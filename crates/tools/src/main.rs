@@ -251,6 +251,28 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("ctda-stats") => {
+            // ctda-stats <data dir> <TYPE>: condition function usage counts
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let tag: [u8; 4] = args[2].as_bytes().try_into().context("4-char type")?;
+            let mut counts: std::collections::HashMap<(u16, u32), usize> = Default::default();
+            for &id in lo.ids_of_type(&tag) {
+                if let Some(r) = lo.get(id) {
+                    for s in r.subrecords().filter(|s| s.tag.0 == *b"CTDA") {
+                        let f = u16::from_le_bytes([s.data[8], s.data[9]]);
+                        let run_on = u32::from_le_bytes(s.data[20..24].try_into().unwrap());
+                        *counts.entry((f, run_on)).or_default() += 1;
+                    }
+                }
+            }
+            let mut v: Vec<_> = counts.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            for ((f, run_on), c) in v.iter().take(60) {
+                println!("{c:>7} func {f:>4} run_on {run_on}");
+            }
+        }
         _ => bail!("usage: vrm-tool <bsa-list|bsa-extract|bsa-verify> ..."),
     }
     Ok(())

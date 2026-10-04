@@ -38,6 +38,7 @@ impl Ui {
         let mut visuals = egui::Visuals::dark();
         visuals.window_fill = Color32::from_rgba_unmultiplied(10, 10, 10, 220);
         ctx.set_visuals(visuals);
+        ctx.global_style_mut(|s| s.animation_time = 0.0);
         let renderer = egui_wgpu::Renderer::new(device, format, egui_wgpu::RendererOptions::default());
         Ui { ctx, renderer, console: Console::default(), show_debug: false, fps: 0 }
     }
@@ -51,13 +52,25 @@ impl Ui {
     pub fn build(&mut self, raw: egui::RawInput, engine: &mut Engine) -> egui::FullOutput {
         let ctx = self.ctx.clone();
         let mut commands: Vec<String> = Vec::new();
+        let mut choice: Option<usize> = None;
+        let mut skip = false;
         let out = ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx().clone();
-            self.hud(&ctx, engine);
+            if engine.conversation.is_some() {
+                self.dialogue(&ctx, engine, &mut choice, &mut skip);
+            } else {
+                self.hud(&ctx, engine);
+            }
             if self.console.open {
                 self.console_window(&ctx, &mut commands);
             }
         });
+        if let Some(i) = choice {
+            engine.choose_topic(i);
+        }
+        if skip {
+            engine.skip_line();
+        }
         for c in commands {
             self.console.lines.push(format!("> {c}"));
             let res = crate::console::execute(engine, &c);
@@ -122,6 +135,62 @@ impl Ui {
                 engine.location_name()
             );
             painter.text(Pos2::new(rect.left() + 8.0, rect.top() + 8.0), Align2::LEFT_TOP, text, FontId::monospace(13.0), Color32::YELLOW);
+        }
+    }
+
+    fn dialogue(&self, ctx: &egui::Context, engine: &Engine, choice: &mut Option<usize>, skip: &mut bool) {
+        let Some(c) = &engine.conversation else { return };
+        let rect = ctx.content_rect();
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("dlg")));
+        // Subtitle
+        if let Some(line) = &c.current {
+            let galley = painter.layout(
+                line.text.clone(),
+                FontId::proportional(20.0),
+                Color32::WHITE,
+                rect.width() * 0.6,
+            );
+            let pos = Pos2::new(rect.center().x - galley.size().x / 2.0, rect.bottom() - 120.0);
+            painter.galley(pos + egui::vec2(1.5, 1.5), galley.clone(), Color32::BLACK);
+            painter.galley(pos, galley, Color32::WHITE);
+            if ctx.input(|i| i.pointer.primary_clicked() || i.key_pressed(egui::Key::Space)) {
+                *skip = true;
+            }
+        }
+        // Topic menu on the right, Skyrim style (painter-drawn with manual hit testing).
+        let x = rect.right() - rect.width() * 0.38;
+        let mut y = rect.center().y - 150.0;
+        let shadow = |p: Pos2, t: &str, size: f32, col: Color32| {
+            painter.text(p + egui::vec2(1.5, 1.5), Align2::LEFT_TOP, t, FontId::proportional(size), Color32::BLACK);
+            painter.text(p, Align2::LEFT_TOP, t, FontId::proportional(size), col)
+        };
+        shadow(Pos2::new(x, y), &c.name, 28.0, Color32::WHITE);
+        y += 44.0;
+        if c.current.is_some() {
+            return;
+        }
+        let (hover, clicked) = ctx.input(|i| (i.pointer.hover_pos(), i.pointer.primary_clicked()));
+        let mut entries: Vec<&str> = c.options.iter().map(|o| o.1.as_str()).collect();
+        entries.push("Goodbye.");
+        for (i, text) in entries.iter().enumerate() {
+            let r = shadow(Pos2::new(x, y), text, 20.0, Color32::from_gray(225));
+            if hover.is_some_and(|p| r.expand(3.0).contains(p)) {
+                painter.rect_stroke(r.expand(3.0), 2.0, Stroke::new(1.0, Color32::from_gray(170)), egui::StrokeKind::Outside);
+                if clicked {
+                    *choice = Some(if i < c.options.len() { i } else { usize::MAX });
+                }
+            }
+            y += 30.0;
+        }
+        // Number keys pick options; Tab leaves.
+        let keys = [egui::Key::Num1, egui::Key::Num2, egui::Key::Num3, egui::Key::Num4, egui::Key::Num5, egui::Key::Num6, egui::Key::Num7, egui::Key::Num8, egui::Key::Num9];
+        for (k, key) in keys.iter().enumerate() {
+            if ctx.input(|inp| inp.key_pressed(*key)) {
+                *choice = Some(if k < c.options.len() { k } else { usize::MAX });
+            }
+        }
+        if ctx.input(|inp| inp.key_pressed(egui::Key::Tab)) {
+            *choice = Some(usize::MAX);
         }
     }
 

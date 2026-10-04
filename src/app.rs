@@ -106,6 +106,10 @@ pub fn run(opts: Options) -> Result<()> {
             let (dest, pos, rot) = d.destination.unwrap();
             engine.teleport_through(dest, pos, rot.z)?;
         }
+        if let Some(t) = &opts.talk {
+            let id = engine.resolve_form(t).context("unknown reference")?;
+            engine.start_conversation(id);
+        }
         if let Some(frames) = opts.wait {
             // Advance the world without moving the camera.
             let (pos, yaw, pitch) = (engine.camera.position, engine.camera.yaw, engine.camera.pitch);
@@ -152,7 +156,14 @@ pub fn run(opts: Options) -> Result<()> {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(opts.width as f32, opts.height as f32))),
             ..Default::default()
         };
-        let out = ui.build(raw, &mut engine);
+        log::debug!("conversation active: {}", engine.conversation.is_some());
+        // egui hides new areas during their first (sizing) pass.
+        let first = ui.build(raw.clone(), &mut engine);
+        let mut out = ui.build(raw, &mut engine);
+        // Texture uploads (the font atlas) from the first pass must not be lost.
+        let mut deltas = first.textures_delta;
+        deltas.append(std::mem::take(&mut out.textures_delta));
+        out.textures_delta = deltas;
         let size = [opts.width, opts.height];
         let pixels = engine.renderer.render_to_image(&engine.scene, &engine.camera, |r, view| {
             ui.paint(&r.device, &r.queue, view, out, size);
@@ -270,8 +281,14 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(s) = &mut self.state else { return };
-        // The console takes keyboard input while open.
-        let console_open = s.ui.console.open;
+        // The console and dialogue menu take input while open.
+        let console_open = s.ui.console.open || s.engine.conversation.is_some();
+        if s.engine.conversation.is_some() && s.grabbed {
+            s.grabbed = false;
+            let _ = s.window.set_cursor_grab(CursorGrabMode::None);
+            s.window.set_cursor_visible(true);
+            s.keys.clear();
+        }
         let resp = s.egui_state.on_window_event(&s.window, &event);
         if console_open
             && resp.consumed
@@ -301,7 +318,7 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
-                    if s.ui.console.open {
+                    if s.ui.console.open || s.engine.conversation.is_some() {
                         return;
                     }
                     match event.state {
@@ -336,7 +353,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
-                if !s.grabbed && !s.ui.console.open {
+                if !s.grabbed && !s.ui.console.open && s.engine.conversation.is_none() {
                     let ok = s
                         .window
                         .set_cursor_grab(CursorGrabMode::Locked)

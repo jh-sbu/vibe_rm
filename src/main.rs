@@ -1,6 +1,7 @@
 mod app;
 mod audio;
 mod condition;
+mod dialogue;
 mod console;
 mod engine;
 mod render;
@@ -33,6 +34,7 @@ pub struct Options {
     pub pick: Option<(f32, f32)>,
     pub wait: Option<u32>,
     pub no_scripts: bool,
+    pub talk: Option<String>,
 }
 
 fn parse_args() -> Result<Options> {
@@ -71,6 +73,7 @@ fn parse_args() -> Result<Options> {
             "--bench" => o.bench = Some(val()?.parse()?),
             "--wait" => o.wait = Some(val()?.parse()?),
             "--no-scripts" => o.no_scripts = true,
+            "--talk" => o.talk = Some(val()?),
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v.split_once(',').context("--pick x,y (0..1 screen coords)")?;

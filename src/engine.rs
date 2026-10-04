@@ -70,6 +70,8 @@ pub struct Engine {
     pending_moveto: Option<FormId>,
     pub audio: Option<crate::audio::Audio>,
     music: MusicState,
+    pub conversation: Option<crate::dialogue::Conversation>,
+    npc_refs: HashMap<FormId, FormId>,
 }
 
 #[derive(Default)]
@@ -118,6 +120,8 @@ impl Engine {
             pending_moveto: None,
             audio: None,
             music: MusicState::default(),
+            conversation: None,
+            npc_refs: HashMap::new(),
         }
     }
 
@@ -800,6 +804,7 @@ impl Engine {
             a.update();
         }
         self.update_music();
+        self.update_conversation();
     }
 
     fn animate_actors(&mut self, dt: f32) {
@@ -874,7 +879,9 @@ impl Engine {
     pub fn activate(&mut self) -> Result<()> {
         let Some((owner, name)) = self.look_target.clone() else { return Ok(()) };
         let rec = self.lo.get(owner).context("reference vanished")?;
+        let is_actor = rec.tag().0 == *b"ACHR";
         let rf = records::reference(&rec);
+        drop(rec);
         let base_tag = self.lo.tag_of(rf.base);
         log::info!("activate {owner} ({name})");
         {
@@ -885,6 +892,10 @@ impl Engine {
             self.vm = vm;
         }
         if self.scripts.blocked_activation.contains(&owner) {
+            return Ok(());
+        }
+        if is_actor {
+            self.start_conversation(owner);
             return Ok(());
         }
         if base_tag.map(|t| t.0) == Some(*b"DOOR")
@@ -1100,12 +1111,28 @@ impl Engine {
         st.running = true;
         let Some(rec) = self.lo.get(q) else { return };
         let vmad = crate::script::vmad::parse(&rec).unwrap_or_default();
+        let alias_specs = alias_specs(&rec);
         // Startup stage: INDX flags (third byte) 0x2 marks "start up stage".
         let startup = rec.subrecords().find(|sr| sr.tag.0 == *b"INDX" && sr.u8(2) & 0x2 != 0).map(|sr| sr.u16(0));
         drop(rec);
+        let aliases = self.fill_aliases(&alias_specs);
+        self.scripts.quests.entry(q).or_default().aliases = aliases;
         let mut vm = std::mem::take(&mut self.vm);
         {
             let obj = papyrus::ObjectId::Form(q.0);
+            // Alias scripts run on the alias objects.
+            for (alias, scripts) in &vmad.alias_scripts {
+                let aobj = papyrus::ObjectId::Alias { quest: q.0, alias: *alias };
+                for s in scripts {
+                    let props: Vec<(String, papyrus::Value)> = s
+                        .properties
+                        .iter()
+                        .map(|(n, pv)| (n.clone(), crate::script::vmad::to_value(pv, &|f| host_class(&self.lo, f))))
+                        .collect();
+                    let mut host = crate::script::EngineHost { engine: self };
+                    vm.attach(&mut host, aobj, &s.name, &props);
+                }
+            }
             let mut host = crate::script::EngineHost { engine: self };
             for s in &vmad.scripts {
                 let props: Vec<(String, papyrus::Value)> = s
@@ -1143,6 +1170,32 @@ impl Engine {
             }
         }
         self.vm = vm;
+    }
+
+    /// Resolve reference aliases (forced refs and unique actors).
+    fn fill_aliases(&mut self, specs: &[(u32, Option<FormId>, Option<FormId>)]) -> HashMap<u32, FormId> {
+        let mut out = HashMap::new();
+        for &(id, forced, unique) in specs {
+            if let Some(r) = forced.or_else(|| unique.and_then(|npc| self.unique_actor_ref(npc))) {
+                out.insert(id, r);
+            }
+        }
+        out
+    }
+
+    /// The placed reference of a unique NPC.
+    pub fn unique_actor_ref(&mut self, npc: FormId) -> Option<FormId> {
+        if self.npc_refs.is_empty() {
+            for &a in self.lo.ids_of_type(b"ACHR") {
+                if let Some(r) = self.lo.get(a)
+                    && let Some(d) = r.get(b"NAME")
+                {
+                    let base = r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())));
+                    self.npc_refs.entry(base).or_insert(a);
+                }
+            }
+        }
+        self.npc_refs.get(&npc).copied()
     }
 
     fn update_scripts(&mut self, dt: f32) {
@@ -1223,6 +1276,42 @@ impl Engine {
             self.start_quest(q);
         }
     }
+}
+
+/// Reference alias definitions of a quest: (alias id, forced reference, unique actor).
+fn alias_specs(quest: &esp::LoadedRecord<'_>) -> Vec<(u32, Option<FormId>, Option<FormId>)> {
+    let mut out = Vec::new();
+    let mut cur: Option<(u32, Option<FormId>, Option<FormId>)> = None;
+    for sr in quest.subrecords() {
+        match &sr.tag.0 {
+            b"ALST" => cur = Some((sr.u32(0), None, None)),
+            b"ALLS" => cur = None,
+            b"ALFR" => {
+                if let Some(c) = cur.as_mut() {
+                    c.1 = Some(quest.fid(sr.form_id(0)));
+                }
+            }
+            b"ALUA" => {
+                if let Some(c) = cur.as_mut() {
+                    c.2 = Some(quest.fid(sr.form_id(0)));
+                }
+            }
+            b"ALED" => {
+                if let Some(c) = cur.take() {
+                    out.push(c);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn host_class(lo: &LoadOrder, f: FormId) -> &'static str {
+    if f == PLAYER_REF {
+        return "Actor";
+    }
+    lo.tag_of(f).map(|t| crate::script::types::class_for_tag(&t.0)).unwrap_or("Form")
 }
 
 pub fn interior_environment(l: &Lighting) -> Environment {
