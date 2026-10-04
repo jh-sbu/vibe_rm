@@ -171,6 +171,34 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("hkx-dump") => {
+            // hkx-dump <data dir> <vfs path> [time]
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let bytes = v.read(&args[2]).context("not found")?;
+            let p = havok::Packfile::parse(&bytes)?;
+            println!("{} objects: {:?}", p.version, p.objects.iter().map(|o| o.class.as_str()).collect::<Vec<_>>());
+            let c = havok::AnimationContainer::parse(&bytes)?;
+            for s in &c.skeletons {
+                println!("skeleton {} with {} bones", s.name, s.bones.len());
+                for (i, b) in s.bones.iter().enumerate().take(8) {
+                    println!("  [{i}] {} parent {:?} t {:?}", b.name, b.parent, b.reference.translation);
+                }
+            }
+            let t: f32 = args.get(3).map(|s| s.parse()).transpose()?.unwrap_or(0.0);
+            for a in &c.animations {
+                println!("animation {:.3}s {} tracks, binding {:?}", a.duration, a.num_tracks, a.binding.as_ref().map(|b| (&b.skeleton_name, b.track_to_bone.len())));
+                for an in a.annotations.iter().take(10) {
+                    println!("  @{:.3} {}", an.time, an.text);
+                }
+                let mut out = Vec::new();
+                a.sample(t, &mut out);
+                for (i, q) in out.iter().enumerate().take(6) {
+                    println!("  track {i}: t={:?} r={:?} |r|={:.4} s={:?}", q.translation, q.rotation, q.rotation.length(), q.scale);
+                }
+            }
+        }
         _ => bail!("usage: vrm-tool <bsa-list|bsa-extract|bsa-verify> ..."),
     }
     Ok(())

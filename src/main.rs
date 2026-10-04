@@ -26,6 +26,7 @@ pub struct Options {
     pub use_door: Option<usize>,
     pub bench: Option<u32>,
     pub pick: Option<(f32, f32)>,
+    pub wait: Option<u32>,
 }
 
 fn parse_args() -> Result<Options> {
@@ -62,6 +63,7 @@ fn parse_args() -> Result<Options> {
             "--simulate" => o.simulate = Some(val()?.parse()?),
             "--use-door" => o.use_door = Some(val()?.parse()?),
             "--bench" => o.bench = Some(val()?.parse()?),
+            "--wait" => o.wait = Some(val()?.parse()?),
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v.split_once(',').context("--pick x,y (0..1 screen coords)")?;

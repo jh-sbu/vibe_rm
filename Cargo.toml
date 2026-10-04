@@ -23,6 +23,7 @@ bsa = { path = "crates/bsa", package = "vrm-bsa" }
 esp = { path = "crates/esp", package = "vrm-esp" }
 nif = { path = "crates/nif", package = "vrm-nif" }
 vfs = { path = "crates/vfs", package = "vrm-vfs" }
+havok = { path = "crates/havok", package = "vrm-havok" }
 
 [package]
 name = "vibe_rm"
@@ -45,6 +46,7 @@ wgpu = "29"
 winit = "0.30"
 pollster = "0.4"
 png = "0.17"
+havok.workspace = true
 rapier3d = "0.36"
 
 [profile.dev]

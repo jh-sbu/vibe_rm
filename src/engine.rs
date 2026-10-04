@@ -19,6 +19,8 @@ use crate::world::weather::{self, Climate, Weather};
 
 #[derive(Default)]
 struct CellRuntime {
+    /// Animation state for each actor in the matching RenderCell, by index.
+    actor_anims: Vec<Option<(crate::world::animation::ActorAnim, std::sync::Arc<crate::world::skeleton::Skeleton>)>>,
     colliders: Vec<ColliderHandle>,
     land: Option<Land>,
     lights: Vec<PointLight>,
@@ -55,6 +57,7 @@ pub struct Engine {
     /// Name of what the crosshair points at, if activatable.
     pub look_target: Option<(FormId, String)>,
     skeletons: HashMap<String, Option<std::sync::Arc<crate::world::skeleton::Skeleton>>>,
+    anims: crate::world::animation::AnimationLibrary,
 }
 
 pub fn grid_of(p: Vec2) -> (i32, i32) {
@@ -82,6 +85,7 @@ impl Engine {
             pending_loads: Vec::new(),
             look_target: None,
             skeletons: HashMap::new(),
+            anims: Default::default(),
         }
     }
 
@@ -171,8 +175,15 @@ impl Engine {
         let paths: Vec<String> = descs.iter().flat_map(|d| d.models.iter().cloned()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let mut actors = Vec::new();
-        for d in &descs {
+        let mut anims = Vec::new();
+        for (ai, d) in descs.iter().enumerate() {
             let Some(skel) = self.skeleton(&d.skeleton) else { continue };
+            let clip = crate::world::animation::idle_clip(&d.skeleton, d.female)
+                .iter()
+                .find_map(|c| self.anims.clip(&self.vfs, c, &d.skeleton, &skel));
+            // Desynchronise actors sharing a clip.
+            let start = (ai as f32 * 1.618) % 7.0;
+            anims.push(clip.map(|c| (crate::world::animation::ActorAnim::new(c, &skel, start), skel.clone())));
             let pose = skel.model_space(&skel.bind_locals());
             let mut meshes = Vec::new();
             for m in &d.models {
@@ -207,6 +218,9 @@ impl Engine {
         log::info!("spawned {} actors", actors.len());
         if let Some(rc) = self.scene.cells.get_mut(&key) {
             rc.actors.extend(actors);
+        }
+        if let Some(rt) = self.cells.get_mut(&key) {
+            rt.actor_anims.extend(anims);
         }
     }
 
@@ -554,11 +568,23 @@ impl Engine {
             self.scene.env = env;
         }
         self.physics.step(dt);
+        self.animate_actors(dt);
         let cam = self.camera_copy();
         self.player.update(&self.physics, &cam, input, dt);
         self.camera.position = self.player.eye();
         self.update_streaming();
         self.update_look_target();
+    }
+
+    fn animate_actors(&mut self, dt: f32) {
+        for (key, rt) in self.cells.iter_mut() {
+            let Some(rc) = self.scene.cells.get_mut(key) else { continue };
+            for (actor, anim) in rc.actors.iter_mut().zip(rt.actor_anims.iter_mut()) {
+                if let Some((a, skel)) = anim {
+                    actor.pose = a.update(skel, dt);
+                }
+            }
+        }
     }
 
     fn update_look_target(&mut self) {

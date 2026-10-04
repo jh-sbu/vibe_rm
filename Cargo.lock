@@ -2489,6 +2489,7 @@ dependencies = [
  "rayon",
  "vrm-bsa",
  "vrm-esp",
+ "vrm-havok",
  "vrm-nif",
  "vrm-vfs",
  "wgpu",
@@ -2517,6 +2518,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vrm-havok"
+version = "0.1.0"
+dependencies = [
+ "glam 0.33.12",
+ "log",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "vrm-nif"
 version = "0.1.0"
 dependencies = [
@@ -2533,6 +2543,7 @@ dependencies = [
  "env_logger",
  "vrm-bsa",
  "vrm-esp",
+ "vrm-havok",
  "vrm-nif",
  "vrm-vfs",
 ]

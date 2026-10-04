@@ -1,4 +1,5 @@
 pub mod actor;
+pub mod animation;
 pub mod cell;
 pub mod loader;
 pub mod records;

@@ -99,6 +99,17 @@ pub fn run(opts: Options) -> Result<()> {
             let (dest, pos, rot) = d.destination.unwrap();
             engine.teleport_through(dest, pos, rot.z)?;
         }
+        if let Some(frames) = opts.wait {
+            // Advance the world without moving the camera.
+            let (pos, yaw, pitch) = (engine.camera.position, engine.camera.yaw, engine.camera.pitch);
+            engine.player.noclip = true;
+            for _ in 0..frames {
+                engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
+            }
+            engine.camera.position = pos;
+            engine.camera.yaw = yaw;
+            engine.camera.pitch = pitch;
+        }
         if let Some(frames) = opts.simulate {
             let input = MoveInput { forward: 1.0, run: true, ..Default::default() };
             for i in 0..frames {

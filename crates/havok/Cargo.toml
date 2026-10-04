@@ -1,0 +1,11 @@
+[package]
+name = "vrm-havok"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Reader for Havok 2010 binary packfiles (.hkx) as used by Skyrim SE: skeletons and spline-compressed animations"
+
+[dependencies]
+thiserror.workspace = true
+log.workspace = true
+glam.workspace = true
