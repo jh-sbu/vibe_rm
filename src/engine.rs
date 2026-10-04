@@ -611,6 +611,39 @@ impl Engine {
         }
     }
 
+    /// The verb shown in the activation prompt.
+    pub fn look_verb(&self) -> &'static str {
+        let Some((id, _)) = &self.look_target else { return "" };
+        let Some(rec) = self.lo.get(*id) else { return "Activate" };
+        if rec.tag().0 == *b"ACHR" {
+            return "Talk";
+        }
+        let base = records::reference(&rec).base;
+        match self.lo.tag_of(base).map(|t| t.0) {
+            Some(t) if t == *b"DOOR" => "Open",
+            Some(t) if t == *b"CONT" => "Search",
+            Some(t) if t == *b"FURN" => "Sit",
+            Some(t) if t == *b"BOOK" => "Read",
+            Some(t) if t == *b"FLOR" => "Harvest",
+            Some(t) if t == *b"ACTI" => "Activate",
+            _ => "Take",
+        }
+    }
+
+    pub fn location_name(&self) -> String {
+        match self.location {
+            Location::Interior(c) | Location::Exterior { world: c, .. } => self
+                .lo
+                .get(c)
+                .map(|r| {
+                    let n = r.get(b"FULL").map(|d| self.lo.lstring(&r, d)).unwrap_or_default();
+                    if n.is_empty() { r.editor_id().unwrap_or_default() } else { n }
+                })
+                .unwrap_or_default(),
+            Location::Nowhere => String::new(),
+        }
+    }
+
     /// Activate whatever the player is looking at.
     pub fn activate(&mut self) -> Result<()> {
         let Some((owner, name)) = self.look_target.clone() else { return Ok(()) };

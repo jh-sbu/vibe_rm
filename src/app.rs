@@ -39,6 +39,7 @@ async fn create_device(instance: &wgpu::Instance, surface: Option<&wgpu::Surface
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: surface,
+            apply_limit_buckets: false,
         })
         .await?;
     log::info!("adapter: {:?}", adapter.get_info());
@@ -139,7 +140,17 @@ pub fn run(opts: Options) -> Result<()> {
             let t = engine.renderer.bench(&engine.scene, &engine.camera, n);
             log::info!("bench: {:?}/frame ({:.1} fps), {:?}", t, 1.0 / t.as_secs_f64(), engine.renderer.stats);
         }
-        let pixels = engine.renderer.render_to_image(&engine.scene, &engine.camera);
+        let mut ui = crate::ui::Ui::new(&engine.renderer.device, engine.renderer.color_format);
+        ui.show_debug = true;
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(opts.width as f32, opts.height as f32))),
+            ..Default::default()
+        };
+        let out = ui.build(raw, &mut engine);
+        let size = [opts.width, opts.height];
+        let pixels = engine.renderer.render_to_image(&engine.scene, &engine.camera, |r, view| {
+            ui.paint(&r.device, &r.queue, view, out, size);
+        });
         log::info!("render stats: {:?}", engine.renderer.stats);
         let file = std::fs::File::create(&path)?;
         let mut enc = png::Encoder::new(std::io::BufWriter::new(file), opts.width, opts.height);
@@ -157,6 +168,8 @@ pub fn run(opts: Options) -> Result<()> {
 }
 
 struct WindowState {
+    ui: crate::ui::Ui,
+    egui_state: egui_winit::State,
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
@@ -197,6 +210,7 @@ impl App {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             width: size.width.max(1),
             height: size.height.max(1),
             present_mode: wgpu::PresentMode::AutoVsync,
@@ -208,7 +222,11 @@ impl App {
         let renderer = Renderer::new(device, queue, format, config.width, config.height);
         let (lo, vfs) = self.data.take().context("already initialised")?;
         let engine = setup_engine(&self.opts, renderer, lo, vfs)?;
+        let ui = crate::ui::Ui::new(&engine.renderer.device, format);
+        let egui_state = egui_winit::State::new(ui.ctx.clone(), egui::ViewportId::ROOT, el, Some(window.scale_factor() as f32), None, None);
         self.state = Some(WindowState {
+            ui,
+            egui_state,
             window,
             surface,
             config,
@@ -246,6 +264,17 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(s) = &mut self.state else { return };
+        // The console takes keyboard input while open.
+        let console_open = s.ui.console.open;
+        let resp = s.egui_state.on_window_event(&s.window, &event);
+        if console_open
+            && resp.consumed
+            && !matches!(&event, WindowEvent::KeyboardInput { event, .. } if event.physical_key == PhysicalKey::Code(KeyCode::Backquote))
+        {
+            if let WindowEvent::KeyboardInput { .. } = event {
+                return;
+            }
+        }
         match event {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::Resized(size) => {
@@ -256,8 +285,24 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    if code == KeyCode::Backquote && event.state == ElementState::Pressed && !event.repeat {
+                        s.ui.toggle_console();
+                        s.keys.clear();
+                        if s.ui.console.open && s.grabbed {
+                            s.grabbed = false;
+                            let _ = s.window.set_cursor_grab(CursorGrabMode::None);
+                            s.window.set_cursor_visible(true);
+                        }
+                        return;
+                    }
+                    if s.ui.console.open {
+                        return;
+                    }
                     match event.state {
                         ElementState::Pressed => {
+                            if code == KeyCode::F3 && !event.repeat {
+                                s.ui.show_debug = !s.ui.show_debug;
+                            }
                             if code == KeyCode::Escape {
                                 if s.grabbed {
                                     s.grabbed = false;
@@ -285,7 +330,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
-                if !s.grabbed {
+                if !s.grabbed && !s.ui.console.open {
                     let ok = s
                         .window
                         .set_cursor_grab(CursorGrabMode::Locked)
@@ -313,9 +358,15 @@ impl ApplicationHandler for App {
                 };
                 let view = frame.texture.create_view(&Default::default());
                 s.engine.renderer.render(&s.engine.scene, &s.engine.camera, &view);
-                frame.present();
+                let raw = s.egui_state.take_egui_input(&s.window);
+                let out = s.ui.build(raw, &mut s.engine);
+                s.egui_state.handle_platform_output(&s.window, out.platform_output.clone());
+                let size = [s.config.width, s.config.height];
+                s.ui.paint(&s.engine.renderer.device, &s.engine.renderer.queue, &view, out, size);
+                s.engine.renderer.queue.present(frame);
                 s.frames += 1;
                 if s.fps_timer.elapsed().as_secs_f32() >= 1.0 {
+                    s.ui.fps = s.frames;
                     let st = s.engine.renderer.stats;
                     let p = s.engine.camera.position;
                     let target = s.engine.look_target.as_ref().map(|t| format!(" | [E] {}", t.1)).unwrap_or_default();

@@ -306,10 +306,10 @@ impl Camera {
         Vec3::new(self.yaw.cos(), -self.yaw.sin(), 0.0)
     }
     pub fn view(&self) -> Mat4 {
-        Mat4::look_to_rh(self.position, self.forward(), Vec3::Z)
+        glam::camera::rh::view::look_to_mat4(self.position, self.forward(), Vec3::Z)
     }
     pub fn proj(&self, aspect: f32) -> Mat4 {
-        Mat4::perspective_infinite_reverse_rh(self.fov_y, aspect, 5.0)
+        glam::camera::rh::proj::directx::perspective_infinite_reverse(self.fov_y, aspect, 5.0)
     }
 }
 
@@ -606,28 +606,28 @@ impl Renderer {
         ];
         let skin_inst_attrs = wgpu::vertex_attr_array![13 => Uint32, 14 => Uint32x4];
         let static_buffers = [
-            wgpu::VertexBufferLayout {
+            Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Vertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &vertex_attrs,
-            },
-            wgpu::VertexBufferLayout {
+            }),
+            Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<InstanceData>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &inst_attrs,
-            },
+            }),
         ];
         let skinned_buffers = [
-            wgpu::VertexBufferLayout {
+            Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<SkinVertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &skin_attrs,
-            },
-            wgpu::VertexBufferLayout {
+            }),
+            Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<SkinInstanceData>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &skin_inst_attrs,
-            },
+            }),
         ];
         let blend = match key.blend {
             BlendMode::Opaque => None,
@@ -1070,7 +1070,7 @@ impl Renderer {
     }
 
     /// Render a frame into an offscreen texture and return RGBA8 pixels.
-    pub fn render_to_image(&mut self, scene: &Scene, camera: &Camera) -> Vec<u8> {
+    pub fn render_to_image(&mut self, scene: &Scene, camera: &Camera, overlay: impl FnOnce(&mut Self, &wgpu::TextureView)) -> Vec<u8> {
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen"),
             size: wgpu::Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
@@ -1083,6 +1083,7 @@ impl Renderer {
         });
         let view = tex.create_view(&Default::default());
         self.render(scene, camera, &view);
+        overlay(self, &view);
         let bpr = (self.width * 4).div_ceil(256) * 256;
         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("readback"),
@@ -1103,7 +1104,7 @@ impl Renderer {
         let slice = buf.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-        let data = slice.get_mapped_range();
+        let data = slice.get_mapped_range().expect("readback buffer mapped");
         let mut out = Vec::with_capacity((self.width * self.height * 4) as usize);
         let bgra = matches!(self.color_format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
         for y in 0..self.height {

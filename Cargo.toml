@@ -42,9 +42,12 @@ bsa.workspace = true
 esp.workspace = true
 nif.workspace = true
 vfs.workspace = true
-wgpu = "29"
+wgpu = "30"
 winit = "0.30"
 pollster = "0.4"
+egui = "0.36"
+egui-wgpu = "0.36"
+egui-winit = { version = "0.36", default-features = false, features = ["wayland", "x11"] }
 png = "0.17"
 havok.workspace = true
 rapier3d = "0.36"

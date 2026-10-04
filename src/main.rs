@@ -1,8 +1,10 @@
 mod app;
+mod console;
 mod engine;
 mod render;
 mod physics;
 mod player;
+mod ui;
 mod world;
 
 use anyhow::{Context, Result};
