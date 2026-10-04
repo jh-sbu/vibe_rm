@@ -2,6 +2,7 @@
 
 pub mod dds;
 pub mod model;
+pub mod terrain;
 pub mod texture;
 
 use std::collections::HashMap;
@@ -45,6 +46,7 @@ struct MaterialUniform {
     specular: [f32; 4],
     params: [f32; 4],
     flags: [u32; 4],
+    falloff: [f32; 4],
 }
 
 #[repr(C)]
@@ -134,6 +136,7 @@ impl Default for Environment {
 #[derive(Default)]
 pub struct Scene {
     pub instances: Vec<Instance>,
+    pub terrain: Vec<terrain::TerrainChunk>,
     pub lights: Vec<GpuLight>,
     pub env: Environment,
 }
@@ -218,12 +221,13 @@ pub struct Renderer {
     pipeline_layout: wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
     pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
-    sampler: wgpu::Sampler,
+    pub(crate) sampler: wgpu::Sampler,
+    pub(crate) terrain: terrain::TerrainPipeline,
     instance_buf: wgpu::Buffer,
     instance_cap: usize,
     pub textures: TextureCache,
-    white: Arc<GpuTexture>,
-    flat_normal: Arc<GpuTexture>,
+    pub(crate) white: Arc<GpuTexture>,
+    pub(crate) flat_normal: Arc<GpuTexture>,
     black: Arc<GpuTexture>,
     pub stats: FrameStats,
 }
@@ -347,7 +351,9 @@ impl Renderer {
         let flat_normal = Arc::new(texture::solid(&device, &queue, [128, 128, 255, 0], "flat_normal"));
         let black = Arc::new(texture::solid(&device, &queue, [0, 0, 0, 255], "black"));
         let depth_view = Self::make_depth(&device, width, height);
+        let terrain = terrain::TerrainPipeline::new(&device, &frame_bgl, color_format);
         Renderer {
+            terrain,
             device,
             queue,
             color_format,
@@ -504,6 +510,7 @@ impl Renderer {
                 if has_glow { 1.0 } else { 0.0 },
             ],
             flags: [m.flags1, m.flags2, if m.kind == ShaderKind::Effect { 1 } else { 0 }, 0],
+            falloff: m.falloff.to_array(),
         };
         let ubuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("material"),
@@ -664,6 +671,19 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_bind_group(0, &self.frame_bg, &[]);
+            if !scene.terrain.is_empty() {
+                pass.set_pipeline(&self.terrain.pipeline);
+                pass.set_index_buffer(self.terrain.ibuf.slice(..), wgpu::IndexFormat::Uint16);
+                for chunk in &scene.terrain {
+                    if !frustum.sphere_visible(chunk.center, chunk.radius) {
+                        continue;
+                    }
+                    pass.set_bind_group(1, &chunk.bind_group, &[]);
+                    pass.set_vertex_buffer(0, chunk.vbuf.slice(..));
+                    pass.draw_indexed(0..self.terrain.index_count, 0, 0..1);
+                    stats.draws += 1;
+                }
+            }
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             let mut current: Option<PipelineKey> = None;
             let mut draw = |pass: &mut wgpu::RenderPass, part: &GpuPart, range: std::ops::Range<u32>| {

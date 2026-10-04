@@ -116,6 +116,20 @@ fn main() -> Result<()> {
                 println!("example {k}: {v}");
             }
         }
+        Some("nif-dump") => {
+            // nif-dump <data dir> <vfs path>
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let bytes = v.read(&args[2]).context("not found")?;
+            let n = nif::Nif::parse(&bytes)?;
+            println!("bs version {} roots {:?}", n.header.bs_version, n.roots);
+            for (i, b) in n.blocks.iter().enumerate() {
+                let s = format!("{b:?}");
+                let s: String = s.chars().take(600).collect();
+                println!("[{i}] {}: {s}", n.block_type_name(i));
+            }
+        }
         _ => bail!("usage: vrm-tool <bsa-list|bsa-extract|bsa-verify> ..."),
     }
     Ok(())

@@ -14,3 +14,4 @@ bsa.workspace = true
 esp.workspace = true
 nif.workspace = true
 env_logger.workspace = true
+vfs.workspace = true

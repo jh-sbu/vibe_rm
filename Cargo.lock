@@ -2226,6 +2226,7 @@ dependencies = [
  "vrm-bsa",
  "vrm-esp",
  "vrm-nif",
+ "vrm-vfs",
 ]
 
 [[package]]

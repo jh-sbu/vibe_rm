@@ -27,6 +27,7 @@ struct Material {
     specular: vec4<f32>,    // rgb * strength, glossiness
     params: vec4<f32>,      // alpha, alpha test threshold (<0 = off), has normal map, has glow map
     flags: vec4<u32>,       // shader flags 1, shader flags 2, kind (0 lit, 1 effect), unused
+    falloff: vec4<f32>,     // effect: start angle, stop angle, start opacity, stop opacity (cosines)
 };
 
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
@@ -78,6 +79,9 @@ fn vs_main(v: VIn) -> VOut {
 }
 
 const SF1_VERTEX_ALPHA: u32 = 8u;
+const SF1_GREYSCALE_TO_PALETTE_COLOR: u32 = 16u;
+const SF1_GREYSCALE_TO_PALETTE_ALPHA: u32 = 32u;
+const SF1_USE_FALLOFF: u32 = 64u;
 const SF1_MODEL_SPACE_NORMALS: u32 = 4096u;
 const SF2_VERTEX_COLORS: u32 = 32u;
 const SF2_SOFT_LIGHTING: u32 = 33554432u;
@@ -112,13 +116,34 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     }
 
     if (mat.flags.z == 1u) {
-        // Effect shader: unlit, emissive tinted.
-        var c = base.rgb * mat.emissive.rgb * mat.emissive.w * in.color.rgb;
-        var a = base.a * mat.params.x * in.color.a;
+        // Effect shader: unlit, emissive tinted. The glow slot holds the greyscale palette.
+        var c = base.rgb;
+        var a = base.a;
+        if ((flags1 & SF1_GREYSCALE_TO_PALETTE_COLOR) != 0u && mat.params.w > 0.5) {
+            c = textureSample(t_glow, s_main, vec2<f32>(base.g, 0.5)).rgb;
+        }
+        if ((flags1 & SF1_GREYSCALE_TO_PALETTE_ALPHA) != 0u && mat.params.w > 0.5) {
+            a = textureSample(t_glow, s_main, vec2<f32>(base.a, 0.5)).a;
+        }
+        c *= mat.emissive.rgb * mat.emissive.w;
+        a *= mat.params.x;
+        if ((flags2 & SF2_VERTEX_COLORS) != 0u) {
+            c *= in.color.rgb;
+        }
+        if ((flags1 & SF1_VERTEX_ALPHA) != 0u) {
+            a *= in.color.a;
+        }
+        if ((flags1 & SF1_USE_FALLOFF) != 0u) {
+            let v = normalize(frame.cam_pos.xyz - in.world_pos);
+            let ndv = abs(dot(normalize(in.normal), v));
+            let f = mat.falloff;
+            let t = clamp((ndv - f.y) / max(f.x - f.y, 0.0001), 0.0, 1.0);
+            a *= mix(f.w, f.z, t);
+        }
         if (mat.params.y >= 0.0 && a < mat.params.y) {
             discard;
         }
-        return vec4<f32>(apply_fog(c, in.world_pos), a);
+        return vec4<f32>(apply_fog(c, in.world_pos), clamp(a, 0.0, 1.0));
     }
 
     if (mat.params.y >= 0.0 && alpha < mat.params.y) {

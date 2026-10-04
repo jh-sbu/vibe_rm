@@ -36,7 +36,15 @@ impl ModelCache {
             .par_iter()
             .map(|p| {
                 let m = vfs.read(p).and_then(|data| match nif::Nif::parse(&data) {
-                    Ok(n) => Some(model::convert(&n)),
+                    Ok(n) => {
+                        let m = model::convert(&n);
+                        for mesh in &m.meshes {
+                            if mesh.material.kind == model::ShaderKind::Effect {
+                                log::debug!("effect mesh in {p}: {:?}", mesh.material);
+                            }
+                        }
+                        Some(m)
+                    }
                     Err(e) => {
                         log::warn!("{p}: {e}");
                         None

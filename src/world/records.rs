@@ -211,7 +211,12 @@ pub fn reference(rec: &LoadedRecord<'_>) -> Reference {
 
 /// Model path of a base object (`MODL`), normalised to a VFS path under `meshes/`.
 pub fn model_path(rec: &LoadedRecord<'_>) -> Option<String> {
-    let m = rec.get(b"MODL")?;
+    // Armor world models are MOD2 (male) / MOD4 (female); MODL holds ARMA ids.
+    let m = if rec.tag().0 == *b"ARMO" { rec.get(b"MOD2").or_else(|| rec.get(b"MOD4"))? } else { rec.get(b"MODL")? };
+    if m.len() < 2 || m.iter().take(m.len() - 1).any(|&b| b < 0x20) {
+        log::debug!("{} {}: odd MODL {:?}", rec.tag(), rec.form_id, m);
+        return None;
+    }
     let s = esp::decode_zstring(m);
     if s.is_empty() {
         return None;
@@ -220,15 +225,25 @@ pub fn model_path(rec: &LoadedRecord<'_>) -> Option<String> {
 }
 
 pub fn mesh_path(s: &str) -> String {
-    let n = vfs::normalize_path(s);
-    let n = n.strip_prefix("data/").unwrap_or(&n).to_owned();
-    if n.starts_with("meshes/") { n } else { format!("meshes/{n}") }
+    resource_path(s, "meshes/")
 }
 
 pub fn texture_path(s: &str) -> String {
+    resource_path(s, "textures/")
+}
+
+/// Normalise a resource reference into a VFS path rooted at `root` ("meshes/", "textures/").
+/// Handles absolute authoring paths such as `skyrimhd\build\pc\data\textures\...`.
+fn resource_path(s: &str, root: &str) -> String {
     let n = vfs::normalize_path(s);
-    let n = n.strip_prefix("data/").unwrap_or(&n).to_owned();
-    if n.starts_with("textures/") { n } else { format!("textures/{n}") }
+    if n.starts_with(root) {
+        return n;
+    }
+    if let Some(i) = n.find(&format!("/{root}")) {
+        return n[i + 1..].to_owned();
+    }
+    let n = n.strip_prefix("data/").unwrap_or(&n);
+    format!("{root}{n}")
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -49,6 +49,8 @@ pub struct MaterialDesc {
     pub double_sided: bool,
     pub z_write: bool,
     pub z_test: bool,
+    /// Effect shader view-angle falloff (start, stop, start opacity, stop opacity).
+    pub falloff: Vec4,
 }
 
 impl Default for MaterialDesc {
@@ -71,6 +73,7 @@ impl Default for MaterialDesc {
             double_sided: false,
             z_write: true,
             z_test: true,
+            falloff: Vec4::new(1.0, 0.0, 1.0, 1.0),
         }
     }
 }
@@ -120,13 +123,13 @@ fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut Vec<CpuMesh>, depth: u32) {
     }
     let Some(block) = nif.get(r) else { return };
     let Some(av) = block.av() else { return };
-    if av.hidden() {
+    if av.hidden() || av.net.name.to_ascii_lowercase().starts_with("editormarker") {
         return;
     }
     let world = parent * av.transform.to_mat4();
     match block {
         Block::Node(n) => {
-            if n.kind == NodeKind::RootCollision || av.net.name.eq_ignore_ascii_case("EditorMarker") {
+            if n.kind == NodeKind::RootCollision {
                 return;
             }
             match n.kind {
@@ -206,6 +209,8 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
             m.flags1 = s.flags1;
             m.flags2 = s.flags2;
             m.diffuse = tex(&s.source_texture);
+            m.glow = tex(&s.greyscale_texture);
+            m.falloff = s.falloff;
             m.uv_offset = s.uv_offset;
             m.uv_scale = s.uv_scale;
             m.emissive = s.emissive_color.truncate().extend(s.emissive_multiple);

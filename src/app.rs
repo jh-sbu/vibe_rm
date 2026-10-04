@@ -18,6 +18,7 @@ use crate::render::{Camera, Environment, GpuLight, Instance, Renderer, Scene};
 use crate::world::cell::{self, PlacedObject, PointLight};
 use crate::world::loader::ModelCache;
 use crate::world::records::Lighting;
+use crate::world::terrain::{self, Land};
 
 pub struct Engine {
     pub lo: LoadOrder,
@@ -26,6 +27,7 @@ pub struct Engine {
     pub models: ModelCache,
     pub scene: Scene,
     pub camera: Camera,
+    pub lands: Vec<Land>,
 }
 
 impl Engine {
@@ -106,6 +108,11 @@ impl Engine {
         Ok(())
     }
 
+    pub fn ground_height(&self, p: glam::Vec2) -> Option<f32> {
+        let (x, y) = ((p.x / 4096.0).floor() as i32, (p.y / 4096.0).floor() as i32);
+        self.lands.iter().find(|l| l.x == x && l.y == y).map(|l| l.height_at(p))
+    }
+
     pub fn load_exterior(&mut self, world: FormId, cx: i32, cy: i32, radius: i32) -> Result<()> {
         let t = Instant::now();
         let wi = self.lo.world(world).context("worldspace not indexed")?.clone();
@@ -152,7 +159,48 @@ impl Engine {
             clear_color: Vec3::new(0.6, 0.68, 0.78),
         };
         self.build_scene(&objects, &lights, env);
-        self.camera.position = Vec3::new(cx as f32 * 4096.0 + 2048.0, cy as f32 * 4096.0 + 2048.0, 2000.0);
+
+        // Landscape
+        let default_height = self
+            .lo
+            .get(world)
+            .and_then(|w| w.get(b"DNAM").map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap())))
+            .unwrap_or(-2048.0);
+        let mut lands = Vec::new();
+        for y in cy - radius..=cy + radius {
+            for x in cx - radius..=cx + radius {
+                if let Some(&cell_id) = wi.cells.get(&(x, y))
+                    && let Some(land) = self.lo.cell(cell_id).and_then(|c| c.land)
+                    && let Some(l) = terrain::load_land(&self.lo, land, x, y, default_height)
+                {
+                    lands.push(l);
+                }
+            }
+        }
+        let mut tex = HashSet::new();
+        for l in &lands {
+            for q in &l.quadrants {
+                for layer in &q.layers {
+                    if !self.renderer.textures.contains(&layer.diffuse) {
+                        tex.insert(layer.diffuse.clone());
+                    }
+                    if let Some(n) = &layer.normal
+                        && !self.renderer.textures.contains(n)
+                    {
+                        tex.insert(n.clone());
+                    }
+                }
+            }
+        }
+        crate::world::loader::load_textures(&mut self.renderer, &self.vfs, tex.into_iter().collect());
+        for l in &lands {
+            let chunks = self.renderer.build_terrain(l);
+            self.scene.terrain.extend(chunks);
+        }
+        self.lands = lands;
+        let p = glam::Vec2::new(cx as f32 * 4096.0 + 2048.0, cy as f32 * 4096.0 + 2048.0);
+        let ground = self.ground_height(p).unwrap_or(0.0);
+        self.camera.position = p.extend(ground + 150.0);
         log::info!("exterior loaded in {:?}", t.elapsed());
         Ok(())
     }
@@ -205,7 +253,7 @@ async fn create_device(instance: &wgpu::Instance, surface: Option<&wgpu::Surface
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("device"),
             required_features: features,
-            required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+            required_limits: adapter.limits(),
             ..Default::default()
         })
         .await?;
@@ -220,10 +268,15 @@ fn setup_engine(opts: &Options, renderer: Renderer, lo: LoadOrder, vfs: vfs::Vfs
         models: ModelCache::default(),
         scene: Scene::default(),
         camera: Camera { position: Vec3::ZERO, yaw: 0.0, pitch: 0.0, fov_y: 65f32.to_radians() },
+        lands: Vec::new(),
     };
     if let Some(c) = &opts.cell {
         let id = engine.resolve_form(c).with_context(|| format!("unknown cell {c}"))?;
-        engine.load_interior(id)?;
+        let idx = engine.lo.cell(id).cloned().unwrap_or_default();
+        match (idx.world, idx.grid) {
+            (Some(w), Some((x, y))) => engine.load_exterior(w, x, y, opts.radius)?,
+            _ => engine.load_interior(id)?,
+        }
     } else {
         let wname = opts.world.clone().unwrap_or_else(|| "Tamriel".into());
         let w = engine.resolve_form(&wname).with_context(|| format!("unknown worldspace {wname}"))?;
