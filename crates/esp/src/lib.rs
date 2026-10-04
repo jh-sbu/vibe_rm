@@ -7,6 +7,7 @@
 
 mod form_id;
 mod load_order;
+pub mod navmesh;
 mod plugin;
 mod record;
 pub mod strings;

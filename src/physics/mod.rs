@@ -109,6 +109,14 @@ impl Physics {
         h
     }
 
+    /// Move an actor capsule so that its feet are at `feet`.
+    pub fn move_actor_capsule(&mut self, h: ColliderHandle, feet: Vec3) {
+        if let Some(c) = self.world.colliders.get_mut(h) {
+            let lift = c.shape().as_capsule().map(|cap| cap.half_height() + cap.radius).unwrap_or(0.0);
+            c.set_translation(feet + Vec3::Z * lift);
+        }
+    }
+
     /// Enable or disable all colliders owned by a reference.
     pub fn set_owner_enabled(&mut self, owner: esp::FormId, enabled: bool) {
         let hs: Vec<ColliderHandle> = self.owners.iter().filter(|(_, o)| **o == owner).map(|(h, _)| *h).collect();
