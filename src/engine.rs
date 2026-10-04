@@ -21,6 +21,8 @@ use crate::world::weather::{self, Climate, Weather};
 struct CellRuntime {
     /// References instantiated in this cell (for script detach / visibility).
     refs: Vec<FormId>,
+    /// Looping ambient sounds started for this cell.
+    sounds: Vec<crate::audio::VoiceId>,
     /// Animation state for each actor in the matching RenderCell, by index.
     actor_anims: Vec<Option<(crate::world::animation::ActorAnim, std::sync::Arc<crate::world::skeleton::Skeleton>)>>,
     colliders: Vec<ColliderHandle>,
@@ -66,6 +68,16 @@ pub struct Engine {
     pub day: u32,
     rng: u64,
     pending_moveto: Option<FormId>,
+    pub audio: Option<crate::audio::Audio>,
+    music: MusicState,
+}
+
+#[derive(Default)]
+struct MusicState {
+    music_type: Option<FormId>,
+    voice: Option<crate::audio::VoiceId>,
+    /// Real time at which to start the next track.
+    next_at: f64,
 }
 
 /// The player character reference ("PlayerRef").
@@ -102,8 +114,10 @@ impl Engine {
             scripts: Default::default(),
             vm: papyrus::Vm::new(),
             day: 0,
-            rng: 0x2545_F491_4F6C_DD1D,
+            rng: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1) | 1,
             pending_moveto: None,
+            audio: None,
+            music: MusicState::default(),
         }
     }
 
@@ -121,7 +135,129 @@ impl Engine {
         Camera { position: self.camera.position, yaw: self.camera.yaw, pitch: self.camera.pitch, fov_y: self.camera.fov_y }
     }
 
+    /// Start looping sounds emitted by objects (sound markers, lights, activators, ...).
+    fn start_cell_sounds(&mut self, key: CellKey, refs: &[FormId]) {
+        let Some(audio) = self.audio.as_mut() else { return };
+        let mut voices = Vec::new();
+        for &r in refs {
+            let Some(rec) = self.lo.get(r) else { continue };
+            let rf = records::reference(&rec);
+            if rf.deleted() || rf.initially_disabled() {
+                continue;
+            }
+            let Some(base) = self.lo.get(rf.base) else { continue };
+            let snd = match &base.tag().0 {
+                b"SOUN" => Some(rf.base),
+                b"LIGH" | b"ACTI" | b"MSTT" | b"FURN" => base.get(b"SNAM").map(|d| base.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))),
+                _ => None,
+            };
+            let Some(desc) = snd.and_then(|s| crate::world::sound::descriptor(&self.lo, &self.vfs, s)) else { continue };
+            if !desc.looping {
+                continue;
+            }
+            let file = &desc.files[r.0 as usize % desc.files.len()];
+            if let Some(v) = audio.play(&self.vfs, file, desc.volume, true, Some(rf.position), desc.min_dist, desc.max_dist) {
+                voices.push(v);
+            }
+        }
+        if let Some(rt) = self.cells.get_mut(&key) {
+            rt.sounds.extend(voices);
+        }
+    }
+
+    /// Music type for the current location: cell XCMO, else the cell's regions.
+    fn location_music(&self) -> Option<FormId> {
+        let cell = match self.location {
+            Location::Interior(c) => Some(c),
+            Location::Exterior { world, center } => self.lo.world(world).and_then(|w| w.cells.get(&center).copied()),
+            Location::Nowhere => None,
+        }?;
+        let rec = self.lo.get(cell)?;
+        if let Some(d) = rec.get(b"XCMO") {
+            return Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))));
+        }
+        let regions: Vec<FormId> =
+            rec.get(b"XCLR").map(|d| d.chunks_exact(4).map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))).collect()).unwrap_or_default();
+        for r in regions {
+            let Some(reg) = self.lo.get(r) else { continue };
+            let mut in_music = false;
+            for sr in reg.subrecords() {
+                match &sr.tag.0 {
+                    b"RDAT" => in_music = sr.u32(0) == 7,
+                    b"RDMO" if in_music => return Some(reg.fid(sr.form_id(0))),
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
+    /// Choose a track file from a music type, honouring track conditions.
+    fn pick_track(&mut self, music: FormId) -> Option<String> {
+        let rec = self.lo.get(music)?;
+        let tracks: Vec<FormId> = rec.get(b"TNAM")?.chunks_exact(4).map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))).collect();
+        drop(rec);
+        let ctx = crate::condition::Context { subject: Some(PLAYER_REF), ..Default::default() };
+        let mut candidates: Vec<FormId> = tracks
+            .into_iter()
+            .filter(|t| self.lo.get(*t).is_some_and(|r| crate::condition::evaluate(self, &crate::condition::parse_all(&r), ctx)))
+            .collect();
+        log::debug!("music candidates: {}", candidates.len());
+        for _ in 0..4 {
+            if candidates.is_empty() {
+                return None;
+            }
+            let i = (self.rand() % candidates.len() as u64) as usize;
+            let t = self.lo.get(candidates[i])?;
+            let kind = t.get(b"CNAM").map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap())).unwrap_or(crate::world::sound::MUST_SINGLE);
+            if kind == crate::world::sound::MUST_PALETTE {
+                candidates = t.get(b"SNAM").map(|d| d.chunks_exact(4).map(|c| t.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))).collect()).unwrap_or_default();
+                continue;
+            }
+            if let Some(f) = t.get(b"ANAM") {
+                return Some(crate::world::sound::sound_path(&esp::decode_zstring(f), &self.vfs));
+            }
+            log::debug!("music: silent track {}", t.editor_id().unwrap_or_default());
+            return None;
+        }
+        None
+    }
+
+    fn update_music(&mut self) {
+        if self.audio.is_none() {
+            return;
+        }
+        let now = self.scripts.real_time;
+        let want = self.location_music();
+        let playing = self.music.voice.is_some_and(|v| self.audio.as_ref().unwrap().is_playing(v));
+        if want != self.music.music_type {
+            if let Some(v) = self.music.voice.take() {
+                self.audio.as_ref().unwrap().stop(v);
+            }
+            self.music.music_type = want;
+            log::debug!("music type -> {:?}", want.and_then(|w| self.lo.get(w)).and_then(|r| r.editor_id()));
+            self.music.next_at = now + 1.0;
+            return;
+        }
+        if !playing && now >= self.music.next_at {
+            self.music.voice = None;
+            if let Some(m) = want
+                && let Some(track) = self.pick_track(m)
+            {
+                log::info!("music: {track}");
+                let vfs = &self.vfs;
+                self.music.voice = self.audio.as_mut().unwrap().play(vfs, &track, 0.45, false, None, 0.0, 0.0);
+            }
+            // Silence between tracks, like the original.
+            self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
+        }
+    }
+
     fn unload_all(&mut self) {
+        if let Some(a) = self.audio.as_mut() {
+            a.stop_all();
+        }
+        self.music.voice = None;
         self.scene.cells.clear();
         self.scene.lights.clear();
         self.cells.clear();
@@ -296,6 +432,11 @@ impl Engine {
         self.scene.cells.remove(&key);
         if let Some(rt) = self.cells.remove(&key) {
             self.physics.remove_colliders(&rt.colliders);
+            if let Some(a) = &self.audio {
+                for v in &rt.sounds {
+                    a.stop(*v);
+                }
+            }
             for r in &rt.refs {
                 self.vm.detach_all(papyrus::ObjectId::Form(r.0));
             }
@@ -338,6 +479,7 @@ impl Engine {
             .unwrap_or_default();
         self.spawn_actors(key, &refs);
         self.attach_cell_scripts(&refs);
+        self.start_cell_sounds(key, &refs);
         if contents.info.has_water
             && let Some(h) = contents.info.water_height
             && h < 1.0e30
@@ -443,6 +585,7 @@ impl Engine {
         refs.extend(self.world_persistent.get(&(x, y)).cloned().unwrap_or_default());
         self.spawn_actors(key, &refs);
         self.attach_cell_scripts(&refs);
+        self.start_cell_sounds(key, &refs);
 
         // Landscape
         let dnam = self.world_field(world, b"DNAM", 0x1).map(|d| d.0);
@@ -652,6 +795,11 @@ impl Engine {
         self.camera.position = self.player.eye();
         self.update_streaming();
         self.update_look_target();
+        if let Some(a) = self.audio.as_mut() {
+            a.set_listener(self.camera.position, self.camera.right());
+            a.update();
+        }
+        self.update_music();
     }
 
     fn animate_actors(&mut self, dt: f32) {

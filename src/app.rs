@@ -58,8 +58,9 @@ async fn create_device(instance: &wgpu::Instance, surface: Option<&wgpu::Surface
     Ok((adapter, device, queue))
 }
 
-fn setup_engine(opts: &Options, renderer: Renderer, lo: LoadOrder, vfs: vfs::Vfs) -> Result<Engine> {
+fn setup_engine(opts: &Options, renderer: Renderer, lo: LoadOrder, vfs: vfs::Vfs, audio: Option<crate::audio::Audio>) -> Result<Engine> {
     let mut engine = Engine::new(lo, vfs, renderer, opts.hour, opts.weather.clone(), opts.radius);
+    engine.audio = audio;
     if !opts.no_scripts {
         let t = Instant::now();
         engine.start_game_enabled_quests();
@@ -95,7 +96,7 @@ pub fn run(opts: Options) -> Result<()> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
         let (_adapter, device, queue) = pollster::block_on(create_device(&instance, None))?;
         let renderer = Renderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm, opts.width, opts.height);
-        let mut engine = setup_engine(&opts, renderer, lo, vfs)?;
+        let mut engine = setup_engine(&opts, renderer, lo, vfs, None)?;
         if let Some(n) = opts.use_door {
             let doors = engine.load_doors();
             for d in &doors {
@@ -226,7 +227,7 @@ impl App {
         surface.configure(&device, &config);
         let renderer = Renderer::new(device, queue, format, config.width, config.height);
         let (lo, vfs) = self.data.take().context("already initialised")?;
-        let engine = setup_engine(&self.opts, renderer, lo, vfs)?;
+        let engine = setup_engine(&self.opts, renderer, lo, vfs, Some(crate::audio::Audio::new()))?;
         let ui = crate::ui::Ui::new(&engine.renderer.device, format);
         let egui_state = egui_winit::State::new(ui.ctx.clone(), egui::ViewportId::ROOT, el, Some(window.scale_factor() as f32), None, None);
         self.state = Some(WindowState {

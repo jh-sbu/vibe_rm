@@ -104,8 +104,15 @@ impl Audio {
         let mixer = Arc::new(Mutex::new(Mixer { voices: Vec::new(), listener: Vec3::ZERO, listener_right: Vec3::X, rate: 44100, master: 0.8 }));
         let mut rate = 44100;
         let stream = (|| -> Option<cpal::Stream> {
-            let host = cpal::default_host();
-            let device = host.default_output_device()?;
+            // Prefer PulseAudio (also served by PipeWire), then the platform default.
+            let hosts = cpal::available_hosts();
+            log::debug!("audio hosts: {hosts:?}");
+            let host = hosts
+                .iter()
+                .filter(|h| format!("{h:?}").to_ascii_lowercase().contains("pulse"))
+                .find_map(|h| cpal::host_from_id(*h).ok())
+                .unwrap_or_else(cpal::default_host);
+            let device = host.default_output_device().or_else(|| cpal::default_host().default_output_device())?;
             let cfg = device.default_output_config().ok()?;
             rate = cfg.sample_rate();
             let channels = cfg.channels() as usize;
