@@ -31,6 +31,8 @@ pub struct QuestState {
     pub objectives_displayed: HashSet<i32>,
     pub objectives_completed: HashSet<i32>,
     pub completed: bool,
+    /// Reference alias fills: alias id -> reference.
+    pub aliases: HashMap<u32, FormId>,
 }
 
 /// Script-visible world state and queues.

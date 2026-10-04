@@ -322,8 +322,28 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             v(Value::Float(cur + arg(0).as_float()))
         }
         // ------------------------------------------------------------- Alias
-        ("referencealias", "getreference") | ("referencealias", "getactorreference") | ("referencealias", "getactorref") => none(),
-        ("referencealias", "forcerefto") | ("referencealias", "clear") | ("referencealias", "forcereftoifempty") => none(),
+        ("referencealias", "getreference") | ("referencealias", "getactorreference") | ("referencealias", "getactorref") => match this {
+            Some(Value::Object(ObjectId::Alias { quest, alias }, _)) => match e.alias_ref(FormId(*quest), *alias) {
+                Some(r) => v(e.object_value(r)),
+                None => none(),
+            },
+            _ => none(),
+        },
+        ("referencealias", "forcerefto") | ("referencealias", "forcereftoifempty") => {
+            if let (Some(Value::Object(ObjectId::Alias { quest, alias }, _)), Some(r)) = (this, form_arg(args, 0)) {
+                let q = e.scripts.quests.entry(FormId(*quest)).or_default();
+                if func == "forcerefto" || !q.aliases.contains_key(alias) {
+                    q.aliases.insert(*alias, r);
+                }
+            }
+            none()
+        }
+        ("referencealias", "clear") => {
+            if let Some(Value::Object(ObjectId::Alias { quest, alias }, _)) = this {
+                e.scripts.quests.entry(FormId(*quest)).or_default().aliases.remove(alias);
+            }
+            none()
+        }
         ("alias", "getowningquest") => match this {
             Some(Value::Object(ObjectId::Alias { quest, .. }, _)) => v(e.object_value(FormId(*quest))),
             _ => none(),

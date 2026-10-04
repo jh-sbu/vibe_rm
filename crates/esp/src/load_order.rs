@@ -96,6 +96,7 @@ pub struct LoadOrder {
     cells: HashMap<FormId, CellIndex>,
     worlds: HashMap<FormId, WorldIndex>,
     ref_cell: HashMap<FormId, FormId>,
+    topic_infos: HashMap<FormId, Vec<FormId>>,
     editor_ids: OnceLock<HashMap<String, FormId>>,
     strings: HashMap<(usize, u32), String>,
 }
@@ -191,6 +192,7 @@ impl LoadOrder {
             cells: HashMap::new(),
             worlds: HashMap::new(),
             ref_cell: HashMap::new(),
+            topic_infos: HashMap::new(),
             editor_ids: OnceLock::new(),
             strings: HashMap::new(),
         };
@@ -232,6 +234,20 @@ impl LoadOrder {
                     group_type::CELL_CHILDREN => {
                         let c = self.plugins[pi].globalize(FormId(child.label_u32()));
                         self.walk_group(pi, child, coff, world, Some((c, group_type::CELL_CHILDREN)))?;
+                    }
+                    group_type::TOPIC_CHILDREN => {
+                        let topic = self.plugins[pi].globalize(FormId(child.label_u32()));
+                        let items: Vec<Item> = self.plugins[pi].plugin.group_items(&child, coff).collect();
+                        for it in items {
+                            if let Item::Record(rh, roff) = it {
+                                let id = self.plugins[pi].globalize(rh.form_id);
+                                self.add_record(pi, rh, roff, id, world, None)?;
+                                let list = self.topic_infos.entry(topic).or_default();
+                                if !list.contains(&id) {
+                                    list.push(id);
+                                }
+                            }
+                        }
                     }
                     group_type::CELL_PERSISTENT | group_type::CELL_TEMPORARY => {
                         let c = self.plugins[pi].globalize(FormId(child.label_u32()));
@@ -367,6 +383,11 @@ impl LoadOrder {
     pub fn world(&self, id: FormId) -> Option<&WorldIndex> {
         self.worlds.get(&id)
     }
+    /// INFO records belonging to a dialogue topic, in file order.
+    pub fn topic_infos(&self, topic: FormId) -> &[FormId] {
+        self.topic_infos.get(&topic).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
     pub fn cell_of_ref(&self, id: FormId) -> Option<FormId> {
         self.ref_cell.get(&id).copied()
     }

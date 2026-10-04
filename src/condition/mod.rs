@@ -6,7 +6,7 @@ use esp::{FormId, LoadedRecord};
 
 use crate::engine::{Engine, PLAYER_REF};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Condition {
     pub op: u8,
     pub or: bool,
@@ -20,11 +20,37 @@ pub struct Condition {
     pub p2: u32,
     pub run_on: u32,
     pub reference: FormId,
+    /// Raw reference field (alias id when `run_on` is a quest alias).
+    pub reference_raw: u32,
+    /// String parameters (CIS1 / CIS2) that follow the CTDA.
+    pub string_p1: Option<std::sync::Arc<str>>,
+    pub string_p2: Option<std::sync::Arc<str>>,
 }
 
-/// Parse all CTDA subrecords of a record (optionally only those following a given marker).
+/// Parse all CTDA subrecords of a record, attaching CIS1/CIS2 string parameters.
 pub fn parse_all(rec: &LoadedRecord<'_>) -> Vec<Condition> {
-    rec.subrecords().filter(|s| s.tag.0 == *b"CTDA").filter_map(|s| parse(rec, s.data)).collect()
+    let mut out: Vec<Condition> = Vec::new();
+    for s in rec.subrecords() {
+        match &s.tag.0 {
+            b"CTDA" => {
+                if let Some(c) = parse(rec, s.data) {
+                    out.push(c);
+                }
+            }
+            b"CIS1" => {
+                if let Some(c) = out.last_mut() {
+                    c.string_p1 = Some(s.zstring().into());
+                }
+            }
+            b"CIS2" => {
+                if let Some(c) = out.last_mut() {
+                    c.string_p2 = Some(s.zstring().into());
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
@@ -51,7 +77,10 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
         p1: if param_is_form(func, 1) { fid(p1) } else { p1 },
         p2: if param_is_form(func, 2) { fid(p2) } else { p2 },
         run_on: u32_at(20),
-        reference: if d.len() >= 28 { FormId(fid(u32_at(24))) } else { FormId::NULL },
+        reference: if d.len() >= 28 && u32_at(20) == 2 { FormId(fid(u32_at(24))) } else { FormId::NULL },
+        reference_raw: if d.len() >= 28 { u32_at(24) } else { 0 },
+        string_p1: None,
+        string_p2: None,
     })
 }
 
@@ -118,17 +147,41 @@ pub fn evaluate(e: &Engine, conds: &[Condition], ctx: Context) -> bool {
     result
 }
 
+/// Debug description of how each condition evaluates.
+pub fn explain(e: &Engine, conds: &[Condition], ctx: Context) -> String {
+    conds
+        .iter()
+        .map(|c| {
+            format!(
+                "{}({:08X},{:08X}) run_on={} op={} val={} {} => {}",
+                functions::name(c.func),
+                c.p1,
+                c.p2,
+                c.run_on,
+                c.op,
+                c.value,
+                if c.or { "OR" } else { "AND" },
+                eval_one(e, c, ctx)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 fn eval_one(e: &Engine, c: &Condition, ctx: Context) -> bool {
     let mut subject = match c.run_on {
         0 => ctx.subject,
         1 => ctx.target,
         2 => Some(c.reference),
+        // Quest alias: the reference field holds the alias id.
+        5 => ctx.quest.and_then(|q| e.alias_ref(q, c.reference_raw)),
         _ => ctx.subject,
     };
     if c.swap {
         subject = ctx.target;
     }
-    let Some(lhs) = function_value(e, c, subject, ctx) else { return true };
+    // Unsupported functions fail: hiding content beats showing everything.
+    let Some(lhs) = function_value(e, c, subject, ctx) else { return false };
     let rhs = if c.use_global { e.global_value(c.global) } else { c.value };
     match c.op {
         0 => (lhs - rhs).abs() < 1e-4,
@@ -186,6 +239,25 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             Some(a.distance(t))
         }
         32 => b(subject.and_then(|s| e.lo.cell_of_ref(s)) == e.lo.cell_of_ref(p1)), // GetInSameCell
+        566 => b(ctx.quest.and_then(|q| e.alias_ref(q, c.p1)).is_some_and(|r| Some(r) == subject)), // GetIsAliasRef
+        629 => {
+            // GetVMQuestVariable(quest, "::name_var")
+            let name = c.string_p2.as_deref()?;
+            Some(e.vm.get_var(papyrus::ObjectId::Form(c.p1), name).map(|v| v.as_float()).unwrap_or(0.0))
+        }
+        630 => {
+            // GetVMScriptVariable(script, "::name_var") on the subject
+            let name = c.string_p2.as_deref()?;
+            Some(subject.and_then(|s| e.vm.get_var(papyrus::ObjectId::Form(s.0), name)).map(|v| v.as_float()).unwrap_or(0.0))
+        }
+        249 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject)), // IsInDialogueWithPlayer
+        47 => Some(0.0),                                                  // GetItemCount
+        35 => b(subject.is_some_and(|s| e.is_disabled(s))),               // GetDisabled
+        359 => b(e.current_location().is_some_and(|l| e.location_within(l, p1))), // GetInCurrentLoc
+        562 => b(e.current_location().is_some_and(|l| e.has_keyword(l, p1))), // LocationHasKeyword
+        606 => Some(0.0),                                                 // GetKeywordDataForLocation
+        579 | 286 | 403 | 161 | 182 => Some(0.0),                         // equipped shout, sneaking, relationship, package, equipped
+        255 => b(subj_base.is_some_and(|n| e.offers_services_now(n))),   // GetOffersServicesNow
         _ => {
             let _ = ctx;
             None
@@ -214,6 +286,81 @@ impl Engine {
     pub fn race_is_child(&self, race: FormId) -> bool {
         // RACE DATA flags bit 0x4 = child.
         self.lo.get(race).and_then(|r| r.get(b"DATA").map(|d| d.len() >= 36 && u32::from_le_bytes(d[32..36].try_into().unwrap()) & 0x4 != 0)).unwrap_or(false)
+    }
+
+    /// Location (LCTN) of the current cell.
+    pub fn current_location(&self) -> Option<FormId> {
+        let cell = match self.location {
+            crate::engine::Location::Interior(c) => Some(c),
+            crate::engine::Location::Exterior { world, center } => self.lo.world(world).and_then(|w| w.cells.get(&center).copied()),
+            _ => None,
+        }?;
+        let rec = self.lo.get(cell)?;
+        let d = rec.get(b"XLCN")?;
+        Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))))
+    }
+
+    /// Whether location `l` is `target` or nested inside it.
+    pub fn location_within(&self, mut l: FormId, target: FormId) -> bool {
+        for _ in 0..16 {
+            if l == target {
+                return true;
+            }
+            let Some(rec) = self.lo.get(l) else { return false };
+            let Some(d) = rec.get(b"PNAM") else { return false };
+            l = rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())));
+        }
+        false
+    }
+
+    /// Whether an NPC is in a vendor faction whose hours include the current time.
+    pub fn offers_services_now(&self, npc: FormId) -> bool {
+        self.npc_factions(npc).iter().any(|(f, _)| {
+            let Some(r) = self.lo.get(*f) else { return false };
+            let flags = r.get(b"DATA").map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap())).unwrap_or(0);
+            if flags & 0x4000 == 0 {
+                return false;
+            }
+            match r.get(b"VENV") {
+                Some(v) if v.len() >= 4 => {
+                    let (start, end) = (u16::from_le_bytes([v[0], v[1]]) as f32, u16::from_le_bytes([v[2], v[3]]) as f32);
+                    start == end || (self.hour >= start && self.hour < end)
+                }
+                _ => true,
+            }
+        })
+    }
+
+    /// Dialogue conditions declared on a quest (CTDAs before the NEXT marker).
+    pub fn quest_dialogue_conditions(&self, quest: FormId) -> Vec<Condition> {
+        let Some(rec) = self.lo.get(quest) else { return Vec::new() };
+        let mut out: Vec<Condition> = Vec::new();
+        for s in rec.subrecords() {
+            match &s.tag.0 {
+                b"NEXT" | b"INDX" | b"QOBJ" | b"ALST" | b"ALLS" | b"ANAM" => break,
+                b"CTDA" => {
+                    if let Some(c) = parse(&rec, s.data) {
+                        out.push(c);
+                    }
+                }
+                b"CIS1" => {
+                    if let Some(c) = out.last_mut() {
+                        c.string_p1 = Some(s.zstring().into());
+                    }
+                }
+                b"CIS2" => {
+                    if let Some(c) = out.last_mut() {
+                        c.string_p2 = Some(s.zstring().into());
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    pub fn alias_ref(&self, quest: FormId, alias: u32) -> Option<FormId> {
+        self.scripts.quests.get(&quest).and_then(|q| q.aliases.get(&alias).copied())
     }
 
     pub fn current_weather(&self) -> Option<FormId> {

@@ -309,6 +309,20 @@ impl Vm {
         self.attached.get(&obj).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
+    /// Read a script variable (by its compiled name, e.g. `::Foo_var`) from any script on `obj`.
+    pub fn get_var(&self, obj: ObjectId, name: &str) -> Option<Value> {
+        let key = name.to_ascii_lowercase();
+        let alt = format!("::{key}_var");
+        for c in self.attached.get(&obj)? {
+            if let Some(i) = self.instances.get(&(obj, c.clone()))
+                && let Some(v) = i.vars.get(key.as_str()).or_else(|| i.vars.get(alt.as_str()))
+            {
+                return Some(v.clone());
+            }
+        }
+        None
+    }
+
     pub fn has_instance(&self, obj: ObjectId, script: &str) -> bool {
         self.instances.contains_key(&(obj, lc(script)))
     }
