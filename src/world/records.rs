@@ -118,7 +118,9 @@ pub struct CellInfo {
     pub has_water: bool,
     pub lighting: Option<Lighting>,
     pub lighting_template: FormId,
-    pub water_height: f32,
+    /// XCLW, if present. `f32::MAX` means no water.
+    pub water_height: Option<f32>,
+    pub water_type: FormId,
 }
 
 pub fn cell_info(lo: &LoadOrder, id: FormId) -> Option<CellInfo> {
@@ -131,7 +133,8 @@ pub fn cell_info(lo: &LoadOrder, id: FormId) -> Option<CellInfo> {
         has_water: false,
         lighting: None,
         lighting_template: FormId::NULL,
-        water_height: 0.0,
+        water_height: None,
+        water_type: FormId::NULL,
     };
     for sr in rec.subrecords() {
         match &sr.tag.0 {
@@ -143,7 +146,8 @@ pub fn cell_info(lo: &LoadOrder, id: FormId) -> Option<CellInfo> {
             }
             b"XCLL" => c.lighting = Some(Lighting::parse(sr.data)),
             b"LTMP" => c.lighting_template = rec.fid(sr.form_id(0)),
-            b"XCLW" => c.water_height = sr.f32(0),
+            b"XCLW" => c.water_height = Some(sr.f32(0)),
+            b"XCWT" => c.water_type = rec.fid(sr.form_id(0)),
             _ => {}
         }
     }
@@ -297,4 +301,24 @@ pub fn is_renderable_base(tag: &[u8; 4]) -> bool {
             | b"MISC" | b"WEAP" | b"ARMO" | b"BOOK" | b"ALCH" | b"INGR" | b"KEYM" | b"SLGM"
             | b"AMMO" | b"SCRL" | b"TACT" | b"IDLM" | b"BNDS" | b"ADDN" | b"ARTO" | b"GRAS"
     )
+}
+
+pub fn water_params(lo: &LoadOrder, id: FormId) -> Option<crate::render::water::WaterParams> {
+    let rec = lo.get(id)?;
+    let d = rec.get(b"DNAM")?;
+    let noise = rec
+        .get(b"NAM2")
+        .map(esp::decode_zstring)
+        .filter(|s| !s.is_empty())
+        .map(|s| texture_path(&s))
+        .unwrap_or_else(|| "textures/water/defaultwater.dds".into());
+    Some(crate::render::water::WaterParams {
+        sun_power: f32_at(d, 16),
+        reflectivity: f32_at(d, 20),
+        fresnel: f32_at(d, 24),
+        shallow: rgb(d, 40),
+        deep: rgb(d, 44),
+        reflection: rgb(d, 48),
+        noise_texture: noise,
+    })
 }

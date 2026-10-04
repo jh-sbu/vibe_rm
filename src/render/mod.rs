@@ -5,6 +5,7 @@ pub mod model;
 pub mod sky;
 pub mod terrain;
 pub mod texture;
+pub mod water;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -145,6 +146,7 @@ impl Default for Environment {
 pub struct Scene {
     pub instances: Vec<Instance>,
     pub terrain: Vec<terrain::TerrainChunk>,
+    pub water: Vec<water::WaterPlane>,
     pub lights: Vec<GpuLight>,
     pub env: Environment,
 }
@@ -231,6 +233,7 @@ pub struct Renderer {
     pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
     pub(crate) sampler: wgpu::Sampler,
     pub(crate) terrain: terrain::TerrainPipeline,
+    pub(crate) water: water::WaterPipeline,
     instance_buf: wgpu::Buffer,
     instance_cap: usize,
     pub textures: TextureCache,
@@ -364,7 +367,9 @@ impl Renderer {
         let depth_view = Self::make_depth(&device, width, height);
         let terrain = terrain::TerrainPipeline::new(&device, &frame_bgl, color_format);
         let sky = sky::SkyRenderer::new(&device, color_format);
+        let water = water::WaterPipeline::new(&device, &frame_bgl, color_format);
         Renderer {
+            water,
             sky,
             time: 0.0,
             terrain,
@@ -649,6 +654,7 @@ impl Renderer {
             all.extend(v);
             draws.push((part, start..all.len() as u32));
         }
+        let opaque_count = draws.len();
         for (_, part, data) in &blended {
             let start = all.len() as u32;
             all.push(*data);
@@ -712,11 +718,11 @@ impl Renderer {
                 }
             }
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            let mut current: Option<PipelineKey> = None;
+            let current: std::cell::Cell<Option<PipelineKey>> = std::cell::Cell::new(None);
             let mut draw = |pass: &mut wgpu::RenderPass, part: &GpuPart, range: std::ops::Range<u32>| {
-                if current != Some(part.material.key) {
+                if current.get() != Some(part.material.key) {
                     pass.set_pipeline(&self.pipelines[&part.material.key]);
-                    current = Some(part.material.key);
+                    current.set(Some(part.material.key));
                 }
                 pass.set_bind_group(1, &part.material.bind_group, &[]);
                 pass.set_vertex_buffer(0, part.vbuf.slice(..));
@@ -725,7 +731,23 @@ impl Renderer {
                 stats.draws += 1;
                 stats.instances += range.end - range.start;
             };
-            for (part, range) in &draws {
+            for (part, range) in &draws[..opaque_count] {
+                draw(&mut pass, part, range.clone());
+            }
+            if !scene.water.is_empty() {
+                pass.set_pipeline(&self.water.pipeline);
+                for w in &scene.water {
+                    if !frustum.sphere_visible(w.center, w.radius) {
+                        continue;
+                    }
+                    pass.set_bind_group(1, &w.bind_group, &[]);
+                    pass.set_vertex_buffer(0, w.vbuf.slice(..));
+                    pass.draw(0..6, 0..1);
+                }
+                current.set(None);
+            }
+            pass.set_vertex_buffer(1, self.instance_buf.slice(..));
+            for (part, range) in &draws[opaque_count..] {
                 draw(&mut pass, part, range.clone());
             }
         }

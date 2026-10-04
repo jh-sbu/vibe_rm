@@ -86,6 +86,13 @@ impl Engine {
         let env = interior_environment(&contents.lighting);
         self.sky = None;
         self.build_scene(&contents.objects, &contents.lights, env);
+        if contents.info.has_water
+            && let Some(h) = contents.info.water_height
+            && h < 1.0e30
+        {
+            let wt = if contents.info.water_type.is_null() { FormId(0x18) } else { contents.info.water_type };
+            self.add_water(vec![(-50_000.0, -50_000.0, 100_000.0, h, wt)]);
+        }
 
         // Spawn point: a COC marker if present, else the middle of the cell.
         let coc = self.lo.find_editor_id("COCMarkerHeading");
@@ -160,6 +167,27 @@ impl Engine {
         };
         self.renderer.sky.set_state(st);
         Some(env)
+    }
+
+    fn add_water(&mut self, planes: Vec<(f32, f32, f32, f32, FormId)>) {
+        let mut params = Vec::new();
+        for (x, y, size, h, wt) in planes {
+            if let Some(p) = crate::world::records::water_params(&self.lo, wt) {
+                params.push((x, y, size, h, p));
+            }
+        }
+        let tex: Vec<String> = params
+            .iter()
+            .map(|p| p.4.noise_texture.clone())
+            .filter(|t| !self.renderer.textures.contains(t))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        crate::world::loader::load_textures(&mut self.renderer, &self.vfs, tex);
+        for (x, y, size, h, p) in params {
+            let plane = self.renderer.build_water(x, y, size, h, &p);
+            self.scene.water.push(plane);
+        }
     }
 
     pub fn ground_height(&self, p: glam::Vec2) -> Option<f32> {
@@ -242,6 +270,28 @@ impl Engine {
             self.scene.terrain.extend(chunks);
         }
         self.lands = lands;
+
+        // Water planes
+        let (default_water, world_water) = {
+            let w = self.lo.get(world);
+            let h = w.as_ref().and_then(|w| w.get(b"DNAM").map(|d| f32::from_le_bytes(d[4..8].try_into().unwrap()))).unwrap_or(0.0);
+            let t = w.as_ref().and_then(|w| w.get(b"NAM2").map(|d| w.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))));
+            (h, t)
+        };
+        let mut planes = Vec::new();
+        for y in cy - radius..=cy + radius {
+            for x in cx - radius..=cx + radius {
+                let Some(&cell_id) = wi.cells.get(&(x, y)) else { continue };
+                let Some(info) = crate::world::records::cell_info(&self.lo, cell_id) else { continue };
+                let h = info.water_height.unwrap_or(default_water);
+                if h >= 1.0e30 {
+                    continue;
+                }
+                let wt = if info.water_type.is_null() { world_water.unwrap_or(FormId(0x18)) } else { info.water_type };
+                planes.push((x, y, h, wt));
+            }
+        }
+        self.add_water(planes.into_iter().map(|(x, y, h, wt)| (x as f32 * 4096.0, y as f32 * 4096.0, 4096.0, h, wt)).collect());
         let p = glam::Vec2::new(cx as f32 * 4096.0 + 2048.0, cy as f32 * 4096.0 + 2048.0);
         let ground = self.ground_height(p).unwrap_or(0.0);
         self.camera.position = p.extend(ground + 150.0);
