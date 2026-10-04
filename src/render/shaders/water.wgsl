@@ -11,6 +11,7 @@ struct Frame {
     fog: vec4<f32>,
     misc: vec4<f32>,
     amb: array<vec4<f32>, 6>,
+    lod_clip: vec4<f32>,    // xy min, xy max of the loaded full-detail area
 };
 
 struct Water {

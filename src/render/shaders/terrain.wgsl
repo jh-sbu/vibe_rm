@@ -11,6 +11,7 @@ struct Frame {
     fog: vec4<f32>,
     misc: vec4<f32>,
     amb: array<vec4<f32>, 6>, // directional ambient X+ X- Y+ Y- Z+ Z-; amb[0].w > 0.5 enables
+    lod_clip: vec4<f32>,    // xy min, xy max of the loaded full-detail area
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;

@@ -72,6 +72,7 @@ pub struct Engine {
     music: MusicState,
     pub conversation: Option<crate::dialogue::Conversation>,
     npc_refs: HashMap<FormId, FormId>,
+    lod: Option<crate::world::lod::Lod>,
 }
 
 #[derive(Default)]
@@ -122,6 +123,7 @@ impl Engine {
             music: MusicState::default(),
             conversation: None,
             npc_refs: HashMap::new(),
+            lod: None,
         }
     }
 
@@ -254,6 +256,82 @@ impl Engine {
             }
             // Silence between tracks, like the original.
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
+        }
+    }
+
+    /// Keep the distant LOD quadtree in sync with the camera.
+    fn update_lod(&mut self) {
+        let Location::Exterior { center, .. } = self.location else {
+            self.scene.lod.clear();
+            return;
+        };
+        let r = self.radius as f32;
+        self.scene.lod_clip = [
+            (center.0 as f32 - r) * CELL_SIZE,
+            (center.1 as f32 - r) * CELL_SIZE,
+            (center.0 as f32 + r + 1.0) * CELL_SIZE,
+            (center.1 as f32 + r + 1.0) * CELL_SIZE,
+        ];
+        let Some(lod) = self.lod.as_mut() else { return };
+        let mut want = lod.desired(self.camera.position.truncate());
+        if let Ok(only) = std::env::var("VRM_LOD_ONLY") {
+            let v: Vec<i32> = only.split(',').filter_map(|x| x.parse().ok()).collect();
+            if v.len() == 3 {
+                want = vec![(v[0], v[1], v[2])];
+            }
+        }
+        let want_set: HashSet<(i32, i32, i32)> = want.iter().copied().collect();
+        // Load missing blocks, nearest (finest) first, a few per frame.
+        let mut missing: Vec<(i32, i32, i32)> = want.iter().copied().filter(|k| !lod.is_loaded(*k)).collect();
+        missing.sort_by_key(|k| k.0);
+        let mut loaded_any = false;
+        for (level, x, y) in missing.into_iter().take(4) {
+            let (btr, bto) = lod.paths(level, x, y);
+            let mut models = Vec::new();
+            if std::env::var_os("VRM_NO_BTR").is_none()
+                && let Some(m) = crate::world::lod::load_block(&self.vfs, &btr, level, x, y, true)
+            {
+                models.push(m);
+            }
+            if lod.has(level, x, y, true)
+                && std::env::var_os("VRM_NO_BTO").is_none()
+                && let Some(m) = crate::world::lod::load_block(&self.vfs, &bto, level, x, y, false)
+            {
+                models.push(m);
+            }
+            let mut tex = HashSet::new();
+            for m in &models {
+                for mesh in &m.meshes {
+                    for t in [&mesh.material.diffuse, &mesh.material.normal].into_iter().flatten() {
+                        if !self.renderer.textures.contains(t) {
+                            tex.insert(t.clone());
+                        }
+                    }
+                }
+            }
+            loader::load_textures(&mut self.renderer, &self.vfs, tex.into_iter().collect());
+            for m in &models {
+                log::debug!("lod block {level}.{x}.{y}: {} meshes, bound center {:?} r {}", m.meshes.len(), m.bound_center, m.bound_radius);
+            }
+            let instances = models
+                .into_iter()
+                .filter(|m| !m.meshes.is_empty())
+                .map(|m| crate::world::lod::instance(std::sync::Arc::new(self.renderer.upload_model(&m))))
+                .collect();
+            lod.insert((level, x, y), instances);
+            loaded_any = true;
+        }
+        // Drop blocks no longer wanted once everything wanted is present.
+        if !loaded_any {
+            for k in lod.loaded_keys() {
+                if !want_set.contains(&k) {
+                    lod.remove(k);
+                }
+            }
+        }
+        if lod.dirty {
+            lod.dirty = false;
+            self.scene.lod = lod.instances().map(|i| crate::render::Instance::new(i.model.clone(), i.transform)).collect();
         }
     }
 
@@ -473,6 +551,8 @@ impl Engine {
             contents.lights.len()
         );
         self.sky = None;
+        self.lod = None;
+        self.scene.lod.clear();
         self.scene.env = interior_environment(&contents.lighting);
         let key = CellKey::Interior(cell_id);
         self.instantiate(key, &contents.objects, contents.lights.clone(), contents.doors.clone());
@@ -536,6 +616,17 @@ impl Engine {
         }
         self.setup_weather(world);
         self.scene.env = self.sky_environment().unwrap_or_default();
+        // Distant LOD (child worldspaces may use their parent's).
+        let lod_world = self
+            .world_field(world, b"EDID", 0x2)
+            .map(|(d, _)| esp::decode_zstring(&d))
+            .unwrap_or_default();
+        // Distant LOD is experimental (block transforms still wrong); opt in with VRM_LOD=1.
+        self.lod = if std::env::var_os("VRM_LOD").is_some() {
+            Some(crate::world::lod::Lod::new(&self.vfs, &lod_world)).filter(|l| !l.is_empty())
+        } else {
+            None
+        };
         let center = grid_of(feet.truncate());
         self.location = Location::Exterior { world, center };
         for y in center.1 - self.radius..=center.1 + self.radius {
@@ -798,6 +889,7 @@ impl Engine {
         self.player.update(&self.physics, &cam, input, dt);
         self.camera.position = self.player.eye();
         self.update_streaming();
+        self.update_lod();
         self.update_look_target();
         if let Some(a) = self.audio.as_mut() {
             a.set_listener(self.camera.position, self.camera.right());

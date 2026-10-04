@@ -12,6 +12,7 @@ struct Frame {
     fog: vec4<f32>,         // near, far, power, max
     misc: vec4<f32>,        // time, light count, exterior flag, unused
     amb: array<vec4<f32>, 6>, // directional ambient X+ X- Y+ Y- Z+ Z-; amb[0].w > 0.5 enables
+    lod_clip: vec4<f32>,    // xy min, xy max of the loaded full-detail area
 };
 
 struct Light {
@@ -157,6 +158,12 @@ fn light_index(idx: vec4<u32>, i: u32) -> u32 {
 
 @fragment
 fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    if (mat.flags.z == 2u) {
+        let c = frame.lod_clip;
+        if (in.world_pos.x > c.x && in.world_pos.x < c.z && in.world_pos.y > c.y && in.world_pos.y < c.w) {
+            discard;
+        }
+    }
     let base = textureSample(t_diffuse, s_main, in.uv);
     var albedo = base.rgb;
     var alpha = base.a * mat.params.x;
