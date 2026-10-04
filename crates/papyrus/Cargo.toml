@@ -1,0 +1,10 @@
+[package]
+name = "vrm-papyrus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Papyrus (.pex) script loader and virtual machine for Skyrim"
+
+[dependencies]
+thiserror.workspace = true
+log.workspace = true

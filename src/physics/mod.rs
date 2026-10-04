@@ -109,6 +109,16 @@ impl Physics {
         h
     }
 
+    /// Enable or disable all colliders owned by a reference.
+    pub fn set_owner_enabled(&mut self, owner: esp::FormId, enabled: bool) {
+        let hs: Vec<ColliderHandle> = self.owners.iter().filter(|(_, o)| **o == owner).map(|(h, _)| *h).collect();
+        for h in hs {
+            if let Some(c) = self.world.colliders.get_mut(h) {
+                c.set_enabled(enabled);
+            }
+        }
+    }
+
     pub fn remove_colliders(&mut self, handles: &[ColliderHandle]) {
         for &h in handles {
             self.world.remove_collider(h);

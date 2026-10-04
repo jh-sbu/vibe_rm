@@ -2822,6 +2822,7 @@ dependencies = [
  "vrm-esp",
  "vrm-havok",
  "vrm-nif",
+ "vrm-papyrus",
  "vrm-vfs",
  "wgpu",
  "winit",
@@ -2867,6 +2868,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vrm-papyrus"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "vrm-tools"
 version = "0.1.0"
 dependencies = [
@@ -2876,6 +2885,7 @@ dependencies = [
  "vrm-esp",
  "vrm-havok",
  "vrm-nif",
+ "vrm-papyrus",
  "vrm-vfs",
 ]
 

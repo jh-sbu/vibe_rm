@@ -4,6 +4,7 @@ mod engine;
 mod render;
 mod physics;
 mod player;
+mod script;
 mod ui;
 mod world;
 
@@ -29,6 +30,7 @@ pub struct Options {
     pub bench: Option<u32>,
     pub pick: Option<(f32, f32)>,
     pub wait: Option<u32>,
+    pub no_scripts: bool,
 }
 
 fn parse_args() -> Result<Options> {
@@ -66,6 +68,7 @@ fn parse_args() -> Result<Options> {
             "--use-door" => o.use_door = Some(val()?.parse()?),
             "--bench" => o.bench = Some(val()?.parse()?),
             "--wait" => o.wait = Some(val()?.parse()?),
+            "--no-scripts" => o.no_scripts = true,
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v.split_once(',').context("--pick x,y (0..1 screen coords)")?;

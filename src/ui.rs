@@ -87,6 +87,15 @@ impl Ui {
             let hint = format!("E  {verb}");
             painter.text(pos + egui::vec2(0.0, 28.0), Align2::CENTER_CENTER, hint, FontId::proportional(16.0), Color32::from_gray(200));
         }
+        // Script notifications (top left, like Skyrim's HUD messages).
+        let now = engine.scripts.real_time;
+        for (i, (text, t)) in engine.scripts.notifications.iter().rev().take(6).enumerate() {
+            let age = (now - t) as f32;
+            let alpha = ((6.0 - age) / 1.5).clamp(0.0, 1.0);
+            let col = Color32::from_rgba_unmultiplied(240, 240, 240, (alpha * 255.0) as u8);
+            let y = rect.top() + 60.0 + i as f32 * 22.0;
+            painter.text(Pos2::new(rect.left() + 30.0, y), Align2::LEFT_TOP, text, FontId::proportional(17.0), col);
+        }
         // Compass-ish heading and location at the top.
         let heading = (engine.camera.yaw.to_degrees().rem_euclid(360.0) / 45.0).round() as usize % 8;
         let dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];

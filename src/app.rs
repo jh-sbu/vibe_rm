@@ -60,6 +60,11 @@ async fn create_device(instance: &wgpu::Instance, surface: Option<&wgpu::Surface
 
 fn setup_engine(opts: &Options, renderer: Renderer, lo: LoadOrder, vfs: vfs::Vfs) -> Result<Engine> {
     let mut engine = Engine::new(lo, vfs, renderer, opts.hour, opts.weather.clone(), opts.radius);
+    if !opts.no_scripts {
+        let t = Instant::now();
+        engine.start_game_enabled_quests();
+        log::info!("quests started in {:?}", t.elapsed());
+    }
     if let Some(c) = &opts.cell {
         let id = engine.resolve_form(c).with_context(|| format!("unknown cell {c}"))?;
         let exterior = engine.lo.cell(id).and_then(|c| c.world);
