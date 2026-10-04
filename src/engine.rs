@@ -27,10 +27,10 @@ pub(crate) struct CellRuntime {
     pub(crate) actors: Vec<crate::ai::ActorRuntime>,
     /// Navmeshes loaded for this cell.
     navmeshes: Vec<FormId>,
-    colliders: Vec<ColliderHandle>,
+    pub(crate) colliders: Vec<ColliderHandle>,
     land: Option<Land>,
     lights: Vec<PointLight>,
-    doors: Vec<Door>,
+    pub(crate) doors: Vec<Door>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,6 +80,9 @@ pub struct Engine {
     pub moved_refs: HashMap<FormId, Vec3>,
     /// Actor AI processing (toggled with the `tai` console command).
     pub ai_enabled: bool,
+    pub whereabouts: crate::ai::schedule::Whereabouts,
+    /// Cell each spawned actor reference belongs to.
+    pub actor_cells: HashMap<FormId, CellKey>,
 }
 
 #[derive(Default)]
@@ -134,6 +137,8 @@ impl Engine {
             nav: Default::default(),
             moved_refs: HashMap::new(),
             ai_enabled: true,
+            whereabouts: Default::default(),
+            actor_cells: HashMap::new(),
         }
     }
 
@@ -358,6 +363,7 @@ impl Engine {
         self.world_persistent.clear();
         self.nav.clear();
         self.moved_refs.clear();
+        self.actor_cells.clear();
     }
 
     /// Place the player with their feet at `feet`, facing `yaw` (radians).
@@ -449,26 +455,46 @@ impl Engine {
         s
     }
 
-    /// Spawn actors (ACHR references) into a loaded cell.
-    fn spawn_actors(&mut self, key: CellKey, refs: &[FormId]) {
+    /// Spawn actors (ACHR references) into a loaded cell, optionally away from their
+    /// editor location (NaN: anywhere on the cell's navmesh).
+    pub(crate) fn spawn_actors(&mut self, key: CellKey, refs: &[(FormId, Option<Vec3>)]) {
         let mut descs = Vec::new();
-        for &r in refs {
+        let cell_meshes = self.cells.get(&key).map(|rt| rt.navmeshes.clone()).unwrap_or_default();
+        for &(r, at) in refs {
             let Some(rec) = self.lo.get(r) else { continue };
-            if rec.tag().0 != *b"ACHR" {
+            if rec.tag().0 != *b"ACHR" || self.actor_cells.contains_key(&r) {
                 continue;
             }
-            if let Some(d) = crate::world::actor::describe_actor(&self.lo, &rec) {
-                descs.push(d);
+            if let Some(mut d) = crate::world::actor::describe_actor(&self.lo, &rec) {
+                let editor_pos = d.transform.w_axis.truncate();
+                if let Some(p) = at {
+                    let mut rng = self.rand() | 1;
+                    let mut rand = move || {
+                        rng ^= rng << 13;
+                        rng ^= rng >> 7;
+                        rng ^= rng << 17;
+                        rng
+                    };
+                    let spot = if p.is_nan() {
+                        self.nav.random_point_in(&cell_meshes, &mut rand)
+                    } else {
+                        // Spread out actors sent to the same marker.
+                        self.nav.random_point(p, 96.0, &mut rand).or(Some(p))
+                    };
+                    let Some(spot) = spot else { continue };
+                    d.transform.w_axis = spot.extend(1.0);
+                }
+                descs.push((d, editor_pos));
             }
         }
         if descs.is_empty() {
             return;
         }
-        let paths: Vec<String> = descs.iter().flat_map(|d| d.models.iter().cloned()).collect();
+        let paths: Vec<String> = descs.iter().flat_map(|(d, _)| d.models.iter().cloned()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let mut actors = Vec::new();
         let mut runtimes = Vec::new();
-        for (ai, d) in descs.iter().enumerate() {
+        for (ai, (d, editor_pos)) in descs.iter().enumerate() {
             let Some(skel) = self.skeleton(&d.skeleton) else { continue };
             let idle = crate::world::animation::idle_clip(&d.skeleton, d.female)
                 .iter()
@@ -480,6 +506,7 @@ impl Engine {
             let start = (ai as f32 * 1.618) % 7.0;
             let packages = crate::ai::package::npc_packages(&self.lo, d.npc);
             let mut rt = crate::ai::ActorRuntime::new(d.ref_id, d.npc, skel.clone(), d.transform, packages, start * 0.3);
+            rt.editor_pos = *editor_pos;
             rt.anim = idle.clone().map(|c| crate::world::animation::ActorAnim::new(c, &skel, start));
             rt.idle = idle;
             rt.walk = walk;
@@ -528,6 +555,9 @@ impl Engine {
         if let Some(rc) = self.scene.cells.get_mut(&key) {
             rc.actors.extend(actors);
         }
+        for a in &runtimes {
+            self.actor_cells.insert(a.ref_id, key);
+        }
         if let Some(rt) = self.cells.get_mut(&key) {
             rt.colliders.extend(runtimes.iter().filter_map(|a| a.capsule));
             rt.actors.extend(runtimes);
@@ -557,6 +587,7 @@ impl Engine {
             self.nav.unload(&rt.navmeshes);
             for a in &rt.actors {
                 self.moved_refs.remove(&a.ref_id);
+                self.actor_cells.remove(&a.ref_id);
             }
         }
     }
@@ -598,7 +629,8 @@ impl Engine {
             .map(|c| c.persistent.iter().chain(c.temporary.iter()).copied().collect())
             .unwrap_or_default();
         self.load_navmeshes(key, cell_id);
-        self.spawn_actors(key, &refs);
+        let actors = self.actors_for_cell(key, &refs);
+        self.spawn_actors(key, &actors);
         self.attach_cell_scripts(&refs);
         self.start_cell_sounds(key, &refs);
         if contents.info.has_water
@@ -718,7 +750,8 @@ impl Engine {
         if let Some(cid) = cell_id {
             self.load_navmeshes(key, cid);
         }
-        self.spawn_actors(key, &refs);
+        let actors = self.actors_for_cell(key, &refs);
+        self.spawn_actors(key, &actors);
         self.attach_cell_scripts(&refs);
         self.start_cell_sounds(key, &refs);
 
@@ -924,6 +957,7 @@ impl Engine {
             self.scene.env = env;
         }
         self.physics.step(dt);
+        self.update_whereabouts(dt);
         self.update_actors(dt);
         let cam = self.camera_copy();
         self.player.update(&self.physics, &cam, input, dt);

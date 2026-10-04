@@ -9,24 +9,25 @@ game each piece unlocks.
 - Interior/exterior cells, landscape, water, weather/climate/sky, time of day
 - Havok collision shapes -> rapier3d; first-person character controller
 - Exterior cell streaming, load doors
+- Actors: skinning, GPU skinning, NPC assembly (race, outfit, FaceGen); Havok clip playback
+- Papyrus VM (PEX, natives, events, VMAD), conditions (CTDA), quest stages, dialogue
+- egui HUD and console; audio (WAV/xWMA/FUZ), music, ambient sounds, voice
+- AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
+  (schedule + conditions), sandbox / travel behaviour, idle/walk cross-fade,
+  persistent NPC whereabouts with leaving / arriving through load doors
 
 ## Next
-1. **Actors**
-   - Skin blocks (NiSkinInstance, BSDismemberSkinInstance, NiSkinData, NiSkinPartition)
-   - GPU skinning; skeleton.nif; bind pose
-   - NPC assembly: RACE skeleton/skin, OTFT/ARMO/ARMA equipment, FaceGen head + tint
-   - Leveled lists (LVLN/LVLI), templates (TPLT/ACFG)
-2. **Animation**
-   - NiControllerSequence / interpolators for animated statics (water wheels, flags)
-   - Havok packfile reader (hkx 2010, 64-bit), hkaSplineCompressedAnimation decoding
-   - Behavior graph subset: idle / walk / run / turn selection
-3. **Scripting**: Papyrus `.pex` loader + VM, native function library, events
-   (OnInit, OnActivate, OnTriggerEnter, ...), properties filled from VMAD
-4. **Game logic**: conditions (CTDA), quests and stages, dialogue (DIAL/INFO),
-   AI packages, navmesh pathfinding, combat, magic, inventory, leveling
-5. **UI**: HUD (compass, bars), activation prompt, dialogue, inventory, console
-6. **Audio**: SNDR/SOUN, music types, xWMA/FUZ decoding, voice + lip sync
-7. **Rendering**: shadows, HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
+1. **AI depth**
+   - Furniture and idle markers (sit, sleep, eat, work idles), behaviour-graph subset
+   - Remaining procedures: follow, escort, patrol (linked refs), flee, dialogue packages
+   - Actor-actor avoidance; doors opening; off-screen travel between worldspaces
+   - Leveled lists (LVLN/LVLI) beyond the first entry, templates (TPLT/ACFG)
+2. **Animation**: NiControllerSequence for animated statics (water wheels, flags);
+   root motion from behaviour data
+3. **Game logic**: combat, magic, inventory, leveling, crime
+4. **UI**: inventory, map, bars
+5. **Audio**: lip sync
+6. **Rendering**: shadows, HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
    grass, decals, environment maps
-8. **Saves**: an engine-native save format (reading .ess later)
-9. **Performance**: async loading, GPU-driven culling
+7. **Saves**: an engine-native save format (reading .ess later)
+8. **Performance**: async loading, GPU-driven culling
