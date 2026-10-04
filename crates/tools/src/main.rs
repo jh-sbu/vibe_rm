@@ -297,6 +297,68 @@ fn main() -> Result<()> {
                 println!("{c:>7} func {f:>4} run_on {run_on}");
             }
         }
+        Some("navm-verify") => {
+            // navm-verify <data dir>: parse every navmesh and check its indices
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let (mut ok, mut bad, mut missing) = (0usize, 0usize, 0usize);
+            let mut versions: std::collections::BTreeMap<u32, usize> = Default::default();
+            for &id in lo.ids_of_type(b"NAVM") {
+                let Some(r) = lo.get(id) else { continue };
+                let Some(d) = r.get(b"NVNM") else {
+                    missing += 1;
+                    continue;
+                };
+                match esp::navmesh::NavMesh::parse(d, |f| r.fid(f)) {
+                    Some(m) => {
+                        *versions.entry(m.version).or_default() += 1;
+                        match m.validate() {
+                            Ok(()) => ok += 1,
+                            Err(e) => {
+                                bad += 1;
+                                if bad < 10 {
+                                    println!("{id}: {e}");
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        bad += 1;
+                        if bad < 10 {
+                            println!("{id}: parse failed ({} bytes)", d.len());
+                        }
+                    }
+                }
+            }
+            println!("{ok} ok, {bad} bad, {missing} without NVNM; versions {versions:?}");
+            // Cross-mesh links must land on an existing triangle that links back.
+            let mut meshes = std::collections::HashMap::new();
+            for &id in lo.ids_of_type(b"NAVM") {
+                if let Some(r) = lo.get(id)
+                    && let Some(m) = r.get(b"NVNM").and_then(|d| esp::navmesh::NavMesh::parse(d, |f| r.fid(f)))
+                {
+                    meshes.insert(id, m);
+                }
+            }
+            let (mut links, mut dangling, mut one_way) = (0usize, 0usize, 0usize);
+            for (&id, m) in &meshes {
+                for l in &m.edge_links {
+                    links += 1;
+                    match meshes.get(&l.navmesh) {
+                        Some(t) if (l.triangle as usize) < t.triangles.len() => {
+                            let tri = &t.triangles[l.triangle as usize];
+                            let back = (0..3).filter_map(|e| tri.link(e)).any(|i| t.edge_links[i].navmesh == id);
+                            if !back {
+                                one_way += 1;
+                            }
+                        }
+                        _ => dangling += 1,
+                    }
+                }
+            }
+            println!("{links} edge links: {dangling} dangling, {one_way} without a link back");
+        }
         _ => bail!("usage: vrm-tool <bsa-list|bsa-extract|bsa-verify> ..."),
     }
     Ok(())

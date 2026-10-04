@@ -18,6 +18,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "player.setpos x y z   teleport within the current location".into(),
             "getpos                print position".into(),
             "tdt                   toggle debug text".into(),
+            "tai                   toggle actor AI".into(),
         ],
         "coc" | "centeroncell" => {
             let Some(name) = args.first() else { return vec!["usage: coc <cell editor id>".into()] };
@@ -48,6 +49,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             }
             Err(_) => vec!["bad number".into()],
         },
+        "tai" | "toggleai" => {
+            engine.ai_enabled = !engine.ai_enabled;
+            vec![format!("AI {}", if engine.ai_enabled { "on" } else { "off" })]
+        }
         "getpos" | "player.getpos" => {
             let p = engine.player.position;
             vec![format!("{:.1} {:.1} {:.1} in {}", p.x, p.y, p.z, engine.location_name())]

@@ -18,13 +18,15 @@ use crate::world::terrain::{self, CELL_SIZE, Land};
 use crate::world::weather::{self, Climate, Weather};
 
 #[derive(Default)]
-struct CellRuntime {
+pub(crate) struct CellRuntime {
     /// References instantiated in this cell (for script detach / visibility).
     refs: Vec<FormId>,
     /// Looping ambient sounds started for this cell.
     sounds: Vec<crate::audio::VoiceId>,
-    /// Animation state for each actor in the matching RenderCell, by index.
-    actor_anims: Vec<Option<(crate::world::animation::ActorAnim, std::sync::Arc<crate::world::skeleton::Skeleton>)>>,
+    /// Runtime state for each actor in the matching RenderCell, by index.
+    pub(crate) actors: Vec<crate::ai::ActorRuntime>,
+    /// Navmeshes loaded for this cell.
+    navmeshes: Vec<FormId>,
     colliders: Vec<ColliderHandle>,
     land: Option<Land>,
     lights: Vec<PointLight>,
@@ -54,7 +56,7 @@ pub struct Engine {
     pub location: Location,
     /// Exterior cell load radius.
     pub radius: i32,
-    cells: HashMap<CellKey, CellRuntime>,
+    pub(crate) cells: HashMap<CellKey, CellRuntime>,
     /// Persistent references of the current worldspace bucketed by grid cell.
     world_persistent: HashMap<(i32, i32), Vec<FormId>>,
     pending_loads: Vec<(i32, i32)>,
@@ -73,6 +75,11 @@ pub struct Engine {
     pub conversation: Option<crate::dialogue::Conversation>,
     npc_refs: HashMap<FormId, FormId>,
     lod: Option<crate::world::lod::Lod>,
+    pub nav: crate::ai::nav::NavWorld,
+    /// Current positions of references that have moved from their editor location.
+    pub moved_refs: HashMap<FormId, Vec3>,
+    /// Actor AI processing (toggled with the `tai` console command).
+    pub ai_enabled: bool,
 }
 
 #[derive(Default)]
@@ -124,6 +131,9 @@ impl Engine {
             conversation: None,
             npc_refs: HashMap::new(),
             lod: None,
+            nav: Default::default(),
+            moved_refs: HashMap::new(),
+            ai_enabled: true,
         }
     }
 
@@ -346,6 +356,8 @@ impl Engine {
         self.physics.clear();
         self.pending_loads.clear();
         self.world_persistent.clear();
+        self.nav.clear();
+        self.moved_refs.clear();
     }
 
     /// Place the player with their feet at `feet`, facing `yaw` (radians).
@@ -455,15 +467,24 @@ impl Engine {
         let paths: Vec<String> = descs.iter().flat_map(|d| d.models.iter().cloned()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let mut actors = Vec::new();
-        let mut anims = Vec::new();
+        let mut runtimes = Vec::new();
         for (ai, d) in descs.iter().enumerate() {
             let Some(skel) = self.skeleton(&d.skeleton) else { continue };
-            let clip = crate::world::animation::idle_clip(&d.skeleton, d.female)
+            let idle = crate::world::animation::idle_clip(&d.skeleton, d.female)
+                .iter()
+                .find_map(|c| self.anims.clip(&self.vfs, c, &d.skeleton, &skel));
+            let walk = crate::world::animation::locomotion_clip(&d.skeleton, d.female, false)
                 .iter()
                 .find_map(|c| self.anims.clip(&self.vfs, c, &d.skeleton, &skel));
             // Desynchronise actors sharing a clip.
             let start = (ai as f32 * 1.618) % 7.0;
-            anims.push(clip.map(|c| (crate::world::animation::ActorAnim::new(c, &skel, start), skel.clone())));
+            let packages = crate::ai::package::npc_packages(&self.lo, d.npc);
+            let mut rt = crate::ai::ActorRuntime::new(d.ref_id, d.npc, skel.clone(), d.transform, packages, start * 0.3);
+            rt.anim = idle.clone().map(|c| crate::world::animation::ActorAnim::new(c, &skel, start));
+            rt.idle = idle;
+            rt.walk = walk;
+            let (scale, _, feet) = d.transform.to_scale_rotation_translation();
+            rt.capsule = Some(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
             let pose = skel.model_space(&skel.bind_locals());
             let mut meshes = Vec::new();
             for m in &d.models {
@@ -485,7 +506,14 @@ impl Engine {
                     meshes.push(crate::render::ActorMesh { model: model.clone(), part: pi, bone_map });
                 }
             }
-            log::debug!("actor {} {:?} {} meshes at {:?}", d.ref_id, d.name, meshes.len(), d.transform.w_axis.truncate());
+            log::debug!(
+                "actor {} {:?} {} meshes at {:?}, {} packages",
+                d.ref_id,
+                d.name,
+                meshes.len(),
+                d.transform.w_axis.truncate(),
+                rt.packages.len()
+            );
             actors.push(crate::render::ActorInstance {
                 meshes,
                 attachments: Vec::new(),
@@ -494,19 +522,23 @@ impl Engine {
                 lights: [0xFFFF; 8],
                 radius: 120.0,
             });
+            runtimes.push(rt);
         }
         log::info!("spawned {} actors", actors.len());
-        let mut capsules = Vec::new();
-        for d in &descs {
-            let (scale, _, feet) = d.transform.to_scale_rotation_translation();
-            capsules.push(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
-        }
         if let Some(rc) = self.scene.cells.get_mut(&key) {
             rc.actors.extend(actors);
         }
         if let Some(rt) = self.cells.get_mut(&key) {
-            rt.actor_anims.extend(anims);
-            rt.colliders.extend(capsules);
+            rt.colliders.extend(runtimes.iter().filter_map(|a| a.capsule));
+            rt.actors.extend(runtimes);
+        }
+    }
+
+    fn load_navmeshes(&mut self, key: CellKey, cell: FormId) {
+        let ids = self.nav.load_cell(&self.lo, cell);
+        log::debug!("{cell}: {} navmeshes", ids.len());
+        if let Some(rt) = self.cells.get_mut(&key) {
+            rt.navmeshes.extend(ids);
         }
     }
 
@@ -521,6 +553,10 @@ impl Engine {
             }
             for r in &rt.refs {
                 self.vm.detach_all(papyrus::ObjectId::Form(r.0));
+            }
+            self.nav.unload(&rt.navmeshes);
+            for a in &rt.actors {
+                self.moved_refs.remove(&a.ref_id);
             }
         }
     }
@@ -561,6 +597,7 @@ impl Engine {
             .cell(cell_id)
             .map(|c| c.persistent.iter().chain(c.temporary.iter()).copied().collect())
             .unwrap_or_default();
+        self.load_navmeshes(key, cell_id);
         self.spawn_actors(key, &refs);
         self.attach_cell_scripts(&refs);
         self.start_cell_sounds(key, &refs);
@@ -678,6 +715,9 @@ impl Engine {
             .map(|c| c.persistent.iter().chain(c.temporary.iter()).copied().collect())
             .unwrap_or_default();
         refs.extend(self.world_persistent.get(&(x, y)).cloned().unwrap_or_default());
+        if let Some(cid) = cell_id {
+            self.load_navmeshes(key, cid);
+        }
         self.spawn_actors(key, &refs);
         self.attach_cell_scripts(&refs);
         self.start_cell_sounds(key, &refs);
@@ -884,7 +924,7 @@ impl Engine {
             self.scene.env = env;
         }
         self.physics.step(dt);
-        self.animate_actors(dt);
+        self.update_actors(dt);
         let cam = self.camera_copy();
         self.player.update(&self.physics, &cam, input, dt);
         self.camera.position = self.player.eye();
@@ -897,17 +937,6 @@ impl Engine {
         }
         self.update_music();
         self.update_conversation();
-    }
-
-    fn animate_actors(&mut self, dt: f32) {
-        for (key, rt) in self.cells.iter_mut() {
-            let Some(rc) = self.scene.cells.get_mut(key) else { continue };
-            for (actor, anim) in rc.actors.iter_mut().zip(rt.actor_anims.iter_mut()) {
-                if let Some((a, skel)) = anim {
-                    actor.pose = a.update(skel, dt);
-                }
-            }
-        }
     }
 
     fn update_look_target(&mut self) {
@@ -1106,6 +1135,9 @@ impl Engine {
     pub fn ref_position(&self, r: FormId) -> Option<Vec3> {
         if r == PLAYER_REF {
             return Some(self.player.position - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius));
+        }
+        if let Some(p) = self.moved_refs.get(&r) {
+            return Some(*p);
         }
         let rec = self.lo.get(r)?;
         Some(records::reference(&rec).position)
