@@ -24,6 +24,7 @@ esp = { path = "crates/esp", package = "vrm-esp" }
 nif = { path = "crates/nif", package = "vrm-nif" }
 vfs = { path = "crates/vfs", package = "vrm-vfs" }
 havok = { path = "crates/havok", package = "vrm-havok" }
+papyrus = { path = "crates/papyrus", package = "vrm-papyrus" }
 
 [package]
 name = "vibe_rm"
@@ -50,6 +51,7 @@ egui-wgpu = "0.36"
 egui-winit = { version = "0.36", default-features = false, features = ["wayland", "x11"] }
 png = "0.17"
 havok.workspace = true
+papyrus.workspace = true
 rapier3d = "0.36"
 
 [profile.dev]

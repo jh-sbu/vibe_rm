@@ -19,6 +19,8 @@ use crate::world::weather::{self, Climate, Weather};
 
 #[derive(Default)]
 struct CellRuntime {
+    /// References instantiated in this cell (for script detach / visibility).
+    refs: Vec<FormId>,
     /// Animation state for each actor in the matching RenderCell, by index.
     actor_anims: Vec<Option<(crate::world::animation::ActorAnim, std::sync::Arc<crate::world::skeleton::Skeleton>)>>,
     colliders: Vec<ColliderHandle>,
@@ -58,7 +60,18 @@ pub struct Engine {
     pub look_target: Option<(FormId, String)>,
     skeletons: HashMap<String, Option<std::sync::Arc<crate::world::skeleton::Skeleton>>>,
     anims: crate::world::animation::AnimationLibrary,
+    pub scripts: crate::script::ScriptState,
+    pub vm: papyrus::Vm,
+    /// Whole game days elapsed before the current day.
+    pub day: u32,
+    rng: u64,
+    pending_moveto: Option<FormId>,
 }
+
+/// The player character reference ("PlayerRef").
+pub const PLAYER_REF: FormId = FormId(0x14);
+/// Real seconds per game hour at the default timescale of 20.
+const TIMESCALE: f64 = 20.0;
 
 pub fn grid_of(p: Vec2) -> (i32, i32) {
     ((p.x / CELL_SIZE).floor() as i32, (p.y / CELL_SIZE).floor() as i32)
@@ -86,6 +99,11 @@ impl Engine {
             look_target: None,
             skeletons: HashMap::new(),
             anims: Default::default(),
+            scripts: Default::default(),
+            vm: papyrus::Vm::new(),
+            day: 0,
+            rng: 0x2545_F491_4F6C_DD1D,
+            pending_moveto: None,
         }
     }
 
@@ -130,8 +148,12 @@ impl Engine {
         let mut rc = RenderCell::default();
         let mut rt = CellRuntime { lights, doors, ..Default::default() };
         for o in objects {
+            rt.refs.push(o.ref_id);
             if let Some(m) = self.models.get(&o.model) {
-                rc.instances.push(Instance::new(m, o.transform));
+                let mut inst = Instance::new(m, o.transform);
+                inst.ref_id = o.ref_id.0;
+                inst.hidden = self.is_disabled(o.ref_id);
+                rc.instances.push(inst);
             }
             if let Some(c) = self.models.collision(&o.model) {
                 rt.colliders.extend(self.physics.add_static(&c, o.transform, o.ref_id));
@@ -139,6 +161,46 @@ impl Engine {
         }
         self.scene.cells.insert(key, rc);
         self.cells.insert(key, rt);
+    }
+
+    /// Attach scripts for references in a newly loaded cell and send load events.
+    fn attach_cell_scripts(&mut self, refs: &[FormId]) {
+        let mut vm = std::mem::take(&mut self.vm);
+        for &r in refs {
+            let Some(rec) = self.lo.get(r) else { continue };
+            let base = records::reference(&rec).base;
+            let mut scripts = crate::script::vmad::parse(&rec).map(|v| v.scripts).unwrap_or_default();
+            if let Some(b) = self.lo.get(base)
+                && let Some(bv) = crate::script::vmad::parse(&b)
+            {
+                for s in bv.scripts {
+                    if !scripts.iter().any(|x| x.name.eq_ignore_ascii_case(&s.name)) {
+                        scripts.push(s);
+                    }
+                }
+            }
+            if scripts.is_empty() {
+                continue;
+            }
+            let obj = papyrus::ObjectId::Form(r.0);
+            {
+                let mut host = crate::script::EngineHost { engine: self };
+                for s in &scripts {
+                    let props: Vec<(String, papyrus::Value)> = s
+                        .properties
+                        .iter()
+                        .map(|(n, pv)| (n.clone(), crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f))))
+                        .collect();
+                    vm.attach(&mut host, obj, &s.name, &props);
+                }
+                if host.engine.scripts.initialized.insert(obj) {
+                    vm.send_event(&mut host, obj, "OnInit", vec![]);
+                }
+                vm.send_event(&mut host, obj, "OnLoad", vec![]);
+                vm.send_event(&mut host, obj, "OnCellAttach", vec![]);
+            }
+        }
+        self.vm = vm;
     }
 
     fn skeleton(&mut self, path: &str) -> Option<std::sync::Arc<crate::world::skeleton::Skeleton>> {
@@ -234,6 +296,9 @@ impl Engine {
         self.scene.cells.remove(&key);
         if let Some(rt) = self.cells.remove(&key) {
             self.physics.remove_colliders(&rt.colliders);
+            for r in &rt.refs {
+                self.vm.detach_all(papyrus::ObjectId::Form(r.0));
+            }
         }
     }
 
@@ -272,6 +337,7 @@ impl Engine {
             .map(|c| c.persistent.iter().chain(c.temporary.iter()).copied().collect())
             .unwrap_or_default();
         self.spawn_actors(key, &refs);
+        self.attach_cell_scripts(&refs);
         if contents.info.has_water
             && let Some(h) = contents.info.water_height
             && h < 1.0e30
@@ -376,6 +442,7 @@ impl Engine {
             .unwrap_or_default();
         refs.extend(self.world_persistent.get(&(x, y)).cloned().unwrap_or_default());
         self.spawn_actors(key, &refs);
+        self.attach_cell_scripts(&refs);
 
         // Landscape
         let dnam = self.world_field(world, b"DNAM", 0x1).map(|d| d.0);
@@ -569,7 +636,12 @@ impl Engine {
     /// Advance the simulation by `dt` seconds.
     pub fn update(&mut self, input: crate::player::MoveInput, dt: f32, time_scale: f32) {
         self.renderer.time += dt;
-        self.hour = (self.hour + dt * time_scale / 3600.0).rem_euclid(24.0);
+        let h = self.hour + dt * time_scale / 3600.0;
+        if h >= 24.0 {
+            self.day += 1;
+        }
+        self.hour = h.rem_euclid(24.0);
+        self.update_scripts(dt);
         if let Some(env) = self.sky_environment() {
             self.scene.env = env;
         }
@@ -657,6 +729,16 @@ impl Engine {
         let rf = records::reference(&rec);
         let base_tag = self.lo.tag_of(rf.base);
         log::info!("activate {owner} ({name})");
+        {
+            let mut vm = std::mem::take(&mut self.vm);
+            let player = self.object_value(PLAYER_REF);
+            let mut host = crate::script::EngineHost { engine: self };
+            vm.send_event(&mut host, papyrus::ObjectId::Form(owner.0), "OnActivate", vec![player]);
+            self.vm = vm;
+        }
+        if self.scripts.blocked_activation.contains(&owner) {
+            return Ok(());
+        }
         if base_tag.map(|t| t.0) == Some(*b"DOOR")
             && let Some((dest, pos, rot)) = rf.teleport
         {
@@ -689,6 +771,308 @@ impl Engine {
                 self.enter_exterior(w, p, 0.0)
             }
             _ => self.enter_interior(id, None),
+        }
+    }
+}
+
+impl Engine {
+    // ----------------------------------------------------------- scripting
+
+    pub fn rand(&mut self) -> u64 {
+        // xorshift64*
+        self.rng ^= self.rng >> 12;
+        self.rng ^= self.rng << 25;
+        self.rng ^= self.rng >> 27;
+        self.rng.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    /// Game time in days (Papyrus GetCurrentGameTime).
+    pub fn game_days(&self) -> f32 {
+        self.day as f32 + self.hour / 24.0
+    }
+
+    pub fn game_hours_total(&self) -> f64 {
+        self.day as f64 * 24.0 + self.hour as f64
+    }
+
+    pub fn native_class(&self, id: FormId) -> &'static str {
+        if id == PLAYER_REF {
+            return "Actor";
+        }
+        self.lo.tag_of(id).map(|t| crate::script::types::class_for_tag(&t.0)).unwrap_or("Form")
+    }
+
+    pub fn object_value(&self, id: FormId) -> papyrus::Value {
+        if id.is_null() || (self.lo.locate(id).is_none() && id != PLAYER_REF) {
+            return papyrus::Value::None;
+        }
+        papyrus::Value::Object(papyrus::ObjectId::Form(id.0), self.native_class(id).into())
+    }
+
+    pub fn form_from_file(&self, local: u32, file: &str) -> Option<FormId> {
+        let p = self.lo.plugins().iter().find(|p| p.plugin.name().eq_ignore_ascii_case(file))?;
+        let id = match p.slot {
+            esp::Slot::Full(i) => FormId(((i as u32) << 24) | (local & 0x00FF_FFFF)),
+            esp::Slot::Light(j) => FormId(0xFE00_0000 | ((j as u32) << 12) | (local & 0xFFF)),
+        };
+        self.lo.locate(id).map(|_| id)
+    }
+
+    pub fn form_name(&self, id: FormId) -> String {
+        let Some(rec) = self.lo.get(id) else { return String::new() };
+        let rec = if matches!(&rec.tag().0, b"REFR" | b"ACHR") {
+            match self.lo.get(records::reference(&rec).base) {
+                Some(b) => b,
+                None => return String::new(),
+            }
+        } else {
+            rec
+        };
+        rec.get(b"FULL").map(|d| self.lo.lstring(&rec, d)).unwrap_or_default()
+    }
+
+    pub fn has_keyword(&self, form: FormId, kw: FormId) -> bool {
+        let Some(rec) = self.lo.get(form) else { return false };
+        let rec = if matches!(&rec.tag().0, b"REFR" | b"ACHR") {
+            match self.lo.get(records::reference(&rec).base) {
+                Some(b) => b,
+                None => return false,
+            }
+        } else {
+            rec
+        };
+        rec.get(b"KWDA").is_some_and(|d| d.chunks_exact(4).any(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))) == kw))
+    }
+
+    pub fn base_of(&self, r: FormId) -> Option<FormId> {
+        if r == PLAYER_REF {
+            return Some(FormId(0x7));
+        }
+        let rec = self.lo.get(r)?;
+        Some(records::reference(&rec).base)
+    }
+
+    pub fn ref_position(&self, r: FormId) -> Option<Vec3> {
+        if r == PLAYER_REF {
+            return Some(self.player.position - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius));
+        }
+        let rec = self.lo.get(r)?;
+        Some(records::reference(&rec).position)
+    }
+
+    pub fn linked_ref(&self, r: FormId, keyword: Option<FormId>) -> Option<FormId> {
+        let rec = self.lo.get(r)?;
+        for sr in rec.subrecords() {
+            if sr.tag.0 == *b"XLKR" {
+                let (kw, target) = if sr.data.len() >= 8 {
+                    (rec.fid(sr.form_id(0)), rec.fid(sr.form_id(4)))
+                } else {
+                    (FormId::NULL, rec.fid(sr.form_id(0)))
+                };
+                if keyword.is_none_or(|k| k == kw) {
+                    return Some(target);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn npc_is_female(&self, npc: FormId) -> bool {
+        self.lo.get(npc).and_then(|r| r.get(b"ACBS").map(|d| d[0] & 1 != 0)).unwrap_or(false)
+    }
+
+    pub fn global_value(&self, g: FormId) -> f32 {
+        if let Some(v) = self.scripts.globals.get(&g) {
+            return *v;
+        }
+        if let Some(rec) = self.lo.get(g) {
+            // Well-known time globals.
+            match rec.editor_id().as_deref() {
+                Some("GameHour") => return self.hour,
+                Some("GameDaysPassed") => return self.game_days(),
+                _ => {}
+            }
+            if let Some(d) = rec.get(b"FLTV") {
+                return f32::from_le_bytes(d[0..4].try_into().unwrap());
+            }
+        }
+        0.0
+    }
+
+    pub fn message_text(&self, m: FormId) -> String {
+        let Some(rec) = self.lo.get(m) else { return String::new() };
+        rec.get(b"DESC").map(|d| self.lo.lstring(&rec, d)).unwrap_or_default()
+    }
+
+    pub fn formlist(&self, f: FormId) -> Vec<FormId> {
+        let Some(rec) = self.lo.get(f) else { return Vec::new() };
+        rec.subrecords().filter(|s| s.tag.0 == *b"LNAM").map(|s| rec.fid(s.form_id(0))).collect()
+    }
+
+    pub fn objective_text(&self, q: FormId, objective: i32) -> String {
+        let Some(rec) = self.lo.get(q) else { return String::new() };
+        let mut current = None;
+        for sr in rec.subrecords() {
+            match &sr.tag.0 {
+                b"QOBJ" => current = Some(sr.u16(0) as i32),
+                b"NNAM" if current == Some(objective) => return self.lo.lstring(&rec, sr.data),
+                _ => {}
+            }
+        }
+        String::new()
+    }
+
+    pub fn is_disabled(&self, r: FormId) -> bool {
+        if let Some(d) = self.scripts.disabled.get(&r) {
+            return *d;
+        }
+        self.lo.get(r).is_some_and(|rec| rec.flags() & esp::record_flags::INITIALLY_DISABLED != 0)
+    }
+
+    pub fn set_disabled(&mut self, r: FormId, disabled: bool) {
+        self.scripts.disabled.insert(r, disabled);
+        for rc in self.scene.cells.values_mut() {
+            for i in rc.instances.iter_mut().filter(|i| i.ref_id == r.0) {
+                i.hidden = disabled;
+            }
+        }
+        self.physics.set_owner_enabled(r, !disabled);
+    }
+
+    pub fn queue_player_moveto(&mut self, target: FormId) {
+        self.pending_moveto = Some(target);
+    }
+
+    /// Start a quest: mark running, attach its scripts, send OnInit and run its startup stage.
+    pub fn start_quest(&mut self, q: FormId) {
+        let st = self.scripts.quests.entry(q).or_default();
+        if st.running {
+            return;
+        }
+        st.running = true;
+        let Some(rec) = self.lo.get(q) else { return };
+        let vmad = crate::script::vmad::parse(&rec).unwrap_or_default();
+        // Startup stage: INDX flags (third byte) 0x2 marks "start up stage".
+        let startup = rec.subrecords().find(|sr| sr.tag.0 == *b"INDX" && sr.u8(2) & 0x2 != 0).map(|sr| sr.u16(0));
+        drop(rec);
+        let mut vm = std::mem::take(&mut self.vm);
+        {
+            let obj = papyrus::ObjectId::Form(q.0);
+            let mut host = crate::script::EngineHost { engine: self };
+            for s in &vmad.scripts {
+                let props: Vec<(String, papyrus::Value)> = s
+                    .properties
+                    .iter()
+                    .map(|(n, pv)| (n.clone(), crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f))))
+                    .collect();
+                vm.attach(&mut host, obj, &s.name, &props);
+            }
+            vm.send_event(&mut host, obj, "OnInit", vec![]);
+        }
+        self.vm = vm;
+        if let Some(s) = startup {
+            self.scripts.pending_stages.push((q, s));
+        }
+    }
+
+    /// Set a quest stage: record it and run the stage's fragment.
+    fn run_stage(&mut self, q: FormId, stage: u16) {
+        {
+            let st = self.scripts.quests.entry(q).or_default();
+            st.stage = stage;
+            st.done.insert(stage);
+        }
+        let Some(rec) = self.lo.get(q) else { return };
+        let Some(vmad) = crate::script::vmad::parse(&rec) else { return };
+        let edid = rec.editor_id().unwrap_or_default();
+        drop(rec);
+        log::info!("quest {edid} stage {stage}");
+        let mut vm = std::mem::take(&mut self.vm);
+        {
+            let mut host = crate::script::EngineHost { engine: self };
+            for f in vmad.fragments.iter().filter(|f| f.stage == stage) {
+                vm.call_method(&mut host, papyrus::ObjectId::Form(q.0), &f.script, &f.function, vec![]);
+            }
+        }
+        self.vm = vm;
+    }
+
+    fn update_scripts(&mut self, dt: f32) {
+        self.scripts.real_time += dt as f64;
+        let now = self.scripts.real_time;
+        let game_now = self.game_hours_total();
+        // Timers
+        let mut fired = Vec::new();
+        self.scripts.timers.retain_mut(|t| {
+            let due = if t.game_time { game_now >= t.at } else { now >= t.at };
+            if due {
+                fired.push((t.obj, t.script.clone(), t.event));
+                if let Some(r) = t.repeat {
+                    t.at += r.max(0.01);
+                    return true;
+                }
+                return false;
+            }
+            true
+        });
+        let mut vm = std::mem::take(&mut self.vm);
+        for _ in 0..4 {
+            {
+                let mut host = crate::script::EngineHost { engine: self };
+                for (obj, script, ev) in fired.drain(..) {
+                    if !vm.send_event_to(&mut host, obj, &script, ev, vec![]) {
+                        vm.send_event(&mut host, obj, ev, vec![]);
+                    }
+                }
+                let events = std::mem::take(&mut host.engine.scripts.pending_events);
+                for (obj, ev, args) in events {
+                    vm.send_event(&mut host, obj, &ev, args);
+                }
+                vm.run(&mut host, now, 20_000);
+            }
+            let stages = std::mem::take(&mut self.scripts.pending_stages);
+            if stages.is_empty() && self.scripts.pending_events.is_empty() {
+                break;
+            }
+            self.vm = vm;
+            for (q, s) in stages {
+                self.run_stage(q, s);
+            }
+            vm = std::mem::take(&mut self.vm);
+        }
+        self.vm = vm;
+        if let Some(t) = self.pending_moveto.take()
+            && let Some(p) = self.ref_position(t)
+        {
+            let cell = self.lo.cell_of_ref(t);
+            let interior = cell.and_then(|c| self.lo.cell(c)).is_some_and(|c| c.world.is_none());
+            let res = match (interior, cell) {
+                (true, Some(c)) if self.location != Location::Interior(c) => self.enter_interior(c, Some((p, 0.0))),
+                _ => {
+                    self.place_player(p, self.camera.yaw);
+                    Ok(())
+                }
+            };
+            if let Err(e) = res {
+                log::warn!("moveto failed: {e:#}");
+            }
+        }
+        // Drop notifications older than a few seconds.
+        self.scripts.notifications.retain(|(_, t)| now - t < 6.0);
+    }
+
+    /// Start every quest flagged "start game enabled".
+    pub fn start_game_enabled_quests(&mut self) {
+        let quests: Vec<FormId> = self
+            .lo
+            .ids_of_type(b"QUST")
+            .iter()
+            .copied()
+            .filter(|&q| self.lo.get(q).and_then(|r| r.get(b"DNAM").map(|d| u16::from_le_bytes([d[0], d[1]]) & 0x1 != 0)).unwrap_or(false))
+            .collect();
+        log::info!("starting {} start-game-enabled quests", quests.len());
+        for q in quests {
+            self.start_quest(q);
         }
     }
 }

@@ -16,3 +16,4 @@ nif.workspace = true
 env_logger.workspace = true
 vfs.workspace = true
 havok.workspace = true
+papyrus.workspace = true

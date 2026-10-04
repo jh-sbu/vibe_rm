@@ -199,6 +199,46 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("pex-dump") => {
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let bytes = v.read(&format!("scripts/{}.pex", args[2])).context("script not found")?;
+            let p = papyrus::pex::parse(&bytes)?;
+            print!("{}", papyrus::pex::disassemble(&p));
+        }
+        Some("pex-verify") => {
+            let a = bsa::Archive::open(&args[1])?;
+            let mut ok = 0;
+            let mut bad = 0;
+            let mut ops = [0usize; 36];
+            for p in a.paths().filter(|p| p.ends_with(".pex")).map(str::to_owned).collect::<Vec<_>>() {
+                match papyrus::pex::parse(&a.read(&p)?.unwrap()) {
+                    Ok(x) => {
+                        ok += 1;
+                        for o in &x.objects {
+                            for s in &o.states {
+                                for (_, f) in &s.functions {
+                                    for i in &f.code {
+                                        ops[i.op as usize] += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        bad += 1;
+                        if bad < 10 {
+                            println!("{p}: {e}");
+                        }
+                    }
+                }
+            }
+            println!("{ok} ok, {bad} failed");
+            for (i, c) in ops.iter().enumerate() {
+                println!("{:>20} {c}", papyrus::pex::OP_NAMES[i]);
+            }
+        }
         _ => bail!("usage: vrm-tool <bsa-list|bsa-extract|bsa-verify> ..."),
     }
     Ok(())

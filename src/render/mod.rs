@@ -109,6 +109,8 @@ pub struct GpuModel {
 }
 
 pub struct Instance {
+    pub ref_id: u32,
+    pub hidden: bool,
     pub model: Arc<GpuModel>,
     pub transform: Mat4,
     pub lights: [u16; 8],
@@ -121,7 +123,7 @@ impl Instance {
         let world_center = transform.transform_point3(model.bound_center);
         let scale = transform.x_axis.truncate().length().max(transform.y_axis.truncate().length()).max(transform.z_axis.truncate().length());
         let world_radius = model.bound_radius * scale;
-        Instance { model, transform, lights: [0xFFFF; 8], world_center, world_radius }
+        Instance { ref_id: 0, hidden: false, model, transform, lights: [0xFFFF; 8], world_center, world_radius }
     }
 }
 
@@ -829,6 +831,9 @@ impl Renderer {
         let mut opaque: HashMap<(*const GpuModel, usize), (&GpuPart, Vec<InstanceData>)> = HashMap::new();
         let mut blended: Vec<(f32, &GpuPart, InstanceData)> = Vec::new();
         for inst in scene.instances() {
+            if inst.hidden {
+                continue;
+            }
             if !frustum.sphere_visible(inst.world_center, inst.world_radius) {
                 stats.culled += 1;
                 continue;
