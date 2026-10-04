@@ -319,6 +319,9 @@ pub enum Block {
     TextureSet(Vec<String>),
     Alpha(AlphaProperty),
     ExtraData(ExtraData),
+    CollisionObject(crate::collision::CollisionObject),
+    RigidBody(Box<crate::collision::RigidBody>),
+    Shape(crate::collision::Shape),
     Unknown(String),
 }
 
@@ -792,7 +795,19 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             let dimensions = r.vec3()?;
             Block::ExtraData(ExtraData::Bound { center, dimensions })
         }
-        _ => return Ok(None),
+        "bhkCollisionObject" | "bhkSPCollisionObject" | "bhkBlendCollisionObject" | "bhkPCollisionObject" => {
+            let c = crate::collision::collision_object(r)?;
+            if ty == "bhkBlendCollisionObject" {
+                r.skip(8)?; // heir gain, vel gain
+            }
+            Block::CollisionObject(c)
+        }
+        "bhkRigidBody" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, false)?)),
+        "bhkRigidBodyT" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, true)?)),
+        _ => match crate::collision::parse_shape(ty, r)? {
+            Some(s) => Block::Shape(s),
+            None => return Ok(None),
+        },
     };
     Ok(Some(b))
 }

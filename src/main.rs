@@ -1,5 +1,7 @@
 mod app;
 mod render;
+mod physics;
+mod player;
 mod world;
 
 use anyhow::{Context, Result};
@@ -19,6 +21,7 @@ pub struct Options {
     pub radius: i32,
     pub hour: f32,
     pub weather: Option<String>,
+    pub simulate: Option<u32>,
 }
 
 fn parse_args() -> Result<Options> {
@@ -52,6 +55,7 @@ fn parse_args() -> Result<Options> {
             "--radius" => o.radius = val()?.parse()?,
             "--hour" => o.hour = val()?.parse()?,
             "--weather" => o.weather = Some(val()?),
+            "--simulate" => o.simulate = Some(val()?.parse()?),
             "-h" | "--help" => {
                 println!(
                     "vibe_rm - a Creation Engine (Skyrim SE) compatible engine\n\n\

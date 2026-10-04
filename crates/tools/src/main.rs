@@ -130,6 +130,27 @@ fn main() -> Result<()> {
                 println!("[{i}] {}: {s}", n.block_type_name(i));
             }
         }
+        Some("nif-raw") => {
+            // nif-raw <data dir> <vfs path> <block type>: hex dump blocks of a type as floats
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let bytes = v.read(&args[2]).context("not found")?;
+            let n = nif::Nif::parse(&bytes)?;
+            for i in 0..n.blocks.len() {
+                if n.block_type_name(i) != args[3] {
+                    continue;
+                }
+                let off = n.header.block_offsets[i];
+                let sz = n.header.block_sizes[i] as usize;
+                println!("[{i}] {} size {sz}", args[3]);
+                let b = &bytes[off..off + sz];
+                for (j, c) in b.chunks(4).enumerate() {
+                    let u = u32::from_le_bytes([c[0], *c.get(1).unwrap_or(&0), *c.get(2).unwrap_or(&0), *c.get(3).unwrap_or(&0)]);
+                    println!("  +{:3}: {:08x} {:>14.6} {}", j * 4, u, f32::from_bits(u), u as i32);
+                }
+            }
+        }
         _ => bail!("usage: vrm-tool <bsa-list|bsa-extract|bsa-verify> ..."),
     }
     Ok(())

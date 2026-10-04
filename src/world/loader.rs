@@ -12,6 +12,7 @@ use crate::render::{GpuModel, Renderer, dds};
 #[derive(Default)]
 pub struct ModelCache {
     map: HashMap<String, Option<Arc<GpuModel>>>,
+    collision: crate::physics::CollisionCache,
 }
 
 impl ModelCache {
@@ -20,6 +21,9 @@ impl ModelCache {
     }
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+    pub fn collision(&self, path: &str) -> Option<Arc<crate::physics::shapes::CollisionModel>> {
+        self.collision.get(path).cloned().flatten()
     }
 
     /// Ensure all `paths` are loaded (in parallel where possible).
@@ -32,11 +36,13 @@ impl ModelCache {
             return;
         }
         let t0 = std::time::Instant::now();
-        let cpu: Vec<(String, Option<CpuModel>)> = missing
+        let cpu: Vec<(String, Option<CpuModel>, Option<crate::physics::shapes::CollisionModel>)> = missing
             .par_iter()
             .map(|p| {
+                let mut col = None;
                 let m = vfs.read(p).and_then(|data| match nif::Nif::parse(&data) {
                     Ok(n) => {
+                        col = crate::physics::shapes::from_nif(&n);
                         let m = model::convert(&n);
                         for mesh in &m.meshes {
                             if mesh.material.kind == model::ShaderKind::Effect {
@@ -53,14 +59,14 @@ impl ModelCache {
                 if m.is_none() {
                     log::debug!("model not found or unreadable: {p}");
                 }
-                ((*p).clone(), m)
+                ((*p).clone(), m, col)
             })
             .collect();
         let t1 = std::time::Instant::now();
 
         // Textures referenced by the new models.
         let mut tex: HashSet<String> = HashSet::new();
-        for (_, m) in &cpu {
+        for (_, m, _) in &cpu {
             if let Some(m) = m {
                 for mesh in &m.meshes {
                     for t in [&mesh.material.diffuse, &mesh.material.normal, &mesh.material.glow].into_iter().flatten() {
@@ -74,7 +80,8 @@ impl ModelCache {
         load_textures(renderer, vfs, tex.into_iter().collect());
         let t2 = std::time::Instant::now();
 
-        for (p, m) in cpu {
+        for (p, m, col) in cpu {
+            self.collision.insert(p.clone(), col.map(Arc::new));
             let g = m.filter(|m| !m.meshes.is_empty()).map(|m| Arc::new(renderer.upload_model(&m)));
             self.map.insert(p, g);
         }

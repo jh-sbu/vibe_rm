@@ -14,6 +14,8 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
 use crate::Options;
+use crate::physics::Physics;
+use crate::player::{MoveInput, Player};
 use crate::render::{Camera, Environment, GpuLight, Instance, Renderer, Scene};
 use crate::world::cell::{self, PlacedObject, PointLight};
 use crate::world::loader::ModelCache;
@@ -33,6 +35,8 @@ pub struct Engine {
     pub hour: f32,
     pub sky: Option<(Weather, Climate)>,
     pub forced_weather: Option<String>,
+    pub physics: Physics,
+    pub player: Player,
 }
 
 impl Engine {
@@ -50,9 +54,13 @@ impl Engine {
         let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let mut scene = Scene { env, ..Default::default() };
+        self.physics.clear();
         for o in objects {
             if let Some(m) = self.models.get(&o.model) {
                 scene.instances.push(Instance::new(m, o.transform));
+            }
+            if let Some(c) = self.models.collision(&o.model) {
+                self.physics.add_static(&c, o.transform, o.ref_id);
             }
         }
         for l in lights {
@@ -190,6 +198,10 @@ impl Engine {
         }
     }
 
+    pub fn camera_copy(&self) -> Camera {
+        Camera { position: self.camera.position, yaw: self.camera.yaw, pitch: self.camera.pitch, fov_y: self.camera.fov_y }
+    }
+
     pub fn ground_height(&self, p: glam::Vec2) -> Option<f32> {
         let (x, y) = ((p.x / 4096.0).floor() as i32, (p.y / 4096.0).floor() as i32);
         self.lands.iter().find(|l| l.x == x && l.y == y).map(|l| l.height_at(p))
@@ -268,6 +280,7 @@ impl Engine {
         for l in &lands {
             let chunks = self.renderer.build_terrain(l);
             self.scene.terrain.extend(chunks);
+            self.physics.add_terrain(l);
         }
         self.lands = lands;
 
@@ -368,6 +381,8 @@ fn setup_engine(opts: &Options, renderer: Renderer, lo: LoadOrder, vfs: vfs::Vfs
         hour: opts.hour,
         sky: None,
         forced_weather: opts.weather.clone(),
+        physics: Physics::new(),
+        player: Player::new(Vec3::ZERO),
     };
     if let Some(c) = &opts.cell {
         let id = engine.resolve_form(c).with_context(|| format!("unknown cell {c}"))?;
@@ -391,6 +406,8 @@ fn setup_engine(opts: &Options, renderer: Renderer, lo: LoadOrder, vfs: vfs::Vfs
     if let Some(p) = opts.pitch {
         engine.camera.pitch = p;
     }
+    engine.physics.step(1.0 / 60.0);
+    engine.player = Player::new(engine.camera.position);
     Ok(engine)
 }
 
@@ -401,6 +418,18 @@ pub fn run(opts: Options) -> Result<()> {
         let (_adapter, device, queue) = pollster::block_on(create_device(&instance, None))?;
         let renderer = Renderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm, opts.width, opts.height);
         let mut engine = setup_engine(&opts, renderer, lo, vfs)?;
+        if let Some(frames) = opts.simulate {
+            let input = MoveInput { forward: 1.0, run: true, ..Default::default() };
+            for i in 0..frames {
+                engine.physics.step(1.0 / 60.0);
+                let cam = Camera { ..engine.camera_copy() };
+                engine.player.update(&engine.physics, &cam, input, 1.0 / 60.0);
+                if i % 30 == 0 {
+                    log::info!("sim frame {i}: pos {:?} grounded {}", engine.player.position, engine.player.grounded);
+                }
+            }
+            engine.camera.position = engine.player.eye();
+        }
         let pixels = engine.renderer.render_to_image(&engine.scene, &engine.camera);
         log::info!("render stats: {:?}", engine.renderer.stats);
         let file = std::fs::File::create(&path)?;
@@ -529,6 +558,10 @@ impl ApplicationHandler for App {
                                     el.exit();
                                 }
                             }
+                            if code == KeyCode::KeyN && !event.repeat {
+                                s.engine.player.noclip = !s.engine.player.noclip;
+                                log::info!("noclip {}", s.engine.player.noclip);
+                            }
                             s.keys.insert(code);
                         }
                         ElementState::Released => {
@@ -553,7 +586,11 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = (now - s.last).as_secs_f32().min(0.1);
                 s.last = now;
-                update_camera(&mut s.engine.camera, &s.keys, dt);
+                let input = move_input(&s.keys);
+                s.engine.physics.step(dt);
+                let cam = s.engine.camera_copy();
+                s.engine.player.update(&s.engine.physics, &cam, input, dt);
+                s.engine.camera.position = s.engine.player.eye();
                 s.engine.renderer.time += dt;
                 // Skyrim's default timescale: 20 game seconds per real second.
                 let mut scale = 20.0;
@@ -605,34 +642,16 @@ impl ApplicationHandler for App {
     }
 }
 
-fn update_camera(cam: &mut Camera, keys: &HashSet<KeyCode>, dt: f32) {
-    let mut speed = 600.0;
-    if keys.contains(&KeyCode::ShiftLeft) {
-        speed *= 6.0;
+fn move_input(keys: &HashSet<KeyCode>) -> MoveInput {
+    let k = |c: KeyCode| keys.contains(&c);
+    let axis = |p: KeyCode, n: KeyCode| (k(p) as i32 - k(n) as i32) as f32;
+    MoveInput {
+        forward: axis(KeyCode::KeyW, KeyCode::KeyS),
+        right: axis(KeyCode::KeyD, KeyCode::KeyA),
+        up: axis(KeyCode::Space, KeyCode::ControlLeft),
+        // Skyrim runs by default; Caps Lock would toggle walking, Alt walks while held here.
+        run: !k(KeyCode::AltLeft),
+        sprint: k(KeyCode::ShiftLeft),
+        jump: k(KeyCode::Space),
     }
-    if keys.contains(&KeyCode::AltLeft) {
-        speed *= 0.2;
-    }
-    let mut v = Vec3::ZERO;
-    let f = cam.forward();
-    let r = cam.right();
-    if keys.contains(&KeyCode::KeyW) {
-        v += f;
-    }
-    if keys.contains(&KeyCode::KeyS) {
-        v -= f;
-    }
-    if keys.contains(&KeyCode::KeyD) {
-        v += r;
-    }
-    if keys.contains(&KeyCode::KeyA) {
-        v -= r;
-    }
-    if keys.contains(&KeyCode::Space) {
-        v += Vec3::Z;
-    }
-    if keys.contains(&KeyCode::ControlLeft) {
-        v -= Vec3::Z;
-    }
-    cam.position += v.normalize_or_zero() * speed * dt;
 }

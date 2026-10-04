@@ -6,11 +6,13 @@
 //! skipped safely. The parsed representation lives in [`blocks`].
 
 pub mod blocks;
+pub mod collision;
 mod reader;
 
 use std::collections::HashMap;
 
 pub use blocks::*;
+pub use collision::{CollisionObject, HAVOK_SCALE, MotionSystem, RigidBody, Shape};
 use reader::Reader;
 
 #[derive(Debug, thiserror::Error)]
@@ -35,6 +37,8 @@ pub struct Header {
     pub block_types: Vec<String>,
     pub block_type_index: Vec<u16>,
     pub block_sizes: Vec<u32>,
+    /// Absolute file offset of each block.
+    pub block_offsets: Vec<usize>,
     pub strings: Vec<String>,
 }
 
@@ -116,9 +120,18 @@ impl Nif {
             bs_version,
             block_types,
             block_type_index,
+            block_offsets: Vec::with_capacity(block_sizes.len()),
             block_sizes,
             strings,
         };
+        let mut header = header;
+        {
+            let mut off = r.pos();
+            for &sz in &header.block_sizes {
+                header.block_offsets.push(off);
+                off += sz as usize;
+            }
+        }
         r.bs_version = bs_version;
         r.strings = &header.strings;
 
