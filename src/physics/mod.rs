@@ -97,6 +97,18 @@ impl Physics {
         handles
     }
 
+    /// A capsule standing at `feet`, used for actors.
+    pub fn add_actor_capsule(&mut self, feet: Vec3, scale: f32, owner: esp::FormId) -> ColliderHandle {
+        let r = 20.0 * scale;
+        let half = 40.0 * scale;
+        let c = ColliderBuilder::new(SharedShape::capsule_z(half, r))
+            .position(Pose::from_translation(feet + Vec3::Z * (half + r)))
+            .build();
+        let h = self.world.insert_collider(c, None);
+        self.owners.insert(h, owner);
+        h
+    }
+
     pub fn remove_colliders(&mut self, handles: &[ColliderHandle]) {
         for &h in handles {
             self.world.remove_collider(h);

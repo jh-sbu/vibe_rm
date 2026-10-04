@@ -216,11 +216,17 @@ impl Engine {
             });
         }
         log::info!("spawned {} actors", actors.len());
+        let mut capsules = Vec::new();
+        for d in &descs {
+            let (scale, _, feet) = d.transform.to_scale_rotation_translation();
+            capsules.push(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
+        }
         if let Some(rc) = self.scene.cells.get_mut(&key) {
             rc.actors.extend(actors);
         }
         if let Some(rt) = self.cells.get_mut(&key) {
             rt.actor_anims.extend(anims);
+            rt.colliders.extend(capsules);
         }
     }
 
