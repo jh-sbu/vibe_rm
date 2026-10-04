@@ -35,6 +35,7 @@ pub struct Options {
     pub wait: Option<u32>,
     pub no_scripts: bool,
     pub talk: Option<String>,
+    pub choose: Vec<usize>,
 }
 
 fn parse_args() -> Result<Options> {
@@ -74,6 +75,7 @@ fn parse_args() -> Result<Options> {
             "--wait" => o.wait = Some(val()?.parse()?),
             "--no-scripts" => o.no_scripts = true,
             "--talk" => o.talk = Some(val()?),
+            "--choose" => o.choose.push(val()?.parse()?),
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v.split_once(',').context("--pick x,y (0..1 screen coords)")?;

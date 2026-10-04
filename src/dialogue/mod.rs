@@ -191,8 +191,10 @@ pub fn voice_path(lo: &LoadOrder, npc_voice: FormId, topic: &Topic, info: FormId
     let (plugin, local) = lo.origin(info)?;
     let vt = lo.get(npc_voice)?.editor_id()?;
     let quest = lo.get(topic.quest).and_then(|q| q.editor_id()).unwrap_or_default();
-    let t: String = topic.editor_id.chars().take(15).collect();
-    let q: String = quest.chars().take(25usize.saturating_sub(t.len()).max(10)).collect();
+    // Quest and topic editor ids share a 25 character budget; the quest keeps at least 10.
+    let tlen = topic.editor_id.chars().count();
+    let q: String = quest.chars().take(25usize.saturating_sub(tlen).max(10)).collect();
+    let t: String = topic.editor_id.chars().take(25 - q.chars().count()).collect();
     Some(format!("sound/voice/{}/{}/{}_{}_{:08x}_{}.fuz", plugin, vt, q, t, local, response).to_ascii_lowercase())
 }
 
