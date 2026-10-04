@@ -81,7 +81,8 @@ impl Physics {
     }
 
     /// Add the static collision of a placed object.
-    pub fn add_static(&mut self, model: &CollisionModel, transform: Mat4, owner: esp::FormId) {
+    pub fn add_static(&mut self, model: &CollisionModel, transform: Mat4, owner: esp::FormId) -> Vec<ColliderHandle> {
+        let mut handles = Vec::new();
         for part in &model.parts {
             if !layer_blocks_player(part.layer) {
                 continue;
@@ -91,11 +92,20 @@ impl Physics {
             let c = ColliderBuilder::new(shape).position(pose).build();
             let h = self.world.insert_collider(c, None);
             self.owners.insert(h, owner);
+            handles.push(h);
+        }
+        handles
+    }
+
+    pub fn remove_colliders(&mut self, handles: &[ColliderHandle]) {
+        for &h in handles {
+            self.world.remove_collider(h);
+            self.owners.remove(&h);
         }
     }
 
     /// Add a landscape cell as a triangle mesh.
-    pub fn add_terrain(&mut self, land: &crate::world::terrain::Land) {
+    pub fn add_terrain(&mut self, land: &crate::world::terrain::Land) -> Option<ColliderHandle> {
         use crate::world::terrain::{CELL_SIZE, VERTS};
         let o = land.origin();
         let step = CELL_SIZE / 32.0;
@@ -116,9 +126,8 @@ impl Physics {
                 t.push([a, cc, d]);
             }
         }
-        if let Ok(shape) = SharedShape::trimesh(v, t) {
-            self.world.insert_collider(ColliderBuilder::new(shape).build(), None);
-        }
+        let shape = SharedShape::trimesh(v, t).ok()?;
+        Some(self.world.insert_collider(ColliderBuilder::new(shape).build(), None))
     }
 
     /// Update the broad phase after colliders were added.

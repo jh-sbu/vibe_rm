@@ -142,21 +142,42 @@ impl Default for Environment {
     }
 }
 
+/// Identifies a loaded cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CellKey {
+    Interior(esp::FormId),
+    Exterior(i32, i32),
+}
+
+/// Render data belonging to one loaded cell.
 #[derive(Default)]
-pub struct Scene {
+pub struct RenderCell {
     pub instances: Vec<Instance>,
     pub terrain: Vec<terrain::TerrainChunk>,
     pub water: Vec<water::WaterPlane>,
+}
+
+#[derive(Default)]
+pub struct Scene {
+    pub cells: HashMap<CellKey, RenderCell>,
     pub lights: Vec<GpuLight>,
     pub env: Environment,
 }
 
 impl Scene {
+    pub fn instances(&self) -> impl Iterator<Item = &Instance> {
+        self.cells.values().flat_map(|c| c.instances.iter())
+    }
+    pub fn instance_count(&self) -> usize {
+        self.cells.values().map(|c| c.instances.len()).sum()
+    }
+
     /// Assign up to 8 point lights to each instance based on bounding-sphere overlap.
     pub fn assign_lights(&mut self) {
-        for inst in &mut self.instances {
+        let lights = &self.lights;
+        for inst in self.cells.values_mut().flat_map(|c| c.instances.iter_mut()) {
             let mut cands: Vec<(f32, u16)> = Vec::new();
-            for (i, l) in self.lights.iter().enumerate() {
+            for (i, l) in lights.iter().enumerate() {
                 let p = Vec3::new(l.pos_radius[0], l.pos_radius[1], l.pos_radius[2]);
                 let r = l.pos_radius[3];
                 let d = p.distance(inst.world_center);
@@ -617,7 +638,7 @@ impl Renderer {
         let mut stats = FrameStats::default();
         let mut opaque: HashMap<(*const GpuModel, usize), (&GpuPart, Vec<InstanceData>)> = HashMap::new();
         let mut blended: Vec<(f32, &GpuPart, InstanceData)> = Vec::new();
-        for inst in &scene.instances {
+        for inst in scene.instances() {
             if !frustum.sphere_visible(inst.world_center, inst.world_radius) {
                 stats.culled += 1;
                 continue;
@@ -704,10 +725,10 @@ impl Renderer {
                 self.sky.draw(&self.queue, &mut pass, view_proj, camera.position, self.time);
             }
             pass.set_bind_group(0, &self.frame_bg, &[]);
-            if !scene.terrain.is_empty() {
+            if scene.cells.values().any(|c| !c.terrain.is_empty()) {
                 pass.set_pipeline(&self.terrain.pipeline);
                 pass.set_index_buffer(self.terrain.ibuf.slice(..), wgpu::IndexFormat::Uint16);
-                for chunk in &scene.terrain {
+                for chunk in scene.cells.values().flat_map(|c| c.terrain.iter()) {
                     if !frustum.sphere_visible(chunk.center, chunk.radius) {
                         continue;
                     }
@@ -734,9 +755,9 @@ impl Renderer {
             for (part, range) in &draws[..opaque_count] {
                 draw(&mut pass, part, range.clone());
             }
-            if !scene.water.is_empty() {
+            if scene.cells.values().any(|c| !c.water.is_empty()) {
                 pass.set_pipeline(&self.water.pipeline);
-                for w in &scene.water {
+                for w in scene.cells.values().flat_map(|c| c.water.iter()) {
                     if !frustum.sphere_visible(w.center, w.radius) {
                         continue;
                     }

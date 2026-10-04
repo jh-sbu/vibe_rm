@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use esp::{FormId, LoadOrder};
+use esp::LoadOrder;
 use glam::Vec3;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
@@ -14,321 +14,9 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
 use crate::Options;
-use crate::physics::Physics;
-use crate::player::{MoveInput, Player};
-use crate::render::{Camera, Environment, GpuLight, Instance, Renderer, Scene};
-use crate::world::cell::{self, PlacedObject, PointLight};
-use crate::world::loader::ModelCache;
-use crate::world::records::Lighting;
-use crate::world::terrain::{self, Land};
-use crate::world::weather::{self, Climate, Weather};
-
-pub struct Engine {
-    pub lo: LoadOrder,
-    pub vfs: vfs::Vfs,
-    pub renderer: Renderer,
-    pub models: ModelCache,
-    pub scene: Scene,
-    pub camera: Camera,
-    pub lands: Vec<Land>,
-    /// Game time of day in hours.
-    pub hour: f32,
-    pub sky: Option<(Weather, Climate)>,
-    pub forced_weather: Option<String>,
-    pub physics: Physics,
-    pub player: Player,
-}
-
-impl Engine {
-    pub fn resolve_form(&self, s: &str) -> Option<FormId> {
-        if s.len() == 8
-            && let Ok(v) = u32::from_str_radix(s, 16)
-            && self.lo.locate(FormId(v)).is_some()
-        {
-            return Some(FormId(v));
-        }
-        self.lo.find_editor_id(s)
-    }
-
-    fn build_scene(&mut self, objects: &[PlacedObject], lights: &[PointLight], env: Environment) {
-        let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
-        self.models.load_all(&mut self.renderer, &self.vfs, &paths);
-        let mut scene = Scene { env, ..Default::default() };
-        self.physics.clear();
-        for o in objects {
-            if let Some(m) = self.models.get(&o.model) {
-                scene.instances.push(Instance::new(m, o.transform));
-            }
-            if let Some(c) = self.models.collision(&o.model) {
-                self.physics.add_static(&c, o.transform, o.ref_id);
-            }
-        }
-        for l in lights {
-            scene.lights.push(GpuLight {
-                pos_radius: [l.position.x, l.position.y, l.position.z, l.radius],
-                color: [l.color.x, l.color.y, l.color.z, 1.0],
-            });
-        }
-        scene.assign_lights();
-        log::info!(
-            "scene: {} instances, {} lights, {} models cached, {} textures cached",
-            scene.instances.len(),
-            scene.lights.len(),
-            self.models.len(),
-            self.renderer.textures.len()
-        );
-        self.scene = scene;
-    }
-
-    pub fn load_interior(&mut self, cell_id: FormId) -> Result<()> {
-        let t = Instant::now();
-        let contents = cell::load_cell(&self.lo, cell_id).context("cell not found")?;
-        log::info!(
-            "cell {} '{}' ({}): {} objects, {} lights",
-            contents.info.editor_id,
-            contents.info.name,
-            cell_id,
-            contents.objects.len(),
-            contents.lights.len()
-        );
-        let env = interior_environment(&contents.lighting);
-        self.sky = None;
-        self.build_scene(&contents.objects, &contents.lights, env);
-        if contents.info.has_water
-            && let Some(h) = contents.info.water_height
-            && h < 1.0e30
-        {
-            let wt = if contents.info.water_type.is_null() { FormId(0x18) } else { contents.info.water_type };
-            self.add_water(vec![(-50_000.0, -50_000.0, 100_000.0, h, wt)]);
-        }
-
-        // Spawn point: a COC marker if present, else the middle of the cell.
-        let coc = self.lo.find_editor_id("COCMarkerHeading");
-        let index = self.lo.cell(cell_id).cloned().unwrap_or_default();
-        let mut spawn = None;
-        for &r in index.persistent.iter().chain(index.temporary.iter()) {
-            if let Some(rec) = self.lo.get(r) {
-                let rf = crate::world::records::reference(&rec);
-                if Some(rf.base) == coc {
-                    spawn = Some((rf.position, rf.rotation.z));
-                    break;
-                }
-            }
-        }
-        let (pos, yaw) = spawn.unwrap_or_else(|| {
-            let mut c = Vec3::ZERO;
-            for o in &contents.objects {
-                c += o.transform.w_axis.truncate();
-            }
-            (c / contents.objects.len().max(1) as f32, 0.0)
-        });
-        self.camera.position = pos + Vec3::new(0.0, 0.0, 120.0);
-        self.camera.yaw = yaw;
-        self.camera.pitch = 0.0;
-        log::info!("interior loaded in {:?}", t.elapsed());
-        Ok(())
-    }
-
-    /// Pick the climate's weather for a worldspace and load its sky textures.
-    pub fn setup_weather(&mut self, world: FormId) {
-        let clmt = self
-            .lo
-            .get(world)
-            .and_then(|w| w.get(b"CNAM").map(|d| w.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))));
-        let climate = clmt.and_then(|c| weather::load_climate(&self.lo, c)).unwrap_or_default();
-        let forced = self.forced_weather.as_ref().and_then(|w| self.resolve_form(w));
-        let wid = forced.or_else(|| climate.weathers.iter().max_by_key(|w| w.1).map(|w| w.0));
-        let Some(w) = wid.and_then(|w| weather::load_weather(&self.lo, w)) else {
-            self.sky = None;
-            return;
-        };
-        log::info!("weather {} ({} cloud layers)", w.editor_id, w.clouds.len());
-        let mut tex: Vec<String> = vec![climate.sun_texture.clone()];
-        tex.extend(w.clouds.iter().take(4).map(|c| c.texture.clone()));
-        let missing: Vec<String> = tex.iter().filter(|t| !self.renderer.textures.contains(t)).cloned().collect();
-        crate::world::loader::load_textures(&mut self.renderer, &self.vfs, missing);
-        let get = |p: &String| self.renderer.textures.get(p).flatten();
-        let sun = get(&climate.sun_texture).unwrap_or_else(|| self.renderer.white.clone());
-        let clouds = w.clouds.iter().take(4).filter_map(|c| get(&c.texture)).collect();
-        let (dev, sampler, black) = (&self.renderer.device, &self.renderer.sampler, self.renderer.black.clone());
-        self.renderer.sky.set_textures(dev, sampler, sun, clouds, black);
-        self.sky = Some((w, climate));
-    }
-
-    /// Evaluate the current weather at the current hour into a render environment.
-    pub fn sky_environment(&mut self) -> Option<Environment> {
-        let (w, c) = self.sky.as_ref()?;
-        let st = weather::evaluate(w, c, self.hour);
-        let env = Environment {
-            sun_dir: st.light_dir,
-            sun_color: st.sunlight,
-            ambient: st.ambient,
-            fog_near_color: st.fog_near_color,
-            fog_far_color: st.fog_far_color,
-            fog_near: st.fog_near,
-            fog_far: st.fog_far.max(st.fog_near + 1.0),
-            fog_power: st.fog_power,
-            fog_max: st.fog_max,
-            clear_color: st.horizon,
-            dalc: Some(st.dalc),
-            sky: true,
-        };
-        self.renderer.sky.set_state(st);
-        Some(env)
-    }
-
-    fn add_water(&mut self, planes: Vec<(f32, f32, f32, f32, FormId)>) {
-        let mut params = Vec::new();
-        for (x, y, size, h, wt) in planes {
-            if let Some(p) = crate::world::records::water_params(&self.lo, wt) {
-                params.push((x, y, size, h, p));
-            }
-        }
-        let tex: Vec<String> = params
-            .iter()
-            .map(|p| p.4.noise_texture.clone())
-            .filter(|t| !self.renderer.textures.contains(t))
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
-        crate::world::loader::load_textures(&mut self.renderer, &self.vfs, tex);
-        for (x, y, size, h, p) in params {
-            let plane = self.renderer.build_water(x, y, size, h, &p);
-            self.scene.water.push(plane);
-        }
-    }
-
-    pub fn camera_copy(&self) -> Camera {
-        Camera { position: self.camera.position, yaw: self.camera.yaw, pitch: self.camera.pitch, fov_y: self.camera.fov_y }
-    }
-
-    pub fn ground_height(&self, p: glam::Vec2) -> Option<f32> {
-        let (x, y) = ((p.x / 4096.0).floor() as i32, (p.y / 4096.0).floor() as i32);
-        self.lands.iter().find(|l| l.x == x && l.y == y).map(|l| l.height_at(p))
-    }
-
-    pub fn load_exterior(&mut self, world: FormId, cx: i32, cy: i32, radius: i32) -> Result<()> {
-        let t = Instant::now();
-        let wi = self.lo.world(world).context("worldspace not indexed")?.clone();
-        let mut objects = Vec::new();
-        let mut lights = Vec::new();
-        let mut doors = Vec::new();
-        for y in cy - radius..=cy + radius {
-            for x in cx - radius..=cx + radius {
-                if let Some(&cell_id) = wi.cells.get(&(x, y)) {
-                    let idx = self.lo.cell(cell_id).cloned().unwrap_or_default();
-                    for &r in idx.temporary.iter().chain(idx.persistent.iter()) {
-                        cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
-                    }
-                }
-            }
-        }
-        // Persistent references of a worldspace live in one special cell; pick those nearby.
-        if let Some(pc) = wi.persistent_cell
-            && let Some(idx) = self.lo.cell(pc)
-        {
-            let mut tmp = Vec::new();
-            for &r in idx.persistent.iter().chain(idx.temporary.iter()) {
-                cell::add_reference(&self.lo, r, &mut tmp, &mut lights, &mut doors);
-            }
-            let lo_x = ((cx - radius) * 4096) as f32;
-            let hi_x = ((cx + radius + 1) * 4096) as f32;
-            let lo_y = ((cy - radius) * 4096) as f32;
-            let hi_y = ((cy + radius + 1) * 4096) as f32;
-            objects.extend(tmp.into_iter().filter(|o| {
-                let p = o.transform.w_axis;
-                p.x >= lo_x && p.x < hi_x && p.y >= lo_y && p.y < hi_y
-            }));
-        }
-        self.setup_weather(world);
-        let env = self.sky_environment().unwrap_or_default();
-        self.build_scene(&objects, &lights, env);
-
-        // Landscape
-        let default_height = self
-            .lo
-            .get(world)
-            .and_then(|w| w.get(b"DNAM").map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap())))
-            .unwrap_or(-2048.0);
-        let mut lands = Vec::new();
-        for y in cy - radius..=cy + radius {
-            for x in cx - radius..=cx + radius {
-                if let Some(&cell_id) = wi.cells.get(&(x, y))
-                    && let Some(land) = self.lo.cell(cell_id).and_then(|c| c.land)
-                    && let Some(l) = terrain::load_land(&self.lo, land, x, y, default_height)
-                {
-                    lands.push(l);
-                }
-            }
-        }
-        let mut tex = HashSet::new();
-        for l in &lands {
-            for q in &l.quadrants {
-                for layer in &q.layers {
-                    if !self.renderer.textures.contains(&layer.diffuse) {
-                        tex.insert(layer.diffuse.clone());
-                    }
-                    if let Some(n) = &layer.normal
-                        && !self.renderer.textures.contains(n)
-                    {
-                        tex.insert(n.clone());
-                    }
-                }
-            }
-        }
-        crate::world::loader::load_textures(&mut self.renderer, &self.vfs, tex.into_iter().collect());
-        for l in &lands {
-            let chunks = self.renderer.build_terrain(l);
-            self.scene.terrain.extend(chunks);
-            self.physics.add_terrain(l);
-        }
-        self.lands = lands;
-
-        // Water planes
-        let (default_water, world_water) = {
-            let w = self.lo.get(world);
-            let h = w.as_ref().and_then(|w| w.get(b"DNAM").map(|d| f32::from_le_bytes(d[4..8].try_into().unwrap()))).unwrap_or(0.0);
-            let t = w.as_ref().and_then(|w| w.get(b"NAM2").map(|d| w.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))));
-            (h, t)
-        };
-        let mut planes = Vec::new();
-        for y in cy - radius..=cy + radius {
-            for x in cx - radius..=cx + radius {
-                let Some(&cell_id) = wi.cells.get(&(x, y)) else { continue };
-                let Some(info) = crate::world::records::cell_info(&self.lo, cell_id) else { continue };
-                let h = info.water_height.unwrap_or(default_water);
-                if h >= 1.0e30 {
-                    continue;
-                }
-                let wt = if info.water_type.is_null() { world_water.unwrap_or(FormId(0x18)) } else { info.water_type };
-                planes.push((x, y, h, wt));
-            }
-        }
-        self.add_water(planes.into_iter().map(|(x, y, h, wt)| (x as f32 * 4096.0, y as f32 * 4096.0, 4096.0, h, wt)).collect());
-        let p = glam::Vec2::new(cx as f32 * 4096.0 + 2048.0, cy as f32 * 4096.0 + 2048.0);
-        let ground = self.ground_height(p).unwrap_or(0.0);
-        self.camera.position = p.extend(ground + 150.0);
-        log::info!("exterior loaded in {:?}", t.elapsed());
-        Ok(())
-    }
-}
-
-fn interior_environment(l: &Lighting) -> Environment {
-    Environment {
-        dalc: l.dalc,
-        sky: false,
-        sun_dir: -l.directional_dir(),
-        sun_color: l.directional,
-        ambient: l.ambient,
-        fog_near_color: l.fog_near_color,
-        fog_far_color: l.fog_far_color,
-        fog_near: l.fog_near,
-        fog_far: if l.fog_far > l.fog_near { l.fog_far } else { l.fog_near + 1.0 },
-        fog_power: if l.fog_power > 0.0 { l.fog_power } else { 1.0 },
-        fog_max: if l.fog_max > 0.0 { l.fog_max } else { 1.0 },
-        clear_color: l.fog_far_color,
-    }
-}
+use crate::engine::Engine;
+use crate::player::MoveInput;
+use crate::render::Renderer;
 
 fn init_data(opts: &Options) -> Result<(LoadOrder, vfs::Vfs)> {
     let data_dir = match &opts.data_dir {
@@ -370,35 +58,21 @@ async fn create_device(instance: &wgpu::Instance, surface: Option<&wgpu::Surface
 }
 
 fn setup_engine(opts: &Options, renderer: Renderer, lo: LoadOrder, vfs: vfs::Vfs) -> Result<Engine> {
-    let mut engine = Engine {
-        lo,
-        vfs,
-        renderer,
-        models: ModelCache::default(),
-        scene: Scene::default(),
-        camera: Camera { position: Vec3::ZERO, yaw: 0.0, pitch: 0.0, fov_y: 65f32.to_radians() },
-        lands: Vec::new(),
-        hour: opts.hour,
-        sky: None,
-        forced_weather: opts.weather.clone(),
-        physics: Physics::new(),
-        player: Player::new(Vec3::ZERO),
-    };
+    let mut engine = Engine::new(lo, vfs, renderer, opts.hour, opts.weather.clone(), opts.radius);
     if let Some(c) = &opts.cell {
         let id = engine.resolve_form(c).with_context(|| format!("unknown cell {c}"))?;
-        let idx = engine.lo.cell(id).cloned().unwrap_or_default();
-        match (idx.world, idx.grid) {
-            (Some(w), Some((x, y))) => engine.load_exterior(w, x, y, opts.radius)?,
-            _ => engine.load_interior(id)?,
+        let exterior = engine.lo.cell(id).and_then(|c| c.world);
+        match (exterior, opts.position) {
+            (Some(w), Some(p)) => engine.enter_exterior(w, p, opts.yaw.unwrap_or(0.0))?,
+            (None, Some(p)) => engine.enter_interior(id, Some((p, opts.yaw.unwrap_or(0.0))))?,
+            _ => engine.center_on_cell(id)?,
         }
     } else {
         let wname = opts.world.clone().unwrap_or_else(|| "Tamriel".into());
         let w = engine.resolve_form(&wname).with_context(|| format!("unknown worldspace {wname}"))?;
-        let (x, y) = opts.grid.unwrap_or((5, -3));
-        engine.load_exterior(w, x, y, opts.radius)?;
-    }
-    if let Some(p) = opts.position {
-        engine.camera.position = p;
+        let (x, y) = opts.grid.unwrap_or((4, -12));
+        let p = opts.position.unwrap_or(Vec3::new((x as f32 + 0.5) * 4096.0, (y as f32 + 0.5) * 4096.0, -100_000.0));
+        engine.enter_exterior(w, p, opts.yaw.unwrap_or(0.0))?;
     }
     if let Some(y) = opts.yaw {
         engine.camera.yaw = y;
@@ -406,8 +80,6 @@ fn setup_engine(opts: &Options, renderer: Renderer, lo: LoadOrder, vfs: vfs::Vfs
     if let Some(p) = opts.pitch {
         engine.camera.pitch = p;
     }
-    engine.physics.step(1.0 / 60.0);
-    engine.player = Player::new(engine.camera.position);
     Ok(engine)
 }
 
@@ -418,17 +90,28 @@ pub fn run(opts: Options) -> Result<()> {
         let (_adapter, device, queue) = pollster::block_on(create_device(&instance, None))?;
         let renderer = Renderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm, opts.width, opts.height);
         let mut engine = setup_engine(&opts, renderer, lo, vfs)?;
+        if let Some(n) = opts.use_door {
+            let doors = engine.load_doors();
+            for d in &doors {
+                log::info!("door {} at {:?} -> {:?}", d.ref_id, d.position, d.destination);
+            }
+            let d = doors.get(n).context("no such door")?;
+            let (dest, pos, rot) = d.destination.unwrap();
+            engine.teleport_through(dest, pos, rot.z)?;
+        }
         if let Some(frames) = opts.simulate {
             let input = MoveInput { forward: 1.0, run: true, ..Default::default() };
             for i in 0..frames {
-                engine.physics.step(1.0 / 60.0);
-                let cam = Camera { ..engine.camera_copy() };
-                engine.player.update(&engine.physics, &cam, input, 1.0 / 60.0);
+                engine.update(input, 1.0 / 60.0, 20.0);
                 if i % 30 == 0 {
-                    log::info!("sim frame {i}: pos {:?} grounded {}", engine.player.position, engine.player.grounded);
+                    log::info!(
+                        "sim frame {i}: pos {:?} grounded {} looking at {:?}",
+                        engine.player.position,
+                        engine.player.grounded,
+                        engine.look_target
+                    );
                 }
             }
-            engine.camera.position = engine.player.eye();
         }
         let pixels = engine.renderer.render_to_image(&engine.scene, &engine.camera);
         log::info!("render stats: {:?}", engine.renderer.stats);
@@ -558,6 +241,11 @@ impl ApplicationHandler for App {
                                     el.exit();
                                 }
                             }
+                            if code == KeyCode::KeyE && !event.repeat
+                                && let Err(e) = s.engine.activate()
+                            {
+                                log::error!("activation failed: {e:#}");
+                            }
                             if code == KeyCode::KeyN && !event.repeat {
                                 s.engine.player.noclip = !s.engine.player.noclip;
                                 log::info!("noclip {}", s.engine.player.noclip);
@@ -587,20 +275,8 @@ impl ApplicationHandler for App {
                 let dt = (now - s.last).as_secs_f32().min(0.1);
                 s.last = now;
                 let input = move_input(&s.keys);
-                s.engine.physics.step(dt);
-                let cam = s.engine.camera_copy();
-                s.engine.player.update(&s.engine.physics, &cam, input, dt);
-                s.engine.camera.position = s.engine.player.eye();
-                s.engine.renderer.time += dt;
-                // Skyrim's default timescale: 20 game seconds per real second.
-                let mut scale = 20.0;
-                if s.keys.contains(&KeyCode::KeyT) {
-                    scale = 2000.0;
-                }
-                s.engine.hour = (s.engine.hour + dt * scale / 3600.0).rem_euclid(24.0);
-                if let Some(env) = s.engine.sky_environment() {
-                    s.engine.scene.env = env;
-                }
+                let scale = if s.keys.contains(&KeyCode::KeyT) { 2000.0 } else { 20.0 };
+                s.engine.update(input, dt, scale);
                 let frame = match s.surface.get_current_texture() {
                     wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
                     wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
@@ -616,8 +292,9 @@ impl ApplicationHandler for App {
                 if s.fps_timer.elapsed().as_secs_f32() >= 1.0 {
                     let st = s.engine.renderer.stats;
                     let p = s.engine.camera.position;
+                    let target = s.engine.look_target.as_ref().map(|t| format!(" | [E] {}", t.1)).unwrap_or_default();
                     s.window.set_title(&format!(
-                        "vibe_rm | {} fps | {} draws, {} inst | pos {:.0},{:.0},{:.0} | {:02}:{:02}",
+                        "vibe_rm | {} fps | {} draws, {} inst | pos {:.0},{:.0},{:.0} | {:02}:{:02}{}",
                         s.frames,
                         st.draws,
                         st.instances,
@@ -625,7 +302,8 @@ impl ApplicationHandler for App {
                         p.y,
                         p.z,
                         s.engine.hour as u32,
-                        (s.engine.hour.fract() * 60.0) as u32
+                        (s.engine.hour.fract() * 60.0) as u32,
+                        target
                     ));
                     s.frames = 0;
                     s.fps_timer = Instant::now();

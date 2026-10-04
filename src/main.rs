@@ -1,4 +1,5 @@
 mod app;
+mod engine;
 mod render;
 mod physics;
 mod player;
@@ -22,6 +23,7 @@ pub struct Options {
     pub hour: f32,
     pub weather: Option<String>,
     pub simulate: Option<u32>,
+    pub use_door: Option<usize>,
 }
 
 fn parse_args() -> Result<Options> {
@@ -56,6 +58,7 @@ fn parse_args() -> Result<Options> {
             "--hour" => o.hour = val()?.parse()?,
             "--weather" => o.weather = Some(val()?),
             "--simulate" => o.simulate = Some(val()?.parse()?),
+            "--use-door" => o.use_door = Some(val()?.parse()?),
             "-h" | "--help" => {
                 println!(
                     "vibe_rm - a Creation Engine (Skyrim SE) compatible engine\n\n\
