@@ -320,6 +320,9 @@ pub enum Block {
     Alpha(AlphaProperty),
     ExtraData(ExtraData),
     CollisionObject(crate::collision::CollisionObject),
+    SkinInstance(crate::skin::SkinInstance),
+    SkinData(crate::skin::SkinData),
+    SkinPartition(Box<crate::skin::SkinPartition>),
     RigidBody(Box<crate::collision::RigidBody>),
     Shape(crate::collision::Shape),
     Unknown(String),
@@ -802,6 +805,10 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             }
             Block::CollisionObject(c)
         }
+        "NiSkinInstance" => Block::SkinInstance(crate::skin::skin_instance(r, false)?),
+        "BSDismemberSkinInstance" => Block::SkinInstance(crate::skin::skin_instance(r, true)?),
+        "NiSkinData" => Block::SkinData(crate::skin::skin_data(r)?),
+        "NiSkinPartition" => Block::SkinPartition(Box::new(crate::skin::skin_partition(r)?)),
         "bhkRigidBody" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, false)?)),
         "bhkRigidBodyT" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, true)?)),
         _ => match crate::collision::parse_shape(ty, r)? {

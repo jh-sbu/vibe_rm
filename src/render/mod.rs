@@ -13,7 +13,7 @@ use std::sync::Arc;
 use glam::{Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
-use model::{BlendMode, CpuModel, MaterialDesc, ShaderKind, Vertex};
+use model::{BlendMode, CpuModel, MaterialDesc, ShaderKind, SkinVertex, Vertex};
 use texture::{GpuTexture, TextureCache};
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -50,6 +50,7 @@ struct MaterialUniform {
     params: [f32; 4],
     flags: [u32; 4],
     falloff: [f32; 4],
+    tint: [f32; 4],
 }
 
 #[repr(C)]
@@ -59,8 +60,16 @@ struct InstanceData {
     lights: [u32; 4],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct SkinInstanceData {
+    palette_base: u32,
+    lights: [u32; 4],
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PipelineKey {
+    pub skinned: bool,
     pub blend: BlendMode,
     pub double_sided: bool,
     pub z_write: bool,
@@ -81,8 +90,19 @@ pub struct GpuPart {
     pub bound_radius: f32,
 }
 
+pub struct GpuSkinnedPart {
+    pub vbuf: wgpu::Buffer,
+    pub ibuf: wgpu::Buffer,
+    pub index_count: u32,
+    pub material: Arc<GpuMaterial>,
+    pub bone_names: Vec<String>,
+    pub skin_to_bone: Vec<Mat4>,
+    pub name: String,
+}
+
 pub struct GpuModel {
     pub parts: Vec<GpuPart>,
+    pub skinned: Vec<GpuSkinnedPart>,
     pub bound_center: Vec3,
     pub bound_radius: f32,
 }
@@ -142,6 +162,32 @@ impl Default for Environment {
     }
 }
 
+/// One skinned shape of an actor, with its bones mapped onto the actor's skeleton.
+pub struct ActorMesh {
+    pub model: Arc<GpuModel>,
+    pub part: usize,
+    /// Mesh bone index -> skeleton bone index.
+    pub bone_map: Vec<usize>,
+}
+
+/// A posed, skinned character.
+pub struct ActorInstance {
+    pub meshes: Vec<ActorMesh>,
+    /// Rigid (non-skinned) models attached to skeleton bones, e.g. weapons.
+    pub attachments: Vec<(Arc<GpuModel>, usize, Mat4)>,
+    pub transform: Mat4,
+    /// Model-space bone matrices for the current pose.
+    pub pose: Vec<Mat4>,
+    pub lights: [u16; 8],
+    pub radius: f32,
+}
+
+impl ActorInstance {
+    pub fn center(&self) -> Vec3 {
+        self.transform.transform_point3(Vec3::new(0.0, 0.0, 64.0))
+    }
+}
+
 /// Identifies a loaded cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CellKey {
@@ -153,6 +199,7 @@ pub enum CellKey {
 #[derive(Default)]
 pub struct RenderCell {
     pub instances: Vec<Instance>,
+    pub actors: Vec<ActorInstance>,
     pub terrain: Vec<terrain::TerrainChunk>,
     pub water: Vec<water::WaterPlane>,
 }
@@ -194,7 +241,29 @@ impl Scene {
                 inst.lights[slot] = *i;
             }
         }
+        for a in self.cells.values_mut().flat_map(|c| c.actors.iter_mut()) {
+            a.lights = pick_lights(lights, a.center(), a.radius);
+        }
     }
+}
+
+fn pick_lights(lights: &[GpuLight], center: Vec3, radius: f32) -> [u16; 8] {
+    let mut cands: Vec<(f32, u16)> = Vec::new();
+    for (i, l) in lights.iter().enumerate() {
+        let p = Vec3::new(l.pos_radius[0], l.pos_radius[1], l.pos_radius[2]);
+        let r = l.pos_radius[3];
+        let d = p.distance(center);
+        if d < r + radius {
+            let lum = l.color[0] + l.color[1] + l.color[2];
+            cands.push((-(lum * (1.0 - (d / (r + radius)).min(1.0))), i as u16));
+        }
+    }
+    cands.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut out = [0xFFFF; 8];
+    for (slot, (_, i)) in cands.iter().take(8).enumerate() {
+        out[slot] = *i;
+    }
+    out
 }
 
 pub struct Camera {
@@ -248,6 +317,11 @@ pub struct Renderer {
     frame_buf: wgpu::Buffer,
     light_buf: wgpu::Buffer,
     frame_bg: wgpu::BindGroup,
+    frame_bgl: wgpu::BindGroupLayout,
+    palette_buf: wgpu::Buffer,
+    palette_cap: usize,
+    skin_instance_buf: wgpu::Buffer,
+    skin_instance_cap: usize,
     material_bgl: wgpu::BindGroupLayout,
     pipeline_layout: wgpu::PipelineLayout,
     shader: wgpu::ShaderModule,
@@ -296,6 +370,16 @@ impl Renderer {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -356,14 +440,9 @@ impl Renderer {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let frame_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("frame"),
-            layout: &frame_bgl,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: frame_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: light_buf.as_entire_binding() },
-            ],
-        });
+        let palette_cap = 4096;
+        let palette_buf = Self::make_palette(&device, palette_cap);
+        let frame_bg = Self::make_frame_bg(&device, &frame_bgl, &frame_buf, &light_buf, &palette_buf);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("main"),
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -386,6 +465,7 @@ impl Renderer {
         let flat_normal = Arc::new(texture::solid(&device, &queue, [128, 128, 255, 0], "flat_normal"));
         let black = Arc::new(texture::solid(&device, &queue, [0, 0, 0, 255], "black"));
         let depth_view = Self::make_depth(&device, width, height);
+        let skin_instance_buf = Self::make_vbuf(&device, 1024 * std::mem::size_of::<SkinInstanceData>(), "skin instances");
         let terrain = terrain::TerrainPipeline::new(&device, &frame_bgl, color_format);
         let sky = sky::SkyRenderer::new(&device, color_format);
         let water = water::WaterPipeline::new(&device, &frame_bgl, color_format);
@@ -403,6 +483,11 @@ impl Renderer {
             frame_buf,
             light_buf,
             frame_bg,
+            frame_bgl,
+            palette_buf,
+            palette_cap,
+            skin_instance_buf,
+            skin_instance_cap: 1024,
             material_bgl,
             pipeline_layout,
             shader,
@@ -416,6 +501,42 @@ impl Renderer {
             black,
             stats: FrameStats::default(),
         }
+    }
+
+    fn make_palette(device: &wgpu::Device, cap: usize) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("bone palette"),
+            size: (cap * 64) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
+    fn make_vbuf(device: &wgpu::Device, size: usize, label: &str) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: size as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
+    fn make_frame_bg(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        frame: &wgpu::Buffer,
+        lights: &wgpu::Buffer,
+        palette: &wgpu::Buffer,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("frame"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: frame.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: palette.as_entire_binding() },
+            ],
+        })
     }
 
     fn make_depth(device: &wgpu::Device, w: u32, h: u32) -> wgpu::TextureView {
@@ -454,6 +575,35 @@ impl Renderer {
         let inst_attrs = wgpu::vertex_attr_array![
             6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4, 10 => Uint32x4
         ];
+        let skin_attrs = wgpu::vertex_attr_array![
+            0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Float32x2, 5 => Float32x4,
+            11 => Uint32x4, 12 => Float32x4
+        ];
+        let skin_inst_attrs = wgpu::vertex_attr_array![13 => Uint32, 14 => Uint32x4];
+        let static_buffers = [
+            wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Vertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &vertex_attrs,
+            },
+            wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<InstanceData>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &inst_attrs,
+            },
+        ];
+        let skinned_buffers = [
+            wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<SkinVertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &skin_attrs,
+            },
+            wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<SkinInstanceData>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &skin_inst_attrs,
+            },
+        ];
         let blend = match key.blend {
             BlendMode::Opaque => None,
             BlendMode::Blend(src, dst) => Some(wgpu::BlendState {
@@ -474,20 +624,9 @@ impl Renderer {
             layout: Some(&self.pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &self.shader,
-                entry_point: Some("vs_main"),
+                entry_point: Some(if key.skinned { "vs_skinned" } else { "vs_main" }),
                 compilation_options: Default::default(),
-                buffers: &[
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Vertex>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &vertex_attrs,
-                    },
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<InstanceData>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &inst_attrs,
-                    },
-                ],
+                buffers: if key.skinned { &skinned_buffers } else { &static_buffers },
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -547,10 +686,11 @@ impl Renderer {
                 m.alpha,
                 m.alpha_test.unwrap_or(-1.0),
                 if has_normal && m.kind == ShaderKind::Lit { 1.0 } else { 0.0 },
-                if has_glow { 1.0 } else { 0.0 },
+                if has_glow && m.shader_type != 4 { 1.0 } else if has_glow { 2.0 } else { 0.0 },
             ],
-            flags: [m.flags1, m.flags2, if m.kind == ShaderKind::Effect { 1 } else { 0 }, 0],
+            flags: [m.flags1, m.flags2, if m.kind == ShaderKind::Effect { 1 } else { 0 }, m.shader_type],
             falloff: m.falloff.to_array(),
+            tint: m.tint.extend(1.0).to_array(),
         };
         let ubuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("material"),
@@ -569,6 +709,7 @@ impl Renderer {
             ],
         });
         let key = PipelineKey {
+            skinned: false,
             blend: m.blend,
             double_sided: m.double_sided,
             z_write: m.z_write || m.blend == BlendMode::Opaque,
@@ -599,7 +740,31 @@ impl Renderer {
                 bound_radius: m.bound_radius,
             });
         }
-        GpuModel { parts, bound_center: cpu.bound_center, bound_radius: cpu.bound_radius }
+        let mut skinned = Vec::with_capacity(cpu.skinned.len());
+        for m in &cpu.skinned {
+            let vbuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&m.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            let ibuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&m.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+            let mut mat = self.create_material(&m.material);
+            mat.key.skinned = true;
+            skinned.push(GpuSkinnedPart {
+                vbuf,
+                ibuf,
+                index_count: m.indices.len() as u32,
+                material: Arc::new(mat),
+                bone_names: m.bone_names.clone(),
+                skin_to_bone: m.skin_to_bone.clone(),
+                name: m.name.clone(),
+            });
+        }
+        GpuModel { parts, skinned, bound_center: cpu.bound_center, bound_radius: cpu.bound_radius }
     }
 
     pub fn render(&mut self, scene: &Scene, camera: &Camera, target: &wgpu::TextureView) {
@@ -645,15 +810,7 @@ impl Renderer {
             }
             let mp = Arc::as_ptr(&inst.model);
             let l = inst.lights;
-            let data = InstanceData {
-                model: inst.transform.to_cols_array_2d(),
-                lights: [
-                    l[0] as u32 | (l[1] as u32) << 16,
-                    l[2] as u32 | (l[3] as u32) << 16,
-                    l[4] as u32 | (l[5] as u32) << 16,
-                    l[6] as u32 | (l[7] as u32) << 16,
-                ],
-            };
+            let data = InstanceData { model: inst.transform.to_cols_array_2d(), lights: pack_lights(l) };
             for (pi, part) in inst.model.parts.iter().enumerate() {
                 if part.material.key.blend == BlendMode::Opaque {
                     opaque.entry((mp, pi)).or_insert_with(|| (part, Vec::new())).1.push(data);
@@ -663,7 +820,68 @@ impl Renderer {
                 }
             }
         }
+        // Rigid attachments of actors (weapons, etc.) go through the static path.
+        for actor in scene.cells.values().flat_map(|c| c.actors.iter()) {
+            if !frustum.sphere_visible(actor.center(), actor.radius) {
+                continue;
+            }
+            for (model, bone, local) in &actor.attachments {
+                let xf = actor.transform * actor.pose.get(*bone).copied().unwrap_or(Mat4::IDENTITY) * *local;
+                let data = InstanceData { model: xf.to_cols_array_2d(), lights: pack_lights(actor.lights) };
+                for (pi, part) in model.parts.iter().enumerate() {
+                    if part.material.key.blend == BlendMode::Opaque {
+                        opaque.entry((Arc::as_ptr(model), pi)).or_insert_with(|| (part, Vec::new())).1.push(data);
+                    } else {
+                        let c = xf.transform_point3(part.bound_center);
+                        blended.push((c.distance_squared(camera.position), part, data));
+                    }
+                }
+            }
+        }
         blended.sort_by(|a, b| b.0.total_cmp(&a.0));
+
+        // Skinned actors: build the bone palette.
+        let mut palette: Vec<Mat4> = Vec::new();
+        let mut skin_inst: Vec<SkinInstanceData> = Vec::new();
+        let mut skin_draws: Vec<(&GpuSkinnedPart, u32)> = Vec::new();
+        for actor in scene.cells.values().flat_map(|c| c.actors.iter()) {
+            if !frustum.sphere_visible(actor.center(), actor.radius) {
+                stats.culled += 1;
+                continue;
+            }
+            for mesh in &actor.meshes {
+                let Some(part) = mesh.model.skinned.get(mesh.part) else { continue };
+                let base = palette.len() as u32;
+                for (i, &b) in mesh.bone_map.iter().enumerate() {
+                    let bone = actor.pose.get(b).copied().unwrap_or(Mat4::IDENTITY);
+                    palette.push(actor.transform * bone * part.skin_to_bone.get(i).copied().unwrap_or(Mat4::IDENTITY));
+                }
+                if mesh.bone_map.is_empty() {
+                    palette.push(actor.transform);
+                }
+                skin_inst.push(SkinInstanceData { palette_base: base, lights: pack_lights(actor.lights) });
+                skin_draws.push((part, skin_inst.len() as u32 - 1));
+            }
+        }
+        if palette.len() > self.palette_cap {
+            self.palette_cap = palette.len().next_power_of_two();
+            self.palette_buf = Self::make_palette(&self.device, self.palette_cap);
+            self.frame_bg = Self::make_frame_bg(&self.device, &self.frame_bgl, &self.frame_buf, &self.light_buf, &self.palette_buf);
+        }
+        if !palette.is_empty() {
+            self.queue.write_buffer(&self.palette_buf, 0, bytemuck::cast_slice(&palette));
+        }
+        if skin_inst.len() > self.skin_instance_cap {
+            self.skin_instance_cap = skin_inst.len().next_power_of_two();
+            self.skin_instance_buf =
+                Self::make_vbuf(&self.device, self.skin_instance_cap * std::mem::size_of::<SkinInstanceData>(), "skin instances");
+        }
+        if !skin_inst.is_empty() {
+            self.queue.write_buffer(&self.skin_instance_buf, 0, bytemuck::cast_slice(&skin_inst));
+        }
+        for (part, _) in &skin_draws {
+            self.pipeline(part.material.key);
+        }
 
         // Flatten into one instance buffer.
         let mut all: Vec<InstanceData> = Vec::new();
@@ -755,6 +973,22 @@ impl Renderer {
             for (part, range) in &draws[..opaque_count] {
                 draw(&mut pass, part, range.clone());
             }
+            let mut skinned_draws = 0;
+            if !skin_draws.is_empty() {
+                pass.set_vertex_buffer(1, self.skin_instance_buf.slice(..));
+                for (part, i) in &skin_draws {
+                    if current.get() != Some(part.material.key) {
+                        pass.set_pipeline(&self.pipelines[&part.material.key]);
+                        current.set(Some(part.material.key));
+                    }
+                    pass.set_bind_group(1, &part.material.bind_group, &[]);
+                    pass.set_vertex_buffer(0, part.vbuf.slice(..));
+                    pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..part.index_count, 0, *i..*i + 1);
+                    skinned_draws += 1;
+                }
+                pass.set_vertex_buffer(1, self.instance_buf.slice(..));
+            }
             if scene.cells.values().any(|c| !c.water.is_empty()) {
                 pass.set_pipeline(&self.water.pipeline);
                 for w in scene.cells.values().flat_map(|c| c.water.iter()) {
@@ -771,6 +1005,8 @@ impl Renderer {
             for (part, range) in &draws[opaque_count..] {
                 draw(&mut pass, part, range.clone());
             }
+            drop(draw);
+            stats.draws += skinned_draws;
         }
         self.queue.submit([enc.finish()]);
         self.stats = stats;
@@ -852,6 +1088,15 @@ impl Renderer {
         }
         out
     }
+}
+
+fn pack_lights(l: [u16; 8]) -> [u32; 4] {
+    [
+        l[0] as u32 | (l[1] as u32) << 16,
+        l[2] as u32 | (l[3] as u32) << 16,
+        l[4] as u32 | (l[5] as u32) << 16,
+        l[6] as u32 | (l[7] as u32) << 16,
+    ]
 }
 
 fn blend_factor(f: u16) -> wgpu::BlendFactor {

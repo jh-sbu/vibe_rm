@@ -51,6 +51,10 @@ pub struct MaterialDesc {
     pub z_test: bool,
     /// Effect shader view-angle falloff (start, stop, start opacity, stop opacity).
     pub falloff: Vec4,
+    /// BSLightingShaderProperty shader type (4 = FaceGen, 5 = skin tint, 6 = hair tint, ...).
+    pub shader_type: u32,
+    /// Skin / hair tint colour.
+    pub tint: Vec3,
 }
 
 impl Default for MaterialDesc {
@@ -74,6 +78,8 @@ impl Default for MaterialDesc {
             z_write: true,
             z_test: true,
             falloff: Vec4::new(1.0, 0.0, 1.0, 1.0),
+            shader_type: 0,
+            tint: Vec3::ONE,
         }
     }
 }
@@ -86,19 +92,46 @@ pub struct CpuMesh {
     pub bound_radius: f32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SkinVertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub tangent: [f32; 3],
+    pub bitangent: [f32; 3],
+    pub uv: [f32; 2],
+    pub color: [f32; 4],
+    pub bones: [u32; 4],
+    pub weights: [f32; 4],
+}
+
+/// A skinned shape: vertices in skin space, bound to named bones.
+pub struct CpuSkinnedMesh {
+    pub vertices: Vec<SkinVertex>,
+    pub indices: Vec<u32>,
+    pub material: MaterialDesc,
+    pub bone_names: Vec<String>,
+    /// Skin-space -> bone-space transform for each bone.
+    pub skin_to_bone: Vec<Mat4>,
+    /// Name of the shape, used for e.g. dismemberment and head part matching.
+    pub name: String,
+}
+
 pub struct CpuModel {
     pub meshes: Vec<CpuMesh>,
+    pub skinned: Vec<CpuSkinnedMesh>,
     pub bound_center: Vec3,
     pub bound_radius: f32,
 }
 
 pub fn convert(nif: &Nif) -> CpuModel {
     let mut meshes = Vec::new();
+    let mut skinned = Vec::new();
     for &root in &nif.roots {
-        walk(nif, Ref(root as i32), Mat4::IDENTITY, &mut meshes, 0);
+        walk(nif, Ref(root as i32), Mat4::IDENTITY, &mut meshes, &mut skinned, 0);
     }
     let (bound_center, bound_radius) = bounds_of(meshes.iter().map(|m| (m.bound_center, m.bound_radius)));
-    CpuModel { meshes, bound_center, bound_radius }
+    CpuModel { meshes, skinned, bound_center, bound_radius }
 }
 
 pub fn bounds_of(spheres: impl Iterator<Item = (Vec3, f32)>) -> (Vec3, f32) {
@@ -117,7 +150,7 @@ pub fn bounds_of(spheres: impl Iterator<Item = (Vec3, f32)>) -> (Vec3, f32) {
     (center, radius)
 }
 
-fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut Vec<CpuMesh>, depth: u32) {
+fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut Vec<CpuMesh>, skinned: &mut Vec<CpuSkinnedMesh>, depth: u32) {
     if depth > 64 {
         return;
     }
@@ -135,23 +168,37 @@ fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut Vec<CpuMesh>, depth: u32) {
             match n.kind {
                 NodeKind::Switch { index } => {
                     if let Some(&c) = n.children.get(index as usize) {
-                        walk(nif, c, world, out, depth + 1);
+                        walk(nif, c, world, out, skinned, depth + 1);
                     }
                 }
                 NodeKind::Lod => {
                     if let Some(&c) = n.children.first() {
-                        walk(nif, c, world, out, depth + 1);
+                        walk(nif, c, world, out, skinned, depth + 1);
                     }
                 }
                 _ => {
                     for &c in &n.children {
-                        walk(nif, c, world, out, depth + 1);
+                        walk(nif, c, world, out, skinned, depth + 1);
                     }
                 }
             }
         }
+        Block::TriShape(t) if !t.skin.is_none() => {
+            let mat = material(nif, t.shader, t.alpha);
+            if let Some(m) = build_skinned(nif, t.skin, &t.geometry, &av.net.name, mat) {
+                skinned.push(m);
+            }
+        }
+        Block::NiTriShape(g) | Block::NiTriStrips(g) if !g.skin.is_none() => {
+            if let Some(Block::TriShapeData(d)) = nif.get(g.data) {
+                let mat = material(nif, g.shader, g.alpha);
+                if let Some(m) = build_skinned(nif, g.skin, &d.geometry, &av.net.name, mat) {
+                    skinned.push(m);
+                }
+            }
+        }
         Block::TriShape(t) => {
-            if t.skin.is_none() && !t.geometry.triangles.is_empty() {
+            if !t.geometry.triangles.is_empty() {
                 let mat = material(nif, t.shader, t.alpha);
                 if let Some(m) = build_mesh(&t.geometry, world, mat) {
                     out.push(m);
@@ -189,6 +236,10 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
                 if s.flags2 & sf2::GLOW_MAP != 0 {
                     m.glow = t.get(2).and_then(|s| tex(s));
                 }
+                // FaceGen heads: the tint mask sits in slot 6; reuse the glow binding.
+                if s.shader_type == 4 {
+                    m.glow = t.get(6).and_then(|s| tex(s));
+                }
             }
             m.alpha = s.alpha;
             m.uv_offset = s.uv_offset;
@@ -200,6 +251,12 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
                 m.specular = s.specular_color * s.specular_strength;
             }
             m.glossiness = s.glossiness;
+            m.shader_type = s.shader_type;
+            m.tint = match s.shader_type {
+                5 => s.skin_tint_color,
+                6 => s.hair_tint_color,
+                _ => Vec3::ONE,
+            };
             m.double_sided = s.flags2 & sf2::DOUBLE_SIDED != 0;
             m.z_write = s.flags2 & sf2::ZBUFFER_WRITE != 0;
             m.z_test = s.flags1 & sf1::ZBUFFER_TEST != 0;
@@ -278,4 +335,113 @@ fn build_mesh(g: &Geometry, world: Mat4, material: MaterialDesc) -> Option<CpuMe
     let center = (min + max) * 0.5;
     let radius = (max - min).length() * 0.5;
     Some(CpuMesh { vertices, indices, material, bound_center: center, bound_radius: radius })
+}
+
+fn build_skinned(nif: &Nif, skin: Ref, shape_geom: &Geometry, name: &str, material: MaterialDesc) -> Option<CpuSkinnedMesh> {
+    let Some(Block::SkinInstance(si)) = nif.get(skin) else { return None };
+    let Some(Block::SkinData(sd)) = nif.get(si.data) else { return None };
+    let partition = match nif.get(si.partition) {
+        Some(Block::SkinPartition(p)) => Some(p.as_ref()),
+        _ => None,
+    };
+    let bone_names: Vec<String> =
+        si.bones.iter().map(|b| nif.get(*b).and_then(|b| b.av()).map(|a| a.net.name.clone()).unwrap_or_default()).collect();
+    let skin_to_bone: Vec<Mat4> = sd.bones.iter().map(|b| b.transform.to_mat4()).collect();
+
+    // SSE keeps the vertex data in the partition; LE in the shape (or its data block).
+    // BSDynamicTriShape keeps positions in the shape and everything else in the partition.
+    let merged;
+    let g = match partition {
+        Some(p) if !p.geometry.uvs.is_empty() || !p.geometry.positions.is_empty() => {
+            if p.geometry.positions.is_empty() {
+                let mut m = p.geometry.clone();
+                m.positions = shape_geom.positions.clone();
+                merged = m;
+                &merged
+            } else {
+                &p.geometry
+            }
+        }
+        _ => shape_geom,
+    };
+    let n = g.positions.len();
+    if n == 0 {
+        return None;
+    }
+    let mut bones = vec![[0u32; 4]; n];
+    let mut weights = vec![[0f32; 4]; n];
+    let mut indices: Vec<u32> = Vec::new();
+    match partition {
+        Some(p) => {
+            for part in &p.partitions {
+                let map = |i: usize| -> usize { if part.vertex_map.is_empty() { i } else { part.vertex_map[i] as usize } };
+                let sse = !p.geometry.uvs.is_empty() || !p.geometry.positions.is_empty();
+                for local in 0..part.num_vertices as usize {
+                    let gi = map(local);
+                    if gi >= n {
+                        continue;
+                    }
+                    let (bi, w) = if sse {
+                        (g.bone_indices.get(gi).copied().unwrap_or_default(), g.bone_weights.get(gi).copied().unwrap_or_default())
+                    } else {
+                        (part.bone_indices.get(local).copied().unwrap_or_default(), part.weights.get(local).copied().unwrap_or_default())
+                    };
+                    for k in 0..4 {
+                        bones[gi][k] = part.bones.get(bi[k] as usize).copied().unwrap_or(0) as u32;
+                        weights[gi][k] = w[k];
+                    }
+                }
+                for t in &part.triangles {
+                    // SSE triangles index the global buffer; LE ones the partition's vertex map.
+                    let tri = if sse { [t[0] as usize, t[1] as usize, t[2] as usize] } else { [map(t[0] as usize), map(t[1] as usize), map(t[2] as usize)] };
+                    if tri.iter().all(|&i| i < n) {
+                        indices.extend(tri.iter().map(|&i| i as u32));
+                    }
+                }
+            }
+        }
+        None => {
+            // Weights stored per bone in NiSkinData.
+            let mut count = vec![0usize; n];
+            for (bi, b) in sd.bones.iter().enumerate() {
+                for &(vi, w) in &b.weights {
+                    let vi = vi as usize;
+                    if vi < n && count[vi] < 4 {
+                        bones[vi][count[vi]] = bi as u32;
+                        weights[vi][count[vi]] = w;
+                        count[vi] += 1;
+                    }
+                }
+            }
+            for t in &g.triangles {
+                indices.extend_from_slice(&[t[0] as u32, t[1] as u32, t[2] as u32]);
+            }
+        }
+    }
+    if indices.is_empty() {
+        return None;
+    }
+    let mut vertices = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut w = weights[i];
+        let sum: f32 = w.iter().sum();
+        if sum > 0.0 {
+            for x in &mut w {
+                *x /= sum;
+            }
+        } else {
+            w = [1.0, 0.0, 0.0, 0.0];
+        }
+        vertices.push(SkinVertex {
+            position: g.positions[i].to_array(),
+            normal: g.normals.get(i).copied().unwrap_or(Vec3::Z).to_array(),
+            tangent: g.tangents.get(i).copied().unwrap_or(Vec3::X).to_array(),
+            bitangent: g.bitangents.get(i).copied().unwrap_or(Vec3::Y).to_array(),
+            uv: g.uvs.get(i).copied().unwrap_or(Vec2::ZERO).to_array(),
+            color: g.colors.get(i).copied().unwrap_or(Vec4::ONE).to_array(),
+            bones: bones[i],
+            weights: w,
+        });
+    }
+    Some(CpuSkinnedMesh { vertices, indices, material, bone_names, skin_to_bone, name: name.to_owned() })
 }

@@ -68,8 +68,9 @@ impl ModelCache {
         let mut tex: HashSet<String> = HashSet::new();
         for (_, m, _) in &cpu {
             if let Some(m) = m {
-                for mesh in &m.meshes {
-                    for t in [&mesh.material.diffuse, &mesh.material.normal, &mesh.material.glow].into_iter().flatten() {
+                let mats = m.meshes.iter().map(|x| &x.material).chain(m.skinned.iter().map(|x| &x.material));
+                for mat in mats {
+                    for t in [&mat.diffuse, &mat.normal, &mat.glow].into_iter().flatten() {
                         if !renderer.textures.contains(t) {
                             tex.insert(t.clone());
                         }
@@ -82,7 +83,7 @@ impl ModelCache {
 
         for (p, m, col) in cpu {
             self.collision.insert(p.clone(), col.map(Arc::new));
-            let g = m.filter(|m| !m.meshes.is_empty()).map(|m| Arc::new(renderer.upload_model(&m)));
+            let g = m.filter(|m| !m.meshes.is_empty() || !m.skinned.is_empty()).map(|m| Arc::new(renderer.upload_model(&m)));
             self.map.insert(p, g);
         }
         log::info!(

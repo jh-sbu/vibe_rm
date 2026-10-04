@@ -125,7 +125,27 @@ fn main() -> Result<()> {
             let n = nif::Nif::parse(&bytes)?;
             println!("bs version {} roots {:?}", n.header.bs_version, n.roots);
             for (i, b) in n.blocks.iter().enumerate() {
-                let s = format!("{b:?}");
+                let s = match b {
+                    nif::Block::TriShape(t) => format!(
+                        "TriShape name={} verts={} tris={} skin={:?} shader={:?} alpha={:?} desc={:016x} flags={:03x} xf={:?}",
+                        t.av.net.name, t.geometry.positions.len(), t.geometry.triangles.len(), t.skin, t.shader, t.alpha,
+                        t.vertex_desc, t.vertex_flags(), t.av.transform.translation
+                    ),
+                    nif::Block::SkinPartition(p) => format!(
+                        "SkinPartition verts={} desc={:016x} partitions={:?}",
+                        p.geometry.positions.len(),
+                        p.vertex_desc,
+                        p.partitions.iter().map(|q| (q.num_vertices, q.bones.len(), q.triangles.len(), q.vertex_map.len(), q.weights_per_vertex)).collect::<Vec<_>>()
+                    ),
+                    nif::Block::SkinData(d) => format!(
+                        "SkinData skin_xf={:?} bones={} first={:?}",
+                        d.skin_transform.translation, d.bones.len(), d.bones.first().map(|b| b.transform.translation)
+                    ),
+                    nif::Block::Shape(nif::Shape::CompressedMeshData { vertices, triangles }) => {
+                        format!("CompressedMeshData verts={} tris={}", vertices.len(), triangles.len())
+                    }
+                    other => format!("{other:?}"),
+                };
                 let s: String = s.chars().take(600).collect();
                 println!("[{i}] {}: {s}", n.block_type_name(i));
             }

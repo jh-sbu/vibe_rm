@@ -54,6 +54,7 @@ pub struct Engine {
     pending_loads: Vec<(i32, i32)>,
     /// Name of what the crosshair points at, if activatable.
     pub look_target: Option<(FormId, String)>,
+    skeletons: HashMap<String, Option<std::sync::Arc<crate::world::skeleton::Skeleton>>>,
 }
 
 pub fn grid_of(p: Vec2) -> (i32, i32) {
@@ -80,6 +81,7 @@ impl Engine {
             world_persistent: HashMap::new(),
             pending_loads: Vec::new(),
             look_target: None,
+            skeletons: HashMap::new(),
         }
     }
 
@@ -135,6 +137,70 @@ impl Engine {
         self.cells.insert(key, rt);
     }
 
+    fn skeleton(&mut self, path: &str) -> Option<std::sync::Arc<crate::world::skeleton::Skeleton>> {
+        if let Some(s) = self.skeletons.get(path) {
+            return s.clone();
+        }
+        let s = self
+            .vfs
+            .read(path)
+            .and_then(|d| nif::Nif::parse(&d).ok())
+            .map(|n| std::sync::Arc::new(crate::world::skeleton::Skeleton::from_nif(&n)));
+        if s.is_none() {
+            log::warn!("missing skeleton {path}");
+        }
+        self.skeletons.insert(path.to_owned(), s.clone());
+        s
+    }
+
+    /// Spawn actors (ACHR references) into a loaded cell.
+    fn spawn_actors(&mut self, key: CellKey, refs: &[FormId]) {
+        let mut descs = Vec::new();
+        for &r in refs {
+            let Some(rec) = self.lo.get(r) else { continue };
+            if rec.tag().0 != *b"ACHR" {
+                continue;
+            }
+            if let Some(d) = crate::world::actor::describe_actor(&self.lo, &rec) {
+                descs.push(d);
+            }
+        }
+        if descs.is_empty() {
+            return;
+        }
+        let paths: Vec<String> = descs.iter().flat_map(|d| d.models.iter().cloned()).collect();
+        self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        let mut actors = Vec::new();
+        for d in &descs {
+            let Some(skel) = self.skeleton(&d.skeleton) else { continue };
+            let pose = skel.model_space(&skel.bind_locals());
+            let mut meshes = Vec::new();
+            for m in &d.models {
+                let Some(model) = self.models.get(m) else {
+                    log::debug!("{}: missing model {m}", d.name);
+                    continue;
+                };
+                for (pi, part) in model.skinned.iter().enumerate() {
+                    let bone_map = part.bone_names.iter().map(|n| skel.find(n).unwrap_or(0)).collect();
+                    meshes.push(crate::render::ActorMesh { model: model.clone(), part: pi, bone_map });
+                }
+            }
+            log::debug!("actor {} {:?} {} meshes at {:?}", d.ref_id, d.name, meshes.len(), d.transform.w_axis.truncate());
+            actors.push(crate::render::ActorInstance {
+                meshes,
+                attachments: Vec::new(),
+                transform: d.transform,
+                pose,
+                lights: [0xFFFF; 8],
+                radius: 120.0,
+            });
+        }
+        log::info!("spawned {} actors", actors.len());
+        if let Some(rc) = self.scene.cells.get_mut(&key) {
+            rc.actors.extend(actors);
+        }
+    }
+
     fn unload_cell(&mut self, key: CellKey) {
         self.scene.cells.remove(&key);
         if let Some(rt) = self.cells.remove(&key) {
@@ -171,6 +237,12 @@ impl Engine {
         self.scene.env = interior_environment(&contents.lighting);
         let key = CellKey::Interior(cell_id);
         self.instantiate(key, &contents.objects, contents.lights.clone(), contents.doors.clone());
+        let refs: Vec<FormId> = self
+            .lo
+            .cell(cell_id)
+            .map(|c| c.persistent.iter().chain(c.temporary.iter()).copied().collect())
+            .unwrap_or_default();
+        self.spawn_actors(key, &refs);
         if contents.info.has_water
             && let Some(h) = contents.info.water_height
             && h < 1.0e30
@@ -269,6 +341,12 @@ impl Engine {
             }
         }
         self.instantiate(key, &objects, lights, doors);
+        let mut refs: Vec<FormId> = cell_id
+            .and_then(|c| self.lo.cell(c))
+            .map(|c| c.persistent.iter().chain(c.temporary.iter()).copied().collect())
+            .unwrap_or_default();
+        refs.extend(self.world_persistent.get(&(x, y)).cloned().unwrap_or_default());
+        self.spawn_actors(key, &refs);
 
         // Landscape
         let dnam = self.world_field(world, b"DNAM", 0x1).map(|d| d.0);

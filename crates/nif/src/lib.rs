@@ -7,11 +7,13 @@
 
 pub mod blocks;
 pub mod collision;
+pub mod skin;
 mod reader;
 
 use std::collections::HashMap;
 
 pub use blocks::*;
+pub use skin::{SkinData, SkinInstance, SkinPartition};
 pub use collision::{CollisionObject, HAVOK_SCALE, MotionSystem, RigidBody, Shape};
 use reader::Reader;
 

@@ -21,6 +21,7 @@ struct Light {
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var<storage, read> lights: array<Light>;
+@group(0) @binding(2) var<storage, read> palette: array<mat4x4<f32>>;
 
 struct Material {
     uv: vec4<f32>,          // offset.xy, scale.zw
@@ -29,6 +30,7 @@ struct Material {
     params: vec4<f32>,      // alpha, alpha test threshold (<0 = off), has normal map, has glow map
     flags: vec4<u32>,       // shader flags 1, shader flags 2, kind (0 lit, 1 effect), unused
     falloff: vec4<f32>,     // effect: start angle, stop angle, start opacity, stop opacity (cosines)
+    tint: vec4<f32>,        // skin / hair tint
 };
 
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
@@ -60,6 +62,10 @@ struct VOut {
     @location(4) uv: vec2<f32>,
     @location(5) color: vec4<f32>,
     @location(6) @interpolate(flat) light_idx: vec4<u32>,
+    // Model-to-world rotation, for model-space normal maps.
+    @location(7) mx: vec3<f32>,
+    @location(8) my: vec3<f32>,
+    @location(9) mz: vec3<f32>,
 };
 
 @vertex
@@ -76,6 +82,42 @@ fn vs_main(v: VIn) -> VOut {
     o.uv = v.uv * mat.uv.zw + mat.uv.xy;
     o.color = v.color;
     o.light_idx = v.light_idx;
+    return o;
+}
+
+struct SkinIn {
+    @location(0) pos: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) tangent: vec3<f32>,
+    @location(3) bitangent: vec3<f32>,
+    @location(4) uv: vec2<f32>,
+    @location(5) color: vec4<f32>,
+    @location(11) bones: vec4<u32>,
+    @location(12) weights: vec4<f32>,
+    @location(13) palette_base: u32,
+    @location(14) light_idx: vec4<u32>,
+};
+
+@vertex
+fn vs_skinned(v: SkinIn) -> VOut {
+    let b = v.palette_base;
+    let m = palette[b + v.bones.x] * v.weights.x
+          + palette[b + v.bones.y] * v.weights.y
+          + palette[b + v.bones.z] * v.weights.z
+          + palette[b + v.bones.w] * v.weights.w;
+    let world = m * vec4<f32>(v.pos, 1.0);
+    var o: VOut;
+    o.clip = frame.view_proj * world;
+    o.world_pos = world.xyz;
+    o.normal = (m * vec4<f32>(v.normal, 0.0)).xyz;
+    o.tangent = (m * vec4<f32>(v.tangent, 0.0)).xyz;
+    o.bitangent = (m * vec4<f32>(v.bitangent, 0.0)).xyz;
+    o.uv = v.uv * mat.uv.zw + mat.uv.xy;
+    o.color = v.color;
+    o.light_idx = v.light_idx;
+    o.mx = m[0].xyz;
+    o.my = m[1].xyz;
+    o.mz = m[2].xyz;
     return o;
 }
 
@@ -123,6 +165,15 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     if ((flags2 & SF2_VERTEX_COLORS) != 0u) {
         albedo *= in.color.rgb;
     }
+    let shader_type = mat.flags.w;
+    if (shader_type == 5u || shader_type == 6u) {
+        albedo *= mat.tint.rgb;
+    }
+    if (shader_type == 4u && mat.params.w > 1.5) {
+        // FaceGen tint mask, applied as an overlay.
+        let tint = textureSample(t_glow, s_main, in.uv).rgb;
+        albedo = clamp(albedo * tint * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
     if ((flags1 & SF1_VERTEX_ALPHA) != 0u) {
         alpha *= in.color.a;
     }
@@ -168,7 +219,9 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         let nt = textureSample(t_normal, s_main, in.uv);
         let tn = nt.xyz * 2.0 - 1.0;
         if ((flags1 & SF1_MODEL_SPACE_NORMALS) != 0u) {
-            n = normalize(tn);
+            // Model-space normal maps store X/Y/Z in R/B/G order in Skyrim.
+            let msn = vec3<f32>(tn.x, tn.z, tn.y);
+            n = normalize(mat3x3<f32>(in.mx, in.my, in.mz) * msn);
         } else {
             n = normalize(tn.x * normalize(in.bitangent) + tn.y * normalize(in.tangent) + tn.z * n);
             spec_mask = nt.a;
@@ -216,7 +269,7 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     }
 
     var emit = mat.emissive.rgb * mat.emissive.w;
-    if (mat.params.w > 0.5) {
+    if (mat.params.w > 0.5 && mat.params.w < 1.5) {
         emit *= textureSample(t_glow, s_main, in.uv).rgb;
     }
     diffuse += emit;

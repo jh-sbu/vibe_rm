@@ -323,6 +323,18 @@ impl LoadOrder {
     pub fn plugins(&self) -> &[PluginInfo] {
         &self.plugins
     }
+    /// The plugin that owns a global FormID's prefix, and the id local to it
+    /// (as used in e.g. FaceGen file names).
+    pub fn origin(&self, id: FormId) -> Option<(&str, u32)> {
+        let top = id.0 >> 24;
+        let (slot, local) = if top == 0xFE {
+            (Slot::Light(((id.0 >> 12) & 0xFFF) as u16), id.0 & 0xFFF)
+        } else {
+            (Slot::Full(top as u8), id.0 & 0x00FF_FFFF)
+        };
+        self.plugins.iter().find(|p| p.slot == slot).map(|p| (p.plugin.name(), local))
+    }
+
     pub fn record_count(&self) -> usize {
         self.records.len()
     }
