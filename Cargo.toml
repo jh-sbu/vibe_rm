@@ -50,6 +50,7 @@ egui = "0.36"
 egui-wgpu = "0.36"
 egui-winit = { version = "0.36", default-features = false, features = ["wayland", "x11"] }
 png = "0.17"
+cpal = "0.18"
 havok.workspace = true
 papyrus.workspace = true
 rapier3d = "0.36"

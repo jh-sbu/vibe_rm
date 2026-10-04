@@ -1,4 +1,5 @@
 mod app;
+mod audio;
 mod console;
 mod engine;
 mod render;
