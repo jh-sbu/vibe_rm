@@ -24,6 +24,7 @@ pub struct Options {
     pub weather: Option<String>,
     pub simulate: Option<u32>,
     pub use_door: Option<usize>,
+    pub bench: Option<u32>,
 }
 
 fn parse_args() -> Result<Options> {
@@ -59,6 +60,7 @@ fn parse_args() -> Result<Options> {
             "--weather" => o.weather = Some(val()?),
             "--simulate" => o.simulate = Some(val()?.parse()?),
             "--use-door" => o.use_door = Some(val()?.parse()?),
+            "--bench" => o.bench = Some(val()?.parse()?),
             "-h" | "--help" => {
                 println!(
                     "vibe_rm - a Creation Engine (Skyrim SE) compatible engine\n\n\

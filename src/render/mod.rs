@@ -776,6 +776,33 @@ impl Renderer {
         self.stats = stats;
     }
 
+    /// Render `frames` frames offscreen and return the average wall time per frame (GPU-synchronised).
+    pub fn bench(&mut self, scene: &Scene, camera: &Camera, frames: u32) -> std::time::Duration {
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("bench"),
+            size: wgpu::Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.color_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&Default::default());
+        self.render(scene, camera, &view);
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let t = std::time::Instant::now();
+        let mut cpu = std::time::Duration::ZERO;
+        for _ in 0..frames {
+            let c = std::time::Instant::now();
+            self.render(scene, camera, &view);
+            cpu += c.elapsed();
+            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        }
+        log::info!("bench: cpu {:?}/frame", cpu / frames.max(1));
+        t.elapsed() / frames.max(1)
+    }
+
     /// Render a frame into an offscreen texture and return RGBA8 pixels.
     pub fn render_to_image(&mut self, scene: &Scene, camera: &Camera) -> Vec<u8> {
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {

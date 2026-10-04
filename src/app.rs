@@ -113,6 +113,10 @@ pub fn run(opts: Options) -> Result<()> {
                 }
             }
         }
+        if let Some(n) = opts.bench {
+            let t = engine.renderer.bench(&engine.scene, &engine.camera, n);
+            log::info!("bench: {:?}/frame ({:.1} fps), {:?}", t, 1.0 / t.as_secs_f64(), engine.renderer.stats);
+        }
         let pixels = engine.renderer.render_to_image(&engine.scene, &engine.camera);
         log::info!("render stats: {:?}", engine.renderer.stats);
         let file = std::fs::File::create(&path)?;
@@ -305,6 +309,7 @@ impl ApplicationHandler for App {
                         (s.engine.hour.fract() * 60.0) as u32,
                         target
                     ));
+                    log::debug!("{} fps, {:?}", s.frames, st);
                     s.frames = 0;
                     s.fps_timer = Instant::now();
                 }
