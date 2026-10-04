@@ -239,6 +239,18 @@ fn main() -> Result<()> {
                 println!("{:>20} {c}", papyrus::pex::OP_NAMES[i]);
             }
         }
+        Some("esp-list") => {
+            // esp-list <data dir> <TYPE>: editor ids of all records of a type
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let tag: [u8; 4] = args[2].as_bytes().try_into().context("4-char type")?;
+            for &id in lo.ids_of_type(&tag) {
+                if let Some(r) = lo.get(id) {
+                    println!("{id} {}", r.editor_id().unwrap_or_default());
+                }
+            }
+        }
         _ => bail!("usage: vrm-tool <bsa-list|bsa-extract|bsa-verify> ..."),
     }
     Ok(())
