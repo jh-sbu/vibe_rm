@@ -2,6 +2,7 @@
 
 pub mod dds;
 pub mod model;
+pub mod sky;
 pub mod terrain;
 pub mod texture;
 
@@ -29,6 +30,7 @@ struct FrameUniform {
     fog_far_color: [f32; 4],
     fog: [f32; 4],
     misc: [f32; 4],
+    amb: [[f32; 4]; 6],
 }
 
 #[repr(C)]
@@ -114,6 +116,10 @@ pub struct Environment {
     pub fog_power: f32,
     pub fog_max: f32,
     pub clear_color: Vec3,
+    /// Directional ambient (X+, X-, Y+, Y-, Z+, Z-); replaces `ambient` when set.
+    pub dalc: Option<[Vec3; 6]>,
+    /// Draw the weather sky instead of the clear colour.
+    pub sky: bool,
 }
 
 impl Default for Environment {
@@ -129,6 +135,8 @@ impl Default for Environment {
             fog_power: 1.0,
             fog_max: 0.0,
             clear_color: Vec3::new(0.4, 0.5, 0.6),
+            dalc: None,
+            sky: false,
         }
     }
 }
@@ -228,8 +236,11 @@ pub struct Renderer {
     pub textures: TextureCache,
     pub(crate) white: Arc<GpuTexture>,
     pub(crate) flat_normal: Arc<GpuTexture>,
-    black: Arc<GpuTexture>,
+    pub(crate) black: Arc<GpuTexture>,
     pub stats: FrameStats,
+    pub sky: sky::SkyRenderer,
+    /// Seconds since start, for animated effects.
+    pub time: f32,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -352,7 +363,10 @@ impl Renderer {
         let black = Arc::new(texture::solid(&device, &queue, [0, 0, 0, 255], "black"));
         let depth_view = Self::make_depth(&device, width, height);
         let terrain = terrain::TerrainPipeline::new(&device, &frame_bgl, color_format);
+        let sky = sky::SkyRenderer::new(&device, color_format);
         Renderer {
+            sky,
+            time: 0.0,
             terrain,
             device,
             queue,
@@ -576,7 +590,17 @@ impl Renderer {
             fog_near_color: env.fog_near_color.extend(1.0).to_array(),
             fog_far_color: env.fog_far_color.extend(1.0).to_array(),
             fog: [env.fog_near, env.fog_far, env.fog_power, env.fog_max],
-            misc: [0.0, scene.lights.len() as f32, 0.0, 0.0],
+            misc: [self.time, scene.lights.len() as f32, 0.0, 0.0],
+            amb: match env.dalc {
+                Some(d) => {
+                    let mut a = [[0f32; 4]; 6];
+                    for i in 0..6 {
+                        a[i] = d[i].extend(1.0).to_array();
+                    }
+                    a
+                }
+                None => [[0f32; 4]; 6],
+            },
         };
         self.queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&fu));
         let nl = scene.lights.len().min(MAX_LIGHTS);
@@ -670,6 +694,9 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            if env.sky && self.sky.is_active() {
+                self.sky.draw(&self.queue, &mut pass, view_proj, camera.position, self.time);
+            }
             pass.set_bind_group(0, &self.frame_bg, &[]);
             if !scene.terrain.is_empty() {
                 pass.set_pipeline(&self.terrain.pipeline);

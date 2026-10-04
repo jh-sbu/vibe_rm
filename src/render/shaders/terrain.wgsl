@@ -10,6 +10,7 @@ struct Frame {
     fog_far_color: vec4<f32>,
     fog: vec4<f32>,
     misc: vec4<f32>,
+    amb: array<vec4<f32>, 6>, // directional ambient X+ X- Y+ Y- Z+ Z-; amb[0].w > 0.5 enables
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -64,6 +65,17 @@ fn vs_main(v: VIn) -> VOut {
     return o;
 }
 
+fn ambient(n: vec3<f32>) -> vec3<f32> {
+    if (frame.amb[0].w < 0.5) {
+        return frame.ambient.rgb;
+    }
+    let n2 = n * n;
+    let x = select(frame.amb[1].rgb, frame.amb[0].rgb, n.x >= 0.0);
+    let y = select(frame.amb[3].rgb, frame.amb[2].rgb, n.y >= 0.0);
+    let z = select(frame.amb[5].rgb, frame.amb[4].rgb, n.z >= 0.0);
+    return x * n2.x + y * n2.y + z * n2.z;
+}
+
 fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     let dist = distance(world_pos, frame.cam_pos.xyz);
     let range = max(frame.fog.y - frame.fog.x, 1.0);
@@ -101,7 +113,7 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     let n = normalize(tn.x * T + tn.y * B + tn.z * N);
 
     let l = normalize(frame.sun_dir.xyz);
-    let diffuse = frame.ambient.rgb + frame.sun_color.rgb * max(dot(n, l), 0.0);
+    let diffuse = ambient(n) + frame.sun_color.rgb * max(dot(n, l), 0.0);
     let color = c * in.color * diffuse;
     return vec4<f32>(apply_fog(color, in.world_pos), 1.0);
 }

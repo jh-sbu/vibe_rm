@@ -17,10 +17,12 @@ pub struct Options {
     pub width: u32,
     pub height: u32,
     pub radius: i32,
+    pub hour: f32,
+    pub weather: Option<String>,
 }
 
 fn parse_args() -> Result<Options> {
-    let mut o = Options { width: 1280, height: 720, radius: 2, ..Default::default() };
+    let mut o = Options { width: 1280, height: 720, radius: 2, hour: 12.0, ..Default::default() };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let mut val = || args.next().with_context(|| format!("{a} needs a value"));
@@ -48,13 +50,16 @@ fn parse_args() -> Result<Options> {
                 o.height = h.parse()?;
             }
             "--radius" => o.radius = val()?.parse()?,
+            "--hour" => o.hour = val()?.parse()?,
+            "--weather" => o.weather = Some(val()?),
             "-h" | "--help" => {
                 println!(
                     "vibe_rm - a Creation Engine (Skyrim SE) compatible engine\n\n\
                      Options:\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
                      --cell <edid|formid> Interior cell to load\n  --world <edid>      Worldspace (default Tamriel)\n  \
                      --grid x,y          Exterior cell coordinates\n  --pos x,y,z         Camera position\n  \
-                     --yaw/--pitch deg   Camera orientation\n  --radius n          Exterior cell load radius\n  \
+                     --yaw/--pitch deg   Camera orientation\n  --radius n          Exterior cell load radius\n  --hour h            Time of day (0-24)\n  \
+                     --weather <edid>    Force a weather\n  \
                      --screenshot <png>  Render one frame offscreen and exit\n  --size WxH          Window/screenshot size"
                 );
                 std::process::exit(0);

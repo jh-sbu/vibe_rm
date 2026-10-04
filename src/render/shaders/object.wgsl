@@ -11,6 +11,7 @@ struct Frame {
     fog_far_color: vec4<f32>,
     fog: vec4<f32>,         // near, far, power, max
     misc: vec4<f32>,        // time, light count, exterior flag, unused
+    amb: array<vec4<f32>, 6>, // directional ambient X+ X- Y+ Y- Z+ Z-; amb[0].w > 0.5 enables
 };
 
 struct Light {
@@ -86,6 +87,17 @@ const SF1_MODEL_SPACE_NORMALS: u32 = 4096u;
 const SF2_VERTEX_COLORS: u32 = 32u;
 const SF2_SOFT_LIGHTING: u32 = 33554432u;
 const SF2_BACK_LIGHTING: u32 = 134217728u;
+
+fn ambient(n: vec3<f32>) -> vec3<f32> {
+    if (frame.amb[0].w < 0.5) {
+        return frame.ambient.rgb;
+    }
+    let n2 = n * n;
+    let x = select(frame.amb[1].rgb, frame.amb[0].rgb, n.x >= 0.0);
+    let y = select(frame.amb[3].rgb, frame.amb[2].rgb, n.y >= 0.0);
+    let z = select(frame.amb[5].rgb, frame.amb[4].rgb, n.z >= 0.0);
+    return x * n2.x + y * n2.y + z * n2.z;
+}
 
 fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     let dist = distance(world_pos, frame.cam_pos.xyz);
@@ -167,7 +179,7 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     }
 
     let view_dir = normalize(frame.cam_pos.xyz - in.world_pos);
-    var diffuse = frame.ambient.rgb;
+    var diffuse = ambient(n);
     var specular = vec3<f32>(0.0);
     let gloss = max(mat.specular.w, 1.0);
 

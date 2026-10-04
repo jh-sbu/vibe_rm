@@ -19,6 +19,7 @@ use crate::world::cell::{self, PlacedObject, PointLight};
 use crate::world::loader::ModelCache;
 use crate::world::records::Lighting;
 use crate::world::terrain::{self, Land};
+use crate::world::weather::{self, Climate, Weather};
 
 pub struct Engine {
     pub lo: LoadOrder,
@@ -28,6 +29,10 @@ pub struct Engine {
     pub scene: Scene,
     pub camera: Camera,
     pub lands: Vec<Land>,
+    /// Game time of day in hours.
+    pub hour: f32,
+    pub sky: Option<(Weather, Climate)>,
+    pub forced_weather: Option<String>,
 }
 
 impl Engine {
@@ -79,6 +84,7 @@ impl Engine {
             contents.lights.len()
         );
         let env = interior_environment(&contents.lighting);
+        self.sky = None;
         self.build_scene(&contents.objects, &contents.lights, env);
 
         // Spawn point: a COC marker if present, else the middle of the cell.
@@ -106,6 +112,54 @@ impl Engine {
         self.camera.pitch = 0.0;
         log::info!("interior loaded in {:?}", t.elapsed());
         Ok(())
+    }
+
+    /// Pick the climate's weather for a worldspace and load its sky textures.
+    pub fn setup_weather(&mut self, world: FormId) {
+        let clmt = self
+            .lo
+            .get(world)
+            .and_then(|w| w.get(b"CNAM").map(|d| w.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))));
+        let climate = clmt.and_then(|c| weather::load_climate(&self.lo, c)).unwrap_or_default();
+        let forced = self.forced_weather.as_ref().and_then(|w| self.resolve_form(w));
+        let wid = forced.or_else(|| climate.weathers.iter().max_by_key(|w| w.1).map(|w| w.0));
+        let Some(w) = wid.and_then(|w| weather::load_weather(&self.lo, w)) else {
+            self.sky = None;
+            return;
+        };
+        log::info!("weather {} ({} cloud layers)", w.editor_id, w.clouds.len());
+        let mut tex: Vec<String> = vec![climate.sun_texture.clone()];
+        tex.extend(w.clouds.iter().take(4).map(|c| c.texture.clone()));
+        let missing: Vec<String> = tex.iter().filter(|t| !self.renderer.textures.contains(t)).cloned().collect();
+        crate::world::loader::load_textures(&mut self.renderer, &self.vfs, missing);
+        let get = |p: &String| self.renderer.textures.get(p).flatten();
+        let sun = get(&climate.sun_texture).unwrap_or_else(|| self.renderer.white.clone());
+        let clouds = w.clouds.iter().take(4).filter_map(|c| get(&c.texture)).collect();
+        let (dev, sampler, black) = (&self.renderer.device, &self.renderer.sampler, self.renderer.black.clone());
+        self.renderer.sky.set_textures(dev, sampler, sun, clouds, black);
+        self.sky = Some((w, climate));
+    }
+
+    /// Evaluate the current weather at the current hour into a render environment.
+    pub fn sky_environment(&mut self) -> Option<Environment> {
+        let (w, c) = self.sky.as_ref()?;
+        let st = weather::evaluate(w, c, self.hour);
+        let env = Environment {
+            sun_dir: st.light_dir,
+            sun_color: st.sunlight,
+            ambient: st.ambient,
+            fog_near_color: st.fog_near_color,
+            fog_far_color: st.fog_far_color,
+            fog_near: st.fog_near,
+            fog_far: st.fog_far.max(st.fog_near + 1.0),
+            fog_power: st.fog_power,
+            fog_max: st.fog_max,
+            clear_color: st.horizon,
+            dalc: Some(st.dalc),
+            sky: true,
+        };
+        self.renderer.sky.set_state(st);
+        Some(env)
     }
 
     pub fn ground_height(&self, p: glam::Vec2) -> Option<f32> {
@@ -146,18 +200,8 @@ impl Engine {
                 p.x >= lo_x && p.x < hi_x && p.y >= lo_y && p.y < hi_y
             }));
         }
-        let env = Environment {
-            sun_dir: Vec3::new(0.4, 0.3, 0.6).normalize(),
-            sun_color: Vec3::new(0.9, 0.85, 0.75),
-            ambient: Vec3::new(0.35, 0.38, 0.45),
-            fog_near_color: Vec3::new(0.6, 0.68, 0.78),
-            fog_far_color: Vec3::new(0.6, 0.68, 0.78),
-            fog_near: 2000.0,
-            fog_far: 60000.0,
-            fog_power: 1.0,
-            fog_max: 0.8,
-            clear_color: Vec3::new(0.6, 0.68, 0.78),
-        };
+        self.setup_weather(world);
+        let env = self.sky_environment().unwrap_or_default();
         self.build_scene(&objects, &lights, env);
 
         // Landscape
@@ -208,6 +252,8 @@ impl Engine {
 
 fn interior_environment(l: &Lighting) -> Environment {
     Environment {
+        dalc: l.dalc,
+        sky: false,
         sun_dir: -l.directional_dir(),
         sun_color: l.directional,
         ambient: l.ambient,
@@ -269,6 +315,9 @@ fn setup_engine(opts: &Options, renderer: Renderer, lo: LoadOrder, vfs: vfs::Vfs
         scene: Scene::default(),
         camera: Camera { position: Vec3::ZERO, yaw: 0.0, pitch: 0.0, fov_y: 65f32.to_radians() },
         lands: Vec::new(),
+        hour: opts.hour,
+        sky: None,
+        forced_weather: opts.weather.clone(),
     };
     if let Some(c) = &opts.cell {
         let id = engine.resolve_form(c).with_context(|| format!("unknown cell {c}"))?;
@@ -455,6 +504,16 @@ impl ApplicationHandler for App {
                 let dt = (now - s.last).as_secs_f32().min(0.1);
                 s.last = now;
                 update_camera(&mut s.engine.camera, &s.keys, dt);
+                s.engine.renderer.time += dt;
+                // Skyrim's default timescale: 20 game seconds per real second.
+                let mut scale = 20.0;
+                if s.keys.contains(&KeyCode::KeyT) {
+                    scale = 2000.0;
+                }
+                s.engine.hour = (s.engine.hour + dt * scale / 3600.0).rem_euclid(24.0);
+                if let Some(env) = s.engine.sky_environment() {
+                    s.engine.scene.env = env;
+                }
                 let frame = match s.surface.get_current_texture() {
                     wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
                     wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
@@ -471,8 +530,15 @@ impl ApplicationHandler for App {
                     let st = s.engine.renderer.stats;
                     let p = s.engine.camera.position;
                     s.window.set_title(&format!(
-                        "vibe_rm | {} fps | {} draws, {} inst | pos {:.0},{:.0},{:.0}",
-                        s.frames, st.draws, st.instances, p.x, p.y, p.z
+                        "vibe_rm | {} fps | {} draws, {} inst | pos {:.0},{:.0},{:.0} | {:02}:{:02}",
+                        s.frames,
+                        st.draws,
+                        st.instances,
+                        p.x,
+                        p.y,
+                        p.z,
+                        s.engine.hour as u32,
+                        (s.engine.hour.fract() * 60.0) as u32
                     ));
                     s.frames = 0;
                     s.fps_timer = Instant::now();

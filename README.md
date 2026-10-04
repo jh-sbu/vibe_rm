@@ -1,0 +1,65 @@
+# vibe_rm
+
+A from-scratch, open source game engine written in Rust that runs games built
+for the Skyrim Special Edition era of Bethesda's Creation Engine. It reads the original
+game data formats directly: BSA archives, ESM/ESP/ESL plugins, NIF models, DDS
+textures, and so on.
+
+Like [OpenMW](https://openmw.org) for Morrowind, **this repository contains no
+game assets**. To play, you must own and install Skyrim Special Edition.
+The engine reads your installed `Data` directory at runtime. Never commit game
+files to this repository (`.gitignore` blocks the common asset types).
+
+## Status
+
+Early but already visual:
+
+| Area | State |
+| --- | --- |
+| BSA archives (v103/104/105, zlib + LZ4) | done |
+| Plugins: load order, ESM/ESP/ESL FormID resolution, overrides, localized strings | done |
+| NIF (SSE BS v100 / LE v83): nodes, BSTriShape family, NiTriShape/Strips, shader props | done for rendering; all base-game meshes parse with exact block sizes |
+| DDS: BC1–BC7, uncompressed, cubemaps | done |
+| Interior cells: references, lighting templates, point lights | done |
+| Exterior cells: objects, landscape heightmap with multi-layer splatting | done |
+| Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day | done |
+| Water, collision/physics, player controller, doors, cell streaming | in progress |
+| Actors (skinning, Havok animation), AI, Papyrus VM, UI, audio | planned |
+
+## Building and running
+
+```sh
+cargo build --release
+# Interior cell by editor id (or 8-digit hex FormID)
+./target/release/vibe_rm --cell WhiterunBanneredMare
+# Exterior cell by editor id, at sunset
+./target/release/vibe_rm --cell Riverwood --hour 19
+# Exterior by worldspace + grid
+./target/release/vibe_rm --world Tamriel --grid 4,-12
+# Render one frame offscreen to a PNG (useful for testing)
+./target/release/vibe_rm --cell Riverwood --screenshot out.png
+```
+
+The data directory is found from `--data`, `$SKYRIM_DATA`, or the default Steam
+locations on Linux.
+
+Controls: click to capture the mouse, WASD to move, Space/Ctrl for up/down,
+Shift to go faster, T to fast-forward time, Esc to release the mouse or quit.
+
+## Layout
+
+- `crates/bsa`: BSA archive reader
+- `crates/esp`: plugin reader, load order and record index
+- `crates/nif`: NIF model reader
+- `crates/vfs`: virtual file system (loose files over archives)
+- `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
+  (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`)
+- `src/`: the engine (renderer, world, app)
+
+## Verifying format support
+
+```sh
+cargo run --release -p vrm-tools -- nif-verify "<Data>/Skyrim - Meshes0.bsa" "<Data>/Skyrim - Meshes1.bsa"
+```
+
+This parses every mesh and reports any block whose parse didn't consume exactly its declared size.

@@ -51,6 +51,7 @@ pub fn load_cell(lo: &LoadOrder, cell: FormId) -> Option<CellContents> {
                 let pick = |bit: u32| f & bit != 0;
                 if pick(0x1) {
                     lighting.ambient = tmpl.ambient;
+                    lighting.dalc = tmpl.dalc;
                 }
                 if pick(0x2) {
                     lighting.directional = tmpl.directional;

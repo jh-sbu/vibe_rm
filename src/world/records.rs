@@ -38,6 +38,7 @@ pub struct Lighting {
     pub light_fade_begin: f32,
     pub light_fade_end: f32,
     pub inherit: u32,
+    pub dalc: Option<[Vec3; 6]>,
 }
 
 impl Default for Lighting {
@@ -58,6 +59,7 @@ impl Default for Lighting {
             light_fade_begin: 0.0,
             light_fade_end: 0.0,
             inherit: 0,
+            dalc: None,
         }
     }
 }
@@ -77,6 +79,15 @@ impl Lighting {
             fog_power: f32_at(d, 36),
             ..Default::default()
         };
+        if d.len() >= 72 {
+            let mut dalc = [Vec3::ZERO; 6];
+            for (i, c) in dalc.iter_mut().enumerate() {
+                *c = rgb(d, 40 + i * 4);
+            }
+            if dalc.iter().any(|c| *c != Vec3::ZERO) {
+                l.dalc = Some(dalc);
+            }
+        }
         if d.len() >= 92 {
             l.fog_far_color = rgb(d, 72);
             l.fog_max = f32_at(d, 76);
