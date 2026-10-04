@@ -121,6 +121,12 @@ pub fn run(opts: Options) -> Result<()> {
             engine.camera.yaw = yaw;
             engine.camera.pitch = pitch;
         }
+        for &c in &opts.choose {
+            engine.choose_topic(c);
+            for _ in 0..600 {
+                engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
+            }
+        }
         if let Some(frames) = opts.simulate {
             let input = MoveInput { forward: 1.0, run: true, ..Default::default() };
             for i in 0..frames {
