@@ -101,6 +101,7 @@ pub struct GpuSkinnedPart {
 }
 
 pub struct GpuModel {
+    pub path: String,
     pub parts: Vec<GpuPart>,
     pub skinned: Vec<GpuSkinnedPart>,
     pub bound_center: Vec3,
@@ -212,6 +213,30 @@ pub struct Scene {
 }
 
 impl Scene {
+    /// Debug: instances whose bounding sphere intersects a ray, nearest first.
+    pub fn pick(&self, origin: Vec3, dir: Vec3) -> Vec<(f32, String)> {
+        let mut hits = Vec::new();
+        for i in self.instances() {
+            let oc = i.world_center - origin;
+            let t = oc.dot(dir);
+            let d2 = oc.length_squared() - t * t;
+            if t > 0.0 && d2 < i.world_radius * i.world_radius {
+                hits.push((t, i.model.path.clone()));
+            }
+        }
+        for a in self.cells.values().flat_map(|c| c.actors.iter()) {
+            let oc = a.center() - origin;
+            let t = oc.dot(dir);
+            let d2 = oc.length_squared() - t * t;
+            if t > 0.0 && d2 < a.radius * a.radius {
+                let names: Vec<&str> = a.meshes.iter().map(|m| m.model.skinned[m.part].name.as_str()).collect();
+                hits.push((t, format!("actor: {names:?}")));
+            }
+        }
+        hits.sort_by(|a, b| a.0.total_cmp(&b.0));
+        hits
+    }
+
     pub fn instances(&self) -> impl Iterator<Item = &Instance> {
         self.cells.values().flat_map(|c| c.instances.iter())
     }
@@ -764,7 +789,7 @@ impl Renderer {
                 name: m.name.clone(),
             });
         }
-        GpuModel { parts, skinned, bound_center: cpu.bound_center, bound_radius: cpu.bound_radius }
+        GpuModel { path: String::new(), parts, skinned, bound_center: cpu.bound_center, bound_radius: cpu.bound_radius }
     }
 
     pub fn render(&mut self, scene: &Scene, camera: &Camera, target: &wgpu::TextureView) {
@@ -853,8 +878,13 @@ impl Renderer {
                 let Some(part) = mesh.model.skinned.get(mesh.part) else { continue };
                 let base = palette.len() as u32;
                 for (i, &b) in mesh.bone_map.iter().enumerate() {
-                    let bone = actor.pose.get(b).copied().unwrap_or(Mat4::IDENTITY);
-                    palette.push(actor.transform * bone * part.skin_to_bone.get(i).copied().unwrap_or(Mat4::IDENTITY));
+                    let s2b = part.skin_to_bone.get(i).copied().unwrap_or(Mat4::IDENTITY);
+                    // Bones missing from the skeleton stay in their bind position.
+                    let m = match actor.pose.get(b) {
+                        Some(bone) => actor.transform * *bone * s2b,
+                        None => actor.transform,
+                    };
+                    palette.push(m);
                 }
                 if mesh.bone_map.is_empty() {
                     palette.push(actor.transform);

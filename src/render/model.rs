@@ -290,6 +290,10 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
 }
 
 fn build_mesh(g: &Geometry, world: Mat4, material: MaterialDesc) -> Option<CpuMesh> {
+    // Screen-space refraction (heat haze, etc.) isn't implemented; its "diffuse" is a normal map.
+    if material.flags1 & (sf1::REFRACTION | sf1::FIRE_REFRACTION) != 0 {
+        return None;
+    }
     let n = g.positions.len();
     if n == 0 {
         return None;

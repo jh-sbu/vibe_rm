@@ -183,10 +183,10 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         var c = base.rgb;
         var a = base.a;
         if ((flags1 & SF1_GREYSCALE_TO_PALETTE_COLOR) != 0u && mat.params.w > 0.5) {
-            c = textureSample(t_glow, s_main, vec2<f32>(base.g, 0.5)).rgb;
+            c = textureSample(t_glow, s_main, vec2<f32>(base.g, in.color.r)).rgb;
         }
         if ((flags1 & SF1_GREYSCALE_TO_PALETTE_ALPHA) != 0u && mat.params.w > 0.5) {
-            a = textureSample(t_glow, s_main, vec2<f32>(base.a, 0.5)).a;
+            a = textureSample(t_glow, s_main, vec2<f32>(base.a, in.color.a)).a;
         }
         c *= mat.emissive.rgb * mat.emissive.w;
         a *= mat.params.x;

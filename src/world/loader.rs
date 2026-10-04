@@ -45,9 +45,7 @@ impl ModelCache {
                         col = crate::physics::shapes::from_nif(&n);
                         let m = model::convert(&n);
                         for mesh in &m.meshes {
-                            if mesh.material.kind == model::ShaderKind::Effect {
-                                log::debug!("effect mesh in {p}: {:?}", mesh.material);
-                            }
+                            log::trace!("mesh in {p}: {:?}", mesh.material);
                         }
                         Some(m)
                     }
@@ -83,7 +81,11 @@ impl ModelCache {
 
         for (p, m, col) in cpu {
             self.collision.insert(p.clone(), col.map(Arc::new));
-            let g = m.filter(|m| !m.meshes.is_empty() || !m.skinned.is_empty()).map(|m| Arc::new(renderer.upload_model(&m)));
+            let g = m.filter(|m| !m.meshes.is_empty() || !m.skinned.is_empty()).map(|m| {
+                let mut g = renderer.upload_model(&m);
+                g.path = p.clone();
+                Arc::new(g)
+            });
             self.map.insert(p, g);
         }
         log::info!(
@@ -101,7 +103,10 @@ pub fn load_textures(renderer: &mut Renderer, vfs: &vfs::Vfs, paths: Vec<String>
         .into_par_iter()
         .map(|p| {
             let d = vfs.read(&p).and_then(|data| match dds::parse(&data) {
-                Ok(d) => Some(d),
+                Ok(d) => {
+                    log::trace!("texture {p}: {:?} {}x{} mips {} layers {}", d.format, d.width, d.height, d.mips, d.layers);
+                    Some(d)
+                }
                 Err(e) => {
                     log::warn!("{p}: {e}");
                     None

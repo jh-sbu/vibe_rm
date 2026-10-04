@@ -181,7 +181,16 @@ impl Engine {
                     continue;
                 };
                 for (pi, part) in model.skinned.iter().enumerate() {
-                    let bone_map = part.bone_names.iter().map(|n| skel.find(n).unwrap_or(0)).collect();
+                    let bone_map = part
+                        .bone_names
+                        .iter()
+                        .map(|n| {
+                            skel.find(n).unwrap_or_else(|| {
+                                log::debug!("{}: bone {n:?} of {m} not in skeleton {}", d.name, d.skeleton);
+                                usize::MAX
+                            })
+                        })
+                        .collect();
                     meshes.push(crate::render::ActorMesh { model: model.clone(), part: pi, bone_map });
                 }
             }

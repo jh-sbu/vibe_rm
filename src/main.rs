@@ -25,6 +25,7 @@ pub struct Options {
     pub simulate: Option<u32>,
     pub use_door: Option<usize>,
     pub bench: Option<u32>,
+    pub pick: Option<(f32, f32)>,
 }
 
 fn parse_args() -> Result<Options> {
@@ -61,6 +62,11 @@ fn parse_args() -> Result<Options> {
             "--simulate" => o.simulate = Some(val()?.parse()?),
             "--use-door" => o.use_door = Some(val()?.parse()?),
             "--bench" => o.bench = Some(val()?.parse()?),
+            "--pick" => {
+                let v = val()?;
+                let (x, y) = v.split_once(',').context("--pick x,y (0..1 screen coords)")?;
+                o.pick = Some((x.parse()?, y.parse()?));
+            }
             "-h" | "--help" => {
                 println!(
                     "vibe_rm - a Creation Engine (Skyrim SE) compatible engine\n\n\

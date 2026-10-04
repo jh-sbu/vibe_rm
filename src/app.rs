@@ -113,6 +113,17 @@ pub fn run(opts: Options) -> Result<()> {
                 }
             }
         }
+        if let Some((px, py)) = opts.pick {
+            let aspect = opts.width as f32 / opts.height as f32;
+            let vp = engine.camera.proj(aspect) * engine.camera.view();
+            let inv = vp.inverse();
+            let ndc = glam::Vec4::new(px * 2.0 - 1.0, 1.0 - py * 2.0, 1.0, 1.0);
+            let p = inv * ndc;
+            let dir = ((p.truncate() / p.w) - engine.camera.position).normalize();
+            for (t, name) in engine.scene.pick(engine.camera.position, dir).iter().take(8) {
+                log::info!("pick: {t:.0} {name}");
+            }
+        }
         if let Some(n) = opts.bench {
             let t = engine.renderer.bench(&engine.scene, &engine.camera, n);
             log::info!("bench: {:?}/frame ({:.1} fps), {:?}", t, 1.0 / t.as_secs_f64(), engine.renderer.stats);
