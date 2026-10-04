@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 //! Condition (CTDA) function indices, names and parameter types for Skyrim.
 //! Table derived from xEdit's record definitions (TES5Edit, MPL-2.0).
 
