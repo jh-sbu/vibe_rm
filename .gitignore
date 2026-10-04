@@ -1,1 +1,17 @@
 /target
+# Never commit game assets
+*.bsa
+*.ba2
+*.esm
+*.esp
+*.esl
+*.nif
+*.dds
+*.strings
+*.dlstrings
+*.ilstrings
+*.pex
+*.hkx
+*.wav
+*.xwm
+*.fuz

@@ -1,0 +1,10 @@
+[package]
+name = "vrm-vfs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Virtual file system over a Skyrim Data directory: loose files layered over BSA archives"
+
+[dependencies]
+bsa.workspace = true
+log.workspace = true

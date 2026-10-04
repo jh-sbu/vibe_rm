@@ -1,0 +1,12 @@
+[package]
+name = "vrm-bsa"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Reader for Bethesda BSA archives (TES4/FO3/Skyrim LE v104, Skyrim SE v105)"
+
+[dependencies]
+memmap2.workspace = true
+flate2.workspace = true
+lz4_flex.workspace = true
+thiserror.workspace = true

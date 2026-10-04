@@ -1,0 +1,16 @@
+[package]
+name = "vrm-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vrm-tool"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+bsa.workspace = true
+esp.workspace = true
+nif.workspace = true
+env_logger.workspace = true

@@ -1,0 +1,13 @@
+[package]
+name = "vrm-esp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Reader for TES4-format plugins (Skyrim .esm/.esp/.esl)"
+
+[dependencies]
+memmap2.workspace = true
+flate2.workspace = true
+thiserror.workspace = true
+log.workspace = true
+encoding_rs.workspace = true
