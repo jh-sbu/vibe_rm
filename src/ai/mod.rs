@@ -2,6 +2,7 @@
 
 pub mod nav;
 pub mod package;
+pub mod schedule;
 
 use std::sync::Arc;
 
@@ -22,8 +23,9 @@ const EVAL_INTERVAL: f32 = 3.0;
 /// Sandbox wander radius clamp.
 const SANDBOX_MIN: f32 = 200.0;
 const SANDBOX_MAX: f32 = 1200.0;
-/// Longest path an actor will set out on (avoids crossing half the map).
-const MAX_PATH: f32 = 6000.0;
+/// Longest path an actor will set out on while sandboxing / travelling.
+const MAX_SANDBOX_PATH: f32 = 6000.0;
+const MAX_TRAVEL_PATH: f32 = 30_000.0;
 
 /// Where and how the current package wants the actor to be.
 #[derive(Debug, Clone, Copy)]
@@ -56,6 +58,8 @@ pub struct ActorRuntime {
     pub heading: f32,
     pub scale: f32,
     pub editor_pos: Vec3,
+    /// Load door the actor is walking to in order to leave the cell.
+    pub exiting: Option<FormId>,
     state: State,
     next_eval: f32,
     speed: f32,
@@ -80,6 +84,7 @@ impl ActorRuntime {
             heading: f.x.atan2(f.y),
             scale: scale.x,
             editor_pos: pos,
+            exiting: None,
             state: State::Idle(1.0 + stagger),
             next_eval: stagger,
             speed: 0.0,
@@ -163,6 +168,8 @@ impl ActorRuntime {
             self.state = State::Idle(idle(rand, 5.0, 10.0));
             return;
         };
+        // Heading back into the sandbox area from elsewhere counts as travel.
+        let mut travelling = goal.behaviour != Behaviour::Sandbox;
         let target = match goal.behaviour {
             Behaviour::Hold => None,
             Behaviour::Travel => {
@@ -173,6 +180,7 @@ impl ActorRuntime {
                 // Return to the sandbox area first if we've strayed from it.
                 let r = goal.radius.clamp(SANDBOX_MIN, SANDBOX_MAX);
                 if self.pos.truncate().distance(goal.centre.truncate()) > r * 1.5 {
+                    travelling = true;
                     Some(goal.centre)
                 } else {
                     nav.random_point(goal.centre, r, &mut *rand)
@@ -183,7 +191,8 @@ impl ActorRuntime {
         match path {
             Some(path) if !path.is_empty() => {
                 let len: f32 = std::iter::once(self.pos).chain(path.iter().copied()).collect::<Vec<_>>().windows(2).map(|w| w[0].distance(w[1])).sum();
-                if len > MAX_PATH {
+                let max = if travelling { MAX_TRAVEL_PATH } else { MAX_SANDBOX_PATH };
+                if len > max {
                     log::debug!("{} path too long ({len:.0})", self.ref_id);
                     self.state = State::Idle(idle(rand, 10.0, 20.0));
                     return;
@@ -240,7 +249,7 @@ impl Engine {
         let mut decisions = Vec::new();
         for (key, rt) in &self.cells {
             for (i, a) in rt.actors.iter().enumerate() {
-                if a.next_eval - dt > 0.0 {
+                if a.next_eval - dt > 0.0 || a.exiting.is_some() {
                     continue;
                 }
                 let ctx = crate::condition::Context { subject: Some(a.ref_id), target: None, quest: None };
@@ -290,6 +299,7 @@ impl Engine {
         };
         let nav = std::mem::take(&mut self.nav);
         let mut moved = Vec::new();
+        let mut gone = Vec::new();
         for (key, rt) in self.cells.iter_mut() {
             let Some(rc) = self.scene.cells.get_mut(key) else { continue };
             for (inst, a) in rc.actors.iter_mut().zip(rt.actors.iter_mut()) {
@@ -309,9 +319,19 @@ impl Engine {
                 if a.is_walking() || talking == Some(a.ref_id) {
                     moved.push((a.ref_id, a.pos, a.capsule));
                 }
+                // Reached the door (or gave up out of sight): leave the cell.
+                if a.exiting.is_some()
+                    && !a.is_walking()
+                    && a.goal.is_none_or(|g| g.centre.truncate().distance(a.pos.truncate()) < 64.0 || a.pos.distance(player) > 2500.0)
+                {
+                    gone.push(a.ref_id);
+                }
             }
         }
         self.nav = nav;
+        for r in gone {
+            self.despawn_actor(r);
+        }
         for (r, pos, capsule) in moved {
             if let Some(c) = capsule {
                 self.physics.move_actor_capsule(c, pos);

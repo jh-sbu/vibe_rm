@@ -23,8 +23,11 @@ Early but already visual:
 | Interior cells: references, lighting templates, point lights | done |
 | Exterior cells: objects, landscape heightmap with multi-layer splatting | done |
 | Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day | done |
-| Water, collision/physics, player controller, doors, cell streaming | in progress |
-| Actors (skinning, Havok animation), AI, Papyrus VM, UI, audio | planned |
+| Water, collision/physics, player controller, doors, cell streaming | done |
+| Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
+| AI: navmeshes, pathfinding, packages (sandbox/travel), daily schedules across cells | in progress |
+| Papyrus VM, conditions, quests, dialogue, HUD, console, audio, music | in progress |
+| Combat, magic, inventory, saves | planned |
 
 ## Building and running
 
@@ -45,6 +48,8 @@ locations on Linux.
 
 Controls: click to capture the mouse, WASD to move, Space/Ctrl for up/down,
 Shift to go faster, T to fast-forward time, Esc to release the mouse or quit.
+The developer console has a subset of Skyrim's commands (`help` lists them; `tai`
+toggles actor AI).
 
 ## Layout
 
@@ -53,7 +58,8 @@ Shift to go faster, T to fast-forward time, Esc to release the mouse or quit.
 - `crates/nif`: NIF model reader
 - `crates/vfs`: virtual file system (loose files over archives)
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
-  (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`)
+  (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`,
+  `navm-verify`, ...)
 - `src/`: the engine (renderer, world, app)
 
 ## Verifying format support

@@ -277,6 +277,23 @@ impl NavWorld {
         Some(string_pull(from, to, &portals))
     }
 
+    /// A random point anywhere on the given meshes.
+    pub fn random_point_in(&self, ids: &[FormId], mut rand: impl FnMut() -> u64) -> Option<Vec3> {
+        let meshes: Vec<&Mesh> = ids.iter().filter_map(|id| self.meshes.get(id)).collect();
+        let total: usize = meshes.iter().map(|m| m.tris.len()).sum();
+        if total == 0 {
+            return None;
+        }
+        let mut k = (rand() % total as u64) as usize;
+        for m in meshes {
+            if k < m.tris.len() {
+                return Some(m.centroid(k));
+            }
+            k -= m.tris.len();
+        }
+        None
+    }
+
     /// A random point on the navmesh within `radius` of `centre` (in XY).
     pub fn random_point(&self, centre: Vec3, radius: f32, mut rand: impl FnMut() -> u64) -> Option<Vec3> {
         let c = centre.truncate();
