@@ -3130,6 +3130,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
+ "glam 0.33.12",
  "vrm-bsa",
  "vrm-esp",
  "vrm-havok",

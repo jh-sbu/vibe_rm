@@ -126,11 +126,18 @@ fn main() -> Result<()> {
             println!("bs version {} roots {:?}", n.header.bs_version, n.roots);
             for (i, b) in n.blocks.iter().enumerate() {
                 let s = match b {
-                    nif::Block::TriShape(t) => format!(
-                        "TriShape name={} verts={} tris={} skin={:?} shader={:?} alpha={:?} desc={:016x} flags={:03x} xf={:?}",
-                        t.av.net.name, t.geometry.positions.len(), t.geometry.triangles.len(), t.skin, t.shader, t.alpha,
-                        t.vertex_desc, t.vertex_flags(), t.av.transform.translation
-                    ),
+                    nif::Block::TriShape(t) => {
+                        let (mut lo, mut hi) = (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN));
+                        for p in &t.geometry.positions {
+                            lo = lo.min(*p);
+                            hi = hi.max(*p);
+                        }
+                        format!(
+                            "TriShape name={} verts={} tris={} skin={:?} shader={:?} alpha={:?} desc={:016x} flags={:03x} xf={:?} bounds={lo:?}..{hi:?}",
+                            t.av.net.name, t.geometry.positions.len(), t.geometry.triangles.len(), t.skin, t.shader, t.alpha,
+                            t.vertex_desc, t.vertex_flags(), t.av.transform.translation
+                        )
+                    }
                     nif::Block::SkinPartition(p) => format!(
                         "SkinPartition verts={} desc={:016x} partitions={:?}",
                         p.geometry.positions.len(),
@@ -248,6 +255,23 @@ fn main() -> Result<()> {
             for &id in lo.ids_of_type(&tag) {
                 if let Some(r) = lo.get(id) {
                     println!("{id} {}", r.editor_id().unwrap_or_default());
+                }
+            }
+        }
+        Some("nif-points") => {
+            // nif-points <data dir> <vfs path>: print vertices of the first TriShape near given xy
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let n = nif::Nif::parse(&v.read(&args[2]).context("not found")?)?;
+            for b in &n.blocks {
+                if let nif::Block::TriShape(t) = b {
+                    let mut pts = t.geometry.positions.clone();
+                    pts.sort_by(|a, b| (a.x + a.y * 10000.0).total_cmp(&(b.x + b.y * 10000.0)));
+                    for p in pts.iter().take(5) {
+                        println!("{p:?}");
+                    }
+                    break;
                 }
             }
         }

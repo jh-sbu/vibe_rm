@@ -32,6 +32,7 @@ struct FrameUniform {
     fog: [f32; 4],
     misc: [f32; 4],
     amb: [[f32; 4]; 6],
+    lod_clip: [f32; 4],
 }
 
 #[repr(C)]
@@ -210,6 +211,10 @@ pub struct RenderCell {
 #[derive(Default)]
 pub struct Scene {
     pub cells: HashMap<CellKey, RenderCell>,
+    /// Distant LOD instances.
+    pub lod: Vec<Instance>,
+    /// World-space XY rectangle (min x, min y, max x, max y) where LOD is hidden.
+    pub lod_clip: [f32; 4],
     pub lights: Vec<GpuLight>,
     pub env: Environment,
 }
@@ -240,7 +245,7 @@ impl Scene {
     }
 
     pub fn instances(&self) -> impl Iterator<Item = &Instance> {
-        self.cells.values().flat_map(|c| c.instances.iter())
+        self.cells.values().flat_map(|c| c.instances.iter()).chain(self.lod.iter())
     }
     pub fn instance_count(&self) -> usize {
         self.cells.values().map(|c| c.instances.len()).sum()
@@ -715,7 +720,18 @@ impl Renderer {
                 if has_normal && m.kind == ShaderKind::Lit { 1.0 } else { 0.0 },
                 if has_glow && m.shader_type != 4 { 1.0 } else if has_glow { 2.0 } else { 0.0 },
             ],
-            flags: [m.flags1, m.flags2, if m.kind == ShaderKind::Effect { 1 } else { 0 }, m.shader_type],
+            flags: [
+                m.flags1,
+                m.flags2,
+                if m.kind == ShaderKind::Effect {
+                    1
+                } else if m.lod {
+                    2
+                } else {
+                    0
+                },
+                m.shader_type,
+            ],
             falloff: m.falloff.to_array(),
             tint: m.tint.extend(1.0).to_array(),
         };
@@ -819,6 +835,7 @@ impl Renderer {
                 }
                 None => [[0f32; 4]; 6],
             },
+            lod_clip: scene.lod_clip,
         };
         self.queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&fu));
         let nl = scene.lights.len().min(MAX_LIGHTS);

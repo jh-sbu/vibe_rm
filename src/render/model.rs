@@ -55,6 +55,8 @@ pub struct MaterialDesc {
     pub shader_type: u32,
     /// Skin / hair tint colour.
     pub tint: Vec3,
+    /// Distant LOD geometry: clipped where full-detail cells are loaded.
+    pub lod: bool,
 }
 
 impl Default for MaterialDesc {
@@ -80,6 +82,7 @@ impl Default for MaterialDesc {
             falloff: Vec4::new(1.0, 0.0, 1.0, 1.0),
             shader_type: 0,
             tint: Vec3::ONE,
+            lod: false,
         }
     }
 }

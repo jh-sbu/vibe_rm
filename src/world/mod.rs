@@ -2,6 +2,7 @@ pub mod actor;
 pub mod animation;
 pub mod cell;
 pub mod loader;
+pub mod lod;
 pub mod records;
 pub mod skeleton;
 pub mod sound;
