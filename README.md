@@ -63,3 +63,11 @@ cargo run --release -p vrm-tools -- nif-verify "<Data>/Skyrim - Meshes0.bsa" "<D
 ```
 
 This parses every mesh and reports any block whose parse didn't consume exactly its declared size.
+
+## License
+
+vibe_rm is licensed under the [MIT License](LICENSE), except as noted below.
+
+`src/condition/functions.rs` contains a condition function table derived from
+[xEdit](https://github.com/TES5Edit/TES5Edit)'s record definitions and is
+licensed under the [Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/).
