@@ -32,6 +32,19 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+log.workspace = true
+env_logger.workspace = true
+glam.workspace = true
+bytemuck.workspace = true
+rayon.workspace = true
+bsa.workspace = true
+esp.workspace = true
+nif.workspace = true
+vfs.workspace = true
+wgpu = "29"
+winit = "0.30"
+pollster = "0.4"
+png = "0.17"
 
 [profile.dev]
 opt-level = 1

@@ -1,0 +1,188 @@
+// Forward shader for Creation Engine style objects (BSLightingShaderProperty /
+// BSEffectShaderProperty). Lighting is done in gamma space, like the original.
+
+struct Frame {
+    view_proj: mat4x4<f32>,
+    cam_pos: vec4<f32>,
+    sun_dir: vec4<f32>,     // xyz: direction *towards* the light
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
+    fog_near_color: vec4<f32>,
+    fog_far_color: vec4<f32>,
+    fog: vec4<f32>,         // near, far, power, max
+    misc: vec4<f32>,        // time, light count, exterior flag, unused
+};
+
+struct Light {
+    pos_radius: vec4<f32>,
+    color: vec4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> frame: Frame;
+@group(0) @binding(1) var<storage, read> lights: array<Light>;
+
+struct Material {
+    uv: vec4<f32>,          // offset.xy, scale.zw
+    emissive: vec4<f32>,    // rgb, multiple
+    specular: vec4<f32>,    // rgb * strength, glossiness
+    params: vec4<f32>,      // alpha, alpha test threshold (<0 = off), has normal map, has glow map
+    flags: vec4<u32>,       // shader flags 1, shader flags 2, kind (0 lit, 1 effect), unused
+};
+
+@group(1) @binding(0) var t_diffuse: texture_2d<f32>;
+@group(1) @binding(1) var t_normal: texture_2d<f32>;
+@group(1) @binding(2) var t_glow: texture_2d<f32>;
+@group(1) @binding(3) var s_main: sampler;
+@group(1) @binding(4) var<uniform> mat: Material;
+
+struct VIn {
+    @location(0) pos: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) tangent: vec3<f32>,
+    @location(3) bitangent: vec3<f32>,
+    @location(4) uv: vec2<f32>,
+    @location(5) color: vec4<f32>,
+    @location(6) m0: vec4<f32>,
+    @location(7) m1: vec4<f32>,
+    @location(8) m2: vec4<f32>,
+    @location(9) m3: vec4<f32>,
+    @location(10) light_idx: vec4<u32>,
+};
+
+struct VOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) world_pos: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) tangent: vec3<f32>,
+    @location(3) bitangent: vec3<f32>,
+    @location(4) uv: vec2<f32>,
+    @location(5) color: vec4<f32>,
+    @location(6) @interpolate(flat) light_idx: vec4<u32>,
+};
+
+@vertex
+fn vs_main(v: VIn) -> VOut {
+    let model = mat4x4<f32>(v.m0, v.m1, v.m2, v.m3);
+    let world = model * vec4<f32>(v.pos, 1.0);
+    let m3 = mat3x3<f32>(v.m0.xyz, v.m1.xyz, v.m2.xyz);
+    var o: VOut;
+    o.clip = frame.view_proj * world;
+    o.world_pos = world.xyz;
+    o.normal = m3 * v.normal;
+    o.tangent = m3 * v.tangent;
+    o.bitangent = m3 * v.bitangent;
+    o.uv = v.uv * mat.uv.zw + mat.uv.xy;
+    o.color = v.color;
+    o.light_idx = v.light_idx;
+    return o;
+}
+
+const SF1_VERTEX_ALPHA: u32 = 8u;
+const SF1_MODEL_SPACE_NORMALS: u32 = 4096u;
+const SF2_VERTEX_COLORS: u32 = 32u;
+const SF2_SOFT_LIGHTING: u32 = 33554432u;
+const SF2_BACK_LIGHTING: u32 = 134217728u;
+
+fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
+    let dist = distance(world_pos, frame.cam_pos.xyz);
+    let range = max(frame.fog.y - frame.fog.x, 1.0);
+    var f = clamp((dist - frame.fog.x) / range, 0.0, 1.0);
+    f = pow(f, max(frame.fog.z, 0.0001)) * frame.fog.w;
+    let fog_color = mix(frame.fog_near_color.rgb, frame.fog_far_color.rgb, f);
+    return mix(color, fog_color, f);
+}
+
+fn light_index(idx: vec4<u32>, i: u32) -> u32 {
+    let word = idx[i / 2u];
+    return select(word & 0xFFFFu, word >> 16u, (i & 1u) == 1u);
+}
+
+@fragment
+fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    let base = textureSample(t_diffuse, s_main, in.uv);
+    var albedo = base.rgb;
+    var alpha = base.a * mat.params.x;
+    let flags1 = mat.flags.x;
+    let flags2 = mat.flags.y;
+    if ((flags2 & SF2_VERTEX_COLORS) != 0u) {
+        albedo *= in.color.rgb;
+    }
+    if ((flags1 & SF1_VERTEX_ALPHA) != 0u) {
+        alpha *= in.color.a;
+    }
+
+    if (mat.flags.z == 1u) {
+        // Effect shader: unlit, emissive tinted.
+        var c = base.rgb * mat.emissive.rgb * mat.emissive.w * in.color.rgb;
+        var a = base.a * mat.params.x * in.color.a;
+        if (mat.params.y >= 0.0 && a < mat.params.y) {
+            discard;
+        }
+        return vec4<f32>(apply_fog(c, in.world_pos), a);
+    }
+
+    if (mat.params.y >= 0.0 && alpha < mat.params.y) {
+        discard;
+    }
+
+    var n = normalize(in.normal);
+    var spec_mask = 0.0;
+    if (mat.params.z > 0.5) {
+        let nt = textureSample(t_normal, s_main, in.uv);
+        let tn = nt.xyz * 2.0 - 1.0;
+        if ((flags1 & SF1_MODEL_SPACE_NORMALS) != 0u) {
+            n = normalize(tn);
+        } else {
+            n = normalize(tn.x * normalize(in.bitangent) + tn.y * normalize(in.tangent) + tn.z * n);
+            spec_mask = nt.a;
+        }
+    }
+    if (!front) {
+        n = -n;
+    }
+
+    let view_dir = normalize(frame.cam_pos.xyz - in.world_pos);
+    var diffuse = frame.ambient.rgb;
+    var specular = vec3<f32>(0.0);
+    let gloss = max(mat.specular.w, 1.0);
+
+    // Directional (sun / interior directional)
+    let l = normalize(frame.sun_dir.xyz);
+    let ndl = dot(n, l);
+    diffuse += frame.sun_color.rgb * max(ndl, 0.0);
+    if (ndl > 0.0) {
+        let h = normalize(l + view_dir);
+        specular += frame.sun_color.rgb * pow(max(dot(n, h), 0.0), gloss) * spec_mask;
+    }
+
+    for (var i = 0u; i < 8u; i++) {
+        let li = light_index(in.light_idx, i);
+        if (li == 0xFFFFu) {
+            break;
+        }
+        let light = lights[li];
+        let d = light.pos_radius.xyz - in.world_pos;
+        let dist = length(d);
+        let r = light.pos_radius.w;
+        if (dist >= r) {
+            continue;
+        }
+        let ld = d / max(dist, 0.001);
+        let x = dist / r;
+        let att = clamp(1.0 - x * x, 0.0, 1.0);
+        let nl = max(dot(n, ld), 0.0);
+        diffuse += light.color.rgb * nl * att;
+        if (nl > 0.0) {
+            let h = normalize(ld + view_dir);
+            specular += light.color.rgb * pow(max(dot(n, h), 0.0), gloss) * spec_mask * att;
+        }
+    }
+
+    var emit = mat.emissive.rgb * mat.emissive.w;
+    if (mat.params.w > 0.5) {
+        emit *= textureSample(t_glow, s_main, in.uv).rgb;
+    }
+    diffuse += emit;
+    let color = albedo * diffuse + specular * mat.specular.rgb;
+    return vec4<f32>(apply_fog(color, in.world_pos), alpha);
+}
