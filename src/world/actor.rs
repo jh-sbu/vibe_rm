@@ -17,6 +17,8 @@ pub struct ActorDesc {
     pub female: bool,
     /// The race's behaviour project file (`meshes/actors/canine/dogproject.hkx`).
     pub behavior: Option<String>,
+    /// What it carries and has equipped.
+    pub inventory: super::inventory::Inventory,
 }
 
 fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
@@ -42,18 +44,22 @@ fn mix(seed: u64, list: FormId) -> u64 {
 
 /// Leveled list flags (`LVLF`).
 const LVL_ALL_LEVELS: u8 = 0x01;
+const LVL_EACH_ITEM: u8 = 0x02;
 const LVL_USE_ALL: u8 = 0x04;
 
-/// A leveled list's entries (`LVLO`: level, form) eligible at the player's level:
-/// with "calculate from all levels" every entry up to it, otherwise those of the
-/// highest level reached; the lowest-level entries if none is.
-fn eligible(rec: &LoadedRecord<'_>) -> Vec<FormId> {
-    let entries: Vec<(u16, FormId)> =
-        rec.subrecords().filter(|s| s.tag.0 == *b"LVLO" && s.data.len() >= 8).map(|s| (s.u16(0), rec.fid(s.form_id(4)))).collect();
+/// A leveled list's entries (`LVLO`: level, form, count) eligible at the player's
+/// level: with "calculate from all levels" every entry up to it, otherwise those of
+/// the highest level reached; the lowest-level entries if none is.
+fn eligible(rec: &LoadedRecord<'_>) -> Vec<(FormId, i32)> {
+    let entries: Vec<(u16, FormId, i32)> = rec
+        .subrecords()
+        .filter(|s| s.tag.0 == *b"LVLO" && s.data.len() >= 8)
+        .map(|s| (s.u16(0), rec.fid(s.form_id(4)), if s.data.len() >= 10 { s.u16(8).max(1) as i32 } else { 1 }))
+        .collect();
     let pc = player_level();
     let flags = rec.get(b"LVLF").and_then(|d| d.first().copied()).unwrap_or(0);
     let reached = entries.iter().map(|e| e.0).filter(|&l| l <= pc).max();
-    let pick = |want: &dyn Fn(u16) -> bool| entries.iter().filter(|e| want(e.0)).map(|e| e.1).collect::<Vec<_>>();
+    let pick = |want: &dyn Fn(u16) -> bool| entries.iter().filter(|e| want(e.0)).map(|e| (e.1, e.2)).collect::<Vec<_>>();
     match reached {
         Some(_) if flags & LVL_ALL_LEVELS != 0 => pick(&|l| l <= pc),
         Some(top) => pick(&|l| l == top),
@@ -82,28 +88,57 @@ fn resolve_leveled(lo: &LoadOrder, mut id: FormId, list_tag: &[u8; 4], seed: u64
         if entries.is_empty() {
             return None;
         }
-        id = entries[((roll >> 8) % entries.len() as u64) as usize];
+        id = entries[((roll >> 8) % entries.len() as u64) as usize].0;
     }
     None
 }
 
-/// Like [`resolve_leveled`] for item lists, where "use all" gives every entry.
-fn resolve_items(lo: &LoadOrder, id: FormId, seed: u64, depth: u32) -> Vec<FormId> {
+/// Items from a leveled item list (or a plain item), `count` times: "use all" gives
+/// every entry, otherwise one entry is picked by `seed`, its own count multiplying
+/// `count`; "each item in count" picks again for each one. Chance of none can leave
+/// nothing.
+pub(crate) fn resolve_items(lo: &LoadOrder, id: FormId, count: i32, seed: u64, depth: u32) -> Vec<(FormId, i32)> {
     let Some(rec) = lo.get(id) else { return Vec::new() };
-    if rec.tag().0 != *b"LVLI" || depth > 8 {
-        return vec![id];
+    if rec.tag().0 != *b"LVLI" {
+        return vec![(id, count)];
+    }
+    if depth > 8 || count <= 0 {
+        return Vec::new();
     }
     let flags = rec.get(b"LVLF").and_then(|d| d.first().copied()).unwrap_or(0);
-    if flags & LVL_USE_ALL != 0 {
-        return eligible(&rec).into_iter().flat_map(|e| resolve_items(lo, e, seed, depth + 1)).collect();
+    if flags & LVL_EACH_ITEM != 0 && count > 1 {
+        return (0..count.min(64)).flat_map(|i| resolve_items_once(lo, &rec, id, 1, mix(seed, FormId(i as u32)), depth)).collect();
     }
-    resolve_leveled(lo, id, b"LVLI", seed).map_or_else(Vec::new, |e| resolve_items(lo, e, seed, depth + 1))
+    resolve_items_once(lo, &rec, id, count, seed, depth)
+}
+
+fn resolve_items_once(lo: &LoadOrder, rec: &LoadedRecord<'_>, id: FormId, count: i32, seed: u64, depth: u32) -> Vec<(FormId, i32)> {
+    let flags = rec.get(b"LVLF").and_then(|d| d.first().copied()).unwrap_or(0);
+    let roll = mix(seed, id);
+    let none = rec.get(b"LVLD").and_then(|d| d.first().copied()).unwrap_or(0);
+    if (roll % 100) < none as u64 {
+        return Vec::new();
+    }
+    let entries = eligible(rec);
+    if flags & LVL_USE_ALL != 0 {
+        return entries.into_iter().flat_map(|(e, n)| resolve_items(lo, e, n * count, seed, depth + 1)).collect();
+    }
+    if entries.is_empty() {
+        return Vec::new();
+    }
+    let (e, n) = entries[((roll >> 8) % entries.len() as u64) as usize];
+    resolve_items(lo, e, n * count, seed, depth + 1)
 }
 
 struct NpcTraits {
     /// Display name (`FULL`).
     name: String,
     npc_for_face: FormId,
+    /// The NPC whose items (`CNTO`) and skills it has.
+    npc_for_inventory: FormId,
+    npc_for_stats: FormId,
+    /// Combat style (`ZNAM`), weighing the weapons it would wield.
+    combat_style: FormId,
     race: FormId,
     female: bool,
     skin: FormId,
@@ -112,6 +147,8 @@ struct NpcTraits {
 }
 
 const TPL_TRAITS: u16 = 0x1;
+const TPL_STATS: u16 = 0x2;
+const TPL_AI_DATA: u16 = 0x10;
 const TPL_BASE_DATA: u16 = 0x80;
 const TPL_INVENTORY: u16 = 0x100;
 
@@ -130,6 +167,9 @@ fn npc_traits(lo: &LoadOrder, npc: FormId, seed: u64) -> Option<NpcTraits> {
     let mut out = NpcTraits {
         name: rec.get(b"FULL").map(|d| lo.lstring(&rec, d)).unwrap_or_default(),
         npc_for_face: npc,
+        npc_for_inventory: npc,
+        npc_for_stats: npc,
+        combat_style: rec.get(b"ZNAM").map(|d| fid_at(&rec, d)).unwrap_or_default(),
         race: rec.get(b"RNAM").map(|d| fid_at(&rec, d)).unwrap_or_default(),
         female: flags & 1 != 0,
         skin: rec.get(b"WNAM").map(|d| fid_at(&rec, d)).unwrap_or_default(),
@@ -146,6 +186,13 @@ fn npc_traits(lo: &LoadOrder, npc: FormId, seed: u64) -> Option<NpcTraits> {
         }
         if tpl_flags & TPL_INVENTORY != 0 {
             out.outfit = t.outfit;
+            out.npc_for_inventory = t.npc_for_inventory;
+        }
+        if tpl_flags & TPL_STATS != 0 {
+            out.npc_for_stats = t.npc_for_stats;
+        }
+        if tpl_flags & TPL_AI_DATA != 0 || out.combat_style.is_null() {
+            out.combat_style = t.combat_style;
         }
         if tpl_flags & TPL_BASE_DATA != 0 || out.name.is_empty() {
             out.name = t.name;
@@ -246,7 +293,8 @@ fn outfit_armors(lo: &LoadOrder, outfit: FormId, seed: u64) -> Vec<FormId> {
     items
         .chunks_exact(4)
         .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
-        .flat_map(|id| resolve_items(lo, id, seed, 0))
+        .flat_map(|id| resolve_items(lo, id, 1, seed, 0))
+        .map(|(id, _)| id)
         .filter(|id| lo.tag_of(*id).map(|t| t.0) == Some(*b"ARMO"))
         .collect()
 }
@@ -281,9 +329,23 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
     let (skeleton, race_skin, race_height) = race_info(lo, traits.race, traits.female)?;
     let skin = if traits.skin.is_null() { race_skin } else { traits.skin };
 
+    // Carried items, then the outfit (worn), then a weapon and shield to wield.
+    let mut inventory = super::inventory::Inventory::default();
+    if let Some(rec) = lo.get(traits.npc_for_inventory) {
+        for (f, n) in super::inventory::listed_items(lo, &rec, seed) {
+            inventory.add(f, n);
+        }
+    }
+    let outfit = outfit_armors(lo, traits.outfit, seed);
+    for &armo in &outfit {
+        inventory.add(armo, 1);
+        inventory.equipped.push(armo);
+    }
+    super::inventory::equip_weapons(lo, &mut inventory, traits.npc_for_stats, traits.combat_style);
+
     let mut models: Vec<String> = Vec::new();
     let mut covered = 0u32;
-    for armo in outfit_armors(lo, traits.outfit, seed) {
+    for &armo in &inventory.equipped {
         for (m, slots) in armor_models(lo, armo, traits.race, traits.female) {
             if slots & covered != 0 {
                 continue;
@@ -304,9 +366,13 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
             models.push(f);
         }
     }
+    // Weapons are rigid models hung from the bone their model names (sheathed).
+    if let Some(m) = inventory.weapon(lo).and_then(|w| super::inventory::weapon_model(lo, w)) {
+        models.push(m);
+    }
     let name = traits.name.clone();
     let scale = r.scale * traits.height * race_height;
     let transform = Mat4::from_scale_rotation_translation(glam::Vec3::splat(scale), r.rotation_quat(), r.position);
     let behavior = race_behavior(lo, traits.race, traits.female);
-    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female, behavior })
+    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female, behavior, inventory })
 }

@@ -72,6 +72,10 @@ pub struct Engine {
     move_types: Option<HashMap<String, crate::world::movement::MoveSpeeds>>,
     /// Anim objects by lowercase editor id: model path and the bone it hangs from.
     anim_objects: HashMap<String, Option<(String, String)>>,
+    /// Model path -> the bone a rigid model hangs from (its root's `Prn` string).
+    parent_bones: HashMap<String, Option<String>>,
+    /// What actors and containers carry, by reference (kept across cell loads).
+    pub inventories: HashMap<FormId, crate::world::inventory::Inventory>,
     /// IDLE records by parent and keyword (built on first use).
     pub(crate) idles: Option<crate::ai::idles::IdleIndex>,
     pub scripts: crate::script::ScriptState,
@@ -143,6 +147,8 @@ impl Engine {
             graphs: Default::default(),
             move_types: None,
             anim_objects: Default::default(),
+            parent_bones: Default::default(),
+            inventories: Default::default(),
             idles: None,
             scripts: Default::default(),
             vm: papyrus::Vm::new(),
@@ -574,6 +580,10 @@ impl Engine {
                     // NPC weight (0..100) picks between skinny and muscular body poses.
                     let weight = self.lo.get(d.npc).and_then(|r| r.get(b"NAM7").filter(|b| b.len() >= 4).map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap())));
                     g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
+                    // What the hands hold (sheathed): the graph picks equip / unequip
+                    // and weapon-drawn behaviours by it.
+                    g.set_variable("iLeftHandType", d.inventory.hand(&self.lo, true) as i32 as f32);
+                    g.set_variable("iRightHandType", d.inventory.hand(&self.lo, false) as i32 as f32);
                 }
                 // Desynchronise actors standing about.
                 rt.graph_walk_speed = g.walk_speed(&self.vfs, &mut self.anims, &skel);
@@ -587,11 +597,20 @@ impl Engine {
             rt.capsule = Some(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
             let pose = first_pose.unwrap_or_else(|| skel.model_space(&skel.bind_locals()));
             let mut meshes = Vec::new();
+            let mut equipment = Vec::new();
             for m in &d.models {
                 let Some(model) = self.models.get(m) else {
                     log::debug!("{}: missing model {m}", d.name);
                     continue;
                 };
+                // Rigid models (weapons, shields) hang from the bone they name.
+                if model.skinned.is_empty() && !model.parts.is_empty() {
+                    match self.parent_bone(m).and_then(|b| skel.find(&b).map(|i| (b, i))) {
+                        Some((_, bone)) => equipment.push((model.clone(), bone, glam::Mat4::IDENTITY)),
+                        None => log::debug!("{}: rigid model {m} has no parent bone in {}", d.name, d.skeleton),
+                    }
+                    continue;
+                }
                 for (pi, part) in model.skinned.iter().enumerate() {
                     let bone_map = part
                         .bone_names
@@ -607,18 +626,21 @@ impl Engine {
                 }
             }
             log::debug!(
-                "actor {} {:?} ({} {}) {} meshes at {:?}, {} packages",
+                "actor {} {:?} ({} {}) {} meshes, {} rigid ({:?}) at {:?}, {} packages",
                 d.ref_id,
                 d.name,
                 d.npc,
                 self.lo.get(d.npc).and_then(|r| r.editor_id()).unwrap_or_default(),
                 meshes.len(),
+                equipment.len(),
+                d.inventory.weapon(&self.lo).and_then(|w| self.lo.get(w)?.editor_id().map(|e| e.to_string())),
                 d.transform.w_axis.truncate(),
                 rt.packages.len()
             );
             actors.push(crate::render::ActorInstance {
                 meshes,
                 attachments: Vec::new(),
+                equipment,
                 transform: d.transform,
                 pose,
                 lights: [0xFFFF; 8],
@@ -632,6 +654,9 @@ impl Engine {
         }
         for a in &runtimes {
             self.actor_cells.insert(a.ref_id, key);
+        }
+        for (d, _) in descs {
+            self.inventories.entry(d.ref_id).or_insert(d.inventory);
         }
         if let Some(rt) = self.cells.get_mut(&key) {
             rt.colliders.extend(runtimes.iter().filter_map(|a| a.capsule));
@@ -686,7 +711,25 @@ impl Engine {
         }
     }
 
-    /// Model path and parent bone (the root's `Prn` string) of anim object `edid`.
+    /// The bone a rigid model (weapon, shield, anim object) hangs from: its root's
+    /// `Prn` string.
+    fn parent_bone(&mut self, model: &str) -> Option<String> {
+        if let Some(r) = self.parent_bones.get(model) {
+            return r.clone();
+        }
+        let r = (|| {
+            let nif = nif::Nif::parse(&self.vfs.read(model)?).ok()?;
+            let root = nif.roots.first().and_then(|&r| nif.get(nif::Ref(r as i32)))?.av()?;
+            root.net.extra_data.iter().find_map(|&e| match nif.get(e) {
+                Some(nif::Block::ExtraData(nif::ExtraData::String { name, value })) if name == "Prn" => Some(value.clone()),
+                _ => None,
+            })
+        })();
+        self.parent_bones.insert(model.to_owned(), r.clone());
+        r
+    }
+
+    /// Model path and parent bone of anim object `edid`.
     fn anim_object(&mut self, edid: &str) -> Option<(String, String)> {
         let key = edid.to_ascii_lowercase();
         if let Some(r) = self.anim_objects.get(&key) {
@@ -698,12 +741,7 @@ impl Engine {
                 return None;
             }
             let model = crate::world::records::mesh_path(&esp::decode_zstring(rec.get(b"MODL")?));
-            let nif = nif::Nif::parse(&self.vfs.read(&model)?).ok()?;
-            let root = nif.roots.first().and_then(|&r| nif.get(nif::Ref(r as i32)))?.av()?;
-            let bone = root.net.extra_data.iter().find_map(|&e| match nif.get(e) {
-                Some(nif::Block::ExtraData(nif::ExtraData::String { name, value })) if name == "Prn" => Some(value.clone()),
-                _ => None,
-            })?;
+            let bone = self.parent_bone(&model)?;
             Some((model, bone))
         })();
         if r.is_none() {
@@ -1417,6 +1455,58 @@ impl Engine {
     pub fn message_text(&self, m: FormId) -> String {
         let Some(rec) = self.lo.get(m) else { return String::new() };
         rec.get(b"DESC").map(|d| self.lo.lstring(&rec, d)).unwrap_or_default()
+    }
+
+    /// The inventory of a reference; a container's starts out with its contents.
+    pub fn inventory_mut(&mut self, r: FormId) -> &mut crate::world::inventory::Inventory {
+        if !self.inventories.contains_key(&r) {
+            let inv = self.base_of(r).map(|b| crate::world::inventory::container_inventory(&self.lo, b, r.0 as u64)).unwrap_or_default();
+            self.inventories.insert(r, inv);
+        }
+        self.inventories.get_mut(&r).unwrap()
+    }
+
+    /// How many of `item` (or of the forms in a form list) a reference holds.
+    pub fn item_count(&self, r: FormId, item: FormId) -> i32 {
+        let base = || self.base_of(r).map(|b| crate::world::inventory::container_inventory(&self.lo, b, r.0 as u64));
+        let held = self.inventories.get(&r).cloned().or_else(base).unwrap_or_default();
+        if self.lo.tag_of(item).map(|t| t.0) == Some(*b"FLST") {
+            self.formlist(item).into_iter().map(|f| held.count(f)).sum()
+        } else {
+            held.count(item)
+        }
+    }
+
+    /// Give `count` of `item` to a reference: a form list gives one of each, a
+    /// leveled list what it rolls.
+    pub fn add_item(&mut self, r: FormId, item: FormId, count: i32) {
+        let items: Vec<(FormId, i32)> = match self.lo.tag_of(item).map(|t| t.0) {
+            Some(t) if &t == b"FLST" => self.formlist(item).into_iter().map(|f| (f, count)).collect(),
+            Some(t) if &t == b"LVLI" => {
+                let seed = self.rand();
+                crate::world::actor::resolve_items(&self.lo, item, count, seed, 0)
+            }
+            _ => vec![(item, count)],
+        };
+        let inv = self.inventory_mut(r);
+        for (f, n) in items {
+            inv.add(f, n);
+        }
+    }
+
+    /// Take up to `count` of `item` (or of a form list's forms) from a reference,
+    /// handing them to `to` if given. Returns how many were taken.
+    pub fn remove_item(&mut self, r: FormId, item: FormId, count: i32, to: Option<FormId>) -> i32 {
+        let forms = if self.lo.tag_of(item).map(|t| t.0) == Some(*b"FLST") { self.formlist(item) } else { vec![item] };
+        let mut total = 0;
+        for f in forms {
+            let n = self.inventory_mut(r).remove(f, count);
+            if let Some(to) = to.filter(|_| n > 0) {
+                self.inventory_mut(to).add(f, n);
+            }
+            total += n;
+        }
+        total
     }
 
     pub fn formlist(&self, f: FormId) -> Vec<FormId> {
