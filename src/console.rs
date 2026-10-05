@@ -22,6 +22,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sae <ref> <event>     send a behaviour event to an actor".into(),
             "pi <ref> <idle>       play an IDLE record on an actor".into(),
             "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
+            "gstate <ref>          an actor's active behaviour graph states".into(),
             "door <ref>            open / close a door".into(),
         ],
         "door" => {
@@ -48,6 +49,14 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 Some(ev) if engine.play_animation_event(actor, &ev) => vec![format!("{r}: {ev}")],
                 Some(ev) => vec![format!("{r}: nothing plays {ev}")],
                 None => vec![format!("unknown idle '{what}'")],
+            }
+        }
+        "gstate" => {
+            let [r] = args[..] else { return vec!["usage: gstate <actor ref>".into()] };
+            let Some(actor) = engine.resolve_form(r) else { return vec![format!("unknown reference '{r}'")] };
+            match engine.graph_states(actor) {
+                Some(states) => vec![format!("{r}: {}", states.join(" > "))],
+                None => vec![format!("{r} has no behaviour graph")],
             }
         }
         "coc" | "centeroncell" => {

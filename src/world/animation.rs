@@ -13,10 +13,14 @@ pub struct BoundClip {
     pub anim: Arc<havok::Animation>,
     /// Transform track -> NIF skeleton bone index.
     pub track_to_bone: Vec<Option<usize>>,
+    /// Transform track -> Havok skeleton bone index (the order of behaviour bone weights).
+    pub track_to_hk: Vec<Option<usize>>,
     /// Root motion from the project's animation data, if the clip moves the actor.
     pub motion: Option<Arc<Motion>>,
     /// Played backwards (a behaviour clip generator with negative speed).
     pub reversed: bool,
+    /// Offsets to add to a pose rather than a pose.
+    pub additive: bool,
 }
 
 impl BoundClip {
@@ -29,8 +33,10 @@ impl BoundClip {
         BoundClip {
             anim: self.anim.clone(),
             track_to_bone: self.track_to_bone.clone(),
+            track_to_hk: self.track_to_hk.clone(),
             motion: self.motion.as_ref().map(|m| Arc::new(m.reversed(self.duration()))),
             reversed: !self.reversed,
+            additive: self.additive,
         }
     }
 }
@@ -61,6 +67,27 @@ impl Motion {
 
     pub fn end(&self) -> (Vec3, f32) {
         self.sample(f32::MAX)
+    }
+
+    /// Movement from time `from` to `to` (`wrapped` when a loop restarted in
+    /// between, over a clip of `duration`), in the actor's frame at `from`.
+    pub fn delta(&self, from: f32, to: f32, wrapped: bool, duration: f32) -> (Vec3, f32) {
+        let step = |a: f32, b: f32| {
+            let (pa, ya) = self.sample(a);
+            let (pb, yb) = self.sample(b);
+            // Into the frame at `a`: undo its counter-clockwise yaw (a clockwise turn).
+            let d = pb - pa;
+            let (s, c) = ya.sin_cos();
+            (Vec3::new(d.x * c + d.y * s, -d.x * s + d.y * c, d.z), yb - ya)
+        };
+        if !wrapped {
+            return step(from, to);
+        }
+        // To the end, then from the start: chain the two.
+        let (t1, y1) = step(from, duration);
+        let (t2, y2) = step(0.0, to);
+        let (s, c) = y1.sin_cos();
+        (t1 + Vec3::new(t2.x * c - t2.y * s, t2.x * s + t2.y * c, t2.z), y1 + y2)
     }
 
     /// Motion of the clip played backwards over `duration`: relative to the pose the
@@ -155,8 +182,6 @@ pub struct ActorAnim {
     pub speed: f32,
     /// Clip being faded out, its time, and fade progress (0..1) with duration.
     fading: Option<(Arc<BoundClip>, f32)>,
-    /// False while a one-shot clip plays; it then holds its last frame.
-    looping: bool,
     fade: f32,
     fade_len: f32,
     scratch: Vec<havok::QsTransform>,
@@ -172,7 +197,6 @@ impl ActorAnim {
             time: start % duration,
             speed: 1.0,
             fading: None,
-            looping: true,
             fade: 1.0,
             fade_len: 0.0,
             scratch: Vec::new(),
@@ -183,24 +207,9 @@ impl ActorAnim {
 
     /// Switch to `clip`, cross-fading from the current one over `fade` seconds.
     pub fn play(&mut self, clip: Arc<BoundClip>, fade: f32) {
-        if Arc::ptr_eq(&clip, &self.clip) && self.looping {
+        if Arc::ptr_eq(&clip, &self.clip) {
             return;
         }
-        self.start(clip, fade, true);
-    }
-
-    /// Play `clip` once from the start, then hold its last frame.
-    pub fn play_once(&mut self, clip: Arc<BoundClip>, fade: f32) {
-        self.start(clip, fade, false);
-    }
-
-    /// True once a one-shot clip has reached its end.
-    pub fn finished(&self) -> bool {
-        !self.looping && self.time >= self.clip.duration()
-    }
-
-    fn start(&mut self, clip: Arc<BoundClip>, fade: f32, looping: bool) {
-        self.looping = looping;
         let old = std::mem::replace(&mut self.clip, clip);
         self.fading = Some((old, self.time));
         self.time = 0.0;
@@ -226,7 +235,7 @@ impl ActorAnim {
     pub fn update(&mut self, skeleton: &Skeleton, dt: f32) -> Vec<glam::Mat4> {
         let d = self.clip.duration();
         self.time += dt * self.speed;
-        self.time = if self.looping { self.time % d } else { self.time.min(d) };
+        self.time %= d;
         if let Some((old, t)) = &mut self.fading {
             *t = (*t + dt) % old.duration();
             Self::apply(old, *t, &mut self.scratch, &mut self.locals);
@@ -265,8 +274,6 @@ pub struct BehaviorLibrary {
 pub struct EventClips {
     pub clips: Vec<havok::behavior::PlayedClip>,
     pub exit: Vec<havok::behavior::PlayedClip>,
-    /// Anim objects drawn on the way in (`AnimObjDraw` with an ANIO editor id).
-    pub draws: Vec<havok::behavior::RaisedEvent>,
     /// The loop plays once: its own trigger leads on to `exit`.
     pub loop_once: bool,
 }
@@ -315,19 +322,10 @@ impl BehaviorLibrary {
                         loop_once = true;
                     }
                 }
-                let draws = p
-                    .events
-                    .iter()
-                    .filter(|e| e.payload.is_some() && e.event.eq_ignore_ascii_case("AnimObjDraw"))
-                    .cloned()
-                    .collect();
-                Some(EventClips { clips: p.clips.clone(), exit, draws, loop_once })
+                Some(EventClips { clips: p.clips.clone(), exit, loop_once })
             }
-            // Loose idles name their clip generator after the event.
-            None => project
-                .clip_named(&format!("MT_{event}"))
-                .or_else(|| project.clip_named(event))
-                .map(|c| EventClips { clips: vec![c], exit: Vec::new(), draws: Vec::new(), loop_once: false }),
+            // No graph handles it (some IDLE records name events nothing listens to).
+            None => None,
         };
         if r.is_none() {
             log::debug!("{dir}: no clips for animation event {event:?}");
@@ -408,19 +406,16 @@ impl AnimationLibrary {
             let container = havok::AnimationContainer::parse(&bytes).map_err(|e| log::warn!("{clip}: {e}")).ok()?;
             let anim = container.animations.into_iter().next()?;
             let hk = hk.as_ref()?;
-            let track_to_bone = (0..anim.num_tracks)
-                .map(|t| {
-                    let bone = match &anim.binding {
-                        Some(b) if !b.track_to_bone.is_empty() => *b.track_to_bone.get(t)? as usize,
-                        _ => t,
-                    };
-                    let name = &hk.bones.get(bone)?.name;
-                    skeleton.find(name)
+            let track_to_hk: Vec<Option<usize>> = (0..anim.num_tracks)
+                .map(|t| match &anim.binding {
+                    Some(b) if !b.track_to_bone.is_empty() => b.track_to_bone.get(t).map(|&x| x as usize),
+                    _ => Some(t),
                 })
                 .collect();
-            Some((anim, track_to_bone))
+            let track_to_bone = track_to_hk.iter().map(|b| skeleton.find(&hk.bones.get((*b)?)?.name)).collect();
+            Some((anim, track_to_bone, track_to_hk))
         })()
-        .map(|(anim, track_to_bone)| {
+        .map(|(anim, track_to_bone, track_to_hk)| {
             // Humanoid clips take root motion from the matching default project.
             let motion = clip.contains("actors/character/").then(|| {
                 let project = if clip.contains("/female/") { "defaultfemale" } else { "defaultmale" };
@@ -429,7 +424,8 @@ impl AnimationLibrary {
                 log::trace!("{clip}: {project} motion for {stem:?}: {}", m.is_some());
                 m
             });
-            Arc::new(BoundClip { anim: Arc::new(anim), track_to_bone, motion: motion.flatten(), reversed: false })
+            let additive = anim.binding.as_ref().is_some_and(|b| b.additive);
+            Arc::new(BoundClip { anim: Arc::new(anim), track_to_bone, track_to_hk, motion: motion.flatten(), reversed: false, additive })
         });
         if result.is_none() {
             log::debug!("could not load clip {clip} for {nif_skeleton_path}");
@@ -509,6 +505,28 @@ mod tests {
         let (half, _) = m[&469].sample(1.0);
         assert!((half.y - 31.75).abs() < 1e-3);
         assert!(m[&470].translations.is_empty());
+    }
+
+    #[test]
+    fn motion_delta_across_a_loop() {
+        // One unit forward per second, turning a quarter counter-clockwise over 2 s.
+        let m = Motion {
+            translations: vec![(2.0, Vec3::new(0.0, 2.0, 0.0))],
+            rotations: vec![(2.0, std::f32::consts::FRAC_PI_2)],
+        };
+        let (t, yaw) = m.delta(0.5, 1.5, false, 2.0);
+        assert!((yaw - std::f32::consts::FRAC_PI_4).abs() < 1e-5);
+        assert!((t.length() - 1.0).abs() < 1e-5);
+        // 1.5 -> end -> 0.5 turns as far as 1.5 -> 2.5 would.
+        let (_, yaw) = m.delta(1.5, 0.5, true, 2.0);
+        assert!((yaw - std::f32::consts::FRAC_PI_4).abs() < 1e-5);
+        // A straight walk carries on straight across the wrap.
+        let walk = Motion { translations: vec![(2.0, Vec3::new(0.0, 2.0, 0.0))], rotations: vec![] };
+        let (t, _) = walk.delta(1.5, 0.5, true, 2.0);
+        assert!((t - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-5, "{t}");
+        // Turning in place by a quarter every loop: half a loop after a wrap faces on.
+        let turn = Motion { translations: vec![], rotations: vec![(2.0, std::f32::consts::FRAC_PI_2)] };
+        assert!((turn.delta(1.0, 1.0, true, 2.0).1 - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
     }
 
     #[test]

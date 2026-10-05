@@ -20,6 +20,12 @@ use super::*;
 /// (`Animations\male\MT_Idle.hkx`).
 pub trait ClipSource {
     fn duration(&mut self, animation: &str) -> Option<f32>;
+
+    /// Whether the animation is additive (an offset to apply on top of a pose,
+    /// `hkaAnimationBinding::blendHint`).
+    fn additive(&mut self, _animation: &str) -> bool {
+        false
+    }
 }
 
 impl<F: FnMut(&str) -> Option<f32>> ClipSource for F {
@@ -41,6 +47,8 @@ pub struct Sample {
     pub prev_time: f32,
     pub wrapped: bool,
     pub weight: f32,
+    /// Added on top of the blended pose (with `weight`) rather than blended into it.
+    pub additive: bool,
     /// Per-bone factors (Havok skeleton order) when only some bones take part.
     pub mask: Option<Arc<[f32]>>,
 }
@@ -228,6 +236,7 @@ struct ClipState {
     length: f32,
     offset: f32,
     reverse: bool,
+    additive: bool,
     looping: bool,
     wrapped: bool,
     started: bool,
@@ -339,6 +348,7 @@ impl Ctx<'_> {
                     let full = self.clips.duration(animation).unwrap_or(0.0);
                     let length = (full - crop_start - crop_end).max(0.0);
                     let start = self.bound(gi, g, "startTime").unwrap_or(*start_time).clamp(0.0, length);
+                    let additive = self.clips.additive(animation);
                     Kind::Clip(ClipState {
                         animation: animation.as_str().into(),
                         t: start,
@@ -346,6 +356,7 @@ impl Ctx<'_> {
                         length,
                         offset: *crop_start,
                         reverse: speed < 0.0,
+                        additive,
                         looping: *mode != ClipMode::SinglePlay,
                         wrapped: false,
                         started: false,
@@ -703,7 +714,7 @@ impl Ctx<'_> {
                 if flags & BLEND_SYNC != 0 {
                     // Synchronised cyclic children share a phase; the cycle length is
                     // the weighted mix of theirs.
-                    let weights = self.blend_weights(gi, g);
+                    let weights = self.blend_weights(gi, g, &[]);
                     let lengths: Vec<f32> = children.iter().map(|c| c.as_ref().map_or(0.0, cycle_length)).collect();
                     let total: f32 = weights.iter().zip(&lengths).map(|(w, l)| w * l).sum();
                     if total > 1e-4 {
@@ -865,8 +876,9 @@ impl Ctx<'_> {
         }
     }
 
-    /// Normalised weights of a blender's children.
-    fn blend_weights(&self, gi: usize, g: GenId) -> Vec<f32> {
+    /// Normalised weights of a blender's children. Children flagged in `additive`
+    /// keep their own weight (0..1) and don't take part in the normalisation.
+    fn blend_weights(&self, gi: usize, g: GenId, additive: &[bool]) -> Vec<f32> {
         let graph = self.shared.graph(gi);
         let Generator::Blender { parameter, min_cyclic, max_cyclic, flags, children, .. } = &graph.generators[g] else { return Vec::new() };
         let raw: Vec<f32> = children.iter().map(|c| c.weight_variable.map_or(c.weight, |v| self.var(gi, v))).collect();
@@ -912,13 +924,19 @@ impl Ctx<'_> {
                 }
             }
         } else {
-            let total: f32 = raw.iter().map(|x| x.max(0.0)).sum();
-            if total > 1e-6 {
-                for (o, r) in w.iter_mut().zip(&raw) {
-                    *o = r.max(0.0) / total;
-                }
-            } else if !w.is_empty() {
-                w[0] = 1.0;
+            let add = |i: usize| additive.get(i).copied().unwrap_or(false);
+            let total: f32 = raw.iter().enumerate().filter(|(i, _)| !add(*i)).map(|(_, x)| x.max(0.0)).sum();
+            for (i, (o, r)) in w.iter_mut().zip(&raw).enumerate() {
+                *o = if add(i) {
+                    r.clamp(0.0, 1.0)
+                } else if total > 1e-6 {
+                    r.max(0.0) / total
+                } else {
+                    0.0
+                };
+            }
+            if total <= 1e-6 && let Some(i) = (0..w.len()).find(|&i| !add(i)) {
+                w[i] = 1.0;
             }
         }
         w
@@ -942,6 +960,7 @@ impl Ctx<'_> {
                     prev_time: file_time(c.prev),
                     wrapped: c.wrapped,
                     weight,
+                    additive: c.additive,
                     mask: mask.cloned(),
                 });
             }
@@ -962,7 +981,8 @@ impl Ctx<'_> {
             Kind::Blend { children, .. } => {
                 let graph = self.shared.graph(gi);
                 let Generator::Blender { children: defs, .. } = &graph.generators[g] else { return };
-                let w = self.blend_weights(gi, g);
+                let additive: Vec<bool> = children.iter().map(|c| c.as_ref().is_some_and(is_additive)).collect();
+                let w = self.blend_weights(gi, g, &additive);
                 for ((c, wi), def) in children.iter().zip(w).zip(defs) {
                     let Some(c) = c else { continue };
                     match &def.bone_weights {
@@ -1010,6 +1030,15 @@ fn combine(outer: Option<&Arc<[f32]>>, inner: &[f32]) -> Arc<[f32]> {
     match outer {
         None => inner.into(),
         Some(o) => (0..o.len().max(inner.len())).map(|b| o.get(b).copied().unwrap_or(1.0) * inner.get(b).copied().unwrap_or(1.0)).collect(),
+    }
+}
+
+/// A clip (or a wrapper around one) whose animation is additive.
+fn is_additive(node: &Node) -> bool {
+    match &node.kind {
+        Kind::Clip(c) => c.additive,
+        Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => is_additive(c),
+        _ => false,
     }
 }
 

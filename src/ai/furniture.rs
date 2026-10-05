@@ -114,24 +114,29 @@ impl Seat {
     }
 }
 
-/// Clips for using a marker: played in order to get in, looped while in, played
-/// in order to get out.
+/// What using a marker (or playing an idle) will look like, worked out ahead from
+/// the behaviour graphs: the event that starts it and the clips it plays to get
+/// in, hold and get out (with the events that end it). The graph plays them; the
+/// AI uses them to plan where the actor must start and how long each part takes.
 pub struct UseClips {
+    pub event: String,
+    /// Events that may end it, in order of preference.
+    pub exits: Vec<String>,
     pub enter: Vec<Arc<BoundClip>>,
     pub idle: Arc<BoundClip>,
     pub exit: Vec<Arc<BoundClip>>,
     /// False when the last clip is a one-shot (a gesture rather than a pose to hold).
     pub idle_loops: bool,
-    /// Anim objects (ANIO editor ids) to draw, by clip (index into `enter`, or
-    /// `enter.len()` for the idle) and seconds into it.
-    pub objects: Vec<ObjectCue>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ObjectCue {
-    pub clip: usize,
-    pub time: f32,
-    pub anio: String,
+impl UseClips {
+    pub fn enter_time(&self) -> f32 {
+        self.enter.iter().map(|c| c.duration()).sum()
+    }
+
+    pub fn exit_time(&self) -> f32 {
+        self.exit.iter().map(|c| c.duration()).sum()
+    }
 }
 
 /// Rotate an actor-space offset (+Y forward, +X right) into the world by `heading`.

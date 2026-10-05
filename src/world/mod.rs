@@ -1,6 +1,7 @@
 pub mod actor;
 pub mod animated;
 pub mod animation;
+pub mod behavior;
 pub mod cell;
 pub mod loader;
 pub mod lod;

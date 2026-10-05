@@ -67,6 +67,7 @@ pub struct Engine {
     skeletons: HashMap<String, Option<std::sync::Arc<crate::world::skeleton::Skeleton>>>,
     pub(crate) anims: crate::world::animation::AnimationLibrary,
     pub(crate) behaviors: crate::world::animation::BehaviorLibrary,
+    pub(crate) graphs: crate::world::behavior::GraphLibrary,
     /// Anim objects by lowercase editor id: model path and the bone it hangs from.
     anim_objects: HashMap<String, Option<(String, String)>>,
     /// IDLE records by parent and keyword (built on first use).
@@ -137,6 +138,7 @@ impl Engine {
             skeletons: HashMap::new(),
             anims: Default::default(),
             behaviors: Default::default(),
+            graphs: Default::default(),
             anim_objects: Default::default(),
             idles: None,
             scripts: Default::default(),
@@ -544,11 +546,29 @@ impl Engine {
             rt.female = d.female;
             rt.child = self.npc_race(d.npc).is_some_and(|r| self.race_is_child(r));
             rt.anim = idle.clone().map(|c| crate::world::animation::ActorAnim::new(c, &skel, start));
+            let mut first_pose = None;
+            // Humanoids run their behaviour graph, set up as the game does for NPCs.
+            let project = d.skeleton.split("/character assets").next().filter(|b| b.ends_with("actors/character")).map(str::to_owned);
+            if let Some(project) = project
+                && let Some(shared) = self.graphs.shared(&self.vfs, &project)
+            {
+                let mut g = crate::world::behavior::GraphAnim::new(shared, &project, &d.skeleton, d.female, &skel, self.rng ^ d.ref_id.0 as u64);
+                g.label = d.ref_id.to_string();
+                for (var, value) in [("IsNPC", 1.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)] {
+                    g.set_variable(var, value);
+                }
+                // NPC weight (0..100) picks between skinny and muscular body poses.
+                let weight = self.lo.get(d.npc).and_then(|r| r.get(b"NAM7").filter(|b| b.len() >= 4).map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap())));
+                g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
+                // Desynchronise actors standing about.
+                first_pose = Some(g.update(start, &self.vfs, &mut self.anims, &skel).pose);
+                rt.graph = Some(g);
+            }
             rt.idle = idle;
             rt.walk = walk;
             let (scale, _, feet) = d.transform.to_scale_rotation_translation();
             rt.capsule = Some(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
-            let pose = skel.model_space(&skel.bind_locals());
+            let pose = first_pose.unwrap_or_else(|| skel.model_space(&skel.bind_locals()));
             let mut meshes = Vec::new();
             for m in &d.models {
                 let Some(model) = self.models.get(m) else {

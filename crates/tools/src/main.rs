@@ -403,14 +403,32 @@ fn main() -> Result<()> {
             let dir = args[2].trim_end_matches('/').to_owned();
             let project = std::sync::Arc::new(havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}"))));
             let shared = Shared::new(project);
-            let mut cache: std::collections::HashMap<String, Option<f32>> = Default::default();
-            let mut clips = |anim: &str| -> Option<f32> {
-                let path = format!("{dir}/{}", anim.to_ascii_lowercase().replace('\\', "/"));
-                *cache.entry(path.clone()).or_insert_with(|| {
-                    let c = havok::AnimationContainer::parse(&v.read(&path)?).ok()?;
-                    Some(c.animations.first()?.duration)
-                })
-            };
+            /// Clip lengths and blend hints, read from the data.
+            struct ToolClips<'a> {
+                v: &'a vfs::Vfs,
+                dir: String,
+                cache: std::collections::HashMap<String, Option<(f32, bool)>>,
+            }
+            impl ToolClips<'_> {
+                fn info(&mut self, anim: &str) -> Option<(f32, bool)> {
+                    let path = format!("{}/{}", self.dir, anim.to_ascii_lowercase().replace('\\', "/"));
+                    let v = self.v;
+                    *self.cache.entry(path.clone()).or_insert_with(|| {
+                        let c = havok::AnimationContainer::parse(&v.read(&path)?).ok()?;
+                        let a = c.animations.first()?;
+                        Some((a.duration, a.binding.as_ref().is_some_and(|b| b.additive)))
+                    })
+                }
+            }
+            impl havok::behavior::runtime::ClipSource for ToolClips<'_> {
+                fn duration(&mut self, anim: &str) -> Option<f32> {
+                    self.info(anim).map(|i| i.0)
+                }
+                fn additive(&mut self, anim: &str) -> bool {
+                    self.info(anim).is_some_and(|i| i.1)
+                }
+            }
+            let mut clips = ToolClips { v: &v, dir: dir.clone(), cache: Default::default() };
             let mut inst = Instance::new(shared, 1);
             inst.set_tracing(true);
             let show = |inst: &mut Instance, label: &str| {
@@ -419,8 +437,23 @@ fn main() -> Result<()> {
                     println!("  > {t}");
                 }
                 println!("  states: {}", inst.active_states().join(" > "));
-                for s in inst.samples() {
-                    println!("  {:5.2} {} t={:.2}", s.weight, s.animation, s.time);
+                let samples = inst.samples();
+                let mut cover = vec![0.0f32; 99];
+                for s in &samples {
+                    for (b, c) in cover.iter_mut().enumerate() {
+                        *c += s.weight * s.mask.as_ref().map_or(1.0, |m| m.get(b).copied().unwrap_or(0.0));
+                    }
+                }
+                let bare: Vec<usize> = cover.iter().enumerate().filter(|(_, c)| **c < 1e-3).map(|(b, _)| b).collect();
+                if !bare.is_empty() {
+                    println!("  uncovered bones {bare:?}");
+                }
+                for s in samples {
+                    let mask = s.mask.as_ref().map(|m| {
+                        let on: Vec<usize> = m.iter().enumerate().filter(|(_, w)| **w > 0.0).map(|(i, _)| i).collect();
+                        format!(" mask {} of {} bones {:?}", on.len(), m.len(), &on[..on.len().min(8)])
+                    });
+                    println!("  {:5.2}{} {} t={:.2}{}", s.weight, if s.additive { " +" } else { "" }, s.animation, s.time, mask.unwrap_or_default());
                 }
                 for r in inst.take_raised() {
                     println!("  raised {}{}", r.event, r.payload.map(|p| format!(" ({p})")).unwrap_or_default());
@@ -443,6 +476,17 @@ fn main() -> Result<()> {
                     }
                     show(&mut inst, &format!("+{secs} s"));
                 }
+            }
+        }
+        Some("hkx-binding") => {
+            // hkx-binding <data dir> <animation path>: how a clip binds to its skeleton.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let c = havok::AnimationContainer::parse(&v.read(&args[2]).context("not found")?)?;
+            for a in &c.animations {
+                let b = a.binding.as_ref();
+                println!("duration {} tracks {} additive {:?} bound tracks {:?}", a.duration, a.num_tracks, b.map(|b| b.additive), b.map(|b| b.track_to_bone.len()));
             }
         }
         Some("hkb-clips") => {
