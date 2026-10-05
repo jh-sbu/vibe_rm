@@ -9,6 +9,7 @@ use havok::behavior::runtime::{Instance, Raised, Shared};
 use nif::Transform;
 
 use super::animation::{AnimationLibrary, BoundClip, Motion, project_clip_paths};
+use super::footik::{self, FootIkState};
 use super::lookat::{self, LookAtState};
 use super::skeleton::Skeleton;
 
@@ -114,6 +115,12 @@ pub struct GraphAnim {
     look: LookAtState,
     /// NIF bone of each Havok skeleton bone (look-at bone indices are Havok's).
     hk_bones: Option<Vec<Option<usize>>>,
+    /// Foot placement: on or off, the ground under each leg's ankle (model space
+    /// height and normal, from the AI's rays), and the ankles to cast from next.
+    pub foot_ik: bool,
+    pub ground: Vec<Option<(f32, Vec3)>>,
+    pub ankles: Vec<Vec3>,
+    feet: FootIkState,
     bind: Vec<Transform>,
     scratch: Vec<havok::QsTransform>,
 }
@@ -169,6 +176,10 @@ impl GraphAnim {
             look_target: None,
             look: LookAtState::default(),
             hk_bones: None,
+            foot_ik: false,
+            ground: Vec::new(),
+            ankles: Vec::new(),
+            feet: FootIkState::default(),
             bind: skeleton.bind_locals(),
             scratch: Vec::new(),
         }
@@ -332,7 +343,12 @@ impl GraphAnim {
         }
         let mut locals: Vec<Transform> =
             locals.into_iter().map(|(t, q, s)| Transform { translation: t, rotation: glam::Mat3::from_quat(q), scale: s }).collect();
-        // Head tracking on top (the first look-at modifier running).
+        // Feet on the ground, then head tracking on top (the first look-at modifier running).
+        if let Some(ik) = self.project.shared.project.character.as_ref().and_then(|c| c.foot_ik.as_ref()) {
+            let map = self.hk_bones.get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
+            let ground: &[Option<(f32, Vec3)>] = if self.foot_ik { &self.ground } else { &[] };
+            self.ankles = footik::apply(&mut self.feet, ik, map, skeleton, &mut locals, ground, dt);
+        }
         if let Some(l) = self.inst.look_ats().first() {
             let map = self.hk_bones.get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
             let outside = lookat::apply(&mut self.look, l, map, skeleton, &mut locals, self.look_target, dt);

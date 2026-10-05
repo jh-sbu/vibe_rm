@@ -41,6 +41,8 @@ pub struct Physics {
     player_shape: SharedShape,
     /// Collider -> reference FormID that owns it.
     pub owners: HashMap<ColliderHandle, esp::FormId>,
+    /// Actors' capsules (not ground to stand on).
+    capsules: std::collections::HashSet<ColliderHandle>,
     pub player_radius: f32,
     pub player_half_height: f32,
 }
@@ -71,6 +73,7 @@ impl Physics {
             controller,
             player_shape: SharedShape::capsule_z(player_half_height, player_radius),
             owners: HashMap::new(),
+            capsules: Default::default(),
             player_radius,
             player_half_height,
         }
@@ -117,6 +120,7 @@ impl Physics {
             .build();
         let h = self.world.insert_collider(c, None);
         self.owners.insert(h, owner);
+        self.capsules.insert(h);
         h
     }
 
@@ -142,6 +146,7 @@ impl Physics {
         for &h in handles {
             self.world.remove_collider(h);
             self.owners.remove(&h);
+            self.capsules.remove(&h);
         }
     }
 
@@ -183,6 +188,15 @@ impl Physics {
         let qp = self.world.query_pipeline();
         let m = self.controller.move_shape(dt, &qp, &*self.player_shape.0, &pose, desired, |_| {});
         (pos + m.translation, m.grounded)
+    }
+
+    /// Cast a ray at the ground and what stands on it, ignoring actors: the hit
+    /// distance and surface normal.
+    pub fn ground_ray(&self, origin: Vec3, dir: Vec3, max: f32) -> Option<(f32, Vec3)> {
+        let ray = Ray::new(origin, dir);
+        let not_actor = |h: ColliderHandle, _: &Collider| !self.capsules.contains(&h);
+        let (_, hit) = self.world.cast_ray_and_get_normal(&ray, max, true, QueryFilter::default().predicate(&not_actor))?;
+        Some((hit.time_of_impact, hit.normal))
     }
 
     /// Cast a ray, returning the hit distance and the owning reference (if any).

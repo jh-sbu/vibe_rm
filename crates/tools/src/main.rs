@@ -8,6 +8,9 @@ fn load_project(v: &vfs::Vfs, arg: &str) -> Result<(String, havok::behavior::Pro
         let p = havok::behavior::Project::load_project(file, |rel| v.read(&format!("{dir}/{rel}")))?;
         if let Some(c) = &p.character {
             eprintln!("character {} rig {} behaviour {}, {} graphs", c.name, c.rig, c.behavior, p.graphs.len());
+            if let Some(f) = &c.foot_ik {
+                eprintln!("foot IK: {f:?}");
+            }
         }
         return Ok((dir.to_owned(), p));
     }

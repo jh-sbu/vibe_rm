@@ -60,6 +60,9 @@ game each piece unlocks.
 - Head tracking: humanoids' `BSLookAtModifier` (spine, neck, head and eye bones, each
   within its limit, eased by the graph's gains, off past the overall limit) turns NPCs
   towards the player close by and while talking (`bHeadTracking`, `LookAtOutOfRange`)
+- Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses): rays through
+  the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
+  IK raising the others within their knee limits, planted feet tilted with the slope
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
@@ -78,7 +81,8 @@ game each piece unlocks.
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
-   - Pose modifiers: foot IK, twist, keyframe bones; creatures' look-at modifiers (unbound:
+   - Pose modifiers: twist, keyframe bones; foot IK gains from `hkbFootIkControlsModifier`,
+     locking planted feet; creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
    - Transition intervals, `ABUT_AT_END_OF_FROM_GENERATOR`, chooser start states,
      state machine `currentStateId` outputs, selectors' own blends

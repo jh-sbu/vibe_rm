@@ -3,6 +3,7 @@ pub mod animated;
 pub mod animation;
 pub mod behavior;
 pub mod cell;
+pub mod footik;
 pub mod loader;
 pub mod lookat;
 pub mod movement;
