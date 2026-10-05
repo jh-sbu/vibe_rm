@@ -13,6 +13,58 @@ pub enum Menu {
     Inventory,
     /// A container (or another inventory) being searched.
     Container(FormId),
+    /// A book being read: the book, and the reference it lies as in the world.
+    Book { book: FormId, reference: Option<FormId> },
+}
+
+/// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,
+/// `<font>`, `<img>`...) reduced to paragraphs, `[pagebreak]` starting a new page.
+pub fn book_pages(text: &str) -> Vec<String> {
+    let mut pages = Vec::new();
+    for raw in text.split("[pagebreak]") {
+        let mut out = String::new();
+        let mut rest = raw;
+        while let Some(i) = rest.find('<') {
+            out.push_str(&rest[..i]);
+            let Some(j) = rest[i..].find('>') else {
+                rest = &rest[i + 1..];
+                continue;
+            };
+            let tag = rest[i + 1..i + j].trim().to_ascii_lowercase();
+            if tag.starts_with("br") || tag.starts_with("/p") || tag.starts_with("p ") || tag == "p" {
+                out.push('\n');
+            }
+            // Illuminated first letters are pictures of the letter (`.../T_kells.png`).
+            if let Some(k) = tag.find("illuminated_letters/")
+                && let Some(c) = tag[k + "illuminated_letters/".len()..].chars().next()
+            {
+                out.push(c.to_ascii_uppercase());
+            }
+            rest = &rest[i + j + 1..];
+        }
+        out.push_str(rest);
+        let text = out.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("\r", "");
+        // Collapse runs of blank lines.
+        let mut page = String::new();
+        let mut blank = 0;
+        for line in text.lines().map(str::trim) {
+            if line.is_empty() {
+                blank += 1;
+                if blank > 1 || page.is_empty() {
+                    continue;
+                }
+            } else {
+                blank = 0;
+            }
+            page.push_str(line);
+            page.push('\n');
+        }
+        let page = page.trim_end().to_owned();
+        if !page.is_empty() {
+            pages.push(page);
+        }
+    }
+    pages
 }
 
 impl Engine {
@@ -34,6 +86,19 @@ impl Engine {
         let player = self.object_value(PLAYER_REF);
         self.send_script_event(r, "OnContainerChanged", vec![player, papyrus::Value::None]);
         true
+    }
+
+    /// A book's title and text.
+    pub fn book_text(&self, book: FormId) -> (String, String) {
+        let Some(rec) = self.lo.get(book) else { return Default::default() };
+        let name = rec.get(b"FULL").map(|d| self.lo.lstring(&rec, d)).unwrap_or_default();
+        let text = rec.get(b"DESC").map(|d| self.lo.lstring(&rec, d)).unwrap_or_default();
+        (name, text)
+    }
+
+    /// Whether a book may be taken (`DATA` flag 0x02: can't be taken).
+    pub fn book_takeable(&self, book: FormId) -> bool {
+        !self.lo.get(book).and_then(|r| r.get(b"DATA").and_then(|d| d.first().copied())).is_some_and(|f| f & 0x2 != 0)
     }
 
     /// Move up to `n` of `item` from one inventory to another; returns how many moved.

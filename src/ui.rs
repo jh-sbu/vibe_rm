@@ -211,7 +211,8 @@ impl Ui {
         let mut close = self.menu_shown && ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Tab));
         let all = ctx.input(|i| i.modifiers.shift);
         let rect = ctx.content_rect();
-        let list = |ui: &mut egui::Ui, engine: &mut Engine, owner: FormId, to: Option<FormId>, moves: &mut Vec<(FormId, FormId, FormId, i32)>| {
+        let mut reading: Option<FormId> = None;
+        let list = |ui: &mut egui::Ui, engine: &mut Engine, owner: FormId, to: Option<FormId>, moves: &mut Vec<(FormId, FormId, FormId, i32)>, read: &mut Option<FormId>| {
             let items = engine.listed_inventory(owner);
             let weight: f32 = items.iter().map(|(_, n, i)| i.weight * *n as f32).sum();
             ui.set_min_width(420.0);
@@ -224,8 +225,13 @@ impl Ui {
                     ui.end_row();
                     for (f, n, info) in &items {
                         let r = ui.add(egui::Label::new(&info.name).sense(egui::Sense::click()));
-                        if let (Some(to), true) = (to, r.clicked()) {
-                            moves.push((owner, to, *f, if all { *n } else { 1 }));
+                        match to {
+                            Some(to) if r.clicked() => moves.push((owner, to, *f, if all { *n } else { 1 })),
+                            // Books in one's own inventory are read.
+                            None if r.clicked() && info.kind == crate::world::inventory::ItemKind::Book => {
+                                *read = Some(*f);
+                            }
+                            _ => {}
                         }
                         ui.label(n.to_string());
                         ui.label(format!("{:.1}", info.weight));
@@ -240,12 +246,48 @@ impl Ui {
         let container = match menu {
             Menu::Container(c) => Some(c),
             Menu::Inventory => None,
+            Menu::Book { book, reference } => {
+                let (title, text) = engine.book_text(book);
+                let pages = crate::items::book_pages(&text);
+                let take = reference.filter(|_| engine.book_takeable(book));
+                egui::Window::new(if title.is_empty() { "Book".to_owned() } else { title })
+                    .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                    .resizable(false)
+                    .collapsible(false)
+                    .default_width(rect.width().min(640.0))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(rect.width().min(640.0) - 20.0);
+                        ui.horizontal(|ui| {
+                            if let Some(r) = take
+                                && ui.button("Take").clicked()
+                            {
+                                engine.take_item(r);
+                                close = true;
+                            }
+                            close |= ui.button("Close").clicked();
+                        });
+                        ui.separator();
+                        egui::ScrollArea::vertical().max_height(rect.height() * 0.55).show(ui, |ui| {
+                            for (i, p) in pages.iter().enumerate() {
+                                if i > 0 {
+                                    ui.separator();
+                                }
+                                ui.label(egui::RichText::new(p).size(17.0));
+                            }
+                        });
+                    });
+                if close {
+                    // Back to the inventory when reading from it.
+                    engine.menu = if reference.is_none() { Some(Menu::Inventory) } else { None };
+                }
+                return;
+            }
         };
         egui::Window::new("Inventory")
             .anchor(Align2::LEFT_CENTER, egui::vec2(40.0, 0.0))
             .resizable(false)
             .collapsible(false)
-            .show(ctx, |ui| list(ui, engine, PLAYER_REF, container, &mut moves));
+            .show(ctx, |ui| list(ui, engine, PLAYER_REF, container, &mut moves, &mut reading));
         if let Some(c) = container {
             let name = engine.base_of(c).and_then(|b| engine.lo.get(b)).and_then(|r| r.get(b"FULL").map(|d| engine.lo.lstring(&r, d))).unwrap_or_default();
             egui::Window::new(if name.is_empty() { "Container".to_owned() } else { name })
@@ -253,7 +295,7 @@ impl Ui {
                 .resizable(false)
                 .collapsible(false)
                 .show(ctx, |ui| {
-                    list(ui, engine, c, Some(PLAYER_REF), &mut moves);
+                    list(ui, engine, c, Some(PLAYER_REF), &mut moves, &mut reading);
                     ui.horizontal(|ui| {
                         if ui.button("Take all").clicked() {
                             for (f, n, _) in engine.listed_inventory(c) {
@@ -269,6 +311,9 @@ impl Ui {
         }
         if close {
             engine.menu = None;
+        }
+        if let Some(book) = reading {
+            engine.menu = Some(Menu::Book { book, reference: None });
         }
     }
 
