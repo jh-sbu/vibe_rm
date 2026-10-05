@@ -309,6 +309,20 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("hkb-clips") => {
+            // hkb-clips <data dir> <project dir> <graph file>: every clip generator with mode and speed.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let dir = args[2].trim_end_matches('/');
+            let bytes = v.read(&format!("{dir}/behaviors/{}", args[3])).context("graph not found")?;
+            let g = havok::behavior::BehaviorGraph::parse(&bytes)?;
+            for node in &g.generators {
+                if let havok::behavior::Generator::Clip { name, animation, mode, speed, .. } = node {
+                    println!("{name}\t{animation}\t{mode:?}\t{speed}");
+                }
+            }
+        }
         Some("idle-tree") => {
             // idle-tree <data dir> <IDLE editor id>: the idle and its descendants with raw conditions.
             let data = std::path::Path::new(&args[1]);
