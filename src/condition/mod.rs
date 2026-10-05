@@ -291,6 +291,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             Some(if c.func == 434 { line.emotion.0 } else { line.emotion.1 } as f32)
         }
         623 => Some(subject.and_then(|s| e.actor_speed(s)).unwrap_or(0.0)), // GetMovementSpeed
+        // GetEquippedItemType: hands empty until there is an inventory.
+        597 => Some(0.0),
+        263 => b(false), // IsWeaponOut
         // Nor flees, attacks, staggers, recoils or is ridden.
         329 | 672 | 701 | 702 | 714 => b(false),
         _ => idle_function_value(e, c, ctx),
