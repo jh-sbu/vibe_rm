@@ -104,6 +104,16 @@ pub struct UseClips {
     pub exit: Vec<Arc<BoundClip>>,
     /// False when the last clip is a one-shot (a gesture rather than a pose to hold).
     pub idle_loops: bool,
+    /// Anim objects (ANIO editor ids) to draw, by clip (index into `enter`, or
+    /// `enter.len()` for the idle) and seconds into it.
+    pub objects: Vec<ObjectCue>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjectCue {
+    pub clip: usize,
+    pub time: f32,
+    pub anio: String,
 }
 
 /// Rotate an actor-space offset (+Y forward, +X right) into the world by `heading`.
@@ -370,7 +380,7 @@ pub fn ways_to_use(
         }
         let Some([enter, idle, exit]) = clip_names(m.kind, f.bedroll, entry) else { continue };
         let Some(idle) = clip(&idle) else { continue };
-        out.push((entry, UseClips { enter: clip(&enter).into_iter().collect(), idle, exit: clip(&exit).into_iter().collect(), idle_loops: true }));
+        out.push((entry, UseClips { enter: clip(&enter).into_iter().collect(), idle, exit: clip(&exit).into_iter().collect(), idle_loops: true, objects: Vec::new() }));
     }
     out
 }

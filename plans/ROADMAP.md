@@ -27,14 +27,16 @@ game each piece unlocks.
   follow / escort packages; SitTarget
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
+- Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
+  payloads) put brooms, tankards, hammers, lutes, books... in actors' hands, hung from the
+  bone named by the model's `Prn`; put away when the actor leaves the idle / furniture
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
 
 ## Next
 1. **AI depth**
-   - Anim objects (mugs, bowls, hammers) for table / counter / work idles; chair idle
-     variants; child furniture clips; IDLE conditions (currently ignored); chairs and
+   - Chair idle variants (eating / drinking with their anim objects); child furniture clips; IDLE conditions (currently ignored); chairs and
      beds still pick clips by name rather than through the graphs
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target

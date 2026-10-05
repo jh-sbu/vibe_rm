@@ -21,6 +21,8 @@ pub struct Trigger {
     pub from_end: bool,
     /// Index into the graph's event names.
     pub event: i32,
+    /// String payload (`hkbStringEventPayload`), e.g. the ANIO editor id of `AnimObjLoad`.
+    pub payload: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -35,12 +37,22 @@ pub struct Transition {
 const FLAG_TO_NESTED_STATE_ID_IS_VALID: u16 = 0x2000;
 const FLAG_DISABLED: u16 = 0x20;
 
+/// An event raised by the graph itself, with its optional string payload.
+#[derive(Debug, Clone)]
+pub struct EventProperty {
+    pub event: i32,
+    pub payload: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct State {
     pub id: i32,
     pub name: String,
     pub generator: Option<GenId>,
     pub transitions: Vec<Transition>,
+    /// Events raised on entering / leaving the state (e.g. `AnimObjLoad`).
+    pub enter_events: Vec<EventProperty>,
+    pub exit_events: Vec<EventProperty>,
 }
 
 #[derive(Debug, Clone)]
@@ -107,13 +119,24 @@ impl Reader<'_> {
             .collect()
     }
 
+    /// String payload of the `hkbEventPayload` pointed to from `slot`.
+    fn payload(&self, slot: u32) -> Option<String> {
+        self.p.ptr(slot).filter(|&o| self.p.object_class(o) == Some("hkbStringEventPayload")).and_then(|o| self.p.string(o + 0x10))
+    }
+
+    fn event_properties(&self, array_obj: Option<u32>) -> Vec<EventProperty> {
+        let Some(a) = array_obj else { return Vec::new() };
+        let (Some(data), n) = self.p.array(a + 0x10) else { return Vec::new() };
+        (0..n as u32).map(|i| data + i * 0x10).map(|e| EventProperty { event: self.p.i32(e), payload: self.payload(e + 8) }).collect()
+    }
+
     fn triggers(&self, array_obj: Option<u32>) -> Vec<Trigger> {
         let Some(a) = array_obj else { return Vec::new() };
         let (Some(data), n) = self.p.array(a + 0x10) else { return Vec::new() };
         (0..n as u32)
             .map(|i| {
                 let t = data + i * 0x20;
-                Trigger { time: self.p.f32(t), event: self.p.i32(t + 8), from_end: self.p.u8(t + 0x18) != 0 }
+                Trigger { time: self.p.f32(t), event: self.p.i32(t + 8), from_end: self.p.u8(t + 0x18) != 0, payload: self.payload(t + 0x10) }
             })
             .collect()
     }
@@ -150,6 +173,8 @@ impl Reader<'_> {
                         name: p.string(s + 0x60).unwrap_or_default(),
                         generator,
                         transitions: self.transitions(p.ptr(s + 0x50)),
+                        enter_events: self.event_properties(p.ptr(s + 0x40)),
+                        exit_events: self.event_properties(p.ptr(s + 0x48)),
                     });
                 }
                 Generator::StateMachine { name, start: p.i32(o + 0x68), states, wildcards: self.transitions(p.ptr(o + 0xA0)) }
@@ -246,10 +271,25 @@ pub struct PlayedClip {
     pub mode: ClipMode,
 }
 
+/// An event the graph raises while playing a sequence: on entering a state, or
+/// from a clip trigger.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RaisedEvent {
+    /// Index into [`Playback::clips`] of the clip playing when it is raised.
+    pub clip: usize,
+    /// Seconds into that clip (from its end if `from_end`).
+    pub time: f32,
+    pub from_end: bool,
+    pub event: String,
+    pub payload: Option<String>,
+}
+
 /// Clips played for an event and where in the graphs playback ended up.
 #[derive(Debug, Clone)]
 pub struct Playback {
     pub clips: Vec<PlayedClip>,
+    /// Events raised along the way, in order.
+    pub events: Vec<RaisedEvent>,
     cursor: Cursor,
 }
 
@@ -262,6 +302,9 @@ pub struct Project {
 
 /// Position while walking a graph: (graph index, state machine stack of (sm, state id)).
 type Cursor = (usize, Vec<(GenId, i32)>);
+
+/// A state entered while walking: (graph index, state machine, state id).
+type Entered = (usize, GenId, i32);
 
 impl Project {
     /// Load `root` (e.g. `behaviors\0_master.hkx`) and every graph it references.
@@ -293,7 +336,16 @@ impl Project {
     /// Descend from `g` to the first clip, pushing entered state machines onto the cursor.
     /// `nested` picks the state to enter in the first state machine reached (a
     /// transition's nested target) instead of its start state.
-    fn descend(&self, gi: usize, g: GenId, stack: &mut Vec<(GenId, i32)>, nested: &mut Option<i32>, depth: usize) -> Option<(usize, GenId)> {
+    /// States entered on the way are appended to `entered`.
+    fn descend(
+        &self,
+        gi: usize,
+        g: GenId,
+        stack: &mut Vec<(GenId, i32)>,
+        nested: &mut Option<i32>,
+        entered: &mut Vec<Entered>,
+        depth: usize,
+    ) -> Option<(usize, GenId)> {
         if depth > 64 {
             return None;
         }
@@ -304,13 +356,15 @@ impl Project {
                 let want = nested.take().unwrap_or(*start);
                 let s = states.iter().find(|s| s.id == want).or(states.first())?;
                 stack.push((g, s.id));
-                self.descend(gi, s.generator?, stack, nested, depth + 1)
+                entered.push((gi, g, s.id));
+                self.descend(gi, s.generator?, stack, nested, entered, depth + 1)
             }
             Generator::Group { children, .. } => children.iter().find_map(|&c| {
-                let mark = stack.len();
-                let r = self.descend(gi, c, stack, nested, depth + 1);
+                let (mark, emark) = (stack.len(), entered.len());
+                let r = self.descend(gi, c, stack, nested, entered, depth + 1);
                 if r.is_none() {
                     stack.truncate(mark);
+                    entered.truncate(emark);
                 }
                 r
             }),
@@ -319,7 +373,7 @@ impl Project {
                 // Entering another graph: its state machines form a fresh stack.
                 stack.clear();
                 let root = self.graphs[other].1.root?;
-                self.descend(other, root, stack, nested, depth + 1)
+                self.descend(other, root, stack, nested, entered, depth + 1)
             }
             Generator::Other(_) => None,
         }
@@ -388,21 +442,45 @@ impl Project {
         None
     }
 
+    /// Events raised on entering each of `entered`, while clip `clip` starts.
+    fn enter_events(&self, entered: &[Entered], clip: usize, out: &mut Vec<RaisedEvent>) {
+        for &(gi, sm, id) in entered {
+            let graph = &self.graphs[gi].1;
+            let Generator::StateMachine { states, .. } = &graph.generators[sm] else { continue };
+            let Some(state) = states.iter().find(|s| s.id == id) else { continue };
+            for e in &state.enter_events {
+                let Some(event) = graph.event_name(e.event) else { continue };
+                out.push(RaisedEvent { clip, time: 0.0, from_end: false, event: event.to_owned(), payload: e.payload.clone() });
+            }
+        }
+    }
+
+    /// `cursor`'s innermost state has just been entered.
     fn follow(&self, cursor: Cursor, start: GenId, mut nested: Option<i32>) -> Playback {
         let (mut gi, mut stack) = cursor;
         let mut seq: Vec<PlayedClip> = Vec::new();
+        let mut events: Vec<RaisedEvent> = Vec::new();
+        let mut entered: Vec<Entered> = stack.last().map(|&(sm, id)| (gi, sm, id)).into_iter().collect();
         let mut next = Some(start);
         while let Some(g) = next.take() {
             if seq.len() >= 6 {
                 break;
             }
-            let Some((cgi, clip)) = self.descend(gi, g, &mut stack, &mut nested, 0) else { break };
+            let Some((cgi, clip)) = self.descend(gi, g, &mut stack, &mut nested, &mut entered, 0) else { break };
             gi = cgi;
             let graph = &self.graphs[gi].1;
             let Generator::Clip { animation, mode, triggers, .. } = &graph.generators[clip] else { break };
             let played = PlayedClip { animation: animation.clone(), mode: *mode };
             if seq.contains(&played) {
                 break;
+            }
+            self.enter_events(&entered, seq.len(), &mut events);
+            entered.clear();
+            for t in triggers {
+                if let Some(event) = graph.event_name(t.event) {
+                    let (time, from_end) = (t.time, t.from_end);
+                    events.push(RaisedEvent { clip: seq.len(), time, from_end, event: event.to_owned(), payload: t.payload.clone() });
+                }
             }
             seq.push(played);
             if *mode != ClipMode::SinglePlay {
@@ -424,6 +502,7 @@ impl Project {
                     {
                         stack.truncate(depth);
                         stack.push((sm, s.id));
+                        entered.push((gi, sm, s.id));
                         next = s.generator;
                         nested = tr.to_nested;
                         break 'triggers;
@@ -431,7 +510,7 @@ impl Project {
                 }
             }
         }
-        Playback { clips: seq, cursor: (gi, stack) }
+        Playback { clips: seq, events, cursor: (gi, stack) }
     }
 }
 
@@ -448,7 +527,7 @@ mod tests {
     }
 
     fn state(id: i32, generator: GenId, transitions: Vec<Transition>) -> State {
-        State { id, name: format!("s{id}"), generator: Some(generator), transitions }
+        State { id, name: format!("s{id}"), generator: Some(generator), transitions, enter_events: Vec::new(), exit_events: Vec::new() }
     }
 
     /// Root SM: default idle (state 0) and a furniture SM (state 1) entered with a
@@ -456,7 +535,7 @@ mod tests {
     /// `00NextClip` trigger moves on to a loop, and an exit reached by IdleChairExitStart.
     fn project() -> Project {
         let events = ["IdleKneeling", "00NextClip", "IdleChairExitStart", "IdleOther"].map(String::from).to_vec();
-        let next = Trigger { time: -0.2, from_end: true, event: 1 };
+        let next = Trigger { time: -0.2, from_end: true, event: 1, payload: None };
         let generators = vec![
             /* 0 */
             Generator::StateMachine {
@@ -518,5 +597,31 @@ mod tests {
     fn clip_lookup_by_name() {
         assert_eq!(project().clip_named("kneelidle").unwrap().animation, "Animations\\KneelIdle.hkx");
         assert!(project().play_event("Unknown").is_empty());
+    }
+
+    #[test]
+    fn state_enter_events_and_trigger_payloads() {
+        let mut p = project();
+        let master = &mut p.graphs[0].1;
+        master.events.extend(["AnimObjLoad", "AnimObjDraw"].map(String::from));
+        let (load, draw) = (4, 5);
+        let Generator::StateMachine { states, .. } = &mut master.generators[2] else { unreachable!() };
+        // Entering state 7 loads the object; the loop clip draws it 1.5 s in.
+        states[1].enter_events.push(EventProperty { event: load, payload: Some("AnimObjectBroom".into()) });
+        let Generator::Clip { triggers, .. } = &mut master.generators[5] else { unreachable!() };
+        triggers.push(Trigger { time: 1.5, from_end: false, event: draw, payload: Some("AnimObjectBroom".into()) });
+
+        let plays = p.play_event("IdleKneeling");
+        let events: Vec<(usize, &str, Option<&str>)> =
+            plays[0].events.iter().map(|e| (e.clip, e.event.as_str(), e.payload.as_deref())).collect();
+        assert_eq!(
+            events,
+            [
+                (0, "AnimObjLoad", Some("AnimObjectBroom")),
+                (0, "00NextClip", None),
+                (1, "AnimObjDraw", Some("AnimObjectBroom")),
+            ]
+        );
+        assert_eq!(plays[0].events[2].time, 1.5);
     }
 }

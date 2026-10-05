@@ -110,10 +110,22 @@ pub fn run(opts: Options) -> Result<()> {
             let id = engine.resolve_form(t).context("unknown reference")?;
             engine.start_conversation(id);
         }
-        for line in &opts.console {
-            for out in crate::console::execute(&mut engine, line) {
+        // "@<frame> <command>" runs at that frame of --wait instead of now.
+        let (later, now): (Vec<(u32, &str)>, Vec<(u32, &str)>) = opts
+            .console
+            .iter()
+            .map(|l| match l.strip_prefix('@').and_then(|r| r.split_once(' ')) {
+                Some((f, cmd)) if f.parse::<u32>().is_ok() => (f.parse().unwrap(), cmd),
+                _ => (0, l.as_str()),
+            })
+            .partition(|(f, _)| *f > 0);
+        let run_console = |engine: &mut Engine, line: &str| {
+            for out in crate::console::execute(engine, line) {
                 log::info!("console: {out}");
             }
+        };
+        for (_, line) in now {
+            run_console(&mut engine, line);
         }
         if let Some(frames) = opts.wait {
             // Advance the world without moving the camera.
@@ -121,6 +133,9 @@ pub fn run(opts: Options) -> Result<()> {
             let watch = opts.watch.as_deref().map(|w| engine.resolve_form(w).context("unknown --watch reference")).transpose()?;
             engine.player.noclip = true;
             for i in 0..frames {
+                for (_, line) in later.iter().filter(|(f, _)| *f == i) {
+                    run_console(&mut engine, line);
+                }
                 engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
                 engine.camera.position = pos;
                 engine.camera.yaw = yaw;

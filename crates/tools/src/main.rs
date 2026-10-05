@@ -238,8 +238,35 @@ fn main() -> Result<()> {
                 }
                 for pb in project.play_event(e) {
                     println!("  {:?}", pb.clips.iter().map(|c| format!("{} ({:?})", c.animation, c.mode)).collect::<Vec<_>>());
+                    for e in pb.events.iter().filter(|e| e.payload.is_some() || e.event.to_ascii_lowercase().contains("animobj")) {
+                        println!("    clip {} @{:.3}{} {} {:?}", e.clip, e.time, if e.from_end { " from end" } else { "" }, e.event, e.payload);
+                    }
                     if let Some(exit) = project.then_event(&pb, "IdleChairExitStart").or_else(|| project.then_event(&pb, "IdleStop")) {
                         println!("    exit {:?}", exit.clips.iter().map(|c| c.animation.as_str()).collect::<Vec<_>>());
+                    }
+                }
+            }
+        }
+        Some("hkb-payloads") => {
+            // hkb-payloads <data dir> <project dir>: clip triggers carrying string payloads.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let dir = args[2].trim_end_matches('/');
+            let project = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}")));
+            for (rel, g) in &project.graphs {
+                for node in &g.generators {
+                    if let havok::behavior::Generator::StateMachine { name, states, .. } = node {
+                        for st in states {
+                            for (when, e) in st.enter_events.iter().map(|e| ("enter", e)).chain(st.exit_events.iter().map(|e| ("exit", e))) {
+                                println!("{rel} sm {name} state {} {when} {} {:?}", st.name, g.event_name(e.event).unwrap_or("?"), e.payload.as_deref().unwrap_or(""));
+                            }
+                        }
+                    }
+                    let havok::behavior::Generator::Clip { name, animation, triggers, .. } = node else { continue };
+                    for t in triggers.iter().filter(|t| t.payload.is_some()) {
+                        let end = if t.from_end { " from end" } else { "" };
+                        println!("{rel} {name} ({animation}) @{:.3}{end} {} {:?}", t.time, g.event_name(t.event).unwrap_or("?"), t.payload.as_deref().unwrap_or(""));
                     }
                 }
             }

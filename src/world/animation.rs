@@ -226,6 +226,8 @@ pub struct BehaviorLibrary {
 pub struct EventClips {
     pub clips: Vec<havok::behavior::PlayedClip>,
     pub exit: Vec<havok::behavior::PlayedClip>,
+    /// Anim objects drawn on the way in (`AnimObjDraw` with an ANIO editor id).
+    pub draws: Vec<havok::behavior::RaisedEvent>,
 }
 
 impl BehaviorLibrary {
@@ -260,13 +262,19 @@ impl BehaviorLibrary {
                     .find_map(|e| project.then_event(p, e))
                     .map(|x| x.clips)
                     .unwrap_or_default();
-                Some(EventClips { clips: p.clips.clone(), exit })
+                let draws = p
+                    .events
+                    .iter()
+                    .filter(|e| e.payload.is_some() && e.event.eq_ignore_ascii_case("AnimObjDraw"))
+                    .cloned()
+                    .collect();
+                Some(EventClips { clips: p.clips.clone(), exit, draws })
             }
             // Loose idles name their clip generator after the event.
             None => project
                 .clip_named(&format!("MT_{event}"))
                 .or_else(|| project.clip_named(event))
-                .map(|c| EventClips { clips: vec![c], exit: Vec::new() }),
+                .map(|c| EventClips { clips: vec![c], exit: Vec::new(), draws: Vec::new() }),
         };
         if r.is_none() {
             log::debug!("{dir}: no clips for animation event {event:?}");
