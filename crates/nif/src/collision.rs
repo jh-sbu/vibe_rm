@@ -39,6 +39,65 @@ pub struct RigidBody {
     pub motion: MotionSystem,
     /// bhkRigidBodyT: the body transform applies to the shape.
     pub transform_applies: bool,
+    /// Constraints joining it to other bodies (ragdolls).
+    pub constraints: Vec<Ref>,
+}
+
+/// A constraint between two rigid bodies; pivots and axes in Havok units, each in
+/// its body's space.
+#[derive(Debug, Clone)]
+pub struct Constraint {
+    pub entities: [Ref; 2],
+    pub kind: ConstraintKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConstraintKind {
+    /// `bhkRagdollConstraint`: a ball joint with a cone around the twist axis, a plane
+    /// limit and a twist range (radians).
+    Ragdoll {
+        pivot: [Vec3; 2],
+        twist: [Vec3; 2],
+        plane: [Vec3; 2],
+        cone_max: f32,
+        plane_min: f32,
+        plane_max: f32,
+        twist_min: f32,
+        twist_max: f32,
+    },
+    /// `bhkLimitedHingeConstraint`: rotation about one axis within an angle range.
+    Hinge { pivot: [Vec3; 2], axis: [Vec3; 2], perp: [Vec3; 2], min: f32, max: f32 },
+}
+
+pub(crate) fn constraint(r: &mut Reader, ragdoll: bool) -> Result<Constraint> {
+    let n = r.u32()?;
+    let a = r.block_ref()?;
+    let b = r.block_ref()?;
+    debug_assert_eq!(n, 2);
+    r.u32()?; // priority
+    let v = |r: &mut Reader| -> Result<Vec3> { Ok(r.vec4()?.truncate()) };
+    let kind = if ragdoll {
+        // Twist, plane, motor, pivot for A then B.
+        let (ta, pa, _, pva) = (v(r)?, v(r)?, v(r)?, v(r)?);
+        let (tb, pb, _, pvb) = (v(r)?, v(r)?, v(r)?, v(r)?);
+        let cone_max = r.f32()?;
+        let plane_min = r.f32()?;
+        let plane_max = r.f32()?;
+        let twist_min = r.f32()?;
+        let twist_max = r.f32()?;
+        r.f32()?; // max friction
+        ConstraintKind::Ragdoll { pivot: [pva, pvb], twist: [ta, tb], plane: [pa, pb], cone_max, plane_min, plane_max, twist_min, twist_max }
+    } else {
+        // Axis, perpendicular axes 1 and 2, pivot for A then B.
+        let (aa, p1a, _, pva) = (v(r)?, v(r)?, v(r)?, v(r)?);
+        let (ab, p1b, _, pvb) = (v(r)?, v(r)?, v(r)?, v(r)?);
+        let min = r.f32()?;
+        let max = r.f32()?;
+        r.f32()?; // max friction
+        ConstraintKind::Hinge { pivot: [pva, pvb], axis: [aa, ab], perp: [p1a, p1b], min, max }
+    };
+    // The motor's settings follow; nothing here uses them.
+    Ok(Constraint { entities: [a, b], kind })
 }
 
 #[derive(Debug, Clone)]
@@ -92,7 +151,10 @@ pub(crate) fn rigid_body(r: &mut Reader, transform_applies: bool) -> Result<Rigi
     r.skip(3)?; // deactivation, solver deactivation, quality
     r.skip(16)?; // unused / reserved
     let n = r.u32()? as usize;
-    r.skip(n * 4)?;
+    let mut constraints = Vec::with_capacity(n);
+    for _ in 0..n {
+        constraints.push(r.block_ref()?);
+    }
     if r.bs_version < 76 {
         r.u32()?;
     } else {
@@ -100,7 +162,7 @@ pub(crate) fn rigid_body(r: &mut Reader, transform_applies: bool) -> Result<Rigi
     }
     let rotation = Quat::from_xyzw(q.x, q.y, q.z, q.w);
     let rotation = if rotation.length_squared() > 0.5 { rotation.normalize() } else { Quat::IDENTITY };
-    Ok(RigidBody { shape, layer, translation: t.truncate(), rotation, mass, friction, restitution, motion, transform_applies })
+    Ok(RigidBody { shape, layer, translation: t.truncate(), rotation, mass, friction, restitution, motion, transform_applies, constraints })
 }
 
 fn compressed_mesh_data(r: &mut Reader) -> Result<Shape> {

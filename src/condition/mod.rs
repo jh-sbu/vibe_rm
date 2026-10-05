@@ -244,7 +244,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         300 => b(matches!(e.location, crate::engine::Location::Interior(_))), // IsInInterior
         67 => b(subject.and_then(|s| e.lo.cell_of_ref(s)) == Some(p1)),   // GetInCell
         310 => b(matches!(e.location, crate::engine::Location::Exterior { world, .. } if world == p1)), // GetInWorldspace
-        46 => b(false),                                                   // GetDead
+        46 => b(subject.is_some_and(|s| e.is_dead(s))),                   // GetDead
         84 => Some(0.0),                                                  // GetDeadCount
         80 => Some(1.0),                                                  // GetLevel
         14 => Some(100.0),                                                // GetActorValue

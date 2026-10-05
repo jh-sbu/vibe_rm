@@ -35,6 +35,18 @@ fn layer_blocks_player(layer: u8) -> bool {
     )
 }
 
+/// Collision groups: actors' capsules, and ragdoll bodies (which don't collide with
+/// either, only with the world).
+const ACTOR_GROUP: Group = Group::GROUP_3;
+const RAGDOLL_GROUP: Group = Group::GROUP_2;
+
+/// A ragdoll in the simulation: one body per ragdoll body of the description, and
+/// the actor's scale.
+pub struct Ragdoll {
+    pub bodies: Vec<RigidBodyHandle>,
+    pub scale: f32,
+}
+
 pub struct Physics {
     pub world: PhysicsWorld,
     controller: KinematicCharacterController,
@@ -117,6 +129,7 @@ impl Physics {
         let half = 40.0 * scale;
         let c = ColliderBuilder::new(SharedShape::capsule_z(half, r))
             .position(Pose::from_translation(feet + Vec3::Z * (half + r)))
+            .collision_groups(InteractionGroups::new(ACTOR_GROUP, Group::ALL, InteractionTestMode::And))
             .build();
         let h = self.world.insert_collider(c, None);
         self.owners.insert(h, owner);
@@ -177,6 +190,49 @@ impl Physics {
     }
 
     /// Update the broad phase after colliders were added.
+    /// Drop a ragdoll in: each body placed where `body_world` (its bone's world
+    /// transform times its offset, scale included) puts it.
+    pub fn spawn_ragdoll(&mut self, desc: &crate::world::ragdoll::RagdollDesc, body_world: impl Fn(usize) -> Mat4, velocity: Vec3, owner: esp::FormId) -> Ragdoll {
+        let groups = InteractionGroups::new(RAGDOLL_GROUP, Group::ALL ^ RAGDOLL_GROUP ^ ACTOR_GROUP, InteractionTestMode::And);
+        let mut scale = 1.0;
+        let mut bodies = Vec::with_capacity(desc.bodies.len());
+        for (i, b) in desc.bodies.iter().enumerate() {
+            let (pose, s) = shapes::decompose(body_world(i));
+            scale = s;
+            let body = RigidBodyBuilder::dynamic().pose(pose).linvel(velocity).linear_damping(0.2).angular_damping(1.0).ccd_enabled(true);
+            let collider = ColliderBuilder::new(SharedShape::capsule(b.p1 * s, b.p2 * s, b.radius * s)).mass(b.mass).friction(0.8).collision_groups(groups);
+            let (h, c) = self.world.insert(body, collider);
+            self.owners.insert(c, owner);
+            bodies.push(h);
+        }
+        for j in &desc.joints {
+            let frame = |f: (Vec3, glam::Quat)| Pose::from_parts(f.0 * scale, f.1);
+            let mask = if j.limits[1].is_some() { JointAxesMask::LOCKED_SPHERICAL_AXES } else { JointAxesMask::LOCKED_REVOLUTE_AXES };
+            let mut joint = GenericJointBuilder::new(mask).local_frame1(frame(j.frame_a)).local_frame2(frame(j.frame_b)).contacts_enabled(false);
+            for (axis, limit) in [JointAxis::AngX, JointAxis::AngY, JointAxis::AngZ].into_iter().zip(j.limits) {
+                if let Some((lo, hi)) = limit {
+                    joint = joint.limits(axis, [lo.min(hi), hi.max(lo)]);
+                }
+            }
+            self.world.insert_impulse_joint(bodies[j.a], bodies[j.b], joint.build());
+        }
+        Ragdoll { bodies, scale }
+    }
+
+    /// Where a ragdoll's bodies are now (world, with the actor's scale).
+    pub fn ragdoll_bodies(&self, r: &Ragdoll) -> Vec<Mat4> {
+        r.bodies
+            .iter()
+            .map(|&h| self.world.bodies.get(h).map_or(Mat4::IDENTITY, |b| b.position().to_mat4() * Mat4::from_scale(Vec3::splat(r.scale))))
+            .collect()
+    }
+
+    pub fn remove_ragdoll(&mut self, r: &Ragdoll) {
+        for &h in &r.bodies {
+            self.world.remove_body_with_colliders(h, true);
+        }
+    }
+
     pub fn step(&mut self, dt: f32) {
         self.world.integration_parameters.dt = dt.clamp(1.0 / 240.0, 1.0 / 30.0);
         self.world.step();

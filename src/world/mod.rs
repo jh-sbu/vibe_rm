@@ -9,6 +9,7 @@ pub mod loader;
 pub mod lookat;
 pub mod movement;
 pub mod lod;
+pub mod ragdoll;
 pub mod records;
 pub mod skeleton;
 pub mod sound;
