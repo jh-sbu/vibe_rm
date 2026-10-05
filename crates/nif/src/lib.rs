@@ -5,6 +5,7 @@
 //! block types that aren't understood (or are only partially parsed) are
 //! skipped safely. The parsed representation lives in [`blocks`].
 
+pub mod anim;
 pub mod blocks;
 pub mod collision;
 pub mod skin;
@@ -60,6 +61,22 @@ pub enum BlockParse {
     /// Parsed but the consumed size didn't match the declared size.
     SizeMismatch { consumed: usize, declared: usize },
     Failed,
+}
+
+impl Nif {
+    /// Names of nodes moved by transform controllers in the model's sequences.
+    pub fn animated_nodes(&self) -> std::collections::HashSet<String> {
+        self.blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::ControllerSequence(s) => Some(s),
+                _ => None,
+            })
+            .flat_map(|s| &s.blocks)
+            .filter(|cb| cb.controller_type.contains("TransformController") && !cb.node.is_empty())
+            .map(|cb| cb.node.clone())
+            .collect()
+    }
 }
 
 impl Nif {

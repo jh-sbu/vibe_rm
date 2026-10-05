@@ -81,7 +81,9 @@ impl Physics {
     }
 
     /// Add the static collision of a placed object.
-    pub fn add_static(&mut self, model: &CollisionModel, transform: Mat4, owner: esp::FormId) -> Vec<ColliderHandle> {
+    /// Add a model's static collision. Returns the colliders with the animated node
+    /// (e.g. a door leaf) each one moves with, if any.
+    pub fn add_static_tagged(&mut self, model: &CollisionModel, transform: Mat4, owner: esp::FormId) -> Vec<(ColliderHandle, Option<String>)> {
         let mut handles = Vec::new();
         for part in &model.parts {
             if !layer_blocks_player(part.layer) {
@@ -92,9 +94,18 @@ impl Physics {
             let c = ColliderBuilder::new(shape).position(pose).build();
             let h = self.world.insert_collider(c, None);
             self.owners.insert(h, owner);
-            handles.push(h);
+            handles.push((h, part.node.clone()));
         }
         handles
+    }
+
+    /// Turn colliders on or off (e.g. an open door's leaves).
+    pub fn set_enabled(&mut self, handles: &[ColliderHandle], enabled: bool) {
+        for &h in handles {
+            if let Some(c) = self.world.colliders.get_mut(h) {
+                c.set_enabled(enabled);
+            }
+        }
     }
 
     /// A capsule standing at `feet`, used for actors.

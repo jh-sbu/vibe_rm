@@ -125,16 +125,110 @@ pub struct CpuModel {
     pub skinned: Vec<CpuSkinnedMesh>,
     pub bound_center: Vec3,
     pub bound_radius: f32,
+    /// Subtrees under keyframe-animated nodes (door leaves...), drawn separately.
+    pub animated: Vec<AnimatedPart>,
+    /// The model's controller sequences ("Open", "Close", "Idle"...).
+    pub sequences: Vec<Sequence>,
+}
+
+/// Meshes under an animated node, in that node's space.
+pub struct AnimatedPart {
+    pub node: String,
+    /// Model-space transform of the node's parent, and the node's own rest transform.
+    pub parent: Mat4,
+    pub rest: Mat4,
+    pub model: CpuModel,
+}
+
+/// A keyframe channel animating one node.
+pub struct Channel {
+    pub node: String,
+    pub interpolator: nif::anim::TransformInterpolator,
+    pub data: Option<std::sync::Arc<nif::anim::TransformData>>,
+}
+
+impl Channel {
+    /// The node's local transform at `t`, starting from `rest` for unkeyed parts.
+    pub fn sample(&self, t: f32, rest: Mat4) -> Mat4 {
+        let (rs, rr, rt) = rest.to_scale_rotation_translation();
+        let i = &self.interpolator;
+        let (mut rot, mut tr, mut sc) = (rr, rt, rs.x);
+        // Interpolator poses use huge / NaN values for "unset".
+        if i.rotation.is_finite() && i.rotation.length_squared() > 0.5 {
+            rot = i.rotation;
+        }
+        if i.translation.is_finite() && i.translation.abs().max_element() < 1.0e6 {
+            tr = i.translation;
+        }
+        if i.scale.is_finite() && i.scale.abs() < 1.0e6 {
+            sc = i.scale;
+        }
+        if let Some(d) = &self.data {
+            let (r, t, s) = d.sample(t);
+            rot = r.unwrap_or(rot);
+            tr = t.unwrap_or(tr);
+            sc = s.unwrap_or(sc);
+        }
+        Mat4::from_scale_rotation_translation(Vec3::splat(sc), rot, tr)
+    }
+}
+
+pub struct Sequence {
+    pub name: String,
+    /// 0 loop, 1 reverse, 2 clamp.
+    pub cycle: u32,
+    pub start: f32,
+    pub stop: f32,
+    pub channels: Vec<Channel>,
+}
+
+/// Controller sequences of a model with transform channels, and the nodes they move.
+fn sequences(nif: &Nif) -> Vec<Sequence> {
+    let mut out = Vec::new();
+    for b in &nif.blocks {
+        let Block::ControllerSequence(seq) = b else { continue };
+        let channels: Vec<Channel> = seq
+            .blocks
+            .iter()
+            .filter(|cb| cb.controller_type.contains("TransformController") && !cb.node.is_empty())
+            .filter_map(|cb| {
+                let Some(Block::TransformInterpolator(i)) = nif.get(cb.interpolator) else { return None };
+                let data = match nif.get(i.data) {
+                    Some(Block::TransformData(d)) => Some(std::sync::Arc::new((**d).clone())),
+                    _ => None,
+                };
+                Some(Channel { node: cb.node.clone(), interpolator: i.clone(), data })
+            })
+            .collect();
+        if !channels.is_empty() {
+            out.push(Sequence { name: seq.name.clone(), cycle: seq.cycle, start: seq.start, stop: seq.stop, channels });
+        }
+    }
+    out
 }
 
 pub fn convert(nif: &Nif) -> CpuModel {
-    let mut meshes = Vec::new();
-    let mut skinned = Vec::new();
+    let sequences = sequences(nif);
+    let animated_nodes: std::collections::HashSet<&str> =
+        sequences.iter().flat_map(|s| &s.channels).map(|c| c.node.as_str()).collect();
+    let mut w = Walk { meshes: Vec::new(), skinned: Vec::new(), animated: Vec::new(), animated_nodes: &animated_nodes };
     for &root in &nif.roots {
-        walk(nif, Ref(root as i32), Mat4::IDENTITY, &mut meshes, &mut skinned, 0);
+        w.walk(nif, Ref(root as i32), Mat4::IDENTITY, 0);
     }
-    let (bound_center, bound_radius) = bounds_of(meshes.iter().map(|m| (m.bound_center, m.bound_radius)));
-    CpuModel { meshes, skinned, bound_center, bound_radius }
+    let (bound_center, bound_radius) = bounds_of(
+        w.meshes
+            .iter()
+            .map(|m| (m.bound_center, m.bound_radius))
+            .chain(w.animated.iter().map(|p| ((p.parent * p.rest).transform_point3(p.model.bound_center), p.model.bound_radius))),
+    );
+    CpuModel { meshes: w.meshes, skinned: w.skinned, bound_center, bound_radius, animated: w.animated, sequences }
+}
+
+struct Walk<'a> {
+    meshes: Vec<CpuMesh>,
+    skinned: Vec<CpuSkinnedMesh>,
+    animated: Vec<AnimatedPart>,
+    animated_nodes: &'a std::collections::HashSet<&'a str>,
 }
 
 pub fn bounds_of(spheres: impl Iterator<Item = (Vec3, f32)>) -> (Vec3, f32) {
@@ -153,7 +247,8 @@ pub fn bounds_of(spheres: impl Iterator<Item = (Vec3, f32)>) -> (Vec3, f32) {
     (center, radius)
 }
 
-fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut Vec<CpuMesh>, skinned: &mut Vec<CpuSkinnedMesh>, depth: u32) {
+impl Walk<'_> {
+fn walk(&mut self, nif: &Nif, r: Ref, parent: Mat4, depth: u32) {
     if depth > 64 {
         return;
     }
@@ -162,7 +257,21 @@ fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut Vec<CpuMesh>, skinned: &mut V
     if av.hidden() || av.net.name.to_ascii_lowercase().starts_with("editormarker") {
         return;
     }
+    // An animated node (not the root): its subtree becomes a separately drawn part.
+    if depth > 0 && matches!(block, Block::Node(_)) && self.animated_nodes.contains(av.net.name.as_str()) {
+        let mut sub = Walk { meshes: Vec::new(), skinned: Vec::new(), animated: Vec::new(), animated_nodes: self.animated_nodes };
+        if let Block::Node(n) = block {
+            for &c in &n.children {
+                sub.walk(nif, c, Mat4::IDENTITY, depth + 1);
+            }
+        }
+        let (bound_center, bound_radius) = bounds_of(sub.meshes.iter().map(|m| (m.bound_center, m.bound_radius)));
+        let model = CpuModel { meshes: sub.meshes, skinned: sub.skinned, bound_center, bound_radius, animated: sub.animated, sequences: Vec::new() };
+        self.animated.push(AnimatedPart { node: av.net.name.clone(), parent, rest: av.transform.to_mat4(), model });
+        return;
+    }
     let world = parent * av.transform.to_mat4();
+    let (out, skinned) = (&mut self.meshes, &mut self.skinned);
     match block {
         Block::Node(n) => {
             if n.kind == NodeKind::RootCollision {
@@ -171,17 +280,17 @@ fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut Vec<CpuMesh>, skinned: &mut V
             match n.kind {
                 NodeKind::Switch { index } => {
                     if let Some(&c) = n.children.get(index as usize) {
-                        walk(nif, c, world, out, skinned, depth + 1);
+                        self.walk(nif, c, world, depth + 1);
                     }
                 }
                 NodeKind::Lod => {
                     if let Some(&c) = n.children.first() {
-                        walk(nif, c, world, out, skinned, depth + 1);
+                        self.walk(nif, c, world, depth + 1);
                     }
                 }
                 _ => {
                     for &c in &n.children {
-                        walk(nif, c, world, out, skinned, depth + 1);
+                        self.walk(nif, c, world, depth + 1);
                     }
                 }
             }
@@ -220,6 +329,8 @@ fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut Vec<CpuMesh>, skinned: &mut V
         }
         _ => {}
     }
+}
+
 }
 
 fn tex(s: &str) -> Option<String> {

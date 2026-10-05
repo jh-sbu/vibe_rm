@@ -22,7 +22,12 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sae <ref> <event>     send a behaviour event to an actor".into(),
             "pi <ref> <idle>       play an IDLE record on an actor".into(),
             "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
+            "door <ref>            open / close a door".into(),
         ],
+        "door" => {
+            let Some(d) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: door <ref>".into()] };
+            if engine.toggle_door(d, false) { vec![format!("toggled {d}")] } else { vec![format!("{d} is not an animated door")] }
+        }
         "use" => {
             let [r, f] = args[..] else { return vec!["usage: use <actor ref> <furniture ref>".into()] };
             match (engine.resolve_form(r), engine.resolve_form(f)) {

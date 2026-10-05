@@ -27,6 +27,9 @@ game each piece unlocks.
   follow / escort packages; SitTarget
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
+- Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
+  / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
+  activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
 
 ## Next
 1. **AI depth**
@@ -35,10 +38,10 @@ game each piece unlocks.
      beds still pick clips by name rather than through the graphs
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target
-   - Doors opening (needs NiControllerSequence); off-screen travel between worldspaces
+   - Off-screen travel between worldspaces; locked doors and keys
    - Leveled lists (LVLN/LVLI) beyond the first entry, templates (TPLT/ACFG)
-2. **Animation**: NiControllerSequence for animated statics (water wheels, flags);
-   root motion for locomotion (walk speeds and turns from the motion data)
+2. **Animation**: root motion for locomotion (walk speeds and turns from the motion data);
+   NiTransformController (non-sequence) and texture / material controllers
 3. **Game logic**: combat, magic, inventory, leveling, crime
 4. **UI**: inventory, map, bars
 5. **Audio**: lip sync

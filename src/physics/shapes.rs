@@ -11,6 +11,8 @@ pub struct CollisionPart {
     pub shape: ShapeDesc,
     pub layer: u8,
     pub dynamic: bool,
+    /// The keyframe-animated node this part moves with (a door leaf), if any.
+    pub node: Option<String>,
 }
 
 /// Unscaled shape description; kept so instances with a scale can rebuild it.
@@ -49,18 +51,30 @@ pub struct CollisionModel {
 
 pub fn from_nif(nif: &Nif) -> Option<CollisionModel> {
     let mut m = CollisionModel::default();
+    let animated = nif.animated_nodes();
     for &root in &nif.roots {
-        walk(nif, Ref(root as i32), Mat4::IDENTITY, &mut m, 0);
+        walk(nif, Ref(root as i32), Mat4::IDENTITY, &mut m, 0, &animated, None);
     }
     if m.parts.is_empty() { None } else { Some(m) }
 }
 
-fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut CollisionModel, depth: u32) {
+fn walk(
+    nif: &Nif,
+    r: Ref,
+    parent: Mat4,
+    out: &mut CollisionModel,
+    depth: u32,
+    animated: &std::collections::HashSet<String>,
+    mut node: Option<String>,
+) {
     if depth > 64 {
         return;
     }
     let Some(block) = nif.get(r) else { return };
     let Some(av) = block.av() else { return };
+    if depth > 0 && animated.contains(&av.net.name) {
+        node = Some(av.net.name.clone());
+    }
     let world = parent * av.transform.to_mat4();
     if let Some(Block::CollisionObject(co)) = nif.get(av.collision)
         && let Some(Block::RigidBody(rb)) = nif.get(co.body)
@@ -75,17 +89,18 @@ fn walk(nif: &Nif, r: Ref, parent: Mat4, out: &mut CollisionModel, depth: u32) {
         for p in &mut out.parts[before..] {
             p.layer = rb.layer;
             p.dynamic = dynamic;
+            p.node.clone_from(&node);
         }
     }
     if let Block::Node(n) = block {
         for &c in &n.children {
-            walk(nif, c, world, out, depth + 1);
+            walk(nif, c, world, out, depth + 1, animated, node.clone());
         }
     }
 }
 
 fn push(out: &mut CollisionModel, transform: Mat4, shape: ShapeDesc) {
-    out.parts.push(CollisionPart { transform, shape, layer: 0, dynamic: false });
+    out.parts.push(CollisionPart { transform, shape, layer: 0, dynamic: false, node: None });
 }
 
 fn add_shape(nif: &Nif, r: Ref, xf: Mat4, out: &mut CollisionModel, depth: u32) {
