@@ -105,6 +105,14 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 vec![format!("{r} isn't a loaded actor")]
             }
         }
+        "startcombat" => {
+            let [a, t] = args[..] else { return vec!["usage: startcombat <actor ref> <target ref | player>".into()] };
+            let target = if t.eq_ignore_ascii_case("player") { Some(crate::engine::PLAYER_REF) } else { engine.resolve_form(t) };
+            match (engine.resolve_form(a), target) {
+                (Some(a), Some(t)) if engine.start_combat(a, t) => vec![format!("{a} attacks {t}")],
+                _ => vec!["can't start that fight".into()],
+            }
+        }
         "kill" => {
             let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: kill <actor ref>".into()] };
             if engine.kill_actor(actor) { vec![format!("{actor} killed")] } else { vec![format!("{actor} isn't a living loaded actor")] }

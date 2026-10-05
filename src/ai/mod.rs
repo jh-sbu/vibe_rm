@@ -1,6 +1,6 @@
 //! Actor AI: package selection, sandboxing / travelling over the navmesh.
 
-mod combat;
+pub mod combat;
 mod equipment;
 pub mod furniture;
 pub mod idles;
@@ -265,6 +265,15 @@ pub struct ActorRuntime {
     pub(crate) drawn: bool,
     /// Sounds the graph asked for this frame (`SoundPlay` payloads: SNDR editor ids).
     pub(crate) sounds: Vec<String>,
+    /// What it fights with, how much health it has left, whom it is fighting,
+    /// its weapon's reach (0 unarmed), seconds until it looks for enemies again, and
+    /// whether its graph reached a hit frame this update.
+    pub(crate) stats: Arc<combat::CombatStats>,
+    pub(crate) health: f32,
+    pub(crate) combat: Option<combat::Combat>,
+    pub(crate) weapon_reach: f32,
+    pub(crate) detect_in: f32,
+    hit_frame: bool,
     /// Dead, and the ragdoll it lies as (with the mapping back to its bones).
     pub(crate) dead: bool,
     pub(crate) ragdoll: Option<(crate::physics::Ragdoll, crate::world::ragdoll::RagdollPose)>,
@@ -316,6 +325,12 @@ impl ActorRuntime {
             wants_action_idle: false,
             dead: false,
             ragdoll: None,
+            stats: Default::default(),
+            health: 50.0,
+            combat: None,
+            weapon_reach: 0.0,
+            detect_in: stagger,
+            hit_frame: false,
             torch: None,
             stowed_shield: None,
             weapon_out: false,
@@ -1074,6 +1089,9 @@ impl ActorRuntime {
         }
         for r in frame.raised {
             let e = r.event.to_ascii_lowercase();
+            if self.combat.is_some() && log::log_enabled!(target: "combat_events", log::Level::Trace) {
+                log::trace!(target: "combat_events", "{} raised {}{}", self.ref_id, r.event, r.payload.as_deref().map(|p| format!(" ({p})")).unwrap_or_default());
+            }
             match e.as_str() {
                 "animobjdraw" => {
                     if let Some(anio) = r.payload
@@ -1093,6 +1111,7 @@ impl ActorRuntime {
                     self.equipment_changed |= out != self.weapon_out;
                     self.weapon_out = out;
                 }
+                "hitframe" => self.hit_frame = true,
                 "soundplay" | "npcsoundplay" => {
                     if let Some(p) = r.payload {
                         self.sounds.push(p);
@@ -1638,6 +1657,14 @@ impl Engine {
         let mut held = Vec::new();
         let mut equip = Vec::new();
         let mut sounds: Vec<(String, Vec3)> = Vec::new();
+        let mut swings: Vec<combat::Swing> = Vec::new();
+        let mut lost: Vec<FormId> = Vec::new();
+        // Where everyone is, for fights.
+        let mut positions: std::collections::HashMap<FormId, Vec3> =
+            self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.dead).map(|a| (a.ref_id, a.pos)).collect();
+        if !self.player_died_at.is_some() {
+            positions.insert(PLAYER_REF, player);
+        }
         // Everyone's position last frame, for walkers to keep clear of.
         let mut bodies: Vec<(FormId, Vec3)> = self.cells.values().flat_map(|rt| &rt.actors).map(|a| (a.ref_id, a.pos)).collect();
         bodies.push((PLAYER_REF, player));
@@ -1675,6 +1702,17 @@ impl Engine {
                     }
                 } else if !self.ai_enabled {
                     a.halt(1.0);
+                } else if let Some(target) = a.combat.as_ref().map(|c| c.target) {
+                    match positions.get(&target).filter(|p| p.distance(a.pos) < combat::LOSE_DISTANCE) {
+                        Some(&tp) => {
+                            if let Some(ev) = a.combat_step(dt, &mut world, tp) {
+                                // Attacks the graph has no state for fall back to the basic one.
+                                let took = a.graph_event(&ev, &mut world.clips) || a.graph_event("attackStart", &mut world.clips);
+                                log::debug!("{} swings: {ev}{}", a.ref_id, if took { "" } else { " (the graph won't take it)" });
+                            }
+                        }
+                        None => lost.push(a.ref_id),
+                    }
                 } else {
                     let before = a.pos;
                     if a.step(dt, &mut world) && a.is_walking() {
@@ -1695,6 +1733,12 @@ impl Engine {
                 }
                 if std::mem::take(&mut a.equipment_changed) {
                     equip.push((*key, index, a.ref_id));
+                }
+                if std::mem::take(&mut a.hit_frame)
+                    && let Some(c) = a.combat.as_mut()
+                    && !std::mem::replace(&mut c.struck, true)
+                {
+                    swings.push(combat::Swing { attacker: a.ref_id, target: c.target, attack: c.attack, pos: a.pos, heading: a.heading });
                 }
                 for s in a.sounds.drain(..) {
                     sounds.push((s, a.pos + Vec3::Z * 64.0 * a.scale));
@@ -1718,6 +1762,13 @@ impl Engine {
         }
         for (key, index, actor) in equip {
             self.refresh_equipment(key, index, actor);
+        }
+        for r in lost {
+            self.end_combat(r);
+        }
+        self.resolve_swings(swings);
+        if self.ai_enabled {
+            self.detect_enemies(dt);
         }
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);

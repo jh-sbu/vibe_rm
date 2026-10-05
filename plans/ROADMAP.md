@@ -112,6 +112,20 @@ game each piece unlocks.
   stand with a subtitle, gesturing and looking at the player; one speaker at a time.
   `GetSitting` / `GetSleeping` / `IsMoving` answer from what actors are doing outside
   idle picking; console `bark <ref> <subtype>`; vrm-tool `dial-subtypes`
+- Combat (first pass): health from race and NPC stats; hostility from faction relations
+  (`XNAM` combat reactions) and aggression (`AIDT`), enemies noticed within sight
+  range; fighters draw their weapons (creatures take their combat stance), run in
+  along the navmesh, face and attack with their race's attack data (`ATKD` / `ATKE`,
+  by chance; situational ones left out), the hit landing at the graph's `HitFrame`
+  within reach and strike angle for weapon (or unarmed) damage times the attack's
+  multiplier; targets flinch (`recoilStart`) or stagger and fight back; death drops
+  the ragdoll. The player has health (HUD bars) and swings at what they look at
+  (click). Console `startcombat <a> <b|player>`
+- Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
+  twist / plane and hinge limits as rapier joints); bodies can be searched;
+  `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
+- Synchronised blends of single-play clips (directional attacks) end instead of
+  cycling, and their heaviest child raises the clip triggers
 - Character property bindings: bone switches bound to the character's bone weight
   properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
@@ -153,7 +167,9 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; locked doors and keys
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
-3. **Game logic**: combat, magic, inventory (player's, equipping by hand, armor from
+3. **Game logic**: combat (blocking, bows, power attack timing, armor ratings, crime and
+   assault, bleedout for essential actors, killmoves, the player's own weapon and
+   animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
 4. **UI**: inventory (categories, equipping, item details), map, bars
 5. **Audio**: lip sync

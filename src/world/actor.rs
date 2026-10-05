@@ -20,6 +20,8 @@ pub struct ActorDesc {
     pub behavior: Option<String>,
     /// What it carries and has equipped.
     pub inventory: super::inventory::Inventory,
+    /// Its race (from its template when that gives its traits).
+    pub race: FormId,
 }
 
 fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
@@ -375,5 +377,5 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
     let scale = r.scale * traits.height * race_height;
     let transform = Mat4::from_scale_rotation_translation(glam::Vec3::splat(scale), r.rotation_quat(), r.position);
     let behavior = race_behavior(lo, traits.race, traits.female);
-    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female, behavior, inventory })
+    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female, behavior, inventory, race: traits.race })
 }

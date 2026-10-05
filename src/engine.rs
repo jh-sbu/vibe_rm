@@ -97,6 +97,11 @@ pub struct Engine {
     pub audio: Option<crate::audio::Audio>,
     music: MusicState,
     pub conversation: Option<crate::dialogue::Conversation>,
+    /// Factions' relations to others (`XNAM`), as read.
+    pub(crate) faction_relations: crate::ai::combat::FactionRelations,
+    /// The player's health, and when they died (if they have).
+    pub player_health: f32,
+    pub player_died_at: Option<f64>,
     /// Lines NPCs say by themselves (greetings, idle chatter).
     pub barks: crate::dialogue::barks::Barks,
     /// The inventory or container menu, while open.
@@ -126,6 +131,8 @@ struct MusicState {
 
 /// The player character reference ("PlayerRef").
 pub const PLAYER_REF: FormId = FormId(0x14);
+/// The player's health (no leveling yet).
+pub const PLAYER_HEALTH: f32 = 100.0;
 /// Real seconds per game hour at the default timescale of 20.
 const TIMESCALE: f64 = 20.0;
 
@@ -182,6 +189,9 @@ impl Engine {
             conversation: None,
             menu: None,
             barks: Default::default(),
+            faction_relations: Default::default(),
+            player_health: PLAYER_HEALTH,
+            player_died_at: None,
             npc_refs: HashMap::new(),
             lod: None,
             nav: Default::default(),
@@ -599,6 +609,15 @@ impl Engine {
             rt.skeleton_path = d.skeleton.clone();
             rt.female = d.female;
             rt.child = self.npc_race(d.npc).is_some_and(|r| self.race_is_child(r));
+            let stats = crate::ai::combat::CombatStats::of(self, d.npc, d.race);
+            rt.health = stats.max_health;
+            rt.stats = std::sync::Arc::new(stats);
+            rt.weapon_reach = d
+                .inventory
+                .weapon(&self.lo)
+                .and_then(|w| self.lo.get(w))
+                .and_then(|r| r.get(b"DNAM").filter(|x| x.len() >= 12).map(|x| f32::from_le_bytes(x[8..12].try_into().unwrap())))
+                .unwrap_or(0.0);
             rt.anim = idle.clone().map(|c| crate::world::animation::ActorAnim::new(c, &skel, start));
             let mut first_pose = None;
             // Actors run their race's behaviour graph, set up as the game does for NPCs.
@@ -1248,6 +1267,14 @@ impl Engine {
         self.update_music();
         self.update_conversation();
         self.update_barks();
+        // The player gets back up a few seconds after dying (until there are saves).
+        if let Some(t) = self.player_died_at
+            && self.scripts.real_time - t > 5.0
+        {
+            self.player_died_at = None;
+            self.player_health = PLAYER_HEALTH;
+            self.scripts.notify("You come to.");
+        }
     }
 
     fn update_look_target(&mut self) {
