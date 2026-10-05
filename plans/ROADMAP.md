@@ -95,6 +95,9 @@ game each piece unlocks.
   `iRightHandType` follow. Torches after dark: actors outdoors between dusk and dawn
   light one they carry (in place of the shield, put away to use furniture), the graph
   raises it and its flame lights what is around (moving lights)
+- Player items: activating an item picks it up (`XCNT` counts; gone from the world for
+  good), containers open a take / store window beside the inventory (Tab); console
+  `[ref.]additem`, `removeitem`, `showinventory`, `openactorcontainer`, `activate`
 - Character property bindings: bone switches bound to the character's bone weight
   properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
@@ -133,7 +136,7 @@ game each piece unlocks.
      data, keywords, scripts; leveled list counts ("each item in count")
 3. **Game logic**: combat, magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-4. **UI**: inventory, map, bars
+4. **UI**: inventory (categories, equipping, item details), map, bars
 5. **Audio**: lip sync
 6. **Rendering**: shadows, HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
    grass, decals, environment maps

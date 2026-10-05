@@ -95,6 +95,8 @@ pub struct Engine {
     pub audio: Option<crate::audio::Audio>,
     music: MusicState,
     pub conversation: Option<crate::dialogue::Conversation>,
+    /// The inventory or container menu, while open.
+    pub menu: Option<crate::items::Menu>,
     npc_refs: HashMap<FormId, FormId>,
     lod: Option<crate::world::lod::Lod>,
     pub nav: crate::ai::nav::NavWorld,
@@ -173,6 +175,7 @@ impl Engine {
             audio: None,
             music: MusicState::default(),
             conversation: None,
+            menu: None,
             npc_refs: HashMap::new(),
             lod: None,
             nav: Default::default(),
@@ -192,7 +195,8 @@ impl Engine {
         {
             return Some(FormId(v));
         }
-        self.lo.find_editor_id(s)
+        // Editor ids first, then FormIDs written short (`f` for gold).
+        self.lo.find_editor_id(s).or_else(|| u32::from_str_radix(s, 16).ok().map(FormId).filter(|&f| self.lo.locate(f).is_some()))
     }
 
     pub fn camera_copy(&self) -> Camera {
@@ -440,6 +444,9 @@ impl Engine {
                 None => Vec::new(),
             };
             rt.colliders.extend(tagged.iter().map(|(h, _)| *h));
+            if !tagged.is_empty() && self.scripts.disabled.get(&o.ref_id) == Some(&true) {
+                self.physics.set_owner_enabled(o.ref_id, false);
+            }
             if let Some(obj) = self.animated_object(o.ref_id, &o.model, o.transform, &mut rc.instances, &tagged) {
                 rt.animated.push(obj);
             }
@@ -1300,6 +1307,14 @@ impl Engine {
         }
         if is_actor {
             self.start_conversation(owner);
+            return Ok(());
+        }
+        if base_tag.map(|t| t.0) == Some(*b"CONT") {
+            self.menu = Some(crate::items::Menu::Container(owner));
+            return Ok(());
+        }
+        if self.is_item_ref(owner) {
+            self.take_item(owner);
             return Ok(());
         }
         if base_tag.map(|t| t.0) == Some(*b"DOOR") {
