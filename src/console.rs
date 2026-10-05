@@ -172,6 +172,13 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             vec![format!("AI {}", if engine.ai_enabled { "on" } else { "off" })]
         }
         "getpos" | "player.getpos" => {
+            if let Some(r) = args.first().and_then(|r| engine.resolve_form(r)) {
+                let p = engine.actor_pose(r).map(|p| p.0).or_else(|| engine.ref_position(r));
+                return vec![match p {
+                    Some(p) => format!("{r}: {:.1} {:.1} {:.1}", p.x, p.y, p.z),
+                    None => format!("{r} isn't loaded"),
+                }];
+            }
             let p = engine.player.position;
             vec![format!("{:.1} {:.1} {:.1} in {}", p.x, p.y, p.z, engine.location_name())]
         }

@@ -48,6 +48,8 @@ pub struct CombatStats {
     /// AI data: 0 unaggressive, 1 aggressive (attacks enemies), 2 very aggressive
     /// (and neutrals), 3 frenzied (anyone).
     pub aggression: u8,
+    /// Aggro radius behaviour (`AIDT`): attacks the player coming this close.
+    pub aggro_attack: Option<f32>,
     pub factions: Vec<FormId>,
 }
 
@@ -55,12 +57,16 @@ fn f32_at(d: &[u8], o: usize) -> f32 {
     d.get(o..o + 4).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
 }
 
-/// Follow an NPC's templates to the first record with `tag`.
-fn npc_field(lo: &LoadOrder, npc: FormId, tag: &[u8; 4]) -> Option<Vec<u8>> {
+/// An NPC's `tag` subrecord, from its template when it takes that part from it
+/// (template flag `use_template`) or lacks it.
+fn npc_field(lo: &LoadOrder, npc: FormId, tag: &[u8; 4], use_template: u16) -> Option<Vec<u8>> {
     let mut id = npc;
     for _ in 0..8 {
         let rec = lo.get(id)?;
+        let tpl_flags = rec.get(b"ACBS").filter(|d| d.len() >= 20).map_or(0, |d| u16::from_le_bytes([d[18], d[19]]));
+        let templated = tpl_flags & use_template != 0 && rec.get(b"TPLT").is_some();
         if rec.tag().0 == *b"NPC_"
+            && !templated
             && let Some(d) = rec.get(tag)
         {
             return Some(d.to_vec());
@@ -137,11 +143,17 @@ impl CombatStats {
             }
         }
         // Health from the NPC's stats (DNAM: skills, then health / magicka / stamina).
-        if let Some(d) = npc_field(lo, npc, b"DNAM").filter(|d| d.len() >= 38) {
+        // Template flags: 0x2 stats, 0x10 AI data.
+        if let Some(d) = npc_field(lo, npc, b"DNAM", 0x2).filter(|d| d.len() >= 38) {
             s.max_health += u16::from_le_bytes([d[36], d[37]]) as f32;
         }
         s.max_health = s.max_health.max(5.0);
-        s.aggression = npc_field(lo, npc, b"AIDT").and_then(|d| d.first().copied()).unwrap_or(0);
+        if let Some(d) = npc_field(lo, npc, b"AIDT", 0x10).filter(|d| d.len() >= 20) {
+            s.aggression = d[0];
+            if d[6] != 0 {
+                s.aggro_attack = Some(u32::from_le_bytes(d[16..20].try_into().unwrap()) as f32).filter(|r| *r > 0.0);
+            }
+        }
         s.factions = npc_factions(lo, npc);
         s
     }
@@ -395,7 +407,7 @@ impl Engine {
             .collect();
         let mut lookers: Vec<(FormId, Vec3, Arc<CombatStats>)> = Vec::new();
         for rt in self.cells.values_mut() {
-            for a in rt.actors.iter_mut().filter(|a| !a.dead && a.combat.is_none() && a.stats.aggression > 0) {
+            for a in rt.actors.iter_mut().filter(|a| !a.dead && a.combat.is_none() && (a.stats.aggression > 0 || a.stats.aggro_attack.is_some())) {
                 a.detect_in -= dt;
                 if a.detect_in <= 0.0 {
                     a.detect_in = DETECT_INTERVAL;
@@ -406,7 +418,8 @@ impl Engine {
         for (r, pos, stats) in lookers {
             let mut best: Option<(f32, FormId)> = None;
             let d = pos.distance(player);
-            if d < DETECT_DISTANCE && !self.player_dead() && self.hostile_to(&stats, &player_factions, true) {
+            let aggro = stats.aggro_attack.is_some_and(|r| d < r) && !self.law_abiding(&stats.factions) && !matches!(self.faction_reaction(&stats.factions, &player_factions), Some(2 | 3));
+            if d < DETECT_DISTANCE && !self.player_dead() && (aggro || self.hostile_to(&stats, &player_factions, true)) {
                 best = Some((d, PLAYER_REF));
             }
             for (o, opos, of) in &others {
