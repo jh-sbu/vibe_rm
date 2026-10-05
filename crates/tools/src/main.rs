@@ -260,20 +260,33 @@ fn main() -> Result<()> {
             fn show(g: &havok::behavior::BehaviorGraph, id: usize, depth: usize, max: usize) {
                 let pad = "  ".repeat(depth);
                 match &g.generators[id] {
-                    G::Clip { name, animation, mode, speed, triggers } => {
+                    G::Clip { name, animation, mode, speed, triggers, .. } => {
                         let t: Vec<String> = triggers.iter().map(|t| format!("{}@{:.2}{}", g.event_name(t.event).unwrap_or("?"), t.time, if t.from_end { "e" } else { "" })).collect();
                         println!("{pad}clip {name} {animation} {mode:?} x{speed} {t:?}");
                     }
                     G::StateMachine { name, start, start_variable, states, wildcards } => {
                         let var = start_variable.map(|v| format!(" (bound to {} = {:?})", g.variables.get(v).map_or("?", String::as_str), g.variable_defaults.get(v)));
                         println!("{pad}sm {name} start {start}{}", var.unwrap_or_default());
+                        let tr = |t: &havok::behavior::Transition| {
+                            let mut s = format!("--{}--> {} nested {:?}", g.event_name(t.event).unwrap_or("?"), t.to_state, t.to_nested);
+                            if let Some(b) = t.blend {
+                                s += &format!(" blend {b}");
+                            }
+                            if let Some(c) = &t.condition {
+                                s += &format!(" if {c:?}");
+                            }
+                            if t.flags & !0x2000 != 0 {
+                                s += &format!(" flags {:#x}", t.flags);
+                            }
+                            s
+                        };
                         for w in wildcards {
-                            println!("{pad}  * --{}--> {} nested {:?}", g.event_name(w.event).unwrap_or("?"), w.to_state, w.to_nested);
+                            println!("{pad}  * {}", tr(w));
                         }
                         for st in states {
                             println!("{pad}  state {} {}", st.id, st.name);
                             for t in &st.transitions {
-                                println!("{pad}    --{}--> {} nested {:?}", g.event_name(t.event).unwrap_or("?"), t.to_state, t.to_nested);
+                                println!("{pad}    {}", tr(t));
                             }
                             if depth < max {
                                 if let Some(c) = st.generator {
@@ -282,10 +295,24 @@ fn main() -> Result<()> {
                             }
                         }
                     }
-                    G::Group { name, children } => {
-                        println!("{pad}group {name}");
+                    other @ (G::Blender { .. } | G::Selector { .. } | G::Wrap { .. } | G::BoneSwitch { .. }) => {
+                        let vars: Vec<String> = g.bindings[id].iter().map(|b| format!("{}={}", b.member, g.variables.get(b.variable).map_or("?", String::as_str))).collect();
+                        let what = match other {
+                            G::Blender { name, parameter, flags, children, .. } => {
+                                let w: Vec<f32> = children.iter().map(|c| c.weight).collect();
+                                format!("blend {name} param {parameter} flags {flags:#x} weights {w:?}")
+                            }
+                            G::Selector { name, index, .. } => format!("select {name} index {index}"),
+                            G::Wrap { name, class, modifier, .. } => {
+                                let m = modifier.map(|m| format!(" modifier {:?}", g.modifiers[m])).unwrap_or_default();
+                                format!("{class} {name}{m}")
+                            }
+                            G::BoneSwitch { name, .. } => format!("boneswitch {name}"),
+                            _ => unreachable!(),
+                        };
+                        println!("{pad}{what} {}", if vars.is_empty() { String::new() } else { format!("{vars:?}") });
                         if depth < max {
-                            for &c in children {
+                            for c in other.children() {
                                 show(g, c, depth + 1, max);
                             }
                         }
@@ -295,6 +322,11 @@ fn main() -> Result<()> {
                 }
             }
             let want = args[4].to_ascii_lowercase();
+            if want == "root"
+                && let Some(r) = g.root
+            {
+                show(&g, r, 0, max);
+            }
             for (i, node) in g.generators.iter().enumerate() {
                 if node.name().to_ascii_lowercase() == want {
                     show(&g, i, 0, max);
@@ -306,6 +338,110 @@ fn main() -> Result<()> {
                             show(&g, c, 1, max);
                         }
                     }
+                }
+            }
+        }
+        Some("hkb-classes") => {
+            // hkb-classes <data dir> <project dir>: object classes across the project's graphs.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let dir = args[2].trim_end_matches('/');
+            let project = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}")));
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            for (rel, _) in &project.graphs {
+                let bytes = v.read(&format!("{dir}/{}", rel.replace('\\', "/"))).context("graph vanished")?;
+                for o in havok::Packfile::parse(&bytes)?.objects {
+                    *counts.entry(o.class).or_default() += 1;
+                }
+            }
+            for (class, n) in counts {
+                println!("{n:6} {class}");
+            }
+        }
+        Some("hkb-obj") => {
+            // hkb-obj <data dir> <project dir> <graph file> <class> [count]: raw fields of
+            // objects of a class (words as hex / float, pointers with their target).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let dir = args[2].trim_end_matches('/');
+            let bytes = v.read(&format!("{dir}/behaviors/{}", args[3])).context("graph not found")?;
+            let p = havok::Packfile::parse(&bytes)?;
+            let count: usize = args.get(5).map(|s| s.parse()).transpose()?.unwrap_or(2);
+            let mut starts: Vec<u32> = p.objects.iter().map(|o| o.offset).collect();
+            starts.sort();
+            for o in p.objects.iter().filter(|o| o.class == args[4]).take(count) {
+                let end = starts.iter().copied().find(|&s| s > o.offset).unwrap_or(p.data.len() as u32);
+                println!("{} @{:#x} ({} bytes)", o.class, o.offset, end - o.offset);
+                let mut at = o.offset;
+                while at < end {
+                    let rel = at - o.offset;
+                    if let Some(t) = p.ptr(at) {
+                        let what = p.object_class(t).map(str::to_owned).unwrap_or_else(|| {
+                            let s = p.string(at).unwrap_or_default();
+                            if s.chars().all(|c| c.is_ascii_graphic() || c == ' ') && !s.is_empty() { format!("{s:?}") } else { format!("data @{t:#x}") }
+                        });
+                        println!("  {rel:#05x} ptr -> {what}");
+                        at += 8;
+                        continue;
+                    }
+                    let w = p.u32(at);
+                    println!("  {rel:#05x} {w:08x} {:>12} {:>14}", p.i32(at), format!("{:.4}", f32::from_bits(w)));
+                    at += 4;
+                }
+            }
+        }
+        Some("hkb-run") => {
+            // hkb-run <data dir> <project dir> <step>...: run a character's behaviour graphs.
+            // Steps: `<seconds>` advances time, `!Event` handles an event (reporting whether
+            // the graph took it), `Var=value` sets a variable.
+            use havok::behavior::runtime::{Instance, Shared};
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let dir = args[2].trim_end_matches('/').to_owned();
+            let project = std::sync::Arc::new(havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}"))));
+            let shared = Shared::new(project);
+            let mut cache: std::collections::HashMap<String, Option<f32>> = Default::default();
+            let mut clips = |anim: &str| -> Option<f32> {
+                let path = format!("{dir}/{}", anim.to_ascii_lowercase().replace('\\', "/"));
+                *cache.entry(path.clone()).or_insert_with(|| {
+                    let c = havok::AnimationContainer::parse(&v.read(&path)?).ok()?;
+                    Some(c.animations.first()?.duration)
+                })
+            };
+            let mut inst = Instance::new(shared, 1);
+            inst.set_tracing(true);
+            let show = |inst: &mut Instance, label: &str| {
+                println!("== {label}");
+                for t in inst.take_trace() {
+                    println!("  > {t}");
+                }
+                println!("  states: {}", inst.active_states().join(" > "));
+                for s in inst.samples() {
+                    println!("  {:5.2} {} t={:.2}", s.weight, s.animation, s.time);
+                }
+                for r in inst.take_raised() {
+                    println!("  raised {}{}", r.event, r.payload.map(|p| format!(" ({p})")).unwrap_or_default());
+                }
+            };
+            for step in &args[3..] {
+                if let Some(ev) = step.strip_prefix('!') {
+                    let took = inst.handle_event(ev, &mut clips);
+                    show(&mut inst, &format!("{ev} ({})", if took { "taken" } else { "ignored" }));
+                } else if let Some((name, value)) = step.split_once('=') {
+                    let ok = inst.set_variable(name, value.parse()?);
+                    println!("== {name} = {value}{}", if ok { "" } else { " (unknown variable)" });
+                } else {
+                    let secs: f32 = step.parse()?;
+                    let mut t = 0.0;
+                    while t < secs - 1e-4 {
+                        let dt = (secs - t).min(1.0 / 30.0);
+                        inst.update(dt, &mut clips);
+                        t += dt;
+                    }
+                    show(&mut inst, &format!("+{secs} s"));
                 }
             }
         }
