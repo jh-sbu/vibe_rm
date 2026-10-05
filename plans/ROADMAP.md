@@ -63,6 +63,10 @@ game each piece unlocks.
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope
+- Talking gestures: each line of dialogue picks from the `ActionTalking` tree (hands on hips,
+  hand gestures, angry / happy / expressive idles) by the line's emotion (`TRDT`) and the
+  speaker's graph variables (`GetGraphVariableInt` / `Float` now read the actor's graph);
+  `IsTalking`, `GetDialogueEmotion(Value)`, `GetMovementSpeed`
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
@@ -91,8 +95,8 @@ game each piece unlocks.
      standing idles, `ActionTurnLeft`...) as the way events are chosen
    - Carry furniture (`CarryFurnitureScript`: wood piles): the carrying states after the
      pick-up and putting the load down
-   - Engine variables and events still missing: weapons drawn, combat, dialogue
-     (`IdleDialogue*`), first person
+   - Engine variables and events still missing: weapons drawn, combat, first person;
+     INFO speaker / listener idles; listeners' reactions
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;

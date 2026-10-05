@@ -239,7 +239,21 @@ fn main() -> Result<()> {
                 let clips = g.generators.iter().filter(|g| matches!(g, havok::behavior::Generator::Clip { .. })).count();
                 println!("{rel}: {} generators, {clips} clips, {} events", g.generators.len(), g.events.len());
             }
+            // `name*` lists the events starting with `name` (any case).
+            let mut wanted: Vec<String> = Vec::new();
             for e in &args[3..] {
+                match e.strip_suffix('*') {
+                    Some(prefix) => {
+                        let prefix = prefix.to_ascii_lowercase();
+                        let mut names: Vec<String> = project.graphs.iter().flat_map(|(_, g)| g.events.iter()).filter(|n| n.to_ascii_lowercase().starts_with(&prefix)).cloned().collect();
+                        names.sort();
+                        names.dedup();
+                        wanted.extend(names);
+                    }
+                    None => wanted.push(e.clone()),
+                }
+            }
+            for e in &wanted {
                 println!("{e}:");
                 for (gpath, g) in &project.graphs {
                     let Some(id) = g.event_id(e) else { continue };

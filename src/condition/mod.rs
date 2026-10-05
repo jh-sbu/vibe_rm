@@ -250,7 +250,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         14 => Some(100.0),                                                // GetActorValue
         365 => b(ctx.idle.and_then(|q| q.child).unwrap_or_else(|| subj_base.and_then(|n| e.npc_race(n)).is_some_and(|r| e.race_is_child(r)))), // IsChild
         125 => b(false),                                                  // IsGuard
-        141 => b(false),                                                  // IsTalking
+        141 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject && cv.current.is_some())), // IsTalking
         149 => b(e.current_weather() == Some(p1)),                        // GetIsCurrentWeather
         1 => {
             // GetDistance
@@ -280,6 +280,17 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         255 => b(subj_base.is_some_and(|n| e.offers_services_now(n))),   // GetOffersServicesNow
         // Nobody fights, swims, bleeds out, feeds or takes commands yet.
         289 | 101 | 185 | 580 | 700 | 226 => b(false),
+        // Behaviour graph variables of the subject's graph (the idle-picking
+        // fallback below answers for actors without one).
+        675 | 447 if subject.is_some_and(|s| e.graph_variable(s, "").is_some()) => {
+            subject.and_then(|s| e.graph_variable(s, c.string_p1.as_deref().unwrap_or("")))
+        }
+        // The line being said, while saying it.
+        434 | 435 => {
+            let line = e.conversation.as_ref().filter(|cv| Some(cv.npc_ref) == subject)?.current.as_ref()?;
+            Some(if c.func == 434 { line.emotion.0 } else { line.emotion.1 } as f32)
+        }
+        623 => Some(subject.and_then(|s| e.actor_speed(s)).unwrap_or(0.0)), // GetMovementSpeed
         // Nor flees, attacks, staggers, recoils or is ridden.
         329 | 672 | 701 | 702 | 714 => b(false),
         _ => idle_function_value(e, c, ctx),

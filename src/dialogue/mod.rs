@@ -27,7 +27,10 @@ pub struct Topic {
 pub struct Response {
     pub number: u8,
     pub text: String,
+    /// Emotion type (0 neutral, 1 anger, 2 disgust, 3 fear, 4 sad, 5 happy,
+    /// 6 surprise, 7 puzzled) and strength (0..100).
     pub emotion: u32,
+    pub emotion_value: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +84,7 @@ pub fn info(lo: &LoadOrder, id: FormId) -> Option<Info> {
                 if let Some(c) = cur.take() {
                     out.responses.push(c);
                 }
-                cur = Some(Response { number: sr.u8(12), text: String::new(), emotion: sr.u32(0) });
+                cur = Some(Response { number: sr.u8(12), text: String::new(), emotion: sr.u32(0), emotion_value: sr.u32(4) });
             }
             b"NAM1" => {
                 if let Some(c) = cur.as_mut() {
@@ -204,6 +207,8 @@ pub struct Line {
     pub text: String,
     pub voice: Option<crate::audio::VoiceId>,
     pub ends_at: f64,
+    /// The response's emotion type and strength.
+    pub emotion: (u32, u32),
 }
 
 /// An ongoing conversation with an NPC.
@@ -428,17 +433,20 @@ impl Engine {
         }
         log::info!("{}: {} [{}]", self.conversation.as_ref().map(|c| c.name.as_str()).unwrap_or(""), r.text, path.unwrap_or_default());
         if let Some(c) = self.conversation.as_mut() {
-            c.current = Some(Line { text: r.text, voice, ends_at: now + duration });
+            c.current = Some(Line { text: r.text, voice, ends_at: now + duration, emotion: (r.emotion, r.emotion_value) });
         }
+        // Gesture along with the line.
+        self.talking_gesture(npc_ref);
     }
 
     pub fn end_conversation(&mut self) {
-        if let Some(c) = self.conversation.take()
-            && let (Some(line), Some(a)) = (c.current, &self.audio)
+        let Some(c) = self.conversation.take() else { return };
+        if let (Some(line), Some(a)) = (&c.current, &self.audio)
             && let Some(v) = line.voice
         {
             a.stop(v);
         }
+        self.end_talking_gestures(c.npc_ref);
     }
 
     /// Advance the conversation (called every frame).
