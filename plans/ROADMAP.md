@@ -19,12 +19,16 @@ game each piece unlocks.
   furniture markers; ownership; reservations; sit / sleep packages and sandbox
   "Allow ..." inputs; enter / exit clips placed by root motion from the behaviour
   projects' animation data
+- Behaviour graphs: hkbBehaviorGraph generator trees (state machines, nested state
+  targets, clip triggers, references between graphs) to resolve animation events to
+  clip sequences and their exits; IDLE tree by keyword for crafting stations and
+  special furniture; idle markers; Papyrus `PlayIdle` / `SendAnimationEvent`
 
 ## Next
 1. **AI depth**
-   - Idle markers (IDLM) and their IDLE animations; workbenches and crafting stations;
-     chair idle variants, eating / drinking (anim objects), child furniture clips;
-     behaviour-graph subset (event -> clip) instead of name matching
+   - Anim objects (mugs, bowls, hammers) for table / counter / work idles; chair idle
+     variants; child furniture clips; IDLE conditions (currently ignored); chairs and
+     beds still pick clips by name rather than through the graphs
    - Remaining procedures: follow, escort, patrol (linked refs), flee, dialogue packages
    - Actor-actor avoidance; doors opening; off-screen travel between worldspaces
    - Leveled lists (LVLN/LVLI) beyond the first entry, templates (TPLT/ACFG)

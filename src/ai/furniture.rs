@@ -17,6 +17,11 @@ pub enum Use {
     Sit,
     Sleep,
     Lean,
+    /// Furniture with its own idles (crafting stations, special chairs), entered
+    /// through the behaviour graph event from its keyword's idle tree.
+    Special,
+    /// An idle marker (`IDLM`): stand there and play one of its idles.
+    Idle,
 }
 
 /// Side an actor gets on from (marker entry flags).
@@ -58,6 +63,11 @@ pub struct Furniture {
     pub owner: Option<FormId>,
     pub bedroll: bool,
     pub markers: Vec<Marker>,
+    /// Behaviour events played here: the enter event of special furniture, or an
+    /// idle marker's idles.
+    pub events: Vec<String>,
+    /// Seconds an idle marker is used for (0: package default).
+    pub idle_time: f32,
 }
 
 /// Furniture in the loaded cells and who is using (or heading for) each marker.
@@ -82,14 +92,18 @@ impl Seat {
     /// Pose (feet, heading) at which the enter animation starts.
     pub fn enter_start(&self) -> (Vec3, f32) {
         let m = Marker { pos: self.pos, heading: self.heading, kind: Use::Sit, entries: 0 };
-        enter_start(&m, self.clips.enter.as_deref())
+        enter_start(&m, &self.clips.enter)
     }
 }
 
+/// Clips for using a marker: played in order to get in, looped while in, played
+/// in order to get out.
 pub struct UseClips {
-    pub enter: Option<Arc<BoundClip>>,
+    pub enter: Vec<Arc<BoundClip>>,
     pub idle: Arc<BoundClip>,
-    pub exit: Option<Arc<BoundClip>>,
+    pub exit: Vec<Arc<BoundClip>>,
+    /// False when the last clip is a one-shot (a gesture rather than a pose to hold).
+    pub idle_loops: bool,
 }
 
 /// Rotate an actor-space offset (+Y forward, +X right) into the world by `heading`.
@@ -98,12 +112,20 @@ pub fn to_world(offset: Vec3, heading: f32) -> Vec3 {
     Vec3::new(offset.x * c + offset.y * s, -offset.x * s + offset.y * c, offset.z)
 }
 
-/// Pose (feet, heading) at which to start `enter` so that it ends on the marker.
-pub fn enter_start(m: &Marker, enter: Option<&BoundClip>) -> (Vec3, f32) {
-    let Some((t, yaw)) = enter.and_then(|c| c.motion.as_ref()).map(|mo| mo.end()) else { return (m.pos, m.heading) };
+/// Pose (feet, heading) at which to start the `enter` clips so that they end on the marker.
+pub fn enter_start(m: &Marker, enter: &[Arc<BoundClip>]) -> (Vec3, f32) {
+    // Each clip moves the actor relative to where the previous one left it.
     // Motion yaw is counter-clockwise; headings are clockwise.
-    let h0 = m.heading + yaw;
-    (m.pos - to_world(t, h0), h0)
+    let ends: Vec<(Vec3, f32)> = enter.iter().filter_map(|c| c.motion.as_ref()).map(|mo| mo.end()).collect();
+    let total_yaw: f32 = ends.iter().map(|e| e.1).sum();
+    let h0 = m.heading + total_yaw;
+    let mut h = h0;
+    let mut offset = Vec3::ZERO;
+    for (t, yaw) in ends {
+        offset += to_world(t, h);
+        h -= yaw;
+    }
+    (m.pos - offset, h0)
 }
 
 /// Owner of a reference (`XOWN`), falling back to its cell's owner.
@@ -137,6 +159,7 @@ impl FurnitureWorld {
     pub fn add_cell(
         &mut self,
         lo: &LoadOrder,
+        idles: &super::idles::IdleIndex,
         key: CellKey,
         refs: &[FormId],
         mut markers: impl FnMut(&str) -> Option<Arc<[nif::FurnitureMarker]>>,
@@ -151,11 +174,20 @@ impl FurnitureWorld {
                 continue;
             }
             let Some(base) = lo.get(rf.base) else { continue };
+            if base.tag().0 == *b"IDLM" {
+                self.add_idle_marker(lo, idles, key, r, &rf, &base);
+                continue;
+            }
             if base.tag().0 != *b"FURN" {
                 continue;
             }
-            // Workbenches, alchemy labs, etc. need their own animations.
+            // Furniture whose keywords select an idle tree (crafting stations,
+            // thrones, writing desks...) is entered through that idle's event.
+            let special = idles.furniture_event(lo, &base);
             let bench = base.get(b"WBDT").is_some_and(|d| !d.is_empty() && d[0] != 0);
+            if bench && special.is_none() {
+                continue;
+            }
             let Some(model) = records::model_path(&base) else { continue };
             let Some(nif_markers) = markers(&model) else { continue };
             // Active markers: bits 0..23 of MNAM (none set means all).
@@ -169,6 +201,7 @@ impl FurnitureWorld {
                 .filter(|(i, _)| active.is_none_or(|a| a == 0 || a & (1 << i) != 0))
                 .filter_map(|(_, m)| {
                     let kind = match m.anim_type {
+                        _ if special.is_some() => Use::Special,
                         1 => Use::Sit,
                         2 => Use::Sleep,
                         4 => Use::Lean,
@@ -179,7 +212,7 @@ impl FurnitureWorld {
                     Some(Marker { pos, heading: ref_heading - m.heading, kind, entries: m.entry })
                 })
                 .collect();
-            if bench || list.is_empty() {
+            if list.is_empty() {
                 continue;
             }
             self.items.push(Furniture {
@@ -188,8 +221,42 @@ impl FurnitureWorld {
                 owner: owner_of(lo, r),
                 bedroll: model.contains("bedroll"),
                 markers: list,
+                events: special.into_iter().collect(),
+                idle_time: 0.0,
             });
         }
+    }
+
+    fn add_idle_marker(
+        &mut self,
+        lo: &LoadOrder,
+        idles: &super::idles::IdleIndex,
+        key: CellKey,
+        r: FormId,
+        rf: &records::Reference,
+        base: &esp::LoadedRecord<'_>,
+    ) {
+        let events: Vec<String> = base
+            .get(b"IDLA")
+            .unwrap_or(&[])
+            .chunks_exact(4)
+            .filter_map(|c| idles.humanoid_event(base.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))))
+            .collect();
+        if events.is_empty() {
+            return;
+        }
+        let idle_time = base.get(b"IDLT").filter(|d| d.len() >= 4).map_or(0.0, |d| f32::from_le_bytes(d[0..4].try_into().unwrap()));
+        let fwd = rf.transform().transform_vector3(Vec3::Y);
+        let marker = Marker { pos: rf.position, heading: fwd.x.atan2(fwd.y), kind: Use::Idle, entries: 1 };
+        self.items.push(Furniture {
+            ref_id: r,
+            cell: key,
+            owner: owner_of(lo, r),
+            bedroll: false,
+            markers: vec![marker],
+            events,
+            idle_time,
+        });
     }
 
     pub fn count(&self, key: CellKey) -> (usize, usize) {
@@ -259,25 +326,41 @@ fn clip_names(kind: Use, bedroll: bool, entry: Entry) -> Option<[String; 3]> {
         (Use::Sleep, true, _) => [format!("bedroll_{side}enter"), format!("bedroll_{side}sleep"), format!("bedroll_{side}exit")],
         (Use::Sleep, false, _) => [format!("bed_{side}enter"), format!("bed_{side}sleep"), format!("bed_{side}exit")],
         (Use::Lean, _, Entry::Front) => ["wall_idlebackenter".into(), "wall_idlebackloop".into(), "wall_idlebackexit".into()],
-        (Use::Lean, _, _) => return None,
+        (Use::Lean, _, _) | (Use::Special | Use::Idle, _, _) => return None,
     })
 }
 
-/// Ways to use `m` (entry side and clips), for an actor whose skeleton lives at
-/// `skeleton_path`. `load` loads a clip by path.
+/// Ways to use `m` of furniture `f` (entry side and clips), for an actor whose
+/// skeleton lives at `skeleton_path`.
 pub fn ways_to_use(
+    f: &Furniture,
     m: &Marker,
-    bedroll: bool,
     skeleton_path: &str,
     female: bool,
-    mut load: impl FnMut(&str) -> Option<Arc<BoundClip>>,
+    skeleton: &crate::world::skeleton::Skeleton,
+    clips: &mut super::Clips,
+    rand: &mut dyn FnMut() -> u64,
 ) -> Vec<(Entry, UseClips)> {
     let Some(base) = skeleton_path.split("/character assets").next().filter(|b| b.ends_with("actors/character")) else {
         return Vec::new();
     };
+    if matches!(m.kind, Use::Special | Use::Idle) {
+        // One of the marker's idles (special furniture has just its enter event).
+        if f.events.is_empty() {
+            return Vec::new();
+        }
+        let start = (rand() % f.events.len() as u64) as usize;
+        let pick = (0..f.events.len()).find_map(|i| {
+            let e = &f.events[(start + i) % f.events.len()];
+            clips.event(e, base, skeleton_path, female, skeleton)
+        });
+        return pick.map(|c| vec![(Entry::Front, c)]).unwrap_or_default();
+    }
     let g = if female { "female" } else { "male" };
     let mut clip = |stem: &str| {
-        [format!("{base}/animations/{g}/{stem}.hkx"), format!("{base}/animations/{stem}.hkx")].iter().find_map(|p| load(p))
+        [format!("{base}/animations/{g}/{stem}.hkx"), format!("{base}/animations/{stem}.hkx")]
+            .iter()
+            .find_map(|p| clips.clip(p, skeleton_path, skeleton))
     };
     let mut out = Vec::new();
     for (entry, bit) in Entry::ALL {
@@ -285,9 +368,9 @@ pub fn ways_to_use(
         if m.entries & bit == 0 && !(m.entries & 0xF == 0 && entry == Entry::Front) {
             continue;
         }
-        let Some([enter, idle, exit]) = clip_names(m.kind, bedroll, entry) else { continue };
+        let Some([enter, idle, exit]) = clip_names(m.kind, f.bedroll, entry) else { continue };
         let Some(idle) = clip(&idle) else { continue };
-        out.push((entry, UseClips { enter: clip(&enter), idle, exit: clip(&exit) }));
+        out.push((entry, UseClips { enter: clip(&enter).into_iter().collect(), idle, exit: clip(&exit).into_iter().collect(), idle_loops: true }));
     }
     out
 }

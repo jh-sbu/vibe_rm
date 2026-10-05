@@ -3,9 +3,11 @@
 //! Only the classes needed for character animation are interpreted:
 //! `hkRootLevelContainer`, `hkaAnimationContainer`, `hkaSkeleton`,
 //! `hkaAnimationBinding`, `hkaSplineCompressedAnimation` and
-//! `hkaInterleavedUncompressedAnimation`.
+//! `hkaInterleavedUncompressedAnimation`, plus the generator tree of behaviour
+//! graphs (see [`behavior`]).
 
 mod anim;
+pub mod behavior;
 mod packfile;
 mod spline;
 

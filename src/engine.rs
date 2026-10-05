@@ -64,6 +64,9 @@ pub struct Engine {
     pub look_target: Option<(FormId, String)>,
     skeletons: HashMap<String, Option<std::sync::Arc<crate::world::skeleton::Skeleton>>>,
     pub(crate) anims: crate::world::animation::AnimationLibrary,
+    pub(crate) behaviors: crate::world::animation::BehaviorLibrary,
+    /// IDLE records by parent and keyword (built on first use).
+    idles: Option<crate::ai::idles::IdleIndex>,
     pub scripts: crate::script::ScriptState,
     pub vm: papyrus::Vm,
     /// Whole game days elapsed before the current day.
@@ -125,6 +128,8 @@ impl Engine {
             look_target: None,
             skeletons: HashMap::new(),
             anims: Default::default(),
+            behaviors: Default::default(),
+            idles: None,
             scripts: Default::default(),
             vm: papyrus::Vm::new(),
             day: 0,
@@ -582,9 +587,15 @@ impl Engine {
         }
     }
 
+    /// The behaviour event an IDLE record plays.
+    pub fn idle_event(&mut self, idle: FormId) -> Option<String> {
+        self.idles.get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo)).humanoid_event(idle)
+    }
+
     fn load_furniture(&mut self, key: CellKey, refs: &[FormId]) {
+        let idles = self.idles.get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo));
         let (models, vfs) = (&mut self.models, &self.vfs);
-        self.furniture.add_cell(&self.lo, key, refs, |path| models.furniture(vfs, path));
+        self.furniture.add_cell(&self.lo, idles, key, refs, |path| models.furniture(vfs, path));
         let (n, m) = self.furniture.count(key);
         log::debug!("{key:?}: {n} furniture with {m} markers");
         for f in self.furniture.items.iter().filter(|f| f.cell == key) {

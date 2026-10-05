@@ -214,6 +214,82 @@ impl ActorAnim {
     }
 }
 
+/// Behaviour projects (a character's graphs) by project directory, with cached
+/// event -> clip sequence lookups.
+#[derive(Default)]
+pub struct BehaviorLibrary {
+    projects: HashMap<String, Arc<havok::behavior::Project>>,
+    events: HashMap<(String, String), Option<Arc<EventClips>>>,
+}
+
+/// Clips a behaviour event plays, and the clips that leave that state again.
+pub struct EventClips {
+    pub clips: Vec<havok::behavior::PlayedClip>,
+    pub exit: Vec<havok::behavior::PlayedClip>,
+}
+
+impl BehaviorLibrary {
+    fn project(&mut self, vfs: &vfs::Vfs, dir: &str) -> Arc<havok::behavior::Project> {
+        if let Some(p) = self.projects.get(dir) {
+            return p.clone();
+        }
+        let t = std::time::Instant::now();
+        let p = Arc::new(havok::behavior::Project::load("behaviors/0_master.hkx", |rel| vfs.read(&format!("{dir}/{rel}"))));
+        log::debug!("{dir}: {} behaviour graphs in {:?}", p.graphs.len(), t.elapsed());
+        self.projects.insert(dir.to_owned(), p.clone());
+        p
+    }
+
+    /// Clips an animation event plays on actors of the project in `dir`
+    /// (e.g. `meshes/actors/character`), ending in a loop where there is one.
+    pub fn event_clips(&mut self, vfs: &vfs::Vfs, dir: &str, event: &str) -> Option<Arc<EventClips>> {
+        use havok::behavior::ClipMode;
+        let key = (dir.to_owned(), event.to_ascii_lowercase());
+        if let Some(r) = self.events.get(&key) {
+            return r.clone();
+        }
+        let project = self.project(vfs, dir);
+        let plays = project.play_event(event);
+        // Prefer a sequence that settles into a loop.
+        let play = plays.iter().find(|p| p.clips.last().is_some_and(|c| c.mode == ClipMode::Looping)).or(plays.first());
+        let r = match play {
+            Some(p) => {
+                // Furniture and idle markers are left with IdleChairExitStart / IdleStop.
+                let exit = ["IdleChairExitStart", "IdleStop"]
+                    .iter()
+                    .find_map(|e| project.then_event(p, e))
+                    .map(|x| x.clips)
+                    .unwrap_or_default();
+                Some(EventClips { clips: p.clips.clone(), exit })
+            }
+            // Loose idles name their clip generator after the event.
+            None => project
+                .clip_named(&format!("MT_{event}"))
+                .or_else(|| project.clip_named(event))
+                .map(|c| EventClips { clips: vec![c], exit: Vec::new() }),
+        };
+        if r.is_none() {
+            log::debug!("{dir}: no clips for animation event {event:?}");
+        }
+        let r = r.map(Arc::new);
+        self.events.insert(key, r.clone());
+        r
+    }
+}
+
+/// Candidate files for a behaviour clip path (`Animations\male\MT_Idle.HKX`) in the
+/// project at `dir`, female variants first for female actors.
+pub fn project_clip_paths(dir: &str, animation: &str, female: bool) -> Vec<String> {
+    let rel = animation.to_ascii_lowercase().replace('\\', "/");
+    let path = format!("{dir}/{rel}");
+    let mut out = Vec::new();
+    if female && path.contains("/animations/male/") {
+        out.push(path.replace("/animations/male/", "/animations/female/"));
+    }
+    out.push(path);
+    out
+}
+
 /// Loads and caches clips per (clip path, skeleton path).
 #[derive(Default)]
 pub struct AnimationLibrary {

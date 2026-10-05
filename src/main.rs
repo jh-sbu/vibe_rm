@@ -39,8 +39,12 @@ pub struct Options {
     pub choose: Vec<usize>,
     /// While waiting, also save a screenshot every this many frames.
     pub burst: Option<u32>,
-    /// Keep the camera in front of this actor while waiting (`--pos` z sets the height).
+    /// Keep the camera in front of this actor while waiting.
     pub watch: Option<String>,
+    /// Degrees to orbit the --watch camera around the actor (0: in front).
+    pub watch_angle: f32,
+    /// Console commands to run once the world is set up.
+    pub console: Vec<String>,
 }
 
 fn parse_args() -> Result<Options> {
@@ -83,6 +87,8 @@ fn parse_args() -> Result<Options> {
             "--choose" => o.choose.push(val()?.parse()?),
             "--burst" => o.burst = Some(val()?.parse()?),
             "--watch" => o.watch = Some(val()?),
+            "--console" => o.console.push(val()?),
+            "--watch-angle" => o.watch_angle = val()?.parse::<f32>()?.to_radians(),
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v.split_once(',').context("--pick x,y (0..1 screen coords)")?;
