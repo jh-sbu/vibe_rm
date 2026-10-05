@@ -13,6 +13,14 @@ use crate::render::{GpuModel, Renderer, dds};
 pub struct ModelCache {
     map: HashMap<String, Option<Arc<GpuModel>>>,
     collision: crate::physics::CollisionCache,
+    furniture: HashMap<String, Option<Arc<[nif::FurnitureMarker]>>>,
+}
+
+fn furniture_markers(n: &nif::Nif) -> Option<Arc<[nif::FurnitureMarker]>> {
+    n.blocks.iter().find_map(|b| match b {
+        nif::Block::ExtraData(nif::ExtraData::Furniture(m)) => Some(m.as_slice().into()),
+        _ => None,
+    })
 }
 
 impl ModelCache {
@@ -26,6 +34,16 @@ impl ModelCache {
         self.collision.get(path).cloned().flatten()
     }
 
+    /// Furniture markers of a model (parsed on demand if it isn't loaded).
+    pub fn furniture(&mut self, vfs: &vfs::Vfs, path: &str) -> Option<Arc<[nif::FurnitureMarker]>> {
+        if let Some(m) = self.furniture.get(path) {
+            return m.clone();
+        }
+        let m = vfs.read(path).and_then(|d| nif::Nif::parse(&d).ok()).and_then(|n| furniture_markers(&n));
+        self.furniture.insert(path.to_owned(), m.clone());
+        m
+    }
+
     /// Ensure all `paths` are loaded (in parallel where possible).
     pub fn load_all(&mut self, renderer: &mut Renderer, vfs: &vfs::Vfs, paths: &[String]) {
         let missing: Vec<&String> = {
@@ -36,13 +54,16 @@ impl ModelCache {
             return;
         }
         let t0 = std::time::Instant::now();
-        let cpu: Vec<(String, Option<CpuModel>, Option<crate::physics::shapes::CollisionModel>)> = missing
+        #[allow(clippy::type_complexity)]
+        let cpu: Vec<(String, Option<CpuModel>, Option<crate::physics::shapes::CollisionModel>, Option<Arc<[nif::FurnitureMarker]>>)> = missing
             .par_iter()
             .map(|p| {
                 let mut col = None;
+                let mut furn = None;
                 let m = vfs.read(p).and_then(|data| match nif::Nif::parse(&data) {
                     Ok(n) => {
                         col = crate::physics::shapes::from_nif(&n);
+                        furn = furniture_markers(&n);
                         let m = model::convert(&n);
                         for mesh in &m.meshes {
                             log::trace!("mesh in {p}: {:?}", mesh.material);
@@ -57,14 +78,14 @@ impl ModelCache {
                 if m.is_none() {
                     log::debug!("model not found or unreadable: {p}");
                 }
-                ((*p).clone(), m, col)
+                ((*p).clone(), m, col, furn)
             })
             .collect();
         let t1 = std::time::Instant::now();
 
         // Textures referenced by the new models.
         let mut tex: HashSet<String> = HashSet::new();
-        for (_, m, _) in &cpu {
+        for (_, m, _, _) in &cpu {
             if let Some(m) = m {
                 let mats = m.meshes.iter().map(|x| &x.material).chain(m.skinned.iter().map(|x| &x.material));
                 for mat in mats {
@@ -79,8 +100,9 @@ impl ModelCache {
         load_textures(renderer, vfs, tex.into_iter().collect());
         let t2 = std::time::Instant::now();
 
-        for (p, m, col) in cpu {
+        for (p, m, col, furn) in cpu {
             self.collision.insert(p.clone(), col.map(Arc::new));
+            self.furniture.insert(p.clone(), furn);
             let g = m.filter(|m| !m.meshes.is_empty() || !m.skinned.is_empty()).map(|m| {
                 let mut g = renderer.upload_model(&m);
                 g.path = p.clone();

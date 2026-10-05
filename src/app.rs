@@ -113,13 +113,27 @@ pub fn run(opts: Options) -> Result<()> {
         if let Some(frames) = opts.wait {
             // Advance the world without moving the camera.
             let (pos, yaw, pitch) = (engine.camera.position, engine.camera.yaw, engine.camera.pitch);
+            let watch = opts.watch.as_deref().map(|w| engine.resolve_form(w).context("unknown --watch reference")).transpose()?;
             engine.player.noclip = true;
-            for _ in 0..frames {
+            for i in 0..frames {
                 engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
+                engine.camera.position = pos;
+                engine.camera.yaw = yaw;
+                engine.camera.pitch = pitch;
+                if let Some((feet, heading)) = watch.and_then(|w| engine.actor_pose(w)) {
+                    // Stand in front of the actor (at --pos height above it) and look at its chest.
+                    let eye = feet + glam::Vec3::new(heading.sin(), heading.cos(), 0.0) * 170.0 + glam::Vec3::Z * pos.z.max(60.0);
+                    let d = feet + glam::Vec3::Z * 80.0 - eye;
+                    engine.camera.position = eye;
+                    engine.camera.yaw = d.x.atan2(d.y);
+                    engine.camera.pitch = (d.z / d.length().max(1.0)).asin();
+                }
+                if opts.burst.is_some_and(|n| n > 0 && i % n == 0) {
+                    let pixels = engine.renderer.render_to_image(&engine.scene, &engine.camera, |_, _| {});
+                    let stem = path.with_extension("");
+                    write_png(&format!("{}_{i:05}.png", stem.display()), opts.width, opts.height, &pixels)?;
+                }
             }
-            engine.camera.position = pos;
-            engine.camera.yaw = yaw;
-            engine.camera.pitch = pitch;
         }
         for &c in &opts.choose {
             engine.choose_topic(c);
@@ -175,18 +189,23 @@ pub fn run(opts: Options) -> Result<()> {
             ui.paint(&r.device, &r.queue, view, out, size);
         });
         log::info!("render stats: {:?}", engine.renderer.stats);
-        let file = std::fs::File::create(&path)?;
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), opts.width, opts.height);
-        enc.set_color(png::ColorType::Rgba);
-        enc.set_depth(png::BitDepth::Eight);
-        enc.write_header()?.write_image_data(&pixels)?;
-        log::info!("wrote {}", path.display());
+        write_png(&path.display().to_string(), opts.width, opts.height, &pixels)?;
         return Ok(());
     }
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App { opts, data: Some((lo, vfs)), state: None };
     event_loop.run_app(&mut app)?;
+    Ok(())
+}
+
+fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) -> Result<()> {
+    let file = std::fs::File::create(path)?;
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()?.write_image_data(pixels)?;
+    log::info!("wrote {path}");
     Ok(())
 }
 

@@ -280,8 +280,8 @@ impl Engine {
             if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r)) {
                 log::debug!("{r} leaving through door {door} at {spot:?} ({:.0} away)", spot.distance(a.pos));
                 a.exiting = Some(door);
-                a.goal = Some(super::Goal { behaviour: super::package::Behaviour::Travel, centre: spot, radius: 0.0 });
-                a.halt(0.0);
+                a.goal = Some(super::Goal::travel(spot));
+                a.interrupt(&mut self.furniture);
             }
         }
         for r in despawn {
@@ -298,6 +298,7 @@ impl Engine {
                 .map(|v| v.iter().copied().filter(|r| !self.actor_cells.contains_key(r)).collect())
                 .unwrap_or_default();
             let mut spawn = Vec::new();
+            let mut through_door = Vec::new();
             for r in arrivals {
                 let Some(&(_, pos)) = self.whereabouts.of.get(&r) else { continue };
                 let from = self.whereabouts.prev.get(&r).map(|p| p.0).filter(|p| *p != here);
@@ -305,7 +306,10 @@ impl Engine {
                 let near = if pos.is_nan() { player } else { pos };
                 let door = from.and_then(|f| self.door_towards(near, f));
                 match door {
-                    Some((_, spot)) => spawn.push((r, Some(spot))),
+                    Some((_, spot)) => {
+                        spawn.push((r, Some(spot)));
+                        through_door.push(r);
+                    }
                     None if pos.is_nan() || pos.distance(player) > UNSEEN_DISTANCE => spawn.push((r, Some(pos))),
                     None => {}
                 }
@@ -313,6 +317,12 @@ impl Engine {
             if !spawn.is_empty() {
                 log::debug!("{} actors arriving in {key:?}", spawn.len());
                 self.spawn_actors(key, &spawn);
+                // Arrivals walk in rather than appearing already seated.
+                if let Some(rt) = self.cells.get_mut(&key) {
+                    for a in rt.actors.iter_mut().filter(|a| through_door.contains(&a.ref_id)) {
+                        a.fresh = false;
+                    }
+                }
             }
         }
     }
@@ -321,6 +331,7 @@ impl Engine {
     pub fn despawn_actor(&mut self, r: FormId) {
         let Some(key) = self.actor_cells.remove(&r) else { return };
         self.moved_refs.remove(&r);
+        self.furniture.release(r);
         let (Some(rt), Some(rc)) = (self.cells.get_mut(&key), self.scene.cells.get_mut(&key)) else { return };
         let Some(i) = rt.actors.iter().position(|a| a.ref_id == r) else { return };
         let a = rt.actors.remove(i);

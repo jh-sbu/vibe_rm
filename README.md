@@ -25,7 +25,7 @@ Early but already visual:
 | Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day | done |
 | Water, collision/physics, player controller, doors, cell streaming | done |
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
-| AI: navmeshes, pathfinding, packages (sandbox/travel), daily schedules across cells | in progress |
+| AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture use (chairs, benches, beds, wall leaning) with root motion | in progress |
 | Papyrus VM, conditions, quests, dialogue, HUD, console, audio, music | in progress |
 | Combat, magic, inventory, saves | planned |
 
@@ -39,9 +39,15 @@ cargo build --release
 ./target/release/vibe_rm --cell Riverwood --hour 19
 # Exterior by worldspace + grid
 ./target/release/vibe_rm --world Tamriel --grid 4,-12
-# Render one frame offscreen to a PNG (useful for testing)
+# Render one frame offscreen to a PNG (useful for testing; needs no display)
 ./target/release/vibe_rm --cell Riverwood --screenshot out.png
+# Let the world run 20 s first, saving a frame every 0.5 s with the camera on an actor
+./target/release/vibe_rm --cell WhiterunBanneredMare --hour 20 --wait 1200 --burst 30 \
+    --watch 0001A675 --screenshot shots/mare.png
 ```
+
+Testing aids: `VRM_SEED=<n>` fixes the engine's random seed, and `VRM_AI_NO_SNAP=1`
+makes actors walk into furniture on cell load instead of starting out in it.
 
 The data directory is found from `--data`, `$SKYRIM_DATA`, or the default Steam
 locations on Linux.
