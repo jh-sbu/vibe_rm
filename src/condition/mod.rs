@@ -271,12 +271,11 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             Some(subject.and_then(|s| e.vm.get_var(papyrus::ObjectId::Form(s.0), name)).map(|v| v.as_float()).unwrap_or(0.0))
         }
         249 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject)), // IsInDialogueWithPlayer
-        47 => Some(0.0),                                                  // GetItemCount
         35 => b(subject.is_some_and(|s| e.is_disabled(s))),               // GetDisabled
         359 => b(e.current_location().is_some_and(|l| e.location_within(l, p1))), // GetInCurrentLoc
         562 => b(e.current_location().is_some_and(|l| e.has_keyword(l, p1))), // LocationHasKeyword
         606 => Some(0.0),                                                 // GetKeywordDataForLocation
-        579 | 286 | 403 | 161 | 182 => Some(0.0),                         // equipped shout, sneaking, relationship, package, equipped
+        579 | 286 | 403 | 161 => Some(0.0),                               // equipped shout, sneaking, relationship, package
         255 => b(subj_base.is_some_and(|n| e.offers_services_now(n))),   // GetOffersServicesNow
         // Nobody fights, swims, bleeds out, feeds or takes commands yet.
         289 | 101 | 185 | 580 | 700 | 226 => b(false),
@@ -291,8 +290,10 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             Some(if c.func == 434 { line.emotion.0 } else { line.emotion.1 } as f32)
         }
         623 => Some(subject.and_then(|s| e.actor_speed(s)).unwrap_or(0.0)), // GetMovementSpeed
-        // GetEquippedItemType: hands empty until there is an inventory.
-        597 => Some(0.0),
+        // GetEquippedItemType (left 0, right 1).
+        597 => Some(subject.and_then(|s| e.inventories.get(&s)).map_or(0, |i| i.hand(&e.lo, c.p1 == 0) as i32) as f32),
+        47 => Some(subject.map_or(0, |s| e.item_count(s, p1)) as f32), // GetItemCount
+        182 => b(subject.and_then(|s| e.inventories.get(&s)).is_some_and(|i| i.is_equipped(p1))), // GetEquipped
         263 => b(false), // IsWeaponOut
         // Nor flees, attacks, staggers, recoils or is ridden.
         329 | 672 | 701 | 702 | 714 => b(false),

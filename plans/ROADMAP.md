@@ -85,6 +85,14 @@ game each piece unlocks.
   player's level (all levels up to it, or the highest reached), deterministically by
   reference; chance of none; "use all" item lists. Templated NPCs take their name from
   the template (Base Data)
+- Inventories: NPCs' items (`CNTO`, leveled item counts, "each item in count"), outfits
+  and containers' contents, kept by reference; `GetItemCount`, `GetEquipped`,
+  `GetEquippedItemType`, Papyrus `GetItemCount` / `AddItem` / `RemoveItem` /
+  `RemoveAllItems` / `IsEquipped`. NPCs wield their best weapon (melee unless their
+  combat style favours ranged; skill-weighted damage) and a shield; weapons hang
+  sheathed from the bone their model names (`Prn`: hip, back), bows posed from their
+  own string bones, shields on the forearm; the graph's `iLeftHandType` /
+  `iRightHandType` follow
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
   follow / escort packages; SitTarget
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
@@ -119,7 +127,8 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; locked doors and keys
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
-3. **Game logic**: combat, magic, inventory, leveling, crime
+3. **Game logic**: combat, magic, inventory (player's, equipping by hand, armor from
+   inventory, ammo / quivers, torches at night), leveling, crime
 4. **UI**: inventory, map, bars
 5. **Audio**: lip sync
 6. **Rendering**: shadows, HDR/image spaces, particles, distant LOD (BTR/BTO/trees),

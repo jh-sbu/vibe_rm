@@ -179,6 +179,8 @@ pub struct ActorInstance {
     pub meshes: Vec<ActorMesh>,
     /// Rigid (non-skinned) models attached to skeleton bones, e.g. weapons.
     pub attachments: Vec<(Arc<GpuModel>, usize, Mat4)>,
+    /// Rigid equipment (weapons, shields), the same way.
+    pub equipment: Vec<(Arc<GpuModel>, usize, Mat4)>,
     pub transform: Mat4,
     /// Model-space bone matrices for the current pose.
     pub pose: Vec<Mat4>,
@@ -872,7 +874,7 @@ impl Renderer {
             if !frustum.sphere_visible(actor.center(), actor.radius) {
                 continue;
             }
-            for (model, bone, local) in &actor.attachments {
+            for (model, bone, local) in actor.attachments.iter().chain(&actor.equipment) {
                 let xf = actor.transform * actor.pose.get(*bone).copied().unwrap_or(Mat4::IDENTITY) * *local;
                 let data = InstanceData { model: xf.to_cols_array_2d(), lights: pack_lights(actor.lights) };
                 for (pi, part) in model.parts.iter().enumerate() {

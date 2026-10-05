@@ -215,6 +215,16 @@ pub fn convert(nif: &Nif) -> CpuModel {
     for &root in &nif.roots {
         w.walk(nif, Ref(root as i32), Mat4::IDENTITY, 0);
     }
+    // Rigid models hung from a bone (bows) may be skinned to bones of their own:
+    // drawn in their rest pose.
+    if !w.skinned.is_empty() && has_parent_bone(nif) {
+        let nodes = node_transforms(nif);
+        for m in std::mem::take(&mut w.skinned) {
+            if let Some(mesh) = rigidify(&m, &nodes) {
+                w.meshes.push(mesh);
+            }
+        }
+    }
     let (bound_center, bound_radius) = bounds_of(
         w.meshes
             .iter()
@@ -222,6 +232,63 @@ pub fn convert(nif: &Nif) -> CpuModel {
             .chain(w.animated.iter().map(|p| ((p.parent * p.rest).transform_point3(p.model.bound_center), p.model.bound_radius))),
     );
     CpuModel { meshes: w.meshes, skinned: w.skinned, bound_center, bound_radius, animated: w.animated, sequences }
+}
+
+/// The root names the bone it hangs from (`Prn`): a weapon, shield or anim object.
+fn has_parent_bone(nif: &Nif) -> bool {
+    let Some(root) = nif.roots.first().and_then(|&r| nif.get(Ref(r as i32))).and_then(|b| b.av()) else { return false };
+    root.net.extra_data.iter().any(|&e| matches!(nif.get(e), Some(Block::ExtraData(nif::ExtraData::String { name, .. })) if name == "Prn"))
+}
+
+/// Model-space rest transforms of the named nodes.
+fn node_transforms(nif: &Nif) -> std::collections::HashMap<String, Mat4> {
+    fn visit(nif: &Nif, r: Ref, parent: Mat4, out: &mut std::collections::HashMap<String, Mat4>, depth: u32) {
+        let Some(block) = nif.get(r) else { return };
+        let Some(av) = block.av() else { return };
+        let world = parent * av.transform.to_mat4();
+        out.entry(av.net.name.clone()).or_insert(world);
+        if let (Block::Node(n), true) = (block, depth < 64) {
+            for &c in &n.children {
+                visit(nif, c, world, out, depth + 1);
+            }
+        }
+    }
+    let mut out = std::collections::HashMap::new();
+    for &root in &nif.roots {
+        visit(nif, Ref(root as i32), Mat4::IDENTITY, &mut out, 0);
+    }
+    out
+}
+
+/// A skinned mesh posed by its bones' rest transforms, as a static mesh.
+fn rigidify(m: &CpuSkinnedMesh, nodes: &std::collections::HashMap<String, Mat4>) -> Option<CpuMesh> {
+    if m.vertices.len() > u16::MAX as usize {
+        return None;
+    }
+    let palette: Vec<Mat4> = m
+        .bone_names
+        .iter()
+        .zip(&m.skin_to_bone)
+        .map(|(n, s)| nodes.get(n).copied().unwrap_or(Mat4::IDENTITY) * *s)
+        .collect();
+    let mut g = Geometry::default();
+    for v in &m.vertices {
+        let mut xf = Mat4::ZERO;
+        for k in 0..4 {
+            if v.weights[k] > 0.0 {
+                xf += palette.get(v.bones[k] as usize).copied().unwrap_or(Mat4::IDENTITY) * v.weights[k];
+            }
+        }
+        let dir = |d: [f32; 3]| xf.transform_vector3(Vec3::from(d)).normalize_or_zero();
+        g.positions.push(xf.transform_point3(Vec3::from(v.position)));
+        g.normals.push(dir(v.normal));
+        g.tangents.push(dir(v.tangent));
+        g.bitangents.push(dir(v.bitangent));
+        g.uvs.push(Vec2::from(v.uv));
+        g.colors.push(Vec4::from(v.color));
+    }
+    g.triangles = m.indices.chunks_exact(3).map(|t| [t[0] as u16, t[1] as u16, t[2] as u16]).collect();
+    build_mesh(&g, Mat4::IDENTITY, m.material.clone())
 }
 
 struct Walk<'a> {
@@ -254,7 +321,9 @@ fn walk(&mut self, nif: &Nif, r: Ref, parent: Mat4, depth: u32) {
     }
     let Some(block) = nif.get(r) else { return };
     let Some(av) = block.av() else { return };
-    if av.hidden() || av.net.name.to_ascii_lowercase().starts_with("editormarker") {
+    // Weapons' blood shapes only show once the blade has drawn blood.
+    let name = av.net.name.to_ascii_lowercase();
+    if av.hidden() || name.starts_with("editormarker") || name.starts_with("blood") {
         return;
     }
     // An animated node (not the root): its subtree becomes a separately drawn part.

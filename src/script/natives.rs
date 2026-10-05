@@ -216,8 +216,44 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         | ("objectreference", "addtomap")
         | ("objectreference", "setplayerknows") => v(Value::Bool(true)),
         ("objectreference", "getopenstate") => v(Value::Int(3)),
-        ("objectreference", "getitemcount") => v(Value::Int(0)),
-        ("objectreference", "additem") | ("objectreference", "removeitem") | ("objectreference", "removeallitems") => none(),
+        ("objectreference", "getitemcount") => v(Value::Int(match (me, form_arg(args, 0)) {
+            (Some(r), Some(item)) => e.item_count(r, FormId(item.0)),
+            _ => 0,
+        })),
+        ("objectreference", "additem") => {
+            if let (Some(r), Some(item)) = (me, form_arg(args, 0)) {
+                let n = if args.len() > 1 { arg(1).as_int() } else { 1 };
+                e.add_item(r, item, n);
+            }
+            none()
+        }
+        ("objectreference", "removeitem") => {
+            if let (Some(r), Some(item)) = (me, form_arg(args, 0)) {
+                let n = if args.len() > 1 { arg(1).as_int() } else { 1 };
+                e.remove_item(r, item, n, form_arg(args, 3));
+            }
+            none()
+        }
+        ("objectreference", "removeallitems") => {
+            if let Some(r) = me {
+                let items = std::mem::take(&mut e.inventory_mut(r).items);
+                e.inventory_mut(r).equipped.clear();
+                if let Some(to) = form_arg(args, 0) {
+                    for (f, n) in items {
+                        e.inventory_mut(to).add(f, n);
+                    }
+                }
+            }
+            none()
+        }
+        ("actor", "isequipped") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(r), Some(item)) => e.inventories.get(&r).is_some_and(|i| i.is_equipped(item)),
+            _ => false,
+        })),
+        ("actor", "getequippeditemtype") => {
+            let left = arg(0).as_int() == 0;
+            v(Value::Int(me.and_then(|r| e.inventories.get(&r)).map_or(0, |i| i.hand(&e.lo, left) as i32)))
+        }
         ("objectreference", "moveto") => {
             if me == Some(crate::engine::PLAYER_REF)
                 && let Some(t) = form_arg(args, 0)
