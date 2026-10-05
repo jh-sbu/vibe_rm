@@ -9,6 +9,7 @@ use havok::behavior::runtime::{Instance, Raised, Shared};
 use nif::Transform;
 
 use super::animation::{AnimationLibrary, BoundClip, Motion, project_clip_paths};
+use super::lookat::{self, LookAtState};
 use super::skeleton::Skeleton;
 
 /// Behaviour projects' shared runtime tables, by project file.
@@ -108,6 +109,11 @@ pub struct GraphAnim {
     clips: HashMap<Arc<str>, Option<Arc<BoundClip>>>,
     /// Root motion per (graph, clip generator), from the project's animation data.
     motions: HashMap<(usize, usize), Option<Arc<Motion>>>,
+    /// Where to look (model space), for the graph's look-at modifier.
+    pub look_target: Option<Vec3>,
+    look: LookAtState,
+    /// NIF bone of each Havok skeleton bone (look-at bone indices are Havok's).
+    hk_bones: Option<Vec<Option<usize>>>,
     bind: Vec<Transform>,
     scratch: Vec<havok::QsTransform>,
 }
@@ -160,6 +166,9 @@ impl GraphAnim {
             female,
             clips: HashMap::new(),
             motions: HashMap::new(),
+            look_target: None,
+            look: LookAtState::default(),
+            hk_bones: None,
             bind: skeleton.bind_locals(),
             scratch: Vec::new(),
         }
@@ -321,8 +330,14 @@ impl GraphAnim {
                 l.2 *= 1.0 + (q.scale.x - 1.0) * w;
             }
         }
-        let locals: Vec<Transform> =
+        let mut locals: Vec<Transform> =
             locals.into_iter().map(|(t, q, s)| Transform { translation: t, rotation: glam::Mat3::from_quat(q), scale: s }).collect();
+        // Head tracking on top (the first look-at modifier running).
+        if let Some(l) = self.inst.look_ats().first() {
+            let map = self.hk_bones.get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
+            let outside = lookat::apply(&mut self.look, l, map, skeleton, &mut locals, self.look_target, dt);
+            self.inst.set_variable("LookAtOutOfRange", if outside { 1.0 } else { 0.0 });
+        }
         Frame { pose: skeleton.model_space(&locals), motion, raised }
     }
 }

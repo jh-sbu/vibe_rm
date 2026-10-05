@@ -149,6 +149,9 @@ pub fn run(opts: Options) -> Result<()> {
                     engine.camera.yaw = d.x.atan2(d.y);
                     engine.camera.pitch = (d.z / d.length().max(1.0)).asin();
                 }
+                if opts.player_at_camera {
+                    engine.player.position = engine.camera.position - (engine.player.eye() - engine.player.position);
+                }
                 if opts.burst.is_some_and(|n| n > 0 && i % n == 0) {
                     let pixels = engine.renderer.render_to_image(&engine.scene, &engine.camera, |_, _| {});
                     let stem = path.with_extension("");

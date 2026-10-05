@@ -49,7 +49,7 @@ cargo build --release
 Testing aids: `--console "<command>"` runs console commands after loading (e.g.
 `use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`; `"@<frame> <command>"`
 runs it at that frame of `--wait`), `--watch-angle`
-orbits the `--watch` camera, `VRM_SEED=<n>` fixes the engine's random seed, and
+orbits the `--watch` camera, `--player-at-camera` puts the player there (NPCs look at it), `VRM_SEED=<n>` fixes the engine's random seed, and
 `VRM_AI_NO_SNAP=1` makes actors walk into furniture on cell load instead of starting
 out in it.
 

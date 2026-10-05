@@ -532,6 +532,10 @@ fn main() -> Result<()> {
                 for r in inst.take_raised() {
                     println!("  raised {}{}", r.event, r.payload.map(|p| format!(" ({p})")).unwrap_or_default());
                 }
+                for l in inst.look_ats() {
+                    let bones: Vec<String> = l.bones.iter().map(|b| format!("{}{} {:.0}deg", b.index, if b.enabled { "" } else { " off" }, b.limit_degrees)).collect();
+                    println!("  look-at{} limit {:.0}deg bones {bones:?} eyes {}", if l.look_at_target { " (tracking)" } else { "" }, l.limit_degrees, l.eye_bones.len());
+                }
             };
             for step in &args[3..] {
                 if let Some(ev) = step.strip_prefix('!') {

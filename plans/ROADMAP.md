@@ -57,6 +57,9 @@ game each piece unlocks.
   for their own graphs (IDLE `DNAM`): howling, foraging, lying down, looking about, feeding;
   held and ended (`IdleStop`) like humanoid idles. The event -> clip resolver and furniture
   planning run on each actor's own project
+- Head tracking: humanoids' `BSLookAtModifier` (spine, neck, head and eye bones, each
+  within its limit, eased by the graph's gains, off past the overall limit) turns NPCs
+  towards the player close by and while talking (`bHeadTracking`, `LookAtOutOfRange`)
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
@@ -75,7 +78,8 @@ game each piece unlocks.
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
-   - Pose modifiers: look-at / head tracking, foot IK, twist, keyframe bones
+   - Pose modifiers: foot IK, twist, keyframe bones; creatures' look-at modifiers (unbound:
+     the game picks and aims them itself); NPCs looking at each other in conversation
    - Transition intervals, `ABUT_AT_END_OF_FROM_GENERATOR`, chooser start states,
      state machine `currentStateId` outputs, selectors' own blends
    - `Direction` (strafing), sprinting; character property bindings;

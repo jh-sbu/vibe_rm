@@ -206,7 +206,39 @@ pub enum Modifier {
     /// `hkbDampingModifier`: `dampedValue` chases `rawValue` through a PID step
     /// every update.
     Damping { kp: f32, ki: f32, kd: f32, raw: f32, damped: f32 },
+    /// `BSLookAtModifier`: turn a chain of bones (spine, neck, head) and the eyes
+    /// towards a target. The engine applies it to the pose.
+    LookAt(LookAt),
     Other(String),
+}
+
+/// `BSLookAtModifier` settings (bound members, such as `lookAtTarget` and
+/// `bones:0/enabled`, are read from the graph's variables at run time).
+#[derive(Debug, Clone)]
+pub struct LookAt {
+    pub bones: Vec<LookAtBone>,
+    pub eye_bones: Vec<LookAtBone>,
+    /// Targets further than this from straight ahead aren't looked at.
+    pub limit_degrees: f32,
+    pub limit_threshold_degrees: f32,
+    pub continue_outside_limit: bool,
+    pub on_gain: f32,
+    pub off_gain: f32,
+    pub use_bone_gains: bool,
+    pub look_at_target: bool,
+}
+
+/// A bone of a look-at chain (`BSLookAtModifier::BoneData`).
+#[derive(Debug, Clone)]
+pub struct LookAtBone {
+    /// Havok skeleton bone.
+    pub index: i16,
+    /// The bone's forward axis in its own space.
+    pub forward: glam::Vec3,
+    pub limit_degrees: f32,
+    pub on_gain: f32,
+    pub off_gain: f32,
+    pub enabled: bool,
 }
 
 /// Variable types (`hkbVariableInfo::type`).
@@ -425,6 +457,39 @@ impl<'a> Reader<'a> {
                 raw: p.f32(o + 0x60),
                 damped: p.f32(o + 0x64),
             },
+            "BSLookAtModifier" => {
+                let bones = |at: u32| {
+                    let (data, n) = p.array(o + at);
+                    // BoneData: index, forward axis (16-aligned), limit, gains, enabled.
+                    data.map(|d| {
+                        (0..n as u32)
+                            .map(|i| {
+                                let b = d + i * 0x40;
+                                LookAtBone {
+                                    index: p.i16(b),
+                                    forward: glam::Vec3::new(p.f32(b + 0x10), p.f32(b + 0x14), p.f32(b + 0x18)),
+                                    limit_degrees: p.f32(b + 0x20),
+                                    on_gain: p.f32(b + 0x24),
+                                    off_gain: p.f32(b + 0x28),
+                                    enabled: p.u8(b + 0x2C) != 0,
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+                };
+                Modifier::LookAt(LookAt {
+                    look_at_target: p.u8(o + 0x50) != 0,
+                    bones: bones(0x58),
+                    eye_bones: bones(0x68),
+                    limit_degrees: p.f32(o + 0x78),
+                    limit_threshold_degrees: p.f32(o + 0x7C),
+                    continue_outside_limit: p.u8(o + 0x80) != 0,
+                    on_gain: p.f32(o + 0x84),
+                    off_gain: p.f32(o + 0x88),
+                    use_bone_gains: p.u8(o + 0x8C) != 0,
+                })
+            }
             other => Modifier::Other(other.to_owned()),
         };
         self.modifiers[id] = m;

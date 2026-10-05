@@ -23,6 +23,8 @@ use package::{Allow, Behaviour, LocationKind, Package, Target};
 pub const WALK_SPEED: f32 = 80.0;
 /// Turn rate while walking, radians/s.
 const TURN_RATE: f32 = 4.0;
+/// How close the player must be for NPCs to look at them.
+const HEAD_TRACK_DISTANCE: f32 = 450.0;
 /// Real seconds between package re-evaluations.
 const EVAL_INTERVAL: f32 = 3.0;
 /// Sandbox wander radius clamp.
@@ -249,6 +251,8 @@ pub struct ActorRuntime {
     turning: i8,
     /// The graph is sneaking (`SneakStart` sent).
     sneaking: bool,
+    /// What to look at (world space), for humanoids' head tracking.
+    pub look_at: Option<Vec3>,
     /// The goal was set by hand (console `travel`): packages leave it alone.
     pinned: bool,
     /// The graph raised `IdleFurnitureExit`: out of the furniture.
@@ -301,6 +305,7 @@ impl ActorRuntime {
             graph_heading: f32::NAN,
             turning: 0,
             sneaking: false,
+            look_at: None,
             pinned: false,
             out_of_furniture: false,
             patrol: None,
@@ -958,6 +963,7 @@ impl ActorRuntime {
         self.graph_heading = self.heading;
         let turn_delta = if dt > 1e-4 { -turned.to_degrees() / dt } else { 0.0 };
         let still = !walking && !self.in_furniture();
+        let model = self.transform();
         let sneak = self.goal.is_some_and(|g| g.sneak) && !self.in_furniture();
         let state = if sneak { self.sneak_moves.or(self.moves) } else { self.moves }.map(|(_, s)| s);
         let g = self.graph.as_mut().expect("checked");
@@ -968,6 +974,10 @@ impl ActorRuntime {
         if let Some(s) = state {
             g.set_variable("iState", s);
         }
+        // Head tracking (humanoids: their graph's look-at follows bHeadTracking).
+        let look = self.look_at.filter(|_| g.project().humanoid());
+        g.set_variable("bHeadTracking", if look.is_some() { 1.0 } else { 0.0 });
+        g.look_target = look.map(|w| model.inverse().transform_point3(w));
         g.set_variable("Speed", if walking { self.speed } else { 0.0 });
         g.set_variable("TurnDelta", turn_delta);
         // Standing still and turning: the graph's turn-in-place loops (creatures).
@@ -1418,6 +1428,7 @@ impl Engine {
         self.evaluate_packages(dt);
         let talking = self.conversation.as_ref().map(|c| c.npc_ref);
         let player = self.ref_position(PLAYER_REF).unwrap_or_default();
+        let eye = self.player.eye();
         let mut seed = self.rand() | 1;
         let mut rand = move || {
             seed ^= seed << 13;
@@ -1505,6 +1516,9 @@ impl Engine {
                         a.keep_clear(&bodies, &nav, dt, before);
                     }
                 }
+                // NPCs look at the player close by, and while talking to them.
+                let near = a.pos.distance(player) < HEAD_TRACK_DISTANCE;
+                a.look_at = (near || talking == Some(a.ref_id)).then_some(eye);
                 inst.transform = a.transform();
                 if let Some(pose) = a.animate(dt, &mut world.clips) {
                     inst.pose = pose;
