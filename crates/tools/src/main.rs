@@ -863,6 +863,25 @@ fn main() -> Result<()> {
                 println!("{n:6} {k}");
             }
         }
+        Some("dial-subtypes") => {
+            // dial-subtypes <data dir>: dialogue topic subtypes (SNAM) with counts and examples.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut by: std::collections::BTreeMap<String, (usize, Vec<String>)> = Default::default();
+            for &id in lo.ids_of_type(b"DIAL") {
+                let Some(rec) = lo.get(id) else { continue };
+                let sub = rec.get(b"SNAM").and_then(|d| d.get(0..4)).map(|d| String::from_utf8_lossy(d).into_owned()).unwrap_or_default();
+                let e = by.entry(sub).or_default();
+                e.0 += 1;
+                if e.1.len() < 3 {
+                    e.1.push(rec.editor_id().unwrap_or_default().to_string());
+                }
+            }
+            for (k, (n, ex)) in by {
+                println!("{n:6} {k} {ex:?}");
+            }
+        }
         Some("cell-refs") => {
             // cell-refs <data dir> <cell editor id | hex> [base tag]: a cell's references
             // with their base records.

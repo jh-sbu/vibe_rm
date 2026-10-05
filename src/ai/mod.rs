@@ -1440,6 +1440,22 @@ impl Engine {
         }
     }
 
+    /// `GetSitting` / `GetSleeping` of a loaded actor: 0 not, 2 getting in, 3 in,
+    /// 4 getting out (beds count as sleeping, other furniture as sitting).
+    pub fn sit_sleep_state(&self, r: FormId, sleeping: bool) -> f32 {
+        let Some(a) = self.actor_cells.get(&r).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r)) else { return 0.0 };
+        let Some(seat) = &a.seat else { return 0.0 };
+        if (seat.kind == Use::Sleep) != sleeping || matches!(seat.kind, Use::Idle) {
+            return 0.0;
+        }
+        match a.state {
+            State::Enter(_) => 2.0,
+            State::Use(_) => 3.0,
+            State::Exit(_) => 4.0,
+            _ => 0.0,
+        }
+    }
+
     /// Set a behaviour graph variable of a loaded actor; false if it has no graph.
     pub fn set_graph_variable(&mut self, r: FormId, name: &str, value: f32) -> bool {
         let Some(key) = self.actor_cells.get(&r) else { return false };
@@ -1558,7 +1574,7 @@ impl Engine {
     /// Run AI and animation for every loaded actor.
     pub(crate) fn update_actors(&mut self, dt: f32) {
         self.evaluate_packages(dt);
-        let talking = self.conversation.as_ref().map(|c| c.npc_ref);
+        let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self.barks.current.as_ref().map(|b| b.speaker));
         let player = self.ref_position(PLAYER_REF).unwrap_or_default();
         let eye = self.player.eye();
         let mut seed = self.rand() | 1;
