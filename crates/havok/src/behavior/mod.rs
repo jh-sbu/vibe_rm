@@ -22,6 +22,19 @@ pub enum ClipMode {
     Other,
 }
 
+/// `hkbStateMachine::StartStateMode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StartMode {
+    /// `startStateId` (or the variable bound to it).
+    #[default]
+    Default,
+    /// The state kept in a graph variable, which follows the current state: a
+    /// machine re-entered later resumes where it was (sneaking, sprinting).
+    Sync(usize),
+    /// A random state.
+    Random,
+}
+
 #[derive(Debug, Clone)]
 pub struct Trigger {
     /// Seconds from the start of the clip, or from its end if `from_end`.
@@ -125,6 +138,8 @@ pub enum Generator {
         start: i32,
         /// Graph variable the start state is bound to, if any (overrides `start`).
         start_variable: Option<usize>,
+        /// How the start state is picked when the machine activates.
+        start_mode: StartMode,
         states: Vec<State>,
         wildcards: Vec<Transition>,
     },
@@ -185,6 +200,12 @@ pub enum Modifier {
     OnDeactivate(EventProperty),
     /// `BSIsActiveModifier`: bound `bIsActiveN` outputs follow whether it runs.
     IsActive { invert: [bool; 5] },
+    /// `BSSpeedSamplerModifier`: the bound `speedOut` follows `goalSpeed` (the
+    /// locomotion blends' parameter, in units per second).
+    SpeedSampler { goal_speed: f32 },
+    /// `hkbDampingModifier`: `dampedValue` chases `rawValue` through a PID step
+    /// every update.
+    Damping { kp: f32, ki: f32, kd: f32, raw: f32, damped: f32 },
     Other(String),
 }
 
@@ -394,6 +415,16 @@ impl<'a> Reader<'a> {
             },
             "BSEventOnDeactivateModifier" => Modifier::OnDeactivate(self.event_property(o + 0x50)),
             "BSIsActiveModifier" => Modifier::IsActive { invert: std::array::from_fn(|i| p.u8(o + 0x51 + 2 * i as u32) != 0) },
+            // After hkbModifier (enable at 0x48): state, direction, goal speed, speed out.
+            "BSSpeedSamplerModifier" => Modifier::SpeedSampler { goal_speed: p.f32(o + 0x50) },
+            // kP, kI, kD, scalar / vector flags, raw and damped values.
+            "hkbDampingModifier" if p.u8(o + 0x5C) != 0 => Modifier::Damping {
+                kp: p.f32(o + 0x50),
+                ki: p.f32(o + 0x54),
+                kd: p.f32(o + 0x58),
+                raw: p.f32(o + 0x60),
+                damped: p.f32(o + 0x64),
+            },
             other => Modifier::Other(other.to_owned()),
         };
         self.modifiers[id] = m;
@@ -444,6 +475,12 @@ impl<'a> Reader<'a> {
                     name,
                     start: p.i32(o + 0x68),
                     start_variable: self.bindings[id].iter().find(|b| b.member == "startStateId").map(|b| b.variable),
+                    // syncVariableIndex at 0x7C; startStateMode at 0x86.
+                    start_mode: match (p.u8(o + 0x86), p.i32(o + 0x7C)) {
+                        (1, v) if v >= 0 => StartMode::Sync(v as usize),
+                        (2, _) => StartMode::Random,
+                        _ => StartMode::Default,
+                    },
                     states,
                     wildcards: self.transitions(p.ptr(o + 0xA0)),
                 }

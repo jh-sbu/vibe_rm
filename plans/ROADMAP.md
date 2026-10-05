@@ -44,6 +44,15 @@ game each piece unlocks.
   dogs, wolves, horses, cows, deer... idle in their layered idles and walk through their
   locomotion states; root motion by clip generator name from each project's animation
   data; AI walk speed measured from the graph's own walk
+- Locomotion through the graph: `BSSpeedSamplerModifier` (`SpeedSampled` drives the speed
+  blends), `hkbDampingModifier`, synchronised blends timed by their clips' playback speed
+  and nested blends; state machine start modes (sync variables, so sneaking / sprinting
+  survive re-entry; random start states). Movement types (`MOVT`) found through the
+  graph's `iState_<name>` variables give walk / run speeds and turn rates. Packages'
+  preferred speed (walk, jog, run, fast walk) and "Always Sneak" (`PKDT`): NPCs run and
+  sneak through their graphs (`SneakStart` / `SneakStop`, `iState`). `TurnDelta` from
+  the AI's turning: lean blends while walking, turn-in-place loops (`turnLeft` /
+  `turnRight` / `turnStop`) when standing
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
@@ -63,10 +72,12 @@ game each piece unlocks.
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
    - Pose modifiers: look-at / head tracking, foot IK, twist, keyframe bones
-   - Transition intervals, `ABUT_AT_END_OF_FROM_GENERATOR`, random / chooser start states,
+   - Transition intervals, `ABUT_AT_END_OF_FROM_GENERATOR`, chooser start states,
      state machine `currentStateId` outputs, selectors' own blends
-   - Turning / run / sneak through the graph (`Direction`, `TurnDelta`, `iState`...);
-     creatures' own idle events (grazing, lying down) and character property bindings
+   - `Direction` (strafing), sprinting; creatures' own idle events (grazing, lying down)
+     and character property bindings; `hkbRotateCharacterModifier`
+   - Carry furniture (`CarryFurnitureScript`: wood piles): the carrying states after the
+     pick-up and putting the load down
    - Engine variables and events still missing: weapons drawn, combat, dialogue
      (`IdleDialogue*`), first person
    - Later / separate: NiTransformController (non-sequence), texture / material controllers

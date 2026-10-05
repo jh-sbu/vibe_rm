@@ -173,6 +173,11 @@ impl Shared {
         Arc::new(s)
     }
 
+    /// Variables shared across the project's graphs, with their defaults.
+    pub fn variables(&self) -> impl Iterator<Item = (&str, f32)> {
+        self.var_names.iter().map(String::as_str).zip(self.var_defaults.iter().copied())
+    }
+
     pub fn event_id(&self, name: &str) -> Option<usize> {
         self.event_index.get(&name.to_ascii_lowercase()).copied()
     }
@@ -264,6 +269,7 @@ enum ModKind {
     EveryN { count: u32, target: u32 },
     Driven { active: bool, child: Option<Box<ModState>> },
     Expressions { was_true: Vec<bool> },
+    Damping { damped: f32, error_sum: f32, previous: f32 },
     Plain,
 }
 
@@ -303,6 +309,19 @@ impl Ctx<'_> {
 
     fn bound(&self, gi: usize, g: GenId, member: &str) -> Option<f32> {
         self.shared.graph(gi).bound(g, member).map(|v| self.var(gi, v))
+    }
+
+    /// Value of the variable bound to `member` of modifier `m`.
+    fn modifier_bound(&self, gi: usize, m: ModId, member: &str) -> Option<f32> {
+        let v = self.shared.graph(gi).modifier_bindings[m].iter().find(|b| b.member == member)?.variable;
+        Some(self.var(gi, v))
+    }
+
+    /// Write `value` to the variable bound to `member` of modifier `m`, if any.
+    fn set_modifier_output(&mut self, gi: usize, m: ModId, member: &str, value: f32) {
+        if let Some(v) = self.shared.graph(gi).modifier_bindings[m].iter().find(|b| b.member == member).map(|b| b.variable) {
+            self.set_var(gi, v, value);
+        }
     }
 
     fn by_name(&self, name: &str) -> f32 {
@@ -362,10 +381,15 @@ impl Ctx<'_> {
                         started: false,
                     })
                 }
-                Generator::StateMachine { start, start_variable, states, .. } => {
+                Generator::StateMachine { start, start_variable, start_mode, states, .. } => {
                     // A bound start state takes the variable's value (`i1stPerson`...).
                     let bound = start_variable.map(|v| self.var(gi, v) as i32);
-                    let want = nested.take().or(bound).unwrap_or(*start);
+                    let by_mode = match *start_mode {
+                        StartMode::Sync(v) => Some(self.var(gi, v) as i32),
+                        StartMode::Random if !states.is_empty() => Some(states[(self.rand() % states.len() as u64) as usize].id),
+                        _ => None,
+                    };
+                    let want = nested.take().or(bound).or(by_mode).unwrap_or(*start);
                     match states.iter().find(|s| s.id == want).or(states.first()) {
                         Some(s) => {
                             let (id, generator) = (s.id, s.generator);
@@ -448,6 +472,11 @@ impl Ctx<'_> {
             Modifier::IsActive { .. } => {
                 self.is_active_outputs(gi, m, true);
                 ModKind::Plain
+            }
+            Modifier::Damping { damped, .. } => {
+                // Picks up from the bound output (a re-entered state carries on smoothly).
+                let damped = self.modifier_bound(gi, m, "dampedValue").unwrap_or(*damped);
+                ModKind::Damping { damped, error_sum: 0.0, previous: 0.0 }
             }
             _ => ModKind::Plain,
         };
@@ -684,6 +713,9 @@ impl Ctx<'_> {
         m.state = id;
         m.child = child;
         m.from = from;
+        if let Generator::StateMachine { start_mode: StartMode::Sync(v), .. } = &graph.generators[sm] {
+            self.set_var(gi, *v, id as f32);
+        }
     }
 
     // ---------------------------------------------------------------- update
@@ -715,17 +747,15 @@ impl Ctx<'_> {
                     // Synchronised cyclic children share a phase; the cycle length is
                     // the weighted mix of theirs.
                     let weights = self.blend_weights(gi, g, &[]);
-                    let lengths: Vec<f32> = children.iter().map(|c| c.as_ref().map_or(0.0, cycle_length)).collect();
+                    let lengths: Vec<f32> = children.iter().map(|c| c.as_ref().map_or(0.0, |c| self.cycle_length(c))).collect();
                     let total: f32 = weights.iter().zip(&lengths).map(|(w, l)| w * l).sum();
                     if total > 1e-4 {
                         *phase += dt / total;
                         let wrapped = *phase >= 1.0;
                         *phase %= 1.0;
                         let p = *phase;
-                        for (c, len) in children.iter_mut().zip(&lengths) {
-                            if let Some(c) = c {
-                                self.set_phase(c, p, *len, wrapped);
-                            }
+                        for c in children.iter_mut().flatten() {
+                            self.set_phase(c, p, wrapped);
                         }
                         return;
                     }
@@ -813,11 +843,11 @@ impl Ctx<'_> {
         }
     }
 
-    fn set_phase(&mut self, node: &mut Node, phase: f32, len: f32, wrapped: bool) {
+    fn set_phase(&mut self, node: &mut Node, phase: f32, wrapped: bool) {
         match &mut node.kind {
             Kind::Clip(c) => {
                 c.prev = c.t;
-                c.t = phase * len;
+                c.t = phase * c.length;
                 c.wrapped = wrapped;
                 c.started = true;
             }
@@ -825,9 +855,35 @@ impl Ctx<'_> {
                 if let Some(m) = modifier {
                     self.advance_modifier(m, 0.0);
                 }
-                self.set_phase(c, phase, len, wrapped);
+                self.set_phase(c, phase, wrapped);
+            }
+            Kind::Select { child: Some(c), .. } => self.set_phase(c, phase, wrapped),
+            // A blend inside a synchronised one (left / centre / right leans) follows its phase.
+            Kind::Blend { children, phase: own } => {
+                *own = phase;
+                for c in children.iter_mut().flatten() {
+                    self.set_phase(c, phase, wrapped);
+                }
             }
             _ => self.advance(node, 0.0),
+        }
+    }
+
+    /// Seconds a node takes to play one cycle: a clip's length over its playback
+    /// speed, a blend's children mixed by weight.
+    fn cycle_length(&self, node: &Node) -> f32 {
+        match &node.kind {
+            Kind::Clip(c) => {
+                let Generator::Clip { speed, .. } = &self.shared.graph(node.gi).generators[node.g] else { return c.length };
+                let speed = self.bound(node.gi, node.g, "playbackSpeed").unwrap_or(*speed).abs();
+                if speed > 1e-3 { c.length / speed } else { 0.0 }
+            }
+            Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => self.cycle_length(c),
+            Kind::Blend { children, .. } => {
+                let weights = self.blend_weights(node.gi, node.g, &[]);
+                children.iter().zip(&weights).map(|(c, w)| c.as_ref().map_or(0.0, |c| self.cycle_length(c)) * w).sum()
+            }
+            _ => 0.0,
         }
     }
 
@@ -850,6 +906,23 @@ impl Ctx<'_> {
                 }
             }
             (ModKind::Driven { active: true, child: Some(c) }, _) => self.advance_modifier(c, dt),
+            (_, Modifier::SpeedSampler { goal_speed }) => {
+                let goal = self.modifier_bound(gi, m.m, "goalSpeed").unwrap_or(*goal_speed);
+                self.set_modifier_output(gi, m.m, "speedOut", goal);
+            }
+            (ModKind::Damping { damped, error_sum, previous }, Modifier::Damping { kp, ki, kd, raw, .. }) => {
+                // Havok's step is per frame at 30 Hz: take as many as the update covers.
+                let raw = self.modifier_bound(gi, m.m, "rawValue").unwrap_or(*raw);
+                let steps = (dt * 30.0).round().clamp(if dt > 0.0 { 1.0 } else { 0.0 }, 8.0) as usize;
+                for _ in 0..steps {
+                    let error = raw - *damped;
+                    *error_sum += error;
+                    *damped += kp * error + ki * *error_sum + kd * (error - *previous);
+                    *previous = error;
+                }
+                let d = *damped;
+                self.set_modifier_output(gi, m.m, "dampedValue", d);
+            }
             (ModKind::Expressions { was_true }, Modifier::Expressions(lines)) => {
                 for (i, line) in lines.iter().enumerate() {
                     let Some(Some(st)) = self.shared.statements.get(line) else { continue };
@@ -1043,15 +1116,6 @@ fn is_additive(node: &Node) -> bool {
 }
 
 /// Cycle length of a synchronised blend child (its first clip's).
-fn cycle_length(node: &Node) -> f32 {
-    match &node.kind {
-        Kind::Clip(c) => c.length,
-        Kind::Wrap { child: Some(c), .. } => cycle_length(c),
-        Kind::Select { child: Some(c), .. } => cycle_length(c),
-        _ => 0.0,
-    }
-}
-
 impl Instance {
     /// An instance of `shared`'s project. It starts at the root graph (the first
     /// loaded, `0_master`) on the first update or event, so that variables set
@@ -1261,6 +1325,7 @@ mod tests {
                 name: "Root".into(),
                 start: 0,
                 start_variable: None,
+                start_mode: Default::default(),
                 states: vec![
                     state(0, 1, vec![Transition::new(0, 1, None)]),
                     state(1, 2, vec![Transition::new(1, 2, None)]),
@@ -1380,6 +1445,7 @@ mod tests {
                 name: "Root".into(),
                 start: 0,
                 start_variable: None,
+                start_mode: Default::default(),
                 states: vec![state(0, 1, vec![]), state(1, 2, vec![])],
                 wildcards: vec![],
             },
@@ -1388,6 +1454,7 @@ mod tests {
                 name: "Nested".into(),
                 start: 5,
                 start_variable: None,
+                start_mode: Default::default(),
                 states: vec![state(5, 3, vec![]), state(7, 4, vec![])],
                 wildcards: vec![kneel],
             },

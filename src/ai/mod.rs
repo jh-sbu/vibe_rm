@@ -14,6 +14,7 @@ use glam::{Mat4, Quat, Vec3};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::world::animation::{ActorAnim, BoundClip};
 use crate::world::behavior::GraphAnim;
+use crate::world::movement::MoveSpeeds;
 use crate::world::skeleton::Skeleton;
 use furniture::{FurnitureWorld, Seat, Use};
 use package::{Allow, Behaviour, LocationKind, Package, Target};
@@ -49,6 +50,8 @@ pub struct Goal {
     pub start_nearest: bool,
     /// Follow: (min, max) distance to keep.
     pub follow_radius: (f32, f32),
+    pub gait: package::Gait,
+    pub sneak: bool,
 }
 
 impl Goal {
@@ -64,6 +67,8 @@ impl Goal {
             repeat: false,
             start_nearest: false,
             follow_radius: (0.0, 0.0),
+            gait: package::Gait::Walk,
+            sneak: false,
         }
     }
 }
@@ -196,6 +201,10 @@ pub struct ActorRuntime {
     pub graph: Option<GraphAnim>,
     /// Ground speed of the graph's walk (its clips' root motion).
     pub graph_walk_speed: Option<f32>,
+    /// Movement types of the graph's default and sneaking states, with the
+    /// `iState` values that select them.
+    pub moves: Option<(MoveSpeeds, f32)>,
+    pub sneak_moves: Option<(MoveSpeeds, f32)>,
     pub anim: Option<ActorAnim>,
     pub idle: Option<Arc<BoundClip>>,
     pub walk: Option<Arc<BoundClip>>,
@@ -231,6 +240,14 @@ pub struct ActorRuntime {
     leave: bool,
     /// The graph is in its locomotion state (`moveStart` sent).
     moving: bool,
+    /// Heading at the last graph update, for its turn rate.
+    graph_heading: f32,
+    /// Turning in place through the graph: -1 right, 1 left, 0 not.
+    turning: i8,
+    /// The graph is sneaking (`SneakStart` sent).
+    sneaking: bool,
+    /// The goal was set by hand (console `travel`): packages leave it alone.
+    pinned: bool,
     /// The graph raised `IdleFurnitureExit`: out of the furniture.
     out_of_furniture: bool,
     /// Patrol progress: (route start, index of the point heading for).
@@ -250,6 +267,8 @@ impl ActorRuntime {
             skeleton,
             graph: None,
             graph_walk_speed: None,
+            moves: None,
+            sneak_moves: None,
             anim: None,
             idle: None,
             walk: None,
@@ -275,6 +294,10 @@ impl ActorRuntime {
             objects_changed: false,
             leave: false,
             moving: false,
+            graph_heading: f32::NAN,
+            turning: 0,
+            sneaking: false,
+            pinned: false,
             out_of_furniture: false,
             patrol: None,
             state: State::Idle(1.0 + stagger),
@@ -339,7 +362,8 @@ impl ActorRuntime {
         if d > std::f32::consts::PI {
             d -= std::f32::consts::TAU;
         }
-        let step = d.clamp(-TURN_RATE * dt, TURN_RATE * dt);
+        let rate = self.turn_rate();
+        let step = d.clamp(-rate * dt, rate * dt);
         self.heading += step;
         d - step
     }
@@ -489,7 +513,7 @@ impl ActorRuntime {
                 let dir = (to / dist).extend(0.0);
                 let remaining = self.turn_towards(dir, dt);
                 // Slow down while facing away from the next waypoint.
-                let speed = self.walk_speed() * remaining.cos().max(0.0).powi(2);
+                let speed = self.move_speed() * remaining.cos().max(0.0).powi(2);
                 self.speed = speed;
                 let fwd = Vec3::new(self.heading.sin(), self.heading.cos(), 0.0);
                 let mut p = self.pos + fwd * (speed * dt).min(dist);
@@ -850,10 +874,10 @@ impl ActorRuntime {
         false
     }
 
-    /// Pick the idle or walk clip to match the current speed.
-    /// Ground speed of the walk clip (its root motion), so feet don't slide.
+    /// Walking speed: the movement type's, else the graph's or walk clip's root
+    /// motion, so feet don't slide.
     pub fn walk_speed(&self) -> f32 {
-        if let Some(v) = self.graph_walk_speed {
+        if let Some(v) = self.moves.map(|(m, _)| m.walk).filter(|v| *v > 1.0).or(self.graph_walk_speed) {
             return v;
         }
         self.walk
@@ -861,6 +885,30 @@ impl ActorRuntime {
             .and_then(|w| w.motion.as_ref().map(|m| m.end().0.truncate().length() / w.duration()))
             .filter(|v| (20.0..400.0).contains(v))
             .unwrap_or(WALK_SPEED)
+    }
+
+    /// Speed for the package's gait: walking at the graph's walk, running at its
+    /// movement type's run, sneaking at its sneaking movement type's walk.
+    pub fn move_speed(&self) -> f32 {
+        let walk = self.walk_speed();
+        let (gait, sneak) = self.goal.map_or((package::Gait::Walk, false), |g| (g.gait, g.sneak));
+        if sneak {
+            return self.sneak_moves.map_or(walk * 0.75, |(m, _)| if gait == package::Gait::Run { m.run } else { m.walk });
+        }
+        let run = self.moves.map(|(m, _)| m.run).filter(|r| *r > walk).unwrap_or(walk * 3.0);
+        match gait {
+            package::Gait::Walk => walk,
+            package::Gait::FastWalk => walk + (run - walk) * 0.25,
+            package::Gait::Jog => (walk + run) * 0.5,
+            package::Gait::Run => run,
+        }
+    }
+
+    /// Turn rate (radians per second) from the movement type, walking or standing.
+    fn turn_rate(&self) -> f32 {
+        let m = if self.goal.is_some_and(|g| g.sneak) { self.sneak_moves.or(self.moves) } else { self.moves };
+        let r = m.map(|(m, _)| if self.speed > 5.0 { m.turn_moving } else { m.turn_walk });
+        r.filter(|r| *r > 0.1).unwrap_or(TURN_RATE)
     }
 
     pub fn animate(&mut self, dt: f32, clips: &mut Clips) -> Option<Vec<Mat4>> {
@@ -889,8 +937,38 @@ impl ActorRuntime {
     fn animate_graph(&mut self, dt: f32, clips: &mut Clips) -> Vec<Mat4> {
         let walking = self.speed > 5.0 && matches!(self.state, State::Walk { .. } | State::Approach(_));
         let furniture = self.in_furniture() && self.seat.as_ref().is_some_and(|s| !s.furniture.is_null());
+        // Turn rate in degrees per second, counter-clockwise (left) positive as Havok
+        // has it; headings turn clockwise.
+        let turned = if self.graph_heading.is_finite() { wrap_angle(self.heading - self.graph_heading) } else { 0.0 };
+        self.graph_heading = self.heading;
+        let turn_delta = if dt > 1e-4 { -turned.to_degrees() / dt } else { 0.0 };
+        let still = !walking && !self.in_furniture();
+        let sneak = self.goal.is_some_and(|g| g.sneak) && !self.in_furniture();
+        let state = if sneak { self.sneak_moves.or(self.moves) } else { self.moves }.map(|(_, s)| s);
         let g = self.graph.as_mut().expect("checked");
+        if sneak != self.sneaking {
+            g.send_event(if sneak { "SneakStart" } else { "SneakStop" });
+            self.sneaking = sneak;
+        }
+        if let Some(s) = state {
+            g.set_variable("iState", s);
+        }
         g.set_variable("Speed", if walking { self.speed } else { 0.0 });
+        g.set_variable("TurnDelta", turn_delta);
+        // Standing still and turning: the graph's turn-in-place loops (creatures).
+        let turning = match (still, turn_delta) {
+            (true, d) if d > 20.0 => 1,
+            (true, d) if d < -20.0 => -1,
+            _ => 0,
+        };
+        if turning != self.turning {
+            g.send_event(match turning {
+                1 => "turnLeft",
+                -1 => "turnRight",
+                _ => "turnStop",
+            });
+            self.turning = turning;
+        }
         g.set_variable("isInFurniture", if furniture { 1.0 } else { 0.0 });
         if walking != self.moving {
             g.send_event(if walking { "moveStart" } else { "moveStop" });
@@ -974,6 +1052,12 @@ impl ActorRuntime {
 }
 
 /// A small random number generator seeded from the engine's.
+/// `a` in -pi..pi.
+fn wrap_angle(a: f32) -> f32 {
+    let a = a.rem_euclid(std::f32::consts::TAU);
+    if a > std::f32::consts::PI { a - std::f32::consts::TAU } else { a }
+}
+
 fn xorshift(seed: u64) -> impl FnMut() -> u64 {
     let mut seed = seed | 1;
     move || {
@@ -1158,6 +1242,17 @@ impl Engine {
         a.seek_furniture(&goal, false, &mut w)
     }
 
+    /// Send an actor to `to` at a gait (testing): it keeps this goal until its
+    /// packages pick another.
+    pub fn travel_to(&mut self, actor: FormId, to: Vec3, gait: package::Gait, sneak: bool) -> bool {
+        let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
+        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
+        a.interrupt(&mut self.furniture);
+        a.goal = Some(Goal { gait, sneak, ..Goal::travel(to) });
+        a.pinned = true;
+        true
+    }
+
     /// The patrol route starting at `start`: it and the references reached by
     /// following default linked refs, until the chain ends or loops back.
     fn patrol_route(&self, start: FormId) -> Vec<PatrolPoint> {
@@ -1244,6 +1339,8 @@ impl Engine {
                         repeat: p.repeat,
                         start_nearest: p.start_nearest,
                         follow_radius: p.follow_radius,
+                        gait: p.gait,
+                        sneak: p.sneak,
                     }
                 });
                 decisions.push((*key, i, pick, goal));
@@ -1257,6 +1354,9 @@ impl Engine {
         for (key, i, pick, goal) in decisions {
             let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else { continue };
             a.next_eval = EVAL_INTERVAL;
+            if a.pinned {
+                continue;
+            }
             if pick != a.current {
                 if let Some(p) = pick.map(|pi| &a.packages[pi]) {
                     log::debug!("{} -> package {} ({}, {:?})", a.ref_id, p.editor_id, p.template, goal);

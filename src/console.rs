@@ -51,6 +51,31 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 None => vec![format!("unknown idle '{what}'")],
             }
         }
+        "travel" => {
+            // Test hook: travel <actor> <ref> [walk|jog|run|fastwalk] [sneak]
+            let usage = || vec!["usage: travel <actor ref> <target ref> [walk|jog|run|fastwalk] [sneak]".into()];
+            let [r, to, rest @ ..] = &args[..] else { return usage() };
+            use crate::ai::package::Gait;
+            let mut gait = Gait::Walk;
+            let mut sneak = false;
+            for w in rest {
+                match w.to_ascii_lowercase().as_str() {
+                    "walk" => gait = Gait::Walk,
+                    "jog" => gait = Gait::Jog,
+                    "run" => gait = Gait::Run,
+                    "fastwalk" => gait = Gait::FastWalk,
+                    "sneak" => sneak = true,
+                    _ => return usage(),
+                }
+            }
+            let (Some(actor), Some(target)) = (engine.resolve_form(r), engine.resolve_form(to)) else { return vec!["unknown reference".into()] };
+            let Some(pos) = engine.ref_position(target) else { return vec![format!("{to} isn't loaded")] };
+            if engine.travel_to(actor, pos, gait, sneak) {
+                vec![format!("{r} -> {to} ({gait:?}{})", if sneak { ", sneaking" } else { "" })]
+            } else {
+                vec![format!("{r} isn't a loaded actor")]
+            }
+        }
         "gstate" => {
             let [r] = args[..] else { return vec!["usage: gstate <actor ref>".into()] };
             let Some(actor) = engine.resolve_form(r) else { return vec![format!("unknown reference '{r}'")] };
