@@ -246,6 +246,7 @@ enum Kind {
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 struct ClipState {
     animation: Arc<str>,
     /// Progress through the (cropped) clip, 0..length.
@@ -851,11 +852,18 @@ impl Ctx<'_> {
                     let total: f32 = weights.iter().zip(&lengths).map(|(w, l)| w * l).sum();
                     if total > 1e-4 {
                         *phase += dt / total;
-                        let wrapped = *phase >= 1.0;
-                        *phase %= 1.0;
+                        // Single-play children (attacks) end rather than cycle.
+                        let looping = children.iter().flatten().any(|c| self.loops(c));
+                        let wrapped = looping && *phase >= 1.0;
+                        *phase = if looping { *phase % 1.0 } else { phase.min(1.0) };
                         let p = *phase;
-                        for c in children.iter_mut().flatten() {
-                            self.set_phase(c, p, wrapped);
+                        // The heaviest child raises the blend's triggers (as Havok's
+                        // sync master), the others just follow its phase.
+                        let master = weights.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i);
+                        for (i, c) in children.iter_mut().enumerate() {
+                            if let Some(c) = c {
+                                self.set_phase(c, p, wrapped, Some(i) == master);
+                            }
                         }
                         return;
                     }
@@ -906,7 +914,7 @@ impl Ctx<'_> {
 
     fn advance_clip(&mut self, gi: usize, g: GenId, c: &mut ClipState, dt: f32) {
         let graph = self.shared.graph(gi);
-        let Generator::Clip { triggers, speed, .. } = &graph.generators[g] else { return };
+        let Generator::Clip { speed, .. } = &graph.generators[g] else { return };
         let speed = self.bound(gi, g, "playbackSpeed").unwrap_or(*speed).abs();
         let first = !c.started;
         c.started = true;
@@ -922,7 +930,14 @@ impl Ctx<'_> {
             t = t.min(c.length);
         }
         c.t = t;
-        // Triggers between the previous and current time (a trigger at 0 fires on start).
+        self.clip_triggers(gi, g, c, first);
+    }
+
+    /// Raise a clip's triggers between its previous and current time (a trigger at 0
+    /// fires on start).
+    fn clip_triggers(&mut self, gi: usize, g: GenId, c: &ClipState, first: bool) {
+        let graph = self.shared.graph(gi);
+        let Generator::Clip { triggers, .. } = &graph.generators[g] else { return };
         let mut due = Vec::new();
         for tr in triggers {
             // Trigger times are clip-local; played backwards, local time runs down
@@ -943,26 +958,38 @@ impl Ctx<'_> {
         }
     }
 
-    fn set_phase(&mut self, node: &mut Node, phase: f32, wrapped: bool) {
+    /// Move a node in a synchronised blend to `phase`; `fire` raises the triggers
+    /// its clips pass on the way.
+    fn set_phase(&mut self, node: &mut Node, phase: f32, wrapped: bool, fire: bool) {
+        let (gi, g) = (node.gi, node.g);
         match &mut node.kind {
             Kind::Clip(c) => {
+                let first = !c.started;
                 c.prev = c.t;
                 c.t = phase * c.length;
                 c.wrapped = wrapped;
                 c.started = true;
+                if fire {
+                    let c = c.clone();
+                    self.clip_triggers(gi, g, &c, first);
+                }
             }
             Kind::Wrap { child: Some(c), modifier } => {
                 if let Some(m) = modifier {
                     self.advance_modifier(m, 0.0);
                 }
-                self.set_phase(c, phase, wrapped);
+                self.set_phase(c, phase, wrapped, fire);
             }
-            Kind::Select { child: Some(c), .. } => self.set_phase(c, phase, wrapped),
+            Kind::Select { child: Some(c), .. } => self.set_phase(c, phase, wrapped, fire),
             // A blend inside a synchronised one (left / centre / right leans) follows its phase.
             Kind::Blend { children, phase: own } => {
                 *own = phase;
-                for c in children.iter_mut().flatten() {
-                    self.set_phase(c, phase, wrapped);
+                let weights = self.blend_weights(gi, g, &[]);
+                let master = weights.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i);
+                for (i, c) in children.iter_mut().enumerate() {
+                    if let Some(c) = c {
+                        self.set_phase(c, phase, wrapped, fire && Some(i) == master);
+                    }
                 }
             }
             _ => self.advance(node, 0.0),
@@ -971,6 +998,16 @@ impl Ctx<'_> {
 
     /// Seconds a node takes to play one cycle: a clip's length over its playback
     /// speed, a blend's children mixed by weight.
+    /// Whether any clip under `node` loops.
+    fn loops(&self, node: &Node) -> bool {
+        match &node.kind {
+            Kind::Clip(c) => c.looping,
+            Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => self.loops(c),
+            Kind::Blend { children, .. } => children.iter().flatten().any(|c| self.loops(c)),
+            _ => false,
+        }
+    }
+
     fn cycle_length(&self, node: &Node) -> f32 {
         match &node.kind {
             Kind::Clip(c) => {

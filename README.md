@@ -29,7 +29,8 @@ Early but already visual:
 | AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture and crafting stations picked through the IDLE tree, idle markers, seated and standing eating / drinking, sitting variants, anim objects in hand; humanoids and creatures animated by running their behaviour graphs (walking, running, sneaking and turning at their movement types' speeds; `PlayIdle`, `SendAnimationEvent`) | in progress |
 | Papyrus VM, conditions, quests, dialogue, HUD, console, audio, music | in progress |
 | Inventories (NPC items, outfits, containers), sheathed weapons and shields | in progress |
-| Combat, magic, saves | planned |
+| Combat (melee between NPCs, creatures and the player), ragdoll deaths | in progress |
+| Magic, saves | planned |
 
 ## Building and running
 

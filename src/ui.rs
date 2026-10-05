@@ -116,6 +116,24 @@ impl Ui {
             painter.galley(pos + egui::vec2(1.5, 1.5), galley.clone(), Color32::BLACK);
             painter.galley(pos, galley, Color32::from_gray(235));
         }
+        // Health: the player's when hurt, and that of whom they look at when hurt.
+        let bar = |painter: &egui::Painter, centre: Pos2, frac: f32, colour: Color32| {
+            let w = 260.0;
+            let r = egui::Rect::from_center_size(centre, egui::vec2(w, 10.0));
+            painter.rect_filled(r, 3.0, Color32::from_rgba_unmultiplied(0, 0, 0, 160));
+            let fill = egui::Rect::from_min_size(r.min, egui::vec2(w * frac.clamp(0.0, 1.0), 10.0));
+            painter.rect_filled(fill, 3.0, colour);
+        };
+        if engine.player_health < crate::engine::PLAYER_HEALTH {
+            bar(&painter, Pos2::new(c.x, rect.bottom() - 40.0), engine.player_health / crate::engine::PLAYER_HEALTH, Color32::from_rgb(170, 30, 30));
+        }
+        if let Some((r, _)) = &engine.look_target
+            && let Some((h, max)) = engine.actor_health(*r)
+            && h < max
+            && h > 0.0
+        {
+            bar(&painter, Pos2::new(c.x, rect.top() + 56.0), h / max, Color32::from_rgb(170, 30, 30));
+        }
         // Script notifications (top left, like Skyrim's HUD messages).
         let now = engine.scripts.real_time;
         for (i, (text, t)) in engine.scripts.notifications.iter().rev().take(6).enumerate() {
