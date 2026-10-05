@@ -80,11 +80,17 @@ impl ModelCache {
             .map(|p| {
                 let mut col = None;
                 let mut furn = None;
-                let m = vfs.read(p).and_then(|data| match nif::Nif::parse(&data) {
+                // `path#blade` / `path#scb`: a weapon without / only its scabbard.
+                let (file, variant) = p.split_once('#').map_or((p.as_str(), None), |(f, v)| (f, Some(v)));
+                let m = vfs.read(file).and_then(|data| match nif::Nif::parse(&data) {
                     Ok(n) => {
                         col = crate::physics::shapes::from_nif(&n);
                         furn = furniture_markers(&n);
-                        let m = model::convert(&n);
+                        let m = match variant {
+                            Some("scb") => model::convert_filtered(&n, &|name| name.to_ascii_lowercase().starts_with("scb")),
+                            Some(_) => model::convert_filtered(&n, &|name| !name.to_ascii_lowercase().starts_with("scb")),
+                            None => model::convert(&n),
+                        };
                         for mesh in &m.meshes {
                             log::trace!("mesh in {p}: {:?}", mesh.material);
                         }

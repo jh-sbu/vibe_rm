@@ -256,6 +256,14 @@ pub struct ActorRuntime {
     pub look_at: Option<Vec3>,
     /// The goal was set by hand (console `travel`): packages leave it alone.
     pinned: bool,
+    /// The weapon is in hand (between the graph's `weaponDraw` and `weaponSheathe`),
+    /// and whether that changed this frame.
+    pub(crate) weapon_out: bool,
+    pub(crate) equipment_changed: bool,
+    /// Weapons drawn (or being drawn): the graph was sent `WeapEquip`.
+    pub(crate) drawn: bool,
+    /// Sounds the graph asked for this frame (`SoundPlay` payloads: SNDR editor ids).
+    pub(crate) sounds: Vec<String>,
     /// The lit torch it holds, and the shield it put away for it.
     pub(crate) torch: Option<FormId>,
     pub(crate) stowed_shield: Option<FormId>,
@@ -304,6 +312,10 @@ impl ActorRuntime {
             wants_action_idle: false,
             torch: None,
             stowed_shield: None,
+            weapon_out: false,
+            equipment_changed: false,
+            drawn: false,
+            sounds: Vec::new(),
             objects: Vec::new(),
             objects_changed: false,
             leave: false,
@@ -1070,6 +1082,16 @@ impl ActorRuntime {
                     self.objects.clear();
                 }
                 "idlefurnitureexit" => self.out_of_furniture = true,
+                "weapondraw" | "weaponsheathe" => {
+                    let out = e == "weapondraw";
+                    self.equipment_changed |= out != self.weapon_out;
+                    self.weapon_out = out;
+                }
+                "soundplay" | "npcsoundplay" => {
+                    if let Some(p) = r.payload {
+                        self.sounds.push(p);
+                    }
+                }
                 _ => {}
             }
         }
@@ -1592,6 +1614,8 @@ impl Engine {
         let mut moved = Vec::new();
         let mut gone = Vec::new();
         let mut held = Vec::new();
+        let mut equip = Vec::new();
+        let mut sounds: Vec<(String, Vec3)> = Vec::new();
         // Everyone's position last frame, for walkers to keep clear of.
         let mut bodies: Vec<(FormId, Vec3)> = self.cells.values().flat_map(|rt| &rt.actors).map(|a| (a.ref_id, a.pos)).collect();
         bodies.push((PLAYER_REF, player));
@@ -1638,6 +1662,12 @@ impl Engine {
                     log::debug!("{} holds {:?}", a.ref_id, a.objects);
                     held.push((*key, index, a.objects.clone()));
                 }
+                if std::mem::take(&mut a.equipment_changed) {
+                    equip.push((*key, index, a.ref_id));
+                }
+                for s in a.sounds.drain(..) {
+                    sounds.push((s, a.pos + Vec3::Z * 64.0 * a.scale));
+                }
                 if a.is_walking() || matches!(a.state, State::Approach(_) | State::Enter(_) | State::Exit(_) | State::Use(_)) || talking == Some(a.ref_id) {
                     moved.push((a.ref_id, a.pos, a.capsule));
                 }
@@ -1654,6 +1684,12 @@ impl Engine {
         self.furniture = furniture;
         for (key, index, objects) in held {
             self.attach_anim_objects(key, index, &objects);
+        }
+        for (key, index, actor) in equip {
+            self.refresh_equipment(key, index, actor);
+        }
+        for (sound, at) in sounds {
+            self.play_sound_at(&sound, at);
         }
         self.play_furniture_idles();
         self.play_standing_meals();

@@ -208,10 +208,15 @@ fn sequences(nif: &Nif) -> Vec<Sequence> {
 }
 
 pub fn convert(nif: &Nif) -> CpuModel {
+    convert_filtered(nif, &|_| true)
+}
+
+/// [`convert`], keeping only the shapes whose names pass `keep`.
+pub fn convert_filtered(nif: &Nif, keep: &dyn Fn(&str) -> bool) -> CpuModel {
     let sequences = sequences(nif);
     let animated_nodes: std::collections::HashSet<&str> =
         sequences.iter().flat_map(|s| &s.channels).map(|c| c.node.as_str()).collect();
-    let mut w = Walk { meshes: Vec::new(), skinned: Vec::new(), animated: Vec::new(), animated_nodes: &animated_nodes };
+    let mut w = Walk { meshes: Vec::new(), skinned: Vec::new(), animated: Vec::new(), animated_nodes: &animated_nodes, keep };
     for &root in &nif.roots {
         w.walk(nif, Ref(root as i32), Mat4::IDENTITY, 0);
     }
@@ -296,6 +301,7 @@ struct Walk<'a> {
     skinned: Vec<CpuSkinnedMesh>,
     animated: Vec<AnimatedPart>,
     animated_nodes: &'a std::collections::HashSet<&'a str>,
+    keep: &'a dyn Fn(&str) -> bool,
 }
 
 pub fn bounds_of(spheres: impl Iterator<Item = (Vec3, f32)>) -> (Vec3, f32) {
@@ -328,7 +334,7 @@ fn walk(&mut self, nif: &Nif, r: Ref, parent: Mat4, depth: u32) {
     }
     // An animated node (not the root): its subtree becomes a separately drawn part.
     if depth > 0 && matches!(block, Block::Node(_)) && self.animated_nodes.contains(av.net.name.as_str()) {
-        let mut sub = Walk { meshes: Vec::new(), skinned: Vec::new(), animated: Vec::new(), animated_nodes: self.animated_nodes };
+        let mut sub = Walk { meshes: Vec::new(), skinned: Vec::new(), animated: Vec::new(), animated_nodes: self.animated_nodes, keep: self.keep };
         if let Block::Node(n) = block {
             for &c in &n.children {
                 sub.walk(nif, c, Mat4::IDENTITY, depth + 1);
@@ -340,6 +346,9 @@ fn walk(&mut self, nif: &Nif, r: Ref, parent: Mat4, depth: u32) {
         return;
     }
     let world = parent * av.transform.to_mat4();
+    if !matches!(block, Block::Node(_)) && !(self.keep)(&av.net.name) {
+        return;
+    }
     let (out, skinned) = (&mut self.meshes, &mut self.skinned);
     match block {
         Block::Node(n) => {

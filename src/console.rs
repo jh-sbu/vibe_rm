@@ -162,7 +162,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 5] = ["additem", "removeitem", "showinventory", "inv", "openactorcontainer"];
+const ITEM_COMMANDS: [&str; 7] = ["additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon"];
 
 /// Inventory commands on a reference (the player when none is given).
 fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -> Vec<String> {
@@ -177,6 +177,10 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                 let taken = engine.remove_item(r, item, n, None);
                 vec![format!("{r}: removed {taken} {item}")]
             }
+        }
+        "drawweapon" | "sheatheweapon" => {
+            let draw = cmd == "drawweapon";
+            if engine.draw_weapon(r, draw) { vec![format!("{r}: {cmd}")] } else { vec![format!("{r} can't {cmd}")] }
         }
         "openactorcontainer" => {
             engine.menu = Some(crate::items::Menu::Container(r));

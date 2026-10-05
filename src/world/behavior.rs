@@ -22,6 +22,48 @@ pub struct GraphLibrary {
     graphs: HashMap<(String, String), Arc<Shared>>,
 }
 
+/// Add animation data triggers (clip generator name -> (seconds, `Event[.Payload]`))
+/// to the project's clip generators. The data repeats the clips' own triggers (those
+/// timed from the end as absolute times), so an event the clip already raises with
+/// the same payload is left out. Returns how many were added.
+fn add_clip_triggers(p: &mut havok::behavior::Project, triggers: &HashMap<String, Vec<(f32, String)>>) -> usize {
+    use havok::behavior::{Generator, Trigger};
+    let mut added = 0;
+    for (_, g) in &mut p.graphs {
+        for gi in 0..g.generators.len() {
+            let Generator::Clip { name, triggers: own, .. } = &g.generators[gi] else { continue };
+            let Some(list) = triggers.get(&name.to_ascii_lowercase()) else { continue };
+            let own: Vec<(i32, Option<String>)> = own.iter().map(|t| (t.event, t.payload.clone())).collect();
+            let mut extra = Vec::new();
+            for (time, text) in list {
+                let (event, payload) = match text.split_once('.') {
+                    Some((e, p)) => (e, Some(p.to_owned())),
+                    None => (text.as_str(), None),
+                };
+                if event.is_empty() {
+                    continue;
+                }
+                let id = match g.events.iter().position(|e| e.eq_ignore_ascii_case(event)) {
+                    Some(i) => i as i32,
+                    None => {
+                        g.events.push(event.to_owned());
+                        g.events.len() as i32 - 1
+                    }
+                };
+                if own.iter().any(|(e, p)| *e == id && p.as_deref().map(str::to_ascii_lowercase) == payload.as_deref().map(str::to_ascii_lowercase)) {
+                    continue;
+                }
+                extra.push(Trigger { time: *time, from_end: false, event: id, payload });
+            }
+            added += extra.len();
+            if let Generator::Clip { triggers: have, .. } = &mut g.generators[gi] {
+                have.extend(extra);
+            }
+        }
+    }
+    added
+}
+
 /// A loaded behaviour project.
 pub struct ProjectRuntime {
     pub shared: Arc<Shared>,
@@ -71,6 +113,13 @@ impl GraphLibrary {
                     if p.graphs.is_empty() {
                         log::warn!("{file}: no behaviour graphs");
                         return None;
+                    }
+                    // The annotations the project's animation data lists for its clips
+                    // play as clip triggers (weapon draw, hit frames, footsteps, sounds).
+                    let stem = name.strip_suffix(".hkx").unwrap_or(name);
+                    if let Some(text) = vfs.read(&format!("meshes/animationdata/{stem}.txt")) {
+                        let added = add_clip_triggers(&mut p, &crate::world::animation::parse_clip_triggers(&String::from_utf8_lossy(&text)));
+                        log::debug!("{file}: {added} clip triggers from animation data");
                     }
                     p.character = Some(character);
                     let s = Shared::new(Arc::new(p));
