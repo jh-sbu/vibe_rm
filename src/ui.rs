@@ -108,6 +108,14 @@ impl Ui {
             let hint = format!("E  {verb}");
             painter.text(pos + egui::vec2(0.0, 28.0), Align2::CENTER_CENTER, hint, FontId::proportional(16.0), Color32::from_gray(200));
         }
+        // What an NPC nearby says by itself, as a subtitle.
+        if let Some(b) = engine.barks.current.as_ref().filter(|b| !b.text.trim().is_empty()) {
+            let text = format!("{}: {}", b.name, b.text);
+            let galley = painter.layout(text, FontId::proportional(18.0), Color32::WHITE, rect.width() * 0.6);
+            let pos = Pos2::new(c.x - galley.size().x / 2.0, rect.bottom() - 110.0);
+            painter.galley(pos + egui::vec2(1.5, 1.5), galley.clone(), Color32::BLACK);
+            painter.galley(pos, galley, Color32::from_gray(235));
+        }
         // Script notifications (top left, like Skyrim's HUD messages).
         let now = engine.scripts.real_time;
         for (i, (text, t)) in engine.scripts.notifications.iter().rev().take(6).enumerate() {

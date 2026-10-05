@@ -39,6 +39,11 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
             "activate <ref>        activate a reference as the player".into(),
         ],
+        "bark" => {
+            let [r, sub] = args[..] else { return vec!["usage: bark <actor ref> <subtype, e.g. HELO / IDLE>".into()] };
+            let (Some(actor), Ok(sub)) = (engine.resolve_form(r), <[u8; 4]>::try_from(sub.to_ascii_uppercase().as_bytes())) else { return vec!["bad reference or subtype".into()] };
+            if engine.bark(actor, &sub) { vec![format!("{r} says something")] } else { vec![format!("{r} has nothing to say")] }
+        }
         "activate" => {
             let Some(r) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: activate <ref>".into()] };
             let name = engine.base_of(r).and_then(|b| engine.lo.get(b)).and_then(|b| b.get(b"FULL").map(|d| engine.lo.lstring(&b, d))).unwrap_or_default();

@@ -5,6 +5,8 @@ use esp::{FormId, LoadOrder};
 use crate::condition::{self, Condition};
 use crate::engine::{Engine, PLAYER_REF};
 
+pub mod barks;
+
 pub mod info_flags {
     pub const GOODBYE: u16 = 0x1;
     pub const RANDOM: u16 = 0x2;
@@ -251,7 +253,11 @@ impl Engine {
             let Some(i) = info(&self.lo, id) else { continue };
             let mut c = ctx;
             c.quest = Some(topic.quest);
-            if condition::evaluate(self, &i.conditions, c) {
+            let pass = condition::evaluate(self, &i.conditions, c);
+            if !pass && log::log_enabled!(target: "dialogue_fail", log::Level::Trace) {
+                log::trace!(target: "dialogue_fail", "{} {} {}: {}", topic.editor_id, topic.id, i.id, condition::explain(self, &i.conditions, c));
+            }
+            if pass {
                 if log::log_enabled!(log::Level::Trace) {
                     log::trace!("{} / {}: {}", topic.editor_id, topic.prompt, condition::explain(self, &i.conditions, c));
                 }

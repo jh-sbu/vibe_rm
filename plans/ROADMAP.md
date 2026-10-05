@@ -107,6 +107,11 @@ game each piece unlocks.
   weapon goes to the hand at `weaponDraw` (bows to the left), its scabbard stays; console
   `<ref>.drawweapon` / `sheatheweapon`, Papyrus `DrawWeapon` / `SheatheWeapon` /
   `IsWeaponDrawn`
+- Barks: NPCs greet the player as they pass (`HELO` topics, once in a while each) and
+  chatter now and then (`IDLE` topics, their own chances deciding), voiced where they
+  stand with a subtitle, gesturing and looking at the player; one speaker at a time.
+  `GetSitting` / `GetSleeping` / `IsMoving` answer from what actors are doing outside
+  idle picking; console `bark <ref> <subtype>`; vrm-tool `dial-subtypes`
 - Character property bindings: bone switches bound to the character's bone weight
   properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and

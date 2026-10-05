@@ -250,7 +250,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         14 => Some(100.0),                                                // GetActorValue
         365 => b(ctx.idle.and_then(|q| q.child).unwrap_or_else(|| subj_base.and_then(|n| e.npc_race(n)).is_some_and(|r| e.race_is_child(r)))), // IsChild
         125 => b(false),                                                  // IsGuard
-        141 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject && cv.current.is_some())), // IsTalking
+        141 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject && cv.current.is_some()) || subject.is_some_and(|s| e.is_barking(s))), // IsTalking
         149 => b(e.current_weather() == Some(p1)),                        // GetIsCurrentWeather
         1 => {
             // GetDistance
@@ -295,6 +295,11 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         47 => Some(subject.map_or(0, |s| e.item_count(s, p1)) as f32), // GetItemCount
         182 => b(subject.and_then(|s| e.inventories.get(&s)).is_some_and(|i| i.is_equipped(p1))), // GetEquipped
         263 => b(false), // IsWeaponOut
+        // Outside idle picking, sitting / sleeping come from what the actor is doing.
+        159 | 49 if ctx.idle.is_none() => Some(subject.map_or(0.0, |s| e.sit_sleep_state(s, c.func == 49))),
+        237 => b(false), // GetIsGhost
+        // IsMoving / IsPathing outside idle picking: walking about.
+        25 | 704 if ctx.idle.is_none() => b(subject.and_then(|s| e.actor_speed(s)).is_some_and(|v| v > 1.0)),
         // Nor flees, attacks, staggers, recoils or is ridden.
         329 | 672 | 701 | 702 | 714 => b(false),
         _ => idle_function_value(e, c, ctx),

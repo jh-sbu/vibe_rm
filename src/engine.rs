@@ -97,6 +97,8 @@ pub struct Engine {
     pub audio: Option<crate::audio::Audio>,
     music: MusicState,
     pub conversation: Option<crate::dialogue::Conversation>,
+    /// Lines NPCs say by themselves (greetings, idle chatter).
+    pub barks: crate::dialogue::barks::Barks,
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     npc_refs: HashMap<FormId, FormId>,
@@ -179,6 +181,7 @@ impl Engine {
             music: MusicState::default(),
             conversation: None,
             menu: None,
+            barks: Default::default(),
             npc_refs: HashMap::new(),
             lod: None,
             nav: Default::default(),
@@ -1244,6 +1247,7 @@ impl Engine {
         }
         self.update_music();
         self.update_conversation();
+        self.update_barks();
     }
 
     fn update_look_target(&mut self) {
