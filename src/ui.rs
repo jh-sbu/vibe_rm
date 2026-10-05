@@ -110,7 +110,7 @@ impl Ui {
         }
         // What an NPC nearby says by itself, as a subtitle.
         if let Some(b) = engine.barks.current.as_ref().filter(|b| !b.text.trim().is_empty()) {
-            let text = format!("{}: {}", b.name, b.text);
+            let text = if b.name.is_empty() { b.text.clone() } else { format!("{}: {}", b.name, b.text) };
             let galley = painter.layout(text, FontId::proportional(18.0), Color32::WHITE, rect.width() * 0.6);
             let pos = Pos2::new(c.x - galley.size().x / 2.0, rect.bottom() - 110.0);
             painter.galley(pos + egui::vec2(1.5, 1.5), galley.clone(), Color32::BLACK);

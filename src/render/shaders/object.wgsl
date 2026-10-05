@@ -13,6 +13,10 @@ struct Frame {
     misc: vec4<f32>,        // time, light count, exterior flag, unused
     amb: array<vec4<f32>, 6>, // directional ambient X+ X- Y+ Y- Z+ Z-; amb[0].w > 0.5 enables
     lod_clip: vec4<f32>,    // xy min, xy max of the loaded full-detail area
+    shadow_vp: array<mat4x4<f32>, 4>, // sun shadow cascades
+    shadow_splits: vec4<f32>,         // view depth where each cascade ends
+    shadow_params: vec4<f32>,         // enabled, texel size (uv), ...
+    cam_fwd: vec4<f32>,
 };
 
 struct Light {
@@ -23,6 +27,45 @@ struct Light {
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var<storage, read> lights: array<Light>;
 @group(0) @binding(2) var<storage, read> palette: array<mat4x4<f32>>;
+
+@group(0) @binding(3) var shadow_map: texture_depth_2d_array;
+@group(0) @binding(4) var shadow_sampler: sampler_comparison;
+
+// How much of the sun reaches a point (1 lit, 0 in shadow): the cascade for its view
+// depth, sampled 3x3 a little off the surface along its normal.
+fn sun_shadow(world_pos: vec3<f32>, normal: vec3<f32>) -> f32 {
+    if (frame.shadow_params.x < 0.5) {
+        return 1.0;
+    }
+    let depth = dot(world_pos - frame.cam_pos.xyz, frame.cam_fwd.xyz);
+    let splits = frame.shadow_splits;
+    if (depth > splits.w) {
+        return 1.0;
+    }
+    var c = 0u;
+    if (depth > splits.x) { c = 1u; }
+    if (depth > splits.y) { c = 2u; }
+    if (depth > splits.z) { c = 3u; }
+    let vp = frame.shadow_vp[c];
+    // The cascade's half-width in world units, from its projection's scale.
+    let radius = 1.0 / length(vec3<f32>(vp[0].x, vp[1].x, vp[2].x));
+    let texel = 2.0 * radius * frame.shadow_params.y;
+    let p = vp * vec4<f32>(world_pos + normal * texel * 1.5, 1.0);
+    let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || p.z >= 1.0) {
+        return 1.0;
+    }
+    let t = frame.shadow_params.y;
+    var lit = 0.0;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            lit += textureSampleCompareLevel(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * t, c, p.z);
+        }
+    }
+    lit /= 9.0;
+    // Fade out towards the end of the last cascade.
+    return mix(lit, 1.0, smoothstep(splits.w * 0.85, splits.w, depth));
+}
 
 struct Material {
     uv: vec4<f32>,          // offset.xy, scale.zw
@@ -246,10 +289,18 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     // Directional (sun / interior directional)
     let l = normalize(frame.sun_dir.xyz);
     let ndl = dot(n, l);
-    diffuse += frame.sun_color.rgb * max(ndl, 0.0);
+    var sun = 1.0;
+    if (ndl > 0.0) {
+        var gn = normalize(in.normal);
+        if (!front) {
+            gn = -gn;
+        }
+        sun = sun_shadow(in.world_pos, gn);
+    }
+    diffuse += frame.sun_color.rgb * max(ndl, 0.0) * sun;
     if (ndl > 0.0) {
         let h = normalize(l + view_dir);
-        specular += frame.sun_color.rgb * pow(max(dot(n, h), 0.0), gloss) * spec_mask;
+        specular += frame.sun_color.rgb * pow(max(dot(n, h), 0.0), gloss) * spec_mask * sun;
     }
 
     for (var i = 0u; i < 8u; i++) {

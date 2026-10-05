@@ -121,6 +121,10 @@ game each piece unlocks.
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
   payloads) put brooms, tankards, hammers, lutes, books... in actors' hands, hung from the
   bone named by the model's `Prn`; put away when the actor leaves the idle / furniture
+- Sun shadows outdoors: four cascades fitted to the view (texel-snapped, far ones
+  refreshed every 2nd / 4th frame), cast by objects (alpha-tested ones through their
+  cutouts), actors, their weapons and the landscape; 3x3 PCF with normal offset.
+  Console `tsh`, `VRM_NO_SHADOWS`
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
@@ -153,7 +157,8 @@ game each piece unlocks.
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
 4. **UI**: inventory (categories, equipping, item details), map, bars
 5. **Audio**: lip sync
-6. **Rendering**: shadows, HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
+6. **Rendering**: point light and interior shadows, static shadow caching (per-cell
+   caster batches), HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
    grass, decals, environment maps
 7. **Saves**: an engine-native save format (reading .ess later)
 8. **Performance**: async loading, GPU-driven culling

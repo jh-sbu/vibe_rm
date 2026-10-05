@@ -30,6 +30,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "getpos                print position".into(),
             "tdt                   toggle debug text".into(),
             "tai                   toggle actor AI".into(),
+            "tsh                   toggle sun shadows".into(),
             "sae <ref> <event>     send a behaviour event to an actor".into(),
             "pi <ref> <idle>       play an IDLE record on an actor".into(),
             "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
@@ -146,6 +147,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             }
             Err(_) => vec!["bad number".into()],
         },
+        "tsh" | "toggleshadows" => {
+            engine.renderer.shadows_enabled = !engine.renderer.shadows_enabled;
+            vec![format!("shadows {}", if engine.renderer.shadows_enabled { "on" } else { "off" })]
+        }
         "tai" | "toggleai" => {
             engine.ai_enabled = !engine.ai_enabled;
             vec![format!("AI {}", if engine.ai_enabled { "on" } else { "off" })]
