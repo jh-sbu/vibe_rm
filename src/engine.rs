@@ -607,9 +607,11 @@ impl Engine {
                 }
             }
             log::debug!(
-                "actor {} {:?} {} meshes at {:?}, {} packages",
+                "actor {} {:?} ({} {}) {} meshes at {:?}, {} packages",
                 d.ref_id,
                 d.name,
+                d.npc,
+                self.lo.get(d.npc).and_then(|r| r.editor_id()).unwrap_or_default(),
                 meshes.len(),
                 d.transform.w_axis.truncate(),
                 rt.packages.len()
