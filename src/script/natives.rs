@@ -307,7 +307,14 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("actor", "getlevel") => v(Value::Int(1)),
         ("actor", "getfactionrank") => v(Value::Int(-1)),
-        ("actor", "isplayerteammate") | ("actor", "isweapondrawn") | ("actor", "issneaking") | ("actor", "isonmount") => v(Value::Bool(false)),
+        ("actor", "isweapondrawn") => v(Value::Bool(me.is_some_and(|r| e.weapon_drawn(r)))),
+        ("actor", "drawweapon") | ("actor", "sheatheweapon") => {
+            if let Some(r) = me {
+                e.draw_weapon(r, func == "drawweapon");
+            }
+            none()
+        }
+        ("actor", "isplayerteammate") | ("actor", "issneaking") | ("actor", "isonmount") => v(Value::Bool(false)),
         ("actor", "evaluatepackage") | ("actor", "setrestrained") | ("actor", "setdontmove") | ("actor", "setalert") | ("actor", "stopcombat") => none(),
         ("actor", "getsitstate") | ("actor", "getsleepstate") => v(Value::Int(0)),
         ("actorbase", "getsex") => v(Value::Int(me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0))),

@@ -628,6 +628,36 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("hkb-annotations") => {
+            // hkb-annotations <data dir> <project file>: annotation texts across the
+            // project's clips (prefix before any '.'), with whether a graph has an event
+            // of that name.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let (dir, project) = load_project(&v, &args[2])?;
+            let events: std::collections::HashSet<String> = project.graphs.iter().flat_map(|(_, g)| g.events.iter().map(|e| e.to_ascii_lowercase())).collect();
+            let mut anims = std::collections::BTreeSet::new();
+            for (_, g) in &project.graphs {
+                for gn in &g.generators {
+                    if let havok::behavior::Generator::Clip { animation, .. } = gn {
+                        anims.insert(animation.to_ascii_lowercase().replace('\\', "/"));
+                    }
+                }
+            }
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            for a in &anims {
+                let Some(bytes) = v.read(&format!("{dir}/{a}")) else { continue };
+                let Ok(c) = havok::AnimationContainer::parse(&bytes) else { continue };
+                for an in c.animations.iter().flat_map(|x| &x.annotations) {
+                    let key = an.text.split('.').next().unwrap_or("").to_owned();
+                    *counts.entry(key).or_default() += 1;
+                }
+            }
+            for (k, n) in counts {
+                println!("{n:6} {k}{}", if events.contains(&k.to_ascii_lowercase()) { "  [event]" } else { "" });
+            }
+        }
         Some("hkx-binding") => {
             // hkx-binding <data dir> <animation path>: how a clip binds to its skeleton.
             let data = std::path::Path::new(&args[1]);

@@ -140,6 +140,35 @@ fn parse_clip_ids(text: &str) -> HashMap<String, u32> {
     out
 }
 
+/// Parse a behaviour project's clip triggers (`animationdata/<project>.txt`): clip
+/// generator name (lowercase) -> (seconds, `Event` or `Event.Payload`), the
+/// annotations the game raises as the clips play.
+pub fn parse_clip_triggers(text: &str) -> HashMap<String, Vec<(f32, String)>> {
+    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    let mut out: HashMap<String, Vec<(f32, String)>> = HashMap::new();
+    let Some(files) = lines.get(1).and_then(|l| l.parse::<usize>().ok()) else { return out };
+    let mut i = 2 + files + 1;
+    while i + 5 < lines.len() {
+        if lines[i].is_empty() {
+            i += 1;
+            continue;
+        }
+        let (Ok(_), Ok(n)) = (lines[i + 1].parse::<u32>(), lines[i + 5].parse::<usize>()) else { break };
+        let triggers = lines[i + 6..(i + 6 + n).min(lines.len())]
+            .iter()
+            .filter_map(|l| {
+                let (text, t) = l.rsplit_once(':')?;
+                Some((t.parse::<f32>().ok()?, text.to_owned()))
+            })
+            .collect::<Vec<_>>();
+        if !triggers.is_empty() {
+            out.entry(lines[i].to_ascii_lowercase()).or_default().extend(triggers);
+        }
+        i += 6 + n;
+    }
+    out
+}
+
 /// Parse root motion (`animationdata/boundanims/anims_<project>.txt`): id, duration,
 /// translation keys "t x y z", rotation keys "t qx qy qz qw".
 fn parse_motions(text: &str) -> HashMap<u32, Motion> {

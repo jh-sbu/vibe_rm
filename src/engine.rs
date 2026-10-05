@@ -78,6 +78,8 @@ pub struct Engine {
     pub(crate) rigid_models: HashMap<FormId, Vec<(FormId, String)>>,
     /// How many of `scene.lights` belong to the cells (carried lights follow).
     pub(crate) static_lights: usize,
+    /// Sound descriptors by editor id (`SoundPlay` payloads).
+    sound_descs: HashMap<String, Option<crate::world::sound::SoundDesc>>,
     /// Model path -> where a carried light shines from (its `AttachLight` node).
     pub(crate) light_attach: HashMap<String, Vec3>,
     /// What actors and containers carry, by reference (kept across cell loads).
@@ -160,6 +162,7 @@ impl Engine {
             rigid_models: Default::default(),
             static_lights: 0,
             light_attach: Default::default(),
+            sound_descs: Default::default(),
             idles: None,
             scripts: Default::default(),
             vm: papyrus::Vm::new(),
@@ -201,6 +204,23 @@ impl Engine {
 
     pub fn camera_copy(&self) -> Camera {
         Camera { position: self.camera.position, yaw: self.camera.yaw, pitch: self.camera.pitch, fov_y: self.camera.fov_y }
+    }
+
+    /// Play a sound descriptor (by editor id) once at a point: one of its files.
+    pub fn play_sound_at(&mut self, edid: &str, at: Vec3) {
+        let key = edid.to_ascii_lowercase();
+        if !self.sound_descs.contains_key(&key) {
+            let d = self.lo.find_editor_id(edid).and_then(|f| crate::world::sound::descriptor(&self.lo, &self.vfs, f));
+            if d.is_none() {
+                log::debug!("no sound descriptor {edid}");
+            }
+            self.sound_descs.insert(key.clone(), d);
+        }
+        let Some(desc) = self.sound_descs.get(&key).cloned().flatten() else { return };
+        let i = (self.rand() % desc.files.len() as u64) as usize;
+        if let Some(a) = self.audio.as_mut() {
+            a.play(&self.vfs, &desc.files[i], desc.volume, false, Some(at), desc.min_dist, desc.max_dist);
+        }
     }
 
     /// Start looping sounds emitted by objects (sound markers, lights, activators, ...).

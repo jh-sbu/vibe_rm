@@ -100,6 +100,13 @@ game each piece unlocks.
   `[ref.]additem`, `removeitem`, `showinventory`, `openactorcontainer`, `activate`.
   Books open to be read (their markup reduced to paragraphs and pages, illuminated
   letters kept), taken unless they can't be; books in the inventory are read by clicking
+- Clip annotations: the triggers each project's animation data lists for its clip
+  generators (`animationdata/<project>.txt`: hit frames, weapon draw / sheathe, footsteps,
+  `SoundPlay.<sound>`) play as clip triggers; `SoundPlay` / `NPCSoundPlay` sounds play at
+  the actor. Weapons drawn and sheathed through the graph (`WeapEquip` / `Unequip`): the
+  weapon goes to the hand at `weaponDraw` (bows to the left), its scabbard stays; console
+  `<ref>.drawweapon` / `sheatheweapon`, Papyrus `DrawWeapon` / `SheatheWeapon` /
+  `IsWeaponDrawn`
 - Character property bindings: bone switches bound to the character's bone weight
   properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
@@ -127,7 +134,8 @@ game each piece unlocks.
      the graph is reset (`IdleForceDefaultState`) after the pick-up
    - Delayed state changes (`FLAG_DELAY_STATE_CHANGE`), blending effects' event /
      self-transition modes (`vrm-tool hkb-flags` counts and lists them)
-   - Engine variables and events still missing: weapons drawn, combat, first person;
+   - Engine variables and events still missing: combat, first person; footstep sounds
+     (`FootLeft` / `FootRight` by ground material);
      INFO speaker / listener idles; listeners' reactions
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
