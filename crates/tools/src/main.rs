@@ -247,6 +247,119 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("hkb-tree") => {
+            // hkb-tree <data dir> <project dir> <graph file> <state or generator name> [depth]
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let dir = args[2].trim_end_matches('/');
+            let bytes = v.read(&format!("{dir}/behaviors/{}", args[3])).context("graph not found")?;
+            let g = havok::behavior::BehaviorGraph::parse(&bytes)?;
+            let max: usize = args.get(5).map(|s| s.parse()).transpose()?.unwrap_or(6);
+            use havok::behavior::Generator as G;
+            fn show(g: &havok::behavior::BehaviorGraph, id: usize, depth: usize, max: usize) {
+                let pad = "  ".repeat(depth);
+                match &g.generators[id] {
+                    G::Clip { name, animation, mode, speed, triggers } => {
+                        let t: Vec<String> = triggers.iter().map(|t| format!("{}@{:.2}{}", g.event_name(t.event).unwrap_or("?"), t.time, if t.from_end { "e" } else { "" })).collect();
+                        println!("{pad}clip {name} {animation} {mode:?} x{speed} {t:?}");
+                    }
+                    G::StateMachine { name, start, start_variable, states, wildcards } => {
+                        let var = start_variable.map(|v| format!(" (bound to {} = {:?})", g.variables.get(v).map_or("?", String::as_str), g.variable_defaults.get(v)));
+                        println!("{pad}sm {name} start {start}{}", var.unwrap_or_default());
+                        for w in wildcards {
+                            println!("{pad}  * --{}--> {} nested {:?}", g.event_name(w.event).unwrap_or("?"), w.to_state, w.to_nested);
+                        }
+                        for st in states {
+                            println!("{pad}  state {} {}", st.id, st.name);
+                            for t in &st.transitions {
+                                println!("{pad}    --{}--> {} nested {:?}", g.event_name(t.event).unwrap_or("?"), t.to_state, t.to_nested);
+                            }
+                            if depth < max {
+                                if let Some(c) = st.generator {
+                                    show(g, c, depth + 2, max);
+                                }
+                            }
+                        }
+                    }
+                    G::Group { name, children } => {
+                        println!("{pad}group {name}");
+                        if depth < max {
+                            for &c in children {
+                                show(g, c, depth + 1, max);
+                            }
+                        }
+                    }
+                    G::Reference { name, behavior } => println!("{pad}ref {name} -> {behavior}"),
+                    G::Other(c) => println!("{pad}other {c}"),
+                }
+            }
+            let want = args[4].to_ascii_lowercase();
+            for (i, node) in g.generators.iter().enumerate() {
+                if node.name().to_ascii_lowercase() == want {
+                    show(&g, i, 0, max);
+                }
+                if let G::StateMachine { states, .. } = node {
+                    for st in states.iter().filter(|s| s.name.to_ascii_lowercase() == want) {
+                        println!("state {} {} in sm {}", st.id, st.name, node.name());
+                        if let Some(c) = st.generator {
+                            show(&g, c, 1, max);
+                        }
+                    }
+                }
+            }
+        }
+        Some("idle-tree") => {
+            // idle-tree <data dir> <IDLE editor id>: the idle and its descendants with raw conditions.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut children: std::collections::HashMap<esp::FormId, Vec<esp::FormId>> = Default::default();
+            let mut previous: std::collections::HashMap<esp::FormId, esp::FormId> = Default::default();
+            for &id in lo.ids_of_type(b"IDLE") {
+                let Some(rec) = lo.get(id) else { continue };
+                if let Some(d) = rec.get(b"ANAM").filter(|d| d.len() >= 8) {
+                    let v = u32::from_le_bytes(d[0..4].try_into().unwrap());
+                    let prev = u32::from_le_bytes(d[4..8].try_into().unwrap());
+                    previous.insert(id, if prev == 0 { esp::FormId::NULL } else { rec.fid(esp::FormId(prev)) });
+                    if v != 0 {
+                        children.entry(rec.fid(esp::FormId(v))).or_default().push(id);
+                    }
+                }
+            }
+            // Authored order: follow previous-sibling links.
+            for kids in children.values_mut() {
+                let mut ordered = Vec::new();
+                let mut cur = esp::FormId::NULL;
+                while let Some(&n) = kids.iter().find(|k| previous.get(k).copied().unwrap_or_default() == cur && !ordered.contains(*k)) {
+                    ordered.push(n);
+                    cur = n;
+                }
+                let rest: Vec<_> = kids.iter().filter(|k| !ordered.contains(*k)).copied().collect();
+                ordered.extend(rest);
+                *kids = ordered;
+            }
+            let root = lo.find_editor_id(&args[2]).context("editor id not found")?;
+            let mut stack = vec![(root, 0usize)];
+            while let Some((id, depth)) = stack.pop() {
+                let Some(rec) = lo.get(id) else { continue };
+                let text = |t: &[u8; 4]| rec.get(t).map(esp::decode_zstring).unwrap_or_default();
+                let pad = "  ".repeat(depth);
+                println!("{pad}{id} {} event={:?}", rec.editor_id().unwrap_or_default(), text(b"ENAM"));
+                for c in rec.subrecords().filter(|s| s.tag.0 == *b"CTDA" && s.data.len() >= 24) {
+                    let d = c.data;
+                    let f = u16::from_le_bytes([d[8], d[9]]);
+                    let p1 = u32::from_le_bytes(d[12..16].try_into().unwrap());
+                    let p1s = lo.get(rec.fid(esp::FormId(p1))).and_then(|r| r.editor_id()).unwrap_or_default();
+                    let p2 = u32::from_le_bytes(d[16..20].try_into().unwrap());
+                    let v = f32::from_le_bytes(d[4..8].try_into().unwrap());
+                    println!("{pad}    ctda op {:#04x} func {f} p1 {p1:#x} {p1s} p2 {p2:#x} value {v} run {}", d[0], u32::from_le_bytes(d[20..24].try_into().unwrap()));
+                }
+                for &k in children.get(&id).into_iter().flatten().rev() {
+                    stack.push((k, depth + 1));
+                }
+            }
+        }
         Some("hkb-payloads") => {
             // hkb-payloads <data dir> <project dir>: clip triggers carrying string payloads.
             let data = std::path::Path::new(&args[1]);
@@ -256,6 +369,9 @@ fn main() -> Result<()> {
             let project = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}")));
             for (rel, g) in &project.graphs {
                 for node in &g.generators {
+                    if let havok::behavior::Generator::StateMachine { name, start, start_variable: Some(v), .. } = node {
+                        println!("{rel} sm {name} start {start} bound to {} = {:?}", g.variables.get(*v).map_or("?", String::as_str), g.variable_defaults.get(*v));
+                    }
                     if let havok::behavior::Generator::StateMachine { name, states, .. } = node {
                         for st in states {
                             for (when, e) in st.enter_events.iter().map(|e| ("enter", e)).chain(st.exit_events.iter().map(|e| ("exit", e))) {

@@ -219,7 +219,7 @@ impl ActorAnim {
 #[derive(Default)]
 pub struct BehaviorLibrary {
     projects: HashMap<String, Arc<havok::behavior::Project>>,
-    events: HashMap<(String, String), Option<Arc<EventClips>>>,
+    events: HashMap<(String, String, String), Option<Arc<EventClips>>>,
 }
 
 /// Clips a behaviour event plays, and the clips that leave that state again.
@@ -243,10 +243,11 @@ impl BehaviorLibrary {
     }
 
     /// Clips an animation event plays on actors of the project in `dir`
-    /// (e.g. `meshes/actors/character`), ending in a loop where there is one.
-    pub fn event_clips(&mut self, vfs: &vfs::Vfs, dir: &str, event: &str) -> Option<Arc<EventClips>> {
+    /// (e.g. `meshes/actors/character`), ending in a loop where there is one, and
+    /// the clips played from there by the first of `exits` the graph handles.
+    pub fn event_clips(&mut self, vfs: &vfs::Vfs, dir: &str, event: &str, exits: &[&str]) -> Option<Arc<EventClips>> {
         use havok::behavior::ClipMode;
-        let key = (dir.to_owned(), event.to_ascii_lowercase());
+        let key = (dir.to_owned(), event.to_ascii_lowercase(), exits.join(",").to_ascii_lowercase());
         if let Some(r) = self.events.get(&key) {
             return r.clone();
         }
@@ -256,8 +257,7 @@ impl BehaviorLibrary {
         let play = plays.iter().find(|p| p.clips.last().is_some_and(|c| c.mode == ClipMode::Looping)).or(plays.first());
         let r = match play {
             Some(p) => {
-                // Furniture and idle markers are left with IdleChairExitStart / IdleStop.
-                let exit = ["IdleChairExitStart", "IdleStop"]
+                let exit = exits
                     .iter()
                     .find_map(|e| project.then_event(p, e))
                     .map(|x| x.clips)

@@ -89,6 +89,60 @@ enum State {
     Exit { step: usize, from: Vec3, heading: f32 },
 }
 
+/// A short idle played while in furniture (eating, drinking, another way of
+/// sitting), after which the actor returns to the seat's loop.
+struct SubIdle {
+    clips: Arc<furniture::UseClips>,
+    phase: SubPhase,
+    step: usize,
+    /// Seconds left in a looping idle.
+    left: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SubPhase {
+    Enter,
+    Loop,
+    Exit,
+}
+
+impl SubIdle {
+    /// Start the clip for the current phase and step, moving on through the phases
+    /// as their clips run out. False once the exit clips are done.
+    fn play_step(&mut self, anim: &mut ActorAnim) -> bool {
+        loop {
+            match self.phase {
+                SubPhase::Enter => match self.clips.enter.get(self.step) {
+                    Some(c) => {
+                        anim.play_once(c.clone(), 0.2);
+                        return true;
+                    }
+                    None => {
+                        self.phase = SubPhase::Loop;
+                        if self.clips.idle_loops {
+                            anim.play(self.clips.idle.clone(), 0.2);
+                        } else {
+                            anim.play_once(self.clips.idle.clone(), 0.2);
+                        }
+                        return true;
+                    }
+                },
+                SubPhase::Loop => {
+                    self.phase = SubPhase::Exit;
+                    self.step = 0;
+                }
+                SubPhase::Exit => match self.clips.exit.get(self.step) {
+                    Some(c) => {
+                        anim.play_once(c.clone(), 0.2);
+                        return true;
+                    }
+                    None => return false,
+                },
+            }
+        }
+    }
+}
+
 /// Clip and behaviour lookups for the actor being stepped.
 pub struct Clips<'a> {
     pub vfs: &'a vfs::Vfs,
@@ -97,15 +151,26 @@ pub struct Clips<'a> {
 }
 
 impl Clips<'_> {
-    pub fn clip(&mut self, path: &str, skeleton_path: &str, skeleton: &Skeleton) -> Option<Arc<BoundClip>> {
-        self.anims.clip(self.vfs, path, skeleton_path, skeleton)
-    }
-
     /// Clips to enter, loop in and leave the state that behaviour `event` leads to,
     /// for an actor of the character project at `project`.
+    /// Furniture and idle markers are left with IdleChairExitStart / IdleStop.
     pub fn event(&mut self, event: &str, project: &str, skeleton_path: &str, female: bool, skeleton: &Skeleton) -> Option<furniture::UseClips> {
+        self.event_with_exits(event, &["IdleChairExitStart", "IdleStop"], project, skeleton_path, female, skeleton)
+    }
+
+    /// Like [`Clips::event`], leaving through the first of behaviour events `exits`
+    /// that the graph handles from the loop.
+    pub fn event_with_exits(
+        &mut self,
+        event: &str,
+        exits: &[&str],
+        project: &str,
+        skeleton_path: &str,
+        female: bool,
+        skeleton: &Skeleton,
+    ) -> Option<furniture::UseClips> {
         use havok::behavior::ClipMode;
-        let played = self.behaviors.event_clips(self.vfs, project, event)?;
+        let played = self.behaviors.event_clips(self.vfs, project, event, exits)?;
         let mut load = |c: &havok::behavior::PlayedClip| {
             crate::world::animation::project_clip_paths(project, &c.animation, female)
                 .iter()
@@ -182,10 +247,16 @@ pub struct ActorRuntime {
     pub exiting: Option<FormId>,
     pub skeleton_path: String,
     pub female: bool,
+    pub child: bool,
     /// Furniture marker reserved (walking to it) or in use.
     pub seat: Option<Seat>,
     /// Just spawned with the cell: may start out already in furniture.
     pub fresh: bool,
+    /// Idle being played in the furniture, if any.
+    sub: Option<SubIdle>,
+    /// Seconds until the next seated idle is picked; set `wants_idle` when due.
+    next_idle: f32,
+    pub(crate) wants_idle: bool,
     /// Anim objects (ANIO editor ids) in hand, and whether they changed this frame.
     pub objects: Vec<String>,
     pub objects_changed: bool,
@@ -220,8 +291,12 @@ impl ActorRuntime {
             exiting: None,
             skeleton_path: String::new(),
             female: false,
+            child: false,
             seat: None,
             fresh: true,
+            sub: None,
+            next_idle: 0.0,
+            wants_idle: false,
             objects: Vec::new(),
             objects_changed: false,
             leave: false,
@@ -276,6 +351,7 @@ impl ActorRuntime {
     }
 
     fn give_up_seat(&mut self, furniture: &mut FurnitureWorld) {
+        self.sub = None;
         if self.seat.take().is_some() {
             furniture.release(self.ref_id);
         }
@@ -365,6 +441,7 @@ impl ActorRuntime {
             anim.play(seat.clips.idle.clone(), fade);
         }
         self.state = State::Use(secs);
+        self.next_idle = 4.0;
     }
 
     /// Advance movement. Returns true when the actor moved.
@@ -436,7 +513,8 @@ impl ActorRuntime {
                     self.pos = start;
                     self.heading = h0;
                     if !seat.clips.enter.is_empty() {
-                        log::debug!("{} entering {} ({} clips)", self.ref_id, seat.furniture, seat.clips.enter.len());
+                        let motion: Vec<_> = seat.clips.enter.iter().map(|c| c.motion.as_ref().map(|m| m.end())).collect();
+                        log::debug!("{} entering {} ({} clips, motion {motion:?})", self.ref_id, seat.furniture, seat.clips.enter.len());
                     }
                     self.state = State::Enter { step: 0, from: start, heading: h0 };
                     self.next_clip(true, 0.2);
@@ -462,7 +540,20 @@ impl ActorRuntime {
             }
             State::Use(t) => {
                 *t -= dt;
-                if *t > 0.0 && !self.leave {
+                let remaining = *t;
+                if self.step_sub_idle(dt) {
+                    return false;
+                }
+                if remaining > 0.0 && !self.leave {
+                    // Now and then pick an idle to play in the chair (the engine
+                    // walks the idle tree, then calls `start_sub_idle`).
+                    if self.seat.as_ref().is_some_and(|s| s.kind == Use::Sit && !s.furniture.is_null()) {
+                        self.next_idle -= dt;
+                        if self.next_idle <= 0.0 {
+                            self.next_idle = uniform(w.rand, 5.0, 12.0);
+                            self.wants_idle = true;
+                        }
+                    }
                     return false;
                 }
                 self.leave = false;
@@ -717,7 +808,7 @@ impl ActorRuntime {
         }
         for (fid, mi, marker) in options.into_iter().take(6) {
             let Some(f) = w.furniture.get(fid) else { continue };
-            let ways = furniture::ways_to_use(f, &marker, &self.skeleton_path, self.female, &self.skeleton, &mut w.clips, &mut *w.rand);
+            let ways = furniture::ways_to_use(f, mi, &marker, self.child, &self.skeleton_path, self.female, &self.skeleton, &mut w.clips, &mut *w.rand);
             // Idle markers say how long they are used for.
             let secs = if f.idle_time > 0.0 && matches!(goal.behaviour, Behaviour::Sandbox | Behaviour::Patrol) { f.idle_time } else { secs };
             // The entry whose starting spot is on the navmesh and nearest.
@@ -735,6 +826,9 @@ impl ActorRuntime {
             };
             let seat = Seat {
                 furniture: fid,
+                kind: marker.kind,
+                anim_type: marker.anim_type,
+                entry,
                 pos: marker.pos,
                 heading: marker.heading,
                 clips: Arc::new(clips),
@@ -793,6 +887,46 @@ impl ActorRuntime {
         Some(pose)
     }
 
+    /// Play `clips` in the furniture, then go back to the seat's loop.
+    pub fn start_sub_idle(&mut self, clips: furniture::UseClips, rand: &mut dyn FnMut() -> u64) {
+        let Some(anim) = &mut self.anim else { return };
+        if !matches!(self.state, State::Use(_)) || self.leave || self.sub.is_some() {
+            return;
+        }
+        let mut sub = SubIdle { clips: Arc::new(clips), phase: SubPhase::Enter, step: 0, left: uniform(rand, 8.0, 20.0) };
+        if sub.play_step(anim) {
+            self.sub = Some(sub);
+        }
+    }
+
+    /// Advance the idle being played in the furniture. False when there is none
+    /// (any more); leaving the furniture waits for it to finish.
+    fn step_sub_idle(&mut self, dt: f32) -> bool {
+        let (Some(sub), Some(anim)) = (&mut self.sub, &mut self.anim) else { return false };
+        let more = match sub.phase {
+            SubPhase::Loop => {
+                sub.left -= dt;
+                let over = if sub.clips.idle_loops { sub.left <= 0.0 || self.leave } else { anim.finished() };
+                !over || sub.play_step(anim)
+            }
+            _ if !anim.finished() => true,
+            _ => {
+                sub.step += 1;
+                sub.play_step(anim)
+            }
+        };
+        if !more {
+            // Back to the seat's loop; the idle's anim objects are put away.
+            self.sub = None;
+            if let Some(seat) = &self.seat {
+                anim.play(seat.clips.idle.clone(), 0.4);
+            }
+            self.objects_changed |= !self.objects.is_empty();
+            self.objects.clear();
+        }
+        more
+    }
+
     /// Draw the seat's anim objects as their cues come up; they are put away
     /// (`AnimObjectUnequip`) once the actor is out of the furniture or idle.
     fn update_objects(&mut self) {
@@ -807,12 +941,27 @@ impl ActorRuntime {
             }
         };
         let Some(seat) = &self.seat else { return };
-        let idle = seat.clips.enter.len();
-        let clip = clip.min(idle);
-        for cue in &seat.clips.objects {
-            let due = cue.clip < clip || (cue.clip == clip && time >= cue.time);
-            if due && !self.objects.iter().any(|o| o.eq_ignore_ascii_case(&cue.anio)) {
-                self.objects.push(cue.anio.clone());
+        let mut due: Vec<String> = Vec::new();
+        let mut collect = |clips: &furniture::UseClips, clip: usize, time: f32| {
+            let clip = clip.min(clips.enter.len());
+            for cue in &clips.objects {
+                if cue.clip < clip || (cue.clip == clip && time >= cue.time) {
+                    due.push(cue.anio.clone());
+                }
+            }
+        };
+        match &self.sub {
+            // The seat's own objects were drawn before the idle started.
+            Some(sub) => match sub.phase {
+                SubPhase::Enter => collect(&sub.clips, sub.step, time),
+                SubPhase::Loop => collect(&sub.clips, usize::MAX, time),
+                SubPhase::Exit => return,
+            },
+            None => collect(&seat.clips, clip, time),
+        }
+        for anio in due {
+            if !self.objects.iter().any(|o| o.eq_ignore_ascii_case(&anio)) {
+                self.objects.push(anio);
                 self.objects_changed = true;
             }
         }
@@ -851,11 +1000,66 @@ impl Engine {
         // A one-shot gesture (no loop at the end) is played through once.
         let duration = if c.idle_loops { f32::INFINITY } else { c.idle.duration() };
         log::debug!("{actor} plays {event} ({} enter clips)", c.enter.len());
-        a.seat = Some(Seat { furniture: FormId::NULL, pos, heading, clips: Arc::new(c), duration });
+        a.seat = Some(Seat { furniture: FormId::NULL, kind: Use::Idle, anim_type: 0, entry: furniture::Entry::Front, pos, heading, clips: Arc::new(c), duration });
         a.state = State::Enter { step: 0, from: a.pos, heading: a.heading };
         a.leave = false;
         a.next_clip(true, 0.25);
         true
+    }
+
+    /// Pick idles from the idle tree (`NonCombatIdles`) for actors in furniture that
+    /// asked for one: eating and drinking when their package allows it, the odd
+    /// change of sitting pose.
+    fn play_furniture_idles(&mut self) {
+        use crate::condition::{Context, IdleQuery};
+        let wanting: Vec<(crate::render::CellKey, FormId)> = self
+            .cells
+            .iter_mut()
+            .flat_map(|(k, rt)| rt.actors.iter_mut().filter_map(move |a| std::mem::take(&mut a.wants_idle).then_some((*k, a.ref_id))))
+            .collect();
+        if wanting.is_empty() {
+            return;
+        }
+        let Some(root) = self.idles.as_ref().and_then(|ix| ix.find(&self.lo, "NonCombatIdles")) else { return };
+        let special = self.lo.find_editor_id("FurnitureSpecial");
+        for (key, r) in wanting {
+            let Some(a) = self.cells.get(&key).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r)) else { continue };
+            let Some(seat) = a.seat.clone() else { continue };
+            // Wood piles, pour spots and the like are "sat in" too, but aren't seats.
+            if special.is_some_and(|kw| self.has_keyword(seat.furniture, kw)) {
+                continue;
+            }
+            let Some(project) = a.skeleton_path.split("/character assets").next().filter(|b| b.ends_with("actors/character")).map(str::to_owned)
+            else {
+                continue;
+            };
+            let query = IdleQuery {
+                anim_type: seat.anim_type,
+                entry: seat.entry.entry_type(),
+                state: 3.0,
+                eating: a.goal.is_some_and(|g| g.allow.eating),
+                ..Default::default()
+            };
+            let ctx = Context { subject: Some(r), target: Some(seat.furniture), idle: Some(query), ..Default::default() };
+            let Some((idle, event)) = self.idles.as_ref().and_then(|ix| ix.select(self, root, ctx)) else { continue };
+            let (skeleton_path, female, skeleton) = (a.skeleton_path.clone(), a.female, a.skeleton.clone());
+            let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
+            let Some(c) = clips.event_with_exits(&event, &["IdleStop"], &project, &skeleton_path, female, &skeleton) else {
+                log::debug!("{r}: no clips for furniture idle {idle} ({event})");
+                continue;
+            };
+            log::debug!("{r} plays {event} in {} ({} enter, {} exit clips)", seat.furniture, c.enter.len(), c.exit.len());
+            let mut seed = self.rand() | 1;
+            let mut rand = move || {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                seed
+            };
+            if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r)) {
+                a.start_sub_idle(c, &mut rand);
+            }
+        }
     }
 
     /// Send a loaded actor to use specific furniture (Papyrus `Activate` by an NPC,
@@ -935,7 +1139,7 @@ impl Engine {
                 if a.next_eval - dt > 0.0 || a.exiting.is_some() {
                     continue;
                 }
-                let ctx = crate::condition::Context { subject: Some(a.ref_id), target: None, quest: None };
+                let ctx = crate::condition::Context { subject: Some(a.ref_id), ..Default::default() };
                 let pick = a.packages.iter().position(|p| {
                     p.schedule.matches(self.hour, self.day) && crate::condition::evaluate(self, &p.conditions, ctx)
                 });
@@ -1116,6 +1320,7 @@ impl Engine {
         for (key, index, objects) in held {
             self.attach_anim_objects(key, index, &objects);
         }
+        self.play_furniture_idles();
         for r in gone {
             self.despawn_actor(r);
         }

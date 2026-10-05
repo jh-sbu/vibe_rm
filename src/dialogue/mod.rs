@@ -223,7 +223,7 @@ pub struct Conversation {
 
 impl Engine {
     fn dialogue_ctx(&self, npc_ref: FormId) -> condition::Context {
-        condition::Context { subject: Some(npc_ref), target: Some(PLAYER_REF), quest: None }
+        condition::Context { subject: Some(npc_ref), target: Some(PLAYER_REF), ..Default::default() }
     }
 
     /// First INFO of a topic whose conditions pass for this speaker.

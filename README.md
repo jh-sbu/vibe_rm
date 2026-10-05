@@ -25,7 +25,7 @@ Early but already visual:
 | Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day | done |
 | Water, collision/physics, player controller, load doors and animated doors, cell streaming | done |
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
-| AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture, crafting stations and idle markers with root motion; behaviour-graph event lookup (`PlayIdle`, `SendAnimationEvent`) | in progress |
+| AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture and crafting stations picked through the IDLE tree, idle markers, seated eating / drinking, anim objects in hand; behaviour-graph event lookup (`PlayIdle`, `SendAnimationEvent`) | in progress |
 | Papyrus VM, conditions, quests, dialogue, HUD, console, audio, music | in progress |
 | Combat, magic, inventory, saves | planned |
 
