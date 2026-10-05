@@ -55,7 +55,9 @@ game each piece unlocks.
   `turnRight` / `turnStop`) when standing
 - Creature idles: creatures standing about pick from the `ActionIdle` action tree's branches
   for their own graphs (IDLE `DNAM`): howling, foraging, lying down, looking about, feeding;
-  held and ended (`IdleStop`) like humanoid idles. The event -> clip resolver and furniture
+  held and ended (`IdleStop`) like humanoid idles. Humanoids standing about pick their
+  idle styles from the same tree (`AnimationDrivenIdleRoot`: hands on hips, hands down,
+  motion-driven). The event -> clip resolver and furniture
   planning run on each actor's own project
 - Head tracking: humanoids' `BSLookAtModifier` (spine, neck, head and eye bones, each
   within its limit, eased by the graph's gains, off past the overall limit) turns NPCs
@@ -101,8 +103,8 @@ game each piece unlocks.
      the game picks and aims them itself); NPCs looking at each other in conversation
    - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
    - `Direction` (strafing), sprinting; character property bindings;
-     `hkbRotateCharacterModifier`; the other action trees (`ActionIdle` for humanoids'
-     standing idles, `ActionTurnLeft`...) as the way events are chosen
+     `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
+     way events are chosen
    - Carry furniture (`CarryFurnitureScript`: wood piles): carrying the load away
      (`OffsetCarryLogStart`) and putting it down by inventory (`GetItemCount`); for now
      the graph is reset (`IdleForceDefaultState`) after the pick-up

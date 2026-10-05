@@ -235,8 +235,8 @@ pub struct ActorRuntime {
     pub(crate) wants_idle: bool,
     /// Wants to eat or drink where it stands (a sandbox pause).
     pub(crate) wants_meal: bool,
-    /// Wants an idle from the `ActionIdle` tree (creatures standing about: grazing,
-    /// lying down, shaking off).
+    /// Wants an idle from the `ActionIdle` tree (actors standing about: hands on
+    /// hips, a shrug; creatures grazing, lying down, shaking off).
     pub(crate) wants_action_idle: bool,
     /// Anim objects (ANIO editor ids) in hand, and whether they changed this frame.
     pub objects: Vec<String>,
@@ -626,10 +626,12 @@ impl ActorRuntime {
         // VRM_AI_NO_SNAP: walk into furniture even on cell load (to watch enter animations).
         let fresh = std::mem::take(&mut self.fresh) && std::env::var_os("VRM_AI_NO_SNAP").is_none();
         self.give_up_seat(w.furniture);
-        // Creatures standing about now and then play one of their idles first.
-        let creature = self.graph.as_ref().is_some_and(|g| !g.project().humanoid());
+        // Actors standing about now and then play one of their idles first
+        // (creatures more often: they have no furniture to use).
+        let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
         let wandering = self.goal.is_none_or(|g| matches!(g.behaviour, Behaviour::Sandbox | Behaviour::Hold));
-        if creature && wandering && !fresh && (w.rand)() % 3 == 0 {
+        let odds = if humanoid { 4 } else { 3 };
+        if self.graph.is_some() && wandering && !fresh && (w.rand)() % odds == 0 {
             self.wants_action_idle = true;
             self.state = State::Idle(uniform(w.rand, 1.0, 3.0));
             return;
@@ -1192,8 +1194,9 @@ impl Engine {
         true
     }
 
-    /// Idles for creatures that asked for one, from the `ActionIdle` tree's
-    /// branches for their graphs (a horse grazes, a chicken settles down to sit).
+    /// Idles for actors that asked for one, from the `ActionIdle` tree's branches
+    /// for their graphs (hands on hips, a sigh; a horse grazes, a chicken settles
+    /// down to sit).
     fn play_action_idles(&mut self) {
         use crate::condition::{Context, IdleQuery};
         let wanting: Vec<(FormId, Arc<ProjectRuntime>)> = self
