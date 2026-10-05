@@ -40,8 +40,9 @@ game each piece unlocks.
      escort waits for its target
    - Off-screen travel between worldspaces; locked doors and keys
    - Leveled lists (LVLN/LVLI) beyond the first entry, templates (TPLT/ACFG)
-2. **Animation**: root motion for locomotion (walk speeds and turns from the motion data);
-   NiTransformController (non-sequence) and texture / material controllers
+2. **Animation**: creature behaviour projects (motion data and events for non-humanoids);
+   turning / run clips; NiTransformController (non-sequence) and texture / material
+   controllers
 3. **Game logic**: combat, magic, inventory, leveling, crime
 4. **UI**: inventory, map, bars
 5. **Audio**: lip sync

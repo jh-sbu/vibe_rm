@@ -17,7 +17,7 @@ use crate::world::skeleton::Skeleton;
 use furniture::{FurnitureWorld, Seat, Use};
 use package::{Allow, Behaviour, LocationKind, Package, Target};
 
-/// Forward walk speed (units/s) from the default NPC movement type.
+/// Forward walk speed (units/s) when the walk clip has no root motion.
 pub const WALK_SPEED: f32 = 80.0;
 /// Turn rate while walking, radians/s.
 const TURN_RATE: f32 = 4.0;
@@ -393,7 +393,7 @@ impl ActorRuntime {
                 let dir = (to / dist).extend(0.0);
                 let remaining = self.turn_towards(dir, dt);
                 // Slow down while facing away from the next waypoint.
-                let speed = WALK_SPEED * remaining.cos().max(0.0).powi(2);
+                let speed = self.walk_speed() * remaining.cos().max(0.0).powi(2);
                 self.speed = speed;
                 let fwd = Vec3::new(self.heading.sin(), self.heading.cos(), 0.0);
                 let mut p = self.pos + fwd * (speed * dt).min(dist);
@@ -748,7 +748,17 @@ impl ActorRuntime {
     }
 
     /// Pick the idle or walk clip to match the current speed.
+    /// Ground speed of the walk clip (its root motion), so feet don't slide.
+    pub fn walk_speed(&self) -> f32 {
+        self.walk
+            .as_ref()
+            .and_then(|w| w.motion.as_ref().map(|m| m.end().0.truncate().length() / w.duration()))
+            .filter(|v| (20.0..400.0).contains(v))
+            .unwrap_or(WALK_SPEED)
+    }
+
     pub fn animate(&mut self, dt: f32) -> Option<Vec<Mat4>> {
+        let walk_speed = self.walk_speed();
         let walking = self.speed > 5.0;
         let locomotion = matches!(self.state, State::Idle(_) | State::Walk { .. } | State::Approach(_));
         let anim = self.anim.as_mut()?;
@@ -756,7 +766,7 @@ impl ActorRuntime {
             _ if !locomotion => anim.speed = 1.0,
             (true, Some(w), _) => {
                 anim.play(w.clone(), 0.25);
-                anim.speed = (self.speed / WALK_SPEED).clamp(0.3, 1.5);
+                anim.speed = (self.speed / walk_speed).clamp(0.3, 1.5);
             }
             (false, _, Some(i)) => {
                 anim.play(i.clone(), 0.35);
