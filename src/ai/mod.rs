@@ -222,6 +222,17 @@ impl ActorRuntime {
         Mat4::from_scale_rotation_translation(Vec3::splat(self.scale), Quat::from_rotation_z(-self.heading), self.pos)
     }
 
+    fn state_name(&self) -> &'static str {
+        match self.state {
+            State::Idle(_) => "idle",
+            State::Walk { .. } => "walk",
+            State::Approach(_) => "approach",
+            State::Enter { .. } => "enter",
+            State::Use(_) => "use",
+            State::Exit { .. } => "exit",
+        }
+    }
+
     pub fn is_walking(&self) -> bool {
         matches!(self.state, State::Walk { .. })
     }
@@ -265,6 +276,60 @@ impl ActorRuntime {
         let step = d.clamp(-TURN_RATE * dt, TURN_RATE * dt);
         self.heading += step;
         d - step
+    }
+
+    /// Step aside from other actors (and the player) within reach, preferring to
+    /// pass on the side we're already heading for. Stays on the navmesh.
+    fn keep_clear(&mut self, bodies: &[(FormId, Vec3)], nav: &nav::NavWorld, dt: f32, before: Vec3) {
+        const REACH: f32 = 48.0;
+        // Someone already standing at our destination: stop short of it.
+        if let State::Walk { path, next, to_seat: false, .. } = &mut self.state
+            && let Some(&dest) = path.last()
+            && self.pos.truncate().distance(dest.truncate()) < REACH * 2.0
+            && bodies.iter().any(|&(id, p)| id != self.ref_id && p.truncate().distance(dest.truncate()) < REACH && (p.z - dest.z).abs() < 100.0)
+        {
+            *next = path.len();
+            return;
+        }
+        let fwd = glam::Vec2::new(self.heading.sin(), self.heading.cos());
+        let mut push = glam::Vec2::ZERO;
+        let mut blocked = false;
+        for &(id, p) in bodies {
+            if id == self.ref_id || (p.z - self.pos.z).abs() > 100.0 {
+                continue;
+            }
+            let d = (self.pos - p).truncate();
+            let dist = d.length();
+            if dist >= REACH {
+                continue;
+            }
+            let away = if dist > 1e-3 { d / dist } else { fwd.perp() };
+            let w = (REACH - dist) / REACH;
+            push += away * w;
+            // Someone ahead: sidestep, to the right when they're dead ahead.
+            let to_them = -away;
+            blocked |= fwd.dot(to_them) > 0.7 && dist < REACH * 0.8;
+            if fwd.dot(to_them) > 0.5 {
+                let left = fwd.perp();
+                push += if left.dot(to_them) > 0.0 { -left } else { left } * w * 0.7;
+            }
+        }
+        if push == glam::Vec2::ZERO {
+            return;
+        }
+        let step = push.clamp_length_max(1.0) * WALK_SPEED * 0.8 * dt;
+        // Blocked ahead: give up this frame's forward progress and only sidestep.
+        let from = if blocked { before } else { self.pos };
+        let mut p = from + step.extend(0.0);
+        match nav.height_at(p) {
+            Some(z) if (z - from.z).abs() < 30.0 => {
+                p.z = z;
+                self.pos = p;
+            }
+            // No room to step aside: wait behind them.
+            _ if blocked => self.pos = before,
+            _ => {}
+        }
     }
 
     /// Place the actor along a clip's root motion from a start pose.
@@ -940,6 +1005,22 @@ impl Engine {
         };
         let mut moved = Vec::new();
         let mut gone = Vec::new();
+        // Everyone's position last frame, for walkers to keep clear of.
+        let mut bodies: Vec<(FormId, Vec3)> = self.cells.values().flat_map(|rt| &rt.actors).map(|a| (a.ref_id, a.pos)).collect();
+        bodies.push((PLAYER_REF, player));
+        if log::log_enabled!(log::Level::Trace) {
+            let free: Vec<&ActorRuntime> = self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.in_furniture()).collect();
+            let mut overlaps = 0;
+            for (i, a) in free.iter().enumerate() {
+                for b in &free[i + 1..] {
+                    if a.pos.distance(b.pos) < 35.0 {
+                        overlaps += 1;
+                        log::trace!("overlap {} {:?} / {} {:?}", a.ref_id, a.state_name(), b.ref_id, b.state_name());
+                    }
+                }
+            }
+            log::trace!("actor overlaps: {overlaps}");
+        }
         for (key, rt) in self.cells.iter_mut() {
             let Some(rc) = self.scene.cells.get_mut(key) else { continue };
             for (inst, a) in rc.actors.iter_mut().zip(rt.actors.iter_mut()) {
@@ -953,7 +1034,10 @@ impl Engine {
                 } else if !self.ai_enabled {
                     a.halt(1.0);
                 } else {
-                    a.step(dt, &mut world);
+                    let before = a.pos;
+                    if a.step(dt, &mut world) && a.is_walking() {
+                        a.keep_clear(&bodies, &nav, dt, before);
+                    }
                 }
                 inst.transform = a.transform();
                 if let Some(pose) = a.animate(dt) {

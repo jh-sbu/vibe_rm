@@ -25,6 +25,8 @@ game each piece unlocks.
   special furniture; idle markers; Papyrus `PlayIdle` / `SendAnimationEvent`
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
   follow / escort packages; SitTarget
+- Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
+  when blocked, and stop short of a destination someone is standing on
 
 ## Next
 1. **AI depth**
@@ -33,7 +35,7 @@ game each piece unlocks.
      beds still pick clips by name rather than through the graphs
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target
-   - Actor-actor avoidance; doors opening; off-screen travel between worldspaces
+   - Doors opening (needs NiControllerSequence); off-screen travel between worldspaces
    - Leveled lists (LVLN/LVLI) beyond the first entry, templates (TPLT/ACFG)
 2. **Animation**: NiControllerSequence for animated statics (water wheels, flags);
    root motion for locomotion (walk speeds and turns from the motion data)
