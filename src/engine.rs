@@ -68,6 +68,8 @@ pub struct Engine {
     pub(crate) anims: crate::world::animation::AnimationLibrary,
     pub(crate) behaviors: crate::world::animation::BehaviorLibrary,
     pub(crate) graphs: crate::world::behavior::GraphLibrary,
+    /// Movement types (`MOVT`) by name, read on first use.
+    move_types: Option<HashMap<String, crate::world::movement::MoveSpeeds>>,
     /// Anim objects by lowercase editor id: model path and the bone it hangs from.
     anim_objects: HashMap<String, Option<(String, String)>>,
     /// IDLE records by parent and keyword (built on first use).
@@ -139,6 +141,7 @@ impl Engine {
             anims: Default::default(),
             behaviors: Default::default(),
             graphs: Default::default(),
+            move_types: None,
             anim_objects: Default::default(),
             idles: None,
             scripts: Default::default(),
@@ -555,6 +558,12 @@ impl Engine {
             let mut first_pose = None;
             // Actors run their race's behaviour graph, set up as the game does for NPCs.
             if let Some(project) = project {
+                // Speeds and turn rates of the graph's default and sneaking movement types.
+                let types = self.move_types.get_or_insert_with(|| crate::world::movement::movement_types(&self.lo));
+                let character = project.shared.project.character.as_ref().map_or("", |c| c.name.as_str());
+                let (default, sneak) = crate::world::movement::graph_movement_types(project.shared.variables(), character);
+                rt.moves = default.and_then(|(n, v)| Some((*types.get(&n)?, v)));
+                rt.sneak_moves = sneak.and_then(|(n, v)| Some((*types.get(&n)?, v)));
                 let humanoid = project.humanoid();
                 let mut g = crate::world::behavior::GraphAnim::new(project, &d.skeleton, d.female, &skel, self.rng ^ d.ref_id.0 as u64);
                 g.label = d.ref_id.to_string();
@@ -573,7 +582,7 @@ impl Engine {
             }
             rt.idle = idle;
             rt.walk = walk;
-            log::debug!("{}: walks at {:.0} units/s", d.ref_id, rt.walk_speed());
+            log::debug!("{}: walks at {:.0} units/s; movement {:?}, sneaking {:?}", d.ref_id, rt.walk_speed(), rt.moves, rt.sneak_moves);
             let (scale, _, feet) = d.transform.to_scale_rotation_translation();
             rt.capsule = Some(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
             let pose = first_pose.unwrap_or_else(|| skel.model_space(&skel.bind_locals()));

@@ -50,6 +50,20 @@ impl Allow {
     };
 }
 
+/// A package's preferred speed (`PKDT`, when its "Preferred Speed" flag is set).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Gait {
+    #[default]
+    Walk,
+    Jog,
+    Run,
+    FastWalk,
+}
+
+/// `PKDT` general flags.
+const PKDT_PREFERRED_SPEED: u32 = 1 << 13;
+const PKDT_ALWAYS_SNEAK: u32 = 1 << 17;
+
 /// A package "TargetSelector" / "SingleRef" input (`PTDA`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
@@ -125,6 +139,8 @@ pub struct Package {
     pub start_nearest: bool,
     /// Follow: keep between these distances from the target.
     pub follow_radius: (f32, f32),
+    pub gait: Gait,
+    pub sneak: bool,
 }
 
 fn behaviour_of(template: &str) -> Behaviour {
@@ -256,6 +272,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     let editor_id = rec.editor_id().unwrap_or_default();
     let mut schedule = Schedule { month: -1, day_of_week: -1, hour: -1, minute: -1, duration: 0 };
     let mut template = FormId::NULL;
+    let (mut gait, mut sneak) = (Gait::Walk, false);
     for sr in rec.subrecords() {
         match &sr.tag.0 {
             b"PSDT" if sr.data.len() >= 12 => {
@@ -268,6 +285,19 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
                 };
             }
             b"PKCU" if sr.data.len() >= 8 => template = rec.fid(sr.form_id(4)),
+            // General flags, type, interrupt override, preferred speed.
+            b"PKDT" if sr.data.len() >= 7 => {
+                let flags = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
+                if flags & PKDT_PREFERRED_SPEED != 0 {
+                    gait = match sr.data[6] {
+                        1 => Gait::Jog,
+                        2 => Gait::Run,
+                        3 => Gait::FastWalk,
+                        _ => Gait::Walk,
+                    };
+                }
+                sneak = flags & PKDT_ALWAYS_SNEAK != 0;
+            }
             _ => {}
         }
     }
@@ -340,6 +370,8 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         repeat,
         start_nearest,
         follow_radius,
+        gait,
+        sneak,
     })
 }
 

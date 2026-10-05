@@ -278,9 +278,14 @@ fn main() -> Result<()> {
                         let t: Vec<String> = triggers.iter().map(|t| format!("{}@{:.2}{}", g.event_name(t.event).unwrap_or("?"), t.time, if t.from_end { "e" } else { "" })).collect();
                         println!("{pad}clip {name} {animation} {mode:?} x{speed} {t:?}");
                     }
-                    G::StateMachine { name, start, start_variable, states, wildcards } => {
+                    G::StateMachine { name, start, start_variable, start_mode, states, wildcards } => {
                         let var = start_variable.map(|v| format!(" (bound to {} = {:?})", g.variables.get(v).map_or("?", String::as_str), g.variable_defaults.get(v)));
-                        println!("{pad}sm {name} start {start}{}", var.unwrap_or_default());
+                        let mode = match start_mode {
+                            havok::behavior::StartMode::Default => String::new(),
+                            havok::behavior::StartMode::Sync(v) => format!(" synced with {}", g.variables.get(*v).map_or("?", String::as_str)),
+                            havok::behavior::StartMode::Random => " random".to_owned(),
+                        };
+                        println!("{pad}sm {name} start {start}{}{mode}", var.unwrap_or_default());
                         let tr = |t: &havok::behavior::Transition| {
                             let mut s = format!("--{}--> {} nested {:?}", g.event_name(t.event).unwrap_or("?"), t.to_state, t.to_nested);
                             if let Some(b) = t.blend {
@@ -350,6 +355,56 @@ fn main() -> Result<()> {
                         println!("state {} {} in sm {}", st.id, st.name, node.name());
                         if let Some(c) = st.generator {
                             show(&g, c, 1, max);
+                        }
+                    }
+                }
+            }
+        }
+        Some("hkb-vars") => {
+            // hkb-vars <data dir> <project> [name filter]: variables, their defaults and
+            // what reads or writes them (bound members, expressions, conditions).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let (_, project) = load_project(&v, &args[2])?;
+            let filter = args.get(3).map(|f| f.to_ascii_lowercase());
+            use havok::behavior::{Generator as G, Modifier as M};
+            for (rel, g) in &project.graphs {
+                for (vi, var) in g.variables.iter().enumerate() {
+                    if filter.as_ref().is_some_and(|f| !var.to_ascii_lowercase().contains(f.as_str())) {
+                        continue;
+                    }
+                    println!("{rel}: {var} ({:?}, default {})", g.variable_types.get(vi), g.variable_default(vi));
+                    for (gi, b) in g.bindings.iter().enumerate() {
+                        for b in b.iter().filter(|b| b.variable == vi) {
+                            println!("    gen {} .{}", g.generators[gi].name(), b.member);
+                        }
+                    }
+                    for (mi, b) in g.modifier_bindings.iter().enumerate() {
+                        for b in b.iter().filter(|b| b.variable == vi) {
+                            let kind = match &g.modifiers[mi] {
+                                M::Other(c) => c.clone(),
+                                m => format!("{m:?}").chars().take(60).collect(),
+                            };
+                            println!("    mod #{mi} {kind} .{}", b.member);
+                        }
+                    }
+                    let lower = var.to_ascii_lowercase();
+                    for m in &g.modifiers {
+                        if let M::Expressions(lines) = m {
+                            for l in lines.iter().filter(|l| l.to_ascii_lowercase().contains(&lower)) {
+                                println!("    expr {l}");
+                            }
+                        }
+                    }
+                    for node in &g.generators {
+                        if let G::StateMachine { name, states, wildcards, .. } = node {
+                            for t in states.iter().flat_map(|s| s.transitions.iter()).chain(wildcards) {
+                                if let Some(c) = t.condition.as_ref().filter(|c| c.to_ascii_lowercase().contains(&lower)) {
+                                    let to = states.iter().find(|s| s.id == t.to_state).map(|s| s.name.as_str()).unwrap_or("?");
+                                    println!("    cond in {name} -> {to}: {c}");
+                                }
+                            }
                         }
                     }
                 }
@@ -649,6 +704,26 @@ fn main() -> Result<()> {
             v.sort_by(|a, b| b.1.cmp(&a.1));
             for (n, c) in v.iter().take(40) {
                 println!("{c:6} {n}");
+            }
+        }
+        Some("pack-speeds") => {
+            // pack-speeds <data dir>: packages by type, preferred speed flag / speed, sneak flag.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            for &id in lo.ids_of_type(b"PACK") {
+                let Some(rec) = lo.get(id) else { continue };
+                let Some(d) = rec.get(b"PKDT").filter(|d| d.len() >= 8) else { continue };
+                let flags = u32::from_le_bytes(d[0..4].try_into().unwrap());
+                let key = format!("type {:2} preferred {} speed {} sneak {}", d[4], flags >> 13 & 1, d[6], flags >> 17 & 1);
+                if flags >> 13 & 1 != 0 && d[6] >= 2 && std::env::var_os("SHOW").is_some() {
+                    println!("{id} {}", rec.editor_id().unwrap_or_default());
+                }
+                *counts.entry(key).or_default() += 1;
+            }
+            for (k, n) in counts {
+                println!("{n:6} {k}");
             }
         }
         Some("esp-list") => {

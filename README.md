@@ -25,7 +25,7 @@ Early but already visual:
 | Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day | done |
 | Water, collision/physics, player controller, load doors and animated doors, cell streaming | done |
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
-| AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture and crafting stations picked through the IDLE tree, idle markers, seated and standing eating / drinking, sitting variants, anim objects in hand; humanoids and creatures animated by running their behaviour graphs (`PlayIdle`, `SendAnimationEvent`) | in progress |
+| AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture and crafting stations picked through the IDLE tree, idle markers, seated and standing eating / drinking, sitting variants, anim objects in hand; humanoids and creatures animated by running their behaviour graphs (walking, running, sneaking and turning at their movement types' speeds; `PlayIdle`, `SendAnimationEvent`) | in progress |
 | Papyrus VM, conditions, quests, dialogue, HUD, console, audio, music | in progress |
 | Combat, magic, inventory, saves | planned |
 
@@ -47,7 +47,7 @@ cargo build --release
 ```
 
 Testing aids: `--console "<command>"` runs console commands after loading (e.g.
-`use <actor> <furniture>`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`; `"@<frame> <command>"`
+`use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`; `"@<frame> <command>"`
 runs it at that frame of `--wait`), `--watch-angle`
 orbits the `--watch` camera, `VRM_SEED=<n>` fixes the engine's random seed, and
 `VRM_AI_NO_SNAP=1` makes actors walk into furniture on cell load instead of starting
@@ -69,7 +69,7 @@ toggles actor AI).
 - `crates/vfs`: virtual file system (loose files over archives)
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
   (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`,
-  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), ...)
+  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, ...)
 - `src/`: the engine (renderer, world, app)
 
 ## Verifying format support
