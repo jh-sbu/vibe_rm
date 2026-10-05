@@ -14,7 +14,22 @@ pub struct ModelCache {
     map: HashMap<String, Option<Arc<GpuModel>>>,
     collision: crate::physics::CollisionCache,
     furniture: HashMap<String, Option<Arc<[nif::FurnitureMarker]>>>,
+    anims: HashMap<String, Arc<ModelAnim>>,
 }
+
+/// Keyframe-animated parts of a model and the sequences that move them.
+pub struct ModelAnim {
+    pub parts: Vec<AnimPart>,
+    pub sequences: Vec<model::Sequence>,
+}
+
+pub struct AnimPart {
+    pub node: String,
+    pub parent: glam::Mat4,
+    pub rest: glam::Mat4,
+    pub model: Arc<GpuModel>,
+}
+
 
 fn furniture_markers(n: &nif::Nif) -> Option<Arc<[nif::FurnitureMarker]>> {
     n.blocks.iter().find_map(|b| match b {
@@ -27,6 +42,11 @@ impl ModelCache {
     pub fn get(&self, path: &str) -> Option<Arc<GpuModel>> {
         self.map.get(path).cloned().flatten()
     }
+    /// Animated parts and sequences of a loaded model, if it has any.
+    pub fn anim(&self, path: &str) -> Option<Arc<ModelAnim>> {
+        self.anims.get(path).cloned()
+    }
+
     pub fn len(&self) -> usize {
         self.map.len()
     }
@@ -87,7 +107,8 @@ impl ModelCache {
         let mut tex: HashSet<String> = HashSet::new();
         for (_, m, _, _) in &cpu {
             if let Some(m) = m {
-                let mats = m.meshes.iter().map(|x| &x.material).chain(m.skinned.iter().map(|x| &x.material));
+                let parts = m.animated.iter().flat_map(|a| a.model.meshes.iter().map(|x| &x.material));
+                let mats = m.meshes.iter().map(|x| &x.material).chain(m.skinned.iter().map(|x| &x.material)).chain(parts);
                 for mat in mats {
                     for t in [&mat.diffuse, &mat.normal, &mat.glow].into_iter().flatten() {
                         if !renderer.textures.contains(t) {
@@ -100,9 +121,22 @@ impl ModelCache {
         load_textures(renderer, vfs, tex.into_iter().collect());
         let t2 = std::time::Instant::now();
 
-        for (p, m, col, furn) in cpu {
+        for (p, mut m, col, furn) in cpu {
             self.collision.insert(p.clone(), col.map(Arc::new));
             self.furniture.insert(p.clone(), furn);
+            if let Some(cpu) = m.as_mut().filter(|m| !m.animated.is_empty()) {
+                let parts = std::mem::take(&mut cpu.animated)
+                    .into_iter()
+                    .filter(|a| !a.model.meshes.is_empty())
+                    .map(|a| {
+                        let mut g = renderer.upload_model(&a.model);
+                        g.path = format!("{p}#{}", a.node);
+                        AnimPart { node: a.node, parent: a.parent, rest: a.rest, model: Arc::new(g) }
+                    })
+                    .collect();
+                let sequences = std::mem::take(&mut cpu.sequences);
+                self.anims.insert(p.clone(), Arc::new(ModelAnim { parts, sequences }));
+            }
             let g = m.filter(|m| !m.meshes.is_empty() || !m.skinned.is_empty()).map(|m| {
                 let mut g = renderer.upload_model(&m);
                 g.path = p.clone();

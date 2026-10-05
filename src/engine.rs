@@ -31,6 +31,8 @@ pub(crate) struct CellRuntime {
     land: Option<Land>,
     lights: Vec<PointLight>,
     pub(crate) doors: Vec<Door>,
+    /// Doors and other keyframe-animated objects.
+    pub(crate) animated: Vec<crate::world::animated::AnimatedObject>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -407,9 +409,18 @@ impl Engine {
                 inst.hidden = self.is_disabled(o.ref_id);
                 rc.instances.push(inst);
             }
-            if let Some(c) = self.models.collision(&o.model) {
-                rt.colliders.extend(self.physics.add_static(&c, o.transform, o.ref_id));
+            let tagged = match self.models.collision(&o.model) {
+                Some(c) => self.physics.add_static_tagged(&c, o.transform, o.ref_id),
+                None => Vec::new(),
+            };
+            rt.colliders.extend(tagged.iter().map(|(h, _)| *h));
+            if let Some(obj) = self.animated_object(o.ref_id, &o.model, o.transform, &mut rc.instances, &tagged) {
+                rt.animated.push(obj);
             }
+        }
+        if !rt.animated.is_empty() {
+            let doors = rt.animated.iter().filter(|a| a.door).count();
+            log::debug!("{key:?}: {} animated objects ({doors} doors)", rt.animated.len());
         }
         self.scene.cells.insert(key, rc);
         self.cells.insert(key, rt);
@@ -997,6 +1008,7 @@ impl Engine {
         self.physics.step(dt);
         self.update_whereabouts(dt);
         self.update_actors(dt);
+        self.update_animated(dt);
         let cam = self.camera_copy();
         self.player.update(&self.physics, &cam, input, dt);
         self.camera.position = self.player.eye();
@@ -1094,10 +1106,14 @@ impl Engine {
             self.start_conversation(owner);
             return Ok(());
         }
-        if base_tag.map(|t| t.0) == Some(*b"DOOR")
-            && let Some((dest, pos, rot)) = rf.teleport
-        {
-            self.teleport_through(dest, pos, rot.z)?;
+        if base_tag.map(|t| t.0) == Some(*b"DOOR") {
+            match rf.teleport {
+                Some((dest, pos, rot)) => self.teleport_through(dest, pos, rot.z)?,
+                None if self.scripts.locked.get(&owner).copied().unwrap_or(false) => log::info!("{owner} is locked"),
+                None => {
+                    self.toggle_door(owner, false);
+                }
+            }
         }
         Ok(())
     }

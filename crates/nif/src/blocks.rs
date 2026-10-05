@@ -338,6 +338,11 @@ pub enum Block {
     SkinPartition(Box<crate::skin::SkinPartition>),
     RigidBody(Box<crate::collision::RigidBody>),
     Shape(crate::collision::Shape),
+    ControllerManager(Vec<Ref>),
+    ControllerSequence(Box<crate::anim::ControllerSequence>),
+    TransformInterpolator(crate::anim::TransformInterpolator),
+    TransformData(Box<crate::anim::TransformData>),
+    TextKeys(Vec<(f32, String)>),
     Unknown(String),
 }
 
@@ -817,6 +822,19 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
                 v.push(FurnitureMarker { offset, heading, anim_type, entry });
             }
             Block::ExtraData(ExtraData::Furniture(v))
+        }
+        "NiControllerManager" => Block::ControllerManager(crate::anim::controller_manager(r)?),
+        "NiMultiTargetTransformController" => {
+            crate::anim::multi_target_transform_controller(r)?;
+            Block::Unknown(ty.into())
+        }
+        "NiControllerSequence" => Block::ControllerSequence(Box::new(crate::anim::controller_sequence(r)?)),
+        "NiTransformInterpolator" => Block::TransformInterpolator(crate::anim::transform_interpolator(r)?),
+        "NiTransformData" | "NiKeyframeData" => Block::TransformData(Box::new(crate::anim::transform_data(r)?)),
+        "NiTextKeyExtraData" => Block::TextKeys(crate::anim::text_key_extra_data(r)?),
+        "NiDefaultAVObjectPalette" => {
+            crate::anim::default_av_object_palette(r)?;
+            Block::Unknown(ty.into())
         }
         "BSBound" => {
             r.string_value()?;
