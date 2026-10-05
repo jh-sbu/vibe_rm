@@ -6,6 +6,12 @@ use std::collections::HashMap;
 use esp::{FormId, LoadOrder};
 
 use crate::condition::{self, Condition};
+use crate::world::behavior::ProjectRuntime;
+
+/// Idles of the humanoid graphs (or inheriting no graph).
+fn is_humanoid_graph(behavior: &str) -> bool {
+    behavior.is_empty() || behavior.starts_with("actors\\character\\")
+}
 
 /// Condition function `HasKeyword`.
 const HAS_KEYWORD: u16 = 560;
@@ -68,8 +74,9 @@ impl IdleIndex {
         ix
     }
 
+    /// An idle, or an action (`AACT`, e.g. `ActionIdle`) whose idles hang off it.
     pub fn find(&self, lo: &LoadOrder, edid: &str) -> Option<FormId> {
-        lo.find_editor_id(edid).filter(|id| self.idles.contains_key(id))
+        lo.find_editor_id(edid).filter(|id| self.idles.contains_key(id) || self.children.contains_key(id))
     }
 
     /// Pick an idle under `root` as the game does: the first child (in authored
@@ -77,32 +84,47 @@ impl IdleIndex {
     /// back to its own event if none of them pass. `root`'s own conditions are not
     /// checked. Returns the idle and its event.
     pub fn select(&self, e: &crate::engine::Engine, root: FormId, ctx: condition::Context) -> Option<(FormId, String)> {
-        self.select_in(e, root, ctx, 0)
+        self.select_in(e, root, ctx, &is_humanoid_graph, 0)
+    }
+
+    /// Like [`IdleIndex::select`] for an actor of `project`: idles of its graphs.
+    pub fn select_for(&self, e: &crate::engine::Engine, root: FormId, ctx: condition::Context, project: &ProjectRuntime) -> Option<(FormId, String)> {
+        self.select_in(e, root, ctx, &|b: &str| b.is_empty() || project.plays(b), 0)
     }
 
     /// Like [`IdleIndex::select`] over `roots` as if they were siblings, checking
     /// their own conditions (e.g. `EatingRoot` then `DrinkingRoot`).
     pub fn select_among(&self, e: &crate::engine::Engine, roots: &[FormId], ctx: condition::Context) -> Option<(FormId, String)> {
-        self.select_list(e, roots, ctx, 0)
+        self.select_list(e, roots, ctx, &is_humanoid_graph, 0)
     }
 
-    fn select_in(&self, e: &crate::engine::Engine, root: FormId, ctx: condition::Context, depth: u32) -> Option<(FormId, String)> {
-        self.select_list(e, self.children.get(&root).map_or(&[], Vec::as_slice), ctx, depth)
+    fn select_in(&self, e: &crate::engine::Engine, root: FormId, ctx: condition::Context, graphs: &dyn Fn(&str) -> bool, depth: u32) -> Option<(FormId, String)> {
+        self.select_list(e, self.children.get(&root).map_or(&[], Vec::as_slice), ctx, graphs, depth)
     }
 
-    fn select_list(&self, e: &crate::engine::Engine, kids: &[FormId], ctx: condition::Context, depth: u32) -> Option<(FormId, String)> {
+    fn select_list(
+        &self,
+        e: &crate::engine::Engine,
+        kids: &[FormId],
+        ctx: condition::Context,
+        graphs: &dyn Fn(&str) -> bool,
+        depth: u32,
+    ) -> Option<(FormId, String)> {
         if depth > 16 {
             return None;
         }
         for &kid in kids {
             let Some(idle) = self.idles.get(&kid) else { continue };
-            if !self.humanoid(kid) || !condition::evaluate(e, &idle.conditions, ctx) {
+            if !graphs(self.behavior_of(kid)) {
+                continue;
+            }
+            if !condition::evaluate(e, &idle.conditions, ctx) {
                 if log::log_enabled!(log::Level::Trace) {
                     log::trace!("idle {kid} fails: {}", condition::explain(e, &idle.conditions, ctx));
                 }
                 continue;
             }
-            if let Some(found) = self.select_in(e, kid, ctx, depth + 1) {
+            if let Some(found) = self.select_in(e, kid, ctx, graphs, depth + 1) {
                 return Some(found);
             }
             if !idle.event.is_empty() {
@@ -124,8 +146,7 @@ impl IdleIndex {
     }
 
     fn humanoid(&self, id: FormId) -> bool {
-        let b = self.behavior_of(id);
-        b.is_empty() || b.starts_with("actors\\character\\")
+        is_humanoid_graph(self.behavior_of(id))
     }
 
     /// The event a (humanoid) idle plays.

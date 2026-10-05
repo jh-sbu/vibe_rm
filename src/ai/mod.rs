@@ -13,7 +13,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::engine::{Engine, PLAYER_REF};
 use crate::world::animation::{ActorAnim, BoundClip};
-use crate::world::behavior::GraphAnim;
+use crate::world::behavior::{GraphAnim, ProjectRuntime};
 use crate::world::movement::MoveSpeeds;
 use crate::world::skeleton::Skeleton;
 use furniture::{FurnitureWorld, Seat, Use};
@@ -119,10 +119,10 @@ pub struct Clips<'a> {
 
 impl Clips<'_> {
     /// Clips to enter, loop in and leave the state that behaviour `event` leads to,
-    /// for an actor of the character project at `project`.
+    /// for an actor of `project`.
     /// Furniture and idle markers are left with IdleChairExitStart / IdleStop,
     /// anim-object idles (standing eating, drinking) with AnimObjectIdleStop.
-    pub fn event(&mut self, event: &str, project: &str, skeleton_path: &str, female: bool, skeleton: &Skeleton) -> Option<furniture::UseClips> {
+    pub fn event(&mut self, event: &str, project: &ProjectRuntime, skeleton_path: &str, female: bool, skeleton: &Skeleton) -> Option<furniture::UseClips> {
         self.event_with_exits(event, &["IdleChairExitStart", "AnimObjectIdleStop", "IdleStop"], project, skeleton_path, female, skeleton)
     }
 
@@ -132,17 +132,17 @@ impl Clips<'_> {
         &mut self,
         event: &str,
         exits: &[&str],
-        project: &str,
+        project: &ProjectRuntime,
         skeleton_path: &str,
         female: bool,
         skeleton: &Skeleton,
     ) -> Option<furniture::UseClips> {
         use havok::behavior::ClipMode;
-        let played = self.behaviors.event_clips(self.vfs, project, event, exits)?;
+        let played = self.behaviors.event_clips(project, event, exits)?;
         let mut load = |c: &havok::behavior::PlayedClip| {
-            crate::world::animation::project_clip_paths(project, &c.animation, female)
+            crate::world::animation::project_clip_paths(&project.dir, &c.animation, female)
                 .iter()
-                .find_map(|p| self.anims.clip_with_speed(self.vfs, p, skeleton_path, skeleton, c.speed))
+                .find_map(|p| self.anims.project_clip(self.vfs, p, skeleton_path, skeleton, c.speed, project))
         };
         let (last, enter) = played.clips.split_last()?;
         let idle = load(last)?;
@@ -233,6 +233,9 @@ pub struct ActorRuntime {
     pub(crate) wants_idle: bool,
     /// Wants to eat or drink where it stands (a sandbox pause).
     pub(crate) wants_meal: bool,
+    /// Wants an idle from the `ActionIdle` tree (creatures standing about: grazing,
+    /// lying down, shaking off).
+    pub(crate) wants_action_idle: bool,
     /// Anim objects (ANIO editor ids) in hand, and whether they changed this frame.
     pub objects: Vec<String>,
     pub objects_changed: bool,
@@ -290,6 +293,7 @@ impl ActorRuntime {
             next_idle: 0.0,
             wants_idle: false,
             wants_meal: false,
+            wants_action_idle: false,
             objects: Vec::new(),
             objects_changed: false,
             leave: false,
@@ -608,6 +612,14 @@ impl ActorRuntime {
         // VRM_AI_NO_SNAP: walk into furniture even on cell load (to watch enter animations).
         let fresh = std::mem::take(&mut self.fresh) && std::env::var_os("VRM_AI_NO_SNAP").is_none();
         self.give_up_seat(w.furniture);
+        // Creatures standing about now and then play one of their idles first.
+        let creature = self.graph.as_ref().is_some_and(|g| !g.project().humanoid());
+        let wandering = self.goal.is_none_or(|g| matches!(g.behaviour, Behaviour::Sandbox | Behaviour::Hold));
+        if creature && wandering && !fresh && (w.rand)() % 3 == 0 {
+            self.wants_action_idle = true;
+            self.state = State::Idle(uniform(w.rand, 1.0, 3.0));
+            return;
+        }
         let Some(goal) = self.goal else {
             self.state = State::Idle(uniform(w.rand, 5.0, 10.0));
             return;
@@ -687,7 +699,9 @@ impl ActorRuntime {
     /// Now and then a sandboxing actor pausing on its feet has a bite or a drink.
     fn maybe_eat(&mut self, w: &mut World) {
         let sandbox = self.goal.is_some_and(|g| g.behaviour == Behaviour::Sandbox && g.allow.eating);
-        self.wants_meal = sandbox && (w.rand)() % 4 == 0;
+        // Meals are the humanoid graphs' (creatures graze through their own idles).
+        let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
+        self.wants_meal = sandbox && humanoid && (w.rand)() % 4 == 0;
     }
 
     /// Where to go next on a patrol. At a point that is an idle marker (or other
@@ -814,7 +828,8 @@ impl ActorRuntime {
         }
         for (fid, mi, marker) in options.into_iter().take(6) {
             let Some(f) = w.furniture.get(fid) else { continue };
-            let ways = furniture::ways_to_use(f, mi, &marker, self.child, &self.skeleton_path, self.female, &self.skeleton, &mut w.clips, &mut *w.rand);
+            let Some(project) = self.graph.as_ref().map(|g| g.project().clone()) else { return false };
+            let ways = furniture::ways_to_use(f, mi, &marker, self.child, &project, &self.skeleton_path, self.female, &self.skeleton, &mut w.clips, &mut *w.rand);
             // Idle markers say how long they are used for.
             let secs = if f.idle_time > 0.0 && matches!(goal.behaviour, Behaviour::Sandbox | Behaviour::Patrol) { f.idle_time } else { secs };
             // The entry whose starting spot is on the navmesh and nearest.
@@ -1090,13 +1105,7 @@ impl Engine {
             }
             return true;
         }
-        if a.graph.is_none() {
-            return false;
-        }
-        let Some(project) = a.skeleton_path.split("/character assets").next().filter(|b| b.ends_with("actors/character")).map(str::to_owned)
-        else {
-            return false;
-        };
+        let Some(project) = a.graph.as_ref().map(|g| g.project().clone()) else { return false };
         let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
         // Seated, the event is one of the seat's own idles (`idleChairArmsCrossedVar1`).
         if matches!(a.state, State::Use(_)) && a.seat.as_ref().is_some_and(|s| s.kind != Use::Idle) {
@@ -1130,6 +1139,38 @@ impl Engine {
         a.state = State::Enter(enter);
         a.leave = false;
         true
+    }
+
+    /// Idles for creatures that asked for one, from the `ActionIdle` tree's
+    /// branches for their graphs (a horse grazes, a chicken settles down to sit).
+    fn play_action_idles(&mut self) {
+        use crate::condition::{Context, IdleQuery};
+        let wanting: Vec<(FormId, Arc<ProjectRuntime>)> = self
+            .cells
+            .values_mut()
+            .flat_map(|rt| {
+                rt.actors.iter_mut().filter_map(|a| std::mem::take(&mut a.wants_action_idle).then(|| Some((a.ref_id, a.graph.as_ref()?.project().clone()))).flatten())
+            })
+            .collect();
+        if wanting.is_empty() {
+            return;
+        }
+        let Some(root) = self.idles.get_or_insert_with(|| idles::IdleIndex::build(&self.lo)).find(&self.lo, "ActionIdle") else {
+            log::warn!("no ActionIdle in the idle tree");
+            return;
+        };
+        for (r, project) in wanting {
+            // Standing still, out of furniture.
+            let ctx = Context { subject: Some(r), idle: Some(IdleQuery::default()), ..Default::default() };
+            let Some((idle, event)) = self.idles.as_ref().and_then(|ix| ix.select_for(self, root, ctx, &project)) else {
+                log::debug!("{r}: no idle in ActionIdle for {}", project.name);
+                continue;
+            };
+            let secs = 6.0 + (self.rand() % 1400) as f32 / 100.0;
+            if self.play_idle(r, &event, Some(secs)) {
+                log::debug!("{r} idles: {idle} ({event}) for up to {secs:.0} s");
+            }
+        }
     }
 
     /// Standing meals for sandboxing actors that asked for one: the idle tree's
@@ -1180,10 +1221,7 @@ impl Engine {
             if special.is_some_and(|kw| self.has_keyword(seat.furniture, kw)) {
                 continue;
             }
-            let Some(project) = a.skeleton_path.split("/character assets").next().filter(|b| b.ends_with("actors/character")).map(str::to_owned)
-            else {
-                continue;
-            };
+            let Some(project) = a.graph.as_ref().map(|g| g.project().clone()).filter(|p| p.humanoid()) else { continue };
             let query = IdleQuery {
                 anim_type: seat.anim_type,
                 entry: seat.entry.entry_type(),
@@ -1242,8 +1280,8 @@ impl Engine {
         a.seek_furniture(&goal, false, &mut w)
     }
 
-    /// Send an actor to `to` at a gait (testing): it keeps this goal until its
-    /// packages pick another.
+    /// Send an actor to `to` at a gait (testing): the goal is pinned, so its
+    /// packages no longer replace it.
     pub fn travel_to(&mut self, actor: FormId, to: Vec3, gait: package::Gait, sneak: bool) -> bool {
         let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
         let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
@@ -1494,6 +1532,7 @@ impl Engine {
         }
         self.play_furniture_idles();
         self.play_standing_meals();
+        self.play_action_idles();
         for r in gone {
             self.despawn_actor(r);
         }

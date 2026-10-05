@@ -53,6 +53,10 @@ game each piece unlocks.
   sneak through their graphs (`SneakStart` / `SneakStop`, `iState`). `TurnDelta` from
   the AI's turning: lean blends while walking, turn-in-place loops (`turnLeft` /
   `turnRight` / `turnStop`) when standing
+- Creature idles: creatures standing about pick from the `ActionIdle` action tree's branches
+  for their own graphs (IDLE `DNAM`): howling, foraging, lying down, looking about, feeding;
+  held and ended (`IdleStop`) like humanoid idles. The event -> clip resolver and furniture
+  planning run on each actor's own project
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
@@ -74,8 +78,9 @@ game each piece unlocks.
    - Pose modifiers: look-at / head tracking, foot IK, twist, keyframe bones
    - Transition intervals, `ABUT_AT_END_OF_FROM_GENERATOR`, chooser start states,
      state machine `currentStateId` outputs, selectors' own blends
-   - `Direction` (strafing), sprinting; creatures' own idle events (grazing, lying down)
-     and character property bindings; `hkbRotateCharacterModifier`
+   - `Direction` (strafing), sprinting; character property bindings;
+     `hkbRotateCharacterModifier`; the other action trees (`ActionIdle` for humanoids'
+     standing idles, `ActionTurnLeft`...) as the way events are chosen
    - Carry furniture (`CarryFurnitureScript`: wood piles): the carrying states after the
      pick-up and putting the load down
    - Engine variables and events still missing: weapons drawn, combat, dialogue

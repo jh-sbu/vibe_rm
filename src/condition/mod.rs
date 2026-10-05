@@ -280,6 +280,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         255 => b(subj_base.is_some_and(|n| e.offers_services_now(n))),   // GetOffersServicesNow
         // Nobody fights, swims, bleeds out, feeds or takes commands yet.
         289 | 101 | 185 | 580 | 700 | 226 => b(false),
+        // Nor flees, attacks, staggers, recoils or is ridden.
+        329 | 672 | 701 | 702 | 714 => b(false),
         _ => idle_function_value(e, c, ctx),
     }
 }
