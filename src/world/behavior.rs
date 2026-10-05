@@ -8,31 +8,71 @@ use glam::{Mat4, Quat, Vec3};
 use havok::behavior::runtime::{Instance, Raised, Shared};
 use nif::Transform;
 
-use super::animation::{AnimationLibrary, BoundClip, project_clip_paths};
+use super::animation::{AnimationLibrary, BoundClip, Motion, project_clip_paths};
 use super::skeleton::Skeleton;
 
-/// Behaviour projects' shared runtime tables, by project directory.
+/// Behaviour projects' shared runtime tables, by project file.
 #[derive(Default)]
 pub struct GraphLibrary {
-    shared: HashMap<String, Option<Arc<Shared>>>,
+    projects: HashMap<String, Option<Arc<ProjectRuntime>>>,
+    /// By (directory, root graph): projects naming the same graphs share them
+    /// (`DefaultMale.hkx` and `DefaultFemale.hkx`).
+    graphs: HashMap<(String, String), Arc<Shared>>,
+}
+
+/// A loaded behaviour project.
+pub struct ProjectRuntime {
+    pub shared: Arc<Shared>,
+    /// Directory its paths are relative to (`meshes/actors/canine`).
+    pub dir: String,
+    /// Name of its animation data (`dogproject`: `animationdata/dogproject.txt`).
+    pub name: String,
+}
+
+impl ProjectRuntime {
+    /// The humanoid project (`meshes/actors/character`): clips under
+    /// `animations/male` and `animations/female`.
+    pub fn humanoid(&self) -> bool {
+        self.dir.ends_with("actors/character")
+    }
 }
 
 impl GraphLibrary {
-    /// Runtime tables for the character project at `dir` (e.g. `meshes/actors/character`).
-    pub fn shared(&mut self, vfs: &vfs::Vfs, dir: &str) -> Option<Arc<Shared>> {
-        self.shared
-            .entry(dir.to_owned())
-            .or_insert_with(|| {
-                let t = std::time::Instant::now();
-                let p = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| vfs.read(&format!("{dir}/{rel}")));
-                if p.graphs.is_empty() {
-                    return None;
+    /// The behaviour project in `file` (`meshes/actors/canine/dogproject.hkx`).
+    pub fn project(&mut self, vfs: &vfs::Vfs, file: &str) -> Option<Arc<ProjectRuntime>> {
+        let file = file.to_ascii_lowercase().replace('\\', "/");
+        if let Some(p) = self.projects.get(&file) {
+            return p.clone();
+        }
+        let t = std::time::Instant::now();
+        let p = (|| {
+            let (dir, name) = file.rsplit_once('/')?;
+            let read = |rel: &str| vfs.read(&format!("{dir}/{rel}"));
+            let bytes = read(name)?;
+            let character_file = havok::behavior::project_character_file(&bytes).map_err(|e| log::warn!("{file}: {e}")).ok()?;
+            let character =
+                havok::behavior::Character::parse(&read(&character_file.to_ascii_lowercase().replace('\\', "/"))?).map_err(|e| log::warn!("{file}: {e}")).ok()?;
+            let key = (dir.to_owned(), character.behavior.to_ascii_lowercase());
+            let shared = match self.graphs.get(&key) {
+                Some(s) => s.clone(),
+                None => {
+                    let mut p = havok::behavior::Project::load(&character.behavior, read);
+                    if p.graphs.is_empty() {
+                        log::warn!("{file}: no behaviour graphs");
+                        return None;
+                    }
+                    p.character = Some(character);
+                    let s = Shared::new(Arc::new(p));
+                    self.graphs.insert(key, s.clone());
+                    s
                 }
-                let s = Shared::new(Arc::new(p));
-                log::debug!("{dir}: behaviour runtime in {:?}", t.elapsed());
-                Some(s)
-            })
-            .clone()
+            };
+            let name = name.strip_suffix(".hkx").unwrap_or(name).to_owned();
+            Some(Arc::new(ProjectRuntime { shared, dir: dir.to_owned(), name }))
+        })();
+        log::debug!("{file}: behaviour runtime in {:?}", t.elapsed());
+        self.projects.insert(file, p.clone());
+        p
     }
 }
 
@@ -51,10 +91,12 @@ pub struct GraphAnim {
     /// For logs (the actor's reference).
     pub label: String,
     inst: Instance,
-    project: String,
+    project: Arc<ProjectRuntime>,
     skeleton_path: String,
     female: bool,
     clips: HashMap<Arc<str>, Option<Arc<BoundClip>>>,
+    /// Root motion per (graph, clip generator), from the project's animation data.
+    motions: HashMap<(usize, usize), Option<Arc<Motion>>>,
     bind: Vec<Transform>,
     scratch: Vec<havok::QsTransform>,
 }
@@ -65,7 +107,7 @@ struct Source<'a> {
     vfs: &'a vfs::Vfs,
     anims: &'a mut AnimationLibrary,
     skeleton: &'a Skeleton,
-    project: &'a str,
+    project: &'a ProjectRuntime,
     skeleton_path: &'a str,
     female: bool,
 }
@@ -75,9 +117,13 @@ impl Source<'_> {
         if let Some(c) = self.clips.get(animation) {
             return c.clone();
         }
-        let c = project_clip_paths(self.project, animation, self.female)
-            .iter()
-            .find_map(|p| self.anims.clip(self.vfs, p, self.skeleton_path, self.skeleton));
+        let c = project_clip_paths(&self.project.dir, animation, self.female).iter().find_map(|p| {
+            if self.project.humanoid() {
+                self.anims.clip(self.vfs, p, self.skeleton_path, self.skeleton)
+            } else {
+                self.anims.clip_in_project(self.vfs, p, self.skeleton_path, self.skeleton, Some(&self.project.name))
+            }
+        });
         self.clips.insert(animation.into(), c.clone());
         c
     }
@@ -94,14 +140,15 @@ impl havok::behavior::runtime::ClipSource for Source<'_> {
 }
 
 impl GraphAnim {
-    pub fn new(shared: Arc<Shared>, project: &str, skeleton_path: &str, female: bool, skeleton: &Skeleton, seed: u64) -> GraphAnim {
+    pub fn new(project: Arc<ProjectRuntime>, skeleton_path: &str, female: bool, skeleton: &Skeleton, seed: u64) -> GraphAnim {
         GraphAnim {
             label: String::new(),
-            inst: Instance::new(shared, seed),
-            project: project.to_owned(),
+            inst: Instance::new(project.shared.clone(), seed),
+            project,
             skeleton_path: skeleton_path.to_owned(),
             female,
             clips: HashMap::new(),
+            motions: HashMap::new(),
             bind: skeleton.bind_locals(),
             scratch: Vec::new(),
         }
@@ -109,7 +156,44 @@ impl GraphAnim {
 
     fn source<'a>(&'a mut self, vfs: &'a vfs::Vfs, anims: &'a mut AnimationLibrary, skeleton: &'a Skeleton) -> (&'a mut Instance, Source<'a>) {
         let GraphAnim { inst, project, skeleton_path, female, clips, .. } = self;
+        let project: &'a Arc<ProjectRuntime> = project;
         (inst, Source { clips, vfs, anims, skeleton, project, skeleton_path, female: *female })
+    }
+
+    /// Root motion of the clip a sample plays: the project's animation data names
+    /// clips by their generator (`Forward_Walk` plays `WalkForward.hkx`).
+    fn motion(&mut self, graph: usize, generator: usize, anims: &mut AnimationLibrary, vfs: &vfs::Vfs) -> Option<Arc<Motion>> {
+        if let Some(m) = self.motions.get(&(graph, generator)) {
+            return m.clone();
+        }
+        let name = self.project.shared.project.graphs.get(graph).and_then(|(_, g)| g.generators.get(generator)).map(|g| g.name().to_ascii_lowercase());
+        let m = name.and_then(|n| anims.project_motions(vfs, &self.project.name).get(n.strip_suffix(".hkx").unwrap_or(&n)).cloned());
+        self.motions.insert((graph, generator), m.clone());
+        m
+    }
+
+    /// Ground speed of the graph's slowest forward locomotion: a scratch instance of
+    /// the graph is set walking and its clips' root motion measured.
+    pub fn walk_speed(&mut self, vfs: &vfs::Vfs, anims: &mut AnimationLibrary, skeleton: &Skeleton) -> Option<f32> {
+        let mut probe = Instance::new(self.project.shared.clone(), 0);
+        let samples = {
+            let (_, mut src) = self.source(vfs, anims, skeleton);
+            probe.set_variable("Speed", 1.0);
+            probe.handle_event("moveStart", &mut src);
+            probe.handle_event("SprintStop", &mut src);
+            for _ in 0..30 {
+                probe.update(1.0 / 30.0, &mut src);
+            }
+            probe.samples()
+        };
+        let (mut speed, mut weight) = (0.0, 0.0);
+        for s in samples.iter().filter(|s| !s.additive && s.mask.is_none()) {
+            let Some(m) = self.motion(s.graph, s.generator, anims, vfs) else { continue };
+            let Some(d) = self.clips.get(&s.animation).cloned().flatten().map(|c| c.duration()) else { continue };
+            speed += m.end().0.truncate().length() / d * s.weight;
+            weight += s.weight;
+        }
+        (weight > 0.5).then(|| speed / weight).filter(|v| (10.0..400.0).contains(v))
     }
 
     pub fn set_variable(&mut self, name: &str, value: f32) -> bool {
@@ -171,7 +255,8 @@ impl GraphAnim {
                 rot[*b] += v * w;
                 scale[*b] += q.scale.x * w;
             }
-            let (d, yaw) = clip.motion.as_ref().map_or((Vec3::ZERO, 0.0), |m| m.delta(s.prev_time, s.time, s.wrapped, clip.duration()));
+            let m = self.motion(s.graph, s.generator, anims, vfs).or_else(|| clip.motion.clone());
+            let (d, yaw) = m.map_or((Vec3::ZERO, 0.0), |m| m.delta(s.prev_time, s.time, s.wrapped, clip.duration()));
             motion.0 += d * s.weight;
             motion.1 += yaw * s.weight;
             motion_weight += s.weight;

@@ -192,8 +192,10 @@ pub struct ActorRuntime {
     pub ref_id: FormId,
     pub npc: FormId,
     pub skeleton: Arc<Skeleton>,
-    /// The actor's behaviour graph (humanoids); others play `anim`.
+    /// The actor's behaviour graph; actors without one play `anim`.
     pub graph: Option<GraphAnim>,
+    /// Ground speed of the graph's walk (its clips' root motion).
+    pub graph_walk_speed: Option<f32>,
     pub anim: Option<ActorAnim>,
     pub idle: Option<Arc<BoundClip>>,
     pub walk: Option<Arc<BoundClip>>,
@@ -247,6 +249,7 @@ impl ActorRuntime {
             npc,
             skeleton,
             graph: None,
+            graph_walk_speed: None,
             anim: None,
             idle: None,
             walk: None,
@@ -850,6 +853,9 @@ impl ActorRuntime {
     /// Pick the idle or walk clip to match the current speed.
     /// Ground speed of the walk clip (its root motion), so feet don't slide.
     pub fn walk_speed(&self) -> f32 {
+        if let Some(v) = self.graph_walk_speed {
+            return v;
+        }
         self.walk
             .as_ref()
             .and_then(|w| w.motion.as_ref().map(|m| m.end().0.truncate().length() / w.duration()))
@@ -888,6 +894,10 @@ impl ActorRuntime {
         g.set_variable("isInFurniture", if furniture { 1.0 } else { 0.0 });
         if walking != self.moving {
             g.send_event(if walking { "moveStart" } else { "moveStop" });
+            if walking {
+                // Walking, not sprinting (horses' locomotion starts out in its sprint).
+                g.send_event("SprintStop");
+            }
             self.moving = walking;
         }
         let frame = g.update(dt, clips.vfs, clips.anims, &self.skeleton);

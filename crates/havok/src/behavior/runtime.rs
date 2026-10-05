@@ -1285,7 +1285,7 @@ mod tests {
     }
 
     fn instance(g: BehaviorGraph) -> Instance {
-        let shared = Shared::new(Arc::new(Project { graphs: vec![("g".into(), g)] }));
+        let shared = Shared::new(Arc::new(Project { graphs: vec![("g".into(), g)], character: None }));
         let mut i = Instance::new(shared, 1);
         i.update(0.0, &mut durations);
         i
