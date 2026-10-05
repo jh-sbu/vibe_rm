@@ -1,6 +1,7 @@
 //! Actor AI: package selection, sandboxing / travelling over the navmesh.
 
 pub mod furniture;
+pub mod idles;
 pub mod nav;
 pub mod package;
 pub mod schedule;
@@ -63,23 +64,50 @@ enum State {
     Walk { path: Vec<Vec3>, next: usize, budget: f32, to_seat: bool },
     /// At the start of the seat's enter animation, turning to face the right way.
     Approach(f32),
-    /// Playing the seat's enter animation from `from` / `heading`.
-    Enter { from: Vec3, heading: f32 },
+    /// Playing enter clip `step` of the seat, which started at `from` / `heading`.
+    Enter { step: usize, from: Vec3, heading: f32 },
     /// In the furniture for this many more seconds.
     Use(f32),
-    /// Playing the exit animation from the seat.
-    Exit,
+    /// Playing exit clip `step`, which started at `from` / `heading`.
+    Exit { step: usize, from: Vec3, heading: f32 },
 }
 
-/// Loads a clip by path for an actor (given its skeleton path and skeleton).
-pub type ClipLoader<'a> = dyn FnMut(&str, &str, &Skeleton) -> Option<Arc<BoundClip>> + 'a;
+/// Clip and behaviour lookups for the actor being stepped.
+pub struct Clips<'a> {
+    pub vfs: &'a vfs::Vfs,
+    pub anims: &'a mut crate::world::animation::AnimationLibrary,
+    pub behaviors: &'a mut crate::world::animation::BehaviorLibrary,
+}
+
+impl Clips<'_> {
+    pub fn clip(&mut self, path: &str, skeleton_path: &str, skeleton: &Skeleton) -> Option<Arc<BoundClip>> {
+        self.anims.clip(self.vfs, path, skeleton_path, skeleton)
+    }
+
+    /// Clips to enter, loop in and leave the state that behaviour `event` leads to,
+    /// for an actor of the character project at `project`.
+    pub fn event(&mut self, event: &str, project: &str, skeleton_path: &str, female: bool, skeleton: &Skeleton) -> Option<furniture::UseClips> {
+        use havok::behavior::ClipMode;
+        let played = self.behaviors.event_clips(self.vfs, project, event)?;
+        let mut load = |c: &havok::behavior::PlayedClip| {
+            crate::world::animation::project_clip_paths(project, &c.animation, female)
+                .iter()
+                .find_map(|p| self.anims.clip(self.vfs, p, skeleton_path, skeleton))
+        };
+        let (last, enter) = played.clips.split_last()?;
+        let idle = load(last)?;
+        let enter = enter.iter().map(&mut load).collect::<Option<Vec<_>>>()?;
+        // The exit ends back in the default idle; only its one-shot clips matter.
+        let exit = played.exit.iter().filter(|c| c.mode == ClipMode::SinglePlay).filter_map(&mut load).collect();
+        Some(furniture::UseClips { enter, idle, exit, idle_loops: last.mode != ClipMode::SinglePlay })
+    }
+}
 
 /// What the AI needs from the world while stepping an actor.
 pub struct World<'a> {
     pub nav: &'a nav::NavWorld,
     pub furniture: &'a mut FurnitureWorld,
-    /// Load a clip by path for the actor being stepped.
-    pub clip: &'a mut ClipLoader<'a>,
+    pub clips: Clips<'a>,
     /// Whether an NPC may use a kind of furniture with this owner.
     pub may_use: &'a dyn Fn(FormId, Use, Option<FormId>) -> bool,
     /// Furniture that is a specific actor's package target (kept free for them).
@@ -168,7 +196,7 @@ impl ActorRuntime {
 
     /// Getting into, using or getting out of furniture.
     pub fn in_furniture(&self) -> bool {
-        matches!(self.state, State::Enter { .. } | State::Use(_) | State::Exit)
+        matches!(self.state, State::Enter { .. } | State::Use(_) | State::Exit { .. })
     }
 
     /// Stop and stand (e.g. when spoken to). Actors in furniture stay put.
@@ -292,23 +320,28 @@ impl ActorRuntime {
                 if remaining.abs() < 0.03 && to.length() < 2.0 || t > 3.0 {
                     self.pos = start;
                     self.heading = h0;
-                    match (&mut self.anim, &seat.clips.enter) {
-                        (Some(anim), Some(enter)) => {
-                            anim.play_once(enter.clone(), 0.2);
-                            log::debug!("{} entering {} ({:.1}s clip)", self.ref_id, seat.furniture, enter.duration());
-                            self.state = State::Enter { from: start, heading: h0 };
-                        }
-                        _ => self.settle(seat.duration, 0.4),
+                    if !seat.clips.enter.is_empty() {
+                        log::debug!("{} entering {} ({} clips)", self.ref_id, seat.furniture, seat.clips.enter.len());
                     }
+                    self.state = State::Enter { step: 0, from: start, heading: h0 };
+                    self.next_clip(true, 0.2);
                 }
                 true
             }
-            State::Enter { from, heading } => {
+            State::Enter { from, heading, .. } | State::Exit { from, heading, .. } => {
                 let (from, heading) = (*from, *heading);
                 self.follow_motion(from, heading);
                 if self.anim.as_ref().is_none_or(|a| a.finished()) {
-                    let secs = self.seat.as_ref().map_or(0.0, |s| s.duration);
-                    self.settle(secs, 0.2);
+                    let entering = matches!(self.state, State::Enter { .. });
+                    if let State::Enter { step, from, heading } | State::Exit { step, from, heading } = &mut self.state {
+                        // The next clip starts where this one left the actor.
+                        *step += 1;
+                        *from = self.pos;
+                        *heading = self.heading;
+                    }
+                    if !self.next_clip(entering, 0.15) && !entering {
+                        self.stand_up(w);
+                    }
                 }
                 true
             }
@@ -318,26 +351,39 @@ impl ActorRuntime {
                     return false;
                 }
                 self.leave = false;
-                let exit = self.seat.as_ref().and_then(|s| s.clips.exit.clone());
-                match (&mut self.anim, exit) {
-                    (Some(anim), Some(exit)) => {
-                        log::debug!("{} getting up ({:.1}s clip)", self.ref_id, exit.duration());
-                        anim.play_once(exit, 0.2);
-                        self.state = State::Exit;
-                    }
-                    _ => self.stand_up(w),
+                let Some(seat) = &self.seat else {
+                    self.stand_up(w);
+                    return false;
+                };
+                if !seat.clips.exit.is_empty() {
+                    log::debug!("{} getting up ({} clips)", self.ref_id, seat.clips.exit.len());
+                }
+                self.state = State::Exit { step: 0, from: seat.pos, heading: seat.heading };
+                if !self.next_clip(false, 0.2) {
+                    self.stand_up(w);
                 }
                 false
             }
-            State::Exit => {
-                if let Some(seat) = &self.seat {
-                    let (pos, heading) = (seat.pos, seat.heading);
-                    self.follow_motion(pos, heading);
-                }
-                if self.anim.as_ref().is_none_or(|a| a.finished()) {
-                    self.stand_up(w);
-                }
+        }
+    }
+
+    /// Start the current enter / exit clip. Returns false when the sequence is done
+    /// (entering then settles into the seat).
+    fn next_clip(&mut self, entering: bool, fade: f32) -> bool {
+        let (State::Enter { step, .. } | State::Exit { step, .. }) = self.state else { return false };
+        let Some(seat) = &self.seat else { return false };
+        let list = if entering { &seat.clips.enter } else { &seat.clips.exit };
+        match (list.get(step).cloned(), &mut self.anim) {
+            (Some(clip), Some(anim)) => {
+                anim.play_once(clip, fade);
                 true
+            }
+            _ => {
+                if entering {
+                    let secs = seat.duration;
+                    self.settle(secs, if step == 0 { 0.4 } else { fade });
+                }
+                false
             }
         }
     }
@@ -414,16 +460,32 @@ impl ActorRuntime {
         if !self.skeleton_path.contains("actors/character/") {
             return false;
         }
-        let (kinds, centre, radius, secs): (&[Use], Vec3, f32, f32) = match goal.behaviour {
-            Behaviour::Sleep => (&[Use::Sleep], goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY),
-            Behaviour::Sit => (&[Use::Sit], goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY),
-            Behaviour::Sandbox => {
-                let kinds: &[Use] = match (goal.allow.sitting, goal.allow.idle_markers) {
-                    (true, true) => &[Use::Sit, Use::Lean],
-                    (true, false) => &[Use::Sit],
-                    (false, true) => &[Use::Lean],
-                    (false, false) => return false,
+        let (kinds, centre, radius, secs): (Vec<Use>, Vec3, f32, f32) = match goal.behaviour {
+            Behaviour::Sleep => (vec![Use::Sleep], goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY),
+            // A Sit package's chair may be special furniture (a throne, a writing desk).
+            Behaviour::Sit => {
+                // A specific target can be anything usable; otherwise a chair or special seat.
+                let kinds = if goal.furniture.is_some() {
+                    vec![Use::Sit, Use::Special, Use::Sleep, Use::Lean, Use::Idle]
+                } else {
+                    vec![Use::Sit, Use::Special]
                 };
+                (kinds, goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY)
+            }
+            Behaviour::Sandbox => {
+                let mut kinds = Vec::new();
+                if goal.allow.sitting {
+                    kinds.push(Use::Sit);
+                }
+                if goal.allow.idle_markers {
+                    kinds.extend([Use::Lean, Use::Idle]);
+                }
+                if goal.allow.special_furniture {
+                    kinds.push(Use::Special);
+                }
+                if kinds.is_empty() {
+                    return false;
+                }
                 // Restless actors wander more and sit for less long.
                 let chance = if goal.allow.wandering { 0.75 - goal.energy / 200.0 } else { 0.9 };
                 if uniform(w.rand, 0.0, 1.0) > chance {
@@ -436,7 +498,7 @@ impl ActorRuntime {
         };
         let npc = self.npc;
         let mut options = Vec::new();
-        for &kind in kinds {
+        for &kind in &kinds {
             let me = self.ref_id;
             options.extend(w.furniture.free_near(kind, centre, radius, |f, kind| {
                 goal.furniture.is_none_or(|r| r == f.ref_id)
@@ -464,14 +526,15 @@ impl ActorRuntime {
             }
         }
         for (fid, mi, marker) in options.into_iter().take(6) {
-            let bedroll = w.furniture.get(fid).is_some_and(|f| f.bedroll);
-            let (path, skel) = (self.skeleton_path.clone(), self.skeleton.clone());
-            let ways = furniture::ways_to_use(&marker, bedroll, &path, self.female, |p| (w.clip)(p, &path, &skel));
+            let Some(f) = w.furniture.get(fid) else { continue };
+            let ways = furniture::ways_to_use(f, &marker, &self.skeleton_path, self.female, &self.skeleton, &mut w.clips, &mut *w.rand);
+            // Idle markers say how long they are used for.
+            let secs = if f.idle_time > 0.0 && goal.behaviour == Behaviour::Sandbox { f.idle_time } else { secs };
             // The entry whose starting spot is on the navmesh and nearest.
             let best = ways
                 .into_iter()
                 .map(|(entry, clips)| {
-                    let (start, _) = furniture::enter_start(&marker, clips.enter.as_deref());
+                    let (start, _) = furniture::enter_start(&marker, &clips.enter);
                     (entry, clips, start)
                 })
                 .filter(|(_, _, start)| w.nav.height_at(*start).is_some_and(|z| (z - start.z).abs() < 48.0))
@@ -530,6 +593,73 @@ impl ActorRuntime {
 }
 
 impl Engine {
+    /// Play behaviour `event` on a loaded humanoid actor (Papyrus `PlayIdle` /
+    /// `Debug.SendAnimationEvent`). Idle-stopping events return it to its AI.
+    pub fn play_animation_event(&mut self, actor: FormId, event: &str) -> bool {
+        let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
+        let Some(rt) = self.cells.get_mut(&key) else { return false };
+        let Some(a) = rt.actors.iter_mut().find(|a| a.ref_id == actor) else { return false };
+        let lower = event.to_ascii_lowercase();
+        if matches!(lower.as_str(), "idlestop" | "idlestopinstant" | "idleforcedefaultstate" | "idlechairexitstart" | "idlefurnitureexit") {
+            if a.in_furniture() {
+                a.leave = true;
+            }
+            return true;
+        }
+        let Some(project) = a.skeleton_path.split("/character assets").next().filter(|b| b.ends_with("actors/character")).map(str::to_owned)
+        else {
+            return false;
+        };
+        let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
+        let Some(c) = clips.event(event, &project, &a.skeleton_path, a.female, &a.skeleton) else { return false };
+        self.furniture.release(a.ref_id);
+        // Where the enter clips leave the actor; it stays there.
+        let mut pos = a.pos;
+        let mut heading = a.heading;
+        for m in c.enter.iter().filter_map(|c| c.motion.as_ref()) {
+            let (t, yaw) = m.end();
+            pos += furniture::to_world(t, heading);
+            heading -= yaw;
+        }
+        // A one-shot gesture (no loop at the end) is played through once.
+        let duration = if c.idle_loops { f32::INFINITY } else { c.idle.duration() };
+        log::debug!("{actor} plays {event} ({} enter clips)", c.enter.len());
+        a.seat = Some(Seat { furniture: FormId::NULL, pos, heading, clips: Arc::new(c), duration });
+        a.state = State::Enter { step: 0, from: a.pos, heading: a.heading };
+        a.leave = false;
+        a.next_clip(true, 0.25);
+        true
+    }
+
+    /// Send a loaded actor to use specific furniture (Papyrus `Activate` by an NPC,
+    /// the `use` console command). It stays until its package changes.
+    pub fn use_furniture(&mut self, actor: FormId, furniture: FormId) -> bool {
+        let Some(f) = self.furniture.get(furniture) else { return false };
+        let centre = f.markers.first().map_or(Vec3::ZERO, |m| m.pos);
+        let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
+        let mut seed = self.rand() | 1;
+        let mut rand = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let may_use = |_: FormId, _: Use, _: Option<FormId>| true;
+        let claimed = Default::default();
+        let mut w = World {
+            nav: &self.nav,
+            furniture: &mut self.furniture,
+            clips: Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors },
+            may_use: &may_use,
+            claimed: &claimed,
+            rand: &mut rand,
+        };
+        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
+        a.give_up_seat(w.furniture);
+        let goal = Goal { behaviour: Behaviour::Sit, centre, radius: 64.0, furniture: Some(furniture), ..Goal::travel(centre) };
+        a.seek_furniture(&goal, false, &mut w)
+    }
+
     /// Feet position and heading of a loaded actor.
     pub fn actor_pose(&self, r: FormId) -> Option<(Vec3, f32)> {
         let key = self.actor_cells.get(&r)?;
@@ -590,9 +720,14 @@ impl Engine {
                 if let Some(p) = pick.map(|pi| &a.packages[pi]) {
                     log::debug!("{} -> package {} ({}, {:?})", a.ref_id, p.editor_id, p.template, goal);
                 }
+                // The first package an actor gets doesn't interrupt what it is doing
+                // (e.g. an idle a script started on load).
+                let first = a.current.is_none();
                 a.current = pick;
                 a.goal = goal;
-                a.interrupt(&mut self.furniture);
+                if !first {
+                    a.interrupt(&mut self.furniture);
+                }
             } else {
                 a.goal = goal;
             }
@@ -613,8 +748,8 @@ impl Engine {
         };
         let nav = std::mem::take(&mut self.nav);
         let mut furniture = std::mem::take(&mut self.furniture);
-        let (lo, vfs, anims) = (&self.lo, &self.vfs, &mut self.anims);
-        let mut clip = |p: &str, skel_path: &str, skel: &Skeleton| anims.clip(vfs, p, skel_path, skel);
+        let (lo, vfs) = (&self.lo, &self.vfs);
+        let clips = Clips { vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
         let may_use = |npc: FormId, kind: Use, owner: Option<FormId>| furniture::may_use(lo, npc, kind, owner);
         let claimed = self
             .cells
@@ -625,7 +760,7 @@ impl Engine {
         let mut world = World {
             nav: &nav,
             furniture: &mut furniture,
-            clip: &mut clip,
+            clips,
             may_use: &may_use,
             claimed: &claimed,
             rand: &mut rand,
@@ -651,7 +786,7 @@ impl Engine {
                 if let Some(pose) = a.animate(dt) {
                     inst.pose = pose;
                 }
-                if a.is_walking() || matches!(a.state, State::Approach(_) | State::Enter { .. } | State::Exit) || talking == Some(a.ref_id) {
+                if a.is_walking() || matches!(a.state, State::Approach(_) | State::Enter { .. } | State::Exit { .. }) || talking == Some(a.ref_id) {
                     moved.push((a.ref_id, a.pos, a.capsule));
                 }
                 // Reached the door (or gave up out of sight): leave the cell.

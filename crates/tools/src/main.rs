@@ -211,6 +211,123 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("hkb-events") => {
+            // hkb-events <data dir> <project dir, e.g. meshes/actors/character> <event>...
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let dir = args[2].trim_end_matches('/');
+            let project = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}")));
+            for (rel, g) in &project.graphs {
+                let clips = g.generators.iter().filter(|g| matches!(g, havok::behavior::Generator::Clip { .. })).count();
+                println!("{rel}: {} generators, {clips} clips, {} events", g.generators.len(), g.events.len());
+            }
+            for e in &args[3..] {
+                println!("{e}:");
+                for (gpath, g) in &project.graphs {
+                    let Some(id) = g.event_id(e) else { continue };
+                    for (gi, node) in g.generators.iter().enumerate() {
+                        let havok::behavior::Generator::StateMachine { name, states, wildcards, .. } = node else { continue };
+                        for (from, t) in wildcards.iter().map(|t| ("*", t)).chain(states.iter().flat_map(|s| s.transitions.iter().map(move |t| (s.name.as_str(), t)))) {
+                            if t.event == id {
+                                let to = states.iter().find(|s| s.id == t.to_state).map(|s| s.name.as_str()).unwrap_or("?");
+                                println!("  {gpath} sm#{gi} {name}: {from} -> {to} nested {:?} flags {:#x}", t.to_nested, t.flags);
+                            }
+                        }
+                    }
+                }
+                for pb in project.play_event(e) {
+                    println!("  {:?}", pb.clips.iter().map(|c| format!("{} ({:?})", c.animation, c.mode)).collect::<Vec<_>>());
+                    if let Some(exit) = project.then_event(&pb, "IdleChairExitStart").or_else(|| project.then_event(&pb, "IdleStop")) {
+                        println!("    exit {:?}", exit.clips.iter().map(|c| c.animation.as_str()).collect::<Vec<_>>());
+                    }
+                }
+            }
+        }
+        Some("idlm-check") => {
+            // idlm-check <data dir>: resolve the humanoid idles of every idle marker.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let v = vfs::Vfs::new(data, &names);
+            let project = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("meshes/actors/character/{rel}")));
+            let (mut ok, mut bad) = (0, 0);
+            for &m in lo.ids_of_type(b"IDLM") {
+                let Some(rec) = lo.get(m) else { continue };
+                let Some(list) = rec.get(b"IDLA") else { continue };
+                for c in list.chunks_exact(4) {
+                    let idle = rec.fid(esp::FormId(u32::from_le_bytes(c.try_into().unwrap())));
+                    let Some(i) = lo.get(idle) else { continue };
+                    let dnam = i.get(b"DNAM").map(esp::decode_zstring).unwrap_or_default().to_ascii_lowercase();
+                    if !dnam.is_empty() && !dnam.starts_with("actors\\character\\") {
+                        continue;
+                    }
+                    let event = i.get(b"ENAM").map(esp::decode_zstring).unwrap_or_default();
+                    let seqs = project.clips_for_event(&event);
+                    if seqs.is_empty() {
+                        bad += 1;
+                        println!("unresolved {} {} event {event:?}", rec.editor_id().unwrap_or_default(), i.editor_id().unwrap_or_default());
+                    } else {
+                        ok += 1;
+                    }
+                }
+            }
+            println!("{ok} resolved, {bad} unresolved");
+        }
+        Some("esp-list") => {
+            // esp-list <data dir> <TAG> [edid substring]: records of a type with their text subrecords.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let tag: [u8; 4] = args[2].as_bytes().try_into().context("TAG must be 4 bytes")?;
+            let filter = args.get(3).map(|f| f.to_ascii_lowercase());
+            for &id in lo.ids_of_type(&tag) {
+                let Some(rec) = lo.get(id) else { continue };
+                let edid = rec.editor_id().unwrap_or_default();
+                if filter.as_ref().is_some_and(|f| !edid.to_ascii_lowercase().contains(f.as_str())) {
+                    continue;
+                }
+                let text: Vec<String> = rec
+                    .subrecords()
+                    .filter(|s| s.tag.0 != *b"EDID" && s.data.len() > 1 && s.data[..s.data.len() - 1].iter().all(|&b| (32..127).contains(&b)) && s.data.last() == Some(&0))
+                    .map(|s| format!("{}={}", s.tag, String::from_utf8_lossy(&s.data[..s.data.len() - 1])))
+                    .collect();
+                println!("{id} {edid} {}", text.join(" "));
+            }
+        }
+        Some("hkx-probe") => {
+            // hkx-probe <data dir> <vfs path> <class> [max objects]: pointer slots of each object.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let bytes = v.read(&args[2]).context("not found")?;
+            let p = havok::Packfile::parse(&bytes)?;
+            let max: usize = args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(3);
+            let mut offs: Vec<u32> = p.objects.iter().map(|o| o.offset).collect();
+            offs.sort();
+            for o in p.objects_of(&args[3]).take(max) {
+                let end = offs.iter().copied().find(|&x| x > o).unwrap_or(p.data.len() as u32);
+                println!("{} @{o:#x} size {:#x}", args[3], end - o);
+                for slot in (o..end).step_by(4) {
+                    let rel = slot - o;
+                    if let Some(t) = p.ptr(slot) {
+                        let what = match p.object_class(t) {
+                            Some(c) => format!("-> {c} @{t:#x}"),
+                            None => {
+                                let s: String = p.data[t as usize..].iter().take(60).take_while(|&&b| b != 0).map(|&b| b as char).collect();
+                                format!("-> {t:#x} {s:?}")
+                            }
+                        };
+                        println!("  +{rel:#04x} ptr {what}  (next i32 {})", p.i32(slot + 8));
+                    } else if rel % 4 == 0 {
+                        let x = p.u32(slot);
+                        if x != 0 {
+                            println!("  +{rel:#04x} {x:#010x} ({} / {:.3})", x as i32, f32::from_bits(x));
+                        }
+                    }
+                }
+            }
+        }
         Some("pex-dump") => {
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
@@ -249,18 +366,6 @@ fn main() -> Result<()> {
             println!("{ok} ok, {bad} failed");
             for (i, c) in ops.iter().enumerate() {
                 println!("{:>20} {c}", papyrus::pex::OP_NAMES[i]);
-            }
-        }
-        Some("esp-list") => {
-            // esp-list <data dir> <TYPE>: editor ids of all records of a type
-            let data = std::path::Path::new(&args[1]);
-            let names = esp::LoadOrder::default_plugin_list(data, None);
-            let lo = esp::LoadOrder::load(data, &names)?;
-            let tag: [u8; 4] = args[2].as_bytes().try_into().context("4-char type")?;
-            for &id in lo.ids_of_type(&tag) {
-                if let Some(r) = lo.get(id) {
-                    println!("{id} {}", r.editor_id().unwrap_or_default());
-                }
             }
         }
         Some("nif-points") => {

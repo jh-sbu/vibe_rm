@@ -186,6 +186,22 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             Some(c) => v(e.object_value(c)),
             None => none(),
         },
+        ("actor", "playidle") | ("actor", "playidlewithtarget") => {
+            let event = form_arg(args, 0).and_then(|i| e.idle_event(i));
+            v(Value::Bool(match (me, event) {
+                (Some(a), Some(ev)) => e.play_animation_event(a, &ev),
+                _ => false,
+            }))
+        }
+        ("debug", "sendanimationevent") => {
+            if let (Some(r), Some(ev)) = (form_arg(args, 0), args.get(1).and_then(|a| match a {
+                Value::String(s) => Some(s.to_string()),
+                _ => None,
+            })) {
+                e.play_animation_event(r, &ev);
+            }
+            none()
+        }
         ("objectreference", "playanimation")
         | ("objectreference", "playanimationandwait")
         | ("objectreference", "playgamebryoanimation")

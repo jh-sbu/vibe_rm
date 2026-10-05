@@ -19,7 +19,32 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "getpos                print position".into(),
             "tdt                   toggle debug text".into(),
             "tai                   toggle actor AI".into(),
+            "sae <ref> <event>     send a behaviour event to an actor".into(),
+            "pi <ref> <idle>       play an IDLE record on an actor".into(),
+            "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
         ],
+        "use" => {
+            let [r, f] = args[..] else { return vec!["usage: use <actor ref> <furniture ref>".into()] };
+            match (engine.resolve_form(r), engine.resolve_form(f)) {
+                (Some(a), Some(f)) if engine.use_furniture(a, f) => vec![format!("{r} -> {f}")],
+                (Some(_), Some(_)) => vec![format!("{r} can't use {f}")],
+                _ => vec!["unknown reference".into()],
+            }
+        }
+        "sae" | "sendanimevent" | "pi" | "playidle" => {
+            let [r, what] = args[..] else { return vec![format!("usage: {lower} <ref> <{}>", if lower.starts_with('s') { "event" } else { "idle" })] };
+            let Some(actor) = engine.resolve_form(r) else { return vec![format!("unknown reference '{r}'")] };
+            let event = if lower.starts_with('s') {
+                Some(what.to_owned())
+            } else {
+                engine.resolve_form(what).and_then(|i| engine.idle_event(i))
+            };
+            match event {
+                Some(ev) if engine.play_animation_event(actor, &ev) => vec![format!("{r}: {ev}")],
+                Some(ev) => vec![format!("{r}: nothing plays {ev}")],
+                None => vec![format!("unknown idle '{what}'")],
+            }
+        }
         "coc" | "centeroncell" => {
             let Some(name) = args.first() else { return vec!["usage: coc <cell editor id>".into()] };
             match engine.resolve_form(name) {

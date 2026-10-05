@@ -110,6 +110,11 @@ pub fn run(opts: Options) -> Result<()> {
             let id = engine.resolve_form(t).context("unknown reference")?;
             engine.start_conversation(id);
         }
+        for line in &opts.console {
+            for out in crate::console::execute(&mut engine, line) {
+                log::info!("console: {out}");
+            }
+        }
         if let Some(frames) = opts.wait {
             // Advance the world without moving the camera.
             let (pos, yaw, pitch) = (engine.camera.position, engine.camera.yaw, engine.camera.pitch);
@@ -121,8 +126,9 @@ pub fn run(opts: Options) -> Result<()> {
                 engine.camera.yaw = yaw;
                 engine.camera.pitch = pitch;
                 if let Some((feet, heading)) = watch.and_then(|w| engine.actor_pose(w)) {
-                    // Stand in front of the actor (at --pos height above it) and look at its chest.
-                    let eye = feet + glam::Vec3::new(heading.sin(), heading.cos(), 0.0) * 170.0 + glam::Vec3::Z * pos.z.max(60.0);
+                    // Stand in front of the actor at head height and look at its chest.
+                    let a = heading + opts.watch_angle;
+                    let eye = feet + glam::Vec3::new(a.sin(), a.cos(), 0.0) * 170.0 + glam::Vec3::Z * 110.0;
                     let d = feet + glam::Vec3::Z * 80.0 - eye;
                     engine.camera.position = eye;
                     engine.camera.yaw = d.x.atan2(d.y);

@@ -25,7 +25,7 @@ Early but already visual:
 | Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day | done |
 | Water, collision/physics, player controller, doors, cell streaming | done |
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
-| AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture use (chairs, benches, beds, wall leaning) with root motion | in progress |
+| AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture, crafting stations and idle markers with root motion; behaviour-graph event lookup (`PlayIdle`, `SendAnimationEvent`) | in progress |
 | Papyrus VM, conditions, quests, dialogue, HUD, console, audio, music | in progress |
 | Combat, magic, inventory, saves | planned |
 
@@ -46,8 +46,11 @@ cargo build --release
     --watch 0001A675 --screenshot shots/mare.png
 ```
 
-Testing aids: `VRM_SEED=<n>` fixes the engine's random seed, and `VRM_AI_NO_SNAP=1`
-makes actors walk into furniture on cell load instead of starting out in it.
+Testing aids: `--console "<command>"` runs console commands after loading (e.g.
+`use <actor> <furniture>`, `sae <actor> <event>`, `pi <actor> <idle>`), `--watch-angle`
+orbits the `--watch` camera, `VRM_SEED=<n>` fixes the engine's random seed, and
+`VRM_AI_NO_SNAP=1` makes actors walk into furniture on cell load instead of starting
+out in it.
 
 The data directory is found from `--data`, `$SKYRIM_DATA`, or the default Steam
 locations on Linux.
