@@ -361,6 +361,12 @@ impl AnimationLibrary {
         s
     }
 
+    /// NIF bone for each bone of the Havok skeleton next to `nif_skeleton_path`.
+    pub fn havok_bone_map(&mut self, vfs: &vfs::Vfs, nif_skeleton_path: &str, skeleton: &Skeleton) -> Vec<Option<usize>> {
+        let hk = nif_skeleton_path.strip_suffix(".nif").and_then(|s| self.havok_skeleton(vfs, &format!("{s}.hkx")));
+        hk.map(|hk| hk.bones.iter().map(|b| skeleton.find(&b.name)).collect()).unwrap_or_default()
+    }
+
     /// Root motion of a behaviour project's clips (`animationdata/boundanims/anims_<project>.txt`),
     /// by clip generator name (lowercase, without extension).
     pub fn project_motions(&mut self, vfs: &vfs::Vfs, project: &str) -> Arc<HashMap<String, Arc<Motion>>> {

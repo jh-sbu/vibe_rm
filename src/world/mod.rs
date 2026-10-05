@@ -4,6 +4,7 @@ pub mod animation;
 pub mod behavior;
 pub mod cell;
 pub mod loader;
+pub mod lookat;
 pub mod movement;
 pub mod lod;
 pub mod records;

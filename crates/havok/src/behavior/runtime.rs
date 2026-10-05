@@ -1237,6 +1237,89 @@ impl Instance {
     }
 
     /// Names of the active states, outermost first (for debugging).
+    /// Look-at modifiers running now (enabled), with their bound members resolved:
+    /// target on / off, per-bone `enabled` and gains.
+    pub fn look_ats(&self) -> Vec<LookAt> {
+        fn mods(shared: &Shared, m: &ModState, values: &[f32], out: &mut Vec<(usize, ModId)>) {
+            let enabled = shared.graph(m.gi).modifier_bindings[m.m]
+                .iter()
+                .find(|b| b.member == "enable")
+                .is_none_or(|b| shared.maps[m.gi].vars.get(b.variable).and_then(|&v| values.get(v)).is_some_and(|v| *v != 0.0));
+            if !enabled {
+                return;
+            }
+            match &m.kind {
+                ModKind::List(l) => l.iter().for_each(|c| mods(shared, c, values, out)),
+                ModKind::Driven { active: true, child: Some(c) } => mods(shared, c, values, out),
+                _ => out.push((m.gi, m.m)),
+            }
+        }
+        fn walk(shared: &Shared, n: &Node, values: &[f32], out: &mut Vec<(usize, ModId)>) {
+            match &n.kind {
+                Kind::Machine(m) => {
+                    if let Some(c) = &m.child {
+                        walk(shared, c, values, out);
+                    }
+                }
+                Kind::Blend { children, .. } => children.iter().flatten().for_each(|c| walk(shared, c, values, out)),
+                Kind::Select { child: Some(c), .. } => walk(shared, c, values, out),
+                Kind::Wrap { child, modifier } => {
+                    if let Some(m) = modifier {
+                        mods(shared, m, values, out);
+                    }
+                    if let Some(c) = child {
+                        walk(shared, c, values, out);
+                    }
+                }
+                Kind::Switch { default, children } => {
+                    if let Some(d) = default {
+                        walk(shared, d, values, out);
+                    }
+                    children.iter().for_each(|c| walk(shared, c, values, out));
+                }
+                _ => {}
+            }
+        }
+        let mut active = Vec::new();
+        if let Some(r) = &self.root {
+            walk(&self.shared, r, &self.values, &mut active);
+        }
+        active
+            .into_iter()
+            .filter_map(|(gi, m)| {
+                let graph = self.shared.graph(gi);
+                let Modifier::LookAt(l) = &graph.modifiers[m] else { return None };
+                let mut l = l.clone();
+                for b in &graph.modifier_bindings[m] {
+                    let Some(v) = self.shared.maps[gi].vars.get(b.variable).and_then(|&v| self.values.get(v)).copied() else { continue };
+                    let member = b.member.as_str();
+                    match member {
+                        "lookAtTarget" => l.look_at_target = v != 0.0,
+                        "onGain" => l.on_gain = v,
+                        "offGain" => l.off_gain = v,
+                        "limitAngleDegrees" => l.limit_degrees = v,
+                        _ => {
+                            // bones:N/field, eyeBones:N/field
+                            let Some((list, rest)) = member.split_once(':') else { continue };
+                            let Some((i, field)) = rest.split_once('/') else { continue };
+                            let Ok(i) = i.parse::<usize>() else { continue };
+                            let bones = if list == "eyeBones" { &mut l.eye_bones } else { &mut l.bones };
+                            let Some(bone) = bones.get_mut(i) else { continue };
+                            match field {
+                                "enabled" => bone.enabled = v != 0.0,
+                                "onGain" => bone.on_gain = v,
+                                "offGain" => bone.off_gain = v,
+                                "limitAngleDegrees" => bone.limit_degrees = v,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                Some(l)
+            })
+            .collect()
+    }
+
     pub fn active_states(&self) -> Vec<String> {
         fn walk(shared: &Shared, n: &Node, out: &mut Vec<String>) {
             match &n.kind {

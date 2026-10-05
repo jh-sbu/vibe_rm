@@ -43,6 +43,8 @@ pub struct Options {
     pub watch: Option<String>,
     /// Degrees to orbit the --watch camera around the actor (0: in front).
     pub watch_angle: f32,
+    /// Keep the player's eye at the camera while waiting (NPCs look at it).
+    pub player_at_camera: bool,
     /// Console commands to run once the world is set up.
     pub console: Vec<String>,
 }
@@ -89,6 +91,7 @@ fn parse_args() -> Result<Options> {
             "--watch" => o.watch = Some(val()?),
             "--console" => o.console.push(val()?),
             "--watch-angle" => o.watch_angle = val()?.parse::<f32>()?.to_radians(),
+            "--player-at-camera" => o.player_at_camera = true,
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v.split_once(',').context("--pick x,y (0..1 screen coords)")?;
