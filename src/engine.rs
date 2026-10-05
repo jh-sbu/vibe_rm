@@ -1279,7 +1279,7 @@ impl Engine {
         let Some((id, _)) = &self.look_target else { return "" };
         let Some(rec) = self.lo.get(*id) else { return "Activate" };
         if rec.tag().0 == *b"ACHR" {
-            return "Talk";
+            return if self.is_dead(*id) { "Search" } else { "Talk" };
         }
         let base = records::reference(&rec).base;
         match self.lo.tag_of(base).map(|t| t.0) {
@@ -1331,6 +1331,11 @@ impl Engine {
             }
         }
         if self.scripts.blocked_activation.contains(&owner) {
+            return Ok(());
+        }
+        if is_actor && self.is_dead(owner) {
+            // Searching the body.
+            self.menu = Some(crate::items::Menu::Container(owner));
             return Ok(());
         }
         if is_actor {

@@ -285,7 +285,13 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("objectreference", "isnearplayer") => v(Value::Bool(true)),
         ("objectreference", "getheadingangle") => v(Value::Float(0.0)),
         // ------------------------------------------------------------- Actor
-        ("actor", "isdead") => v(Value::Bool(false)),
+        ("actor", "isdead") => v(Value::Bool(me.is_some_and(|r| e.is_dead(r)))),
+        ("actor", "kill") | ("actor", "killessential") | ("actor", "killsilent") => {
+            if let Some(r) = me {
+                e.kill_actor(r);
+            }
+            none()
+        }
         ("actor", "isincombat") | ("actor", "isinfaction") | ("actor", "isguard") | ("actor", "isarrested") | ("actor", "isbleedingout") => {
             v(Value::Bool(false))
         }

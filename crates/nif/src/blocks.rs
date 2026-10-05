@@ -337,6 +337,7 @@ pub enum Block {
     SkinData(crate::skin::SkinData),
     SkinPartition(Box<crate::skin::SkinPartition>),
     RigidBody(Box<crate::collision::RigidBody>),
+    Constraint(Box<crate::collision::Constraint>),
     Shape(crate::collision::Shape),
     ControllerManager(Vec<Ref>),
     ControllerSequence(Box<crate::anim::ControllerSequence>),
@@ -855,6 +856,8 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
         "NiSkinPartition" => Block::SkinPartition(Box::new(crate::skin::skin_partition(r)?)),
         "bhkRigidBody" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, false)?)),
         "bhkRigidBodyT" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, true)?)),
+        "bhkRagdollConstraint" => Block::Constraint(Box::new(crate::collision::constraint(r, true)?)),
+        "bhkLimitedHingeConstraint" => Block::Constraint(Box::new(crate::collision::constraint(r, false)?)),
         _ => match crate::collision::parse_shape(ty, r)? {
             Some(s) => Block::Shape(s),
             None => return Ok(None),

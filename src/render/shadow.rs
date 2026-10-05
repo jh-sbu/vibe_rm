@@ -45,7 +45,7 @@ pub fn cascades(camera: &Camera, aspect: f32, sun_dir: Vec3) -> [Cascade; CASCAD
     // A fixed orientation for the light (only its position follows the camera), so
     // texel snapping keeps shadow edges still as the camera moves.
     let light_up = if l.z.abs() > 0.99 { Vec3::Y } else { Vec3::Z };
-    let rot = Mat4::look_to_rh(Vec3::ZERO, -l, light_up);
+    let rot = glam::camera::rh::view::look_to_mat4(Vec3::ZERO, -l, light_up);
     let mut near = 5.0;
     std::array::from_fn(|i| {
         let far = SPLITS[i];
@@ -65,8 +65,8 @@ pub fn cascades(camera: &Camera, aspect: f32, sun_dir: Vec3) -> [Cascade; CASCAD
         lc.y = (lc.y / texel).floor() * texel;
         let centre = rot.inverse().transform_point3(lc);
         let eye = centre + l * (radius + CASTER_REACH);
-        let view = Mat4::look_to_rh(eye, -l, light_up);
-        let proj = Mat4::orthographic_rh(-radius, radius, -radius, radius, 0.0, 2.0 * radius + CASTER_REACH);
+        let view = glam::camera::rh::view::look_to_mat4(eye, -l, light_up);
+        let proj = glam::camera::rh::proj::directx::orthographic(-radius, radius, -radius, radius, 0.0, 2.0 * radius + CASTER_REACH);
         Cascade { view_proj: proj * view, view, radius }
     })
 }

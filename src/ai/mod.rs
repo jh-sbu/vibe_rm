@@ -1,5 +1,6 @@
 //! Actor AI: package selection, sandboxing / travelling over the navmesh.
 
+mod combat;
 mod equipment;
 pub mod furniture;
 pub mod idles;
@@ -264,6 +265,9 @@ pub struct ActorRuntime {
     pub(crate) drawn: bool,
     /// Sounds the graph asked for this frame (`SoundPlay` payloads: SNDR editor ids).
     pub(crate) sounds: Vec<String>,
+    /// Dead, and the ragdoll it lies as (with the mapping back to its bones).
+    pub(crate) dead: bool,
+    pub(crate) ragdoll: Option<(crate::physics::Ragdoll, crate::world::ragdoll::RagdollPose)>,
     /// The lit torch it holds, and the shield it put away for it.
     pub(crate) torch: Option<FormId>,
     pub(crate) stowed_shield: Option<FormId>,
@@ -310,6 +314,8 @@ impl ActorRuntime {
             wants_idle: false,
             wants_meal: false,
             wants_action_idle: false,
+            dead: false,
+            ragdoll: None,
             torch: None,
             stowed_shield: None,
             weapon_out: false,
@@ -1550,7 +1556,7 @@ impl Engine {
         for (key, i, pick, goal) in decisions {
             let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else { continue };
             a.next_eval = EVAL_INTERVAL;
-            if a.pinned {
+            if a.pinned || a.dead {
                 continue;
             }
             if pick != a.current {
@@ -1651,6 +1657,15 @@ impl Engine {
         for (key, rt) in self.cells.iter_mut() {
             let Some(rc) = self.scene.cells.get_mut(key) else { continue };
             for (index, (inst, a)) in rc.actors.iter_mut().zip(rt.actors.iter_mut()).enumerate() {
+                if a.dead {
+                    if let Some((rd, mapping)) = &a.ragdoll {
+                        inst.pose = mapping.pose(&a.skeleton, &self.physics.ragdoll_bodies(rd));
+                    }
+                    if std::mem::take(&mut a.objects_changed) {
+                        held.push((*key, index, Vec::new()));
+                    }
+                    continue;
+                }
                 if talking == Some(a.ref_id) {
                     // Seated actors talk from where they are.
                     if !a.in_furniture() {

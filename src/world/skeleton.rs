@@ -16,6 +16,8 @@ pub struct Bone {
 pub struct Skeleton {
     pub bones: Vec<Bone>,
     pub by_name: HashMap<String, usize>,
+    /// The bodies and joints it falls as when its actor dies.
+    pub ragdoll: Option<std::sync::Arc<super::ragdoll::RagdollDesc>>,
 }
 
 impl Skeleton {
@@ -24,6 +26,7 @@ impl Skeleton {
         for &root in &nif.roots {
             s.add(nif, Ref(root as i32), None, 0);
         }
+        s.ragdoll = super::ragdoll::RagdollDesc::from_nif(nif, &s).map(std::sync::Arc::new);
         s
     }
 
