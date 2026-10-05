@@ -72,6 +72,10 @@ game each piece unlocks.
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
 - Eating and drinking: occasional for sandboxing actors (every idle for Eat packages);
   standing meals from `EatingRoot` / `DrinkingRoot`, put away through `AnimObjectIdleStop`
+- Leveled lists (LVLN / LVLI): each reference picks among the entries eligible at the
+  player's level (all levels up to it, or the highest reached), deterministically by
+  reference; chance of none; "use all" item lists. Templated NPCs take their name from
+  the template (Base Data)
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
   follow / escort packages; SitTarget
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
@@ -104,7 +108,8 @@ game each piece unlocks.
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target
    - Off-screen travel between worldspaces; locked doors and keys
-   - Leveled lists (LVLN/LVLI) beyond the first entry, templates (TPLT/ACFG)
+   - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
+     data, keywords, scripts; leveled list counts ("each item in count")
 3. **Game logic**: combat, magic, inventory, leveling, crime
 4. **UI**: inventory, map, bars
 5. **Audio**: lip sync

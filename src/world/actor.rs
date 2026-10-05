@@ -26,21 +26,83 @@ fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
     rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))
 }
 
-/// Follow leveled lists (picking the first entry) until reaching a record of one of `tags`.
-fn resolve_leveled(lo: &LoadOrder, mut id: FormId, list_tag: &[u8; 4]) -> Option<FormId> {
+/// The player's level for leveled lists (there is no leveling yet: a new game's).
+fn player_level() -> u16 {
+    std::env::var("VRM_PC_LEVEL").ok().and_then(|v| v.parse().ok()).unwrap_or(1)
+}
+
+/// A well-mixed hash of a seed and a list, so each reference picks its own entry
+/// and picks it again next time.
+fn mix(seed: u64, list: FormId) -> u64 {
+    let mut z = seed ^ (list.0 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// Leveled list flags (`LVLF`).
+const LVL_ALL_LEVELS: u8 = 0x01;
+const LVL_USE_ALL: u8 = 0x04;
+
+/// A leveled list's entries (`LVLO`: level, form) eligible at the player's level:
+/// with "calculate from all levels" every entry up to it, otherwise those of the
+/// highest level reached; the lowest-level entries if none is.
+fn eligible(rec: &LoadedRecord<'_>) -> Vec<FormId> {
+    let entries: Vec<(u16, FormId)> =
+        rec.subrecords().filter(|s| s.tag.0 == *b"LVLO" && s.data.len() >= 8).map(|s| (s.u16(0), rec.fid(s.form_id(4)))).collect();
+    let pc = player_level();
+    let flags = rec.get(b"LVLF").and_then(|d| d.first().copied()).unwrap_or(0);
+    let reached = entries.iter().map(|e| e.0).filter(|&l| l <= pc).max();
+    let pick = |want: &dyn Fn(u16) -> bool| entries.iter().filter(|e| want(e.0)).map(|e| e.1).collect::<Vec<_>>();
+    match reached {
+        Some(_) if flags & LVL_ALL_LEVELS != 0 => pick(&|l| l <= pc),
+        Some(top) => pick(&|l| l == top),
+        None => {
+            let low = entries.iter().map(|e| e.0).min().unwrap_or(0);
+            pick(&|l| l == low)
+        }
+    }
+}
+
+/// Follow leveled lists (`list_tag`: LVLN, LVLI) down to a record, picking among
+/// each list's eligible entries by `seed` (the reference); `None` when a list's
+/// chance of none (`LVLD`) comes up.
+fn resolve_leveled(lo: &LoadOrder, mut id: FormId, list_tag: &[u8; 4], seed: u64) -> Option<FormId> {
     for _ in 0..8 {
         let rec = lo.get(id)?;
         if rec.tag().0 != *list_tag {
             return Some(id);
         }
-        // LVLO: level u16, pad u16, reference formid, count u16, pad
-        let first = rec.subrecords().find(|s| s.tag.0 == *b"LVLO")?;
-        id = rec.fid(first.form_id(4));
+        let roll = mix(seed, id);
+        let none = rec.get(b"LVLD").and_then(|d| d.first().copied()).unwrap_or(0);
+        if (roll % 100) < none as u64 {
+            return None;
+        }
+        let entries = eligible(&rec);
+        if entries.is_empty() {
+            return None;
+        }
+        id = entries[((roll >> 8) % entries.len() as u64) as usize];
     }
     None
 }
 
+/// Like [`resolve_leveled`] for item lists, where "use all" gives every entry.
+fn resolve_items(lo: &LoadOrder, id: FormId, seed: u64, depth: u32) -> Vec<FormId> {
+    let Some(rec) = lo.get(id) else { return Vec::new() };
+    if rec.tag().0 != *b"LVLI" || depth > 8 {
+        return vec![id];
+    }
+    let flags = rec.get(b"LVLF").and_then(|d| d.first().copied()).unwrap_or(0);
+    if flags & LVL_USE_ALL != 0 {
+        return eligible(&rec).into_iter().flat_map(|e| resolve_items(lo, e, seed, depth + 1)).collect();
+    }
+    resolve_leveled(lo, id, b"LVLI", seed).map_or_else(Vec::new, |e| resolve_items(lo, e, seed, depth + 1))
+}
+
 struct NpcTraits {
+    /// Display name (`FULL`).
+    name: String,
     npc_for_face: FormId,
     race: FormId,
     female: bool,
@@ -50,21 +112,23 @@ struct NpcTraits {
 }
 
 const TPL_TRAITS: u16 = 0x1;
+const TPL_BASE_DATA: u16 = 0x80;
 const TPL_INVENTORY: u16 = 0x100;
 
 /// Resolve the effective traits of an NPC, following templates.
-fn npc_traits(lo: &LoadOrder, npc: FormId) -> Option<NpcTraits> {
+fn npc_traits(lo: &LoadOrder, npc: FormId, seed: u64) -> Option<NpcTraits> {
     let rec = lo.get(npc)?;
     let acbs = rec.get(b"ACBS").unwrap_or(&[]);
     let flags = if acbs.len() >= 4 { u32::from_le_bytes(acbs[0..4].try_into().unwrap()) } else { 0 };
     let tpl_flags = if acbs.len() >= 20 { u16::from_le_bytes([acbs[18], acbs[19]]) } else { 0 };
     let template = rec.get(b"TPLT").map(|d| fid_at(&rec, d)).filter(|f| !f.is_null());
     let tmpl = template
-        .and_then(|t| resolve_leveled(lo, t, b"LVLN"))
+        .and_then(|t| resolve_leveled(lo, t, b"LVLN", seed))
         .filter(|t| *t != npc)
-        .and_then(|t| npc_traits(lo, t));
+        .and_then(|t| npc_traits(lo, t, seed));
 
     let mut out = NpcTraits {
+        name: rec.get(b"FULL").map(|d| lo.lstring(&rec, d)).unwrap_or_default(),
         npc_for_face: npc,
         race: rec.get(b"RNAM").map(|d| fid_at(&rec, d)).unwrap_or_default(),
         female: flags & 1 != 0,
@@ -82,6 +146,9 @@ fn npc_traits(lo: &LoadOrder, npc: FormId) -> Option<NpcTraits> {
         }
         if tpl_flags & TPL_INVENTORY != 0 {
             out.outfit = t.outfit;
+        }
+        if tpl_flags & TPL_BASE_DATA != 0 || out.name.is_empty() {
+            out.name = t.name;
         }
     }
     Some(out)
@@ -173,13 +240,13 @@ fn armor_models(lo: &LoadOrder, armo: FormId, race: FormId, female: bool) -> Vec
 }
 
 /// Equipment worn by default: armors from the outfit, resolving leveled item lists.
-fn outfit_armors(lo: &LoadOrder, outfit: FormId) -> Vec<FormId> {
+fn outfit_armors(lo: &LoadOrder, outfit: FormId, seed: u64) -> Vec<FormId> {
     let Some(rec) = lo.get(outfit) else { return Vec::new() };
     let Some(items) = rec.get(b"INAM") else { return Vec::new() };
     items
         .chunks_exact(4)
         .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
-        .filter_map(|id| resolve_leveled(lo, id, b"LVLI"))
+        .flat_map(|id| resolve_items(lo, id, seed, 0))
         .filter(|id| lo.tag_of(*id).map(|t| t.0) == Some(*b"ARMO"))
         .collect()
 }
@@ -203,18 +270,20 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
     if r.deleted() || r.initially_disabled() {
         return None;
     }
-    let npc = resolve_leveled(lo, r.base, b"LVLN")?;
+    // Each reference picks its own entry from leveled lists, the same every time.
+    let seed = r.id.0 as u64;
+    let npc = resolve_leveled(lo, r.base, b"LVLN", seed)?;
     let base = lo.get(npc)?;
     if base.tag().0 != *b"NPC_" {
         return None;
     }
-    let traits = npc_traits(lo, npc)?;
+    let traits = npc_traits(lo, npc, seed)?;
     let (skeleton, race_skin, race_height) = race_info(lo, traits.race, traits.female)?;
     let skin = if traits.skin.is_null() { race_skin } else { traits.skin };
 
     let mut models: Vec<String> = Vec::new();
     let mut covered = 0u32;
-    for armo in outfit_armors(lo, traits.outfit) {
+    for armo in outfit_armors(lo, traits.outfit, seed) {
         for (m, slots) in armor_models(lo, armo, traits.race, traits.female) {
             if slots & covered != 0 {
                 continue;
@@ -235,7 +304,7 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
             models.push(f);
         }
     }
-    let name = base.get(b"FULL").map(|d| lo.lstring(&base, d)).unwrap_or_default();
+    let name = traits.name.clone();
     let scale = r.scale * traits.height * race_height;
     let transform = Mat4::from_scale_rotation_translation(glam::Vec3::splat(scale), r.rotation_quat(), r.position);
     let behavior = race_behavior(lo, traits.race, traits.female);
