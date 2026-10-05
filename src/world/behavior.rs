@@ -27,6 +27,8 @@ pub struct ProjectRuntime {
     pub dir: String,
     /// Name of its animation data (`dogproject`: `animationdata/dogproject.txt`).
     pub name: String,
+    /// Its graph files as IDLE records name them (`actors\\canine\\behaviors\\dogbehavior.hkx`).
+    pub files: Vec<String>,
 }
 
 impl ProjectRuntime {
@@ -34,6 +36,13 @@ impl ProjectRuntime {
     /// `animations/male` and `animations/female`.
     pub fn humanoid(&self) -> bool {
         self.dir.ends_with("actors/character")
+    }
+
+    /// Whether IDLE records for graph `file` (as their DNAM names it) play on this
+    /// project's actors.
+    pub fn plays(&self, file: &str) -> bool {
+        let file = file.to_ascii_lowercase().replace('/', "\\");
+        self.files.iter().any(|f| *f == file)
     }
 }
 
@@ -68,7 +77,9 @@ impl GraphLibrary {
                 }
             };
             let name = name.strip_suffix(".hkx").unwrap_or(name).to_owned();
-            Some(Arc::new(ProjectRuntime { shared, dir: dir.to_owned(), name }))
+            let base = dir.strip_prefix("meshes/").unwrap_or(dir).replace('/', "\\");
+            let files = shared.project.graphs.iter().map(|(rel, _)| format!("{base}\\{rel}")).collect();
+            Some(Arc::new(ProjectRuntime { shared, dir: dir.to_owned(), name, files }))
         })();
         log::debug!("{file}: behaviour runtime in {:?}", t.elapsed());
         self.projects.insert(file, p.clone());
@@ -194,6 +205,10 @@ impl GraphAnim {
             weight += s.weight;
         }
         (weight > 0.5).then(|| speed / weight).filter(|v| (10.0..400.0).contains(v))
+    }
+
+    pub fn project(&self) -> &Arc<ProjectRuntime> {
+        &self.project
     }
 
     pub fn set_variable(&mut self, name: &str, value: f32) -> bool {

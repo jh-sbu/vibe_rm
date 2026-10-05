@@ -364,15 +364,17 @@ pub fn ways_to_use(
     mi: u8,
     m: &Marker,
     child: bool,
+    project: &crate::world::behavior::ProjectRuntime,
     skeleton_path: &str,
     female: bool,
     skeleton: &crate::world::skeleton::Skeleton,
     clips: &mut super::Clips,
     rand: &mut dyn FnMut() -> u64,
 ) -> Vec<(Entry, UseClips)> {
-    let Some(base) = skeleton_path.split("/character assets").next().filter(|b| b.ends_with("actors/character")) else {
+    // Furniture idles are the humanoid graphs'.
+    if !project.humanoid() {
         return Vec::new();
-    };
+    }
     if m.kind == Use::Idle || (m.kind == Use::Special && !f.ways.iter().any(|w| w.marker == mi)) {
         // One of the marker's idles, or special furniture's keyword idle event.
         if f.events.is_empty() {
@@ -381,7 +383,7 @@ pub fn ways_to_use(
         let start = (rand() % f.events.len() as u64) as usize;
         let pick = (0..f.events.len()).find_map(|i| {
             let e = &f.events[(start + i) % f.events.len()];
-            clips.event(e, base, skeleton_path, female, skeleton)
+            clips.event(e, project, skeleton_path, female, skeleton)
         });
         return pick.map(|c| vec![(Entry::Front, c)]).unwrap_or_default();
     }
@@ -392,7 +394,7 @@ pub fn ways_to_use(
         .filter_map(|w| {
             // The tree's exit (IdleChairFrontExit...), else the generic ones.
             let exits: Vec<&str> = w.exit.as_deref().into_iter().chain(["IdleChairExitStart", "IdleStop"]).collect();
-            Some((w.entry, clips.event_with_exits(&w.enter, &exits, base, skeleton_path, female, skeleton)?))
+            Some((w.entry, clips.event_with_exits(&w.enter, &exits, project, skeleton_path, female, skeleton)?))
         })
         .collect();
     if ways.is_empty() {

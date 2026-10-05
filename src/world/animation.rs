@@ -6,6 +6,7 @@ use std::sync::Arc;
 use glam::{Quat, Vec3};
 use nif::Transform;
 
+use super::behavior::ProjectRuntime;
 use super::skeleton::Skeleton;
 
 /// A clip whose tracks are already mapped onto a NIF skeleton's bones.
@@ -262,11 +263,9 @@ impl ActorAnim {
     }
 }
 
-/// Behaviour projects (a character's graphs) by project directory, with cached
-/// event -> clip sequence lookups.
+/// Cached event -> clip sequence lookups in behaviour projects.
 #[derive(Default)]
 pub struct BehaviorLibrary {
-    projects: HashMap<String, Arc<havok::behavior::Project>>,
     events: HashMap<(String, String, String), Option<Arc<EventClips>>>,
 }
 
@@ -279,27 +278,17 @@ pub struct EventClips {
 }
 
 impl BehaviorLibrary {
-    fn project(&mut self, vfs: &vfs::Vfs, dir: &str) -> Arc<havok::behavior::Project> {
-        if let Some(p) = self.projects.get(dir) {
-            return p.clone();
-        }
-        let t = std::time::Instant::now();
-        let p = Arc::new(havok::behavior::Project::load("behaviors/0_master.hkx", |rel| vfs.read(&format!("{dir}/{rel}"))));
-        log::debug!("{dir}: {} behaviour graphs in {:?}", p.graphs.len(), t.elapsed());
-        self.projects.insert(dir.to_owned(), p.clone());
-        p
-    }
-
-    /// Clips an animation event plays on actors of the project in `dir`
-    /// (e.g. `meshes/actors/character`), ending in a loop where there is one, and
-    /// the clips played from there by the first of `exits` the graph handles.
-    pub fn event_clips(&mut self, vfs: &vfs::Vfs, dir: &str, event: &str, exits: &[&str]) -> Option<Arc<EventClips>> {
+    /// Clips an animation event plays on actors of `project`, ending in a loop
+    /// where there is one, and the clips played from there by the first of `exits`
+    /// the graph handles.
+    pub fn event_clips(&mut self, project: &ProjectRuntime, event: &str, exits: &[&str]) -> Option<Arc<EventClips>> {
         use havok::behavior::ClipMode;
-        let key = (dir.to_owned(), event.to_ascii_lowercase(), exits.join(",").to_ascii_lowercase());
+        let key = (project.name.clone(), event.to_ascii_lowercase(), exits.join(",").to_ascii_lowercase());
         if let Some(r) = self.events.get(&key) {
             return r.clone();
         }
-        let project = self.project(vfs, dir);
+        let dir = &project.dir;
+        let project = &project.shared.project;
         let plays = project.play_event(event);
         // Prefer a sequence that settles into a loop.
         let play = plays.iter().find(|p| p.clips.last().is_some_and(|c| c.mode == ClipMode::Looping)).or(plays.first());
@@ -449,16 +438,24 @@ impl AnimationLibrary {
         result
     }
 
-    /// Like [`AnimationLibrary::clip`], played backwards when `speed` is negative.
-    pub fn clip_with_speed(&mut self, vfs: &vfs::Vfs, clip: &str, nif_skeleton_path: &str, skeleton: &Skeleton, speed: f32) -> Option<Arc<BoundClip>> {
+    /// A clip of `project`'s graphs (root motion from its animation data), played
+    /// backwards when `speed` is negative.
+    pub fn project_clip(&mut self, vfs: &vfs::Vfs, clip: &str, nif_skeleton_path: &str, skeleton: &Skeleton, speed: f32, project: &ProjectRuntime) -> Option<Arc<BoundClip>> {
+        let forward = |lib: &mut Self| {
+            if project.humanoid() {
+                lib.clip(vfs, clip, nif_skeleton_path, skeleton)
+            } else {
+                lib.clip_in_project(vfs, clip, nif_skeleton_path, skeleton, Some(&project.name))
+            }
+        };
         if speed >= 0.0 {
-            return self.clip(vfs, clip, nif_skeleton_path, skeleton);
+            return forward(self);
         }
-        let key = (format!("{clip}#reversed"), nif_skeleton_path.to_owned());
+        let key = (format!("{clip}@{}#reversed", project.name), nif_skeleton_path.to_owned());
         if let Some(c) = self.clips.get(&key) {
             return c.clone();
         }
-        let r = self.clip(vfs, clip, nif_skeleton_path, skeleton).map(|c| Arc::new(c.reverse()));
+        let r = forward(self).map(|c| Arc::new(c.reverse()));
         self.clips.insert(key, r.clone());
         r
     }

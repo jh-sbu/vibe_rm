@@ -577,6 +577,37 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("idle-roots") => {
+            // idle-roots <data dir>: IDLE records without a parent, with their graph and size.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut parent: std::collections::HashMap<esp::FormId, esp::FormId> = Default::default();
+            for &id in lo.ids_of_type(b"IDLE") {
+                let Some(rec) = lo.get(id) else { continue };
+                if let Some(d) = rec.get(b"ANAM").filter(|d| d.len() >= 4) {
+                    let v = u32::from_le_bytes(d[0..4].try_into().unwrap());
+                    if v != 0 {
+                        parent.insert(id, rec.fid(esp::FormId(v)));
+                    }
+                }
+            }
+            let mut size: std::collections::HashMap<esp::FormId, usize> = Default::default();
+            for &id in lo.ids_of_type(b"IDLE") {
+                let mut cur = id;
+                while let Some(&p) = parent.get(&cur) {
+                    cur = p;
+                }
+                *size.entry(cur).or_default() += 1;
+            }
+            let mut roots: Vec<_> = size.into_iter().collect();
+            roots.sort_by_key(|r| std::cmp::Reverse(r.1));
+            for (id, n) in roots {
+                let Some(rec) = lo.get(id) else { continue };
+                let graph = rec.get(b"DNAM").map(esp::decode_zstring).unwrap_or_default();
+                println!("{id} {:5} {} {graph}", n, rec.editor_id().unwrap_or_default());
+            }
+        }
         Some("idle-tree") => {
             // idle-tree <data dir> <IDLE editor id>: the idle and its descendants with raw conditions.
             let data = std::path::Path::new(&args[1]);
