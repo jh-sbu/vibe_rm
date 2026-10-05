@@ -1299,8 +1299,12 @@ impl Engine {
             let mut vm = std::mem::take(&mut self.vm);
             let player = self.object_value(PLAYER_REF);
             let mut host = crate::script::EngineHost { engine: self };
-            vm.send_event(&mut host, papyrus::ObjectId::Form(owner.0), "OnActivate", vec![player]);
+            vm.send_event(&mut host, papyrus::ObjectId::Form(owner.0), "OnActivate", vec![player.clone()]);
             self.vm = vm;
+            // And to the aliases it fills.
+            for obj in self.objects_of_ref(owner).into_iter().skip(1) {
+                self.scripts.pending_events.push((obj, "OnActivate".into(), vec![player.clone()]));
+            }
         }
         if self.scripts.blocked_activation.contains(&owner) {
             return Ok(());
@@ -1524,9 +1528,9 @@ impl Engine {
             }
             _ => vec![(item, count)],
         };
-        let inv = self.inventory_mut(r);
         for (f, n) in items {
-            inv.add(f, n);
+            self.inventory_mut(r).add(f, n);
+            self.inventory_event(r, true, f, n, None);
         }
     }
 
@@ -1537,8 +1541,10 @@ impl Engine {
         let mut total = 0;
         for f in forms {
             let n = self.inventory_mut(r).remove(f, count);
+            self.inventory_event(r, false, f, n, to);
             if let Some(to) = to.filter(|_| n > 0) {
                 self.inventory_mut(to).add(f, n);
+                self.inventory_event(to, true, f, n, Some(r));
             }
             total += n;
         }
