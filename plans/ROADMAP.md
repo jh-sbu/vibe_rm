@@ -28,6 +28,17 @@ game each piece unlocks.
   / exit events from `ActivateRootChar` (chairs, stools, tables, beds, bedrolls, leans,
   crafting stations, child chairs) and seated idles from `NonCombatIdles` (eating and
   drinking with bread / tankards, table drinking, sitting variants)
+- Behaviour graph runtime (`havok::behavior::runtime`): each humanoid runs its character
+  project's graphs: state machines with event, wildcard, promoted global wildcard and
+  condition transitions (expression conditions), cross-fades, clips (crop, start time,
+  backwards, clip-local triggers), parametric / cyclic / synchronised blends with per-bone
+  weights, additive (offset) clips, selectors following variables, references, control
+  modifiers (expressions, every-N-events, timers, event-driven, on-deactivate, is-active).
+  The AI sends events (`moveStart`, furniture enter / exit, `IdleStop`...) and sets
+  variables (`Speed`, `isInFurniture`, `IsNPC`, `weapAdj`...), follows the graph's root
+  motion in furniture and takes anim objects and `IdleFurnitureExit` from its events;
+  `PlayIdle` succeeds only when the graph takes the event. The static event -> clip
+  resolver remains for planning (enter start pose, durations)
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
@@ -45,23 +56,14 @@ game each piece unlocks.
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
 
 ## Next
-1. **Animation: behaviour graphs at runtime.** Each actor runs its behaviour graph the
-   way the game does, instead of the engine resolving events to fixed enter / loop / exit
-   clip lists and driving them from AI code. This keeps the engine generic over animation
-   content (anything authored as behaviour graphs + animation data, including FNIS /
-   Nemesis output, plays through `SendAnimationEvent` / IDLE records).
-   - Graph instance per actor: variables (with defaults), event queue, active state per
-     state machine, transitions (event / wildcard / nested, transition blend times),
-     clip generators (modes, speed incl. reverse, crop, triggers), blenders weighted by
-     bound variables, selectors, behaviour references, modifier generators (pass-through
-     first)
-   - Events back to the engine from triggers and state enter / exit events
-     (`AnimObjDraw`, `SoundPlay`, `HeadTrackingOn`...), root motion from the active clips
-   - Engine drives it like the game: events (`IdleStop`, `IdleChairExitStart`,
-     `moveStart`...) and variables (`Speed`, `Direction`, `iSyncIdleLocomotion`...)
-   - Replace the event -> clip-list lookup, the furniture / sub-idle clip sequencing and
-     the walk / idle clips chosen by file name
-   - Then: creature behaviour projects; turning / run through the graph
+1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
+   - Pose modifiers: look-at / head tracking, foot IK, twist, keyframe bones
+   - Transition intervals, `ABUT_AT_END_OF_FROM_GENERATOR`, random / chooser start states,
+     state machine `currentStateId` outputs, selectors' own blends
+   - Creature behaviour projects (their project file names the root graph); turning /
+     run / sneak through the graph (`Direction`, `TurnDelta`, `iState`...)
+   - Engine variables and events still missing: weapons drawn, combat, dialogue
+     (`IdleDialogue*`), first person
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;

@@ -13,6 +13,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::engine::{Engine, PLAYER_REF};
 use crate::world::animation::{ActorAnim, BoundClip};
+use crate::world::behavior::GraphAnim;
 use crate::world::skeleton::Skeleton;
 use furniture::{FurnitureWorld, Seat, Use};
 use package::{Allow, Behaviour, LocationKind, Package, Target};
@@ -81,66 +82,23 @@ enum State {
     Walk { path: Vec<Vec3>, next: usize, budget: f32, to_seat: bool },
     /// At the start of the seat's enter animation, turning to face the right way.
     Approach(f32),
-    /// Playing enter clip `step` of the seat, which started at `from` / `heading`.
-    Enter { step: usize, from: Vec3, heading: f32 },
+    /// Getting in: the graph plays the seat's enter animation (moving the actor by
+    /// its root motion) for about this many more seconds.
+    Enter(f32),
     /// In the furniture for this many more seconds.
     Use(f32),
-    /// Playing exit clip `step`, which started at `from` / `heading`.
-    Exit { step: usize, from: Vec3, heading: f32 },
+    /// Getting out, for at most this many more seconds (the graph says when the
+    /// actor is out with `IdleFurnitureExit`).
+    Exit(f32),
 }
 
-/// A short idle played while in furniture (eating, drinking, another way of
-/// sitting), after which the actor returns to the seat's loop.
+/// An idle played while in furniture (eating, drinking, another way of sitting):
+/// the graph plays it; the AI ends it after a while.
 struct SubIdle {
-    clips: Arc<furniture::UseClips>,
-    phase: SubPhase,
-    step: usize,
-    /// Seconds left in a looping idle.
+    /// Seconds until it is stopped (or over, for a one-shot).
     left: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SubPhase {
-    Enter,
-    Loop,
-    Exit,
-}
-
-impl SubIdle {
-    /// Start the clip for the current phase and step, moving on through the phases
-    /// as their clips run out. False once the exit clips are done.
-    fn play_step(&mut self, anim: &mut ActorAnim) -> bool {
-        loop {
-            match self.phase {
-                SubPhase::Enter => match self.clips.enter.get(self.step) {
-                    Some(c) => {
-                        anim.play_once(c.clone(), 0.2);
-                        return true;
-                    }
-                    None => {
-                        self.phase = SubPhase::Loop;
-                        if self.clips.idle_loops {
-                            anim.play(self.clips.idle.clone(), 0.2);
-                        } else {
-                            anim.play_once(self.clips.idle.clone(), 0.2);
-                        }
-                        return true;
-                    }
-                },
-                SubPhase::Loop => {
-                    self.phase = SubPhase::Exit;
-                    self.step = 0;
-                }
-                SubPhase::Exit => match self.clips.exit.get(self.step) {
-                    Some(c) => {
-                        anim.play_once(c.clone(), 0.2);
-                        return true;
-                    }
-                    None => return false,
-                },
-            }
-        }
-    }
+    /// Events that may end a held idle, in order (none for a one-shot that ends by itself).
+    stop: Vec<String>,
 }
 
 /// Events that end an idle played in furniture: anim-object idles (eating,
@@ -186,16 +144,14 @@ impl Clips<'_> {
         let enter = enter.iter().map(&mut load).collect::<Option<Vec<_>>>()?;
         // The exit ends back in the default idle; only its one-shot clips matter.
         let exit = played.exit.iter().filter(|c| c.mode == ClipMode::SinglePlay).filter_map(&mut load).collect();
-        let objects = played
-            .draws
-            .iter()
-            .filter_map(|d| {
-                let clip = enter.get(d.clip).unwrap_or(&idle);
-                let time = if d.from_end { clip.duration() + d.time } else { d.time };
-                Some(furniture::ObjectCue { clip: d.clip.min(enter.len()), time: time.max(0.0), anio: d.payload.clone()? })
-            })
-            .collect();
-        Some(furniture::UseClips { enter, idle, exit, idle_loops: last.mode != ClipMode::SinglePlay && !played.loop_once, objects })
+        Some(furniture::UseClips {
+            event: event.to_owned(),
+            exits: exits.iter().map(|e| e.to_string()).collect(),
+            enter,
+            idle,
+            exit,
+            idle_loops: last.mode != ClipMode::SinglePlay && !played.loop_once,
+        })
     }
 }
 
@@ -236,6 +192,8 @@ pub struct ActorRuntime {
     pub ref_id: FormId,
     pub npc: FormId,
     pub skeleton: Arc<Skeleton>,
+    /// The actor's behaviour graph (humanoids); others play `anim`.
+    pub graph: Option<GraphAnim>,
     pub anim: Option<ActorAnim>,
     pub idle: Option<Arc<BoundClip>>,
     pub walk: Option<Arc<BoundClip>>,
@@ -269,6 +227,10 @@ pub struct ActorRuntime {
     pub objects_changed: bool,
     /// Get out of the furniture as soon as possible (package changed).
     leave: bool,
+    /// The graph is in its locomotion state (`moveStart` sent).
+    moving: bool,
+    /// The graph raised `IdleFurnitureExit`: out of the furniture.
+    out_of_furniture: bool,
     /// Patrol progress: (route start, index of the point heading for).
     patrol: Option<(FormId, usize)>,
     state: State,
@@ -284,6 +246,7 @@ impl ActorRuntime {
             ref_id,
             npc,
             skeleton,
+            graph: None,
             anim: None,
             idle: None,
             walk: None,
@@ -308,6 +271,8 @@ impl ActorRuntime {
             objects: Vec::new(),
             objects_changed: false,
             leave: false,
+            moving: false,
+            out_of_furniture: false,
             patrol: None,
             state: State::Idle(1.0 + stagger),
             next_eval: stagger,
@@ -324,9 +289,9 @@ impl ActorRuntime {
             State::Idle(_) => "idle",
             State::Walk { .. } => "walk",
             State::Approach(_) => "approach",
-            State::Enter { .. } => "enter",
+            State::Enter(_) => "enter",
             State::Use(_) => "use",
-            State::Exit { .. } => "exit",
+            State::Exit(_) => "exit",
         }
     }
 
@@ -336,7 +301,7 @@ impl ActorRuntime {
 
     /// Getting into, using or getting out of furniture.
     pub fn in_furniture(&self) -> bool {
-        matches!(self.state, State::Enter { .. } | State::Use(_) | State::Exit { .. })
+        matches!(self.state, State::Enter(_) | State::Use(_) | State::Exit(_))
     }
 
     /// Stop and stand (e.g. when spoken to). Actors in furniture stay put.
@@ -430,26 +395,52 @@ impl ActorRuntime {
         }
     }
 
-    /// Place the actor along a clip's root motion from a start pose.
-    fn follow_motion(&mut self, from: Vec3, heading: f32) {
-        let Some(anim) = &self.anim else { return };
-        if let Some(m) = &anim.clip.motion {
-            let (off, yaw) = m.sample(anim.time);
-            self.pos = from + furniture::to_world(off, heading);
-            self.heading = heading - yaw;
-        }
-    }
-
-    /// Start sitting / lying / leaning in the reserved seat for `secs`.
-    fn settle(&mut self, secs: f32, fade: f32) {
+    /// Settled in the reserved seat (the graph is in its loop) for `secs`.
+    fn settle(&mut self, secs: f32) {
         let Some(seat) = &self.seat else { return };
         self.pos = seat.pos;
         self.heading = seat.heading;
-        if let Some(anim) = &mut self.anim {
-            anim.play(seat.clips.idle.clone(), fade);
-        }
         self.state = State::Use(secs);
         self.next_idle = 4.0;
+    }
+
+    /// Send the graph an event now; true when it took it.
+    fn graph_event(&mut self, event: &str, clips: &mut Clips) -> bool {
+        match &mut self.graph {
+            Some(g) => g.handle_event(event, clips.vfs, clips.anims, &self.skeleton),
+            None => false,
+        }
+    }
+
+    /// At the start of the seat's enter animation: have the graph play it.
+    fn begin_enter(&mut self, w: &mut World) {
+        let Some(seat) = self.seat.clone() else { return };
+        if !self.graph_event(&seat.clips.event, &mut w.clips) {
+            log::debug!("{}: the graph won't take {} for {}", self.ref_id, seat.clips.event, seat.furniture);
+            self.give_up_seat(w.furniture);
+            self.state = State::Idle(uniform(w.rand, 2.0, 5.0));
+            return;
+        }
+        log::debug!("{} entering {} ({}, {:.1} s)", self.ref_id, seat.furniture, seat.clips.event, seat.clips.enter_time());
+        self.out_of_furniture = false;
+        self.state = State::Enter(seat.clips.enter_time());
+    }
+
+    /// Have the graph leave the seat by the first exit it takes.
+    fn begin_exit(&mut self, w: &mut World) {
+        let Some(seat) = self.seat.clone() else {
+            self.stand_up(w);
+            return;
+        };
+        let exit = seat.clips.exits.iter().find(|e| self.graph_event(e, &mut w.clips)).cloned();
+        let Some(exit) = exit else {
+            // Nothing to play (or no graph): just stand.
+            self.stand_up(w);
+            return;
+        };
+        log::debug!("{} getting up ({exit}, {:.1} s)", self.ref_id, seat.clips.exit_time());
+        self.out_of_furniture = false;
+        self.state = State::Exit(seat.clips.exit_time() + 0.5);
     }
 
     /// Advance movement. Returns true when the actor moved.
@@ -523,36 +514,30 @@ impl ActorRuntime {
                 if remaining.abs() < 0.03 && to.length() < 2.0 || t > 3.0 {
                     self.pos = start;
                     self.heading = h0;
-                    if !seat.clips.enter.is_empty() {
-                        let motion: Vec<_> = seat.clips.enter.iter().map(|c| c.motion.as_ref().map(|m| m.end())).collect();
-                        log::debug!("{} entering {} ({} clips, motion {motion:?})", self.ref_id, seat.furniture, seat.clips.enter.len());
-                    }
-                    self.state = State::Enter { step: 0, from: start, heading: h0 };
-                    self.next_clip(true, 0.2);
+                    self.begin_enter(w);
                 }
                 true
             }
-            State::Enter { from, heading, .. } | State::Exit { from, heading, .. } => {
-                let (from, heading) = (*from, *heading);
-                self.follow_motion(from, heading);
-                if self.anim.as_ref().is_none_or(|a| a.finished()) {
-                    let entering = matches!(self.state, State::Enter { .. });
-                    if let State::Enter { step, from, heading } | State::Exit { step, from, heading } = &mut self.state {
-                        // The next clip starts where this one left the actor.
-                        *step += 1;
-                        *from = self.pos;
-                        *heading = self.heading;
-                    }
-                    if !self.next_clip(entering, 0.15) && !entering {
-                        self.stand_up(w);
-                    }
+            // The graph moves the actor (root motion, applied in `animate`).
+            State::Enter(t) => {
+                *t -= dt;
+                if *t <= 0.0 {
+                    let secs = self.seat.as_ref().map_or(0.0, |s| s.duration);
+                    self.settle(secs);
+                }
+                true
+            }
+            State::Exit(t) => {
+                *t -= dt;
+                if *t <= 0.0 || self.out_of_furniture {
+                    self.stand_up(w);
                 }
                 true
             }
             State::Use(t) => {
                 *t -= dt;
                 let remaining = *t;
-                if self.step_sub_idle(dt) {
+                if self.step_sub_idle(dt, &mut w.clips) {
                     return false;
                 }
                 if remaining > 0.0 && !self.leave {
@@ -568,37 +553,11 @@ impl ActorRuntime {
                     return false;
                 }
                 self.leave = false;
-                let Some(seat) = &self.seat else {
+                // A one-shot gesture (no loop to hold) has already ended by itself.
+                if self.seat.as_ref().is_some_and(|s| !s.clips.idle_loops) {
                     self.stand_up(w);
-                    return false;
-                };
-                if !seat.clips.exit.is_empty() {
-                    log::debug!("{} getting up ({} clips)", self.ref_id, seat.clips.exit.len());
-                }
-                self.state = State::Exit { step: 0, from: seat.pos, heading: seat.heading };
-                if !self.next_clip(false, 0.2) {
-                    self.stand_up(w);
-                }
-                false
-            }
-        }
-    }
-
-    /// Start the current enter / exit clip. Returns false when the sequence is done
-    /// (entering then settles into the seat).
-    fn next_clip(&mut self, entering: bool, fade: f32) -> bool {
-        let (State::Enter { step, .. } | State::Exit { step, .. }) = self.state else { return false };
-        let Some(seat) = &self.seat else { return false };
-        let list = if entering { &seat.clips.enter } else { &seat.clips.exit };
-        match (list.get(step).cloned(), &mut self.anim) {
-            (Some(clip), Some(anim)) => {
-                anim.play_once(clip, fade);
-                true
-            }
-            _ => {
-                if entering {
-                    let secs = seat.duration;
-                    self.settle(secs, if step == 0 { 0.4 } else { fade });
+                } else {
+                    self.begin_exit(w);
                 }
                 false
             }
@@ -609,6 +568,8 @@ impl ActorRuntime {
     fn stand_up(&mut self, w: &mut World) {
         log::debug!("{} stood up at {:?}", self.ref_id, self.pos);
         self.give_up_seat(w.furniture);
+        self.objects_changed |= !self.objects.is_empty();
+        self.objects.clear();
         if let Some(z) = w.nav.height_at(self.pos) {
             self.pos.z = z;
         }
@@ -853,9 +814,22 @@ impl ActorRuntime {
                 duration: secs,
             };
             if fresh {
+                // Start out in it: play the way in at once, out of sight.
+                if !self.graph_event(&seat.clips.event, &mut w.clips) {
+                    continue;
+                }
+                if let Some(g) = &mut self.graph {
+                    g.set_variable("isInFurniture", 1.0);
+                    let settle = seat.clips.enter_time() + 1.0;
+                    let mut t = 0.0;
+                    while t < settle {
+                        g.update(0.25, w.clips.vfs, w.clips.anims, &self.skeleton);
+                        t += 0.25;
+                    }
+                }
                 w.furniture.reserve(fid, mi, self.ref_id);
                 self.seat = Some(seat);
-                self.settle(secs, 0.0);
+                self.settle(secs);
                 log::debug!("{} starts in {fid} marker {mi} ({:?})", self.ref_id, marker.kind);
                 return true;
             }
@@ -883,13 +857,14 @@ impl ActorRuntime {
             .unwrap_or(WALK_SPEED)
     }
 
-    pub fn animate(&mut self, dt: f32) -> Option<Vec<Mat4>> {
+    pub fn animate(&mut self, dt: f32, clips: &mut Clips) -> Option<Vec<Mat4>> {
+        if self.graph.is_some() {
+            return Some(self.animate_graph(dt, clips));
+        }
         let walk_speed = self.walk_speed();
         let walking = self.speed > 5.0;
-        let locomotion = matches!(self.state, State::Idle(_) | State::Walk { .. } | State::Approach(_));
         let anim = self.anim.as_mut()?;
         match (walking, &self.walk, &self.idle) {
-            _ if !locomotion => anim.speed = 1.0,
             (true, Some(w), _) => {
                 anim.play(w.clone(), 0.25);
                 anim.speed = (self.speed / walk_speed).clamp(0.3, 1.5);
@@ -900,92 +875,91 @@ impl ActorRuntime {
             }
             _ => {}
         }
-        let pose = anim.update(&self.skeleton, dt);
-        self.update_objects();
-        Some(pose)
+        Some(anim.update(&self.skeleton, dt))
     }
 
-    /// Play `clips` in the furniture, then go back to the seat's loop. False when
-    /// the actor isn't settled in (or is already playing another idle).
-    pub fn start_sub_idle(&mut self, clips: furniture::UseClips, rand: &mut dyn FnMut() -> u64) -> bool {
-        let Some(anim) = &mut self.anim else { return false };
+    /// Drive the behaviour graph from the AI state, run it, and follow its root
+    /// motion while in furniture. Anim objects come and go with its events.
+    fn animate_graph(&mut self, dt: f32, clips: &mut Clips) -> Vec<Mat4> {
+        let walking = self.speed > 5.0 && matches!(self.state, State::Walk { .. } | State::Approach(_));
+        let furniture = self.in_furniture() && self.seat.as_ref().is_some_and(|s| !s.furniture.is_null());
+        let g = self.graph.as_mut().expect("checked");
+        g.set_variable("Speed", if walking { self.speed } else { 0.0 });
+        g.set_variable("isInFurniture", if furniture { 1.0 } else { 0.0 });
+        if walking != self.moving {
+            g.send_event(if walking { "moveStart" } else { "moveStop" });
+            self.moving = walking;
+        }
+        let frame = g.update(dt, clips.vfs, clips.anims, &self.skeleton);
+        if self.in_furniture() {
+            let (t, yaw) = frame.motion;
+            self.pos += furniture::to_world(t * self.scale, self.heading);
+            self.heading -= yaw;
+        }
+        for r in frame.raised {
+            let e = r.event.to_ascii_lowercase();
+            match e.as_str() {
+                "animobjdraw" => {
+                    if let Some(anio) = r.payload
+                        && !self.objects.iter().any(|o| o.eq_ignore_ascii_case(&anio))
+                    {
+                        self.objects.push(anio);
+                        self.objects_changed = true;
+                    }
+                }
+                "animobjectunequip" => {
+                    self.objects_changed |= !self.objects.is_empty();
+                    self.objects.clear();
+                }
+                "idlefurnitureexit" => self.out_of_furniture = true,
+                _ => {}
+            }
+        }
+        frame.pose
+    }
+
+    /// Play the idle `clips` describe in the furniture, then go back to the seat's
+    /// loop. False when the actor isn't settled in, is already playing another
+    /// idle, or the graph won't take it.
+    pub fn start_sub_idle(&mut self, clips: furniture::UseClips, lib: &mut Clips, rand: &mut dyn FnMut() -> u64) -> bool {
         if !matches!(self.state, State::Use(_)) || self.leave || self.sub.is_some() {
             return false;
         }
-        let mut sub = SubIdle { clips: Arc::new(clips), phase: SubPhase::Enter, step: 0, left: uniform(rand, 8.0, 20.0) };
-        let started = sub.play_step(anim);
-        if started {
-            self.sub = Some(sub);
+        if !self.graph_event(&clips.event, lib) {
+            return false;
         }
-        started
+        // A held idle is stopped after a while; a gesture runs its course.
+        self.sub = Some(if clips.idle_loops {
+            SubIdle { left: uniform(rand, 8.0, 20.0), stop: clips.exits.clone() }
+        } else {
+            SubIdle { left: clips.enter_time() + clips.idle.duration() + clips.exit_time() + 0.5, stop: Vec::new() }
+        });
+        true
     }
 
     /// Advance the idle being played in the furniture. False when there is none
-    /// (any more); leaving the furniture waits for it to finish.
-    fn step_sub_idle(&mut self, dt: f32) -> bool {
-        let (Some(sub), Some(anim)) = (&mut self.sub, &mut self.anim) else { return false };
-        let more = match sub.phase {
-            SubPhase::Loop => {
-                sub.left -= dt;
-                let over = if sub.clips.idle_loops { sub.left <= 0.0 || self.leave } else { anim.finished() };
-                !over || sub.play_step(anim)
-            }
-            _ if !anim.finished() => true,
-            _ => {
-                sub.step += 1;
-                sub.play_step(anim)
-            }
-        };
-        if !more {
-            // Back to the seat's loop; the idle's anim objects are put away.
-            self.sub = None;
-            if let Some(seat) = &self.seat {
-                anim.play(seat.clips.idle.clone(), 0.4);
-            }
-            self.objects_changed |= !self.objects.is_empty();
-            self.objects.clear();
+    /// (any more); leaving the furniture first stops it and lets it wind down.
+    fn step_sub_idle(&mut self, dt: f32, clips: &mut Clips) -> bool {
+        let Some(sub) = &mut self.sub else { return false };
+        sub.left -= dt;
+        if self.leave && !sub.stop.is_empty() {
+            sub.left = sub.left.min(0.0);
         }
-        more
-    }
-
-    /// Draw the seat's anim objects as their cues come up; they are put away
-    /// (`AnimObjectUnequip`) once the actor is out of the furniture or idle.
-    fn update_objects(&mut self) {
-        let (clip, time) = match (&self.state, &self.anim) {
-            (State::Enter { step, .. }, Some(a)) => (*step, a.time),
-            (State::Use(_), Some(a)) => (usize::MAX, a.time),
-            (State::Exit { .. }, _) => return,
-            _ => {
-                self.objects_changed |= !self.objects.is_empty();
-                self.objects.clear();
-                return;
-            }
-        };
-        let Some(seat) = &self.seat else { return };
-        let mut due: Vec<String> = Vec::new();
-        let mut collect = |clips: &furniture::UseClips, clip: usize, time: f32| {
-            let clip = clip.min(clips.enter.len());
-            for cue in &clips.objects {
-                if cue.clip < clip || (cue.clip == clip && time >= cue.time) {
-                    due.push(cue.anio.clone());
-                }
-            }
-        };
-        match &self.sub {
-            // The seat's own objects were drawn before the idle started.
-            Some(sub) => match sub.phase {
-                SubPhase::Enter => collect(&sub.clips, sub.step, time),
-                SubPhase::Loop => collect(&sub.clips, usize::MAX, time),
-                SubPhase::Exit => return,
-            },
-            None => collect(&seat.clips, clip, time),
+        if sub.left > 0.0 {
+            return true;
         }
-        for anio in due {
-            if !self.objects.iter().any(|o| o.eq_ignore_ascii_case(&anio)) {
-                self.objects.push(anio);
-                self.objects_changed = true;
+        // Stop a held idle by the first exit the graph takes, then give its way
+        // out a moment before moving on.
+        let stops = std::mem::take(&mut sub.stop);
+        if !stops.is_empty() {
+            let _ = stops.iter().any(|e| self.graph_event(e, clips));
+            if let Some(sub) = &mut self.sub {
+                sub.left = 1.0;
             }
+            return true;
         }
+        self.sub = None;
+        false
     }
 }
 
@@ -1008,7 +982,7 @@ impl Engine {
     }
 
     /// [`Engine::play_animation_event`], leaving a looping idle after `secs` (it is
-    /// otherwise held until the AI moves on).
+    /// otherwise held until the AI moves on). True when the actor's graph took it.
     fn play_idle(&mut self, actor: FormId, event: &str, secs: Option<f32>) -> bool {
         let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
         let Some(rt) = self.cells.get_mut(&key) else { return false };
@@ -1017,8 +991,13 @@ impl Engine {
         if matches!(lower.as_str(), "idlestop" | "idlestopinstant" | "idleforcedefaultstate" | "idlechairexitstart" | "idlefurnitureexit") {
             if a.in_furniture() {
                 a.leave = true;
+            } else if let Some(g) = &mut a.graph {
+                g.send_event(event);
             }
             return true;
+        }
+        if a.graph.is_none() {
+            return false;
         }
         let Some(project) = a.skeleton_path.split("/character assets").next().filter(|b| b.ends_with("actors/character")).map(str::to_owned)
         else {
@@ -1028,16 +1007,19 @@ impl Engine {
         // Seated, the event is one of the seat's own idles (`idleChairArmsCrossedVar1`).
         if matches!(a.state, State::Use(_)) && a.seat.as_ref().is_some_and(|s| s.kind != Use::Idle) {
             let Some(c) = clips.event_with_exits(event, &SUB_IDLE_EXITS, &project, &a.skeleton_path, a.female, &a.skeleton) else { return false };
-            let summary = format!("{} enter, {} exit clips, loops {}", c.enter.len(), c.exit.len(), c.idle_loops);
-            let started = a.start_sub_idle(c, &mut xorshift(self.rng));
+            let started = a.start_sub_idle(c, &mut clips, &mut xorshift(self.rng));
             if started {
-                log::debug!("{actor} plays {event} in its seat ({summary})");
+                log::debug!("{actor} plays {event} in its seat");
             }
             return started;
         }
+        // Planning: where the way in leaves the actor, how long it lasts.
         let Some(c) = clips.event(event, &project, &a.skeleton_path, a.female, &a.skeleton) else { return false };
+        if !a.graph_event(event, &mut clips) {
+            log::debug!("{actor}: the graph won't take {event}");
+            return false;
+        }
         self.furniture.release(a.ref_id);
-        // Where the enter clips leave the actor; it stays there.
         let mut pos = a.pos;
         let mut heading = a.heading;
         for m in c.enter.iter().filter_map(|c| c.motion.as_ref()) {
@@ -1047,11 +1029,12 @@ impl Engine {
         }
         // A one-shot gesture (no loop at the end) is played through once.
         let duration = if c.idle_loops { secs.unwrap_or(f32::INFINITY) } else { c.idle.duration() };
-        log::debug!("{actor} plays {event} ({} enter, {} exit clips)", c.enter.len(), c.exit.len());
+        log::debug!("{actor} plays {event} ({:.1} s in, {:.1} s out)", c.enter_time(), c.exit_time());
+        let enter = c.enter_time();
+        a.sub = None;
         a.seat = Some(Seat { furniture: FormId::NULL, kind: Use::Idle, anim_type: 0, entry: furniture::Entry::Front, pos, heading, clips: Arc::new(c), duration });
-        a.state = State::Enter { step: 0, from: a.pos, heading: a.heading };
+        a.state = State::Enter(enter);
         a.leave = false;
-        a.next_clip(true, 0.25);
         true
     }
 
@@ -1124,10 +1107,12 @@ impl Engine {
                 log::debug!("{r}: no clips for furniture idle {idle} ({event})");
                 continue;
             };
+            drop(clips);
             log::debug!("{r} plays {event} in {} ({} enter, {} exit clips)", seat.furniture, c.enter.len(), c.exit.len());
             let mut rand = xorshift(self.rand());
+            let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
             if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r)) {
-                a.start_sub_idle(c, &mut rand);
+                a.start_sub_idle(c, &mut clips, &mut rand);
             }
         }
     }
@@ -1177,6 +1162,13 @@ impl Engine {
             cur = self.linked_ref(r, Some(FormId::NULL));
         }
         out
+    }
+
+    /// Active states of a loaded actor's behaviour graph, outermost first.
+    pub fn graph_states(&self, r: FormId) -> Option<Vec<String>> {
+        let key = self.actor_cells.get(&r)?;
+        let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;
+        Some(a.graph.as_ref()?.active_states())
     }
 
     /// Feet position and heading of a loaded actor.
@@ -1366,14 +1358,14 @@ impl Engine {
                     }
                 }
                 inst.transform = a.transform();
-                if let Some(pose) = a.animate(dt) {
+                if let Some(pose) = a.animate(dt, &mut world.clips) {
                     inst.pose = pose;
                 }
                 if std::mem::take(&mut a.objects_changed) {
                     log::debug!("{} holds {:?}", a.ref_id, a.objects);
                     held.push((*key, index, a.objects.clone()));
                 }
-                if a.is_walking() || matches!(a.state, State::Approach(_) | State::Enter { .. } | State::Exit { .. }) || talking == Some(a.ref_id) {
+                if a.is_walking() || matches!(a.state, State::Approach(_) | State::Enter(_) | State::Exit(_) | State::Use(_)) || talking == Some(a.ref_id) {
                     moved.push((a.ref_id, a.pos, a.capsule));
                 }
                 // Reached the door (or gave up out of sight): leave the cell.

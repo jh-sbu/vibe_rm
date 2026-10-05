@@ -63,6 +63,8 @@ pub struct Binding {
     pub skeleton_name: String,
     /// Transform track -> skeleton bone index (empty = identity).
     pub track_to_bone: Vec<i16>,
+    /// `blendHint` ADDITIVE: the tracks are offsets to add to a pose, not a pose.
+    pub additive: bool,
 }
 
 pub enum AnimationData {
@@ -134,7 +136,8 @@ impl AnimationContainer {
                     let anim = p.ptr(b + 24).unwrap_or(u32::MAX);
                     let (ta, tn) = p.array(b + 32);
                     let track_to_bone = ta.map(|ta| (0..tn as u32).map(|k| p.i16(ta + k * 2)).collect()).unwrap_or_default();
-                    bindings.push((anim, Binding { skeleton_name: p.string(b + 16).unwrap_or_default(), track_to_bone }));
+                    let additive = p.u8(b + 64) == 1;
+                    bindings.push((anim, Binding { skeleton_name: p.string(b + 16).unwrap_or_default(), track_to_bone, additive }));
                 }
             }
         }

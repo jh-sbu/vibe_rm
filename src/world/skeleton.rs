@@ -40,6 +40,10 @@ impl Skeleton {
         }
     }
 
+    pub fn bone_name(&self, i: usize) -> Option<&str> {
+        self.bones.get(i).map(|b| b.name.as_str())
+    }
+
     pub fn find(&self, name: &str) -> Option<usize> {
         self.by_name.get(&name.to_ascii_lowercase()).copied()
     }
