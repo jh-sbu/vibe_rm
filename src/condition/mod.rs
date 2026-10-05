@@ -230,7 +230,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         14 => Some(100.0),                                                // GetActorValue
         365 => b(subj_base.and_then(|n| e.npc_race(n)).is_some_and(|r| e.race_is_child(r))), // IsChild
         125 => b(false),                                                  // IsGuard
-        141 | 249 => b(false),                                            // IsTalking / IsInDialogueWithPlayer
+        141 => b(false),                                                  // IsTalking
         149 => b(e.current_weather() == Some(p1)),                        // GetIsCurrentWeather
         1 => {
             // GetDistance
