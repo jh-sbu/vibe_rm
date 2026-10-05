@@ -304,7 +304,20 @@ pub enum ExtraData {
     Integer { name: String, value: u32 },
     BsxFlags(u32),
     Bound { center: Vec3, dimensions: Vec3 },
+    Furniture(Vec<FurnitureMarker>),
     Other { name: String },
+}
+
+/// One furniture marker position (`BSFurnitureMarker`), in the model's space.
+#[derive(Debug, Clone, Copy)]
+pub struct FurnitureMarker {
+    pub offset: Vec3,
+    /// Radians about Z.
+    pub heading: f32,
+    /// 1 sit, 2 lay, 4 lean.
+    pub anim_type: u16,
+    /// Entry flags: 1 front, 2 behind, 4 right, 8 left, 16 up.
+    pub entry: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -791,6 +804,19 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
         "BSXFlags" => {
             r.string_value()?;
             Block::ExtraData(ExtraData::BsxFlags(r.u32()?))
+        }
+        "BSFurnitureMarker" | "BSFurnitureMarkerNode" => {
+            r.string_value()?;
+            let n = r.u32()?;
+            let mut v = Vec::with_capacity(n.min(64) as usize);
+            for _ in 0..n {
+                let offset = r.vec3()?;
+                let heading = r.f32()?;
+                let anim_type = r.u16()?;
+                let entry = r.u16()?;
+                v.push(FurnitureMarker { offset, heading, anim_type, entry });
+            }
+            Block::ExtraData(ExtraData::Furniture(v))
         }
         "BSBound" => {
             r.string_value()?;

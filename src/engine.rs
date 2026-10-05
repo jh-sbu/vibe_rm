@@ -63,7 +63,7 @@ pub struct Engine {
     /// Name of what the crosshair points at, if activatable.
     pub look_target: Option<(FormId, String)>,
     skeletons: HashMap<String, Option<std::sync::Arc<crate::world::skeleton::Skeleton>>>,
-    anims: crate::world::animation::AnimationLibrary,
+    pub(crate) anims: crate::world::animation::AnimationLibrary,
     pub scripts: crate::script::ScriptState,
     pub vm: papyrus::Vm,
     /// Whole game days elapsed before the current day.
@@ -76,6 +76,7 @@ pub struct Engine {
     npc_refs: HashMap<FormId, FormId>,
     lod: Option<crate::world::lod::Lod>,
     pub nav: crate::ai::nav::NavWorld,
+    pub furniture: crate::ai::furniture::FurnitureWorld,
     /// Current positions of references that have moved from their editor location.
     pub moved_refs: HashMap<FormId, Vec3>,
     /// Actor AI processing (toggled with the `tai` console command).
@@ -127,7 +128,12 @@ impl Engine {
             scripts: Default::default(),
             vm: papyrus::Vm::new(),
             day: 0,
-            rng: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1) | 1,
+            // VRM_SEED makes runs reproducible (for testing).
+            rng: std::env::var("VRM_SEED")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1))
+                | 1,
             pending_moveto: None,
             audio: None,
             music: MusicState::default(),
@@ -135,6 +141,7 @@ impl Engine {
             npc_refs: HashMap::new(),
             lod: None,
             nav: Default::default(),
+            furniture: Default::default(),
             moved_refs: HashMap::new(),
             ai_enabled: true,
             whereabouts: Default::default(),
@@ -362,6 +369,7 @@ impl Engine {
         self.pending_loads.clear();
         self.world_persistent.clear();
         self.nav.clear();
+        self.furniture = Default::default();
         self.moved_refs.clear();
         self.actor_cells.clear();
     }
@@ -507,6 +515,8 @@ impl Engine {
             let packages = crate::ai::package::npc_packages(&self.lo, d.npc);
             let mut rt = crate::ai::ActorRuntime::new(d.ref_id, d.npc, skel.clone(), d.transform, packages, start * 0.3);
             rt.editor_pos = *editor_pos;
+            rt.skeleton_path = d.skeleton.clone();
+            rt.female = d.female;
             rt.anim = idle.clone().map(|c| crate::world::animation::ActorAnim::new(c, &skel, start));
             rt.idle = idle;
             rt.walk = walk;
@@ -572,6 +582,16 @@ impl Engine {
         }
     }
 
+    fn load_furniture(&mut self, key: CellKey, refs: &[FormId]) {
+        let (models, vfs) = (&mut self.models, &self.vfs);
+        self.furniture.add_cell(&self.lo, key, refs, |path| models.furniture(vfs, path));
+        let (n, m) = self.furniture.count(key);
+        log::debug!("{key:?}: {n} furniture with {m} markers");
+        for f in self.furniture.items.iter().filter(|f| f.cell == key) {
+            log::trace!("furniture {} owner {:?} {:?}", f.ref_id, f.owner, f.markers);
+        }
+    }
+
     fn unload_cell(&mut self, key: CellKey) {
         self.scene.cells.remove(&key);
         if let Some(rt) = self.cells.remove(&key) {
@@ -585,7 +605,9 @@ impl Engine {
                 self.vm.detach_all(papyrus::ObjectId::Form(r.0));
             }
             self.nav.unload(&rt.navmeshes);
+            self.furniture.remove_cell(key);
             for a in &rt.actors {
+                self.furniture.release(a.ref_id);
                 self.moved_refs.remove(&a.ref_id);
                 self.actor_cells.remove(&a.ref_id);
             }
@@ -629,6 +651,7 @@ impl Engine {
             .map(|c| c.persistent.iter().chain(c.temporary.iter()).copied().collect())
             .unwrap_or_default();
         self.load_navmeshes(key, cell_id);
+        self.load_furniture(key, &refs);
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_actors(key, &actors);
         self.attach_cell_scripts(&refs);
@@ -750,6 +773,7 @@ impl Engine {
         if let Some(cid) = cell_id {
             self.load_navmeshes(key, cid);
         }
+        self.load_furniture(key, &refs);
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_actors(key, &actors);
         self.attach_cell_scripts(&refs);
@@ -1008,7 +1032,10 @@ impl Engine {
         match self.lo.tag_of(base).map(|t| t.0) {
             Some(t) if t == *b"DOOR" => "Open",
             Some(t) if t == *b"CONT" => "Search",
-            Some(t) if t == *b"FURN" => "Sit",
+            Some(t) if t == *b"FURN" => {
+                let sleep = self.furniture.get(*id).is_some_and(|f| f.markers.iter().any(|m| m.kind == crate::ai::furniture::Use::Sleep));
+                if sleep { "Sleep" } else { "Sit" }
+            }
             Some(t) if t == *b"BOOK" => "Read",
             Some(t) if t == *b"FLOR" => "Harvest",
             Some(t) if t == *b"ACTI" => "Activate",

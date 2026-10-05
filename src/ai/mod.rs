@@ -1,5 +1,6 @@
 //! Actor AI: package selection, sandboxing / travelling over the navmesh.
 
+pub mod furniture;
 pub mod nav;
 pub mod package;
 pub mod schedule;
@@ -12,7 +13,8 @@ use glam::{Mat4, Quat, Vec3};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::world::animation::{ActorAnim, BoundClip};
 use crate::world::skeleton::Skeleton;
-use package::{Behaviour, LocationKind, Package};
+use furniture::{FurnitureWorld, Seat, Use};
+use package::{Allow, Behaviour, LocationKind, Package, Target};
 
 /// Forward walk speed (units/s) from the default NPC movement type.
 pub const WALK_SPEED: f32 = 80.0;
@@ -26,6 +28,8 @@ const SANDBOX_MAX: f32 = 1200.0;
 /// Longest path an actor will set out on while sandboxing / travelling.
 const MAX_SANDBOX_PATH: f32 = 6000.0;
 const MAX_TRAVEL_PATH: f32 = 30_000.0;
+/// How far from a sleep / sit location to look for a bed or chair.
+const FURNITURE_SEARCH: f32 = 768.0;
 
 /// Where and how the current package wants the actor to be.
 #[derive(Debug, Clone, Copy)]
@@ -33,12 +37,62 @@ pub struct Goal {
     pub behaviour: Behaviour,
     pub centre: Vec3,
     pub radius: f32,
+    pub allow: Allow,
+    pub energy: f32,
+    /// Specific furniture to use (a Sit package's chair).
+    pub furniture: Option<FormId>,
+}
+
+impl Goal {
+    pub fn travel(to: Vec3) -> Goal {
+        Goal {
+            behaviour: Behaviour::Travel,
+            centre: to,
+            radius: 0.0,
+            allow: Allow { wandering: false, ..package::Allow::default() },
+            energy: 50.0,
+            furniture: None,
+        }
+    }
 }
 
 #[derive(Debug)]
 enum State {
     Idle(f32),
-    Walk { path: Vec<Vec3>, next: usize, budget: f32 },
+    /// Following a path; `to_seat` when heading for the start of `ActorRuntime::seat`.
+    Walk { path: Vec<Vec3>, next: usize, budget: f32, to_seat: bool },
+    /// At the start of the seat's enter animation, turning to face the right way.
+    Approach(f32),
+    /// Playing the seat's enter animation from `from` / `heading`.
+    Enter { from: Vec3, heading: f32 },
+    /// In the furniture for this many more seconds.
+    Use(f32),
+    /// Playing the exit animation from the seat.
+    Exit,
+}
+
+/// Loads a clip by path for an actor (given its skeleton path and skeleton).
+pub type ClipLoader<'a> = dyn FnMut(&str, &str, &Skeleton) -> Option<Arc<BoundClip>> + 'a;
+
+/// What the AI needs from the world while stepping an actor.
+pub struct World<'a> {
+    pub nav: &'a nav::NavWorld,
+    pub furniture: &'a mut FurnitureWorld,
+    /// Load a clip by path for the actor being stepped.
+    pub clip: &'a mut ClipLoader<'a>,
+    /// Whether an NPC may use a kind of furniture with this owner.
+    pub may_use: &'a dyn Fn(FormId, Use, Option<FormId>) -> bool,
+    /// Furniture that is a specific actor's package target (kept free for them).
+    pub claimed: &'a std::collections::HashMap<FormId, FormId>,
+    pub rand: &'a mut dyn FnMut() -> u64,
+}
+
+fn path_length(from: Vec3, path: &[Vec3]) -> f32 {
+    std::iter::once(&from).chain(path).zip(path).map(|(a, b)| a.distance(*b)).sum()
+}
+
+fn uniform(rand: &mut dyn FnMut() -> u64, lo: f32, hi: f32) -> f32 {
+    lo + (rand() % 1000) as f32 / 1000.0 * (hi - lo)
 }
 
 /// Runtime state of one spawned actor.
@@ -60,6 +114,14 @@ pub struct ActorRuntime {
     pub editor_pos: Vec3,
     /// Load door the actor is walking to in order to leave the cell.
     pub exiting: Option<FormId>,
+    pub skeleton_path: String,
+    pub female: bool,
+    /// Furniture marker reserved (walking to it) or in use.
+    pub seat: Option<Seat>,
+    /// Just spawned with the cell: may start out already in furniture.
+    pub fresh: bool,
+    /// Get out of the furniture as soon as possible (package changed).
+    leave: bool,
     state: State,
     next_eval: f32,
     speed: f32,
@@ -85,6 +147,11 @@ impl ActorRuntime {
             scale: scale.x,
             editor_pos: pos,
             exiting: None,
+            skeleton_path: String::new(),
+            female: false,
+            seat: None,
+            fresh: true,
+            leave: false,
             state: State::Idle(1.0 + stagger),
             next_eval: stagger,
             speed: 0.0,
@@ -99,10 +166,34 @@ impl ActorRuntime {
         matches!(self.state, State::Walk { .. })
     }
 
-    /// Stop and stand (e.g. when spoken to).
+    /// Getting into, using or getting out of furniture.
+    pub fn in_furniture(&self) -> bool {
+        matches!(self.state, State::Enter { .. } | State::Use(_) | State::Exit)
+    }
+
+    /// Stop and stand (e.g. when spoken to). Actors in furniture stay put.
     pub fn halt(&mut self, idle: f32) {
+        if self.in_furniture() {
+            return;
+        }
         self.state = State::Idle(idle);
         self.speed = 0.0;
+    }
+
+    /// The package changed: get up (if in furniture) or stop, then plan anew.
+    pub fn interrupt(&mut self, furniture: &mut FurnitureWorld) {
+        if self.in_furniture() {
+            self.leave = true;
+        } else {
+            self.give_up_seat(furniture);
+            self.halt(0.5);
+        }
+    }
+
+    fn give_up_seat(&mut self, furniture: &mut FurnitureWorld) {
+        if self.seat.take().is_some() {
+            furniture.release(self.ref_id);
+        }
     }
 
     fn turn_towards(&mut self, dir: Vec3, dt: f32) -> f32 {
@@ -116,8 +207,29 @@ impl ActorRuntime {
         d - step
     }
 
+    /// Place the actor along a clip's root motion from a start pose.
+    fn follow_motion(&mut self, from: Vec3, heading: f32) {
+        let Some(anim) = &self.anim else { return };
+        if let Some(m) = &anim.clip.motion {
+            let (off, yaw) = m.sample(anim.time);
+            self.pos = from + furniture::to_world(off, heading);
+            self.heading = heading - yaw;
+        }
+    }
+
+    /// Start sitting / lying / leaning in the reserved seat for `secs`.
+    fn settle(&mut self, secs: f32, fade: f32) {
+        let Some(seat) = &self.seat else { return };
+        self.pos = seat.pos;
+        self.heading = seat.heading;
+        if let Some(anim) = &mut self.anim {
+            anim.play(seat.clips.idle.clone(), fade);
+        }
+        self.state = State::Use(secs);
+    }
+
     /// Advance movement. Returns true when the actor moved.
-    pub fn step(&mut self, dt: f32, nav: &nav::NavWorld, rand: &mut impl FnMut() -> u64) -> bool {
+    pub fn step(&mut self, dt: f32, w: &mut World) -> bool {
         match &mut self.state {
             State::Idle(t) => {
                 self.speed = 0.0;
@@ -125,15 +237,21 @@ impl ActorRuntime {
                 if *t > 0.0 {
                     return false;
                 }
-                self.plan(nav, rand);
+                self.plan(w);
                 false
             }
-            State::Walk { path, next, budget } => {
+            State::Walk { path, next, budget, to_seat } => {
                 *budget -= dt;
                 if *budget < 0.0 || *next >= path.len() {
-                    log::debug!("{} walk ended ({})", self.ref_id, if *budget < 0.0 { "timeout" } else { "arrived" });
-                    self.state = State::Idle(4.0 + (rand() % 1100) as f32 / 100.0);
+                    let arrived = *budget >= 0.0;
+                    log::debug!("{} walk ended ({})", self.ref_id, if arrived { "arrived" } else { "timeout" });
                     self.speed = 0.0;
+                    if *to_seat && arrived {
+                        self.state = State::Approach(0.0);
+                    } else {
+                        self.give_up_seat(w.furniture);
+                        self.state = State::Idle(uniform(w.rand, 4.0, 15.0));
+                    }
                     return false;
                 }
                 let target = path[*next];
@@ -151,28 +269,106 @@ impl ActorRuntime {
                 let fwd = Vec3::new(self.heading.sin(), self.heading.cos(), 0.0);
                 let mut p = self.pos + fwd * (speed * dt).min(dist);
                 let z_hint = Vec3::new(p.x, p.y, self.pos.z);
-                p.z = nav.height_at(z_hint).unwrap_or_else(|| {
+                p.z = w.nav.height_at(z_hint).unwrap_or_else(|| {
                     // Interpolate towards the waypoint height off the mesh.
                     self.pos.z + (target.z - self.pos.z) * ((speed * dt) / dist).min(1.0)
                 });
                 self.pos = p;
                 true
             }
+            State::Approach(t) => {
+                *t += dt;
+                let t = *t;
+                let Some(seat) = self.seat.clone() else {
+                    self.state = State::Idle(1.0);
+                    return false;
+                };
+                let (start, h0) = furniture::Seat::enter_start(&seat);
+                // Close the last few units and turn to the start heading.
+                let to = (start - self.pos).truncate();
+                let step = (WALK_SPEED * 0.5 * dt).min(to.length());
+                self.pos += (to.normalize_or_zero() * step).extend(0.0);
+                let remaining = self.turn_towards(Vec3::new(h0.sin(), h0.cos(), 0.0), dt);
+                if remaining.abs() < 0.03 && to.length() < 2.0 || t > 3.0 {
+                    self.pos = start;
+                    self.heading = h0;
+                    match (&mut self.anim, &seat.clips.enter) {
+                        (Some(anim), Some(enter)) => {
+                            anim.play_once(enter.clone(), 0.2);
+                            log::debug!("{} entering {} ({:.1}s clip)", self.ref_id, seat.furniture, enter.duration());
+                            self.state = State::Enter { from: start, heading: h0 };
+                        }
+                        _ => self.settle(seat.duration, 0.4),
+                    }
+                }
+                true
+            }
+            State::Enter { from, heading } => {
+                let (from, heading) = (*from, *heading);
+                self.follow_motion(from, heading);
+                if self.anim.as_ref().is_none_or(|a| a.finished()) {
+                    let secs = self.seat.as_ref().map_or(0.0, |s| s.duration);
+                    self.settle(secs, 0.2);
+                }
+                true
+            }
+            State::Use(t) => {
+                *t -= dt;
+                if *t > 0.0 && !self.leave {
+                    return false;
+                }
+                self.leave = false;
+                let exit = self.seat.as_ref().and_then(|s| s.clips.exit.clone());
+                match (&mut self.anim, exit) {
+                    (Some(anim), Some(exit)) => {
+                        log::debug!("{} getting up ({:.1}s clip)", self.ref_id, exit.duration());
+                        anim.play_once(exit, 0.2);
+                        self.state = State::Exit;
+                    }
+                    _ => self.stand_up(w),
+                }
+                false
+            }
+            State::Exit => {
+                if let Some(seat) = &self.seat {
+                    let (pos, heading) = (seat.pos, seat.heading);
+                    self.follow_motion(pos, heading);
+                }
+                if self.anim.as_ref().is_none_or(|a| a.finished()) {
+                    self.stand_up(w);
+                }
+                true
+            }
         }
     }
 
+    /// Back on the floor after using furniture.
+    fn stand_up(&mut self, w: &mut World) {
+        log::debug!("{} stood up at {:?}", self.ref_id, self.pos);
+        self.give_up_seat(w.furniture);
+        if let Some(z) = w.nav.height_at(self.pos) {
+            self.pos.z = z;
+        }
+        self.state = State::Idle(uniform(w.rand, 2.0, 6.0));
+    }
+
     /// Choose what to do next from the current goal.
-    fn plan(&mut self, nav: &nav::NavWorld, rand: &mut impl FnMut() -> u64) {
-        let idle = |r: &mut dyn FnMut() -> u64, lo: f32, hi: f32| lo + (r() % 1000) as f32 / 1000.0 * (hi - lo);
+    fn plan(&mut self, w: &mut World) {
+        // VRM_AI_NO_SNAP: walk into furniture even on cell load (to watch enter animations).
+        let fresh = std::mem::take(&mut self.fresh) && std::env::var_os("VRM_AI_NO_SNAP").is_none();
+        self.give_up_seat(w.furniture);
         let Some(goal) = self.goal else {
-            self.state = State::Idle(idle(rand, 5.0, 10.0));
+            self.state = State::Idle(uniform(w.rand, 5.0, 10.0));
             return;
         };
+        if self.seek_furniture(&goal, fresh, w) {
+            return;
+        }
         // Heading back into the sandbox area from elsewhere counts as travel.
         let mut travelling = goal.behaviour != Behaviour::Sandbox;
         let target = match goal.behaviour {
             Behaviour::Hold => None,
-            Behaviour::Travel => {
+            Behaviour::Travel | Behaviour::Sleep | Behaviour::Sit => {
                 let near = goal.radius.max(96.0);
                 (self.pos.truncate().distance(goal.centre.truncate()) > near).then_some(goal.centre)
             }
@@ -182,38 +378,143 @@ impl ActorRuntime {
                 if self.pos.truncate().distance(goal.centre.truncate()) > r * 1.5 {
                     travelling = true;
                     Some(goal.centre)
+                } else if goal.allow.wandering || (w.rand)().is_multiple_of(4) {
+                    w.nav.random_point(goal.centre, r, &mut *w.rand)
                 } else {
-                    nav.random_point(goal.centre, r, &mut *rand)
+                    None
                 }
             }
         };
-        let path = target.and_then(|t| nav.find_path(self.pos, t));
+        let path = target.and_then(|t| w.nav.find_path(self.pos, t));
         match path {
             Some(path) if !path.is_empty() => {
-                let len: f32 = std::iter::once(self.pos).chain(path.iter().copied()).collect::<Vec<_>>().windows(2).map(|w| w[0].distance(w[1])).sum();
+                let len = path_length(self.pos, &path);
                 let max = if travelling { MAX_TRAVEL_PATH } else { MAX_SANDBOX_PATH };
                 if len > max {
                     log::debug!("{} path too long ({len:.0})", self.ref_id);
-                    self.state = State::Idle(idle(rand, 10.0, 20.0));
+                    self.state = State::Idle(uniform(w.rand, 10.0, 20.0));
                     return;
                 }
                 log::debug!("{} walking {:.0} units via {} points ({:?})", self.ref_id, len, path.len(), goal.behaviour);
-                self.state = State::Walk { path, next: 0, budget: len / WALK_SPEED * 2.5 + 5.0 };
+                self.state = State::Walk { path, next: 0, budget: len / WALK_SPEED * 2.5 + 5.0, to_seat: false };
             }
             _ => {
                 if target.is_some() {
                     log::debug!("{} no path to {:?}", self.ref_id, target);
                 }
-                self.state = State::Idle(idle(rand, 6.0, 16.0));
+                self.state = State::Idle(uniform(w.rand, 6.0, 16.0));
             }
         }
+    }
+
+    /// Look for furniture the goal wants used; reserve it and head there (or, when
+    /// `fresh`, start out in it). Returns true if the actor is now on its way.
+    fn seek_furniture(&mut self, goal: &Goal, fresh: bool, w: &mut World) -> bool {
+        // Only humanoids have furniture animations.
+        if !self.skeleton_path.contains("actors/character/") {
+            return false;
+        }
+        let (kinds, centre, radius, secs): (&[Use], Vec3, f32, f32) = match goal.behaviour {
+            Behaviour::Sleep => (&[Use::Sleep], goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY),
+            Behaviour::Sit => (&[Use::Sit], goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY),
+            Behaviour::Sandbox => {
+                let kinds: &[Use] = match (goal.allow.sitting, goal.allow.idle_markers) {
+                    (true, true) => &[Use::Sit, Use::Lean],
+                    (true, false) => &[Use::Sit],
+                    (false, true) => &[Use::Lean],
+                    (false, false) => return false,
+                };
+                // Restless actors wander more and sit for less long.
+                let chance = if goal.allow.wandering { 0.75 - goal.energy / 200.0 } else { 0.9 };
+                if uniform(w.rand, 0.0, 1.0) > chance {
+                    return false;
+                }
+                let secs = (150.0 - goal.energy * 1.2) * uniform(w.rand, 0.6, 1.4);
+                (kinds, goal.centre, goal.radius.clamp(SANDBOX_MIN, SANDBOX_MAX), secs)
+            }
+            Behaviour::Travel | Behaviour::Hold => return false,
+        };
+        let npc = self.npc;
+        let mut options = Vec::new();
+        for &kind in kinds {
+            let me = self.ref_id;
+            options.extend(w.furniture.free_near(kind, centre, radius, |f, kind| {
+                goal.furniture.is_none_or(|r| r == f.ref_id)
+                    && w.claimed.get(&f.ref_id).is_none_or(|&a| a == me)
+                    && (w.may_use)(npc, kind, f.owner)
+            }));
+        }
+        if options.is_empty() {
+            log::debug!("{} no free {kinds:?} within {radius:.0} of {centre:?}", self.ref_id);
+            return false;
+        }
+        // Beds: own bed first, then nearest. Otherwise a random nearby choice.
+        if goal.behaviour == Behaviour::Sleep {
+            let rank = |f: FormId| match w.furniture.get(f).and_then(|f| f.owner) {
+                Some(o) if o == npc => 0,
+                Some(_) => 1,
+                None => 2,
+            };
+            options.sort_by(|a, b| {
+                (rank(a.0), a.2.pos.distance(self.pos)).partial_cmp(&(rank(b.0), b.2.pos.distance(self.pos))).unwrap()
+            });
+        } else {
+            for i in (1..options.len()).rev() {
+                options.swap(i, ((w.rand)() % (i as u64 + 1)) as usize);
+            }
+        }
+        for (fid, mi, marker) in options.into_iter().take(6) {
+            let bedroll = w.furniture.get(fid).is_some_and(|f| f.bedroll);
+            let (path, skel) = (self.skeleton_path.clone(), self.skeleton.clone());
+            let ways = furniture::ways_to_use(&marker, bedroll, &path, self.female, |p| (w.clip)(p, &path, &skel));
+            // The entry whose starting spot is on the navmesh and nearest.
+            let best = ways
+                .into_iter()
+                .map(|(entry, clips)| {
+                    let (start, _) = furniture::enter_start(&marker, clips.enter.as_deref());
+                    (entry, clips, start)
+                })
+                .filter(|(_, _, start)| w.nav.height_at(*start).is_some_and(|z| (z - start.z).abs() < 48.0))
+                .min_by(|a, b| a.2.distance(self.pos).total_cmp(&b.2.distance(self.pos)));
+            let Some((entry, clips, start)) = best else {
+                log::debug!("{} can't use {fid} marker {mi}: no reachable entry", self.ref_id);
+                continue;
+            };
+            let seat = Seat {
+                furniture: fid,
+                pos: marker.pos,
+                heading: marker.heading,
+                clips: Arc::new(clips),
+                duration: secs,
+            };
+            if fresh {
+                w.furniture.reserve(fid, mi, self.ref_id);
+                self.seat = Some(seat);
+                self.settle(secs, 0.0);
+                log::debug!("{} starts in {fid} marker {mi} ({:?})", self.ref_id, marker.kind);
+                return true;
+            }
+            let Some(route) = w.nav.find_path(self.pos, start) else { continue };
+            let len = path_length(self.pos, &route);
+            if len > MAX_TRAVEL_PATH {
+                continue;
+            }
+            w.furniture.reserve(fid, mi, self.ref_id);
+            log::debug!("{} heading for {fid} marker {mi} ({:?}, {entry:?} entry, {len:.0} units)", self.ref_id, marker.kind);
+            self.seat = Some(seat);
+            self.state = State::Walk { path: route, next: 0, budget: len / WALK_SPEED * 2.5 + 5.0, to_seat: true };
+            return true;
+        }
+        false
     }
 
     /// Pick the idle or walk clip to match the current speed.
     pub fn animate(&mut self, dt: f32) -> Option<Vec<Mat4>> {
         let walking = self.speed > 5.0;
+        let locomotion = matches!(self.state, State::Idle(_) | State::Walk { .. } | State::Approach(_));
         let anim = self.anim.as_mut()?;
         match (walking, &self.walk, &self.idle) {
+            _ if !locomotion => anim.speed = 1.0,
             (true, Some(w), _) => {
                 anim.play(w.clone(), 0.25);
                 anim.speed = (self.speed / WALK_SPEED).clamp(0.3, 1.5);
@@ -229,6 +530,13 @@ impl ActorRuntime {
 }
 
 impl Engine {
+    /// Feet position and heading of a loaded actor.
+    pub fn actor_pose(&self, r: FormId) -> Option<(Vec3, f32)> {
+        let key = self.actor_cells.get(&r)?;
+        let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;
+        Some((a.pos, a.heading))
+    }
+
     /// Where a package location points to, as (centre, radius).
     fn package_target(&self, a: &ActorRuntime, p: &Package) -> (Vec3, f32) {
         let Some(loc) = p.location else { return (a.editor_pos, 0.0) };
@@ -259,7 +567,13 @@ impl Engine {
                 let goal = pick.map(|pi| {
                     let p = &a.packages[pi];
                     let (centre, radius) = self.package_target(a, p);
-                    Goal { behaviour: p.behaviour, centre, radius }
+                    let furniture = match p.target {
+                        Some(Target::Ref(r)) => Some(r),
+                        Some(Target::LinkedRef(kw)) => self.linked_ref(a.ref_id, kw),
+                        _ => None,
+                    }
+                    .filter(|r| self.furniture.get(*r).is_some());
+                    Goal { behaviour: p.behaviour, centre, radius, allow: p.allow, energy: p.energy, furniture }
                 });
                 decisions.push((*key, i, pick, goal));
             }
@@ -278,7 +592,7 @@ impl Engine {
                 }
                 a.current = pick;
                 a.goal = goal;
-                a.halt(0.5);
+                a.interrupt(&mut self.furniture);
             } else {
                 a.goal = goal;
             }
@@ -298,25 +612,46 @@ impl Engine {
             seed
         };
         let nav = std::mem::take(&mut self.nav);
+        let mut furniture = std::mem::take(&mut self.furniture);
+        let (lo, vfs, anims) = (&self.lo, &self.vfs, &mut self.anims);
+        let mut clip = |p: &str, skel_path: &str, skel: &Skeleton| anims.clip(vfs, p, skel_path, skel);
+        let may_use = |npc: FormId, kind: Use, owner: Option<FormId>| furniture::may_use(lo, npc, kind, owner);
+        let claimed = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter_map(|a| Some((a.goal?.furniture?, a.ref_id)))
+            .collect();
+        let mut world = World {
+            nav: &nav,
+            furniture: &mut furniture,
+            clip: &mut clip,
+            may_use: &may_use,
+            claimed: &claimed,
+            rand: &mut rand,
+        };
         let mut moved = Vec::new();
         let mut gone = Vec::new();
         for (key, rt) in self.cells.iter_mut() {
             let Some(rc) = self.scene.cells.get_mut(key) else { continue };
             for (inst, a) in rc.actors.iter_mut().zip(rt.actors.iter_mut()) {
                 if talking == Some(a.ref_id) {
-                    a.halt(3.0);
-                    let d = player - a.pos;
-                    a.turn_towards(d.normalize_or_zero(), dt);
+                    // Seated actors talk from where they are.
+                    if !a.in_furniture() {
+                        a.halt(3.0);
+                        let d = player - a.pos;
+                        a.turn_towards(d.normalize_or_zero(), dt);
+                    }
                 } else if !self.ai_enabled {
                     a.halt(1.0);
                 } else {
-                    a.step(dt, &nav, &mut rand);
+                    a.step(dt, &mut world);
                 }
                 inst.transform = a.transform();
                 if let Some(pose) = a.animate(dt) {
                     inst.pose = pose;
                 }
-                if a.is_walking() || talking == Some(a.ref_id) {
+                if a.is_walking() || matches!(a.state, State::Approach(_) | State::Enter { .. } | State::Exit) || talking == Some(a.ref_id) {
                     moved.push((a.ref_id, a.pos, a.capsule));
                 }
                 // Reached the door (or gave up out of sight): leave the cell.
@@ -329,6 +664,7 @@ impl Engine {
             }
         }
         self.nav = nav;
+        self.furniture = furniture;
         for r in gone {
             self.despawn_actor(r);
         }

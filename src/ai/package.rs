@@ -14,6 +14,35 @@ pub enum Behaviour {
     Travel,
     /// Stay put.
     Hold,
+    /// Go to the location and sleep in a bed there.
+    Sleep,
+    /// Sit in the target chair (or one near the location).
+    Sit,
+}
+
+/// What a sandboxing actor may do besides wander (the template's "Allow ..." inputs).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Allow {
+    pub sitting: bool,
+    pub sleeping: bool,
+    pub eating: bool,
+    pub idle_markers: bool,
+    pub special_furniture: bool,
+    pub wandering: bool,
+}
+
+impl Allow {
+    const NONE: Allow =
+        Allow { sitting: false, sleeping: false, eating: false, idle_markers: false, special_furniture: false, wandering: true };
+}
+
+/// A package "TargetSelector" / "SingleRef" input (`PTDA`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    Ref(FormId),
+    LinkedRef(Option<FormId>),
+    /// Object ids / types, aliases, etc. (not resolved yet).
+    Other,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -71,11 +100,19 @@ pub struct Package {
     pub schedule: Schedule,
     pub conditions: Vec<Condition>,
     pub location: Option<Location>,
+    pub target: Option<Target>,
+    pub allow: Allow,
+    /// 0..100: how restless a sandboxing actor is.
+    pub energy: f32,
 }
 
 fn behaviour_of(template: &str) -> Behaviour {
     let t = template.to_ascii_lowercase();
-    if t.starts_with("travel") || t.starts_with("sleep") || t.starts_with("hold") || t == "patrol" {
+    if t.starts_with("sleep") {
+        Behaviour::Sleep
+    } else if t == "sit" {
+        Behaviour::Sit
+    } else if t.starts_with("travel") || t.starts_with("hold") || t == "patrol" {
         Behaviour::Travel
     } else if t.starts_with("sandbox")
         || t.starts_with("eat")
@@ -91,6 +128,101 @@ fn behaviour_of(template: &str) -> Behaviour {
     }
 }
 
+/// A package data input value, in record order.
+#[derive(Debug, Clone, Copy)]
+enum Input {
+    Bool(bool),
+    Float(f32),
+    Location(Location),
+    Target(Target),
+    Other,
+}
+
+fn location(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Location> {
+    if d.len() < 12 {
+        return None;
+    }
+    let v = u32::from_le_bytes(d[4..8].try_into().unwrap());
+    let f = rec.fid(FormId(v));
+    let kind = match u32::from_le_bytes(d[0..4].try_into().unwrap()) {
+        0 => LocationKind::NearReference(f),
+        1 => LocationKind::InCell(f),
+        2 => LocationKind::NearCurrent,
+        3 => LocationKind::NearEditor,
+        6 => LocationKind::NearLinkedRef(if v == 0 { FormId::NULL } else { f }),
+        12 => LocationKind::NearSelf,
+        k => LocationKind::Other(k),
+    };
+    Some(Location { kind, radius: i32::from_le_bytes(d[8..12].try_into().unwrap()).max(0) as f32 })
+}
+
+fn target(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Target> {
+    if d.len() < 8 {
+        return None;
+    }
+    let v = u32::from_le_bytes(d[4..8].try_into().unwrap());
+    Some(match u32::from_le_bytes(d[0..4].try_into().unwrap()) {
+        0 => Target::Ref(rec.fid(FormId(v))),
+        3 => Target::LinkedRef((v != 0).then(|| rec.fid(FormId(v)))),
+        _ => Target::Other,
+    })
+}
+
+/// Data inputs of a package with their indices (`UNAM`), in record order.
+fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
+    let mut values = Vec::new();
+    let mut indices = Vec::new();
+    let mut kind = String::new();
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            // The procedure tree follows; its UNAMs are names, not input indices.
+            b"XNAM" => break,
+            b"ANAM" => {
+                kind = sr.zstring();
+                values.push(Input::Other);
+            }
+            b"CNAM" if kind == "Bool" && !sr.data.is_empty() => *values.last_mut().unwrap() = Input::Bool(sr.data[0] != 0),
+            b"CNAM" if kind == "Float" && sr.data.len() >= 4 => *values.last_mut().unwrap() = Input::Float(sr.f32(0)),
+            b"PLDT" if !values.is_empty() => {
+                if let Some(l) = location(rec, sr.data) {
+                    *values.last_mut().unwrap() = Input::Location(l);
+                }
+            }
+            b"PTDA" if !values.is_empty() => {
+                if let Some(t) = target(rec, sr.data) {
+                    *values.last_mut().unwrap() = Input::Target(t);
+                }
+            }
+            b"UNAM" if !sr.data.is_empty() => indices.push(sr.data[0]),
+            _ => {}
+        }
+    }
+    indices.into_iter().zip(values).collect()
+}
+
+/// Input names of a template package, by index (`UNAM` + `BNAM` after the procedure tree).
+fn input_names(lo: &LoadOrder, template: FormId) -> std::collections::HashMap<u8, String> {
+    let mut out = std::collections::HashMap::new();
+    let Some(rec) = lo.get(template) else { return out };
+    let mut tree = false;
+    let mut index = None;
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            b"XNAM" => tree = true,
+            b"UNAM" if tree && !sr.data.is_empty() => index = Some(sr.data[0]),
+            b"BNAM" if tree => {
+                if let Some(i) = index.take() {
+                    // "Allow Sitting*", "AllowSitting", "Energy*" -> "allowsitting", "energy".
+                    let name: String = sr.zstring().chars().filter(char::is_ascii_alphanumeric).collect();
+                    out.insert(i, name.to_ascii_lowercase());
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     let rec = lo.get(id)?;
     if rec.tag().0 != *b"PACK" {
@@ -99,8 +231,6 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     let editor_id = rec.editor_id().unwrap_or_default();
     let mut schedule = Schedule { month: -1, day_of_week: -1, hour: -1, minute: -1, duration: 0 };
     let mut template = FormId::NULL;
-    let mut location = None;
-    let mut last_input = String::new();
     for sr in rec.subrecords() {
         match &sr.tag.0 {
             b"PSDT" if sr.data.len() >= 12 => {
@@ -113,34 +243,60 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
                 };
             }
             b"PKCU" if sr.data.len() >= 8 => template = rec.fid(sr.form_id(4)),
-            b"ANAM" => last_input = sr.zstring(),
-            // The first "Location" input is the package's main location.
-            b"PLDT" if location.is_none() && last_input == "Location" && sr.data.len() >= 12 => {
-                let v = sr.u32(4);
-                let f = rec.fid(FormId(v));
-                let kind = match sr.u32(0) {
-                    0 => LocationKind::NearReference(f),
-                    1 => LocationKind::InCell(f),
-                    2 => LocationKind::NearCurrent,
-                    3 => LocationKind::NearEditor,
-                    6 => LocationKind::NearLinkedRef(if v == 0 { FormId::NULL } else { f }),
-                    12 => LocationKind::NearSelf,
-                    k => LocationKind::Other(k),
-                };
-                location = Some(Location { kind, radius: sr.i32(8).max(0) as f32 });
-            }
             _ => {}
         }
     }
     let template_name = lo.get(template).and_then(|t| t.editor_id()).unwrap_or_default();
+    let behaviour = behaviour_of(&template_name);
+    let names = input_names(lo, template);
+    let inputs = inputs(&rec);
+    let named = |n: &str| inputs.iter().find(|(i, _)| names.get(i).is_some_and(|x| x == n)).map(|(_, v)| *v);
+    let flag = |n: &str| match named(n) {
+        Some(Input::Bool(b)) => Some(b),
+        _ => None,
+    };
+    let mut allow = Allow::NONE;
+    let fields: [(&mut bool, &[&str]); 6] = [
+        (&mut allow.sitting, &["allowsitting"]),
+        (&mut allow.sleeping, &["allowsleeping"]),
+        (&mut allow.eating, &["alloweating"]),
+        (&mut allow.idle_markers, &["allowidlemarkers"]),
+        (&mut allow.special_furniture, &["allowspecialfurniture", "allowfurniture"]),
+        (&mut allow.wandering, &["allowwandering"]),
+    ];
+    for (field, keys) in fields {
+        if let Some(b) = keys.iter().find_map(|k| flag(k)) {
+            *field = b;
+        }
+    }
+    // Eating means sitting down at a table.
+    if template_name.eq_ignore_ascii_case("eat") {
+        allow.sitting = true;
+    }
+    let energy = match named("energy") {
+        Some(Input::Float(e)) => e.clamp(0.0, 100.0),
+        _ => 50.0,
+    };
+    // The first location input is the package's main location; likewise for targets.
+    let location = inputs.iter().find_map(|(_, v)| match v {
+        Input::Location(l) => Some(*l),
+        _ => None,
+    });
+    let target = inputs.iter().find_map(|(_, v)| match v {
+        Input::Target(t) => Some(*t),
+        _ => None,
+    });
     Some(Package {
         id,
         editor_id,
-        behaviour: behaviour_of(&template_name),
+        behaviour,
         template: template_name,
         schedule,
         conditions: condition::parse_all(&rec),
         location,
+        target,
+        allow,
+        energy,
     })
 }
 

@@ -37,6 +37,10 @@ pub struct Options {
     pub no_scripts: bool,
     pub talk: Option<String>,
     pub choose: Vec<usize>,
+    /// While waiting, also save a screenshot every this many frames.
+    pub burst: Option<u32>,
+    /// Keep the camera in front of this actor while waiting (`--pos` z sets the height).
+    pub watch: Option<String>,
 }
 
 fn parse_args() -> Result<Options> {
@@ -77,6 +81,8 @@ fn parse_args() -> Result<Options> {
             "--no-scripts" => o.no_scripts = true,
             "--talk" => o.talk = Some(val()?),
             "--choose" => o.choose.push(val()?.parse()?),
+            "--burst" => o.burst = Some(val()?.parse()?),
+            "--watch" => o.watch = Some(val()?),
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v.split_once(',').context("--pick x,y (0..1 screen coords)")?;

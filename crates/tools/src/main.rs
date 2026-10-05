@@ -189,7 +189,8 @@ fn main() -> Result<()> {
             let c = havok::AnimationContainer::parse(&bytes)?;
             for s in &c.skeletons {
                 println!("skeleton {} with {} bones", s.name, s.bones.len());
-                for (i, b) in s.bones.iter().enumerate().take(8) {
+                let shown = if std::env::var_os("HKX_ALL").is_some() { usize::MAX } else { 8 };
+                for (i, b) in s.bones.iter().enumerate().take(shown) {
                     println!("  [{i}] {} parent {:?} t {:?}", b.name, b.parent, b.reference.translation);
                 }
             }
@@ -201,7 +202,11 @@ fn main() -> Result<()> {
                 }
                 let mut out = Vec::new();
                 a.sample(t, &mut out);
-                for (i, q) in out.iter().enumerate().take(6) {
+                let tracks: Vec<usize> = std::env::var("HKX_TRACKS")
+                    .ok()
+                    .map(|v| v.split(',').filter_map(|s| s.parse().ok()).collect())
+                    .unwrap_or_else(|| (0..6).collect());
+                for (i, q) in out.iter().enumerate().filter(|(i, _)| tracks.contains(i)) {
                     println!("  track {i}: t={:?} r={:?} |r|={:.4} s={:?}", q.translation, q.rotation, q.rotation.length(), q.scale);
                 }
             }

@@ -15,15 +15,21 @@ game each piece unlocks.
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
   (schedule + conditions), sandbox / travel behaviour, idle/walk cross-fade,
   persistent NPC whereabouts with leaving / arriving through load doors
+- AI furniture: chairs, benches, stools, beds, bedrolls and wall-lean markers from NIF
+  furniture markers; ownership; reservations; sit / sleep packages and sandbox
+  "Allow ..." inputs; enter / exit clips placed by root motion from the behaviour
+  projects' animation data
 
 ## Next
 1. **AI depth**
-   - Furniture and idle markers (sit, sleep, eat, work idles), behaviour-graph subset
+   - Idle markers (IDLM) and their IDLE animations; workbenches and crafting stations;
+     chair idle variants, eating / drinking (anim objects), child furniture clips;
+     behaviour-graph subset (event -> clip) instead of name matching
    - Remaining procedures: follow, escort, patrol (linked refs), flee, dialogue packages
    - Actor-actor avoidance; doors opening; off-screen travel between worldspaces
    - Leveled lists (LVLN/LVLI) beyond the first entry, templates (TPLT/ACFG)
 2. **Animation**: NiControllerSequence for animated statics (water wheels, flags);
-   root motion from behaviour data
+   root motion for locomotion (walk speeds and turns from the motion data)
 3. **Game logic**: combat, magic, inventory, leveling, crime
 4. **UI**: inventory, map, bars
 5. **Audio**: lip sync
