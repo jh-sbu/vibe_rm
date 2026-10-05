@@ -833,6 +833,29 @@ fn main() -> Result<()> {
                 println!("{n:6} {k}");
             }
         }
+        Some("cell-refs") => {
+            // cell-refs <data dir> <cell editor id | hex> [base tag]: a cell's references
+            // with their base records.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let cell = match u32::from_str_radix(&args[2], 16) {
+                Ok(v) if args[2].len() == 8 => esp::FormId(v),
+                _ => lo.find_editor_id(&args[2]).context("cell not found")?,
+            };
+            let idx = lo.cell(cell).context("not a cell")?;
+            for &r in idx.persistent.iter().chain(&idx.temporary) {
+                let Some(rec) = lo.get(r) else { continue };
+                let Some(b) = rec.get(b"NAME").filter(|d| d.len() >= 4) else { continue };
+                let base = rec.fid(esp::FormId(u32::from_le_bytes(b[0..4].try_into().unwrap())));
+                let tag = lo.tag_of(base).map(|t| t.to_string()).unwrap_or_default();
+                if args.get(3).is_some_and(|want| !want.eq_ignore_ascii_case(&tag)) {
+                    continue;
+                }
+                let edid = lo.get(base).and_then(|b| b.editor_id().map(|e| e.to_string())).unwrap_or_default();
+                println!("{r} {} -> {base} {tag} {edid}", rec.tag());
+            }
+        }
         Some("esp-list") => {
             // esp-list <data dir> <TAG> [edid substring]: records of a type with their text subrecords.
             let data = std::path::Path::new(&args[1]);

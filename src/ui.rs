@@ -2,6 +2,8 @@
 
 use egui::{Align2, Color32, FontId, Pos2, Stroke};
 
+use esp::FormId;
+
 use crate::engine::Engine;
 
 pub struct Console {
@@ -30,6 +32,8 @@ pub struct Ui {
     pub console: Console,
     pub show_debug: bool,
     pub fps: u32,
+    /// The item menu was shown last frame (the key that opened it doesn't close it).
+    menu_shown: bool,
 }
 
 impl Ui {
@@ -40,7 +44,7 @@ impl Ui {
         ctx.set_visuals(visuals);
         ctx.global_style_mut(|s| s.animation_time = 0.0);
         let renderer = egui_wgpu::Renderer::new(device, format, egui_wgpu::RendererOptions::default());
-        Ui { ctx, renderer, console: Console::default(), show_debug: false, fps: 0 }
+        Ui { ctx, renderer, console: Console::default(), show_debug: false, fps: 0, menu_shown: false }
     }
 
     pub fn toggle_console(&mut self) {
@@ -61,6 +65,10 @@ impl Ui {
             } else {
                 self.hud(&ctx, engine);
             }
+            if engine.menu.is_some() {
+                self.item_menu(&ctx, engine);
+            }
+            self.menu_shown = engine.menu.is_some();
             if self.console.open {
                 self.console_window(&ctx, &mut commands);
             }
@@ -191,6 +199,76 @@ impl Ui {
         }
         if ctx.input(|inp| inp.key_pressed(egui::Key::Tab)) {
             *choice = Some(usize::MAX);
+        }
+    }
+
+    /// The inventory, or a container beside it: click an item to move one (shift: all).
+    fn item_menu(&mut self, ctx: &egui::Context, engine: &mut Engine) {
+        use crate::engine::PLAYER_REF;
+        use crate::items::Menu;
+        let Some(menu) = engine.menu else { return };
+        let mut moves: Vec<(FormId, FormId, FormId, i32)> = Vec::new();
+        let mut close = self.menu_shown && ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Tab));
+        let all = ctx.input(|i| i.modifiers.shift);
+        let rect = ctx.content_rect();
+        let list = |ui: &mut egui::Ui, engine: &mut Engine, owner: FormId, to: Option<FormId>, moves: &mut Vec<(FormId, FormId, FormId, i32)>| {
+            let items = engine.listed_inventory(owner);
+            let weight: f32 = items.iter().map(|(_, n, i)| i.weight * *n as f32).sum();
+            ui.set_min_width(420.0);
+            egui::ScrollArea::vertical().max_height(rect.height() * 0.6).auto_shrink([false, true]).id_salt(owner.0).show(ui, |ui| {
+                egui::Grid::new(("items", owner.0)).striped(true).num_columns(4).show(ui, |ui| {
+                    ui.label(egui::RichText::new("Item").strong());
+                    ui.label(egui::RichText::new("Count").strong());
+                    ui.label(egui::RichText::new("Weight").strong());
+                    ui.label(egui::RichText::new("Value").strong());
+                    ui.end_row();
+                    for (f, n, info) in &items {
+                        let r = ui.add(egui::Label::new(&info.name).sense(egui::Sense::click()));
+                        if let (Some(to), true) = (to, r.clicked()) {
+                            moves.push((owner, to, *f, if all { *n } else { 1 }));
+                        }
+                        ui.label(n.to_string());
+                        ui.label(format!("{:.1}", info.weight));
+                        ui.label(info.value.to_string());
+                        ui.end_row();
+                    }
+                });
+            });
+            ui.separator();
+            ui.label(format!("{} items, weight {weight:.1}", items.len()));
+        };
+        let container = match menu {
+            Menu::Container(c) => Some(c),
+            Menu::Inventory => None,
+        };
+        egui::Window::new("Inventory")
+            .anchor(Align2::LEFT_CENTER, egui::vec2(40.0, 0.0))
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui| list(ui, engine, PLAYER_REF, container, &mut moves));
+        if let Some(c) = container {
+            let name = engine.base_of(c).and_then(|b| engine.lo.get(b)).and_then(|r| r.get(b"FULL").map(|d| engine.lo.lstring(&r, d))).unwrap_or_default();
+            egui::Window::new(if name.is_empty() { "Container".to_owned() } else { name })
+                .anchor(Align2::RIGHT_CENTER, egui::vec2(-40.0, 0.0))
+                .resizable(false)
+                .collapsible(false)
+                .show(ctx, |ui| {
+                    list(ui, engine, c, Some(PLAYER_REF), &mut moves);
+                    ui.horizontal(|ui| {
+                        if ui.button("Take all").clicked() {
+                            for (f, n, _) in engine.listed_inventory(c) {
+                                moves.push((c, PLAYER_REF, f, n));
+                            }
+                        }
+                        close |= ui.button("Close").clicked();
+                    });
+                });
+        }
+        for (from, to, item, n) in moves {
+            engine.transfer_item(from, to, item, n);
+        }
+        if close {
+            engine.menu = None;
         }
     }
 

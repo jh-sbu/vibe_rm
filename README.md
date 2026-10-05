@@ -58,7 +58,8 @@ The data directory is found from `--data`, `$SKYRIM_DATA`, or the default Steam
 locations on Linux.
 
 Controls: click to capture the mouse, WASD to move, Space/Ctrl for up/down,
-Shift to go faster, T to fast-forward time, Esc to release the mouse or quit.
+Shift to go faster, T to fast-forward time, E to activate (talk, open, take, search),
+Tab for the inventory, Esc to release the mouse or quit.
 The developer console has a subset of Skyrim's commands (`help` lists them; `tai`
 toggles actor AI).
 

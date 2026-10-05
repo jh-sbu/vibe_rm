@@ -5,6 +5,64 @@ use esp::{FormId, LoadOrder, LoadedRecord};
 
 use super::actor::resolve_items;
 
+/// What an item is, for listing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ItemKind {
+    Weapon,
+    Armor,
+    Ammo,
+    Potion,
+    Ingredient,
+    Book,
+    Scroll,
+    Key,
+    SoulGem,
+    Light,
+    Misc,
+}
+
+#[derive(Debug, Clone)]
+pub struct ItemInfo {
+    pub name: String,
+    pub kind: ItemKind,
+    pub value: i32,
+    pub weight: f32,
+}
+
+/// Name, kind, value and weight of an inventory item; `None` for forms that aren't
+/// items (and lights that can't be carried).
+pub fn item_info(lo: &LoadOrder, form: FormId) -> Option<ItemInfo> {
+    let rec = lo.get(form)?;
+    let tag = rec.tag().0;
+    let data = rec.get(b"DATA").unwrap_or(&[]);
+    let f32_at = |d: &[u8], o: usize| d.get(o..o + 4).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()));
+    let i32_at = |d: &[u8], o: usize| d.get(o..o + 4).map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap()));
+    let (kind, value, weight) = match &tag {
+        b"WEAP" => (ItemKind::Weapon, i32_at(data, 0), f32_at(data, 4)),
+        b"ARMO" => (ItemKind::Armor, i32_at(data, 0), f32_at(data, 4)),
+        b"MISC" => (ItemKind::Misc, i32_at(data, 0), f32_at(data, 4)),
+        b"KEYM" => (ItemKind::Key, i32_at(data, 0), f32_at(data, 4)),
+        b"SLGM" => (ItemKind::SoulGem, i32_at(data, 0), f32_at(data, 4)),
+        b"INGR" => (ItemKind::Ingredient, i32_at(data, 0), f32_at(data, 4)),
+        // Value in the enchanted item data (ENIT).
+        b"ALCH" => (ItemKind::Potion, i32_at(rec.get(b"ENIT").unwrap_or(&[]), 0), f32_at(data, 0)),
+        b"SCRL" => (ItemKind::Scroll, i32_at(data, 0), f32_at(data, 4)),
+        b"BOOK" => (ItemKind::Book, i32_at(data, 8), f32_at(data, 12)),
+        // SSE: projectile, flags, damage, value, weight.
+        b"AMMO" => (ItemKind::Ammo, i32_at(data, 12), f32_at(data, 16)),
+        b"LIGH" => {
+            let l = super::records::light_data(&rec)?;
+            if l.flags & 0x2 == 0 {
+                return None;
+            }
+            (ItemKind::Light, i32_at(data, 40), f32_at(data, 44))
+        }
+        _ => return None,
+    };
+    let name = rec.get(b"FULL").map(|d| lo.lstring(&rec, d)).unwrap_or_default();
+    Some(ItemInfo { name: if name.is_empty() { rec.editor_id().unwrap_or_default().to_owned() } else { name }, kind, value, weight })
+}
+
 /// Biped slot 39 (shield).
 const SLOT_SHIELD: u32 = 1 << 9;
 

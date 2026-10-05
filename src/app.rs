@@ -367,7 +367,8 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
-                    if s.ui.console.open || s.engine.conversation.is_some() {
+                    if s.ui.console.open || s.engine.conversation.is_some() || s.engine.menu.is_some() {
+                        s.keys.clear();
                         return;
                     }
                     match event.state {
@@ -389,6 +390,19 @@ impl ApplicationHandler for App {
                             {
                                 log::error!("activation failed: {e:#}");
                             }
+                            if code == KeyCode::Tab && !event.repeat {
+                                s.engine.menu = Some(crate::items::Menu::Inventory);
+                            }
+                            // Menus take the mouse.
+                            if s.engine.menu.is_some() {
+                                if s.grabbed {
+                                    s.grabbed = false;
+                                    let _ = s.window.set_cursor_grab(CursorGrabMode::None);
+                                    s.window.set_cursor_visible(true);
+                                }
+                                s.keys.clear();
+                                return;
+                            }
                             if code == KeyCode::KeyN && !event.repeat {
                                 s.engine.player.noclip = !s.engine.player.noclip;
                                 log::info!("noclip {}", s.engine.player.noclip);
@@ -402,7 +416,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
-                if !s.grabbed && !s.ui.console.open && s.engine.conversation.is_none() {
+                if !s.grabbed && !s.ui.console.open && s.engine.conversation.is_none() && s.engine.menu.is_none() {
                     let ok = s
                         .window
                         .set_cursor_grab(CursorGrabMode::Locked)

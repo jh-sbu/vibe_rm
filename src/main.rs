@@ -5,6 +5,7 @@ mod condition;
 mod dialogue;
 mod console;
 mod engine;
+mod items;
 mod render;
 mod physics;
 mod player;

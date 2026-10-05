@@ -9,6 +9,17 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     let Some(cmd) = parts.next() else { return Vec::new() };
     let args: Vec<&str> = parts.collect();
     let lower = cmd.to_ascii_lowercase();
+    // `<ref>.command` (`player.additem f 100`) acts on that reference.
+    if let Some((target, sub)) = lower.split_once('.').filter(|(_, sub)| ITEM_COMMANDS.contains(sub)) {
+        let r = if target == "player" { Some(crate::engine::PLAYER_REF) } else { engine.resolve_form(target) };
+        return match r {
+            Some(r) => item_command(engine, r, sub, &args),
+            None => vec![format!("unknown reference '{target}'")],
+        };
+    }
+    if ITEM_COMMANDS.contains(&lower.as_str()) {
+        return item_command(engine, crate::engine::PLAYER_REF, &lower, &args);
+    }
     match lower.as_str() {
         "help" => vec![
             "coc <cell>            center on cell (editor id)".into(),
@@ -25,7 +36,18 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "gstate <ref>          an actor's active behaviour graph states".into(),
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
+            "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
+            "activate <ref>        activate a reference as the player".into(),
         ],
+        "activate" => {
+            let Some(r) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: activate <ref>".into()] };
+            let name = engine.base_of(r).and_then(|b| engine.lo.get(b)).and_then(|b| b.get(b"FULL").map(|d| engine.lo.lstring(&b, d))).unwrap_or_default();
+            engine.look_target = Some((r, name));
+            match engine.activate() {
+                Ok(()) => vec![format!("activated {r}")],
+                Err(e) => vec![format!("error: {e:#}")],
+            }
+        }
         "door" => {
             let Some(d) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: door <ref>".into()] };
             if engine.toggle_door(d, false) { vec![format!("toggled {d}")] } else { vec![format!("{d} is not an animated door")] }
@@ -137,5 +159,38 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         }
         "qqq" | "quit" => std::process::exit(0),
         _ => vec![format!("unknown command '{cmd}'")],
+    }
+}
+
+const ITEM_COMMANDS: [&str; 5] = ["additem", "removeitem", "showinventory", "inv", "openactorcontainer"];
+
+/// Inventory commands on a reference (the player when none is given).
+fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -> Vec<String> {
+    match cmd {
+        "additem" | "removeitem" => {
+            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: {cmd} <item> [count]")] };
+            let n = args.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
+            if cmd == "additem" {
+                engine.add_item(r, item, n);
+                vec![format!("{r}: added {n} {item}")]
+            } else {
+                let taken = engine.remove_item(r, item, n, None);
+                vec![format!("{r}: removed {taken} {item}")]
+            }
+        }
+        "openactorcontainer" => {
+            engine.menu = Some(crate::items::Menu::Container(r));
+            vec![format!("opened {r}")]
+        }
+        _ => {
+            let items = engine.listed_inventory(r);
+            let equipped = engine.inventories.get(&r).map(|i| i.equipped.clone()).unwrap_or_default();
+            let mut out: Vec<String> =
+                items.iter().map(|(f, n, i)| format!("{n:5} {} ({f}){}", i.name, if equipped.contains(f) { " [equipped]" } else { "" })).collect();
+            if out.is_empty() {
+                out.push(format!("{r} carries nothing"));
+            }
+            out
+        }
     }
 }
