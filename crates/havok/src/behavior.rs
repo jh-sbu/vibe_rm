@@ -303,6 +303,9 @@ pub struct PlayedClip {
     /// Path relative to the character project, e.g. `Animations\IdleKneeling.hkx`.
     pub animation: String,
     pub mode: ClipMode,
+    /// Playback speed; negative plays the clip backwards (e.g. a sitting variant's
+    /// return reusing its enter clip).
+    pub speed: f32,
 }
 
 /// An event the graph raises while playing a sequence: on entering a state, or
@@ -420,8 +423,8 @@ impl Project {
     /// event names their clip (`idle_A_leg_shift` -> `MT_idle_A_leg_shift`).
     pub fn clip_named(&self, name: &str) -> Option<PlayedClip> {
         self.graphs.iter().flat_map(|(_, g)| &g.generators).find_map(|g| match g {
-            Generator::Clip { name: n, animation, mode, .. } if n.eq_ignore_ascii_case(name) => {
-                Some(PlayedClip { animation: animation.clone(), mode: *mode })
+            Generator::Clip { name: n, animation, mode, speed, .. } if n.eq_ignore_ascii_case(name) => {
+                Some(PlayedClip { animation: animation.clone(), mode: *mode, speed: *speed })
             }
             _ => None,
         })
@@ -506,8 +509,8 @@ impl Project {
             let Some((cgi, clip)) = self.descend(gi, g, &mut stack, &mut nested, &mut entered, 0) else { break };
             gi = cgi;
             let graph = &self.graphs[gi].1;
-            let Generator::Clip { animation, mode, triggers, .. } = &graph.generators[clip] else { break };
-            let played = PlayedClip { animation: animation.clone(), mode: *mode };
+            let Generator::Clip { animation, mode, speed, triggers, .. } = &graph.generators[clip] else { break };
+            let played = PlayedClip { animation: animation.clone(), mode: *mode, speed: *speed };
             if seq.contains(&played) {
                 break;
             }

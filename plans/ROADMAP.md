@@ -28,6 +28,11 @@ game each piece unlocks.
   / exit events from `ActivateRootChar` (chairs, stools, tables, beds, bedrolls, leans,
   crafting stations, child chairs) and seated idles from `NonCombatIdles` (eating and
   drinking with bread / tankards, table drinking, sitting variants)
+- Reversed clips (negative clip generator speed, root motion seen from the clip's end);
+  loops that lead on by their own trigger (sitting variants play once and return through
+  their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
+- Eating and drinking: occasional for sandboxing actors (every idle for Eat packages);
+  standing meals from `EatingRoot` / `DrinkingRoot`, put away through `AnimObjectIdleStop`
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
   follow / escort packages; SitTarget
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
@@ -41,8 +46,6 @@ game each piece unlocks.
 
 ## Next
 1. **AI depth**
-   - Reversed clips (speed -1, e.g. arms-crossed sitting variants return by playing their
-     enter clip backwards; they cross-fade for now); standing eating / drinking idles
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target
    - Off-screen travel between worldspaces; locked doors and keys

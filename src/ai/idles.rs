@@ -80,11 +80,21 @@ impl IdleIndex {
         self.select_in(e, root, ctx, 0)
     }
 
+    /// Like [`IdleIndex::select`] over `roots` as if they were siblings, checking
+    /// their own conditions (e.g. `EatingRoot` then `DrinkingRoot`).
+    pub fn select_among(&self, e: &crate::engine::Engine, roots: &[FormId], ctx: condition::Context) -> Option<(FormId, String)> {
+        self.select_list(e, roots, ctx, 0)
+    }
+
     fn select_in(&self, e: &crate::engine::Engine, root: FormId, ctx: condition::Context, depth: u32) -> Option<(FormId, String)> {
+        self.select_list(e, self.children.get(&root).map_or(&[], Vec::as_slice), ctx, depth)
+    }
+
+    fn select_list(&self, e: &crate::engine::Engine, kids: &[FormId], ctx: condition::Context, depth: u32) -> Option<(FormId, String)> {
         if depth > 16 {
             return None;
         }
-        for &kid in self.children.get(&root).into_iter().flatten() {
+        for &kid in kids {
             let Some(idle) = self.idles.get(&kid) else { continue };
             if !self.humanoid(kid) || !condition::evaluate(e, &idle.conditions, ctx) {
                 if log::log_enabled!(log::Level::Trace) {

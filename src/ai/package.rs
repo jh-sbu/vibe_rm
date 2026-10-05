@@ -33,11 +33,21 @@ pub struct Allow {
     pub idle_markers: bool,
     pub special_furniture: bool,
     pub wandering: bool,
+    /// Eating is the point (the Eat template): every seated idle is a meal, not
+    /// just the occasional one.
+    pub meal: bool,
 }
 
 impl Allow {
-    const NONE: Allow =
-        Allow { sitting: false, sleeping: false, eating: false, idle_markers: false, special_furniture: false, wandering: true };
+    const NONE: Allow = Allow {
+        sitting: false,
+        sleeping: false,
+        eating: false,
+        idle_markers: false,
+        special_furniture: false,
+        wandering: true,
+        meal: false,
+    };
 }
 
 /// A package "TargetSelector" / "SingleRef" input (`PTDA`).
@@ -287,6 +297,8 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     // Eating means sitting down at a table.
     if template_name.eq_ignore_ascii_case("eat") {
         allow.sitting = true;
+        allow.eating = true;
+        allow.meal = true;
     }
     let energy = match named("energy") {
         Some(Input::Float(e)) => e.clamp(0.0, 100.0),

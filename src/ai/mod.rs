@@ -143,6 +143,10 @@ impl SubIdle {
     }
 }
 
+/// Events that end an idle played in furniture: anim-object idles (eating,
+/// drinking) put their object away on `AnimObjectIdleStop`.
+const SUB_IDLE_EXITS: [&str; 2] = ["AnimObjectIdleStop", "IdleStop"];
+
 /// Clip and behaviour lookups for the actor being stepped.
 pub struct Clips<'a> {
     pub vfs: &'a vfs::Vfs,
@@ -153,9 +157,10 @@ pub struct Clips<'a> {
 impl Clips<'_> {
     /// Clips to enter, loop in and leave the state that behaviour `event` leads to,
     /// for an actor of the character project at `project`.
-    /// Furniture and idle markers are left with IdleChairExitStart / IdleStop.
+    /// Furniture and idle markers are left with IdleChairExitStart / IdleStop,
+    /// anim-object idles (standing eating, drinking) with AnimObjectIdleStop.
     pub fn event(&mut self, event: &str, project: &str, skeleton_path: &str, female: bool, skeleton: &Skeleton) -> Option<furniture::UseClips> {
-        self.event_with_exits(event, &["IdleChairExitStart", "IdleStop"], project, skeleton_path, female, skeleton)
+        self.event_with_exits(event, &["IdleChairExitStart", "AnimObjectIdleStop", "IdleStop"], project, skeleton_path, female, skeleton)
     }
 
     /// Like [`Clips::event`], leaving through the first of behaviour events `exits`
@@ -174,7 +179,7 @@ impl Clips<'_> {
         let mut load = |c: &havok::behavior::PlayedClip| {
             crate::world::animation::project_clip_paths(project, &c.animation, female)
                 .iter()
-                .find_map(|p| self.anims.clip(self.vfs, p, skeleton_path, skeleton))
+                .find_map(|p| self.anims.clip_with_speed(self.vfs, p, skeleton_path, skeleton, c.speed))
         };
         let (last, enter) = played.clips.split_last()?;
         let idle = load(last)?;
@@ -190,7 +195,7 @@ impl Clips<'_> {
                 Some(furniture::ObjectCue { clip: d.clip.min(enter.len()), time: time.max(0.0), anio: d.payload.clone()? })
             })
             .collect();
-        Some(furniture::UseClips { enter, idle, exit, idle_loops: last.mode != ClipMode::SinglePlay, objects })
+        Some(furniture::UseClips { enter, idle, exit, idle_loops: last.mode != ClipMode::SinglePlay && !played.loop_once, objects })
     }
 }
 
@@ -257,6 +262,8 @@ pub struct ActorRuntime {
     /// Seconds until the next seated idle is picked; set `wants_idle` when due.
     next_idle: f32,
     pub(crate) wants_idle: bool,
+    /// Wants to eat or drink where it stands (a sandbox pause).
+    pub(crate) wants_meal: bool,
     /// Anim objects (ANIO editor ids) in hand, and whether they changed this frame.
     pub objects: Vec<String>,
     pub objects_changed: bool,
@@ -297,6 +304,7 @@ impl ActorRuntime {
             sub: None,
             next_idle: 0.0,
             wants_idle: false,
+            wants_meal: false,
             objects: Vec::new(),
             objects_changed: false,
             leave: false,
@@ -471,6 +479,9 @@ impl ActorRuntime {
                     } else {
                         self.give_up_seat(w.furniture);
                         self.state = State::Idle(uniform(w.rand, 4.0, 15.0));
+                        if arrived {
+                            self.maybe_eat(w);
+                        }
                     }
                     return false;
                 }
@@ -680,8 +691,15 @@ impl ActorRuntime {
                     log::debug!("{} no path to {:?}", self.ref_id, target);
                 }
                 self.state = State::Idle(uniform(w.rand, 6.0, 16.0));
+                self.maybe_eat(w);
             }
         }
+    }
+
+    /// Now and then a sandboxing actor pausing on its feet has a bite or a drink.
+    fn maybe_eat(&mut self, w: &mut World) {
+        let sandbox = self.goal.is_some_and(|g| g.behaviour == Behaviour::Sandbox && g.allow.eating);
+        self.wants_meal = sandbox && (w.rand)() % 4 == 0;
     }
 
     /// Where to go next on a patrol. At a point that is an idle marker (or other
@@ -887,16 +905,19 @@ impl ActorRuntime {
         Some(pose)
     }
 
-    /// Play `clips` in the furniture, then go back to the seat's loop.
-    pub fn start_sub_idle(&mut self, clips: furniture::UseClips, rand: &mut dyn FnMut() -> u64) {
-        let Some(anim) = &mut self.anim else { return };
+    /// Play `clips` in the furniture, then go back to the seat's loop. False when
+    /// the actor isn't settled in (or is already playing another idle).
+    pub fn start_sub_idle(&mut self, clips: furniture::UseClips, rand: &mut dyn FnMut() -> u64) -> bool {
+        let Some(anim) = &mut self.anim else { return false };
         if !matches!(self.state, State::Use(_)) || self.leave || self.sub.is_some() {
-            return;
+            return false;
         }
         let mut sub = SubIdle { clips: Arc::new(clips), phase: SubPhase::Enter, step: 0, left: uniform(rand, 8.0, 20.0) };
-        if sub.play_step(anim) {
+        let started = sub.play_step(anim);
+        if started {
             self.sub = Some(sub);
         }
+        started
     }
 
     /// Advance the idle being played in the furniture. False when there is none
@@ -968,10 +989,27 @@ impl ActorRuntime {
     }
 }
 
+/// A small random number generator seeded from the engine's.
+fn xorshift(seed: u64) -> impl FnMut() -> u64 {
+    let mut seed = seed | 1;
+    move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed
+    }
+}
+
 impl Engine {
     /// Play behaviour `event` on a loaded humanoid actor (Papyrus `PlayIdle` /
     /// `Debug.SendAnimationEvent`). Idle-stopping events return it to its AI.
     pub fn play_animation_event(&mut self, actor: FormId, event: &str) -> bool {
+        self.play_idle(actor, event, None)
+    }
+
+    /// [`Engine::play_animation_event`], leaving a looping idle after `secs` (it is
+    /// otherwise held until the AI moves on).
+    fn play_idle(&mut self, actor: FormId, event: &str, secs: Option<f32>) -> bool {
         let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
         let Some(rt) = self.cells.get_mut(&key) else { return false };
         let Some(a) = rt.actors.iter_mut().find(|a| a.ref_id == actor) else { return false };
@@ -987,6 +1025,16 @@ impl Engine {
             return false;
         };
         let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
+        // Seated, the event is one of the seat's own idles (`idleChairArmsCrossedVar1`).
+        if matches!(a.state, State::Use(_)) && a.seat.as_ref().is_some_and(|s| s.kind != Use::Idle) {
+            let Some(c) = clips.event_with_exits(event, &SUB_IDLE_EXITS, &project, &a.skeleton_path, a.female, &a.skeleton) else { return false };
+            let summary = format!("{} enter, {} exit clips, loops {}", c.enter.len(), c.exit.len(), c.idle_loops);
+            let started = a.start_sub_idle(c, &mut xorshift(self.rng));
+            if started {
+                log::debug!("{actor} plays {event} in its seat ({summary})");
+            }
+            return started;
+        }
         let Some(c) = clips.event(event, &project, &a.skeleton_path, a.female, &a.skeleton) else { return false };
         self.furniture.release(a.ref_id);
         // Where the enter clips leave the actor; it stays there.
@@ -998,13 +1046,38 @@ impl Engine {
             heading -= yaw;
         }
         // A one-shot gesture (no loop at the end) is played through once.
-        let duration = if c.idle_loops { f32::INFINITY } else { c.idle.duration() };
-        log::debug!("{actor} plays {event} ({} enter clips)", c.enter.len());
+        let duration = if c.idle_loops { secs.unwrap_or(f32::INFINITY) } else { c.idle.duration() };
+        log::debug!("{actor} plays {event} ({} enter, {} exit clips)", c.enter.len(), c.exit.len());
         a.seat = Some(Seat { furniture: FormId::NULL, kind: Use::Idle, anim_type: 0, entry: furniture::Entry::Front, pos, heading, clips: Arc::new(c), duration });
         a.state = State::Enter { step: 0, from: a.pos, heading: a.heading };
         a.leave = false;
         a.next_clip(true, 0.25);
         true
+    }
+
+    /// Standing meals for sandboxing actors that asked for one: the idle tree's
+    /// `EatingRoot` / `DrinkingRoot` pick bread, an apple, a tankard...
+    fn play_standing_meals(&mut self) {
+        use crate::condition::{Context, IdleQuery};
+        let wanting: Vec<FormId> = self
+            .cells
+            .values_mut()
+            .flat_map(|rt| rt.actors.iter_mut().filter_map(|a| std::mem::take(&mut a.wants_meal).then_some(a.ref_id)))
+            .collect();
+        if wanting.is_empty() {
+            return;
+        }
+        let Some(ix) = self.idles.as_ref() else { return };
+        let roots: Vec<FormId> = ["EatingRoot", "DrinkingRoot"].iter().filter_map(|n| ix.find(&self.lo, n)).collect();
+        for r in wanting {
+            let query = IdleQuery { eating: true, ..Default::default() };
+            let ctx = Context { subject: Some(r), idle: Some(query), ..Default::default() };
+            let Some((idle, event)) = self.idles.as_ref().and_then(|ix| ix.select_among(self, &roots, ctx)) else { continue };
+            let secs = 10.0 + (self.rand() % 1500) as f32 / 100.0;
+            if self.play_idle(r, &event, Some(secs)) {
+                log::debug!("{r} has a standing meal: {idle} ({event}) for {secs:.0} s");
+            }
+        }
     }
 
     /// Pick idles from the idle tree (`NonCombatIdles`) for actors in furniture that
@@ -1023,6 +1096,7 @@ impl Engine {
         let Some(root) = self.idles.as_ref().and_then(|ix| ix.find(&self.lo, "NonCombatIdles")) else { return };
         let special = self.lo.find_editor_id("FurnitureSpecial");
         for (key, r) in wanting {
+            let roll = self.rand();
             let Some(a) = self.cells.get(&key).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r)) else { continue };
             let Some(seat) = a.seat.clone() else { continue };
             // Wood piles, pour spots and the like are "sat in" too, but aren't seats.
@@ -1037,25 +1111,21 @@ impl Engine {
                 anim_type: seat.anim_type,
                 entry: seat.entry.entry_type(),
                 state: 3.0,
-                eating: a.goal.is_some_and(|g| g.allow.eating),
+                // Sandboxing actors eat now and then (food or drink in hand); the
+                // rest of the time they sit, with the odd change of pose.
+                eating: a.goal.is_some_and(|g| g.allow.meal || (g.allow.eating && roll % 3 == 0)),
                 ..Default::default()
             };
             let ctx = Context { subject: Some(r), target: Some(seat.furniture), idle: Some(query), ..Default::default() };
             let Some((idle, event)) = self.idles.as_ref().and_then(|ix| ix.select(self, root, ctx)) else { continue };
             let (skeleton_path, female, skeleton) = (a.skeleton_path.clone(), a.female, a.skeleton.clone());
             let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
-            let Some(c) = clips.event_with_exits(&event, &["IdleStop"], &project, &skeleton_path, female, &skeleton) else {
+            let Some(c) = clips.event_with_exits(&event, &SUB_IDLE_EXITS, &project, &skeleton_path, female, &skeleton) else {
                 log::debug!("{r}: no clips for furniture idle {idle} ({event})");
                 continue;
             };
             log::debug!("{r} plays {event} in {} ({} enter, {} exit clips)", seat.furniture, c.enter.len(), c.exit.len());
-            let mut seed = self.rand() | 1;
-            let mut rand = move || {
-                seed ^= seed << 13;
-                seed ^= seed >> 7;
-                seed ^= seed << 17;
-                seed
-            };
+            let mut rand = xorshift(self.rand());
             if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r)) {
                 a.start_sub_idle(c, &mut rand);
             }
@@ -1321,6 +1391,7 @@ impl Engine {
             self.attach_anim_objects(key, index, &objects);
         }
         self.play_furniture_idles();
+        self.play_standing_meals();
         for r in gone {
             self.despawn_actor(r);
         }
