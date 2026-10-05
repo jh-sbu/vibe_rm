@@ -30,6 +30,7 @@ pub enum HandType {
     Bow = 7,
     Staff = 8,
     Shield = 10,
+    Torch = 11,
     Crossbow = 12,
 }
 

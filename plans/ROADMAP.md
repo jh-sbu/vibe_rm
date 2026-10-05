@@ -92,7 +92,11 @@ game each piece unlocks.
   combat style favours ranged; skill-weighted damage) and a shield; weapons hang
   sheathed from the bone their model names (`Prn`: hip, back), bows posed from their
   own string bones, shields on the forearm; the graph's `iLeftHandType` /
-  `iRightHandType` follow
+  `iRightHandType` follow. Torches after dark: actors outdoors between dusk and dawn
+  light one they carry (in place of the shield, put away to use furniture), the graph
+  raises it and its flame lights what is around (moving lights)
+- Character property bindings: bone switches bound to the character's bone weight
+  properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
   follow / escort packages; SitTarget
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
@@ -110,7 +114,7 @@ game each piece unlocks.
      locking planted feet; creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
    - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
-   - `Direction` (strafing), sprinting; character property bindings;
+   - `Direction` (strafing), sprinting; character properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
      way events are chosen
    - Carry furniture (`CarryFurnitureScript`: wood piles): carrying the load away
@@ -128,7 +132,7 @@ game each piece unlocks.
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
 3. **Game logic**: combat, magic, inventory (player's, equipping by hand, armor from
-   inventory, ammo / quivers, torches at night), leveling, crime
+   inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
 4. **UI**: inventory, map, bars
 5. **Audio**: lip sync
 6. **Rendering**: shadows, HDR/image spaces, particles, distant LOD (BTR/BTO/trees),

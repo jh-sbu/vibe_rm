@@ -186,8 +186,10 @@ pub enum Generator {
     /// A generator wrapping one child: `hkbModifierGenerator` (running a modifier
     /// alongside it) and Bethesda's tagging / sync / cyclic-blend wrappers.
     Wrap { name: String, class: String, child: Option<GenId>, modifier: Option<ModId> },
-    /// `BSBoneSwitchGenerator`: children replace the default on their bones.
-    BoneSwitch { name: String, default: Option<GenId>, children: Vec<(GenId, Vec<f32>)> },
+    /// `BSBoneSwitchGenerator`: children replace the default on their bones. A
+    /// child's weights may instead come from a character property (`properties`,
+    /// e.g. the left arm for a torch), as the character file sets it.
+    BoneSwitch { name: String, default: Option<GenId>, children: Vec<(GenId, Vec<f32>)>, properties: Vec<Option<String>> },
     /// Another behaviour file (e.g. `Behaviors\MT_Behavior.hkx`).
     Reference { name: String, behavior: String },
     Other(String),
@@ -362,6 +364,8 @@ struct Reader<'a> {
     mod_ids: std::collections::HashMap<u32, ModId>,
     modifiers: Vec<Modifier>,
     modifier_bindings: Vec<Vec<Binding>>,
+    /// The graph's character property names (what type-1 bindings index).
+    character_properties: Vec<String>,
 }
 
 impl<'a> Reader<'a> {
@@ -414,6 +418,16 @@ impl<'a> Reader<'a> {
             .filter(|&b| self.p.u8(b + 0x21) == 0)
             .filter_map(|b| Some(Binding { member: self.p.string(b)?, variable: usize::try_from(self.p.i32(b + 0x1C)).ok()? }))
             .collect()
+    }
+
+    /// The character property bound to `member` of the object at `o`, if any.
+    fn character_property(&self, o: u32, member: &str) -> Option<String> {
+        let set = self.p.ptr(o + 0x10)?;
+        let (Some(data), n) = self.p.array(set + 0x10) else { return None };
+        (0..n as u32)
+            .map(|i| data + i * 0x28)
+            .filter(|&b| self.p.u8(b + 0x21) == 1 && self.p.string(b).is_some_and(|m| m == member))
+            .find_map(|b| self.character_properties.get(usize::try_from(self.p.i32(b + 0x1C)).ok()?).cloned())
     }
 
     /// String payload of the `hkbEventPayload` pointed to from `slot`.
@@ -619,13 +633,15 @@ impl<'a> Reader<'a> {
             "BSBoneSwitchGenerator" => {
                 let default = p.ptr(o + 0x50).map(|g| self.generator(g));
                 let mut children = Vec::new();
+                let mut properties = Vec::new();
                 for d in self.ptr_array(o + 0x58) {
                     if let Some(g) = p.ptr(d + 0x30) {
                         let weights = self.bone_weights(p.ptr(d + 0x38)).unwrap_or_default();
+                        properties.push(self.character_property(d, "spBoneWeight"));
                         children.push((self.generator(g), weights));
                     }
                 }
-                Generator::BoneSwitch { name, default, children }
+                Generator::BoneSwitch { name, default, children, properties }
             }
             "hkbModifierGenerator" => {
                 let modifier = p.ptr(o + 0x48).map(|m| self.modifier(m));
@@ -690,6 +706,7 @@ impl BehaviorGraph {
             mod_ids: Default::default(),
             modifiers: Vec::new(),
             modifier_bindings: Vec::new(),
+            character_properties: string_array(0x40),
         };
         let root = p.ptr(graph + 0x80).map(|g| r.generator(g));
         Ok(BehaviorGraph {
@@ -753,6 +770,9 @@ pub struct Character {
     pub behavior: String,
     /// Foot placement settings (`hkbFootIkDriverInfo`), if the character has them.
     pub foot_ik: Option<FootIk>,
+    /// Bone weight properties (lowercase name -> weight per bone), which graphs
+    /// bind bone switches to.
+    pub bone_weights: std::collections::HashMap<String, Vec<f32>>,
 }
 
 /// `hkbFootIkDriverInfo`: the legs and how far to look for the ground.
@@ -842,7 +862,34 @@ impl Character {
                 sideways_align: p.f32(f + 0x38),
             }
         });
-        Ok(Character { name: s(0xa0), rig: s(0xa8), behavior: s(0xb8), foot_ik })
+        // Property values (`hkbCharacterData`): a word per property, indexing the
+        // variants (bone weight arrays) for pointer properties.
+        let mut bone_weights = std::collections::HashMap::new();
+        let names = string_array(&p, o + 0x50);
+        let data = p.objects_of("hkbCharacterData").next();
+        // Property types (`hkbVariableInfo`: role, flags, type); 5 is a pointer.
+        let (infos, ni) = data.map_or((None, 0), |c| p.array(c + 0x60));
+        if let Some(values) = data.and_then(|c| p.ptr(c + 0x80)) {
+            let (words, nw) = p.array(values + 0x10);
+            let (variants, nv) = p.array(values + 0x30);
+            if let (Some(words), Some(variants), Some(infos)) = (words, variants, infos) {
+                for (i, name) in names.iter().enumerate().take(nw.min(ni) as usize) {
+                    if p.u8(infos + i as u32 * 6 + 4) != 5 {
+                        continue;
+                    }
+                    let v = p.i32(words + i as u32 * 4);
+                    if v < 0 || v as usize >= nv as usize {
+                        continue;
+                    }
+                    let Some(obj) = p.ptr(variants + v as u32 * 8).filter(|&o| p.object_class(o) == Some("hkbBoneWeightArray")) else { continue };
+                    let (data, n) = p.array(obj + 0x30);
+                    if let Some(d) = data {
+                        bone_weights.insert(name.to_ascii_lowercase(), (0..n as u32).map(|k| p.f32(d + k * 4)).collect());
+                    }
+                }
+            }
+        }
+        Ok(Character { name: s(0xa0), rig: s(0xa8), behavior: s(0xb8), foot_ik, bone_weights })
     }
 }
 

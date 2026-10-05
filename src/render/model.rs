@@ -241,7 +241,7 @@ fn has_parent_bone(nif: &Nif) -> bool {
 }
 
 /// Model-space rest transforms of the named nodes.
-fn node_transforms(nif: &Nif) -> std::collections::HashMap<String, Mat4> {
+pub fn node_transforms(nif: &Nif) -> std::collections::HashMap<String, Mat4> {
     fn visit(nif: &Nif, r: Ref, parent: Mat4, out: &mut std::collections::HashMap<String, Mat4>, depth: u32) {
         let Some(block) = nif.get(r) else { return };
         let Some(av) = block.av() else { return };

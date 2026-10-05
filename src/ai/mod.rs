@@ -1,5 +1,6 @@
 //! Actor AI: package selection, sandboxing / travelling over the navmesh.
 
+mod equipment;
 pub mod furniture;
 pub mod idles;
 pub mod nav;
@@ -255,6 +256,9 @@ pub struct ActorRuntime {
     pub look_at: Option<Vec3>,
     /// The goal was set by hand (console `travel`): packages leave it alone.
     pinned: bool,
+    /// The lit torch it holds, and the shield it put away for it.
+    pub(crate) torch: Option<FormId>,
+    pub(crate) stowed_shield: Option<FormId>,
     /// The graph raised `IdleFurnitureExit`: out of the furniture.
     out_of_furniture: bool,
     /// Patrol progress: (route start, index of the point heading for).
@@ -298,6 +302,8 @@ impl ActorRuntime {
             wants_idle: false,
             wants_meal: false,
             wants_action_idle: false,
+            torch: None,
+            stowed_shield: None,
             objects: Vec::new(),
             objects_changed: false,
             leave: false,
@@ -1412,6 +1418,16 @@ impl Engine {
         }
     }
 
+    /// Set a behaviour graph variable of a loaded actor; false if it has no graph.
+    pub fn set_graph_variable(&mut self, r: FormId, name: &str, value: f32) -> bool {
+        let Some(key) = self.actor_cells.get(&r) else { return false };
+        let Some(g) = self.cells.get_mut(key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r)).and_then(|a| a.graph.as_mut()) else {
+            return false;
+        };
+        g.set_variable(name, value);
+        true
+    }
+
     pub fn graph_states(&self, r: FormId) -> Option<Vec<String>> {
         let key = self.actor_cells.get(&r)?;
         let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;
@@ -1642,6 +1658,7 @@ impl Engine {
         self.play_furniture_idles();
         self.play_standing_meals();
         self.play_action_idles();
+        self.update_torches();
         for r in gone {
             self.despawn_actor(r);
         }

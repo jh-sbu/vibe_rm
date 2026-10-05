@@ -174,13 +174,25 @@ pub struct ActorMesh {
     pub bone_map: Vec<usize>,
 }
 
+/// A point light hanging from an actor's bone.
+#[derive(Debug, Clone, Copy)]
+pub struct HeldLight {
+    pub bone: usize,
+    /// Position in the bone's space.
+    pub offset: Vec3,
+    pub radius: f32,
+    pub color: Vec3,
+}
+
 /// A posed, skinned character.
 pub struct ActorInstance {
     pub meshes: Vec<ActorMesh>,
     /// Rigid (non-skinned) models attached to skeleton bones, e.g. weapons.
     pub attachments: Vec<(Arc<GpuModel>, usize, Mat4)>,
-    /// Rigid equipment (weapons, shields), the same way.
+    /// Rigid equipment (weapons, shields, torches), the same way.
     pub equipment: Vec<(Arc<GpuModel>, usize, Mat4)>,
+    /// A light carried (a torch's flame).
+    pub held_light: Option<HeldLight>,
     pub transform: Mat4,
     /// Model-space bone matrices for the current pose.
     pub pose: Vec<Mat4>,
@@ -189,6 +201,12 @@ pub struct ActorInstance {
 }
 
 impl ActorInstance {
+    /// World position of the light it carries.
+    pub fn held_light_pos(&self) -> Option<Vec3> {
+        let l = self.held_light?;
+        Some((self.transform * self.pose.get(l.bone).copied().unwrap_or(Mat4::IDENTITY)).transform_point3(l.offset))
+    }
+
     pub fn center(&self) -> Vec3 {
         self.transform.transform_point3(Vec3::new(0.0, 0.0, 64.0))
     }
@@ -277,6 +295,29 @@ impl Scene {
         }
         for a in self.cells.values_mut().flat_map(|c| c.actors.iter_mut()) {
             a.lights = pick_lights(lights, a.center(), a.radius);
+        }
+    }
+}
+
+impl Scene {
+    /// Re-pick lights for what is lit, or was lit, by the lights from `first` on
+    /// (lights that move: carried torches).
+    pub fn assign_moving_lights(&mut self, first: usize) {
+        let lights = &self.lights;
+        let moving = &lights[first.min(lights.len())..];
+        let touched = |center: Vec3, radius: f32, current: &[u16; 8]| {
+            current.iter().any(|&i| i != 0xFFFF && i as usize >= first)
+                || moving.iter().any(|l| Vec3::new(l.pos_radius[0], l.pos_radius[1], l.pos_radius[2]).distance(center) < l.pos_radius[3] + radius)
+        };
+        for inst in self.cells.values_mut().flat_map(|c| c.instances.iter_mut()) {
+            if touched(inst.world_center, inst.world_radius, &inst.lights) {
+                inst.lights = pick_lights(lights, inst.world_center, inst.world_radius);
+            }
+        }
+        for a in self.cells.values_mut().flat_map(|c| c.actors.iter_mut()) {
+            if touched(a.center(), a.radius, &a.lights) {
+                a.lights = pick_lights(lights, a.center(), a.radius);
+            }
         }
     }
 }
