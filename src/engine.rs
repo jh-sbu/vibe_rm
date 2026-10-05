@@ -1313,6 +1313,10 @@ impl Engine {
             self.menu = Some(crate::items::Menu::Container(owner));
             return Ok(());
         }
+        if base_tag.map(|t| t.0) == Some(*b"BOOK") {
+            self.menu = Some(crate::items::Menu::Book { book: rf.base, reference: Some(owner) });
+            return Ok(());
+        }
         if self.is_item_ref(owner) {
             self.take_item(owner);
             return Ok(());

@@ -97,7 +97,9 @@ game each piece unlocks.
   raises it and its flame lights what is around (moving lights)
 - Player items: activating an item picks it up (`XCNT` counts; gone from the world for
   good), containers open a take / store window beside the inventory (Tab); console
-  `[ref.]additem`, `removeitem`, `showinventory`, `openactorcontainer`, `activate`
+  `[ref.]additem`, `removeitem`, `showinventory`, `openactorcontainer`, `activate`.
+  Books open to be read (their markup reduced to paragraphs and pages, illuminated
+  letters kept), taken unless they can't be; books in the inventory are read by clicking
 - Character property bindings: bone switches bound to the character's bone weight
   properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
