@@ -61,6 +61,34 @@ pub struct Transition {
     /// `hkbExpressionCondition` that must hold.
     pub condition: Option<String>,
     pub priority: i16,
+    /// When the event is accepted (`FLAG_USE_TRIGGER_INTERVAL`); outside it the
+    /// event is ignored.
+    pub trigger: Option<Interval>,
+    /// When the transition may begin (`FLAG_USE_INITIATE_INTERVAL`); one triggered
+    /// earlier waits for it.
+    pub initiate: Option<Interval>,
+}
+
+/// `hkbStateMachineTimeInterval`: a window in the current state, opened and
+/// closed by events or (when both events are -1) by seconds since the state was
+/// entered. An exit time of 0 leaves it open.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Interval {
+    pub enter_event: i32,
+    pub exit_event: i32,
+    pub enter_time: f32,
+    pub exit_time: f32,
+}
+
+impl Interval {
+    pub fn timed(&self) -> bool {
+        self.enter_event < 0 && self.exit_event < 0
+    }
+
+    /// Whether `elapsed` seconds into the state lie within a timed interval.
+    pub fn contains_time(&self, elapsed: f32) -> bool {
+        elapsed >= self.enter_time && (self.exit_time <= 0.0 || elapsed <= self.exit_time)
+    }
 }
 
 impl Transition {
@@ -81,8 +109,16 @@ impl Transition {
     pub fn allows_self(&self) -> bool {
         self.flags & FLAG_ALLOW_SELF_TRANSITION != 0
     }
+
+    /// No other transition of the machine may interrupt this one's blend.
+    pub fn uninterruptible(&self) -> bool {
+        self.flags & FLAG_UNINTERRUPTIBLE_WHILE_PLAYING != 0
+    }
 }
 
+const FLAG_USE_TRIGGER_INTERVAL: u16 = 0x1;
+const FLAG_USE_INITIATE_INTERVAL: u16 = 0x2;
+const FLAG_UNINTERRUPTIBLE_WHILE_PLAYING: u16 = 0x4;
 const FLAG_DISABLED: u16 = 0x20;
 const FLAG_ALLOW_SELF_TRANSITION: u16 = 0x200;
 const FLAG_IS_GLOBAL_WILDCARD: u16 = 0x400;
@@ -357,9 +393,15 @@ impl<'a> Reader<'a> {
                     blend_variable: effect.and_then(|e| self.bindings_of(e).into_iter().find(|b| b.member == "duration")).map(|b| b.variable),
                     condition: condition.and_then(|c| self.p.string(c + 0x10)),
                     priority: self.p.i16(t + 0x40),
+                    trigger: (flags & FLAG_USE_TRIGGER_INTERVAL != 0).then(|| self.interval(t)),
+                    initiate: (flags & FLAG_USE_INITIATE_INTERVAL != 0).then(|| self.interval(t + 0x10)),
                 }
             })
             .collect()
+    }
+
+    fn interval(&self, o: u32) -> Interval {
+        Interval { enter_event: self.p.i32(o), exit_event: self.p.i32(o + 4), enter_time: self.p.f32(o + 8), exit_time: self.p.f32(o + 0xC) }
     }
 
     /// Variable bindings of the bindable object at `o`.

@@ -253,6 +253,51 @@ struct MachineState {
     child: Option<Box<Node>>,
     /// The state being left: its node, seconds into the blend, blend length.
     from: Option<(Box<Node>, f32, f32)>,
+    /// Seconds since the state was entered.
+    elapsed: f32,
+    /// Graph-local events seen in this state, with the order they last came in
+    /// (for event-bounded transition intervals).
+    seen: Vec<(i32, u32)>,
+    seq: u32,
+    /// A transition triggered outside its initiate interval, waiting for it.
+    pending: Option<Transition>,
+    /// An uninterruptible transition's blend is playing.
+    locked: bool,
+}
+
+impl MachineState {
+    fn new(state: i32, child: Option<Box<Node>>) -> MachineState {
+        MachineState { state, child, from: None, elapsed: 0.0, seen: Vec::new(), seq: 0, pending: None, locked: false }
+    }
+
+    fn see(&mut self, event: i32) {
+        self.seq += 1;
+        match self.seen.iter_mut().find(|(e, _)| *e == event) {
+            Some(s) => s.1 = self.seq,
+            None => self.seen.push((event, self.seq)),
+        }
+    }
+
+    /// Whether `i` is open now: by time in the state, or between its enter event
+    /// (or the state's start, without one) and its exit event.
+    fn within(&self, i: &Interval) -> bool {
+        if i.timed() {
+            return i.contains_time(self.elapsed);
+        }
+        let last = |e: i32| self.seen.iter().find(|(x, _)| *x == e).map(|s| s.1);
+        let opened = if i.enter_event < 0 { Some(0) } else { last(i.enter_event) };
+        opened.is_some_and(|o| last(i.exit_event).is_none_or(|x| x < o))
+    }
+}
+
+/// What a state machine did with an event.
+#[derive(PartialEq)]
+enum Took {
+    Nothing,
+    /// Changed state.
+    Transition,
+    /// Triggered a transition that waits for its initiate interval.
+    Pending,
 }
 
 #[derive(Debug)]
@@ -397,7 +442,7 @@ impl Ctx<'_> {
                                 self.raise(gi, e.event, e.payload);
                             }
                             let child = generator.map(|c| Box::new(self.activate(gi, c, nested, depth + 1)));
-                            Kind::Machine(MachineState { state: id, child, from: None })
+                            Kind::Machine(MachineState::new(id, child))
                         }
                         None => Kind::Empty,
                     }
@@ -561,12 +606,20 @@ impl Ctx<'_> {
     fn handle(&mut self, node: &mut Node, ev: &Event) -> bool {
         let gi = node.gi;
         match &mut node.kind {
-            Kind::Machine(_) => {
-                if self.try_transition(node, Some(ev.id)) {
+            Kind::Machine(m) => {
+                if let Some(local) = self.local_event(gi, ev.id) {
+                    m.see(local);
+                }
+                // The event may have opened a pending transition's window.
+                if self.take_pending(node) {
+                    return true;
+                }
+                let took = self.try_transition(node, Some(ev.id));
+                if took == Took::Transition {
                     return true;
                 }
                 let Kind::Machine(m) = &mut node.kind else { unreachable!() };
-                m.child.as_mut().is_some_and(|c| self.handle(c, ev))
+                m.child.as_mut().is_some_and(|c| self.handle(c, ev)) || took == Took::Pending
             }
             Kind::Blend { children, .. } => children.iter_mut().flatten().fold(false, |acc, c| self.handle(c, ev) | acc),
             Kind::Select { child, .. } => child.as_mut().is_some_and(|c| self.handle(c, ev)),
@@ -618,17 +671,33 @@ impl Ctx<'_> {
         }
     }
 
+    /// Take the machine's pending transition if its initiate interval has opened.
+    fn take_pending(&mut self, node: &mut Node) -> bool {
+        let Kind::Machine(m) = &mut node.kind else { return false };
+        match &m.pending {
+            Some(t) if !m.locked && t.initiate.as_ref().is_none_or(|i| m.within(i)) => {
+                let t = m.pending.take().unwrap();
+                self.transition(node, &t);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Take a transition of the state machine at `node` on `event` (or, for `None`,
     /// a condition-only transition whose condition holds).
-    fn try_transition(&mut self, node: &mut Node, event: Option<usize>) -> bool {
+    fn try_transition(&mut self, node: &mut Node, event: Option<usize>) -> Took {
         let (gi, sm) = (node.gi, node.g);
-        let Kind::Machine(m) = &node.kind else { return false };
+        let Kind::Machine(m) = &node.kind else { return Took::Nothing };
+        if m.locked {
+            return Took::Nothing;
+        }
         let graph = self.shared.graph(gi);
-        let Generator::StateMachine { states, wildcards, .. } = &graph.generators[sm] else { return false };
+        let Generator::StateMachine { states, wildcards, .. } = &graph.generators[sm] else { return Took::Nothing };
         let local = match event {
             Some(e) => match self.local_event(gi, e) {
                 Some(l) => l,
-                None => return false,
+                None => return Took::Nothing,
             },
             None => -1,
         };
@@ -662,12 +731,25 @@ impl Ctx<'_> {
             if !states.iter().any(|s| s.id == t.to_state) {
                 continue;
             }
+            // Events outside the trigger interval are ignored.
+            if t.trigger.as_ref().is_some_and(|i| !m.within(i)) {
+                continue;
+            }
+            // Condition transitions wait by not being taken yet.
+            if event.is_none() && t.initiate.as_ref().is_some_and(|i| !m.within(i)) {
+                continue;
+            }
             chosen = Some(t.clone());
             break;
         }
-        let Some(t) = chosen else { return false };
+        let Some(t) = chosen else { return Took::Nothing };
+        if t.initiate.as_ref().is_some_and(|i| !m.within(i)) {
+            let Kind::Machine(m) = &mut node.kind else { unreachable!() };
+            m.pending = Some(t);
+            return Took::Pending;
+        }
         self.transition(node, &t);
-        true
+        Took::Transition
     }
 
     fn transition(&mut self, node: &mut Node, t: &Transition) {
@@ -709,10 +791,11 @@ impl Ctx<'_> {
             }
             None => None,
         };
+        let locked = t.uninterruptible() && from.is_some();
         let Kind::Machine(m) = &mut node.kind else { return };
-        m.state = id;
-        m.child = child;
+        *m = MachineState::new(id, child);
         m.from = from;
+        m.locked = locked;
         if let Generator::StateMachine { start_mode: StartMode::Sync(v), .. } = &graph.generators[sm] {
             self.set_var(gi, *v, id as f32);
         }
@@ -725,10 +808,12 @@ impl Ctx<'_> {
         match &mut node.kind {
             Kind::Clip(c) => self.advance_clip(gi, g, c, dt),
             Kind::Machine(m) => {
+                m.elapsed += dt;
                 if let Some((f, t, len)) = &mut m.from {
                     *t += dt;
                     if *t >= *len {
                         let (f, _, _) = m.from.take().unwrap();
+                        m.locked = false;
                         self.deactivate(*f);
                     } else {
                         self.advance(f, dt);
@@ -738,7 +823,9 @@ impl Ctx<'_> {
                 if let Some(c) = &mut m.child {
                     self.advance(c, dt);
                 }
-                self.try_transition(node, None);
+                if !self.take_pending(node) {
+                    self.try_transition(node, None);
+                }
             }
             Kind::Blend { children, phase } => {
                 let graph = self.shared.graph(gi);
@@ -1231,6 +1318,21 @@ impl Instance {
         out
     }
 
+    /// Whether some state machine holds a transition waiting for its initiate
+    /// interval (an exit finishing its swing first...).
+    pub fn waiting(&self) -> bool {
+        fn walk(n: &Node) -> bool {
+            match &n.kind {
+                Kind::Machine(m) => m.pending.is_some() || m.child.as_deref().is_some_and(walk),
+                Kind::Blend { children, .. } => children.iter().flatten().any(walk),
+                Kind::Select { child, .. } | Kind::Wrap { child, .. } => child.as_deref().is_some_and(walk),
+                Kind::Switch { default, children } => default.as_deref().is_some_and(walk) || children.iter().any(walk),
+                Kind::Clip(_) | Kind::Empty => false,
+            }
+        }
+        self.root.as_ref().is_some_and(walk)
+    }
+
     /// Events raised since the last call.
     pub fn take_raised(&mut self) -> Vec<Raised> {
         std::mem::take(&mut self.raised)
@@ -1547,5 +1649,78 @@ mod tests {
         let mut i = instance(BehaviorGraph::new("G", Some(0), gens, vec!["Kneel".into()]));
         assert!(i.handle_event("kneel", &mut durations));
         assert_eq!(playing(&i), [("Kneel".into(), 1.0)]);
+    }
+
+    /// A loop (0) raising Open at 1 s and Close at 1.5 s of its 2 s cycle, left on
+    /// Out for state 1 (an exit clip) within Open .. Close.
+    fn windowed(trigger: bool) -> BehaviorGraph {
+        let events = ["Out", "Open", "Close", "Kill"].map(String::from).to_vec();
+        let at = |time, event| Trigger { time, from_end: false, event, payload: None };
+        let window = Interval { enter_event: 1, exit_event: 2, enter_time: 0.0, exit_time: 0.0 };
+        let mut out = Transition::new(0, 1, None);
+        if trigger {
+            out.trigger = Some(window);
+        } else {
+            out.initiate = Some(window);
+        }
+        let mut kill = Transition::new(3, 2, None);
+        kill.flags |= 0x4;
+        kill.blend = Some(0.5);
+        let gens = vec![
+            Generator::StateMachine {
+                name: "Root".into(),
+                start: 0,
+                start_variable: None,
+                start_mode: Default::default(),
+                states: vec![state(0, 1, vec![out]), state(1, 2, vec![]), state(2, 3, vec![])],
+                wildcards: vec![kill],
+            },
+            clip("Loop", ClipMode::Looping, vec![at(1.0, 1), at(1.5, 2)]),
+            clip("Exit", ClipMode::Looping, vec![]),
+            clip("Dying", ClipMode::Looping, vec![]),
+        ];
+        BehaviorGraph::new("G", Some(0), gens, events)
+    }
+
+    #[test]
+    fn initiate_interval_delays_the_transition() {
+        let mut i = instance(windowed(false));
+        i.update(0.2, &mut durations);
+        // Triggered before the window: accepted, but waits for Open.
+        assert!(i.handle_event("Out", &mut durations));
+        assert_eq!(i.active_states(), ["s0"]);
+        i.update(0.5, &mut durations);
+        assert_eq!(i.active_states(), ["s0"]);
+        i.update(0.4, &mut durations);
+        assert_eq!(i.active_states(), ["s1"], "taken when the window opens");
+    }
+
+    #[test]
+    fn trigger_interval_ignores_events_outside_it() {
+        let mut i = instance(windowed(true));
+        i.update(0.2, &mut durations);
+        assert!(!i.handle_event("Out", &mut durations));
+        i.update(1.0, &mut durations);
+        assert!(i.handle_event("Out", &mut durations), "inside Open .. Close");
+        assert_eq!(i.active_states(), ["s1"]);
+        // After Close it's ignored again.
+        let mut i = instance(windowed(true));
+        i.update(1.7, &mut durations);
+        assert!(!i.handle_event("Out", &mut durations));
+    }
+
+    #[test]
+    fn uninterruptible_blend_holds_off_other_transitions() {
+        let mut g = windowed(false);
+        if let Generator::StateMachine { wildcards, .. } = &mut g.generators[0] {
+            wildcards[0].flags |= 0x200;
+        }
+        let mut i = instance(g);
+        assert!(i.handle_event("Kill", &mut durations));
+        i.update(0.2, &mut durations);
+        assert!(!i.handle_event("Kill", &mut durations), "locked while blending");
+        i.update(0.4, &mut durations);
+        assert_eq!(playing(&i), [("Dying".into(), 1.0)]);
+        assert!(i.handle_event("Kill", &mut durations), "free once the blend ends");
     }
 }

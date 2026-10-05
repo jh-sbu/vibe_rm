@@ -439,8 +439,22 @@ fn main() -> Result<()> {
             for (_, g) in &project.graphs {
                 for node in &g.generators {
                     if let havok::behavior::Generator::StateMachine { states, wildcards, .. } = node {
-                        for t in states.iter().flat_map(|s| s.transitions.iter()).chain(wildcards) {
+                        let from = states.iter().flat_map(|s| s.transitions.iter().map(move |t| (s.name.as_str(), t)));
+                        for (from, t) in from.chain(wildcards.iter().map(|t| ("*", t))) {
                             total += 1;
+                            if t.trigger.is_some() || t.initiate.is_some() || t.uninterruptible() {
+                                let ev = |e: i32| g.event_name(e).unwrap_or("-");
+                                let iv = |i: &havok::behavior::Interval| format!("[{} .. {} | {}s .. {}s]", ev(i.enter_event), ev(i.exit_event), i.enter_time, i.exit_time);
+                                let to = states.iter().find(|s| s.id == t.to_state).map_or("?", |s| s.name.as_str());
+                                println!(
+                                    "{}: {from} -> {to} on {}{}{}{}",
+                                    node.name(),
+                                    ev(t.event),
+                                    t.trigger.as_ref().map(|i| format!(" trigger {}", iv(i))).unwrap_or_default(),
+                                    t.initiate.as_ref().map(|i| format!(" initiate {}", iv(i))).unwrap_or_default(),
+                                    if t.uninterruptible() { format!(" uninterruptible (blend {:?})", t.blend) } else { String::new() },
+                                );
+                            }
                             for (b, c) in counts.iter_mut().enumerate() {
                                 if t.flags & (1 << b) != 0 {
                                     *c += 1;
