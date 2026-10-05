@@ -67,13 +67,40 @@ fn npc_field(lo: &LoadOrder, npc: FormId, tag: &[u8; 4]) -> Option<Vec<u8>> {
         }
         let t = rec.get(b"TPLT").filter(|d| d.len() >= 4)?;
         id = rec.fid(FormId(u32::from_le_bytes(t[0..4].try_into().unwrap())));
-        // Leveled templates: their first entry is as good as any for these.
-        if let Some(l) = lo.get(id).filter(|r| r.tag().0 == *b"LVLN") {
-            let first = l.subrecords().find(|s| s.tag.0 == *b"LVLO" && s.data.len() >= 8)?;
-            id = l.fid(first.form_id(4));
-        }
+        id = first_of_leveled(lo, id);
     }
     None
+}
+
+/// Leveled NPC lists (nested) down to their first entry: as good as any for the
+/// stats they share.
+fn first_of_leveled(lo: &LoadOrder, mut id: FormId) -> FormId {
+    for _ in 0..8 {
+        let Some(l) = lo.get(id).filter(|r| r.tag().0 == *b"LVLN") else { break };
+        let Some(first) = l.subrecords().find(|s| s.tag.0 == *b"LVLO" && s.data.len() >= 8) else { break };
+        id = l.fid(first.form_id(4));
+    }
+    id
+}
+
+/// An NPC's factions: its own, or its template's when it takes them from one
+/// (template flag 0x4) or has none.
+fn npc_factions(lo: &LoadOrder, npc: FormId) -> Vec<FormId> {
+    let mut id = npc;
+    for _ in 0..8 {
+        let Some(rec) = lo.get(id) else { break };
+        let own: Vec<FormId> = rec.subrecords().filter(|s| s.tag.0 == *b"SNAM" && s.data.len() >= 5).map(|s| rec.fid(s.form_id(0))).collect();
+        let tpl_flags = rec.get(b"ACBS").filter(|d| d.len() >= 20).map_or(0, |d| u16::from_le_bytes([d[18], d[19]]));
+        let template = rec.get(b"TPLT").filter(|d| d.len() >= 4).map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))));
+        match template {
+            Some(t) if tpl_flags & 0x4 != 0 || own.is_empty() => {
+                id = t;
+                id = first_of_leveled(lo, id);
+            }
+            _ => return own,
+        }
+    }
+    Vec::new()
 }
 
 impl CombatStats {
@@ -115,7 +142,7 @@ impl CombatStats {
         }
         s.max_health = s.max_health.max(5.0);
         s.aggression = npc_field(lo, npc, b"AIDT").and_then(|d| d.first().copied()).unwrap_or(0);
-        s.factions = e.npc_factions(npc).into_iter().map(|(f, _)| f).collect();
+        s.factions = npc_factions(lo, npc);
         s
     }
 }
@@ -203,7 +230,10 @@ impl ActorRuntime {
             self.state = State::Walk { path: Vec::new(), next: 0, budget: 1.0, to_seat: false };
             let fwd = Vec3::new(self.heading.sin(), self.heading.cos(), 0.0);
             let mut p = pos + fwd * (speed * dt).min(d.length().max(1.0));
-            p.z = w.nav.height_at(Vec3::new(p.x, p.y, pos.z)).unwrap_or(pos.z + (way.z - pos.z) * 0.1);
+            // Off the navmesh, keep level rather than heading for the target's height.
+            let nz = w.nav.height_at(Vec3::new(p.x, p.y, pos.z));
+            p.z = nz.unwrap_or(pos.z);
+            log::trace!("{} chases: at {pos:?} target {target:?} way {way:?} nav z {nz:?}", self.ref_id);
             self.pos = p;
             return None;
         }
@@ -259,16 +289,26 @@ impl Engine {
         base * mult
     }
 
-    /// Whether `a` (an NPC with these stats) would attack `b` on sight.
-    fn hostile_to(&mut self, a: &CombatStats, b_factions: &[FormId]) -> bool {
+    /// Whether `a` (an NPC with these stats) would attack `b` on sight. Aggressive
+    /// actors attack their enemies, and the player unless they keep the law (belong
+    /// to a faction that tracks crime: townsfolk, guards); very aggressive ones
+    /// neutrals too; frenzied ones anyone. Allies and friends are left alone.
+    fn hostile_to(&mut self, a: &CombatStats, b_factions: &[FormId], b_is_player: bool) -> bool {
         let reaction = self.faction_reaction(&a.factions, b_factions);
+        if matches!(reaction, Some(2 | 3)) && a.aggression < 3 {
+            return false;
+        }
         match a.aggression {
             0 => false,
-            1 => reaction == Some(1),
-            // Very aggressive: enemies and neutrals (the player too).
-            2 => matches!(reaction, None | Some(0) | Some(1)),
+            1 => reaction == Some(1) || (b_is_player && !self.law_abiding(&a.factions)),
+            2 => true,
             _ => true,
         }
+    }
+
+    /// In a faction that tracks crime (`DATA` flag 0x40).
+    fn law_abiding(&self, factions: &[FormId]) -> bool {
+        factions.iter().any(|&f| self.lo.get(f).and_then(|r| r.get(b"DATA").and_then(|d| d.first().copied())).is_some_and(|flags| flags & 0x40 != 0))
     }
 
     /// The strongest reaction (`XNAM` group combat reaction: 0 neutral, 1 enemy,
@@ -366,7 +406,7 @@ impl Engine {
         for (r, pos, stats) in lookers {
             let mut best: Option<(f32, FormId)> = None;
             let d = pos.distance(player);
-            if d < DETECT_DISTANCE && !self.player_dead() && self.hostile_to(&stats, &player_factions) {
+            if d < DETECT_DISTANCE && !self.player_dead() && self.hostile_to(&stats, &player_factions, true) {
                 best = Some((d, PLAYER_REF));
             }
             for (o, opos, of) in &others {
@@ -374,7 +414,7 @@ impl Engine {
                 if *o == r || d > DETECT_DISTANCE || best.is_some_and(|b| b.0 <= d) {
                     continue;
                 }
-                if self.hostile_to(&stats, of) {
+                if self.hostile_to(&stats, of, false) {
                     best = Some((d, *o));
                 }
             }
@@ -540,6 +580,22 @@ impl Engine {
 
     pub fn is_dead(&self, actor: FormId) -> bool {
         self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor)).is_some_and(|a| a.dead)
+    }
+
+    /// A summary of a loaded actor's combat stats (console).
+    pub fn combat_summary(&mut self, actor: FormId) -> Vec<String> {
+        let Some(a) = self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor)) else {
+            return vec![format!("{actor} isn't a loaded actor")];
+        };
+        let stats = a.stats.clone();
+        let mut out = vec![
+            format!("{actor}: health {:.0} / {:.0}, aggression {}, reach {:.0}, fighting {:?}", a.health, stats.max_health, stats.aggression, a.reach(), a.combat.as_ref().map(|c| c.target)),
+            format!("factions {:?}", stats.factions.iter().map(|f| format!("{f} {}", self.lo.get(*f).and_then(|r| r.editor_id().map(|e| e.to_string())).unwrap_or_default())).collect::<Vec<_>>()),
+            format!("attacks {:?}", stats.attacks.iter().map(|x| x.event.as_str()).collect::<Vec<_>>()),
+        ];
+        let pf = self.player_factions();
+        out.push(format!("towards the player: reaction {:?}, hostile {}", self.faction_reaction(&stats.factions, &pf), self.hostile_to(&stats, &pf, true)));
+        out
     }
 
     /// Health of a loaded actor (current, max).

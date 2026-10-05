@@ -113,6 +113,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 _ => vec!["can't start that fight".into()],
             }
         }
+        "cstats" => {
+            let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: cstats <actor ref>".into()] };
+            engine.combat_summary(actor)
+        }
         "kill" => {
             let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: kill <actor ref>".into()] };
             if engine.kill_actor(actor) { vec![format!("{actor} killed")] } else { vec![format!("{actor} isn't a living loaded actor")] }

@@ -1662,8 +1662,10 @@ impl Engine {
         // Where everyone is, for fights.
         let mut positions: std::collections::HashMap<FormId, Vec3> =
             self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.dead).map(|a| (a.ref_id, a.pos)).collect();
-        if !self.player_died_at.is_some() {
-            positions.insert(PLAYER_REF, player);
+        if self.player_died_at.is_none() {
+            // The player's feet.
+            let feet = self.player.position - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius);
+            positions.insert(PLAYER_REF, feet);
         }
         // Everyone's position last frame, for walkers to keep clear of.
         let mut bodies: Vec<(FormId, Vec3)> = self.cells.values().flat_map(|rt| &rt.actors).map(|a| (a.ref_id, a.pos)).collect();
