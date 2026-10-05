@@ -39,6 +39,11 @@ game each piece unlocks.
   motion in furniture and takes anim objects and `IdleFurnitureExit` from its events;
   `PlayIdle` succeeds only when the graph takes the event. The static event -> clip
   resolver remains for planning (enter start pose, durations)
+- Creature behaviour graphs: every actor runs the project its race names (project file ->
+  character -> root graph, `hkbProjectStringData` / `hkbCharacterStringData`): chickens,
+  dogs, wolves, horses, cows, deer... idle in their layered idles and walk through their
+  locomotion states; root motion by clip generator name from each project's animation
+  data; AI walk speed measured from the graph's own walk
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
@@ -60,8 +65,8 @@ game each piece unlocks.
    - Pose modifiers: look-at / head tracking, foot IK, twist, keyframe bones
    - Transition intervals, `ABUT_AT_END_OF_FROM_GENERATOR`, random / chooser start states,
      state machine `currentStateId` outputs, selectors' own blends
-   - Creature behaviour projects (their project file names the root graph); turning /
-     run / sneak through the graph (`Direction`, `TurnDelta`, `iState`...)
+   - Turning / run / sneak through the graph (`Direction`, `TurnDelta`, `iState`...);
+     creatures' own idle events (grazing, lying down) and character property bindings
    - Engine variables and events still missing: weapons drawn, combat, dialogue
      (`IdleDialogue*`), first person
    - Later / separate: NiTransformController (non-sequence), texture / material controllers

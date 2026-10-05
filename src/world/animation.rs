@@ -372,7 +372,9 @@ impl AnimationLibrary {
         s
     }
 
-    fn project_motions(&mut self, vfs: &vfs::Vfs, project: &str) -> Arc<HashMap<String, Arc<Motion>>> {
+    /// Root motion of a behaviour project's clips (`animationdata/boundanims/anims_<project>.txt`),
+    /// by clip generator name (lowercase, without extension).
+    pub fn project_motions(&mut self, vfs: &vfs::Vfs, project: &str) -> Arc<HashMap<String, Arc<Motion>>> {
         if let Some(m) = self.motions.get(project) {
             return m.clone();
         }
@@ -395,7 +397,22 @@ impl AnimationLibrary {
 
     /// Load `clip` for an actor whose NIF skeleton lives at `nif_skeleton_path`.
     pub fn clip(&mut self, vfs: &vfs::Vfs, clip: &str, nif_skeleton_path: &str, skeleton: &Skeleton) -> Option<Arc<BoundClip>> {
-        let key = (clip.to_owned(), nif_skeleton_path.to_owned());
+        // Humanoid clips take root motion from the matching default project.
+        let project = clip.contains("actors/character/").then(|| if clip.contains("/female/") { "defaultfemale" } else { "defaultmale" });
+        self.clip_in_project(vfs, clip, nif_skeleton_path, skeleton, project)
+    }
+
+    /// Load `clip` with root motion from the animation data of the behaviour project
+    /// named `project` (`dogproject`), if any.
+    pub fn clip_in_project(
+        &mut self,
+        vfs: &vfs::Vfs,
+        clip: &str,
+        nif_skeleton_path: &str,
+        skeleton: &Skeleton,
+        project: Option<&str>,
+    ) -> Option<Arc<BoundClip>> {
+        let key = (format!("{clip}@{}", project.unwrap_or_default()), nif_skeleton_path.to_owned());
         if let Some(c) = self.clips.get(&key) {
             return c.clone();
         }
@@ -416,9 +433,7 @@ impl AnimationLibrary {
             Some((anim, track_to_bone, track_to_hk))
         })()
         .map(|(anim, track_to_bone, track_to_hk)| {
-            // Humanoid clips take root motion from the matching default project.
-            let motion = clip.contains("actors/character/").then(|| {
-                let project = if clip.contains("/female/") { "defaultfemale" } else { "defaultmale" };
+            let motion = project.map(|project| {
                 let stem = clip.rsplit('/').next().unwrap_or(clip).trim_end_matches(".hkx");
                 let m = self.project_motions(vfs, project).get(stem).cloned();
                 log::trace!("{clip}: {project} motion for {stem:?}: {}", m.is_some());

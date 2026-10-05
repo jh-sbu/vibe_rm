@@ -15,6 +15,8 @@ pub struct ActorDesc {
     /// Skinned models to attach (body parts, armor, head).
     pub models: Vec<String>,
     pub female: bool,
+    /// The race's behaviour project file (`meshes/actors/canine/dogproject.hkx`).
+    pub behavior: Option<String>,
 }
 
 fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
@@ -109,6 +111,33 @@ fn race_info(lo: &LoadOrder, race: FormId, female: bool) -> Option<(String, Form
         }
     }
     Some((skeleton?, skin, height))
+}
+
+/// The race's behaviour project for the sex (the MNAM / FNAM model after NAM3).
+fn race_behavior(lo: &LoadOrder, race: FormId, female: bool) -> Option<String> {
+    let rec = lo.get(race)?;
+    let mut in_section = false;
+    let mut gender_marker: Option<bool> = None;
+    let mut found = None;
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            b"NAM3" => in_section = true,
+            b"MNAM" => gender_marker = Some(false),
+            b"FNAM" => gender_marker = Some(true),
+            b"MODL" if in_section && (gender_marker == Some(female) || found.is_none()) => {
+                let m = sr.zstring();
+                if !m.is_empty() {
+                    found = Some(mesh_path(&m));
+                }
+                if gender_marker == Some(female) {
+                    break;
+                }
+            }
+            b"NAM4" | b"NAM5" if in_section => break,
+            _ => {}
+        }
+    }
+    found
 }
 
 /// Armor addon models for an armor on a given race: (model path, biped slot mask).
@@ -209,5 +238,6 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
     let name = base.get(b"FULL").map(|d| lo.lstring(&base, d)).unwrap_or_default();
     let scale = r.scale * traits.height * race_height;
     let transform = Mat4::from_scale_rotation_translation(glam::Vec3::splat(scale), r.rotation_quat(), r.position);
-    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female })
+    let behavior = race_behavior(lo, traits.race, traits.female);
+    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female, behavior })
 }

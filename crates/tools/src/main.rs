@@ -1,5 +1,20 @@
 use anyhow::{Context, Result, bail};
 
+/// A behaviour project named by its directory (humanoids: `behaviors/0_master.hkx`)
+/// or by its project file (`meshes/actors/canine/dogproject.hkx`), with its directory.
+fn load_project(v: &vfs::Vfs, arg: &str) -> Result<(String, havok::behavior::Project)> {
+    let arg = arg.trim_end_matches('/').to_ascii_lowercase();
+    if let Some((dir, file)) = arg.rsplit_once('/').filter(|_| arg.ends_with(".hkx")) {
+        let p = havok::behavior::Project::load_project(file, |rel| v.read(&format!("{dir}/{rel}")))?;
+        if let Some(c) = &p.character {
+            eprintln!("character {} rig {} behaviour {}, {} graphs", c.name, c.rig, c.behavior, p.graphs.len());
+        }
+        return Ok((dir.to_owned(), p));
+    }
+    let p = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{arg}/{rel}")));
+    Ok((arg, p))
+}
+
 fn main() -> Result<()> {
     env_logger::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -216,8 +231,7 @@ fn main() -> Result<()> {
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let v = vfs::Vfs::new(data, &names);
-            let dir = args[2].trim_end_matches('/');
-            let project = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}")));
+            let (_, project) = load_project(&v, &args[2])?;
             for (rel, g) in &project.graphs {
                 let clips = g.generators.iter().filter(|g| matches!(g, havok::behavior::Generator::Clip { .. })).count();
                 println!("{rel}: {} generators, {clips} clips, {} events", g.generators.len(), g.events.len());
@@ -346,8 +360,8 @@ fn main() -> Result<()> {
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let v = vfs::Vfs::new(data, &names);
-            let dir = args[2].trim_end_matches('/');
-            let project = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}")));
+            let (dir, project) = load_project(&v, &args[2])?;
+            let dir = dir.as_str();
             let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
             for (rel, _) in &project.graphs {
                 let bytes = v.read(&format!("{dir}/{}", rel.replace('\\', "/"))).context("graph vanished")?;
@@ -366,7 +380,12 @@ fn main() -> Result<()> {
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let v = vfs::Vfs::new(data, &names);
             let dir = args[2].trim_end_matches('/');
-            let bytes = v.read(&format!("{dir}/behaviors/{}", args[3])).context("graph not found")?;
+            // A graph under behaviors/, or a project-relative path starting with `./`.
+            let file = match args[3].strip_prefix("./") {
+                Some(rel) => format!("{dir}/{rel}"),
+                None => format!("{dir}/behaviors/{}", args[3]),
+            };
+            let bytes = v.read(&file).context("graph not found")?;
             let p = havok::Packfile::parse(&bytes)?;
             let count: usize = args.get(5).map(|s| s.parse()).transpose()?.unwrap_or(2);
             let mut starts: Vec<u32> = p.objects.iter().map(|o| o.offset).collect();
@@ -400,8 +419,8 @@ fn main() -> Result<()> {
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let v = vfs::Vfs::new(data, &names);
-            let dir = args[2].trim_end_matches('/').to_owned();
-            let project = std::sync::Arc::new(havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}"))));
+            let (dir, project) = load_project(&v, &args[2])?;
+            let project = std::sync::Arc::new(project);
             let shared = Shared::new(project);
             /// Clip lengths and blend hints, read from the data.
             struct ToolClips<'a> {
@@ -559,8 +578,7 @@ fn main() -> Result<()> {
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let v = vfs::Vfs::new(data, &names);
-            let dir = args[2].trim_end_matches('/');
-            let project = havok::behavior::Project::load("behaviors/0_master.hkx", |rel| v.read(&format!("{dir}/{rel}")));
+            let (_, project) = load_project(&v, &args[2])?;
             for (rel, g) in &project.graphs {
                 for node in &g.generators {
                     if let havok::behavior::Generator::StateMachine { name, start, start_variable: Some(v), .. } = node {

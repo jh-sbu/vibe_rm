@@ -300,7 +300,7 @@ mod tests {
             children: vec![BlendChild { generator: Some(1), weight: 1.0, weight_variable: None, bone_weights: None }],
         };
         let other = BehaviorGraph::new("Other", Some(0), vec![blend, clip("OtherLoop", ClipMode::Looping, vec![])], vec![]);
-        Project { graphs: vec![("behaviors\\master.hkx".into(), master), ("behaviors\\other.hkx".into(), other)] }
+        Project { graphs: vec![("behaviors\\master.hkx".into(), master), ("behaviors\\other.hkx".into(), other)], character: None }
     }
 
     fn names(clips: &[PlayedClip]) -> Vec<&str> {

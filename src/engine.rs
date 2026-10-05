@@ -534,9 +534,15 @@ impl Engine {
             let idle = crate::world::animation::idle_clip(&d.skeleton, d.female)
                 .iter()
                 .find_map(|c| self.anims.clip(&self.vfs, c, &d.skeleton, &skel));
+            let project = d.behavior.as_deref().and_then(|p| self.graphs.project(&self.vfs, p));
+            // With root motion from the project's animation data: the AI walks at its speed.
+            let motion_project = project.as_ref().filter(|p| !p.humanoid()).map(|p| p.name.clone());
             let walk = crate::world::animation::locomotion_clip(&d.skeleton, d.female, false)
                 .iter()
-                .find_map(|c| self.anims.clip(&self.vfs, c, &d.skeleton, &skel));
+                .find_map(|c| match &motion_project {
+                    Some(p) => self.anims.clip_in_project(&self.vfs, c, &d.skeleton, &skel, Some(p)),
+                    None => self.anims.clip(&self.vfs, c, &d.skeleton, &skel),
+                });
             // Desynchronise actors sharing a clip.
             let start = (ai as f32 * 1.618) % 7.0;
             let packages = crate::ai::package::npc_packages(&self.lo, d.npc);
@@ -547,25 +553,27 @@ impl Engine {
             rt.child = self.npc_race(d.npc).is_some_and(|r| self.race_is_child(r));
             rt.anim = idle.clone().map(|c| crate::world::animation::ActorAnim::new(c, &skel, start));
             let mut first_pose = None;
-            // Humanoids run their behaviour graph, set up as the game does for NPCs.
-            let project = d.skeleton.split("/character assets").next().filter(|b| b.ends_with("actors/character")).map(str::to_owned);
-            if let Some(project) = project
-                && let Some(shared) = self.graphs.shared(&self.vfs, &project)
-            {
-                let mut g = crate::world::behavior::GraphAnim::new(shared, &project, &d.skeleton, d.female, &skel, self.rng ^ d.ref_id.0 as u64);
+            // Actors run their race's behaviour graph, set up as the game does for NPCs.
+            if let Some(project) = project {
+                let humanoid = project.humanoid();
+                let mut g = crate::world::behavior::GraphAnim::new(project, &d.skeleton, d.female, &skel, self.rng ^ d.ref_id.0 as u64);
                 g.label = d.ref_id.to_string();
-                for (var, value) in [("IsNPC", 1.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)] {
-                    g.set_variable(var, value);
+                if humanoid {
+                    for (var, value) in [("IsNPC", 1.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)] {
+                        g.set_variable(var, value);
+                    }
+                    // NPC weight (0..100) picks between skinny and muscular body poses.
+                    let weight = self.lo.get(d.npc).and_then(|r| r.get(b"NAM7").filter(|b| b.len() >= 4).map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap())));
+                    g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
                 }
-                // NPC weight (0..100) picks between skinny and muscular body poses.
-                let weight = self.lo.get(d.npc).and_then(|r| r.get(b"NAM7").filter(|b| b.len() >= 4).map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap())));
-                g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
                 // Desynchronise actors standing about.
+                rt.graph_walk_speed = g.walk_speed(&self.vfs, &mut self.anims, &skel);
                 first_pose = Some(g.update(start, &self.vfs, &mut self.anims, &skel).pose);
                 rt.graph = Some(g);
             }
             rt.idle = idle;
             rt.walk = walk;
+            log::debug!("{}: walks at {:.0} units/s", d.ref_id, rt.walk_speed());
             let (scale, _, feet) = d.transform.to_scale_rotation_translation();
             rt.capsule = Some(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
             let pose = first_pose.unwrap_or_else(|| skel.model_space(&skel.bind_locals()));

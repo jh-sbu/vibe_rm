@@ -594,6 +594,44 @@ impl BehaviorGraph {
 #[derive(Default)]
 pub struct Project {
     pub graphs: Vec<(String, BehaviorGraph)>,
+    /// The character the project was loaded for, when loaded from a project file.
+    pub character: Option<Character>,
+}
+
+/// A behaviour project's character (`hkbCharacterStringData`): paths are
+/// project-relative with backslashes, as written.
+#[derive(Debug, Clone, Default)]
+pub struct Character {
+    pub name: String,
+    /// Havok skeleton (`Character Assets Dog\skeleton.HKX`).
+    pub rig: String,
+    /// Root behaviour graph (`Behaviors\DogBehavior.hkx`).
+    pub behavior: String,
+}
+
+/// Strings at `o`: an hkArray of hkStringPtr.
+fn string_array(p: &Packfile, o: u32) -> Vec<String> {
+    let (data, n) = p.array(o);
+    data.map(|d| (0..n as u32).filter_map(|i| p.string(d + i * 8)).collect()).unwrap_or_default()
+}
+
+/// The first character file a project file (`hkbProjectStringData`) lists.
+pub fn project_character_file(bytes: &[u8]) -> Result<String> {
+    let p = Packfile::parse(bytes)?;
+    let o = p.objects_of("hkbProjectStringData").next().ok_or_else(|| crate::Error::Corrupt("no hkbProjectStringData".into()))?;
+    // hkReferencedObject header, then animation, behavior and character filenames.
+    string_array(&p, o + 0x30).into_iter().next().ok_or_else(|| crate::Error::Corrupt("project lists no character".into()))
+}
+
+impl Character {
+    pub fn parse(bytes: &[u8]) -> Result<Character> {
+        let p = Packfile::parse(bytes)?;
+        let o = p.objects_of("hkbCharacterStringData").next().ok_or_else(|| crate::Error::Corrupt("no hkbCharacterStringData".into()))?;
+        // Seven arrays (skins, animations, properties, retargeting, LODs, mirroring)
+        // after the header, then name, rig, ragdoll and behaviour file names.
+        let s = |at: u32| p.string(o + at).unwrap_or_default();
+        Ok(Character { name: s(0xa0), rig: s(0xa8), behavior: s(0xb8) })
+    }
 }
 
 impl Project {
@@ -616,6 +654,20 @@ impl Project {
             project.graphs.push((rel, g));
         }
         project
+    }
+
+    /// Load a project from its project file (`DogProject.hkx`, relative to the
+    /// project directory `read` resolves against): its character, then the
+    /// character's root behaviour graph and everything that references.
+    pub fn load_project(file: &str, read: impl Fn(&str) -> Option<Vec<u8>>) -> Result<Project> {
+        let norm = |p: &str| p.to_ascii_lowercase().replace('\\', "/");
+        let bytes = read(&norm(file)).ok_or_else(|| crate::Error::Corrupt(format!("{file} not found")))?;
+        let character_file = project_character_file(&bytes)?;
+        let bytes = read(&norm(&character_file)).ok_or_else(|| crate::Error::Corrupt(format!("{character_file} not found")))?;
+        let character = Character::parse(&bytes)?;
+        let mut project = Project::load(&character.behavior, read);
+        project.character = Some(character);
+        Ok(project)
     }
 
     pub fn graph_index(&self, path: &str) -> Option<usize> {
