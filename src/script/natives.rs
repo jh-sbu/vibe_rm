@@ -215,6 +215,25 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         | ("objectreference", "addtomap")
         | ("objectreference", "setplayerknows") => v(Value::Bool(true)),
         ("objectreference", "getopenstate") => v(Value::Int(3)),
+        (_, "addinventoryeventfilter") | (_, "removeinventoryeventfilter") | (_, "removeallinventoryeventfilters") => {
+            if let Some(obj) = this.and_then(|t| match t {
+                Value::Object(o, _) => Some(*o),
+                _ => None,
+            }) {
+                let set = e.scripts.inventory_filters.entry(obj).or_default();
+                match (func, form_arg(args, 0)) {
+                    ("addinventoryeventfilter", Some(f)) => {
+                        set.insert(f);
+                    }
+                    ("removeinventoryeventfilter", Some(f)) => {
+                        set.remove(&f);
+                    }
+                    ("removeallinventoryeventfilters", _) => set.clear(),
+                    _ => {}
+                }
+            }
+            none()
+        }
         ("objectreference", "getitemcount") => v(Value::Int(match (me, form_arg(args, 0)) {
             (Some(r), Some(item)) => e.item_count(r, FormId(item.0)),
             _ => 0,

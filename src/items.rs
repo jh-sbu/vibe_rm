@@ -80,6 +80,7 @@ impl Engine {
         let Some(info) = item_info(&self.lo, base) else { return false };
         let count = self.lo.get(r).and_then(|rec| rec.get(b"XCNT").filter(|d| d.len() >= 4).map(|d| i32::from_le_bytes(d[0..4].try_into().unwrap()))).unwrap_or(1).max(1);
         self.inventory_mut(PLAYER_REF).add(base, count);
+        self.inventory_event(PLAYER_REF, true, base, count, None);
         self.set_disabled(r, true);
         self.scripts.notify(if count > 1 { format!("{} ({count}) added", info.name) } else { format!("{} added", info.name) });
         log::info!("took {r} ({base} x{count})");
@@ -119,11 +120,46 @@ impl Engine {
         out
     }
 
-    /// Send a Papyrus event to the scripts on a reference.
+    /// Send a Papyrus event to the scripts on a reference and on the quest aliases
+    /// it fills (delivered with the next script update).
     pub fn send_script_event(&mut self, r: FormId, event: &str, args: Vec<papyrus::Value>) {
-        let mut vm = std::mem::take(&mut self.vm);
-        let mut host = crate::script::EngineHost { engine: self };
-        vm.send_event(&mut host, papyrus::ObjectId::Form(r.0), event, args);
-        self.vm = vm;
+        for obj in self.objects_of_ref(r) {
+            self.scripts.pending_events.push((obj, event.to_owned(), args.clone()));
+        }
+    }
+
+    /// A reference's script objects: itself and the running quests' aliases it fills.
+    pub(crate) fn objects_of_ref(&self, r: FormId) -> Vec<papyrus::ObjectId> {
+        let mut out = vec![papyrus::ObjectId::Form(r.0)];
+        for (q, st) in &self.scripts.quests {
+            if !st.running {
+                continue;
+            }
+            for (&alias, &filled) in &st.aliases {
+                if filled == r {
+                    out.push(papyrus::ObjectId::Alias { quest: q.0, alias });
+                }
+            }
+        }
+        out
+    }
+
+    /// `OnItemAdded` / `OnItemRemoved` on a container (or actor) for `count` of `item`,
+    /// from or to `other`, to the objects whose inventory filters let it through.
+    pub fn inventory_event(&mut self, owner: FormId, added: bool, item: FormId, count: i32, other: Option<FormId>) {
+        if count <= 0 {
+            return;
+        }
+        let event = if added { "OnItemAdded" } else { "OnItemRemoved" };
+        let args = vec![self.object_value(item), papyrus::Value::Int(count), papyrus::Value::None, other.map_or(papyrus::Value::None, |o| self.object_value(o))];
+        for obj in self.objects_of_ref(owner) {
+            let heard = match self.scripts.inventory_filters.get(&obj) {
+                Some(f) if !f.is_empty() => f.contains(&item) || f.iter().any(|&l| self.formlist(l).contains(&item)),
+                _ => true,
+            };
+            if heard {
+                self.scripts.pending_events.push((obj, event.to_owned(), args.clone()));
+            }
+        }
     }
 }

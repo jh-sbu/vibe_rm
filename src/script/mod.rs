@@ -47,6 +47,9 @@ pub struct ScriptState {
     pub blocked_activation: HashSet<FormId>,
     pub locked: HashMap<FormId, bool>,
     pub actor_values: HashMap<(FormId, String), f32>,
+    /// `AddInventoryEventFilter`: the items (or form lists) an object hears
+    /// `OnItemAdded` / `OnItemRemoved` for; none set means all.
+    pub inventory_filters: HashMap<ObjectId, HashSet<FormId>>,
     /// Events raised by natives, delivered after the current VM run.
     pub pending_events: Vec<(ObjectId, String, Vec<Value>)>,
     /// Quest fragments to run: (quest, stage).
