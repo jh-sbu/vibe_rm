@@ -907,6 +907,34 @@ impl ActorRuntime {
             .unwrap_or(WALK_SPEED)
     }
 
+    /// Foot placement: the ground under each leg's ankle (as the graph left them
+    /// last update), from rays through the static world. Off in furniture, where
+    /// the animation puts the feet.
+    fn find_ground(&mut self, physics: &crate::physics::Physics) {
+        let model = self.transform();
+        let (feet, heading, scale) = (self.pos, self.heading, self.scale);
+        let on = !self.in_furniture();
+        let Some(g) = self.graph.as_mut() else { return };
+        let Some(ik) = g.project().shared.project.character.as_ref().and_then(|c| c.foot_ik.clone()) else { return };
+        g.foot_ik = on;
+        if !on {
+            return;
+        }
+        let ground = g
+            .ankles
+            .iter()
+            .map(|ankle| {
+                let w = model.transform_point3(*ankle);
+                let from = Vec3::new(w.x, w.y, feet.z + ik.raycast_up * scale);
+                let (toi, normal) = physics.ground_ray(from, -Vec3::Z, (ik.raycast_up + ik.raycast_down) * scale)?;
+                // Into model space: relative to the feet, unscaled, unturned.
+                let z = (from.z - toi - feet.z) / scale;
+                Some((z, Quat::from_rotation_z(heading) * normal))
+            })
+            .collect();
+        g.ground = ground;
+    }
+
     /// Speed for the package's gait: walking at the graph's walk, running at its
     /// movement type's run, sneaking at its sneaking movement type's walk.
     pub fn move_speed(&self) -> f32 {
@@ -1519,6 +1547,7 @@ impl Engine {
                 // NPCs look at the player close by, and while talking to them.
                 let near = a.pos.distance(player) < HEAD_TRACK_DISTANCE;
                 a.look_at = (near || talking == Some(a.ref_id)).then_some(eye);
+                a.find_ground(&self.physics);
                 inst.transform = a.transform();
                 if let Some(pose) = a.animate(dt, &mut world.clips) {
                     inst.pose = pose;

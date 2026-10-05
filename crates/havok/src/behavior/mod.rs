@@ -709,6 +709,37 @@ pub struct Character {
     pub rig: String,
     /// Root behaviour graph (`Behaviors\DogBehavior.hkx`).
     pub behavior: String,
+    /// Foot placement settings (`hkbFootIkDriverInfo`), if the character has them.
+    pub foot_ik: Option<FootIk>,
+}
+
+/// `hkbFootIkDriverInfo`: the legs and how far to look for the ground.
+#[derive(Debug, Clone)]
+pub struct FootIk {
+    pub legs: Vec<FootIkLeg>,
+    pub raycast_up: f32,
+    pub raycast_down: f32,
+    pub original_ground_height: f32,
+    pub vertical_offset: f32,
+    pub forward_align: f32,
+    pub sideways_align: f32,
+}
+
+/// A leg (`hkbFootIkDriverInfoLeg`); heights in model space, bones by Havok index.
+#[derive(Debug, Clone)]
+pub struct FootIkLeg {
+    pub knee_axis: glam::Vec3,
+    pub foot_end: glam::Vec3,
+    pub planted_ankle_height: f32,
+    pub raised_ankle_height: f32,
+    pub max_ankle_height: f32,
+    pub min_ankle_height: f32,
+    pub max_knee_degrees: f32,
+    pub min_knee_degrees: f32,
+    pub max_ankle_degrees: f32,
+    pub hip: i16,
+    pub knee: i16,
+    pub ankle: i16,
 }
 
 /// Strings at `o`: an hkArray of hkStringPtr.
@@ -732,7 +763,44 @@ impl Character {
         // Seven arrays (skins, animations, properties, retargeting, LODs, mirroring)
         // after the header, then name, rig, ragdoll and behaviour file names.
         let s = |at: u32| p.string(o + at).unwrap_or_default();
-        Ok(Character { name: s(0xa0), rig: s(0xa8), behavior: s(0xb8) })
+        let foot_ik = p.objects_of("hkbFootIkDriverInfo").next().map(|f| {
+            let v = |at: u32| glam::Vec3::new(p.f32(at), p.f32(at + 4), p.f32(at + 8));
+            let (data, n) = p.array(f + 0x10);
+            let legs = data
+                .map(|d| {
+                    (0..n as u32)
+                        .map(|i| {
+                            // prevAnkleRotLS, knee axis, foot end, heights, angles, bones.
+                            let l = d + i * 0x60;
+                            FootIkLeg {
+                                knee_axis: v(l + 0x10),
+                                foot_end: v(l + 0x20),
+                                planted_ankle_height: p.f32(l + 0x30),
+                                raised_ankle_height: p.f32(l + 0x34),
+                                max_ankle_height: p.f32(l + 0x38),
+                                min_ankle_height: p.f32(l + 0x3C),
+                                max_knee_degrees: p.f32(l + 0x40),
+                                min_knee_degrees: p.f32(l + 0x44),
+                                max_ankle_degrees: p.f32(l + 0x48),
+                                hip: p.i16(l + 0x4C),
+                                knee: p.i16(l + 0x4E),
+                                ankle: p.i16(l + 0x50),
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            FootIk {
+                legs,
+                raycast_up: p.f32(f + 0x20),
+                raycast_down: p.f32(f + 0x24),
+                original_ground_height: p.f32(f + 0x28),
+                vertical_offset: p.f32(f + 0x2C),
+                forward_align: p.f32(f + 0x34),
+                sideways_align: p.f32(f + 0x38),
+            }
+        });
+        Ok(Character { name: s(0xa0), rig: s(0xa8), behavior: s(0xb8), foot_ik })
     }
 }
 
