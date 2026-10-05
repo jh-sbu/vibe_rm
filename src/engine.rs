@@ -74,6 +74,12 @@ pub struct Engine {
     anim_objects: HashMap<String, Option<(String, String)>>,
     /// Model path -> the bone a rigid model hangs from (its root's `Prn` string).
     parent_bones: HashMap<String, Option<String>>,
+    /// Rigid models of actors' items (weapons, shields), by actor: (item, model).
+    pub(crate) rigid_models: HashMap<FormId, Vec<(FormId, String)>>,
+    /// How many of `scene.lights` belong to the cells (carried lights follow).
+    pub(crate) static_lights: usize,
+    /// Model path -> where a carried light shines from (its `AttachLight` node).
+    pub(crate) light_attach: HashMap<String, Vec3>,
     /// What actors and containers carry, by reference (kept across cell loads).
     pub inventories: HashMap<FormId, crate::world::inventory::Inventory>,
     /// IDLE records by parent and keyword (built on first use).
@@ -149,6 +155,9 @@ impl Engine {
             anim_objects: Default::default(),
             parent_bones: Default::default(),
             inventories: Default::default(),
+            rigid_models: Default::default(),
+            static_lights: 0,
+            light_attach: Default::default(),
             idles: None,
             scripts: Default::default(),
             vm: papyrus::Vm::new(),
@@ -534,7 +543,7 @@ impl Engine {
         if descs.is_empty() {
             return;
         }
-        let paths: Vec<String> = descs.iter().flat_map(|(d, _)| d.models.iter().cloned()).collect();
+        let paths: Vec<String> = descs.iter().flat_map(|(d, _)| d.models.iter().map(|(m, _)| m.clone())).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let mut actors = Vec::new();
         let mut runtimes = Vec::new();
@@ -598,7 +607,8 @@ impl Engine {
             let pose = first_pose.unwrap_or_else(|| skel.model_space(&skel.bind_locals()));
             let mut meshes = Vec::new();
             let mut equipment = Vec::new();
-            for m in &d.models {
+            let mut rigid = Vec::new();
+            for (m, item) in &d.models {
                 let Some(model) = self.models.get(m) else {
                     log::debug!("{}: missing model {m}", d.name);
                     continue;
@@ -606,7 +616,10 @@ impl Engine {
                 // Rigid models (weapons, shields) hang from the bone they name.
                 if model.skinned.is_empty() && !model.parts.is_empty() {
                     match self.parent_bone(m).and_then(|b| skel.find(&b).map(|i| (b, i))) {
-                        Some((_, bone)) => equipment.push((model.clone(), bone, glam::Mat4::IDENTITY)),
+                        Some((_, bone)) => {
+                            equipment.push((model.clone(), bone, glam::Mat4::IDENTITY));
+                            rigid.push((*item, m.clone()));
+                        }
                         None => log::debug!("{}: rigid model {m} has no parent bone in {}", d.name, d.skeleton),
                     }
                     continue;
@@ -641,11 +654,13 @@ impl Engine {
                 meshes,
                 attachments: Vec::new(),
                 equipment,
+                held_light: None,
                 transform: d.transform,
                 pose,
                 lights: [0xFFFF; 8],
                 radius: 120.0,
             });
+            self.rigid_models.insert(d.ref_id, rigid);
             runtimes.push(rt);
         }
         log::info!("spawned {} actors", actors.len());
@@ -713,7 +728,7 @@ impl Engine {
 
     /// The bone a rigid model (weapon, shield, anim object) hangs from: its root's
     /// `Prn` string.
-    fn parent_bone(&mut self, model: &str) -> Option<String> {
+    pub(crate) fn parent_bone(&mut self, model: &str) -> Option<String> {
         if let Some(r) = self.parent_bones.get(model) {
             return r.clone();
         }
@@ -828,6 +843,7 @@ impl Engine {
                 color: [l.color.x, l.color.y, l.color.z, 1.0],
             })
             .collect();
+        self.static_lights = self.scene.lights.len();
         self.scene.assign_lights();
     }
 
@@ -1187,6 +1203,7 @@ impl Engine {
         self.physics.step(dt);
         self.update_whereabouts(dt);
         self.update_actors(dt);
+        self.update_held_lights();
         self.update_animated(dt);
         let cam = self.camera_copy();
         self.player.update(&self.physics, &cam, input, dt);

@@ -12,8 +12,9 @@ pub struct ActorDesc {
     pub name: String,
     pub transform: Mat4,
     pub skeleton: String,
-    /// Skinned models to attach (body parts, armor, head).
-    pub models: Vec<String>,
+    /// Models to attach (body parts, armor, head, weapon) and the item each comes
+    /// from (null for the body and head).
+    pub models: Vec<(String, FormId)>,
     pub female: bool,
     /// The race's behaviour project file (`meshes/actors/canine/dogproject.hkx`).
     pub behavior: Option<String>,
@@ -343,7 +344,7 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
     }
     super::inventory::equip_weapons(lo, &mut inventory, traits.npc_for_stats, traits.combat_style);
 
-    let mut models: Vec<String> = Vec::new();
+    let mut models: Vec<(String, FormId)> = Vec::new();
     let mut covered = 0u32;
     for &armo in &inventory.equipped {
         for (m, slots) in armor_models(lo, armo, traits.race, traits.female) {
@@ -351,24 +352,24 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
                 continue;
             }
             covered |= slots;
-            models.push(m);
+            models.push((m, armo));
         }
     }
     for (m, slots) in armor_models(lo, skin, traits.race, traits.female) {
         if slots & covered == 0 {
             covered |= slots;
-            models.push(m);
+            models.push((m, FormId::NULL));
         }
     }
     // The pre-built FaceGen head (head, hair, eyes, brows) unless a helmet hides it.
     if covered & SLOT_HEAD == 0 || covered & SLOT_HAIR == 0 {
         if let Some(f) = facegen_path(lo, traits.npc_for_face) {
-            models.push(f);
+            models.push((f, FormId::NULL));
         }
     }
     // Weapons are rigid models hung from the bone their model names (sheathed).
-    if let Some(m) = inventory.weapon(lo).and_then(|w| super::inventory::weapon_model(lo, w)) {
-        models.push(m);
+    if let Some((w, m)) = inventory.weapon(lo).and_then(|w| Some((w, super::inventory::weapon_model(lo, w)?))) {
+        models.push((m, w));
     }
     let name = traits.name.clone();
     let scale = r.scale * traits.height * race_height;

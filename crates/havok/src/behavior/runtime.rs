@@ -88,6 +88,8 @@ pub struct Shared {
     promoted: HashMap<(usize, GenId), Vec<(i32, Transition)>>,
     /// Per (graph, bone switch): mask for its default child.
     default_masks: HashMap<(usize, GenId), Arc<[f32]>>,
+    /// Bone switches' children's weights, character properties resolved.
+    switch_weights: HashMap<(usize, GenId), Vec<Arc<[f32]>>>,
 }
 
 impl Shared {
@@ -103,6 +105,7 @@ impl Shared {
             statements: HashMap::new(),
             promoted: HashMap::new(),
             default_masks: HashMap::new(),
+            switch_weights: HashMap::new(),
             project: project.clone(),
         };
         for (gi, (_, g)) in project.graphs.iter().enumerate() {
@@ -154,10 +157,20 @@ impl Shared {
                             s.promoted.insert((gi, id), promoted);
                         }
                     }
-                    Generator::BoneSwitch { children, .. } => {
-                        let n = children.iter().map(|c| c.1.len()).max().unwrap_or(0);
-                        let mask: Vec<f32> = (0..n).map(|b| 1.0 - children.iter().map(|c| c.1.get(b).copied().unwrap_or(0.0)).fold(0.0, f32::max)).collect();
+                    Generator::BoneSwitch { children, properties, .. } => {
+                        let character = s.project.character.as_ref();
+                        let weights: Vec<Arc<[f32]>> = children
+                            .iter()
+                            .enumerate()
+                            .map(|(i, c)| {
+                                let bound = properties.get(i).and_then(|p| p.as_ref()).and_then(|p| character?.bone_weights.get(&p.to_ascii_lowercase()));
+                                bound.unwrap_or(&c.1).as_slice().into()
+                            })
+                            .collect();
+                        let n = weights.iter().map(|w| w.len()).max().unwrap_or(0);
+                        let mask: Vec<f32> = (0..n).map(|b| 1.0 - weights.iter().map(|w| w.get(b).copied().unwrap_or(0.0)).fold(0.0, f32::max)).collect();
                         s.default_masks.insert((gi, id), mask.into());
+                        s.switch_weights.insert((gi, id), weights);
                     }
                     _ => {}
                 }
@@ -1165,8 +1178,7 @@ impl Ctx<'_> {
                 }
             }
             Kind::Switch { default, children } => {
-                let graph = self.shared.graph(gi);
-                let Generator::BoneSwitch { children: defs, .. } = &graph.generators[g] else { return };
+                let Some(weights) = self.shared.switch_weights.get(&(gi, g)) else { return };
                 if let Some(d) = default {
                     match self.shared.default_masks.get(&(gi, g)) {
                         Some(dm) if !dm.is_empty() => {
@@ -1176,7 +1188,7 @@ impl Ctx<'_> {
                         _ => self.collect(d, weight, mask, out),
                     }
                 }
-                for (c, (_, bw)) in children.iter().zip(defs) {
+                for (c, bw) in children.iter().zip(weights) {
                     let m = combine(mask, bw);
                     self.collect(c, weight, Some(&m), out);
                 }

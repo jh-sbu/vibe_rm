@@ -23,6 +23,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "pi <ref> <idle>       play an IDLE record on an actor".into(),
             "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
             "gstate <ref>          an actor's active behaviour graph states".into(),
+            "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
         ],
         "door" => {
@@ -75,6 +76,11 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             } else {
                 vec![format!("{r} isn't a loaded actor")]
             }
+        }
+        "sgv" => {
+            let [r, var, value] = args[..] else { return vec!["usage: sgv <actor ref> <variable> <value>".into()] };
+            let (Some(actor), Ok(x)) = (engine.resolve_form(r), value.parse::<f32>()) else { return vec!["bad reference or value".into()] };
+            if engine.set_graph_variable(actor, var, x) { vec![format!("{r}: {var} = {x}")] } else { vec![format!("{r} has no behaviour graph")] }
         }
         "gstate" => {
             let [r] = args[..] else { return vec!["usage: gstate <actor ref>".into()] };

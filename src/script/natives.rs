@@ -4,7 +4,6 @@ use esp::FormId;
 use papyrus::{NativeResult, ObjectId, Value};
 
 use crate::engine::Engine;
-use crate::world::records;
 
 fn v(x: Value) -> NativeResult {
     NativeResult::Value(x)
