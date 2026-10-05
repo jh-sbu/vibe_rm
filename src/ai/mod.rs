@@ -1346,6 +1346,56 @@ impl Engine {
     }
 
     /// Active states of a loaded actor's behaviour graph, outermost first.
+    /// A behaviour graph variable of a loaded actor (0 for one its graph lacks);
+    /// `None` when it has no graph.
+    pub fn graph_variable(&self, r: FormId, name: &str) -> Option<f32> {
+        let key = self.actor_cells.get(&r)?;
+        let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;
+        Some(a.graph.as_ref()?.variable(name).unwrap_or(0.0))
+    }
+
+    /// How fast a loaded actor is moving.
+    pub fn actor_speed(&self, r: FormId) -> Option<f32> {
+        let key = self.actor_cells.get(&r)?;
+        Some(self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?.speed)
+    }
+
+    /// Gesture along with a line of dialogue: an idle from the `ActionTalking`
+    /// tree for the speaker's graph (hands on hips, expressive or angry gestures,
+    /// by the line's emotion and the pose the speaker is in).
+    pub(crate) fn talking_gesture(&mut self, actor: FormId) {
+        use crate::condition::{Context, IdleQuery};
+        let Some(key) = self.actor_cells.get(&actor).copied() else { return };
+        let Some(a) = self.cells.get(&key).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor)) else { return };
+        let Some(project) = a.graph.as_ref().map(|g| g.project().clone()) else { return };
+        let query = match &a.seat {
+            Some(s) if a.in_furniture() => IdleQuery { anim_type: s.anim_type, entry: s.entry.entry_type(), state: 3.0, ..Default::default() },
+            _ => IdleQuery::default(),
+        };
+        let target = a.seat.as_ref().map(|s| s.furniture).filter(|f| !f.is_null());
+        let Some(root) = self.idles.get_or_insert_with(|| idles::IdleIndex::build(&self.lo)).find(&self.lo, "ActionTalking") else { return };
+        let ctx = Context { subject: Some(actor), target, idle: Some(query), ..Default::default() };
+        let Some((idle, event)) = self.idles.as_ref().and_then(|ix| ix.select_for(self, root, ctx, &project)) else {
+            log::debug!("{actor}: no talking idle");
+            return;
+        };
+        let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
+        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return };
+        let took = a.graph_event(&event, &mut clips);
+        log::debug!("{actor} talks with {idle} ({event}){}", if took { "" } else { ": the graph won't take it" });
+    }
+
+    /// The conversation is over: standing speakers stop their dialogue idle.
+    pub(crate) fn end_talking_gestures(&mut self, actor: FormId) {
+        let Some(key) = self.actor_cells.get(&actor).copied() else { return };
+        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return };
+        if !a.in_furniture()
+            && let Some(g) = &mut a.graph
+        {
+            g.send_event("IdleStop");
+        }
+    }
+
     pub fn graph_states(&self, r: FormId) -> Option<Vec<String>> {
         let key = self.actor_cells.get(&r)?;
         let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;

@@ -231,6 +231,10 @@ impl GraphAnim {
         &self.project
     }
 
+    pub fn variable(&self, name: &str) -> Option<f32> {
+        self.inst.variable(name)
+    }
+
     pub fn set_variable(&mut self, name: &str, value: f32) -> bool {
         self.inst.set_variable(name, value)
     }
