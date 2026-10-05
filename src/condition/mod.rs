@@ -120,8 +120,28 @@ fn param_is_form(func: u16, n: u8) -> bool {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Context {
     pub subject: Option<FormId>,
+    /// For furniture idles, the furniture reference.
     pub target: Option<FormId>,
     pub quest: Option<FormId>,
+    /// Set when picking from the IDLE tree.
+    pub idle: Option<IdleQuery>,
+}
+
+/// The subject's furniture state while picking an idle.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IdleQuery {
+    /// Furniture marker animation type: 1 sit, 2 lay, 4 lean (0 none).
+    pub anim_type: u32,
+    /// `IsFurnitureEntryType` value of the side used (front 0x10000, back 0x20000,
+    /// right 0x40000, left 0x80000).
+    pub entry: u32,
+    /// `GetSitting` / `GetSleeping`: 2 getting in, 3 in, 4 getting out.
+    pub state: f32,
+    pub quick: bool,
+    /// Using food or drink (`GetIsUsedItemType`).
+    pub eating: bool,
+    /// Overrides the subject's race for `IsChild` (no subject when picking ahead of time).
+    pub child: Option<bool>,
 }
 
 pub fn evaluate(e: &Engine, conds: &[Condition], ctx: Context) -> bool {
@@ -228,7 +248,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         84 => Some(0.0),                                                  // GetDeadCount
         80 => Some(1.0),                                                  // GetLevel
         14 => Some(100.0),                                                // GetActorValue
-        365 => b(subj_base.and_then(|n| e.npc_race(n)).is_some_and(|r| e.race_is_child(r))), // IsChild
+        365 => b(ctx.idle.and_then(|q| q.child).unwrap_or_else(|| subj_base.and_then(|n| e.npc_race(n)).is_some_and(|r| e.race_is_child(r)))), // IsChild
         125 => b(false),                                                  // IsGuard
         141 => b(false),                                                  // IsTalking
         149 => b(e.current_weather() == Some(p1)),                        // GetIsCurrentWeather
@@ -258,10 +278,28 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         606 => Some(0.0),                                                 // GetKeywordDataForLocation
         579 | 286 | 403 | 161 | 182 => Some(0.0),                         // equipped shout, sneaking, relationship, package, equipped
         255 => b(subj_base.is_some_and(|n| e.offers_services_now(n))),   // GetOffersServicesNow
-        _ => {
-            let _ = ctx;
-            None
-        }
+        // Nobody fights, swims, bleeds out, feeds or takes commands yet.
+        289 | 101 | 185 | 580 | 700 | 226 => b(false),
+        _ => idle_function_value(e, c, ctx),
+    }
+}
+
+/// Furniture and idle functions, answered from the query when picking idles.
+fn idle_function_value(e: &Engine, c: &Condition, ctx: Context) -> Option<f32> {
+    let q = ctx.idle?;
+    let furniture_base = ctx.target.and_then(|t| e.base_of(t));
+    match c.func {
+        159 => Some(if q.anim_type == 2 { 0.0 } else { q.state }), // GetSitting
+        49 => Some(if q.anim_type == 2 { q.state } else { 0.0 }),  // GetSleeping
+        631 | 703 => b(q.quick),                                    // IsEntering / IsExitingInteractionQuick
+        614 => b(q.entry == c.p1),                                 // IsFurnitureEntryType
+        613 => b(q.anim_type == c.p1),                             // IsFurnitureAnimType
+        163 => b(furniture_base == Some(FormId(c.p1))),            // IsCurrentFurnitureObj
+        247 => b(q.eating),                                        // GetIsUsedItemType
+        25 | 704 => b(false),                                      // IsMoving, IsPathing
+        // GetGraphVariableInt: settled in a pose (not mid-transition).
+        675 => Some(if c.string_p1.as_deref().is_some_and(|v| v.eq_ignore_ascii_case("bNeutralState")) { 1.0 } else { 0.0 }),
+        _ => None,
     }
 }
 
@@ -368,8 +406,13 @@ impl Engine {
     }
 
     /// A random number that doesn't advance the generator (for read-only condition checks).
+    /// A fresh roll for each condition that asks (xorshift, seeded from the engine RNG).
     pub fn peek_rand(&self) -> u64 {
-        let x = (self.scripts.real_time * 1000.0) as u64 ^ 0x9E37_79B9_7F4A_7C15;
+        let mut x = self.cond_rng.get() ^ self.rng;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.cond_rng.set(x);
         x.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 32
     }
 }

@@ -70,12 +70,14 @@ pub struct Engine {
     /// Anim objects by lowercase editor id: model path and the bone it hangs from.
     anim_objects: HashMap<String, Option<(String, String)>>,
     /// IDLE records by parent and keyword (built on first use).
-    idles: Option<crate::ai::idles::IdleIndex>,
+    pub(crate) idles: Option<crate::ai::idles::IdleIndex>,
     pub scripts: crate::script::ScriptState,
     pub vm: papyrus::Vm,
     /// Whole game days elapsed before the current day.
     pub day: u32,
-    rng: u64,
+    pub(crate) rng: u64,
+    /// Rolls for `GetRandomPercent` (conditions are evaluated through `&Engine`).
+    pub(crate) cond_rng: std::cell::Cell<u64>,
     pending_moveto: Option<FormId>,
     pub audio: Option<crate::audio::Audio>,
     music: MusicState,
@@ -146,6 +148,7 @@ impl Engine {
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1))
                 | 1,
+            cond_rng: std::cell::Cell::new(0x9E37_79B9_7F4A_7C15),
             pending_moveto: None,
             audio: None,
             music: MusicState::default(),
@@ -539,6 +542,7 @@ impl Engine {
             rt.editor_pos = *editor_pos;
             rt.skeleton_path = d.skeleton.clone();
             rt.female = d.female;
+            rt.child = self.npc_race(d.npc).is_some_and(|r| self.race_is_child(r));
             rt.anim = idle.clone().map(|c| crate::world::animation::ActorAnim::new(c, &skel, start));
             rt.idle = idle;
             rt.walk = walk;
@@ -593,6 +597,53 @@ impl Engine {
         if let Some(rt) = self.cells.get_mut(&key) {
             rt.colliders.extend(runtimes.iter().filter_map(|a| a.capsule));
             rt.actors.extend(runtimes);
+        }
+    }
+
+    /// Pick the idle-tree events for getting on and off each furniture marker in
+    /// `key` (not idle markers), from each side, for adults and children.
+    fn find_furniture_ways(&mut self, key: CellKey) {
+        use crate::ai::furniture::{Entry, Way};
+        use crate::condition::{Context, IdleQuery};
+        let Some(idles) = self.idles.as_ref() else { return };
+        let Some(root) = idles.find(&self.lo, "ActivateRootChar") else { return };
+        let mut found: Vec<(FormId, Way)> = Vec::new();
+        for f in self.furniture.items.iter().filter(|f| f.cell == key) {
+            for (mi, m) in f.markers.iter().enumerate() {
+                if m.kind == crate::ai::furniture::Use::Idle {
+                    continue;
+                }
+                let anim_type = m.anim_type;
+                for (entry, bit) in Entry::of(m.entries) {
+                    for child in [false, true] {
+                        let ctx = |state: f32| Context {
+                            target: Some(f.ref_id),
+                            idle: Some(IdleQuery { anim_type, entry: u32::from(bit) << 16, state, child: Some(child), ..Default::default() }),
+                            ..Default::default()
+                        };
+                        let Some((_, enter)) = idles.select(self, root, ctx(2.0)) else { continue };
+                        // A subtree without an exit idle offers its enter idle again.
+                        let exit = idles.select(self, root, ctx(4.0)).map(|(_, e)| e).filter(|e| *e != enter);
+                        log::trace!("{} marker {mi} {entry:?}{}: {enter} / {exit:?}", f.ref_id, if child { " (child)" } else { "" });
+                        found.push((f.ref_id, Way { marker: mi as u8, entry, child, enter, exit }));
+                    }
+                }
+            }
+        }
+        let markers: Vec<(FormId, usize, crate::ai::furniture::Use)> = self
+            .furniture
+            .items
+            .iter()
+            .filter(|f| f.cell == key)
+            .flat_map(|f| f.markers.iter().enumerate().map(move |(i, m)| (f.ref_id, i, m.kind)))
+            .filter(|m| m.2 != crate::ai::furniture::Use::Idle)
+            .collect();
+        let missing: Vec<_> = markers.iter().filter(|(r, i, _)| !found.iter().any(|(fr, w)| fr == r && w.marker as usize == *i && !w.child)).collect();
+        log::debug!("{key:?}: {} of {} furniture markers have no way on: {missing:?}", missing.len(), markers.len());
+        for (r, way) in found {
+            if let Some(f) = self.furniture.items.iter_mut().find(|f| f.ref_id == r) {
+                f.ways.push(way);
+            }
         }
     }
 
@@ -660,6 +711,7 @@ impl Engine {
         let idles = self.idles.get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo));
         let (models, vfs) = (&mut self.models, &self.vfs);
         self.furniture.add_cell(&self.lo, idles, key, refs, |path| models.furniture(vfs, path));
+        self.find_furniture_ways(key);
         let (n, m) = self.furniture.count(key);
         log::debug!("{key:?}: {n} furniture with {m} markers");
         for f in self.furniture.items.iter().filter(|f| f.cell == key) {

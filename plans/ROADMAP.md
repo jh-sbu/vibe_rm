@@ -21,8 +21,13 @@ game each piece unlocks.
   projects' animation data
 - Behaviour graphs: hkbBehaviorGraph generator trees (state machines, nested state
   targets, clip triggers, references between graphs) to resolve animation events to
-  clip sequences and their exits; IDLE tree by keyword for crafting stations and
-  special furniture; idle markers; Papyrus `PlayIdle` / `SendAnimationEvent`
+  clip sequences and their exits, start states bound to graph variables (`i1stPerson`...);
+  idle markers; Papyrus `PlayIdle` / `SendAnimationEvent`
+- IDLE tree: walked in authored sibling order with conditions (furniture anim type, entry
+  side, sitting state, child, furniture keywords...) to pick every furniture marker's enter
+  / exit events from `ActivateRootChar` (chairs, stools, tables, beds, bedrolls, leans,
+  crafting stations, child chairs) and seated idles from `NonCombatIdles` (eating and
+  drinking with bread / tankards, table drinking, sitting variants)
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
   follow / escort packages; SitTarget
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
@@ -36,8 +41,8 @@ game each piece unlocks.
 
 ## Next
 1. **AI depth**
-   - Chair idle variants (eating / drinking with their anim objects); child furniture clips; IDLE conditions (currently ignored); chairs and
-     beds still pick clips by name rather than through the graphs
+   - Reversed clips (speed -1, e.g. arms-crossed sitting variants return by playing their
+     enter clip backwards; they cross-fade for now); standing eating / drinking idles
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target
    - Off-screen travel between worldspaces; locked doors and keys

@@ -83,7 +83,7 @@ impl Engine {
 
     /// Where the current package of a persistent actor puts it.
     fn scheduled_place(&self, achr: FormId, editor: (Place, Vec3), packages: &[Package]) -> (Place, Vec3) {
-        let ctx = crate::condition::Context { subject: Some(achr), target: None, quest: None };
+        let ctx = crate::condition::Context { subject: Some(achr), ..Default::default() };
         let Some(p) = packages
             .iter()
             .find(|p| p.schedule.matches(self.hour, self.day) && crate::condition::evaluate(self, &p.conditions, ctx))
