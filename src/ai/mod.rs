@@ -116,7 +116,16 @@ impl Clips<'_> {
         let enter = enter.iter().map(&mut load).collect::<Option<Vec<_>>>()?;
         // The exit ends back in the default idle; only its one-shot clips matter.
         let exit = played.exit.iter().filter(|c| c.mode == ClipMode::SinglePlay).filter_map(&mut load).collect();
-        Some(furniture::UseClips { enter, idle, exit, idle_loops: last.mode != ClipMode::SinglePlay })
+        let objects = played
+            .draws
+            .iter()
+            .filter_map(|d| {
+                let clip = enter.get(d.clip).unwrap_or(&idle);
+                let time = if d.from_end { clip.duration() + d.time } else { d.time };
+                Some(furniture::ObjectCue { clip: d.clip.min(enter.len()), time: time.max(0.0), anio: d.payload.clone()? })
+            })
+            .collect();
+        Some(furniture::UseClips { enter, idle, exit, idle_loops: last.mode != ClipMode::SinglePlay, objects })
     }
 }
 
@@ -177,6 +186,9 @@ pub struct ActorRuntime {
     pub seat: Option<Seat>,
     /// Just spawned with the cell: may start out already in furniture.
     pub fresh: bool,
+    /// Anim objects (ANIO editor ids) in hand, and whether they changed this frame.
+    pub objects: Vec<String>,
+    pub objects_changed: bool,
     /// Get out of the furniture as soon as possible (package changed).
     leave: bool,
     /// Patrol progress: (route start, index of the point heading for).
@@ -210,6 +222,8 @@ impl ActorRuntime {
             female: false,
             seat: None,
             fresh: true,
+            objects: Vec::new(),
+            objects_changed: false,
             leave: false,
             patrol: None,
             state: State::Idle(1.0 + stagger),
@@ -774,7 +788,34 @@ impl ActorRuntime {
             }
             _ => {}
         }
-        Some(anim.update(&self.skeleton, dt))
+        let pose = anim.update(&self.skeleton, dt);
+        self.update_objects();
+        Some(pose)
+    }
+
+    /// Draw the seat's anim objects as their cues come up; they are put away
+    /// (`AnimObjectUnequip`) once the actor is out of the furniture or idle.
+    fn update_objects(&mut self) {
+        let (clip, time) = match (&self.state, &self.anim) {
+            (State::Enter { step, .. }, Some(a)) => (*step, a.time),
+            (State::Use(_), Some(a)) => (usize::MAX, a.time),
+            (State::Exit { .. }, _) => return,
+            _ => {
+                self.objects_changed |= !self.objects.is_empty();
+                self.objects.clear();
+                return;
+            }
+        };
+        let Some(seat) = &self.seat else { return };
+        let idle = seat.clips.enter.len();
+        let clip = clip.min(idle);
+        for cue in &seat.clips.objects {
+            let due = cue.clip < clip || (cue.clip == clip && time >= cue.time);
+            if due && !self.objects.iter().any(|o| o.eq_ignore_ascii_case(&cue.anio)) {
+                self.objects.push(cue.anio.clone());
+                self.objects_changed = true;
+            }
+        }
     }
 }
 
@@ -1015,6 +1056,7 @@ impl Engine {
         };
         let mut moved = Vec::new();
         let mut gone = Vec::new();
+        let mut held = Vec::new();
         // Everyone's position last frame, for walkers to keep clear of.
         let mut bodies: Vec<(FormId, Vec3)> = self.cells.values().flat_map(|rt| &rt.actors).map(|a| (a.ref_id, a.pos)).collect();
         bodies.push((PLAYER_REF, player));
@@ -1033,7 +1075,7 @@ impl Engine {
         }
         for (key, rt) in self.cells.iter_mut() {
             let Some(rc) = self.scene.cells.get_mut(key) else { continue };
-            for (inst, a) in rc.actors.iter_mut().zip(rt.actors.iter_mut()) {
+            for (index, (inst, a)) in rc.actors.iter_mut().zip(rt.actors.iter_mut()).enumerate() {
                 if talking == Some(a.ref_id) {
                     // Seated actors talk from where they are.
                     if !a.in_furniture() {
@@ -1053,6 +1095,10 @@ impl Engine {
                 if let Some(pose) = a.animate(dt) {
                     inst.pose = pose;
                 }
+                if std::mem::take(&mut a.objects_changed) {
+                    log::debug!("{} holds {:?}", a.ref_id, a.objects);
+                    held.push((*key, index, a.objects.clone()));
+                }
                 if a.is_walking() || matches!(a.state, State::Approach(_) | State::Enter { .. } | State::Exit { .. }) || talking == Some(a.ref_id) {
                     moved.push((a.ref_id, a.pos, a.capsule));
                 }
@@ -1067,6 +1113,9 @@ impl Engine {
         }
         self.nav = nav;
         self.furniture = furniture;
+        for (key, index, objects) in held {
+            self.attach_anim_objects(key, index, &objects);
+        }
         for r in gone {
             self.despawn_actor(r);
         }

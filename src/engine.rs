@@ -67,6 +67,8 @@ pub struct Engine {
     skeletons: HashMap<String, Option<std::sync::Arc<crate::world::skeleton::Skeleton>>>,
     pub(crate) anims: crate::world::animation::AnimationLibrary,
     pub(crate) behaviors: crate::world::animation::BehaviorLibrary,
+    /// Anim objects by lowercase editor id: model path and the bone it hangs from.
+    anim_objects: HashMap<String, Option<(String, String)>>,
     /// IDLE records by parent and keyword (built on first use).
     idles: Option<crate::ai::idles::IdleIndex>,
     pub scripts: crate::script::ScriptState,
@@ -133,6 +135,7 @@ impl Engine {
             skeletons: HashMap::new(),
             anims: Default::default(),
             behaviors: Default::default(),
+            anim_objects: Default::default(),
             idles: None,
             scripts: Default::default(),
             vm: papyrus::Vm::new(),
@@ -590,6 +593,53 @@ impl Engine {
         if let Some(rt) = self.cells.get_mut(&key) {
             rt.colliders.extend(runtimes.iter().filter_map(|a| a.capsule));
             rt.actors.extend(runtimes);
+        }
+    }
+
+    /// Model path and parent bone (the root's `Prn` string) of anim object `edid`.
+    fn anim_object(&mut self, edid: &str) -> Option<(String, String)> {
+        let key = edid.to_ascii_lowercase();
+        if let Some(r) = self.anim_objects.get(&key) {
+            return r.clone();
+        }
+        let r = (|| {
+            let rec = self.lo.get(self.lo.find_editor_id(edid)?)?;
+            if rec.tag().0 != *b"ANIO" {
+                return None;
+            }
+            let model = crate::world::records::mesh_path(&esp::decode_zstring(rec.get(b"MODL")?));
+            let nif = nif::Nif::parse(&self.vfs.read(&model)?).ok()?;
+            let root = nif.roots.first().and_then(|&r| nif.get(nif::Ref(r as i32)))?.av()?;
+            let bone = root.net.extra_data.iter().find_map(|&e| match nif.get(e) {
+                Some(nif::Block::ExtraData(nif::ExtraData::String { name, value })) if name == "Prn" => Some(value.clone()),
+                _ => None,
+            })?;
+            Some((model, bone))
+        })();
+        if r.is_none() {
+            log::debug!("anim object {edid}: no model / parent bone");
+        }
+        self.anim_objects.insert(key, r.clone());
+        r
+    }
+
+    /// Rebuild the rigid attachments of actor `index` in cell `key` from the anim
+    /// objects it holds.
+    pub(crate) fn attach_anim_objects(&mut self, key: CellKey, index: usize, objects: &[String]) {
+        let found: Vec<(String, String)> = objects.iter().filter_map(|o| self.anim_object(o)).collect();
+        let paths: Vec<String> = found.iter().map(|(m, _)| m.clone()).collect();
+        self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        let Some(skel) = self.cells.get(&key).and_then(|rt| rt.actors.get(index)).map(|a| a.skeleton.clone()) else { return };
+        let mut attachments = Vec::new();
+        for (model, bone) in &found {
+            let (Some(m), Some(b)) = (self.models.get(model), skel.find(bone)) else {
+                log::debug!("anim object {model}: not loaded or no bone {bone:?}");
+                continue;
+            };
+            attachments.push((m, b, glam::Mat4::IDENTITY));
+        }
+        if let Some(inst) = self.scene.cells.get_mut(&key).and_then(|rc| rc.actors.get_mut(index)) {
+            inst.attachments = attachments;
         }
     }
 
