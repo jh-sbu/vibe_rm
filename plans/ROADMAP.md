@@ -23,13 +23,16 @@ game each piece unlocks.
   targets, clip triggers, references between graphs) to resolve animation events to
   clip sequences and their exits; IDLE tree by keyword for crafting stations and
   special furniture; idle markers; Papyrus `PlayIdle` / `SendAnimationEvent`
+- Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
+  follow / escort packages; SitTarget
 
 ## Next
 1. **AI depth**
    - Anim objects (mugs, bowls, hammers) for table / counter / work idles; chair idle
      variants; child furniture clips; IDLE conditions (currently ignored); chairs and
      beds still pick clips by name rather than through the graphs
-   - Remaining procedures: follow, escort, patrol (linked refs), flee, dialogue packages
+   - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
+     escort waits for its target
    - Actor-actor avoidance; doors opening; off-screen travel between worldspaces
    - Leveled lists (LVLN/LVLI) beyond the first entry, templates (TPLT/ACFG)
 2. **Animation**: NiControllerSequence for animated statics (water wheels, flags);

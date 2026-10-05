@@ -18,6 +18,10 @@ pub enum Behaviour {
     Sleep,
     /// Sit in the target chair (or one near the location).
     Sit,
+    /// Walk a chain of linked patrol markers from the target reference.
+    Patrol,
+    /// Stay near the target reference.
+    Follow,
 }
 
 /// What a sandboxing actor may do besides wander (the template's "Allow ..." inputs).
@@ -104,14 +108,25 @@ pub struct Package {
     pub allow: Allow,
     /// 0..100: how restless a sandboxing actor is.
     pub energy: f32,
+    /// Patrol: how close to each point counts as reached; loop at the end; start
+    /// at the nearest point rather than the first.
+    pub point_radius: f32,
+    pub repeat: bool,
+    pub start_nearest: bool,
+    /// Follow: keep between these distances from the target.
+    pub follow_radius: (f32, f32),
 }
 
 fn behaviour_of(template: &str) -> Behaviour {
     let t = template.to_ascii_lowercase();
     if t.starts_with("sleep") {
         Behaviour::Sleep
-    } else if t == "sit" {
+    } else if t == "sit" || t == "sittarget" {
         Behaviour::Sit
+    } else if t.contains("patrol") {
+        Behaviour::Patrol
+    } else if t.starts_with("follow") || t.starts_with("escort") {
+        Behaviour::Follow
     } else if t.starts_with("travel") || t.starts_with("hold") || t == "patrol" {
         Behaviour::Travel
     } else if t.starts_with("sandbox")
@@ -277,6 +292,18 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         Some(Input::Float(e)) => e.clamp(0.0, 100.0),
         _ => 50.0,
     };
+    let float = |keys: &[&str], default: f32| {
+        keys.iter()
+            .find_map(|k| match named(k) {
+                Some(Input::Float(f)) => Some(f),
+                _ => None,
+            })
+            .unwrap_or(default)
+    };
+    let point_radius = float(&["patrolradius", "pointradius"], 50.0);
+    let repeat = ["repeatable"].iter().find_map(|k| flag(k)).unwrap_or(true);
+    let start_nearest = ["startatnearest", "startatnearestpoint"].iter().find_map(|k| flag(k)).unwrap_or(false);
+    let follow_radius = (float(&["minradius"], 128.0), float(&["maxradius"], 384.0));
     // The first location input is the package's main location; likewise for targets.
     let location = inputs.iter().find_map(|(_, v)| match v {
         Input::Location(l) => Some(*l),
@@ -297,6 +324,10 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         target,
         allow,
         energy,
+        point_radius,
+        repeat,
+        start_nearest,
+        follow_radius,
     })
 }
 

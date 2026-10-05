@@ -80,6 +80,8 @@ pub struct Engine {
     lod: Option<crate::world::lod::Lod>,
     pub nav: crate::ai::nav::NavWorld,
     pub furniture: crate::ai::furniture::FurnitureWorld,
+    /// Patrol routes by start reference.
+    pub(crate) patrol_paths: HashMap<FormId, std::sync::Arc<Vec<crate::ai::PatrolPoint>>>,
     /// Current positions of references that have moved from their editor location.
     pub moved_refs: HashMap<FormId, Vec3>,
     /// Actor AI processing (toggled with the `tai` console command).
@@ -147,6 +149,7 @@ impl Engine {
             lod: None,
             nav: Default::default(),
             furniture: Default::default(),
+            patrol_paths: Default::default(),
             moved_refs: HashMap::new(),
             ai_enabled: true,
             whereabouts: Default::default(),

@@ -274,6 +274,28 @@ fn main() -> Result<()> {
             }
             println!("{ok} resolved, {bad} unresolved");
         }
+        Some("pack-templates") => {
+            // pack-templates <data dir>: how many NPC package slots use each procedure template.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut count: std::collections::BTreeMap<String, usize> = Default::default();
+            for &npc in lo.ids_of_type(b"NPC_") {
+                let Some(rec) = lo.get(npc) else { continue };
+                for s in rec.subrecords().filter(|s| s.tag.0 == *b"PKID") {
+                    let Some(pack) = lo.get(rec.fid(s.form_id(0))) else { continue };
+                    let Some(cu) = pack.get(b"PKCU").filter(|d| d.len() >= 8) else { continue };
+                    let t = pack.fid(esp::FormId(u32::from_le_bytes(cu[4..8].try_into().unwrap())));
+                    let name = lo.get(t).and_then(|r| r.editor_id()).unwrap_or_default();
+                    *count.entry(name).or_default() += 1;
+                }
+            }
+            let mut v: Vec<_> = count.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            for (n, c) in v.iter().take(40) {
+                println!("{c:6} {n}");
+            }
+        }
         Some("esp-list") => {
             // esp-list <data dir> <TAG> [edid substring]: records of a type with their text subrecords.
             let data = std::path::Path::new(&args[1]);

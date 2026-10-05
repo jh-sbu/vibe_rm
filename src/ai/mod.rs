@@ -42,6 +42,12 @@ pub struct Goal {
     pub energy: f32,
     /// Specific furniture to use (a Sit package's chair).
     pub furniture: Option<FormId>,
+    /// Patrol start or follow target.
+    pub target: Option<FormId>,
+    pub repeat: bool,
+    pub start_nearest: bool,
+    /// Follow: (min, max) distance to keep.
+    pub follow_radius: (f32, f32),
 }
 
 impl Goal {
@@ -53,8 +59,19 @@ impl Goal {
             allow: Allow { wandering: false, ..package::Allow::default() },
             energy: 50.0,
             furniture: None,
+            target: None,
+            repeat: false,
+            start_nearest: false,
+            follow_radius: (0.0, 0.0),
         }
     }
+}
+
+/// A point on a patrol route.
+#[derive(Debug, Clone, Copy)]
+pub struct PatrolPoint {
+    pub ref_id: FormId,
+    pub pos: Vec3,
 }
 
 #[derive(Debug)]
@@ -103,6 +120,14 @@ impl Clips<'_> {
     }
 }
 
+enum PatrolStep {
+    Walk(Vec3),
+    /// Pausing or using a marker; the state is already set.
+    Busy,
+    /// End of a one-way route (or none): stay.
+    Done,
+}
+
 /// What the AI needs from the world while stepping an actor.
 pub struct World<'a> {
     pub nav: &'a nav::NavWorld,
@@ -112,6 +137,10 @@ pub struct World<'a> {
     pub may_use: &'a dyn Fn(FormId, Use, Option<FormId>) -> bool,
     /// Furniture that is a specific actor's package target (kept free for them).
     pub claimed: &'a std::collections::HashMap<FormId, FormId>,
+    /// Patrol routes by start reference.
+    pub patrols: &'a std::collections::HashMap<FormId, Arc<Vec<PatrolPoint>>>,
+    /// Current positions of follow targets.
+    pub targets: &'a std::collections::HashMap<FormId, Vec3>,
     pub rand: &'a mut dyn FnMut() -> u64,
 }
 
@@ -150,6 +179,8 @@ pub struct ActorRuntime {
     pub fresh: bool,
     /// Get out of the furniture as soon as possible (package changed).
     leave: bool,
+    /// Patrol progress: (route start, index of the point heading for).
+    patrol: Option<(FormId, usize)>,
     state: State,
     next_eval: f32,
     speed: f32,
@@ -180,6 +211,7 @@ impl ActorRuntime {
             seat: None,
             fresh: true,
             leave: false,
+            patrol: None,
             state: State::Idle(1.0 + stagger),
             next_eval: stagger,
             speed: 0.0,
@@ -274,8 +306,12 @@ impl ActorRuntime {
                     let arrived = *budget >= 0.0;
                     log::debug!("{} walk ended ({})", self.ref_id, if arrived { "arrived" } else { "timeout" });
                     self.speed = 0.0;
+                    let follow = self.goal.is_some_and(|g| g.behaviour == Behaviour::Follow);
                     if *to_seat && arrived {
                         self.state = State::Approach(0.0);
+                    } else if follow || (arrived && self.goal.is_some_and(|g| g.behaviour == Behaviour::Patrol)) {
+                        // Keep up with the target / carry on along the route.
+                        self.state = State::Idle(0.1);
                     } else {
                         self.give_up_seat(w.furniture);
                         self.state = State::Idle(uniform(w.rand, 4.0, 15.0));
@@ -414,6 +450,27 @@ impl ActorRuntime {
         let mut travelling = goal.behaviour != Behaviour::Sandbox;
         let target = match goal.behaviour {
             Behaviour::Hold => None,
+            Behaviour::Patrol => match self.patrol_target(&goal, w) {
+                PatrolStep::Walk(p) => Some(p),
+                PatrolStep::Busy => return,
+                PatrolStep::Done => None,
+            },
+            Behaviour::Follow => {
+                let (min, max) = goal.follow_radius;
+                let t = goal.target.and_then(|t| w.targets.get(&t).copied());
+                match t {
+                    Some(t) if self.pos.distance(t) > max => {
+                        // Head for a spot `min` short of the target.
+                        let back = (self.pos - t).truncate().normalize_or_zero().extend(0.0) * min;
+                        Some(t + back)
+                    }
+                    Some(_) => {
+                        self.state = State::Idle(0.5);
+                        return;
+                    }
+                    None => None,
+                }
+            }
             Behaviour::Travel | Behaviour::Sleep | Behaviour::Sit => {
                 let near = goal.radius.max(96.0);
                 (self.pos.truncate().distance(goal.centre.truncate()) > near).then_some(goal.centre)
@@ -442,7 +499,11 @@ impl ActorRuntime {
                     return;
                 }
                 log::debug!("{} walking {:.0} units via {} points ({:?})", self.ref_id, len, path.len(), goal.behaviour);
-                self.state = State::Walk { path, next: 0, budget: len / WALK_SPEED * 2.5 + 5.0, to_seat: false };
+                let mut budget = len / WALK_SPEED * 2.5 + 5.0;
+                if goal.behaviour == Behaviour::Follow {
+                    budget = budget.min(2.0);
+                }
+                self.state = State::Walk { path, next: 0, budget, to_seat: false };
             }
             _ => {
                 if target.is_some() {
@@ -450,6 +511,52 @@ impl ActorRuntime {
                 }
                 self.state = State::Idle(uniform(w.rand, 6.0, 16.0));
             }
+        }
+    }
+
+    /// Where to go next on a patrol. At a point that is an idle marker (or other
+    /// usable furniture) the actor uses it before moving on.
+    fn patrol_target(&mut self, goal: &Goal, w: &mut World) -> PatrolStep {
+        let Some(start) = goal.target else { return PatrolStep::Done };
+        let Some(points) = w.patrols.get(&start).cloned() else { return PatrolStep::Done };
+        if points.is_empty() {
+            return PatrolStep::Done;
+        }
+        let idx = match self.patrol {
+            Some((s, i)) if s == start => i,
+            _ if goal.start_nearest => {
+                let near = points.iter().enumerate().min_by(|a, b| a.1.pos.distance(self.pos).total_cmp(&b.1.pos.distance(self.pos)));
+                near.map_or(0, |(i, _)| i)
+            }
+            _ => 0,
+        };
+        let Some(p) = points.get(idx).copied() else { return PatrolStep::Done };
+        if self.pos.truncate().distance(p.pos.truncate()) > goal.radius.max(48.0) {
+            self.patrol = Some((start, idx));
+            return PatrolStep::Walk(p.pos);
+        }
+        // Reached: move the cursor on, wrapping when repeatable.
+        let next = if idx + 1 < points.len() {
+            Some(idx + 1)
+        } else if goal.repeat {
+            Some(0)
+        } else {
+            None
+        };
+        self.patrol = Some((start, next.unwrap_or(idx)));
+        if w.furniture.get(p.ref_id).is_some() {
+            let at = Goal { behaviour: Behaviour::Patrol, centre: p.pos, furniture: Some(p.ref_id), ..*goal };
+            if self.seek_furniture(&at, false, w) {
+                return PatrolStep::Busy;
+            }
+        }
+        match next {
+            Some(n) => {
+                self.state = State::Idle(uniform(w.rand, 0.2, 1.5));
+                log::debug!("{} patrol point {idx} reached, next {n}", self.ref_id);
+                PatrolStep::Busy
+            }
+            None => PatrolStep::Done,
         }
     }
 
@@ -494,7 +601,11 @@ impl ActorRuntime {
                 let secs = (150.0 - goal.energy * 1.2) * uniform(w.rand, 0.6, 1.4);
                 (kinds, goal.centre, goal.radius.clamp(SANDBOX_MIN, SANDBOX_MAX), secs)
             }
-            Behaviour::Travel | Behaviour::Hold => return false,
+            // Patrol idle markers: the point's marker, for its idle time.
+            Behaviour::Patrol if goal.furniture.is_some() => {
+                (vec![Use::Idle, Use::Lean, Use::Special, Use::Sit], goal.centre, 96.0, uniform(w.rand, 6.0, 12.0))
+            }
+            Behaviour::Travel | Behaviour::Hold | Behaviour::Patrol | Behaviour::Follow => return false,
         };
         let npc = self.npc;
         let mut options = Vec::new();
@@ -529,7 +640,7 @@ impl ActorRuntime {
             let Some(f) = w.furniture.get(fid) else { continue };
             let ways = furniture::ways_to_use(f, &marker, &self.skeleton_path, self.female, &self.skeleton, &mut w.clips, &mut *w.rand);
             // Idle markers say how long they are used for.
-            let secs = if f.idle_time > 0.0 && goal.behaviour == Behaviour::Sandbox { f.idle_time } else { secs };
+            let secs = if f.idle_time > 0.0 && matches!(goal.behaviour, Behaviour::Sandbox | Behaviour::Patrol) { f.idle_time } else { secs };
             // The entry whose starting spot is on the navmesh and nearest.
             let best = ways
                 .into_iter()
@@ -645,19 +756,37 @@ impl Engine {
             seed
         };
         let may_use = |_: FormId, _: Use, _: Option<FormId>| true;
-        let claimed = Default::default();
+        let (claimed, targets) = Default::default();
         let mut w = World {
             nav: &self.nav,
             furniture: &mut self.furniture,
             clips: Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors },
             may_use: &may_use,
             claimed: &claimed,
+            patrols: &self.patrol_paths,
+            targets: &targets,
             rand: &mut rand,
         };
         let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
         a.give_up_seat(w.furniture);
         let goal = Goal { behaviour: Behaviour::Sit, centre, radius: 64.0, furniture: Some(furniture), ..Goal::travel(centre) };
         a.seek_furniture(&goal, false, &mut w)
+    }
+
+    /// The patrol route starting at `start`: it and the references reached by
+    /// following default linked refs, until the chain ends or loops back.
+    fn patrol_route(&self, start: FormId) -> Vec<PatrolPoint> {
+        let mut out: Vec<PatrolPoint> = Vec::new();
+        let mut cur = Some(start);
+        while let Some(r) = cur {
+            if out.len() >= 64 || out.iter().any(|p| p.ref_id == r) {
+                break;
+            }
+            let Some(pos) = self.ref_position(r) else { break };
+            out.push(PatrolPoint { ref_id: r, pos });
+            cur = self.linked_ref(r, Some(FormId::NULL));
+        }
+        out
     }
 
     /// Feet position and heading of a loaded actor.
@@ -697,13 +826,33 @@ impl Engine {
                 let goal = pick.map(|pi| {
                     let p = &a.packages[pi];
                     let (centre, radius) = self.package_target(a, p);
-                    let furniture = match p.target {
+                    let target = match p.target {
                         Some(Target::Ref(r)) => Some(r),
                         Some(Target::LinkedRef(kw)) => self.linked_ref(a.ref_id, kw),
                         _ => None,
+                    };
+                    // Only Sit / Sleep packages target furniture; a patrol start or follow
+                    // target can be an idle marker without being "the package's seat".
+                    let furniture = target
+                        .filter(|_| matches!(p.behaviour, Behaviour::Sit | Behaviour::Sleep))
+                        .filter(|r| self.furniture.get(*r).is_some());
+                    let (centre, radius) = match p.behaviour {
+                        Behaviour::Patrol => (centre, p.point_radius),
+                        Behaviour::Follow => (target.and_then(|t| self.ref_position(t)).unwrap_or(centre), radius),
+                        _ => (centre, radius),
+                    };
+                    Goal {
+                        behaviour: p.behaviour,
+                        centre,
+                        radius,
+                        allow: p.allow,
+                        energy: p.energy,
+                        furniture,
+                        target,
+                        repeat: p.repeat,
+                        start_nearest: p.start_nearest,
+                        follow_radius: p.follow_radius,
                     }
-                    .filter(|r| self.furniture.get(*r).is_some());
-                    Goal { behaviour: p.behaviour, centre, radius, allow: p.allow, energy: p.energy, furniture }
                 });
                 decisions.push((*key, i, pick, goal));
             }
@@ -746,6 +895,28 @@ impl Engine {
             seed ^= seed << 17;
             seed
         };
+        let mut patrol_starts = Vec::new();
+        let mut targets = std::collections::HashMap::new();
+        for a in self.cells.values().flat_map(|rt| &rt.actors) {
+            match a.goal {
+                Some(g) if g.behaviour == Behaviour::Patrol => patrol_starts.extend(g.target),
+                Some(g) if g.behaviour == Behaviour::Follow => {
+                    if let Some(t) = g.target
+                        && let Some(p) = self.ref_position(t)
+                    {
+                        targets.insert(t, p);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for s in patrol_starts {
+            if !self.patrol_paths.contains_key(&s) {
+                let route = Arc::new(self.patrol_route(s));
+                log::debug!("patrol route from {s}: {} points", route.len());
+                self.patrol_paths.insert(s, route);
+            }
+        }
         let nav = std::mem::take(&mut self.nav);
         let mut furniture = std::mem::take(&mut self.furniture);
         let (lo, vfs) = (&self.lo, &self.vfs);
@@ -763,6 +934,8 @@ impl Engine {
             clips,
             may_use: &may_use,
             claimed: &claimed,
+            patrols: &self.patrol_paths,
+            targets: &targets,
             rand: &mut rand,
         };
         let mut moved = Vec::new();
