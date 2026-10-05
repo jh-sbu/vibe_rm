@@ -45,14 +45,29 @@ game each piece unlocks.
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
 
 ## Next
-1. **AI depth**
+1. **Animation: behaviour graphs at runtime.** Each actor runs its behaviour graph the
+   way the game does, instead of the engine resolving events to fixed enter / loop / exit
+   clip lists and driving them from AI code. This keeps the engine generic over animation
+   content (anything authored as behaviour graphs + animation data, including FNIS /
+   Nemesis output, plays through `SendAnimationEvent` / IDLE records).
+   - Graph instance per actor: variables (with defaults), event queue, active state per
+     state machine, transitions (event / wildcard / nested, transition blend times),
+     clip generators (modes, speed incl. reverse, crop, triggers), blenders weighted by
+     bound variables, selectors, behaviour references, modifier generators (pass-through
+     first)
+   - Events back to the engine from triggers and state enter / exit events
+     (`AnimObjDraw`, `SoundPlay`, `HeadTrackingOn`...), root motion from the active clips
+   - Engine drives it like the game: events (`IdleStop`, `IdleChairExitStart`,
+     `moveStart`...) and variables (`Speed`, `Direction`, `iSyncIdleLocomotion`...)
+   - Replace the event -> clip-list lookup, the furniture / sub-idle clip sequencing and
+     the walk / idle clips chosen by file name
+   - Then: creature behaviour projects; turning / run through the graph
+   - Later / separate: NiTransformController (non-sequence), texture / material controllers
+2. **AI depth**
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target
    - Off-screen travel between worldspaces; locked doors and keys
    - Leveled lists (LVLN/LVLI) beyond the first entry, templates (TPLT/ACFG)
-2. **Animation**: creature behaviour projects (motion data and events for non-humanoids);
-   turning / run clips; NiTransformController (non-sequence) and texture / material
-   controllers
 3. **Game logic**: combat, magic, inventory, leveling, crime
 4. **UI**: inventory, map, bars
 5. **Audio**: lip sync
