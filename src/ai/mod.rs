@@ -589,8 +589,14 @@ impl ActorRuntime {
                     return false;
                 }
                 self.leave = false;
-                // A one-shot gesture (no loop to hold) has already ended by itself.
+                // A one-shot gesture (no loop to hold) has already ended by itself;
+                // some (picking up firewood) hold their last pose in the graph's
+                // furniture state until scripts and inventory move them on, so the
+                // graph goes back to its default state.
                 if self.seat.as_ref().is_some_and(|s| !s.clips.idle_loops) {
+                    if let Some(g) = &mut self.graph {
+                        g.send_event("IdleForceDefaultState");
+                    }
                     self.stand_up(w);
                 } else {
                     self.begin_exit(w);

@@ -427,6 +427,47 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("hkb-flags") => {
+            // hkb-flags <data dir> <project>: how often each transition flag and kind of
+            // blending effect occurs.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let (dir, project) = load_project(&v, &args[2])?;
+            let mut counts = [0usize; 16];
+            let mut total = 0;
+            for (_, g) in &project.graphs {
+                for node in &g.generators {
+                    if let havok::behavior::Generator::StateMachine { states, wildcards, .. } = node {
+                        for t in states.iter().flat_map(|s| s.transitions.iter()).chain(wildcards) {
+                            total += 1;
+                            for (b, c) in counts.iter_mut().enumerate() {
+                                if t.flags & (1 << b) != 0 {
+                                    *c += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Blending effects: end mode, start-time fraction, flags.
+            let mut effects: std::collections::BTreeMap<String, usize> = Default::default();
+            for (rel, _) in &project.graphs {
+                let Some(bytes) = v.read(&format!("{dir}/{}", rel.replace('\\', "/"))) else { continue };
+                let p = havok::Packfile::parse(&bytes)?;
+                for o in p.objects_of("hkbBlendingTransitionEffect") {
+                    let key = format!("end mode {} start fraction {} flags {:#x} self mode {} event mode {}", p.u8(o + 0x5A) as i8, p.f32(o + 0x54), p.u16(o + 0x58), p.u8(o + 0x48) as i8, p.u8(o + 0x49) as i8);
+                    *effects.entry(key).or_default() += 1;
+                }
+            }
+            for (k, n) in effects {
+                println!("  effect {k}: {n}");
+            }
+            println!("{total} transitions");
+            for (b, c) in counts.iter().enumerate().filter(|(_, c)| **c > 0) {
+                println!("  {:#06x}: {c}", 1 << b);
+            }
+        }
         Some("hkb-classes") => {
             // hkb-classes <data dir> <project dir>: object classes across the project's graphs.
             let data = std::path::Path::new(&args[1]);

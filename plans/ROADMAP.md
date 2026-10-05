@@ -88,13 +88,15 @@ game each piece unlocks.
    - Pose modifiers: twist, keyframe bones; foot IK gains from `hkbFootIkControlsModifier`,
      locking planted feet; creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
-   - Transition intervals, `ABUT_AT_END_OF_FROM_GENERATOR`, chooser start states,
-     state machine `currentStateId` outputs, selectors' own blends
+   - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
    - `Direction` (strafing), sprinting; character property bindings;
      `hkbRotateCharacterModifier`; the other action trees (`ActionIdle` for humanoids'
      standing idles, `ActionTurnLeft`...) as the way events are chosen
-   - Carry furniture (`CarryFurnitureScript`: wood piles): the carrying states after the
-     pick-up and putting the load down
+   - Carry furniture (`CarryFurnitureScript`: wood piles): carrying the load away
+     (`OffsetCarryLogStart`) and putting it down by inventory (`GetItemCount`); for now
+     the graph is reset (`IdleForceDefaultState`) after the pick-up
+   - Transition initiate / trigger intervals, uninterruptible transitions, blending
+     effects' event / self-transition modes (`vrm-tool hkb-flags` counts them)
    - Engine variables and events still missing: weapons drawn, combat, first person;
      INFO speaker / listener idles; listeners' reactions
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
