@@ -564,7 +564,10 @@ impl ActorRuntime {
                 true
             }
             State::Exit(t) => {
-                *t -= dt;
+                // The graph may finish a swing or a gesture before its exit begins.
+                if !self.graph.as_ref().is_some_and(|g| g.waiting()) {
+                    *t -= dt;
+                }
                 if *t <= 0.0 || self.out_of_furniture {
                     self.stand_up(w);
                 }
@@ -1087,8 +1090,12 @@ impl ActorRuntime {
     /// Advance the idle being played in the furniture. False when there is none
     /// (any more); leaving the furniture first stops it and lets it wind down.
     fn step_sub_idle(&mut self, dt: f32, clips: &mut Clips) -> bool {
+        let waiting = self.graph.as_ref().is_some_and(|g| g.waiting());
         let Some(sub) = &mut self.sub else { return false };
-        sub.left -= dt;
+        // A stopped idle's way out may wait for its moment in the graph.
+        if !(waiting && sub.stop.is_empty()) {
+            sub.left -= dt;
+        }
         if self.leave && !sub.stop.is_empty() {
             sub.left = sub.left.min(0.0);
         }

@@ -70,6 +70,13 @@ game each piece unlocks.
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
+- Transition timing: trigger intervals (events outside them are ignored), initiate
+  intervals (a transition triggered early waits for its window: woodcutters finish the
+  swing, talking gestures and standing idles leave at their authored moment), both
+  bounded by events or seconds in the state; uninterruptible transitions hold the
+  machine until their blend ends. The AI's furniture exits wait for a graph that is
+  waiting; looping exit clips that leave by their own `IdleFurnitureExit` count as
+  one-shot
 - Eating and drinking: occasional for sandboxing actors (every idle for Eat packages);
   standing meals from `EatingRoot` / `DrinkingRoot`, put away through `AnimObjectIdleStop`
 - Leveled lists (LVLN / LVLI): each reference picks among the entries eligible at the
@@ -99,8 +106,8 @@ game each piece unlocks.
    - Carry furniture (`CarryFurnitureScript`: wood piles): carrying the load away
      (`OffsetCarryLogStart`) and putting it down by inventory (`GetItemCount`); for now
      the graph is reset (`IdleForceDefaultState`) after the pick-up
-   - Transition initiate / trigger intervals, uninterruptible transitions, blending
-     effects' event / self-transition modes (`vrm-tool hkb-flags` counts them)
+   - Delayed state changes (`FLAG_DELAY_STATE_CHANGE`), blending effects' event /
+     self-transition modes (`vrm-tool hkb-flags` counts and lists them)
    - Engine variables and events still missing: weapons drawn, combat, first person;
      INFO speaker / listener idles; listeners' reactions
    - Later / separate: NiTransformController (non-sequence), texture / material controllers

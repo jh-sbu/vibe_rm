@@ -250,6 +250,11 @@ impl GraphAnim {
         inst.handle_event(name, &mut src)
     }
 
+    /// A transition the graph took is waiting for its moment (initiate interval).
+    pub fn waiting(&self) -> bool {
+        self.inst.waiting()
+    }
+
     pub fn active_states(&self) -> Vec<String> {
         self.inst.active_states()
     }

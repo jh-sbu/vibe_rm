@@ -297,7 +297,17 @@ impl BehaviorLibrary {
                 let mut exit = exits
                     .iter()
                     .find_map(|e| project.then_event(p, e))
-                    .map(|x| x.clips)
+                    .map(|x| {
+                        // A looping exit clip that leaves the furniture by its own
+                        // trigger (woodchopping's stop) plays once.
+                        let mut clips = x.clips;
+                        for e in x.events.iter().filter(|e| e.event.eq_ignore_ascii_case("IdleFurnitureExit")) {
+                            if let Some(c) = clips.get_mut(e.clip) {
+                                c.mode = ClipMode::SinglePlay;
+                            }
+                        }
+                        clips
+                    })
                     .unwrap_or_default();
                 // Otherwise the loop may move on by itself (a sitting variant's
                 // `NextClip` at the end of its loop, into the way back); a trigger
