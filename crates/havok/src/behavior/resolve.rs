@@ -1,301 +1,9 @@
-//! Behaviour graphs (`hkbBehaviorGraph`), reduced to what is needed to answer
-//! "which clips does this animation event play?": the generator tree (state
-//! machines, blends, selectors, clips, references to other graphs), state
-//! transitions keyed by event, and clip triggers.
+//! Static event -> clip resolution over a project's graphs: "which clips does this
+//! animation event play, and which clips leave that state again?" Used to plan
+//! ahead (where an enter animation must start so that it ends on a furniture
+//! marker); playback itself runs graphs with [`super::runtime`].
 
-use crate::{Packfile, Result};
-
-pub type GenId = usize;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClipMode {
-    SinglePlay,
-    Looping,
-    Other,
-}
-
-#[derive(Debug, Clone)]
-pub struct Trigger {
-    /// Seconds from the start of the clip, or from its end if `from_end`.
-    pub time: f32,
-    pub from_end: bool,
-    /// Index into the graph's event names.
-    pub event: i32,
-    /// String payload (`hkbStringEventPayload`), e.g. the ANIO editor id of `AnimObjLoad`.
-    pub payload: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Transition {
-    pub event: i32,
-    pub to_state: i32,
-    /// State to enter inside the target state's (nested) state machine, if any.
-    pub to_nested: Option<i32>,
-    pub flags: u16,
-}
-
-const FLAG_TO_NESTED_STATE_ID_IS_VALID: u16 = 0x2000;
-const FLAG_DISABLED: u16 = 0x20;
-
-/// An event raised by the graph itself, with its optional string payload.
-#[derive(Debug, Clone)]
-pub struct EventProperty {
-    pub event: i32,
-    pub payload: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct State {
-    pub id: i32,
-    pub name: String,
-    pub generator: Option<GenId>,
-    pub transitions: Vec<Transition>,
-    /// Events raised on entering / leaving the state (e.g. `AnimObjLoad`).
-    pub enter_events: Vec<EventProperty>,
-    pub exit_events: Vec<EventProperty>,
-}
-
-#[derive(Debug, Clone)]
-pub enum Generator {
-    Clip { name: String, animation: String, mode: ClipMode, speed: f32, triggers: Vec<Trigger> },
-    StateMachine {
-        name: String,
-        start: i32,
-        /// Graph variable the start state is bound to, if any (overrides `start`).
-        start_variable: Option<usize>,
-        states: Vec<State>,
-        wildcards: Vec<Transition>,
-    },
-    /// Blends or switches between children; the first is the default / dominant one.
-    Group { name: String, children: Vec<GenId> },
-    /// Another behaviour file (e.g. `Behaviors\MT_Behavior.hkx`).
-    Reference { name: String, behavior: String },
-    Other(String),
-}
-
-impl Generator {
-    pub fn name(&self) -> &str {
-        match self {
-            Generator::Clip { name, .. }
-            | Generator::StateMachine { name, .. }
-            | Generator::Group { name, .. }
-            | Generator::Reference { name, .. } => name,
-            Generator::Other(class) => class,
-        }
-    }
-}
-
-pub struct BehaviorGraph {
-    pub name: String,
-    pub root: Option<GenId>,
-    pub generators: Vec<Generator>,
-    pub events: Vec<String>,
-    /// Graph variables and their initial (word) values.
-    pub variables: Vec<String>,
-    pub variable_defaults: Vec<i32>,
-}
-
-// Field offsets for hk_2010.2.0-r1 with 64-bit pointers (hkbNode name at 0x38).
-const NODE_NAME: u32 = 0x38;
-const ARRAY_PTR_SIZE: u32 = 8;
-
-struct Reader<'a> {
-    p: &'a Packfile,
-    ids: std::collections::HashMap<u32, GenId>,
-    generators: Vec<Generator>,
-}
-
-impl Reader<'_> {
-    /// Pointer array (hkArray of object pointers) at `o`.
-    fn ptr_array(&self, o: u32) -> Vec<u32> {
-        let (Some(data), n) = self.p.array(o) else { return Vec::new() };
-        (0..n as u32).filter_map(|i| self.p.ptr(data + i * ARRAY_PTR_SIZE)).collect()
-    }
-
-    fn transitions(&self, array_obj: Option<u32>) -> Vec<Transition> {
-        let Some(a) = array_obj else { return Vec::new() };
-        let (Some(data), n) = self.p.array(a + 0x10) else { return Vec::new() };
-        (0..n as u32)
-            .map(|i| {
-                let t = data + i * 0x48;
-                let flags = self.p.u16(t + 0x42);
-                Transition {
-                    event: self.p.i32(t + 0x30),
-                    to_state: self.p.i32(t + 0x34),
-                    to_nested: (flags & FLAG_TO_NESTED_STATE_ID_IS_VALID != 0).then(|| self.p.i32(t + 0x3C)),
-                    flags,
-                }
-            })
-            .collect()
-    }
-
-    /// Variable bound to `member` of the bindable object at `o`, if any.
-    fn bound_variable(&self, o: u32, member: &str) -> Option<usize> {
-        let set = self.p.ptr(o + 0x10)?;
-        let (Some(data), n) = self.p.array(set + 0x10) else { return None };
-        (0..n as u32).map(|i| data + i * 0x28).find_map(|b| {
-            let path = self.p.string(b)?;
-            // Binding type 0: a variable (1 would be a character property).
-            (path == member && self.p.u8(b + 0x21) == 0).then(|| usize::try_from(self.p.i32(b + 0x1C)).ok()).flatten()
-        })
-    }
-
-    /// String payload of the `hkbEventPayload` pointed to from `slot`.
-    fn payload(&self, slot: u32) -> Option<String> {
-        self.p.ptr(slot).filter(|&o| self.p.object_class(o) == Some("hkbStringEventPayload")).and_then(|o| self.p.string(o + 0x10))
-    }
-
-    fn event_properties(&self, array_obj: Option<u32>) -> Vec<EventProperty> {
-        let Some(a) = array_obj else { return Vec::new() };
-        let (Some(data), n) = self.p.array(a + 0x10) else { return Vec::new() };
-        (0..n as u32).map(|i| data + i * 0x10).map(|e| EventProperty { event: self.p.i32(e), payload: self.payload(e + 8) }).collect()
-    }
-
-    fn triggers(&self, array_obj: Option<u32>) -> Vec<Trigger> {
-        let Some(a) = array_obj else { return Vec::new() };
-        let (Some(data), n) = self.p.array(a + 0x10) else { return Vec::new() };
-        (0..n as u32)
-            .map(|i| {
-                let t = data + i * 0x20;
-                Trigger { time: self.p.f32(t), event: self.p.i32(t + 8), from_end: self.p.u8(t + 0x18) != 0, payload: self.payload(t + 0x10) }
-            })
-            .collect()
-    }
-
-    /// Read the generator at `o` (memoised; cycles resolve to the same id).
-    fn generator(&mut self, o: u32) -> GenId {
-        if let Some(&id) = self.ids.get(&o) {
-            return id;
-        }
-        let id = self.generators.len();
-        self.ids.insert(o, id);
-        self.generators.push(Generator::Other(String::new()));
-        let p = self.p;
-        let class = p.object_class(o).unwrap_or("").to_owned();
-        let name = p.string(o + NODE_NAME).unwrap_or_default();
-        let g = match class.as_str() {
-            "hkbClipGenerator" => Generator::Clip {
-                name,
-                animation: p.string(o + 0x48).unwrap_or_default(),
-                mode: match p.u8(o + 0x72) {
-                    0 => ClipMode::SinglePlay,
-                    1 => ClipMode::Looping,
-                    _ => ClipMode::Other,
-                },
-                speed: p.f32(o + 0x64),
-                triggers: self.triggers(p.ptr(o + 0x50)),
-            },
-            "hkbStateMachine" => {
-                let mut states = Vec::new();
-                for s in self.ptr_array(o + 0x90) {
-                    let generator = p.ptr(s + 0x58).map(|g| self.generator(g));
-                    states.push(State {
-                        id: p.i32(s + 0x68),
-                        name: p.string(s + 0x60).unwrap_or_default(),
-                        generator,
-                        transitions: self.transitions(p.ptr(s + 0x50)),
-                        enter_events: self.event_properties(p.ptr(s + 0x40)),
-                        exit_events: self.event_properties(p.ptr(s + 0x48)),
-                    });
-                }
-                Generator::StateMachine {
-                    name,
-                    start: p.i32(o + 0x68),
-                    start_variable: self.bound_variable(o, "startStateId"),
-                    states,
-                    wildcards: self.transitions(p.ptr(o + 0xA0)),
-                }
-            }
-            "hkbBlenderGenerator" | "hkbPoseMatchingGenerator" => {
-                let children = self
-                    .ptr_array(o + 0x60)
-                    .into_iter()
-                    .filter_map(|c| p.ptr(c + 0x30))
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .map(|g| self.generator(g))
-                    .collect();
-                Generator::Group { name, children }
-            }
-            "hkbManualSelectorGenerator" => {
-                let gens = self.ptr_array(o + 0x48);
-                Generator::Group { name, children: gens.into_iter().map(|g| self.generator(g)).collect() }
-            }
-            "BSBoneSwitchGenerator" => {
-                let mut kids: Vec<u32> = p.ptr(o + 0x50).into_iter().collect();
-                kids.extend(self.ptr_array(o + 0x58).into_iter().filter_map(|d| p.ptr(d + 0x30)));
-                Generator::Group { name, children: kids.into_iter().map(|g| self.generator(g)).collect() }
-            }
-            "hkbModifierGenerator"
-            | "BSSynchronizedClipGenerator"
-            | "BSCyclicBlendTransitionGenerator"
-            | "BSiStateTaggingGenerator"
-            | "BSOffsetAnimationGenerator" => {
-                let children = p.ptr(o + 0x50).map(|g| self.generator(g)).into_iter().collect();
-                Generator::Group { name, children }
-            }
-            "hkbBehaviorReferenceGenerator" => Generator::Reference { name, behavior: p.string(o + 0x48).unwrap_or_default() },
-            _ => Generator::Other(class),
-        };
-        self.generators[id] = g;
-        id
-    }
-}
-
-impl BehaviorGraph {
-    pub fn parse(bytes: &[u8]) -> Result<BehaviorGraph> {
-        let p = Packfile::parse(bytes)?;
-        let Some(graph) = p.objects_of("hkbBehaviorGraph").next() else {
-            return Err(crate::Error::Corrupt("no hkbBehaviorGraph".into()));
-        };
-        let name = p.string(graph + NODE_NAME).unwrap_or_default();
-        let data = p.ptr(graph + 0x88);
-        let strings = data.and_then(|d| p.ptr(d + 0x78));
-        let string_array = |at: u32| -> Vec<String> {
-            let Some(s) = strings else { return Vec::new() };
-            let (ptr, n) = p.array(s + at);
-            ptr.map(|d| (0..n as u32).map(|i| p.string(d + i * 8).unwrap_or_default()).collect()).unwrap_or_default()
-        };
-        let events = string_array(0x10);
-        let variables = string_array(0x30);
-        let variable_defaults = data
-            .and_then(|d| p.ptr(d + 0x70))
-            .map(|values| {
-                let (ptr, n) = p.array(values + 0x10);
-                ptr.map(|d| (0..n as u32).map(|i| p.i32(d + i * 4)).collect()).unwrap_or_default()
-            })
-            .unwrap_or_default();
-        let mut r = Reader { p: &p, ids: Default::default(), generators: Vec::new() };
-        let root = p.ptr(graph + 0x80).map(|g| r.generator(g));
-        Ok(BehaviorGraph { name, root, generators: r.generators, events, variables, variable_defaults })
-    }
-
-    pub fn event_id(&self, name: &str) -> Option<i32> {
-        self.events.iter().position(|e| e.eq_ignore_ascii_case(name)).map(|i| i as i32)
-    }
-
-    pub fn event_name(&self, id: i32) -> Option<&str> {
-        self.events.get(usize::try_from(id).ok()?).map(String::as_str)
-    }
-
-    /// Every (state machine, state reached, transition) for transitions on `event`,
-    /// from any state or wildcard.
-    pub fn transitions_on(&self, event: i32) -> Vec<(GenId, &State, Transition)> {
-        let mut out: Vec<(GenId, &State, Transition)> = Vec::new();
-        for (gi, g) in self.generators.iter().enumerate() {
-            let Generator::StateMachine { states, wildcards, .. } = g else { continue };
-            let targets = wildcards.iter().chain(states.iter().flat_map(|s| &s.transitions));
-            for t in targets.filter(|t| t.event == event && t.flags & FLAG_DISABLED == 0) {
-                if let Some(s) = states.iter().find(|s| s.id == t.to_state)
-                    && !out.iter().any(|(g, x, y)| *g == gi && x.id == s.id && y.to_nested == t.to_nested)
-                {
-                    out.push((gi, s, *t));
-                }
-            }
-        }
-        out
-    }
-}
+use super::*;
 
 /// A clip reached by following an event.
 #[derive(Debug, Clone, PartialEq)]
@@ -330,13 +38,6 @@ pub struct Playback {
     cursor: Cursor,
 }
 
-/// Behaviour graphs of one character project, by lowercase relative path
-/// (`behaviors\0_master.hkx`), with event lookups across them.
-#[derive(Default)]
-pub struct Project {
-    pub graphs: Vec<(String, BehaviorGraph)>,
-}
-
 /// Position while walking a graph: (graph index, state machine stack of (sm, state id)).
 type Cursor = (usize, Vec<(GenId, i32)>);
 
@@ -344,32 +45,6 @@ type Cursor = (usize, Vec<(GenId, i32)>);
 type Entered = (usize, GenId, i32);
 
 impl Project {
-    /// Load `root` (e.g. `behaviors\0_master.hkx`) and every graph it references.
-    /// `read` takes a project-relative path with forward slashes.
-    pub fn load(root: &str, read: impl Fn(&str) -> Option<Vec<u8>>) -> Project {
-        let mut project = Project::default();
-        let mut queue = vec![root.to_ascii_lowercase().replace('/', "\\")];
-        while let Some(rel) = queue.pop() {
-            if project.graphs.iter().any(|(p, _)| *p == rel) {
-                continue;
-            }
-            let Some(bytes) = read(&rel.replace('\\', "/")) else { continue };
-            let Ok(g) = BehaviorGraph::parse(&bytes) else { continue };
-            for node in &g.generators {
-                if let Generator::Reference { behavior, .. } = node {
-                    queue.push(behavior.to_ascii_lowercase().replace('/', "\\"));
-                }
-            }
-            project.graphs.push((rel, g));
-        }
-        project
-    }
-
-    fn graph_index(&self, path: &str) -> Option<usize> {
-        let path = path.to_ascii_lowercase().replace('/', "\\");
-        self.graphs.iter().position(|(p, _)| *p == path)
-    }
-
     /// Descend from `g` to the first clip, pushing entered state machines onto the cursor.
     /// `nested` picks the state to enter in the first state machine reached (a
     /// transition's nested target) instead of its start state.
@@ -399,7 +74,8 @@ impl Project {
                 entered.push((gi, g, s.id));
                 self.descend(gi, s.generator?, stack, nested, entered, depth + 1)
             }
-            Generator::Group { children, .. } => children.iter().find_map(|&c| {
+            Generator::Blender { .. } | Generator::Selector { .. } | Generator::Wrap { .. } | Generator::BoneSwitch { .. } => {
+                graph.generators[g].children().into_iter().find_map(|c| {
                 let (mark, emark) = (stack.len(), entered.len());
                 let r = self.descend(gi, c, stack, nested, entered, depth + 1);
                 if r.is_none() {
@@ -407,7 +83,8 @@ impl Project {
                     entered.truncate(emark);
                 }
                 r
-            }),
+                })
+            }
             Generator::Reference { behavior, .. } => {
                 let other = self.graph_index(behavior)?;
                 // Entering another graph: its state machines form a fresh stack.
@@ -559,11 +236,20 @@ mod tests {
     use super::*;
 
     fn clip(name: &str, mode: ClipMode, triggers: Vec<Trigger>) -> Generator {
-        Generator::Clip { name: name.into(), animation: format!("Animations\\{name}.hkx"), mode, speed: 1.0, triggers }
+        Generator::Clip {
+            name: name.into(),
+            animation: format!("Animations\\{name}.hkx"),
+            mode,
+            speed: 1.0,
+            triggers,
+            crop_start: 0.0,
+            crop_end: 0.0,
+            start_time: 0.0,
+        }
     }
 
     fn tr(event: i32, to_state: i32, to_nested: Option<i32>) -> Transition {
-        Transition { event, to_state, to_nested, flags: 0 }
+        Transition::new(event, to_state, to_nested)
     }
 
     fn state(id: i32, generator: GenId, transitions: Vec<Transition>) -> State {
@@ -604,15 +290,16 @@ mod tests {
             /* 5 */ clip("KneelIdle", ClipMode::Looping, vec![]),
             /* 6 */ clip("KneelExit", ClipMode::SinglePlay, vec![]),
         ];
-        let master = BehaviorGraph { name: "Master".into(), root: Some(0), generators, events, variables: vec![], variable_defaults: vec![] };
-        let other = BehaviorGraph {
-            name: "Other".into(),
-            root: Some(0),
-            generators: vec![Generator::Group { name: "Blend".into(), children: vec![1] }, clip("OtherLoop", ClipMode::Looping, vec![])],
-            events: vec![],
-            variables: vec![],
-            variable_defaults: vec![],
+        let master = BehaviorGraph::new("Master", Some(0), generators, events);
+        let blend = Generator::Blender {
+            name: "Blend".into(),
+            parameter: 0.0,
+            min_cyclic: 0.0,
+            max_cyclic: 1.0,
+            flags: 0,
+            children: vec![BlendChild { generator: Some(1), weight: 1.0, weight_variable: None, bone_weights: None }],
         };
+        let other = BehaviorGraph::new("Other", Some(0), vec![blend, clip("OtherLoop", ClipMode::Looping, vec![])], vec![]);
         Project { graphs: vec![("behaviors\\master.hkx".into(), master), ("behaviors\\other.hkx".into(), other)] }
     }
 
@@ -675,8 +362,7 @@ mod tests {
         // variable whose initial value is 8 (the kneel loop).
         let mut p = project();
         let master = &mut p.graphs[0].1;
-        master.variables = vec!["i1stPerson".into()];
-        master.variable_defaults = vec![8];
+        master.add_variable("i1stPerson", VarType::Int, 8.0);
         let Generator::StateMachine { start_variable, .. } = &mut master.generators[2] else { unreachable!() };
         *start_variable = Some(0);
         let plays = p.play_event("IdleOther");
