@@ -33,6 +33,8 @@ pub(crate) struct CellRuntime {
     pub(crate) doors: Vec<Door>,
     /// Doors and other keyframe-animated objects.
     pub(crate) animated: Vec<crate::world::animated::AnimatedObject>,
+    /// Water planes: south-west corner, size and surface height.
+    pub(crate) water: Vec<(glam::Vec2, f32, f32)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -119,6 +121,8 @@ pub struct Engine {
     /// Where `--wait` runs hold the camera instead (console `tcam`): position,
     /// yaw, pitch.
     pub test_camera: Option<(Vec3, f32, f32)>,
+    /// A jump asked for from the console, taken once the player is on the ground.
+    pub test_jump: bool,
     pub player_died_at: Option<f64>,
     /// Lines NPCs say by themselves (greetings, idle chatter).
     pub barks: crate::dialogue::barks::Barks,
@@ -218,6 +222,7 @@ impl Engine {
             player_stats: Default::default(),
             projectiles: Vec::new(),
             test_camera: None,
+            test_jump: false,
             player_health: PLAYER_HEALTH,
             player_died_at: None,
             npc_refs: HashMap::new(),
@@ -484,9 +489,24 @@ impl Engine {
         self.actor_cells.clear();
     }
 
+    /// The share of their speed the player keeps sneaking: the NPC sneaking
+    /// movement type's forward speeds against the default's.
+    fn player_sneak_speed(&mut self) -> f32 {
+        let types = self.move_types.get_or_insert_with(|| crate::world::movement::movement_types(&self.lo));
+        match (types.get("npcsneaking"), types.get("npcdefault")) {
+            (Some(s), Some(d)) if d.walk > 0.0 && d.run > 0.0 => (s.walk / d.walk + s.run / d.run) / 2.0,
+            _ => 0.6,
+        }
+    }
+
     /// Place the player with their feet at `feet`, facing `yaw` (radians).
     pub fn place_player(&mut self, feet: Vec3, yaw: f32) {
+        let sneaking = self.player.sneaking;
         self.player = Player::new(Vec3::ZERO);
+        self.player.sneaking = sneaking;
+        self.player.crouch = sneaking as u8 as f32;
+        // Settling onto the ground isn't a landing.
+        self.footsteps.airborne = f32::NEG_INFINITY;
         self.player.position = feet + Vec3::Z * (self.physics.player_half_height + self.physics.player_radius + 2.0);
         self.camera.yaw = yaw;
         self.camera.pitch = 0.0;
@@ -1142,6 +1162,9 @@ impl Engine {
 
     fn add_water(&mut self, key: CellKey, planes: Vec<(f32, f32, f32, f32, FormId)>) {
         let mut params = Vec::new();
+        if let Some(rt) = self.cells.get_mut(&key) {
+            rt.water.extend(planes.iter().map(|&(x, y, size, h, _)| (glam::Vec2::new(x, y), size, h)));
+        }
         for (x, y, size, h, wt) in planes {
             if let Some(p) = records::water_params(&self.lo, wt) {
                 params.push((x, y, size, h, p));
@@ -1210,12 +1233,13 @@ impl Engine {
         let top = 2000.0;
         let origin = Vec3::new(p.x, p.y, self.player.position.z + top);
         let mut out = vec![format!(
-            "probe at {:.1} {:.1} (cell {:?}); player centre z {:.1}; land height {}",
+            "probe at {:.1} {:.1} (cell {:?}); player centre z {:.1}; land height {}; water {}",
             p.x,
             p.y,
             grid_of(p),
             self.player.position.z,
-            self.ground_height(p).map_or("none".into(), |h| format!("{h:.1}"))
+            self.ground_height(p).map_or("none".into(), |h| format!("{h:.1}")),
+            self.water_level(p.extend(0.0)).map_or("none".into(), |h| format!("{h:.1}"))
         )];
         let cell_of = |h: ColliderHandle| self.cells.iter().find(|(_, rt)| rt.colliders.contains(&h)).map(|(k, _)| *k);
         for hit in self.physics.probe_ray(origin, -Vec3::Z, 2.0 * top) {
@@ -1365,10 +1389,17 @@ impl Engine {
         let mut input = input;
         if input.sprint && (input.forward != 0.0 || input.right != 0.0) && !self.player.noclip {
             input.sprint = self.player_sprint(dt);
+            // Sprinting stands them up.
+            self.player.sneaking &= !input.sprint;
         }
         self.update_player_attack(dt);
         let (run, sprint, before) = (input.run, input.sprint, self.player.position);
-        self.player.update(&self.physics, &cam, input, dt);
+        if self.test_jump && self.player.grounded {
+            input.jump = true;
+            self.test_jump = false;
+        }
+        let sneak_speed = self.player_sneak_speed();
+        self.player.update(&self.physics, &cam, input, sneak_speed, dt);
         self.update_player_footsteps(dt, (self.player.position - before).truncate().length(), run, sprint);
         self.camera.position = self.player.eye();
         self.update_streaming();

@@ -44,6 +44,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "pattack [power]       the player swings (power: as holding the button)".into(),
             "pbash                 the player bashes (attacking with the guard up)".into(),
             "pshoot [secs]         the player looses an arrow drawn so long (default full)".into(),
+            "psneak / pjump        the player sneaks (toggle) / jumps when next on the ground".into(),
             "tcam x y z yaw pitch  hold the --wait camera there (degrees; yaw 0 = north)".into(),
             "stamina <ref|player> [n]  show or set stamina".into(),
             "probe [x y]           collision under the player (or x y) and per-cell colliders".into(),
@@ -146,6 +147,14 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let held = args.first().and_then(|s| s.parse::<f32>().ok()).unwrap_or(5.0);
             engine.player_loose(held);
             vec![format!("player looses after {held}s")]
+        }
+        "psneak" => {
+            engine.player.sneaking = !engine.player.sneaking;
+            vec![format!("player {}", if engine.player.sneaking { "sneaks" } else { "stands up" })]
+        }
+        "pjump" => {
+            engine.test_jump = true;
+            vec!["player jumps".into()]
         }
         "pbash" => {
             engine.player_bash();

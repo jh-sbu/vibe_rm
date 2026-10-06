@@ -410,6 +410,10 @@ impl ApplicationHandler for App {
                                 s.keys.clear();
                                 return;
                             }
+                            // Ctrl sneaks (noclip flies down with it instead).
+                            if code == KeyCode::ControlLeft && !event.repeat && !s.engine.player.noclip {
+                                s.engine.player.sneaking = !s.engine.player.sneaking;
+                            }
                             if code == KeyCode::KeyN && !event.repeat {
                                 s.engine.player.noclip = !s.engine.player.noclip;
                                 log::info!("noclip {}", s.engine.player.noclip);
