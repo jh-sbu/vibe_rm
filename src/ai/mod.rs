@@ -56,6 +56,8 @@ pub struct Goal {
     pub start_nearest: bool,
     /// Follow: (min, max) distance to keep.
     pub follow_radius: (f32, f32),
+    /// Escort: how far behind the escorted actor may fall before the escort waits.
+    pub escort_wait: f32,
     pub gait: package::Gait,
     pub sneak: bool,
 }
@@ -73,6 +75,7 @@ impl Goal {
             repeat: false,
             start_nearest: false,
             follow_radius: (0.0, 0.0),
+            escort_wait: 0.0,
             gait: package::Gait::Walk,
             sneak: false,
         }
@@ -584,7 +587,7 @@ impl ActorRuntime {
                     let arrived = *budget >= 0.0;
                     log::debug!("{} walk ended ({})", self.ref_id, if arrived { "arrived" } else { "timeout" });
                     self.speed = 0.0;
-                    let follow = self.goal.is_some_and(|g| g.behaviour == Behaviour::Follow);
+                    let follow = self.goal.is_some_and(|g| matches!(g.behaviour, Behaviour::Follow | Behaviour::Escort));
                     if *to_seat && arrived {
                         self.state = State::Approach(0.0);
                     } else if follow || (arrived && self.goal.is_some_and(|g| g.behaviour == Behaviour::Patrol)) {
@@ -777,6 +780,27 @@ impl ActorRuntime {
                     None => None,
                 }
             }
+            Behaviour::Escort => {
+                let near = goal.radius.max(96.0);
+                let left = self.pos.truncate().distance(goal.centre.truncate());
+                // Behind: too far off and no nearer the destination (one gone on ahead
+                // isn't waited for).
+                let behind = goal
+                    .target
+                    .and_then(|t| w.targets.get(&t))
+                    .filter(|t| t.truncate().distance(goal.centre.truncate()) > left)
+                    .map(|t| self.pos.distance(*t));
+                if left <= near {
+                    None
+                } else if behind.is_some_and(|d| d > goal.escort_wait) {
+                    // Wait for the escorted actor to catch up.
+                    log::debug!("{} waiting for {:?} ({:.0} behind)", self.ref_id, goal.target, behind.unwrap_or_default());
+                    self.state = State::Idle(0.5);
+                    return;
+                } else {
+                    Some(goal.centre)
+                }
+            }
             Behaviour::Travel | Behaviour::Sleep | Behaviour::Sit => {
                 let near = goal.radius.max(96.0);
                 (self.pos.truncate().distance(goal.centre.truncate()) > near).then_some(goal.centre)
@@ -806,7 +830,8 @@ impl ActorRuntime {
                 }
                 log::debug!("{} walking {:.0} units via {} points ({:?})", self.ref_id, len, path.len(), goal.behaviour);
                 let mut budget = len / WALK_SPEED * 2.5 + 5.0;
-                if goal.behaviour == Behaviour::Follow {
+                // Look back at the target now and then.
+                if matches!(goal.behaviour, Behaviour::Follow | Behaviour::Escort) {
                     budget = budget.min(2.0);
                 }
                 self.state = State::Walk { path, next: 0, budget, to_seat: false };
@@ -920,7 +945,7 @@ impl ActorRuntime {
             Behaviour::Patrol if goal.furniture.is_some() => {
                 (vec![Use::Idle, Use::Lean, Use::Special, Use::Sit], goal.centre, 96.0, uniform(w.rand, 6.0, 12.0))
             }
-            Behaviour::Travel | Behaviour::Hold | Behaviour::Patrol | Behaviour::Follow => return false,
+            Behaviour::Travel | Behaviour::Hold | Behaviour::Patrol | Behaviour::Follow | Behaviour::Escort => return false,
         };
         let npc = self.npc;
         let mut options = Vec::new();
@@ -1474,6 +1499,17 @@ impl Engine {
         true
     }
 
+    /// Have an actor lead `target` to `to` (an Escort package's procedure), waiting
+    /// whenever the target is more than `wait` behind.
+    pub fn escort(&mut self, actor: FormId, target: FormId, to: Vec3, wait: f32) -> bool {
+        let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
+        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
+        a.interrupt(&mut self.furniture);
+        a.goal = Some(Goal { behaviour: Behaviour::Escort, target: Some(target), escort_wait: wait, ..Goal::travel(to) });
+        a.pinned = true;
+        true
+    }
+
     /// The patrol route starting at `start`: it and the references reached by
     /// following default linked refs, until the chain ends or loops back.
     fn patrol_route(&self, start: FormId) -> Vec<PatrolPoint> {
@@ -1636,6 +1672,7 @@ impl Engine {
                         repeat: p.repeat,
                         start_nearest: p.start_nearest,
                         follow_radius: p.follow_radius,
+                        escort_wait: p.escort_wait,
                         gait: p.gait,
                         sneak: p.sneak,
                     }
@@ -1690,7 +1727,7 @@ impl Engine {
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
             match a.goal {
                 Some(g) if g.behaviour == Behaviour::Patrol => patrol_starts.extend(g.target),
-                Some(g) if g.behaviour == Behaviour::Follow => {
+                Some(g) if matches!(g.behaviour, Behaviour::Follow | Behaviour::Escort) => {
                     if let Some(t) = g.target
                         && let Some(p) = self.ref_position(t)
                     {

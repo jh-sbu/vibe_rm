@@ -22,6 +22,8 @@ pub enum Behaviour {
     Patrol,
     /// Stay near the target reference.
     Follow,
+    /// Lead the target to the location, waiting while it falls behind.
+    Escort,
 }
 
 /// What a sandboxing actor may do besides wander (the template's "Allow ..." inputs).
@@ -141,6 +143,8 @@ pub struct Package {
     pub start_nearest: bool,
     /// Follow: keep between these distances from the target.
     pub follow_radius: (f32, f32),
+    /// Escort: wait while the escorted actor is farther than this.
+    pub escort_wait: f32,
     pub gait: Gait,
     pub sneak: bool,
     /// The sleeper locks its home's doors ("Lock Doors?" input).
@@ -159,7 +163,9 @@ fn behaviour_of(template: &str) -> Behaviour {
         Behaviour::Sit
     } else if t.contains("patrol") {
         Behaviour::Patrol
-    } else if t.starts_with("follow") || t.starts_with("escort") {
+    } else if t.starts_with("escort") {
+        Behaviour::Escort
+    } else if t.starts_with("follow") {
         Behaviour::Follow
     } else if t.starts_with("travel") || t.starts_with("hold") || t == "patrol" {
         Behaviour::Travel
@@ -356,6 +362,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     let repeat = ["repeatable"].iter().find_map(|k| flag(k)).unwrap_or(true);
     let start_nearest = ["startatnearest", "startatnearestpoint"].iter().find_map(|k| flag(k)).unwrap_or(false);
     let follow_radius = (float(&["minradius"], 128.0), float(&["maxradius"], 384.0));
+    let escort_wait = float(&["distancetowaitforfollowers"], 512.0);
     // The first location input is the package's main location; likewise for targets.
     let location = inputs.iter().find_map(|(_, v)| match v {
         Input::Location(l) => Some(*l),
@@ -380,6 +387,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         repeat,
         start_nearest,
         follow_radius,
+        escort_wait,
         gait,
         sneak,
         lock_doors: flag("lockdoors").unwrap_or(false),
