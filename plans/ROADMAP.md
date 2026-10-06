@@ -155,6 +155,15 @@ game each piece unlocks.
   (a basic swing without the stamina); HUD bar. Papyrus `GetActorValue` /
   `DamageActorValue` read and spend live health / stamina. Console `stamina`,
   `pattack`; vrm-tool `gmst <pattern>`
+- Bashing: the race's bash attacks (`bashStart`, `bashPowerStart`) with a shield or a
+  melee weapon out, within `fCombatBashReach`, for `fStaminaBashBase` /
+  `fStaminaPowerBashBase` stamina. A bash isn't blocked: it breaks the guard,
+  staggers and cuts short the target's swing; it strikes for the shield's rating
+  (or weapon's damage) x a share growing with block skill (`fShieldBashMin` / `Max`,
+  `fWeaponBashMax`) x the attack's multiplier. Fighters bash a raised guard and,
+  from their own guard, the swings coming at them, as the combat style's bash
+  multipliers (`CSME`) have them. The player bashes by attacking with the guard up.
+  Console `pbash`; `cstats` shows the bash multipliers
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
@@ -201,7 +210,7 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; locked doors and keys
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
-3. **Game logic**: combat (bashing, bows, armor perks, tempering
+3. **Game logic**: combat (bows, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime

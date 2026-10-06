@@ -42,6 +42,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "activate <ref>        activate a reference as the player".into(),
             "pblock                toggle the player's guard (right mouse button)".into(),
             "pattack [power]       the player swings (power: as holding the button)".into(),
+            "pbash                 the player bashes (attacking with the guard up)".into(),
             "stamina <ref|player> [n]  show or set stamina".into(),
         ],
         "bark" => {
@@ -129,6 +130,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         "pattack" => {
             let power = args.first().is_some_and(|a| a.eq_ignore_ascii_case("power"));
             engine.player_attack(power);
+            vec![format!("player stamina {:.0}", engine.player_stamina)]
+        }
+        "pbash" => {
+            engine.player_bash();
             vec![format!("player stamina {:.0}", engine.player_stamina)]
         }
         "stamina" => {
