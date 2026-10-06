@@ -27,6 +27,11 @@ const SWING_TIME: f32 = 1.1;
 const BLOCK_CHANCE: f32 = 2.0;
 const GUARD_RATE: f32 = 0.6;
 
+/// Chance a fighter in reach bashes rather than swings, per point of its combat
+/// style's bash multiplier: against a raised guard, and otherwise. Tuned by eye.
+const BASH_VS_GUARD: f32 = 0.6;
+const BASH_CHANCE: f32 = 0.08;
+
 /// Chance an attack is a power attack per point of combat style offensiveness
 /// (at most 60%). Tuned by eye, like the guard rates.
 const POWER_ATTACK_CHANCE: f32 = 0.6;
@@ -89,6 +94,11 @@ pub struct CombatStats {
     /// (`CSME` power attack blocking multiplier).
     pub offensive: f32,
     pub power_vs_guard: f32,
+    /// How readily it bashes (`CSME` bash multiplier), and bashes a swing coming
+    /// at it from behind its guard (bash attack / bash power attack multipliers).
+    pub bash: f32,
+    pub bash_vs_attack: f32,
+    pub bash_vs_power: f32,
 }
 
 /// A weapon's weight (`DATA`).
@@ -213,6 +223,18 @@ pub struct CombatSettings {
     sprint_weight: f32,
     combat_regen: f32,
     regen_delay: f32,
+    /// Bashing: stamina for a bash and a power bash (times the attack's own
+    /// multiplier), how far one reaches, and the share of the shield's rating
+    /// (or the weapon's damage) it strikes for, from `min` at block skill 0 to
+    /// `max` at 100 (`pc_max` for the player's shield).
+    bash_stamina: f32,
+    power_bash_stamina: f32,
+    bash_reach: f32,
+    shield_bash_min: f32,
+    shield_bash_max: f32,
+    shield_bash_pc_max: f32,
+    weapon_bash_min: f32,
+    weapon_bash_max: f32,
 }
 
 impl CombatSettings {
@@ -241,6 +263,14 @@ impl CombatSettings {
             sprint_weight: gmst_f32(lo, "fSprintStaminaWeightMult", 0.02),
             combat_regen: gmst_f32(lo, "fCombatStaminaRegenRateMult", 0.35),
             regen_delay: gmst_f32(lo, "fDamagedStaminaRegenDelay", 0.5),
+            bash_stamina: gmst_f32(lo, "fStaminaBashBase", 35.0),
+            power_bash_stamina: gmst_f32(lo, "fStaminaPowerBashBase", 55.0),
+            bash_reach: gmst_f32(lo, "fCombatBashReach", 141.0),
+            shield_bash_min: gmst_f32(lo, "fShieldBashMin", 0.05),
+            shield_bash_max: gmst_f32(lo, "fShieldBashMax", 0.25),
+            shield_bash_pc_max: gmst_f32(lo, "fShieldBashPCMax", 0.25),
+            weapon_bash_min: gmst_f32(lo, "fWeaponBashMin", 0.05),
+            weapon_bash_max: gmst_f32(lo, "fWeaponBashMax", 0.25),
         }
     }
 }
@@ -350,7 +380,11 @@ impl CombatStats {
         let csgd = style.as_ref().and_then(|r| r.get(b"CSGD")).filter(|d| d.len() >= 8);
         s.offensive = csgd.map_or(0.25, |d| f32_at(d, 0));
         s.defensive = csgd.map_or(0.25, |d| f32_at(d, 4));
-        s.power_vs_guard = style.as_ref().and_then(|r| r.get(b"CSME")).filter(|d| d.len() >= 12).map_or(1.0, |d| f32_at(d, 8));
+        // CSME: attack staggered, power attack staggered, power attack blocking,
+        // bash, bash recoil, bash attack, bash power attack multipliers.
+        let csme = style.as_ref().and_then(|r| r.get(b"CSME"));
+        s.power_vs_guard = csme.filter(|d| d.len() >= 12).map_or(1.0, |d| f32_at(d, 8));
+        (s.bash, s.bash_vs_attack, s.bash_vs_power) = csme.filter(|d| d.len() >= 28).map_or((0.5, 0.25, 0.25), |d| (f32_at(d, 12), f32_at(d, 20), f32_at(d, 24)));
         s.max_health = s.max_health.max(5.0);
         s.max_stamina = s.max_stamina.max(10.0);
         if let Some(d) = npc_field(lo, npc, b"AIDT", 0x10).filter(|d| d.len() >= 20) {
@@ -386,11 +420,24 @@ pub struct Combat {
     guard_shown: bool,
     /// The target has its guard up (set by the engine each frame).
     pub(crate) target_guarding: bool,
+    /// Whether it can bash (with a shield or a melee weapon out), what with
+    /// (set by the engine each frame), and whether to bash the swing coming at
+    /// it from behind its guard.
+    pub(crate) bash: Option<Bash>,
+    pub(crate) counter: bool,
+}
+
+/// What an actor's bashes cost (bash, power bash; before the attack's own
+/// multiplier) and how far they reach.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Bash {
+    pub cost: [f32; 2],
+    pub reach: f32,
 }
 
 impl Combat {
     pub fn new(target: FormId) -> Combat {
-        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false }
+        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false }
     }
 
     pub fn swinging(&self) -> bool {
@@ -425,6 +472,25 @@ impl ActorRuntime {
             self.stamina_spent = true;
             log::debug!("{} spends {amount:.0} stamina ({:.0} left)", self.ref_id, self.stamina);
         }
+    }
+
+    /// Start a bash (a power bash if wanted and it has the stamina), by the
+    /// race's bash attacks' chances. None if it has none it can pay for.
+    fn start_bash(&mut self, b: Bash, want_power: bool, w: &mut World) -> Option<String> {
+        let cost = |a: &Attack| b.cost[(a.flags & ATK_POWER != 0) as usize] * a.stamina_mult;
+        let affordable: Vec<(usize, f32)> =
+            self.stats.attacks.iter().enumerate().filter(|(_, a)| a.flags & ATK_BASH != 0 && cost(a) <= self.stamina).map(|(i, a)| (i, a.chance.max(0.05))).collect();
+        let kind: Vec<(usize, f32)> = affordable.iter().copied().filter(|&(i, _)| (self.stats.attacks[i].flags & ATK_POWER != 0) == want_power).collect();
+        let pool = if kind.is_empty() { &affordable } else { &kind };
+        let pick = pick_weighted(pool, w)?;
+        let cost = cost(&self.stats.attacks[pick]);
+        let c = self.combat.as_mut()?;
+        c.attack = Some(pick);
+        c.struck = false;
+        c.cost = cost;
+        c.swing = SWING_TIME * 0.8;
+        c.cooldown = SWING_TIME + uniform(w.rand, 0.4, 1.2);
+        Some(self.stats.attacks[pick].event.clone())
     }
 
     /// Raise its guard for `secs` (the AI step has the graph raise it), or lower it.
@@ -476,6 +542,32 @@ impl ActorRuntime {
             return None;
         }
         if c.guard > 0.0 {
+            // A swing coming at it: bash it from behind the guard, in reach and
+            // with the stamina.
+            if std::mem::take(&mut c.counter)
+                && c.guard_shown
+                && let Some(b) = c.bash.filter(|b| dist <= b.reach * self.scale)
+            {
+                c.guard = 0.0;
+                c.guard_shown = false;
+                if let Some(g) = self.graph.as_mut() {
+                    g.set_variable("IsBlocking", 0.0);
+                }
+                let want_power = uniform(w.rand, 0.0, 1.0) < self.stats.offensive * POWER_ATTACK_CHANCE;
+                if let Some(ev) = self.start_bash(b, want_power, w) {
+                    log::debug!("{} bashes back from its guard", self.ref_id);
+                    return Some(ev);
+                }
+                // Short of stamina: keep the guard up.
+                if let Some(c) = self.combat.as_mut() {
+                    c.guard = 0.5;
+                    c.guard_shown = true;
+                }
+                if let Some(g) = self.graph.as_mut() {
+                    g.set_variable("IsBlocking", 1.0);
+                }
+            }
+            let Some(c) = self.combat.as_mut() else { return None };
             // Guard up: stand facing the target (the engine lowers it). Ask the
             // graph until it takes it.
             if !c.guard_shown {
@@ -522,9 +614,21 @@ impl ActorRuntime {
         self.state = State::Idle(1.0);
         let cooldown = c.cooldown;
         let target_guarding = c.target_guarding;
+        let bash = c.bash.filter(|b| dist <= b.reach * self.scale);
         let off = self.turn_towards(to.normalize_or_zero(), dt).abs();
         if cooldown > 0.0 || off > 0.35 || attacks.is_empty() {
             return None;
+        }
+        // A bash, as readily as its combat style bashes: mostly to break a
+        // raised guard.
+        if let Some(b) = bash {
+            let chance = self.stats.bash * if target_guarding { BASH_VS_GUARD } else { BASH_CHANCE };
+            if uniform(w.rand, 0.0, 1.0) < chance {
+                let want_power = uniform(w.rand, 0.0, 1.0) < self.stats.offensive * POWER_ATTACK_CHANCE;
+                if let Some(ev) = self.start_bash(b, want_power, w) {
+                    return Some(ev);
+                }
+            }
         }
         // A power attack now and then, as offensive as its combat style (more or
         // less so against a raised guard) and if it has the stamina for one, else
@@ -539,16 +643,7 @@ impl ActorRuntime {
             return None;
         }
         let pool = if kind.is_empty() { &attacks } else { &kind };
-        let total: f32 = pool.iter().map(|a| a.1).sum();
-        let mut roll = uniform(w.rand, 0.0, total);
-        let mut pick = pool[0].0;
-        for (i, ch) in pool {
-            if roll < *ch {
-                pick = *i;
-                break;
-            }
-            roll -= ch;
-        }
+        let pick = pick_weighted(pool, w)?;
         let power = is_power(pick);
         let cost = if power { cost(pick) } else { 0.0 };
         let c = self.combat.as_mut()?;
@@ -560,6 +655,19 @@ impl ActorRuntime {
         c.cooldown = SWING_TIME + uniform(w.rand, 0.3, 1.4) + if power { uniform(w.rand, 0.5, 1.0) } else { 0.0 };
         Some(self.stats.attacks[pick].event.clone())
     }
+}
+
+/// One of `pool` (index, chance) by their chances.
+fn pick_weighted(pool: &[(usize, f32)], w: &mut World) -> Option<usize> {
+    let total: f32 = pool.iter().map(|a| a.1).sum();
+    let mut roll = uniform(w.rand, 0.0, total);
+    for &(i, ch) in pool {
+        if roll < ch {
+            return Some(i);
+        }
+        roll -= ch;
+    }
+    pool.last().map(|a| a.0)
 }
 
 /// A swing at its hit frame: who swung (with which attack) at whom, from where.
@@ -737,8 +845,12 @@ impl Engine {
         for s in swings {
             let Some(a) = self.actor_cells.get(&s.attacker).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == s.attacker)) else { continue };
             let attack = s.attack.and_then(|i| a.stats.attacks.get(i)).cloned();
-            let damage = self.attack_damage(a, attack.as_ref());
-            let reach = a.reach();
+            let bash = attack.as_ref().is_some_and(|x| x.flags & ATK_BASH != 0);
+            let (damage, reach) = if bash {
+                (self.bash_damage(s.attacker, a.stats.block_skill) * attack.as_ref().map_or(1.0, |x| x.damage_mult), self.combat_settings().bash_reach * a.scale)
+            } else {
+                (self.attack_damage(a, attack.as_ref()), a.reach())
+            };
             let strike_angle = attack.as_ref().map_or(35.0, |x| x.strike_angle);
             let stagger = attack.as_ref().map_or(0.0, |x| x.stagger);
             let target_pos = if s.target == PLAYER_REF { Some(self.player.position - Vec3::Z * 60.0) } else { self.actor_pose(s.target).map(|p| p.0) };
@@ -752,7 +864,11 @@ impl Engine {
                 continue;
             }
             let power = attack.as_ref().is_some_and(|x| x.flags & ATK_POWER != 0);
-            self.hit(s.target, s.attacker, damage, power, stagger);
+            if bash {
+                self.bash_hit(s.target, s.attacker, damage, power, stagger);
+            } else {
+                self.hit(s.target, s.attacker, damage, power, stagger);
+            }
         }
     }
 
@@ -783,6 +899,39 @@ impl Engine {
             }
         }
         self.damage(target, damage, Some(attacker), stagger);
+    }
+
+    /// A bash landing: armor takes its share, but no guard stops it; it breaks
+    /// an actor's guard, staggers the target (harder for a power bash) and cuts short
+    /// the swing it was making.
+    pub(crate) fn bash_hit(&mut self, target: FormId, attacker: FormId, damage: f32, power: bool, stagger: f32) {
+        let damage = self.after_armor(target, damage);
+        log::info!("{attacker} {} {target} for {damage:.1}", if power { "power bashes" } else { "bashes" });
+        if let Some(a) = self.actor_mut(target) {
+            a.set_guard(0.0);
+            if let Some(c) = a.combat.as_mut().filter(|c| c.swinging()) {
+                log::debug!("{target}'s swing is cut short");
+                c.swing = 0.0;
+                c.struck = true;
+                c.cost = 0.0;
+            }
+        }
+        self.damage(target, damage, Some(attacker), stagger.max(0.25));
+    }
+
+    /// What a bash by `actor` (or the player) strikes for, before the attack's
+    /// multiplier: its shield's rating, else its weapon's damage, times a share
+    /// growing with block skill from `fShieldBashMin` / `fWeaponBashMin` to the
+    /// matching max (the game settings' names suggest the rule; the game's own
+    /// formula isn't documented). Nothing without either.
+    pub(crate) fn bash_damage(&self, actor: FormId, block_skill: f32) -> f32 {
+        let set = self.combat_settings();
+        let t = (block_skill / 100.0).clamp(0.0, 1.0);
+        if let Some(rating) = self.shield_rating(actor) {
+            let max = if actor == PLAYER_REF { set.shield_bash_pc_max } else { set.shield_bash_max };
+            return rating * (set.shield_bash_min + (max - set.shield_bash_min) * t);
+        }
+        self.weapon_base(actor) * (set.weapon_bash_min + (set.weapon_bash_max - set.weapon_bash_min) * t)
     }
 
     /// Armor and block game settings.
@@ -860,6 +1009,35 @@ impl Engine {
     /// they lower it after a while.
     pub(crate) fn update_guards(&mut self, dt: f32, started: &[(FormId, FormId)]) {
         let set = self.combat_settings();
+        // Who can bash, and what it costs them.
+        let bashers: Vec<(FormId, Option<Bash>)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| a.combat.is_some())
+            .map(|a| (a.ref_id, self.can_bash(a).then_some(Bash { cost: [set.bash_stamina, set.power_bash_stamina], reach: set.bash_reach })))
+            .collect();
+        for (actor, bash) in bashers {
+            if let Some(c) = self.actor_mut(actor).and_then(|a| a.combat.as_mut()) {
+                c.bash = bash;
+            }
+        }
+        // A swing started at a raised guard: bash it now and then (as the combat
+        // style's bash attack / bash power attack multipliers have it).
+        for &(attacker, target) in started {
+            let Some(swing) = self.actor_ref(attacker).and_then(|a| a.combat.as_ref()?.attack.and_then(|i| a.stats.attacks.get(i))).map(|x| x.flags) else { continue };
+            let Some(a) = self.actor_ref(target).filter(|a| a.guarding() && a.combat.as_ref().is_some_and(|c| c.bash.is_some())) else { continue };
+            if swing & ATK_BASH != 0 {
+                continue;
+            }
+            let chance = if swing & ATK_POWER != 0 { a.stats.bash_vs_power } else { a.stats.bash_vs_attack };
+            let roll = (self.rand() % 10_000) as f32 / 10_000.0;
+            if roll < chance
+                && let Some(c) = self.actor_mut(target).and_then(|a| a.combat.as_mut())
+            {
+                c.counter = true;
+            }
+        }
         let mut want: Vec<(FormId, f32)> = Vec::new();
         for &(attacker, target) in started {
             let Some(a) = self.actor_ref(target).filter(|a| a.combat.as_ref().is_some_and(|c| c.guard <= 0.0 && !c.swinging())) else { continue };
@@ -933,6 +1111,15 @@ impl Engine {
             }
             None => false,
         }
+    }
+
+    /// Whether an actor can bash: a humanoid with a shield (not a torch) or a
+    /// melee weapon out.
+    fn can_bash(&self, a: &ActorRuntime) -> bool {
+        if a.dead || a.bleeding.is_some() || !a.graph.as_ref().is_some_and(|g| g.project().humanoid()) {
+            return false;
+        }
+        (self.shield_rating(a.ref_id).is_some() && a.torch.is_none()) || (a.weapon_out && a.weapon_reach > 0.0)
     }
 
     /// How likely an actor is to block a blow: humanoids with a shield, or a
@@ -1104,7 +1291,41 @@ impl Engine {
     /// The attack button went down: a power attack if it is held long enough
     /// (`update_player_attack`), else a basic one when it comes up.
     pub fn player_attack_press(&mut self) {
+        if self.player_blocking {
+            self.player_bash();
+            return;
+        }
         self.player_attack_held = Some(0.0);
+    }
+
+    /// Attacking with the guard up: a bash at whatever actor is in front within
+    /// bash reach, with a shield or a weapon and the stamina for it (power bashes
+    /// need a perk the player doesn't have yet).
+    pub fn player_bash(&mut self) {
+        if self.player_dead() || self.conversation.is_some() {
+            return;
+        }
+        let set = self.combat_settings();
+        if self.shield_rating(PLAYER_REF).is_none() && self.player_weapon().is_none() {
+            return;
+        }
+        let stats = self.player_stats();
+        let Some(attack) = stats.attacks.iter().find(|a| a.flags & ATK_BASH != 0 && a.flags & ATK_POWER == 0) else { return };
+        let cost = set.bash_stamina * attack.stamina_mult;
+        if self.player_stamina < cost {
+            log::debug!("player hasn't the stamina to bash ({:.0} / {cost:.0})", self.player_stamina);
+            return;
+        }
+        self.spend_stamina(PLAYER_REF, cost);
+        let skill = npc_field(&self.lo, FormId(0x7), b"DNAM", 0x2).and_then(|d| d.get(3).copied()).unwrap_or(15) as f32;
+        let damage = self.bash_damage(PLAYER_REF, skill) * attack.damage_mult;
+        let hit = self.physics.raycast(self.camera.position, self.camera.forward(), set.bash_reach + 40.0);
+        if let Some((_, Some(r))) = hit
+            && self.lo.tag_of(r).map(|t| t.0) == Some(*b"ACHR")
+            && !self.is_dead(r)
+        {
+            self.bash_hit(r, PLAYER_REF, damage, false, attack.stagger);
+        }
     }
 
     pub fn player_attack_release(&mut self) {
@@ -1244,6 +1465,14 @@ impl Engine {
             stats.block_skill,
             stats.defensive,
             self.actor_ref(actor).is_some_and(|a| a.guarding())
+        ));
+        let bash = self.actor_ref(actor).is_some_and(|a| self.can_bash(a));
+        out.push(format!(
+            "bash x{:.2} (vs attack {:.2}, vs power attack {:.2}), can bash {bash} for {:.1}",
+            stats.bash,
+            stats.bash_vs_attack,
+            stats.bash_vs_power,
+            self.bash_damage(actor, stats.block_skill)
         ));
         let p = self.protection(actor);
         out.push(format!(
