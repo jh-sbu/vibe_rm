@@ -39,6 +39,10 @@ const MAX_SANDBOX_PATH: f32 = 6000.0;
 const MAX_TRAVEL_PATH: f32 = 30_000.0;
 /// How far from a sleep / sit location to look for a bed or chair.
 const FURNITURE_SEARCH: f32 = 768.0;
+/// Standing actors facing someone turn once they are this far off (radians), and
+/// stop within the second.
+const FACE_TURN_START: f32 = 0.6;
+const FACE_TURN_STOP: f32 = 0.05;
 
 /// Where and how the current package wants the actor to be.
 #[derive(Debug, Clone, Copy)]
@@ -58,6 +62,8 @@ pub struct Goal {
     pub follow_radius: (f32, f32),
     /// Escort: how far behind the escorted actor may fall before the escort waits.
     pub escort_wait: f32,
+    /// Escort: run while the escorted actor is this far ahead.
+    pub escort_run: f32,
     pub gait: package::Gait,
     pub sneak: bool,
 }
@@ -76,6 +82,7 @@ impl Goal {
             start_nearest: false,
             follow_radius: (0.0, 0.0),
             escort_wait: 0.0,
+            escort_run: 0.0,
             gait: package::Gait::Walk,
             sneak: false,
         }
@@ -193,6 +200,12 @@ pub struct World<'a> {
     pub rand: &'a mut dyn FnMut() -> u64,
 }
 
+/// Signed angle (radians, -pi..pi) to turn from `heading` to face `dir`.
+fn angle_to(heading: f32, dir: Vec3) -> f32 {
+    let d = (dir.x.atan2(dir.y) - heading).rem_euclid(std::f32::consts::TAU);
+    if d > std::f32::consts::PI { d - std::f32::consts::TAU } else { d }
+}
+
 fn path_length(from: Vec3, path: &[Vec3]) -> f32 {
     std::iter::once(&from).chain(path).zip(path).map(|(a, b)| a.distance(*b)).sum()
 }
@@ -262,6 +275,11 @@ pub struct ActorRuntime {
     pub look_at: Option<Vec3>,
     /// The goal was set by hand (console `travel`): packages leave it alone.
     pinned: bool,
+    /// Running whatever the package's gait (an escort fallen behind).
+    hurry: bool,
+    /// Whom to face while standing (an escort waiting, a follower in range), and
+    /// whether it is turning to them.
+    face: Option<(FormId, bool)>,
     /// The weapon is in hand (between the graph's `weaponDraw` and `weaponSheathe`),
     /// and whether that changed this frame.
     pub(crate) weapon_out: bool,
@@ -386,6 +404,8 @@ impl ActorRuntime {
             sneaking: false,
             look_at: None,
             pinned: false,
+            hurry: false,
+            face: None,
             out_of_furniture: false,
             patrol: None,
             state: State::Idle(1.0 + stagger),
@@ -440,6 +460,7 @@ impl ActorRuntime {
 
     /// The package changed: get up (if in furniture) or stop, then plan anew.
     pub fn interrupt(&mut self, furniture: &mut FurnitureWorld) {
+        self.face = None;
         if self.in_furniture() {
             self.leave = true;
         } else {
@@ -455,12 +476,29 @@ impl ActorRuntime {
         }
     }
 
-    fn turn_towards(&mut self, dir: Vec3, dt: f32) -> f32 {
-        let want = dir.x.atan2(dir.y);
-        let mut d = (want - self.heading).rem_euclid(std::f32::consts::TAU);
-        if d > std::f32::consts::PI {
-            d -= std::f32::consts::TAU;
+    /// Face `target` while standing, carrying on a turn already under way (`was`).
+    fn face_towards(&mut self, target: Option<FormId>, was: Option<(FormId, bool)>) {
+        self.face = target.map(|t| (t, was.is_some_and(|(f, turning)| f == t && turning)));
+    }
+
+    /// Standing: turn to whom it waits for once they are well off to one side,
+    /// until facing them.
+    fn face_target(&mut self, w: &World, dt: f32) {
+        let Some((id, turning)) = self.face else { return };
+        let Some(&p) = w.targets.get(&id) else { return };
+        let dir = (p - self.pos).truncate();
+        if dir.length() < 1.0 {
+            return;
         }
+        let off = angle_to(self.heading, dir.extend(0.0)).abs();
+        if turning || off > FACE_TURN_START {
+            let remaining = self.turn_towards(dir.normalize().extend(0.0), dt);
+            self.face = Some((id, remaining.abs() > FACE_TURN_STOP));
+        }
+    }
+
+    fn turn_towards(&mut self, dir: Vec3, dt: f32) -> f32 {
+        let d = angle_to(self.heading, dir);
         let rate = self.turn_rate();
         let step = d.clamp(-rate * dt, rate * dt);
         self.heading += step;
@@ -576,6 +614,7 @@ impl ActorRuntime {
                 self.speed = 0.0;
                 *t -= dt;
                 if *t > 0.0 {
+                    self.face_target(w, dt);
                     return false;
                 }
                 self.plan(w);
@@ -738,6 +777,8 @@ impl ActorRuntime {
         // VRM_AI_NO_SNAP: walk into furniture even on cell load (to watch enter animations).
         let fresh = std::mem::take(&mut self.fresh) && std::env::var_os("VRM_AI_NO_SNAP").is_none();
         self.give_up_seat(w.furniture);
+        self.hurry = false;
+        let face = self.face.take();
         // Actors standing about now and then play one of their idles first
         // (creatures more often: they have no furniture to use).
         let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
@@ -774,6 +815,7 @@ impl ActorRuntime {
                         Some(t + back)
                     }
                     Some(_) => {
+                        self.face_towards(goal.target, face);
                         self.state = State::Idle(0.5);
                         return;
                     }
@@ -783,21 +825,23 @@ impl ActorRuntime {
             Behaviour::Escort => {
                 let near = goal.radius.max(96.0);
                 let left = self.pos.truncate().distance(goal.centre.truncate());
+                let t = goal.target.and_then(|t| w.targets.get(&t).copied());
                 // Behind: too far off and no nearer the destination (one gone on ahead
                 // isn't waited for).
-                let behind = goal
-                    .target
-                    .and_then(|t| w.targets.get(&t))
-                    .filter(|t| t.truncate().distance(goal.centre.truncate()) > left)
-                    .map(|t| self.pos.distance(*t));
+                let ahead = t.is_some_and(|t| t.truncate().distance(goal.centre.truncate()) < left);
+                let apart = t.map_or(0.0, |t| self.pos.distance(t));
                 if left <= near {
+                    self.face_towards(goal.target, face);
                     None
-                } else if behind.is_some_and(|d| d > goal.escort_wait) {
-                    // Wait for the escorted actor to catch up.
-                    log::debug!("{} waiting for {:?} ({:.0} behind)", self.ref_id, goal.target, behind.unwrap_or_default());
+                } else if !ahead && t.is_some() && apart > goal.escort_wait {
+                    // Wait for the escorted actor to catch up, facing them.
+                    log::debug!("{} waiting for {:?} ({apart:.0} behind)", self.ref_id, goal.target);
+                    self.face_towards(goal.target, face);
                     self.state = State::Idle(0.5);
                     return;
                 } else {
+                    // Run to catch up with one gone on ahead ("Run If Behind Distance").
+                    self.hurry = ahead && apart > goal.escort_run;
                     Some(goal.centre)
                 }
             }
@@ -828,7 +872,7 @@ impl ActorRuntime {
                     self.state = State::Idle(uniform(w.rand, 10.0, 20.0));
                     return;
                 }
-                log::debug!("{} walking {:.0} units via {} points ({:?})", self.ref_id, len, path.len(), goal.behaviour);
+                log::debug!("{} walking {:.0} units via {} points ({:?}{})", self.ref_id, len, path.len(), goal.behaviour, if self.hurry { ", running" } else { "" });
                 let mut budget = len / WALK_SPEED * 2.5 + 5.0;
                 // Look back at the target now and then.
                 if matches!(goal.behaviour, Behaviour::Follow | Behaviour::Escort) {
@@ -1089,6 +1133,9 @@ impl ActorRuntime {
             return self.sneak_moves.map_or(walk * 0.75, |(m, _)| if gait == package::Gait::Run { m.run } else { m.walk });
         }
         let run = self.moves.map(|(m, _)| m.run).filter(|r| *r > walk).unwrap_or(walk * 3.0);
+        if self.hurry {
+            return run;
+        }
         match gait {
             package::Gait::Walk => walk,
             package::Gait::FastWalk => walk + (run - walk) * 0.25,
@@ -1500,12 +1547,13 @@ impl Engine {
     }
 
     /// Have an actor lead `target` to `to` (an Escort package's procedure), waiting
-    /// whenever the target is more than `wait` behind.
-    pub fn escort(&mut self, actor: FormId, target: FormId, to: Vec3, wait: f32) -> bool {
+    /// whenever the target is more than `wait` behind and running to catch up when it
+    /// is more than `run` ahead.
+    pub fn escort(&mut self, actor: FormId, target: FormId, to: Vec3, wait: f32, run: f32) -> bool {
         let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
         let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
         a.interrupt(&mut self.furniture);
-        a.goal = Some(Goal { behaviour: Behaviour::Escort, target: Some(target), escort_wait: wait, ..Goal::travel(to) });
+        a.goal = Some(Goal { behaviour: Behaviour::Escort, target: Some(target), escort_wait: wait, escort_run: run, ..Goal::travel(to) });
         a.pinned = true;
         true
     }
@@ -1673,6 +1721,7 @@ impl Engine {
                         start_nearest: p.start_nearest,
                         follow_radius: p.follow_radius,
                         escort_wait: p.escort_wait,
+                        escort_run: p.escort_run,
                         gait: p.gait,
                         sneak: p.sneak,
                     }
