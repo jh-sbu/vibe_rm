@@ -22,6 +22,8 @@ pub struct ActorDesc {
     pub inventory: super::inventory::Inventory,
     /// Its race (from its template when that gives its traits).
     pub race: FormId,
+    /// The footstep set of what it wears.
+    pub footsteps: Option<FormId>,
 }
 
 fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
@@ -257,26 +259,52 @@ fn race_behavior(lo: &LoadOrder, race: FormId, female: bool) -> Option<String> {
     found
 }
 
-/// Armor addon models for an armor on a given race: (model path, biped slot mask).
-fn armor_models(lo: &LoadOrder, armo: FormId, race: FormId, female: bool) -> Vec<(String, u32)> {
+/// The addons (ARMA) of an armor that a race wears.
+fn race_addons<'a>(lo: &'a LoadOrder, armo: FormId, race: FormId) -> Vec<LoadedRecord<'a>> {
     let Some(rec) = lo.get(armo) else { return Vec::new() };
     if rec.tag().0 != *b"ARMO" {
         return Vec::new();
     }
-    let mut out = Vec::new();
     let mut armor_race = FormId::NULL;
     if let Some(d) = rec.get(b"RNAM") {
         armor_race = fid_at(&rec, d);
     }
     let addons: Vec<FormId> = rec.subrecords().filter(|s| s.tag.0 == *b"MODL" && s.data.len() == 4).map(|s| rec.fid(s.form_id(0))).collect();
-    for aa in addons {
-        let Some(a) = lo.get(aa) else { continue };
-        let primary = a.get(b"RNAM").map(|d| fid_at(&a, d)).unwrap_or_default();
-        let extra: Vec<FormId> = a.subrecords().filter(|s| s.tag.0 == *b"MODL" && s.data.len() == 4).map(|s| a.fid(s.form_id(0))).collect();
-        let matches = primary == race || extra.contains(&race) || (primary == armor_race && extra.is_empty() && race == armor_race);
-        if !matches {
-            continue;
+    addons
+        .into_iter()
+        .filter_map(|aa| lo.get(aa))
+        .filter(|a| {
+            let primary = a.get(b"RNAM").map(|d| fid_at(a, d)).unwrap_or_default();
+            let extra: Vec<FormId> = a.subrecords().filter(|s| s.tag.0 == *b"MODL" && s.data.len() == 4).map(|s| a.fid(s.form_id(0))).collect();
+            primary == race || extra.contains(&race) || (primary == armor_race && extra.is_empty() && race == armor_race)
+        })
+        .collect()
+}
+
+/// The footstep set (FSTS) of what an actor wears: the addon on its feet (biped
+/// slot 37) that has one, else the first that does (creatures' skins), the worn
+/// armor before the skin.
+pub fn footstep_set(lo: &LoadOrder, worn: &[FormId], skin: FormId, race: FormId) -> Option<FormId> {
+    const FEET: u32 = 1 << 7;
+    let mut first = None;
+    for &armo in worn.iter().chain([&skin]) {
+        for a in race_addons(lo, armo, race) {
+            let Some(d) = a.get(b"SNDD") else { continue };
+            let set = fid_at(&a, d);
+            let slots = super::inventory::armor_slots(&a);
+            if slots & FEET != 0 {
+                return Some(set);
+            }
+            first.get_or_insert(set);
         }
+    }
+    first
+}
+
+/// Armor addon models for an armor on a given race: (model path, biped slot mask).
+fn armor_models(lo: &LoadOrder, armo: FormId, race: FormId, female: bool) -> Vec<(String, u32)> {
+    let mut out = Vec::new();
+    for a in race_addons(lo, armo, race) {
         let slots = a.get(b"BOD2").map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap())).unwrap_or(0);
         let model = if female { a.get(b"MOD3").or_else(|| a.get(b"MOD2")) } else { a.get(b"MOD2").or_else(|| a.get(b"MOD3")) };
         if let Some(m) = model {
@@ -377,5 +405,6 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
     let scale = r.scale * traits.height * race_height;
     let transform = Mat4::from_scale_rotation_translation(glam::Vec3::splat(scale), r.rotation_quat(), r.position);
     let behavior = race_behavior(lo, traits.race, traits.female);
-    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female, behavior, inventory, race: traits.race })
+    let footsteps = footstep_set(lo, &inventory.equipped, skin, traits.race);
+    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female, behavior, inventory, race: traits.race, footsteps })
 }

@@ -73,7 +73,7 @@ toggles actor AI).
 - `crates/nif`: NIF model reader
 - `crates/vfs`: virtual file system (loose files over archives)
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
-  (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`,
+  (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`, `nif-materials`, `fsts`,
   `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, ...)
 - `src/`: the engine (renderer, world, app)
 

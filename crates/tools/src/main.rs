@@ -161,6 +161,69 @@ fn main() -> Result<()> {
                 println!("example {k}: {v}");
             }
         }
+        Some("fsts") => {
+            // fsts <data dir> <footstep set>: its groups (walk, run, sprint, sneak,
+            // swim): each footstep's tag and impact data set.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let id = match u32::from_str_radix(&args[2], 16) {
+                Ok(v) if args[2].len() == 8 => esp::FormId(v),
+                _ => lo.find_editor_id(&args[2]).context("editor id not found")?,
+            };
+            let rec = lo.get(id).context("record not found")?;
+            let fid = |r: &esp::LoadedRecord<'_>, d: &[u8]| r.fid(esp::FormId(u32::from_le_bytes(d[..4].try_into().unwrap())));
+            let counts: Vec<usize> = rec.get(b"XCNT").context("no XCNT")?.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize).collect();
+            let steps: Vec<esp::FormId> = rec.get(b"DATA").context("no DATA")?.chunks_exact(4).map(|c| fid(&rec, c)).collect();
+            // The counts run walk to swim; the footsteps are stored swim first.
+            let mut next = steps.into_iter();
+            for (g, n) in ["walk", "run", "sprint", "sneak", "swim"].iter().zip(counts).rev() {
+                println!("{g}:");
+                for s in next.by_ref().take(n) {
+                    let Some(st) = lo.get(s) else { continue };
+                    let tag = st.get(b"ANAM").map(esp::decode_zstring).unwrap_or_default();
+                    let ipds = st.get(b"DATA").map(|d| fid(&st, d)).unwrap_or_default();
+                    let ipds_name = lo.get(ipds).and_then(|r| r.editor_id()).unwrap_or_default();
+                    println!("  {s} {:<40} {tag:<16} {ipds} {ipds_name}", st.editor_id().unwrap_or_default());
+                }
+            }
+        }
+        Some("nif-materials") => {
+            // nif-materials <bsa>...: Havok materials across the archives' collision
+            // shapes (triangles for meshes, else shapes), with a model using each.
+            use std::collections::BTreeMap;
+            let mut counts: BTreeMap<u32, (usize, String)> = BTreeMap::new();
+            for path in &args[1..] {
+                let a = bsa::Archive::open(path)?;
+                for p in a.paths().filter(|p| p.ends_with(".nif")).map(str::to_owned).collect::<Vec<_>>() {
+                    let Ok(n) = nif::Nif::parse(&a.read(&p)?.unwrap()) else { continue };
+                    let mut add = |m: u32, k: usize| {
+                        let e = counts.entry(m).or_insert_with(|| (0, p.clone()));
+                        e.0 += k;
+                    };
+                    for b in &n.blocks {
+                        match b {
+                            nif::Block::Shape(nif::Shape::CompressedMeshData { materials, .. } | nif::Shape::PackedTriStripsData { materials, .. }) => {
+                                materials.iter().for_each(|&m| add(m, 1))
+                            }
+                            nif::Block::Shape(
+                                nif::Shape::NiTriStrips { material, .. }
+                                | nif::Shape::ConvexVertices { material, .. }
+                                | nif::Shape::Box { material, .. }
+                                | nif::Shape::Sphere { material, .. }
+                                | nif::Shape::Capsule { material, .. },
+                            ) => add(*material, 1),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            let mut v: Vec<_> = counts.into_iter().collect();
+            v.sort_by_key(|e| std::cmp::Reverse(e.1.0));
+            for (m, (n, p)) in v {
+                println!("{m:>10} {n:>9} {p}");
+            }
+        }
         Some("nif-dump") => {
             // nif-dump <data dir> <vfs path>
             let data = std::path::Path::new(&args[1]);
@@ -201,7 +264,7 @@ fn main() -> Result<()> {
                         }
                         format!("TriShapeData verts={} tris={} bounds={lo:?}..{hi:?}", d.geometry.positions.len(), d.geometry.triangles.len())
                     }
-                    nif::Block::Shape(nif::Shape::CompressedMeshData { vertices, triangles }) => {
+                    nif::Block::Shape(nif::Shape::CompressedMeshData { vertices, triangles, .. }) => {
                         format!("CompressedMeshData verts={} tris={}", vertices.len(), triangles.len())
                     }
                     other => format!("{other:?}"),

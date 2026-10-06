@@ -4,6 +4,7 @@ pub mod animation;
 pub mod behavior;
 pub mod cell;
 pub mod footik;
+pub mod footsteps;
 pub mod inventory;
 pub mod loader;
 pub mod lookat;
