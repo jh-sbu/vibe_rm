@@ -122,9 +122,21 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             if engine.kill(actor, false) { vec![format!("{actor} killed")] } else { vec![format!("{actor} isn't a living loaded actor")] }
         }
         "damage" => {
-            let [r, amount] = args[..] else { return vec!["usage: damage <actor ref> <health>".into()] };
+            let (r, amount, by) = match args[..] {
+                [r, amount] => (r, amount, None),
+                [r, amount, by] => (r, amount, Some(by)),
+                _ => return vec!["usage: damage <actor ref> <health> [attacker ref | player]".into()],
+            };
             let (Some(actor), Ok(x)) = (engine.resolve_form(r), amount.parse::<f32>()) else { return vec!["bad reference or amount".into()] };
-            engine.damage(actor, x, None, 0.0);
+            let attacker = match by {
+                Some(b) if b.eq_ignore_ascii_case("player") => Some(crate::engine::PLAYER_REF),
+                Some(b) => match engine.resolve_form(b) {
+                    Some(b) => Some(b),
+                    None => return vec![format!("unknown reference '{b}'")],
+                },
+                None => None,
+            };
+            engine.damage(actor, x, attacker, 0.0);
             engine.combat_summary(actor).into_iter().take(1).collect()
         }
         "sgv" => {

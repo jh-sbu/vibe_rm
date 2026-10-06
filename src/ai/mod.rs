@@ -663,6 +663,28 @@ impl ActorRuntime {
         self.state = State::Idle(uniform(w.rand, 2.0, 6.0));
     }
 
+    /// Brought down in furniture (bleeding out): out of it at once, onto the floor
+    /// where getting in began (clear of the bench or chair), without the exit
+    /// animation.
+    pub(crate) fn fall_out_of_furniture(&mut self, furniture: &mut FurnitureWorld, nav: &nav::NavWorld) {
+        if !self.in_furniture() {
+            return;
+        }
+        if let Some(seat) = &self.seat {
+            let (start, _) = seat.enter_start();
+            log::debug!("{} drops out of {}: seat {:?} heading {:.0}, was at {:?}, enter start {:?}", self.ref_id, seat.furniture, seat.pos, seat.heading.to_degrees(), self.pos, start);
+            self.pos = start.with_z(self.pos.z);
+        }
+        self.give_up_seat(furniture);
+        self.leave = false;
+        self.objects_changed |= !self.objects.is_empty();
+        self.objects.clear();
+        if let Some(z) = nav.height_at(self.pos) {
+            self.pos.z = z;
+        }
+        self.state = State::Idle(0.0);
+    }
+
     /// Choose what to do next from the current goal.
     fn plan(&mut self, w: &mut World) {
         // VRM_AI_NO_SNAP: walk into furniture even on cell load (to watch enter animations).
