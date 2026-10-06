@@ -173,6 +173,7 @@ const SF1_MODEL_SPACE_NORMALS: u32 = 4096u;
 const SF2_VERTEX_COLORS: u32 = 32u;
 const SF2_SOFT_LIGHTING: u32 = 33554432u;
 const SF2_BACK_LIGHTING: u32 = 134217728u;
+const SF2_TREE_ANIM: u32 = 536870912u;
 
 fn ambient(n: vec3<f32>) -> vec3<f32> {
     if (frame.amb[0].w < 0.5) {
@@ -224,7 +225,8 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         let tint = textureSample(t_glow, s_main, in.uv).rgb;
         albedo = clamp(albedo * tint * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
     }
-    if ((flags1 & SF1_VERTEX_ALPHA) != 0u) {
+    // Trees keep their wind sway weights in vertex alpha, not opacity.
+    if ((flags1 & SF1_VERTEX_ALPHA) != 0u && (flags2 & SF2_TREE_ANIM) == 0u) {
         alpha *= in.color.a;
     }
 

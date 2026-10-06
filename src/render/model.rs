@@ -220,9 +220,9 @@ pub fn convert_filtered(nif: &Nif, keep: &dyn Fn(&str) -> bool) -> CpuModel {
     for &root in &nif.roots {
         w.walk(nif, Ref(root as i32), Mat4::IDENTITY, 0);
     }
-    // Rigid models hung from a bone (bows) may be skinned to bones of their own:
-    // drawn in their rest pose.
-    if !w.skinned.is_empty() && has_parent_bone(nif) {
+    // Rigid models hung from a bone (bows) and trees (skinned to branch bones for
+    // wind) may be skinned to bones of their own: drawn in their rest pose.
+    if !w.skinned.is_empty() && (has_parent_bone(nif) || is_tree(nif)) {
         let nodes = node_transforms(nif);
         for m in std::mem::take(&mut w.skinned) {
             if let Some(mesh) = rigidify(&m, &nodes) {
@@ -250,6 +250,11 @@ pub fn local_transform(av: &nif::AvObject, depth: u32) -> Mat4 {
 fn has_parent_bone(nif: &Nif) -> bool {
     let Some(root) = nif.roots.first().and_then(|&r| nif.get(Ref(r as i32))).and_then(|b| b.av()) else { return false };
     root.net.extra_data.iter().any(|&e| matches!(nif.get(e), Some(Block::ExtraData(nif::ExtraData::String { name, .. })) if name == "Prn"))
+}
+
+/// The root is a `BSTreeNode` (SpeedTree-exported trees).
+fn is_tree(nif: &Nif) -> bool {
+    matches!(nif.roots.first().and_then(|&r| nif.get(Ref(r as i32))), Some(Block::Node(n)) if n.kind == NodeKind::Tree)
 }
 
 /// Model-space rest transforms of the named nodes.
