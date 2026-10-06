@@ -288,11 +288,12 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("actor", "isdead") => v(Value::Bool(me.is_some_and(|r| e.is_dead(r)))),
         ("actor", "kill") | ("actor", "killessential") | ("actor", "killsilent") => {
             if let Some(r) = me {
-                e.kill_actor(r);
+                e.kill(r, func == "killessential");
             }
             none()
         }
-        ("actor", "isincombat") | ("actor", "isinfaction") | ("actor", "isguard") | ("actor", "isarrested") | ("actor", "isbleedingout") => {
+        ("actor", "isbleedingout") => v(Value::Bool(me.is_some_and(|r| e.is_bleeding_out(r)))),
+        ("actor", "isincombat") | ("actor", "isinfaction") | ("actor", "isguard") | ("actor", "isarrested") => {
             v(Value::Bool(false))
         }
         ("actor", "getactorvalue") | ("actor", "getav") | ("actor", "getbaseactorvalue") | ("actor", "getbaseav") => {

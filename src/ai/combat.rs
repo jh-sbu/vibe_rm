@@ -21,6 +21,9 @@ const COMBAT_DISTANCE: f32 = 141.0;
 /// Seconds an attack keeps the attacker in place.
 const SWING_TIME: f32 = 1.1;
 
+/// Seconds an essential actor stays down before getting back up.
+const BLEEDOUT_TIME: f32 = 12.0;
+
 /// Attack data flags (`ATKD`).
 const ATK_IGNORE_WEAPON: u32 = 0x1;
 const ATK_BASH: u32 = 0x2;
@@ -50,6 +53,9 @@ pub struct CombatStats {
     pub aggression: u8,
     /// Aggro radius behaviour (`AIDT`): attacks the player coming this close.
     pub aggro_attack: Option<f32>,
+    /// Can't die (bleeds out instead); protected ones only die by the player's hand.
+    pub essential: bool,
+    pub protected: bool,
     pub factions: Vec<FormId>,
 }
 
@@ -143,6 +149,10 @@ impl CombatStats {
             }
         }
         // Health from the NPC's stats (DNAM: skills, then health / magicka / stamina).
+        // ACBS flags: 0x2 essential, 0x800 protected.
+        let acbs = npc_field(lo, npc, b"ACBS", 0x80).filter(|d| d.len() >= 4).map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()));
+        s.essential = acbs & 0x2 != 0;
+        s.protected = acbs & 0x800 != 0;
         // Template flags: 0x2 stats, 0x10 AI data.
         if let Some(d) = npc_field(lo, npc, b"DNAM", 0x2).filter(|d| d.len() >= 38) {
             s.max_health += u16::from_le_bytes([d[36], d[37]]) as f32;
@@ -402,12 +412,12 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead)
+            .filter(|a| !a.dead && a.bleeding.is_none())
             .map(|a| (a.ref_id, a.pos, a.stats.factions.clone()))
             .collect();
         let mut lookers: Vec<(FormId, Vec3, Arc<CombatStats>)> = Vec::new();
         for rt in self.cells.values_mut() {
-            for a in rt.actors.iter_mut().filter(|a| !a.dead && a.combat.is_none() && (a.stats.aggression > 0 || a.stats.aggro_attack.is_some())) {
+            for a in rt.actors.iter_mut().filter(|a| !a.dead && a.bleeding.is_none() && a.combat.is_none() && (a.stats.aggression > 0 || a.stats.aggro_attack.is_some())) {
                 a.detect_in -= dt;
                 if a.detect_in <= 0.0 {
                     a.detect_in = DETECT_INTERVAL;
@@ -488,9 +498,17 @@ impl Engine {
         if a.dead {
             return;
         }
+        if a.bleeding.is_some() {
+            return;
+        }
         a.health -= amount;
         log::info!("{target} takes {amount:.0} damage ({:.0} / {:.0})", a.health, a.stats.max_health);
         if a.health <= 0.0 {
+            // Essential actors (and protected ones, but to the player) bleed out.
+            if a.stats.essential || (a.stats.protected && attacker != Some(PLAYER_REF)) {
+                self.start_bleedout(target);
+                return;
+            }
             self.kill_actor(target);
             return;
         }
@@ -507,6 +525,73 @@ impl Engine {
         if let Some(by) = attacker {
             self.start_combat(target, by);
         }
+    }
+
+    /// Bring an actor down to bleed out: it drops, stops fighting, and whoever
+    /// fought it looks for someone else.
+    fn start_bleedout(&mut self, actor: FormId) {
+        let Some(a) = self.actor_cells.get(&actor).and_then(|k| self.cells.get_mut(k)).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return };
+        a.health = 0.0;
+        a.bleeding = Some(BLEEDOUT_TIME);
+        a.combat = None;
+        a.halt(BLEEDOUT_TIME);
+        if let Some(g) = a.graph.as_mut() {
+            g.send_event("bleedOutStart");
+        }
+        log::info!("{actor} bleeds out");
+        let fighting: Vec<FormId> =
+            self.cells.values().flat_map(|rt| &rt.actors).filter(|a| a.combat.as_ref().is_some_and(|c| c.target == actor)).map(|a| a.ref_id).collect();
+        for f in fighting {
+            self.end_combat(f);
+        }
+    }
+
+    /// Papyrus `Kill()` and the console's `kill`: essential actors only bleed out
+    /// (unless `essential_too`, as `KillEssential()`). False if it isn't a living
+    /// loaded actor.
+    pub fn kill(&mut self, actor: FormId, essential_too: bool) -> bool {
+        let essential = self
+            .actor_cells
+            .get(&actor)
+            .and_then(|k| self.cells.get(k))
+            .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor))
+            .filter(|a| !a.dead)
+            .map(|a| a.stats.essential);
+        match essential {
+            Some(true) if !essential_too => {
+                if !self.is_bleeding_out(actor) {
+                    self.start_bleedout(actor);
+                }
+                true
+            }
+            Some(_) => self.kill_actor(actor),
+            None => false,
+        }
+    }
+
+    /// Essential actors bleeding out get back up after a while, with a quarter of
+    /// their health.
+    pub(crate) fn update_bleedouts(&mut self, dt: f32) {
+        for rt in self.cells.values_mut() {
+            for a in rt.actors.iter_mut() {
+                let Some(t) = a.bleeding.as_mut() else { continue };
+                *t -= dt;
+                if *t > 0.0 {
+                    a.halt(1.0);
+                    continue;
+                }
+                a.bleeding = None;
+                a.health = a.stats.max_health * 0.25;
+                if let Some(g) = a.graph.as_mut() {
+                    g.send_event("bleedOutStop");
+                }
+                log::info!("{} recovers", a.ref_id);
+            }
+        }
+    }
+
+    pub fn is_bleeding_out(&self, actor: FormId) -> bool {
+        self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor)).is_some_and(|a| a.bleeding.is_some())
     }
 
     pub fn player_dead(&self) -> bool {
@@ -602,7 +687,16 @@ impl Engine {
         };
         let stats = a.stats.clone();
         let mut out = vec![
-            format!("{actor}: health {:.0} / {:.0}, aggression {}, reach {:.0}, fighting {:?}", a.health, stats.max_health, stats.aggression, a.reach(), a.combat.as_ref().map(|c| c.target)),
+            format!(
+                "{actor}: health {:.0} / {:.0}, aggression {}, reach {:.0}, fighting {:?}{}{}",
+                a.health,
+                stats.max_health,
+                stats.aggression,
+                a.reach(),
+                a.combat.as_ref().map(|c| c.target),
+                if stats.essential { ", essential" } else { "" },
+                if stats.protected { ", protected" } else { "" }
+            ),
             format!("factions {:?}", stats.factions.iter().map(|f| format!("{f} {}", self.lo.get(*f).and_then(|r| r.editor_id().map(|e| e.to_string())).unwrap_or_default())).collect::<Vec<_>>()),
             format!("attacks {:?}", stats.attacks.iter().map(|x| x.event.as_str()).collect::<Vec<_>>()),
         ];

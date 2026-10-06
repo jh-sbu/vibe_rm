@@ -121,6 +121,10 @@ game each piece unlocks.
   multiplier; targets flinch (`recoilStart`) or stagger and fight back; death drops
   the ragdoll. The player has health (HUD bars) and swings at what they look at
   (click). Console `startcombat <a> <b|player>`
+- Bleedout: essential actors (and protected ones, except to the player) brought to zero
+  health bleed out through the graph (`bleedOutStart` / `bleedOutStop`), dropped as
+  targets, and get up after a while with a quarter of their health. Papyrus `Kill()`
+  bleeds them out (`KillEssential()` doesn't), `IsBleedingOut`; console `damage <ref> <n>`
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
@@ -168,7 +172,7 @@ game each piece unlocks.
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
 3. **Game logic**: combat (blocking, bows, power attack timing, armor ratings, crime and
-   assault, bleedout for essential actors, killmoves, the player's own weapon and
+   assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
 4. **UI**: inventory (categories, equipping, item details), map, bars

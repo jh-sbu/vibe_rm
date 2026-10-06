@@ -119,7 +119,13 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         }
         "kill" => {
             let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: kill <actor ref>".into()] };
-            if engine.kill_actor(actor) { vec![format!("{actor} killed")] } else { vec![format!("{actor} isn't a living loaded actor")] }
+            if engine.kill(actor, false) { vec![format!("{actor} killed")] } else { vec![format!("{actor} isn't a living loaded actor")] }
+        }
+        "damage" => {
+            let [r, amount] = args[..] else { return vec!["usage: damage <actor ref> <health>".into()] };
+            let (Some(actor), Ok(x)) = (engine.resolve_form(r), amount.parse::<f32>()) else { return vec!["bad reference or amount".into()] };
+            engine.damage(actor, x, None, 0.0);
+            engine.combat_summary(actor).into_iter().take(1).collect()
         }
         "sgv" => {
             let [r, var, value] = args[..] else { return vec!["usage: sgv <actor ref> <variable> <value>".into()] };
