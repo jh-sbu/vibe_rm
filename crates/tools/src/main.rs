@@ -1025,6 +1025,67 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("alias-packages") => {
+            // alias-packages <data dir>: quest alias packages (ALPC) by procedure template, how
+            // many aliases carry them, and the location (PLDT) / target (PTDA) kinds all
+            // packages use, with whether they have an owner quest (QNAM).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let (mut aliases, mut slots) = (0, 0);
+            let mut templates: std::collections::BTreeMap<String, usize> = Default::default();
+            for &q in lo.ids_of_type(b"QUST") {
+                let Some(rec) = lo.get(q) else { continue };
+                let mut has = false;
+                for sr in rec.subrecords() {
+                    match &sr.tag.0 {
+                        b"ALST" | b"ALLS" => has = false,
+                        b"ALPC" => {
+                            if !has {
+                                aliases += 1;
+                                has = true;
+                            }
+                            slots += 1;
+                            let pack = rec.fid(sr.form_id(0));
+                            let t = lo
+                                .get(pack)
+                                .and_then(|p| p.get(b"PKCU").filter(|d| d.len() >= 8).map(|cu| p.fid(esp::FormId(u32::from_le_bytes(cu[4..8].try_into().unwrap())))))
+                                .and_then(|t| lo.get(t).and_then(|t| t.editor_id()))
+                                .unwrap_or_default();
+                            if std::env::var("SHOW").is_ok_and(|v| v.eq_ignore_ascii_case(&t)) {
+                                println!("{q} {} -> {pack} {}", rec.editor_id().unwrap_or_default(), lo.get(pack).and_then(|p| p.editor_id()).unwrap_or_default());
+                            }
+                            *templates.entry(t).or_default() += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            println!("{slots} alias package slots on {aliases} aliases");
+            let mut v: Vec<_> = templates.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            for (n, c) in v.iter().take(30) {
+                println!("{c:6} {n}");
+            }
+            let (mut pldt, mut ptda): (std::collections::BTreeMap<u32, usize>, std::collections::BTreeMap<u32, usize>) = Default::default();
+            let (mut owned, mut packs) = (0, 0);
+            for &id in lo.ids_of_type(b"PACK") {
+                let Some(rec) = lo.get(id) else { continue };
+                packs += 1;
+                owned += rec.get(b"QNAM").is_some() as usize;
+                for sr in rec.subrecords() {
+                    match &sr.tag.0 {
+                        b"XNAM" => break,
+                        b"PLDT" if sr.data.len() >= 4 => *pldt.entry(sr.u32(0)).or_default() += 1,
+                        b"PTDA" if sr.data.len() >= 4 => *ptda.entry(sr.u32(0)).or_default() += 1,
+                        _ => {}
+                    }
+                }
+            }
+            println!("{packs} packages, {owned} with an owner quest");
+            println!("location kinds {pldt:?}");
+            println!("target kinds {ptda:?}");
+        }
         Some("npc-templates") => {
             // npc-templates <data dir>: NPCs with a template (TPLT), by what it is (NPC_ or a
             // leveled list), how often each "Use ..." flag (ACBS) is set, and ACHRs placing

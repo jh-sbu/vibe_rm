@@ -103,6 +103,8 @@ pub struct Engine {
     pub conversation: Option<crate::dialogue::Conversation>,
     /// Actors the player has had a conversation with (`GetTalkedToPC`).
     pub(crate) talked_to_pc: std::collections::HashSet<FormId>,
+    /// Quest alias packages: who fills which aliases, and their packages.
+    pub(crate) alias_packs: crate::ai::alias::AliasPackages,
     /// Factions' relations to others (`XNAM`), as read.
     pub(crate) faction_relations: crate::ai::combat::FactionRelations,
     /// Armor and block game settings, read on first use.
@@ -217,6 +219,7 @@ impl Engine {
             lockpick: None,
             barks: Default::default(),
             talked_to_pc: Default::default(),
+            alias_packs: Default::default(),
             faction_relations: Default::default(),
             combat_settings: Default::default(),
             player_blocking: false,
@@ -669,8 +672,9 @@ impl Engine {
                 });
             // Desynchronise actors sharing a clip.
             let start = (ai as f32 * 1.618) % 7.0;
-            let packages = crate::ai::package::npc_packages(&self.lo, &d.templates);
+            let packages = self.actor_packages(d.ref_id, d.npc);
             let mut rt = crate::ai::ActorRuntime::new(d.ref_id, d.npc, skel.clone(), d.transform, packages, start * 0.3);
+            rt.alias_gen = self.scripts.alias_gen;
             rt.editor_pos = *editor_pos;
             rt.skeleton_path = d.skeleton.clone();
             rt.female = d.female;
@@ -1845,6 +1849,7 @@ impl Engine {
         drop(rec);
         let aliases = self.fill_aliases(&alias_specs);
         self.scripts.quests.entry(q).or_default().aliases = aliases;
+        self.scripts.alias_gen += 1;
         let mut vm = std::mem::take(&mut self.vm);
         {
             let obj = papyrus::ObjectId::Form(q.0);

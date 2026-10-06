@@ -103,6 +103,8 @@ const PKDT_UNLOCK_ON_CHANGE: u32 = 0x80;
 pub enum Target {
     Ref(FormId),
     LinkedRef(Option<FormId>),
+    /// A reference alias of the package's quest, by alias id.
+    Alias(u32),
     /// Object ids / types, aliases, etc. (not resolved yet).
     Other,
 }
@@ -115,6 +117,8 @@ pub enum LocationKind {
     NearEditor,
     NearLinkedRef(FormId),
     NearSelf,
+    /// Near what fills a reference alias of the package's quest (alias id).
+    NearAlias(u32),
     /// Object ids / types, aliases, etc. Approximated by the editor location.
     Other(u32),
 }
@@ -157,6 +161,9 @@ impl Schedule {
 pub struct Package {
     pub id: FormId,
     pub editor_id: String,
+    /// The quest whose aliases its conditions, locations and targets name (`QNAM`;
+    /// for an alias's package without one, the alias's quest).
+    pub quest: Option<FormId>,
     pub template: String,
     pub behaviour: Behaviour,
     pub schedule: Schedule,
@@ -242,6 +249,7 @@ fn location(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Location> {
         2 => LocationKind::NearCurrent,
         3 => LocationKind::NearEditor,
         6 => LocationKind::NearLinkedRef(if v == 0 { FormId::NULL } else { f }),
+        8 => LocationKind::NearAlias(v),
         12 => LocationKind::NearSelf,
         k => LocationKind::Other(k),
     };
@@ -256,6 +264,7 @@ fn target(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Target> {
     Some(match u32::from_le_bytes(d[0..4].try_into().unwrap()) {
         0 => Target::Ref(rec.fid(FormId(v))),
         3 => Target::LinkedRef((v != 0).then(|| rec.fid(FormId(v)))),
+        4 => Target::Alias(v),
         _ => Target::Other,
     })
 }
@@ -332,8 +341,10 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     let mut template = FormId::NULL;
     let (mut gait, mut sneak) = (Gait::Walk, false);
     let mut pkdt_flags = 0;
+    let mut quest = None;
     for sr in rec.subrecords() {
         match &sr.tag.0 {
+            b"QNAM" if sr.data.len() >= 4 => quest = Some(rec.fid(sr.form_id(0))).filter(|q| !q.is_null()),
             b"PSDT" if sr.data.len() >= 12 => {
                 schedule = Schedule {
                     month: sr.data[0] as i8,
@@ -440,6 +451,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     Some(Package {
         id,
         editor_id,
+        quest,
         behaviour,
         template: template_name,
         schedule,

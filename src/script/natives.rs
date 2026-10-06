@@ -373,6 +373,7 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("quest", "stop") => {
             if let Some(q) = me {
                 e.scripts.quests.entry(q).or_default().running = false;
+                e.scripts.alias_gen += 1;
             }
             none()
         }
@@ -439,6 +440,7 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
                 let q = e.scripts.quests.entry(FormId(*quest)).or_default();
                 if func == "forcerefto" || !q.aliases.contains_key(alias) {
                     q.aliases.insert(*alias, r);
+                    e.scripts.alias_gen += 1;
                 }
             }
             none()
@@ -446,6 +448,7 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("referencealias", "clear") => {
             if let Some(Value::Object(ObjectId::Alias { quest, alias }, _)) = this {
                 e.scripts.quests.entry(FormId(*quest)).or_default().aliases.remove(alias);
+                e.scripts.alias_gen += 1;
             }
             none()
         }

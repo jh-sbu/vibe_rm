@@ -60,6 +60,9 @@ pub struct ScriptState {
     /// Objects that already received OnInit.
     pub initialized: HashSet<ObjectId>,
     pub real_time: f64,
+    /// Bumped whenever a quest starts or stops or an alias fill changes (actors'
+    /// alias packages follow).
+    pub alias_gen: u64,
     /// Set when a native changed enable state; the engine re-syncs visibility.
     pub visibility_dirty: bool,
     pub warned: HashSet<String>,

@@ -91,8 +91,10 @@ impl Engine {
 
     /// The current package of a persistent actor (index into `packages`).
     fn current_package(&self, achr: FormId, packages: &[Package]) -> Option<usize> {
-        let ctx = crate::condition::Context { subject: Some(achr), ..Default::default() };
-        packages.iter().position(|p| p.schedule.matches(self.hour, self.day) && crate::condition::evaluate(self, &p.conditions, ctx))
+        packages.iter().position(|p| {
+            let ctx = crate::condition::Context { subject: Some(achr), quest: p.quest, ..Default::default() };
+            p.schedule.matches(self.hour, self.day) && crate::condition::evaluate(self, &p.conditions, ctx)
+        })
     }
 
     /// Where a package puts an actor, when its location names a place (a reference,
@@ -101,6 +103,7 @@ impl Engine {
         let target = match p.location.map(|l| l.kind) {
             Some(LocationKind::NearReference(r)) => Some(r),
             Some(LocationKind::NearLinkedRef(kw)) => self.linked_ref(achr, (!kw.is_null()).then_some(kw)),
+            Some(LocationKind::NearAlias(alias)) => p.quest.and_then(|q| self.alias_ref(q, alias)),
             Some(LocationKind::InCell(c)) => {
                 return match self.lo.cell(c) {
                     Some(idx) if idx.world.is_none() => Some((Place::Interior(c), Vec3::NAN)),
@@ -150,7 +153,7 @@ impl Engine {
             }
             let Some(editor_place) = self.place_of_ref(a, rf.position) else { continue };
             let Some(npc) = self.base_npc(rf.base) else { continue };
-            let packages = self.npc_packages_cached(a, npc);
+            let packages = self.actor_packages(a, npc);
             let current = self.current_package(a, &packages);
             let (place, pos) = current.and_then(|i| self.package_place(a, &packages[i])).unwrap_or((editor_place, rf.position));
             pending_packages.insert(a, current.map(|i| packages[i].id));
