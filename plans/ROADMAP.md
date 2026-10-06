@@ -202,8 +202,9 @@ game each piece unlocks.
   cycling, and their heaviest child raises the clip triggers
 - Character property bindings: bone switches bound to the character's bone weight
   properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored
-- Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest) and
-  follow / escort packages; SitTarget
+- Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest),
+  follow and escort packages (leading the target to the destination, waiting while it
+  lags more than "Distance to Wait for Follower(s)" behind); SitTarget
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -260,7 +261,8 @@ game each piece unlocks.
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
    - Remaining procedures: force greet, guard, use weapon / magic, dialogue packages;
-     escort waits for its target
+     escorts running to catch up ("Run If Behind Distance"), turning to the one
+     they wait for, riding
    - Off-screen travel between worldspaces; paths round locked animated doors,
      lockpicking perks and skill gain
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI

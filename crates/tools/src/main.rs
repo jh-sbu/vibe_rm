@@ -921,6 +921,7 @@ fn main() -> Result<()> {
         }
         Some("pack-templates") => {
             // pack-templates <data dir>: how many NPC package slots use each procedure template.
+            // SHOW=<template> lists the NPCs and packages using one.
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let lo = esp::LoadOrder::load(data, &names)?;
@@ -932,6 +933,10 @@ fn main() -> Result<()> {
                     let Some(cu) = pack.get(b"PKCU").filter(|d| d.len() >= 8) else { continue };
                     let t = pack.fid(esp::FormId(u32::from_le_bytes(cu[4..8].try_into().unwrap())));
                     let name = lo.get(t).and_then(|r| r.editor_id()).unwrap_or_default();
+                    // SHOW=<template>: the NPCs and packages using it.
+                    if std::env::var("SHOW").is_ok_and(|v| v.eq_ignore_ascii_case(&name)) {
+                        println!("{npc} {} -> {} {}", rec.editor_id().unwrap_or_default(), pack.form_id(), pack.editor_id().unwrap_or_default());
+                    }
                     *count.entry(name).or_default() += 1;
                 }
             }
