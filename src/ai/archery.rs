@@ -214,9 +214,12 @@ impl Engine {
         }
     }
 
-    /// Whether each archer has a clear line from its bow to its target's body
-    /// (nothing in the way but the target).
+    /// Whether each archer has a clear shot at its target's body: nothing but the
+    /// target along the line to it, nor along the edges of the spread cone (a
+    /// shot within the spread could clip what the line just passes).
     pub(crate) fn update_clear_shots(&mut self) {
+        let spread = crate::ai::combat::gmst_f32(&self.lo, "fBowNPCSpreadAngle", 4.0).to_radians();
+        let edge = (spread * 0.5).tan();
         let archers: Vec<(FormId, FormId, Vec3)> = self
             .cells
             .values()
@@ -228,10 +231,18 @@ impl Engine {
             let aim = if target == PLAYER_REF { Some(self.player.position + Vec3::Z * 20.0) } else { self.actor_ref(target).map(|t| t.pos + Vec3::Z * CAPSULE_CENTRE * t.scale) };
             let clear = aim.is_some_and(|aim| {
                 let to = aim - eye;
-                match self.physics.raycast_excluding(eye, to.normalize_or_zero(), to.length(), archer) {
-                    Some((_, owner)) => owner == Some(target),
-                    None => true,
-                }
+                let (dir, dist) = (to.normalize_or_zero(), to.length());
+                let right = dir.cross(Vec3::Z).normalize_or(Vec3::X);
+                let up = right.cross(dir);
+                // The edge rays stop a little short: they pass beside the target,
+                // into the ground around it.
+                [(0.0, 0.0, 1.0), (edge, 0.0, 0.95), (-edge, 0.0, 0.95), (0.0, edge, 0.95), (0.0, -edge, 0.95)].iter().all(|&(r, u, reach)| {
+                    let d = (dir + right * r + up * u).normalize();
+                    match self.physics.raycast_excluding(eye, d, dist * reach, archer) {
+                        Some((_, owner)) => owner == Some(target),
+                        None => true,
+                    }
+                })
             });
             if let Some(c) = self.actor_mut(archer).and_then(|a| a.combat.as_mut()) {
                 c.clear_shot = clear;
@@ -287,6 +298,7 @@ impl Engine {
             let yaw = flat.y.atan2(flat.x) + off() * spread;
             let pitch = pitch + off() * spread;
             let dir = Vec3::new(yaw.cos() * pitch.cos(), yaw.sin() * pitch.cos(), pitch.sin());
+            log::debug!("{shooter} shoots from {from:?} at {aim:?} ({target}), pitch {:.1} deg", pitch.to_degrees());
             self.spawn_arrow(shooter, arrow, from, dir, 1.0, damage);
         }
     }
@@ -318,6 +330,7 @@ impl Engine {
     /// (stuck there a while). The scene's moving instances follow them.
     pub(crate) fn update_projectiles(&mut self, dt: f32) {
         let mut hits: Vec<(FormId, FormId, f32, FormId)> = Vec::new();
+        let mut stuck: Vec<(FormId, Vec3, f32, Option<FormId>, Vec3)> = Vec::new();
         let player = self.player.position;
         let (pr, ph) = (self.physics.player_radius, self.physics.player_half_height);
         for p in self.projectiles.iter_mut() {
@@ -355,7 +368,7 @@ impl Engine {
                             p.stuck = Some(0.0);
                         }
                         None => {
-                            log::debug!("{}'s arrow sticks at {:?}", p.shooter, p.pos);
+                            stuck.push((p.shooter, p.pos, p.age, owner, dir));
                             p.stuck = Some(STUCK_TIME);
                         }
                     }
@@ -365,6 +378,10 @@ impl Engine {
             if p.age > FLIGHT_TIME && p.stuck.is_none() {
                 p.stuck = Some(0.0);
             }
+        }
+        for (shooter, at, age, owner, dir) in stuck {
+            let what = owner.and_then(|o| self.base_of(o).or(Some(o))).and_then(|b| self.lo.get(b)).map(|r| format!("{} {}", r.tag(), r.editor_id().unwrap_or_default()));
+            log::debug!("{shooter}'s arrow sticks at {at:?} after {age:.2}s in {owner:?} ({what:?}), flying {dir:?}");
         }
         // Keep the newest stuck arrows, a while.
         self.projectiles.retain(|p| p.stuck.is_none_or(|t| t > 0.0));
