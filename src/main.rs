@@ -5,6 +5,7 @@ mod condition;
 mod dialogue;
 mod console;
 mod engine;
+mod footsteps;
 mod items;
 mod render;
 mod physics;

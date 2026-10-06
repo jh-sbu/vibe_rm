@@ -266,6 +266,10 @@ pub struct ActorRuntime {
     pub(crate) drawn: bool,
     /// Sounds the graph asked for this frame (`SoundPlay` payloads: SNDR editor ids).
     pub(crate) sounds: Vec<String>,
+    /// The footstep set of what it wears, and its footstep events (lowercase) the
+    /// graph raised this frame.
+    pub(crate) footstep_set: Option<Arc<crate::world::footsteps::FootstepSet>>,
+    pub(crate) footsteps: Vec<String>,
     /// What it fights with, how much health it has left, whom it is fighting,
     /// its weapon's reach (0 unarmed), seconds until it looks for enemies again, and
     /// whether its graph reached a hit frame this update.
@@ -362,6 +366,8 @@ impl ActorRuntime {
             equipment_changed: false,
             drawn: false,
             sounds: Vec::new(),
+            footstep_set: None,
+            footsteps: Vec::new(),
             objects: Vec::new(),
             objects_changed: false,
             leave: false,
@@ -396,6 +402,17 @@ impl ActorRuntime {
 
     pub fn is_walking(&self) -> bool {
         matches!(self.state, State::Walk { .. })
+    }
+
+    /// How it is moving, for its footsteps: sneaking, or running when nearer its
+    /// movement type's run speed than its walk.
+    pub(crate) fn gait(&self) -> crate::world::footsteps::Gait {
+        use crate::world::footsteps::Gait;
+        if self.sneaking {
+            return Gait::Sneak;
+        }
+        let (walk, run) = self.moves.map_or_else(|| (self.walk_speed(), self.walk_speed() * 2.5), |(m, _)| (m.walk, m.run));
+        if self.speed > (walk + run) / 2.0 { Gait::Run } else { Gait::Walk }
     }
 
     /// Getting into, using or getting out of furniture.
@@ -1160,11 +1177,16 @@ impl ActorRuntime {
                 }
                 "hitframe" => self.hit_frame = true,
                 "arrowrelease" => self.arrow_release = true,
+                // Body-part layers running the same clips (humanoids' arms) raise
+                // their triggers again: one sound each.
                 "soundplay" | "npcsoundplay" => {
-                    if let Some(p) = r.payload {
+                    if let Some(p) = r.payload
+                        && !self.sounds.contains(&p)
+                    {
                         self.sounds.push(p);
                     }
                 }
+                _ if !self.footsteps.contains(&e) && self.footstep_set.as_ref().is_some_and(|s| s.has_tag(&e)) => self.footsteps.push(e),
                 _ => {}
             }
         }
@@ -1705,6 +1727,8 @@ impl Engine {
         let mut held = Vec::new();
         let mut equip = Vec::new();
         let mut sounds: Vec<(String, Vec3)> = Vec::new();
+        let mut steps: Vec<crate::footsteps::Step> = Vec::new();
+        let listener = self.camera.position;
         let mut swings: Vec<combat::Swing> = Vec::new();
         // Attacks started this frame (attacker, target): their targets may block.
         let mut started: Vec<(FormId, FormId)> = Vec::new();
@@ -1816,6 +1840,11 @@ impl Engine {
                 for s in a.sounds.drain(..) {
                     sounds.push((s, a.pos + Vec3::Z * 64.0 * a.scale));
                 }
+                if let Some(set) = a.footstep_set.as_ref().filter(|_| a.pos.distance(listener) < crate::footsteps::HEARING) {
+                    let gait = a.gait();
+                    steps.extend(a.footsteps.drain(..).map(|tag| crate::footsteps::Step { tag, gait, at: a.pos, set: set.clone() }));
+                }
+                a.footsteps.clear();
                 if a.is_walking() || matches!(a.state, State::Approach(_) | State::Enter(_) | State::Exit(_) | State::Use(_)) || talking == Some(a.ref_id) {
                     moved.push((a.ref_id, a.pos, a.capsule));
                 }
@@ -1850,6 +1879,9 @@ impl Engine {
         }
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);
+        }
+        for step in &steps {
+            self.play_footstep(step);
         }
         self.play_furniture_idles();
         self.play_standing_meals();

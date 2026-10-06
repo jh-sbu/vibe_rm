@@ -104,7 +104,8 @@ pub(crate) fn constraint(r: &mut Reader, ragdoll: bool) -> Result<Constraint> {
 pub enum Shape {
     MoppBvTree { shape: Ref, scale: f32 },
     CompressedMesh { data: Ref, radius: f32, scale: Vec4 },
-    CompressedMeshData { vertices: Vec<Vec3>, triangles: Vec<[u32; 3]> },
+    /// Triangles with their Havok material (`SKY_HAV_MAT_*`) each.
+    CompressedMeshData { vertices: Vec<Vec3>, triangles: Vec<[u32; 3]>, materials: Vec<u32> },
     ConvexVertices { radius: f32, vertices: Vec<Vec3>, material: u32 },
     Box { radius: f32, half_extents: Vec3, material: u32 },
     Sphere { radius: f32, material: u32 },
@@ -112,8 +113,8 @@ pub enum Shape {
     List { shapes: Vec<Ref>, material: u32 },
     Transform { shape: Ref, transform: Mat4 },
     PackedTriStrips { data: Ref, scale: Vec4 },
-    PackedTriStripsData { vertices: Vec<Vec3>, triangles: Vec<[u32; 3]> },
-    NiTriStrips { strips: Vec<Ref> },
+    PackedTriStripsData { vertices: Vec<Vec3>, triangles: Vec<[u32; 3]>, materials: Vec<u32> },
+    NiTriStrips { strips: Vec<Ref>, material: u32 },
     ConvexList { shapes: Vec<Ref> },
 }
 
@@ -176,7 +177,12 @@ fn compressed_mesh_data(r: &mut Reader) -> Result<Shape> {
         r.skip(n * 4)?;
     }
     let n_chunk_mat = r.u32()? as usize;
-    r.skip(n_chunk_mat * 8)?;
+    let mut chunk_materials = Vec::with_capacity(n_chunk_mat);
+    for _ in 0..n_chunk_mat {
+        chunk_materials.push(r.u32()?);
+        r.u32()?; // filter
+    }
+    let material = |i: u32| chunk_materials.get(i as usize).copied().unwrap_or(0);
     r.u32()?; // named materials
     let n_transforms = r.u32()? as usize;
     let mut transforms = Vec::with_capacity(n_transforms);
@@ -188,20 +194,21 @@ fn compressed_mesh_data(r: &mut Reader) -> Result<Shape> {
     let n_big_verts = r.u32()? as usize;
     let mut vertices = Vec::new();
     let mut triangles = Vec::new();
+    let mut materials = Vec::new();
     for _ in 0..n_big_verts {
         vertices.push(r.vec4()?.truncate());
     }
     let n_big_tris = r.u32()? as usize;
     for _ in 0..n_big_tris {
         let (a, b, c) = (r.u16()? as u32, r.u16()? as u32, r.u16()? as u32);
-        r.u32()?; // material
+        materials.push(material(r.u32()?));
         r.u16()?; // welding
         triangles.push([a, b, c]);
     }
     let n_chunks = r.u32()? as usize;
     for _ in 0..n_chunks {
         let translation = r.vec4()?.truncate();
-        r.u32()?; // material index
+        let chunk_material = material(r.u32()?);
         r.u16()?; // reference
         let transform_index = r.u16()? as usize;
         let nv = r.u32()? as usize;
@@ -247,9 +254,10 @@ fn compressed_mesh_data(r: &mut Reader) -> Result<Shape> {
         for t in idx[off.min(idx.len())..].chunks_exact(3) {
             triangles.push([base + t[0], base + t[1], base + t[2]]);
         }
+        materials.resize(triangles.len(), chunk_material);
     }
     r.u32()?; // convex piece count
-    Ok(Shape::CompressedMeshData { vertices, triangles })
+    Ok(Shape::CompressedMeshData { vertices, triangles, materials })
 }
 
 fn packed_tri_strips_data(r: &mut Reader) -> Result<Shape> {
@@ -266,9 +274,18 @@ fn packed_tri_strips_data(r: &mut Reader) -> Result<Shape> {
     for _ in 0..nv {
         vertices.push(r.vec3()?);
     }
+    // Sub shapes: consecutive vertex ranges, each with its material.
     let nsub = r.u16()? as usize;
-    r.skip(nsub * 12)?;
-    Ok(Shape::PackedTriStripsData { vertices, triangles })
+    let mut subs = Vec::with_capacity(nsub);
+    let mut first = 0u32;
+    for _ in 0..nsub {
+        r.u32()?; // filter
+        let n = r.u32()?;
+        subs.push((first + n, r.u32()?));
+        first += n;
+    }
+    let materials = triangles.iter().map(|t| subs.iter().find(|s| t[0] < s.0).or(subs.last()).map_or(0, |s| s.1)).collect();
+    Ok(Shape::PackedTriStripsData { vertices, triangles, materials })
 }
 
 pub(crate) fn parse_shape(ty: &str, r: &mut Reader) -> Result<Option<Shape>> {
@@ -367,7 +384,7 @@ pub(crate) fn parse_shape(ty: &str, r: &mut Reader) -> Result<Option<Shape>> {
         }
         "hkPackedNiTriStripsData" => packed_tri_strips_data(r)?,
         "bhkNiTriStripsShape" => {
-            r.u32()?; // material
+            let material = r.u32()?;
             r.f32()?; // radius
             r.skip(20)?;
             r.u32()?; // grow by
@@ -375,7 +392,7 @@ pub(crate) fn parse_shape(ty: &str, r: &mut Reader) -> Result<Option<Shape>> {
             let strips = r.ref_list()?;
             let n = r.u32()? as usize;
             r.skip(n * 4)?;
-            Shape::NiTriStrips { strips }
+            Shape::NiTriStrips { strips, material }
         }
         "bhkConvexListShape" => {
             let shapes = r.ref_list()?;

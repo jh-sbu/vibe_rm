@@ -15,6 +15,8 @@ pub struct Layer {
     pub normal: Option<String>,
     /// Opacity per vertex of the quadrant (17x17).
     pub opacity: Vec<f32>,
+    /// The landscape texture (LTEX), if not the default.
+    pub ltex: Option<FormId>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +42,27 @@ impl Land {
     pub fn origin(&self) -> Vec2 {
         Vec2::new(self.x as f32 * CELL_SIZE, self.y as f32 * CELL_SIZE)
     }
+    /// The landscape texture (LTEX) showing most at a point of the cell: the
+    /// nearest vertex's layer that the ones above it cover least.
+    pub fn texture_at(&self, p: Vec2) -> Option<FormId> {
+        let local = ((p - self.origin()) / (CELL_SIZE / 32.0)).round().clamp(Vec2::ZERO, Vec2::splat(32.0));
+        let (gc, gr) = (local.x as usize, local.y as usize);
+        let (qx, qy) = ((gc / 16).min(1), (gr / 16).min(1));
+        let quad = &self.quadrants[qy * 2 + qx];
+        let i = (gr - qy * 16) * QUAD_VERTS + (gc - qx * 16);
+        let mut best = (0.0, None);
+        let mut above = 1.0;
+        for layer in quad.layers.iter().rev() {
+            let op = layer.opacity[i];
+            let shown = op * above;
+            if shown > best.0 {
+                best = (shown, layer.ltex);
+            }
+            above *= 1.0 - op;
+        }
+        best.1
+    }
+
     /// Bilinear height lookup in world coordinates (assumes the point lies in this cell).
     pub fn height_at(&self, p: Vec2) -> f32 {
         let local = (p - self.origin()) / (CELL_SIZE / 32.0);
@@ -149,12 +172,12 @@ pub fn load_land(lo: &LoadOrder, land: FormId, x: i32, y: i32, default_height: f
     };
     for (q, quad) in quadrants.iter_mut().enumerate() {
         let (d, n) = resolve(base[q]);
-        quad.layers.push(Layer { diffuse: d, normal: n, opacity: vec![1.0; QUAD_VERTS * QUAD_VERTS] });
+        quad.layers.push(Layer { diffuse: d, normal: n, opacity: vec![1.0; QUAD_VERTS * QUAD_VERTS], ltex: base[q] });
         let mut layers: Vec<&(usize, u16, FormId, Vec<f32>)> = extra.iter().filter(|e| e.0 == q).collect();
         layers.sort_by_key(|e| e.1);
         for e in layers.into_iter().take(MAX_LAYERS - 1) {
             let (d, n) = resolve(Some(e.2));
-            quad.layers.push(Layer { diffuse: d, normal: n, opacity: e.3.clone() });
+            quad.layers.push(Layer { diffuse: d, normal: n, opacity: e.3.clone(), ltex: Some(e.2) });
         }
     }
     Some(Land { x, y, heights, normals, colors, quadrants })

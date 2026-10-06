@@ -28,7 +28,7 @@ pub(crate) struct CellRuntime {
     /// Navmeshes loaded for this cell.
     navmeshes: Vec<FormId>,
     pub(crate) colliders: Vec<ColliderHandle>,
-    land: Option<Land>,
+    pub(crate) land: Option<Land>,
     lights: Vec<PointLight>,
     pub(crate) doors: Vec<Door>,
     /// Doors and other keyframe-animated objects.
@@ -78,8 +78,10 @@ pub struct Engine {
     pub(crate) rigid_models: HashMap<FormId, Vec<(FormId, String)>>,
     /// How many of `scene.lights` belong to the cells (carried lights follow).
     pub(crate) static_lights: usize,
-    /// Sound descriptors by editor id (`SoundPlay` payloads).
-    sound_descs: HashMap<String, Option<crate::world::sound::SoundDesc>>,
+    /// Sound descriptors (SNDR / SOUN) as resolved.
+    sound_descs: HashMap<FormId, Option<crate::world::sound::SoundDesc>>,
+    /// Footstep sets, impacts and ground materials; the player's stride.
+    pub(crate) footsteps: crate::footsteps::Footsteps,
     /// Model path -> where a carried light shines from (its `AttachLight` node).
     pub(crate) light_attach: HashMap<String, Vec3>,
     /// What actors and containers carry, by reference (kept across cell loads).
@@ -188,6 +190,7 @@ impl Engine {
             static_lights: 0,
             light_attach: Default::default(),
             sound_descs: Default::default(),
+            footsteps: Default::default(),
             idles: None,
             scripts: Default::default(),
             vm: papyrus::Vm::new(),
@@ -246,15 +249,22 @@ impl Engine {
 
     /// Play a sound descriptor (by editor id) once at a point: one of its files.
     pub fn play_sound_at(&mut self, edid: &str, at: Vec3) {
-        let key = edid.to_ascii_lowercase();
-        if !self.sound_descs.contains_key(&key) {
-            let d = self.lo.find_editor_id(edid).and_then(|f| crate::world::sound::descriptor(&self.lo, &self.vfs, f));
-            if d.is_none() {
-                log::debug!("no sound descriptor {edid}");
-            }
-            self.sound_descs.insert(key.clone(), d);
+        match self.lo.find_editor_id(edid) {
+            Some(f) => self.play_sound(f, at),
+            None => log::debug!("no sound descriptor {edid}"),
         }
-        let Some(desc) = self.sound_descs.get(&key).cloned().flatten() else { return };
+    }
+
+    /// Play a sound descriptor (SNDR, or a SOUN naming one) at a point.
+    pub fn play_sound(&mut self, sound: FormId, at: Vec3) {
+        let desc = self.sound_descs.entry(sound).or_insert_with(|| {
+            let d = crate::world::sound::descriptor(&self.lo, &self.vfs, sound);
+            if d.is_none() {
+                log::debug!("no sound descriptor {sound}");
+            }
+            d
+        });
+        let Some(desc) = desc.clone() else { return };
         let i = (self.rand() % desc.files.len() as u64) as usize;
         if let Some(a) = self.audio.as_mut() {
             a.play(&self.vfs, &desc.files[i], desc.volume, false, Some(at), desc.min_dist, desc.max_dist);
@@ -646,6 +656,8 @@ impl Engine {
                 log::debug!("{} wields bow {bow} (speed {})", d.ref_id, rt.bow_speed);
             }
             rt.stats = std::sync::Arc::new(stats);
+            rt.footstep_set = d.footsteps.and_then(|f| self.footstep_set(f));
+            log::debug!(target: "footsteps", "{} ({}) walks with footstep set {:?}", d.ref_id, d.name, d.footsteps);
             rt.weapon_reach = d
                 .inventory
                 .weapon(&self.lo)
@@ -1215,9 +1227,17 @@ impl Engine {
                 }
                 None => "no owner (terrain?)".into(),
             };
+            let at = origin - Vec3::Z * hit.toi;
+            let material = self
+                .physics
+                .surface_below(at + Vec3::Z, 2.0)
+                .map(|(_, s)| self.surface_material(s, at))
+                .and_then(|m| self.lo.get(m))
+                .and_then(|m| m.editor_id())
+                .unwrap_or_default();
             out.push(format!(
-                "  z {:.1}: {:?} {what}, cell {:?}, bounds {:.0} .. {:.0}{}{}",
-                origin.z - hit.toi,
+                "  z {:.1}: {:?} {what} {material}, cell {:?}, bounds {:.0} .. {:.0}{}{}",
+                at.z,
                 hit.handle.0.into_raw_parts(),
                 cell_of(hit.handle),
                 hit.bounds.0,
@@ -1347,7 +1367,9 @@ impl Engine {
             input.sprint = self.player_sprint(dt);
         }
         self.update_player_attack(dt);
+        let (run, sprint, before) = (input.run, input.sprint, self.player.position);
         self.player.update(&self.physics, &cam, input, dt);
+        self.update_player_footsteps(dt, (self.player.position - before).truncate().length(), run, sprint);
         self.camera.position = self.player.eye();
         self.update_streaming();
         self.update_lod();

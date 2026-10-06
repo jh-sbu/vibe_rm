@@ -1,5 +1,7 @@
 //! Conversion of NIF Havok collision data into physics shapes (game units).
 
+use std::sync::Arc;
+
 use glam::{Mat4, Quat, Vec3};
 use nif::{Block, HAVOK_SCALE, Nif, Ref, Shape};
 use rapier3d::prelude::{Pose, SharedShape};
@@ -13,6 +15,9 @@ pub struct CollisionPart {
     pub dynamic: bool,
     /// The keyframe-animated node this part moves with (a door leaf), if any.
     pub node: Option<String>,
+    /// Havok materials (`SKY_HAV_MAT_*`): one per triangle of a mesh, or one for
+    /// the whole part.
+    pub materials: Arc<[u32]>,
 }
 
 /// Unscaled shape description; kept so instances with a scale can rebuild it.
@@ -99,8 +104,8 @@ fn walk(
     }
 }
 
-fn push(out: &mut CollisionModel, transform: Mat4, shape: ShapeDesc) {
-    out.parts.push(CollisionPart { transform, shape, layer: 0, dynamic: false, node: None });
+fn push(out: &mut CollisionModel, transform: Mat4, shape: ShapeDesc, materials: &[u32]) {
+    out.parts.push(CollisionPart { transform, shape, layer: 0, dynamic: false, node: None, materials: materials.into() });
 }
 
 fn add_shape(nif: &Nif, r: Ref, xf: Mat4, out: &mut CollisionModel, depth: u32) {
@@ -112,40 +117,40 @@ fn add_shape(nif: &Nif, r: Ref, xf: Mat4, out: &mut CollisionModel, depth: u32) 
     match s {
         Shape::MoppBvTree { shape, .. } => add_shape(nif, *shape, xf, out, depth + 1),
         Shape::CompressedMesh { data, .. } => {
-            if let Some(Block::Shape(Shape::CompressedMeshData { vertices, triangles })) = nif.get(*data)
+            if let Some(Block::Shape(Shape::CompressedMeshData { vertices, triangles, materials })) = nif.get(*data)
                 && !triangles.is_empty()
             {
                 let v = vertices.iter().map(|p| *p * h).collect();
-                push(out, xf, ShapeDesc::TriMesh { vertices: v, triangles: triangles.clone() });
+                push(out, xf, ShapeDesc::TriMesh { vertices: v, triangles: triangles.clone() }, materials);
             }
         }
         Shape::PackedTriStrips { data, scale } => {
-            if let Some(Block::Shape(Shape::PackedTriStripsData { vertices, triangles })) = nif.get(*data)
+            if let Some(Block::Shape(Shape::PackedTriStripsData { vertices, triangles, materials })) = nif.get(*data)
                 && !triangles.is_empty()
             {
                 let sc = if scale.x > 0.0 { scale.x } else { 1.0 };
                 let v = vertices.iter().map(|p| *p * h * sc).collect();
-                push(out, xf, ShapeDesc::TriMesh { vertices: v, triangles: triangles.clone() });
+                push(out, xf, ShapeDesc::TriMesh { vertices: v, triangles: triangles.clone() }, materials);
             }
         }
-        Shape::NiTriStrips { strips } => {
+        Shape::NiTriStrips { strips, material } => {
             // Unlike the Havok shapes, NiTriStripsData vertices are already in game units.
             for s in strips {
                 if let Some(Block::TriShapeData(d)) = nif.get(*s) {
                     let v = d.geometry.positions.clone();
                     let t = d.geometry.triangles.iter().map(|t| [t[0] as u32, t[1] as u32, t[2] as u32]).collect();
-                    push(out, xf, ShapeDesc::TriMesh { vertices: v, triangles: t });
+                    push(out, xf, ShapeDesc::TriMesh { vertices: v, triangles: t }, &[*material]);
                 }
             }
         }
-        Shape::ConvexVertices { vertices, .. } => {
+        Shape::ConvexVertices { vertices, material, .. } => {
             if vertices.len() >= 4 {
-                push(out, xf, ShapeDesc::Convex(vertices.iter().map(|p| *p * h).collect()));
+                push(out, xf, ShapeDesc::Convex(vertices.iter().map(|p| *p * h).collect()), &[*material]);
             }
         }
-        Shape::Box { half_extents, .. } => push(out, xf, ShapeDesc::Box(*half_extents * h)),
-        Shape::Sphere { radius, .. } => push(out, xf, ShapeDesc::Sphere(radius * h)),
-        Shape::Capsule { radius, p1, p2, .. } => push(out, xf, ShapeDesc::Capsule(*p1 * h, *p2 * h, radius * h)),
+        Shape::Box { half_extents, material, .. } => push(out, xf, ShapeDesc::Box(*half_extents * h), &[*material]),
+        Shape::Sphere { radius, material } => push(out, xf, ShapeDesc::Sphere(radius * h), &[*material]),
+        Shape::Capsule { radius, p1, p2, material } => push(out, xf, ShapeDesc::Capsule(*p1 * h, *p2 * h, radius * h), &[*material]),
         Shape::List { shapes, .. } | Shape::ConvexList { shapes } => {
             for &c in shapes {
                 add_shape(nif, c, xf, out, depth + 1);

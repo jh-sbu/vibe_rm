@@ -47,6 +47,15 @@ pub struct Ragdoll {
     pub scale: f32,
 }
 
+/// What a collider is made of.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Surface {
+    /// A Havok material (`SKY_HAV_MAT_*`).
+    Havok(u32),
+    /// The landscape: its texture at that point decides.
+    Terrain,
+}
+
 /// A collider found by [`Physics::probe_ray`].
 pub struct ProbeHit {
     pub handle: ColliderHandle,
@@ -66,6 +75,10 @@ pub struct Physics {
     pub owners: HashMap<ColliderHandle, esp::FormId>,
     /// Actors' capsules (not ground to stand on).
     capsules: std::collections::HashSet<ColliderHandle>,
+    /// Havok materials of the world's colliders (per triangle for meshes), and
+    /// the landscape's colliders (whose material is their texture's).
+    materials: HashMap<ColliderHandle, Arc<[u32]>>,
+    terrain: std::collections::HashSet<ColliderHandle>,
     pub player_radius: f32,
     pub player_half_height: f32,
 }
@@ -97,6 +110,8 @@ impl Physics {
             player_shape: SharedShape::capsule_z(player_half_height, player_radius),
             owners: HashMap::new(),
             capsules: Default::default(),
+            materials: HashMap::new(),
+            terrain: Default::default(),
             player_radius,
             player_half_height,
         }
@@ -120,6 +135,7 @@ impl Physics {
             let c = ColliderBuilder::new(shape).position(pose).build();
             let h = self.world.insert_collider(c, None);
             self.owners.insert(h, owner);
+            self.materials.insert(h, part.materials.clone());
             handles.push((h, part.node.clone()));
         }
         handles
@@ -171,6 +187,8 @@ impl Physics {
             self.world.remove_collider(h);
             self.owners.remove(&h);
             self.capsules.remove(&h);
+            self.materials.remove(&h);
+            self.terrain.remove(&h);
         }
     }
 
@@ -197,7 +215,9 @@ impl Physics {
             }
         }
         let shape = SharedShape::trimesh(v, t).ok()?;
-        Some(self.world.insert_collider(ColliderBuilder::new(shape).build(), None))
+        let h = self.world.insert_collider(ColliderBuilder::new(shape).build(), None);
+        self.terrain.insert(h);
+        Some(h)
     }
 
     /// Update the broad phase after colliders were added.
@@ -264,6 +284,24 @@ impl Physics {
         let not_actor = |h: ColliderHandle, _: &Collider| !self.capsules.contains(&h);
         let (_, hit) = self.world.cast_ray_and_get_normal(&ray, max, true, QueryFilter::default().predicate(&not_actor))?;
         Some((hit.time_of_impact, hit.normal))
+    }
+
+    /// What the ground straight below `origin` (within `max`) is made of, ignoring
+    /// actors: the hit distance and the surface.
+    pub fn surface_below(&self, origin: Vec3, max: f32) -> Option<(f32, Surface)> {
+        let ray = Ray::new(origin, -Vec3::Z);
+        let not_actor = |h: ColliderHandle, _: &Collider| !self.capsules.contains(&h);
+        let (h, hit) = self.world.cast_ray_and_get_normal(&ray, max, true, QueryFilter::default().predicate(&not_actor))?;
+        if self.terrain.contains(&h) {
+            return Some((hit.time_of_impact, Surface::Terrain));
+        }
+        let m = self.materials.get(&h)?;
+        // Mesh faces are numbered past the triangle count when hit from behind.
+        let i = match hit.feature {
+            FeatureId::Face(i) if m.len() > 1 => i as usize % m.len(),
+            _ => 0,
+        };
+        Some((hit.time_of_impact, Surface::Havok(*m.get(i)?)))
     }
 
     /// Cast a ray past what `owner` owns (its capsule, its ragdoll), returning

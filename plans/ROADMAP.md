@@ -193,6 +193,13 @@ game each piece unlocks.
   refreshed every 2nd / 4th frame), cast by objects (alpha-tested ones through their
   cutouts), actors, their weapons and the landscape; 3x3 PCF with normal offset.
   Console `tsh`, `VRM_NO_SHADOWS`
+- Footstep sounds: the graph's footstep events (`FootLeft` / `FootRight`, creatures'
+  `FootFront` / `FootBack`...) through the footstep set of what the actor wears on its
+  feet (ARMA `SNDD`, else its skin's) for its gait (walk, run, sneak), the impact
+  data set's sound for the ground below: the collision's Havok material per triangle
+  (material types matched by the CRC-32 of their name, parents for missing pairs)
+  or the landscape texture showing most there (LTEX material). The player steps by
+  stride. Console `probe` shows materials; vrm-tool `nif-materials`
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
@@ -211,9 +218,9 @@ game each piece unlocks.
      the graph is reset (`IdleForceDefaultState`) after the pick-up
    - Delayed state changes (`FLAG_DELAY_STATE_CHANGE`), blending effects' event /
      self-transition modes (`vrm-tool hkb-flags` counts and lists them)
-   - Engine variables and events still missing: combat, first person; footstep sounds
-     (`FootLeft` / `FootRight` by ground material);
+   - Engine variables and events still missing: combat, first person;
      INFO speaker / listener idles; listeners' reactions
+   - Footsteps: water (wading, swimming), jump / land events, the player's sneaking
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
