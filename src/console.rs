@@ -34,6 +34,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sae <ref> <event>     send a behaviour event to an actor".into(),
             "pi <ref> <idle>       play an IDLE record on an actor".into(),
             "lock <ref> [level]    lock a door or container; unlock <ref> unlocks it".into(),
+            "picklock <deg> [secs] while picking: pick at an angle, turn the lock a while".into(),
             "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
             "gstate <ref>          an actor's active behaviour graph states".into(),
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
@@ -73,6 +74,15 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             engine.set_locked(r, lower == "lock");
             let lock = engine.lock_of(r);
             vec![format!("{r}: locked {}, level {:?}, key {:?}", engine.is_locked(r), lock.map(|l| l.level), lock.and_then(|l| l.key))]
+        }
+        "picklock" => {
+            let Some(lp) = engine.lockpick.as_mut() else { return vec!["not picking a lock".into()] };
+            let Some(angle) = args.first().and_then(|a| a.parse::<f32>().ok()) else {
+                return vec![format!("usage: picklock <deg> [secs] (sweet spot {:.1} wide at {:.1})", lp.sweet, lp.centre)];
+            };
+            lp.pick = angle.clamp(-90.0, 90.0);
+            lp.hold = args.get(1).and_then(|a| a.parse::<f32>().ok()).unwrap_or(1.0);
+            vec![format!("pick at {:.1}: the lock turns {:.0}%", lp.pick, lp.most_turn() * 100.0)]
         }
         "door" => {
             let Some(d) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: door <ref>".into()] };

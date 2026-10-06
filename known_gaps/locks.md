@@ -14,6 +14,13 @@ and location pages, CK wiki descriptions) and the game's data files.
 - Package `PKDT` flags 0x40 "At Package Start Unlock Doors" and 0x80 "On Package
   Change Unlock Doors" (UESP *Mod File Format/PACK*). The Sleep templates have
   "Lock Doors?" and "Warn Before Locking?" inputs.
+- Lockpicking (UESP *Skyrim:Lockpicking*): the pick moves along a 180° arc; the
+  sweet spot is `60 × 2^-d × (0.82 + 0.6 × skill / 100)` degrees (d 1 novice .. 5
+  master), partial zones either side `(26 − 4d) × (0.775 + 1.5 × skill / 100)`
+  degrees, where the lock turns part way, more nearer the spot. A pick breaks
+  after 2 / 1 / 0.75 / 0.5 / 0.25 s of strain, × (1 + 0.5 × skill / 100). The
+  settings agree: `fLockpickSkillSweetSpotMult` 0.006, `fPartialPick<Level>`
+  22 / 18 / 14 / 10 / 6, `fLockpickSkillPartialPickBase` 0.775 and `Mult` 0.015.
 - UESP location pages: shops are open (unlocked) by day and locked at night; some
   homes are locked all the time (Sven and Hilde's house, novice lock, key carried by
   both).
@@ -26,7 +33,11 @@ and location pages, CK wiki descriptions) and the game's data files.
 - A load door pair shares its lock, but the player can always leave an interior
   into the open.
 - The player opens a locked door or container with its key in the inventory (it
-  stays unlocked). Otherwise a notification names the lock level.
+  stays unlocked). Without it, a lock that doesn't need the key is picked, if the
+  player has lockpicks: the sweet spot is placed at random, the lock turns towards
+  the most the pick's place allows (`most_turn`: linear across the partial zones,
+  5% outside), and strain at less than a full turn wears out the pick. Picked open,
+  the door or container opens. The skill is the player record's (`NPC_` `DNAM`).
 - Each whereabouts refresh (every 20 s, for every persistent actor) compares
   actors' packages with the previous refresh. When a package with 0x40 starts or
   one with 0x80 ends, the actor's home doors unlock; when a sleep package with
@@ -36,8 +47,11 @@ and location pages, CK wiki descriptions) and the game's data files.
 
 ## Gaps
 
-1. **Lockpicking.** No minigame, lockpicks, skill or perks; without the key the
-   door stays shut. Leveled locks use their authored level.
+1. **Lockpicking.** No perks, skill gain (`fSkillUsageLockPick*`,
+   `iXPRewardPickLock*`), enchantments or potions; no race skill bonuses in the
+   skill used. How the turn falls off across the partial zone, the turning speed,
+   whether strain carries over between attempts with one pick, and the "Auto
+   Attempt" option are guesses or missing. Leveled locks use their authored level.
 2. **Which doors a package locks.** "Home" is a guess: the sleep location's cell.
    The game may use ownership (`XOWN` on doors and cells), the location
    (`LCTN`), or the package's own location.

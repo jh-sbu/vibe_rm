@@ -128,6 +128,7 @@ pub struct Engine {
     pub barks: crate::dialogue::barks::Barks,
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
+    pub lockpick: Option<crate::locks::Lockpick>,
     npc_refs: HashMap<FormId, FormId>,
     lod: Option<crate::world::lod::Lod>,
     pub nav: crate::ai::nav::NavWorld,
@@ -211,6 +212,7 @@ impl Engine {
             music: MusicState::default(),
             conversation: None,
             menu: None,
+            lockpick: None,
             barks: Default::default(),
             faction_relations: Default::default(),
             combat_settings: Default::default(),
@@ -1393,6 +1395,7 @@ impl Engine {
             self.player.sneaking &= !input.sprint;
         }
         self.update_player_attack(dt);
+        self.update_lockpick(dt);
         let (run, sprint, before) = (input.run, input.sprint, self.player.position);
         if self.test_jump && self.player.grounded {
             input.jump = true;
@@ -1516,7 +1519,7 @@ impl Engine {
             return Ok(());
         }
         if base_tag.map(|t| t.0) == Some(*b"CONT") {
-            if !self.player_unlock(owner) {
+            if !self.player_unlock(owner, owner) {
                 return Ok(());
             }
             self.menu = Some(crate::items::Menu::Container(owner));
@@ -1532,7 +1535,7 @@ impl Engine {
         }
         if base_tag.map(|t| t.0) == Some(*b"DOOR") {
             if let Some(lock) = self.door_lock_for_player(owner, rf.teleport.map(|t| t.0))
-                && !self.player_unlock(lock)
+                && !self.player_unlock(lock, owner)
             {
                 return Ok(());
             }
