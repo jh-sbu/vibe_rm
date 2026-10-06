@@ -46,6 +46,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "pshoot [secs]         the player looses an arrow drawn so long (default full)".into(),
             "tcam x y z yaw pitch  hold the --wait camera there (degrees; yaw 0 = north)".into(),
             "stamina <ref|player> [n]  show or set stamina".into(),
+            "probe [x y]           collision under the player (or x y) and per-cell colliders".into(),
         ],
         "bark" => {
             let [r, sub] = args[..] else { return vec!["usage: bark <actor ref> <subtype, e.g. HELO / IDLE>".into()] };
@@ -260,6 +261,14 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             }
             engine.place_player(Vec3::new(v[0], v[1], v[2]), engine.camera.yaw);
             vec!["ok".into()]
+        }
+        "probe" => {
+            let v: Vec<f32> = args.iter().filter_map(|a| a.parse().ok()).collect();
+            match v[..] {
+                [] => engine.probe(engine.player.position.truncate()),
+                [x, y] => engine.probe(glam::Vec2::new(x, y)),
+                _ => vec!["usage: probe [x y]".into()],
+            }
         }
         "qqq" | "quit" => std::process::exit(0),
         _ => vec![format!("unknown command '{cmd}'")],

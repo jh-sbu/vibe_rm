@@ -1192,6 +1192,58 @@ impl Engine {
         }
     }
 
+    /// Diagnostics (console `probe`): what collision lies along a vertical line at
+    /// `p`, against the landscape height there, and each loaded cell's colliders.
+    pub fn probe(&self, p: Vec2) -> Vec<String> {
+        let top = 2000.0;
+        let origin = Vec3::new(p.x, p.y, self.player.position.z + top);
+        let mut out = vec![format!(
+            "probe at {:.1} {:.1} (cell {:?}); player centre z {:.1}; land height {}",
+            p.x,
+            p.y,
+            grid_of(p),
+            self.player.position.z,
+            self.ground_height(p).map_or("none".into(), |h| format!("{h:.1}"))
+        )];
+        let cell_of = |h: ColliderHandle| self.cells.iter().find(|(_, rt)| rt.colliders.contains(&h)).map(|(k, _)| *k);
+        for hit in self.physics.probe_ray(origin, -Vec3::Z, 2.0 * top) {
+            let what = match hit.owner {
+                Some(r) => {
+                    let base = self.base_of(r);
+                    let edid = base.and_then(|b| self.lo.get(b)).and_then(|b| b.editor_id()).unwrap_or_default();
+                    format!("{r} ({edid})")
+                }
+                None => "no owner (terrain?)".into(),
+            };
+            out.push(format!(
+                "  z {:.1}: {:?} {what}, cell {:?}, bounds {:.0} .. {:.0}{}{}",
+                origin.z - hit.toi,
+                hit.handle.0.into_raw_parts(),
+                cell_of(hit.handle),
+                hit.bounds.0,
+                hit.bounds.1,
+                if hit.in_broad_phase { "" } else { ", NOT IN BROAD PHASE" },
+                if hit.enabled { "" } else { ", disabled" },
+            ));
+        }
+        let mut keys: Vec<_> = self.cells.keys().copied().collect();
+        keys.sort_by_key(|k| format!("{k:?}"));
+        for k in keys {
+            let rt = &self.cells[&k];
+            let stale = rt.colliders.iter().filter(|h| !self.physics.has_collider(**h)).count();
+            out.push(format!(
+                "  {k:?}: {} colliders ({stale} gone), land {}",
+                rt.colliders.len(),
+                if rt.land.is_some() { "yes" } else { "no" }
+            ));
+        }
+        let listed: HashSet<ColliderHandle> = self.cells.values().flat_map(|rt| rt.colliders.iter().copied()).collect();
+        let total = self.physics.world.colliders.len();
+        let orphans = self.physics.world.colliders.iter().filter(|(h, _)| !listed.contains(h)).count();
+        out.push(format!("  {total} colliders in the world, {orphans} not listed by any loaded cell"));
+        out
+    }
+
     pub fn ground_height(&self, p: Vec2) -> Option<f32> {
         let (x, y) = grid_of(p);
         self.cells.get(&CellKey::Exterior(x, y)).and_then(|c| c.land.as_ref()).map(|l| l.height_at(p))

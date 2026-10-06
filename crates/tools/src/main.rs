@@ -193,6 +193,14 @@ fn main() -> Result<()> {
                         "SkinData skin_xf={:?} bones={} first={:?}",
                         d.skin_transform.translation, d.bones.len(), d.bones.first().map(|b| b.transform.translation)
                     ),
+                    nif::Block::TriShapeData(d) => {
+                        let (mut lo, mut hi) = (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN));
+                        for p in &d.geometry.positions {
+                            lo = lo.min(*p);
+                            hi = hi.max(*p);
+                        }
+                        format!("TriShapeData verts={} tris={} bounds={lo:?}..{hi:?}", d.geometry.positions.len(), d.geometry.triangles.len())
+                    }
                     nif::Block::Shape(nif::Shape::CompressedMeshData { vertices, triangles }) => {
                         format!("CompressedMeshData verts={} tris={}", vertices.len(), triangles.len())
                     }
