@@ -129,9 +129,10 @@ fn add_shape(nif: &Nif, r: Ref, xf: Mat4, out: &mut CollisionModel, depth: u32) 
             }
         }
         Shape::NiTriStrips { strips } => {
+            // Unlike the Havok shapes, NiTriStripsData vertices are already in game units.
             for s in strips {
                 if let Some(Block::TriShapeData(d)) = nif.get(*s) {
-                    let v = d.geometry.positions.iter().map(|p| *p * h).collect();
+                    let v = d.geometry.positions.clone();
                     let t = d.geometry.triangles.iter().map(|t| [t[0] as u32, t[1] as u32, t[2] as u32]).collect();
                     push(out, xf, ShapeDesc::TriMesh { vertices: v, triangles: t });
                 }
