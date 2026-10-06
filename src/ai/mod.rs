@@ -274,6 +274,8 @@ pub struct ActorRuntime {
     pub(crate) weapon_reach: f32,
     pub(crate) detect_in: f32,
     hit_frame: bool,
+    /// Seconds left bleeding out (essential actors brought down).
+    pub(crate) bleeding: Option<f32>,
     /// Dead, and the ragdoll it lies as (with the mapping back to its bones).
     pub(crate) dead: bool,
     pub(crate) ragdoll: Option<(crate::physics::Ragdoll, crate::world::ragdoll::RagdollPose)>,
@@ -331,6 +333,7 @@ impl ActorRuntime {
             weapon_reach: 0.0,
             detect_in: stagger,
             hit_frame: false,
+            bleeding: None,
             torch: None,
             stowed_shield: None,
             weapon_out: false,
@@ -1702,7 +1705,7 @@ impl Engine {
                         let d = player - a.pos;
                         a.turn_towards(d.normalize_or_zero(), dt);
                     }
-                } else if !self.ai_enabled {
+                } else if !self.ai_enabled || a.bleeding.is_some() {
                     a.halt(1.0);
                 } else if let Some(target) = a.combat.as_ref().map(|c| c.target) {
                     match positions.get(&target).filter(|p| p.distance(a.pos) < combat::LOSE_DISTANCE) {
@@ -1769,6 +1772,7 @@ impl Engine {
             self.end_combat(r);
         }
         self.resolve_swings(swings);
+        self.update_bleedouts(dt);
         if self.ai_enabled {
             self.detect_enemies(dt);
         }
