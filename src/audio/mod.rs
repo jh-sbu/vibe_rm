@@ -11,6 +11,9 @@ use glam::Vec3;
 
 use decode::Clip;
 
+/// Frames per output callback (about 21 ms at 48 kHz).
+const BUFFER_FRAMES: u32 = 1024;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct VoiceId(u64);
 
@@ -116,11 +119,12 @@ impl Audio {
             let cfg = device.default_output_config().ok()?;
             rate = cfg.sample_rate();
             let channels = cfg.channels() as usize;
-            let config = cfg.config();
             mixer.lock().unwrap().rate = rate;
-            let m = mixer.clone();
-            let stream = device
-                .build_output_stream(
+            let build = |buffer: cpal::BufferSize| {
+                let mut config = cfg.config();
+                config.buffer_size = buffer;
+                let m = mixer.clone();
+                device.build_output_stream(
                     config,
                     move |out: &mut [f32], _| {
                         if let Ok(mut mx) = m.lock() {
@@ -132,6 +136,18 @@ impl Audio {
                     |e| log::warn!("audio stream error: {e}"),
                     None,
                 )
+            };
+            // A short buffer: sounds start when asked (PulseAudio's default holds
+            // about two seconds), and voices start on time within it.
+            let frames = match cfg.buffer_size() {
+                cpal::SupportedBufferSize::Range { min, max } => BUFFER_FRAMES.clamp(*min, *max),
+                cpal::SupportedBufferSize::Unknown => BUFFER_FRAMES,
+            };
+            let stream = build(cpal::BufferSize::Fixed(frames))
+                .or_else(|e| {
+                    log::warn!("audio: a {frames}-frame buffer failed ({e}); using the default");
+                    build(cpal::BufferSize::Default)
+                })
                 .map_err(|e| log::warn!("audio: {e}"))
                 .ok()?;
             stream.play().ok()?;
