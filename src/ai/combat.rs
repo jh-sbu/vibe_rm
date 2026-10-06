@@ -34,6 +34,9 @@ const POWER_ATTACK_CHANCE: f32 = 0.6;
 /// Biped slot 39: shields.
 const SHIELD_SLOT: u32 = 1 << 9;
 
+/// Seconds the player holds the attack button for a power attack.
+const POWER_ATTACK_HOLD: f32 = 0.35;
+
 /// Seconds an essential actor stays down before getting back up.
 const BLEEDOUT_TIME: f32 = 12.0;
 
@@ -52,12 +55,17 @@ pub struct Attack {
     /// Degrees either side of straight ahead a hit lands in.
     pub strike_angle: f32,
     pub stagger: f32,
+    /// Times the power attack stamina cost.
+    pub stamina_mult: f32,
 }
 
 /// What an actor fights with.
 #[derive(Debug, Clone, Default)]
 pub struct CombatStats {
     pub max_health: f32,
+    /// Stamina, and the percent of it that comes back each second out of combat.
+    pub max_stamina: f32,
+    pub stamina_regen: f32,
     pub attacks: Vec<Attack>,
     pub unarmed_damage: f32,
     pub unarmed_reach: f32,
@@ -81,6 +89,11 @@ pub struct CombatStats {
     /// (`CSME` power attack blocking multiplier).
     pub offensive: f32,
     pub power_vs_guard: f32,
+}
+
+/// A weapon's weight (`DATA`).
+fn weapon_weight(lo: &LoadOrder, weapon: FormId) -> f32 {
+    lo.get(weapon).and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 8).map(|d| f32_at(d, 4))).unwrap_or(0.0)
 }
 
 /// A weapon's base damage (`DATA`).
@@ -186,6 +199,20 @@ pub struct CombatSettings {
     npc_max: f32,
     player_max: f32,
     clothing: f32,
+    /// Stamina: a power attack costs `attack_base + attack_mult x weapon weight`
+    /// (times the attack's own multiplier); a blocked blow `block_base +
+    /// block_mult x the damage stopped`; sprinting `sprint x (sprint_base +
+    /// sprint_weight x armor weight)` a second. It comes back `combat_regen` as
+    /// fast in combat, `regen_delay` seconds after being spent.
+    stamina_attack_base: f32,
+    stamina_attack_mult: f32,
+    stamina_block_base: f32,
+    stamina_block_mult: f32,
+    sprint: f32,
+    sprint_base: f32,
+    sprint_weight: f32,
+    combat_regen: f32,
+    regen_delay: f32,
 }
 
 impl CombatSettings {
@@ -205,6 +232,15 @@ impl CombatSettings {
             npc_max: gmst_f32(lo, "fArmorRatingMax", 2.5),
             player_max: gmst_f32(lo, "fArmorRatingPCMax", 1.4),
             clothing: gmst_f32(lo, "fClothingArmorScale", 1.0),
+            stamina_attack_base: gmst_f32(lo, "fStaminaAttackWeaponBase", 20.0),
+            stamina_attack_mult: gmst_f32(lo, "fStaminaAttackWeaponMult", 1.0),
+            stamina_block_base: gmst_f32(lo, "fStaminaBlockBase", 0.0),
+            stamina_block_mult: gmst_f32(lo, "fStaminaBlockDmgMult", 0.25),
+            sprint: gmst_f32(lo, "fSprintStaminaDrainMult", 7.0),
+            sprint_base: gmst_f32(lo, "fSprintStaminaWeightBase", 1.0),
+            sprint_weight: gmst_f32(lo, "fSprintStaminaWeightMult", 0.02),
+            combat_regen: gmst_f32(lo, "fCombatStaminaRegenRateMult", 0.35),
+            regen_delay: gmst_f32(lo, "fDamagedStaminaRegenDelay", 0.5),
         }
     }
 }
@@ -255,25 +291,35 @@ impl CombatStats {
         if let Some(race) = lo.get(race) {
             if let Some(d) = race.get(b"DATA") {
                 s.max_health = f32_at(d, 36);
+                s.max_stamina = f32_at(d, 44);
+                s.stamina_regen = f32_at(d, 92);
                 s.unarmed_damage = f32_at(d, 96).max(1.0);
                 s.unarmed_reach = f32_at(d, 100).max(48.0);
             }
-            let mut pending: Option<(f32, f32, u32, f32, f32)> = None;
+            let mut pending: Option<Attack> = None;
             for sr in race.subrecords() {
                 match &sr.tag.0 {
                     b"ATKD" if sr.data.len() >= 28 => {
                         let d = sr.data;
-                        pending = Some((f32_at(d, 0), f32_at(d, 4), u32::from_le_bytes(d[12..16].try_into().unwrap()), f32_at(d, 20), f32_at(d, 24)));
+                        pending = Some(Attack {
+                            event: String::new(),
+                            damage_mult: f32_at(d, 0),
+                            chance: f32_at(d, 4),
+                            flags: u32::from_le_bytes(d[12..16].try_into().unwrap()),
+                            strike_angle: f32_at(d, 20),
+                            stagger: f32_at(d, 24),
+                            stamina_mult: if d.len() >= 44 { f32_at(d, 40) } else { 1.0 },
+                        });
                     }
                     b"ATKE" => {
-                        if let Some((damage_mult, chance, flags, strike_angle, stagger)) = pending.take() {
-                            let event = sr.zstring();
+                        if let Some(mut attack) = pending.take() {
+                            attack.event = sr.zstring();
                             // Attacks for situations not handled yet: sprinting, on
                             // horseback, with the left hand, dual wielding, unarmed.
-                            let lower = event.to_ascii_lowercase();
+                            let lower = attack.event.to_ascii_lowercase();
                             let situational = ["sprint", "_mc", "lefthand", "dualwield", "h2h"].iter().any(|k| lower.contains(k));
-                            if !event.is_empty() && !situational {
-                                s.attacks.push(Attack { event, damage_mult, chance, flags, strike_angle, stagger });
+                            if !attack.event.is_empty() && !situational {
+                                s.attacks.push(attack);
                             }
                         }
                     }
@@ -281,7 +327,8 @@ impl CombatStats {
                 }
             }
         }
-        // Health from the NPC's stats (DNAM: skills, then health / magicka / stamina).
+        // Health and stamina from the NPC's stats (DNAM: skills, then health /
+        // magicka / stamina).
         // ACBS flags: 0x2 essential, 0x800 protected.
         let acbs = npc_field(lo, npc, b"ACBS", 0x80).filter(|d| d.len() >= 4).map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()));
         s.essential = acbs & 0x2 != 0;
@@ -289,6 +336,9 @@ impl CombatStats {
         // Template flags: 0x2 stats, 0x10 AI data.
         if let Some(d) = npc_field(lo, npc, b"DNAM", 0x2).filter(|d| d.len() >= 38) {
             s.max_health += u16::from_le_bytes([d[36], d[37]]) as f32;
+            if let Some(st) = d.get(40..42) {
+                s.max_stamina += u16::from_le_bytes([st[0], st[1]]) as f32;
+            }
             s.armor_skills = armor_skills(&d);
             s.block_skill = d[3] as f32;
         }
@@ -302,6 +352,7 @@ impl CombatStats {
         s.defensive = csgd.map_or(0.25, |d| f32_at(d, 4));
         s.power_vs_guard = style.as_ref().and_then(|r| r.get(b"CSME")).filter(|d| d.len() >= 12).map_or(1.0, |d| f32_at(d, 8));
         s.max_health = s.max_health.max(5.0);
+        s.max_stamina = s.max_stamina.max(10.0);
         if let Some(d) = npc_field(lo, npc, b"AIDT", 0x10).filter(|d| d.len() >= 20) {
             s.aggression = d[0];
             if d[6] != 0 {
@@ -327,6 +378,8 @@ pub struct Combat {
     /// has struck (one hit a swing).
     pub attack: Option<usize>,
     pub struck: bool,
+    /// Stamina the attack started this frame costs (paid once the graph takes it).
+    pub cost: f32,
     /// Seconds left holding its guard up (blocking), and whether the graph has
     /// raised it (it may be busy finishing a swing or a stagger first).
     pub guard: f32,
@@ -337,7 +390,7 @@ pub struct Combat {
 
 impl Combat {
     pub fn new(target: FormId) -> Combat {
-        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, guard: 0.0, guard_shown: false, target_guarding: false }
+        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false }
     }
 
     pub fn swinging(&self) -> bool {
@@ -363,6 +416,15 @@ impl ActorRuntime {
     fn run_speed(&self) -> f32 {
         let walk = self.walk_speed();
         self.moves.map(|(m, _)| m.run).filter(|r| *r > walk).unwrap_or(walk * 3.0)
+    }
+
+    /// Use up stamina; it doesn't come back for a moment (`update_stamina`).
+    pub(crate) fn spend_stamina(&mut self, amount: f32) {
+        if amount > 0.0 {
+            self.stamina = (self.stamina - amount).max(0.0);
+            self.stamina_spent = true;
+            log::debug!("{} spends {amount:.0} stamina ({:.0} left)", self.ref_id, self.stamina);
+        }
     }
 
     /// Raise its guard for `secs` (the AI step has the graph raise it), or lower it.
@@ -465,12 +527,17 @@ impl ActorRuntime {
             return None;
         }
         // A power attack now and then, as offensive as its combat style (more or
-        // less so against a raised guard), else a basic one; then which, by
-        // their chances.
+        // less so against a raised guard) and if it has the stamina for one, else
+        // a basic one; then which, by their chances.
         let is_power = |i: usize| self.stats.attacks[i].flags & ATK_POWER != 0;
+        let cost = |i: usize| self.power_cost * self.stats.attacks[i].stamina_mult;
         let power_chance = (self.stats.offensive * POWER_ATTACK_CHANCE * if target_guarding { self.stats.power_vs_guard } else { 1.0 }).clamp(0.0, 0.6);
         let want_power = uniform(w.rand, 0.0, 1.0) < power_chance;
-        let kind: Vec<(usize, f32)> = attacks.iter().copied().filter(|&(i, _)| is_power(i) == want_power).collect();
+        let kind: Vec<(usize, f32)> = attacks.iter().copied().filter(|&(i, _)| is_power(i) == want_power && (!want_power || cost(i) <= self.stamina)).collect();
+        let attacks: Vec<(usize, f32)> = attacks.iter().copied().filter(|&(i, _)| !is_power(i) || cost(i) <= self.stamina).collect();
+        if attacks.is_empty() {
+            return None;
+        }
         let pool = if kind.is_empty() { &attacks } else { &kind };
         let total: f32 = pool.iter().map(|a| a.1).sum();
         let mut roll = uniform(w.rand, 0.0, total);
@@ -483,8 +550,10 @@ impl ActorRuntime {
             roll -= ch;
         }
         let power = is_power(pick);
+        let cost = if power { cost(pick) } else { 0.0 };
         let c = self.combat.as_mut()?;
         c.attack = Some(pick);
+        c.cost = cost;
         c.struck = false;
         c.swing = SWING_TIME;
         // A power attack takes longer to recover from.
@@ -697,6 +766,9 @@ impl Engine {
         let mut stagger = if staggers { stagger } else { 0.0 };
         if let Some(share) = self.block_share(target, attacker, power) {
             log::info!("{target} blocks {attacker}{}: {:.0}% of {damage:.0} stopped", if power { "'s power attack" } else { "" }, share * 100.0);
+            // Holding the blow back takes stamina.
+            let set = self.combat_settings();
+            self.spend_stamina(target, set.stamina_block_base + set.stamina_block_mult * damage * share);
             damage *= 1.0 - share;
             // A power attack breaks the guard.
             stagger = if power { 0.5f32.max(stagger) } else { 0.0 };
@@ -1029,12 +1101,47 @@ impl Engine {
         self.player_died_at.is_some()
     }
 
-    /// The player swings at whatever actor is in front within reach.
-    pub fn player_attack(&mut self) {
+    /// The attack button went down: a power attack if it is held long enough
+    /// (`update_player_attack`), else a basic one when it comes up.
+    pub fn player_attack_press(&mut self) {
+        self.player_attack_held = Some(0.0);
+    }
+
+    pub fn player_attack_release(&mut self) {
+        if self.player_attack_held.take().is_some() {
+            self.player_attack(false);
+        }
+    }
+
+    /// Holding the attack button: a power attack once held long enough.
+    pub(crate) fn update_player_attack(&mut self, dt: f32) {
+        let Some(t) = self.player_attack_held.as_mut() else { return };
+        *t += dt;
+        if *t >= POWER_ATTACK_HOLD {
+            self.player_attack_held = None;
+            self.player_attack(true);
+        }
+    }
+
+    /// The player swings at whatever actor is in front within reach. A power
+    /// attack takes the race's standing power attack's damage multiplier and
+    /// stagger, and stamina; without enough left it is a basic swing.
+    pub fn player_attack(&mut self, power: bool) {
         if self.player_dead() || self.conversation.is_some() || self.player_blocking {
             return;
         }
         let weapon = self.player_weapon();
+        let stats = self.player_stats();
+        let power_attack = stats.attacks.iter().find(|a| a.flags & ATK_POWER != 0 && a.event.to_ascii_lowercase().starts_with("attackpowerstart"));
+        let cost = self.power_attack_cost(weapon) * power_attack.map_or(1.0, |a| a.stamina_mult);
+        let power = power && self.player_stamina >= cost;
+        let (mult, stagger) = match power_attack.filter(|_| power) {
+            Some(a) => (a.damage_mult.max(1.0) * 1.5, a.stagger),
+            None => (1.0, 0.0),
+        };
+        if power {
+            self.spend_stamina(PLAYER_REF, cost);
+        }
         let (damage, reach) = match weapon.and_then(|w| self.lo.get(w)) {
             Some(rec) => (
                 rec.get(b"DATA").filter(|d| d.len() >= 10).map_or(4.0, |d| u16::from_le_bytes([d[8], d[9]]) as f32),
@@ -1047,8 +1154,9 @@ impl Engine {
             && self.lo.tag_of(r).map(|t| t.0) == Some(*b"ACHR")
             && !self.is_dead(r)
         {
-            log::info!("player strikes {r} for {damage:.0}");
-            self.hit(r, PLAYER_REF, damage, false, 0.0);
+            let damage = damage * mult;
+            log::info!("player {} {r} for {damage:.0}", if power { "power attacks" } else { "strikes" });
+            self.hit(r, PLAYER_REF, damage, power, stagger);
         }
     }
 
@@ -1114,9 +1222,12 @@ impl Engine {
         let stats = a.stats.clone();
         let mut out = vec![
             format!(
-                "{actor}: health {:.0} / {:.0}, aggression {}, reach {:.0}, fighting {:?}{}{}",
+                "{actor}: health {:.0} / {:.0}, stamina {:.0} / {:.0} (power attack {:.0}), aggression {}, reach {:.0}, fighting {:?}{}{}",
                 a.health,
                 stats.max_health,
+                a.stamina,
+                stats.max_stamina,
+                a.power_cost,
                 stats.aggression,
                 a.reach(),
                 a.combat.as_ref().map(|c| c.target),
@@ -1146,6 +1257,105 @@ impl Engine {
         let pf = self.player_factions();
         out.push(format!("towards the player: reaction {:?}, hostile {}", self.faction_reaction(&stats.factions, &pf), self.hostile_to(&stats, &pf, true)));
         out
+    }
+
+    /// What a power attack with `weapon` (or bare hands) costs, before the
+    /// attack's own multiplier.
+    pub(crate) fn power_attack_cost(&self, weapon: Option<FormId>) -> f32 {
+        let set = self.combat_settings();
+        set.stamina_attack_base + set.stamina_attack_mult * weapon.map_or(0.0, |w| weapon_weight(&self.lo, w))
+    }
+
+    /// The player's stats from their NPC record and race (stamina, attacks).
+    pub(crate) fn player_stats(&self) -> Arc<CombatStats> {
+        self.player_stats
+            .get_or_init(|| {
+                let race = self.npc_race(FormId(0x7)).unwrap_or(FormId(0x13746));
+                Arc::new(CombatStats::of(self, FormId(0x7), race))
+            })
+            .clone()
+    }
+
+    /// Take stamina from an actor or the player; it waits a moment to come back.
+    pub(crate) fn spend_stamina(&mut self, who: FormId, amount: f32) {
+        if amount <= 0.0 {
+            return;
+        }
+        if who == PLAYER_REF {
+            self.player_stamina = (self.player_stamina - amount).max(0.0);
+            self.player_stamina_wait = self.combat_settings().regen_delay;
+        } else if let Some(a) = self.actor_mut(who) {
+            a.spend_stamina(amount);
+            return;
+        }
+        log::debug!("{who} spends {amount:.0} stamina ({:.0} left)", self.player_stamina);
+    }
+
+    /// Sprinting drains the player's stamina, the more the heavier their armor;
+    /// out of it, they can't. Returns whether they may sprint.
+    pub(crate) fn player_sprint(&mut self, dt: f32) -> bool {
+        if self.player_stamina <= 0.0 {
+            return false;
+        }
+        let set = self.combat_settings();
+        let weight: f32 = self.inventories.get(&PLAYER_REF).map_or(0.0, |i| {
+            i.equipped.iter().filter_map(|&f| self.lo.get(f).filter(|r| r.tag().0 == *b"ARMO")?.get(b"DATA").filter(|d| d.len() >= 8).map(|d| f32_at(d, 4))).sum()
+        });
+        self.player_stamina = (self.player_stamina - set.sprint * (set.sprint_base + set.sprint_weight * weight) * dt).max(0.0);
+        self.player_stamina_wait = set.regen_delay;
+        true
+    }
+
+    /// Stamina comes back by the race's rate (percent of the most a second),
+    /// slower in combat, once a moment has passed since it was spent.
+    pub(crate) fn update_stamina(&mut self, dt: f32) {
+        let set = self.combat_settings();
+        let mut player_fought = false;
+        for rt in self.cells.values_mut() {
+            for a in rt.actors.iter_mut().filter(|a| !a.dead) {
+                player_fought |= a.combat.as_ref().is_some_and(|c| c.target == PLAYER_REF);
+                if std::mem::take(&mut a.stamina_spent) {
+                    a.stamina_wait = set.regen_delay;
+                }
+                if a.stamina_wait > 0.0 {
+                    a.stamina_wait -= dt;
+                    continue;
+                }
+                let rate = a.stats.stamina_regen / 100.0 * if a.combat.is_some() { set.combat_regen } else { 1.0 };
+                a.stamina = (a.stamina + a.stats.max_stamina * rate * dt).min(a.stats.max_stamina);
+            }
+        }
+        if self.player_stamina_wait > 0.0 {
+            self.player_stamina_wait -= dt;
+        } else {
+            let stats = self.player_stats();
+            let rate = stats.stamina_regen / 100.0 * if player_fought { set.combat_regen } else { 1.0 };
+            self.player_stamina = (self.player_stamina + stats.max_stamina * rate * dt).min(stats.max_stamina);
+        }
+    }
+
+    /// Stamina of a loaded actor or the player (current, max).
+    pub fn stamina(&self, actor: FormId) -> Option<(f32, f32)> {
+        if actor == PLAYER_REF {
+            return Some((self.player_stamina, self.player_stats().max_stamina));
+        }
+        let a = self.actor_ref(actor)?;
+        Some((a.stamina, a.stats.max_stamina))
+    }
+
+    /// Set a loaded actor's (or the player's) stamina (console, Papyrus).
+    pub fn set_stamina(&mut self, actor: FormId, value: f32) -> bool {
+        if actor == PLAYER_REF {
+            self.player_stamina = value.clamp(0.0, self.player_stats().max_stamina);
+            return true;
+        }
+        match self.actor_mut(actor) {
+            Some(a) => {
+                a.stamina = value.clamp(0.0, a.stats.max_stamina);
+                true
+            }
+            None => false,
+        }
     }
 
     /// Health of a loaded actor (current, max).

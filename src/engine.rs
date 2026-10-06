@@ -105,6 +105,13 @@ pub struct Engine {
     pub player_health: f32,
     /// The player holds their guard up (right mouse button).
     pub player_blocking: bool,
+    /// The player's stamina, seconds before it comes back after being spent, how
+    /// long they have held the attack button (a power attack when long enough),
+    /// and their stats (race, NPC record), read on first use.
+    pub player_stamina: f32,
+    pub(crate) player_stamina_wait: f32,
+    pub(crate) player_attack_held: Option<f32>,
+    pub(crate) player_stats: std::cell::OnceCell<std::sync::Arc<crate::ai::combat::CombatStats>>,
     pub player_died_at: Option<f64>,
     /// Lines NPCs say by themselves (greetings, idle chatter).
     pub barks: crate::dialogue::barks::Barks,
@@ -196,6 +203,11 @@ impl Engine {
             faction_relations: Default::default(),
             combat_settings: Default::default(),
             player_blocking: false,
+            // Full: clamped to their most on the first update.
+            player_stamina: f32::INFINITY,
+            player_stamina_wait: 0.0,
+            player_attack_held: None,
+            player_stats: Default::default(),
             player_health: PLAYER_HEALTH,
             player_died_at: None,
             npc_refs: HashMap::new(),
@@ -617,6 +629,8 @@ impl Engine {
             rt.child = self.npc_race(d.npc).is_some_and(|r| self.race_is_child(r));
             let stats = crate::ai::combat::CombatStats::of(self, d.npc, d.race);
             rt.health = stats.max_health;
+            rt.stamina = stats.max_stamina;
+            rt.power_cost = self.power_attack_cost(d.inventory.weapon(&self.lo));
             rt.stats = std::sync::Arc::new(stats);
             rt.weapon_reach = d
                 .inventory
@@ -1261,6 +1275,11 @@ impl Engine {
         self.update_held_lights();
         self.update_animated(dt);
         let cam = self.camera_copy();
+        let mut input = input;
+        if input.sprint && (input.forward != 0.0 || input.right != 0.0) && !self.player.noclip {
+            input.sprint = self.player_sprint(dt);
+        }
+        self.update_player_attack(dt);
         self.player.update(&self.physics, &cam, input, dt);
         self.camera.position = self.player.eye();
         self.update_streaming();
@@ -1279,6 +1298,7 @@ impl Engine {
         {
             self.player_died_at = None;
             self.player_health = PLAYER_HEALTH;
+            self.player_stamina = self.player_stats().max_stamina;
             self.scripts.notify("You come to.");
         }
     }

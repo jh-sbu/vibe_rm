@@ -272,6 +272,13 @@ pub struct ActorRuntime {
     pub(crate) health: f32,
     pub(crate) combat: Option<combat::Combat>,
     pub(crate) weapon_reach: f32,
+    /// Stamina left, and seconds before it starts coming back after being spent;
+    /// what a power attack costs before the attack's own multiplier (by weapon
+    /// weight).
+    pub(crate) stamina: f32,
+    pub(crate) stamina_wait: f32,
+    pub(crate) stamina_spent: bool,
+    pub(crate) power_cost: f32,
     pub(crate) detect_in: f32,
     hit_frame: bool,
     /// Seconds left bleeding out (essential actors brought down).
@@ -331,6 +338,10 @@ impl ActorRuntime {
             health: 50.0,
             combat: None,
             weapon_reach: 0.0,
+            stamina: 50.0,
+            stamina_wait: 0.0,
+            stamina_spent: false,
+            power_cost: 20.0,
             detect_in: stagger,
             hit_frame: false,
             bleeding: None,
@@ -1736,8 +1747,13 @@ impl Engine {
                         Some(&tp) => {
                             if let Some(ev) = a.combat_step(dt, &mut world, tp) {
                                 // Attacks the graph has no state for fall back to the basic one.
-                                let took = a.graph_event(&ev, &mut world.clips) || a.graph_event("attackStart", &mut world.clips);
+                                let own = a.graph_event(&ev, &mut world.clips);
+                                let took = own || a.graph_event("attackStart", &mut world.clips);
                                 log::debug!("{} swings: {ev}{}", a.ref_id, if took { "" } else { " (the graph won't take it)" });
+                                if own {
+                                    let cost = a.combat.as_ref().map_or(0.0, |c| c.cost);
+                                    a.spend_stamina(cost);
+                                }
                                 if !took {
                                     // Its graph isn't readied (a stagger cut the draw
                                     // short, say): draw again.
@@ -1807,6 +1823,7 @@ impl Engine {
         self.update_guards(dt, &started);
         self.resolve_swings(swings);
         self.update_bleedouts(dt);
+        self.update_stamina(dt);
         if self.ai_enabled {
             self.detect_enemies(dt);
         }

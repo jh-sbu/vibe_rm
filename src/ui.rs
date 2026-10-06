@@ -127,6 +127,12 @@ impl Ui {
         if engine.player_health < crate::engine::PLAYER_HEALTH {
             bar(&painter, Pos2::new(c.x, rect.bottom() - 40.0), engine.player_health / crate::engine::PLAYER_HEALTH, Color32::from_rgb(170, 30, 30));
         }
+        // Stamina (bottom right) while not full.
+        if let Some((st, max)) = engine.stamina(crate::engine::PLAYER_REF)
+            && st < max
+        {
+            bar(&painter, Pos2::new(rect.right() - 190.0, rect.bottom() - 40.0), st / max, Color32::from_rgb(40, 150, 60));
+        }
         if let Some((r, _)) = &engine.look_target
             && let Some((h, max)) = engine.actor_health(*r)
             && h < max

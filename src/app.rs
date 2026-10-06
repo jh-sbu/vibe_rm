@@ -419,10 +419,13 @@ impl ApplicationHandler for App {
                 // Captured: hold to block.
                 s.engine.player_blocking = state == ElementState::Pressed && s.grabbed && s.engine.menu.is_none();
             }
+            WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => {
+                s.engine.player_attack_release();
+            }
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
-                // Captured: swing at what's ahead.
+                // Captured: swing at what's ahead (held: a power attack).
                 if s.grabbed && s.engine.menu.is_none() {
-                    s.engine.player_attack();
+                    s.engine.player_attack_press();
                 }
                 if !s.grabbed && !s.ui.console.open && s.engine.conversation.is_none() && s.engine.menu.is_none() {
                     let ok = s
