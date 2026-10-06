@@ -84,6 +84,33 @@ fn main() -> Result<()> {
                 println!("  {} [{}] {hex} {txt}", sr.tag, sr.data.len());
             }
         }
+        Some("gmst") => {
+            // Game settings whose editor id contains the pattern (case-insensitive).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let pat = args.get(2).map_or(String::new(), |p| p.to_ascii_lowercase());
+            let mut rows: Vec<(String, String)> = Vec::new();
+            for &id in lo.ids_of_type(b"GMST") {
+                let Some(rec) = lo.get(id) else { continue };
+                let Some(name) = rec.editor_id().map(|e| e.to_string()) else { continue };
+                if !name.to_ascii_lowercase().contains(&pat) {
+                    continue;
+                }
+                let d = rec.get(b"DATA").unwrap_or(&[]);
+                let value = match (name.as_bytes().first(), d.get(0..4)) {
+                    (Some(b'f'), Some(b)) => format!("{}", f32::from_le_bytes(b.try_into().unwrap())),
+                    (Some(b'i' | b'u'), Some(b)) => format!("{}", i32::from_le_bytes(b.try_into().unwrap())),
+                    (Some(b'b'), Some(b)) => format!("{}", u32::from_le_bytes(b.try_into().unwrap()) != 0),
+                    _ => format!("{} bytes", d.len()),
+                };
+                rows.push((name, value));
+            }
+            rows.sort();
+            for (n, v) in rows {
+                println!("{n} = {v}");
+            }
+        }
         Some("nif-verify") => {
             // Parse every NIF in the given archives; report blocks whose parse
             // didn't consume exactly the declared size.

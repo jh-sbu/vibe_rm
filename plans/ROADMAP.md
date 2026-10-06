@@ -145,6 +145,16 @@ game each piece unlocks.
   chance; longer recovery after one. Stagger-capable hits stagger at
   `iStaggerAttackChance`. Attacks the graph refuses (mid-flinch, or a stagger cut the
   draw short) are retried and the weapon drawn again
+- Stamina: from race and NPC stats, back at the race's rate (percent of the most a
+  second; x0.35 in combat, `fCombatStaminaRegenRateMult`) a moment after it was spent.
+  Power attacks cost `fStaminaAttackWeaponBase` + weapon weight x
+  `fStaminaAttackWeaponMult`, times the attack's own multiplier (`ATKD`); NPCs short
+  of it attack normally. Blocked blows cost `fStaminaBlockBase` + 0.25 x the damage
+  stopped; the player's sprinting drains it (`fSprintStaminaDrainMult`, armor weight)
+  and stops when it runs out. The player power attacks by holding the attack button
+  (a basic swing without the stamina); HUD bar. Papyrus `GetActorValue` /
+  `DamageActorValue` read and spend live health / stamina. Console `stamina`,
+  `pattack`; vrm-tool `gmst <pattern>`
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
@@ -191,7 +201,7 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; locked doors and keys
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
-3. **Game logic**: combat (stamina, bashing, bows, armor perks, tempering
+3. **Game logic**: combat (bashing, bows, armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime

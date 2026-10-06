@@ -41,6 +41,8 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "player.equipitem / unequipitem <armor>   wear or take off armor".into(),
             "activate <ref>        activate a reference as the player".into(),
             "pblock                toggle the player's guard (right mouse button)".into(),
+            "pattack [power]       the player swings (power: as holding the button)".into(),
+            "stamina <ref|player> [n]  show or set stamina".into(),
         ],
         "bark" => {
             let [r, sub] = args[..] else { return vec!["usage: bark <actor ref> <subtype, e.g. HELO / IDLE>".into()] };
@@ -123,6 +125,28 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         "pblock" => {
             engine.player_blocking = !engine.player_blocking;
             vec![format!("player {}", if engine.player_blocking { "blocks" } else { "lowers their guard" })]
+        }
+        "pattack" => {
+            let power = args.first().is_some_and(|a| a.eq_ignore_ascii_case("power"));
+            engine.player_attack(power);
+            vec![format!("player stamina {:.0}", engine.player_stamina)]
+        }
+        "stamina" => {
+            let who = match args.first() {
+                Some(r) if r.eq_ignore_ascii_case("player") => Some(crate::engine::PLAYER_REF),
+                Some(r) => engine.resolve_form(r),
+                None => None,
+            };
+            let Some(who) = who else { return vec!["usage: stamina <actor ref | player> [value]".into()] };
+            if let Some(x) = args.get(1).and_then(|v| v.parse::<f32>().ok())
+                && !engine.set_stamina(who, x)
+            {
+                return vec![format!("{who} isn't a loaded actor")];
+            }
+            match engine.stamina(who) {
+                Some((st, max)) => vec![format!("{who}: stamina {st:.0} / {max:.0}")],
+                None => vec![format!("{who} isn't a loaded actor")],
+            }
         }
         "cstats" => {
             let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: cstats <actor ref>".into()] };

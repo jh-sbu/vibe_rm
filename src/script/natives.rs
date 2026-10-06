@@ -298,7 +298,15 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("actor", "getactorvalue") | ("actor", "getav") | ("actor", "getbaseactorvalue") | ("actor", "getbaseav") => {
             let key = (me.unwrap_or_default(), arg(0).to_string().to_ascii_lowercase());
-            v(Value::Float(e.scripts.actor_values.get(&key).copied().unwrap_or(100.0)))
+            // Health and stamina of loaded actors are their own.
+            let live = match key.1.as_str() {
+                "health" if key.0 == crate::engine::PLAYER_REF => Some((e.player_health, crate::engine::PLAYER_HEALTH)),
+                "health" => e.actor_health(key.0),
+                "stamina" => e.stamina(key.0),
+                _ => None,
+            };
+            let base = func.contains("base");
+            v(Value::Float(live.map(|(cur, max)| if base { max } else { cur }).or_else(|| e.scripts.actor_values.get(&key).copied()).unwrap_or(100.0)))
         }
         ("actor", "setactorvalue") | ("actor", "setav") | ("actor", "forceactorvalue") | ("actor", "forceav") => {
             let key = (me.unwrap_or_default(), arg(0).to_string().to_ascii_lowercase());
@@ -308,6 +316,12 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("actor", "modactorvalue") | ("actor", "modav") | ("actor", "damageactorvalue") | ("actor", "damageav") | ("actor", "restoreactorvalue") | ("actor", "restoreav") => {
             let key = (me.unwrap_or_default(), arg(0).to_string().to_ascii_lowercase());
             let sign = if func.starts_with("damage") { -1.0 } else { 1.0 };
+            if key.1 == "stamina"
+                && let Some((cur, _)) = e.stamina(key.0)
+            {
+                e.set_stamina(key.0, cur + sign * arg(1).as_float());
+                return none();
+            }
             let cur = e.scripts.actor_values.get(&key).copied().unwrap_or(100.0);
             e.scripts.actor_values.insert(key, cur + sign * arg(1).as_float());
             none()
