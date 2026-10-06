@@ -1683,6 +1683,8 @@ impl Engine {
         let mut equip = Vec::new();
         let mut sounds: Vec<(String, Vec3)> = Vec::new();
         let mut swings: Vec<combat::Swing> = Vec::new();
+        // Attacks started this frame (attacker, target): their targets may block.
+        let mut started: Vec<(FormId, FormId)> = Vec::new();
         let mut lost: Vec<FormId> = Vec::new();
         // Where everyone is, for fights.
         let mut positions: std::collections::HashMap<FormId, Vec3> =
@@ -1736,6 +1738,15 @@ impl Engine {
                                 // Attacks the graph has no state for fall back to the basic one.
                                 let took = a.graph_event(&ev, &mut world.clips) || a.graph_event("attackStart", &mut world.clips);
                                 log::debug!("{} swings: {ev}{}", a.ref_id, if took { "" } else { " (the graph won't take it)" });
+                                if !took {
+                                    // Its graph isn't readied (a stagger cut the draw
+                                    // short, say): draw again.
+                                    a.drawn = false;
+                                    if let Some(c) = a.combat.as_mut() {
+                                        c.refused();
+                                    }
+                                }
+                                started.push((a.ref_id, target));
                             }
                         }
                         None => lost.push(a.ref_id),
@@ -1793,6 +1804,7 @@ impl Engine {
         for r in lost {
             self.end_combat(r);
         }
+        self.update_guards(dt, &started);
         self.resolve_swings(swings);
         self.update_bleedouts(dt);
         if self.ai_enabled {

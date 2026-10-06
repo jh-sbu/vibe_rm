@@ -40,6 +40,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
             "player.equipitem / unequipitem <armor>   wear or take off armor".into(),
             "activate <ref>        activate a reference as the player".into(),
+            "pblock                toggle the player's guard (right mouse button)".into(),
         ],
         "bark" => {
             let [r, sub] = args[..] else { return vec!["usage: bark <actor ref> <subtype, e.g. HELO / IDLE>".into()] };
@@ -113,6 +114,15 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 (Some(a), Some(t)) if engine.start_combat(a, t) => vec![format!("{a} attacks {t}")],
                 _ => vec!["can't start that fight".into()],
             }
+        }
+        "guard" => {
+            let [r, secs] = args[..] else { return vec!["usage: guard <actor ref> <seconds>".into()] };
+            let (Some(actor), Ok(x)) = (engine.resolve_form(r), secs.parse::<f32>()) else { return vec!["bad reference or seconds".into()] };
+            if engine.force_guard(actor, x) { vec![format!("{r} holds its guard up for {x}s")] } else { vec![format!("{r} isn't fighting")] }
+        }
+        "pblock" => {
+            engine.player_blocking = !engine.player_blocking;
+            vec![format!("player {}", if engine.player_blocking { "blocks" } else { "lowers their guard" })]
         }
         "cstats" => {
             let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: cstats <actor ref>".into()] };

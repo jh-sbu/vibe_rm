@@ -415,6 +415,10 @@ impl ApplicationHandler for App {
                     }
                 }
             }
+            WindowEvent::MouseInput { state, button: MouseButton::Right, .. } => {
+                // Captured: hold to block.
+                s.engine.player_blocking = state == ElementState::Pressed && s.grabbed && s.engine.menu.is_none();
+            }
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
                 // Captured: swing at what's ahead.
                 if s.grabbed && s.engine.menu.is_none() {
