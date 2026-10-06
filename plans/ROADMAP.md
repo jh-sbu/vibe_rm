@@ -133,6 +133,12 @@ game each piece unlocks.
   when the ratio recovers; cornered, they fight. Cowards don't draw. NPCs' health
   comes back out of combat. `GetThreatRatio`, `IsFleeing`; `cstats` shows strength
   and confidence. Open questions: `known_gaps/combat-fleeing.md`
+- Assistance: actors not fighting join a fight they see where an ally (same or
+  allied faction) or, for those who help friends too, a friend is fighting someone
+  they aren't friendly with, as their AI data's assistance has it; the player
+  fights whoever fights them, so attacking one of the townsfolk sets their
+  neighbours on the player. Negative faction ranks aren't membership. `cstats`
+  shows assistance. Open questions: `known_gaps/combat-assistance.md`
 - Bleedout: essential actors (and protected ones, except to the player) brought to zero
   health bleed out through the graph (`bleedOutStart` / `bleedOutStop`), dropped as
   targets, and get up after a while with a quarter of their health; the player can

@@ -83,6 +83,8 @@ pub struct CombatStats {
     /// AI data: 0 unaggressive, 1 aggressive (attacks enemies), 2 very aggressive
     /// (and neutrals), 3 frenzied (anyone).
     pub aggression: u8,
+    /// AI data assistance: 0 helps nobody, 1 helps allies, 2 helps friends and allies.
+    pub assistance: u8,
     /// Aggro radius behaviour (`AIDT`): attacks the player coming this close.
     pub aggro_attack: Option<f32>,
     /// AI data confidence (0 cowardly .. 4 foolhardy), and the threat ratio below
@@ -169,7 +171,8 @@ fn npc_factions(lo: &LoadOrder, npc: FormId) -> Vec<FormId> {
     let mut id = npc;
     for _ in 0..8 {
         let Some(rec) = lo.get(id) else { break };
-        let own: Vec<FormId> = rec.subrecords().filter(|s| s.tag.0 == *b"SNAM" && s.data.len() >= 5).map(|s| rec.fid(s.form_id(0))).collect();
+        // A negative rank isn't membership (potential followers' `CurrentFollowerFaction`).
+        let own: Vec<FormId> = rec.subrecords().filter(|s| s.tag.0 == *b"SNAM" && s.data.len() >= 5 && (s.data[4] as i8) >= 0).map(|s| rec.fid(s.form_id(0))).collect();
         let tpl_flags = rec.get(b"ACBS").filter(|d| d.len() >= 20).map_or(0, |d| u16::from_le_bytes([d[18], d[19]]));
         let template = rec.get(b"TPLT").filter(|d| d.len() >= 4).map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))));
         match template {
@@ -409,6 +412,7 @@ impl CombatStats {
         if let Some(d) = npc_field(lo, npc, b"AIDT", 0x10).filter(|d| d.len() >= 20) {
             s.aggression = d[0];
             s.confidence = d[1];
+            s.assistance = d[5];
             if d[6] != 0 {
                 s.aggro_attack = Some(u32::from_le_bytes(d[16..20].try_into().unwrap()) as f32).filter(|r| *r > 0.0);
             }
@@ -907,7 +911,9 @@ impl Engine {
         log::info!("{actor} stops fighting");
     }
 
-    /// Living actors look around now and then for enemies to attack.
+    /// Living actors look around now and then for enemies to attack, or for a
+    /// fight near by to join on their allies' (or friends') side, as their AI
+    /// data's assistance has it.
     pub(crate) fn detect_enemies(&mut self, dt: f32) {
         let player = self.player.position;
         let player_factions = self.player_factions();
@@ -919,9 +925,20 @@ impl Engine {
             .filter(|a| !a.dead && a.bleeding.is_none())
             .map(|a| (a.ref_id, a.pos, a.stats.factions.clone()))
             .collect();
+        // Fights going on: who, where, and against whom. The player fights whoever
+        // fights them.
+        let mut fights: Vec<(FormId, Vec3, FormId)> = Vec::new();
+        for a in self.cells.values().flat_map(|rt| &rt.actors) {
+            if let Some(c) = a.combat.as_ref().filter(|c| !c.fleeing && !a.dead && a.bleeding.is_none()) {
+                fights.push((a.ref_id, a.pos, c.target));
+                if c.target == PLAYER_REF {
+                    fights.push((PLAYER_REF, player, a.ref_id));
+                }
+            }
+        }
         let mut lookers: Vec<(FormId, Vec3, Arc<CombatStats>)> = Vec::new();
         for rt in self.cells.values_mut() {
-            for a in rt.actors.iter_mut().filter(|a| !a.dead && a.bleeding.is_none() && a.combat.is_none() && (a.stats.aggression > 0 || a.stats.aggro_attack.is_some())) {
+            for a in rt.actors.iter_mut().filter(|a| !a.dead && a.bleeding.is_none() && a.combat.is_none() && (a.stats.aggression > 0 || a.stats.aggro_attack.is_some() || a.stats.assistance > 0)) {
                 a.detect_in -= dt;
                 if a.detect_in <= 0.0 {
                     a.detect_in = DETECT_INTERVAL;
@@ -945,6 +962,9 @@ impl Engine {
                     best = Some((d, *o));
                 }
             }
+            if best.is_none() && stats.assistance > 0 {
+                best = self.fight_to_join(r, pos, &stats, &fights, &others, &player_factions);
+            }
             if let Some((_, t)) = best {
                 found.push((r, t));
             }
@@ -952,6 +972,47 @@ impl Engine {
         for (a, t) in found {
             self.start_combat(a, t);
         }
+    }
+
+    /// The nearest fight within sight that `helper` would join, and whom it would
+    /// attack: one where an ally (sharing a faction, or an allied one) or, for
+    /// those who help friends too, a friend is fighting someone it isn't friendly
+    /// with.
+    fn fight_to_join(
+        &mut self,
+        helper: FormId,
+        pos: Vec3,
+        stats: &CombatStats,
+        fights: &[(FormId, Vec3, FormId)],
+        others: &[(FormId, Vec3, Vec<FormId>)],
+        player_factions: &[FormId],
+    ) -> Option<(f32, FormId)> {
+        let factions_of = |who: FormId| -> Option<&[FormId]> {
+            if who == PLAYER_REF { Some(player_factions) } else { others.iter().find(|o| o.0 == who).map(|o| o.2.as_slice()) }
+        };
+        let mut best: Option<(f32, FormId, FormId)> = None;
+        for &(fighter, fpos, target) in fights {
+            let d = pos.distance(fpos);
+            if fighter == helper || target == helper || d > DETECT_DISTANCE || best.is_some_and(|b| b.0 <= d) {
+                continue;
+            }
+            if target == PLAYER_REF && self.player_dead() {
+                continue;
+            }
+            let (Some(ff), Some(tf)) = (factions_of(fighter), factions_of(target)) else { continue };
+            let need = match self.faction_reaction(&stats.factions, ff) {
+                Some(2) => 1,
+                Some(3) => 2,
+                _ => continue,
+            };
+            if stats.assistance < need || matches!(self.faction_reaction(&stats.factions, tf), Some(2 | 3)) {
+                continue;
+            }
+            best = Some((d, target, fighter));
+        }
+        let (d, target, fighter) = best?;
+        log::info!("{helper} comes to {fighter}'s aid against {target}");
+        Some((d, target))
     }
 
     pub(crate) fn player_factions(&self) -> Vec<FormId> {
@@ -1586,7 +1647,7 @@ impl Engine {
         let stats = a.stats.clone();
         let mut out = vec![
             format!(
-                "{actor} at {:.0}: health {:.0} / {:.0} (+{}%/s), stamina {:.0} / {:.0} (power attack {:.0}), aggression {}, confidence {} ({:.3}{:+.2}), strength {:.0}, reach {:.0}, {} {:?}{}{}",
+                "{actor} at {:.0}: health {:.0} / {:.0} (+{}%/s), stamina {:.0} / {:.0} (power attack {:.0}), aggression {}, assistance {}, confidence {} ({:.3}{:+.2}), strength {:.0}, reach {:.0}, {} {:?}{}{}",
                 a.pos,
                 a.health,
                 stats.max_health,
@@ -1595,6 +1656,7 @@ impl Engine {
                 stats.max_stamina,
                 a.power_cost,
                 stats.aggression,
+                stats.assistance,
                 stats.confidence,
                 stats.confidence_value,
                 a.combat.as_ref().map_or(0.0, |c| c.confidence_mod),
