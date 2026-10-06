@@ -980,6 +980,30 @@ fn main() -> Result<()> {
                 println!("{n:6} {k} {ex:?}");
             }
         }
+        Some("locks") => {
+            // locks <data dir>: lock levels and flags (`XLOC`) over every reference,
+            // by base record type, with an example of each.
+            use std::collections::BTreeMap;
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut counts: BTreeMap<(String, u8, u8, bool), (usize, esp::FormId)> = BTreeMap::new();
+            for &c in lo.ids_of_type(b"CELL") {
+                let Some(idx) = lo.cell(c) else { continue };
+                for &r in idx.persistent.iter().chain(&idx.temporary) {
+                    let Some(rec) = lo.get(r) else { continue };
+                    let Some(x) = rec.get(b"XLOC").filter(|d| d.len() >= 9) else { continue };
+                    let base = rec.get(b"NAME").filter(|d| d.len() >= 4).map(|b| rec.fid(esp::FormId(u32::from_le_bytes(b[0..4].try_into().unwrap()))));
+                    let tag = base.and_then(|b| lo.tag_of(b)).map(|t| t.to_string()).unwrap_or_default();
+                    let key = u32::from_le_bytes(x[4..8].try_into().unwrap()) != 0;
+                    let e = counts.entry((tag, x[0], x[8], key)).or_insert((0, r));
+                    e.0 += 1;
+                }
+            }
+            for ((tag, level, flags, key), (n, example)) in counts {
+                println!("{tag} level {level:3} flags {flags:02X} key {key}: {n} (e.g. {example})");
+            }
+        }
         Some("cell-refs") => {
             // cell-refs <data dir> <cell editor id | hex | [world:]x,y> [base tag]: a cell's
             // references with their base records, positions and rotations (degrees).

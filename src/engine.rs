@@ -1516,6 +1516,9 @@ impl Engine {
             return Ok(());
         }
         if base_tag.map(|t| t.0) == Some(*b"CONT") {
+            if !self.player_unlock(owner) {
+                return Ok(());
+            }
             self.menu = Some(crate::items::Menu::Container(owner));
             return Ok(());
         }
@@ -1528,9 +1531,13 @@ impl Engine {
             return Ok(());
         }
         if base_tag.map(|t| t.0) == Some(*b"DOOR") {
+            if let Some(lock) = self.door_lock_for_player(owner, rf.teleport.map(|t| t.0))
+                && !self.player_unlock(lock)
+            {
+                return Ok(());
+            }
             match rf.teleport {
                 Some((dest, pos, rot)) => self.teleport_through(dest, pos, rot.z)?,
-                None if self.scripts.locked.get(&owner).copied().unwrap_or(false) => log::info!("{owner} is locked"),
                 None => {
                     self.toggle_door(owner, false);
                 }

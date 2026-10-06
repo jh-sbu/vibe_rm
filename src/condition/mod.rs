@@ -292,6 +292,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         623 => Some(subject.and_then(|s| e.actor_speed(s)).unwrap_or(0.0)), // GetMovementSpeed
         // GetEquippedItemType (left 0, right 1).
         597 => Some(subject.and_then(|s| e.inventories.get(&s)).map_or(0, |i| i.hand(&e.lo, c.p1 == 0) as i32) as f32),
+        5 => b(subject.is_some_and(|s| e.is_locked(s))),                     // GetLocked
+        65 => Some(subject.and_then(|s| e.lock_of(s)).map_or(0.0, |l| l.level as f32)), // GetLockLevel
         47 => Some(subject.map_or(0, |s| e.item_count(s, p1)) as f32), // GetItemCount
         182 => b(subject.and_then(|s| e.inventories.get(&s)).is_some_and(|i| i.is_equipped(p1))), // GetEquipped
         263 => b(false), // IsWeaponOut

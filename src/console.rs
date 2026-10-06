@@ -33,6 +33,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "tsh                   toggle sun shadows".into(),
             "sae <ref> <event>     send a behaviour event to an actor".into(),
             "pi <ref> <idle>       play an IDLE record on an actor".into(),
+            "lock <ref> [level]    lock a door or container; unlock <ref> unlocks it".into(),
             "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
             "gstate <ref>          an actor's active behaviour graph states".into(),
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
@@ -63,6 +64,15 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 Ok(()) => vec![format!("activated {r}")],
                 Err(e) => vec![format!("error: {e:#}")],
             }
+        }
+        "lock" | "unlock" => {
+            let Some(r) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec![format!("usage: {lower} <ref> [level]")] };
+            if let Some(level) = args.get(1).and_then(|l| l.parse::<u8>().ok()) {
+                engine.scripts.lock_levels.insert(r, level);
+            }
+            engine.set_locked(r, lower == "lock");
+            let lock = engine.lock_of(r);
+            vec![format!("{r}: locked {}, level {:?}, key {:?}", engine.is_locked(r), lock.map(|l| l.level), lock.and_then(|l| l.key))]
         }
         "door" => {
             let Some(d) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: door <ref>".into()] };

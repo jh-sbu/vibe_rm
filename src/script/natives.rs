@@ -170,10 +170,17 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             v(Value::Bool(true))
         }
-        ("objectreference", "islocked") => v(Value::Bool(me.and_then(|f| e.scripts.locked.get(&f).copied()).unwrap_or(false))),
+        ("objectreference", "islocked") => v(Value::Bool(me.is_some_and(|f| e.is_locked(f)))),
         ("objectreference", "lock") => {
             if let Some(f) = me {
-                e.scripts.locked.insert(f, args.first().map(|a| a.as_bool()).unwrap_or(true));
+                e.set_locked(f, args.first().map(|a| a.as_bool()).unwrap_or(true));
+            }
+            none()
+        }
+        ("objectreference", "getlocklevel") => v(Value::Int(me.and_then(|f| e.lock_of(f)).map_or(0, |l| l.level as i32))),
+        ("objectreference", "setlocklevel") => {
+            if let Some(f) = me {
+                e.scripts.lock_levels.insert(f, arg(0).as_int().clamp(0, 255) as u8);
             }
             none()
         }

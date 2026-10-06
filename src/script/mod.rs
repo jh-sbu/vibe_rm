@@ -45,7 +45,10 @@ pub struct ScriptState {
     pub globals: HashMap<FormId, f32>,
     pub disabled: HashMap<FormId, bool>,
     pub blocked_activation: HashSet<FormId>,
+    /// Locks set by scripts and packages, and keys used, over the references' own
+    /// (`XLOC`); lock levels set by scripts.
     pub locked: HashMap<FormId, bool>,
+    pub lock_levels: HashMap<FormId, u8>,
     pub actor_values: HashMap<(FormId, String), f32>,
     /// `AddInventoryEventFilter`: the items (or form lists) an object hears
     /// `OnItemAdded` / `OnItemRemoved` for; none set means all.

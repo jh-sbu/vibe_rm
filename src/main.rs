@@ -7,6 +7,7 @@ mod console;
 mod engine;
 mod footsteps;
 mod items;
+mod locks;
 mod render;
 mod physics;
 mod player;

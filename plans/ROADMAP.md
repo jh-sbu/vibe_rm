@@ -223,6 +223,14 @@ game each piece unlocks.
   slower by the sneaking movement type, the view lowered, sneak footsteps; sprinting
   stands them up) and sounds their jumps and landings (`JumpUp` / `JumpDown`).
   Console `probe` shows materials and water; `psneak`, `pjump`; vrm-tool `nif-materials`
+- Locks: doors and containers with a lock (`XLOC`) start locked; the player opens
+  them with the key (a load door pair shares its lock; houses always let the
+  player out), else a notification names the level. Sleep packages with
+  "Lock Doors?" lock the sleeper's home doors, packages unlocking doors at start /
+  on change (`PKDT`) open them, so shops close at night. Papyrus `Lock`,
+  `IsLocked`, `GetLockLevel`, `SetLockLevel`; conditions `GetLocked`,
+  `GetLockLevel`; console `lock` / `unlock`; vrm-tool `locks`. Open questions:
+  `known_gaps/locks.md`
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
@@ -248,7 +256,8 @@ game each piece unlocks.
 2. **AI depth**
    - Remaining procedures: force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target
-   - Off-screen travel between worldspaces; locked doors and keys
+   - Off-screen travel between worldspaces; NPCs and locked doors (keys,
+     ownership), lockpicking
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
 3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
