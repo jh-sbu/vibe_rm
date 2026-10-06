@@ -47,6 +47,17 @@ pub struct Ragdoll {
     pub scale: f32,
 }
 
+/// A collider found by [`Physics::probe_ray`].
+pub struct ProbeHit {
+    pub handle: ColliderHandle,
+    pub toi: f32,
+    pub in_broad_phase: bool,
+    pub enabled: bool,
+    pub owner: Option<esp::FormId>,
+    /// The collider's world bounds (min, max).
+    pub bounds: (Vec3, Vec3),
+}
+
 pub struct Physics {
     pub world: PhysicsWorld,
     controller: KinematicCharacterController,
@@ -262,6 +273,31 @@ impl Physics {
         let not_owner = |h: ColliderHandle, _: &Collider| self.owners.get(&h) != Some(&owner);
         let (h, toi) = self.world.cast_ray(&ray, max, true, QueryFilter::default().predicate(&not_owner))?;
         Some((toi, self.owners.get(&h).copied()))
+    }
+
+    /// Diagnostics: every collider a ray passes through, tested one by one rather
+    /// than through the broad phase, nearest first. Each hit says whether scene
+    /// queries (the broad phase) also see it, and whether it is enabled.
+    pub fn probe_ray(&self, origin: Vec3, dir: Vec3, max: f32) -> Vec<ProbeHit> {
+        let ray = Ray::new(origin, dir);
+        let seen: std::collections::HashSet<ColliderHandle> =
+            self.world.intersect_ray(ray, max, true, QueryFilter::default()).map(|(h, _, _)| h).collect();
+        let mut hits: Vec<ProbeHit> = self
+            .world
+            .colliders
+            .iter()
+            .filter_map(|(h, co)| {
+                let hit = co.shape().cast_ray_and_get_normal(co.position(), &ray, max, true)?;
+                Some(ProbeHit { handle: h, toi: hit.time_of_impact, in_broad_phase: seen.contains(&h), enabled: co.is_enabled(), owner: self.owners.get(&h).copied(), bounds: { let b = co.compute_aabb(); (b.mins, b.maxs) } })
+            })
+            .collect();
+        hits.sort_by(|a, b| a.toi.total_cmp(&b.toi));
+        hits
+    }
+
+    /// Whether the collider still exists.
+    pub fn has_collider(&self, h: ColliderHandle) -> bool {
+        self.world.colliders.contains(h)
     }
 
     /// Cast a ray, returning the hit distance and the owning reference (if any).
