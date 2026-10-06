@@ -208,6 +208,14 @@ game each piece unlocks.
   it, running to catch up with one more than "Run If Behind Distance" ahead);
   followers in range face their target; SitTarget. Open questions:
   `known_gaps/escort.md`
+- NPC templates (`TPLT`): each "Use ..." flag takes that part (traits, stats,
+  factions, AI data and combat style, AI packages, base data, inventory, script,
+  attack data and attack race, keywords) from the template, through nested templates
+  and leveled NPC lists picked per reference as its looks are, so a leveled draugr's
+  health, factions and packages are the ones of the draugr it looks like. Actors'
+  `HasKeyword` includes their race's; `GetInFaction` / `GetFactionRank` and door
+  ownership follow templates. Console `templates <ref>`; vrm-tool `npc-templates`.
+  Open questions: `known_gaps/npc-templates.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -267,8 +275,7 @@ game each piece unlocks.
      escorts' follower min / max distances and several followers, riding
    - Off-screen travel between worldspaces; paths round locked animated doors,
      lockpicking perks and skill gain
-   - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
-     data, keywords, scripts; leveled list counts ("each item in count")
+   - Templates: spells (with magic), default package lists (`DPLT`)
 3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and

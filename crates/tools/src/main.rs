@@ -946,6 +946,43 @@ fn main() -> Result<()> {
                 println!("{c:6} {n}");
             }
         }
+        Some("npc-templates") => {
+            // npc-templates <data dir>: NPCs with a template (TPLT), by what it is (NPC_ or a
+            // leveled list), how often each "Use ..." flag (ACBS) is set, and ACHRs placing
+            // templated NPCs through a leveled template.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            const FLAGS: [&str; 13] = [
+                "traits", "stats", "factions", "spells", "ai data", "ai packages", "model/anim (unused)", "base data",
+                "inventory", "script", "def pack list", "attack data", "keywords",
+            ];
+            let (mut to_npc, mut to_lvln, mut flags) = (0, 0, [0usize; 13]);
+            let mut lvln_flags = [0usize; 13];
+            for &npc in lo.ids_of_type(b"NPC_") {
+                let Some(rec) = lo.get(npc) else { continue };
+                let Some(t) = rec.get(b"TPLT").filter(|d| d.len() >= 4) else { continue };
+                let t = rec.fid(esp::FormId(u32::from_le_bytes(t[0..4].try_into().unwrap())));
+                let Some(tr) = lo.get(t) else { continue };
+                let lvln = tr.tag().0 == *b"LVLN";
+                if lvln { to_lvln += 1 } else { to_npc += 1 }
+                let f = rec.get(b"ACBS").filter(|d| d.len() >= 20).map_or(0, |d| u16::from_le_bytes([d[18], d[19]]));
+                for (i, n) in flags.iter_mut().enumerate() {
+                    if f & (1 << i) != 0 {
+                        *n += 1;
+                        if lvln {
+                            lvln_flags[i] += 1;
+                        }
+                    }
+                }
+            }
+            println!("templated NPCs: {to_npc} on an NPC, {to_lvln} on a leveled list");
+            let has = |tag: &[u8; 4]| lo.ids_of_type(b"NPC_").iter().filter(|&&n| lo.get(n).is_some_and(|r| r.get(tag).is_some())).count();
+            println!("NPCs with an attack race (ATKR) {}, own attacks (ATKD) {}", has(b"ATKR"), has(b"ATKD"));
+            for (i, n) in FLAGS.iter().enumerate() {
+                println!("  0x{:04X} use {n:22} {:6} ({} through a leveled list)", 1 << i, flags[i], lvln_flags[i]);
+            }
+        }
         Some("pack-speeds") => {
             // pack-speeds <data dir>: packages by type, preferred speed flag / speed, sneak flag.
             let data = std::path::Path::new(&args[1]);

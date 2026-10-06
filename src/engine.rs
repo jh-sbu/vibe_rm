@@ -556,7 +556,11 @@ impl Engine {
         let mut vm = std::mem::take(&mut self.vm);
         for &r in refs {
             let Some(rec) = self.lo.get(r) else { continue };
-            let base = records::reference(&rec).base;
+            let mut base = records::reference(&rec).base;
+            // Actors take their base's scripts from its script part (templates).
+            if rec.tag().0 == *b"ACHR" {
+                base = self.templates_of(r).map_or(FormId::NULL, |t| t.of(crate::world::template::SCRIPT));
+            }
             let mut scripts = crate::script::vmad::parse(&rec).map(|v| v.scripts).unwrap_or_default();
             if let Some(b) = self.lo.get(base)
                 && let Some(bv) = crate::script::vmad::parse(&b)
@@ -662,13 +666,13 @@ impl Engine {
                 });
             // Desynchronise actors sharing a clip.
             let start = (ai as f32 * 1.618) % 7.0;
-            let packages = crate::ai::package::npc_packages(&self.lo, d.npc);
+            let packages = crate::ai::package::npc_packages(&self.lo, &d.templates);
             let mut rt = crate::ai::ActorRuntime::new(d.ref_id, d.npc, skel.clone(), d.transform, packages, start * 0.3);
             rt.editor_pos = *editor_pos;
             rt.skeleton_path = d.skeleton.clone();
             rt.female = d.female;
             rt.child = self.npc_race(d.npc).is_some_and(|r| self.race_is_child(r));
-            let stats = crate::ai::combat::CombatStats::of(self, d.npc, d.race);
+            let stats = crate::ai::combat::CombatStats::of(self, &d.templates, d.race);
             rt.health = stats.max_health;
             rt.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.inventory.weapon(&self.lo));
@@ -1633,7 +1637,28 @@ impl Engine {
         rec.get(b"FULL").map(|d| self.lo.lstring(&rec, d)).unwrap_or_default()
     }
 
+    /// Where an actor takes each part of its definition from: a reference (picking
+    /// its leveled base and templates as it was spawned), the player, or an NPC record.
+    pub fn templates_of(&self, actor: FormId) -> Option<crate::world::template::Sources> {
+        use crate::world::template::Sources;
+        if actor == PLAYER_REF {
+            return Some(Sources::of_npc(&self.lo, FormId(0x7), 0));
+        }
+        let rec = self.lo.get(actor)?;
+        match &rec.tag().0 {
+            b"ACHR" => Sources::for_ref(&self.lo, records::reference(&rec).base, actor.0 as u64),
+            b"NPC_" => Some(Sources::of_npc(&self.lo, actor, 0)),
+            _ => None,
+        }
+    }
+
     pub fn has_keyword(&self, form: FormId, kw: FormId) -> bool {
+        if form == PLAYER_REF || self.lo.get(form).is_some_and(|r| r.tag().0 == *b"ACHR") {
+            // Actors: their keywords part's, and their race's.
+            let Some(t) = self.templates_of(form) else { return false };
+            let race = self.lo.get(t.of(crate::world::template::TRAITS)).and_then(|r| r.get(b"RNAM").map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))));
+            return t.keywords(&self.lo).contains(&kw) || race.is_some_and(|r| self.has_keyword(r, kw));
+        }
         let Some(rec) = self.lo.get(form) else { return false };
         let rec = if matches!(&rec.tag().0, b"REFR" | b"ACHR") {
             match self.lo.get(records::reference(&rec).base) {

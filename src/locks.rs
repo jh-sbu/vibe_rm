@@ -55,7 +55,7 @@ impl Engine {
         }
         let Some(npc) = self.base_of(achr) else { return false };
         if let Some(owner) = crate::ai::furniture::owner_of(&self.lo, r)
-            && (owner == npc || crate::ai::combat::npc_factions(&self.lo, npc).contains(&owner))
+            && (owner == npc || self.npc_factions(achr).iter().any(|&(f, rank)| f == owner && rank >= 0))
         {
             return true;
         }
@@ -177,7 +177,7 @@ impl Engine {
     /// sleep package that locks doors puts it, and the doors on the far side of
     /// them, those of them with locks.
     fn home_doors(&mut self, achr: FormId, npc: FormId) -> Vec<FormId> {
-        let packages = self.npc_packages_cached(npc);
+        let packages = self.npc_packages_cached(achr, npc);
         // Sleeping near its editor location (or elsewhere unnamed): its own cell.
         let editor = self.lo.cell_of_ref(achr).map(Place::Interior);
         let place = packages.iter().find(|p| p.lock_doors).and_then(|p| self.package_place(achr, p).map(|p| p.0).or(editor));
@@ -215,7 +215,7 @@ impl Engine {
         let mut lock = Vec::new();
         for (achr, old, new) in changed {
             let Some(npc) = self.lo.get(achr).map(|rec| records::reference(&rec).base) else { continue };
-            let packages = self.npc_packages_cached(npc);
+            let packages = self.npc_packages_cached(achr, npc);
             let find = |id: Option<FormId>| id.and_then(|id| packages.iter().find(|p| p.id == id));
             let (old, new) = (find(old), find(new));
             let opens = old.is_some_and(|p| p.unlock_on_change) || new.is_some_and(|p| p.unlock_at_start);

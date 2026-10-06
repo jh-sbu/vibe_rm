@@ -13,6 +13,7 @@ pub mod lod;
 pub mod ragdoll;
 pub mod records;
 pub mod skeleton;
+pub mod template;
 pub mod sound;
 pub mod terrain;
 pub mod weather;

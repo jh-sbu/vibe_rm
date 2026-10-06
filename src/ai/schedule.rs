@@ -76,12 +76,16 @@ impl Engine {
         }
     }
 
-    pub(crate) fn npc_packages_cached(&mut self, npc: FormId) -> std::sync::Arc<Vec<Package>> {
-        if let Some(p) = self.whereabouts.packages.get(&npc) {
+    /// The packages of actor `achr` with NPC record `npc`, by the NPC its AI packages
+    /// come from.
+    pub(crate) fn npc_packages_cached(&mut self, achr: FormId, npc: FormId) -> std::sync::Arc<Vec<Package>> {
+        let src = crate::world::template::Sources::of_npc(&self.lo, npc, achr.0 as u64);
+        let key = src.of(crate::world::template::AI_PACKAGES);
+        if let Some(p) = self.whereabouts.packages.get(&key) {
             return p.clone();
         }
-        let p = std::sync::Arc::new(super::package::npc_packages(&self.lo, npc));
-        self.whereabouts.packages.insert(npc, p.clone());
+        let p = std::sync::Arc::new(super::package::npc_packages(&self.lo, &src));
+        self.whereabouts.packages.insert(key, p.clone());
         p
     }
 
@@ -146,7 +150,7 @@ impl Engine {
             }
             let Some(editor_place) = self.place_of_ref(a, rf.position) else { continue };
             let Some(npc) = self.base_npc(rf.base) else { continue };
-            let packages = self.npc_packages_cached(npc);
+            let packages = self.npc_packages_cached(a, npc);
             let current = self.current_package(a, &packages);
             let (place, pos) = current.and_then(|i| self.package_place(a, &packages[i])).unwrap_or((editor_place, rf.position));
             pending_packages.insert(a, current.map(|i| packages[i].id));
