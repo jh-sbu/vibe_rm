@@ -123,7 +123,9 @@ game each piece unlocks.
   (click). Console `startcombat <a> <b|player>`
 - Bleedout: essential actors (and protected ones, except to the player) brought to zero
   health bleed out through the graph (`bleedOutStart` / `bleedOutStop`), dropped as
-  targets, and get up after a while with a quarter of their health. Papyrus `Kill()`
+  targets, and get up after a while with a quarter of their health; the player can
+  finish off a protected one that's down. Seated actors drop out of the furniture
+  in front of it. Papyrus `Kill()`
   bleeds them out (`KillEssential()` doesn't), `IsBleedingOut`; console `damage <ref> <n>`
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;

@@ -498,7 +498,12 @@ impl Engine {
         if a.dead {
             return;
         }
+        // Down and bleeding out: only the player finishes off a protected actor.
         if a.bleeding.is_some() {
+            if !a.stats.essential && attacker == Some(PLAYER_REF) {
+                a.bleeding = None;
+                self.kill_actor(target);
+            }
             return;
         }
         a.health -= amount;
@@ -534,11 +539,12 @@ impl Engine {
         a.health = 0.0;
         a.bleeding = Some(BLEEDOUT_TIME);
         a.combat = None;
+        log::info!("{actor} bleeds out (was {})", a.state_name());
+        a.fall_out_of_furniture(&mut self.furniture, &self.nav);
         a.halt(BLEEDOUT_TIME);
         if let Some(g) = a.graph.as_mut() {
             g.send_event("bleedOutStart");
         }
-        log::info!("{actor} bleeds out");
         let fighting: Vec<FormId> =
             self.cells.values().flat_map(|rt| &rt.actors).filter(|a| a.combat.as_ref().is_some_and(|c| c.target == actor)).map(|a| a.ref_id).collect();
         for f in fighting {
