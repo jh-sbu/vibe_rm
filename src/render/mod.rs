@@ -1376,7 +1376,8 @@ impl Renderer {
         let view = tex.create_view(&Default::default());
         self.render(scene, camera, &view);
         overlay(self, &view);
-        let bpr = (self.width * 4).div_ceil(256) * 256;
+        let bpp = self.color_format.block_copy_size(None).unwrap_or(4);
+        let bpr = (self.width * bpp).div_ceil(256) * 256;
         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("readback"),
             size: (bpr * self.height) as u64,
@@ -1398,19 +1399,40 @@ impl Renderer {
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         let data = slice.get_mapped_range().expect("readback buffer mapped");
         let mut out = Vec::with_capacity((self.width * self.height * 4) as usize);
-        let bgra = matches!(self.color_format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
+        use wgpu::TextureFormat as F;
+        let unorm = |x: f32| (x.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
         for y in 0..self.height {
-            let row = &data[(y * bpr) as usize..(y * bpr + self.width * 4) as usize];
-            for px in row.chunks_exact(4) {
-                if bgra {
-                    out.extend_from_slice(&[px[2], px[1], px[0], 255]);
-                } else {
-                    out.extend_from_slice(&[px[0], px[1], px[2], 255]);
-                }
+            let row = &data[(y * bpr) as usize..(y * bpr + self.width * bpp) as usize];
+            for px in row.chunks_exact(bpp as usize) {
+                let rgb = match self.color_format {
+                    F::Bgra8Unorm | F::Bgra8UnormSrgb => [px[2], px[1], px[0]],
+                    // Window surfaces may be 10 bits per channel (R in the low bits) or half floats.
+                    F::Rgb10a2Unorm => {
+                        let v = u32::from_le_bytes([px[0], px[1], px[2], px[3]]);
+                        let c = |shift: u32| ((v >> shift & 0x3ff) >> 2) as u8;
+                        [c(0), c(10), c(20)]
+                    }
+                    F::Rgba16Float => {
+                        let c = |i: usize| unorm(f16_to_f32(u16::from_le_bytes([px[i * 2], px[i * 2 + 1]])));
+                        [c(0), c(1), c(2)]
+                    }
+                    _ => [px[0], px[1], px[2]],
+                };
+                out.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
             }
         }
         out
     }
+}
+
+fn f16_to_f32(h: u16) -> f32 {
+    let (sign, exp, man) = ((h >> 15) as u32, (h >> 10 & 0x1f) as i32, (h & 0x3ff) as f32);
+    let mag = match exp {
+        0 => man * 2f32.powi(-24),
+        31 => f32::INFINITY,
+        e => (1.0 + man / 1024.0) * 2f32.powi(e - 15),
+    };
+    if sign == 1 { -mag } else { mag }
 }
 
 fn pack_lights(l: [u16; 8]) -> [u32; 4] {
