@@ -21,6 +21,15 @@ and location pages, CK wiki descriptions) and the game's data files.
   after 2 / 1 / 0.75 / 0.5 / 0.25 s of strain, × (1 + 0.5 × skill / 100). The
   settings agree: `fLockpickSkillSweetSpotMult` 0.006, `fPartialPick<Level>`
   22 / 18 / 14 / 10 / 6, `fLockpickSkillPartialPickBase` 0.775 and `Mult` 0.015.
+- Who owns locked load doors (`vrm-tool locks`): most belong, on one side or the
+  other, to a faction (the household or shop's) by the door's own `XOWN` or its
+  cell's; a few to an NPC; 57 to nobody.
+- Packages take NPCs through locked load doors they neither own nor have the key
+  to: Falk Firebeard's `FalkBrylingSecretMeeting2x2` puts him in Bryling's house
+  (locked at night, owned by `SolitudeBrylingsHouseFaction`, which he isn't in, key
+  `SolitudeBrylingsHouseKey`, which he doesn't carry) from 2 to 4 at night, and
+  UESP describes the visit. Severio Pelagia's `WhiterunSeverioDrunkenHuntsman20x3`
+  names Belethor's General Goods, shut at 8 in the evening.
 - UESP location pages: shops are open (unlocked) by day and locked at night; some
   homes are locked all the time (Sven and Hilde's house, novice lock, key carried by
   both).
@@ -42,6 +51,12 @@ and location pages, CK wiki descriptions) and the game's data files.
   actors' packages with the previous refresh. When a package with 0x40 starts or
   one with 0x80 ends, the actor's home doors unlock; when a sleep package with
   "Lock Doors?" starts, they lock (locks applied after unlocks).
+- Animated (non-load) doors open for walkers who get past their lock: with the
+  key, or owning it (the door's `XOWN`, else its cell's: the actor or one of its
+  factions). So cages, cells and gates in dungeons and prisons, and the player's
+  rented room, stay shut; Companions open their own rooms.
+- Load doors don't stop actors: whereabouts move them through locked ones as
+  their packages say (see Falk above).
 - Home doors: the load doors (both sides, those with a lock) of the interior where
   the actor's lock-doors sleep package puts it (or its editor cell).
 
@@ -62,7 +77,10 @@ and location pages, CK wiki descriptions) and the game's data files.
    isn't put out.
 5. **Timing.** Locks change on whereabouts refreshes (20 s real time), not
    exactly when a package starts.
-6. **NPCs.** NPCs pass through locked doors whatever keys they carry; `Lock`'s
-   "as owner" argument is ignored; no trespassing or crime for opening a lock.
-7. **Animated doors.** NPCs open locked animated (non-load) doors as they walk
-   through.
+6. **NPCs and load doors.** What lets NPCs through locked load doors isn't known:
+   whether every package can, only packages naming a place inside, or something
+   in the doors' or quests' data. Ownership ranks (`XRNK`) are ignored, and keys
+   or factions that quest aliases give aren't counted. `Lock`'s "as owner"
+   argument is ignored; no trespassing or crime for opening a lock.
+7. **Animated doors.** The navmesh doesn't know a door is locked: actors walk up to
+   a locked door they can't open and push against it instead of going round.

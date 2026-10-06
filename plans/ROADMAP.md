@@ -232,7 +232,9 @@ game each piece unlocks.
   "Lock Doors?" lock the sleeper's home doors, packages unlocking doors at start /
   on change (`PKDT`) open them, so shops close at night. Papyrus `Lock`,
   `IsLocked`, `GetLockLevel`, `SetLockLevel`; conditions `GetLocked`,
-  `GetLockLevel`; console `lock` / `unlock`, `picklock`; vrm-tool `locks`. Open questions:
+  `GetLockLevel`; console `lock` / `unlock`, `picklock`; vrm-tool `locks`. NPCs
+  open locked animated doors only with the key or owning them (cages and cells
+  stay shut). Open questions:
   `known_gaps/locks.md`
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
@@ -259,8 +261,8 @@ game each piece unlocks.
 2. **AI depth**
    - Remaining procedures: force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target
-   - Off-screen travel between worldspaces; NPCs and locked doors (keys,
-     ownership), lockpicking perks and skill gain
+   - Off-screen travel between worldspaces; paths round locked animated doors,
+     lockpicking perks and skill gain
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
 3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
@@ -268,7 +270,7 @@ game each piece unlocks.
    and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-4. **UI**: inventory (categories, equipping, item details), map, bars
+4. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
 5. **Audio**: lip sync
 6. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), HDR/image spaces, particles, distant LOD (BTR/BTO/trees),

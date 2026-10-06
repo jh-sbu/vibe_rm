@@ -144,15 +144,31 @@ impl Engine {
     /// Animate objects; open doors for actors walking up to them and close them after.
     pub(crate) fn update_animated(&mut self, dt: f32) {
         let player = self.ref_position(PLAYER_REF).unwrap_or_default();
-        let walkers: Vec<Vec3> =
-            self.cells.values().flat_map(|rt| &rt.actors).filter(|a| a.is_walking()).map(|a| a.pos).collect();
+        let walkers: Vec<(FormId, Vec3)> =
+            self.cells.values().flat_map(|rt| &rt.actors).filter(|a| a.is_walking()).map(|a| (a.ref_id, a.pos)).collect();
         let near = |p: Vec3, d: f32, with_player: bool| {
-            walkers.iter().any(|w| w.distance(p) < d) || (with_player && player.distance(p) < d)
+            walkers.iter().any(|w| w.1.distance(p) < d) || (with_player && player.distance(p) < d)
         };
+        // Closed doors someone walks up to, if they get past its lock (so a bandit
+        // walking by doesn't open a locked gate).
+        let mut opening = Vec::new();
+        for obj in self.cells.values().flat_map(|rt| &rt.animated) {
+            if obj.door && !obj.open && obj.playing.is_none() {
+                let at: Vec<FormId> = walkers.iter().filter(|w| w.1.distance(obj.position) < OPEN_DISTANCE).map(|w| w.0).collect();
+                if at.is_empty() {
+                    continue;
+                }
+                if !self.is_locked(obj.ref_id) || at.iter().any(|&w| self.npc_may_open(w, obj.ref_id)) {
+                    opening.push(obj.ref_id);
+                } else {
+                    log::trace!("locked door {} stays shut for {at:?}", obj.ref_id);
+                }
+            }
+        }
         if log::log_enabled!(log::Level::Trace) {
             for rt in self.cells.values() {
                 for obj in rt.animated.iter().filter(|o| o.door && !o.open) {
-                    let d = walkers.iter().map(|w| w.distance(obj.position)).fold(f32::MAX, f32::min);
+                    let d = walkers.iter().map(|w| w.1.distance(obj.position)).fold(f32::MAX, f32::min);
                     if d < 400.0 {
                         log::trace!("closed door {} nearest walker {d:.0}", obj.ref_id);
                     }
@@ -165,7 +181,7 @@ impl Engine {
                 if !obj.door || obj.playing.is_some() {
                     continue;
                 }
-                if !obj.open && near(obj.position, OPEN_DISTANCE, false) {
+                if !obj.open && opening.contains(&obj.ref_id) {
                     toggle.push((obj.ref_id, true));
                 } else if obj.open && obj.auto {
                     if near(obj.position, CLEAR_DISTANCE, true) {

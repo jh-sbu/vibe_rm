@@ -162,7 +162,7 @@ pub fn enter_start(m: &Marker, enter: &[Arc<BoundClip>]) -> (Vec3, f32) {
 }
 
 /// Owner of a reference (`XOWN`), falling back to its cell's owner.
-fn owner_of(lo: &LoadOrder, r: FormId) -> Option<FormId> {
+pub(crate) fn owner_of(lo: &LoadOrder, r: FormId) -> Option<FormId> {
     let own = |rec: &esp::LoadedRecord<'_>| {
         rec.get(b"XOWN").filter(|d| d.len() >= 4).map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
     };

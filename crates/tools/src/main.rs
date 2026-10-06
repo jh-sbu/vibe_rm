@@ -1003,6 +1003,58 @@ fn main() -> Result<()> {
             for ((tag, level, flags, key), (n, example)) in counts {
                 println!("{tag} level {level:3} flags {flags:02X} key {key}: {n} (e.g. {example})");
             }
+            // Who owns locked load doors: the door (`XOWN`), its cell, the far side or
+            // the far side's cell, owned by an NPC or a faction.
+            let fid = |rec: &esp::LoadedRecord<'_>, tag: &[u8; 4]| {
+                rec.get(tag).filter(|d| d.len() >= 4).map(|d| rec.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))).filter(|f| !f.is_null())
+            };
+            let owner = |r: esp::FormId| {
+                let rec = lo.get(r)?;
+                fid(&rec, b"XOWN").map(|o| ("door", o)).or_else(|| lo.get(lo.cell_of_ref(r)?).and_then(|c| fid(&c, b"XOWN")).map(|o| ("cell", o)))
+            };
+            let mut owned: BTreeMap<String, (usize, esp::FormId)> = BTreeMap::new();
+            for &c in lo.ids_of_type(b"CELL") {
+                let Some(idx) = lo.cell(c) else { continue };
+                for &r in idx.persistent.iter().chain(&idx.temporary) {
+                    let Some(rec) = lo.get(r) else { continue };
+                    if rec.get(b"XLOC").is_none() {
+                        continue;
+                    }
+                    let Some(partner) = fid(&rec, b"XTEL") else { continue };
+                    let near = owner(r);
+                    let far = owner(partner);
+                    let desc = |o: Option<(&str, esp::FormId)>| match o {
+                        Some((at, f)) => format!("{at} {}", lo.tag_of(f).map(|t| t.to_string()).unwrap_or_default()),
+                        None => "none".into(),
+                    };
+                    let e = owned.entry(format!("this side {} / far side {}", desc(near), desc(far))).or_insert((0, r));
+                    e.0 += 1;
+                }
+            }
+            for (k, (n, example)) in owned {
+                println!("locked load doors, {k}: {n} (e.g. {example})");
+            }
+            // Locked doors within a cell (no teleport) in cells with persistent actors:
+            // those NPCs may walk up to.
+            for &c in lo.ids_of_type(b"CELL") {
+                let Some(idx) = lo.cell(c) else { continue };
+                let actors = idx.persistent.iter().filter(|&&r| lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR")).count();
+                if actors == 0 {
+                    continue;
+                }
+                let doors: Vec<String> = idx
+                    .persistent
+                    .iter()
+                    .chain(&idx.temporary)
+                    .filter(|&&r| lo.get(r).is_some_and(|rec| rec.get(b"XLOC").is_some() && rec.get(b"XTEL").is_none()))
+                    .filter(|&&r| lo.get(r).and_then(|rec| fid(&rec, b"NAME")).and_then(|b| lo.tag_of(b)).is_some_and(|t| t.0 == *b"DOOR"))
+                    .map(|&r| format!("{r} (owner {:?})", owner(r).map(|o| o.1)))
+                    .collect();
+                if !doors.is_empty() {
+                    let name = lo.get(c).and_then(|r| r.editor_id()).unwrap_or_default();
+                    println!("{name} ({c}), {actors} actors: locked doors {}", doors.join(", "));
+                }
+            }
         }
         Some("cell-refs") => {
             // cell-refs <data dir> <cell editor id | hex | [world:]x,y> [base tag]: a cell's
