@@ -47,6 +47,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "tcam x y z yaw pitch  hold the --wait camera there (degrees; yaw 0 = north)".into(),
             "stamina <ref|player> [n]  show or set stamina".into(),
             "probe [x y]           collision under the player (or x y) and per-cell colliders".into(),
+            "screenshot <png>      save the 3D view (no HUD) at the window size".into(),
         ],
         "bark" => {
             let [r, sub] = args[..] else { return vec!["usage: bark <actor ref> <subtype, e.g. HELO / IDLE>".into()] };
@@ -261,6 +262,19 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             }
             engine.place_player(Vec3::new(v[0], v[1], v[2]), engine.camera.yaw);
             vec!["ok".into()]
+        }
+        "screenshot" => {
+            if args.is_empty() {
+                return vec!["usage: screenshot <png>".into()];
+            }
+            let path = args.join(" ");
+            let r = &mut engine.renderer;
+            let (w, h) = (r.width, r.height);
+            let pixels = r.render_to_image(&engine.scene, &engine.camera, |_, _| {});
+            match crate::app::write_png(&path, w, h, &pixels) {
+                Ok(()) => vec![format!("wrote {path} ({w}x{h}, {:?})", engine.renderer.color_format)],
+                Err(e) => vec![format!("error: {e:#}")],
+            }
         }
         "probe" => {
             let v: Vec<f32> = args.iter().filter_map(|a| a.parse().ok()).collect();

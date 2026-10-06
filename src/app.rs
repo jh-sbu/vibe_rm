@@ -226,7 +226,7 @@ pub fn run(opts: Options) -> Result<()> {
     Ok(())
 }
 
-fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) -> Result<()> {
+pub(crate) fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) -> Result<()> {
     let file = std::fs::File::create(path)?;
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
     enc.set_color(png::ColorType::Rgba);
