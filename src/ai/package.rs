@@ -63,6 +63,8 @@ pub enum Gait {
 /// `PKDT` general flags.
 const PKDT_PREFERRED_SPEED: u32 = 1 << 13;
 const PKDT_ALWAYS_SNEAK: u32 = 1 << 17;
+const PKDT_UNLOCK_AT_START: u32 = 0x40;
+const PKDT_UNLOCK_ON_CHANGE: u32 = 0x80;
 
 /// A package "TargetSelector" / "SingleRef" input (`PTDA`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +143,12 @@ pub struct Package {
     pub follow_radius: (f32, f32),
     pub gait: Gait,
     pub sneak: bool,
+    /// The sleeper locks its home's doors ("Lock Doors?" input).
+    pub lock_doors: bool,
+    /// `PKDT`: unlock the home's doors as the package starts / once it gives way
+    /// to another.
+    pub unlock_at_start: bool,
+    pub unlock_on_change: bool,
 }
 
 fn behaviour_of(template: &str) -> Behaviour {
@@ -273,6 +281,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     let mut schedule = Schedule { month: -1, day_of_week: -1, hour: -1, minute: -1, duration: 0 };
     let mut template = FormId::NULL;
     let (mut gait, mut sneak) = (Gait::Walk, false);
+    let mut pkdt_flags = 0;
     for sr in rec.subrecords() {
         match &sr.tag.0 {
             b"PSDT" if sr.data.len() >= 12 => {
@@ -297,6 +306,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
                     };
                 }
                 sneak = flags & PKDT_ALWAYS_SNEAK != 0;
+                pkdt_flags = flags;
             }
             _ => {}
         }
@@ -372,6 +382,9 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         follow_radius,
         gait,
         sneak,
+        lock_doors: flag("lockdoors").unwrap_or(false),
+        unlock_at_start: pkdt_flags & PKDT_UNLOCK_AT_START != 0,
+        unlock_on_change: pkdt_flags & PKDT_UNLOCK_ON_CHANGE != 0,
     })
 }
 

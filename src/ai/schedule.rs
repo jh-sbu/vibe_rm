@@ -40,6 +40,10 @@ pub struct Whereabouts {
     /// Incremental refresh in progress: next actor index and results so far.
     cursor: usize,
     pending: HashMap<FormId, (Place, Vec3)>,
+    /// The package each persistent actor is running (as of the last refresh), and
+    /// the refresh in progress.
+    pub package: HashMap<FormId, Option<FormId>>,
+    pending_packages: HashMap<FormId, Option<FormId>>,
 }
 
 impl Engine {
@@ -72,7 +76,7 @@ impl Engine {
         }
     }
 
-    fn npc_packages_cached(&mut self, npc: FormId) -> std::sync::Arc<Vec<Package>> {
+    pub(crate) fn npc_packages_cached(&mut self, npc: FormId) -> std::sync::Arc<Vec<Package>> {
         if let Some(p) = self.whereabouts.packages.get(&npc) {
             return p.clone();
         }
@@ -81,33 +85,28 @@ impl Engine {
         p
     }
 
-    /// Where the current package of a persistent actor puts it.
-    fn scheduled_place(&self, achr: FormId, editor: (Place, Vec3), packages: &[Package]) -> (Place, Vec3) {
+    /// The current package of a persistent actor (index into `packages`).
+    fn current_package(&self, achr: FormId, packages: &[Package]) -> Option<usize> {
         let ctx = crate::condition::Context { subject: Some(achr), ..Default::default() };
-        let Some(p) = packages
-            .iter()
-            .find(|p| p.schedule.matches(self.hour, self.day) && crate::condition::evaluate(self, &p.conditions, ctx))
-        else {
-            return editor;
-        };
+        packages.iter().position(|p| p.schedule.matches(self.hour, self.day) && crate::condition::evaluate(self, &p.conditions, ctx))
+    }
+
+    /// Where a package puts an actor, when its location names a place (a reference,
+    /// linked reference or interior cell). The position is NaN for a whole cell.
+    pub(crate) fn package_place(&self, achr: FormId, p: &Package) -> Option<(Place, Vec3)> {
         let target = match p.location.map(|l| l.kind) {
             Some(LocationKind::NearReference(r)) => Some(r),
             Some(LocationKind::NearLinkedRef(kw)) => self.linked_ref(achr, (!kw.is_null()).then_some(kw)),
             Some(LocationKind::InCell(c)) => {
                 return match self.lo.cell(c) {
-                    Some(idx) if idx.world.is_none() => (Place::Interior(c), Vec3::NAN),
-                    _ => editor,
+                    Some(idx) if idx.world.is_none() => Some((Place::Interior(c), Vec3::NAN)),
+                    _ => None,
                 };
             }
             _ => None,
-        };
-        let Some(t) = target else { return editor };
-        let Some(rec) = self.lo.get(t) else { return editor };
-        let pos = records::reference(&rec).position;
-        match self.place_of_ref(t, pos) {
-            Some(place) => (place, pos),
-            None => editor,
-        }
+        }?;
+        let pos = records::reference(&self.lo.get(target)?).position;
+        Some((self.place_of_ref(target, pos)?, pos))
     }
 
     /// Recompute where every persistent actor should be, all at once.
@@ -135,6 +134,7 @@ impl Engine {
         let start = self.whereabouts.cursor;
         let end = start.saturating_add(budget).min(actors.len());
         let mut pending = std::mem::take(&mut self.whereabouts.pending);
+        let mut pending_packages = std::mem::take(&mut self.whereabouts.pending_packages);
         for &a in &actors[start..end] {
             if self.is_disabled(a) {
                 continue;
@@ -147,7 +147,9 @@ impl Engine {
             let Some(editor_place) = self.place_of_ref(a, rf.position) else { continue };
             let Some(npc) = self.base_npc(rf.base) else { continue };
             let packages = self.npc_packages_cached(npc);
-            let (place, pos) = self.scheduled_place(a, (editor_place, rf.position), &packages);
+            let current = self.current_package(a, &packages);
+            let (place, pos) = current.and_then(|i| self.package_place(a, &packages[i])).unwrap_or((editor_place, rf.position));
+            pending_packages.insert(a, current.map(|i| packages[i].id));
             if log::log_enabled!(log::Level::Trace) {
                 log::trace!("{a} {:?}: editor {editor_place:?}, scheduled {place:?} {pos:?}", self.form_name(npc));
             }
@@ -158,6 +160,7 @@ impl Engine {
         self.whereabouts.cursor = end;
         if !done {
             self.whereabouts.pending = pending;
+            self.whereabouts.pending_packages = pending_packages;
             return false;
         }
         let mut by_place: HashMap<Place, Vec<FormId>> = HashMap::new();
@@ -169,6 +172,8 @@ impl Engine {
         self.whereabouts.prev = std::mem::replace(&mut self.whereabouts.of, pending);
         self.whereabouts.by_place = by_place;
         self.whereabouts.cursor = 0;
+        let before = std::mem::replace(&mut self.whereabouts.package, pending_packages);
+        self.package_door_locks(&before);
         self.whereabouts.next_refresh = REFRESH_INTERVAL;
         true
     }

@@ -167,6 +167,21 @@ pub struct Reference {
     /// Door teleport destination: (destination door ref, position, rotation).
     pub teleport: Option<(FormId, Vec3, Vec3)>,
     pub enable_parent: Option<(FormId, bool)>,
+    pub lock: Option<Lock>,
+}
+
+/// A door's or container's lock (`XLOC`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Lock {
+    /// 0 / 1 novice, 25 apprentice, 50 adept, 75 expert, 100 master, 255 needs the key.
+    pub level: u8,
+    pub key: Option<FormId>,
+    /// The level follows the player's (flag 0x04).
+    pub leveled: bool,
+}
+
+impl Lock {
+    pub const NEEDS_KEY: u8 = 255;
 }
 
 impl Reference {
@@ -202,6 +217,7 @@ pub fn reference(rec: &LoadedRecord<'_>) -> Reference {
         radius_override: None,
         teleport: None,
         enable_parent: None,
+        lock: None,
     };
     for sr in rec.subrecords() {
         match &sr.tag.0 {
@@ -218,6 +234,10 @@ pub fn reference(rec: &LoadedRecord<'_>) -> Reference {
                     Vec3::new(sr.f32(4), sr.f32(8), sr.f32(12)),
                     Vec3::new(sr.f32(16), sr.f32(20), sr.f32(24)),
                 ))
+            }
+            b"XLOC" if sr.data.len() >= 9 => {
+                let key = sr.form_id(4);
+                r.lock = Some(Lock { level: sr.u8(0), key: (!key.is_null()).then(|| rec.fid(key)), leveled: sr.u8(8) & 0x04 != 0 });
             }
             b"XESP" => r.enable_parent = Some((rec.fid(sr.form_id(0)), sr.u8(4) & 1 != 0)),
             _ => {}
