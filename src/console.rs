@@ -38,6 +38,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
+            "player.equipitem / unequipitem <armor>   wear or take off armor".into(),
             "activate <ref>        activate a reference as the player".into(),
         ],
         "bark" => {
@@ -213,7 +214,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 7] = ["additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon"];
+const ITEM_COMMANDS: [&str; 9] = ["additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem"];
 
 /// Inventory commands on a reference (the player when none is given).
 fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -> Vec<String> {
@@ -227,6 +228,20 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             } else {
                 let taken = engine.remove_item(r, item, n, None);
                 vec![format!("{r}: removed {taken} {item}")]
+            }
+        }
+        "equipitem" | "unequipitem" => {
+            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: {cmd} <armor>")] };
+            if r != crate::engine::PLAYER_REF {
+                return vec!["only the player's armor can be changed for now".into()];
+            }
+            let on = cmd == "equipitem";
+            match engine.equip_armor(r, item, on) {
+                Ok(()) => {
+                    let p = engine.protection(r);
+                    vec![format!("{r}: {cmd} {item}; armor {:.0} ({} pieces), blows {:.0}% weaker", p.rating, p.pieces, p.reduction * 100.0)]
+                }
+                Err(e) => vec![e],
             }
         }
         "drawweapon" | "sheatheweapon" => {

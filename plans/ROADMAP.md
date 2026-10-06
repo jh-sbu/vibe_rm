@@ -127,6 +127,11 @@ game each piece unlocks.
   finish off a protected one that's down. Seated actors drop out of the furniture
   in front of it. Papyrus `Kill()`
   bleeds them out (`KillEssential()` doesn't), `IsBleedingOut`; console `damage <ref> <n>`
+- Armor ratings: worn armor and shields rate their base times the wearer's light / heavy
+  armor skill (`ceil(base x (1 + k x skill / 100))`, k 1.5 for NPCs, 0.4 for the player,
+  from `fArmorRatingMax` / `fArmorRatingPCMax`); blows lose 0.12% per point plus 3% per
+  piece, at most 80% (`fArmorScalingFactor`, `fArmorBaseFactor`, `fMaxArmorRating`).
+  Console `player.equipitem` / `unequipitem <armor>`; `cstats` shows armor
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
@@ -173,8 +178,8 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; locked doors and keys
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
-3. **Game logic**: combat (blocking, bows, power attack timing, armor ratings, crime and
-   assault, killmoves, the player's own weapon and
+3. **Game logic**: combat (blocking, bows, power attack timing, armor perks, tempering
+   and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
 4. **UI**: inventory (categories, equipping, item details), map, bars

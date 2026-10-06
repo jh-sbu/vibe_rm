@@ -4,7 +4,7 @@
 use esp::FormId;
 
 use crate::engine::{Engine, PLAYER_REF};
-use crate::world::inventory::{item_info, ItemInfo};
+use crate::world::inventory::{armor_slots, item_info, ItemInfo};
 
 /// A menu taking the mouse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,6 +110,30 @@ impl Engine {
             self.scripts.notify(if moved > 1 { format!("{name} ({moved}) added") } else { format!("{name} added") });
         }
         moved
+    }
+
+    /// Wear (taking off whatever covers the same body slots) or take off a piece of
+    /// armor the actor carries.
+    pub fn equip_armor(&mut self, r: FormId, armor: FormId, on: bool) -> Result<(), String> {
+        let slots = match self.lo.get(armor).filter(|rec| rec.tag().0 == *b"ARMO") {
+            Some(rec) => armor_slots(&rec),
+            None => return Err(format!("{armor} isn't armor")),
+        };
+        self.inventory_mut(r);
+        let lo = &self.lo;
+        let Some(inv) = self.inventories.get_mut(&r) else { return Err(format!("{r} has no inventory")) };
+        if on {
+            if inv.count(armor) <= 0 {
+                return Err(format!("{r} doesn't carry {armor}"));
+            }
+            inv.equipped.retain(|&f| f == armor || !lo.get(f).is_some_and(|rec| rec.tag().0 == *b"ARMO" && armor_slots(&rec) & slots != 0));
+            if !inv.equipped.contains(&armor) {
+                inv.equipped.push(armor);
+            }
+        } else {
+            inv.equipped.retain(|&f| f != armor);
+        }
+        Ok(())
     }
 
     /// An inventory's items with what they are, by kind then name.

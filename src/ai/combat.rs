@@ -57,6 +57,8 @@ pub struct CombatStats {
     pub essential: bool,
     pub protected: bool,
     pub factions: Vec<FormId>,
+    /// Light and heavy armor skills: worn armor protects more with them.
+    pub armor_skills: [f32; 2],
 }
 
 fn f32_at(d: &[u8], o: usize) -> f32 {
@@ -115,6 +117,84 @@ fn npc_factions(lo: &LoadOrder, npc: FormId) -> Vec<FormId> {
     Vec::new()
 }
 
+/// Light and heavy armor skills from an NPC's `DNAM` (skills 6 and 5).
+fn armor_skills(dnam: &[u8]) -> [f32; 2] {
+    [dnam.get(6).copied().unwrap_or(15) as f32, dnam.get(5).copied().unwrap_or(15) as f32]
+}
+
+/// A float game setting (`GMST`), or `default` when the plugins lack it.
+fn gmst_f32(lo: &LoadOrder, name: &str, default: f32) -> f32 {
+    lo.find_editor_id(name).and_then(|id| lo.get(id)).and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 4).map(|d| f32_at(d, 0))).unwrap_or(default)
+}
+
+/// How armor protects (`GMST`s): each piece's rating grows with the wearer's skill
+/// (to `npc_max` / `player_max` times base at skill 100), the total takes
+/// `scaling` percent per point, each piece worn `per_piece` more, up to `max`
+/// percent.
+#[derive(Debug, Clone, Copy)]
+pub struct ArmorSettings {
+    scaling: f32,
+    per_piece: f32,
+    max: f32,
+    rating_base: f32,
+    npc_max: f32,
+    player_max: f32,
+    clothing: f32,
+}
+
+impl ArmorSettings {
+    pub fn load(lo: &LoadOrder) -> ArmorSettings {
+        ArmorSettings {
+            scaling: gmst_f32(lo, "fArmorScalingFactor", 0.12),
+            per_piece: gmst_f32(lo, "fArmorBaseFactor", 0.03) * 100.0,
+            max: gmst_f32(lo, "fMaxArmorRating", 80.0),
+            rating_base: gmst_f32(lo, "fArmorRatingBase", 1.0),
+            npc_max: gmst_f32(lo, "fArmorRatingMax", 2.5),
+            player_max: gmst_f32(lo, "fArmorRatingPCMax", 1.4),
+            clothing: gmst_f32(lo, "fClothingArmorScale", 1.0),
+        }
+    }
+}
+
+/// What a set of worn items protects: the total armor rating (as the inventory
+/// shows it) and the share of a blow it takes away.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Protection {
+    pub rating: f32,
+    pub pieces: u32,
+    pub reduction: f32,
+}
+
+/// The protection of `worn` items for a wearer with these light / heavy armor
+/// skills: each light or heavy piece (shields too) rates
+/// `ceil(base x (1 + k x skill / 100))`, with k 1.5 for NPCs and 0.4 for the
+/// player; clothing rates as it is and doesn't count as a piece.
+pub fn protection(lo: &LoadOrder, set: &ArmorSettings, worn: &[FormId], skills: [f32; 2], player: bool) -> Protection {
+    let k = if player { set.player_max } else { set.npc_max } - set.rating_base;
+    let mut p = Protection::default();
+    for &f in worn {
+        let Some(rec) = lo.get(f).filter(|r| r.tag().0 == *b"ARMO") else { continue };
+        // DNAM: rating x 100. Armor type: BOD2 (slots, type) or the older BODT
+        // (slots, flags, type).
+        let base = rec.get(b"DNAM").filter(|d| d.len() >= 4).map_or(0, |d| i32::from_le_bytes(d[0..4].try_into().unwrap())) as f32 / 100.0;
+        let kind = match (rec.get(b"BOD2"), rec.get(b"BODT")) {
+            (Some(d), _) if d.len() >= 8 => u32::from_le_bytes(d[4..8].try_into().unwrap()),
+            (_, Some(d)) if d.len() >= 12 => u32::from_le_bytes(d[8..12].try_into().unwrap()),
+            _ => 2,
+        };
+        match kind {
+            0 | 1 => {
+                let skill = skills[kind as usize];
+                p.rating += (base * (set.rating_base + k * skill / 100.0)).ceil();
+                p.pieces += 1;
+            }
+            _ => p.rating += base * set.clothing,
+        }
+    }
+    p.reduction = ((p.rating * set.scaling + p.pieces as f32 * set.per_piece).min(set.max) / 100.0).clamp(0.0, 1.0);
+    p
+}
+
 impl CombatStats {
     pub fn of(e: &Engine, npc: FormId, race: FormId) -> CombatStats {
         let lo = &e.lo;
@@ -156,6 +236,7 @@ impl CombatStats {
         // Template flags: 0x2 stats, 0x10 AI data.
         if let Some(d) = npc_field(lo, npc, b"DNAM", 0x2).filter(|d| d.len() >= 38) {
             s.max_health += u16::from_le_bytes([d[36], d[37]]) as f32;
+            s.armor_skills = armor_skills(&d);
         }
         s.max_health = s.max_health.max(5.0);
         if let Some(d) = npc_field(lo, npc, b"AIDT", 0x10).filter(|d| d.len() >= 20) {
@@ -474,6 +555,7 @@ impl Engine {
                 log::debug!("{} misses {} ({dist:.0} / {reach:.0} units, {angle:.0} deg)", s.attacker, s.target);
                 continue;
             }
+            let damage = self.after_armor(s.target, damage);
             self.damage(s.target, damage, Some(s.attacker), stagger);
         }
     }
@@ -596,6 +678,30 @@ impl Engine {
         }
     }
 
+    /// What an actor (or the player) is wearing protects against blows.
+    pub fn protection(&self, actor: FormId) -> Protection {
+        let set = *self.armor_settings.get_or_init(|| ArmorSettings::load(&self.lo));
+        let worn = self.inventories.get(&actor).map_or(&[][..], |i| &i.equipped[..]);
+        let skills = if actor == PLAYER_REF {
+            npc_field(&self.lo, FormId(0x7), b"DNAM", 0x2).map_or([15.0; 2], |d| armor_skills(&d))
+        } else {
+            match self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor)) {
+                Some(a) => a.stats.armor_skills,
+                None => return Protection::default(),
+            }
+        };
+        protection(&self.lo, &set, worn, skills, actor == PLAYER_REF)
+    }
+
+    /// Physical damage after the target's armor.
+    fn after_armor(&self, target: FormId, damage: f32) -> f32 {
+        let p = self.protection(target);
+        if p.reduction > 0.0 {
+            log::debug!("{target}'s armor ({:.0}, {} pieces) takes {:.0}% of {damage:.0}", p.rating, p.pieces, p.reduction * 100.0);
+        }
+        damage * (1.0 - p.reduction)
+    }
+
     pub fn is_bleeding_out(&self, actor: FormId) -> bool {
         self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor)).is_some_and(|a| a.bleeding.is_some())
     }
@@ -627,6 +733,7 @@ impl Engine {
             && self.lo.tag_of(r).map(|t| t.0) == Some(*b"ACHR")
             && !self.is_dead(r)
         {
+            let damage = self.after_armor(r, damage);
             log::info!("player hits {r} for {damage:.0}");
             self.damage(r, damage, Some(PLAYER_REF), 0.0);
         }
@@ -706,6 +813,15 @@ impl Engine {
             format!("factions {:?}", stats.factions.iter().map(|f| format!("{f} {}", self.lo.get(*f).and_then(|r| r.editor_id().map(|e| e.to_string())).unwrap_or_default())).collect::<Vec<_>>()),
             format!("attacks {:?}", stats.attacks.iter().map(|x| x.event.as_str()).collect::<Vec<_>>()),
         ];
+        let p = self.protection(actor);
+        out.push(format!(
+            "armor {:.0} ({} pieces, light / heavy skill {:.0} / {:.0}): blows {:.0}% weaker",
+            p.rating,
+            p.pieces,
+            stats.armor_skills[0],
+            stats.armor_skills[1],
+            p.reduction * 100.0
+        ));
         let pf = self.player_factions();
         out.push(format!("towards the player: reaction {:?}, hostile {}", self.faction_reaction(&stats.factions, &pf), self.hostile_to(&stats, &pf, true)));
         out

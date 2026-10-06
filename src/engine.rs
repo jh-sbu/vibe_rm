@@ -99,6 +99,8 @@ pub struct Engine {
     pub conversation: Option<crate::dialogue::Conversation>,
     /// Factions' relations to others (`XNAM`), as read.
     pub(crate) faction_relations: crate::ai::combat::FactionRelations,
+    /// Armor game settings, read on first use.
+    pub(crate) armor_settings: std::cell::OnceCell<crate::ai::combat::ArmorSettings>,
     /// The player's health, and when they died (if they have).
     pub player_health: f32,
     pub player_died_at: Option<f64>,
@@ -190,6 +192,7 @@ impl Engine {
             menu: None,
             barks: Default::default(),
             faction_relations: Default::default(),
+            armor_settings: Default::default(),
             player_health: PLAYER_HEALTH,
             player_died_at: None,
             npc_refs: HashMap::new(),
