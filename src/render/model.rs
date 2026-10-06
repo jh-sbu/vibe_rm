@@ -239,6 +239,13 @@ pub fn convert_filtered(nif: &Nif, keep: &dyn Fn(&str) -> bool) -> CpuModel {
     CpuModel { meshes: w.meshes, skinned: w.skinned, bound_center, bound_radius, animated: w.animated, sequences }
 }
 
+/// A node's transform relative to its parent. The engine overwrites the root's with
+/// the reference's placement, so a rotated root (the Riverwood signpost's Riften and
+/// Helgen arms) doesn't turn the model.
+pub fn local_transform(av: &nif::AvObject, depth: u32) -> Mat4 {
+    if depth == 0 { Mat4::IDENTITY } else { av.transform.to_mat4() }
+}
+
 /// The root names the bone it hangs from (`Prn`): a weapon, shield or anim object.
 fn has_parent_bone(nif: &Nif) -> bool {
     let Some(root) = nif.roots.first().and_then(|&r| nif.get(Ref(r as i32))).and_then(|b| b.av()) else { return false };
@@ -250,7 +257,7 @@ pub fn node_transforms(nif: &Nif) -> std::collections::HashMap<String, Mat4> {
     fn visit(nif: &Nif, r: Ref, parent: Mat4, out: &mut std::collections::HashMap<String, Mat4>, depth: u32) {
         let Some(block) = nif.get(r) else { return };
         let Some(av) = block.av() else { return };
-        let world = parent * av.transform.to_mat4();
+        let world = parent * local_transform(av, depth);
         out.entry(av.net.name.clone()).or_insert(world);
         if let (Block::Node(n), true) = (block, depth < 64) {
             for &c in &n.children {
@@ -346,7 +353,7 @@ fn walk(&mut self, nif: &Nif, r: Ref, parent: Mat4, depth: u32) {
         self.animated.push(AnimatedPart { node: av.net.name.clone(), parent, rest: av.transform.to_mat4(), model });
         return;
     }
-    let world = parent * av.transform.to_mat4();
+    let world = parent * local_transform(av, depth);
     if !matches!(block, Block::Node(_)) && !(self.keep)(&av.net.name) {
         return;
     }

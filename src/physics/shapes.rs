@@ -75,7 +75,7 @@ fn walk(
     if depth > 0 && animated.contains(&av.net.name) {
         node = Some(av.net.name.clone());
     }
-    let world = parent * av.transform.to_mat4();
+    let world = parent * crate::render::model::local_transform(av, depth);
     if let Some(Block::CollisionObject(co)) = nif.get(av.collision)
         && let Some(Block::RigidBody(rb)) = nif.get(co.body)
     {
