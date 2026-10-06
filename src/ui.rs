@@ -19,7 +19,7 @@ impl Default for Console {
         Console {
             open: false,
             input: String::new(),
-            lines: vec!["vibe_rm console. Type 'help' for commands.".into()],
+            lines: vec!["VibeRM console. Type 'help' for commands.".into()],
             history: Vec::new(),
             focus: false,
         }

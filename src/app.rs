@@ -262,7 +262,7 @@ impl App {
     fn init(&mut self, el: &ActiveEventLoop) -> Result<()> {
         let window = Arc::new(el.create_window(
             Window::default_attributes()
-                .with_title("vibe_rm")
+                .with_title("VibeRM")
                 .with_inner_size(winit::dpi::PhysicalSize::new(self.opts.width, self.opts.height)),
         )?);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(
@@ -479,7 +479,7 @@ impl ApplicationHandler for App {
                     let p = s.engine.camera.position;
                     let target = s.engine.look_target.as_ref().map(|t| format!(" | [E] {}", t.1)).unwrap_or_default();
                     s.window.set_title(&format!(
-                        "vibe_rm | {} fps | {} draws, {} inst | pos {:.0},{:.0},{:.0} | {:02}:{:02}{}",
+                        "VibeRM | {} fps | {} draws, {} inst | pos {:.0},{:.0},{:.0} | {:02}:{:02}{}",
                         s.frames,
                         st.draws,
                         st.instances,
