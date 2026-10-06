@@ -1733,6 +1733,9 @@ impl Engine {
         // Attacks started this frame (attacker, target): their targets may block.
         let mut started: Vec<(FormId, FormId)> = Vec::new();
         let mut lost: Vec<FormId> = Vec::new();
+        let mut fled: Vec<FormId> = Vec::new();
+        // Fleeing actors are safe this far from what they run from.
+        let flee_distance = combat::gmst_f32(&self.lo, if matches!(self.location, crate::engine::Location::Interior(_)) { "fFleeDistanceInterior" } else { "fFleeDistanceExterior" }, 4000.0);
         // Where everyone is, for fights.
         let mut positions: std::collections::HashMap<FormId, Vec3> =
             self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.dead).map(|a| (a.ref_id, a.pos)).collect();
@@ -1779,7 +1782,11 @@ impl Engine {
                 } else if !self.ai_enabled || a.bleeding.is_some() {
                     a.halt(1.0);
                 } else if let Some(target) = a.combat.as_ref().map(|c| c.target) {
-                    match positions.get(&target).filter(|p| p.distance(a.pos) < combat::LOSE_DISTANCE) {
+                    if a.check_flee() {
+                        fled.push(a.ref_id);
+                    }
+                    let lose = if a.combat.as_ref().is_some_and(|c| c.fleeing) { flee_distance } else { combat::LOSE_DISTANCE };
+                    match positions.get(&target).filter(|p| p.distance(a.pos) < lose) {
                         Some(&tp) => {
                             if let Some(ev) = a.combat_step(dt, &mut world, tp) {
                                 // Attacks the graph has no state for fall back to the basic
@@ -1808,7 +1815,10 @@ impl Engine {
                                 }
                             }
                         }
-                        None => lost.push(a.ref_id),
+                        None => {
+                            log::debug!("{} loses {target} ({:?} away, {lose} the most)", a.ref_id, positions.get(&target).map(|p| p.distance(a.pos)));
+                            lost.push(a.ref_id)
+                        }
                     }
                 } else {
                     let before = a.pos;
@@ -1867,6 +1877,11 @@ impl Engine {
         }
         for r in lost {
             self.end_combat(r);
+        }
+        for r in fled {
+            if self.barks.current.is_none() {
+                self.bark(r, b"FLEE");
+            }
         }
         self.update_guards(dt, &started);
         self.resolve_swings(swings);

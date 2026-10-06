@@ -121,6 +121,13 @@ game each piece unlocks.
   multiplier; targets flinch (`recoilStart`) or stagger and fight back; death drops
   the ragdoll. The player has health (HUD bars) and swings at what they look at
   (click). Console `startcombat <a> <b|player>`
+- Fleeing: fighters whose health falls below the share their confidence allows
+  (`AIDT`: cowards always, `fConfidenceCautious` / `Average` / `Brave`, the foolhardy
+  never) run from their target to the navmesh places near by furthest from it, saying
+  a `FLEE` line, and are out of the fight past `fFleeDistanceInterior` / `Exterior`;
+  cornered with the threat close, they fight. Cowards don't draw. NPCs' health comes
+  back out of combat (race rate, `fCombatHealthRegenRateMult` in it). `cstats` shows
+  confidence
 - Bleedout: essential actors (and protected ones, except to the player) brought to zero
   health bleed out through the graph (`bleedOutStart` / `bleedOutStop`), dropped as
   targets, and get up after a while with a quarter of their health; the player can
@@ -226,7 +233,7 @@ game each piece unlocks.
    - Footsteps: swimming (and swimming itself), splashes
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
-   - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
+   - Remaining procedures: force greet, guard, use weapon / magic, dialogue packages;
      escort waits for its target
    - Off-screen travel between worldspaces; locked doors and keys
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
