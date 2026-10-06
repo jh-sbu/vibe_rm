@@ -38,11 +38,13 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
-            "player.equipitem / unequipitem <armor>   wear or take off armor".into(),
+            "player.equipitem / unequipitem <item>   wear armor, wield a weapon, ready ammo".into(),
             "activate <ref>        activate a reference as the player".into(),
             "pblock                toggle the player's guard (right mouse button)".into(),
             "pattack [power]       the player swings (power: as holding the button)".into(),
             "pbash                 the player bashes (attacking with the guard up)".into(),
+            "pshoot [secs]         the player looses an arrow drawn so long (default full)".into(),
+            "tcam x y z yaw pitch  hold the --wait camera there (degrees; yaw 0 = north)".into(),
             "stamina <ref|player> [n]  show or set stamina".into(),
         ],
         "bark" => {
@@ -131,6 +133,17 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let power = args.first().is_some_and(|a| a.eq_ignore_ascii_case("power"));
             engine.player_attack(power);
             vec![format!("player stamina {:.0}", engine.player_stamina)]
+        }
+        "tcam" => {
+            let v: Vec<f32> = args.iter().filter_map(|a| a.parse().ok()).collect();
+            let [x, y, z, yaw, pitch] = v[..] else { return vec!["usage: tcam x y z yaw pitch".into()] };
+            engine.test_camera = Some((Vec3::new(x, y, z), yaw.to_radians(), pitch.to_radians()));
+            vec!["ok".into()]
+        }
+        "pshoot" => {
+            let held = args.first().and_then(|s| s.parse::<f32>().ok()).unwrap_or(5.0);
+            engine.player_loose(held);
+            vec![format!("player looses after {held}s")]
         }
         "pbash" => {
             engine.player_bash();
@@ -270,12 +283,12 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             }
         }
         "equipitem" | "unequipitem" => {
-            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: {cmd} <armor>")] };
+            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: {cmd} <item>")] };
             if r != crate::engine::PLAYER_REF {
-                return vec!["only the player's armor can be changed for now".into()];
+                return vec!["only the player's equipment can be changed for now".into()];
             }
             let on = cmd == "equipitem";
-            match engine.equip_armor(r, item, on) {
+            match engine.equip_item(r, item, on) {
                 Ok(()) => {
                     let p = engine.protection(r);
                     vec![format!("{r}: {cmd} {item}; armor {:.0} ({} pieces), blows {:.0}% weaker", p.rating, p.pieces, p.reduction * 100.0)]

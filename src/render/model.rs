@@ -327,9 +327,10 @@ fn walk(&mut self, nif: &Nif, r: Ref, parent: Mat4, depth: u32) {
     }
     let Some(block) = nif.get(r) else { return };
     let Some(av) = block.av() else { return };
-    // Weapons' blood shapes only show once the blade has drawn blood.
+    // Weapons' blood shapes only show once the blade has drawn blood; projectiles'
+    // tracers only for the shots the projectile's tracer chance picks.
     let name = av.net.name.to_ascii_lowercase();
-    if av.hidden() || name.starts_with("editormarker") || name.starts_with("blood") {
+    if av.hidden() || name.starts_with("editormarker") || name.starts_with("blood") || name == "tracerroot" {
         return;
     }
     // An animated node (not the root): its subtree becomes a separately drawn part.

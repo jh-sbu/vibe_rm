@@ -112,6 +112,11 @@ pub struct Engine {
     pub(crate) player_stamina_wait: f32,
     pub(crate) player_attack_held: Option<f32>,
     pub(crate) player_stats: std::cell::OnceCell<std::sync::Arc<crate::ai::combat::CombatStats>>,
+    /// Arrows in flight or stuck where they struck.
+    pub(crate) projectiles: Vec<crate::ai::archery::Projectile>,
+    /// Where `--wait` runs hold the camera instead (console `tcam`): position,
+    /// yaw, pitch.
+    pub test_camera: Option<(Vec3, f32, f32)>,
     pub player_died_at: Option<f64>,
     /// Lines NPCs say by themselves (greetings, idle chatter).
     pub barks: crate::dialogue::barks::Barks,
@@ -208,6 +213,8 @@ impl Engine {
             player_stamina_wait: 0.0,
             player_attack_held: None,
             player_stats: Default::default(),
+            projectiles: Vec::new(),
+            test_camera: None,
             player_health: PLAYER_HEALTH,
             player_died_at: None,
             npc_refs: HashMap::new(),
@@ -455,6 +462,8 @@ impl Engine {
         self.music.voice = None;
         self.scene.cells.clear();
         self.scene.lights.clear();
+        self.scene.dynamic.clear();
+        self.projectiles.clear();
         self.cells.clear();
         self.physics.clear();
         self.pending_loads.clear();
@@ -631,6 +640,11 @@ impl Engine {
             rt.health = stats.max_health;
             rt.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.inventory.weapon(&self.lo));
+            if let Some(bow) = d.inventory.weapon(&self.lo).filter(|&w| crate::ai::archery::is_bow(&self.lo, w)) {
+                rt.bow = true;
+                rt.bow_speed = crate::ai::archery::bow_speed(&self.lo, bow);
+                log::debug!("{} wields bow {bow} (speed {})", d.ref_id, rt.bow_speed);
+            }
             rt.stats = std::sync::Arc::new(stats);
             rt.weapon_reach = d
                 .inventory
@@ -1272,6 +1286,7 @@ impl Engine {
         self.physics.step(dt);
         self.update_whereabouts(dt);
         self.update_actors(dt);
+        self.update_projectiles(dt);
         self.update_held_lights();
         self.update_animated(dt);
         let cam = self.camera_copy();

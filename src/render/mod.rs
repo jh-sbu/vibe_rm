@@ -242,6 +242,8 @@ pub struct Scene {
     pub cells: HashMap<CellKey, RenderCell>,
     /// Distant LOD instances.
     pub lod: Vec<Instance>,
+    /// Moving instances outside any cell (arrows), rebuilt each frame.
+    pub dynamic: Vec<Instance>,
     /// World-space XY rectangle (min x, min y, max x, max y) where LOD is hidden.
     pub lod_clip: [f32; 4],
     pub lights: Vec<GpuLight>,
@@ -274,7 +276,7 @@ impl Scene {
     }
 
     pub fn instances(&self) -> impl Iterator<Item = &Instance> {
-        self.cells.values().flat_map(|c| c.instances.iter()).chain(self.lod.iter())
+        self.cells.values().flat_map(|c| c.instances.iter()).chain(self.lod.iter()).chain(self.dynamic.iter())
     }
     pub fn instance_count(&self) -> usize {
         self.cells.values().map(|c| c.instances.len()).sum()
@@ -331,7 +333,7 @@ impl Scene {
     }
 }
 
-fn pick_lights(lights: &[GpuLight], center: Vec3, radius: f32) -> [u16; 8] {
+pub(crate) fn pick_lights(lights: &[GpuLight], center: Vec3, radius: f32) -> [u16; 8] {
     let mut cands: Vec<(f32, u16)> = Vec::new();
     for (i, l) in lights.iter().enumerate() {
         let p = Vec3::new(l.pos_radius[0], l.pos_radius[1], l.pos_radius[2]);

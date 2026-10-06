@@ -149,6 +149,9 @@ pub fn run(opts: Options) -> Result<()> {
                     engine.camera.yaw = d.x.atan2(d.y);
                     engine.camera.pitch = (d.z / d.length().max(1.0)).asin();
                 }
+                if let Some((p, yaw, pitch)) = engine.test_camera {
+                    (engine.camera.position, engine.camera.yaw, engine.camera.pitch) = (p, yaw, pitch);
+                }
                 if opts.player_at_camera {
                     engine.player.position = engine.camera.position - (engine.player.eye() - engine.player.position);
                 }
