@@ -132,6 +132,19 @@ game each piece unlocks.
   from `fArmorRatingMax` / `fArmorRatingPCMax`); blows lose 0.12% per point plus 3% per
   piece, at most 80% (`fArmorScalingFactor`, `fArmorBaseFactor`, `fMaxArmorRating`).
   Console `player.equipitem` / `unequipitem <armor>`; `cstats` shows armor
+- Blocking: fighters raise their guard (`blockStart`, retried while the graph is busy)
+  against a swing started at them, or now and then while waiting to strike, as
+  defensive as their combat style (`CSGD`; a quarter as often without a shield,
+  `fCombatBlockChanceWeaponMult`). Blows from ahead lose 45% + 0.2% per shield rating
+  point (shield) or 30% + 0.2% per point of the attacker's weapon damage (weapon), x
+  (1 + 1.5 x block skill / 100), x 0.66 for power attacks, at most 85%, after armor;
+  `blockHitStart` instead of a flinch; power attacks break the guard. The player
+  blocks with the right mouse button. Console `guard <ref> <secs>`, `pblock`
+- Power attacks: whether to power attack first (combat style offensiveness, `CSME`
+  power-attack-blocking multiplier against a raised guard), then which attack by
+  chance; longer recovery after one. Stagger-capable hits stagger at
+  `iStaggerAttackChance`. Attacks the graph refuses (mid-flinch, or a stagger cut the
+  draw short) are retried and the weapon drawn again
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
@@ -178,7 +191,7 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; locked doors and keys
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
-3. **Game logic**: combat (blocking, bows, power attack timing, armor perks, tempering
+3. **Game logic**: combat (stamina, bashing, bows, armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime

@@ -21,6 +21,19 @@ const COMBAT_DISTANCE: f32 = 141.0;
 /// Seconds an attack keeps the attacker in place.
 const SWING_TIME: f32 = 1.1;
 
+/// Block chance per incoming swing for each point of combat style defensiveness
+/// (with a shield), and times a second an actor waiting to strike raises its
+/// guard at full defensiveness. Tuned by eye: the game's own rule isn't documented.
+const BLOCK_CHANCE: f32 = 2.0;
+const GUARD_RATE: f32 = 0.6;
+
+/// Chance an attack is a power attack per point of combat style offensiveness
+/// (at most 60%). Tuned by eye, like the guard rates.
+const POWER_ATTACK_CHANCE: f32 = 0.6;
+
+/// Biped slot 39: shields.
+const SHIELD_SLOT: u32 = 1 << 9;
+
 /// Seconds an essential actor stays down before getting back up.
 const BLEEDOUT_TIME: f32 = 12.0;
 
@@ -59,6 +72,20 @@ pub struct CombatStats {
     pub factions: Vec<FormId>,
     /// Light and heavy armor skills: worn armor protects more with them.
     pub armor_skills: [f32; 2],
+    /// Block skill, and how readily it raises its guard (combat style `CSGD`
+    /// defensive multiplier).
+    pub block_skill: f32,
+    pub defensive: f32,
+    /// How readily it attacks, and power attacks (`CSGD` offensive multiplier),
+    /// and how much more (or less) it power attacks a target behind its guard
+    /// (`CSME` power attack blocking multiplier).
+    pub offensive: f32,
+    pub power_vs_guard: f32,
+}
+
+/// A weapon's base damage (`DATA`).
+fn weapon_damage(lo: &LoadOrder, weapon: FormId) -> f32 {
+    lo.get(weapon).and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 10).map(|d| u16::from_le_bytes([d[8], d[9]]) as f32)).unwrap_or(0.0)
 }
 
 fn f32_at(d: &[u8], o: usize) -> f32 {
@@ -68,16 +95,18 @@ fn f32_at(d: &[u8], o: usize) -> f32 {
 /// An NPC's `tag` subrecord, from its template when it takes that part from it
 /// (template flag `use_template`) or lacks it.
 fn npc_field(lo: &LoadOrder, npc: FormId, tag: &[u8; 4], use_template: u16) -> Option<Vec<u8>> {
+    npc_source(lo, npc, tag, use_template).and_then(|r| r.get(tag).map(|d| d.to_vec()))
+}
+
+/// The NPC record `npc_field` takes `tag` from (to resolve form ids it holds).
+fn npc_source<'a>(lo: &'a LoadOrder, npc: FormId, tag: &[u8; 4], use_template: u16) -> Option<esp::LoadedRecord<'a>> {
     let mut id = npc;
     for _ in 0..8 {
         let rec = lo.get(id)?;
         let tpl_flags = rec.get(b"ACBS").filter(|d| d.len() >= 20).map_or(0, |d| u16::from_le_bytes([d[18], d[19]]));
         let templated = tpl_flags & use_template != 0 && rec.get(b"TPLT").is_some();
-        if rec.tag().0 == *b"NPC_"
-            && !templated
-            && let Some(d) = rec.get(tag)
-        {
-            return Some(d.to_vec());
+        if rec.tag().0 == *b"NPC_" && !templated && rec.get(tag).is_some() {
+            return Some(rec);
         }
         let t = rec.get(b"TPLT").filter(|d| d.len() >= 4)?;
         id = rec.fid(FormId(u32::from_le_bytes(t[0..4].try_into().unwrap())));
@@ -127,12 +156,29 @@ fn gmst_f32(lo: &LoadOrder, name: &str, default: f32) -> f32 {
     lo.find_editor_id(name).and_then(|id| lo.get(id)).and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 4).map(|d| f32_at(d, 0))).unwrap_or(default)
 }
 
-/// How armor protects (`GMST`s): each piece's rating grows with the wearer's skill
-/// (to `npc_max` / `player_max` times base at skill 100), the total takes
-/// `scaling` percent per point, each piece worn `per_piece` more, up to `max`
-/// percent.
+/// An integer game setting (`GMST`), or `default` when the plugins lack it.
+fn gmst_i32(lo: &LoadOrder, name: &str, default: i32) -> i32 {
+    lo.find_editor_id(name)
+        .and_then(|id| lo.get(id))
+        .and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 4).map(|d| i32::from_le_bytes(d[0..4].try_into().unwrap())))
+        .unwrap_or(default)
+}
+
+/// How armor and blocking protect (`GMST`s). Armor: each piece's rating grows with
+/// the wearer's skill (to `npc_max` / `player_max` times base at skill 100), the
+/// total takes `scaling` percent per point, each piece worn `per_piece` more, up to
+/// `max` percent. Blocking: see `Engine::block_share`.
 #[derive(Debug, Clone, Copy)]
-pub struct ArmorSettings {
+pub struct CombatSettings {
+    shield_base: f32,
+    shield_scaling: f32,
+    weapon_base: f32,
+    weapon_scaling: f32,
+    power_mult: f32,
+    /// Block chance without a shield, relative to with one.
+    weapon_block_chance: f32,
+    /// Percent chance an attack that can stagger does.
+    stagger_chance: u64,
     scaling: f32,
     per_piece: f32,
     max: f32,
@@ -142,9 +188,16 @@ pub struct ArmorSettings {
     clothing: f32,
 }
 
-impl ArmorSettings {
-    pub fn load(lo: &LoadOrder) -> ArmorSettings {
-        ArmorSettings {
+impl CombatSettings {
+    pub fn load(lo: &LoadOrder) -> CombatSettings {
+        CombatSettings {
+            shield_base: gmst_f32(lo, "fShieldBaseFactor", 0.45),
+            shield_scaling: gmst_f32(lo, "fShieldScalingFactor", 0.2),
+            weapon_base: gmst_f32(lo, "fBlockWeaponBase", 0.3),
+            weapon_scaling: gmst_f32(lo, "fBlockWeaponScaling", 0.2),
+            power_mult: gmst_f32(lo, "fBlockPowerAttackMult", 0.66),
+            weapon_block_chance: gmst_f32(lo, "fCombatBlockChanceWeaponMult", 0.25),
+            stagger_chance: gmst_i32(lo, "iStaggerAttackChance", 50).clamp(0, 100) as u64,
             scaling: gmst_f32(lo, "fArmorScalingFactor", 0.12),
             per_piece: gmst_f32(lo, "fArmorBaseFactor", 0.03) * 100.0,
             max: gmst_f32(lo, "fMaxArmorRating", 80.0),
@@ -169,7 +222,7 @@ pub struct Protection {
 /// skills: each light or heavy piece (shields too) rates
 /// `ceil(base x (1 + k x skill / 100))`, with k 1.5 for NPCs and 0.4 for the
 /// player; clothing rates as it is and doesn't count as a piece.
-pub fn protection(lo: &LoadOrder, set: &ArmorSettings, worn: &[FormId], skills: [f32; 2], player: bool) -> Protection {
+pub fn protection(lo: &LoadOrder, set: &CombatSettings, worn: &[FormId], skills: [f32; 2], player: bool) -> Protection {
     let k = if player { set.player_max } else { set.npc_max } - set.rating_base;
     let mut p = Protection::default();
     for &f in worn {
@@ -237,7 +290,17 @@ impl CombatStats {
         if let Some(d) = npc_field(lo, npc, b"DNAM", 0x2).filter(|d| d.len() >= 38) {
             s.max_health += u16::from_le_bytes([d[36], d[37]]) as f32;
             s.armor_skills = armor_skills(&d);
+            s.block_skill = d[3] as f32;
         }
+        // Combat style (with the AI data, template flag 0x10), else the default one.
+        let style = npc_source(lo, npc, b"ZNAM", 0x10)
+            .and_then(|r| r.get(b"ZNAM").filter(|d| d.len() >= 4).map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))))
+            .or_else(|| lo.find_editor_id("DefaultCombatstyle"));
+        let style = style.and_then(|st| lo.get(st));
+        let csgd = style.as_ref().and_then(|r| r.get(b"CSGD")).filter(|d| d.len() >= 8);
+        s.offensive = csgd.map_or(0.25, |d| f32_at(d, 0));
+        s.defensive = csgd.map_or(0.25, |d| f32_at(d, 4));
+        s.power_vs_guard = style.as_ref().and_then(|r| r.get(b"CSME")).filter(|d| d.len() >= 12).map_or(1.0, |d| f32_at(d, 8));
         s.max_health = s.max_health.max(5.0);
         if let Some(d) = npc_field(lo, npc, b"AIDT", 0x10).filter(|d| d.len() >= 20) {
             s.aggression = d[0];
@@ -264,11 +327,29 @@ pub struct Combat {
     /// has struck (one hit a swing).
     pub attack: Option<usize>,
     pub struck: bool,
+    /// Seconds left holding its guard up (blocking), and whether the graph has
+    /// raised it (it may be busy finishing a swing or a stagger first).
+    pub guard: f32,
+    guard_shown: bool,
+    /// The target has its guard up (set by the engine each frame).
+    pub(crate) target_guarding: bool,
 }
 
 impl Combat {
     pub fn new(target: FormId) -> Combat {
-        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false }
+        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, guard: 0.0, guard_shown: false, target_guarding: false }
+    }
+
+    pub fn swinging(&self) -> bool {
+        self.swing > 0.0
+    }
+
+    /// The graph wouldn't take the attack (busy flinching, say): no swing; try
+    /// again shortly.
+    pub fn refused(&mut self) {
+        self.swing = 0.0;
+        self.attack = None;
+        self.cooldown = 0.3;
     }
 }
 
@@ -282,6 +363,23 @@ impl ActorRuntime {
     fn run_speed(&self) -> f32 {
         let walk = self.walk_speed();
         self.moves.map(|(m, _)| m.run).filter(|r| *r > walk).unwrap_or(walk * 3.0)
+    }
+
+    /// Raise its guard for `secs` (the AI step has the graph raise it), or lower it.
+    pub(crate) fn set_guard(&mut self, secs: f32) {
+        let Some(c) = self.combat.as_mut() else { return };
+        c.guard = secs.max(0.0);
+        if c.guard <= 0.0 && std::mem::take(&mut c.guard_shown)
+            && let Some(g) = self.graph.as_mut()
+        {
+            g.send_event("blockStop");
+            g.set_variable("IsBlocking", 0.0);
+        }
+    }
+
+    /// Its guard is up (raised by the graph): blows from ahead are blocked.
+    pub fn guarding(&self) -> bool {
+        self.combat.as_ref().is_some_and(|c| c.guard > 0.0 && c.guard_shown)
     }
 
     /// Fight on: close in on the target at a run, face it, attack when in reach.
@@ -315,6 +413,23 @@ impl ActorRuntime {
             self.turn_towards(to.normalize_or_zero(), dt * 0.5);
             return None;
         }
+        if c.guard > 0.0 {
+            // Guard up: stand facing the target (the engine lowers it). Ask the
+            // graph until it takes it.
+            if !c.guard_shown {
+                let shown = self.graph_event("blockStart", &mut w.clips);
+                if let Some(c) = self.combat.as_mut() {
+                    c.guard_shown = shown;
+                }
+                if shown && let Some(g) = self.graph.as_mut() {
+                    g.set_variable("IsBlocking", 1.0);
+                }
+            }
+            self.speed = 0.0;
+            self.state = State::Idle(1.0);
+            self.turn_towards(to.normalize_or_zero(), dt);
+            return None;
+        }
         if dist > reach * 0.85 {
             // Close in along a path, refreshed as the target moves.
             if c.repath <= 0.0 || c.next >= c.path.len() {
@@ -344,26 +459,36 @@ impl ActorRuntime {
         self.speed = 0.0;
         self.state = State::Idle(1.0);
         let cooldown = c.cooldown;
+        let target_guarding = c.target_guarding;
         let off = self.turn_towards(to.normalize_or_zero(), dt).abs();
         if cooldown > 0.0 || off > 0.35 || attacks.is_empty() {
             return None;
         }
-        // Pick an attack by its chance.
-        let total: f32 = attacks.iter().map(|a| a.1).sum();
+        // A power attack now and then, as offensive as its combat style (more or
+        // less so against a raised guard), else a basic one; then which, by
+        // their chances.
+        let is_power = |i: usize| self.stats.attacks[i].flags & ATK_POWER != 0;
+        let power_chance = (self.stats.offensive * POWER_ATTACK_CHANCE * if target_guarding { self.stats.power_vs_guard } else { 1.0 }).clamp(0.0, 0.6);
+        let want_power = uniform(w.rand, 0.0, 1.0) < power_chance;
+        let kind: Vec<(usize, f32)> = attacks.iter().copied().filter(|&(i, _)| is_power(i) == want_power).collect();
+        let pool = if kind.is_empty() { &attacks } else { &kind };
+        let total: f32 = pool.iter().map(|a| a.1).sum();
         let mut roll = uniform(w.rand, 0.0, total);
-        let mut pick = attacks[0].0;
-        for (i, ch) in &attacks {
+        let mut pick = pool[0].0;
+        for (i, ch) in pool {
             if roll < *ch {
                 pick = *i;
                 break;
             }
             roll -= ch;
         }
+        let power = is_power(pick);
         let c = self.combat.as_mut()?;
         c.attack = Some(pick);
         c.struck = false;
         c.swing = SWING_TIME;
-        c.cooldown = SWING_TIME + uniform(w.rand, 0.3, 1.4);
+        // A power attack takes longer to recover from.
+        c.cooldown = SWING_TIME + uniform(w.rand, 0.3, 1.4) + if power { uniform(w.rand, 0.5, 1.0) } else { 0.0 };
         Some(self.stats.attacks[pick].event.clone())
     }
 }
@@ -470,9 +595,11 @@ impl Engine {
     pub fn end_combat(&mut self, actor: FormId) {
         let Some(key) = self.actor_cells.get(&actor).copied() else { return };
         let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return };
-        if a.combat.take().is_none() {
+        if a.combat.is_none() {
             return;
         }
+        a.set_guard(0.0);
+        a.combat = None;
         a.halt(2.0);
         a.next_eval = 0.0;
         let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());
@@ -555,8 +682,200 @@ impl Engine {
                 log::debug!("{} misses {} ({dist:.0} / {reach:.0} units, {angle:.0} deg)", s.attacker, s.target);
                 continue;
             }
-            let damage = self.after_armor(s.target, damage);
-            self.damage(s.target, damage, Some(s.attacker), stagger);
+            let power = attack.as_ref().is_some_and(|x| x.flags & ATK_POWER != 0);
+            self.hit(s.target, s.attacker, damage, power, stagger);
+        }
+    }
+
+    /// A blow landing: armor takes its share, then the target's guard if it is
+    /// blocking towards the attacker. Blocked blows don't make it flinch, but a
+    /// blocked power attack breaks its guard with a stagger.
+    pub(crate) fn hit(&mut self, target: FormId, attacker: FormId, damage: f32, power: bool, stagger: f32) {
+        let mut damage = self.after_armor(target, damage);
+        // Attacks that can stagger do so only some of the time (iStaggerAttackChance).
+        let staggers = (self.rand() % 100) < self.combat_settings().stagger_chance;
+        let mut stagger = if staggers { stagger } else { 0.0 };
+        if let Some(share) = self.block_share(target, attacker, power) {
+            log::info!("{target} blocks {attacker}{}: {:.0}% of {damage:.0} stopped", if power { "'s power attack" } else { "" }, share * 100.0);
+            damage *= 1.0 - share;
+            // A power attack breaks the guard.
+            stagger = if power { 0.5f32.max(stagger) } else { 0.0 };
+            if target != PLAYER_REF
+                && let Some(a) = self.actor_mut(target)
+            {
+                if power {
+                    a.set_guard(0.0);
+                } else if let Some(g) = a.graph.as_mut() {
+                    g.send_event("blockHitStart");
+                }
+            }
+        }
+        self.damage(target, damage, Some(attacker), stagger);
+    }
+
+    /// Armor and block game settings.
+    pub(crate) fn combat_settings(&self) -> CombatSettings {
+        *self.combat_settings.get_or_init(|| CombatSettings::load(&self.lo))
+    }
+
+    fn actor_mut(&mut self, actor: FormId) -> Option<&mut ActorRuntime> {
+        let key = self.actor_cells.get(&actor).copied()?;
+        self.cells.get_mut(&key)?.actors.iter_mut().find(|a| a.ref_id == actor)
+    }
+
+    fn actor_ref(&self, actor: FormId) -> Option<&ActorRuntime> {
+        self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor))
+    }
+
+    /// The weapon the player swings: the best one they carry.
+    fn player_weapon(&self) -> Option<FormId> {
+        self.inventories
+            .get(&PLAYER_REF)
+            .and_then(|i| i.items.iter().map(|(f, _)| *f).filter(|f| self.lo.tag_of(*f).map(|t| t.0) == Some(*b"WEAP")).max_by_key(|f| weapon_damage(&self.lo, *f) as u32))
+    }
+
+    /// Base damage of what an actor (or the player) strikes with; 0 for creatures
+    /// and bare hands.
+    fn weapon_base(&self, actor: FormId) -> f32 {
+        let weapon = if actor == PLAYER_REF { self.player_weapon() } else { self.inventories.get(&actor).and_then(|i| i.weapon(&self.lo)) };
+        weapon.map_or(0.0, |w| weapon_damage(&self.lo, w))
+    }
+
+    /// The equipped shield's base armor rating, if any.
+    fn shield_rating(&self, actor: FormId) -> Option<f32> {
+        let inv = self.inventories.get(&actor)?;
+        inv.equipped.iter().find_map(|&f| {
+            let r = self.lo.get(f).filter(|r| r.tag().0 == *b"ARMO" && crate::world::inventory::armor_slots(r) & SHIELD_SLOT != 0)?;
+            Some(r.get(b"DNAM").filter(|d| d.len() >= 4).map_or(0, |d| i32::from_le_bytes(d[0..4].try_into().unwrap())) as f32 / 100.0)
+        })
+    }
+
+    /// The share of a blow `target`'s guard stops, if it is blocking and faces
+    /// the attacker (within 35 degrees): with a shield 45% + 0.2% per point of
+    /// its base rating, with a weapon 30% + 0.2% per point of the attacker's
+    /// weapon damage, either scaled by 1 + 1.5 x block skill / 100; 0.66 of that
+    /// against power attacks; at most 85% (as measured in the game, UESP).
+    fn block_share(&self, target: FormId, attacker: FormId, power: bool) -> Option<f32> {
+        let set = self.combat_settings();
+        let (pos, facing, skill) = if target == PLAYER_REF {
+            if !self.player_blocking {
+                return None;
+            }
+            let f = self.camera.forward();
+            let skill = npc_field(&self.lo, FormId(0x7), b"DNAM", 0x2).and_then(|d| d.get(3).copied()).unwrap_or(15) as f32;
+            (self.player.position, glam::Vec2::new(f.x, f.y).normalize_or_zero(), skill)
+        } else {
+            let a = self.actor_ref(target).filter(|a| a.guarding())?;
+            (a.pos, glam::Vec2::new(a.heading.sin(), a.heading.cos()), a.stats.block_skill)
+        };
+        let from = if attacker == PLAYER_REF { self.player.position } else { self.actor_ref(attacker)?.pos };
+        let angle = facing.angle_to((from - pos).truncate().normalize_or_zero()).abs().to_degrees();
+        if angle > 35.0 {
+            log::debug!("{target}'s guard faces away from {attacker} ({angle:.0} deg)");
+            return None;
+        }
+        let skill = 1.0 + 1.5 * skill / 100.0;
+        let share = match self.shield_rating(target) {
+            Some(rating) => set.shield_base + set.shield_scaling * rating * skill / 100.0,
+            None => set.weapon_base + set.weapon_scaling * self.weapon_base(attacker) * skill / 100.0,
+        };
+        Some((share * if power { set.power_mult } else { 1.0 }).min(0.85))
+    }
+
+    /// Guards: actors raise theirs against a swing started at them (`started`:
+    /// attacker, target), or now and then while waiting to strike, as their
+    /// combat style's defensive side has them (less often without a shield);
+    /// they lower it after a while.
+    pub(crate) fn update_guards(&mut self, dt: f32, started: &[(FormId, FormId)]) {
+        let set = self.combat_settings();
+        let mut want: Vec<(FormId, f32)> = Vec::new();
+        for &(attacker, target) in started {
+            let Some(a) = self.actor_ref(target).filter(|a| a.combat.as_ref().is_some_and(|c| c.guard <= 0.0 && !c.swinging())) else { continue };
+            let Some(chance) = self.block_chance(a, &set) else { continue };
+            let Some(from) = self.actor_ref(attacker).map(|x| x.pos).or((attacker == PLAYER_REF).then_some(self.player.position)) else { continue };
+            let facing = glam::Vec2::new(a.heading.sin(), a.heading.cos());
+            if facing.angle_to((from - a.pos).truncate().normalize_or_zero()).abs() > 1.0 {
+                continue;
+            }
+            let roll = (self.rand() % 10_000) as f32 / 10_000.0;
+            if roll < chance {
+                let secs = SWING_TIME * 0.9 + (self.rand() % 500) as f32 / 1000.0;
+                want.push((target, secs));
+            }
+        }
+        // Waiting in reach between its own swings, facing the target: now and
+        // then put the guard up.
+        let waiting: Vec<(FormId, f32)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| {
+                let Some(c) = a.combat.as_ref().filter(|c| c.guard <= 0.0 && !c.swinging() && c.cooldown > 0.4) else { return false };
+                let target = if c.target == PLAYER_REF { Some(self.player.position) } else { self.actor_ref(c.target).map(|t| t.pos) };
+                target.is_some_and(|t| {
+                    let to = (t - a.pos).truncate();
+                    let facing = glam::Vec2::new(a.heading.sin(), a.heading.cos());
+                    to.length() < a.reach() * 1.5 && facing.angle_to(to.normalize_or_zero()).abs() < 0.6
+                })
+            })
+            .filter_map(|a| Some((a.ref_id, self.block_chance(a, &set)?)))
+            .collect();
+        for (actor, chance) in waiting {
+            let roll = (self.rand() % 10_000) as f32 / 10_000.0;
+            if roll < chance * GUARD_RATE * dt {
+                let secs = 0.8 + (self.rand() % 800) as f32 / 1000.0;
+                want.push((actor, secs));
+            }
+        }
+        for (actor, secs) in want {
+            if let Some(a) = self.actor_mut(actor) {
+                log::debug!("{actor} raises its guard for {secs:.1}s");
+                a.set_guard(secs);
+            }
+        }
+        // Who has a guard up, for attackers choosing their blows.
+        let guarding: Vec<FormId> =
+            self.cells.values().flat_map(|rt| &rt.actors).filter(|a| a.guarding()).map(|a| a.ref_id).chain(self.player_blocking.then_some(PLAYER_REF)).collect();
+        for rt in self.cells.values_mut() {
+            for a in rt.actors.iter_mut() {
+                if let Some(c) = a.combat.as_mut() {
+                    c.target_guarding = guarding.contains(&c.target);
+                }
+                let Some(c) = a.combat.as_mut().filter(|c| c.guard > 0.0) else { continue };
+                let left = c.guard - dt;
+                if left <= 0.0 {
+                    a.set_guard(0.0);
+                } else {
+                    c.guard = left;
+                }
+            }
+        }
+    }
+
+    /// Have a fighting actor hold its guard up for `secs` (console `guard`).
+    pub fn force_guard(&mut self, actor: FormId, secs: f32) -> bool {
+        match self.actor_mut(actor).filter(|a| a.combat.is_some()) {
+            Some(a) => {
+                a.set_guard(secs);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// How likely an actor is to block a blow: humanoids with a shield, or a
+    /// weapon drawn, as defensive as their combat style.
+    fn block_chance(&self, a: &ActorRuntime, set: &CombatSettings) -> Option<f32> {
+        if a.dead || a.bleeding.is_some() || !a.graph.as_ref().is_some_and(|g| g.project().humanoid()) {
+            return None;
+        }
+        let chance = (a.stats.defensive * BLOCK_CHANCE).min(0.9);
+        if self.shield_rating(a.ref_id).is_some() && a.torch.is_none() {
+            Some(chance)
+        } else if a.weapon_out && a.weapon_reach > 0.0 {
+            Some(chance * set.weapon_block_chance)
+        } else {
+            None
         }
     }
 
@@ -599,8 +918,8 @@ impl Engine {
             self.kill_actor(target);
             return;
         }
-        // Flinch unless mid-swing; heavy hits stagger.
-        let swinging = a.combat.as_ref().is_some_and(|c| c.swing > 0.0);
+        // Flinch unless mid-swing or behind its guard; heavy hits stagger.
+        let swinging = a.combat.as_ref().is_some_and(|c| c.swing > 0.0) || a.guarding();
         if let Some(g) = a.graph.as_mut() {
             if stagger > 0.0 {
                 g.set_variable("staggerMagnitude", stagger.min(1.0));
@@ -680,7 +999,7 @@ impl Engine {
 
     /// What an actor (or the player) is wearing protects against blows.
     pub fn protection(&self, actor: FormId) -> Protection {
-        let set = *self.armor_settings.get_or_init(|| ArmorSettings::load(&self.lo));
+        let set = self.combat_settings();
         let worn = self.inventories.get(&actor).map_or(&[][..], |i| &i.equipped[..]);
         let skills = if actor == PLAYER_REF {
             npc_field(&self.lo, FormId(0x7), b"DNAM", 0x2).map_or([15.0; 2], |d| armor_skills(&d))
@@ -712,15 +1031,10 @@ impl Engine {
 
     /// The player swings at whatever actor is in front within reach.
     pub fn player_attack(&mut self) {
-        if self.player_dead() || self.conversation.is_some() {
+        if self.player_dead() || self.conversation.is_some() || self.player_blocking {
             return;
         }
-        let weapon = self
-            .inventories
-            .get(&PLAYER_REF)
-            .and_then(|i| i.items.iter().map(|(f, _)| *f).filter(|f| self.lo.tag_of(*f).map(|t| t.0) == Some(*b"WEAP")).max_by_key(|f| {
-                self.lo.get(*f).and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 10).map(|d| u16::from_le_bytes([d[8], d[9]]))).unwrap_or(0)
-            }));
+        let weapon = self.player_weapon();
         let (damage, reach) = match weapon.and_then(|w| self.lo.get(w)) {
             Some(rec) => (
                 rec.get(b"DATA").filter(|d| d.len() >= 10).map_or(4.0, |d| u16::from_le_bytes([d[8], d[9]]) as f32),
@@ -733,9 +1047,8 @@ impl Engine {
             && self.lo.tag_of(r).map(|t| t.0) == Some(*b"ACHR")
             && !self.is_dead(r)
         {
-            let damage = self.after_armor(r, damage);
-            log::info!("player hits {r} for {damage:.0}");
-            self.damage(r, damage, Some(PLAYER_REF), 0.0);
+            log::info!("player strikes {r} for {damage:.0}");
+            self.hit(r, PLAYER_REF, damage, false, 0.0);
         }
     }
 
@@ -813,6 +1126,14 @@ impl Engine {
             format!("factions {:?}", stats.factions.iter().map(|f| format!("{f} {}", self.lo.get(*f).and_then(|r| r.editor_id().map(|e| e.to_string())).unwrap_or_default())).collect::<Vec<_>>()),
             format!("attacks {:?}", stats.attacks.iter().map(|x| x.event.as_str()).collect::<Vec<_>>()),
         ];
+        out.push(format!(
+            "offensive {:.2} (power vs guard x{:.2}), block skill {:.0}, defensive {:.2}, guard up {}",
+            stats.offensive,
+            stats.power_vs_guard,
+            stats.block_skill,
+            stats.defensive,
+            self.actor_ref(actor).is_some_and(|a| a.guarding())
+        ));
         let p = self.protection(actor);
         out.push(format!(
             "armor {:.0} ({} pieces, light / heavy skill {:.0} / {:.0}): blows {:.0}% weaker",

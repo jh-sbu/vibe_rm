@@ -99,10 +99,12 @@ pub struct Engine {
     pub conversation: Option<crate::dialogue::Conversation>,
     /// Factions' relations to others (`XNAM`), as read.
     pub(crate) faction_relations: crate::ai::combat::FactionRelations,
-    /// Armor game settings, read on first use.
-    pub(crate) armor_settings: std::cell::OnceCell<crate::ai::combat::ArmorSettings>,
+    /// Armor and block game settings, read on first use.
+    pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
     /// The player's health, and when they died (if they have).
     pub player_health: f32,
+    /// The player holds their guard up (right mouse button).
+    pub player_blocking: bool,
     pub player_died_at: Option<f64>,
     /// Lines NPCs say by themselves (greetings, idle chatter).
     pub barks: crate::dialogue::barks::Barks,
@@ -192,7 +194,8 @@ impl Engine {
             menu: None,
             barks: Default::default(),
             faction_relations: Default::default(),
-            armor_settings: Default::default(),
+            combat_settings: Default::default(),
+            player_blocking: false,
             player_health: PLAYER_HEALTH,
             player_died_at: None,
             npc_refs: HashMap::new(),
