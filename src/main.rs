@@ -9,6 +9,8 @@ mod items;
 mod render;
 mod physics;
 mod player;
+#[cfg(feature = "remote-console")]
+mod remote;
 mod script;
 mod ui;
 mod world;

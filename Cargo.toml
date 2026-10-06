@@ -55,6 +55,10 @@ havok.workspace = true
 papyrus.workspace = true
 rapier3d = "0.36"
 
+[features]
+# A Unix socket that runs console commands in a live game (see src/remote.rs).
+remote-console = []
+
 [profile.dev]
 opt-level = 1
 
