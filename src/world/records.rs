@@ -184,9 +184,11 @@ impl Reference {
     }
 }
 
-/// Creation Engine reference rotation: angles applied X, then Y, then Z, each clockwise.
+/// Creation Engine reference rotation: angles applied Z, then Y, then X about the world
+/// axes, each clockwise (the Gamebryo XYZ matrix). A group tilted about world Y in the
+/// editor keeps (0, tilt, heading) on every piece, as the Riverwood signpost's arms do.
 pub fn rotation_from_euler(r: Vec3) -> Quat {
-    Quat::from_euler(EulerRot::ZYX, -r.z, -r.y, -r.x)
+    Quat::from_euler(EulerRot::XYZ, -r.x, -r.y, -r.z)
 }
 
 pub fn reference(rec: &LoadedRecord<'_>) -> Reference {
