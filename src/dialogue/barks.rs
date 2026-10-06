@@ -45,7 +45,8 @@ pub struct Barks {
 }
 
 impl Engine {
-    fn bark_topics(&mut self, sub: &[u8; 4]) -> Vec<Topic> {
+    /// Topics of a subtype, highest priority first (cached).
+    pub(crate) fn bark_topics(&mut self, sub: &[u8; 4]) -> Vec<Topic> {
         if let Some(t) = self.barks.topics.get(sub) {
             return t.clone();
         }

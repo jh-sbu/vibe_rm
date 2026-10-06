@@ -24,6 +24,9 @@ pub enum Behaviour {
     Follow,
     /// Lead the target to the location, waiting while it falls behind.
     Escort,
+    /// Wait about (or in a seat) until the player comes near, then walk up to them
+    /// and start a conversation (`Package::greet`).
+    ForceGreet,
 }
 
 /// What a sandboxing actor may do besides wander (the template's "Allow ..." inputs).
@@ -60,6 +63,33 @@ pub enum Gait {
     Jog,
     Run,
     FastWalk,
+}
+
+/// What a force greet opens the conversation with (the "Topic" input, `PDTO`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GreetTopic {
+    Topic(FormId),
+    /// The first topic of this subtype with a line for the speaker (`HELO`).
+    Subtype([u8; 4]),
+}
+
+/// The ForceGreet / ForceGreetFromSitting templates' inputs.
+#[derive(Debug, Clone, Copy)]
+pub struct ForceGreet {
+    pub topic: GreetTopic,
+    /// The player being here sets the greeter going ("Trigger Location").
+    pub trigger: Option<Location>,
+    /// How close to the player the greeter comes before speaking ("Forcegreet
+    /// Distance": the location is the player; only its radius is the package's).
+    pub distance: f32,
+    /// Only once it sees the player ("Player must be detected?").
+    pub must_detect: bool,
+    /// Sandbox about the wait location rather than stand there ("Sandbox While
+    /// Waiting?").
+    pub sandbox: bool,
+    /// ForceGreetFromSitting: waits in its seat (the package's target) and speaks
+    /// from there.
+    pub seated: bool,
 }
 
 /// `PKDT` general flags.
@@ -155,6 +185,8 @@ pub struct Package {
     /// to another.
     pub unlock_at_start: bool,
     pub unlock_on_change: bool,
+    /// Force greet packages' inputs.
+    pub greet: Option<ForceGreet>,
 }
 
 fn behaviour_of(template: &str) -> Behaviour {
@@ -165,6 +197,8 @@ fn behaviour_of(template: &str) -> Behaviour {
         Behaviour::Sit
     } else if t.contains("patrol") {
         Behaviour::Patrol
+    } else if t.starts_with("forcegreet") {
+        Behaviour::ForceGreet
     } else if t.starts_with("escort") {
         Behaviour::Escort
     } else if t.starts_with("follow") {
@@ -192,6 +226,7 @@ enum Input {
     Float(f32),
     Location(Location),
     Target(Target),
+    Topic(GreetTopic),
     Other,
 }
 
@@ -249,6 +284,13 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
                 if let Some(t) = target(rec, sr.data) {
                     *values.last_mut().unwrap() = Input::Target(t);
                 }
+            }
+            b"PDTO" if !values.is_empty() && sr.data.len() >= 8 => {
+                let d: [u8; 4] = sr.data[4..8].try_into().unwrap();
+                *values.last_mut().unwrap() = Input::Topic(match sr.u32(0) {
+                    0 => GreetTopic::Topic(rec.fid(FormId(u32::from_le_bytes(d)))),
+                    _ => GreetTopic::Subtype(d),
+                });
             }
             b"UNAM" if !sr.data.is_empty() => indices.push(sr.data[0]),
             _ => {}
@@ -366,10 +408,30 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     let follow_radius = (float(&["minradius"], 128.0), float(&["maxradius"], 384.0));
     let escort_wait = float(&["distancetowaitforfollowers"], 512.0);
     let escort_run = float(&["runifbehinddistance"], 500.0);
-    // The first location input is the package's main location; likewise for targets.
-    let location = inputs.iter().find_map(|(_, v)| match v {
-        Input::Location(l) => Some(*l),
-        _ => None,
+    let located = |keys: &[&str]| {
+        keys.iter().find_map(|k| match named(k) {
+            Some(Input::Location(l)) => Some(l),
+            _ => None,
+        })
+    };
+    let greet = (behaviour == Behaviour::ForceGreet).then(|| ForceGreet {
+        topic: match named("topic") {
+            Some(Input::Topic(t)) => t,
+            _ => GreetTopic::Subtype(*b"HELO"),
+        },
+        trigger: located(&["triggerlocationplayerherecausesforcegreet"]),
+        distance: located(&["forcegreetdistancedontchangerefjustradius"]).map_or(300.0, |l| l.radius),
+        must_detect: ["playermustbedetected", "obsplayermustbedetected"].iter().find_map(|k| flag(k)).unwrap_or(false),
+        sandbox: flag("sandboxwhilewaiting").unwrap_or(false),
+        seated: template_name.eq_ignore_ascii_case("forcegreetfromsitting"),
+    });
+    // The first location input is the package's main location (a force greeter's
+    // wait location); likewise for targets.
+    let location = located(&["npcwaitlocationnpchangsouthere"]).or_else(|| {
+        inputs.iter().find_map(|(_, v)| match v {
+            Input::Location(l) => Some(*l),
+            _ => None,
+        })
     });
     let target = inputs.iter().find_map(|(_, v)| match v {
         Input::Target(t) => Some(*t),
@@ -397,6 +459,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         lock_doors: flag("lockdoors").unwrap_or(false),
         unlock_at_start: pkdt_flags & PKDT_UNLOCK_AT_START != 0,
         unlock_on_change: pkdt_flags & PKDT_UNLOCK_ON_CHANGE != 0,
+        greet,
     })
 }
 

@@ -13,7 +13,7 @@ use crate::world::ragdoll::RagdollPose;
 use crate::world::template::{self, Sources};
 
 /// How far actors notice enemies (game units), and how often they look.
-const DETECT_DISTANCE: f32 = 1400.0;
+pub(crate) const DETECT_DISTANCE: f32 = 1400.0;
 const DETECT_INTERVAL: f32 = 1.0;
 /// Combat ends when the target gets this far away.
 pub(crate) const LOSE_DISTANCE: f32 = 4000.0;

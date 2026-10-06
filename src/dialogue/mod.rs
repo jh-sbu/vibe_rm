@@ -310,8 +310,19 @@ impl Engine {
         v
     }
 
+    /// Talk to an NPC: it greets the player with its first `HELO` line.
     pub fn start_conversation(&mut self, npc_ref: FormId) {
+        let greeting = self.bark_topics(b"HELO").into_iter().find_map(|t| {
+            let i = self.select_info(&t, npc_ref)?;
+            Some((t, i))
+        });
+        self.open_conversation(npc_ref, greeting);
+    }
+
+    /// Start a conversation with `npc_ref`, opening with `greeting`.
+    pub(crate) fn open_conversation(&mut self, npc_ref: FormId, greeting: Option<(Topic, Info)>) {
         let Some(npc) = self.base_of(npc_ref) else { return };
+        self.talked_to_pc.insert(npc_ref);
         let voice_type = self.npc_voice_type(npc).unwrap_or_default();
         let name = self.form_name(npc_ref);
         let mut conv = Conversation {
@@ -326,13 +337,9 @@ impl Engine {
             ending: false,
             said_once: Default::default(),
         };
-        // Greeting
-        for t in self.topics_of_subtype(b"HELO") {
-            if let Some(i) = self.select_info(&t, npc_ref) {
-                conv.queue = i.responses.clone();
-                conv.info = Some((t, i));
-                break;
-            }
+        if let Some((t, i)) = greeting {
+            conv.queue = i.responses.clone();
+            conv.info = Some((t, i));
         }
         self.conversation = Some(conv);
         self.begin_info();

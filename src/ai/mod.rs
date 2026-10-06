@@ -4,6 +4,7 @@ pub mod archery;
 pub mod combat;
 mod equipment;
 pub mod furniture;
+mod greet;
 pub mod idles;
 pub mod nav;
 pub mod package;
@@ -329,6 +330,11 @@ pub struct ActorRuntime {
     out_of_furniture: bool,
     /// Patrol progress: (route start, index of the point heading for).
     patrol: Option<(FormId, usize)>,
+    /// Force greet: going up to the player; seconds until it checks again whether
+    /// to, and until it may greet again after a conversation.
+    pub(crate) greeting: bool,
+    pub(crate) greet_check: f32,
+    pub(crate) greet_wait: f32,
     state: State,
     next_eval: f32,
     speed: f32,
@@ -408,6 +414,9 @@ impl ActorRuntime {
             face: None,
             out_of_furniture: false,
             patrol: None,
+            greeting: false,
+            greet_check: stagger,
+            greet_wait: 0.0,
             state: State::Idle(1.0 + stagger),
             next_eval: stagger,
             speed: 0.0,
@@ -799,7 +808,8 @@ impl ActorRuntime {
         // Heading back into the sandbox area from elsewhere counts as travel.
         let mut travelling = goal.behaviour != Behaviour::Sandbox;
         let target = match goal.behaviour {
-            Behaviour::Hold => None,
+            // Goals are what a force greeter does meanwhile, never this.
+            Behaviour::Hold | Behaviour::ForceGreet => None,
             Behaviour::Patrol => match self.patrol_target(&goal, w) {
                 PatrolStep::Walk(p) => Some(p),
                 PatrolStep::Busy => return,
@@ -989,7 +999,7 @@ impl ActorRuntime {
             Behaviour::Patrol if goal.furniture.is_some() => {
                 (vec![Use::Idle, Use::Lean, Use::Special, Use::Sit], goal.centre, 96.0, uniform(w.rand, 6.0, 12.0))
             }
-            Behaviour::Travel | Behaviour::Hold | Behaviour::Patrol | Behaviour::Follow | Behaviour::Escort => return false,
+            Behaviour::Travel | Behaviour::Hold | Behaviour::Patrol | Behaviour::Follow | Behaviour::Escort | Behaviour::ForceGreet => return false,
         };
         let npc = self.npc;
         let mut options = Vec::new();
@@ -1666,7 +1676,13 @@ impl Engine {
 
     /// Where a package location points to, as (centre, radius).
     fn package_target(&self, a: &ActorRuntime, p: &Package) -> (Vec3, f32) {
-        let Some(loc) = p.location else { return (a.editor_pos, 0.0) };
+        match p.location {
+            Some(loc) => self.location_target(a, loc),
+            None => (a.editor_pos, 0.0),
+        }
+    }
+
+    fn location_target(&self, a: &ActorRuntime, loc: package::Location) -> (Vec3, f32) {
         let centre = match loc.kind {
             LocationKind::NearReference(r) => self.ref_position(r),
             LocationKind::NearLinkedRef(kw) => {
@@ -1699,18 +1715,32 @@ impl Engine {
                         Some(Target::LinkedRef(kw)) => self.linked_ref(a.ref_id, kw),
                         _ => None,
                     };
+                    // A force greeter waits (standing, sandboxing or seated) until it
+                    // sets off to the player.
+                    let (behaviour, target) = match p.greet {
+                        Some(g) if g.seated => (Behaviour::Sit, target),
+                        Some(_) if a.greeting => (Behaviour::Follow, Some(PLAYER_REF)),
+                        Some(g) if g.sandbox => (Behaviour::Sandbox, None),
+                        Some(_) => (Behaviour::Travel, None),
+                        None => (p.behaviour, target),
+                    };
                     // Only Sit / Sleep packages target furniture; a patrol start or follow
                     // target can be an idle marker without being "the package's seat".
                     let furniture = target
-                        .filter(|_| matches!(p.behaviour, Behaviour::Sit | Behaviour::Sleep))
+                        .filter(|_| matches!(behaviour, Behaviour::Sit | Behaviour::Sleep))
                         .filter(|r| self.furniture.get(*r).is_some());
-                    let (centre, radius) = match p.behaviour {
+                    let (centre, radius) = match behaviour {
                         Behaviour::Patrol => (centre, p.point_radius),
                         Behaviour::Follow => (target.and_then(|t| self.ref_position(t)).unwrap_or(centre), radius),
                         _ => (centre, radius),
                     };
+                    // Walking up to the player: stop within the force greet distance.
+                    let follow_radius = match p.greet {
+                        Some(g) if behaviour == Behaviour::Follow => (g.distance * 0.5, g.distance),
+                        _ => p.follow_radius,
+                    };
                     Goal {
-                        behaviour: p.behaviour,
+                        behaviour,
                         centre,
                         radius,
                         allow: p.allow,
@@ -1719,7 +1749,7 @@ impl Engine {
                         target,
                         repeat: p.repeat,
                         start_nearest: p.start_nearest,
-                        follow_radius: p.follow_radius,
+                        follow_radius,
                         escort_wait: p.escort_wait,
                         escort_run: p.escort_run,
                         gait: p.gait,
@@ -1736,7 +1766,9 @@ impl Engine {
         }
         for (key, i, pick, goal) in decisions {
             let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else { continue };
-            a.next_eval = EVAL_INTERVAL;
+            // Force greeters keep a closer eye on the player.
+            let greeter = pick.is_some_and(|pi| a.packages[pi].greet.is_some());
+            a.next_eval = if greeter { greet::EVAL_INTERVAL } else { EVAL_INTERVAL };
             if a.pinned || a.dead {
                 continue;
             }
@@ -1753,13 +1785,20 @@ impl Engine {
                     a.interrupt(&mut self.furniture);
                 }
             } else {
+                // A force greeter setting off to the player (or giving up) stops
+                // what it is doing.
+                let changed = a.goal.map(|g| g.behaviour) != goal.map(|g| g.behaviour);
                 a.goal = goal;
+                if changed {
+                    a.interrupt(&mut self.furniture);
+                }
             }
         }
     }
 
     /// Run AI and animation for every loaded actor.
     pub(crate) fn update_actors(&mut self, dt: f32) {
+        self.update_force_greets(dt);
         self.evaluate_packages(dt);
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self.barks.current.as_ref().map(|b| b.speaker));
         let player = self.ref_position(PLAYER_REF).unwrap_or_default();
