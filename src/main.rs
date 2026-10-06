@@ -102,7 +102,7 @@ fn parse_args() -> Result<Options> {
             }
             "-h" | "--help" => {
                 println!(
-                    "vibe_rm - a Creation Engine (Skyrim SE) compatible engine\n\n\
+                    "VibeRM - a Creation Engine (Skyrim SE) compatible engine\n\n\
                      Options:\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
                      --cell <edid|formid> Interior cell to load\n  --world <edid>      Worldspace (default Tamriel)\n  \
                      --grid x,y          Exterior cell coordinates\n  --pos x,y,z         Camera position\n  \

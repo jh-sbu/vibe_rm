@@ -1,4 +1,4 @@
-# vibe_rm
+# VibeRM
 
 A from-scratch, open source game engine written in Rust that runs games built
 for the Skyrim Special Edition era of Bethesda's Creation Engine. It reads the original
@@ -87,7 +87,7 @@ This parses every mesh and reports any block whose parse didn't consume exactly 
 
 ## License
 
-vibe_rm is licensed under the [MIT License](LICENSE), except as noted below.
+VibeRM is licensed under the [MIT License](LICENSE), except as noted below.
 
 `src/condition/functions.rs` contains a condition function table derived from
 [xEdit](https://github.com/TES5Edit/TES5Edit)'s record definitions and is
