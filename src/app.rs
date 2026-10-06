@@ -248,6 +248,8 @@ struct WindowState {
     last: Instant,
     fps_timer: Instant,
     frames: u32,
+    #[cfg(feature = "remote-console")]
+    remote: Option<crate::remote::RemoteConsole>,
 }
 
 struct App {
@@ -305,6 +307,8 @@ impl App {
             last: Instant::now(),
             fps_timer: Instant::now(),
             frames: 0,
+            #[cfg(feature = "remote-console")]
+            remote: crate::remote::RemoteConsole::start().inspect_err(|e| log::error!("remote console: {e}")).ok(),
         });
         Ok(())
     }
@@ -447,6 +451,10 @@ impl ApplicationHandler for App {
                 s.last = now;
                 let input = move_input(&s.keys);
                 let scale = if s.keys.contains(&KeyCode::KeyT) { 2000.0 } else { 20.0 };
+                #[cfg(feature = "remote-console")]
+                if let Some(r) = &s.remote {
+                    r.poll(&mut s.engine);
+                }
                 s.engine.update(input, dt, scale);
                 let frame = match s.surface.get_current_texture() {
                     wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
