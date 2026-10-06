@@ -4,6 +4,7 @@ use esp::{FormId, LoadOrder, LoadedRecord};
 use glam::Mat4;
 
 use super::records::{self, mesh_path, texture_path};
+use super::template::Sources;
 
 #[derive(Debug, Clone)]
 pub struct ActorDesc {
@@ -24,6 +25,8 @@ pub struct ActorDesc {
     pub race: FormId,
     /// The footstep set of what it wears.
     pub footsteps: Option<FormId>,
+    /// Where it takes each part of its definition from (templates).
+    pub templates: super::template::Sources,
 }
 
 fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
@@ -78,7 +81,7 @@ fn eligible(rec: &LoadedRecord<'_>) -> Vec<(FormId, i32)> {
 /// Follow leveled lists (`list_tag`: LVLN, LVLI) down to a record, picking among
 /// each list's eligible entries by `seed` (the reference); `None` when a list's
 /// chance of none (`LVLD`) comes up.
-fn resolve_leveled(lo: &LoadOrder, mut id: FormId, list_tag: &[u8; 4], seed: u64) -> Option<FormId> {
+pub(crate) fn resolve_leveled(lo: &LoadOrder, mut id: FormId, list_tag: &[u8; 4], seed: u64) -> Option<FormId> {
     for _ in 0..8 {
         let rec = lo.get(id)?;
         if rec.tag().0 != *list_tag {
@@ -151,59 +154,26 @@ struct NpcTraits {
     height: f32,
 }
 
-const TPL_TRAITS: u16 = 0x1;
-const TPL_STATS: u16 = 0x2;
-const TPL_AI_DATA: u16 = 0x10;
-const TPL_BASE_DATA: u16 = 0x80;
-const TPL_INVENTORY: u16 = 0x100;
-
-/// Resolve the effective traits of an NPC, following templates.
-fn npc_traits(lo: &LoadOrder, npc: FormId, seed: u64) -> Option<NpcTraits> {
-    let rec = lo.get(npc)?;
-    let acbs = rec.get(b"ACBS").unwrap_or(&[]);
+/// The effective traits of an NPC, from the records its templates give each part.
+fn npc_traits(lo: &LoadOrder, src: &Sources) -> Option<NpcTraits> {
+    use super::template::{AI_DATA, BASE_DATA, INVENTORY, STATS, TRAITS};
+    let traits = lo.get(src.of(TRAITS))?;
+    let acbs = traits.get(b"ACBS").unwrap_or(&[]);
     let flags = if acbs.len() >= 4 { u32::from_le_bytes(acbs[0..4].try_into().unwrap()) } else { 0 };
-    let tpl_flags = if acbs.len() >= 20 { u16::from_le_bytes([acbs[18], acbs[19]]) } else { 0 };
-    let template = rec.get(b"TPLT").map(|d| fid_at(&rec, d)).filter(|f| !f.is_null());
-    let tmpl = template
-        .and_then(|t| resolve_leveled(lo, t, b"LVLN", seed))
-        .filter(|t| *t != npc)
-        .and_then(|t| npc_traits(lo, t, seed));
-
-    let mut out = NpcTraits {
-        name: rec.get(b"FULL").map(|d| lo.lstring(&rec, d)).unwrap_or_default(),
-        npc_for_face: npc,
-        npc_for_inventory: npc,
-        npc_for_stats: npc,
-        combat_style: rec.get(b"ZNAM").map(|d| fid_at(&rec, d)).unwrap_or_default(),
-        race: rec.get(b"RNAM").map(|d| fid_at(&rec, d)).unwrap_or_default(),
+    let name = src.record(lo, BASE_DATA, b"FULL").and_then(|r| r.get(b"FULL").map(|d| lo.lstring(&r, d))).unwrap_or_default();
+    Some(NpcTraits {
+        name,
+        npc_for_face: src.of(TRAITS),
+        npc_for_inventory: src.of(INVENTORY),
+        npc_for_stats: src.of(STATS),
+        // Combat style comes with the AI data.
+        combat_style: src.form(lo, AI_DATA, b"ZNAM").unwrap_or_default(),
+        race: traits.get(b"RNAM").map(|d| fid_at(&traits, d)).unwrap_or_default(),
         female: flags & 1 != 0,
-        skin: rec.get(b"WNAM").map(|d| fid_at(&rec, d)).unwrap_or_default(),
-        outfit: rec.get(b"DOFT").map(|d| fid_at(&rec, d)).unwrap_or_default(),
-        height: rec.get(b"NAM6").map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap())).unwrap_or(1.0),
-    };
-    if let Some(t) = tmpl {
-        if tpl_flags & TPL_TRAITS != 0 {
-            out.npc_for_face = t.npc_for_face;
-            out.race = t.race;
-            out.female = t.female;
-            out.skin = t.skin;
-            out.height = t.height;
-        }
-        if tpl_flags & TPL_INVENTORY != 0 {
-            out.outfit = t.outfit;
-            out.npc_for_inventory = t.npc_for_inventory;
-        }
-        if tpl_flags & TPL_STATS != 0 {
-            out.npc_for_stats = t.npc_for_stats;
-        }
-        if tpl_flags & TPL_AI_DATA != 0 || out.combat_style.is_null() {
-            out.combat_style = t.combat_style;
-        }
-        if tpl_flags & TPL_BASE_DATA != 0 || out.name.is_empty() {
-            out.name = t.name;
-        }
-    }
-    Some(out)
+        skin: traits.get(b"WNAM").map(|d| fid_at(&traits, d)).unwrap_or_default(),
+        outfit: lo.get(src.of(INVENTORY)).and_then(|r| r.get(b"DOFT").map(|d| fid_at(&r, d))).unwrap_or_default(),
+        height: traits.get(b"NAM6").map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap())).unwrap_or(1.0),
+    })
 }
 
 /// Race skeleton path and default skin armor.
@@ -356,7 +326,8 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
     if base.tag().0 != *b"NPC_" {
         return None;
     }
-    let traits = npc_traits(lo, npc, seed)?;
+    let templates = Sources::of_npc(lo, npc, seed);
+    let traits = npc_traits(lo, &templates)?;
     let (skeleton, race_skin, race_height) = race_info(lo, traits.race, traits.female)?;
     let skin = if traits.skin.is_null() { race_skin } else { traits.skin };
 
@@ -406,5 +377,5 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
     let transform = Mat4::from_scale_rotation_translation(glam::Vec3::splat(scale), r.rotation_quat(), r.position);
     let behavior = race_behavior(lo, traits.race, traits.female);
     let footsteps = footstep_set(lo, &inventory.equipped, skin, traits.race);
-    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female, behavior, inventory, race: traits.race, footsteps })
+    Some(ActorDesc { ref_id: r.id, npc, name, transform, skeleton, models, female: traits.female, behavior, inventory, race: traits.race, footsteps, templates })
 }

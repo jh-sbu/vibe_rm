@@ -400,28 +400,10 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     })
 }
 
-/// Packages of an NPC in priority order (following the AI-packages template).
-pub fn npc_packages(lo: &LoadOrder, mut npc: FormId) -> Vec<Package> {
-    const TPL_AI_PACKAGES: u16 = 0x20;
-    for _ in 0..8 {
-        let Some(rec) = lo.get(npc) else { break };
-        let acbs = rec.get(b"ACBS").unwrap_or(&[]);
-        let tpl_flags = if acbs.len() >= 20 { u16::from_le_bytes([acbs[18], acbs[19]]) } else { 0 };
-        let template = rec.get(b"TPLT").filter(|d| d.len() >= 4).map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))));
-        if tpl_flags & TPL_AI_PACKAGES != 0
-            && let Some(t) = template.filter(|t| !t.is_null())
-            && lo.get(t).is_some_and(|r| r.tag().0 == *b"NPC_")
-        {
-            npc = t;
-            continue;
-        }
-        return rec
-            .subrecords()
-            .filter(|s| s.tag.0 == *b"PKID")
-            .filter_map(|s| parse(lo, rec.fid(s.form_id(0))))
-            .collect();
-    }
-    Vec::new()
+/// Packages of an actor in priority order (its AI packages part's: see templates).
+pub fn npc_packages(lo: &LoadOrder, src: &crate::world::template::Sources) -> Vec<Package> {
+    let Some(rec) = lo.get(src.of(crate::world::template::AI_PACKAGES)) else { return Vec::new() };
+    rec.subrecords().filter(|s| s.tag.0 == *b"PKID").filter_map(|s| parse(lo, rec.fid(s.form_id(0)))).collect()
 }
 
 #[cfg(test)]

@@ -237,8 +237,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         131 => b(e.npc_is_female(FormId(0x7)) as u32 == c.p1),            // GetPCIsSex
         69 => b(subj_base.and_then(|n| e.npc_race(n)) == Some(p1)),       // GetIsRace
         130 => b(e.npc_race(FormId(0x7)) == Some(p1)),                    // GetPCIsRace
-        71 => b(subj_base.is_some_and(|n| e.npc_factions(n).iter().any(|(f, _)| *f == p1))), // GetInFaction
-        73 => Some(subj_base.and_then(|n| e.npc_factions(n).into_iter().find(|(f, _)| *f == p1).map(|x| x.1 as f32)).unwrap_or(-1.0)), // GetFactionRank
+        // Rank -1 (potential followers' `CurrentFollowerFaction`) isn't membership.
+        71 => b(subject.is_some_and(|s| e.npc_factions(s).iter().any(|&(f, r)| f == p1 && r >= 0))), // GetInFaction
+        73 => Some(subject.and_then(|s| e.npc_factions(s).into_iter().find(|(f, _)| *f == p1).map(|x| x.1 as f32)).unwrap_or(-1.0)), // GetFactionRank
         426 => b(subj_base.and_then(|n| e.npc_voice_type(n)).is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))),          // HasKeyword
         300 => b(matches!(e.location, crate::engine::Location::Interior(_))), // IsInInterior
@@ -276,7 +277,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         562 => b(e.current_location().is_some_and(|l| e.has_keyword(l, p1))), // LocationHasKeyword
         606 => Some(0.0),                                                 // GetKeywordDataForLocation
         579 | 286 | 403 | 161 => Some(0.0),                               // equipped shout, sneaking, relationship, package
-        255 => b(subj_base.is_some_and(|n| e.offers_services_now(n))),   // GetOffersServicesNow
+        255 => b(subject.is_some_and(|s| e.offers_services_now(s))),   // GetOffersServicesNow
         // Nobody fights, swims, bleeds out, feeds or takes commands yet.
         289 | 101 | 185 | 580 | 700 | 226 => b(false),
         // Behaviour graph variables of the subject's graph (the idle-picking
@@ -336,9 +337,10 @@ impl Engine {
         Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))))
     }
 
-    pub fn npc_factions(&self, npc: FormId) -> Vec<(FormId, i8)> {
-        let Some(rec) = self.lo.get(npc) else { return Vec::new() };
-        rec.subrecords().filter(|s| s.tag.0 == *b"SNAM" && s.data.len() >= 5).map(|s| (rec.fid(s.form_id(0)), s.data[4] as i8)).collect()
+    /// Factions and ranks of an actor (a reference, or an NPC record), from its
+    /// templates when they give them.
+    pub fn npc_factions(&self, actor: FormId) -> Vec<(FormId, i8)> {
+        self.templates_of(actor).map(|t| t.factions(&self.lo)).unwrap_or_default()
     }
 
     pub fn npc_voice_type(&self, npc: FormId) -> Option<FormId> {
@@ -378,8 +380,8 @@ impl Engine {
     }
 
     /// Whether an NPC is in a vendor faction whose hours include the current time.
-    pub fn offers_services_now(&self, npc: FormId) -> bool {
-        self.npc_factions(npc).iter().any(|(f, _)| {
+    pub fn offers_services_now(&self, actor: FormId) -> bool {
+        self.npc_factions(actor).iter().any(|(f, _)| {
             let Some(r) = self.lo.get(*f) else { return false };
             let flags = r.get(b"DATA").map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap())).unwrap_or(0);
             if flags & 0x4000 == 0 {

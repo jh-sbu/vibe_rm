@@ -10,6 +10,7 @@ use glam::Vec3;
 use super::{ActorRuntime, State, World, uniform};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::world::ragdoll::RagdollPose;
+use crate::world::template::{self, Sources};
 
 /// How far actors notice enemies (game units), and how often they look.
 const DETECT_DISTANCE: f32 = 1400.0;
@@ -131,59 +132,41 @@ fn f32_at(d: &[u8], o: usize) -> f32 {
     d.get(o..o + 4).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
 }
 
-/// An NPC's `tag` subrecord, from its template when it takes that part from it
-/// (template flag `use_template`) or lacks it.
-fn npc_field(lo: &LoadOrder, npc: FormId, tag: &[u8; 4], use_template: u16) -> Option<Vec<u8>> {
-    npc_source(lo, npc, tag, use_template).and_then(|r| r.get(tag).map(|d| d.to_vec()))
+/// The player's stats (`DNAM`: skills, then health / magicka / stamina).
+fn player_dnam(lo: &LoadOrder) -> Option<Vec<u8>> {
+    Sources::of_npc(lo, FormId(0x7), 0).field(lo, template::STATS, b"DNAM")
 }
 
-/// The NPC record `npc_field` takes `tag` from (to resolve form ids it holds).
-fn npc_source<'a>(lo: &'a LoadOrder, npc: FormId, tag: &[u8; 4], use_template: u16) -> Option<esp::LoadedRecord<'a>> {
-    let mut id = npc;
-    for _ in 0..8 {
-        let rec = lo.get(id)?;
-        let tpl_flags = rec.get(b"ACBS").filter(|d| d.len() >= 20).map_or(0, |d| u16::from_le_bytes([d[18], d[19]]));
-        let templated = tpl_flags & use_template != 0 && rec.get(b"TPLT").is_some();
-        if rec.tag().0 == *b"NPC_" && !templated && rec.get(tag).is_some() {
-            return Some(rec);
-        }
-        let t = rec.get(b"TPLT").filter(|d| d.len() >= 4)?;
-        id = rec.fid(FormId(u32::from_le_bytes(t[0..4].try_into().unwrap())));
-        id = first_of_leveled(lo, id);
-    }
-    None
-}
-
-/// Leveled NPC lists (nested) down to their first entry: as good as any for the
-/// stats they share.
-fn first_of_leveled(lo: &LoadOrder, mut id: FormId) -> FormId {
-    for _ in 0..8 {
-        let Some(l) = lo.get(id).filter(|r| r.tag().0 == *b"LVLN") else { break };
-        let Some(first) = l.subrecords().find(|s| s.tag.0 == *b"LVLO" && s.data.len() >= 8) else { break };
-        id = l.fid(first.form_id(4));
-    }
-    id
-}
-
-/// An NPC's factions: its own, or its template's when it takes them from one
-/// (template flag 0x4) or has none.
-pub(crate) fn npc_factions(lo: &LoadOrder, npc: FormId) -> Vec<FormId> {
-    let mut id = npc;
-    for _ in 0..8 {
-        let Some(rec) = lo.get(id) else { break };
-        // A negative rank isn't membership (potential followers' `CurrentFollowerFaction`).
-        let own: Vec<FormId> = rec.subrecords().filter(|s| s.tag.0 == *b"SNAM" && s.data.len() >= 5 && (s.data[4] as i8) >= 0).map(|s| rec.fid(s.form_id(0))).collect();
-        let tpl_flags = rec.get(b"ACBS").filter(|d| d.len() >= 20).map_or(0, |d| u16::from_le_bytes([d[18], d[19]]));
-        let template = rec.get(b"TPLT").filter(|d| d.len() >= 4).map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))));
-        match template {
-            Some(t) if tpl_flags & 0x4 != 0 || own.is_empty() => {
-                id = t;
-                id = first_of_leveled(lo, id);
+/// Attacks listed in a race or NPC record (`ATKD` + `ATKE` pairs).
+fn attacks_of(rec: &esp::LoadedRecord<'_>) -> Vec<Attack> {
+    let mut out = Vec::new();
+    let mut pending: Option<Attack> = None;
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            b"ATKD" if sr.data.len() >= 28 => {
+                let d = sr.data;
+                pending = Some(Attack {
+                    event: String::new(),
+                    damage_mult: f32_at(d, 0),
+                    chance: f32_at(d, 4),
+                    flags: u32::from_le_bytes(d[12..16].try_into().unwrap()),
+                    strike_angle: f32_at(d, 20),
+                    stagger: f32_at(d, 24),
+                    stamina_mult: if d.len() >= 44 { f32_at(d, 40) } else { 1.0 },
+                });
             }
-            _ => return own,
+            b"ATKE" => {
+                if let Some(mut attack) = pending.take() {
+                    attack.event = sr.zstring();
+                    if !attack.event.is_empty() {
+                        out.push(attack);
+                    }
+                }
+            }
+            _ => {}
         }
     }
-    Vec::new()
+    out
 }
 
 /// Light and heavy armor skills from an NPC's `DNAM` (skills 6 and 5).
@@ -335,7 +318,7 @@ pub fn protection(lo: &LoadOrder, set: &CombatSettings, worn: &[FormId], skills:
 }
 
 impl CombatStats {
-    pub fn of(e: &Engine, npc: FormId, race: FormId) -> CombatStats {
+    pub fn of(e: &Engine, src: &Sources, race: FormId) -> CombatStats {
         let lo = &e.lo;
         let mut s = CombatStats { max_health: 50.0, unarmed_damage: 4.0, unarmed_reach: 96.0, aggression: 0, confidence: 2, ..Default::default() };
         if let Some(race) = lo.get(race) {
@@ -347,45 +330,31 @@ impl CombatStats {
                 s.unarmed_damage = f32_at(d, 96).max(1.0);
                 s.unarmed_reach = f32_at(d, 100).max(48.0);
             }
-            let mut pending: Option<Attack> = None;
-            for sr in race.subrecords() {
-                match &sr.tag.0 {
-                    b"ATKD" if sr.data.len() >= 28 => {
-                        let d = sr.data;
-                        pending = Some(Attack {
-                            event: String::new(),
-                            damage_mult: f32_at(d, 0),
-                            chance: f32_at(d, 4),
-                            flags: u32::from_le_bytes(d[12..16].try_into().unwrap()),
-                            strike_angle: f32_at(d, 20),
-                            stagger: f32_at(d, 24),
-                            stamina_mult: if d.len() >= 44 { f32_at(d, 40) } else { 1.0 },
-                        });
-                    }
-                    b"ATKE" => {
-                        if let Some(mut attack) = pending.take() {
-                            attack.event = sr.zstring();
-                            // Attacks for situations not handled yet: sprinting, on
-                            // horseback, with the left hand, dual wielding, unarmed.
-                            let lower = attack.event.to_ascii_lowercase();
-                            let situational = ["sprint", "_mc", "lefthand", "dualwield", "h2h"].iter().any(|k| lower.contains(k));
-                            if !attack.event.is_empty() && !situational {
-                                s.attacks.push(attack);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+        }
+        // Attacks: the attack race's (`ATKR`, with the attack data), else its own
+        // race's; attacks the NPC lists itself replace the race's of the same event.
+        let attack_race = src.form(lo, template::ATTACK_DATA, b"ATKR").unwrap_or(race);
+        let mut attacks = lo.get(attack_race).map(|r| attacks_of(&r)).unwrap_or_default();
+        if let Some(own) = src.record(lo, template::ATTACK_DATA, b"ATKD") {
+            for a in attacks_of(&own) {
+                attacks.retain(|x| !x.event.eq_ignore_ascii_case(&a.event));
+                attacks.push(a);
             }
         }
+        // Attacks for situations not handled yet: sprinting, on horseback, with the
+        // left hand, dual wielding, unarmed.
+        attacks.retain(|a| {
+            let lower = a.event.to_ascii_lowercase();
+            !["sprint", "_mc", "lefthand", "dualwield", "h2h"].iter().any(|k| lower.contains(k))
+        });
+        s.attacks = attacks;
         // Health and stamina from the NPC's stats (DNAM: skills, then health /
         // magicka / stamina).
         // ACBS flags: 0x2 essential, 0x800 protected.
-        let acbs = npc_field(lo, npc, b"ACBS", 0x80).filter(|d| d.len() >= 4).map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()));
+        let acbs = src.field(lo, template::BASE_DATA, b"ACBS").filter(|d| d.len() >= 4).map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()));
         s.essential = acbs & 0x2 != 0;
         s.protected = acbs & 0x800 != 0;
-        // Template flags: 0x2 stats, 0x10 AI data.
-        if let Some(d) = npc_field(lo, npc, b"DNAM", 0x2).filter(|d| d.len() >= 38) {
+        if let Some(d) = src.field(lo, template::STATS, b"DNAM").filter(|d| d.len() >= 38) {
             s.max_health += u16::from_le_bytes([d[36], d[37]]) as f32;
             if let Some(st) = d.get(40..42) {
                 s.max_stamina += u16::from_le_bytes([st[0], st[1]]) as f32;
@@ -394,9 +363,7 @@ impl CombatStats {
             s.block_skill = d[3] as f32;
         }
         // Combat style (with the AI data, template flag 0x10), else the default one.
-        let style = npc_source(lo, npc, b"ZNAM", 0x10)
-            .and_then(|r| r.get(b"ZNAM").filter(|d| d.len() >= 4).map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))))
-            .or_else(|| lo.find_editor_id("DefaultCombatstyle"));
+        let style = src.form(lo, template::AI_DATA, b"ZNAM").or_else(|| lo.find_editor_id("DefaultCombatstyle"));
         let style = style.and_then(|st| lo.get(st));
         let csgd = style.as_ref().and_then(|r| r.get(b"CSGD")).filter(|d| d.len() >= 8);
         s.offensive = csgd.map_or(0.25, |d| f32_at(d, 0));
@@ -409,7 +376,7 @@ impl CombatStats {
         s.fallback = style.as_ref().and_then(|r| r.get(b"CSCR")).filter(|d| d.len() >= 8).map_or(0.11, |d| f32_at(d, 4));
         s.max_health = s.max_health.max(5.0);
         s.max_stamina = s.max_stamina.max(10.0);
-        if let Some(d) = npc_field(lo, npc, b"AIDT", 0x10).filter(|d| d.len() >= 20) {
+        if let Some(d) = src.field(lo, template::AI_DATA, b"AIDT").filter(|d| d.len() >= 20) {
             s.aggression = d[0];
             s.confidence = d[1];
             s.assistance = d[5];
@@ -418,7 +385,7 @@ impl CombatStats {
             }
         }
         s.confidence_value = super::threat::confidence_value(lo, s.confidence);
-        s.factions = npc_factions(lo, npc);
+        s.factions = src.member_of(lo);
         s
     }
 }
@@ -1170,7 +1137,7 @@ impl Engine {
                 return None;
             }
             let f = self.camera.forward();
-            let skill = npc_field(&self.lo, FormId(0x7), b"DNAM", 0x2).and_then(|d| d.get(3).copied()).unwrap_or(15) as f32;
+            let skill = player_dnam(&self.lo).and_then(|d| d.get(3).copied()).unwrap_or(15) as f32;
             (self.player.position, glam::Vec2::new(f.x, f.y).normalize_or_zero(), skill)
         } else {
             let a = self.actor_ref(target).filter(|a| a.guarding())?;
@@ -1455,7 +1422,7 @@ impl Engine {
         let set = self.combat_settings();
         let worn = self.inventories.get(&actor).map_or(&[][..], |i| &i.equipped[..]);
         let skills = if actor == PLAYER_REF {
-            npc_field(&self.lo, FormId(0x7), b"DNAM", 0x2).map_or([15.0; 2], |d| armor_skills(&d))
+            player_dnam(&self.lo).map_or([15.0; 2], |d| armor_skills(&d))
         } else {
             match self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor)) {
                 Some(a) => a.stats.armor_skills,
@@ -1511,7 +1478,7 @@ impl Engine {
             return;
         }
         self.spend_stamina(PLAYER_REF, cost);
-        let skill = npc_field(&self.lo, FormId(0x7), b"DNAM", 0x2).and_then(|d| d.get(3).copied()).unwrap_or(15) as f32;
+        let skill = player_dnam(&self.lo).and_then(|d| d.get(3).copied()).unwrap_or(15) as f32;
         let damage = self.bash_damage(PLAYER_REF, skill) * attack.damage_mult;
         let hit = self.physics.raycast(self.camera.position, self.camera.forward(), set.bash_reach + 40.0);
         if let Some((_, Some(r))) = hit
@@ -1723,7 +1690,7 @@ impl Engine {
         self.player_stats
             .get_or_init(|| {
                 let race = self.npc_race(FormId(0x7)).unwrap_or(FormId(0x13746));
-                Arc::new(CombatStats::of(self, FormId(0x7), race))
+                Arc::new(CombatStats::of(self, &Sources::of_npc(&self.lo, FormId(0x7), 0), race))
             })
             .clone()
     }

@@ -35,6 +35,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "pi <ref> <idle>       play an IDLE record on an actor".into(),
             "lock <ref> [level]    lock a door or container; unlock <ref> unlocks it".into(),
             "picklock <deg> [secs] while picking: pick at an angle, turn the lock a while".into(),
+            "templates <ref>       which NPC record each part of an actor comes from".into(),
             "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
             "escort <ref> <target> <dest> [wait] [run]  lead target to dest, waiting while it lags".into(),
             "gstate <ref>          an actor's active behaviour graph states".into(),
@@ -210,6 +211,15 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 Some((st, max)) => vec![format!("{who}: stamina {st:.0} / {max:.0}")],
                 None => vec![format!("{who} isn't a loaded actor")],
             }
+        }
+        "templates" => {
+            // Where an actor takes each part of its definition from (TPLT chains).
+            let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: templates <actor ref>".into()] };
+            let Some(t) = engine.templates_of(actor) else { return vec![format!("{actor}: no NPC (a leveled list picked nothing?)")] };
+            let name = |f: esp::FormId| format!("{f} {}", engine.lo.get(f).and_then(|r| r.editor_id()).unwrap_or_default());
+            let mut out = vec![format!("chain: {}", t.chain().iter().map(|&f| name(f)).collect::<Vec<_>>().join(" -> "))];
+            out.extend(t.parts().map(|(part, f)| format!("  {part:18} {}", name(f))));
+            out
         }
         "cstats" => {
             let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: cstats <actor ref>".into()] };
