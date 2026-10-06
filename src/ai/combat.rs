@@ -85,11 +85,10 @@ pub struct CombatStats {
     pub aggression: u8,
     /// Aggro radius behaviour (`AIDT`): attacks the player coming this close.
     pub aggro_attack: Option<f32>,
-    /// AI data confidence (0 cowardly .. 4 foolhardy), and the share of its
-    /// health below which it flees (`fConfidenceCautious`...; cowards always do,
-    /// the foolhardy never).
+    /// AI data confidence (0 cowardly .. 4 foolhardy), and the threat ratio below
+    /// which it flees (`fConfidenceCowardly` .. `fConfidenceFoolhardy`; see `threat`).
     pub confidence: u8,
-    pub flee_below: f32,
+    pub confidence_value: f32,
     /// Percent of its health that comes back each second out of combat.
     pub health_regen: f32,
     /// Can't die (bleeds out instead); protected ones only die by the player's hand.
@@ -414,13 +413,7 @@ impl CombatStats {
                 s.aggro_attack = Some(u32::from_le_bytes(d[16..20].try_into().unwrap()) as f32).filter(|r| *r > 0.0);
             }
         }
-        s.flee_below = match s.confidence {
-            0 => 1.0,
-            1 => gmst_f32(lo, "fConfidenceCautious", 0.375),
-            2 => gmst_f32(lo, "fConfidenceAverage", 0.15),
-            3 => gmst_f32(lo, "fConfidenceBrave", 0.0375),
-            _ => 0.0,
-        };
+        s.confidence_value = super::threat::confidence_value(lo, s.confidence);
         s.factions = npc_factions(lo, npc);
         s
     }
@@ -461,6 +454,15 @@ pub struct Combat {
     /// from the target to (fleeing, or an archer backing off).
     pub fleeing: bool,
     pub(crate) away_to: Option<Vec3>,
+    /// This fight's adjustment to its confidence, seconds to its next flee check
+    /// (sooner when `recheck` is set), and, fleeing: how far it runs, how long it
+    /// has been that far, and whether the threat was close last frame.
+    pub(crate) confidence_mod: f32,
+    pub(crate) threat_check: f32,
+    pub(crate) recheck: bool,
+    pub(crate) flee_distance: f32,
+    pub(crate) safe: f32,
+    threat_near: bool,
 }
 
 /// What an actor's bashes cost (bash, power bash; before the attack's own
@@ -473,7 +475,7 @@ pub(crate) struct Bash {
 
 impl Combat {
     pub fn new(target: FormId) -> Combat {
-        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false, draw: Default::default(), clear_shot: false, fleeing: false, away_to: None }
+        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false, draw: Default::default(), clear_shot: false, fleeing: false, away_to: None, confidence_mod: 0.0, threat_check: 0.0, recheck: false, flee_distance: 0.0, safe: 0.0, threat_near: false }
     }
 
     pub fn swinging(&self) -> bool {
@@ -574,34 +576,31 @@ impl ActorRuntime {
         self.combat.as_ref().is_some_and(|c| c.guard > 0.0 && c.guard_shown)
     }
 
-    /// Whether it has lost the nerve to fight: its health below the share its
-    /// confidence allows.
-    fn should_flee(&self) -> bool {
-        self.stats.flee_below >= 1.0 || self.health < self.stats.max_health * self.stats.flee_below
-    }
-
-    /// Start running from its target if it should: guard down, no swing.
-    /// True the frame it starts.
-    pub(crate) fn check_flee(&mut self) -> bool {
-        let flee = self.should_flee();
-        let Some(c) = self.combat.as_mut().filter(|c| !c.fleeing && flee && c.swing <= 0.0) else { return false };
-        c.fleeing = true;
-        c.attack = None;
-        c.draw = Default::default();
-        self.set_guard(0.0);
-        log::info!("{} flees ({:.0} / {:.0} health, confidence {})", self.ref_id, self.health, self.stats.max_health, self.stats.confidence);
-        true
-    }
-
     /// Run from the target: to the place on the navmesh near by that is furthest
-    /// from it, then on to the next. False when cornered with the threat close:
-    /// it fights.
+    /// from it, then on to the next, until its flee distance away, where it
+    /// waits facing the threat. The threat coming close has it think again
+    /// (`threat`). False when cornered with the threat close: it fights.
     fn flee_step(&mut self, dt: f32, w: &mut World, threat: Vec3) -> bool {
         let reach = self.reach();
         let pos = self.pos;
         let run = self.run_speed();
         let Some(c) = self.combat.as_mut() else { return true };
         c.repath -= dt;
+        let dist = pos.distance(threat);
+        let near = dist < super::threat::FLEE_THREAT_NEAR;
+        if near && !std::mem::replace(&mut c.threat_near, near) {
+            c.recheck = true;
+        }
+        c.threat_near = near;
+        if dist >= c.flee_distance {
+            c.safe += dt;
+            c.away_to = None;
+            self.speed = 0.0;
+            self.state = State::Idle(1.0);
+            self.turn_towards((threat - pos).normalize_or_zero(), dt);
+            return true;
+        }
+        c.safe = 0.0;
         // Somewhere new once there, or when the threat has come closer to the
         // place than the actor is.
         if c.away_to.is_none_or(|t| arrived_away(pos, t, threat)) {
@@ -625,7 +624,8 @@ impl ActorRuntime {
     /// (or run from it, fleeing). Returns the graph event of an attack started
     /// this frame.
     pub(crate) fn combat_step(&mut self, dt: f32, w: &mut World, target: Vec3) -> Option<String> {
-        if self.combat.as_ref().is_some_and(|c| c.fleeing) && self.flee_step(dt, w, target) {
+        // A swing under way is finished first.
+        if self.combat.as_ref().is_some_and(|c| c.fleeing && !c.swinging()) && self.flee_step(dt, w, target) {
             return None;
         }
         let reach = self.reach();
@@ -868,15 +868,16 @@ impl Engine {
             return false;
         }
         let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
+        let rolls = (self.rand(), self.rand());
         let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
         if a.dead || a.combat.as_ref().is_some_and(|c| c.target == target) {
             return false;
         }
         a.interrupt(&mut self.furniture);
-        a.combat = Some(Combat::new(target));
+        a.combat = Some(super::threat::new_combat(&self.lo, target, &a.stats, rolls));
         let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());
         // Cowards run without drawing (unless cornered).
-        let coward = a.stats.flee_below >= 1.0;
+        let coward = a.stats.confidence == 0;
         log::info!("{actor} attacks {target}");
         if humanoid && !coward {
             self.draw_weapon(actor, true);
@@ -1296,6 +1297,10 @@ impl Engine {
         }
         a.health -= amount;
         log::info!("{target} takes {amount:.0} damage ({:.0} / {:.0})", a.health, a.stats.max_health);
+        // Hurt while fleeing, it thinks again.
+        if let Some(c) = a.combat.as_mut().filter(|c| c.fleeing) {
+            c.recheck = true;
+        }
         if a.health <= 0.0 {
             // Essential actors (and protected ones, but to the player) bleed out.
             if a.stats.essential || (a.stats.protected && attacker != Some(PLAYER_REF)) {
@@ -1581,7 +1586,7 @@ impl Engine {
         let stats = a.stats.clone();
         let mut out = vec![
             format!(
-                "{actor} at {:.0}: health {:.0} / {:.0} (+{}%/s), stamina {:.0} / {:.0} (power attack {:.0}), aggression {}, confidence {} (flees below {:.0}%), reach {:.0}, {} {:?}{}{}",
+                "{actor} at {:.0}: health {:.0} / {:.0} (+{}%/s), stamina {:.0} / {:.0} (power attack {:.0}), aggression {}, confidence {} ({:.3}{:+.2}), strength {:.0}, reach {:.0}, {} {:?}{}{}",
                 a.pos,
                 a.health,
                 stats.max_health,
@@ -1591,7 +1596,9 @@ impl Engine {
                 a.power_cost,
                 stats.aggression,
                 stats.confidence,
-                stats.flee_below * 100.0,
+                stats.confidence_value,
+                a.combat.as_ref().map_or(0.0, |c| c.confidence_mod),
+                a.strength,
                 a.reach(),
                 if a.combat.as_ref().is_some_and(|c| c.fleeing) { "fleeing" } else { "fighting" },
                 a.combat.as_ref().map(|c| c.target),

@@ -121,13 +121,18 @@ game each piece unlocks.
   multiplier; targets flinch (`recoilStart`) or stagger and fight back; death drops
   the ragdoll. The player has health (HUD bars) and swings at what they look at
   (click). Console `startcombat <a> <b|player>`
-- Fleeing: fighters whose health falls below the share their confidence allows
-  (`AIDT`: cowards always, `fConfidenceCautious` / `Average` / `Brave`, the foolhardy
-  never) run from their target to the navmesh places near by furthest from it, saying
-  a `FLEE` line, and are out of the fight past `fFleeDistanceInterior` / `Exterior`;
-  cornered with the threat close, they fight. Cowards don't draw. NPCs' health comes
-  back out of combat (race rate, `fCombatHealthRegenRateMult` in it). `cstats` shows
-  confidence
+- Fleeing by threat ratio: each fighter's combat strength (damage a second x
+  health over what its armor lets through) refreshed every
+  `fCombatStrengthUpdateTime`; its side's strength over the other side's (sides
+  linked through who fights whom, the player among them) checked every
+  `fCombatThreatRatioUpdateTime` against its confidence (`fConfidence<Level>`) plus a
+  modifier rolled per fight (`fCombatConfidenceModifierMin` / `Max`); only the hurt
+  (and cowards) flee. Fleeing actors say a `FLEE` line, run to the navmesh places
+  furthest from the threat out to `fCombatFleeDistance*`, wait there and leave the
+  fight after `fFleeIsSafeTimer`; hurt or approached they check again, and turn back
+  when the ratio recovers; cornered, they fight. Cowards don't draw. NPCs' health
+  comes back out of combat. `GetThreatRatio`, `IsFleeing`; `cstats` shows strength
+  and confidence. Open questions: `known_gaps/combat-fleeing.md`
 - Bleedout: essential actors (and protected ones, except to the player) brought to zero
   health bleed out through the graph (`bleedOutStart` / `bleedOutStop`), dropped as
   targets, and get up after a while with a quarter of their health; the player can
