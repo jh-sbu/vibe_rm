@@ -918,14 +918,21 @@ fn main() -> Result<()> {
             }
         }
         Some("cell-refs") => {
-            // cell-refs <data dir> <cell editor id | hex> [base tag]: a cell's references
-            // with their base records.
+            // cell-refs <data dir> <cell editor id | hex | [world:]x,y> [base tag]: a cell's
+            // references with their base records, positions and rotations (degrees).
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let lo = esp::LoadOrder::load(data, &names)?;
-            let cell = match u32::from_str_radix(&args[2], 16) {
-                Ok(v) if args[2].len() == 8 => esp::FormId(v),
-                _ => lo.find_editor_id(&args[2]).context("cell not found")?,
+            let cell = if let Some((x, y)) = args[2].rsplit(':').next().and_then(|g| g.split_once(',')) {
+                let world = args[2].split_once(':').map_or("Tamriel", |(w, _)| w);
+                let w = lo.find_editor_id(world).context("world not found")?;
+                let g = (x.trim().parse::<i32>()?, y.trim().parse::<i32>()?);
+                *lo.world(w).and_then(|w| w.cells.get(&g)).context("no cell there")?
+            } else {
+                match u32::from_str_radix(&args[2], 16) {
+                    Ok(v) if args[2].len() == 8 => esp::FormId(v),
+                    _ => lo.find_editor_id(&args[2]).context("cell not found")?,
+                }
             };
             let idx = lo.cell(cell).context("not a cell")?;
             for &r in idx.persistent.iter().chain(&idx.temporary) {
@@ -937,7 +944,15 @@ fn main() -> Result<()> {
                     continue;
                 }
                 let edid = lo.get(base).and_then(|b| b.editor_id().map(|e| e.to_string())).unwrap_or_default();
-                println!("{r} {} -> {base} {tag} {edid}", rec.tag());
+                let placement = rec
+                    .get(b"DATA")
+                    .filter(|d| d.len() >= 24)
+                    .map(|d| {
+                        let f = |i: usize| f32::from_le_bytes(d[i * 4..i * 4 + 4].try_into().unwrap());
+                        format!(" @ {:.0},{:.0},{:.0} rot {:.1},{:.1},{:.1}", f(0), f(1), f(2), f(3).to_degrees(), f(4).to_degrees(), f(5).to_degrees())
+                    })
+                    .unwrap_or_default();
+                println!("{r} {} -> {base} {tag} {edid}{placement}", rec.tag());
             }
         }
         Some("esp-list") => {
