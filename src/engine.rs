@@ -101,6 +101,8 @@ pub struct Engine {
     pub audio: Option<crate::audio::Audio>,
     music: MusicState,
     pub conversation: Option<crate::dialogue::Conversation>,
+    /// Actors the player has had a conversation with (`GetTalkedToPC`).
+    pub(crate) talked_to_pc: std::collections::HashSet<FormId>,
     /// Factions' relations to others (`XNAM`), as read.
     pub(crate) faction_relations: crate::ai::combat::FactionRelations,
     /// Armor and block game settings, read on first use.
@@ -214,6 +216,7 @@ impl Engine {
             menu: None,
             lockpick: None,
             barks: Default::default(),
+            talked_to_pc: Default::default(),
             faction_relations: Default::default(),
             combat_settings: Default::default(),
             player_blocking: false,

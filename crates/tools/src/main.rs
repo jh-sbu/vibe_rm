@@ -946,6 +946,85 @@ fn main() -> Result<()> {
                 println!("{c:6} {n}");
             }
         }
+        Some("force-greets") => {
+            // force-greets <data dir>: ForceGreet / ForceGreetFromSitting packages with their
+            // topic, trigger location, force greet distance, "must be detected" and "sandbox
+            // while waiting" inputs, the NPCs using them and where those are placed.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut users: std::collections::HashMap<esp::FormId, Vec<esp::FormId>> = Default::default();
+            for &npc in lo.ids_of_type(b"NPC_") {
+                let Some(rec) = lo.get(npc) else { continue };
+                for s in rec.subrecords().filter(|s| s.tag.0 == *b"PKID") {
+                    users.entry(rec.fid(s.form_id(0))).or_default().push(npc);
+                }
+            }
+            let mut placed: std::collections::HashMap<esp::FormId, Vec<esp::FormId>> = Default::default();
+            for &r in lo.ids_of_type(b"ACHR") {
+                let Some(rec) = lo.get(r) else { continue };
+                let Some(b) = rec.get(b"NAME").filter(|d| d.len() >= 4) else { continue };
+                placed.entry(rec.fid(esp::FormId(u32::from_le_bytes(b[0..4].try_into().unwrap())))).or_default().push(r);
+            }
+            for &id in lo.ids_of_type(b"PACK") {
+                let Some(rec) = lo.get(id) else { continue };
+                let Some(cu) = rec.get(b"PKCU").filter(|d| d.len() >= 8) else { continue };
+                let t = rec.fid(esp::FormId(u32::from_le_bytes(cu[4..8].try_into().unwrap())));
+                let template = lo.get(t).and_then(|r| r.editor_id()).unwrap_or_default();
+                if !template.to_ascii_lowercase().starts_with("forcegreet") {
+                    continue;
+                }
+                // Input values in record order, then their indices (UNAM).
+                let (mut values, mut indices) = (Vec::<String>::new(), Vec::<u8>::new());
+                for sr in rec.subrecords() {
+                    let d = sr.data;
+                    match &sr.tag.0 {
+                        b"XNAM" => break,
+                        b"ANAM" => values.push(String::new()),
+                        b"CNAM" if !d.is_empty() => *values.last_mut().unwrap() = format!("{}", d[0] != 0),
+                        b"PDTO" if d.len() >= 8 && !values.is_empty() => {
+                            let v = u32::from_le_bytes(d[4..8].try_into().unwrap());
+                            *values.last_mut().unwrap() = if d[0] == 0 {
+                                let f = rec.fid(esp::FormId(v));
+                                format!("{f} {}", lo.get(f).and_then(|r| r.editor_id()).unwrap_or_default())
+                            } else {
+                                String::from_utf8_lossy(&d[4..8]).into_owned()
+                            };
+                        }
+                        b"PLDT" if d.len() >= 12 && !values.is_empty() => {
+                            let k = u32::from_le_bytes(d[0..4].try_into().unwrap());
+                            let v = rec.fid(esp::FormId(u32::from_le_bytes(d[4..8].try_into().unwrap())));
+                            *values.last_mut().unwrap() = format!("kind {k} {v} r {}", i32::from_le_bytes(d[8..12].try_into().unwrap()));
+                        }
+                        b"UNAM" if !d.is_empty() => indices.push(d[0]),
+                        _ => {}
+                    }
+                }
+                let input = |i: u8| indices.iter().position(|&x| x == i).and_then(|p| values.get(p).cloned()).unwrap_or_else(|| "-".into());
+                println!(
+                    "{id} {} ({template}): topic {} | trigger {} | distance {} | detect {} | sandbox {}",
+                    rec.editor_id().unwrap_or_default(),
+                    input(0x07),
+                    input(0x3e),
+                    input(0x4b),
+                    if input(0x4f) == "-" { input(0x4d) } else { input(0x4f) },
+                    input(0x28)
+                );
+                for npc in users.get(&id).into_iter().flatten() {
+                    let edid = lo.get(*npc).and_then(|r| r.editor_id()).unwrap_or_default();
+                    let refs: Vec<String> = placed
+                        .get(npc)
+                        .into_iter()
+                        .flatten()
+                        .map(|r| {
+                            let cell = lo.cell_of_ref(*r).and_then(|c| lo.get(c).and_then(|c| c.editor_id())).unwrap_or_default();
+                            format!("{r} in {cell}")
+                        })
+                        .collect();
+                    println!("    {npc} {edid}: {}", refs.join(", "));
+                }
+            }
+        }
         Some("npc-templates") => {
             // npc-templates <data dir>: NPCs with a template (TPLT), by what it is (NPC_ or a
             // leveled list), how often each "Use ..." flag (ACBS) is set, and ACHRs placing

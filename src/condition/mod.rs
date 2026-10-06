@@ -228,6 +228,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         77 => Some((e.peek_rand() % 100) as f32), // GetRandomPercent
         74 => Some(e.global_value(p1)),           // GetGlobalValue
         56 => b(e.scripts.quests.get(&p1).is_some_and(|q| q.running)), // GetQuestRunning
+        50 => b(subject.is_some_and(|s| e.talked_to_pc.contains(&s))), // GetTalkedToPC
         58 => Some(e.scripts.quests.get(&p1).map(|q| q.stage as f32).unwrap_or(0.0)), // GetStage
         59 => b(e.scripts.quests.get(&p1).is_some_and(|q| q.done.contains(&(c.p2 as u16)))), // GetStageDone
         543 => b(e.scripts.quests.get(&p1).is_some_and(|q| q.completed)), // GetQuestCompleted

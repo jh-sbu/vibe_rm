@@ -208,6 +208,13 @@ game each piece unlocks.
   it, running to catch up with one more than "Run If Behind Distance" ahead);
   followers in range face their target; SitTarget. Open questions:
   `known_gaps/escort.md`
+- Force greet packages (ForceGreet / ForceGreetFromSitting templates): the greeter
+  waits at its wait location (standing, sandboxing or in its seat) until the player
+  is in the trigger location (and seen, if asked), walks up to within the force
+  greet distance at the package's speed and opens a conversation with the package's
+  topic (or the first `HELO` line); seated ones speak from the seat. Again 10 s
+  after the conversation if the package still applies. `GetTalkedToPC`. vrm-tool
+  `force-greets`. Open questions: `known_gaps/force-greet.md`
 - NPC templates (`TPLT`): each "Use ..." flag takes that part (traits, stats,
   factions, AI data and combat style, AI packages, base data, inventory, script,
   attack data and attack race, keywords) from the template, through nested templates
@@ -271,7 +278,8 @@ game each piece unlocks.
    - Footsteps: swimming (and swimming itself), splashes
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
-   - Remaining procedures: force greet, guard, use weapon / magic, dialogue packages;
+   - Quest alias packages (`ALPC`: most force greets, escorts and scene packages)
+   - Remaining procedures: guard, use weapon / magic, dialogue packages;
      escorts' follower min / max distances and several followers, riding
    - Off-screen travel between worldspaces; paths round locked animated doors,
      lockpicking perks and skill gain
