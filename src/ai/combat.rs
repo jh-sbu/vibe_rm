@@ -107,7 +107,7 @@ fn weapon_weight(lo: &LoadOrder, weapon: FormId) -> f32 {
 }
 
 /// A weapon's base damage (`DATA`).
-fn weapon_damage(lo: &LoadOrder, weapon: FormId) -> f32 {
+pub(crate) fn weapon_damage(lo: &LoadOrder, weapon: FormId) -> f32 {
     lo.get(weapon).and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 10).map(|d| u16::from_le_bytes([d[8], d[9]]) as f32)).unwrap_or(0.0)
 }
 
@@ -175,12 +175,12 @@ fn armor_skills(dnam: &[u8]) -> [f32; 2] {
 }
 
 /// A float game setting (`GMST`), or `default` when the plugins lack it.
-fn gmst_f32(lo: &LoadOrder, name: &str, default: f32) -> f32 {
+pub(crate) fn gmst_f32(lo: &LoadOrder, name: &str, default: f32) -> f32 {
     lo.find_editor_id(name).and_then(|id| lo.get(id)).and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 4).map(|d| f32_at(d, 0))).unwrap_or(default)
 }
 
 /// An integer game setting (`GMST`), or `default` when the plugins lack it.
-fn gmst_i32(lo: &LoadOrder, name: &str, default: i32) -> i32 {
+pub(crate) fn gmst_i32(lo: &LoadOrder, name: &str, default: i32) -> i32 {
     lo.find_editor_id(name)
         .and_then(|id| lo.get(id))
         .and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 4).map(|d| i32::from_le_bytes(d[0..4].try_into().unwrap())))
@@ -406,7 +406,7 @@ pub struct Combat {
     next: usize,
     repath: f32,
     /// Seconds until it may attack again, and left of the swing it is in.
-    cooldown: f32,
+    pub(crate) cooldown: f32,
     swing: f32,
     /// The attack being made (index into the stats' attacks), and whether it
     /// has struck (one hit a swing).
@@ -425,6 +425,10 @@ pub struct Combat {
     /// it from behind its guard.
     pub(crate) bash: Option<Bash>,
     pub(crate) counter: bool,
+    /// Archers: where they are in their shot, and whether they have a clear line
+    /// to the target (set by the engine each frame).
+    pub(crate) draw: super::archery::Draw,
+    pub(crate) clear_shot: bool,
 }
 
 /// What an actor's bashes cost (bash, power bash; before the attack's own
@@ -437,7 +441,7 @@ pub(crate) struct Bash {
 
 impl Combat {
     pub fn new(target: FormId) -> Combat {
-        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false }
+        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false, draw: Default::default(), clear_shot: false }
     }
 
     pub fn swinging(&self) -> bool {
@@ -449,6 +453,7 @@ impl Combat {
     pub fn refused(&mut self) {
         self.swing = 0.0;
         self.attack = None;
+        self.draw = Default::default();
         self.cooldown = 0.3;
     }
 }
@@ -460,7 +465,7 @@ impl ActorRuntime {
         r * self.scale
     }
 
-    fn run_speed(&self) -> f32 {
+    pub(crate) fn run_speed(&self) -> f32 {
         let walk = self.walk_speed();
         self.moves.map(|(m, _)| m.run).filter(|r| *r > walk).unwrap_or(walk * 3.0)
     }
@@ -491,6 +496,33 @@ impl ActorRuntime {
         c.swing = SWING_TIME * 0.8;
         c.cooldown = SWING_TIME + uniform(w.rand, 0.4, 1.2);
         Some(self.stats.attacks[pick].event.clone())
+    }
+
+    /// Close in on `target` at `run` speed along a path, refreshed as it moves.
+    pub(crate) fn chase(&mut self, dt: f32, w: &mut World, target: Vec3, run: f32) {
+        let pos = self.pos;
+        let Some(c) = self.combat.as_mut() else { return };
+        if c.repath <= 0.0 || c.next >= c.path.len() {
+            c.path = w.nav.find_path(pos, target).unwrap_or_else(|| vec![target]);
+            c.next = 0;
+            c.repath = 0.5;
+        }
+        while c.next < c.path.len() && (c.path[c.next] - pos).truncate().length() < 16.0 {
+            c.next += 1;
+        }
+        let way = c.path.get(c.next).copied().unwrap_or(target);
+        let d = (way - pos).truncate();
+        let remaining = self.turn_towards(d.normalize_or_zero().extend(0.0), dt);
+        let speed = run * remaining.cos().max(0.0).powi(2);
+        self.speed = speed;
+        self.state = State::Walk { path: Vec::new(), next: 0, budget: 1.0, to_seat: false };
+        let fwd = Vec3::new(self.heading.sin(), self.heading.cos(), 0.0);
+        let mut p = pos + fwd * (speed * dt).min(d.length().max(1.0));
+        // Off the navmesh, keep level rather than heading for the target's height.
+        let nz = w.nav.height_at(Vec3::new(p.x, p.y, pos.z));
+        p.z = nz.unwrap_or(pos.z);
+        log::trace!("{} chases: at {pos:?} target {target:?} way {way:?} nav z {nz:?}", self.ref_id);
+        self.pos = p;
     }
 
     /// Raise its guard for `secs` (the AI step has the graph raise it), or lower it.
@@ -567,7 +599,7 @@ impl ActorRuntime {
                     g.set_variable("IsBlocking", 1.0);
                 }
             }
-            let Some(c) = self.combat.as_mut() else { return None };
+            let c = self.combat.as_mut()?;
             // Guard up: stand facing the target (the engine lowers it). Ask the
             // graph until it takes it.
             if !c.guard_shown {
@@ -584,31 +616,14 @@ impl ActorRuntime {
             self.turn_towards(to.normalize_or_zero(), dt);
             return None;
         }
+        if self.bow {
+            return self.archer_step(dt, w, target, dist);
+        }
         if dist > reach * 0.85 {
-            // Close in along a path, refreshed as the target moves.
-            if c.repath <= 0.0 || c.next >= c.path.len() {
-                c.path = w.nav.find_path(pos, target).unwrap_or_else(|| vec![target]);
-                c.next = 0;
-                c.repath = 0.5;
-            }
-            while c.next < c.path.len() && (c.path[c.next] - pos).truncate().length() < 16.0 {
-                c.next += 1;
-            }
-            let way = c.path.get(c.next).copied().unwrap_or(target);
-            let d = (way - pos).truncate();
-            let remaining = self.turn_towards(d.normalize_or_zero().extend(0.0), dt);
-            let speed = run * remaining.cos().max(0.0).powi(2);
-            self.speed = speed;
-            self.state = State::Walk { path: Vec::new(), next: 0, budget: 1.0, to_seat: false };
-            let fwd = Vec3::new(self.heading.sin(), self.heading.cos(), 0.0);
-            let mut p = pos + fwd * (speed * dt).min(d.length().max(1.0));
-            // Off the navmesh, keep level rather than heading for the target's height.
-            let nz = w.nav.height_at(Vec3::new(p.x, p.y, pos.z));
-            p.z = nz.unwrap_or(pos.z);
-            log::trace!("{} chases: at {pos:?} target {target:?} way {way:?} nav z {nz:?}", self.ref_id);
-            self.pos = p;
+            self.chase(dt, w, target, run);
             return None;
         }
+        let c = self.combat.as_mut()?;
         // In reach: stand, face and strike.
         self.speed = 0.0;
         self.state = State::Idle(1.0);
@@ -939,20 +954,27 @@ impl Engine {
         *self.combat_settings.get_or_init(|| CombatSettings::load(&self.lo))
     }
 
-    fn actor_mut(&mut self, actor: FormId) -> Option<&mut ActorRuntime> {
+    pub(crate) fn actor_mut(&mut self, actor: FormId) -> Option<&mut ActorRuntime> {
         let key = self.actor_cells.get(&actor).copied()?;
         self.cells.get_mut(&key)?.actors.iter_mut().find(|a| a.ref_id == actor)
     }
 
-    fn actor_ref(&self, actor: FormId) -> Option<&ActorRuntime> {
+    pub(crate) fn actor_ref(&self, actor: FormId) -> Option<&ActorRuntime> {
         self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor))
     }
 
-    /// The weapon the player swings: the best one they carry.
-    fn player_weapon(&self) -> Option<FormId> {
-        self.inventories
-            .get(&PLAYER_REF)
-            .and_then(|i| i.items.iter().map(|(f, _)| *f).filter(|f| self.lo.tag_of(*f).map(|t| t.0) == Some(*b"WEAP")).max_by_key(|f| weapon_damage(&self.lo, *f) as u32))
+    /// The player's weapon: the one they have equipped, else the best melee one
+    /// they carry.
+    pub(crate) fn player_weapon(&self) -> Option<FormId> {
+        let inv = self.inventories.get(&PLAYER_REF)?;
+        inv.weapon(&self.lo).filter(|w| inv.count(*w) > 0).or_else(|| {
+            inv.items
+                .iter()
+                .filter(|(_, n)| *n > 0)
+                .map(|(f, _)| *f)
+                .filter(|f| self.lo.tag_of(*f).map(|t| t.0) == Some(*b"WEAP") && !super::archery::is_bow(&self.lo, *f))
+                .max_by_key(|f| weapon_damage(&self.lo, *f) as u32)
+        })
     }
 
     /// Base damage of what an actor (or the player) strikes with; 0 for creatures
@@ -1116,7 +1138,7 @@ impl Engine {
     /// Whether an actor can bash: a humanoid with a shield (not a torch) or a
     /// melee weapon out.
     fn can_bash(&self, a: &ActorRuntime) -> bool {
-        if a.dead || a.bleeding.is_some() || !a.graph.as_ref().is_some_and(|g| g.project().humanoid()) {
+        if a.dead || a.bow || a.bleeding.is_some() || !a.graph.as_ref().is_some_and(|g| g.project().humanoid()) {
             return false;
         }
         (self.shield_rating(a.ref_id).is_some() && a.torch.is_none()) || (a.weapon_out && a.weapon_reach > 0.0)
@@ -1126,6 +1148,9 @@ impl Engine {
     /// weapon drawn, as defensive as their combat style.
     fn block_chance(&self, a: &ActorRuntime, set: &CombatSettings) -> Option<f32> {
         if a.dead || a.bleeding.is_some() || !a.graph.as_ref().is_some_and(|g| g.project().humanoid()) {
+            return None;
+        }
+        if a.bow {
             return None;
         }
         let chance = (a.stats.defensive * BLOCK_CHANCE).min(0.9);
@@ -1328,17 +1353,27 @@ impl Engine {
         }
     }
 
+    /// The attack button came up: a basic swing, or with a bow, the arrow loosed.
     pub fn player_attack_release(&mut self) {
-        if self.player_attack_held.take().is_some() {
-            self.player_attack(false);
+        if let Some(held) = self.player_attack_held.take() {
+            if self.player_has_bow() {
+                self.player_loose(held);
+            } else {
+                self.player_attack(false);
+            }
         }
     }
 
-    /// Holding the attack button: a power attack once held long enough.
+    fn player_has_bow(&self) -> bool {
+        self.player_weapon().is_some_and(|w| super::archery::is_bow(&self.lo, w))
+    }
+
+    /// Holding the attack button: a power attack once held long enough (a bow
+    /// just draws on).
     pub(crate) fn update_player_attack(&mut self, dt: f32) {
         let Some(t) = self.player_attack_held.as_mut() else { return };
         *t += dt;
-        if *t >= POWER_ATTACK_HOLD {
+        if *t >= POWER_ATTACK_HOLD && !self.player_has_bow() {
             self.player_attack_held = None;
             self.player_attack(true);
         }
@@ -1443,7 +1478,8 @@ impl Engine {
         let stats = a.stats.clone();
         let mut out = vec![
             format!(
-                "{actor}: health {:.0} / {:.0}, stamina {:.0} / {:.0} (power attack {:.0}), aggression {}, reach {:.0}, fighting {:?}{}{}",
+                "{actor} at {:.0}: health {:.0} / {:.0}, stamina {:.0} / {:.0} (power attack {:.0}), aggression {}, reach {:.0}, fighting {:?}{}{}",
+                a.pos,
                 a.health,
                 stats.max_health,
                 a.stamina,
@@ -1466,6 +1502,17 @@ impl Engine {
             stats.defensive,
             self.actor_ref(actor).is_some_and(|a| a.guarding())
         ));
+        if let Some(a) = self.actor_ref(actor).filter(|a| a.bow) {
+            let arrow = self.arrows_of(actor);
+            out.push(format!(
+                "archer (draw speed {:.2}): shoots {:?} for {:.0} + bow, shot {:?}, clear {}",
+                a.bow_speed,
+                arrow.as_ref().map(|x| x.ammo),
+                arrow.as_ref().map_or(0.0, |x| x.damage),
+                a.combat.as_ref().map(|c| c.draw),
+                a.combat.as_ref().is_some_and(|c| c.clear_shot)
+            ));
+        }
         let bash = self.actor_ref(actor).is_some_and(|a| self.can_bash(a));
         out.push(format!(
             "bash x{:.2} (vs attack {:.2}, vs power attack {:.2}), can bash {bash} for {:.1}",

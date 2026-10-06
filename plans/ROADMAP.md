@@ -164,6 +164,17 @@ game each piece unlocks.
   from their own guard, the swings coming at them, as the combat style's bash
   multipliers (`CSME`) have them. The player bashes by attacking with the guard up.
   Console `pbash`; `cstats` shows the bash multipliers
+- Bows: archers (NPCs wielding a bow) close in until within range with a clear line,
+  then stand, draw through the graph (`bowAttackStart`), hold to aim and loose
+  (`attackRelease`); the arrow flies at the clip's `arrowRelease`, aimed over its drop
+  at the target's body within `fBowNPCSpreadAngle`. Arrows are their ammo's projectile
+  (`PROJ` speed, gravity, flight model without its tracer), swept through the physics
+  world and the player's capsule: hits are blows of bow + arrow damage (shields block
+  them), a third end up in the target's inventory (`iArrowInventoryChance`), misses
+  stick where they land a minute. NPCs shoot their best arrows and never run out.
+  The player wields a bow (`player.equipitem`), draws holding the attack button and
+  looses on release (weaker and slower before full draw, nothing before the nock),
+  using up arrows. Console `pshoot [secs]`, `tcam`
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
@@ -210,7 +221,8 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; locked doors and keys
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
-3. **Game logic**: combat (bows, power bashes for the player (perk), armor perks, tempering
+3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
+   stuck in actors, archers keeping their distance, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime

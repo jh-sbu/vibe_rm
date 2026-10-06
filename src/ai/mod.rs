@@ -1,5 +1,6 @@
 //! Actor AI: package selection, sandboxing / travelling over the navmesh.
 
+pub mod archery;
 pub mod combat;
 mod equipment;
 pub mod furniture;
@@ -279,6 +280,12 @@ pub struct ActorRuntime {
     pub(crate) stamina_wait: f32,
     pub(crate) stamina_spent: bool,
     pub(crate) power_cost: f32,
+    /// Wields a bow (and its draw speed); its graph released the arrow this
+    /// frame, and it looses it.
+    pub(crate) bow: bool,
+    pub(crate) bow_speed: f32,
+    pub(crate) arrow_release: bool,
+    pub(crate) loose: bool,
     pub(crate) detect_in: f32,
     hit_frame: bool,
     /// Seconds left bleeding out (essential actors brought down).
@@ -341,6 +348,10 @@ impl ActorRuntime {
             stamina: 50.0,
             stamina_wait: 0.0,
             stamina_spent: false,
+            bow: false,
+            bow_speed: 1.0,
+            arrow_release: false,
+            loose: false,
             power_cost: 20.0,
             detect_in: stagger,
             hit_frame: false,
@@ -1148,6 +1159,7 @@ impl ActorRuntime {
                     self.weapon_out = out;
                 }
                 "hitframe" => self.hit_frame = true,
+                "arrowrelease" => self.arrow_release = true,
                 "soundplay" | "npcsoundplay" => {
                     if let Some(p) = r.payload {
                         self.sounds.push(p);
@@ -1746,23 +1758,30 @@ impl Engine {
                     match positions.get(&target).filter(|p| p.distance(a.pos) < combat::LOSE_DISTANCE) {
                         Some(&tp) => {
                             if let Some(ev) = a.combat_step(dt, &mut world, tp) {
-                                // Attacks the graph has no state for fall back to the basic one.
+                                // Attacks the graph has no state for fall back to the basic
+                                // one (not a bow's draw, release or lowering).
+                                let bow = matches!(ev.as_str(), "bowAttackStart" | "attackRelease" | "attackStop");
                                 let own = a.graph_event(&ev, &mut world.clips);
-                                let took = own || a.graph_event("attackStart", &mut world.clips);
-                                log::debug!("{} swings: {ev}{}", a.ref_id, if took { "" } else { " (the graph won't take it)" });
+                                let took = own || (!bow && a.graph_event("attackStart", &mut world.clips));
+                                log::debug!("{} {}: {ev}{}", a.ref_id, if bow { "bow" } else { "swings" }, if took { "" } else { " (the graph won't take it)" });
                                 if own {
                                     let cost = a.combat.as_ref().map_or(0.0, |c| c.cost);
                                     a.spend_stamina(cost);
                                 }
-                                if !took {
+                                if !took && ev != "attackStop" {
                                     // Its graph isn't readied (a stagger cut the draw
-                                    // short, say): draw again.
-                                    a.drawn = false;
+                                    // short, say): draw again. A bow still finishing
+                                    // its release is out: just try again shortly.
+                                    if !bow || !a.weapon_out {
+                                        a.drawn = false;
+                                    }
                                     if let Some(c) = a.combat.as_mut() {
                                         c.refused();
                                     }
                                 }
-                                started.push((a.ref_id, target));
+                                if !bow {
+                                    started.push((a.ref_id, target));
+                                }
                             }
                         }
                         None => lost.push(a.ref_id),
@@ -1823,6 +1842,8 @@ impl Engine {
         self.update_guards(dt, &started);
         self.resolve_swings(swings);
         self.update_bleedouts(dt);
+        self.update_clear_shots();
+        self.loose_arrows();
         self.update_stamina(dt);
         if self.ai_enabled {
             self.detect_enemies(dt);

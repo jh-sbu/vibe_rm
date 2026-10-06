@@ -112,6 +112,36 @@ impl Engine {
         moved
     }
 
+    /// Equip or take off an item the actor carries: armor (see `equip_armor`), a
+    /// weapon (in place of the one held; a bow takes both hands, so the shield
+    /// comes off) or ammunition (in place of the other).
+    pub fn equip_item(&mut self, r: FormId, item: FormId, on: bool) -> Result<(), String> {
+        let tag = self.lo.tag_of(item).map(|t| t.0);
+        if !matches!(tag, Some(t) if t == *b"WEAP" || t == *b"AMMO") {
+            return self.equip_armor(r, item, on);
+        }
+        let tag = tag.unwrap();
+        let bow = crate::ai::archery::is_bow(&self.lo, item);
+        self.inventory_mut(r);
+        let lo = &self.lo;
+        let Some(inv) = self.inventories.get_mut(&r) else { return Err(format!("{r} has no inventory")) };
+        if !on {
+            inv.equipped.retain(|&f| f != item);
+            return Ok(());
+        }
+        if inv.count(item) <= 0 {
+            return Err(format!("{r} doesn't carry {item}"));
+        }
+        inv.equipped.retain(|&f| {
+            let rec = lo.get(f);
+            let same_kind = rec.as_ref().is_some_and(|x| x.tag().0 == tag);
+            let shield = bow && rec.as_ref().is_some_and(|x| x.tag().0 == *b"ARMO" && armor_slots(x) & (1 << 9) != 0);
+            !same_kind && !shield
+        });
+        inv.equipped.push(item);
+        Ok(())
+    }
+
     /// Wear (taking off whatever covers the same body slots) or take off a piece of
     /// armor the actor carries.
     pub fn equip_armor(&mut self, r: FormId, armor: FormId, on: bool) -> Result<(), String> {

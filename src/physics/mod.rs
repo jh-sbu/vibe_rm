@@ -255,6 +255,15 @@ impl Physics {
         Some((hit.time_of_impact, hit.normal))
     }
 
+    /// Cast a ray past what `owner` owns (its capsule, its ragdoll), returning
+    /// the hit distance and the owning reference (if any).
+    pub fn raycast_excluding(&self, origin: Vec3, dir: Vec3, max: f32, owner: esp::FormId) -> Option<(f32, Option<esp::FormId>)> {
+        let ray = Ray::new(origin, dir);
+        let not_owner = |h: ColliderHandle, _: &Collider| self.owners.get(&h) != Some(&owner);
+        let (h, toi) = self.world.cast_ray(&ray, max, true, QueryFilter::default().predicate(&not_owner))?;
+        Some((toi, self.owners.get(&h).copied()))
+    }
+
     /// Cast a ray, returning the hit distance and the owning reference (if any).
     pub fn raycast(&self, origin: Vec3, dir: Vec3, max: f32) -> Option<(f32, Option<esp::FormId>)> {
         let ray = Ray::new(origin, dir);
