@@ -90,7 +90,8 @@ impl Engine {
         if a.dead || a.bleeding.is_some() || a.combat.is_some() || a.exiting.is_some() || a.greet_wait > 0.0 {
             return None;
         }
-        let (centre, radius) = self.location_target(a, g.trigger.unwrap_or(DEFAULT_TRIGGER));
+        let quest = a.current.and_then(|i| a.packages.get(i)).and_then(|p| p.quest);
+        let (centre, radius) = self.location_target(a, g.trigger.unwrap_or(DEFAULT_TRIGGER), quest);
         let player = self.player_feet();
         if player.distance(centre) > radius {
             return None;

@@ -215,7 +215,7 @@ impl Engine {
         let mut lock = Vec::new();
         for (achr, old, new) in changed {
             let Some(npc) = self.lo.get(achr).map(|rec| records::reference(&rec).base) else { continue };
-            let packages = self.npc_packages_cached(achr, npc);
+            let packages = self.actor_packages(achr, npc);
             let find = |id: Option<FormId>| id.and_then(|id| packages.iter().find(|p| p.id == id));
             let (old, new) = (find(old), find(new));
             let opens = old.is_some_and(|p| p.unlock_on_change) || new.is_some_and(|p| p.unlock_at_start);

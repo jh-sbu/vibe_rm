@@ -1,5 +1,6 @@
 //! Actor AI: package selection, sandboxing / travelling over the navmesh.
 
+pub mod alias;
 pub mod archery;
 pub mod combat;
 mod equipment;
@@ -335,6 +336,8 @@ pub struct ActorRuntime {
     pub(crate) greeting: bool,
     pub(crate) greet_check: f32,
     pub(crate) greet_wait: f32,
+    /// `ScriptState::alias_gen` its packages were taken at.
+    pub(crate) alias_gen: u64,
     state: State,
     next_eval: f32,
     speed: f32,
@@ -417,6 +420,7 @@ impl ActorRuntime {
             greeting: false,
             greet_check: stagger,
             greet_wait: 0.0,
+            alias_gen: 0,
             state: State::Idle(1.0 + stagger),
             next_eval: stagger,
             speed: 0.0,
@@ -1677,18 +1681,19 @@ impl Engine {
     /// Where a package location points to, as (centre, radius).
     fn package_target(&self, a: &ActorRuntime, p: &Package) -> (Vec3, f32) {
         match p.location {
-            Some(loc) => self.location_target(a, loc),
+            Some(loc) => self.location_target(a, loc, p.quest),
             None => (a.editor_pos, 0.0),
         }
     }
 
-    fn location_target(&self, a: &ActorRuntime, loc: package::Location) -> (Vec3, f32) {
+    fn location_target(&self, a: &ActorRuntime, loc: package::Location, quest: Option<FormId>) -> (Vec3, f32) {
         let centre = match loc.kind {
             LocationKind::NearReference(r) => self.ref_position(r),
             LocationKind::NearLinkedRef(kw) => {
                 self.linked_ref(a.ref_id, (!kw.is_null()).then_some(kw)).and_then(|r| self.ref_position(r))
             }
             LocationKind::NearCurrent | LocationKind::NearSelf => Some(a.pos),
+            LocationKind::NearAlias(alias) => quest.and_then(|q| self.alias_ref(q, alias)).and_then(|r| self.ref_position(r)),
             LocationKind::InCell(_) => return (a.editor_pos, loc.radius.max(SANDBOX_MAX)),
             LocationKind::NearEditor | LocationKind::Other(_) => Some(a.editor_pos),
         };
@@ -1697,14 +1702,15 @@ impl Engine {
 
     /// Choose each actor's package and goal.
     fn evaluate_packages(&mut self, dt: f32) {
+        self.refresh_alias_packages();
         let mut decisions = Vec::new();
         for (key, rt) in &self.cells {
             for (i, a) in rt.actors.iter().enumerate() {
                 if a.next_eval - dt > 0.0 || a.exiting.is_some() {
                     continue;
                 }
-                let ctx = crate::condition::Context { subject: Some(a.ref_id), ..Default::default() };
                 let pick = a.packages.iter().position(|p| {
+                    let ctx = crate::condition::Context { subject: Some(a.ref_id), quest: p.quest, ..Default::default() };
                     p.schedule.matches(self.hour, self.day) && crate::condition::evaluate(self, &p.conditions, ctx)
                 });
                 let goal = pick.map(|pi| {
@@ -1713,6 +1719,7 @@ impl Engine {
                     let target = match p.target {
                         Some(Target::Ref(r)) => Some(r),
                         Some(Target::LinkedRef(kw)) => self.linked_ref(a.ref_id, kw),
+                        Some(Target::Alias(alias)) => p.quest.and_then(|q| self.alias_ref(q, alias)),
                         _ => None,
                     };
                     // A force greeter waits (standing, sandboxing or seated) until it
