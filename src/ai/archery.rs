@@ -7,6 +7,7 @@ use std::sync::Arc;
 use esp::{FormId, LoadOrder};
 use glam::{Mat4, Quat, Vec3};
 
+use super::combat::{arrived_away, place_away};
 use super::{ActorRuntime, State, World, uniform};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::render::{GpuModel, Instance};
@@ -17,6 +18,12 @@ const AMMO_NON_BOLT: u32 = 0x4;
 const IRON_ARROW: FormId = FormId(0x1397D);
 /// Archers shoot from up to this far, with a clear line to the target.
 pub(crate) const BOW_RANGE: f32 = 2000.0;
+/// Archers back off from a target closer than this (at scale 1), as many times a
+/// second as their combat style's fallback multiplier times the rate (tuned by
+/// eye), to somewhere up to `FALLBACK_STEP` away.
+const FALLBACK_RANGE: f32 = 450.0;
+const FALLBACK_RATE: f32 = 2.0;
+const FALLBACK_STEP: f32 = 600.0;
 /// Seconds to draw a bow at speed 1 (`Bow_DrawNock` until it is held drawn).
 const DRAW_TIME: f32 = 1.07;
 /// Seconds from `attackRelease` to the graph's `arrowRelease`, if it never comes.
@@ -139,8 +146,26 @@ impl ActorRuntime {
     /// graph event to send.
     pub(crate) fn archer_step(&mut self, dt: f32, w: &mut World, target: Vec3, dist: f32) -> Option<String> {
         let run = self.run_speed();
+        let pos = self.pos;
+        let close = dist < FALLBACK_RANGE * self.scale;
+        let fallback = self.stats.fallback;
         let c = self.combat.as_mut()?;
         let draw = c.draw;
+        // Backing off from a target close in: between shots, now and then.
+        if c.away_to.is_some_and(|t| arrived_away(pos, t, target)) {
+            c.away_to = None;
+        }
+        if c.away_to.is_none() && close && draw == Draw::Idle && uniform(w.rand, 0.0, 1.0) < fallback * FALLBACK_RATE * dt {
+            c.away_to = place_away(w, pos, target, FALLBACK_STEP);
+            c.repath = 0.0;
+            if c.away_to.is_some() {
+                log::debug!("{} backs off from its target", self.ref_id);
+            }
+        }
+        if let Some(to) = c.away_to {
+            self.chase(dt, w, to, run);
+            return None;
+        }
         let in_range = dist < BOW_RANGE * 0.9 && c.clear_shot;
         if !in_range {
             // Lower the bow to move.
