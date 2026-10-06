@@ -167,7 +167,7 @@ fn first_of_leveled(lo: &LoadOrder, mut id: FormId) -> FormId {
 
 /// An NPC's factions: its own, or its template's when it takes them from one
 /// (template flag 0x4) or has none.
-fn npc_factions(lo: &LoadOrder, npc: FormId) -> Vec<FormId> {
+pub(crate) fn npc_factions(lo: &LoadOrder, npc: FormId) -> Vec<FormId> {
     let mut id = npc;
     for _ in 0..8 {
         let Some(rec) = lo.get(id) else { break };
