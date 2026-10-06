@@ -112,6 +112,8 @@ pub struct CombatStats {
     pub bash: f32,
     pub bash_vs_attack: f32,
     pub bash_vs_power: f32,
+    /// How readily it backs off from a target close in (`CSCR` fallback multiplier).
+    pub fallback: f32,
 }
 
 /// A weapon's weight (`DATA`).
@@ -402,6 +404,7 @@ impl CombatStats {
         let csme = style.as_ref().and_then(|r| r.get(b"CSME"));
         s.power_vs_guard = csme.filter(|d| d.len() >= 12).map_or(1.0, |d| f32_at(d, 8));
         (s.bash, s.bash_vs_attack, s.bash_vs_power) = csme.filter(|d| d.len() >= 28).map_or((0.5, 0.25, 0.25), |d| (f32_at(d, 12), f32_at(d, 20), f32_at(d, 24)));
+        s.fallback = style.as_ref().and_then(|r| r.get(b"CSCR")).filter(|d| d.len() >= 8).map_or(0.11, |d| f32_at(d, 4));
         s.max_health = s.max_health.max(5.0);
         s.max_stamina = s.max_stamina.max(10.0);
         if let Some(d) = npc_field(lo, npc, b"AIDT", 0x10).filter(|d| d.len() >= 20) {
@@ -429,7 +432,7 @@ pub struct Combat {
     pub target: FormId,
     path: Vec<Vec3>,
     next: usize,
-    repath: f32,
+    pub(crate) repath: f32,
     /// Seconds until it may attack again, and left of the swing it is in.
     pub(crate) cooldown: f32,
     swing: f32,
@@ -454,9 +457,10 @@ pub struct Combat {
     /// to the target (set by the engine each frame).
     pub(crate) draw: super::archery::Draw,
     pub(crate) clear_shot: bool,
-    /// Running from the target rather than fighting it, and where to.
+    /// Running from the target rather than fighting it; where it is heading away
+    /// from the target to (fleeing, or an archer backing off).
     pub fleeing: bool,
-    flee_to: Option<Vec3>,
+    pub(crate) away_to: Option<Vec3>,
 }
 
 /// What an actor's bashes cost (bash, power bash; before the attack's own
@@ -469,7 +473,7 @@ pub(crate) struct Bash {
 
 impl Combat {
     pub fn new(target: FormId) -> Combat {
-        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false, draw: Default::default(), clear_shot: false, fleeing: false, flee_to: None }
+        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false, draw: Default::default(), clear_shot: false, fleeing: false, away_to: None }
     }
 
     pub fn swinging(&self) -> bool {
@@ -598,21 +602,13 @@ impl ActorRuntime {
         let run = self.run_speed();
         let Some(c) = self.combat.as_mut() else { return true };
         c.repath -= dt;
-        let arrived = c.flee_to.is_none_or(|t| (t - pos).truncate().length() < FLEE_ARRIVED);
         // Somewhere new once there, or when the threat has come closer to the
         // place than the actor is.
-        let overtaken = c.flee_to.is_some_and(|t| t.distance(threat) < t.distance(pos));
-        if arrived || overtaken {
-            let away = (pos - threat).truncate().normalize_or(glam::Vec2::X);
-            let centre = pos + (away * FLEE_STEP * 0.5).extend(0.0);
-            let rand = &mut *w.rand;
-            c.flee_to = (0..FLEE_TRIES)
-                .filter_map(|_| w.nav.random_point(centre, FLEE_STEP, &mut *rand))
-                .max_by(|a, b| a.distance(threat).total_cmp(&b.distance(threat)))
-                .filter(|p| p.distance(threat) > pos.distance(threat));
+        if c.away_to.is_none_or(|t| arrived_away(pos, t, threat)) {
+            c.away_to = place_away(w, pos, threat, FLEE_STEP);
             c.repath = 0.0;
         }
-        match c.flee_to {
+        match c.away_to {
             Some(to) => self.chase(dt, w, to, run),
             None if pos.distance(threat) < reach * 2.0 => return false,
             // Cornered: stand facing the threat.
@@ -757,6 +753,24 @@ impl ActorRuntime {
         c.cooldown = SWING_TIME + uniform(w.rand, 0.3, 1.4) + if power { uniform(w.rand, 0.5, 1.0) } else { 0.0 };
         Some(self.stats.attacks[pick].event.clone())
     }
+}
+
+/// Somewhere on the navmesh within `step` of `pos`, as far from `threat` as a
+/// few tries find, and further from it than `pos` is.
+pub(crate) fn place_away(w: &mut World, pos: Vec3, threat: Vec3, step: f32) -> Option<Vec3> {
+    let away = (pos - threat).truncate().normalize_or(glam::Vec2::X);
+    let centre = pos + (away * step * 0.5).extend(0.0);
+    let rand = &mut *w.rand;
+    (0..FLEE_TRIES)
+        .filter_map(|_| w.nav.random_point(centre, step, &mut *rand))
+        .max_by(|a, b| a.distance(threat).total_cmp(&b.distance(threat)))
+        .filter(|p| p.distance(threat) > pos.distance(threat))
+}
+
+/// Whether an actor heading to `to`, away from `threat`, is there, or the threat
+/// has come closer to it than the actor is.
+pub(crate) fn arrived_away(pos: Vec3, to: Vec3, threat: Vec3) -> bool {
+    (to - pos).truncate().length() < FLEE_ARRIVED || to.distance(threat) < to.distance(pos)
 }
 
 /// One of `pool` (index, chance) by their chances.

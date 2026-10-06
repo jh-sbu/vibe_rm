@@ -172,7 +172,9 @@ game each piece unlocks.
   multipliers (`CSME`) have them. The player bashes by attacking with the guard up.
   Console `pbash`; `cstats` shows the bash multipliers
 - Bows: archers (NPCs wielding a bow) close in until within range with a clear line,
-  then stand, draw through the graph (`bowAttackStart`), hold to aim and loose
+  then stand (backing off between shots from a target close in, as readily as
+  their combat style's fallback multiplier, `CSCR`), draw through the graph
+  (`bowAttackStart`), hold to aim and loose
   (`attackRelease`); the arrow flies at the clip's `arrowRelease`, aimed over its drop
   at the target's body within `fBowNPCSpreadAngle`. Arrows are their ammo's projectile
   (`PROJ` speed, gravity, flight model without its tracer), swept through the physics
@@ -239,7 +241,7 @@ game each piece unlocks.
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
      data, keywords, scripts; leveled list counts ("each item in count")
 3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
-   stuck in actors, archers keeping their distance, sneak shots, power bashes for the player (perk), armor perks, tempering
+   stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
