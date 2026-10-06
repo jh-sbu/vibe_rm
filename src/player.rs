@@ -21,6 +21,11 @@ pub struct Player {
     pub vertical_velocity: f32,
     pub grounded: bool,
     pub noclip: bool,
+    /// Sneaking (toggled), and how far down the view has gone for it (0..1).
+    pub sneaking: bool,
+    pub crouch: f32,
+    /// Whether they left the ground by jumping this update.
+    pub jumped: bool,
 }
 
 pub const WALK_SPEED: f32 = 110.0;
@@ -29,17 +34,24 @@ pub const SPRINT_SPEED: f32 = 480.0;
 pub const JUMP_SPEED: f32 = 330.0;
 /// Eye height above the capsule centre.
 pub const EYE_OFFSET: f32 = 56.0;
+/// How far the eye drops sneaking, and how quickly (crouch fraction per second).
+const SNEAK_DROP: f32 = 30.0;
+const CROUCH_RATE: f32 = 4.0;
 
 impl Player {
     pub fn new(eye: Vec3) -> Self {
-        Player { position: eye - Vec3::Z * EYE_OFFSET, vertical_velocity: 0.0, grounded: false, noclip: false }
+        Player { position: eye - Vec3::Z * EYE_OFFSET, vertical_velocity: 0.0, grounded: false, noclip: false, sneaking: false, crouch: 0.0, jumped: false }
     }
 
     pub fn eye(&self) -> Vec3 {
-        self.position + Vec3::Z * EYE_OFFSET
+        self.position + Vec3::Z * (EYE_OFFSET - SNEAK_DROP * self.crouch)
     }
 
-    pub fn update(&mut self, physics: &Physics, camera: &Camera, input: MoveInput, dt: f32) {
+    /// `sneak_speed`: the share of their usual speed they keep sneaking.
+    pub fn update(&mut self, physics: &Physics, camera: &Camera, input: MoveInput, sneak_speed: f32, dt: f32) {
+        self.jumped = false;
+        let crouch = if self.sneaking && !self.noclip { 1.0 } else { 0.0 };
+        self.crouch += (crouch - self.crouch).clamp(-CROUCH_RATE * dt, CROUCH_RATE * dt);
         if self.noclip {
             let mut speed = 600.0;
             if input.run {
@@ -58,11 +70,12 @@ impl Player {
             RUN_SPEED
         } else {
             WALK_SPEED
-        };
+        } * if self.sneaking { sneak_speed } else { 1.0 };
         let horizontal = (fwd * input.forward + right * input.right).normalize_or_zero() * speed;
         if self.grounded && input.jump {
             self.vertical_velocity = JUMP_SPEED;
             self.grounded = false;
+            self.jumped = true;
         }
         self.vertical_velocity -= GRAVITY * dt;
         self.vertical_velocity = self.vertical_velocity.max(-60.0 * crate::physics::METRE);

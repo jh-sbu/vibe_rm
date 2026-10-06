@@ -198,8 +198,11 @@ game each piece unlocks.
   feet (ARMA `SNDD`, else its skin's) for its gait (walk, run, sneak), the impact
   data set's sound for the ground below: the collision's Havok material per triangle
   (material types matched by the CRC-32 of their name, parents for missing pairs)
-  or the landscape texture showing most there (LTEX material). The player steps by
-  stride. Console `probe` shows materials; vrm-tool `nif-materials`
+  or the landscape texture showing most there (LTEX material), water for feet in
+  shallow water (none deeper: swimming). The player steps by stride, sneaks (Ctrl:
+  slower by the sneaking movement type, the view lowered, sneak footsteps; sprinting
+  stands them up) and sounds their jumps and landings (`JumpUp` / `JumpDown`).
+  Console `probe` shows materials and water; `psneak`, `pjump`; vrm-tool `nif-materials`
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
@@ -220,7 +223,7 @@ game each piece unlocks.
      self-transition modes (`vrm-tool hkb-flags` counts and lists them)
    - Engine variables and events still missing: combat, first person;
      INFO speaker / listener idles; listeners' reactions
-   - Footsteps: water (wading, swimming), jump / land events, the player's sneaking
+   - Footsteps: swimming (and swimming itself), splashes
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
    - Remaining procedures: flee, force greet, guard, use weapon / magic, dialogue packages;
