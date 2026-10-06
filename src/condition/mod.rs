@@ -301,7 +301,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // IsMoving / IsPathing outside idle picking: walking about.
         25 | 704 if ctx.idle.is_none() => b(subject.and_then(|s| e.actor_speed(s)).is_some_and(|v| v > 1.0)),
         // Nor flees, attacks, staggers, recoils or is ridden.
-        329 | 672 | 701 | 702 | 714 => b(false),
+        329 => b(subject.is_some_and(|s| e.is_fleeing(s))), // IsFleeing
+        477 => Some(subject.map_or(0.0, |s| e.threat_ratio(s, p1))), // GetThreatRatio
+        672 | 701 | 702 | 714 => b(false),
         _ => idle_function_value(e, c, ctx),
     }
 }

@@ -189,9 +189,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let (r, amount, by) = match args[..] {
                 [r, amount] => (r, amount, None),
                 [r, amount, by] => (r, amount, Some(by)),
-                _ => return vec!["usage: damage <actor ref> <health> [attacker ref | player]".into()],
+                _ => return vec!["usage: damage <actor ref | player> <health> [attacker ref | player]".into()],
             };
-            let (Some(actor), Ok(x)) = (engine.resolve_form(r), amount.parse::<f32>()) else { return vec!["bad reference or amount".into()] };
+            let actor = if r.eq_ignore_ascii_case("player") { Some(crate::engine::PLAYER_REF) } else { engine.resolve_form(r) };
+            let (Some(actor), Ok(x)) = (actor, amount.parse::<f32>()) else { return vec!["bad reference or amount".into()] };
             let attacker = match by {
                 Some(b) if b.eq_ignore_ascii_case("player") => Some(crate::engine::PLAYER_REF),
                 Some(b) => match engine.resolve_form(b) {
