@@ -36,7 +36,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "lock <ref> [level]    lock a door or container; unlock <ref> unlocks it".into(),
             "picklock <deg> [secs] while picking: pick at an angle, turn the lock a while".into(),
             "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
-            "escort <ref> <target> <dest> [wait]  lead target to dest, waiting while it lags".into(),
+            "escort <ref> <target> <dest> [wait] [run]  lead target to dest, waiting while it lags".into(),
             "gstate <ref>          an actor's active behaviour graph states".into(),
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
@@ -137,12 +137,13 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             }
         }
         "escort" => {
-            // Test hook: escort <actor> <target> <destination ref> [wait distance]
-            let [r, t, to, rest @ ..] = &args[..] else { return vec!["usage: escort <actor ref> <target ref> <destination ref> [wait distance]".into()] };
+            // Test hook: escort <actor> <target> <destination ref> [wait distance] [run if behind distance]
+            let [r, t, to, rest @ ..] = &args[..] else { return vec!["usage: escort <actor ref> <target ref> <destination ref> [wait distance] [run distance]".into()] };
             let wait = rest.first().and_then(|w| w.parse().ok()).unwrap_or(512.0);
+            let run = rest.get(1).and_then(|w| w.parse().ok()).unwrap_or(500.0);
             let (Some(actor), Some(target), Some(dest)) = (engine.resolve_form(r), engine.resolve_form(t), engine.resolve_form(to)) else { return vec!["unknown reference".into()] };
             let Some(pos) = engine.ref_position(dest) else { return vec![format!("{to} isn't loaded")] };
-            if engine.escort(actor, target, pos, wait) {
+            if engine.escort(actor, target, pos, wait, run) {
                 vec![format!("{r} escorting {t} to {to} (waits beyond {wait:.0})")]
             } else {
                 vec![format!("{r} isn't a loaded actor")]

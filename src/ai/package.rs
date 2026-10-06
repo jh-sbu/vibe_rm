@@ -145,6 +145,8 @@ pub struct Package {
     pub follow_radius: (f32, f32),
     /// Escort: wait while the escorted actor is farther than this.
     pub escort_wait: f32,
+    /// Escort: run while the escorted actor is this far ahead.
+    pub escort_run: f32,
     pub gait: Gait,
     pub sneak: bool,
     /// The sleeper locks its home's doors ("Lock Doors?" input).
@@ -363,6 +365,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     let start_nearest = ["startatnearest", "startatnearestpoint"].iter().find_map(|k| flag(k)).unwrap_or(false);
     let follow_radius = (float(&["minradius"], 128.0), float(&["maxradius"], 384.0));
     let escort_wait = float(&["distancetowaitforfollowers"], 512.0);
+    let escort_run = float(&["runifbehinddistance"], 500.0);
     // The first location input is the package's main location; likewise for targets.
     let location = inputs.iter().find_map(|(_, v)| match v {
         Input::Location(l) => Some(*l),
@@ -388,6 +391,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         start_nearest,
         follow_radius,
         escort_wait,
+        escort_run,
         gait,
         sneak,
         lock_doors: flag("lockdoors").unwrap_or(false),

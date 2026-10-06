@@ -204,7 +204,10 @@ game each piece unlocks.
   properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest),
   follow and escort packages (leading the target to the destination, waiting while it
-  lags more than "Distance to Wait for Follower(s)" behind); SitTarget
+  lags more than "Distance to Wait for Follower(s)" behind, turning in place to face
+  it, running to catch up with one more than "Run If Behind Distance" ahead);
+  followers in range face their target; SitTarget. Open questions:
+  `known_gaps/escort.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -261,8 +264,7 @@ game each piece unlocks.
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
    - Remaining procedures: force greet, guard, use weapon / magic, dialogue packages;
-     escorts running to catch up ("Run If Behind Distance"), turning to the one
-     they wait for, riding
+     escorts' follower min / max distances and several followers, riding
    - Off-screen travel between worldspaces; paths round locked animated doors,
      lockpicking perks and skill gain
    - Templates (TPLT) beyond traits, inventory and name: stats, factions, spells, AI
