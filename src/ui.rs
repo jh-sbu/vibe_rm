@@ -276,6 +276,10 @@ impl Ui {
             ui.label(format!("{} items, weight {weight:.1}", items.len()));
         };
         let container = match menu {
+            Menu::Lockpick => {
+                self.lockpick_view(ctx, engine);
+                return;
+            }
             Menu::Container(c) => Some(c),
             Menu::Inventory => None,
             Menu::Book { book, reference } => {
@@ -346,6 +350,62 @@ impl Ui {
         }
         if let Some(book) = reading {
             engine.menu = Some(Menu::Book { book, reference: None });
+        }
+    }
+
+    /// The lock face-on: the keyhole turning, the pick along its half circle. The
+    /// mouse (or Left / Right) moves the pick; holding Space (or W) turns the lock;
+    /// Escape or Tab gives up.
+    fn lockpick_view(&mut self, ctx: &egui::Context, engine: &mut Engine) {
+        use crate::engine::PLAYER_REF;
+        let picks = engine.item_count(PLAYER_REF, crate::locks::LOCKPICK);
+        let level = engine.lockpick.as_ref().map_or(0, |l| l.level);
+        let level_name = engine.gmst_string(crate::locks::lock_level_setting(level)).unwrap_or_default();
+        let Some(lp) = engine.lockpick.as_mut() else {
+            engine.menu = None;
+            return;
+        };
+        let (close, dx, keys, turn) = ctx.input(|i| {
+            let close = self.menu_shown && (i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Tab));
+            let keys = (i.key_down(egui::Key::ArrowRight) || i.key_down(egui::Key::D)) as i32 as f32
+                - (i.key_down(egui::Key::ArrowLeft) || i.key_down(egui::Key::A)) as i32 as f32;
+            (close, i.pointer.delta().x, keys * i.stable_dt.min(0.1), i.key_down(egui::Key::Space) || i.key_down(egui::Key::W))
+        });
+        if lp.hold <= 0.0 {
+            lp.turning = turn;
+            // The pick stays put while the lock turns.
+            if !turn {
+                lp.pick = (lp.pick + dx * 0.35 + keys * 90.0).clamp(-90.0, 90.0);
+            }
+        }
+        let (pick, turned) = (lp.pick, lp.turn);
+        egui::Window::new("Lockpicking")
+            .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.label(format!("{level_name} lock    Lockpicks: {picks}"));
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(320.0, 300.0), egui::Sense::hover());
+                let p = ui.painter_at(rect);
+                let c = rect.center() + egui::vec2(0.0, 30.0);
+                let metal = egui::Color32::from_rgb(120, 110, 95);
+                p.circle_filled(c, 110.0, egui::Color32::from_rgb(52, 47, 42));
+                p.circle_stroke(c, 110.0, egui::Stroke::new(4.0, metal));
+                p.circle_filled(c, 46.0, egui::Color32::from_rgb(78, 70, 60));
+                // The keyhole, turned a quarter at most.
+                let a = turned * std::f32::consts::FRAC_PI_2;
+                let (s, co) = a.sin_cos();
+                let rot = |x: f32, y: f32| c + egui::vec2(x * co - y * s, x * s + y * co);
+                p.add(egui::Shape::convex_polygon(vec![rot(-5.0, -26.0), rot(5.0, -26.0), rot(5.0, 26.0), rot(-5.0, 26.0)], egui::Color32::BLACK, egui::Stroke::NONE));
+                // The pick, from below the lock's rim up to the keyhole at its angle.
+                let ang = pick.to_radians();
+                let dir = egui::vec2(ang.sin(), -ang.cos());
+                p.line_segment([c + dir * 150.0, c + dir * 8.0], egui::Stroke::new(3.0, egui::Color32::from_rgb(200, 195, 185)));
+            });
+        ui_hint(ctx);
+        if close {
+            engine.lockpick = None;
+            engine.menu = None;
         }
     }
 
@@ -424,4 +484,10 @@ impl Ui {
             self.renderer.free_texture(id);
         }
     }
+}
+
+fn ui_hint(ctx: &egui::Context) {
+    egui::Area::new(egui::Id::new("lockpick_hint")).anchor(Align2::CENTER_BOTTOM, egui::vec2(0.0, -40.0)).show(ctx, |ui| {
+        ui.label(egui::RichText::new("Mouse / A, D: move the pick    Hold Space / W: turn the lock    Esc: stop").color(egui::Color32::LIGHT_GRAY));
+    });
 }

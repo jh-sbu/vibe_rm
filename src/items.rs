@@ -15,6 +15,8 @@ pub enum Menu {
     Container(FormId),
     /// A book being read: the book, and the reference it lies as in the world.
     Book { book: FormId, reference: Option<FormId> },
+    /// Picking a lock (`Engine::lockpick` holds the state).
+    Lockpick,
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,

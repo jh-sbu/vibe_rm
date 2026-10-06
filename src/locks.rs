@@ -45,9 +45,10 @@ impl Engine {
         [door, partner].into_iter().find(|&r| self.is_locked(r))
     }
 
-    /// The player activating a locked door or container: the key opens it for good;
-    /// otherwise it stays shut (there's no lockpicking yet). True when it opens.
-    pub(crate) fn player_unlock(&mut self, r: FormId) -> bool {
+    /// The player activating a locked door or container (`then`: what they
+    /// activated, which opens once the lock does): the key opens it for good;
+    /// otherwise, with lockpicks, picking it begins. True when it's open now.
+    pub(crate) fn player_unlock(&mut self, r: FormId, then: FormId) -> bool {
         if !self.is_locked(r) {
             return true;
         }
@@ -57,14 +58,95 @@ impl Engine {
             log::info!("{r} opened with {key} ({})", self.form_name(key));
             return true;
         }
-        let msg = if lock.level == Lock::NEEDS_KEY {
-            self.gmst_string("sImpossibleLock").unwrap_or_else(|| "Requires key".into())
-        } else {
+        if lock.level == Lock::NEEDS_KEY {
+            let msg = self.gmst_string("sImpossibleLock").unwrap_or_else(|| "Requires key".into());
+            self.scripts.notify(msg);
+            return false;
+        }
+        if self.item_count(PLAYER_REF, LOCKPICK) <= 0 {
             let level = self.gmst_string(lock_level_setting(lock.level)).unwrap_or_default();
-            format!("{} ({level})", self.gmst_string("sLocked").unwrap_or_else(|| "Locked".into()))
-        };
-        self.scripts.notify(msg);
+            let msg = self.gmst_string("sOutOfLockpicks").unwrap_or_else(|| "You have no lockpicks".into());
+            self.scripts.notify(format!("{msg} ({level})"));
+            return false;
+        }
+        self.start_lockpick(r, then, lock.level);
         false
+    }
+
+    /// Put a lock in front of the player to pick (UESP *Skyrim:Lockpicking*): a sweet
+    /// spot somewhere on the pick's half circle, `60 x 2^-difficulty x (0.82 +
+    /// fLockpickSkillSweetSpotMult x skill)` degrees wide, with partial zones either
+    /// side `fPartialPick<level> x (fLockpickSkillPartialPickBase +
+    /// fLockpickSkillPartialPickMult x skill)` wide; a pick lasts 2 / 1 / 0.75 / 0.5 /
+    /// 0.25 seconds of strain (novice .. master) x (1 + skill / 200).
+    pub fn start_lockpick(&mut self, lock: FormId, then: FormId, level: u8) {
+        let difficulty = difficulty(level);
+        let skill = self.player_skill(LOCKPICKING_SKILL);
+        let gmst = |n: &str, d: f32| crate::ai::combat::gmst_f32(&self.lo, n, d);
+        let partial_setting = ["fPartialPickVeryEasy", "fPartialPickEasy", "fPartialPickAverage", "fPartialPickHard", "fPartialPickVeryHard"][difficulty - 1];
+        let sweet = 60.0 * 0.5f32.powi(difficulty as i32) * (0.82 + gmst("fLockpickSkillSweetSpotMult", 0.006) * skill);
+        let partial = gmst(partial_setting, 26.0 - 4.0 * difficulty as f32)
+            * (gmst("fLockpickSkillPartialPickBase", 0.775) + gmst("fLockpickSkillPartialPickMult", 0.015) * skill);
+        let durability = [2.0, 1.0, 0.75, 0.5, 0.25][difficulty - 1] * (1.0 + 0.5 * skill / 100.0);
+        let room = 90.0 - sweet / 2.0;
+        let centre = (self.rand() % 10_000) as f32 / 10_000.0 * 2.0 * room - room;
+        log::info!("picking {lock} (difficulty {difficulty}, skill {skill:.0}): sweet spot {sweet:.1} deg at {centre:.1}, partial {partial:.1}, pick lasts {durability:.2} s");
+        self.lockpick = Some(Lockpick { lock, then, level, centre, sweet, partial, durability, pick: 0.0, turn: 0.0, strain: 0.0, turning: false, hold: 0.0 });
+        self.menu = Some(crate::items::Menu::Lockpick);
+    }
+
+    /// One of the player's skills (the player's `NPC_` `DNAM`).
+    fn player_skill(&self, index: usize) -> f32 {
+        self.lo.get(FormId(0x7)).and_then(|r| r.get(b"DNAM").and_then(|d| d.get(index).copied())).unwrap_or(15) as f32
+    }
+
+    /// Turn the lock as far as the pick lets it: all the way opens it; held against
+    /// the pick, the pick wears out and snaps, and the lock springs back.
+    pub(crate) fn update_lockpick(&mut self, dt: f32) {
+        let Some(mut lp) = self.lockpick.take() else { return };
+        if self.menu != Some(crate::items::Menu::Lockpick) {
+            return;
+        }
+        if lp.hold > 0.0 {
+            lp.hold -= dt;
+            lp.turning = lp.hold > 0.0;
+        }
+        let most = lp.most_turn();
+        if lp.turning {
+            lp.turn = (lp.turn + dt * TURN_SPEED).min(most);
+            if lp.turn >= 1.0 {
+                log::info!("picked {} open", lp.lock);
+                self.set_locked(lp.lock, false);
+                self.menu = None;
+                let name = self.form_name(lp.then);
+                self.look_target = Some((lp.then, name));
+                if let Err(e) = self.activate() {
+                    log::error!("activation failed: {e:#}");
+                }
+                return;
+            }
+            if lp.turn >= most {
+                lp.strain += dt;
+                if lp.strain >= lp.durability {
+                    self.remove_item(PLAYER_REF, LOCKPICK, 1, None);
+                    lp.strain = 0.0;
+                    lp.turn = 0.0;
+                    lp.hold = 0.0;
+                    lp.turning = false;
+                    let left = self.item_count(PLAYER_REF, LOCKPICK);
+                    log::info!("lockpick broke ({left} left)");
+                    if left <= 0 {
+                        let msg = self.gmst_string("sOutOfLockpicks").unwrap_or_else(|| "You have no lockpicks".into());
+                        self.scripts.notify(msg);
+                        self.menu = None;
+                        return;
+                    }
+                }
+            }
+        } else {
+            lp.turn = (lp.turn - dt * TURN_SPEED * 2.0).max(0.0);
+        }
+        self.lockpick = Some(lp);
     }
 
     /// A string game setting, from the localised strings.
@@ -137,6 +219,63 @@ impl Engine {
         for d in lock {
             self.set_locked(d, true);
         }
+    }
+}
+
+/// The lockpick (`MISC`) and the lockpicking skill's place in an NPC's skills.
+pub const LOCKPICK: FormId = FormId(0xA);
+const LOCKPICKING_SKILL: usize = 8;
+/// Share of a full turn the lock makes in a second (tuned by eye).
+const TURN_SPEED: f32 = 1.6;
+
+/// A lock being picked.
+#[derive(Debug, Clone)]
+pub struct Lockpick {
+    pub lock: FormId,
+    pub then: FormId,
+    pub level: u8,
+    /// Degrees from straight up (-90 left .. 90 right): the sweet spot's middle and
+    /// width, the partial zones' width either side.
+    pub centre: f32,
+    pub sweet: f32,
+    pub partial: f32,
+    /// Seconds a pick takes strain before it breaks, and the strain so far.
+    pub durability: f32,
+    pub strain: f32,
+    /// Where the pick is (degrees, as `centre`), how far the lock has turned
+    /// (0 .. 1 open), whether the player turns it, and seconds a test turn lasts.
+    pub pick: f32,
+    pub turn: f32,
+    pub turning: bool,
+    pub hold: f32,
+}
+
+impl Lockpick {
+    /// How far the lock turns with the pick where it is: all the way in the sweet
+    /// spot, less and less across the partial zones, barely at all outside.
+    pub fn most_turn(&self) -> f32 {
+        let off = (self.pick - self.centre).abs() - self.sweet / 2.0;
+        if off <= 0.0 {
+            1.0
+        } else if off < self.partial {
+            (1.0 - off / self.partial).max(MIN_TURN)
+        } else {
+            MIN_TURN
+        }
+    }
+}
+
+/// How far a lock turns with the pick nowhere near the spot.
+const MIN_TURN: f32 = 0.05;
+
+/// Lock difficulty 1 (novice) .. 5 (master).
+fn difficulty(level: u8) -> usize {
+    match level {
+        0..=1 => 1,
+        2..=25 => 2,
+        26..=50 => 3,
+        51..=75 => 4,
+        _ => 5,
     }
 }
 
