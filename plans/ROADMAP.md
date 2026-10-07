@@ -362,9 +362,18 @@ game each piece unlocks.
      INFO speaker / listener idles; listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
-2. **AI depth**
-   - Alias fills: near alias, story manager events (and the story manager
-     itself); created objects drawn in the world, cleaned up
+2. **Story Manager**: what starts most quests that don't start with the game
+   (radiant quests, town scenes' quests, quests begun on arriving somewhere,
+   on a kill, on a script's `SendStoryEvent`...)
+   - Event, branch and quest nodes (`SMEN` / `SMBN` / `SMQN`): the tree walked
+     in order under each event type, node conditions with the event's data,
+     shares / random / first-that-passes, quests' reset hours and counts
+   - Events: change location, script event (`SendStoryEvent`,
+     `SendStoryEventAndWait`), kill, then the others by how many quests they start
+   - Quests started with the event's references and locations filling their
+     "from event" aliases (`GetEventData` conditions)
+3. **AI depth**
+   - Alias fills: near alias; created objects drawn in the world, cleaned up
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
      activate / carry, flee, orbit packages; ambush triggers and sleepers'
      reduced detection;
@@ -374,16 +383,16 @@ game each piece unlocks.
    - Templates: spells (with magic)
    - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
      guard / wait / find / acquire procedures
-3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
+4. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-4. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
-5. **Audio**: lip sync
-6. **Rendering**: point light and interior shadows, static shadow caching (per-cell
+5. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
+6. **Audio**: lip sync
+7. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
    grass, decals, environment maps
-7. **Saves**: an engine-native save format (reading .ess later), writing out
+8. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories and `WorldState`
-8. **Performance**: async loading, GPU-driven culling
+9. **Performance**: async loading, GPU-driven culling
