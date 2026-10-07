@@ -1955,6 +1955,58 @@ fn main() -> Result<()> {
             let missing: Vec<String> = owners.iter().filter(|&&f| flags_of(f).unwrap_or(0) & 0x8000 == 0).map(|&f| lo.get(f).and_then(|r| r.editor_id()).unwrap_or_default()).collect();
             println!("owners without 0x8000: {} {:?}", missing.len(), missing.iter().take(10).collect::<Vec<_>>());
         }
+        Some("crime-factions") => {
+            // crime-factions <data dir>: factions that track crime, their crime
+            // gold (CRVA, or "use defaults"), shared crime groups (CRGR), how
+            // many NPCs name each as their crime faction (CRIF) and locations
+            // naming it as their unreported crime faction (FNAM).
+            use std::collections::BTreeMap;
+            anyhow::ensure!(args.len() > 1, "usage: crime-factions <data dir>");
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let form = |rec: &esp::LoadedRecord<'_>, tag: &[u8; 4]| rec.get(tag).filter(|d| d.len() >= 4).map(|d| rec.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))));
+            let edid = |f: esp::FormId| lo.get(f).and_then(|r| r.editor_id()).unwrap_or_else(|| format!("{f}"));
+            let mut crif: BTreeMap<esp::FormId, usize> = BTreeMap::new();
+            for &n in lo.ids_of_type(b"NPC_") {
+                if let Some(f) = lo.get(n).and_then(|r| form(&r, b"CRIF")) {
+                    *crif.entry(f).or_default() += 1;
+                }
+            }
+            let mut fnam: BTreeMap<esp::FormId, usize> = BTreeMap::new();
+            for &l in lo.ids_of_type(b"LCTN") {
+                if let Some(f) = lo.get(l).and_then(|r| form(&r, b"FNAM")) {
+                    *fnam.entry(f).or_default() += 1;
+                }
+            }
+            for &f in lo.ids_of_type(b"FACT") {
+                let Some(rec) = lo.get(f) else { continue };
+                let flags = rec.get(b"DATA").filter(|d| d.len() >= 4).map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()));
+                if flags & 0x40 == 0 && !crif.contains_key(&f) {
+                    continue;
+                }
+                let crva = rec.get(b"CRVA").map(|d| {
+                    let u16_at = |o: usize| d.get(o..o + 2).map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
+                    let mult = d.get(12..16).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()));
+                    format!("arrest {} aos {} murder {} assault {} trespass {} pickpocket {} steal x{mult} escape {} werewolf {} ({} bytes)", d[0], d.get(1).copied().unwrap_or(0), u16_at(2), u16_at(4), u16_at(6), u16_at(8), u16_at(16), u16_at(18), d.len())
+                });
+                let group = form(&rec, b"CRGR").map(|g| {
+                    let list = lo.get(g).map(|r| r.subrecords().filter(|s| s.tag.0 == *b"LNAM").count()).unwrap_or(0);
+                    format!("{} ({list} factions)", edid(g))
+                });
+                println!(
+                    "{} {f} flags {flags:#07x}{} crif {} locs {}\n    {}\n    group {}  jail {:?} stolen {:?}",
+                    edid(f),
+                    if flags & 0x1000 != 0 { " (defaults)" } else { "" },
+                    crif.get(&f).copied().unwrap_or(0),
+                    fnam.get(&f).copied().unwrap_or(0),
+                    crva.unwrap_or_else(|| "no CRVA".into()),
+                    group.unwrap_or_else(|| "-".into()),
+                    form(&rec, b"JAIL").map(edid),
+                    form(&rec, b"STOL").map(edid),
+                );
+            }
+        }
         Some("first-of") => {
             // first-of <data dir> <TYPE> [n]: editor ids and form ids of the first n records of a type.
             let data = std::path::Path::new(&args[1]);

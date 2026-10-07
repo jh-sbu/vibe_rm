@@ -7,6 +7,7 @@ mod condition;
 mod dialogue;
 mod console;
 mod created;
+mod crime;
 mod engine;
 mod footsteps;
 mod items;

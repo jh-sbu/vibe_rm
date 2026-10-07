@@ -1570,12 +1570,14 @@ impl Engine {
     /// Kill an actor, `killer` (if known) having dealt the blow: its scripts
     /// hear of it (`OnDying`, `OnDeath`) and the Story Manager gets a kill event.
     pub fn kill_actor_by(&mut self, actor: FormId, killer: Option<FormId>) -> bool {
+        let rank = killer.map_or(0, |k| self.relationship_rank(actor, k));
         let killed = self.kill_actor_quietly(actor);
         if killed {
             let k = killer.map_or(papyrus::Value::None, |k| self.object_value(k));
             self.send_script_event(actor, "OnDying", vec![k.clone()]);
             self.send_script_event(actor, "OnDeath", vec![k]);
-            self.send_kill_event(actor, killer);
+            let crime = if killer == Some(PLAYER_REF) { self.player_kill(actor) } else { 0 };
+            self.send_kill_event(actor, killer, crime, rank);
         }
         killed
     }

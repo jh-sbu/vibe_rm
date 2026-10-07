@@ -61,7 +61,18 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "startscene <scene> [force] / stopscene <scene> / scenes   start, stop, list scenes".into(),
             "storyevent <TYPE> [r1] [r2] [l1] [l2] [v1=n f1=form...]   send a Story Manager event (ADIA, CLOC, AIPL...)".into(),
             "[ref.]getrelationshiprank <actor> / setrelationshiprank <actor> <rank>   relationship ranks (-4..4)".into(),
+            "crime                 the player's bounties; player.setcrimegold <n> [faction] [violent]".into(),
+            "player.paycrimegold <remove stolen 0/1> <jail 0/1> [faction]   pay off a bounty (the hold here by default)".into(),
+            "crimefaction <ref> [faction]   show or set an actor's crime faction".into(),
         ],
+        "crime" => engine.describe_bounties(),
+        "crimefaction" => {
+            let Some(r) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec!["usage: crimefaction <ref> [faction]".into()] };
+            if let Some(f) = args.get(1) {
+                engine.set_crime_faction(r, engine.resolve_form(f));
+            }
+            vec![format!("{r}: crime faction {:?}", engine.crime_faction(r).map(|f| format!("{} {f}", engine.form_name(f))))]
+        }
         "storyevent" => {
             let Some(code) = args.first().and_then(|c| <[u8; 4]>::try_from(c.to_ascii_uppercase().as_bytes()).ok()) else {
                 return vec!["usage: storyevent <TYPE> [r1] [r2] [l1] [l2] [v1=n v2=n f1=form k1=keyword]".into()];
@@ -409,14 +420,26 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 21] = [
-    "getrelationshiprank", "setrelationshiprank", "moveto", "enable", "disable", "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
+const ITEM_COMMANDS: [&str; 23] = [
+    "setcrimegold", "paycrimegold", "getrelationshiprank", "setrelationshiprank", "moveto", "enable", "disable", "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
     "getav", "setav", "modav", "forceav", "damageav", "restoreav",
 ];
 
 /// Inventory and actor value commands on a reference (the player when none is given).
 fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -> Vec<String> {
     match cmd {
+        "setcrimegold" => {
+            let Some(n) = args.first().and_then(|x| x.parse::<i32>().ok()) else { return vec!["usage: player.setcrimegold <amount> [faction] [violent 0/1]".into()] };
+            let Some(f) = args.get(1).and_then(|a| engine.resolve_form(a)).or_else(|| engine.location_crime_faction()) else { return vec!["no crime faction here; name one".into()] };
+            engine.set_crime_gold(f, n, args.get(2).is_some_and(|v| *v == "1"));
+            engine.describe_bounties()
+        }
+        "paycrimegold" => {
+            let flag = |i: usize| args.get(i).is_none_or(|v| *v != "0");
+            let Some(f) = args.get(2).and_then(|a| engine.resolve_form(a)).or_else(|| engine.location_crime_faction()) else { return vec!["no crime faction here; name one".into()] };
+            let paid = engine.pay_crime_gold(f, flag(0), flag(1));
+            vec![format!("paid {paid} gold to {}", engine.form_name(f))]
+        }
         "getrelationshiprank" | "setrelationshiprank" => {
             let Some(other) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: [ref.]{cmd} <actor> [rank]")] };
             if cmd == "setrelationshiprank" {

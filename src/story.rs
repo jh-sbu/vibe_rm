@@ -389,8 +389,9 @@ impl Engine {
     /// up) or from a container or body (`container`). A player add item event
     /// (`AIPL`): R1 the owner's reference, R2 the container, L1 where, F1 the
     /// item, V1 how it was acquired (1 stolen, 4 picked up, 5 from a
-    /// container, 6 from a body).
-    pub(crate) fn send_player_add_item(&mut self, item: FormId, source: FormId, container: bool) {
+    /// container, 6 from a body). Taking `count` of something stolen is a
+    /// crime, at the item's value.
+    pub(crate) fn send_player_add_item(&mut self, item: FormId, count: i32, source: FormId, container: bool) {
         // Bodies belong to nobody (not to the house they lie in).
         let body = container && (self.actor_cells.contains_key(&source) || self.lo.tag_of(source).is_some_and(|t| t.0 == *b"ACHR"));
         let owner = crate::ai::furniture::owner_of(&self.lo, source).filter(|_| !body);
@@ -400,11 +401,14 @@ impl Engine {
             _ if container => 5,
             _ => 4,
         };
+        let owner_ref = owner.filter(|&o| o != FormId(0x7)).and_then(|o| self.npc_refs_index().get(&o).copied());
+        if how == 1 {
+            let value = crate::world::inventory::item_info(&self.lo, item).map_or(0, |i| i.value) * count.max(1);
+            let faction = owner.filter(|&o| self.lo.tag_of(o).is_some_and(|t| t.0 == *b"FACT"));
+            self.commit_crime(crate::crime::CrimeType::Steal, owner_ref, faction, value);
+        }
         let mut e = StoryEvent::new(b"AIPL");
-        e.refs = [
-            owner.filter(|&o| o != FormId(0x7)).and_then(|o| self.npc_refs_index().get(&o).copied()).unwrap_or_default(),
-            if container { source } else { FormId::NULL },
-        ];
+        e.refs = [owner_ref.unwrap_or_default(), if container { source } else { FormId::NULL }];
         e.locs[0] = self.current_location().unwrap_or_default();
         e.form = item;
         e.values[0] = how as f32;
@@ -423,8 +427,11 @@ impl Engine {
 
     /// The first blow of a fight: an assault event (`ASSU`: R1 the victim, R2
     /// the attacker, L1 where, V1 whether it is a crime: the victim keeps the
-    /// law and wasn't hostile).
+    /// law and wasn't hostile). The player's crimes are reported.
     pub(crate) fn send_assault(&mut self, victim: FormId, attacker: FormId, crime: bool) {
+        if crime && attacker == crate::engine::PLAYER_REF {
+            self.player_assault(victim);
+        }
         let mut e = StoryEvent::new(b"ASSU");
         e.refs = [victim, attacker];
         e.locs[0] = self.ref_current_location(victim).unwrap_or_default();
@@ -432,11 +439,14 @@ impl Engine {
         self.send_story_event(e);
     }
 
-    /// A kill: the victim, the killer and where.
-    pub(crate) fn send_kill_event(&mut self, victim: FormId, killer: Option<FormId>) {
+    /// A kill (`KILL`: R1 the victim, R2 the killer, L1 where, V1 the crime
+    /// status: 0 none, 1 an unreported murder, 2 a reported one; V2 the
+    /// relationship rank between them before).
+    pub(crate) fn send_kill_event(&mut self, victim: FormId, killer: Option<FormId>, crime: i32, rank: i32) {
         let mut e = StoryEvent::new(b"KILL");
         e.refs = [victim, killer.unwrap_or_default()];
         e.locs[0] = self.ref_current_location(victim).unwrap_or_default();
+        e.values = [crime as f32, rank as f32];
         self.send_story_event(e);
     }
 }

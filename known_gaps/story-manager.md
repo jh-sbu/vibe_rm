@@ -95,16 +95,15 @@ own or their templates'); a member is dead when their placed reference is.
   neither does the favor cap; a member that is a generic NPC with several
   references counts as dead only by its first. The required faction rank
   on owned references (`XRNK`) is ignored, so a player in the owning
-  faction may take everything. No crime system yet: taking stolen items only
-  changes the event's acquire type, nobody sees or reports it, and items
-  aren't marked stolen in the inventory.
+  faction may take everything. Theft seen by a witness adds crime gold
+  (`known_gaps/crime.md`); items aren't marked stolen in the inventory.
 
 - The other events wait for their systems: crafting (`CRFT`), increase
   level / skill (`LEVL`, `SKIL`), arrest / jail / escape (`ARRT`, `JAIL`,
   `ESJA`), item removal (`REMP`: dropping items), spell cast (`CAST`), new
   voice power (`NVPE`), bribe, intimidate, flatter, lock pick.
-- Kill events' crime status and relationship values (V1 / V2) aren't set;
-  item pickups never say bought or pickpocketed (no barter or pickpocketing).
+- Kill events' crime status (V1) only knows the player's murders; item
+  pickups never say bought or pickpocketed (no barter or pickpocketing).
 - Hellos between NPCs, and creatures' (dogs') hellos; the real detection
   and distance rules for noticing bodies; assaults on the player.
 - Relationship association types (`HasFamilyRelationship`,
