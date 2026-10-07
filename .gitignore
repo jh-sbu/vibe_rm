@@ -1,4 +1,5 @@
 /target
+/refs
 # Never commit game assets
 *.bsa
 *.ba2
