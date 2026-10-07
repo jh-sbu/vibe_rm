@@ -10,6 +10,7 @@ mod form_id;
 mod load_order;
 pub mod navmesh;
 pub mod scene;
+pub mod story;
 mod plugin;
 mod record;
 pub mod strings;

@@ -46,7 +46,10 @@ pub enum Fill {
     Matching,
     /// A new reference to `object` made at (or in) what alias `at` holds (`ALCO` + `ALCA`).
     Create { object: FormId, at: u32, inside: bool },
-    /// Kinds not filled yet: "near alias", story manager events.
+    /// What the Story Manager event that started the quest names (`ALFE` event
+    /// type + `ALFD` member: `R1`, `L2`...).
+    FromEvent([u8; 2]),
+    /// Kinds not filled yet: "near alias".
     Unsupported(&'static str),
 }
 
@@ -101,7 +104,12 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
                 }
             }
             b"ALNA" => a.fill = Fill::Unsupported("near alias"),
-            b"ALFE" => a.fill = Fill::Unsupported("from event"),
+            b"ALFE" => a.fill = Fill::FromEvent([0; 2]),
+            b"ALFD" if sr.data.len() >= 2 => {
+                if let Fill::FromEvent(m) = &mut a.fill {
+                    *m = [sr.data[0], sr.data[1]];
+                }
+            }
             b"CTDA" => {
                 if let Some(c) = condition::parse(quest, sr.data) {
                     a.conditions.push(c);
@@ -215,6 +223,8 @@ impl Engine {
             Fill::Unique(npc) if *npc == FormId(0x7) => Some(PLAYER_REF),
             Fill::Unique(npc) => self.npc_refs_index().get(npc).copied(),
             Fill::Specific(l) => Some(*l),
+            // The event's reference or location, if the alias's conditions take it.
+            Fill::FromEvent(m) => self.story_event_for(Some(q)).and_then(|ev| ev.member_form(*m)).filter(|&r| accepts(r)),
             Fill::External { quest, alias } => self.alias_ref(*quest, *alias),
             Fill::RefLocation { ref_alias, keyword } => self
                 .alias_ref(q, *ref_alias)
@@ -274,7 +284,9 @@ impl Engine {
                     self.scripts.quests.entry(q).or_default().aliases.insert(a.id, r);
                 }
                 Ok(None) if !a.has(flags::OPTIONAL) && a.fill != Fill::Empty => {
-                    log::info!("quest {edid} not started: alias {} ({:?}) not filled", a.name, a.fill);
+                    // Story Manager attempts fail all the time (the event's actors aren't the ones).
+                    let level = if self.scripts.quests.get(&q).is_some_and(|st| st.event.is_some()) { log::Level::Debug } else { log::Level::Info };
+                    log::log!(level, "quest {edid} not started: alias {} ({:?}) not filled", a.name, a.fill);
                     self.scripts.quests.entry(q).or_default().aliases.clear();
                     return false;
                 }

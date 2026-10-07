@@ -31,6 +31,8 @@ pub struct Condition {
     pub p1_input: bool,
     /// The first parameter as a package input resolved for the actor.
     pub p1_ref: Option<RefOf>,
+    /// Run on a Story Manager event's data (`run_on` 7): the member (`R1`, `L2`...).
+    pub event_member: [u8; 2],
 }
 
 /// A reference worked out for whoever the condition runs on.
@@ -95,7 +97,8 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
         func,
         // Package inputs by index (flag 0x08) aren't forms.
         p1: if flags & 0x08 == 0 && param_is_form(func, 1) { fid(p1) } else { p1 },
-        p2: if param_is_form(func, 2) { fid(p2) } else { p2 },
+        // GetEventData: (function, member) then a form, but for GetValue.
+        p2: if param_is_form(func, 2) || (func == GET_EVENT_DATA && p1 & 0xffff != 2) { fid(p2) } else { p2 },
         run_on: u32_at(20),
         reference: if d.len() >= 28 && u32_at(20) == 2 { FormId(fid(u32_at(24))) } else { FormId::NULL },
         reference_raw: if d.len() >= 28 { u32_at(24) } else { 0 },
@@ -104,8 +107,13 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
         pack_input: (u32_at(20) == 6 && d.len() >= 32).then(|| u32_at(28) as u8),
         p1_input: flags & 0x08 != 0,
         p1_ref: None,
+        event_member: if u32_at(20) == RUN_ON_EVENT_DATA && d.len() >= 32 { [d[28], d[29]] } else { [0; 2] },
     })
 }
+
+/// `run_on`: the data of the Story Manager event behind the quest.
+const RUN_ON_EVENT_DATA: u32 = 7;
+const GET_EVENT_DATA: u16 = 576;
 
 /// Whether parameter `n` of function `func` is a form reference (vs. an int/enum).
 fn param_is_form(func: u16, n: u8) -> bool {
@@ -220,6 +228,7 @@ fn eval_one(e: &Engine, c: &Condition, ctx: Context) -> bool {
         4 => ctx.subject.and_then(|s| e.linked_ref(s, (!c.reference.is_null()).then_some(c.reference))),
         // Quest alias: the reference field holds the alias id.
         5 => ctx.quest.and_then(|q| e.alias_ref(q, c.reference_raw)),
+        RUN_ON_EVENT_DATA => e.story_event_for(ctx.quest).and_then(|ev| ev.member_form(c.event_member)),
         RUN_ON_NOTHING => return false,
         _ => ctx.subject,
     };
@@ -287,6 +296,21 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         365 => b(ctx.idle.and_then(|q| q.child).unwrap_or_else(|| subj_base.and_then(|n| e.npc_race(n)).is_some_and(|r| e.race_is_child(r)))), // IsChild
         125 => b(false),                                                  // IsGuard
         141 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject && cv.current.is_some()) || subject.is_some_and(|s| e.is_barking(s) || e.is_scene_speaking(s))), // IsTalking
+        GET_EVENT_DATA => {
+            // (function, member): 0 GetIsID, 1 IsInList, 2 GetValue, 3 HasKeyword.
+            let ev = e.story_event_for(ctx.quest)?;
+            let m = [(c.p1 >> 16) as u8, (c.p1 >> 24) as u8];
+            let x = ev.member_form(m);
+            let form = FormId(c.p2);
+            let is = |x: FormId, f: FormId| x == f || e.base_of(x) == Some(f);
+            match c.p1 & 0xffff {
+                0 => b(x.is_some_and(|x| is(x, form))),
+                1 => b(x.is_some_and(|x| e.formlist(form).iter().any(|&f| is(x, f)))),
+                2 => Some(ev.member_value(m)),
+                3 => b(x.is_some_and(|x| e.has_keyword(x, form))),
+                _ => None,
+            }
+        }
         248 => b(e.is_scene_playing(p1)),                                 // IsScenePlaying
         550 => b(e.is_scene_action_complete(p1, c.p2)),                   // IsSceneActionComplete
         590 => b(subject.is_some_and(|s| e.scene_of_actor(s).is_some())), // IsInScene
