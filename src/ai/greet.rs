@@ -77,6 +77,9 @@ impl Engine {
                 a.greet_wait = COOLDOWN;
                 a.next_eval = 0.0;
             }
+            if self.scenes.packages.contains_key(&r) {
+                self.scenes.force_greeted.insert(r);
+            }
             self.open_conversation(r, Some(greeting));
         }
     }

@@ -9,6 +9,7 @@ pub mod actor_value;
 mod form_id;
 mod load_order;
 pub mod navmesh;
+pub mod scene;
 mod plugin;
 mod record;
 pub mod strings;

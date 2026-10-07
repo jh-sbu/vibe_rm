@@ -109,8 +109,10 @@ impl Ui {
             painter.text(pos + egui::vec2(0.0, 28.0), Align2::CENTER_CENTER, hint, FontId::proportional(16.0), Color32::from_gray(200));
         }
         // What an NPC nearby says by itself, as a subtitle.
-        if let Some(b) = engine.barks.current.as_ref().filter(|b| !b.text.trim().is_empty()) {
-            let text = if b.name.is_empty() { b.text.clone() } else { format!("{}: {}", b.name, b.text) };
+        let mut subtitles: Vec<(&str, &str)> = engine.scene_lines().into_iter().map(|l| (l.name.as_str(), l.text.as_str())).collect();
+        subtitles.extend(engine.barks.current.as_ref().map(|b| (b.name.as_str(), b.text.as_str())));
+        if let Some((name, line)) = subtitles.into_iter().find(|(_, t)| !t.trim().is_empty()) {
+            let text = if name.is_empty() { line.to_string() } else { format!("{name}: {line}") };
             let galley = painter.layout(text, FontId::proportional(18.0), Color32::WHITE, rect.width() * 0.6);
             let pos = Pos2::new(c.x - galley.size().x / 2.0, rect.bottom() - 110.0);
             painter.galley(pos + egui::vec2(1.5, 1.5), galley.clone(), Color32::BLACK);

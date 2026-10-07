@@ -387,9 +387,10 @@ impl Engine {
         }
     }
 
-    fn run_info_fragment(&mut self, info: &Info, begin: bool) {
+    /// Run an INFO's begin or end fragment, `speaker` saying it.
+    pub(crate) fn run_info_fragment(&mut self, info: &Info, begin: bool, speaker: FormId) {
         let (Some(script), Some(func)) = (&info.script, if begin { &info.begin_fragment } else { &info.end_fragment }) else { return };
-        let speaker = self.conversation.as_ref().map(|c| self.object_value(c.npc_ref)).unwrap_or_default();
+        let speaker = self.object_value(speaker);
         let obj = papyrus::ObjectId::Form(info.id.0);
         let mut vm = std::mem::take(&mut self.vm);
         {
@@ -402,7 +403,8 @@ impl Engine {
 
     fn begin_info(&mut self) {
         if let Some((_, info)) = self.conversation.as_ref().and_then(|c| c.info.clone()) {
-            self.run_info_fragment(&info, true);
+            let speaker = self.conversation.as_ref().map(|c| c.npc_ref).unwrap_or_default();
+            self.run_info_fragment(&info, true, speaker);
         }
         self.next_line();
     }
@@ -414,8 +416,9 @@ impl Engine {
         if c.queue.is_empty() {
             c.current = None;
             let info = c.info.clone();
+            let npc_ref = c.npc_ref;
             if let Some((_, i)) = &info {
-                self.run_info_fragment(i, false);
+                self.run_info_fragment(i, false, npc_ref);
                 if i.flags & info_flags::GOODBYE != 0 {
                     if let Some(c) = self.conversation.as_mut() {
                         c.ending = true;

@@ -17,6 +17,7 @@ mod physics;
 mod player;
 #[cfg(feature = "remote-console")]
 mod remote;
+mod scene;
 mod script;
 mod ui;
 mod world;

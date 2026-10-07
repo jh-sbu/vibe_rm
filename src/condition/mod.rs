@@ -286,13 +286,18 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         640 => Some(e.actor_value_fraction(subject?, c.p1)),              // GetActorValuePercent
         365 => b(ctx.idle.and_then(|q| q.child).unwrap_or_else(|| subj_base.and_then(|n| e.npc_race(n)).is_some_and(|r| e.race_is_child(r)))), // IsChild
         125 => b(false),                                                  // IsGuard
-        141 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject && cv.current.is_some()) || subject.is_some_and(|s| e.is_barking(s))), // IsTalking
+        141 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject && cv.current.is_some()) || subject.is_some_and(|s| e.is_barking(s) || e.is_scene_speaking(s))), // IsTalking
+        248 => b(e.is_scene_playing(p1)),                                 // IsScenePlaying
+        550 => b(e.is_scene_action_complete(p1, c.p2)),                   // IsSceneActionComplete
+        590 => b(subject.is_some_and(|s| e.scene_of_actor(s).is_some())), // IsInScene
+        429 => b(subject.is_some_and(|s| e.scenes.packages.contains_key(&s))), // IsScenePackageRunning
         149 => b(e.current_weather() == Some(p1)),                        // GetIsCurrentWeather
         1 => {
-            // GetDistance
-            let a = subject.and_then(|s| e.ref_position(s))?;
-            let t = e.ref_position(p1)?;
-            Some(a.distance(t))
+            // GetDistance: far beyond anything between different interiors or
+            // worldspaces.
+            let (pa, a) = e.current_place_of(subject?)?;
+            let (pb, t) = e.current_place_of(p1)?;
+            Some(if crate::ai::schedule::same_space(pa, pb) { a.distance(t) } else { f32::MAX })
         }
         32 => b(subject.and_then(|s| e.lo.cell_of_ref(s)) == e.lo.cell_of_ref(p1)), // GetInSameCell
         566 => b(ctx.quest.and_then(|q| e.alias_ref(q, c.p1)).is_some_and(|r| Some(r) == subject)), // GetIsAliasRef

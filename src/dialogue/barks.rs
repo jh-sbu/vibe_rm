@@ -76,7 +76,7 @@ impl Engine {
             }
             return;
         }
-        if self.conversation.is_some() || now < self.barks.quiet_until || !self.ai_enabled {
+        if self.conversation.is_some() || now < self.barks.quiet_until || !self.ai_enabled || !self.scene_lines().is_empty() {
             return;
         }
         let player = self.player.position;
@@ -91,6 +91,9 @@ impl Engine {
             .collect();
         near.sort_by(|a, b| a.0.total_cmp(&b.0));
         for (d, r) in near {
+            if self.scene_of_actor(r).is_some() {
+                continue;
+            }
             if d < GREETING_DISTANCE && self.barks.greeted.get(&r).is_none_or(|t| now - t > GREETING_INTERVAL) {
                 self.barks.greeted.insert(r, now);
                 if self.bark(r, b"HELO") {
