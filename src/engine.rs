@@ -136,6 +136,10 @@ pub struct Engine {
     pub scenes: crate::scene::Scenes,
     /// The Story Manager's tree and what it remembers.
     pub(crate) story: crate::story::StoryManager,
+    /// Relationship ranks between NPCs.
+    pub(crate) relationships: crate::relationships::Relationships,
+    /// Values scripts keep on locations by keyword (`Location.SetKeywordData`).
+    pub(crate) location_keyword_data: HashMap<(FormId, FormId), f32>,
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     pub lockpick: Option<crate::locks::Lockpick>,
@@ -239,6 +243,8 @@ impl Engine {
             barks: Default::default(),
             scenes: Default::default(),
             story: Default::default(),
+            relationships: Default::default(),
+            location_keyword_data: Default::default(),
             talked_to_pc: Default::default(),
             alias_packs: Default::default(),
             faction_relations: Default::default(),
@@ -2030,6 +2036,22 @@ impl Engine {
     pub fn start_quest_with(&mut self, q: FormId, event: Option<crate::story::StoryEvent>) -> bool {
         if self.scripts.quests.get(&q).is_some_and(|st| st.running) || self.lo.get(q).is_none() {
             return false;
+        }
+        // Started for an event: the quest's own event conditions, on its data.
+        if event.is_some() {
+            let conds = self.quest_event_conditions(q);
+            if !conds.is_empty() {
+                let outer = std::mem::replace(&mut self.story.active, event.clone());
+                let ctx = crate::condition::Context { subject: Some(PLAYER_REF), quest: Some(q), ..Default::default() };
+                let pass = crate::condition::evaluate(self, &conds, ctx);
+                if !pass {
+                    log::debug!("{q}: event conditions fail: {}", crate::condition::explain(self, &conds, ctx));
+                }
+                self.story.active = outer;
+                if !pass {
+                    return false;
+                }
+            }
         }
         self.scripts.quests.entry(q).or_default().event = event;
         if !self.fill_quest_aliases(q) {

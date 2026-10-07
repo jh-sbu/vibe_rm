@@ -83,7 +83,15 @@ pub struct StoryManager {
     next_social: HashMap<FormId, f64>,
     /// The player's location last update (change location events).
     last_location: Option<Option<FormId>>,
+    /// Bodies each NPC has found (dead body events), and when to look next.
+    found_bodies: HashSet<(FormId, FormId)>,
+    next_body_check: f64,
 }
+
+/// How far an NPC notices a body, and how often NPCs look (no source: about
+/// as far as they notice enemies, once a second).
+const BODY_NOTICE_DISTANCE: f32 = 1000.0;
+const BODY_CHECK_INTERVAL: f64 = 1.0;
 
 /// What running a node did.
 struct Outcome {
@@ -268,6 +276,53 @@ impl Engine {
         self.story.last_location = Some(here);
         if self.ai_enabled {
             self.update_social();
+            self.update_found_bodies();
+        }
+    }
+
+    /// Living NPCs coming upon a body they can see: a dead body event (`DEAD`:
+    /// R1 who found it, R2 the body, L1 where), once for each of them.
+    fn update_found_bodies(&mut self) {
+        let now = self.scripts.real_time;
+        if now < self.story.next_body_check {
+            return;
+        }
+        self.story.next_body_check = now + BODY_CHECK_INTERVAL;
+        let actors: Vec<(FormId, glam::Vec3, bool, bool)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .map(|a| (a.ref_id, a.pos, a.dead, a.combat.is_none() && a.bleeding.is_none() && a.graph.as_ref().is_some_and(|g| g.project().humanoid())))
+            .collect();
+        let mut found = Vec::new();
+        for &(body, at, dead, _) in &actors {
+            if !dead || self.is_disabled(body) {
+                continue;
+            }
+            for &(finder, from, finder_dead, calm) in &actors {
+                if finder_dead || !calm || self.story.found_bodies.contains(&(finder, body)) || from.distance(at) > BODY_NOTICE_DISTANCE {
+                    continue;
+                }
+                // Nothing in between, eye to body.
+                let eye = from + glam::Vec3::Z * 110.0;
+                let to = at + glam::Vec3::Z * 20.0 - eye;
+                let dist = to.length().max(1.0);
+                let seen = match self.physics.raycast_excluding(eye, to / dist, (dist - 20.0).max(0.0), finder) {
+                    Some((_, owner)) => owner == Some(body),
+                    None => true,
+                };
+                if seen {
+                    found.push((finder, body));
+                }
+            }
+        }
+        for (finder, body) in found {
+            self.story.found_bodies.insert((finder, body));
+            log::debug!("{finder} finds {body}'s body");
+            let mut e = StoryEvent::new(b"DEAD");
+            e.refs = [finder, body];
+            e.locs[0] = self.ref_current_location(body).unwrap_or_default();
+            self.send_story_event(e);
         }
     }
 
@@ -328,6 +383,59 @@ impl Engine {
         // Forget actors no longer loaded.
         let loaded = &self.actor_cells;
         self.story.next_social.retain(|r, _| loaded.contains_key(r));
+    }
+
+    /// The player taking an item: from the world (`source` the reference picked
+    /// up) or from a container or body (`container`). A player add item event
+    /// (`AIPL`): R1 the owner's reference, R2 the container, L1 where, F1 the
+    /// item, V1 how it was acquired (1 stolen, 4 picked up, 5 from a
+    /// container, 6 from a body).
+    pub(crate) fn send_player_add_item(&mut self, item: FormId, source: FormId, container: bool) {
+        // Bodies belong to nobody (not to the house they lie in).
+        let body = container && (self.actor_cells.contains_key(&source) || self.lo.tag_of(source).is_some_and(|t| t.0 == *b"ACHR"));
+        let owner = crate::ai::furniture::owner_of(&self.lo, source).filter(|&o| !body && !self.player_owns(o));
+        let how = match () {
+            _ if owner.is_some() => 1,
+            _ if body => 6,
+            _ if container => 5,
+            _ => 4,
+        };
+        let mut e = StoryEvent::new(b"AIPL");
+        e.refs = [
+            owner.and_then(|o| self.npc_refs_index().get(&o).copied()).unwrap_or_default(),
+            if container { source } else { FormId::NULL },
+        ];
+        e.locs[0] = self.current_location().unwrap_or_default();
+        e.form = item;
+        e.values[0] = how as f32;
+        self.send_story_event(e);
+    }
+
+    /// Whether something owned by `owner` is the player's: theirs, or a
+    /// faction's they belong to.
+    fn player_owns(&self, owner: FormId) -> bool {
+        owner == FormId(0x7) || self.player_factions().contains(&owner)
+    }
+
+    /// An actor greeting another (`AHEL`: R1 who says hello, R2 to whom, L1
+    /// where), sent before the greeting is picked so the quests it starts can
+    /// supply it.
+    pub(crate) fn send_actor_hello(&mut self, actor: FormId, to: FormId) {
+        let mut e = StoryEvent::new(b"AHEL");
+        e.refs = [actor, to];
+        e.locs[0] = self.ref_current_location(actor).unwrap_or_default();
+        self.send_story_event(e);
+    }
+
+    /// The first blow of a fight: an assault event (`ASSU`: R1 the victim, R2
+    /// the attacker, L1 where, V1 whether it is a crime: the victim keeps the
+    /// law and wasn't hostile).
+    pub(crate) fn send_assault(&mut self, victim: FormId, attacker: FormId, crime: bool) {
+        let mut e = StoryEvent::new(b"ASSU");
+        e.refs = [victim, attacker];
+        e.locs[0] = self.ref_current_location(victim).unwrap_or_default();
+        e.values[0] = crime as u8 as f32;
+        self.send_story_event(e);
     }
 
     /// A kill: the victim, the killer and where.

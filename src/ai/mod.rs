@@ -1713,6 +1713,16 @@ impl Engine {
     }
 
     /// Feet position and heading of a loaded actor.
+    /// Whether a loaded actor is running a package: its scene's, else the one
+    /// its schedule picked.
+    pub fn runs_package(&self, r: FormId, package: FormId) -> bool {
+        if let Some((_, _, pkgs)) = self.scenes.packages.get(&r) {
+            return pkgs.iter().any(|p| p.id == package);
+        }
+        let Some(a) = self.actor_cells.get(&r).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r)) else { return false };
+        a.current.and_then(|i| a.packages.get(i)).is_some_and(|p| p.id == package)
+    }
+
     pub fn actor_pose(&self, r: FormId) -> Option<(Vec3, f32)> {
         let key = self.actor_cells.get(&r)?;
         let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;

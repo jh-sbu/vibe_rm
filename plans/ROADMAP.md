@@ -311,7 +311,14 @@ game each piece unlocks.
   (`Keyword.SendStoryEvent`), kills (`KILL`). "From event" aliases,
   `GetEventData` and run-on-event-data conditions. Quests started from Papyrus
   get their scripts once the running scripts yield (they were lost before).
-  Console `storyevent`; vrm-tool `story`. Open questions:
+  More events: the player taking items (`AIPL`: picked up, from containers and
+  bodies, stolen), NPCs greeting the player (`AHEL`), finding bodies (`DEAD`),
+  assaults (`ASSU`, crime when the victim keeps the law), relationship rank
+  changes (`CHRR`). Quests' own event conditions. Relationships (`RELA`):
+  `GetRelationshipRank` and highest / lowest, Papyrus get / set. Conditions
+  `GetIsCurrentPackage`, `IsInList`, `DoesNotExist`, location keyword data.
+  Console `storyevent` (with `v1=`, `f1=`...), `setrelationshiprank`;
+  vrm-tool `story` (`CONDS=1`, `OWN=1`). Open questions:
   `known_gaps/story-manager.md`
 - Trigger volumes: scripted box and sphere primitives (`XPRM`) send
   `OnTriggerEnter` / `OnTriggerLeave` as the player and actors step in and out
@@ -373,11 +380,11 @@ game each piece unlocks.
      INFO speaker / listener idles; listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
-2. **Story Manager** (core and four events done; see Done)
-   - The other events: crafting, level / skill increases, arrest and jail,
-     assault, actor hello, item pickup and removal, spell cast, bodies found,
-     relationship rank changes...; kill events' crime and relationship values
-   - The quest record's own event conditions; Story Manager state in saves
+2. **Story Manager** (core and nine events done; see Done)
+   - Events waiting on their systems: crafting, level / skill increases, arrest
+     and jail, item removal (dropping), spell cast, shouts; kill events' crime
+     and relationship values; hellos between NPCs and creatures'
+   - Story Manager state and relationship ranks in saves
 3. **AI depth**
    - Alias fills: near alias; created objects drawn in the world, cleaned up
    - Remaining procedures: guard (restricted areas), use magic, dialogue,

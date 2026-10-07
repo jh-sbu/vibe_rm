@@ -380,6 +380,29 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("actor", "getlevel") => v(Value::Int(1)),
         ("actor", "getfactionrank") => v(Value::Int(-1)),
+        ("actor", "getrelationshiprank") => v(Value::Int(match (me, form_arg(args, 0)) {
+            (Some(a), Some(b)) => e.relationship_rank(a, b),
+            _ => 0,
+        })),
+        ("actor", "setrelationshiprank") => {
+            if let (Some(a), Some(b)) = (me, form_arg(args, 0)) {
+                e.set_relationship_rank(a, b, arg(1).as_int());
+            }
+            none()
+        }
+        ("actor", "gethighestrelationshiprank") | ("actor", "getlowestrelationshiprank") => {
+            v(Value::Int(me.map_or(0, |a| e.relationship_extreme(a, func == "gethighestrelationshiprank"))))
+        }
+        // ---------------------------------------------------------- Location
+        ("location", "getkeyworddata") => {
+            v(Value::Float(me.zip(form_arg(args, 0)).and_then(|k| e.location_keyword_data.get(&k).copied()).unwrap_or(0.0)))
+        }
+        ("location", "setkeyworddata") => {
+            if let Some(k) = me.zip(form_arg(args, 0)) {
+                e.location_keyword_data.insert(k, arg(1).as_float());
+            }
+            none()
+        }
         ("actor", "isweapondrawn") => v(Value::Bool(me.is_some_and(|r| e.weapon_drawn(r)))),
         ("actor", "drawweapon") | ("actor", "sheatheweapon") => {
             if let Some(r) = me {

@@ -15,6 +15,7 @@ mod locks;
 mod render;
 mod physics;
 mod player;
+mod relationships;
 #[cfg(feature = "remote-console")]
 mod remote;
 mod scene;

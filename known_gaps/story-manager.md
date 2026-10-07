@@ -26,6 +26,19 @@ or prints one event's tree.
   L2 new) when the player's location changes; script events (`SCPT`,
   `Keyword.SendStoryEvent(AndWait)`: K1 the keyword, L1, R1, R2, V1, V2);
   kills (`KILL`: R1 victim, R2 killer, L1 where).
+- More events (CK wiki, CommonLibSSE `BGSAddToPlayerInventoryEvent`):
+  player add item (`AIPL`: R1 owner, R2 container, L1 location, F1 item,
+  V1 acquire type: 0 none, 1 steal, 2 buy, 3 pickpocket, 4 pick up,
+  5 container, 6 dead body); actor hello (`AHEL`: R1 the one greeting, R2
+  the one greeted, L1); dead body (`DEAD`: R1 who found it, R2 the body,
+  L1); assault (`ASSU`: R1 victim, R2 attacker, L1, V1 crime); change
+  relationship rank (`CHRR`: R1, R2, V1 old rank, V2 new).
+- Quests' own event conditions: the `QUST` CTDAs after `NEXT` and before the
+  stages, checked when a node starts the quest (ADIA 104 quests, SCPT 124,
+  CLOC 39...: `OWN=1 vrm-tool story`).
+- Relationships (`RELA` `DATA`: parent NPC, child NPC, rank counted from
+  lover 0 to archnemesis 8, flags, association type); conditions and Papyrus
+  count ranks 4 (lover) to -4, 0 for acquaintances and strangers.
 - Usage in Skyrim.esm and DLCs: `ADIA` roots 919 quests (every town's
   conversations), `SCPT` 363, `CLOC` 258, `KILL` 15.
 
@@ -40,18 +53,34 @@ or prints one event's tree.
   Manager; quests started otherwise don't count.
 - "Max concurrent" counts the running quests of the node and those below it.
 - `SendStoryEventAndWait` returns whether a quest started, at once.
+- Quests' own event conditions run on the player, like node conditions.
+- Item pickup: an item is stolen when it (else its cell) has an owner other
+  than the player or a faction the player is in; bodies belong to no one.
+  R1 is a person owner's placed reference (none for a faction owner).
+- Hellos: sent when an NPC greets the player in passing, before the greeting
+  is chosen, so the quests it starts can supply it.
+- Assaults: the first blow an actor takes from someone it isn't fighting; a
+  crime when it wasn't fighting anyone and keeps the law (a faction that
+  tracks crime). Blows to the player send none.
+- Bodies: a living, calm humanoid within 1000 units with nothing between
+  its eyes and the body (once a second), once for each finder and body.
+- Relationships are symmetric, kept on NPC records (`SetRelationshipRank`
+  on a reference changes it for its NPC).
 - Quests started from Papyrus (`Quest.Start`, story events) get their scripts
   and OnInit once the running scripts yield, in the same frame.
 
 ## Open questions
 
-- The other events: crafting (`CRFT`), increase level / skill (`LEVL`,
-  `SKIL`), arrest / jail (`ARRT`, `JAIL`), assault (`ASSU`), actor hello
-  (`AHEL`), item pickup / removal (`AIPL`, `REMP`), spell cast (`CAST`),
-  dead body found (`DEAD`), change relationship rank (`CHRR`), bribe,
-  intimidate, flatter, lock pick, escape jail...
-- Kill events' crime status and relationship values (V1 / V2) aren't set.
-- `WarnIfNoChildQuestStarted`, the quest record's own event conditions
-  (`QUST` CTDAs after the dialogue ones), and which runs on subject in node
-  conditions.
+- The other events wait for their systems: crafting (`CRFT`), increase
+  level / skill (`LEVL`, `SKIL`), arrest / jail / escape (`ARRT`, `JAIL`,
+  `ESJA`), item removal (`REMP`: dropping items), spell cast (`CAST`), new
+  voice power (`NVPE`), bribe, intimidate, flatter, lock pick.
+- Kill events' crime status and relationship values (V1 / V2) aren't set;
+  item pickups never say bought or pickpocketed (no barter or pickpocketing).
+- Hellos between NPCs, and creatures' (dogs') hellos; the real detection
+  and distance rules for noticing bodies; assaults on the player.
+- Relationship association types (`HasFamilyRelationship`,
+  `HasParentRelationship`), secret relationships.
+- `WarnIfNoChildQuestStarted`, and which runs on subject in node and quest
+  event conditions.
 - Story Manager state (last run times, do-all rounds) isn't saved.
