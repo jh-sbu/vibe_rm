@@ -63,6 +63,18 @@ pub struct Class {
     auto_state: Arc<str>,
 }
 
+/// The value a variable of a type starts with: 0, 0.0, false, "", else None
+/// (objects and arrays).
+fn type_default(ty: &str) -> Value {
+    match ty {
+        "int" => Value::Int(0),
+        "float" => Value::Float(0.0),
+        "bool" => Value::Bool(false),
+        "string" => Value::str(""),
+        _ => Value::None,
+    }
+}
+
 impl Class {
     fn compile(p: &Pex) -> Option<Class> {
         let obj = p.objects.first()?;
@@ -164,7 +176,18 @@ impl Class {
         Some(Class {
             name: Arc::from(s(obj.name)),
             parent: if parent.is_empty() { None } else { Some(lc(parent)) },
-            variables: obj.variables.iter().map(|v| (lc(s(v.name)), lc(s(v.type_name)), data_value(&v.init))).collect(),
+            variables: obj
+                .variables
+                .iter()
+                .map(|v| {
+                    let ty = lc(s(v.type_name));
+                    let init = match v.init {
+                        Data::Null => type_default(&ty),
+                        ref d => data_value(d),
+                    };
+                    (lc(s(v.name)), ty, init)
+                })
+                .collect(),
             properties,
             states,
             auto_state: lc(s(obj.auto_state)),
@@ -441,7 +464,7 @@ impl Vm {
     }
 
     fn make_frame(&self, f: Arc<Func>, this: Option<(ObjectId, Arc<str>)>, args: &[Value], ret: Option<Arg>) -> Frame {
-        let mut locals = vec![Value::None; f.local_types.len()];
+        let mut locals: Vec<Value> = f.local_types.iter().map(|t| type_default(t)).collect();
         for (i, a) in args.iter().enumerate().take(f.params.len()) {
             locals[i] = a.clone();
         }
@@ -831,5 +854,21 @@ impl Vm {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn variables_start_at_their_type_default() {
+        // An `Int` with no initial value compares equal to 0 (`if pDone == 0`).
+        assert!(type_default("int") == Value::Int(0));
+        assert!(type_default("float") == Value::Float(0.0));
+        assert!(type_default("bool") == Value::Bool(false));
+        assert!(type_default("string") == Value::str(""));
+        assert!(type_default("actor") == Value::None);
+        assert!(type_default("int[]") == Value::None);
     }
 }
