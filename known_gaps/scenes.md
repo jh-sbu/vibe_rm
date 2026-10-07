@@ -65,8 +65,6 @@ records); `vrm-tool scenes <data> [scene]` dumps one scene or counts over all
 - What runs scenes in towns: most ambient ones (Whiterun, Riverwood...) start
   from Story Manager quests (change location, script events), which don't exist
   yet; only eight scenes start with game-start quests.
-- Trigger scripts (`OnTriggerEnter`) aren't sent, so scenes waiting on what they
-  set (IvarsteadSSScene's `GetVMQuestVariable`) wait for ever.
 - Unknown scene flag 0x4 (on 1394 scenes) and action `LNAM`.
 - Observe-combat pause / end, death pause; "interruptible"; "run only scene
   packages" (scene packages already run ahead of all others).

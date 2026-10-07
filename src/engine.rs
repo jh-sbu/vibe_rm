@@ -35,6 +35,8 @@ pub(crate) struct CellRuntime {
     pub(crate) animated: Vec<crate::world::animated::AnimatedObject>,
     /// Water planes: south-west corner, size and surface height.
     pub(crate) water: Vec<(glam::Vec2, f32, f32)>,
+    /// Scripted trigger volumes.
+    pub(crate) triggers: Vec<crate::triggers::Trigger>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -998,7 +1000,7 @@ impl Engine {
                     a.stop(*v);
                 }
             }
-            for r in &rt.refs {
+            for r in rt.refs.iter().chain(rt.triggers.iter().map(|t| &t.ref_id)) {
                 self.vm.detach_all(papyrus::ObjectId::Form(r.0));
             }
             self.nav.unload(&rt.navmeshes);
@@ -1053,6 +1055,7 @@ impl Engine {
         self.load_furniture(key, &refs);
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_actors(key, &actors);
+        self.load_triggers(key, &refs);
         self.attach_cell_scripts(&refs);
         self.start_cell_sounds(key, &refs);
         if contents.info.has_water
@@ -1176,6 +1179,7 @@ impl Engine {
         self.load_furniture(key, &refs);
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_actors(key, &actors);
+        self.load_triggers(key, &refs);
         self.attach_cell_scripts(&refs);
         self.start_cell_sounds(key, &refs);
 
@@ -1448,6 +1452,7 @@ impl Engine {
         self.physics.step(dt);
         self.update_whereabouts(dt);
         self.update_actors(dt);
+        self.update_triggers();
         self.update_projectiles(dt);
         self.update_held_lights();
         self.update_animated(dt);

@@ -19,6 +19,7 @@ mod player;
 mod remote;
 mod scene;
 mod script;
+mod triggers;
 mod ui;
 mod world;
 mod world_state;

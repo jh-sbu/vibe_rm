@@ -74,7 +74,7 @@ toggles actor AI).
 - `crates/vfs`: virtual file system (loose files over archives)
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
   (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`, `nif-materials`, `fsts`,
-  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, ...)
+  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, `triggers`, ...)
 - `src/`: the engine (renderer, world, app)
 
 ## Verifying format support
