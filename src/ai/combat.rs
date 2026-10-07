@@ -1579,6 +1579,8 @@ impl Engine {
         a.dead = true;
         a.health = 0.0;
         a.combat = None;
+        self.remember_dead(actor);
+        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(index)) else { return false };
         a.objects_changed |= !a.objects.is_empty();
         a.objects.clear();
         let velocity = Vec3::new(a.heading.sin(), a.heading.cos(), 0.0) * a.speed;
@@ -1610,8 +1612,12 @@ impl Engine {
         true
     }
 
+    /// Dead, whether loaded or not.
     pub fn is_dead(&self, actor: FormId) -> bool {
-        self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor)).is_some_and(|a| a.dead)
+        match self.actor_ref(actor) {
+            Some(a) => a.dead,
+            None => self.world_state.dead.contains_key(&actor),
+        }
     }
 
     /// A summary of a loaded actor's combat stats (console).

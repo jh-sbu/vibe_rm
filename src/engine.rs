@@ -141,6 +141,8 @@ pub struct Engine {
     pub(crate) location_index: std::cell::OnceCell<crate::locations::LocationIndex>,
     /// Persistent references, candidates for "find matching reference" aliases.
     pub(crate) persistent_refs: std::cell::OnceCell<Vec<FormId>>,
+    /// Reference state kept across cell loads (dead actors...).
+    pub(crate) world_state: crate::world_state::WorldState,
     /// References made while playing (`PlaceAtMe`, created alias references).
     pub(crate) created_refs: crate::created::CreatedRefs,
     /// Quests' aliases as parsed.
@@ -250,6 +252,7 @@ impl Engine {
             persistent_refs: Default::default(),
             alias_spec_cache: HashMap::new(),
             created_refs: Default::default(),
+            world_state: Default::default(),
             lod: None,
             nav: Default::default(),
             furniture: Default::default(),
@@ -500,6 +503,10 @@ impl Engine {
             a.stop_all();
         }
         self.music.voice = None;
+        let keys: Vec<CellKey> = self.cells.keys().copied().collect();
+        for k in keys {
+            self.remember_bodies(k);
+        }
         self.scene.cells.clear();
         self.scene.lights.clear();
         self.scene.dynamic.clear();
@@ -559,7 +566,7 @@ impl Engine {
                 None => Vec::new(),
             };
             rt.colliders.extend(tagged.iter().map(|(h, _)| *h));
-            if !tagged.is_empty() && self.scripts.disabled.get(&o.ref_id) == Some(&true) {
+            if !tagged.is_empty() && self.is_disabled(o.ref_id) {
                 self.physics.set_owner_enabled(o.ref_id, false);
             }
             if let Some(obj) = self.animated_object(o.ref_id, &o.model, o.transform, &mut rc.instances, &tagged) {
@@ -655,7 +662,10 @@ impl Engine {
                         rng ^= rng << 17;
                         rng
                     };
-                    let spot = if p.is_nan() {
+                    let spot = if self.world_state.dead.contains_key(&r) {
+                        // A body lies where it fell.
+                        Some(p)
+                    } else if p.is_nan() {
                         self.nav.random_point_in(&cell_meshes, &mut rand)
                     } else {
                         // Spread out actors sent to the same marker.
@@ -824,7 +834,7 @@ impl Engine {
         let corpses: Vec<FormId> = runtimes
             .iter()
             .map(|a| a.ref_id)
-            .filter(|&r| self.lo.get(r).is_some_and(|rec| rec.flags() & esp::record_flags::STARTS_DEAD != 0))
+            .filter(|&r| self.world_state.dead.contains_key(&r) || self.lo.get(r).is_some_and(|rec| rec.flags() & esp::record_flags::STARTS_DEAD != 0))
             .collect();
         if let Some(rt) = self.cells.get_mut(&key) {
             rt.colliders.extend(runtimes.iter().filter_map(|a| a.capsule));
@@ -956,10 +966,13 @@ impl Engine {
     }
 
     fn load_furniture(&mut self, key: CellKey, refs: &[FormId]) {
-        let off: std::collections::HashSet<FormId> = refs.iter().copied().filter(|&r| self.is_disabled(r)).collect();
+        let off: Vec<FormId> = refs.iter().copied().filter(|&r| self.is_disabled(r)).collect();
         let idles = self.idles.get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo));
         let (models, vfs) = (&mut self.models, &self.vfs);
-        self.furniture.add_cell(&self.lo, idles, key, refs, &|r| off.contains(&r), |path| models.furniture(vfs, path));
+        self.furniture.add_cell(&self.lo, idles, key, refs, |path| models.furniture(vfs, path));
+        for r in off {
+            self.furniture.set_disabled(r, true);
+        }
         self.find_furniture_ways(key);
         let (n, m) = self.furniture.count(key);
         log::debug!("{key:?}: {n} furniture with {m} markers");
@@ -969,6 +982,7 @@ impl Engine {
     }
 
     fn unload_cell(&mut self, key: CellKey) {
+        self.remember_bodies(key);
         self.scene.cells.remove(&key);
         if let Some(rt) = self.cells.remove(&key) {
             self.physics.remove_colliders(&rt.colliders);
@@ -991,10 +1005,9 @@ impl Engine {
     }
 
     fn rebuild_lights(&mut self) {
-        self.scene.lights = self
-            .cells
-            .values()
-            .flat_map(|c| c.lights.iter())
+        let lights: Vec<PointLight> = self.cells.values().flat_map(|c| c.lights.iter()).filter(|l| !self.is_disabled(l.ref_id)).copied().collect();
+        self.scene.lights = lights
+            .iter()
             .map(|l| GpuLight {
                 pos_radius: [l.position.x, l.position.y, l.position.z, l.radius],
                 color: [l.color.x, l.color.y, l.color.z, 1.0],
@@ -1007,7 +1020,7 @@ impl Engine {
     pub fn enter_interior(&mut self, cell_id: FormId, spawn: Option<(Vec3, f32)>) -> Result<()> {
         let t = Instant::now();
         self.unload_all();
-        let contents = cell::load_cell(&self.lo, cell_id, &|r| self.is_disabled(r)).context("cell not found")?;
+        let contents = cell::load_cell(&self.lo, cell_id).context("cell not found")?;
         log::info!(
             "entering {} '{}' ({}): {} objects, {} lights",
             contents.info.editor_id,
@@ -1133,12 +1146,12 @@ impl Engine {
             && let Some(idx) = self.lo.cell(cid)
         {
             for &r in idx.temporary.iter().chain(idx.persistent.iter()) {
-                cell::add_reference(&self.lo, r, &|r| self.is_disabled(r), &mut objects, &mut lights, &mut doors);
+                cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
             }
         }
         if let Some(refs) = self.world_persistent.get(&(x, y)) {
             for &r in refs {
-                cell::add_reference(&self.lo, r, &|r| self.is_disabled(r), &mut objects, &mut lights, &mut doors);
+                cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
             }
         }
         self.instantiate(key, &objects, lights, doors);
@@ -1601,7 +1614,7 @@ impl Engine {
 
     /// Doors with teleport destinations in the loaded cells.
     pub fn load_doors(&self) -> Vec<Door> {
-        self.cells.values().flat_map(|c| c.doors.iter()).filter(|d| d.destination.is_some()).cloned().collect()
+        self.cells.values().flat_map(|c| c.doors.iter()).filter(|d| d.destination.is_some() && !self.is_disabled(d.ref_id)).cloned().collect()
     }
 
     /// `coc`-style entry: an interior cell, or an exterior cell by editor id.
@@ -1909,8 +1922,24 @@ impl Engine {
             affected.extend(kids.into_iter().filter(|k| !self.scripts.disabled.contains_key(k)));
             i += 1;
         }
+        let mut lights_changed = false;
+        let mut arrivals = Vec::new();
         for r in affected {
             let off = self.is_disabled(r);
+            lights_changed |= self.cells.values().any(|c| c.lights.iter().any(|l| l.ref_id == r));
+            self.furniture.set_disabled(r, off);
+            // Enabled actors whose place is loaded appear.
+            if !off && !self.actor_cells.contains_key(&r) && self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR") {
+                let at = self.whereabouts.of.get(&r).copied().or_else(|| self.body_of(r)).or_else(|| {
+                    let pos = self.reference_of(r)?.position;
+                    Some((self.place_of_ref(r, pos)?, pos))
+                });
+                if let Some((place, pos)) = at
+                    && let Some(key) = self.key_of_place(place)
+                {
+                    arrivals.push((key, r, pos));
+                }
+            }
             for rc in self.scene.cells.values_mut() {
                 for inst in rc.instances.iter_mut().filter(|inst| inst.ref_id == r.0) {
                     inst.hidden = off;
@@ -1920,6 +1949,12 @@ impl Engine {
             if off && self.actor_cells.contains_key(&r) {
                 self.despawn_actor(r);
             }
+        }
+        for (key, r, pos) in arrivals {
+            self.spawn_actors(key, &[(r, Some(pos))]);
+        }
+        if lights_changed {
+            self.rebuild_lights();
         }
     }
 

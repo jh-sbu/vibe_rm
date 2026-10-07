@@ -94,6 +94,8 @@ pub struct Furniture {
 pub struct FurnitureWorld {
     pub items: Vec<Furniture>,
     users: HashMap<(FormId, u8), FormId>,
+    /// Furniture that is disabled now (not offered).
+    disabled: std::collections::HashSet<FormId>,
 }
 
 /// A reserved marker and how to use it.
@@ -199,7 +201,6 @@ impl FurnitureWorld {
         idles: &super::idles::IdleIndex,
         key: CellKey,
         refs: &[FormId],
-        disabled: &dyn Fn(FormId) -> bool,
         mut markers: impl FnMut(&str) -> Option<Arc<[nif::FurnitureMarker]>>,
     ) {
         let furniture_special = lo.find_editor_id("FurnitureSpecial");
@@ -209,7 +210,7 @@ impl FurnitureWorld {
                 continue;
             }
             let rf = records::reference(&rec);
-            if rf.deleted() || disabled(r) {
+            if rf.deleted() {
                 continue;
             }
             let Some(base) = lo.get(rf.base) else { continue };
@@ -318,7 +319,15 @@ impl FurnitureWorld {
     }
 
     pub fn get(&self, r: FormId) -> Option<&Furniture> {
-        self.items.iter().find(|f| f.ref_id == r)
+        self.items.iter().find(|f| f.ref_id == r && !self.disabled.contains(&r))
+    }
+
+    pub fn set_disabled(&mut self, r: FormId, off: bool) {
+        if off {
+            self.disabled.insert(r);
+        } else {
+            self.disabled.remove(&r);
+        }
     }
 
     pub fn reserve(&mut self, furniture: FormId, marker: u8, actor: FormId) -> bool {
@@ -345,7 +354,7 @@ impl FurnitureWorld {
         may_use: impl Fn(&Furniture, Use) -> bool,
     ) -> Vec<(FormId, u8, Marker)> {
         let mut out = Vec::new();
-        for f in &self.items {
+        for f in self.items.iter().filter(|f| !self.disabled.contains(&f.ref_id)) {
             for (i, m) in f.markers.iter().enumerate() {
                 if m.kind == kind
                     && m.pos.truncate().distance(centre.truncate()) <= radius

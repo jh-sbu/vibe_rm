@@ -15,6 +15,8 @@ pub struct PlacedObject {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointLight {
+    /// The light's reference (lights of disabled references are left out).
+    pub ref_id: FormId,
     pub position: Vec3,
     pub radius: f32,
     pub color: Vec3,
@@ -35,8 +37,9 @@ pub struct CellContents {
     pub lighting: Lighting,
 }
 
-/// The references in a cell; `disabled` says which are disabled now (left out).
-pub fn load_cell(lo: &LoadOrder, cell: FormId, disabled: &dyn Fn(FormId) -> bool) -> Option<CellContents> {
+/// The references in a cell, disabled ones too (they are built hidden, so that
+/// enabling them shows them).
+pub fn load_cell(lo: &LoadOrder, cell: FormId) -> Option<CellContents> {
     let info = records::cell_info(lo, cell)?;
     let index = lo.cell(cell)?;
     let mut lighting = info.lighting.unwrap_or_default();
@@ -94,7 +97,7 @@ pub fn load_cell(lo: &LoadOrder, cell: FormId, disabled: &dyn Fn(FormId) -> bool
 
     let mut out = CellContents { info, objects: Vec::new(), lights: Vec::new(), doors: Vec::new(), lighting };
     for &rid in index.persistent.iter().chain(index.temporary.iter()) {
-        add_reference(lo, rid, disabled, &mut out.objects, &mut out.lights, &mut out.doors);
+        add_reference(lo, rid, &mut out.objects, &mut out.lights, &mut out.doors);
     }
     Some(out)
 }
@@ -102,7 +105,6 @@ pub fn load_cell(lo: &LoadOrder, cell: FormId, disabled: &dyn Fn(FormId) -> bool
 pub fn add_reference(
     lo: &LoadOrder,
     rid: FormId,
-    disabled: &dyn Fn(FormId) -> bool,
     objects: &mut Vec<PlacedObject>,
     lights: &mut Vec<PointLight>,
     doors: &mut Vec<Door>,
@@ -112,7 +114,7 @@ pub fn add_reference(
         return;
     }
     let r: Reference = records::reference(&rec);
-    if r.deleted() || disabled(rid) {
+    if r.deleted() {
         return;
     }
     let Some(base) = lo.get(r.base) else { return };
@@ -130,6 +132,7 @@ pub fn add_reference(
         && !l.negative()
     {
         lights.push(PointLight {
+            ref_id: rid,
             position: r.position,
             radius: r.radius_override.unwrap_or(l.radius).max(1.0),
             color: l.color * l.fade,

@@ -20,6 +20,7 @@ mod remote;
 mod script;
 mod ui;
 mod world;
+mod world_state;
 
 use anyhow::{Context, Result};
 
