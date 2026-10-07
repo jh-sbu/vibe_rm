@@ -42,6 +42,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
+            "[ref.]moveto <target>  move a reference (or the player) to another".into(),
             "<ref>.enable / disable  enable or disable a reference (and those enabled with it)".into(),
             "[ref.]placeatme <form> [n]  make new references there (actors join the world)".into(),
             "player.equipitem / unequipitem <item>   wear armor, wield a weapon, ready ammo".into(),
@@ -346,8 +347,8 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 18] = [
-    "enable", "disable", "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
+const ITEM_COMMANDS: [&str; 19] = [
+    "moveto", "enable", "disable", "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
     "getav", "setav", "modav", "forceav", "damageav", "restoreav",
 ];
 
@@ -370,6 +371,12 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                 _ => engine.damage_actor_value(r, i, -x),
             }
             vec![format!("{r}: {}", engine.describe_actor_value(r, i))]
+        }
+        "moveto" => {
+            let Some(t) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec!["usage: [ref.]moveto <target ref>".into()] };
+            let Some(p) = engine.ref_position(t) else { return vec![format!("{t} has no position")] };
+            let rot = engine.ref_rotation(t);
+            if engine.move_ref(r, t, p, rot) { vec![format!("{r} moved to {t}")] } else { vec![format!("can't move {r}")] }
         }
         "enable" | "disable" => {
             engine.set_disabled(r, cmd == "disable");

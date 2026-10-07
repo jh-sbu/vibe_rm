@@ -287,13 +287,43 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             };
             v(made.map(|r| e.object_value(r)).unwrap_or(Value::None))
         }
+        // MoveTo(target, x offset, y offset, z offset, match rotation = true).
         ("objectreference", "moveto") => {
-            if me == Some(crate::engine::PLAYER_REF)
-                && let Some(t) = form_arg(args, 0)
+            if let (Some(r), Some(t)) = (me, form_arg(args, 0))
+                && let Some(p) = e.ref_position(t)
             {
-                e.queue_player_moveto(t);
+                let off = glam::Vec3::new(arg(1).as_float(), arg(2).as_float(), arg(3).as_float());
+                let rot = if args.get(4).is_none_or(|m| m.as_bool()) { e.ref_rotation(t) } else { e.ref_rotation(r) };
+                e.move_ref(r, t, p + off, rot);
             }
             none()
+        }
+        ("objectreference", "movetomyeditorlocation") => {
+            if let Some(r) = me {
+                e.move_to_editor_location(r);
+            }
+            none()
+        }
+        ("objectreference", "setposition") => {
+            if let Some(r) = me {
+                let rot = e.ref_rotation(r);
+                e.move_ref(r, r, glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float()), rot);
+            }
+            none()
+        }
+        // Degrees, as scripts give them.
+        ("objectreference", "setangle") => {
+            if let Some(r) = me
+                && let Some(p) = e.ref_position(r)
+            {
+                let rot = glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float()) * std::f32::consts::PI / 180.0;
+                e.move_ref(r, r, p, rot);
+            }
+            none()
+        }
+        ("objectreference", "getanglex") | ("objectreference", "getangley") | ("objectreference", "getanglez") => {
+            let rot = me.map(|r| e.ref_rotation(r)).unwrap_or_default().to_array().map(f32::to_degrees);
+            v(Value::Float(rot[usize::from(func.as_bytes()[8] - b'x')]))
         }
         ("objectreference", "getcurrentlocation") | ("objectreference", "getediblelocation") => none(),
         ("objectreference", "getreftype") | ("objectreference", "getowningfaction") | ("objectreference", "getactorowner") => none(),

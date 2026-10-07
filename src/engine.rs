@@ -20,16 +20,16 @@ use crate::world::weather::{self, Climate, Weather};
 #[derive(Default)]
 pub(crate) struct CellRuntime {
     /// References instantiated in this cell (for script detach / visibility).
-    refs: Vec<FormId>,
-    /// Looping ambient sounds started for this cell.
-    sounds: Vec<crate::audio::VoiceId>,
+    pub(crate) refs: Vec<FormId>,
+    /// Looping ambient sounds started for this cell, by the reference playing them.
+    sounds: Vec<(FormId, crate::audio::VoiceId)>,
     /// Runtime state for each actor in the matching RenderCell, by index.
     pub(crate) actors: Vec<crate::ai::ActorRuntime>,
     /// Navmeshes loaded for this cell.
     navmeshes: Vec<FormId>,
     pub(crate) colliders: Vec<ColliderHandle>,
     pub(crate) land: Option<Land>,
-    lights: Vec<PointLight>,
+    pub(crate) lights: Vec<PointLight>,
     pub(crate) doors: Vec<Door>,
     /// Doors and other keyframe-animated objects.
     pub(crate) animated: Vec<crate::world::animated::AnimatedObject>,
@@ -326,7 +326,7 @@ impl Engine {
             }
             let file = &desc.files[r.0 as usize % desc.files.len()];
             if let Some(v) = audio.play(&self.vfs, file, desc.volume, true, Some(rf.position), desc.min_dist, desc.max_dist) {
-                voices.push(v);
+                voices.push((r, v));
             }
         }
         if let Some(rt) = self.cells.get_mut(&key) {
@@ -665,7 +665,7 @@ impl Engine {
                         rng ^= rng << 17;
                         rng
                     };
-                    let spot = if self.world_state.dead.contains_key(&r) {
+                    let spot = if self.world_state.dead.contains_key(&r) || self.world_state.moved.get(&r).is_some_and(|m| m.pos == p) {
                         // A body lies where it fell.
                         Some(p)
                     } else if p.is_nan() {
@@ -991,7 +991,7 @@ impl Engine {
         if let Some(rt) = self.cells.remove(&key) {
             self.physics.remove_colliders(&rt.colliders);
             if let Some(a) = &self.audio {
-                for v in &rt.sounds {
+                for (_, v) in &rt.sounds {
                     a.stop(*v);
                 }
             }
@@ -1008,7 +1008,7 @@ impl Engine {
         }
     }
 
-    fn rebuild_lights(&mut self) {
+    pub(crate) fn rebuild_lights(&mut self) {
         let lights: Vec<PointLight> = self.cells.values().flat_map(|c| c.lights.iter()).filter(|l| !self.is_disabled(l.ref_id)).copied().collect();
         self.scene.lights = lights
             .iter()
@@ -1038,7 +1038,9 @@ impl Engine {
         self.scene.lod.clear();
         self.scene.env = interior_environment(&contents.lighting);
         let key = CellKey::Interior(cell_id);
-        self.instantiate(key, &contents.objects, contents.lights.clone(), contents.doors.clone());
+        let (mut objects, mut lights, mut doors) = (contents.objects.clone(), contents.lights.clone(), contents.doors.clone());
+        self.apply_moves(crate::ai::schedule::Place::Interior(cell_id), &mut objects, &mut lights, &mut doors);
+        self.instantiate(key, &objects, lights, doors);
         let refs: Vec<FormId> = self
             .lo
             .cell(cell_id)
@@ -1158,6 +1160,7 @@ impl Engine {
                 cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
             }
         }
+        self.apply_moves(crate::ai::schedule::Place::Exterior(world, (x, y)), &mut objects, &mut lights, &mut doors);
         self.instantiate(key, &objects, lights, doors);
         let mut refs: Vec<FormId> = cell_id
             .and_then(|c| self.lo.cell(c))
@@ -1751,6 +1754,9 @@ impl Engine {
         if let Some(p) = self.moved_refs.get(&r) {
             return Some(*p);
         }
+        if let Some(m) = self.world_state.moved.get(&r) {
+            return Some(m.pos);
+        }
         if let Some(c) = self.created(r) {
             return match c.container {
                 Some(holder) => self.ref_position(holder),
@@ -1928,8 +1934,10 @@ impl Engine {
         }
         let mut lights_changed = false;
         let mut arrivals = Vec::new();
+        let mut sounds = Vec::new();
         for r in affected {
             let off = self.is_disabled(r);
+            sounds.push((r, off));
             lights_changed |= self.cells.values().any(|c| c.lights.iter().any(|l| l.ref_id == r));
             self.furniture.set_disabled(r, off);
             // Enabled actors whose place is loaded appear.
@@ -1956,6 +1964,23 @@ impl Engine {
         }
         for (key, r, pos) in arrivals {
             self.spawn_actors(key, &[(r, Some(pos))]);
+        }
+        // Looping sounds of what is now enabled start, of what is disabled stop.
+        let loaded: HashMap<FormId, CellKey> = self.cells.iter().flat_map(|(k, rt)| rt.refs.iter().map(move |r| (*r, *k))).collect();
+        for (r, off) in sounds {
+            let Some(&key) = loaded.get(&r) else { continue };
+            let playing: Vec<crate::audio::VoiceId> = self.cells[&key].sounds.iter().filter(|(s, _)| *s == r).map(|(_, v)| *v).collect();
+            if off {
+                if let Some(a) = &self.audio {
+                    playing.iter().for_each(|v| a.stop(*v));
+                }
+                if let Some(rt) = self.cells.get_mut(&key) {
+                    rt.sounds.retain(|(s, _)| *s != r);
+                }
+            } else if playing.is_empty() {
+                log::debug!("{r} enabled: starting its looping sounds");
+                self.start_cell_sounds(key, &[r]);
+            }
         }
         if lights_changed {
             self.rebuild_lights();

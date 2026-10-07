@@ -278,6 +278,17 @@ game each piece unlocks.
   unless scripts set them; enabling or disabling a parent shows or hides its
   children (cells, sounds, furniture, actors). Actors flagged "Starts Dead" are
   placed as corpses (C04's Silver Hand bodies, treasure-room skeletons)
+- World state across cell loads (in memory, `src/world_state.rs`; what saves
+  will write out): references disabled when their cell loads are built hidden
+  (collision, lights, load doors, furniture, looping sounds follow), so enabling
+  them or their enable parent in place shows them, actors included; dead actors
+  stay dead, their bodies where and as they lay (`IsDead` / `GetDead` unloaded
+  too); actors that leave hurt come back as hurt, less what they'd have healed;
+  doors the player opened stay open; references scripts move (`MoveTo`,
+  `SetPosition`, `SetAngle`, `MoveToMyEditorLocation`, `GetAngleX/Y/Z`) move
+  with their collision and lights, between cells too, and stay moved. Console
+  `[ref.]enable` / `disable`, `[ref.]moveto`. Open questions:
+  `known_gaps/world-state.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -344,24 +355,16 @@ game each piece unlocks.
    - Templates: spells (with magic)
    - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
      guard / wait / find / acquire procedures
-3. **World state across cell loads** (in memory; what Saves will write out;
-   `src/world_state.rs`). Done: references disabled when their cell loads are
-   built hidden (objects, collision, lights, doors, furniture), so enabling
-   them or their enable parent shows them, actors included; dead actors stay
-   dead, as corpses where their bodies came to rest (`IsDead` / `GetDead` for
-   unloaded ones too); doors the player opened stay open; console
-   `[ref.]enable` / `disable`. Still to do: references moved by scripts (`MoveTo`, `SetPosition`) or knocked
-   about by physics, looping sounds of references enabled in place, actors'
-   damage (they come back whole, as if healed while away)
-4. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
+3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-5. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
-6. **Audio**: lip sync
-7. **Rendering**: point light and interior shadows, static shadow caching (per-cell
+4. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
+5. **Audio**: lip sync
+6. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
    grass, decals, environment maps
-8. **Saves**: an engine-native save format (reading .ess later)
-9. **Performance**: async loading, GPU-driven culling
+7. **Saves**: an engine-native save format (reading .ess later), writing out
+   the scripts' state, inventories and `WorldState`
+8. **Performance**: async loading, GPU-driven culling
