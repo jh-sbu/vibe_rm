@@ -15,7 +15,8 @@ public documentation and the game's data files only.
 ## What the implementation does
 
 - Every detection pass (once a second), an actor not in combat with assistance
-  looks at the fights within its detection distance (1400 units). The player
+  looks at the fights within its detection distance (1400 units; no source, a
+  stand-in until detection exists: roadmap Detection). The player
   fights whoever fights them.
 - It joins the nearest fight where the fighter is an ally (assistance ≥ 1) or a
   friend (assistance 2), attacking the fighter's target unless that target is its
@@ -27,14 +28,14 @@ public documentation and the game's data files only.
 ## Gaps
 
 1. **Detection.** The game presumably needs the helper to detect the fight (sight,
-   sound). We use distance only, like enemy detection.
+   sound). We use distance only, like enemy detection; both wait on the
+   roadmap's Detection item.
 2. **Relationships.** `RELA` ranks (ally, confidant, friend...) between two NPCs
    probably count too. Only factions are used.
-3. **Crime.** Attacking or killing someone is a crime: witnesses in the victim's
-   crime faction report it, guards come, a bounty is added
-   (`sCrimeTypeAttack`, `sCrimeTypeMurder`). Not implemented; the townsfolk who
-   join an attack on the player do so through assistance alone, and stay
-   hostile only for that fight.
+3. **Crime.** The player's assaults and murders now add crime gold
+   (`known_gaps/crime.md`), but guards don't come: the townsfolk who join an
+   attack on the player do so through assistance alone, and stay hostile only
+   for that fight.
 4. **Friendly hits.** `iFriendHitCombatAllowed` (4 in Skyrim.esm) suggests friends
    forgive some hits before fighting back. Every hit starts a fight here.
 5. **Helping the player.** Followers would help the player through

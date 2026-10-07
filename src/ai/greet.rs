@@ -106,7 +106,8 @@ impl Engine {
     }
 
     /// Whether `r` (looking from `eye`) can see the player: near enough, with
-    /// nothing in between. Stands in for detection.
+    /// nothing in between (combat's unsourced detection distance). Stands in
+    /// for detection, which isn't implemented.
     fn sees_player(&self, r: FormId, eye: Vec3) -> bool {
         let to = self.player.eye() - eye;
         let dist = to.length();
