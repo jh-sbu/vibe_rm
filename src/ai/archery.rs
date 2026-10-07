@@ -25,9 +25,9 @@ const FALLBACK_RANGE: f32 = 450.0;
 const FALLBACK_RATE: f32 = 2.0;
 const FALLBACK_STEP: f32 = 600.0;
 /// Seconds to draw a bow at speed 1 (`Bow_DrawNock` until it is held drawn).
-const DRAW_TIME: f32 = 1.07;
+pub(crate) const DRAW_TIME: f32 = 1.07;
 /// Seconds from `attackRelease` to the graph's `arrowRelease`, if it never comes.
-const RELEASE_FALLBACK: f32 = 0.3;
+pub(crate) const RELEASE_FALLBACK: f32 = 0.3;
 /// Seconds an arrow may fly, and stays stuck where it struck; the most kept stuck.
 const FLIGHT_TIME: f32 = 8.0;
 const STUCK_TIME: f32 = 60.0;
@@ -290,13 +290,18 @@ impl Engine {
     /// the bow, aimed (over the drop) at the middle of the target's body, spread
     /// by `fBowNPCSpreadAngle`.
     pub(crate) fn loose_arrows(&mut self) {
-        let mut shots: Vec<(FormId, FormId, Vec3, f32)> = Vec::new();
+        // (shooter, target, eye, practice aim point)
+        let mut shots: Vec<(FormId, FormId, Vec3, Option<Vec3>)> = Vec::new();
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut() {
-                if std::mem::take(&mut a.loose)
-                    && let Some(c) = a.combat.as_ref()
-                {
-                    shots.push((a.ref_id, c.target, a.pos + Vec3::Z * 110.0 * a.scale, a.scale));
+                if !std::mem::take(&mut a.loose) {
+                    continue;
+                }
+                let eye = a.pos + Vec3::Z * 110.0 * a.scale;
+                match (a.combat.as_ref(), a.practice_aim.take()) {
+                    (Some(c), _) => shots.push((a.ref_id, c.target, eye, None)),
+                    (None, Some(aim)) => shots.push((a.ref_id, FormId::NULL, eye, Some(aim))),
+                    _ => {}
                 }
             }
         }
@@ -304,8 +309,10 @@ impl Engine {
             return;
         }
         let spread = crate::ai::combat::gmst_f32(&self.lo, "fBowNPCSpreadAngle", 4.0).to_radians();
-        for (shooter, target, eye, _) in shots {
-            let aim = if target == PLAYER_REF {
+        for (shooter, target, eye, practice) in shots {
+            let aim = if let Some(p) = practice {
+                Some(p)
+            } else if target == PLAYER_REF {
                 Some(self.player.position + Vec3::Z * 20.0)
             } else {
                 self.actor_ref(target).map(|t| t.pos + Vec3::Z * CAPSULE_CENTRE * t.scale)
@@ -313,7 +320,8 @@ impl Engine {
             let Some(aim) = aim else { continue };
             let Some(arrow) = self.arrows_of(shooter) else { continue };
             let bow = self.inventories.get(&shooter).and_then(|i| i.weapon(&self.lo));
-            let damage = bow.map_or(0.0, |b| crate::ai::combat::weapon_damage(&self.lo, b)) + arrow.damage;
+            // Practice shots harm nobody.
+            let damage = if practice.is_some() { 0.0 } else { bow.map_or(0.0, |b| crate::ai::combat::weapon_damage(&self.lo, b)) + arrow.damage };
             let to = aim - eye;
             let flat = to.truncate();
             let from = eye + flat.normalize_or_zero().extend(0.0) * 30.0;

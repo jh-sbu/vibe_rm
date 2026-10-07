@@ -27,6 +27,32 @@ pub enum Behaviour {
     /// Wait about (or in a seat) until the player comes near, then walk up to them
     /// and start a conversation (`Package::greet`).
     ForceGreet,
+    /// Go to the location, draw and attack (or shoot at) the package's targets in
+    /// barrages: training at dummies and archery butts (`Package::use_weapon`).
+    UseWeapon,
+}
+
+/// Which weapon a UseWeapon package wants (its "Weapon Type" input).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeaponKind {
+    Any,
+    /// Object type 19.
+    Melee,
+    /// Object type 20 (bows, crossbows).
+    Ranged,
+    Specific(FormId),
+}
+
+/// The UseWeapon templates' inputs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UseWeapon {
+    pub weapon: WeaponKind,
+    /// "Target to Attack" / "Target 01".."03" (one picked per barrage).
+    pub targets: [Option<Target>; 3],
+    /// Seconds between barrages.
+    pub pause: (f32, f32),
+    /// Attacks per barrage.
+    pub attacks: (u32, u32),
 }
 
 /// What a sandboxing actor may do besides wander (the template's "Allow ..." inputs).
@@ -107,7 +133,11 @@ pub enum Target {
     Alias(u32),
     /// The actor running the package.
     SelfRef,
-    /// Object ids / types, aliases, etc. (not resolved yet).
+    /// A specific object (base form), and an object type (`19` melee weapons,
+    /// `20` ranged...).
+    Object(FormId),
+    ObjectType(u32),
+    /// Aliases, etc. (not resolved yet).
     Other,
 }
 
@@ -198,6 +228,7 @@ pub struct Package {
     pub unlock_on_change: bool,
     /// Force greet packages' inputs.
     pub greet: Option<ForceGreet>,
+    pub use_weapon: Option<UseWeapon>,
 }
 
 fn behaviour_of(template: &str) -> Behaviour {
@@ -208,6 +239,8 @@ fn behaviour_of(template: &str) -> Behaviour {
         Behaviour::Sit
     } else if t.contains("patrol") {
         Behaviour::Patrol
+    } else if t.starts_with("useweapon") {
+        Behaviour::UseWeapon
     } else if t.starts_with("forcegreet") {
         Behaviour::ForceGreet
     } else if t.starts_with("escort") {
@@ -235,6 +268,7 @@ fn behaviour_of(template: &str) -> Behaviour {
 enum Input {
     Bool(bool),
     Float(f32),
+    Int(i32),
     Location(Location),
     Target(Target),
     Topic(GreetTopic),
@@ -268,6 +302,8 @@ fn target(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Target> {
     let v = u32::from_le_bytes(d[4..8].try_into().unwrap());
     Some(match u32::from_le_bytes(d[0..4].try_into().unwrap()) {
         0 => Target::Ref(rec.fid(FormId(v))),
+        1 => Target::Object(rec.fid(FormId(v))),
+        2 => Target::ObjectType(v),
         3 => Target::LinkedRef((v != 0).then(|| rec.fid(FormId(v)))),
         4 => Target::Alias(v),
         6 => Target::SelfRef,
@@ -290,6 +326,7 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
             }
             b"CNAM" if kind == "Bool" && !sr.data.is_empty() => *values.last_mut().unwrap() = Input::Bool(sr.data[0] != 0),
             b"CNAM" if kind == "Float" && sr.data.len() >= 4 => *values.last_mut().unwrap() = Input::Float(sr.f32(0)),
+            b"CNAM" if kind == "Int" && sr.data.len() >= 4 => *values.last_mut().unwrap() = Input::Int(sr.i32(0)),
             b"PLDT" if !values.is_empty() => {
                 if let Some(l) = location(rec, sr.data) {
                     *values.last_mut().unwrap() = Input::Location(l);
@@ -379,8 +416,14 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         }
     }
     let template_name = lo.get(template).and_then(|t| t.editor_id()).unwrap_or_default();
-    let behaviour = behaviour_of(&template_name);
-    let names = input_names(lo, template);
+    // A package without a template has its own procedure tree (`ambushSleepPackage`).
+    let tree_src = if template.is_null() { id } else { template };
+    let behaviour = match behaviour_of(&template_name) {
+        // Templates not known by name: by their tree's main procedure.
+        Behaviour::Hold => procedure_tree(lo, tree_src).as_ref().and_then(main_procedure).map_or(Behaviour::Hold, |p| behaviour_of_procedure(&p.procedure)),
+        b => b,
+    };
+    let names = input_names(lo, tree_src);
     let inputs = inputs(&rec);
     let named = |n: &str| inputs.iter().find(|(i, _)| names.get(i).is_some_and(|x| x == n)).map(|(_, v)| *v);
     let flag = |n: &str| match named(n) {
@@ -442,9 +485,32 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         sandbox: flag("sandboxwhilewaiting").unwrap_or(false),
         seated: template_name.eq_ignore_ascii_case("forcegreetfromsitting"),
     });
+    let int = |k: &str| match named(k) {
+        Some(Input::Int(i)) => Some(i.max(0) as u32),
+        _ => None,
+    };
+    let use_weapon = (behaviour == Behaviour::UseWeapon).then(|| {
+        let target = |k: &str| match named(k) {
+            Some(Input::Target(t)) => Some(t),
+            _ => None,
+        };
+        let pause = (float(&["minpause"], 2.0), float(&["maxpause"], 6.0));
+        let attacks = (int("minattacksperbarrage").unwrap_or(1).max(1), int("maxattacksperbarrage").unwrap_or(3).max(1));
+        UseWeapon {
+            weapon: match target("weapontype") {
+                Some(Target::ObjectType(19)) => WeaponKind::Melee,
+                Some(Target::ObjectType(20)) => WeaponKind::Ranged,
+                Some(Target::Object(f)) => WeaponKind::Specific(f),
+                _ => WeaponKind::Any,
+            },
+            targets: [target("targettoattack").or_else(|| target("target01")), target("target02"), target("target03")],
+            pause: (pause.0.min(pause.1), pause.0.max(pause.1)),
+            attacks: (attacks.0.min(attacks.1), attacks.0.max(attacks.1)),
+        }
+    });
     // The first location input is the package's main location (a force greeter's
-    // wait location); likewise for targets.
-    let location = located(&["npcwaitlocationnpchangsouthere"]).or_else(|| {
+    // wait location, where to use a weapon); likewise for targets.
+    let location = located(&["npcwaitlocationnpchangsouthere", "useweaponlocation"]).or_else(|| {
         inputs.iter().find_map(|(_, v)| match v {
             Input::Location(l) => Some(*l),
             _ => None,
@@ -478,6 +544,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         unlock_at_start: pkdt_flags & PKDT_UNLOCK_AT_START != 0,
         unlock_on_change: pkdt_flags & PKDT_UNLOCK_ON_CHANGE != 0,
         greet,
+        use_weapon,
     })
 }
 
@@ -539,10 +606,26 @@ fn procedure_tree(lo: &LoadOrder, template: FormId) -> Option<Node> {
     build(&mut flat.into_iter())
 }
 
+/// What the AI does for a procedure.
+fn behaviour_of_procedure(name: &str) -> Behaviour {
+    match name {
+        "Sandbox" => Behaviour::Sandbox,
+        "Travel" | "HoldPosition" => Behaviour::Travel,
+        "Patrol" => Behaviour::Patrol,
+        "Follow" => Behaviour::Follow,
+        "Escort" => Behaviour::Escort,
+        "Sit" => Behaviour::Sit,
+        "Sleep" => Behaviour::Sleep,
+        "ForceGreet" => Behaviour::ForceGreet,
+        "UseWeapon" => Behaviour::UseWeapon,
+        _ => Behaviour::Hold,
+    }
+}
+
 /// The procedure a branch is about, for the behaviours the AI has: the first
 /// found in this order (a guard post's patrol over its guarding).
 fn main_procedure(node: &Node) -> Option<&Node> {
-    const ORDER: [&str; 6] = ["Patrol", "Follow", "Sit", "Sleep", "Sandbox", "Travel"];
+    const ORDER: [&str; 8] = ["Patrol", "Follow", "Sit", "Sleep", "Sandbox", "Escort", "Travel", "HoldPosition"];
     fn all<'a>(n: &'a Node, out: &mut Vec<&'a Node>) {
         if !n.procedure.is_empty() {
             out.push(n);
@@ -564,7 +647,7 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
     let Some(base) = parse(lo, id) else { return Vec::new() };
     let Some(rec) = lo.get(id) else { return Vec::new() };
     let template = rec.get(b"PKCU").filter(|d| d.len() >= 8).map(|d| rec.fid(FormId(u32::from_le_bytes(d[4..8].try_into().unwrap()))));
-    let tree = template.and_then(|t| procedure_tree(lo, t));
+    let tree = procedure_tree(lo, template.filter(|t| !t.is_null()).unwrap_or(id));
     let Some(root) = tree.filter(|t| t.kind == "Stacked" && t.children.len() > 1) else { return vec![base] };
     let values: std::collections::HashMap<u8, Input> = inputs(&rec).into_iter().collect();
     let mut out = Vec::new();
@@ -617,10 +700,7 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
                 p.behaviour = Behaviour::Follow;
                 p.follow_radius = (float(1, 128.0), float(2, 384.0));
             }
-            "Travel" => p.behaviour = Behaviour::Travel,
-            "Sit" => p.behaviour = Behaviour::Sit,
-            "Sleep" => p.behaviour = Behaviour::Sleep,
-            _ => p.behaviour = Behaviour::Hold,
+            name => p.behaviour = behaviour_of_procedure(name),
         }
         // The branch's conditions, and the procedure's own when it is nested,
         // with package inputs they run on or name resolved for the package.

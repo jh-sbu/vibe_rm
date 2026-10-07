@@ -9,6 +9,7 @@ mod greet;
 pub mod idles;
 pub mod nav;
 pub mod package;
+pub mod practice;
 pub mod schedule;
 pub mod threat;
 
@@ -68,6 +69,8 @@ pub struct Goal {
     pub escort_run: f32,
     pub gait: package::Gait,
     pub sneak: bool,
+    /// UseWeapon: the targets and barrage timing.
+    pub practice: Option<practice::PracticeGoal>,
 }
 
 impl Goal {
@@ -87,6 +90,7 @@ impl Goal {
             escort_run: 0.0,
             gait: package::Gait::Walk,
             sneak: false,
+            practice: None,
         }
     }
 }
@@ -317,6 +321,11 @@ pub struct ActorRuntime {
     pub(crate) bow_speed: f32,
     pub(crate) arrow_release: bool,
     pub(crate) loose: bool,
+    /// Practising with weapons (UseWeapon), and where its loosed arrow aims.
+    pub(crate) practice: Option<practice::Practice>,
+    pub(crate) practice_aim: Option<Vec3>,
+    /// Took another weapon to practise: the one it had (to take back after).
+    pub(crate) practice_weapon: Option<Option<FormId>>,
     pub(crate) detect_in: f32,
     hit_frame: bool,
     /// Seconds left bleeding out (essential actors brought down).
@@ -391,6 +400,9 @@ impl ActorRuntime {
             bow: false,
             bow_speed: 1.0,
             arrow_release: false,
+            practice: None,
+            practice_aim: None,
+            practice_weapon: None,
             loose: false,
             power_cost: 20.0,
             detect_in: stagger,
@@ -622,6 +634,11 @@ impl ActorRuntime {
 
     /// Advance movement. Returns true when the actor moved.
     pub fn step(&mut self, dt: f32, w: &mut World) -> bool {
+        if matches!(self.state, State::Idle(_)) && self.practising() {
+            let goal = self.goal.and_then(|g| g.practice).unwrap();
+            self.practice_step(dt, &goal, w);
+            return false;
+        }
         match &mut self.state {
             State::Idle(t) => {
                 self.speed = 0.0;
@@ -785,8 +802,17 @@ impl ActorRuntime {
         self.state = State::Idle(0.0);
     }
 
+    /// At a UseWeapon goal's location, out of combat.
+    fn practising(&self) -> bool {
+        self.combat.is_none()
+            && self.goal.is_some_and(|g| g.practice.is_some() && self.pos.truncate().distance(g.centre.truncate()) <= g.radius.max(96.0))
+    }
+
     /// Choose what to do next from the current goal.
     fn plan(&mut self, w: &mut World) {
+        if !self.practising() {
+            self.end_practice(w);
+        }
         // VRM_AI_NO_SNAP: walk into furniture even on cell load (to watch enter animations).
         let fresh = std::mem::take(&mut self.fresh) && std::env::var_os("VRM_AI_NO_SNAP").is_none();
         self.give_up_seat(w.furniture);
@@ -859,7 +885,7 @@ impl ActorRuntime {
                     Some(goal.centre)
                 }
             }
-            Behaviour::Travel | Behaviour::Sleep | Behaviour::Sit => {
+            Behaviour::Travel | Behaviour::Sleep | Behaviour::Sit | Behaviour::UseWeapon => {
                 let near = goal.radius.max(96.0);
                 (self.pos.truncate().distance(goal.centre.truncate()) > near).then_some(goal.centre)
             }
@@ -961,11 +987,16 @@ impl ActorRuntime {
     /// Look for furniture the goal wants used; reserve it and head there (or, when
     /// `fresh`, start out in it). Returns true if the actor is now on its way.
     fn seek_furniture(&mut self, goal: &Goal, fresh: bool, w: &mut World) -> bool {
-        // Only humanoids have furniture animations.
-        if !self.skeleton_path.contains("actors/character/") {
+        // Creatures only use the furniture their package names (ambushers' coffins,
+        // thrones and alcoves), through their own graphs' furniture idles.
+        if !self.skeleton_path.contains("actors/character/") && goal.furniture.is_none() {
             return false;
         }
         let (kinds, centre, radius, secs): (Vec<Use>, Vec3, f32, f32) = match goal.behaviour {
+            // A specific target can be any marker (a creature's coffin, throne or alcove).
+            Behaviour::Sleep if goal.furniture.is_some() => {
+                (vec![Use::Sleep, Use::Sit, Use::Special], goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY)
+            }
             Behaviour::Sleep => (vec![Use::Sleep], goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY),
             // A Sit package's chair may be special furniture (a throne, a writing desk).
             Behaviour::Sit => {
@@ -1003,7 +1034,13 @@ impl ActorRuntime {
             Behaviour::Patrol if goal.furniture.is_some() => {
                 (vec![Use::Idle, Use::Lean, Use::Special, Use::Sit], goal.centre, 96.0, uniform(w.rand, 6.0, 12.0))
             }
-            Behaviour::Travel | Behaviour::Hold | Behaviour::Patrol | Behaviour::Follow | Behaviour::Escort | Behaviour::ForceGreet => return false,
+            Behaviour::Travel
+            | Behaviour::Hold
+            | Behaviour::Patrol
+            | Behaviour::Follow
+            | Behaviour::Escort
+            | Behaviour::ForceGreet
+            | Behaviour::UseWeapon => return false,
         };
         let npc = self.npc;
         let mut options = Vec::new();
@@ -1708,10 +1745,57 @@ impl Engine {
         (centre.unwrap_or(a.editor_pos), loc.radius)
     }
 
+    /// The reference a package target input names for actor `a`.
+    fn package_target_ref(&self, a: &ActorRuntime, p: &package::Package, t: Option<Target>) -> Option<FormId> {
+        match t {
+            Some(Target::Ref(r)) => Some(r),
+            Some(Target::LinkedRef(kw)) => self.linked_ref(a.ref_id, kw),
+            Some(Target::Alias(alias)) => p.quest.and_then(|q| self.alias_ref(q, alias)),
+            // Patrolling from itself: along its own linked references.
+            Some(Target::SelfRef) if p.behaviour == Behaviour::Patrol => self.linked_ref(a.ref_id, Some(FormId::NULL)),
+            Some(Target::SelfRef) => Some(a.ref_id),
+            _ => None,
+        }
+    }
+
+    /// For a creature sent to furniture: the ways on and off its markers that its
+    /// own graph has (`ActionActivate`'s branches for its graph, with the creature
+    /// as subject: their conditions name the furniture as its linked reference),
+    /// unless found already.
+    fn creature_furniture_ways(&self, a: &ActorRuntime, furniture: FormId) -> Vec<(FormId, furniture::Way)> {
+        use crate::condition::{Context, IdleQuery};
+        let Some(project) = a.graph.as_ref().map(|g| g.project()).filter(|p| !p.humanoid()) else { return Vec::new() };
+        let Some(f) = self.furniture.get(furniture) else { return Vec::new() };
+        if f.ways.iter().any(|w| w.graph.as_deref() == Some(project.name.as_str())) {
+            return Vec::new();
+        }
+        let Some(idles) = self.idles.as_ref() else { return Vec::new() };
+        let Some(root) = idles.find(&self.lo, "ActionActivate") else { return Vec::new() };
+        let mut out = Vec::new();
+        for (mi, m) in f.markers.iter().enumerate() {
+            let entry = furniture::Entry::of(m.entries).next().map_or(furniture::Entry::Front, |e| e.0);
+            let ctx = |state: f32, quick: bool| Context {
+                subject: Some(a.ref_id),
+                target: Some(furniture),
+                idle: Some(IdleQuery { anim_type: m.anim_type, entry: entry.entry_type(), state, quick, child: Some(false), ..Default::default() }),
+                ..Default::default()
+            };
+            let Some((_, enter)) = idles.select_for(self, root, ctx(2.0, true), project) else { continue };
+            let exit = idles.select_for(self, root, ctx(4.0, false), project).map(|(_, e)| e).filter(|e| *e != enter);
+            log::debug!("{} ({}) uses {furniture} marker {mi}: {enter} / {exit:?}", a.ref_id, project.name);
+            out.push((furniture, furniture::Way { marker: mi as u8, entry, child: false, enter, exit, graph: Some(project.name.clone()) }));
+        }
+        if out.is_empty() {
+            log::debug!("{} ({}): no way into {furniture}", a.ref_id, project.name);
+        }
+        out
+    }
+
     /// Choose each actor's package and goal.
     fn evaluate_packages(&mut self, dt: f32) {
         self.refresh_alias_packages();
         let mut decisions = Vec::new();
+        let mut creature_ways = Vec::new();
         for (key, rt) in &self.cells {
             for (i, a) in rt.actors.iter().enumerate() {
                 if a.next_eval - dt > 0.0 || a.exiting.is_some() {
@@ -1724,15 +1808,7 @@ impl Engine {
                 let goal = pick.map(|pi| {
                     let p = &a.packages[pi];
                     let (centre, radius) = self.package_target(a, p);
-                    let target = match p.target {
-                        Some(Target::Ref(r)) => Some(r),
-                        Some(Target::LinkedRef(kw)) => self.linked_ref(a.ref_id, kw),
-                        Some(Target::Alias(alias)) => p.quest.and_then(|q| self.alias_ref(q, alias)),
-                        // Patrolling from itself: along its own linked references.
-                        Some(Target::SelfRef) if p.behaviour == Behaviour::Patrol => self.linked_ref(a.ref_id, Some(FormId::NULL)),
-                        Some(Target::SelfRef) => Some(a.ref_id),
-                        _ => None,
-                    };
+                    let target = self.package_target_ref(a, p, p.target);
                     // A force greeter waits (standing, sandboxing or seated) until it
                     // sets off to the player.
                     let (behaviour, target) = match p.greet {
@@ -1747,6 +1823,9 @@ impl Engine {
                     let furniture = target
                         .filter(|_| matches!(behaviour, Behaviour::Sit | Behaviour::Sleep))
                         .filter(|r| self.furniture.get(*r).is_some());
+                    if let Some(f) = furniture {
+                        creature_ways.extend(self.creature_furniture_ways(a, f));
+                    }
                     let (centre, radius) = match behaviour {
                         Behaviour::Patrol => (centre, p.point_radius),
                         Behaviour::Follow => (target.and_then(|t| self.ref_position(t)).unwrap_or(centre), radius),
@@ -1757,7 +1836,14 @@ impl Engine {
                         Some(g) if behaviour == Behaviour::Follow => (g.distance * 0.5, g.distance),
                         _ => p.follow_radius,
                     };
+                    let practice = p.use_weapon.map(|u| practice::PracticeGoal {
+                        weapon: u.weapon,
+                        targets: u.targets.map(|t| self.package_target_ref(a, p, t)),
+                        pause: u.pause,
+                        attacks: u.attacks,
+                    });
                     Goal {
+                        practice,
                         behaviour,
                         centre,
                         radius,
@@ -1780,6 +1866,11 @@ impl Engine {
         for rt in self.cells.values_mut() {
             for a in &mut rt.actors {
                 a.next_eval -= dt;
+            }
+        }
+        for (f, way) in creature_ways {
+            if let Some(f) = self.furniture.items.iter_mut().find(|x| x.ref_id == f) {
+                f.ways.push(way);
             }
         }
         for (key, i, pick, goal) in decisions {
@@ -1818,6 +1909,7 @@ impl Engine {
     pub(crate) fn update_actors(&mut self, dt: f32) {
         self.update_force_greets(dt);
         self.evaluate_packages(dt);
+        self.update_practice_weapons();
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self.barks.current.as_ref().map(|b| b.speaker));
         let player = self.ref_position(PLAYER_REF).unwrap_or_default();
         let eye = self.player.eye();
@@ -1838,6 +1930,14 @@ impl Engine {
                         && let Some(p) = self.ref_position(t)
                     {
                         targets.insert(t, p);
+                    }
+                }
+                // Practice targets: where to aim at them.
+                Some(Goal { practice: Some(pg), .. }) => {
+                    for t in pg.targets.into_iter().flatten() {
+                        if let Some(p) = self.ref_position(t) {
+                            targets.insert(t, practice::aim_point(&self.lo, t, p));
+                        }
                     }
                 }
                 _ => {}

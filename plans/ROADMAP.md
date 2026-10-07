@@ -267,6 +267,13 @@ game each piece unlocks.
   `DefaultMasterPackageList` patrol from their linked markers, follow linked
   actors or sandbox where they stood instead of standing still. vrm-tool
   `pack-tree`, `pack-lists`. Open questions: `known_gaps/package-trees.md`
+- Package procedures: packages with their own procedure tree (draugr ambushes
+  in sarcophagi, thrones and alcoves: creatures use furniture through their own
+  graphs' `ActionActivate` branch, starting in it and getting out when the
+  ambush ends), procedures by tree for unknown templates (HoldPosition,
+  GuardPost), and UseWeapon practice: archers take a bow of the package's
+  weapon type, draw and loose at the targets in barrages, melee fighters swing.
+  Open questions: `known_gaps/package-trees.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -324,7 +331,9 @@ game each piece unlocks.
 2. **AI depth**
    - Alias fills: near alias, story manager events (and the story manager
      itself); created objects drawn in the world, cleaned up; scenes
-   - Remaining procedures: guard, use weapon / magic, dialogue packages;
+   - Remaining procedures: guard (restricted areas), use magic, dialogue,
+     activate / carry, flee, orbit packages; ambush triggers and sleepers'
+     reduced detection;
      escorts' follower min / max distances and several followers, riding
    - Off-screen travel between worldspaces; paths round locked animated doors,
      lockpicking perks and skill gain

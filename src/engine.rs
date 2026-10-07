@@ -847,7 +847,7 @@ impl Engine {
                         // A subtree without an exit idle offers its enter idle again.
                         let exit = idles.select(self, root, ctx(4.0)).map(|(_, e)| e).filter(|e| *e != enter);
                         log::trace!("{} marker {mi} {entry:?}{}: {enter} / {exit:?}", f.ref_id, if child { " (child)" } else { "" });
-                        found.push((f.ref_id, Way { marker: mi as u8, entry, child, enter, exit }));
+                        found.push((f.ref_id, Way { marker: mi as u8, entry, child, enter, exit, graph: None }));
                     }
                 }
             }

@@ -42,3 +42,37 @@ which form lists NPCs name (`vrm-tool pack-lists <data>`).
 - `GetNumericPackageData` isn't answered (the `Sequence` templates' optional
   travel and door unlocking steps).
 - Patrolling from "Self" walks the actor's own linked reference chain.
+
+## Procedures
+
+- Packages without a template carry their own procedure tree (`ambushSleepPackage`,
+  184 NPC package slots: draugr and others sleeping in a linked sarcophagus,
+  throne or alcove until their ambush script sets `Variable01`); templates not
+  known by name run their tree's main procedure (`HoldPosition` travels and
+  stays, `GuardPost` travels to its wait location).
+- Creatures use the furniture their package names: their enter / exit events
+  come from their own graph's branch of `ActionActivate` (`DraugrActivateFurniture`:
+  sarcophagus, throne, slouched seats, alcoves, ground ambushes), whose
+  conditions name the furniture as the creature's linked reference
+  (`GetIsID` run on linked reference, `IsEnteringInteractionQuick`,
+  `GetSleeping`). They start in it on load and get out when the package ends.
+- UseWeapon (and UseWeaponMultiTarget / AlreadyHeld): travel to "Use Weapon
+  Location", take a carried weapon of the "Weapon Type" (object type 19 melee,
+  20 ranged, or a specific weapon) in hand, draw and attack one of the targets
+  per barrage ("Min / Max Attacks per Barrage", "Min / Max Pause"); archers loose
+  arrows at the target's bounds centre (harmless, they stick), melee swings
+  strike nothing. The old weapon comes back afterwards.
+
+### Open questions
+
+- Guard (restricted areas, warning trespassers), Wait, Orbit, Find, Acquire,
+  Activate, Flee, UseMagic and the dragons' procedures have no behaviour of
+  their own; GuardPost guards face wherever they arrive.
+- UseWeapon's trigger refs / radii, "Aim Only", "Never End", "End after this
+  many Barrages", "Max Time spent Attacking" and power attacks are ignored.
+  Melee practice isn't seen working yet in a test (the Dragonsreach porch
+  guards practise in `WhiterunDragonsreachWorld` but patrol in `WhiterunWorld`,
+  and actors don't travel between worldspaces off screen).
+- Ambushers in furniture still notice and fight intruders as anyone does;
+  the game's sleeping actors detect far less, and the ambush scripts' triggers
+  (`OnTriggerEnter`) aren't raised.
