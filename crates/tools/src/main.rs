@@ -1246,6 +1246,7 @@ fn main() -> Result<()> {
                             *funcs.entry(format!("create {} level {}", if v & 0x8000_0000 != 0 { "in" } else { "at" }, (v >> 16) & 0x7fff)).or_default() += 1;
                         }
                         b"ALNA" => c.2.push("near alias"),
+                        b"ALNT" => *funcs.entry(format!("near alias type {}", sr.u32(0))).or_default() += 1,
                         b"ALFE" => c.2.push("from event"),
                         b"CTDA" => {
                             if !c.2.contains(&"conditions") {

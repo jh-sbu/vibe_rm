@@ -49,8 +49,9 @@ pub enum Fill {
     /// What the Story Manager event that started the quest names (`ALFE` event
     /// type + `ALFD` member: `R1`, `L2`...).
     FromEvent([u8; 2]),
-    /// Kinds not filled yet: "near alias".
-    Unsupported(&'static str),
+    /// The first reference the conditions accept near what another alias
+    /// holds (`ALNA`; `ALNT` is always 0 in the game's data), nearest first.
+    Near(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -103,7 +104,7 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
                     *inside = v & 0x8000_0000 != 0;
                 }
             }
-            b"ALNA" => a.fill = Fill::Unsupported("near alias"),
+            b"ALNA" => a.fill = Fill::Near(sr.u32(0)),
             b"ALFE" => a.fill = Fill::FromEvent([0; 2]),
             b"ALFD" if sr.data.len() >= 2 => {
                 if let Fill::FromEvent(m) = &mut a.fill {
@@ -193,6 +194,35 @@ impl Engine {
         out
     }
 
+    /// References about `r`: the loaded ones when it is loaded, else those of
+    /// its cell (and, outdoors, the cells around it).
+    fn refs_near(&self, r: FormId) -> Vec<FormId> {
+        let loaded = |c: FormId| self.cells.keys().any(|k| match (*k, self.location) {
+            (crate::render::CellKey::Interior(i), _) => i == c,
+            (crate::render::CellKey::Exterior(x, y), crate::engine::Location::Exterior { world, .. }) => {
+                self.lo.world(world).and_then(|w| w.cells.get(&(x, y)).copied()) == Some(c)
+            }
+            _ => false,
+        });
+        let Some(cell) = self.lo.cell_of_ref(r) else { return Vec::new() };
+        if r == PLAYER_REF || self.actor_cells.contains_key(&r) || loaded(cell) {
+            return self.loaded_refs();
+        }
+        let Some(idx) = self.lo.cell(cell) else { return Vec::new() };
+        let mut cells = vec![cell];
+        // Outdoors (worldspace-persistent references by where they stand).
+        let grid = idx.grid.or_else(|| self.ref_position(r).map(|p| ((p.x / 4096.0).floor() as i32, (p.y / 4096.0).floor() as i32)));
+        if let (Some(w), Some(grid)) = (idx.world.and_then(|w| self.lo.world(w)), grid) {
+            cells.extend(w.persistent_cell.filter(|&c| c != cell));
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    cells.extend(w.cells.get(&(grid.0 + dx, grid.1 + dy)).filter(|&&c| c != cell));
+                }
+            }
+        }
+        cells.iter().filter_map(|&c| self.lo.cell(c)).flat_map(|i| i.persistent.iter().chain(&i.temporary).copied().collect::<Vec<_>>()).collect()
+    }
+
     /// References that reserving aliases of other running quests hold.
     fn reserved_refs(&self, except: FormId) -> HashSet<FormId> {
         let mut out = HashSet::new();
@@ -214,10 +244,10 @@ impl Engine {
     }
 
     /// What alias `a` of quest `q` is filled with now (earlier aliases already in
-    /// the quest's fills). `Err` for a fill kind not supported.
-    fn fill_alias(&self, q: FormId, a: &AliasSpec, reserved: &HashSet<FormId>) -> Result<Option<FormId>, &'static str> {
+    /// the quest's fills).
+    fn fill_alias(&self, q: FormId, a: &AliasSpec, reserved: &HashSet<FormId>) -> Option<FormId> {
         let accepts = |r: FormId| condition::evaluate(self, &a.conditions, Context { subject: Some(r), quest: Some(q), ..Default::default() });
-        Ok(match &a.fill {
+        match &a.fill {
             Fill::Empty => None,
             Fill::Forced(r) => Some(*r),
             Fill::Unique(npc) if *npc == FormId(0x7) => Some(PLAYER_REF),
@@ -231,7 +261,7 @@ impl Engine {
                 .and_then(|r| self.ref_current_location(r))
                 .and_then(|l| self.location_with_keyword(l, *keyword)),
             Fill::LocationRef { loc_alias, ref_type } => {
-                let Some(l) = self.alias_ref(q, *loc_alias) else { return Ok(None) };
+                let l = self.alias_ref(q, *loc_alias)?;
                 self.location_refs_of_type(l, *ref_type).into_iter().find(|&r| self.eligible(q, a, r, reserved) && accepts(r))
             }
             Fill::Matching if a.location => self.lo.ids_of_type(b"LCTN").iter().copied().find(|&l| accepts(l)),
@@ -260,10 +290,21 @@ impl Engine {
                 }
                 found.first().copied()
             }
+            Fill::Near(near) => {
+                let centre = self.alias_ref(q, *near)?;
+                let at = self.ref_position(centre)?;
+                let mut found: Vec<(f32, FormId)> = self
+                    .refs_near(centre)
+                    .into_iter()
+                    .filter(|&r| r != centre && self.eligible(q, a, r, reserved) && accepts(r))
+                    .map(|r| (self.ref_position(r).map_or(f32::MAX, |p| p.distance_squared(at)), r))
+                    .collect();
+                found.sort_by(|x, y| x.0.total_cmp(&y.0));
+                found.first().map(|f| f.1)
+            }
             // Made by `fill_quest_aliases`.
             Fill::Create { .. } => None,
-            Fill::Unsupported(kind) => return Err(kind),
-        })
+        }
     }
 
     /// Fill quest `q`'s aliases in order. False (and nothing filled) when a
@@ -275,23 +316,22 @@ impl Engine {
         let edid = self.lo.get(q).and_then(|r| r.editor_id()).unwrap_or_default();
         for a in specs.iter() {
             let filled = match a.fill {
-                Fill::Create { object, at, inside } => Ok(self.alias_ref(q, at).and_then(|at| self.create_ref(object, at, inside))),
+                Fill::Create { object, at, inside } => self.alias_ref(q, at).and_then(|at| self.create_ref(object, at, inside)),
                 _ => self.fill_alias(q, a, &reserved),
             };
             match filled {
-                Ok(Some(r)) => {
+                Some(r) => {
                     log::trace!("{edid} alias {} = {r}", a.name);
                     self.scripts.quests.entry(q).or_default().aliases.insert(a.id, r);
                 }
-                Ok(None) if !a.has(flags::OPTIONAL) && a.fill != Fill::Empty => {
+                None if !a.has(flags::OPTIONAL) && a.fill != Fill::Empty => {
                     // Story Manager attempts fail all the time (the event's actors aren't the ones).
                     let level = if self.scripts.quests.get(&q).is_some_and(|st| st.event.is_some()) { log::Level::Debug } else { log::Level::Info };
                     log::log!(level, "quest {edid} not started: alias {} ({:?}) not filled", a.name, a.fill);
                     self.scripts.quests.entry(q).or_default().aliases.clear();
                     return false;
                 }
-                Ok(None) => {}
-                Err(kind) => log::debug!("{edid} alias {}: {kind} fills aren't supported", a.name),
+                None => {}
             }
         }
         true

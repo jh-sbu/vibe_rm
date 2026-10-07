@@ -219,7 +219,10 @@ game each piece unlocks.
   location alias references by location ref type (`XLRT`, the locations' static
   reference lists), other quests' aliases, and location aliases (specific, a
   reference alias's location by keyword, by conditions), filled in record order;
-  quests whose required aliases can't be filled don't start. Editor and current
+  quests whose required aliases can't be filled don't start. Near alias fills
+  (the nearest matching reference about another alias's: roadside encounters'
+  travel markers by their trigger). Conditions whose parameters are aliases
+  ("use aliases"). Editor and current
   locations for conditions (`GetIsEditorLocAlias`, `GetInCurrentLocAlias`,
   `HasRefType`, `HasSameEditorLocAsRefAlias`, `LocAliasIsLocation`...), packages
   at location aliases, Papyrus `LocationAlias`. vrm-tool `alias-fills`,
@@ -386,7 +389,7 @@ game each piece unlocks.
      and relationship values; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
 3. **AI depth**
-   - Alias fills: near alias; created objects drawn in the world, cleaned up
+   - Alias fills: created objects drawn in the world, cleaned up
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
      activate / carry, flee, orbit packages; ambush triggers and sleepers'
      reduced detection;

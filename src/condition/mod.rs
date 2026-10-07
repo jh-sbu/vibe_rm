@@ -29,6 +29,9 @@ pub struct Condition {
     /// package data), and whether the first parameter is an input (flag 0x08).
     pub pack_input: Option<u8>,
     pub p1_input: bool,
+    /// Parameters naming quest aliases ("use aliases", flag 0x02): the first
+    /// parameter is an alias id of the condition's quest.
+    pub p1_alias: bool,
     /// The first parameter as a package input resolved for the actor.
     pub p1_ref: Option<RefOf>,
     /// Run on a Story Manager event's data (`run_on` 7): the member (`R1`, `L2`...).
@@ -87,6 +90,8 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
     let fid = |v: u32| if v == 0 { 0 } else { rec.fid(FormId(v)).0 };
     let p1 = u32_at(12);
     let p2 = u32_at(16);
+    // "Use aliases" (flag 0x02): a reference or location parameter is an alias id.
+    let p1_alias = flags & 0x02 != 0 && functions::find(func).is_some_and(|f| matches!(f.2, "ptReference" | "ptActor" | "ptLocation"));
     Some(Condition {
         op: flags >> 5,
         or: flags & 0x01 != 0,
@@ -95,8 +100,8 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
         value: if use_global { 0.0 } else { f32::from_bits(u32_at(4)) },
         global: if use_global { FormId(fid(u32_at(4))) } else { FormId::NULL },
         func,
-        // Package inputs by index (flag 0x08) aren't forms.
-        p1: if flags & 0x08 == 0 && param_is_form(func, 1) { fid(p1) } else { p1 },
+        // Package inputs by index (flag 0x08) and aliases (0x02) aren't forms.
+        p1: if flags & 0x08 == 0 && !p1_alias && param_is_form(func, 1) { fid(p1) } else { p1 },
         // GetEventData: (function, member) then a form, but for GetValue.
         p2: if param_is_form(func, 2) || (func == GET_EVENT_DATA && p1 & 0xffff != 2) { fid(p2) } else { p2 },
         run_on: u32_at(20),
@@ -106,6 +111,7 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
         string_p2: None,
         pack_input: (u32_at(20) == 6 && d.len() >= 32).then(|| u32_at(28) as u8),
         p1_input: flags & 0x08 != 0,
+        p1_alias,
         p1_ref: None,
         event_member: if u32_at(20) == RUN_ON_EVENT_DATA && d.len() >= 32 { [d[28], d[29]] } else { [0; 2] },
     })
@@ -258,6 +264,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
     let p1 = match c.p1_ref {
         Some(RefOf::Subject) => ctx.subject?,
         Some(RefOf::LinkedRef(kw)) => e.linked_ref(ctx.subject?, (!kw.is_null()).then_some(kw))?,
+        // An empty alias: nothing to compare with.
+        None if c.p1_alias => alias(e, ctx, c.p1).unwrap_or_default(),
         None => FormId(c.p1),
     };
     let subj_base = subject.and_then(|s| e.base_of(s));
