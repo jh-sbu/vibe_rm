@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use esp::{FormId, LoadOrder};
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 
 use super::{ActorRuntime, State, World, uniform};
 use crate::engine::{Engine, PLAYER_REF};
@@ -1566,6 +1566,12 @@ impl Engine {
 
     /// Kill an actor without telling its scripts (one placed dead).
     pub(crate) fn kill_actor_quietly(&mut self, actor: FormId) -> bool {
+        self.kill_actor_lying(actor, None)
+    }
+
+    /// Kill an actor quietly, its ragdoll bodies placed as given (a body as it
+    /// lay before its cell unloaded) or from its pose.
+    pub(crate) fn kill_actor_lying(&mut self, actor: FormId, lying: Option<Vec<Mat4>>) -> bool {
         let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
         let Some(index) = self.cells.get(&key).and_then(|rt| rt.actors.iter().position(|a| a.ref_id == actor)) else { return false };
         let (pose, transform) = match self.scene.cells.get(&key).and_then(|rc| rc.actors.get(index)) {
@@ -1590,7 +1596,17 @@ impl Engine {
             self.physics.set_enabled(&[c], false);
         }
         if let Some(desc) = skeleton.ragdoll.clone() {
-            let rd = self.physics.spawn_ragdoll(&desc, |i| transform * pose.get(desc.bodies[i].bone).copied().unwrap_or_default() * desc.bodies[i].offset, velocity, actor);
+            let lying = lying.filter(|b| b.len() == desc.bodies.len());
+            let velocity = if lying.is_some() { Vec3::ZERO } else { velocity };
+            let rd = self.physics.spawn_ragdoll(
+                &desc,
+                |i| match &lying {
+                    Some(b) => b[i],
+                    None => transform * pose.get(desc.bodies[i].bone).copied().unwrap_or_default() * desc.bodies[i].offset,
+                },
+                velocity,
+                actor,
+            );
             let mapping = RagdollPose::new(&desc, &skeleton, &pose, transform);
             if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(index)) {
                 a.ragdoll = Some((rd, mapping));
@@ -1799,9 +1815,13 @@ impl Engine {
     }
 
     /// Health of a loaded actor (current, max).
+    /// Health and the most an actor has: a loaded one's, or a hurt one's that
+    /// unloaded (healing meanwhile).
     pub fn actor_health(&self, actor: FormId) -> Option<(f32, f32)> {
-        let a = self.actor_cells.get(&actor).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor))?;
-        Some((a.health, a.stats.max_health))
+        match self.actor_ref(actor) {
+            Some(a) => Some((a.health, a.stats.max_health)),
+            None => self.world_state.wounds.get(&actor).map(|w| (w.health_at(self.scripts.real_time), w.max)),
+        }
     }
 }
 
