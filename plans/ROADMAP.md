@@ -274,6 +274,10 @@ game each piece unlocks.
   GuardPost), and UseWeapon practice: archers take a bow of the package's
   weapon type, draw and loose at the targets in barrages, melee fighters swing.
   Open questions: `known_gaps/package-trees.md`
+- Enable state: references follow their enable parent (`XESP`, or its opposite)
+  unless scripts set them; enabling or disabling a parent shows or hides its
+  children (cells, sounds, furniture, actors). Actors flagged "Starts Dead" are
+  placed as corpses (C04's Silver Hand bodies, treasure-room skeletons)
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -340,15 +344,20 @@ game each piece unlocks.
    - Templates: spells (with magic)
    - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
      guard / wait / find / acquire procedures
-3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
+3. **World state across cell loads** (in memory; what Saves will write out):
+   references disabled when their cell loads are built hidden, so enabling them
+   (or their enable parent) while the player is there shows them; dead actors
+   stay dead, as corpses where they fell; doors left open, actors' damage, and
+   references moved by scripts or physics keep their state
+4. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-4. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
-5. **Audio**: lip sync
-6. **Rendering**: point light and interior shadows, static shadow caching (per-cell
+5. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
+6. **Audio**: lip sync
+7. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
    grass, decals, environment maps
-7. **Saves**: an engine-native save format (reading .ess later)
-8. **Performance**: async loading, GPU-driven culling
+8. **Saves**: an engine-native save format (reading .ess later)
+9. **Performance**: async loading, GPU-driven culling
