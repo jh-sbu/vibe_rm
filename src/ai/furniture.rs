@@ -48,7 +48,9 @@ impl Entry {
 }
 
 /// How to get on and off one marker from one side: the behaviour events picked
-/// from the idle tree (`ActivateRootChar`) for adults or children.
+/// from the idle tree (`ActivateRootChar`) for adults or children, or for a
+/// creature's graph from its branch of `ActionActivate` (draugr sarcophagi,
+/// thrones and alcoves).
 #[derive(Debug, Clone)]
 pub struct Way {
     pub marker: u8,
@@ -56,6 +58,8 @@ pub struct Way {
     pub child: bool,
     pub enter: String,
     pub exit: Option<String>,
+    /// The creature project the events are for (none: humanoids).
+    pub graph: Option<String>,
 }
 
 /// One usable position, in world space.
@@ -371,11 +375,12 @@ pub fn ways_to_use(
     clips: &mut super::Clips,
     rand: &mut dyn FnMut() -> u64,
 ) -> Vec<(Entry, UseClips)> {
-    // Furniture idles are the humanoid graphs'.
-    if !project.humanoid() {
+    // Creatures only use the furniture their own ways were picked for.
+    let graph = (!project.humanoid()).then_some(project.name.as_str());
+    if graph.is_some() && (m.kind == Use::Idle || !f.ways.iter().any(|w| w.marker == mi && w.graph.as_deref() == graph)) {
         return Vec::new();
     }
-    if m.kind == Use::Idle || (m.kind == Use::Special && !f.ways.iter().any(|w| w.marker == mi)) {
+    if graph.is_none() && (m.kind == Use::Idle || (m.kind == Use::Special && !f.ways.iter().any(|w| w.marker == mi))) || (m.kind == Use::Special && !f.ways.iter().any(|w| w.marker == mi)) {
         // One of the marker's idles, or special furniture's keyword idle event.
         if f.events.is_empty() {
             return Vec::new();
@@ -390,7 +395,7 @@ pub fn ways_to_use(
     let ways: Vec<(Entry, UseClips)> = f
         .ways
         .iter()
-        .filter(|w| w.marker == mi && w.child == child)
+        .filter(|w| w.marker == mi && w.child == child && w.graph.as_deref() == graph)
         .filter_map(|w| {
             // The tree's exit (IdleChairFrontExit...), else the generic ones.
             let exits: Vec<&str> = w.exit.as_deref().into_iter().chain(["IdleChairExitStart", "IdleStop"]).collect();

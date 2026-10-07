@@ -77,6 +77,39 @@ impl Engine {
         self.refresh_equipment(key, index, actor);
     }
 
+    /// Put a weapon an NPC carries in its hand (a bow displaces the shield): its
+    /// model, the graph's hand types and how it fights follow.
+    pub(crate) fn wield(&mut self, actor: FormId, weapon: FormId) -> bool {
+        let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
+        if self.equip_item(actor, weapon, true).is_err() {
+            return false;
+        }
+        if let Some(m) = crate::world::inventory::weapon_model(&self.lo, weapon) {
+            let models = self.rigid_models.entry(actor).or_default();
+            if !models.iter().any(|(f, _)| *f == weapon) {
+                models.push((weapon, m.clone()));
+                self.models.load_all(&mut self.renderer, &self.vfs, &[m]);
+            }
+        }
+        let lo = &self.lo;
+        let inv = self.inventories.get(&actor).cloned().unwrap_or_default();
+        let bow = crate::ai::archery::is_bow(lo, weapon);
+        let reach = lo.get(weapon).and_then(|r| r.get(b"DNAM").filter(|x| x.len() >= 12).map(|x| f32::from_le_bytes(x[8..12].try_into().unwrap()))).unwrap_or(0.0);
+        let cost = self.power_attack_cost(Some(weapon));
+        let Some(index) = self.cells.get(&key).and_then(|rt| rt.actors.iter().position(|a| a.ref_id == actor)) else { return false };
+        let a = &mut self.cells.get_mut(&key).unwrap().actors[index];
+        a.bow = bow;
+        a.bow_speed = if bow { crate::ai::archery::bow_speed(lo, weapon) } else { a.bow_speed };
+        a.weapon_reach = reach;
+        a.power_cost = cost;
+        if let Some(g) = &mut a.graph {
+            g.set_variable("iLeftHandType", inv.hand(lo, true) as i32 as f32);
+            g.set_variable("iRightHandType", inv.hand(lo, false) as i32 as f32);
+        }
+        self.refresh_equipment(key, index, actor);
+        true
+    }
+
     /// Draw (or sheathe) an actor's weapon: the graph plays the draw and raises
     /// `weaponDraw` as the hand takes it. False when the graph won't.
     pub fn draw_weapon(&mut self, actor: FormId, draw: bool) -> bool {
