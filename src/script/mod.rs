@@ -49,7 +49,10 @@ pub struct ScriptState {
     /// (`XLOC`); lock levels set by scripts.
     pub locked: HashMap<FormId, bool>,
     pub lock_levels: HashMap<FormId, u8>,
-    pub actor_values: HashMap<(FormId, String), f32>,
+    /// Actor values scripts changed, by actor and value index (`actor_values`), and
+    /// by name the ones outside the known values.
+    pub actor_values: HashMap<(FormId, u32), crate::actor_values::Modifiers>,
+    pub other_actor_values: HashMap<(FormId, String), f32>,
     /// `AddInventoryEventFilter`: the items (or form lists) an object hears
     /// `OnItemAdded` / `OnItemRemoved` for; none set means all.
     pub inventory_filters: HashMap<ObjectId, HashSet<FormId>>,

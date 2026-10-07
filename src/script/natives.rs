@@ -303,34 +303,40 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("actor", "isincombat") | ("actor", "isinfaction") | ("actor", "isguard") | ("actor", "isarrested") => {
             v(Value::Bool(false))
         }
-        ("actor", "getactorvalue") | ("actor", "getav") | ("actor", "getbaseactorvalue") | ("actor", "getbaseav") => {
-            let key = (me.unwrap_or_default(), arg(0).to_string().to_ascii_lowercase());
-            // Health and stamina of loaded actors are their own.
-            let live = match key.1.as_str() {
-                "health" if key.0 == crate::engine::PLAYER_REF => Some((e.player_health, crate::engine::PLAYER_HEALTH)),
-                "health" => e.actor_health(key.0),
-                "stamina" => e.stamina(key.0),
-                _ => None,
-            };
-            let base = func.contains("base");
-            v(Value::Float(live.map(|(cur, max)| if base { max } else { cur }).or_else(|| e.scripts.actor_values.get(&key).copied()).unwrap_or(100.0)))
+        // Actor values: the shared store (`actor_values`); names outside the known
+        // values are plain numbers.
+        ("actor", "getactorvalue") | ("actor", "getav") | ("actor", "getbaseactorvalue") | ("actor", "getbaseav")
+        | ("actor", "getactorvaluepercentage") | ("actor", "getavpercentage") | ("actor", "getactorvaluemax") | ("actor", "getavmax") => {
+            let (actor, name) = (me.unwrap_or_default(), arg(0).to_string());
+            let Some(i) = esp::actor_value::index(&name) else { return v(Value::Float(e.actor_value_named(actor, &name))) };
+            v(Value::Float(match func {
+                f if f.contains("base") => e.av_base(actor, i),
+                f if f.contains("percentage") => e.actor_value_fraction(actor, i),
+                f if f.ends_with("max") => e.av_max(actor, i),
+                _ => e.actor_value(actor, i),
+            }))
         }
-        ("actor", "setactorvalue") | ("actor", "setav") | ("actor", "forceactorvalue") | ("actor", "forceav") => {
-            let key = (me.unwrap_or_default(), arg(0).to_string().to_ascii_lowercase());
-            e.scripts.actor_values.insert(key, arg(1).as_float());
-            none()
-        }
-        ("actor", "modactorvalue") | ("actor", "modav") | ("actor", "damageactorvalue") | ("actor", "damageav") | ("actor", "restoreactorvalue") | ("actor", "restoreav") => {
-            let key = (me.unwrap_or_default(), arg(0).to_string().to_ascii_lowercase());
-            let sign = if func.starts_with("damage") { -1.0 } else { 1.0 };
-            if key.1 == "stamina"
-                && let Some((cur, _)) = e.stamina(key.0)
-            {
-                e.set_stamina(key.0, cur + sign * arg(1).as_float());
+        ("actor", "setactorvalue") | ("actor", "setav") | ("actor", "forceactorvalue") | ("actor", "forceav") | ("actor", "modactorvalue") | ("actor", "modav")
+        | ("actor", "damageactorvalue") | ("actor", "damageav") | ("actor", "restoreactorvalue") | ("actor", "restoreav") => {
+            let (actor, name, x) = (me.unwrap_or_default(), arg(0).to_string(), arg(1).as_float());
+            let Some(i) = esp::actor_value::index(&name) else {
+                let key = (actor, name.to_ascii_lowercase());
+                let cur = e.scripts.other_actor_values.get(&key).copied().unwrap_or(0.0);
+                let new = match func {
+                    f if f.starts_with("set") || f.starts_with("force") => x,
+                    f if f.starts_with("damage") => cur - x,
+                    _ => cur + x,
+                };
+                e.scripts.other_actor_values.insert(key, new);
                 return none();
+            };
+            match func {
+                f if f.starts_with("set") => e.set_actor_value(actor, i, x),
+                f if f.starts_with("force") => e.force_actor_value(actor, i, x),
+                f if f.starts_with("mod") => e.mod_actor_value(actor, i, x),
+                f if f.starts_with("damage") => e.damage_actor_value(actor, i, x),
+                _ => e.damage_actor_value(actor, i, -x),
             }
-            let cur = e.scripts.actor_values.get(&key).copied().unwrap_or(100.0);
-            e.scripts.actor_values.insert(key, cur + sign * arg(1).as_float());
             none()
         }
         ("actor", "getlevel") => v(Value::Int(1)),

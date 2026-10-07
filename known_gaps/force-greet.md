@@ -36,5 +36,7 @@ packages fill those inputs (`vrm-tool force-greets <data>`).
   "in cell" triggers use the package location rule (the editor location with a
   wide radius) rather than "the player is in that cell".
 - Seated greeters speak from the seat once the player is in the trigger location
-  (the template has no force greet distance); not seen in game here, since the
-  carriage drivers' packages need actor values the engine doesn't keep yet.
+  (the template has no force greet distance); not seen in game here: the
+  carriage drivers' package (`CartDriverOnCartForcegreet`) also needs the player
+  sitting in the carriage (`GetSitting` on the player == 3), and the player
+  doesn't sit yet.

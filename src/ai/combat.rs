@@ -1690,7 +1690,9 @@ impl Engine {
         self.player_stats
             .get_or_init(|| {
                 let race = self.npc_race(FormId(0x7)).unwrap_or(FormId(0x13746));
-                Arc::new(CombatStats::of(self, &Sources::of_npc(&self.lo, FormId(0x7), 0), race))
+                let mut s = CombatStats::of(self, &Sources::of_npc(&self.lo, FormId(0x7), 0), race);
+                self.apply_actor_values(PLAYER_REF, &mut s);
+                Arc::new(s)
             })
             .clone()
     }

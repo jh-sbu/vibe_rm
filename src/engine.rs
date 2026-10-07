@@ -679,7 +679,8 @@ impl Engine {
             rt.skeleton_path = d.skeleton.clone();
             rt.female = d.female;
             rt.child = self.npc_race(d.npc).is_some_and(|r| self.race_is_child(r));
-            let stats = crate::ai::combat::CombatStats::of(self, &d.templates, d.race);
+            let mut stats = crate::ai::combat::CombatStats::of(self, &d.templates, d.race);
+            self.apply_actor_values(d.ref_id, &mut stats);
             rt.health = stats.max_health;
             rt.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.inventory.weapon(&self.lo));
@@ -1431,7 +1432,7 @@ impl Engine {
             && self.scripts.real_time - t > 5.0
         {
             self.player_died_at = None;
-            self.player_health = PLAYER_HEALTH;
+            self.player_health = self.player_max_health();
             self.player_stamina = self.player_stats().max_stamina;
             self.scripts.notify("You come to.");
         }

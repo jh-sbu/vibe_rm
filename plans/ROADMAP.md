@@ -229,6 +229,18 @@ game each piece unlocks.
   `HasKeyword` includes their race's; `GetInFaction` / `GetFactionRank` and door
   ownership follow templates. Console `templates <ref>`; vrm-tool `npc-templates`.
   Open questions: `known_gaps/npc-templates.md`
+- Actor values: one store per actor that conditions (`GetActorValue`,
+  `GetBaseActorValue`, `GetPermanentActorValue`, `GetActorValuePercent`), Papyrus
+  (`Get` / `Set` / `Force` / `Mod` / `Damage` / `RestoreActorValue`,
+  `GetActorValuePercentage`) and the console share: bases from the records (AI
+  data, skills, health / magicka / stamina offsets, the race's starting values,
+  rates, carry weight), a permanent modifier and damage over them. Live health and
+  stamina are folded in (damaging health to nothing kills); changes to health,
+  stamina, aggression, confidence, assistance and the armor and block skills
+  reach combat. `Variable01`-`10` and `WaitingForPlayer` now gate packages and
+  lines as scripts set them. Console `[ref.]getav`, `setav`, `modav`, `forceav`,
+  `damageav`, `restoreav`; vrm-tool `av-conditions`. Open questions:
+  `known_gaps/actor-values.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -291,12 +303,6 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; paths round locked animated doors,
      lockpicking perks and skill gain
    - Templates: spells (with magic), default package lists (`DPLT`)
-   - Actor values: one store per actor that conditions (`GetActorValue`, now a
-     fixed 100) and Papyrus (`Get` / `Set` / `Mod` / `DamageActorValue`) share,
-     seeded from the records (AI data: aggression, confidence, morality,
-     assistance; skills; `Variable01`-`10` script flags), with live health and
-     stamina folded in. Unblocks packages, lines and idles gated on them (the
-     carriage drivers' seated force greets)
 3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and

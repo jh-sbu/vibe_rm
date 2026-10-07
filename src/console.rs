@@ -44,6 +44,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
             "player.equipitem / unequipitem <item>   wear armor, wield a weapon, ready ammo".into(),
             "activate <ref>        activate a reference as the player".into(),
+            "[ref.]getav <av> / setav, modav, forceav, damageav, restoreav <av> <n>   actor values".into(),
             "pblock                toggle the player's guard (right mouse button)".into(),
             "pattack [power]       the player swings (power: as holding the button)".into(),
             "pbash                 the player bashes (attacking with the guard up)".into(),
@@ -343,11 +344,31 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 9] = ["additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem"];
+const ITEM_COMMANDS: [&str; 15] = [
+    "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
+    "getav", "setav", "modav", "forceav", "damageav", "restoreav",
+];
 
-/// Inventory commands on a reference (the player when none is given).
+/// Inventory and actor value commands on a reference (the player when none is given).
 fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -> Vec<String> {
     match cmd {
+        "getav" => {
+            let Some(i) = args.first().and_then(|n| esp::actor_value::index(n)) else { return vec!["usage: [ref.]getav <actor value>".into()] };
+            vec![format!("{r}: {}", engine.describe_actor_value(r, i))]
+        }
+        "setav" | "modav" | "forceav" | "damageav" | "restoreav" => {
+            let (Some(i), Some(x)) = (args.first().and_then(|n| esp::actor_value::index(n)), args.get(1).and_then(|x| x.parse::<f32>().ok())) else {
+                return vec![format!("usage: [ref.]{cmd} <actor value> <amount>")];
+            };
+            match cmd {
+                "setav" => engine.set_actor_value(r, i, x),
+                "modav" => engine.mod_actor_value(r, i, x),
+                "forceav" => engine.force_actor_value(r, i, x),
+                "damageav" => engine.damage_actor_value(r, i, x),
+                _ => engine.damage_actor_value(r, i, -x),
+            }
+            vec![format!("{r}: {}", engine.describe_actor_value(r, i))]
+        }
         "additem" | "removeitem" => {
             let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: {cmd} <item> [count]")] };
             let n = args.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
