@@ -224,6 +224,11 @@ game each piece unlocks.
   `HasRefType`, `HasSameEditorLocAsRefAlias`, `LocAliasIsLocation`...), packages
   at location aliases, Papyrus `LocationAlias`. vrm-tool `alias-fills`,
   `ref-types`. Open questions: `known_gaps/alias-fills.md`
+- Created references: aliases that create theirs (`ALCO`, at or in another
+  alias's reference) and Papyrus `PlaceAtMe` / `PlaceActorAtMe` make references
+  (`FF000800` up): items in containers go to the inventory, actors appear where
+  they were made and live among the persistent actors (packages, whereabouts,
+  combat). Console `placeatme`
 - Force greet packages (ForceGreet / ForceGreetFromSitting templates): the greeter
   waits at its wait location (standing, sandboxing or in its seat) until the player
   is in the trigger location (and seen, if asked), walks up to within the force
@@ -317,8 +322,8 @@ game each piece unlocks.
    - Footsteps: swimming (and swimming itself), splashes
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
-   - Alias fills: created references (`ALCO`, with `PlaceAtMe`), near alias,
-     story manager events (and the story manager itself); scenes
+   - Alias fills: near alias, story manager events (and the story manager
+     itself); created objects drawn in the world, cleaned up; scenes
    - Remaining procedures: guard, use weapon / magic, dialogue packages;
      escorts' follower min / max distances and several followers, riding
    - Off-screen travel between worldspaces; paths round locked animated doors,

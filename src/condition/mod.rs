@@ -360,7 +360,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Outside idle picking, sitting / sleeping come from what the actor is doing.
         159 | 49 if ctx.idle.is_none() => Some(subject.map_or(0.0, |s| e.sit_sleep_state(s, c.func == 49))),
         237 => b(false), // GetIsGhost
-        353 => b(subject.is_some_and(|s| s == PLAYER_REF || e.lo.get(s).is_some_and(|r| r.tag().0 == *b"ACHR"))), // IsActor
+        353 => b(subject.is_some_and(|s| s == PLAYER_REF || e.created(s).is_some_and(|c| c.actor) || e.lo.get(s).is_some_and(|r| r.tag().0 == *b"ACHR"))), // IsActor
         362 => b(subject.and_then(|s| e.linked_ref(s, (!p1.is_null()).then_some(p1))).is_some()), // HasLinkedRef
         650 => b(subject.and_then(|s| e.linked_ref(s, (c.p2 != 0).then_some(FormId(c.p2)))) == Some(p1)), // IsLinkedTo
         // IsMoving / IsPathing outside idle picking: walking about.

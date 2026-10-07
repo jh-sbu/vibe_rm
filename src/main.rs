@@ -6,6 +6,7 @@ mod audio;
 mod condition;
 mod dialogue;
 mod console;
+mod created;
 mod engine;
 mod footsteps;
 mod items;

@@ -279,6 +279,14 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             let left = arg(0).as_int() == 0;
             v(Value::Int(me.and_then(|r| e.inventories.get(&r)).map_or(0, |i| i.hand(&e.lo, left) as i32)))
         }
+        ("objectreference", "placeatme") | ("objectreference", "placeactoratme") => {
+            let count = if func == "placeatme" { args.get(1).map_or(1, |c| c.as_int().max(1)) } else { 1 };
+            let made = match (me, form_arg(args, 0)) {
+                (Some(at), Some(base)) => (0..count).filter_map(|_| e.create_ref(base, at, false)).last(),
+                _ => None,
+            };
+            v(made.map(|r| e.object_value(r)).unwrap_or(Value::None))
+        }
         ("objectreference", "moveto") => {
             if me == Some(crate::engine::PLAYER_REF)
                 && let Some(t) = form_arg(args, 0)

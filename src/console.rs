@@ -42,6 +42,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
+            "[ref.]placeatme <form> [n]  make new references there (actors join the world)".into(),
             "player.equipitem / unequipitem <item>   wear armor, wield a weapon, ready ammo".into(),
             "activate <ref>        activate a reference as the player".into(),
             "[ref.]getav <av> / setav, modav, forceav, damageav, restoreav <av> <n>   actor values".into(),
@@ -344,8 +345,8 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 15] = [
-    "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
+const ITEM_COMMANDS: [&str; 16] = [
+    "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
     "getav", "setav", "modav", "forceav", "damageav", "restoreav",
 ];
 
@@ -368,6 +369,11 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                 _ => engine.damage_actor_value(r, i, -x),
             }
             vec![format!("{r}: {}", engine.describe_actor_value(r, i))]
+        }
+        "placeatme" => {
+            let Some(base) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec!["usage: [ref.]placeatme <form> [count]".into()] };
+            let n = args.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
+            (0..n).map(|_| engine.create_ref(base, r, false).map_or_else(|| format!("can't place {base} at {r}"), |m| format!("placed {m} ({base}) at {r}"))).collect()
         }
         "additem" | "removeitem" => {
             let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: {cmd} <item> [count]")] };

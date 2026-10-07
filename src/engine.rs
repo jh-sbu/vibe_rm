@@ -139,6 +139,8 @@ pub struct Engine {
     pub(crate) location_index: std::cell::OnceCell<crate::locations::LocationIndex>,
     /// Persistent references, candidates for "find matching reference" aliases.
     pub(crate) persistent_refs: std::cell::OnceCell<Vec<FormId>>,
+    /// References made while playing (`PlaceAtMe`, created alias references).
+    pub(crate) created_refs: crate::created::CreatedRefs,
     /// Quests' aliases as parsed.
     pub(crate) alias_spec_cache: HashMap<FormId, std::sync::Arc<Vec<crate::aliases::AliasSpec>>>,
     lod: Option<crate::world::lod::Lod>,
@@ -244,6 +246,7 @@ impl Engine {
             location_index: Default::default(),
             persistent_refs: Default::default(),
             alias_spec_cache: HashMap::new(),
+            created_refs: Default::default(),
             lod: None,
             nav: Default::default(),
             furniture: Default::default(),
@@ -633,11 +636,12 @@ impl Engine {
         let mut descs = Vec::new();
         let cell_meshes = self.cells.get(&key).map(|rt| rt.navmeshes.clone()).unwrap_or_default();
         for &(r, at) in refs {
-            let Some(rec) = self.lo.get(r) else { continue };
-            if rec.tag().0 != *b"ACHR" || self.actor_cells.contains_key(&r) {
+            let is_actor = self.lo.tag_of(r).map_or_else(|| self.created(r).is_some_and(|c| c.actor), |t| t.0 == *b"ACHR");
+            if !is_actor || self.actor_cells.contains_key(&r) {
                 continue;
             }
-            if let Some(mut d) = crate::world::actor::describe_actor(&self.lo, &rec) {
+            let Some(rf) = self.reference_of(r) else { continue };
+            if let Some(mut d) = crate::world::actor::describe_reference(&self.lo, &rf) {
                 let editor_pos = d.transform.w_axis.truncate();
                 if let Some(p) = at {
                     let mut rng = self.rand() | 1;
@@ -1623,11 +1627,14 @@ impl Engine {
         if id == PLAYER_REF {
             return "Actor";
         }
+        if let Some(c) = self.created(id) {
+            return if c.actor { "Actor" } else { "ObjectReference" };
+        }
         self.lo.tag_of(id).map(|t| crate::script::types::class_for_tag(&t.0)).unwrap_or("Form")
     }
 
     pub fn object_value(&self, id: FormId) -> papyrus::Value {
-        if id.is_null() || (self.lo.locate(id).is_none() && id != PLAYER_REF) {
+        if id.is_null() || (self.lo.locate(id).is_none() && id != PLAYER_REF && self.created(id).is_none()) {
             return papyrus::Value::None;
         }
         papyrus::Value::Object(papyrus::ObjectId::Form(id.0), self.native_class(id).into())
@@ -1662,6 +1669,9 @@ impl Engine {
         if actor == PLAYER_REF {
             return Some(Sources::of_npc(&self.lo, FormId(0x7), 0));
         }
+        if let Some(c) = self.created(actor).filter(|c| c.actor) {
+            return Sources::for_ref(&self.lo, c.base, actor.0 as u64);
+        }
         let rec = self.lo.get(actor)?;
         match &rec.tag().0 {
             b"ACHR" => Sources::for_ref(&self.lo, records::reference(&rec).base, actor.0 as u64),
@@ -1671,7 +1681,10 @@ impl Engine {
     }
 
     pub fn has_keyword(&self, form: FormId, kw: FormId) -> bool {
-        if form == PLAYER_REF || self.lo.get(form).is_some_and(|r| r.tag().0 == *b"ACHR") {
+        if let Some(c) = self.created(form).filter(|c| !c.actor) {
+            return self.has_keyword(c.base, kw);
+        }
+        if form == PLAYER_REF || self.created(form).is_some() || self.lo.get(form).is_some_and(|r| r.tag().0 == *b"ACHR") {
             // Actors: their keywords part's, and their race's.
             let Some(t) = self.templates_of(form) else { return false };
             let race = self.lo.get(t.of(crate::world::template::TRAITS)).and_then(|r| r.get(b"RNAM").map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))));
@@ -1693,6 +1706,9 @@ impl Engine {
         if r == PLAYER_REF {
             return Some(FormId(0x7));
         }
+        if let Some(c) = self.created(r) {
+            return Some(c.base);
+        }
         let rec = self.lo.get(r)?;
         Some(records::reference(&rec).base)
     }
@@ -1703,6 +1719,12 @@ impl Engine {
         }
         if let Some(p) = self.moved_refs.get(&r) {
             return Some(*p);
+        }
+        if let Some(c) = self.created(r) {
+            return match c.container {
+                Some(holder) => self.ref_position(holder),
+                None => Some(c.position),
+            };
         }
         let rec = self.lo.get(r)?;
         Some(records::reference(&rec).position)

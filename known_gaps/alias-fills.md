@@ -1,7 +1,7 @@
 # Quest alias fills
 
-Implemented in `src/aliases.rs` (filling) and `src/locations.rs` (editor and
-current locations, location ref types). Based on the Creation Kit wiki's *Quest
+Implemented in `src/aliases.rs` (filling), `src/locations.rs` (editor and
+current locations, location ref types) and `src/created.rs` (created references). Based on the Creation Kit wiki's *Quest
 Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
 
 ## What is known
@@ -35,11 +35,22 @@ Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
   editor place when it is in that location, else go to the location's marker
   (`MNAM`).
 - Stopping a quest empties its aliases.
+- Created references (`ALCO` object, `ALCA` the alias to make it at, high bit
+  set for "in" its inventory): 968 aliases, 570 of them NPCs, 293 "in". They get
+  form ids from `FF000800` up. Items made in a container go to its inventory;
+  actors join the persistent actors' whereabouts at the place they were made
+  (spawned at once when it is loaded) and run their packages. The 443 start game
+  enabled quests make 94 at startup (notes, rewards, MS09's Geirlund and Vidrald...).
+  Papyrus `PlaceAtMe` / `PlaceActorAtMe` and console `placeatme` make them too.
 
 ## Open questions
 
-- Created references (`ALCO`), "near alias" (`ALNA`) and story manager event
-  fills (`ALFE`) aren't made; required ones don't stop the quest from starting.
+- "Near alias" (`ALNA`) and story manager event fills (`ALFE`) aren't made;
+  required ones don't stop the quest from starting.
+- Created items and objects in the world (not in a container) aren't drawn or
+  taken, and nothing created is ever deleted (the game cleans up created
+  references no longer in an alias or persistent). The create level (`ALCL`)
+  is ignored; leveled actors pick by their form id like placed ones.
 - Which of several matching references the game takes without "Closest" (here
   the first persistent one in load order), and whether it searches anything
   beyond persistent references when "In loaded area" isn't set.

@@ -47,9 +47,24 @@ pub struct Whereabouts {
     pending_packages: HashMap<FormId, Option<FormId>>,
 }
 
+impl Whereabouts {
+    /// A created actor: one of the persistent actors from now on, at `place`
+    /// until the next refresh says otherwise.
+    pub fn add_actor(&mut self, r: FormId, place: Place, pos: Vec3) {
+        if self.built && !self.actors.contains(&r) {
+            self.actors.push(r);
+        }
+        self.of.insert(r, (place, pos));
+        self.by_place.entry(place).or_default().push(r);
+    }
+}
+
 impl Engine {
     /// The place containing a reference, from its cell (and position for worldspace-persistent refs).
     pub fn place_of_ref(&self, r: FormId, pos: Vec3) -> Option<Place> {
+        if let Some(c) = self.created(r) {
+            return c.place;
+        }
         let cell = self.lo.cell_of_ref(r)?;
         let idx = self.lo.cell(cell)?;
         match idx.world {
@@ -142,6 +157,7 @@ impl Engine {
                     actors.push(id);
                 }
             }
+            actors.extend(self.created_refs.refs.iter().filter(|(_, c)| c.actor).map(|(id, _)| *id));
             self.whereabouts.actors = actors;
             self.whereabouts.built = true;
         }
@@ -154,8 +170,7 @@ impl Engine {
             if self.is_disabled(a) {
                 continue;
             }
-            let Some(rec) = self.lo.get(a) else { continue };
-            let rf = records::reference(&rec);
+            let Some(rf) = self.reference_of(a) else { continue };
             if rf.deleted() {
                 continue;
             }

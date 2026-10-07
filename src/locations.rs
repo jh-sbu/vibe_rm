@@ -131,6 +131,9 @@ impl Engine {
         if r == PLAYER_REF {
             return self.current_location();
         }
+        if let Some(c) = self.created(r) {
+            return c.location;
+        }
         if let Some(&l) = self.locations().editor.get(&r) {
             return Some(l);
         }

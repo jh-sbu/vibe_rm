@@ -44,7 +44,9 @@ pub enum Fill {
     Specific(FormId),
     /// The first reference or location the conditions accept.
     Matching,
-    /// Kinds not filled yet: created references, "near alias", story manager events.
+    /// A new reference to `object` made at (or in) what alias `at` holds (`ALCO` + `ALCA`).
+    Create { object: FormId, at: u32, inside: bool },
+    /// Kinds not filled yet: "near alias", story manager events.
     Unsupported(&'static str),
 }
 
@@ -90,7 +92,14 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
             b"KNAM" => keyword = form(),
             b"ALEQ" => ext_quest = Some(form()),
             b"ALEA" => ext_alias = sr.u32(0),
-            b"ALCO" => a.fill = Fill::Unsupported("create"),
+            b"ALCO" => a.fill = Fill::Create { object: form(), at: 0, inside: false },
+            b"ALCA" => {
+                if let Fill::Create { at, inside, .. } = &mut a.fill {
+                    let v = sr.u32(0);
+                    *at = v & 0xffff;
+                    *inside = v & 0x8000_0000 != 0;
+                }
+            }
             b"ALNA" => a.fill = Fill::Unsupported("near alias"),
             b"ALFE" => a.fill = Fill::Unsupported("from event"),
             b"CTDA" => {
@@ -241,6 +250,8 @@ impl Engine {
                 }
                 found.first().copied()
             }
+            // Made by `fill_quest_aliases`.
+            Fill::Create { .. } => None,
             Fill::Unsupported(kind) => return Err(kind),
         })
     }
@@ -251,20 +262,24 @@ impl Engine {
         let specs = self.alias_specs(q);
         let reserved = self.reserved_refs(q);
         self.scripts.quests.entry(q).or_default().aliases.clear();
-        let edid = || self.lo.get(q).and_then(|r| r.editor_id()).unwrap_or_default();
+        let edid = self.lo.get(q).and_then(|r| r.editor_id()).unwrap_or_default();
         for a in specs.iter() {
-            match self.fill_alias(q, a, &reserved) {
+            let filled = match a.fill {
+                Fill::Create { object, at, inside } => Ok(self.alias_ref(q, at).and_then(|at| self.create_ref(object, at, inside))),
+                _ => self.fill_alias(q, a, &reserved),
+            };
+            match filled {
                 Ok(Some(r)) => {
-                    log::trace!("{} alias {} = {r}", edid(), a.name);
+                    log::trace!("{edid} alias {} = {r}", a.name);
                     self.scripts.quests.entry(q).or_default().aliases.insert(a.id, r);
                 }
                 Ok(None) if !a.has(flags::OPTIONAL) && a.fill != Fill::Empty => {
-                    log::info!("quest {} not started: alias {} ({:?}) not filled", edid(), a.name, a.fill);
+                    log::info!("quest {edid} not started: alias {} ({:?}) not filled", a.name, a.fill);
                     self.scripts.quests.entry(q).or_default().aliases.clear();
                     return false;
                 }
                 Ok(None) => {}
-                Err(kind) => log::debug!("{} alias {}: {kind} fills aren't supported", edid(), a.name),
+                Err(kind) => log::debug!("{edid} alias {}: {kind} fills aren't supported", a.name),
             }
         }
         true
