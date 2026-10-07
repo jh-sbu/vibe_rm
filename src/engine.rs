@@ -570,6 +570,9 @@ impl Engine {
                 self.physics.set_owner_enabled(o.ref_id, false);
             }
             if let Some(obj) = self.animated_object(o.ref_id, &o.model, o.transform, &mut rc.instances, &tagged) {
+                if obj.open {
+                    self.physics.set_enabled(&obj.colliders, false);
+                }
                 rt.animated.push(obj);
             }
         }

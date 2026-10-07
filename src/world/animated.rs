@@ -110,6 +110,12 @@ impl Engine {
         // Machinery and the like loop their idle animation.
         if !door {
             obj.play("Idle");
+        } else if self.world_state.open_doors.contains(&ref_id) && obj.play("Open") {
+            // Left open: at the end of its opening (posed on the first update).
+            if let Some((si, t)) = &mut obj.playing {
+                *t = obj.anim.sequences[*si].stop;
+            }
+            obj.open = true;
         }
         Some(obj)
     }
@@ -129,6 +135,12 @@ impl Engine {
         }
         obj.open = open;
         obj.auto = auto && open;
+        // Doors the player opens stay open across loads (actors' close behind them).
+        if open && !auto {
+            self.world_state.open_doors.insert(door);
+        } else if !open {
+            self.world_state.open_doors.remove(&door);
+        }
         obj.clear_for = 0.0;
         let colliders = obj.colliders.clone();
         // The leaves stop blocking as soon as the door starts to open.

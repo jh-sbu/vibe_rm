@@ -1,7 +1,7 @@
 //! What happens to references stays when their cells unload and load again (in
 //! memory; what saves will write out): dead actors stay dead, lying where they
-//! fell. Taken items, locks, enable state and inventories are kept elsewhere
-//! (`ScriptState`, `Engine::inventories`).
+//! fell; doors the player opened stay open. Taken items, locks, enable state
+//! and inventories are kept elsewhere (`ScriptState`, `Engine::inventories`).
 
 use std::collections::HashMap;
 
@@ -15,6 +15,8 @@ use crate::engine::Engine;
 pub struct WorldState {
     /// Dead actors and where their bodies lie.
     pub dead: HashMap<FormId, (Place, Vec3)>,
+    /// Animated doors the player left open.
+    pub open_doors: std::collections::HashSet<FormId>,
 }
 
 impl Engine {

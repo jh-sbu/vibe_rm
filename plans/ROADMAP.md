@@ -349,8 +349,8 @@ game each piece unlocks.
    built hidden (objects, collision, lights, doors, furniture), so enabling
    them or their enable parent shows them, actors included; dead actors stay
    dead, as corpses where their bodies came to rest (`IsDead` / `GetDead` for
-   unloaded ones too); console `[ref.]enable` / `disable`. Still to do: doors
-   left open, references moved by scripts (`MoveTo`, `SetPosition`) or knocked
+   unloaded ones too); doors the player opened stay open; console
+   `[ref.]enable` / `disable`. Still to do: references moved by scripts (`MoveTo`, `SetPosition`) or knocked
    about by physics, looping sounds of references enabled in place, actors'
    damage (they come back whole, as if healed while away)
 4. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
