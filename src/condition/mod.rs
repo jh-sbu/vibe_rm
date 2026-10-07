@@ -25,7 +25,26 @@ pub struct Condition {
     /// String parameters (CIS1 / CIS2) that follow the CTDA.
     pub string_p1: Option<std::sync::Arc<str>>,
     pub string_p2: Option<std::sync::Arc<str>>,
+    /// In a package template's procedure tree: the input run on (`run_on` 6,
+    /// package data), and whether the first parameter is an input (flag 0x08).
+    pub pack_input: Option<u8>,
+    pub p1_input: bool,
+    /// The first parameter as a package input resolved for the actor.
+    pub p1_ref: Option<RefOf>,
 }
+
+/// A reference worked out for whoever the condition runs on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefOf {
+    /// The subject itself.
+    Subject,
+    /// The subject's linked reference (with the keyword, if not null).
+    LinkedRef(FormId),
+}
+
+/// `run_on` for a condition with no one to run on (a package input that names
+/// nothing): it fails.
+pub const RUN_ON_NOTHING: u32 = u32::MAX;
 
 /// Parse all CTDA subrecords of a record, attaching CIS1/CIS2 string parameters.
 pub fn parse_all(rec: &LoadedRecord<'_>) -> Vec<Condition> {
@@ -74,13 +93,17 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
         value: if use_global { 0.0 } else { f32::from_bits(u32_at(4)) },
         global: if use_global { FormId(fid(u32_at(4))) } else { FormId::NULL },
         func,
-        p1: if param_is_form(func, 1) { fid(p1) } else { p1 },
+        // Package inputs by index (flag 0x08) aren't forms.
+        p1: if flags & 0x08 == 0 && param_is_form(func, 1) { fid(p1) } else { p1 },
         p2: if param_is_form(func, 2) { fid(p2) } else { p2 },
         run_on: u32_at(20),
         reference: if d.len() >= 28 && u32_at(20) == 2 { FormId(fid(u32_at(24))) } else { FormId::NULL },
         reference_raw: if d.len() >= 28 { u32_at(24) } else { 0 },
         string_p1: None,
         string_p2: None,
+        pack_input: (u32_at(20) == 6 && d.len() >= 32).then(|| u32_at(28) as u8),
+        p1_input: flags & 0x08 != 0,
+        p1_ref: None,
     })
 }
 
@@ -193,8 +216,11 @@ fn eval_one(e: &Engine, c: &Condition, ctx: Context) -> bool {
         0 => ctx.subject,
         1 => ctx.target,
         2 => Some(c.reference),
+        // The subject's linked reference (package inputs: with a keyword).
+        4 => ctx.subject.and_then(|s| e.linked_ref(s, (!c.reference.is_null()).then_some(c.reference))),
         // Quest alias: the reference field holds the alias id.
         5 => ctx.quest.and_then(|q| e.alias_ref(q, c.reference_raw)),
+        RUN_ON_NOTHING => return false,
         _ => ctx.subject,
     };
     if c.swap {
@@ -220,7 +246,11 @@ fn b(x: bool) -> Option<f32> {
 
 /// Value of a condition function; `None` means "unsupported" (treated as passing).
 fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Context) -> Option<f32> {
-    let p1 = FormId(c.p1);
+    let p1 = match c.p1_ref {
+        Some(RefOf::Subject) => ctx.subject?,
+        Some(RefOf::LinkedRef(kw)) => e.linked_ref(ctx.subject?, (!kw.is_null()).then_some(kw))?,
+        None => FormId(c.p1),
+    };
     let subj_base = subject.and_then(|s| e.base_of(s));
     match c.func {
         18 => Some(e.hour),                       // GetCurrentTime
@@ -306,6 +336,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Outside idle picking, sitting / sleeping come from what the actor is doing.
         159 | 49 if ctx.idle.is_none() => Some(subject.map_or(0.0, |s| e.sit_sleep_state(s, c.func == 49))),
         237 => b(false), // GetIsGhost
+        353 => b(subject.is_some_and(|s| s == PLAYER_REF || e.lo.get(s).is_some_and(|r| r.tag().0 == *b"ACHR"))), // IsActor
+        362 => b(subject.and_then(|s| e.linked_ref(s, (!p1.is_null()).then_some(p1))).is_some()), // HasLinkedRef
+        650 => b(subject.and_then(|s| e.linked_ref(s, (c.p2 != 0).then_some(FormId(c.p2)))) == Some(p1)), // IsLinkedTo
         // IsMoving / IsPathing outside idle picking: walking about.
         25 | 704 if ctx.idle.is_none() => b(subject.and_then(|s| e.actor_speed(s)).is_some_and(|v| v > 1.0)),
         // Nor flees, attacks, staggers, recoils or is ridden.

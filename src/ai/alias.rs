@@ -71,7 +71,7 @@ impl Engine {
                     let ids = self.lo.get(q).map(|r| quest_alias_packages(&r)).and_then(|mut m| m.remove(&alias)).unwrap_or_default();
                     let p: Arc<Vec<Package>> = Arc::new(
                         ids.into_iter()
-                            .filter_map(|id| package::parse(&self.lo, id))
+                            .flat_map(|id| package::expand(&self.lo, id))
                             .map(|mut p| {
                                 p.quest = p.quest.or(Some(q));
                                 p

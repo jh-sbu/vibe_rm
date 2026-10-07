@@ -241,6 +241,17 @@ game each piece unlocks.
   lines as scripts set them. Console `[ref.]getav`, `setav`, `modav`, `forceav`,
   `damageav`, `restoreav`; vrm-tool `av-conditions`. Open questions:
   `known_gaps/actor-values.md`
+- Package procedure trees and default package lists: templates that pick one of
+  several branches (`Stacked` roots: `DefaultMasterPackageTemplate`) run as one
+  package per branch, the branch's conditions after the package's own, its main
+  procedure's inputs taken by position (sandbox allowances, patrol radius /
+  repeat, follow radii); tree conditions on package inputs (run-on package data,
+  inputs as parameters), linked references, `IsActor`, `HasLinkedRef`,
+  `IsLinkedTo`. NPCs' default package lists (`DPLT`, through templates) follow
+  their own packages, so draugr, guards, predators and the 2600 NPCs on
+  `DefaultMasterPackageList` patrol from their linked markers, follow linked
+  actors or sandbox where they stood instead of standing still. vrm-tool
+  `pack-tree`, `pack-lists`. Open questions: `known_gaps/package-trees.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -302,7 +313,9 @@ game each piece unlocks.
      escorts' follower min / max distances and several followers, riding
    - Off-screen travel between worldspaces; paths round locked animated doors,
      lockpicking perks and skill gain
-   - Templates: spells (with magic), default package lists (`DPLT`)
+   - Templates: spells (with magic)
+   - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
+     guard / wait / find / acquire procedures
 3. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and

@@ -1,5 +1,9 @@
 use anyhow::{Context, Result, bail};
 
+#[path = "../../../src/condition/functions.rs"]
+#[allow(dead_code)]
+mod functions;
+
 /// A behaviour project named by its directory (humanoids: `behaviors/0_master.hkx`)
 /// or by its project file (`meshes/actors/canine/dogproject.hkx`), with its directory.
 fn load_project(v: &vfs::Vfs, arg: &str) -> Result<(String, havok::behavior::Project)> {
@@ -944,6 +948,117 @@ fn main() -> Result<()> {
             v.sort_by(|a, b| b.1.cmp(&a.1));
             for (n, c) in v.iter().take(40) {
                 println!("{c:6} {n}");
+            }
+        }
+        Some("pack-tree") => {
+            // pack-tree <data dir> <package or template>: a package template's
+            // procedure tree (branches, their conditions, procedures and the inputs
+            // they take) with its input names; for a package, its template's tree
+            // and its own input values.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let id = match u32::from_str_radix(&args[2], 16) {
+                Ok(v) if args[2].len() == 8 => esp::FormId(v),
+                _ => lo.find_editor_id(&args[2]).context("editor id not found")?,
+            };
+            let rec = lo.get(id).context("record not found")?;
+            let template = rec.get(b"PKCU").filter(|d| d.len() >= 8).map(|d| rec.fid(esp::FormId(u32::from_le_bytes(d[4..8].try_into().unwrap()))));
+            let t = template.filter(|t| *t != id).and_then(|t| lo.get(t));
+            let tree = t.as_ref().unwrap_or(&rec);
+            println!("template {} {}", tree.form_id(), tree.editor_id().unwrap_or_default());
+            // Input names follow the tree (UNAM index, BNAM name).
+            let mut input_names: std::collections::BTreeMap<u8, String> = Default::default();
+            let (mut in_tree, mut idx) = (false, None);
+            for sr in tree.subrecords() {
+                match &sr.tag.0 {
+                    b"XNAM" => in_tree = true,
+                    b"UNAM" if in_tree && !sr.data.is_empty() => idx = Some(sr.data[0]),
+                    b"BNAM" if in_tree => {
+                        if let Some(i) = idx.take() {
+                            input_names.insert(i, sr.zstring());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // Input types before the tree, in UNAM order.
+            let (mut kinds, mut indices) = (Vec::new(), Vec::new());
+            for sr in tree.subrecords() {
+                match &sr.tag.0 {
+                    b"XNAM" => break,
+                    b"ANAM" => kinds.push(sr.zstring()),
+                    b"UNAM" if !sr.data.is_empty() => indices.push(sr.data[0]),
+                    _ => {}
+                }
+            }
+            for (i, k) in indices.iter().zip(&kinds) {
+                println!("  input {i:3} {k:14} {}", input_names.get(i).map_or("", String::as_str));
+            }
+            const OPS: [&str; 6] = ["==", "!=", ">", ">=", "<", "<="];
+            let mut in_tree = false;
+            for sr in tree.subrecords() {
+                match &sr.tag.0 {
+                    b"XNAM" => in_tree = true,
+                    _ if !in_tree => {}
+                    // The input names follow the tree.
+                    b"UNAM" => break,
+                    b"ANAM" => println!("  {}", sr.zstring()),
+                    b"PRCB" if sr.data.len() >= 8 => println!("      children {} flags {:08X}", sr.u32(0), sr.u32(4)),
+                    b"PNAM" => println!("      procedure {}", sr.zstring()),
+                    b"PKC2" if !sr.data.is_empty() => {
+                        let i = sr.data[0];
+                        println!("        input {i} {}", input_names.get(&i).map_or("", String::as_str));
+                    }
+                    b"CTDA" if sr.data.len() >= 24 => {
+                        let d = sr.data;
+                        let f = u16::from_le_bytes([d[8], d[9]]);
+                        let value = if d[0] & 0x04 != 0 { "global".to_owned() } else { format!("{}", f32::from_le_bytes(d[4..8].try_into().unwrap())) };
+                        println!(
+                            "      if {}({:08X}, {:08X}) run_on {} ref {:X} {} {value}{}",
+                            functions::name(f),
+                            sr.u32(12),
+                            sr.u32(16),
+                            sr.u32(20),
+                            if d.len() >= 28 { sr.u32(24) } else { 0 },
+                            OPS.get((d[0] >> 5) as usize).unwrap_or(&"?"),
+                            if d[0] & 1 != 0 { " OR" } else { "" }
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Some("pack-lists") => {
+            // pack-lists <data dir>: NPCs' default package lists (DPLT) and override
+            // package lists (SPOR spectator, OCOR observe corpse, GWOR guard warn, ECOR
+            // combat): which form lists, how many NPCs name each, and what is in them.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            for tag in [b"DPLT", b"SPOR", b"OCOR", b"GWOR", b"ECOR"] {
+                let mut lists: std::collections::BTreeMap<esp::FormId, (usize, usize)> = Default::default();
+                for &npc in lo.ids_of_type(b"NPC_") {
+                    let Some(rec) = lo.get(npc) else { continue };
+                    let Some(d) = rec.get(tag).filter(|d| d.len() >= 4) else { continue };
+                    let l = rec.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())));
+                    let own = rec.subrecords().filter(|s| s.tag.0 == *b"PKID").count();
+                    let e = lists.entry(l).or_default();
+                    e.0 += 1;
+                    e.1 += (own == 0) as usize;
+                }
+                println!("{}: {} lists", String::from_utf8_lossy(tag), lists.len());
+                let mut v: Vec<_> = lists.into_iter().collect();
+                v.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+                for (l, (n, no_own)) in v.iter().take(12) {
+                    let Some(r) = lo.get(*l) else { continue };
+                    let packs: Vec<String> = r
+                        .subrecords()
+                        .filter(|s| s.tag.0 == *b"LNAM")
+                        .map(|s| lo.get(r.fid(s.form_id(0))).and_then(|p| p.editor_id()).unwrap_or_default())
+                        .collect();
+                    println!("  {n:6} NPCs ({no_own} with no packages of their own) {l} {}: {packs:?}", r.editor_id().unwrap_or_default());
+                }
             }
         }
         Some("force-greets") => {

@@ -1720,6 +1720,9 @@ impl Engine {
                         Some(Target::Ref(r)) => Some(r),
                         Some(Target::LinkedRef(kw)) => self.linked_ref(a.ref_id, kw),
                         Some(Target::Alias(alias)) => p.quest.and_then(|q| self.alias_ref(q, alias)),
+                        // Patrolling from itself: along its own linked references.
+                        Some(Target::SelfRef) if p.behaviour == Behaviour::Patrol => self.linked_ref(a.ref_id, Some(FormId::NULL)),
+                        Some(Target::SelfRef) => Some(a.ref_id),
                         _ => None,
                     };
                     // A force greeter waits (standing, sandboxing or seated) until it

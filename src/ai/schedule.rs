@@ -29,7 +29,8 @@ pub enum Place {
 pub struct Whereabouts {
     /// Persistent actor references (built once).
     actors: Vec<FormId>,
-    packages: HashMap<FormId, std::sync::Arc<Vec<Package>>>,
+    /// By the NPC records giving the AI packages and the default package list.
+    packages: HashMap<(FormId, FormId), std::sync::Arc<Vec<Package>>>,
     /// Scheduled place and position for each persistent actor.
     pub of: HashMap<FormId, (Place, Vec3)>,
     /// `of` before the last refresh.
@@ -80,7 +81,7 @@ impl Engine {
     /// come from.
     pub(crate) fn npc_packages_cached(&mut self, achr: FormId, npc: FormId) -> std::sync::Arc<Vec<Package>> {
         let src = crate::world::template::Sources::of_npc(&self.lo, npc, achr.0 as u64);
-        let key = src.of(crate::world::template::AI_PACKAGES);
+        let key = (src.of(crate::world::template::AI_PACKAGES), src.of(crate::world::template::DEF_PACK_LIST));
         if let Some(p) = self.whereabouts.packages.get(&key) {
             return p.clone();
         }
