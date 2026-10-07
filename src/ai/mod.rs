@@ -57,6 +57,9 @@ pub struct Goal {
     pub energy: f32,
     /// Specific furniture to use (a Sit package's chair).
     pub furniture: Option<FormId>,
+    /// A Sit package's target is any furniture (object type `FURN`): leans and
+    /// idle markers as well as seats.
+    pub any_furniture: bool,
     /// Patrol start or follow target.
     pub target: Option<FormId>,
     pub repeat: bool,
@@ -82,6 +85,7 @@ impl Goal {
             allow: Allow { wandering: false, ..package::Allow::default() },
             energy: 50.0,
             furniture: None,
+            any_furniture: false,
             target: None,
             repeat: false,
             start_nearest: false,
@@ -1001,7 +1005,7 @@ impl ActorRuntime {
             // A Sit package's chair may be special furniture (a throne, a writing desk).
             Behaviour::Sit => {
                 // A specific target can be anything usable; otherwise a chair or special seat.
-                let kinds = if goal.furniture.is_some() {
+                let kinds = if goal.furniture.is_some() || goal.any_furniture {
                     vec![Use::Sit, Use::Special, Use::Sleep, Use::Lean, Use::Idle]
                 } else {
                     vec![Use::Sit, Use::Special]
@@ -1844,6 +1848,7 @@ impl Engine {
                     });
                     Goal {
                         practice,
+                        any_furniture: matches!(p.target, Some(Target::ObjectType(package::OBJECT_TYPE_FURNITURE))),
                         behaviour,
                         centre,
                         radius,
