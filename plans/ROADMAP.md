@@ -302,6 +302,12 @@ game each piece unlocks.
   `IsScenePackageRunning`; `GetDistance` between interiors / worldspaces is
   far. Console `startscene`, `stopscene`, `scenes`, `startquest`, `stopquest`,
   `setstage`; vrm-tool `scenes`. Open questions: `known_gaps/scenes.md`
+- Trigger volumes: scripted box and sphere primitives (`XPRM`) send
+  `OnTriggerEnter` / `OnTriggerLeave` as the player and actors step in and out
+  (set-stage, start-scene, music and comment triggers...);
+  `GetTriggerObjectCount`. Papyrus variables and locals start at their type's
+  default (an `Int` at 0, not None). vrm-tool `triggers`. Open questions:
+  `known_gaps/triggers.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -358,8 +364,7 @@ game each piece unlocks.
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
    - Alias fills: near alias, story manager events (and the story manager
-     itself); created objects drawn in the world, cleaned up; trigger
-     scripts (`OnTriggerEnter`), which scenes wait on
+     itself); created objects drawn in the world, cleaned up
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
      activate / carry, flee, orbit packages; ambush triggers and sleepers'
      reduced detection;

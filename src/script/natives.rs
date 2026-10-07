@@ -135,6 +135,7 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             none()
         }
+        ("objectreference", "gettriggerobjectcount") => v(Value::Int(me.map_or(0, |f| e.trigger_object_count(f) as i32))),
         ("objectreference", "isdisabled") => v(Value::Bool(me.map(|f| e.is_disabled(f)).unwrap_or(true))),
         ("objectreference", "isenabled") => v(Value::Bool(me.map(|f| !e.is_disabled(f)).unwrap_or(false))),
         ("objectreference", "getbaseobject") | ("actor", "getactorbase") | ("actor", "getleveledactorbase") => match me.and_then(|f| e.base_of(f)) {

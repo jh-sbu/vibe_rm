@@ -1740,6 +1740,51 @@ fn main() -> Result<()> {
             }
             println!("{links} edge links: {dangling} dangling, {one_way} without a link back");
         }
+        Some("triggers") => {
+            // triggers <data dir>: references with a primitive (XPRM) by shape, the
+            // scripts on them (or their base) by name, and their bases' types.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            let scripts_of = |rec: &esp::LoadedRecord<'_>| -> Vec<String> {
+                // VMAD: version, format, count, then (name, ...) — names only of the first script.
+                let Some(d) = rec.get(b"VMAD") else { return Vec::new() };
+                if d.len() < 8 {
+                    return Vec::new();
+                }
+                let n = u16::from_le_bytes([d[4], d[5]]);
+                let len = u16::from_le_bytes([d[6], d[7]]) as usize;
+                if n == 0 || d.len() < 8 + len {
+                    return Vec::new();
+                }
+                vec![format!("{}{}", esp::decode_zstring(&d[8..8 + len]), if n > 1 { " (+more)" } else { "" })]
+            };
+            for &id in lo.ids_of_type(b"REFR") {
+                let Some(rec) = lo.get(id) else { continue };
+                let Some(p) = rec.get(b"XPRM") else { continue };
+                let shape = p.get(28..32).map(|b| u32::from_le_bytes(b.try_into().unwrap())).unwrap_or(0);
+                *counts.entry(format!("shape {shape}")).or_default() += 1;
+                let base = rec.get(b"NAME").map(|d| rec.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))).unwrap_or_default();
+                let tag = lo.tag_of(base).map(|t| t.to_string()).unwrap_or_default();
+                *counts.entry(format!("base {tag}")).or_default() += 1;
+                let mut s = scripts_of(&rec);
+                if let Some(b) = lo.get(base) {
+                    s.extend(scripts_of(&b).into_iter().map(|x| format!("{x} (base)")));
+                }
+                if s.is_empty() {
+                    *counts.entry("no script".into()).or_default() += 1;
+                }
+                for x in s {
+                    *counts.entry(format!("script {x}")).or_default() += 1;
+                }
+            }
+            let mut v: Vec<_> = counts.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            for (k, n) in v.iter().take(60) {
+                println!("{n:>7} {k}");
+            }
+        }
         Some("scenes") => {
             // scenes <data dir> [scene]: one scene's phases, actors and actions, or
             // counts over all scenes: flags, action kinds, package actions' templates
