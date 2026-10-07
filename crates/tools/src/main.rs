@@ -73,6 +73,8 @@ fn main() -> Result<()> {
             }
         }
         Some("esp-dump") => {
+            // esp-dump <data dir> <form id | editor id>: subrecords, the first 48
+            // bytes of each (FULL=1: all of them).
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let lo = esp::LoadOrder::load(data, &names)?;
@@ -83,8 +85,8 @@ fn main() -> Result<()> {
             let rec = lo.get(id).context("record not found")?;
             println!("{} {} flags={:08X} from {}", rec.tag(), id, rec.flags(), rec.plugin.plugin.name());
             for sr in rec.subrecords() {
-                let hex: String = sr.data.iter().take(48).map(|b| format!("{b:02x}")).collect();
-                let txt: String = sr.data.iter().take(48).map(|&b| if (32..127).contains(&b) { b as char } else { '.' }).collect();
+                let hex: String = sr.data.iter().take(std::env::var("FULL").map(|_| 100000).unwrap_or(48)).map(|b| format!("{b:02x}")).collect();
+                let txt: String = sr.data.iter().take(std::env::var("FULL").map(|_| 100000).unwrap_or(48)).map(|&b| if (32..127).contains(&b) { b as char } else { '.' }).collect();
                 println!("  {} [{}] {hex} {txt}", sr.tag, sr.data.len());
             }
         }
@@ -1737,6 +1739,113 @@ fn main() -> Result<()> {
                 }
             }
             println!("{links} edge links: {dangling} dangling, {one_way} without a link back");
+        }
+        Some("scenes") => {
+            // scenes <data dir> [scene]: one scene's phases, actors and actions, or
+            // counts over all scenes: flags, action kinds, package actions' templates
+            // and the phases only a package action (of that template) ends.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let edid = |f: esp::FormId| lo.get(f).and_then(|r| r.editor_id()).unwrap_or_else(|| f.to_string());
+            let template = |p: esp::FormId| {
+                let r = lo.get(p)?;
+                let t = r.get(b"PKCU").filter(|d| d.len() >= 8).map(|d| r.fid(esp::FormId(u32::from_le_bytes(d[4..8].try_into().unwrap()))))?;
+                Some(edid(t))
+            };
+            if let Some(name) = args.get(2) {
+                let id = match u32::from_str_radix(name, 16) {
+                    Ok(v) if name.len() == 8 => esp::FormId(v),
+                    _ => lo.find_editor_id(name).context("editor id not found")?,
+                };
+                let s = esp::scene::parse(&lo.get(id).context("no record")?, id).context("not a scene")?;
+                println!("{} {} quest {} flags {:#x} conditions {}", s.editor_id, s.id, edid(s.quest), s.flags, s.conditions.len());
+                for (i, p) in s.phases.iter().enumerate() {
+                    println!("  phase {i} {:?}: start conditions {}, completion conditions {}", p.name, p.start.len(), p.completion.len());
+                }
+                for a in &s.actors {
+                    println!("  actor alias {} flags {:#x} behaviour {:#x}", a.alias, a.flags, a.behaviour);
+                }
+                for a in &s.actions {
+                    let what = match &a.kind {
+                        esp::scene::ActionKind::Dialogue { topic, headtrack, loop_min, loop_max, .. } => {
+                            format!("say {} headtrack {headtrack:?} loop {loop_min}..{loop_max}", if topic.is_null() { "-".into() } else { edid(*topic) })
+                        }
+                        esp::scene::ActionKind::Package { packages } => {
+                            format!("packages {:?}", packages.iter().map(|&p| format!("{} ({})", edid(p), template(p).unwrap_or_default())).collect::<Vec<_>>())
+                        }
+                        esp::scene::ActionKind::Timer { seconds } => format!("timer {seconds}s"),
+                    };
+                    println!("  action {} {:?} alias {} phases {}..{} flags {:#x}: {what}", a.index, a.name, a.actor, a.start_phase, a.end_phase, a.flags);
+                }
+                return Ok(());
+            }
+            if std::env::var("SGE").is_ok() {
+                // Scenes that begin with a start-game-enabled quest.
+                for &id in lo.ids_of_type(b"SCEN") {
+                    let Some(s) = lo.get(id).and_then(|r| esp::scene::parse(&r, id)) else { continue };
+                    let sge = lo.get(s.quest).and_then(|q| q.get(b"DNAM").map(|d| d[0] & 1 != 0)).unwrap_or(false);
+                    if sge && s.flags & esp::scene::flags::BEGIN_ON_QUEST_START != 0 {
+                        println!("{} {} quest {} phases {} actions {}", s.editor_id, s.id, edid(s.quest), s.phases.len(), s.actions.len());
+                    }
+                }
+                return Ok(());
+            }
+            let mut n = 0;
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            let mut only_ender: std::collections::BTreeMap<String, usize> = Default::default();
+            for &id in lo.ids_of_type(b"SCEN") {
+                let Some(s) = lo.get(id).and_then(|r| esp::scene::parse(&r, id)) else { continue };
+                n += 1;
+                let mut c = |k: String| *counts.entry(k).or_default() += 1;
+                for bit in 0..8 {
+                    if s.flags & (1 << bit) != 0 {
+                        c(format!("scene flag {:#x}", 1 << bit));
+                    }
+                }
+                c(format!("scene conditions: {}", !s.conditions.is_empty()));
+                for p in &s.phases {
+                    c(format!("phase start conditions: {}", !p.start.is_empty()));
+                    c(format!("phase completion conditions: {}", !p.completion.is_empty()));
+                }
+                for a in &s.actors {
+                    c(format!("actor flags {:#x}", a.flags));
+                    for bit in 0..8 {
+                        if a.behaviour & (1 << bit) != 0 {
+                            c(format!("actor behaviour {:#x}", 1 << bit));
+                        }
+                    }
+                }
+                for a in &s.actions {
+                    let looping = a.flags & esp::scene::action_flags::LOOPING != 0;
+                    c(format!("action flags {:#x}", a.flags));
+                    match &a.kind {
+                        esp::scene::ActionKind::Dialogue { topic, .. } => c(format!("dialogue{}{}", if topic.is_null() { " (no topic)" } else { "" }, if looping { " looping" } else { "" })),
+                        esp::scene::ActionKind::Timer { .. } => c("timer".into()),
+                        esp::scene::ActionKind::Package { packages } => {
+                            c(format!("package action with {} packages", packages.len()));
+                            for &p in packages {
+                                c(format!("package template {}", template(p).unwrap_or_else(|| "(own tree)".into())));
+                            }
+                            // The only action ending its end phase, with no completion conditions?
+                            let others = s.actions.iter().filter(|o| o.index != a.index && o.end_phase == a.end_phase && o.flags & esp::scene::action_flags::LOOPING == 0).count();
+                            let cond = s.phases.get(a.end_phase as usize).is_some_and(|p| !p.completion.is_empty());
+                            if others == 0 && !cond {
+                                let t = packages.first().and_then(|&p| template(p)).unwrap_or_default();
+                                *only_ender.entry(t).or_default() += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            println!("{n} scenes");
+            for (k, v) in counts {
+                println!("  {k}: {v}");
+            }
+            println!("package actions that alone end their end phase, by first package's template:");
+            for (k, v) in only_ender {
+                println!("  {k}: {v}");
+            }
         }
         _ => bail!("usage: vrm-tool <bsa-list|bsa-extract|bsa-verify> ..."),
     }

@@ -35,6 +35,17 @@ pub struct Vmad {
     pub fragments: Vec<QuestFragment>,
     /// QUST only: scripts attached to aliases (alias id, scripts).
     pub alias_scripts: Vec<(u32, Vec<ScriptRef>)>,
+    /// SCEN only: the scene's begin / end fragments and its phases'.
+    pub scene: Option<SceneFragments>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SceneFragments {
+    pub script: String,
+    pub begin: Option<String>,
+    pub end: Option<String>,
+    /// (phase, on completion (else on start), function)
+    pub phases: Vec<(u8, bool, String)>,
 }
 
 struct R<'a> {
@@ -167,7 +178,41 @@ pub fn parse(rec: &LoadedRecord<'_>) -> Option<Vmad> {
             }
         }
     }
+    if rec.tag().0 == *b"SCEN" && r.ok(3) {
+        v.scene = scene_fragments(&mut r);
+    }
     Some(v)
+}
+
+/// Scene fragment data: a version byte, flags (1 begin, 2 end), the script, then
+/// each of those fragments (a byte, script, function) and the phase fragments
+/// (flags: 1 start, 2 completion; phase; four unknown bytes; script; function).
+fn scene_fragments(r: &mut R<'_>) -> Option<SceneFragments> {
+    r.u8()?;
+    let flags = r.u8()?;
+    let mut f = SceneFragments { script: r.wstring()?, ..Default::default() };
+    for bit in [1, 2] {
+        if flags & bit != 0 {
+            r.u8()?;
+            r.wstring()?;
+            let func = Some(r.wstring()?);
+            if bit == 1 {
+                f.begin = func;
+            } else {
+                f.end = func;
+            }
+        }
+    }
+    let n = r.u16()?;
+    for _ in 0..n {
+        let pflags = r.u8()?;
+        let phase = r.u8()?;
+        r.u32()?;
+        r.wstring()?;
+        let func = r.wstring()?;
+        f.phases.push((phase, pflags & 2 != 0, func));
+    }
+    Some(f)
 }
 
 /// Convert a VMAD property value into a VM value. Object values need the form's script class.

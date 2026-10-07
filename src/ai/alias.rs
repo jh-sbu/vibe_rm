@@ -88,9 +88,11 @@ impl Engine {
         out
     }
 
-    /// An actor's whole package stack: its aliases' packages, then its own.
+    /// An actor's whole package stack: its scene's packages, its aliases',
+    /// then its own.
     pub(crate) fn actor_packages(&mut self, achr: FormId, npc: FormId) -> Vec<Package> {
-        let mut out = self.alias_packages(achr);
+        let mut out = self.scene_packages(achr);
+        out.extend(self.alias_packages(achr));
         out.extend(self.npc_packages_cached(achr, npc).iter().cloned());
         out
     }

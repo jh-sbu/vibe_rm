@@ -411,14 +411,29 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("quest", "start") => v(Value::Bool(me.is_some_and(|q| e.start_quest(q)))),
         ("quest", "stop") => {
             if let Some(q) = me {
-                // Stopping empties the quest's aliases.
-                let st = e.scripts.quests.entry(q).or_default();
-                st.running = false;
-                st.aliases.clear();
-                e.scripts.alias_gen += 1;
+                e.stop_quest(q);
             }
             none()
         }
+        // ------------------------------------------------------------ Scene
+        ("scene", "start") | ("scene", "forcestart") => {
+            if let Some(s) = me {
+                e.start_scene(s, func == "forcestart");
+            }
+            none()
+        }
+        ("scene", "stop") => {
+            if let Some(s) = me {
+                e.stop_scene(s);
+            }
+            none()
+        }
+        ("scene", "isplaying") => v(Value::Bool(me.is_some_and(|s| e.is_scene_playing(s)))),
+        ("scene", "isactioncomplete") => v(Value::Bool(me.is_some_and(|s| e.is_scene_action_complete(s, arg(0).as_int() as u32)))),
+        ("scene", "getowningquest") => match me.and_then(|s| e.scene_def(s)).map(|d| d.scene.quest).filter(|q| !q.is_null()) {
+            Some(q) => v(e.object_value(q)),
+            None => none(),
+        },
         ("quest", "completequest") => {
             if let Some(q) = me {
                 let s = e.scripts.quests.entry(q).or_default();

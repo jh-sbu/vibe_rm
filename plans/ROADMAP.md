@@ -289,6 +289,19 @@ game each piece unlocks.
   with their collision and lights, between cells too, and stay moved. Console
   `[ref.]enable` / `disable`, `[ref.]moveto`. Open questions:
   `known_gaps/world-state.md`
+- Scenes (`SCEN`): started by Papyrus (`Start`, `ForceStart`, `Stop`,
+  `IsPlaying`, `IsActionComplete`) or with their quest, phases played in order
+  (skipped when their start conditions fail, ended by completion conditions or
+  their actions): dialogue actions say their topic's line where the speaker
+  stands (voiced, subtitled, gesturing, looping ones again and again), head
+  tracking and facing whom the action names; package actions run their
+  packages ahead of all others until done (arrived, seated, force greet held);
+  timers. Phase and scene fragments, actors' death / combat / dialogue pause
+  and end flags, "no player activation", "stop quest on end".
+  `IsSceneActionComplete`, `IsScenePlaying`, `IsInScene`,
+  `IsScenePackageRunning`; `GetDistance` between interiors / worldspaces is
+  far. Console `startscene`, `stopscene`, `scenes`, `startquest`, `stopquest`,
+  `setstage`; vrm-tool `scenes`. Open questions: `known_gaps/scenes.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -345,7 +358,8 @@ game each piece unlocks.
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
    - Alias fills: near alias, story manager events (and the story manager
-     itself); created objects drawn in the world, cleaned up; scenes
+     itself); created objects drawn in the world, cleaned up; trigger
+     scripts (`OnTriggerEnter`), which scenes wait on
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
      activate / carry, flee, orbit packages; ambush triggers and sleepers'
      reduced detection;

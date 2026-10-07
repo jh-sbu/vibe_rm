@@ -1913,6 +1913,16 @@ impl Engine {
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self.barks.current.as_ref().map(|b| b.speaker));
         let player = self.ref_position(PLAYER_REF).unwrap_or_default();
         let eye = self.player.eye();
+        // Scene dialogue: whom actors look at (heads), and whether they turn to them.
+        let scene_look: std::collections::HashMap<FormId, (Vec3, bool)> = self
+            .scene_headtracking()
+            .into_iter()
+            .filter_map(|(r, (t, face))| {
+                // Loaded actors only: others are elsewhere.
+                let at = if t == PLAYER_REF { eye } else { self.actor_ref(t).map(|a| a.pos + Vec3::Z * 110.0 * a.scale)? };
+                Some((r, (at, face)))
+            })
+            .collect();
         let mut seed = self.rand() | 1;
         let mut rand = move || {
             seed ^= seed << 13;
@@ -2025,6 +2035,10 @@ impl Engine {
                         let d = player - a.pos;
                         a.turn_towards(d.normalize_or_zero(), dt);
                     }
+                } else if let Some(&(at, true)) = scene_look.get(&a.ref_id).filter(|_| self.ai_enabled && a.combat.is_none() && !a.is_walking() && !a.in_furniture()) {
+                    // Saying a scene line to someone: stand and face them.
+                    a.halt(1.0);
+                    a.turn_towards((at - a.pos).truncate().extend(0.0).normalize_or_zero(), dt);
                 } else if !self.ai_enabled || a.bleeding.is_some() {
                     a.halt(1.0);
                 } else if let Some(target) = a.combat.as_ref().map(|c| c.target) {
@@ -2073,6 +2087,9 @@ impl Engine {
                 // NPCs look at the player close by, and while talking to them.
                 let near = a.pos.distance(player) < HEAD_TRACK_DISTANCE;
                 a.look_at = (near || talking == Some(a.ref_id)).then_some(eye);
+                if let Some(&(at, _)) = scene_look.get(&a.ref_id) {
+                    a.look_at = Some(at);
+                }
                 a.find_ground(&self.physics);
                 inst.transform = a.transform();
                 if let Some(pose) = a.animate(dt, &mut world.clips) {

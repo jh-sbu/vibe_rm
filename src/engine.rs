@@ -130,6 +130,8 @@ pub struct Engine {
     pub player_died_at: Option<f64>,
     /// Lines NPCs say by themselves (greetings, idle chatter).
     pub barks: crate::dialogue::barks::Barks,
+    /// Scenes playing.
+    pub scenes: crate::scene::Scenes,
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     pub lockpick: Option<crate::locks::Lockpick>,
@@ -231,6 +233,7 @@ impl Engine {
             menu: None,
             lockpick: None,
             barks: Default::default(),
+            scenes: Default::default(),
             talked_to_pc: Default::default(),
             alias_packs: Default::default(),
             faction_relations: Default::default(),
@@ -1438,6 +1441,7 @@ impl Engine {
         }
         self.hour = h.rem_euclid(24.0);
         self.update_scripts(dt);
+        self.update_scenes();
         if let Some(env) = self.sky_environment() {
             self.scene.env = env;
         }
@@ -1555,6 +1559,14 @@ impl Engine {
         drop(rec);
         let base_tag = self.lo.tag_of(rf.base);
         log::info!("activate {owner} ({name})");
+        // Actors in a scene that says so can't be talked to.
+        if is_actor && !self.is_dead(owner) && self.scene_blocks_activation(owner) {
+            let text = self.gmst_string("sSceneBlockingActorActivation").unwrap_or_default();
+            if !text.is_empty() {
+                self.scripts.notify(text.replace("%s", &name));
+            }
+            return Ok(());
+        }
         {
             let mut vm = std::mem::take(&mut self.vm);
             let player = self.object_value(PLAYER_REF);
@@ -1753,6 +1765,11 @@ impl Engine {
         }
         if let Some(p) = self.moved_refs.get(&r) {
             return Some(*p);
+        }
+        // Loaded actors spawned away from their editor place (schedules) before
+        // they move.
+        if let Some(a) = self.actor_ref(r) {
+            return Some(a.pos);
         }
         if let Some(m) = self.world_state.moved.get(&r) {
             return Some(m.pos);
@@ -2039,7 +2056,17 @@ impl Engine {
         if let Some(s) = startup {
             self.scripts.pending_stages.push((q, s));
         }
+        self.start_quest_scenes(q);
         true
+    }
+
+    /// Stop a quest: its aliases empty and its scenes stop.
+    pub fn stop_quest(&mut self, q: FormId) {
+        let st = self.scripts.quests.entry(q).or_default();
+        st.running = false;
+        st.aliases.clear();
+        self.scripts.alias_gen += 1;
+        self.stop_quest_scenes(q);
     }
 
     /// Set a quest stage: record it and run the stage's fragment.

@@ -57,7 +57,40 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "stamina <ref|player> [n]  show or set stamina".into(),
             "probe [x y]           collision under the player (or x y) and per-cell colliders".into(),
             "screenshot <png>      save the 3D view (no HUD) at the window size".into(),
+            "startquest / stopquest <quest>, setstage <quest> <stage>   quests".into(),
+            "startscene <scene> [force] / stopscene <scene> / scenes   start, stop, list scenes".into(),
         ],
+        "startquest" | "stopquest" => {
+            let Some(q) = args.first().and_then(|q| engine.resolve_form(q)) else { return vec![format!("usage: {cmd} <quest>")] };
+            if cmd == "stopquest" {
+                engine.stop_quest(q);
+                vec![format!("{q} stopped")]
+            } else if engine.start_quest(q) {
+                vec![format!("{q} started")]
+            } else {
+                vec![format!("{q} didn't start (running, or an alias can't be filled)")]
+            }
+        }
+        "setstage" => {
+            let (Some(q), Some(st)) = (args.first().and_then(|q| engine.resolve_form(q)), args.get(1).and_then(|s| s.parse::<u16>().ok())) else {
+                return vec!["usage: setstage <quest> <stage>".into()];
+            };
+            engine.scripts.pending_stages.push((q, st));
+            vec![format!("{q} stage {st}")]
+        }
+        "startscene" => {
+            let Some(s) = args.first().and_then(|s| engine.resolve_form(s)) else { return vec!["usage: startscene <scene> [force]".into()] };
+            if engine.start_scene(s, args.get(1) == Some(&"force")) { vec![format!("{s} playing")] } else { vec![format!("{s} didn't start (see the log)")] }
+        }
+        "stopscene" => {
+            let Some(s) = args.first().and_then(|s| engine.resolve_form(s)) else { return vec!["usage: stopscene <scene>".into()] };
+            engine.stop_scene(s);
+            vec![format!("{s} stops")]
+        }
+        "scenes" => {
+            let v = engine.describe_scenes();
+            if v.is_empty() { vec!["no scenes playing".into()] } else { v }
+        }
         "bark" => {
             let [r, sub] = args[..] else { return vec!["usage: bark <actor ref> <subtype, e.g. HELO / IDLE>".into()] };
             let (Some(actor), Ok(sub)) = (engine.resolve_form(r), <[u8; 4]>::try_from(sub.to_ascii_uppercase().as_bytes())) else { return vec!["bad reference or subtype".into()] };

@@ -24,6 +24,15 @@ pub enum Place {
     Exterior(FormId, (i32, i32)),
 }
 
+/// Whether two places share coordinates: the same interior, or the same worldspace.
+pub fn same_space(a: Place, b: Place) -> bool {
+    match (a, b) {
+        (Place::Interior(x), Place::Interior(y)) => x == y,
+        (Place::Exterior(x, _), Place::Exterior(y, _)) => x == y,
+        _ => false,
+    }
+}
+
 #[derive(Default)]
 pub struct Whereabouts {
     /// Persistent actor references (built once).
