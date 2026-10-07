@@ -320,7 +320,9 @@ pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDe
 
 /// Describe an actor reference (placed or created).
 pub fn describe_reference(lo: &LoadOrder, r: &records::Reference) -> Option<ActorDesc> {
-    if r.deleted() || r.initially_disabled() {
+    // Disabled references (initially, or through their enable parent) are left
+    // out by the caller.
+    if r.deleted() {
         return None;
     }
     // Each reference picks its own entry from leveled lists, the same every time.

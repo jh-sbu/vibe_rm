@@ -133,6 +133,8 @@ pub struct Engine {
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     pub lockpick: Option<crate::locks::Lockpick>,
+    /// References by the enable parent they follow (`XESP`).
+    enable_children: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
     /// Each NPC's first placed reference (unique actors' references).
     npc_refs: std::cell::OnceCell<HashMap<FormId, FormId>>,
     /// Locations' references and ref types, read on first use.
@@ -243,6 +245,7 @@ impl Engine {
             player_health: PLAYER_HEALTH,
             player_died_at: None,
             npc_refs: Default::default(),
+            enable_children: Default::default(),
             location_index: Default::default(),
             persistent_refs: Default::default(),
             alias_spec_cache: HashMap::new(),
@@ -299,12 +302,13 @@ impl Engine {
 
     /// Start looping sounds emitted by objects (sound markers, lights, activators, ...).
     fn start_cell_sounds(&mut self, key: CellKey, refs: &[FormId]) {
+        let refs: Vec<FormId> = refs.iter().copied().filter(|&r| !self.is_disabled(r)).collect();
         let Some(audio) = self.audio.as_mut() else { return };
         let mut voices = Vec::new();
-        for &r in refs {
+        for &r in &refs {
             let Some(rec) = self.lo.get(r) else { continue };
             let rf = records::reference(&rec);
-            if rf.deleted() || rf.initially_disabled() {
+            if rf.deleted() {
                 continue;
             }
             let Some(base) = self.lo.get(rf.base) else { continue };
@@ -637,7 +641,7 @@ impl Engine {
         let cell_meshes = self.cells.get(&key).map(|rt| rt.navmeshes.clone()).unwrap_or_default();
         for &(r, at) in refs {
             let is_actor = self.lo.tag_of(r).map_or_else(|| self.created(r).is_some_and(|c| c.actor), |t| t.0 == *b"ACHR");
-            if !is_actor || self.actor_cells.contains_key(&r) {
+            if !is_actor || self.actor_cells.contains_key(&r) || self.is_disabled(r) {
                 continue;
             }
             let Some(rf) = self.reference_of(r) else { continue };
@@ -816,9 +820,18 @@ impl Engine {
         for (d, _) in descs {
             self.inventories.entry(d.ref_id).or_insert(d.inventory);
         }
+        // Placed as corpses ("Starts Dead"): they lie as ragdolls from the start.
+        let corpses: Vec<FormId> = runtimes
+            .iter()
+            .map(|a| a.ref_id)
+            .filter(|&r| self.lo.get(r).is_some_and(|rec| rec.flags() & esp::record_flags::STARTS_DEAD != 0))
+            .collect();
         if let Some(rt) = self.cells.get_mut(&key) {
             rt.colliders.extend(runtimes.iter().filter_map(|a| a.capsule));
             rt.actors.extend(runtimes);
+        }
+        for r in corpses {
+            self.kill_actor_quietly(r);
         }
     }
 
@@ -943,9 +956,10 @@ impl Engine {
     }
 
     fn load_furniture(&mut self, key: CellKey, refs: &[FormId]) {
+        let off: std::collections::HashSet<FormId> = refs.iter().copied().filter(|&r| self.is_disabled(r)).collect();
         let idles = self.idles.get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo));
         let (models, vfs) = (&mut self.models, &self.vfs);
-        self.furniture.add_cell(&self.lo, idles, key, refs, |path| models.furniture(vfs, path));
+        self.furniture.add_cell(&self.lo, idles, key, refs, &|r| off.contains(&r), |path| models.furniture(vfs, path));
         self.find_furniture_ways(key);
         let (n, m) = self.furniture.count(key);
         log::debug!("{key:?}: {n} furniture with {m} markers");
@@ -993,7 +1007,7 @@ impl Engine {
     pub fn enter_interior(&mut self, cell_id: FormId, spawn: Option<(Vec3, f32)>) -> Result<()> {
         let t = Instant::now();
         self.unload_all();
-        let contents = cell::load_cell(&self.lo, cell_id).context("cell not found")?;
+        let contents = cell::load_cell(&self.lo, cell_id, &|r| self.is_disabled(r)).context("cell not found")?;
         log::info!(
             "entering {} '{}' ({}): {} objects, {} lights",
             contents.info.editor_id,
@@ -1119,12 +1133,12 @@ impl Engine {
             && let Some(idx) = self.lo.cell(cid)
         {
             for &r in idx.temporary.iter().chain(idx.persistent.iter()) {
-                cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
+                cell::add_reference(&self.lo, r, &|r| self.is_disabled(r), &mut objects, &mut lights, &mut doors);
             }
         }
         if let Some(refs) = self.world_persistent.get(&(x, y)) {
             for &r in refs {
-                cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
+                cell::add_reference(&self.lo, r, &|r| self.is_disabled(r), &mut objects, &mut lights, &mut doors);
             }
         }
         self.instantiate(key, &objects, lights, doors);
@@ -1846,21 +1860,67 @@ impl Engine {
         String::new()
     }
 
+    /// Whether a reference is disabled: as scripts left it, else as its enable
+    /// parent is (`XESP`; or the opposite, with that flag), else as it starts
+    /// (initially disabled).
     pub fn is_disabled(&self, r: FormId) -> bool {
-        if let Some(d) = self.scripts.disabled.get(&r) {
-            return *d;
+        let mut r = r;
+        let mut opposite = false;
+        for _ in 0..16 {
+            if let Some(d) = self.scripts.disabled.get(&r) {
+                return *d != opposite;
+            }
+            let Some(rec) = self.lo.get(r) else { return opposite };
+            let parent = rec.get(b"XESP").filter(|d| d.len() >= 5).map(|d| (rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))), d[4] & 1 != 0));
+            match parent {
+                Some((p, opp)) if !p.is_null() => {
+                    opposite ^= opp;
+                    r = p;
+                }
+                _ => return (rec.flags() & esp::record_flags::INITIALLY_DISABLED != 0) != opposite,
+            }
         }
-        self.lo.get(r).is_some_and(|rec| rec.flags() & esp::record_flags::INITIALLY_DISABLED != 0)
+        false
+    }
+
+    /// References whose enable parent (`XESP`) each reference is, read on first use.
+    fn enable_children(&self) -> &HashMap<FormId, Vec<FormId>> {
+        self.enable_children.get_or_init(|| {
+            let mut out: HashMap<FormId, Vec<FormId>> = HashMap::new();
+            for tag in [b"REFR", b"ACHR"] {
+                for &r in self.lo.ids_of_type(tag) {
+                    let Some(rec) = self.lo.get(r) else { continue };
+                    if let Some(d) = rec.get(b"XESP").filter(|d| d.len() >= 4) {
+                        out.entry(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))).or_default().push(r);
+                    }
+                }
+            }
+            out
+        })
     }
 
     pub fn set_disabled(&mut self, r: FormId, disabled: bool) {
         self.scripts.disabled.insert(r, disabled);
-        for rc in self.scene.cells.values_mut() {
-            for i in rc.instances.iter_mut().filter(|i| i.ref_id == r.0) {
-                i.hidden = disabled;
+        // It and the references enabled with it, however deep.
+        let mut affected = vec![r];
+        let mut i = 0;
+        while i < affected.len() && affected.len() < 100_000 {
+            let kids = self.enable_children().get(&affected[i]).cloned().unwrap_or_default();
+            affected.extend(kids.into_iter().filter(|k| !self.scripts.disabled.contains_key(k)));
+            i += 1;
+        }
+        for r in affected {
+            let off = self.is_disabled(r);
+            for rc in self.scene.cells.values_mut() {
+                for inst in rc.instances.iter_mut().filter(|inst| inst.ref_id == r.0) {
+                    inst.hidden = off;
+                }
+            }
+            self.physics.set_owner_enabled(r, !off);
+            if off && self.actor_cells.contains_key(&r) {
+                self.despawn_actor(r);
             }
         }
-        self.physics.set_owner_enabled(r, !disabled);
     }
 
     pub fn queue_player_moveto(&mut self, target: FormId) {
