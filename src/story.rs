@@ -393,28 +393,22 @@ impl Engine {
     pub(crate) fn send_player_add_item(&mut self, item: FormId, source: FormId, container: bool) {
         // Bodies belong to nobody (not to the house they lie in).
         let body = container && (self.actor_cells.contains_key(&source) || self.lo.tag_of(source).is_some_and(|t| t.0 == *b"ACHR"));
-        let owner = crate::ai::furniture::owner_of(&self.lo, source).filter(|&o| !body && !self.player_owns(o));
+        let owner = crate::ai::furniture::owner_of(&self.lo, source).filter(|_| !body);
         let how = match () {
-            _ if owner.is_some() => 1,
+            _ if owner.is_some_and(|o| self.is_stealing(item, o)) => 1,
             _ if body => 6,
             _ if container => 5,
             _ => 4,
         };
         let mut e = StoryEvent::new(b"AIPL");
         e.refs = [
-            owner.and_then(|o| self.npc_refs_index().get(&o).copied()).unwrap_or_default(),
+            owner.filter(|&o| o != FormId(0x7)).and_then(|o| self.npc_refs_index().get(&o).copied()).unwrap_or_default(),
             if container { source } else { FormId::NULL },
         ];
         e.locs[0] = self.current_location().unwrap_or_default();
         e.form = item;
         e.values[0] = how as f32;
         self.send_story_event(e);
-    }
-
-    /// Whether something owned by `owner` is the player's: theirs, or a
-    /// faction's they belong to.
-    fn player_owns(&self, owner: FormId) -> bool {
-        owner == FormId(0x7) || self.player_factions().contains(&owner)
     }
 
     /// An actor greeting another (`AHEL`: R1 who says hello, R2 to whom, L1

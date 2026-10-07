@@ -1913,6 +1913,48 @@ fn main() -> Result<()> {
                 println!("  {e} {m}: {} {v:?}", names.len());
             }
         }
+        Some("faction-owners") => {
+            // faction-owners <data dir>: factions that own references or cells
+            // (XOWN), by their DATA flags, against all factions' flags.
+            use std::collections::{BTreeMap, HashSet};
+            anyhow::ensure!(args.len() > 1, "usage: faction-owners <data dir>");
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let flags_of = |f: esp::FormId| lo.get(f).and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 4).map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap())));
+            let mut owners: HashSet<esp::FormId> = HashSet::new();
+            let mut owned = 0usize;
+            for tag in [b"REFR", b"CELL", b"ACHR"] {
+                for &id in lo.ids_of_type(tag) {
+                    let Some(rec) = lo.get(id) else { continue };
+                    if let Some(d) = rec.get(b"XOWN").filter(|d| d.len() >= 4) {
+                        let o = rec.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())));
+                        if lo.tag_of(o).is_some_and(|t| t.0 == *b"FACT") {
+                            owners.insert(o);
+                            owned += 1;
+                        }
+                    }
+                }
+            }
+            println!("{owned} references / cells owned by {} factions", owners.len());
+            // Per flag bit: factions with it, owning factions with it.
+            let mut bits: BTreeMap<u32, (usize, usize)> = BTreeMap::new();
+            for &f in lo.ids_of_type(b"FACT") {
+                let fl = flags_of(f).unwrap_or(0);
+                for b in 0..32 {
+                    if fl & (1 << b) != 0 {
+                        let e = bits.entry(1 << b).or_default();
+                        e.0 += 1;
+                        e.1 += owners.contains(&f) as usize;
+                    }
+                }
+            }
+            for (b, (all, own)) in bits {
+                println!("  flag {b:#07x}: {all} factions, {own} of them owners");
+            }
+            let missing: Vec<String> = owners.iter().filter(|&&f| flags_of(f).unwrap_or(0) & 0x8000 == 0).map(|&f| lo.get(f).and_then(|r| r.editor_id()).unwrap_or_default()).collect();
+            println!("owners without 0x8000: {} {:?}", missing.len(), missing.iter().take(10).collect::<Vec<_>>());
+        }
         Some("first-of") => {
             // first-of <data dir> <TYPE> [n]: editor ids and form ids of the first n records of a type.
             let data = std::path::Path::new(&args[1]);
