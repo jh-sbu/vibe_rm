@@ -124,6 +124,9 @@ const PKDT_ALWAYS_SNEAK: u32 = 1 << 17;
 const PKDT_UNLOCK_AT_START: u32 = 0x40;
 const PKDT_UNLOCK_ON_CHANGE: u32 = 0x80;
 
+/// `Target::ObjectType` of furniture (`FURN`).
+pub const OBJECT_TYPE_FURNITURE: u32 = 10;
+
 /// A package "TargetSelector" / "SingleRef" input (`PTDA`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
