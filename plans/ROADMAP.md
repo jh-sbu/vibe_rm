@@ -214,6 +214,16 @@ game each piece unlocks.
   targets resolve through its fills; whereabouts follow them (Lucan and Camilla's
   MS13 opening, Balgruuf holding court until MQ103 moves on). vrm-tool
   `alias-packages`. Open questions: `known_gaps/alias-packages.md`
+- Quest alias fills: find matching reference (persistent or loaded references by
+  the alias's conditions; closest, reuse, reserved, dead / disabled flags),
+  location alias references by location ref type (`XLRT`, the locations' static
+  reference lists), other quests' aliases, and location aliases (specific, a
+  reference alias's location by keyword, by conditions), filled in record order;
+  quests whose required aliases can't be filled don't start. Editor and current
+  locations for conditions (`GetIsEditorLocAlias`, `GetInCurrentLocAlias`,
+  `HasRefType`, `HasSameEditorLocAsRefAlias`, `LocAliasIsLocation`...), packages
+  at location aliases, Papyrus `LocationAlias`. vrm-tool `alias-fills`,
+  `ref-types`. Open questions: `known_gaps/alias-fills.md`
 - Force greet packages (ForceGreet / ForceGreetFromSitting templates): the greeter
   waits at its wait location (standing, sandboxing or in its seat) until the player
   is in the trigger location (and seen, if asked), walks up to within the force
@@ -307,8 +317,8 @@ game each piece unlocks.
    - Footsteps: swimming (and swimming itself), splashes
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **AI depth**
-   - Alias fills beyond forced / unique refs (find matching reference, created
-     reference, location aliases), so more alias packages apply; scenes
+   - Alias fills: created references (`ALCO`, with `PlaceAtMe`), near alias,
+     story manager events (and the story manager itself); scenes
    - Remaining procedures: guard, use weapon / magic, dialogue packages;
      escorts' follower min / max distances and several followers, riding
    - Off-screen travel between worldspaces; paths round locked animated doors,

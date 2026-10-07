@@ -1,4 +1,5 @@
 mod actor_values;
+mod aliases;
 mod ai;
 mod app;
 mod audio;
@@ -8,6 +9,7 @@ mod console;
 mod engine;
 mod footsteps;
 mod items;
+mod locations;
 mod locks;
 mod render;
 mod physics;

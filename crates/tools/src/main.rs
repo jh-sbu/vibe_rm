@@ -1201,6 +1201,115 @@ fn main() -> Result<()> {
             println!("location kinds {pldt:?}");
             println!("target kinds {ptda:?}");
         }
+        Some("alias-fills") => {
+            // alias-fills <data dir>: reference and location aliases by fill type, for all
+            // quests, start-game-enabled ones, and aliases with packages (ALPC); FNAM flags.
+            // SHOW=<fill type> lists the aliases of that type.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let show = std::env::var("SHOW").ok();
+            // fill type -> (all, start game enabled, with packages)
+            let mut kinds: std::collections::BTreeMap<String, [usize; 3]> = Default::default();
+            let mut flags: std::collections::BTreeMap<u32, usize> = Default::default();
+            let mut funcs: std::collections::BTreeMap<String, usize> = Default::default();
+            for &q in lo.ids_of_type(b"QUST") {
+                let Some(rec) = lo.get(q) else { continue };
+                let sge = rec.get(b"DNAM").is_some_and(|d| d[0] & 1 != 0);
+                let mut cur: Option<(bool, String, Vec<&'static str>, bool, u32)> = None;
+                for sr in rec.subrecords() {
+                    let tag = &sr.tag.0;
+                    match tag {
+                        b"ALST" | b"ALLS" => cur = Some((tag == b"ALLS", String::new(), Vec::new(), false, 0)),
+                        _ => {}
+                    }
+                    let Some(c) = cur.as_mut() else { continue };
+                    match tag {
+                        b"ALID" => c.1 = sr.zstring(),
+                        b"FNAM" => c.4 = sr.u32(0),
+                        b"ALFR" => c.2.push("forced"),
+                        b"ALUA" => c.2.push("unique"),
+                        b"ALFL" => c.2.push("specific location"),
+                        b"ALFA" => c.2.push("from alias"),
+                        b"ALRT" => c.2.push("ref type"),
+                        b"ALEQ" => c.2.push("external"),
+                        b"ALCO" => c.2.push("create"),
+                        b"ALNA" => c.2.push("near alias"),
+                        b"ALFE" => c.2.push("from event"),
+                        b"CTDA" => {
+                            if !c.2.contains(&"conditions") {
+                                c.2.push("conditions");
+                            }
+                            let d = sr.data;
+                            let f = u16::from_le_bytes([d[8], d[9]]);
+                            let run_on = u32::from_le_bytes(d[20..24].try_into().unwrap());
+                            *funcs.entry(format!("{} {} run_on {run_on}", if c.0 { "loc" } else { "ref" }, functions::name(f))).or_default() += 1;
+                        }
+                        b"ALPC" => c.3 = true,
+                        b"ALED" => {
+                            let (loc, name, k, packs, fl) = cur.take().unwrap();
+                            let mut k = k;
+                            k.dedup();
+                            let key = format!("{} {}", if loc { "loc" } else { "ref" }, if k.is_empty() { "-".into() } else { k.join("+") });
+                            let e = kinds.entry(key.clone()).or_default();
+                            e[0] += 1;
+                            e[1] += sge as usize;
+                            e[2] += packs as usize;
+                            for b in 0..32 {
+                                if fl & (1 << b) != 0 {
+                                    *flags.entry(1 << b).or_default() += 1;
+                                }
+                            }
+                            if show.as_deref() == Some(key.as_str()) {
+                                println!("{q} {} {name} flags={fl:x}{}{}", rec.editor_id().unwrap_or_default(), if sge { " SGE" } else { "" }, if packs { " ALPC" } else { "" });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            println!("{:>6} {:>6} {:>6}  fill", "all", "sge", "alpc");
+            for (k, [a, s, p]) in &kinds {
+                println!("{a:6} {s:6} {p:6}  {k}");
+            }
+            println!("flags {flags:x?}");
+            let mut v: Vec<_> = funcs.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            for (n, c) in v.iter().take(60) {
+                println!("{c:6} {n}");
+            }
+        }
+        Some("ref-types") => {
+            // ref-types <data dir> [ref type]: references carrying location ref types
+            // (XLRT), by type, with how long reading every reference takes.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let want = args.get(2).and_then(|a| lo.find_editor_id(a));
+            let t = std::time::Instant::now();
+            let (mut n, mut with) = (0, 0);
+            let mut types: std::collections::BTreeMap<String, usize> = Default::default();
+            for tag in [b"REFR", b"ACHR"] {
+                for &r in lo.ids_of_type(tag) {
+                    let Some(rec) = lo.get(r) else { continue };
+                    n += 1;
+                    for sr in rec.subrecords().filter(|sr| sr.tag.0 == *b"XLRT") {
+                        with += 1;
+                        let ty = rec.fid(sr.form_id(0));
+                        if want == Some(ty) {
+                            println!("{r} {} in {:?}", rec.tag(), lo.cell_of_ref(r));
+                        }
+                        *types.entry(lo.get(ty).and_then(|t| t.editor_id()).unwrap_or_default()).or_default() += 1;
+                    }
+                }
+            }
+            println!("{n} references, {with} ref types, read in {:?}", t.elapsed());
+            let mut v: Vec<_> = types.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            for (k, c) in v.iter().take(25) {
+                println!("{c:6} {k}");
+            }
+        }
         Some("npc-templates") => {
             // npc-templates <data dir>: NPCs with a template (TPLT), by what it is (NPC_ or a
             // leveled list), how often each "Use ..." flag (ACBS) is set, and ACHRs placing

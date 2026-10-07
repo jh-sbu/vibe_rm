@@ -370,15 +370,13 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("quest", "isrunning") | ("quest", "isactive") => v(Value::Bool(me.and_then(|q| e.scripts.quests.get(&q)).is_some_and(|s| s.running))),
         ("quest", "iscompleted") => v(Value::Bool(me.and_then(|q| e.scripts.quests.get(&q)).is_some_and(|s| s.completed))),
-        ("quest", "start") => {
-            if let Some(q) = me {
-                e.start_quest(q);
-            }
-            v(Value::Bool(true))
-        }
+        ("quest", "start") => v(Value::Bool(me.is_some_and(|q| e.start_quest(q)))),
         ("quest", "stop") => {
             if let Some(q) = me {
-                e.scripts.quests.entry(q).or_default().running = false;
+                // Stopping empties the quest's aliases.
+                let st = e.scripts.quests.entry(q).or_default();
+                st.running = false;
+                st.aliases.clear();
                 e.scripts.alias_gen += 1;
             }
             none()
@@ -414,7 +412,11 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             v(Value::Bool(me.and_then(|q| e.scripts.quests.get(&q)).is_some_and(|s| s.objectives_completed.contains(&arg(0).as_int()))))
         }
         ("quest", "getalias") => match this.and_then(|t| t.as_form()) {
-            Some(q) => v(Value::Object(ObjectId::Alias { quest: q, alias: arg(0).as_int() as u32 }, "ReferenceAlias".into())),
+            Some(q) => {
+                let alias = arg(0).as_int() as u32;
+                let class = if e.is_location_alias(FormId(q), alias) { "LocationAlias" } else { "ReferenceAlias" };
+                v(Value::Object(ObjectId::Alias { quest: q, alias }, class.into()))
+            }
             None => none(),
         },
         // ---------------------------------------------------- GlobalVariable
@@ -451,7 +453,21 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             none()
         }
-        ("referencealias", "clear") => {
+        ("locationalias", "getlocation") => match this {
+            Some(Value::Object(ObjectId::Alias { quest, alias }, _)) => match e.alias_ref(FormId(*quest), *alias) {
+                Some(l) => v(e.object_value(l)),
+                None => none(),
+            },
+            _ => none(),
+        },
+        ("locationalias", "forcelocationto") => {
+            if let (Some(Value::Object(ObjectId::Alias { quest, alias }, _)), Some(l)) = (this, form_arg(args, 0)) {
+                e.scripts.quests.entry(FormId(*quest)).or_default().aliases.insert(*alias, l);
+                e.scripts.alias_gen += 1;
+            }
+            none()
+        }
+        ("referencealias", "clear") | ("locationalias", "clear") => {
             if let Some(Value::Object(ObjectId::Alias { quest, alias }, _)) = this {
                 e.scripts.quests.entry(FormId(*quest)).or_default().aliases.remove(alias);
                 e.scripts.alias_gen += 1;
