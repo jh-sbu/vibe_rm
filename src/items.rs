@@ -78,6 +78,9 @@ impl Engine {
     /// Pick up an item reference: into the player's inventory (as many as the
     /// reference stands for, `XCNT`) and gone from the world.
     pub fn take_item(&mut self, r: FormId) -> bool {
+        if self.is_disabled(r) {
+            return false;
+        }
         let Some(base) = self.base_of(r) else { return false };
         let Some(info) = item_info(&self.lo, base) else { return false };
         let count = self.lo.get(r).and_then(|rec| rec.get(b"XCNT").filter(|d| d.len() >= 4).map(|d| i32::from_le_bytes(d[0..4].try_into().unwrap()))).unwrap_or(1).max(1);
@@ -90,6 +93,55 @@ impl Engine {
         let player = self.object_value(PLAYER_REF);
         self.send_script_event(r, "OnContainerChanged", vec![player, papyrus::Value::None]);
         true
+    }
+
+    /// Whether taking `item` from something `owner` owns is stealing. What
+    /// another person owns always is. What a faction owns is when the faction
+    /// can own things (`DATA` flag 0x8000, "can be owner") and the item's base
+    /// value is over the favor cap of its living members the player is on good
+    /// terms with: the lowest of their ranks' caps (`iFavorFriendValue` 25,
+    /// `iFavorConfidantValue` 50, `iFavorAllyValue` 100, `iFavorLoverValue`
+    /// 500); no such member, no allowance. What the player or one of their
+    /// factions owns never is.
+    pub(crate) fn is_stealing(&self, item: FormId, owner: FormId) -> bool {
+        if owner == FormId(0x7) || self.player_factions().contains(&owner) {
+            return false;
+        }
+        let Some(rec) = self.lo.get(owner) else { return false };
+        if rec.tag().0 != *b"FACT" {
+            return true;
+        }
+        let flags = rec.get(b"DATA").filter(|d| d.len() >= 4).map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()));
+        if flags & 0x8000 == 0 {
+            return false;
+        }
+        let value = item_info(&self.lo, item).map_or(0, |i| i.value);
+        let cap = self.faction_favor_cap(owner);
+        log::debug!("{item} (worth {value}) owned by faction {owner}: favor cap {cap:?}");
+        cap.is_none_or(|cap| value > cap)
+    }
+
+    /// The gold value up to which a faction's members let the player take its
+    /// things: the lowest cap among living members ranked friend or better
+    /// with the player (those at acquaintance or below don't count).
+    fn faction_favor_cap(&self, faction: FormId) -> Option<i32> {
+        let gmst = |name: &str, default: i32| crate::ai::combat::gmst_i32(&self.lo, name, default);
+        let mut cap: Option<i32> = None;
+        for &npc in self.faction_members(faction) {
+            let alive = self.npc_refs_index().get(&npc).is_none_or(|&r| !self.is_dead(r));
+            let rank = self.relationship_rank(npc, PLAYER_REF);
+            if !alive || rank <= 0 {
+                continue;
+            }
+            let c = match rank {
+                1 => gmst("iFavorFriendValue", 25),
+                2 => gmst("iFavorConfidantValue", 50),
+                3 => gmst("iFavorAllyValue", 100),
+                _ => gmst("iFavorLoverValue", 500),
+            };
+            cap = Some(cap.map_or(c, |x| x.min(c)));
+        }
+        cap
     }
 
     /// A book's title and text.

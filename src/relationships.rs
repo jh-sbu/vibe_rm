@@ -22,6 +22,8 @@ pub struct Relationships {
     authored: std::cell::OnceCell<HashMap<(FormId, FormId), i32>>,
     /// Ranks changed since.
     changed: HashMap<(FormId, FormId), i32>,
+    /// NPC records in each faction (rank 0 or more), for faction ownership.
+    members: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
 }
 
 fn pair(a: FormId, b: FormId) -> (FormId, FormId) {
@@ -66,6 +68,23 @@ impl Engine {
         let authored = self.authored_relationships().iter().filter(|(p, _)| !changed.contains_key(p));
         let mine = changed.iter().chain(authored).filter(|((x, y), _)| *x == npc || *y == npc).map(|(_, &r)| r);
         if highest { mine.max() } else { mine.min() }.unwrap_or(0)
+    }
+
+    /// The NPC records that belong to a faction (from their own or their
+    /// templates' faction lists; membership doesn't change at runtime yet).
+    pub(crate) fn faction_members(&self, faction: FormId) -> &[FormId] {
+        let members = self.relationships.members.get_or_init(|| {
+            let mut out: HashMap<FormId, Vec<FormId>> = HashMap::new();
+            for &npc in self.lo.ids_of_type(b"NPC_") {
+                for (f, rank) in self.npc_factions(npc) {
+                    if rank >= 0 {
+                        out.entry(f).or_default().push(npc);
+                    }
+                }
+            }
+            out
+        });
+        members.get(&faction).map_or(&[], Vec::as_slice)
     }
 
     /// Change the rank between two actors: a change relationship rank story

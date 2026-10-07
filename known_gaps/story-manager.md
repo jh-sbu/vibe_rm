@@ -54,9 +54,8 @@ or prints one event's tree.
 - "Max concurrent" counts the running quests of the node and those below it.
 - `SendStoryEventAndWait` returns whether a quest started, at once.
 - Quests' own event conditions run on the player, like node conditions.
-- Item pickup: an item is stolen when it (else its cell) has an owner other
-  than the player or a faction the player is in; bodies belong to no one.
-  R1 is a person owner's placed reference (none for a faction owner).
+- Item pickup: R1 is a person owner's placed reference (none for a faction
+  owner). Whether it is stolen: see "Ownership" below.
 - Hellos: sent when an NPC greets the player in passing, before the greeting
   is chosen, so the quests it starts can supply it.
 - Assaults: the first blow an actor takes from someone it isn't fighting; a
@@ -69,7 +68,36 @@ or prints one event's tree.
 - Quests started from Papyrus (`Quest.Start`, story events) get their scripts
   and OnInit once the running scripts yield, in the same frame.
 
+## Ownership (stealing)
+
+The owner is the reference's `XOWN`, else its cell's; bodies belong to no
+one. Taking something is stealing when:
+
+- a person (an NPC record) owns it: always, whatever their relationship;
+- a faction owns it, the faction can own things (`FACT` `DATA` flag 0x8000,
+  "can be owner": all 384 owning factions have it, `vrm-tool
+  faction-owners`; a faction without it owns nothing), and the item's base
+  value is over the faction's favor cap. The cap is the lowest among living
+  members ranked friend or better with the player: friend
+  `iFavorFriendValue` (25), confidant `iFavorConfidantValue` (50), ally
+  `iFavorAllyValue` (100), lover `iFavorLoverValue` (500). Members at
+  acquaintance or below don't count, and with none above it there is no
+  allowance. Only the base value counts, never the stack's.
+- Never for what the player or one of the player's factions owns.
+
+Members are the NPC records listing the faction at rank 0 or more (their
+own or their templates'); a member is dead when their placed reference is.
+
 ## Open questions
+
+- Ownership: faction membership doesn't change at runtime
+  (`AddToFaction` / `RemoveFromFaction`, the player joining a faction), so
+  neither does the favor cap; a member that is a generic NPC with several
+  references counts as dead only by its first. The required faction rank
+  on owned references (`XRNK`) is ignored, so a player in the owning
+  faction may take everything. No crime system yet: taking stolen items only
+  changes the event's acquire type, nobody sees or reports it, and items
+  aren't marked stolen in the inventory.
 
 - The other events wait for their systems: crafting (`CRFT`), increase
   level / skill (`LEVL`, `SKIL`), arrest / jail / escape (`ARRT`, `JAIL`,
