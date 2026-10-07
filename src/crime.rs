@@ -49,11 +49,13 @@ const TRACK_CRIME: u32 = 0x40;
 const DO_NOT_REPORT_MEMBERS: u32 = 0x800;
 const USE_DEFAULTS: u32 = 0x1000;
 
-/// How far a witness sees the player commit a crime; a third of it while the
-/// player sneaks. (No source: combat's detection distance.)
+/// Who witnesses a crime stands in for detection, which isn't implemented;
+/// none of these has a source. How far a witness sees the player: combat's
+/// detection distance (itself unsourced), a third of it while the player
+/// sneaks (invented).
 const WITNESS_DISTANCE: f32 = crate::ai::combat::DETECT_DISTANCE;
 /// Within this the witness notices whichever way it faces; beyond it the
-/// player must be ahead of it (within `WITNESS_HALF_ANGLE`).
+/// player must be ahead of it (within `WITNESS_HALF_ANGLE`). Invented.
 const WITNESS_NEAR: f32 = 200.0;
 const WITNESS_HALF_ANGLE: f32 = 95.0;
 
@@ -235,6 +237,7 @@ impl Engine {
             if a.dead || a.bleeding.is_some() || self.is_disabled(a.ref_id) {
                 continue;
             }
+            // Eye height as for finding bodies (no source).
             let from = a.pos + Vec3::Z * 110.0 * a.scale;
             let to = eye - from;
             let dist = to.length().max(1.0);

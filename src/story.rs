@@ -89,7 +89,8 @@ pub struct StoryManager {
 }
 
 /// How far an NPC notices a body, and how often NPCs look (no source: about
-/// as far as they notice enemies, once a second).
+/// as far as they notice enemies, once a second). Stands in for detection,
+/// which isn't implemented.
 const BODY_NOTICE_DISTANCE: f32 = 1000.0;
 const BODY_CHECK_INTERVAL: f64 = 1.0;
 

@@ -12,7 +12,9 @@ use crate::engine::{Engine, PLAYER_REF};
 use crate::world::ragdoll::RagdollPose;
 use crate::world::template::{self, Sources};
 
-/// How far actors notice enemies (game units), and how often they look.
+/// How far actors notice enemies (game units), and how often they look. No
+/// source for either: a stand-in for detection (sight, light, sound, sneaking),
+/// which isn't implemented. Force greets and crime witnesses use it too.
 pub(crate) const DETECT_DISTANCE: f32 = 1400.0;
 const DETECT_INTERVAL: f32 = 1.0;
 /// Combat ends when the target gets this far away.

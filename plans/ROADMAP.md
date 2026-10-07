@@ -402,29 +402,42 @@ game each piece unlocks.
      and jail, item removal (dropping), spell cast, shouts; kill events' crime
      and relationship values; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
-3. **AI depth**
+3. **Detection (stealth)**: who notices the player and each other. Several systems
+   stand in for it with distances that have no source (see their gaps): combat
+   noticing enemies and fights to join (`DETECT_DISTANCE`, 1400 units),
+   crime witnesses (that distance, an invented third while sneaking, a view cone
+   and eye height), force greets' "player must be detected", NPCs finding bodies
+   (1000 units). Replace them with one detection check built from the game
+   settings (`fSneakMaxDistance`, `fSneakExteriorDistanceMult`, `fSneakLight*`,
+   `fDetectionSneakLightMod`, `fSneakSkillMult`, `fSneakBaseValue`,
+   `fSneakRunningMult`, `fSneakActionMult`, `fSneakSoundLosMult`, `fSneakSounds*`,
+   `fPlayerDetectionSneak*`...) and what public sources say of how they combine
+   (light, distance, view, sound, sneak skill against perception); detection
+   conditions (`GetDetected`, `GetDetectionLevel`, `IsActorDetected`...), the
+   HUD's sneak eye, sleepers' reduced detection
+4. **AI depth**
    - Alias fills: created objects drawn in the world, cleaned up
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
-     activate / carry, flee, orbit packages; ambush triggers and sleepers'
-     reduced detection;
+     activate / carry, flee, orbit packages; ambush triggers (sleepers'
+     reduced detection: see Detection);
      escorts' follower min / max distances and several followers, riding
    - Off-screen travel between worldspaces; paths round locked animated doors,
      lockpicking perks and skill gain
    - Templates: spells (with magic)
    - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
      guard / wait / find / acquire procedures
-4. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
+5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
    (guards arresting, jail, attack on sight; pickpocketing, trespass, lockpicking
    owned locks; stolen items marked; see Done)
-5. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
-6. **Audio**: lip sync
-7. **Rendering**: point light and interior shadows, static shadow caching (per-cell
+6. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
+7. **Audio**: lip sync
+8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
    grass, decals, environment maps
-8. **Saves**: an engine-native save format (reading .ess later), writing out
+9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories and `WorldState`
-9. **Performance**: async loading, GPU-driven culling
+10. **Performance**: async loading, GPU-driven culling
