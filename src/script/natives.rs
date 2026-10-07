@@ -393,6 +393,52 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("actor", "gethighestrelationshiprank") | ("actor", "getlowestrelationshiprank") => {
             v(Value::Int(me.map_or(0, |a| e.relationship_extreme(a, func == "gethighestrelationshiprank"))))
         }
+        // ------------------------------------------------------------- Crime
+        ("faction", "getcrimegold") | ("faction", "getcrimegoldviolent") | ("faction", "getcrimegoldnonviolent") => {
+            let b = me.map(|f| e.bounty(f)).unwrap_or_default();
+            v(Value::Int(match func {
+                "getcrimegoldviolent" => b.violent,
+                "getcrimegoldnonviolent" => b.nonviolent,
+                _ => b.total(),
+            }))
+        }
+        ("faction", "getinfamy") | ("faction", "getinfamyviolent") | ("faction", "getinfamynonviolent") => {
+            let b = me.map(|f| e.bounty(f)).unwrap_or_default();
+            v(Value::Int(match func {
+                "getinfamyviolent" => b.infamy_violent,
+                "getinfamynonviolent" => b.infamy_nonviolent,
+                _ => b.infamy_violent + b.infamy_nonviolent,
+            }))
+        }
+        ("faction", "modcrimegold") => {
+            if let Some(f) = me {
+                e.mod_crime_gold(f, arg(0).as_int(), args.get(1).is_some_and(|b| b.as_bool()));
+            }
+            none()
+        }
+        ("faction", "setcrimegold") | ("faction", "setcrimegoldviolent") => {
+            if let Some(f) = me {
+                e.set_crime_gold(f, arg(0).as_int(), func == "setcrimegoldviolent");
+            }
+            none()
+        }
+        ("faction", "playerpaycrimegold") => {
+            if let Some(f) = me {
+                e.pay_crime_gold(f, args.first().is_none_or(|b| b.as_bool()), args.get(1).is_none_or(|b| b.as_bool()));
+            }
+            none()
+        }
+        ("faction", "canpaycrimegold") => v(Value::Bool(me.is_some_and(|f| e.can_pay_crime_gold(f)))),
+        ("actor", "getcrimefaction") => match me.and_then(|a| e.crime_faction(a)) {
+            Some(f) => v(e.object_value(f)),
+            None => none(),
+        },
+        ("actor", "setcrimefaction") => {
+            if let Some(a) = me {
+                e.set_crime_faction(a, form_arg(args, 0));
+            }
+            none()
+        }
         // ---------------------------------------------------------- Location
         ("location", "getkeyworddata") => {
             v(Value::Float(me.zip(form_arg(args, 0)).and_then(|k| e.location_keyword_data.get(&k).copied()).unwrap_or(0.0)))

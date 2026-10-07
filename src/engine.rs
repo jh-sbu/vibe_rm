@@ -138,6 +138,8 @@ pub struct Engine {
     pub(crate) story: crate::story::StoryManager,
     /// Relationship ranks between NPCs.
     pub(crate) relationships: crate::relationships::Relationships,
+    /// The player's bounties and actors' crime factions set by scripts.
+    pub(crate) crime: crate::crime::Crimes,
     /// Values scripts keep on locations by keyword (`Location.SetKeywordData`).
     pub(crate) location_keyword_data: HashMap<(FormId, FormId), f32>,
     /// The inventory or container menu, while open.
@@ -244,6 +246,7 @@ impl Engine {
             scenes: Default::default(),
             story: Default::default(),
             relationships: Default::default(),
+            crime: Default::default(),
             location_keyword_data: Default::default(),
             talked_to_pc: Default::default(),
             alias_packs: Default::default(),

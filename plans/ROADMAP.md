@@ -323,6 +323,20 @@ game each piece unlocks.
   Console `storyevent` (with `v1=`, `f1=`...), `setrelationshiprank`;
   vrm-tool `story` (`CONDS=1`, `OWN=1`). Open questions:
   `known_gaps/story-manager.md`
+- Ownership and crime: taking what a person owns is stealing; what a faction
+  owns only past its favor cap (the lowest of its living members' who are
+  friends or better with the player, `iFavor*Value`). The player's thefts,
+  assaults and murders seen by actors with a crime faction (`CRIF`) add crime
+  gold there, violent or not, from its crime values (`CRVA`, or the defaults:
+  murder 1000, assault 40, half a stolen item's value), unless it ignores the
+  crime against non-members. Kill events say whether a kill was a (reported)
+  murder and the rank between them. Papyrus `Faction.GetCrimeGold`,
+  `ModCrimeGold`, `SetCrimeGold(Violent)`, `PlayerPayCrimeGold`, infamy,
+  `Actor.Get` / `SetCrimeFaction`; conditions `GetCrimeGold(Violent /
+  Nonviolent)`, `GetIsCrimeFaction`, `CanPayCrimeGold`,
+  `GetInSharedCrimeFaction`. Console `crime`, `player.setcrimegold`,
+  `player.paycrimegold`, `crimefaction`; vrm-tool `faction-owners`,
+  `crime-factions`. Open questions: `known_gaps/crime.md`
 - Trigger volumes: scripted box and sphere primitives (`XPRM`) send
   `OnTriggerEnter` / `OnTriggerLeave` as the player and actors step in and out
   (set-stage, start-scene, music and comment triggers...);
@@ -401,9 +415,11 @@ game each piece unlocks.
      guard / wait / find / acquire procedures
 4. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
-   and enchantments, crime and assault, killmoves, the player's own weapon and
+   and enchantments, killmoves, the player's own weapon and
    animations), magic, inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
+   (guards arresting, jail, attack on sight; pickpocketing, trespass, lockpicking
+   owned locks; stolen items marked; see Done)
 5. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
 6. **Audio**: lip sync
 7. **Rendering**: point light and interior shadows, static shadow caching (per-cell
