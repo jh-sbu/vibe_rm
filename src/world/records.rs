@@ -191,9 +191,6 @@ impl Reference {
     pub fn transform(&self) -> Mat4 {
         Mat4::from_scale_rotation_translation(Vec3::splat(self.scale), self.rotation_quat(), self.position)
     }
-    pub fn initially_disabled(&self) -> bool {
-        self.flags & esp::record_flags::INITIALLY_DISABLED != 0
-    }
     pub fn deleted(&self) -> bool {
         self.flags & esp::record_flags::DELETED != 0
     }

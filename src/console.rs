@@ -42,6 +42,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
+            "<ref>.enable / disable  enable or disable a reference (and those enabled with it)".into(),
             "[ref.]placeatme <form> [n]  make new references there (actors join the world)".into(),
             "player.equipitem / unequipitem <item>   wear armor, wield a weapon, ready ammo".into(),
             "activate <ref>        activate a reference as the player".into(),
@@ -345,8 +346,8 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 16] = [
-    "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
+const ITEM_COMMANDS: [&str; 18] = [
+    "enable", "disable", "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
     "getav", "setav", "modav", "forceav", "damageav", "restoreav",
 ];
 
@@ -369,6 +370,10 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                 _ => engine.damage_actor_value(r, i, -x),
             }
             vec![format!("{r}: {}", engine.describe_actor_value(r, i))]
+        }
+        "enable" | "disable" => {
+            engine.set_disabled(r, cmd == "disable");
+            vec![format!("{r} {cmd}d")]
         }
         "placeatme" => {
             let Some(base) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec!["usage: [ref.]placeatme <form> [count]".into()] };

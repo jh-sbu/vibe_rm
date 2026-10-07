@@ -170,6 +170,12 @@ impl Engine {
             if self.is_disabled(a) {
                 continue;
             }
+            // The dead lie where they fell.
+            if let Some(body) = self.body_of(a) {
+                pending.insert(a, body);
+                pending_packages.insert(a, None);
+                continue;
+            }
             let Some(rf) = self.reference_of(a) else { continue };
             if rf.deleted() {
                 continue;
@@ -228,7 +234,8 @@ impl Engine {
             if self.actor_cells.contains_key(&r) || self.lo.tag_of(r).map(|t| t.0) != Some(*b"ACHR") {
                 continue;
             }
-            match self.whereabouts.of.get(&r) {
+            let at = self.whereabouts.of.get(&r).copied().or_else(|| self.body_of(r));
+            match at.as_ref() {
                 Some((p, _)) if Some(*p) != here => {}
                 Some((_, pos)) => out.push((r, Some(*pos))),
                 None => out.push((r, None)),
@@ -267,7 +274,7 @@ impl Engine {
     fn door_towards(&self, from: Vec3, target: Place) -> Option<(FormId, Vec3)> {
         let mut best: Option<(bool, f32, FormId, Vec3)> = None;
         for rt in self.cells.values() {
-            for d in &rt.doors {
+            for d in rt.doors.iter().filter(|d| !self.is_disabled(d.ref_id)) {
                 let Some(p) = self.door_place(d) else { continue };
                 let exact = p == target;
                 let same_world = matches!((p, target), (Place::Exterior(w, _), Place::Exterior(tw, _)) if w == tw);

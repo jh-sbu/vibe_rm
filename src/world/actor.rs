@@ -314,10 +314,6 @@ pub fn facetint_path(lo: &LoadOrder, npc: FormId) -> Option<String> {
 const SLOT_HEAD: u32 = 1 << 0;
 const SLOT_HAIR: u32 = 1 << 1;
 
-pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDesc> {
-    describe_reference(lo, &records::reference(achr))
-}
-
 /// Describe an actor reference (placed or created).
 pub fn describe_reference(lo: &LoadOrder, r: &records::Reference) -> Option<ActorDesc> {
     // Disabled references (initially, or through their enable parent) are left

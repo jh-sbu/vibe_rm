@@ -344,11 +344,15 @@ game each piece unlocks.
    - Templates: spells (with magic)
    - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
      guard / wait / find / acquire procedures
-3. **World state across cell loads** (in memory; what Saves will write out):
-   references disabled when their cell loads are built hidden, so enabling them
-   (or their enable parent) while the player is there shows them; dead actors
-   stay dead, as corpses where they fell; doors left open, actors' damage, and
-   references moved by scripts or physics keep their state
+3. **World state across cell loads** (in memory; what Saves will write out;
+   `src/world_state.rs`). Done: references disabled when their cell loads are
+   built hidden (objects, collision, lights, doors, furniture), so enabling
+   them or their enable parent shows them, actors included; dead actors stay
+   dead, as corpses where their bodies came to rest (`IsDead` / `GetDead` for
+   unloaded ones too); console `[ref.]enable` / `disable`. Still to do: doors
+   left open, references moved by scripts (`MoveTo`, `SetPosition`) or knocked
+   about by physics, looping sounds of references enabled in place, actors'
+   damage (they come back whole, as if healed while away)
 4. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, crime and assault, killmoves, the player's own weapon and
