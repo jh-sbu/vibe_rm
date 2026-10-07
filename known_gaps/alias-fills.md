@@ -34,6 +34,15 @@ Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
 - Packages located at a location alias (`PLDT` kind 9) stay about the actor's
   editor place when it is in that location, else go to the location's marker
   (`MNAM`).
+- Near alias (`ALNA` the alias, `ALNT` always 0): 355 aliases, all with
+  conditions, mostly roadside encounters' travel and scene markers found by
+  the trigger that started them (`IsLinkedTo` the trigger alias, `HasRefType
+  WETravel`). Filled with the matching reference nearest what the near alias
+  holds, among the loaded references when it is loaded, else its cell's and
+  (outdoors) the cells around it and the worldspace's persistent ones.
+- Conditions with "use aliases" (`CTDA` flag 0x02): a reference or location
+  parameter is an alias id of the condition's quest; an empty alias matches
+  nothing.
 - Stopping a quest empties its aliases.
 - Created references (`ALCO` object, `ALCA` the alias to make it at, high bit
   set for "in" its inventory): 968 aliases, 570 of them NPCs, 293 "in". They get
@@ -45,8 +54,7 @@ Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
 
 ## Open questions
 
-- "Near alias" (`ALNA`) and story manager event fills (`ALFE`) aren't made;
-  required ones don't stop the quest from starting.
+- What `ALNT` other than 0 would mean, and how far "near" reaches.
 - Created items and objects in the world (not in a container) aren't drawn or
   taken, and nothing created is ever deleted (the game cleans up created
   references no longer in an alias or persistent). The create level (`ALCL`)
@@ -56,8 +64,8 @@ Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
   beyond persistent references when "In loaded area" isn't set.
 - Forced references and unique actors fill whether dead or disabled; a unique
   actor without a placed reference fails the quest.
-- Location aliases don't reserve locations; `GetKeywordDataForLocation` is
-  still 0, `GetLocationCleared` unanswered.
+- Location aliases don't reserve locations; location keyword data is only
+  what scripts set (`SetKeywordData`), `GetLocationCleared` unanswered.
 - A reference alias's current location for "from alias" location fills is
   where the actor's schedule has it (or its editor location), not tracked
   through travel between refreshes.
