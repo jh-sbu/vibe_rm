@@ -505,7 +505,7 @@ impl Engine {
         self.music.voice = None;
         let keys: Vec<CellKey> = self.cells.keys().copied().collect();
         for k in keys {
-            self.remember_bodies(k);
+            self.remember_actors(k);
         }
         self.scene.cells.clear();
         self.scene.lights.clear();
@@ -712,7 +712,7 @@ impl Engine {
             rt.child = self.npc_race(d.npc).is_some_and(|r| self.race_is_child(r));
             let mut stats = crate::ai::combat::CombatStats::of(self, &d.templates, d.race);
             self.apply_actor_values(d.ref_id, &mut stats);
-            rt.health = stats.max_health;
+            rt.health = self.returning_health(d.ref_id, stats.max_health);
             rt.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.inventory.weapon(&self.lo));
             if let Some(bow) = d.inventory.weapon(&self.lo).filter(|&w| crate::ai::archery::is_bow(&self.lo, w)) {
@@ -844,7 +844,8 @@ impl Engine {
             rt.actors.extend(runtimes);
         }
         for r in corpses {
-            self.kill_actor_quietly(r);
+            let lying = self.world_state.body_poses.get(&r).cloned();
+            self.kill_actor_lying(r, lying);
         }
     }
 
@@ -985,7 +986,7 @@ impl Engine {
     }
 
     fn unload_cell(&mut self, key: CellKey) {
-        self.remember_bodies(key);
+        self.remember_actors(key);
         self.scene.cells.remove(&key);
         if let Some(rt) = self.cells.remove(&key) {
             self.physics.remove_colliders(&rt.colliders);
