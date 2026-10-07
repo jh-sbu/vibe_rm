@@ -172,6 +172,17 @@ impl Physics {
         }
     }
 
+    /// Move all colliders owned by a reference by `delta` (a rigid transform).
+    pub fn transform_owner(&mut self, owner: esp::FormId, delta: Mat4) {
+        let hs: Vec<ColliderHandle> = self.owners.iter().filter(|(_, o)| **o == owner).map(|(h, _)| *h).collect();
+        for h in hs {
+            if let Some(c) = self.world.colliders.get_mut(h) {
+                let (pose, _) = shapes::decompose(delta * c.position().to_mat4());
+                c.set_position(pose);
+            }
+        }
+    }
+
     /// Enable or disable all colliders owned by a reference.
     pub fn set_owner_enabled(&mut self, owner: esp::FormId, enabled: bool) {
         let hs: Vec<ColliderHandle> = self.owners.iter().filter(|(_, o)| **o == owner).map(|(h, _)| *h).collect();

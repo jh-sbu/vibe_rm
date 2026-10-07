@@ -9,7 +9,6 @@ use glam::Vec3;
 use super::package::{LocationKind, Package};
 use crate::engine::{Engine, Location};
 use crate::render::CellKey;
-use crate::world::records;
 
 /// Real seconds between whereabouts refreshes.
 const REFRESH_INTERVAL: f32 = 20.0;
@@ -62,6 +61,14 @@ impl Whereabouts {
 impl Engine {
     /// The place containing a reference, from its cell (and position for worldspace-persistent refs).
     pub fn place_of_ref(&self, r: FormId, pos: Vec3) -> Option<Place> {
+        if let Some(m) = self.world_state.moved.get(&r) {
+            return Some(m.place);
+        }
+        self.editor_place_of(r, pos)
+    }
+
+    /// The place a reference's own cell is (as placed in the editor).
+    pub fn editor_place_of(&self, r: FormId, pos: Vec3) -> Option<Place> {
         if let Some(c) = self.created(r) {
             return c.place;
         }
@@ -135,7 +142,7 @@ impl Engine {
             }
             _ => None,
         }?;
-        let pos = records::reference(&self.lo.get(target)?).position;
+        let pos = self.ref_position(target)?;
         Some((self.place_of_ref(target, pos)?, pos))
     }
 
@@ -184,7 +191,9 @@ impl Engine {
             let Some(npc) = self.base_npc(rf.base) else { continue };
             let packages = self.actor_packages(a, npc);
             let current = self.current_package(a, &packages);
-            let (place, pos) = current.and_then(|i| self.package_place(a, &packages[i])).unwrap_or((editor_place, rf.position));
+            // Without a package place: where scripts moved it, else its editor place.
+            let home = self.world_state.moved.get(&a).map_or((editor_place, rf.position), |m| (m.place, m.pos));
+            let (place, pos) = current.and_then(|i| self.package_place(a, &packages[i])).unwrap_or(home);
             pending_packages.insert(a, current.map(|i| packages[i].id));
             if log::log_enabled!(log::Level::Trace) {
                 log::trace!("{a} {:?}: editor {editor_place:?}, scheduled {place:?} {pos:?}", self.form_name(npc));
