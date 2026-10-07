@@ -315,7 +315,11 @@ const SLOT_HEAD: u32 = 1 << 0;
 const SLOT_HAIR: u32 = 1 << 1;
 
 pub fn describe_actor(lo: &LoadOrder, achr: &LoadedRecord<'_>) -> Option<ActorDesc> {
-    let r = records::reference(achr);
+    describe_reference(lo, &records::reference(achr))
+}
+
+/// Describe an actor reference (placed or created).
+pub fn describe_reference(lo: &LoadOrder, r: &records::Reference) -> Option<ActorDesc> {
     if r.deleted() || r.initially_disabled() {
         return None;
     }

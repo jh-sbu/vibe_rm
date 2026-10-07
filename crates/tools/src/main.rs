@@ -1233,7 +1233,16 @@ fn main() -> Result<()> {
                         b"ALFA" => c.2.push("from alias"),
                         b"ALRT" => c.2.push("ref type"),
                         b"ALEQ" => c.2.push("external"),
-                        b"ALCO" => c.2.push("create"),
+                        b"ALCO" => {
+                            c.2.push("create");
+                            let obj = rec.fid(sr.form_id(0));
+                            let tag = lo.tag_of(obj).map(|t| t.to_string()).unwrap_or_default();
+                            *funcs.entry(format!("create {tag}")).or_default() += 1;
+                        }
+                        b"ALCA" => {
+                            let v = sr.u32(0);
+                            *funcs.entry(format!("create {} level {}", if v & 0x8000_0000 != 0 { "in" } else { "at" }, (v >> 16) & 0x7fff)).or_default() += 1;
+                        }
                         b"ALNA" => c.2.push("near alias"),
                         b"ALFE" => c.2.push("from event"),
                         b"CTDA" => {
