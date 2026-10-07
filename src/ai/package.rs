@@ -105,6 +105,8 @@ pub enum Target {
     LinkedRef(Option<FormId>),
     /// A reference alias of the package's quest, by alias id.
     Alias(u32),
+    /// The actor running the package.
+    SelfRef,
     /// Object ids / types, aliases, etc. (not resolved yet).
     Other,
 }
@@ -265,6 +267,7 @@ fn target(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Target> {
         0 => Target::Ref(rec.fid(FormId(v))),
         3 => Target::LinkedRef((v != 0).then(|| rec.fid(FormId(v)))),
         4 => Target::Alias(v),
+        6 => Target::SelfRef,
         _ => Target::Other,
     })
 }
@@ -475,10 +478,197 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     })
 }
 
-/// Packages of an actor in priority order (its AI packages part's: see templates).
+/// A node of a package template's procedure tree (after `XNAM`): a branch
+/// (`Stacked`, `Sequence`, `Simultaneous`...) over its children, or a procedure
+/// with the inputs it takes (`PKC2`, by input index), each with its conditions.
+#[derive(Debug, Clone)]
+struct Node {
+    kind: String,
+    conditions: Vec<Condition>,
+    children: Vec<Node>,
+    procedure: String,
+    args: Vec<u8>,
+}
+
+/// The procedure tree of a template package.
+fn procedure_tree(lo: &LoadOrder, template: FormId) -> Option<Node> {
+    let rec = lo.get(template)?;
+    // Flat, in pre-order, with each branch's child count.
+    let mut flat: Vec<(Node, usize)> = Vec::new();
+    let mut tree = false;
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            b"XNAM" => tree = true,
+            _ if !tree => {}
+            // The input names follow the tree.
+            b"UNAM" => break,
+            b"ANAM" => flat.push((Node { kind: sr.zstring(), conditions: Vec::new(), children: Vec::new(), procedure: String::new(), args: Vec::new() }, 0)),
+            b"PRCB" if sr.data.len() >= 4 => {
+                if let Some(n) = flat.last_mut() {
+                    n.1 = sr.u32(0) as usize;
+                }
+            }
+            b"CTDA" => {
+                if let (Some(n), Some(c)) = (flat.last_mut(), condition::parse(&rec, sr.data)) {
+                    n.0.conditions.push(c);
+                }
+            }
+            b"PNAM" => {
+                if let Some(n) = flat.last_mut() {
+                    n.0.procedure = sr.zstring();
+                }
+            }
+            b"PKC2" if !sr.data.is_empty() => {
+                if let Some(n) = flat.last_mut() {
+                    n.0.args.push(sr.data[0]);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn build(flat: &mut std::vec::IntoIter<(Node, usize)>) -> Option<Node> {
+        let (mut node, count) = flat.next()?;
+        for _ in 0..count {
+            node.children.push(build(flat)?);
+        }
+        Some(node)
+    }
+    build(&mut flat.into_iter())
+}
+
+/// The procedure a branch is about, for the behaviours the AI has: the first
+/// found in this order (a guard post's patrol over its guarding).
+fn main_procedure(node: &Node) -> Option<&Node> {
+    const ORDER: [&str; 6] = ["Patrol", "Follow", "Sit", "Sleep", "Sandbox", "Travel"];
+    fn all<'a>(n: &'a Node, out: &mut Vec<&'a Node>) {
+        if !n.procedure.is_empty() {
+            out.push(n);
+        }
+        n.children.iter().for_each(|c| all(c, out));
+    }
+    let mut procs = Vec::new();
+    all(node, &mut procs);
+    ORDER.iter().find_map(|name| procs.iter().find(|p| p.procedure == *name).copied()).or(procs.first().copied())
+}
+
+/// A package whose template picks one of several branches by their conditions
+/// (a `Stacked` root, as the default master packages have: follow the linked
+/// actor, patrol from the linked marker, else sandbox) becomes one package per
+/// branch, in order, each with the branch's conditions after the package's own;
+/// the first whose conditions pass runs, as the first passing branch would.
+/// Others stay one package.
+pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
+    let Some(base) = parse(lo, id) else { return Vec::new() };
+    let Some(rec) = lo.get(id) else { return Vec::new() };
+    let template = rec.get(b"PKCU").filter(|d| d.len() >= 8).map(|d| rec.fid(FormId(u32::from_le_bytes(d[4..8].try_into().unwrap()))));
+    let tree = template.and_then(|t| procedure_tree(lo, t));
+    let Some(root) = tree.filter(|t| t.kind == "Stacked" && t.children.len() > 1) else { return vec![base] };
+    let values: std::collections::HashMap<u8, Input> = inputs(&rec).into_iter().collect();
+    let mut out = Vec::new();
+    for (n, branch) in root.children.iter().enumerate() {
+        let Some(proc) = main_procedure(branch) else { continue };
+        let arg = |i: usize| proc.args.get(i).and_then(|a| values.get(a)).copied();
+        let flag = |i: usize, default: bool| match arg(i) {
+            Some(Input::Bool(b)) => b,
+            _ => default,
+        };
+        let float = |i: usize, default: f32| match arg(i) {
+            Some(Input::Float(f)) => f,
+            _ => default,
+        };
+        let mut p = base.clone();
+        p.editor_id = format!("{}#{n}", base.editor_id);
+        let location = proc.args.iter().find_map(|a| match values.get(a) {
+            Some(Input::Location(l)) => Some(*l),
+            _ => None,
+        });
+        let target = proc.args.iter().find_map(|a| match values.get(a) {
+            Some(Input::Target(t)) => Some(*t),
+            _ => None,
+        });
+        p.location = location.or(base.location);
+        p.target = target;
+        // Procedure inputs by position, as the single-procedure templates (Sandbox,
+        // Patrol, Follow, Travel) name them.
+        match proc.procedure.as_str() {
+            "Sandbox" => {
+                p.behaviour = Behaviour::Sandbox;
+                p.allow = Allow {
+                    eating: flag(1, false),
+                    sleeping: flag(2, false),
+                    idle_markers: flag(4, true),
+                    sitting: flag(5, false),
+                    wandering: flag(6, true),
+                    special_furniture: flag(9, false),
+                    meal: false,
+                };
+                p.energy = float(8, 50.0).clamp(0.0, 100.0);
+            }
+            "Patrol" => {
+                p.behaviour = Behaviour::Patrol;
+                p.point_radius = float(1, 50.0);
+                p.repeat = flag(2, true);
+                p.start_nearest = flag(3, false);
+            }
+            "Follow" => {
+                p.behaviour = Behaviour::Follow;
+                p.follow_radius = (float(1, 128.0), float(2, 384.0));
+            }
+            "Travel" => p.behaviour = Behaviour::Travel,
+            "Sit" => p.behaviour = Behaviour::Sit,
+            "Sleep" => p.behaviour = Behaviour::Sleep,
+            _ => p.behaviour = Behaviour::Hold,
+        }
+        // The branch's conditions, and the procedure's own when it is nested,
+        // with package inputs they run on or name resolved for the package.
+        if let Some(last) = p.conditions.last_mut() {
+            last.or = false;
+        }
+        let nested = (!std::ptr::eq(proc, branch)).then_some(&proc.conditions);
+        for c in branch.conditions.iter().chain(nested.into_iter().flatten()) {
+            let mut c = c.clone();
+            let resolve = |input: u8| match values.get(&input) {
+                Some(Input::Target(Target::Ref(r))) => Some(Ok(*r)),
+                Some(Input::Target(Target::SelfRef)) => Some(Err(condition::RefOf::Subject)),
+                Some(Input::Target(Target::LinkedRef(kw))) => Some(Err(condition::RefOf::LinkedRef(kw.unwrap_or(FormId::NULL)))),
+                _ => None,
+            };
+            if let Some(input) = c.pack_input {
+                (c.run_on, c.reference) = match resolve(input) {
+                    Some(Ok(r)) => (2, r),
+                    Some(Err(condition::RefOf::Subject)) => (0, FormId::NULL),
+                    Some(Err(condition::RefOf::LinkedRef(kw))) => (4, kw),
+                    None => (condition::RUN_ON_NOTHING, FormId::NULL),
+                };
+            }
+            if c.p1_input {
+                match resolve(c.p1 as u8) {
+                    Some(Ok(r)) => c.p1 = r.0,
+                    Some(Err(of)) => c.p1_ref = Some(of),
+                    None => c.run_on = condition::RUN_ON_NOTHING,
+                }
+            }
+            p.conditions.push(c);
+        }
+        out.push(p);
+    }
+    out
+}
+
+/// Packages of an actor in priority order (its AI packages part's: see templates),
+/// then its default package list's (`DPLT`, from the part that gives it).
 pub fn npc_packages(lo: &LoadOrder, src: &crate::world::template::Sources) -> Vec<Package> {
-    let Some(rec) = lo.get(src.of(crate::world::template::AI_PACKAGES)) else { return Vec::new() };
-    rec.subrecords().filter(|s| s.tag.0 == *b"PKID").filter_map(|s| parse(lo, rec.fid(s.form_id(0)))).collect()
+    use crate::world::template::{AI_PACKAGES, DEF_PACK_LIST};
+    let mut out: Vec<Package> = match lo.get(src.of(AI_PACKAGES)) {
+        Some(rec) => rec.subrecords().filter(|s| s.tag.0 == *b"PKID").flat_map(|s| expand(lo, rec.fid(s.form_id(0)))).collect(),
+        None => Vec::new(),
+    };
+    if let Some(list) = src.form(lo, DEF_PACK_LIST, b"DPLT").and_then(|l| lo.get(l)) {
+        for s in list.subrecords().filter(|s| s.tag.0 == *b"LNAM") {
+            out.extend(expand(lo, list.fid(s.form_id(0))));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
