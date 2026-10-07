@@ -249,7 +249,11 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         46 => b(subject.is_some_and(|s| e.is_dead(s))),                   // GetDead
         84 => Some(0.0),                                                  // GetDeadCount
         80 => Some(1.0),                                                  // GetLevel
-        14 => Some(100.0),                                                // GetActorValue
+        // Actor values (`actor_values`).
+        14 => Some(e.actor_value(subject?, c.p1)),                        // GetActorValue
+        277 => Some(e.av_base(subject?, c.p1)),                           // GetBaseActorValue
+        494 => Some(e.av_max(subject?, c.p1)),                            // GetPermanentActorValue
+        640 => Some(e.actor_value_fraction(subject?, c.p1)),              // GetActorValuePercent
         365 => b(ctx.idle.and_then(|q| q.child).unwrap_or_else(|| subj_base.and_then(|n| e.npc_race(n)).is_some_and(|r| e.race_is_child(r)))), // IsChild
         125 => b(false),                                                  // IsGuard
         141 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject && cv.current.is_some()) || subject.is_some_and(|s| e.is_barking(s))), // IsTalking

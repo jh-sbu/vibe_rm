@@ -5,6 +5,7 @@
 //! plugins together, resolving FormIDs into a single global space and
 //! indexing records so higher-priority overrides win.
 
+pub mod actor_value;
 mod form_id;
 mod load_order;
 pub mod navmesh;

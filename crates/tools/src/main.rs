@@ -1409,6 +1409,40 @@ fn main() -> Result<()> {
                 println!("{c:>7} func {f:>4} run_on {run_on}");
             }
         }
+        Some("av-conditions") => {
+            // av-conditions <data dir>: conditions on actor values (GetActorValue,
+            // GetBaseActorValue, GetPermanentActorValue, GetActorValuePercent) by value,
+            // with the record types they gate and the values compared against.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            const FUNCS: [(u16, &str); 4] = [(14, "GetAV"), (277, "GetBaseAV"), (494, "GetPermAV"), (640, "GetAVPercent")];
+            const OPS: [&str; 6] = ["==", "!=", ">", ">=", "<", "<="];
+            type Uses = (usize, std::collections::BTreeMap<String, usize>, std::collections::BTreeSet<String>);
+            let mut uses: std::collections::BTreeMap<(u32, &str), Uses> = Default::default();
+            for tag in [b"INFO", b"PACK", b"IDLE", b"QUST", b"PERK", b"MGEF", b"SPEL", b"SCEN", b"FACT", b"DIAL", b"LVLI", b"COBJ", b"MESG", b"LSCR", b"SMQN", b"SMBN", b"SMEN", b"ENCH", b"ALCH"] {
+                for &id in lo.ids_of_type(tag) {
+                    let Some(r) = lo.get(id) else { continue };
+                    for s in r.subrecords().filter(|s| s.tag.0 == *b"CTDA" && s.data.len() >= 24) {
+                        let d = s.data;
+                        let f = u16::from_le_bytes([d[8], d[9]]);
+                        let Some(&(_, fname)) = FUNCS.iter().find(|x| x.0 == f) else { continue };
+                        let av = u32::from_le_bytes(d[12..16].try_into().unwrap());
+                        let e = uses.entry((av, fname)).or_default();
+                        e.0 += 1;
+                        *e.1.entry(String::from_utf8_lossy(tag).into_owned()).or_default() += 1;
+                        let value = if d[0] & 0x04 != 0 { "global".to_owned() } else { format!("{}", f32::from_le_bytes(d[4..8].try_into().unwrap())) };
+                        if e.2.len() < 8 {
+                            e.2.insert(format!("{} {value}", OPS.get((d[0] >> 5) as usize).unwrap_or(&"?")));
+                        }
+                    }
+                }
+            }
+            for ((av, f), (n, tags, values)) in &uses {
+                let name = esp::actor_value::name(*av).map_or_else(|| format!("#{av}"), str::to_owned);
+                println!("{n:>6} {f:13} {name:22} {tags:?} {values:?}");
+            }
+        }
         Some("navm-verify") => {
             // navm-verify <data dir>: parse every navmesh and check its indices
             let data = std::path::Path::new(&args[1]);
