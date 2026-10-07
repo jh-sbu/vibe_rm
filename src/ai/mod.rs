@@ -1695,6 +1695,14 @@ impl Engine {
             LocationKind::NearCurrent | LocationKind::NearSelf => Some(a.pos),
             LocationKind::NearAlias(alias) => quest.and_then(|q| self.alias_ref(q, alias)).and_then(|r| self.ref_position(r)),
             LocationKind::InCell(_) => return (a.editor_pos, loc.radius.max(SANDBOX_MAX)),
+            // About its editor place when that is in the location, else at the location's marker.
+            LocationKind::InLocAlias(alias) => {
+                let Some(l) = quest.and_then(|q| self.alias_ref(q, alias)) else { return (a.editor_pos, loc.radius) };
+                if self.editor_location(a.ref_id).is_some_and(|e| self.location_within(e, l)) {
+                    return (a.editor_pos, loc.radius.max(SANDBOX_MAX));
+                }
+                self.location_marker(l).and_then(|m| self.ref_position(m))
+            }
             LocationKind::NearEditor | LocationKind::Other(_) => Some(a.editor_pos),
         };
         (centre.unwrap_or(a.editor_pos), loc.radius)

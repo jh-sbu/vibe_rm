@@ -105,6 +105,13 @@ impl Engine {
             Some(LocationKind::NearReference(r)) => Some(r),
             Some(LocationKind::NearLinkedRef(kw)) => self.linked_ref(achr, (!kw.is_null()).then_some(kw)),
             Some(LocationKind::NearAlias(alias)) => p.quest.and_then(|q| self.alias_ref(q, alias)),
+            Some(LocationKind::InLocAlias(alias)) => {
+                let l = p.quest.and_then(|q| self.alias_ref(q, alias))?;
+                if self.editor_location(achr).is_some_and(|e| self.location_within(e, l)) {
+                    return None;
+                }
+                self.location_marker(l)
+            }
             Some(LocationKind::InCell(c)) => {
                 return match self.lo.cell(c) {
                     Some(idx) if idx.world.is_none() => Some((Place::Interior(c), Vec3::NAN)),

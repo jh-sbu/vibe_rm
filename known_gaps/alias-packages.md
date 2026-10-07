@@ -20,9 +20,7 @@ the actor's own) and UESP *Mod File Format/QUST* (`ALST` ... `ALPC` ... `ALED`) 
 
 - Order among aliases of quests with the same priority (here: by quest and alias
   id), and among several aliases of one quest.
-- Aliases are only filled by forced references and unique actors; "find matching
-  reference", "created reference", "from event" and location aliases aren't, so
-  their packages never apply. A stopped quest's aliases stay filled but are
-  ignored.
-- Alias location kind 9 (location alias), object id / type targets and
-  "Interrupt data" targets aren't resolved (editor location / none).
+- Created reference, "near alias" and "from event" aliases aren't filled, so
+  their packages never apply (see `alias-fills.md`).
+- Object id / type targets and "Interrupt data" targets aren't resolved
+  (editor location / none).

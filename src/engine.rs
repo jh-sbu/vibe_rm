@@ -133,7 +133,14 @@ pub struct Engine {
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     pub lockpick: Option<crate::locks::Lockpick>,
-    npc_refs: HashMap<FormId, FormId>,
+    /// Each NPC's first placed reference (unique actors' references).
+    npc_refs: std::cell::OnceCell<HashMap<FormId, FormId>>,
+    /// Locations' references and ref types, read on first use.
+    pub(crate) location_index: std::cell::OnceCell<crate::locations::LocationIndex>,
+    /// Persistent references, candidates for "find matching reference" aliases.
+    pub(crate) persistent_refs: std::cell::OnceCell<Vec<FormId>>,
+    /// Quests' aliases as parsed.
+    pub(crate) alias_spec_cache: HashMap<FormId, std::sync::Arc<Vec<crate::aliases::AliasSpec>>>,
     lod: Option<crate::world::lod::Lod>,
     pub nav: crate::ai::nav::NavWorld,
     pub furniture: crate::ai::furniture::FurnitureWorld,
@@ -233,7 +240,10 @@ impl Engine {
             test_jump: false,
             player_health: PLAYER_HEALTH,
             player_died_at: None,
-            npc_refs: HashMap::new(),
+            npc_refs: Default::default(),
+            location_index: Default::default(),
+            persistent_refs: Default::default(),
+            alias_spec_cache: HashMap::new(),
             lod: None,
             nav: Default::default(),
             furniture: Default::default(),
@@ -1835,21 +1845,22 @@ impl Engine {
         self.pending_moveto = Some(target);
     }
 
-    /// Start a quest: mark running, attach its scripts, send OnInit and run its startup stage.
-    pub fn start_quest(&mut self, q: FormId) {
-        let st = self.scripts.quests.entry(q).or_default();
-        if st.running {
-            return;
+    /// Start a quest: fill its aliases, mark running, attach its scripts, send
+    /// OnInit and run its startup stage. False when it is running already or a
+    /// required alias can't be filled.
+    pub fn start_quest(&mut self, q: FormId) -> bool {
+        if self.scripts.quests.get(&q).is_some_and(|st| st.running) {
+            return false;
         }
-        st.running = true;
-        let Some(rec) = self.lo.get(q) else { return };
+        let Some(rec) = self.lo.get(q) else { return false };
         let vmad = crate::script::vmad::parse(&rec).unwrap_or_default();
-        let alias_specs = alias_specs(&rec);
         // Startup stage: INDX flags (third byte) 0x2 marks "start up stage".
         let startup = rec.subrecords().find(|sr| sr.tag.0 == *b"INDX" && sr.u8(2) & 0x2 != 0).map(|sr| sr.u16(0));
         drop(rec);
-        let aliases = self.fill_aliases(&alias_specs);
-        self.scripts.quests.entry(q).or_default().aliases = aliases;
+        if !self.fill_quest_aliases(q) {
+            return false;
+        }
+        self.scripts.quests.entry(q).or_default().running = true;
         self.scripts.alias_gen += 1;
         let mut vm = std::mem::take(&mut self.vm);
         {
@@ -1882,6 +1893,7 @@ impl Engine {
         if let Some(s) = startup {
             self.scripts.pending_stages.push((q, s));
         }
+        true
     }
 
     /// Set a quest stage: record it and run the stage's fragment.
@@ -1906,30 +1918,20 @@ impl Engine {
         self.vm = vm;
     }
 
-    /// Resolve reference aliases (forced refs and unique actors).
-    fn fill_aliases(&mut self, specs: &[(u32, Option<FormId>, Option<FormId>)]) -> HashMap<u32, FormId> {
-        let mut out = HashMap::new();
-        for &(id, forced, unique) in specs {
-            if let Some(r) = forced.or_else(|| unique.and_then(|npc| self.unique_actor_ref(npc))) {
-                out.insert(id, r);
-            }
-        }
-        out
-    }
-
-    /// The placed reference of a unique NPC.
-    pub fn unique_actor_ref(&mut self, npc: FormId) -> Option<FormId> {
-        if self.npc_refs.is_empty() {
+    /// Each NPC's first placed reference.
+    pub fn npc_refs_index(&self) -> &HashMap<FormId, FormId> {
+        self.npc_refs.get_or_init(|| {
+            let mut out = HashMap::new();
             for &a in self.lo.ids_of_type(b"ACHR") {
                 if let Some(r) = self.lo.get(a)
                     && let Some(d) = r.get(b"NAME")
                 {
                     let base = r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())));
-                    self.npc_refs.entry(base).or_insert(a);
+                    out.entry(base).or_insert(a);
                 }
             }
-        }
-        self.npc_refs.get(&npc).copied()
+            out
+        })
     }
 
     fn update_scripts(&mut self, dt: f32) {
@@ -2010,35 +2012,6 @@ impl Engine {
             self.start_quest(q);
         }
     }
-}
-
-/// Reference alias definitions of a quest: (alias id, forced reference, unique actor).
-fn alias_specs(quest: &esp::LoadedRecord<'_>) -> Vec<(u32, Option<FormId>, Option<FormId>)> {
-    let mut out = Vec::new();
-    let mut cur: Option<(u32, Option<FormId>, Option<FormId>)> = None;
-    for sr in quest.subrecords() {
-        match &sr.tag.0 {
-            b"ALST" => cur = Some((sr.u32(0), None, None)),
-            b"ALLS" => cur = None,
-            b"ALFR" => {
-                if let Some(c) = cur.as_mut() {
-                    c.1 = Some(quest.fid(sr.form_id(0)));
-                }
-            }
-            b"ALUA" => {
-                if let Some(c) = cur.as_mut() {
-                    c.2 = Some(quest.fid(sr.form_id(0)));
-                }
-            }
-            b"ALED" => {
-                if let Some(c) = cur.take() {
-                    out.push(c);
-                }
-            }
-            _ => {}
-        }
-    }
-    out
 }
 
 fn host_class(lo: &LoadOrder, f: FormId) -> &'static str {

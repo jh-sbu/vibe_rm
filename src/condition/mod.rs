@@ -308,8 +308,32 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         }
         249 => b(e.conversation.as_ref().is_some_and(|cv| Some(cv.npc_ref) == subject)), // IsInDialogueWithPlayer
         35 => b(subject.is_some_and(|s| e.is_disabled(s))),               // GetDisabled
-        359 => b(e.current_location().is_some_and(|l| e.location_within(l, p1))), // GetInCurrentLoc
-        562 => b(e.current_location().is_some_and(|l| e.has_keyword(l, p1))), // LocationHasKeyword
+        // Locations: of the subject (a location itself, when filling location aliases).
+        359 => b(subject_location(e, subject).is_some_and(|l| e.location_within(l, p1))), // GetInCurrentLoc
+        360 => b(subject_location(e, subject).zip(alias(e, ctx, c.p1)).is_some_and(|(l, a)| e.location_within(l, a))), // GetInCurrentLocAlias
+        562 => b(subject_location(e, subject).is_some_and(|l| e.has_keyword(l, p1))), // LocationHasKeyword
+        565 => b(editor_location(e, subject).is_some_and(|l| e.location_within(l, p1))), // GetIsEditorLocation
+        567 => b(editor_location(e, subject).zip(alias(e, ctx, c.p1)).is_some_and(|(l, a)| e.location_within(l, a))), // GetIsEditorLocAlias
+        181 | 604 => {
+            // HasSameEditorLocAsRefAlias / IsInSameCurrentLocAsRefAlias (alias, keyword):
+            // both locations, or their parents with the keyword, are the same.
+            let other = alias(e, ctx, c.p1);
+            let (mine, theirs) = if c.func == 181 {
+                (editor_location(e, subject), other.and_then(|r| e.editor_location(r)))
+            } else {
+                (subject_location(e, subject), other.and_then(|r| e.ref_current_location(r)))
+            };
+            let kw = FormId(c.p2);
+            let up = |l: Option<FormId>| l.and_then(|l| e.location_with_keyword(l, kw));
+            b(up(mine).is_some_and(|m| up(theirs) == Some(m)))
+        }
+        605 => b(alias(e, ctx, c.p1) == Some(FormId(c.p2))), // LocAliasIsLocation
+        610 => b(alias(e, ctx, c.p1).is_some_and(|l| e.has_keyword(l, FormId(c.p2)))), // LocAliasHasKeyword
+        561 => b(subject.is_some_and(|s| e.ref_types(s).contains(&p1))), // HasRefType
+        563 => b(subject_location(e, subject).is_some_and(|l| !e.location_refs_of_type(l, p1).is_empty())), // LocationHasRefType
+        503 => b(true), // GetAllowWorldInteractions
+        641 => b(subj_base.is_some_and(|n| e.lo.get(n).and_then(|r| r.get(b"ACBS").map(|d| d[0] & 0x20 != 0)).unwrap_or(false))), // IsUnique
+        555 => b(subject.is_some_and(|s| s == PLAYER_REF || e.actor_cells.contains_key(&s))), // HasLoaded3D
         606 => Some(0.0),                                                 // GetKeywordDataForLocation
         579 | 286 | 403 | 161 => Some(0.0),                               // equipped shout, sneaking, relationship, package
         255 => b(subject.is_some_and(|s| e.offers_services_now(s))),   // GetOffersServicesNow
@@ -347,6 +371,23 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         672 | 701 | 702 | 714 => b(false),
         _ => idle_function_value(e, c, ctx),
     }
+}
+
+/// What alias `id` of the condition's quest holds.
+fn alias(e: &Engine, ctx: Context, id: u32) -> Option<FormId> {
+    ctx.quest.and_then(|q| e.alias_ref(q, id))
+}
+
+/// The location a condition's subject (else the player) is in: itself for a location.
+fn subject_location(e: &Engine, subject: Option<FormId>) -> Option<FormId> {
+    let s = subject.unwrap_or(PLAYER_REF);
+    if e.is_location(s) { Some(s) } else { e.ref_current_location(s) }
+}
+
+/// The subject's editor location: itself for a location.
+fn editor_location(e: &Engine, subject: Option<FormId>) -> Option<FormId> {
+    let s = subject?;
+    if e.is_location(s) { Some(s) } else { e.editor_location(s) }
 }
 
 /// Furniture and idle functions, answered from the query when picking idles.

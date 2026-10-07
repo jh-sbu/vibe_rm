@@ -99,7 +99,7 @@ impl papyrus::Host for EngineHost<'_> {
                 let actual = self.engine.native_class(FormId(id));
                 types::native_is_a(actual, class)
             }
-            ObjectId::Alias { .. } => matches!(class, "alias" | "referencealias"),
+            ObjectId::Alias { .. } => matches!(class, "alias" | "referencealias" | "locationalias"),
             ObjectId::Effect(_) => class == "activemagiceffect",
         }
     }

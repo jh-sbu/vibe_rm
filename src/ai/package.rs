@@ -121,6 +121,8 @@ pub enum LocationKind {
     NearSelf,
     /// Near what fills a reference alias of the package's quest (alias id).
     NearAlias(u32),
+    /// In the location a location alias of the package's quest holds (alias id).
+    InLocAlias(u32),
     /// Object ids / types, aliases, etc. Approximated by the editor location.
     Other(u32),
 }
@@ -252,6 +254,7 @@ fn location(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Location> {
         3 => LocationKind::NearEditor,
         6 => LocationKind::NearLinkedRef(if v == 0 { FormId::NULL } else { f }),
         8 => LocationKind::NearAlias(v),
+        9 => LocationKind::InLocAlias(v),
         12 => LocationKind::NearSelf,
         k => LocationKind::Other(k),
     };
