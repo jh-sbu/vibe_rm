@@ -10,6 +10,8 @@ pub mod record_flags {
     pub const DELETED: u32 = 0x20;
     pub const LOCALIZED: u32 = 0x80;
     pub const LIGHT: u32 = 0x200;
+    /// `ACHR`: placed dead ("Starts Dead").
+    pub const STARTS_DEAD: u32 = 0x200;
     pub const PERSISTENT: u32 = 0x400;
     pub const INITIALLY_DISABLED: u32 = 0x800;
     pub const COMPRESSED: u32 = 0x0004_0000;

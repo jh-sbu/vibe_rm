@@ -1555,6 +1555,17 @@ impl Engine {
     /// Kill an actor: it stops whatever it was doing and falls as a ragdoll (or
     /// just stops, without one). False if it isn't loaded or is already dead.
     pub fn kill_actor(&mut self, actor: FormId) -> bool {
+        let killed = self.kill_actor_quietly(actor);
+        if killed {
+            // Scripts hear of it (killer unknown).
+            self.send_script_event(actor, "OnDying", vec![papyrus::Value::None]);
+            self.send_script_event(actor, "OnDeath", vec![papyrus::Value::None]);
+        }
+        killed
+    }
+
+    /// Kill an actor without telling its scripts (one placed dead).
+    pub(crate) fn kill_actor_quietly(&mut self, actor: FormId) -> bool {
         let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
         let Some(index) = self.cells.get(&key).and_then(|rt| rt.actors.iter().position(|a| a.ref_id == actor)) else { return false };
         let (pose, transform) = match self.scene.cells.get(&key).and_then(|rc| rc.actors.get(index)) {
@@ -1596,9 +1607,6 @@ impl Engine {
         for f in fighting {
             self.end_combat(f);
         }
-        // Scripts hear of it (killer unknown).
-        self.send_script_event(actor, "OnDying", vec![papyrus::Value::None]);
-        self.send_script_event(actor, "OnDeath", vec![papyrus::Value::None]);
         true
     }
 

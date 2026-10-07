@@ -199,6 +199,7 @@ impl FurnitureWorld {
         idles: &super::idles::IdleIndex,
         key: CellKey,
         refs: &[FormId],
+        disabled: &dyn Fn(FormId) -> bool,
         mut markers: impl FnMut(&str) -> Option<Arc<[nif::FurnitureMarker]>>,
     ) {
         let furniture_special = lo.find_editor_id("FurnitureSpecial");
@@ -208,7 +209,7 @@ impl FurnitureWorld {
                 continue;
             }
             let rf = records::reference(&rec);
-            if rf.deleted() || rf.initially_disabled() {
+            if rf.deleted() || disabled(r) {
                 continue;
             }
             let Some(base) = lo.get(rf.base) else { continue };
