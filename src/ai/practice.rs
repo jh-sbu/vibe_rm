@@ -130,7 +130,6 @@ impl crate::engine::Engine {
     /// Actors practising with a kind of weapon take one they carry in hand (best
     /// by damage), and the one they had back afterwards.
     pub(crate) fn update_practice_weapons(&mut self) {
-        use super::package::WeaponKind;
         let mut swaps = Vec::new();
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
             if a.combat.is_some() || a.dead {
