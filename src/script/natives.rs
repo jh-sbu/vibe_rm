@@ -416,6 +416,17 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             none()
         }
+        // ----------------------------------------------------- Story Manager
+        ("keyword", "sendstoryevent") | ("keyword", "sendstoryeventandwait") => {
+            // (akLoc, akRef1, akRef2, aiValue1, aiValue2): L1, R1, R2, V1, V2; the keyword is K1.
+            let mut ev = crate::story::StoryEvent::new(b"SCPT");
+            ev.keyword = me.unwrap_or_default();
+            ev.locs[0] = form_arg(args, 0).unwrap_or_default();
+            ev.refs = [form_arg(args, 1).unwrap_or_default(), form_arg(args, 2).unwrap_or_default()];
+            ev.values = [arg(3).as_int() as f32, arg(4).as_int() as f32];
+            let started = e.send_story_event(ev);
+            if func == "sendstoryeventandwait" { v(Value::Bool(started)) } else { none() }
+        }
         // ------------------------------------------------------------ Scene
         ("scene", "start") | ("scene", "forcestart") => {
             if let Some(s) = me {

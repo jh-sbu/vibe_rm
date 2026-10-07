@@ -1740,6 +1740,136 @@ fn main() -> Result<()> {
             }
             println!("{links} edge links: {dangling} dangling, {one_way} without a link back");
         }
+        Some("story") => {
+            // story <data dir> [event code]: per event type, its nodes and quests and
+            // the event members (R1, L1...) conditions and "from event" aliases use,
+            // with alias names as hints; with a code, that event's tree.
+            use std::collections::{BTreeMap, BTreeSet, HashMap};
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let edid = |f: esp::FormId| lo.get(f).and_then(|r| r.editor_id()).unwrap_or_else(|| f.to_string());
+            let mut nodes: HashMap<esp::FormId, esp::story::Node> = HashMap::new();
+            for tag in [b"SMEN", b"SMBN", b"SMQN"] {
+                for &id in lo.ids_of_type(tag) {
+                    if let Some(n) = lo.get(id).and_then(|r| esp::story::parse(&r, id)) {
+                        nodes.insert(id, n);
+                    }
+                }
+            }
+            // Children in order: the first has no previous sibling, each next names it.
+            let mut children: HashMap<esp::FormId, Vec<esp::FormId>> = HashMap::new();
+            for n in nodes.values() {
+                children.entry(n.parent).or_default().push(n.id);
+            }
+            for kids in children.values_mut() {
+                let mut ordered = Vec::new();
+                let mut prev = esp::FormId::NULL;
+                while let Some(i) = kids.iter().position(|&k| nodes[&k].previous == prev) {
+                    prev = kids.remove(i);
+                    ordered.push(prev);
+                }
+                ordered.extend(kids.drain(..));
+                *kids = ordered;
+            }
+            let members_of = |n: &esp::story::Node, out: &mut BTreeSet<String>| {
+                for c in &n.conditions {
+                    let d = &c.ctda;
+                    if d.len() < 32 {
+                        continue;
+                    }
+                    let func = u16::from_le_bytes([d[8], d[9]]);
+                    let run_on = u32::from_le_bytes(d[20..24].try_into().unwrap());
+                    if run_on == 7 {
+                        out.insert(format!("{} (run on)", esp::story::code(&d[28..30])));
+                    }
+                    if func == 576 {
+                        out.insert(format!("{} (GetEventData fn {})", esp::story::code(&d[14..16]), u16::from_le_bytes([d[12], d[13]])));
+                    }
+                }
+            };
+            fn walk(id: esp::FormId, depth: usize, nodes: &HashMap<esp::FormId, esp::story::Node>, children: &HashMap<esp::FormId, Vec<esp::FormId>>, f: &mut dyn FnMut(&esp::story::Node, usize)) {
+                f(&nodes[&id], depth);
+                for &k in children.get(&id).map(|v| v.as_slice()).unwrap_or(&[]) {
+                    walk(k, depth + 1, nodes, children, f);
+                }
+            }
+            // Quests' "from event" aliases: (event, member) -> alias names.
+            let mut alias_members: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
+            let mut quest_events: BTreeMap<String, usize> = BTreeMap::new();
+            for &q in lo.ids_of_type(b"QUST") {
+                let Some(rec) = lo.get(q) else { continue };
+                if let Some(e) = rec.get(b"ENAM") {
+                    *quest_events.entry(esp::story::code(e)).or_default() += 1;
+                }
+                let (mut name, mut ev) = (String::new(), None);
+                for sr in rec.subrecords() {
+                    match &sr.tag.0 {
+                        b"ALST" | b"ALLS" => (name, ev) = (String::new(), None),
+                        b"ALID" => name = sr.zstring(),
+                        b"ALFE" => ev = Some(esp::story::code(sr.data)),
+                        b"ALFD" => {
+                            if let Some(e) = &ev {
+                                alias_members.entry((e.clone(), esp::story::code(sr.data))).or_default().insert(name.clone());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let mut roots: Vec<&esp::story::Node> = nodes.values().filter(|n| n.event().is_some()).collect();
+            roots.sort_by_key(|n| n.event());
+            if let Some(code) = args.get(2) {
+                for r in roots.iter().filter(|r| esp::story::code(&r.event().unwrap()) == *code) {
+                    walk(r.id, 0, &nodes, &children, &mut |n, d| {
+                        let what = match &n.kind {
+                            esp::story::NodeKind::Quest { quests, num_to_run } => format!(
+                                "quests {:?}{}",
+                                quests.iter().map(|q| format!("{}{}", edid(q.quest), if q.reset_hours > 0.0 { format!(" reset {}h", q.reset_hours) } else { String::new() })).collect::<Vec<_>>(),
+                                if *num_to_run > 0 { format!(" run {num_to_run}") } else { String::new() }
+                            ),
+                            esp::story::NodeKind::Branch => "branch".into(),
+                            esp::story::NodeKind::Event(_) => "event".into(),
+                        };
+                        let mut m = BTreeSet::new();
+                        members_of(n, &mut m);
+                        println!("{}{} {} flags {:#x}/{:#x} max {} conditions {} {what} {m:?}", "  ".repeat(d), n.editor_id, n.id, n.node_flags, n.quest_flags, n.max_concurrent, n.conditions.len());
+                    });
+                }
+                return Ok(());
+            }
+            println!("{} nodes, {} event roots", nodes.len(), roots.len());
+            for r in &roots {
+                let (mut qnodes, mut quests) = (0, 0);
+                let mut members = BTreeSet::new();
+                walk(r.id, 0, &nodes, &children, &mut |n, _| {
+                    members_of(n, &mut members);
+                    if let esp::story::NodeKind::Quest { quests: q, .. } = &n.kind {
+                        qnodes += 1;
+                        quests += q.len();
+                    }
+                });
+                let code = esp::story::code(&r.event().unwrap());
+                println!("{code} {}: {qnodes} quest nodes, {quests} quests ({} with this event type); members {members:?}", r.id, quest_events.get(&code).copied().unwrap_or(0));
+            }
+            println!("from-event aliases (event, member: names):");
+            for ((e, m), names) in &alias_members {
+                let v: Vec<&String> = names.iter().take(6).collect();
+                println!("  {e} {m}: {} {v:?}", names.len());
+            }
+        }
+        Some("first-of") => {
+            // first-of <data dir> <TYPE> [n]: editor ids and form ids of the first n records of a type.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let tag: [u8; 4] = args[2].as_bytes().try_into().context("4-char type")?;
+            let n: usize = args.get(3).and_then(|n| n.parse().ok()).unwrap_or(10);
+            println!("{} records", lo.ids_of_type(&tag).len());
+            for &id in lo.ids_of_type(&tag).iter().take(n) {
+                println!("{id} {}", lo.get(id).and_then(|r| r.editor_id()).unwrap_or_default());
+            }
+        }
         Some("triggers") => {
             // triggers <data dir>: references with a primitive (XPRM) by shape, the
             // scripts on them (or their base) by name, and their bases' types.

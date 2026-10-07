@@ -134,6 +134,8 @@ pub struct Engine {
     pub barks: crate::dialogue::barks::Barks,
     /// Scenes playing.
     pub scenes: crate::scene::Scenes,
+    /// The Story Manager's tree and what it remembers.
+    pub(crate) story: crate::story::StoryManager,
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     pub lockpick: Option<crate::locks::Lockpick>,
@@ -236,6 +238,7 @@ impl Engine {
             lockpick: None,
             barks: Default::default(),
             scenes: Default::default(),
+            story: Default::default(),
             talked_to_pc: Default::default(),
             alias_packs: Default::default(),
             faction_relations: Default::default(),
@@ -1453,6 +1456,7 @@ impl Engine {
         self.update_whereabouts(dt);
         self.update_actors(dt);
         self.update_triggers();
+        self.update_story();
         self.update_projectiles(dt);
         self.update_held_lights();
         self.update_animated(dt);
@@ -2013,23 +2017,42 @@ impl Engine {
         self.pending_moveto = Some(target);
     }
 
-    /// Start a quest: fill its aliases, mark running, attach its scripts, send
-    /// OnInit and run its startup stage. False when it is running already or a
-    /// required alias can't be filled.
+    /// Start a quest: fill its aliases and mark it running; its scripts are
+    /// attached, sent OnInit and its startup stage run once the VM is free
+    /// (`init_quest`), so scripts can start quests. False when it is running
+    /// already or a required alias can't be filled.
     pub fn start_quest(&mut self, q: FormId) -> bool {
-        if self.scripts.quests.get(&q).is_some_and(|st| st.running) {
+        self.start_quest_with(q, None)
+    }
+
+    /// Start a quest for a Story Manager event: its "from event" aliases and
+    /// event data conditions read the event.
+    pub fn start_quest_with(&mut self, q: FormId, event: Option<crate::story::StoryEvent>) -> bool {
+        if self.scripts.quests.get(&q).is_some_and(|st| st.running) || self.lo.get(q).is_none() {
             return false;
         }
-        let Some(rec) = self.lo.get(q) else { return false };
-        let vmad = crate::script::vmad::parse(&rec).unwrap_or_default();
-        // Startup stage: INDX flags (third byte) 0x2 marks "start up stage".
-        let startup = rec.subrecords().find(|sr| sr.tag.0 == *b"INDX" && sr.u8(2) & 0x2 != 0).map(|sr| sr.u16(0));
-        drop(rec);
+        self.scripts.quests.entry(q).or_default().event = event;
         if !self.fill_quest_aliases(q) {
+            self.scripts.quests.entry(q).or_default().event = None;
             return false;
         }
         self.scripts.quests.entry(q).or_default().running = true;
         self.scripts.alias_gen += 1;
+        self.scripts.pending_quest_inits.push(q);
+        true
+    }
+
+    /// Attach a started quest's scripts (its own and its aliases'), send OnInit,
+    /// queue its startup stage and start its scenes.
+    fn init_quest(&mut self, q: FormId) {
+        if !self.scripts.quests.get(&q).is_some_and(|st| st.running) {
+            return;
+        }
+        let Some(rec) = self.lo.get(q) else { return };
+        let vmad = crate::script::vmad::parse(&rec).unwrap_or_default();
+        // Startup stage: INDX flags (third byte) 0x2 marks "start up stage".
+        let startup = rec.subrecords().find(|sr| sr.tag.0 == *b"INDX" && sr.u8(2) & 0x2 != 0).map(|sr| sr.u16(0));
+        drop(rec);
         let mut vm = std::mem::take(&mut self.vm);
         {
             let obj = papyrus::ObjectId::Form(q.0);
@@ -2062,7 +2085,13 @@ impl Engine {
             self.scripts.pending_stages.push((q, s));
         }
         self.start_quest_scenes(q);
-        true
+    }
+
+    /// Initialise the quests started since the last time (outside VM runs).
+    pub(crate) fn init_started_quests(&mut self) {
+        for q in std::mem::take(&mut self.scripts.pending_quest_inits) {
+            self.init_quest(q);
+        }
     }
 
     /// Stop a quest: its aliases empty and its scenes stop.
@@ -2070,6 +2099,7 @@ impl Engine {
         let st = self.scripts.quests.entry(q).or_default();
         st.running = false;
         st.aliases.clear();
+        st.event = None;
         self.scripts.alias_gen += 1;
         self.stop_quest_scenes(q);
     }
@@ -2146,10 +2176,11 @@ impl Engine {
                 vm.run(&mut host, now, 20_000);
             }
             let stages = std::mem::take(&mut self.scripts.pending_stages);
-            if stages.is_empty() && self.scripts.pending_events.is_empty() {
+            if stages.is_empty() && self.scripts.pending_events.is_empty() && self.scripts.pending_quest_inits.is_empty() {
                 break;
             }
             self.vm = vm;
+            self.init_started_quests();
             for (q, s) in stages {
                 self.run_stage(q, s);
             }
@@ -2189,6 +2220,7 @@ impl Engine {
         for q in quests {
             self.start_quest(q);
         }
+        self.init_started_quests();
     }
 }
 

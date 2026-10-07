@@ -33,6 +33,8 @@ pub struct QuestState {
     pub completed: bool,
     /// Reference alias fills: alias id -> reference.
     pub aliases: HashMap<u32, FormId>,
+    /// The Story Manager event that started it.
+    pub event: Option<crate::story::StoryEvent>,
 }
 
 /// Script-visible world state and queues.
@@ -60,6 +62,8 @@ pub struct ScriptState {
     pub pending_events: Vec<(ObjectId, String, Vec<Value>)>,
     /// Quest fragments to run: (quest, stage).
     pub pending_stages: Vec<(FormId, u16)>,
+    /// Quests started whose scripts are to be attached (`Engine::init_quest`).
+    pub pending_quest_inits: Vec<FormId>,
     /// Objects that already received OnInit.
     pub initialized: HashSet<ObjectId>,
     pub real_time: f64,

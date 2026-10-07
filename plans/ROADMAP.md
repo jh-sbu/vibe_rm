@@ -302,6 +302,17 @@ game each piece unlocks.
   `IsScenePackageRunning`; `GetDistance` between interiors / worldspaces is
   far. Console `startscene`, `stopscene`, `scenes`, `startquest`, `stopquest`,
   `setstage`; vrm-tool `scenes`. Open questions: `known_gaps/scenes.md`
+- Story Manager: events run down the tree of event, branch and quest nodes
+  (`SMEN` / `SMBN` / `SMQN`) under their type, stacked or random, node
+  conditions on the event's data, quests started with reset hours, max running,
+  num to run, do all before repeating and shared events. Events: NPCs striking
+  up conversations (`ADIA`: every town's conversation quests and their scenes),
+  the player changing location (`CLOC`), script events
+  (`Keyword.SendStoryEvent`), kills (`KILL`). "From event" aliases,
+  `GetEventData` and run-on-event-data conditions. Quests started from Papyrus
+  get their scripts once the running scripts yield (they were lost before).
+  Console `storyevent`; vrm-tool `story`. Open questions:
+  `known_gaps/story-manager.md`
 - Trigger volumes: scripted box and sphere primitives (`XPRM`) send
   `OnTriggerEnter` / `OnTriggerLeave` as the player and actors step in and out
   (set-stage, start-scene, music and comment triggers...);
@@ -362,16 +373,11 @@ game each piece unlocks.
      INFO speaker / listener idles; listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
-2. **Story Manager**: what starts most quests that don't start with the game
-   (radiant quests, town scenes' quests, quests begun on arriving somewhere,
-   on a kill, on a script's `SendStoryEvent`...)
-   - Event, branch and quest nodes (`SMEN` / `SMBN` / `SMQN`): the tree walked
-     in order under each event type, node conditions with the event's data,
-     shares / random / first-that-passes, quests' reset hours and counts
-   - Events: change location, script event (`SendStoryEvent`,
-     `SendStoryEventAndWait`), kill, then the others by how many quests they start
-   - Quests started with the event's references and locations filling their
-     "from event" aliases (`GetEventData` conditions)
+2. **Story Manager** (core and four events done; see Done)
+   - The other events: crafting, level / skill increases, arrest and jail,
+     assault, actor hello, item pickup and removal, spell cast, bodies found,
+     relationship rank changes...; kill events' crime and relationship values
+   - The quest record's own event conditions; Story Manager state in saves
 3. **AI depth**
    - Alias fills: near alias; created objects drawn in the world, cleaned up
    - Remaining procedures: guard (restricted areas), use magic, dialogue,

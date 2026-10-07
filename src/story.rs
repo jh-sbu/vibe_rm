@@ -1,0 +1,340 @@
+//! The Story Manager: events (an NPC striking up a conversation, the player
+//! changing location, a kill, a script's `SendStoryEvent`...) are run down the
+//! tree of nodes under their event type (`SMEN` -> `SMBN` / `SMQN`), in order
+//! or at random, each node's conditions checked against the event's data; the
+//! first quest node with a quest that starts takes the event, unless it shares
+//! it. Quests started this way keep the event: "from event" aliases are filled
+//! with its references and locations, and `GetEventData` / run-on-event-data
+//! conditions read it.
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use esp::FormId;
+use esp::story::{Node, NodeKind, flags};
+
+use crate::condition::{self, Condition};
+use crate::engine::{Engine, PLAYER_REF};
+
+/// What an event carries: references (`R1`, `R2`), locations (`L1`, `L2`), a
+/// keyword (`K1`: a script event's), values (`V1`, `V2`) and a form (`F1`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StoryEvent {
+    pub code: [u8; 4],
+    pub refs: [FormId; 2],
+    pub locs: [FormId; 2],
+    pub keyword: FormId,
+    pub values: [f32; 2],
+    pub form: FormId,
+}
+
+impl StoryEvent {
+    pub fn new(code: &[u8; 4]) -> Self {
+        StoryEvent { code: *code, ..Default::default() }
+    }
+
+    /// The form a member names (`R1`, `L2`, `K1`, `F1`), if set.
+    pub fn member_form(&self, m: [u8; 2]) -> Option<FormId> {
+        let f = match &m {
+            b"R1" => self.refs[0],
+            b"R2" => self.refs[1],
+            b"L1" => self.locs[0],
+            b"L2" => self.locs[1],
+            b"K1" => self.keyword,
+            b"F1" => self.form,
+            _ => FormId::NULL,
+        };
+        (!f.is_null()).then_some(f)
+    }
+
+    pub fn member_value(&self, m: [u8; 2]) -> f32 {
+        match &m {
+            b"V1" => self.values[0],
+            b"V2" => self.values[1],
+            _ => self.member_form(m).map_or(0.0, |f| f.0 as f32),
+        }
+    }
+
+    pub fn name(&self) -> String {
+        esp::story::code(&self.code)
+    }
+}
+
+struct NodeDef {
+    node: Node,
+    conditions: Vec<Condition>,
+}
+
+#[derive(Default)]
+pub struct StoryManager {
+    built: bool,
+    nodes: HashMap<FormId, Arc<NodeDef>>,
+    /// Children in their order (each names the sibling before it).
+    children: HashMap<FormId, Vec<FormId>>,
+    /// Event nodes by event type.
+    roots: HashMap<[u8; 4], Vec<FormId>>,
+    /// When each quest was last started by the Story Manager (game hours).
+    last_run: HashMap<FormId, f64>,
+    /// "Do all before repeating": the quests each node has run this round.
+    ran: HashMap<FormId, HashSet<FormId>>,
+    /// The event being run down the tree (its data for conditions).
+    pub active: Option<StoryEvent>,
+    /// When each actor next considers striking up a conversation (real seconds).
+    next_social: HashMap<FormId, f64>,
+    /// The player's location last update (change location events).
+    last_location: Option<Option<FormId>>,
+}
+
+/// What running a node did.
+struct Outcome {
+    started: bool,
+    /// Started, and the event goes no further.
+    consumed: bool,
+}
+
+impl Engine {
+    fn build_story(&mut self) {
+        let sm = &mut self.story;
+        if sm.built {
+            return;
+        }
+        sm.built = true;
+        for tag in [b"SMEN", b"SMBN", b"SMQN"] {
+            for &id in self.lo.ids_of_type(tag) {
+                let Some(rec) = self.lo.get(id) else { continue };
+                let Some(node) = esp::story::parse(&rec, id) else { continue };
+                let conditions = node
+                    .conditions
+                    .iter()
+                    .filter_map(|c| {
+                        let mut cond = condition::parse(&rec, &c.ctda)?;
+                        cond.string_p1 = c.cis1.as_deref().map(Into::into);
+                        cond.string_p2 = c.cis2.as_deref().map(Into::into);
+                        Some(cond)
+                    })
+                    .collect();
+                if let Some(e) = node.event() {
+                    sm.roots.entry(e).or_default().push(id);
+                }
+                sm.children.entry(node.parent).or_default().push(id);
+                sm.nodes.insert(id, Arc::new(NodeDef { node, conditions }));
+            }
+        }
+        let nodes = &sm.nodes;
+        for kids in sm.children.values_mut() {
+            let mut ordered = Vec::with_capacity(kids.len());
+            let mut prev = FormId::NULL;
+            while let Some(i) = kids.iter().position(|k| nodes[k].node.previous == prev) {
+                prev = kids.remove(i);
+                ordered.push(prev);
+            }
+            ordered.append(kids);
+            *kids = ordered;
+        }
+        for v in sm.roots.values_mut() {
+            v.sort();
+        }
+        log::info!("story manager: {} nodes, {} event types", sm.nodes.len(), sm.roots.len());
+    }
+
+    /// Run an event down the Story Manager's tree. True if a quest started.
+    pub fn send_story_event(&mut self, event: StoryEvent) -> bool {
+        self.build_story();
+        let roots = self.story.roots.get(&event.code).cloned().unwrap_or_default();
+        let outer = self.story.active.replace(event.clone());
+        let mut started = false;
+        for r in roots {
+            let o = self.run_story_node(r, &event);
+            started |= o.started;
+            if o.consumed {
+                break;
+            }
+        }
+        self.story.active = outer;
+        if started {
+            log::info!("story event {} {:?} started a quest", event.name(), event);
+        } else {
+            log::trace!("story event {} {:?}: nothing started", event.name(), event);
+        }
+        started
+    }
+
+    fn story_node_passes(&self, def: &NodeDef) -> bool {
+        condition::evaluate(self, &def.conditions, condition::Context { subject: Some(PLAYER_REF), ..Default::default() })
+    }
+
+    /// Quests of a node and below that are running.
+    fn story_running_under(&self, id: FormId) -> usize {
+        let Some(def) = self.story.nodes.get(&id) else { return 0 };
+        match &def.node.kind {
+            NodeKind::Quest { quests, .. } => quests.iter().filter(|q| self.scripts.quests.get(&q.quest).is_some_and(|s| s.running)).count(),
+            _ => self.story.children.get(&id).map_or(0, |k| k.iter().map(|&c| self.story_running_under(c)).sum()),
+        }
+    }
+
+    fn run_story_node(&mut self, id: FormId, event: &StoryEvent) -> Outcome {
+        let none = Outcome { started: false, consumed: false };
+        let Some(def) = self.story.nodes.get(&id).cloned() else { return none };
+        let node = &def.node;
+        if !self.story_node_passes(&def) {
+            return none;
+        }
+        if node.max_concurrent > 0 && self.story_running_under(id) >= node.max_concurrent as usize {
+            return none;
+        }
+        match &node.kind {
+            NodeKind::Event(_) | NodeKind::Branch => {
+                let mut kids = self.story.children.get(&id).cloned().unwrap_or_default();
+                if node.node_flags & flags::RANDOM != 0 {
+                    self.shuffle(&mut kids);
+                }
+                let mut started = false;
+                for k in kids {
+                    let o = self.run_story_node(k, event);
+                    started |= o.started;
+                    if o.consumed {
+                        return o;
+                    }
+                }
+                Outcome { started, consumed: false }
+            }
+            NodeKind::Quest { quests, num_to_run } => {
+                let mut order: Vec<usize> = (0..quests.len()).collect();
+                if node.node_flags & flags::RANDOM != 0 {
+                    self.shuffle(&mut order);
+                }
+                let want = if node.quest_flags & flags::NUM_QUESTS_TO_RUN != 0 { (*num_to_run).max(1) } else { 1 };
+                let all_before_repeat = node.quest_flags & flags::DO_ALL_BEFORE_REPEATING != 0;
+                if all_before_repeat && quests.iter().all(|q| self.story.ran.get(&id).is_some_and(|r| r.contains(&q.quest))) {
+                    self.story.ran.remove(&id);
+                }
+                let now = self.game_hours_total();
+                let (mut n, mut shares) = (0, node.quest_flags & flags::SHARES_EVENT != 0);
+                for i in order {
+                    let q = quests[i];
+                    if self.scripts.quests.get(&q.quest).is_some_and(|s| s.running) {
+                        continue;
+                    }
+                    if q.reset_hours > 0.0 && self.story.last_run.get(&q.quest).is_some_and(|&t| now - t < q.reset_hours as f64) {
+                        continue;
+                    }
+                    if all_before_repeat && self.story.ran.get(&id).is_some_and(|r| r.contains(&q.quest)) {
+                        continue;
+                    }
+                    if !self.start_quest_with(q.quest, Some(event.clone())) {
+                        continue;
+                    }
+                    log::info!("story manager: {} starts {} ({})", event.name(), self.lo.get(q.quest).and_then(|r| r.editor_id()).unwrap_or_default(), node.editor_id);
+                    self.story.last_run.insert(q.quest, now);
+                    self.story.ran.entry(id).or_default().insert(q.quest);
+                    shares |= q.flags & flags::QUEST_SHARES_EVENT != 0;
+                    n += 1;
+                    if n >= want {
+                        break;
+                    }
+                }
+                Outcome { started: n > 0, consumed: n > 0 && !shares }
+            }
+        }
+    }
+
+    fn shuffle<T>(&mut self, v: &mut [T]) {
+        for i in (1..v.len()).rev() {
+            let j = (self.rand() % (i as u64 + 1)) as usize;
+            v.swap(i, j);
+        }
+    }
+
+    /// The event a condition reads: the one being run down the tree, else the
+    /// one that started the quest.
+    pub(crate) fn story_event_for(&self, quest: Option<FormId>) -> Option<&StoryEvent> {
+        self.story.active.as_ref().or_else(|| quest.and_then(|q| self.scripts.quests.get(&q)).and_then(|s| s.event.as_ref()))
+    }
+
+    /// Events the world sends by itself (called every frame).
+    pub(crate) fn update_story(&mut self) {
+        // The player arriving somewhere new.
+        let here = self.current_location();
+        match self.story.last_location {
+            Some(before) if before != here => {
+                let mut e = StoryEvent::new(b"CLOC");
+                e.refs[0] = PLAYER_REF;
+                e.locs = [before.unwrap_or_default(), here.unwrap_or_default()];
+                log::debug!("player changes location {before:?} -> {here:?}");
+                self.send_story_event(e);
+            }
+            _ => {}
+        }
+        self.story.last_location = Some(here);
+        if self.ai_enabled {
+            self.update_social();
+        }
+    }
+
+    /// NPCs now and then strike up a conversation with someone near them
+    /// (`fAISocialTimerForConversationsMin` / `Max`,
+    /// `fAISocialchanceForConversation`, `fAISocialRadiusToTriggerConversation`):
+    /// an actor dialogue event, whose quests play the conversation.
+    fn update_social(&mut self) {
+        let now = self.scripts.real_time;
+        let (lo, hi) = (
+            crate::ai::combat::gmst_f32(&self.lo, "fAISocialTimerForConversationsMin", 10.0) as f64,
+            crate::ai::combat::gmst_f32(&self.lo, "fAISocialTimerForConversationsMax", 30.0) as f64,
+        );
+        let interior = matches!(self.location, crate::engine::Location::Interior(_));
+        let suffix = if interior { "Interior" } else { "" };
+        let chance = crate::ai::combat::gmst_f32(&self.lo, &format!("fAISocialchanceForConversation{suffix}"), 10.0);
+        let radius = crate::ai::combat::gmst_f32(&self.lo, &format!("fAISocialRadiusToTriggerConversation{suffix}"), 500.0);
+        let talking = self.conversation.as_ref().map(|c| c.npc_ref);
+        // Who could talk: loaded humanoids, alive, calm, not in a scene or a conversation.
+        let free: Vec<(FormId, glam::Vec3)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.combat.is_none() && a.bleeding.is_none() && a.exiting.is_none())
+            .filter(|a| a.graph.as_ref().is_some_and(|g| g.project().humanoid()))
+            .filter(|a| talking != Some(a.ref_id))
+            .map(|a| (a.ref_id, a.pos))
+            .collect();
+        let mut due = Vec::new();
+        for &(r, _) in &free {
+            let first = now + lo + (r.0 % 17) as f64;
+            let at = *self.story.next_social.entry(r).or_insert(first);
+            if now >= at {
+                due.push(r);
+            }
+        }
+        for r in due {
+            let wait = lo + (self.rand() % 1000) as f64 / 1000.0 * (hi - lo).max(0.0);
+            self.story.next_social.insert(r, now + wait);
+            if (self.rand() % 100) as f32 >= chance || self.scene_of_actor(r).is_some() || self.is_barking(r) {
+                continue;
+            }
+            let Some(&(_, pos)) = free.iter().find(|(x, _)| *x == r) else { continue };
+            let mut near: Vec<(f32, FormId)> = free
+                .iter()
+                .filter(|(o, _)| *o != r)
+                .map(|(o, p)| (p.distance(pos), *o))
+                .filter(|(d, o)| *d <= radius && self.scene_of_actor(*o).is_none())
+                .collect();
+            near.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let Some(&(_, other)) = near.first() else { continue };
+            let mut e = StoryEvent::new(b"ADIA");
+            e.refs = [r, other];
+            e.locs[0] = self.ref_current_location(r).unwrap_or_default();
+            log::debug!("{r} strikes up a conversation with {other}");
+            self.send_story_event(e);
+        }
+        // Forget actors no longer loaded.
+        let loaded = &self.actor_cells;
+        self.story.next_social.retain(|r, _| loaded.contains_key(r));
+    }
+
+    /// A kill: the victim, the killer and where.
+    pub(crate) fn send_kill_event(&mut self, victim: FormId, killer: Option<FormId>) {
+        let mut e = StoryEvent::new(b"KILL");
+        e.refs = [victim, killer.unwrap_or_default()];
+        e.locs[0] = self.ref_current_location(victim).unwrap_or_default();
+        self.send_story_event(e);
+    }
+}

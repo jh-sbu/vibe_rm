@@ -1319,7 +1319,7 @@ impl Engine {
         if a.bleeding.is_some() {
             if !a.stats.essential && attacker == Some(PLAYER_REF) {
                 a.bleeding = None;
-                self.kill_actor(target);
+                self.kill_actor_by(target, attacker);
             }
             return;
         }
@@ -1335,7 +1335,7 @@ impl Engine {
                 self.start_bleedout(target);
                 return;
             }
-            self.kill_actor(target);
+            self.kill_actor_by(target, attacker);
             return;
         }
         // Flinch unless mid-swing or behind its guard; heavy hits stagger.
@@ -1555,11 +1555,18 @@ impl Engine {
     /// Kill an actor: it stops whatever it was doing and falls as a ragdoll (or
     /// just stops, without one). False if it isn't loaded or is already dead.
     pub fn kill_actor(&mut self, actor: FormId) -> bool {
+        self.kill_actor_by(actor, None)
+    }
+
+    /// Kill an actor, `killer` (if known) having dealt the blow: its scripts
+    /// hear of it (`OnDying`, `OnDeath`) and the Story Manager gets a kill event.
+    pub fn kill_actor_by(&mut self, actor: FormId, killer: Option<FormId>) -> bool {
         let killed = self.kill_actor_quietly(actor);
         if killed {
-            // Scripts hear of it (killer unknown).
-            self.send_script_event(actor, "OnDying", vec![papyrus::Value::None]);
-            self.send_script_event(actor, "OnDeath", vec![papyrus::Value::None]);
+            let k = killer.map_or(papyrus::Value::None, |k| self.object_value(k));
+            self.send_script_event(actor, "OnDying", vec![k.clone()]);
+            self.send_script_event(actor, "OnDeath", vec![k]);
+            self.send_kill_event(actor, killer);
         }
         killed
     }

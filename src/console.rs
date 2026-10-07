@@ -59,7 +59,18 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "screenshot <png>      save the 3D view (no HUD) at the window size".into(),
             "startquest / stopquest <quest>, setstage <quest> <stage>   quests".into(),
             "startscene <scene> [force] / stopscene <scene> / scenes   start, stop, list scenes".into(),
+            "storyevent <TYPE> [r1] [r2] [l1] [l2]   send a Story Manager event (ADIA, CLOC, SCPT...)".into(),
         ],
+        "storyevent" => {
+            let Some(code) = args.first().and_then(|c| <[u8; 4]>::try_from(c.to_ascii_uppercase().as_bytes()).ok()) else {
+                return vec!["usage: storyevent <TYPE> [r1] [r2] [l1] [l2]".into()];
+            };
+            let mut ev = crate::story::StoryEvent::new(&code);
+            let f = |i: usize| args.get(i).and_then(|a| engine.resolve_form(a)).unwrap_or_default();
+            ev.refs = [f(1), f(2)];
+            ev.locs = [f(3), f(4)];
+            if engine.send_story_event(ev) { vec!["a quest started".into()] } else { vec!["nothing started".into()] }
+        }
         "startquest" | "stopquest" => {
             let Some(q) = args.first().and_then(|q| engine.resolve_form(q)) else { return vec![format!("usage: {cmd} <quest>")] };
             if cmd == "stopquest" {
