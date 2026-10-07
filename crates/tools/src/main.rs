@@ -1743,8 +1743,11 @@ fn main() -> Result<()> {
         Some("story") => {
             // story <data dir> [event code]: per event type, its nodes and quests and
             // the event members (R1, L1...) conditions and "from event" aliases use,
-            // with alias names as hints; with a code, that event's tree.
+            // with alias names as hints; with a code, that event's tree (CONDS=1:
+            // with each node's conditions). OWN=1 lists quests with their own
+            // event conditions.
             use std::collections::{BTreeMap, BTreeSet, HashMap};
+            anyhow::ensure!(args.len() > 1, "usage: story <data dir> [event code]");
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let lo = esp::LoadOrder::load(data, &names)?;
@@ -1817,6 +1820,34 @@ fn main() -> Result<()> {
                     }
                 }
             }
+            // Quests' own event conditions: CTDAs after NEXT, before the stages.
+            let mut own: BTreeMap<String, Vec<String>> = BTreeMap::new();
+            for &q in lo.ids_of_type(b"QUST") {
+                let Some(rec) = lo.get(q) else { continue };
+                let (mut after_next, mut funcs) = (false, Vec::new());
+                for sr in rec.subrecords() {
+                    match &sr.tag.0 {
+                        b"NEXT" => after_next = true,
+                        b"INDX" | b"QOBJ" | b"ALST" | b"ALLS" | b"ANAM" => break,
+                        b"CTDA" if after_next && sr.data.len() >= 32 => {
+                            funcs.push(format!("{}/{}", u16::from_le_bytes([sr.data[8], sr.data[9]]), u32::from_le_bytes(sr.data[20..24].try_into().unwrap())))
+                        }
+                        _ => {}
+                    }
+                }
+                if !funcs.is_empty() {
+                    let e = rec.get(b"ENAM").map(esp::story::code).unwrap_or_default();
+                    own.entry(e).or_default().push(format!("{} {funcs:?}", rec.editor_id().unwrap_or_default()));
+                }
+            }
+            if std::env::var("OWN").is_ok() {
+                for (e, qs) in &own {
+                    println!("{e}: {} quests with event conditions", qs.len());
+                    for q in qs.iter().take(8) {
+                        println!("  {q}");
+                    }
+                }
+            }
             let mut roots: Vec<&esp::story::Node> = nodes.values().filter(|n| n.event().is_some()).collect();
             roots.sort_by_key(|n| n.event());
             if let Some(code) = args.get(2) {
@@ -1834,6 +1865,29 @@ fn main() -> Result<()> {
                         let mut m = BTreeSet::new();
                         members_of(n, &mut m);
                         println!("{}{} {} flags {:#x}/{:#x} max {} conditions {} {what} {m:?}", "  ".repeat(d), n.editor_id, n.id, n.node_flags, n.quest_flags, n.max_concurrent, n.conditions.len());
+                        // CONDS=1: each condition's function, operator, value, parameters and run-on.
+                        if std::env::var("CONDS").is_ok() {
+                            for c in &n.conditions {
+                                let x = &c.ctda;
+                                if x.len() < 32 {
+                                    continue;
+                                }
+                                let u = |o: usize| u32::from_le_bytes(x[o..o + 4].try_into().unwrap());
+                                let p1 = esp::FormId(u(12));
+                                println!(
+                                    "{}  - fn {} op {:#04x} value {} p1 {} ({}) p2 {:08X} run_on {} ref {:08X}",
+                                    "  ".repeat(d),
+                                    u16::from_le_bytes([x[8], x[9]]),
+                                    x[0],
+                                    f32::from_le_bytes(x[4..8].try_into().unwrap()),
+                                    p1,
+                                    edid(p1),
+                                    u(16),
+                                    u(20),
+                                    u(24)
+                                );
+                            }
+                        }
                     });
                 }
                 return Ok(());

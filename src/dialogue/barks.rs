@@ -96,6 +96,7 @@ impl Engine {
             }
             if d < GREETING_DISTANCE && self.barks.greeted.get(&r).is_none_or(|t| now - t > GREETING_INTERVAL) {
                 self.barks.greeted.insert(r, now);
+                self.send_actor_hello(r, crate::engine::PLAYER_REF);
                 if self.bark(r, b"HELO") {
                     return;
                 }

@@ -84,6 +84,7 @@ impl Engine {
         self.inventory_mut(PLAYER_REF).add(base, count);
         self.inventory_event(PLAYER_REF, true, base, count, None);
         self.set_disabled(r, true);
+        self.send_player_add_item(base, r, false);
         self.scripts.notify(if count > 1 { format!("{} ({count}) added", info.name) } else { format!("{} added", info.name) });
         log::info!("took {r} ({base} x{count})");
         let player = self.object_value(PLAYER_REF);
@@ -108,6 +109,7 @@ impl Engine {
     pub fn transfer_item(&mut self, from: FormId, to: FormId, item: FormId, n: i32) -> i32 {
         let moved = self.remove_item(from, item, n, Some(to));
         if moved > 0 && to == PLAYER_REF {
+            self.send_player_add_item(item, from, true);
             let name = item_info(&self.lo, item).map(|i| i.name).unwrap_or_default();
             self.scripts.notify(if moved > 1 { format!("{name} ({moved}) added") } else { format!("{name} added") });
         }

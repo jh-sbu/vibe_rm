@@ -1323,6 +1323,8 @@ impl Engine {
             }
             return;
         }
+        // A first blow from someone it wasn't fighting is an assault.
+        let assault = attacker.filter(|&by| by != target && a.combat.as_ref().is_none_or(|c| c.target != by)).map(|by| (by, a.combat.is_none(), a.stats.factions.clone()));
         a.health -= amount;
         log::info!("{target} takes {amount:.0} damage ({:.0} / {:.0})", a.health, a.stats.max_health);
         // Hurt while fleeing, it thinks again.
@@ -1331,7 +1333,11 @@ impl Engine {
         }
         if a.health <= 0.0 {
             // Essential actors (and protected ones, but to the player) bleed out.
-            if a.stats.essential || (a.stats.protected && attacker != Some(PLAYER_REF)) {
+            let bleeds = a.stats.essential || (a.stats.protected && attacker != Some(PLAYER_REF));
+            if let Some((by, calm, factions)) = assault {
+                self.send_assault(target, by, calm && self.law_abiding(&factions));
+            }
+            if bleeds {
                 self.start_bleedout(target);
                 return;
             }
@@ -1350,6 +1356,9 @@ impl Engine {
         }
         if let Some(by) = attacker {
             self.start_combat(target, by);
+        }
+        if let Some((by, calm, factions)) = assault {
+            self.send_assault(target, by, calm && self.law_abiding(&factions));
         }
     }
 

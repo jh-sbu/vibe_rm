@@ -59,16 +59,34 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "screenshot <png>      save the 3D view (no HUD) at the window size".into(),
             "startquest / stopquest <quest>, setstage <quest> <stage>   quests".into(),
             "startscene <scene> [force] / stopscene <scene> / scenes   start, stop, list scenes".into(),
-            "storyevent <TYPE> [r1] [r2] [l1] [l2]   send a Story Manager event (ADIA, CLOC, SCPT...)".into(),
+            "storyevent <TYPE> [r1] [r2] [l1] [l2] [v1=n f1=form...]   send a Story Manager event (ADIA, CLOC, AIPL...)".into(),
+            "[ref.]getrelationshiprank <actor> / setrelationshiprank <actor> <rank>   relationship ranks (-4..4)".into(),
         ],
         "storyevent" => {
             let Some(code) = args.first().and_then(|c| <[u8; 4]>::try_from(c.to_ascii_uppercase().as_bytes()).ok()) else {
-                return vec!["usage: storyevent <TYPE> [r1] [r2] [l1] [l2]".into()];
+                return vec!["usage: storyevent <TYPE> [r1] [r2] [l1] [l2] [v1=n v2=n f1=form k1=keyword]".into()];
             };
             let mut ev = crate::story::StoryEvent::new(&code);
-            let f = |i: usize| args.get(i).and_then(|a| engine.resolve_form(a)).unwrap_or_default();
-            ev.refs = [f(1), f(2)];
-            ev.locs = [f(3), f(4)];
+            // Positional r1 r2 l1 l2; then member=value (v1=2, f1=<form>, k1=<keyword>...).
+            let (named, positional): (Vec<&str>, Vec<&str>) = args[1..].iter().copied().partition(|a| a.contains('='));
+            let f = |i: usize| positional.get(i).and_then(|a| engine.resolve_form(a)).unwrap_or_default();
+            ev.refs = [f(0), f(1)];
+            ev.locs = [f(2), f(3)];
+            for a in named {
+                let (m, x) = a.split_once('=').unwrap();
+                let form = || engine.resolve_form(x).unwrap_or_default();
+                match m.to_ascii_lowercase().as_str() {
+                    "r1" => ev.refs[0] = form(),
+                    "r2" => ev.refs[1] = form(),
+                    "l1" => ev.locs[0] = form(),
+                    "l2" => ev.locs[1] = form(),
+                    "k1" => ev.keyword = form(),
+                    "f1" => ev.form = form(),
+                    "v1" => ev.values[0] = x.parse().unwrap_or(0.0),
+                    "v2" => ev.values[1] = x.parse().unwrap_or(0.0),
+                    _ => return vec![format!("unknown member {m}")],
+                }
+            }
             if engine.send_story_event(ev) { vec!["a quest started".into()] } else { vec!["nothing started".into()] }
         }
         "startquest" | "stopquest" => {
@@ -391,14 +409,22 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 19] = [
-    "moveto", "enable", "disable", "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
+const ITEM_COMMANDS: [&str; 21] = [
+    "getrelationshiprank", "setrelationshiprank", "moveto", "enable", "disable", "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
     "getav", "setav", "modav", "forceav", "damageav", "restoreav",
 ];
 
 /// Inventory and actor value commands on a reference (the player when none is given).
 fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -> Vec<String> {
     match cmd {
+        "getrelationshiprank" | "setrelationshiprank" => {
+            let Some(other) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: [ref.]{cmd} <actor> [rank]")] };
+            if cmd == "setrelationshiprank" {
+                let Some(rank) = args.get(1).and_then(|x| x.parse::<i32>().ok()) else { return vec!["usage: [ref.]setrelationshiprank <actor> <rank -4..4>".into()] };
+                engine.set_relationship_rank(r, other, rank);
+            }
+            vec![format!("{r} / {other}: rank {}", engine.relationship_rank(r, other))]
+        }
         "getav" => {
             let Some(i) = args.first().and_then(|n| esp::actor_value::index(n)) else { return vec!["usage: [ref.]getav <actor value>".into()] };
             vec![format!("{r}: {}", engine.describe_actor_value(r, i))]

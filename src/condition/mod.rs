@@ -363,8 +363,15 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         503 => b(true), // GetAllowWorldInteractions
         641 => b(subj_base.is_some_and(|n| e.lo.get(n).and_then(|r| r.get(b"ACBS").map(|d| d[0] & 0x20 != 0)).unwrap_or(false))), // IsUnique
         555 => b(subject.is_some_and(|s| s == PLAYER_REF || e.actor_cells.contains_key(&s))), // HasLoaded3D
-        606 => Some(0.0),                                                 // GetKeywordDataForLocation
-        579 | 286 | 403 | 161 => Some(0.0),                               // equipped shout, sneaking, relationship, package
+        606 => Some(e.location_keyword_data.get(&(p1, FormId(c.p2))).copied().unwrap_or(0.0)), // GetKeywordDataForLocation
+        651 => Some(e.current_location().and_then(|l| e.location_keyword_data.get(&(l, p1)).copied()).unwrap_or(0.0)), // GetKeywordDataForCurrentLocation
+        403 => Some(e.relationship_rank(subject?, p1) as f32),         // GetRelationshipRank
+        615 | 616 => Some(e.relationship_extreme(subject?, c.func == 615) as f32), // GetHighest / GetLowestRelationshipRank
+        726 => b(subject.is_none()),                                      // DoesNotExist
+        372 => b(subject.is_some_and(|s| e.formlist(p1).iter().any(|&f| f == s || subj_base == Some(f)))), // IsInList
+        453 => b(false),                                                  // GetPlayerTeammate: no followers yet
+        161 => b(subject.is_some_and(|s| e.runs_package(s, p1))),       // GetIsCurrentPackage
+        579 | 286 => Some(0.0),                                           // equipped shout, sneaking
         255 => b(subject.is_some_and(|s| e.offers_services_now(s))),   // GetOffersServicesNow
         // Nobody fights, swims, bleeds out, feeds or takes commands yet.
         289 | 101 | 185 | 580 | 700 | 226 => b(false),
@@ -507,11 +514,24 @@ impl Engine {
 
     /// Dialogue conditions declared on a quest (CTDAs before the NEXT marker).
     pub fn quest_dialogue_conditions(&self, quest: FormId) -> Vec<Condition> {
+        self.quest_conditions(quest, false)
+    }
+
+    /// A quest's Story Manager event conditions (CTDAs after the NEXT marker,
+    /// before the stages): checked against the event when a node starts it.
+    pub fn quest_event_conditions(&self, quest: FormId) -> Vec<Condition> {
+        self.quest_conditions(quest, true)
+    }
+
+    fn quest_conditions(&self, quest: FormId, event: bool) -> Vec<Condition> {
         let Some(rec) = self.lo.get(quest) else { return Vec::new() };
         let mut out: Vec<Condition> = Vec::new();
+        let mut after_next = false;
         for s in rec.subrecords() {
             match &s.tag.0 {
+                b"NEXT" if event && !after_next => after_next = true,
                 b"NEXT" | b"INDX" | b"QOBJ" | b"ALST" | b"ALLS" | b"ANAM" => break,
+                _ if event != after_next => {}
                 b"CTDA" => {
                     if let Some(c) = parse(&rec, s.data) {
                         out.push(c);
