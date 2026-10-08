@@ -1,10 +1,12 @@
-//! Trigger volumes: references with a box or sphere primitive (`XPRM`) and a
-//! script. Actors (and the player) stepping into one send its scripts
+//! Trigger volumes: references with a box or sphere primitive (`XPRM`), or
+//! whose model has phantoms (`bhkSimpleShapePhantom`: pressure plates, trip
+//! wires), and a script. Actors (and the player) stepping into one send its scripts
 //! `OnTriggerEnter`, stepping out `OnTriggerLeave`, with themselves as
 //! `akActionRef`; `GetTriggerObjectCount` counts who is inside.
 
 use esp::FormId;
-use glam::{Quat, Vec3};
+use glam::{Mat4, Quat, Vec3};
+use rapier3d::prelude::{Pose, SharedShape};
 
 use crate::engine::{Engine, PLAYER_REF};
 use crate::render::CellKey;
@@ -14,27 +16,83 @@ const BODY_POINTS: [f32; 3] = [10.0, 60.0, 110.0];
 /// A body's reach beyond those points (about a capsule's radius).
 const BODY_RADIUS: f32 = 20.0;
 
+/// The space a trigger takes up.
+enum Volume {
+    /// A primitive: its centre, world to its frame, its half extents (a
+    /// sphere's radius in x).
+    Primitive {
+        centre: Vec3,
+        inv_rotation: Quat,
+        half: Vec3,
+        sphere: bool,
+    },
+    /// The model's phantoms, placed in the world.
+    Phantoms(Vec<(Pose, SharedShape)>),
+}
+
 pub struct Trigger {
     pub ref_id: FormId,
-    centre: Vec3,
-    /// World to the volume's frame.
-    inv_rotation: Quat,
-    /// Half extents (a sphere: its radius in x).
-    half: Vec3,
-    sphere: bool,
+    volume: Volume,
     /// Who is inside.
     pub inside: Vec<FormId>,
 }
 
 impl Trigger {
     fn contains(&self, p: Vec3) -> bool {
-        let l = self.inv_rotation * (p - self.centre);
-        if self.sphere {
-            l.length() <= self.half.x + BODY_RADIUS
-        } else {
-            l.abs().cmple(self.half + Vec3::splat(BODY_RADIUS)).all()
+        match &self.volume {
+            Volume::Primitive {
+                centre,
+                inv_rotation,
+                half,
+                sphere,
+            } => {
+                let l = *inv_rotation * (p - *centre);
+                if *sphere {
+                    l.length() <= half.x + BODY_RADIUS
+                } else {
+                    l.abs().cmple(*half + Vec3::splat(BODY_RADIUS)).all()
+                }
+            }
+            Volume::Phantoms(shapes) => shapes
+                .iter()
+                .any(|(pose, s)| s.distance_to_point(pose, p, true) <= BODY_RADIUS),
         }
     }
+}
+
+/// Whether a reference or its base has scripts.
+fn scripted(lo: &esp::LoadOrder, rec: &esp::LoadedRecord<'_>, base: FormId) -> bool {
+    rec.get(b"VMAD").is_some() || lo.get(base).is_some_and(|b| b.get(b"VMAD").is_some())
+}
+
+/// The trigger of a scripted reference whose model has phantoms, placed at
+/// `transform` (scale included).
+pub fn phantom_trigger(
+    lo: &esp::LoadOrder,
+    r: FormId,
+    model: &crate::physics::shapes::CollisionModel,
+    transform: Mat4,
+) -> Option<Trigger> {
+    if model.phantoms.is_empty() {
+        return None;
+    }
+    let rec = lo.get(r)?;
+    if !scripted(lo, &rec, crate::world::records::reference(&rec).base) {
+        return None;
+    }
+    let shapes = model
+        .phantoms
+        .iter()
+        .filter_map(|p| {
+            let (pose, scale) = crate::physics::shapes::decompose(transform * p.transform);
+            Some((pose, p.shape.build_solid(scale)?))
+        })
+        .collect();
+    Some(Trigger {
+        ref_id: r,
+        volume: Volume::Phantoms(shapes),
+        inside: Vec::new(),
+    })
 }
 
 /// The trigger volume of a reference, if it is one: a box or sphere primitive
@@ -49,17 +107,17 @@ pub fn trigger_of(lo: &esp::LoadOrder, r: FormId) -> Option<Trigger> {
         return None;
     }
     let rf = crate::world::records::reference(&rec);
-    let scripted =
-        rec.get(b"VMAD").is_some() || lo.get(rf.base).is_some_and(|b| b.get(b"VMAD").is_some());
-    if !scripted {
+    if !scripted(lo, &rec, rf.base) {
         return None;
     }
     Some(Trigger {
         ref_id: r,
-        centre: rf.position,
-        inv_rotation: rf.rotation_quat().inverse(),
-        half: Vec3::new(f(0), f(4), f(8)) * rf.scale,
-        sphere: shape == 2,
+        volume: Volume::Primitive {
+            centre: rf.position,
+            inv_rotation: rf.rotation_quat().inverse(),
+            half: Vec3::new(f(0), f(4), f(8)) * rf.scale,
+            sphere: shape == 2,
+        },
         inside: Vec::new(),
     })
 }
@@ -69,7 +127,20 @@ impl Engine {
     pub(crate) fn load_triggers(&mut self, key: CellKey, refs: &[FormId]) {
         let triggers: Vec<Trigger> = refs
             .iter()
-            .filter_map(|&r| trigger_of(&self.lo, r))
+            .filter_map(|&r| {
+                trigger_of(&self.lo, r).or_else(|| {
+                    let rec = self.lo.get(r)?;
+                    let rf = crate::world::records::reference(&rec);
+                    let model = crate::world::records::model_path(&self.lo.get(rf.base)?)?;
+                    let c = self.models.collision(&model)?;
+                    let transform = Mat4::from_scale_rotation_translation(
+                        Vec3::splat(rf.scale),
+                        rf.rotation_quat(),
+                        rf.position,
+                    );
+                    phantom_trigger(&self.lo, r, &c, transform)
+                })
+            })
             .collect();
         if !triggers.is_empty() {
             log::debug!("{key:?}: {} trigger volumes", triggers.len());

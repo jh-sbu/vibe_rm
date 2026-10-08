@@ -255,10 +255,16 @@ pub fn call(
             none()
         }
         ("objectreference", "activate") => {
-            if let Some(t) = this.and_then(|t| t.as_object()) {
-                e.scripts
-                    .pending_events
-                    .push((t, "OnActivate".into(), vec![arg(0)]));
+            // Activate(akActivator, abDefaultProcessingOnly)
+            match me {
+                Some(t) => e.activate_ref(t, form_arg(args, 0), arg(1).as_bool()),
+                None => {
+                    if let Some(t) = this.and_then(|t| t.as_object()) {
+                        e.scripts
+                            .pending_events
+                            .push((t, "OnActivate".into(), vec![arg(0)]));
+                    }
+                }
             }
             v(Value::Bool(true))
         }

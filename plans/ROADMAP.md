@@ -407,10 +407,17 @@ game each piece unlocks.
   Console `crime`, `player.setcrimegold`,
   `player.paycrimegold`, `crimefaction`; vrm-tool `faction-owners`,
   `crime-factions`. Open questions: `known_gaps/crime.md`
-- Trigger volumes: scripted box and sphere primitives (`XPRM`) send
+- Trigger volumes: scripted box and sphere primitives (`XPRM`), and scripted
+  references whose model has phantoms (`bhkSimpleShapePhantom`: pressure
+  plates, oil pools, trip wires), send
   `OnTriggerEnter` / `OnTriggerLeave` as the player and actors step in and out
   (set-stage, start-scene, music and comment triggers...);
-  `GetTriggerObjectCount`. Papyrus variables and locals start at their type's
+  `GetTriggerObjectCount`. Activate parents (`XAPR`): activating a reference
+  (the player, `Activate`) activates the references naming it as parent after
+  their delays, unless its activation is blocked, so pressure plates set off
+  trap linkers and linkers their rockfalls; "Parent Activate Only" references
+  can't be activated by the player. Console `sv` (a reference's script
+  variables); vrm-tool `pex-calls`. Papyrus variables and locals start at their type's
   default (an `Int` at 0, not None). vrm-tool `triggers`. Open questions:
   `known_gaps/triggers.md`
 - Detection: one detection value per observer and target from the CK wiki's
@@ -474,6 +481,9 @@ game each piece unlocks.
    - Pose modifiers: twist, keyframe bones; foot IK gains from `hkbFootIkControlsModifier`,
      locking planted feet; creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
+   - Objects' behaviour graphs (`BSBehaviorGraphExtraData`): `PlayAnimation` on
+     traps, pressure plates (`Down` / `Up`), levers, rigged rockfalls (`break`,
+     whose supports hold the rocks up until then), swinging maces
    - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
    - `Direction` (strafing), sprinting; character properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
@@ -533,8 +543,9 @@ game each piece unlocks.
    - Sneak attacks (`OnHit`'s sneak flag is always false)
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
-     player throwing what they hold, traps (their scripts hold them keyframed until
-     triggered), arrows knocking down beehives, NPCs' blows and spells pushing them
+     player throwing what they hold, traps (triggering and firing work; trap
+     hits, `OnTrapHitStart` / `OnTrapHit` and `ProcessTrapHit`, don't hurt yet,
+     and rigs and maces wait on objects' behaviour graphs), arrows knocking down beehives, NPCs' blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal
    and objectives, help messages (`ShowAsHelpMessage`); support for the game's .swf assets still undecided

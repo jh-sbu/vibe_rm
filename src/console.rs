@@ -79,6 +79,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "pickpocket <ref> <item> [n]   try to take an item from a sneaking player's victim (psneak first)".into(),
             "cgf <Class.Func> [@self] [args]  call a Papyrus native (cgf Actor.GetCombatState @<ref>)".into(),
             "loose [n]             the loose objects nearest the player (position, mass, motion)".into(),
+            "sv <ref> [var]        a reference's script variables".into(),
             "grab [ref | off]      grab what the crosshair (or a ref) is on, say what is held, let go".into(),
             "epc                   enable all player controls (EnablePlayerControls)".into(),
             "detect                who detects the player, by how much; the player's light level and stealth points".into(),
@@ -315,6 +316,19 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let [r, secs] = args[..] else { return vec!["usage: guard <actor ref> <seconds>".into()] };
             let (Some(actor), Ok(x)) = (engine.resolve_form(r), secs.parse::<f32>()) else { return vec!["bad reference or seconds".into()] };
             if engine.force_guard(actor, x) { vec![format!("{r} holds its guard up for {x}s")] } else { vec![format!("{r} isn't fighting")] }
+        }
+        "sv" | "showvars" => {
+            // sv <ref> [var]: a reference's script variables (those named like the var).
+            let Some(r) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: sv <ref> [var]".into()] };
+            let pat = args.get(1).map(|p| p.to_ascii_lowercase());
+            let rows: Vec<String> = engine
+                .vm
+                .vars(papyrus::ObjectId::Form(r.0))
+                .into_iter()
+                .filter(|(_, n, _)| pat.as_ref().is_none_or(|p| n.to_ascii_lowercase().contains(p.as_str())))
+                .map(|(s, n, v)| format!("{s}.{n} = {v:?}"))
+                .collect();
+            if rows.is_empty() { vec![format!("{r}: no script variables{}", if pat.is_some() { " like that" } else { "" })] } else { rows }
         }
         "grab" => {
             // grab: grab what the crosshair is on (or say what is held); grab <ref>:

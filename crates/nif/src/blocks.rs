@@ -349,6 +349,7 @@ pub enum Block {
     SkinData(crate::skin::SkinData),
     SkinPartition(Box<crate::skin::SkinPartition>),
     RigidBody(Box<crate::collision::RigidBody>),
+    Phantom(Box<crate::collision::Phantom>),
     Constraint(Box<crate::collision::Constraint>),
     ConstraintChain(Box<crate::collision::ConstraintChain>),
     Shape(crate::collision::Shape),
@@ -966,6 +967,9 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
         "BSDismemberSkinInstance" => Block::SkinInstance(crate::skin::skin_instance(r, true)?),
         "NiSkinData" => Block::SkinData(crate::skin::skin_data(r)?),
         "NiSkinPartition" => Block::SkinPartition(Box::new(crate::skin::skin_partition(r)?)),
+        "bhkSimpleShapePhantom" => {
+            Block::Phantom(Box::new(crate::collision::simple_shape_phantom(r)?))
+        }
         "bhkRigidBody" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, false)?)),
         "bhkRigidBodyT" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, true)?)),
         "bhkRagdollConstraint"

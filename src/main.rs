@@ -1,3 +1,4 @@
+mod activation;
 mod actor_values;
 mod ai;
 mod aliases;
