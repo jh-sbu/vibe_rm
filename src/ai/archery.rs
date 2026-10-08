@@ -551,8 +551,7 @@ impl Engine {
             }
         }
         for (shooter, what, projectile, vel) in struck {
-            self.physics.apply_impulse(what, vel * ARROW_MASS);
-            self.send_hit_event(what, shooter, Some(projectile), false, false, false);
+            self.strike(what, shooter, Some(projectile), vel * ARROW_MASS, false);
         }
         for (shooter, at, age, owner, dir) in stuck {
             let what = owner

@@ -81,9 +81,13 @@ otherwise undocumented; rapier stands in for it.
   conversation opens, the player dies or activation is disabled; it leaves
   the hand at no more than 700 units / s (`DROP_SPEED`). Keyframed bodies are
   grabbed but don't move (their `OnGrab` may make them dynamic, as
-  `defaultDisableHavokOnLoad` does when `havokOnZKey` is set: no vanilla
-  reference sets it); fixed ones can't be grabbed. The player's character
+  `defaultDisableHavokOnLoad` does when `havokOnZKey` is set, as on Fort
+  Dunstad's hanging corpses); fixed ones can't be grabbed. The player's character
   controller passes through what is held. Grabbing owned things isn't a crime.
+- **Blows**: the player's melee swing that lands on anything but a living
+  actor pushes what moves of it along the view by 4 kg m/s (8 for a power
+  attack; `BLOW_PUSH`, no source) and sends it `OnHit` (so
+  `defaultDisableHavokOnLoad`'s `havokOnHit` lets it go), corpses included.
 - **Corpses** lie where their ragdoll is: a dead actor's position follows its
   first ragdoll body (dragged or fallen), on the lowest of them.
 
@@ -92,7 +96,7 @@ otherwise undocumented; rapier stands in for it.
 - `SetMotionType(Motion_Dynamic)` on an object whose model is fixed (trap
   rubble, scripted collapses) does nothing: its collision is static.
 - Arrows striking a loose object fall instead of sticking in it.
-- Melee blows, spells, explosions and shouts don't push objects.
+- NPCs' blows, spells, explosions and shouts don't push objects.
 - Throwing what is held: no public source says the game has a control for
   it (players drop things moving, or use Telekinesis); none is bound.
 - Display cases' lids keep their collision when opened, so what lies in
