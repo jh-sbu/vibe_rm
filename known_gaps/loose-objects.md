@@ -21,16 +21,28 @@ otherwise undocumented; rapier stands in for it.
   no effect to give.
 - **Created objects fall** at once (dropped items, `PlaceAtMe`).
 - **Shapes.** Triangle meshes on a moving body become their convex hull (bowls
-  are solid). One rigid body per model only: models with several bodies or
-  constraints stay fixed.
-- **Masses** are the NIF's, as given (a kettle weighs 68, a wooden plate 10).
+  are solid).
+- **Several bodies.** A model's bodies are joined as its constraints join them
+  (`bhkHingeConstraint`, `bhkLimitedHingeConstraint`, `bhkRagdollConstraint`,
+  as rapier joints whose bodies don't collide): a hand cart's frame and wheels,
+  a sign's fixed bracket, chain rings and board. A model qualifies when every
+  body is simulated, or some are and constraints join them; one with fixed and
+  unjoined simulated bodies stays fixed. Each body's node is drawn on its own.
+  Only the reference's place (its root body's) is remembered: on reload the
+  other bodies start where the model puts them.
+- **Constraint pivots** are taken in the body's node frame (`bhkRigidBody`) or
+  the `bhkRigidBodyT` frame, as the cart's and signs' data fit.
+- **Masses** are the NIF's, as given (a kettle weighs 68, a wooden plate 10,
+  a hand cart 70 with 15 for each wheel); pushes on several bodies are shared
+  by mass.
   The player pushes with 80 kg (`PLAYER_MASS`), arrows with 0.1 kg
   (`ARROW_MASS`); `ApplyHavokImpulse`'s magnitude is taken as kg m/s.
 - **Damping** (linear 0.1, angular 0.5) keeps things from rolling forever.
 - **Where dropped items appear**: 50 units ahead of the one dropping them, 70
   up (`DROP_AHEAD`, `DROP_HEIGHT`), as one reference for the stack.
 - **Falling out of the world**: 4096 units below where it started, it is put
-  back (`LOST_DEPTH`).
+  back (`LOST_DEPTH`); falling out again, it is held there fixed (a fragment
+  caught in Forelhost's floor does this).
 - **What is remembered**: where a moved object comes to rest (or is when its
   cell unloads), as a scripted move would be.
 

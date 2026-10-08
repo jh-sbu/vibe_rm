@@ -73,24 +73,56 @@ impl ShapeDesc {
 #[derive(Clone, Default)]
 pub struct CollisionModel {
     pub parts: Vec<CollisionPart>,
+    /// The model's rigid bodies (`CollisionPart::body` indexes them), and the
+    /// joints between them.
+    pub bodies: Vec<BodyDesc>,
+    pub joints: Vec<crate::world::ragdoll::RagdollJoint>,
+}
+
+/// One of a model's rigid bodies.
+#[derive(Clone, Debug)]
+pub struct BodyDesc {
+    /// The node it is on, and whether that is the model's root.
+    pub node: String,
+    pub root: bool,
+    /// Its frame in model space (the node's, or the `bhkRigidBodyT`'s): its
+    /// shapes and constraint pivots are relative to it.
+    pub frame: Mat4,
+    pub dynamic: bool,
+    pub mass: f32,
 }
 
 impl CollisionModel {
-    /// A loose object: one rigid body, simulated (`MO_SYS_DYNAMIC` and the
-    /// like), and not moved by an animation. Clutter, weapons, food...
+    /// A loose object: simulated (`MO_SYS_DYNAMIC` and the like) and not moved
+    /// by an animation. Clutter, weapons, food; carts, whose wheels turn on
+    /// hinges, and other models of several bodies with at least one simulated.
     pub fn is_loose(&self) -> bool {
         !self.parts.is_empty()
-            && self
-                .parts
-                .iter()
-                .all(|p| p.dynamic && p.body == self.parts[0].body && p.node.is_none())
+            && self.parts.iter().any(|p| p.dynamic)
+            && self.parts.iter().all(|p| p.node.is_none())
+            && (self.bodies.len() == 1
+                || self.parts.iter().all(|p| p.dynamic)
+                || !self.joints.is_empty())
+    }
+
+    /// The nodes whose subtrees are drawn apart to follow their own bodies: a
+    /// loose model's bodies but the root's, when it has several.
+    pub fn body_nodes(&self) -> std::collections::HashSet<String> {
+        if self.bodies.len() < 2 || !self.is_loose() {
+            return Default::default();
+        }
+        self.bodies
+            .iter()
+            .filter(|b| !b.root)
+            .map(|b| b.node.clone())
+            .collect()
     }
 }
 
 pub fn from_nif(nif: &Nif) -> Option<CollisionModel> {
     let mut m = CollisionModel::default();
     let animated = nif.animated_nodes();
-    let mut bodies = 0;
+    let mut bodies = Vec::new();
     for &root in &nif.roots {
         walk(
             nif,
@@ -103,6 +135,17 @@ pub fn from_nif(nif: &Nif) -> Option<CollisionModel> {
             &mut bodies,
         );
     }
+    // Joints between the bodies (constraints listed on either side, once).
+    let index = |r: Ref| bodies.iter().position(|&(b, _): &(Ref, Vec<Ref>)| b == r);
+    let mut seen = std::collections::HashSet::new();
+    for c in bodies.iter().flat_map(|(_, cs)| cs) {
+        let Some(Block::Constraint(c)) = nif.get(*c).filter(|_| seen.insert(c.0)) else {
+            continue;
+        };
+        if let (Some(a), Some(b)) = (index(c.entities[0]), index(c.entities[1])) {
+            m.joints.push(crate::world::ragdoll::joint(&c.kind, a, b));
+        }
+    }
     if m.parts.is_empty() { None } else { Some(m) }
 }
 
@@ -114,7 +157,7 @@ fn walk(
     depth: u32,
     animated: &std::collections::HashSet<String>,
     mut node: Option<String>,
-    bodies: &mut usize,
+    bodies: &mut Vec<(Ref, Vec<Ref>)>,
 ) {
     if depth > 64 {
         return;
@@ -133,18 +176,26 @@ fn walk(
             xf = xf * Mat4::from_rotation_translation(rb.rotation, rb.translation * HAVOK_SCALE);
         }
         let dynamic = matches!(rb.motion, nif::MotionSystem::Dynamic);
+        let index = out.bodies.len();
+        out.bodies.push(BodyDesc {
+            node: av.net.name.clone(),
+            root: depth == 0,
+            frame: xf,
+            dynamic,
+            mass: rb.mass,
+        });
+        bodies.push((co.body, rb.constraints.clone()));
         let before = out.parts.len();
         add_shape(nif, rb.shape, xf, out, 0);
         for p in &mut out.parts[before..] {
             p.layer = rb.layer;
             p.dynamic = dynamic;
-            p.body = *bodies;
+            p.body = index;
             p.mass = rb.mass;
             p.friction = rb.friction;
             p.restitution = rb.restitution;
             p.node.clone_from(&node);
         }
-        *bodies += 1;
     }
     if let Block::Node(n) = block {
         for &c in &n.children {

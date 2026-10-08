@@ -65,7 +65,8 @@ pub enum ConstraintKind {
         twist_min: f32,
         twist_max: f32,
     },
-    /// `bhkLimitedHingeConstraint`: rotation about one axis within an angle range.
+    /// `bhkLimitedHingeConstraint`: rotation about one axis within an angle range;
+    /// `bhkHingeConstraint`: about one axis freely (the range infinite).
     Hinge {
         pivot: [Vec3; 2],
         axis: [Vec3; 2],
@@ -75,14 +76,22 @@ pub enum ConstraintKind {
     },
 }
 
-pub(crate) fn constraint(r: &mut Reader, ragdoll: bool) -> Result<Constraint> {
+/// The constraint blocks read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConstraintType {
+    Ragdoll,
+    LimitedHinge,
+    Hinge,
+}
+
+pub(crate) fn constraint(r: &mut Reader, ty: ConstraintType) -> Result<Constraint> {
     let n = r.u32()?;
     let a = r.block_ref()?;
     let b = r.block_ref()?;
     debug_assert_eq!(n, 2);
     r.u32()?; // priority
     let v = |r: &mut Reader| -> Result<Vec3> { Ok(r.vec4()?.truncate()) };
-    let kind = if ragdoll {
+    let kind = if ty == ConstraintType::Ragdoll {
         // Twist, plane, motor, pivot for A then B.
         let (ta, pa, _, pva) = (v(r)?, v(r)?, v(r)?, v(r)?);
         let (tb, pb, _, pvb) = (v(r)?, v(r)?, v(r)?, v(r)?);
@@ -106,6 +115,18 @@ pub(crate) fn constraint(r: &mut Reader, ragdoll: bool) -> Result<Constraint> {
         // Axis, perpendicular axes 1 and 2, pivot for A then B.
         let (aa, p1a, _, pva) = (v(r)?, v(r)?, v(r)?, v(r)?);
         let (ab, p1b, _, pvb) = (v(r)?, v(r)?, v(r)?, v(r)?);
+        if ty == ConstraintType::Hinge {
+            return Ok(Constraint {
+                entities: [a, b],
+                kind: ConstraintKind::Hinge {
+                    pivot: [pva, pvb],
+                    axis: [aa, ab],
+                    perp: [p1a, p1b],
+                    min: f32::NEG_INFINITY,
+                    max: f32::INFINITY,
+                },
+            });
+        }
         let min = r.f32()?;
         let max = r.f32()?;
         r.f32()?; // max friction

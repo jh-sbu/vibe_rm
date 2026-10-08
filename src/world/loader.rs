@@ -107,7 +107,11 @@ impl ModelCache {
                                 Some(_) => model::convert_filtered(&n, &|name| {
                                     !name.to_ascii_lowercase().starts_with("scb")
                                 }),
-                                None => model::convert(&n),
+                                None => model::convert_split(
+                                    &n,
+                                    &|_| true,
+                                    &col.as_ref().map(|c| c.body_nodes()).unwrap_or_default(),
+                                ),
                             };
                             for mesh in &m.meshes {
                                 log::trace!("mesh in {p}: {:?}", mesh.material);

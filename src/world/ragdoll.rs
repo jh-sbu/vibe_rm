@@ -50,6 +50,47 @@ fn frame(pivot: Vec3, x: Vec3, y: Vec3) -> (Vec3, Quat) {
     )
 }
 
+/// The joint a NIF constraint between bodies `a` and `b` makes.
+pub(crate) fn joint(kind: &ConstraintKind, a: usize, b: usize) -> RagdollJoint {
+    match kind {
+        ConstraintKind::Ragdoll {
+            pivot,
+            twist,
+            plane,
+            cone_max,
+            plane_min,
+            plane_max,
+            twist_min,
+            twist_max,
+        } => RagdollJoint {
+            a,
+            b,
+            frame_a: frame(pivot[0], twist[0], plane[0]),
+            frame_b: frame(pivot[1], twist[1], plane[1]),
+            // Twisting about the twist axis; swinging within the cone, towards
+            // the plane axis no further than the plane limits.
+            limits: [
+                Some((*twist_min, *twist_max)),
+                Some((-cone_max, *cone_max)),
+                Some((plane_min.max(-cone_max), plane_max.min(*cone_max))),
+            ],
+        },
+        ConstraintKind::Hinge {
+            pivot,
+            axis,
+            perp,
+            min,
+            max,
+        } => RagdollJoint {
+            a,
+            b,
+            frame_a: frame(pivot[0], axis[0], perp[0]),
+            frame_b: frame(pivot[1], axis[1], perp[1]),
+            limits: [Some((*min, *max)).filter(|_| min.is_finite()), None, None],
+        },
+    }
+}
+
 impl RagdollDesc {
     /// The ragdoll of a skeleton NIF, if it has one.
     pub fn from_nif(nif: &Nif, skeleton: &Skeleton) -> Option<RagdollDesc> {
@@ -100,43 +141,7 @@ impl RagdollDesc {
             ) else {
                 continue;
             };
-            let joint = match &c.kind {
-                ConstraintKind::Ragdoll {
-                    pivot,
-                    twist,
-                    plane,
-                    cone_max,
-                    plane_min,
-                    plane_max,
-                    twist_min,
-                    twist_max,
-                } => RagdollJoint {
-                    a,
-                    b,
-                    frame_a: frame(pivot[0], twist[0], plane[0]),
-                    frame_b: frame(pivot[1], twist[1], plane[1]),
-                    // Twisting about the twist axis; swinging within the cone, towards
-                    // the plane axis no further than the plane limits.
-                    limits: [
-                        Some((*twist_min, *twist_max)),
-                        Some((-cone_max, *cone_max)),
-                        Some((plane_min.max(-cone_max), plane_max.min(*cone_max))),
-                    ],
-                },
-                ConstraintKind::Hinge {
-                    pivot,
-                    axis,
-                    perp,
-                    min,
-                    max,
-                } => RagdollJoint {
-                    a,
-                    b,
-                    frame_a: frame(pivot[0], axis[0], perp[0]),
-                    frame_b: frame(pivot[1], axis[1], perp[1]),
-                    limits: [Some((*min, *max)), None, None],
-                },
-            };
+            let joint = joint(&c.kind, a, b);
             desc.joints.push(joint);
         }
         (!desc.bodies.is_empty()).then_some(desc)
