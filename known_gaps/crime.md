@@ -38,14 +38,8 @@ locations name it.
 
 ## Choices made without a source
 
-- Witnesses stand in for detection, which isn't implemented (roadmap:
-  Detection). None of these numbers has a source: living loaded actors within
-  1400 units (combat's detection distance, itself unsourced), a third of that
-  while the player sneaks (invented), facing the player within 95 degrees
-  unless closer than 200 (invented), with nothing between their eyes (110
-  units up, as for finding bodies) and the player's. No light, sound, sneak
-  skill or perception; the game's settings for them (`fSneakMaxDistance`
-  2500, `fSneakExteriorDistanceMult` 2.1, `fSneakLight*`...) aren't used yet.
+- Witnesses: living loaded actors who detect the player at the time
+  (detection above 0, without stealth points; `known_gaps/detection.md`).
   The victim of an assault always knows of it.
 - Each crime faction told adds its gold once, however many of its members saw.
   Whether a witness reports to its own crime faction (done here) or to the

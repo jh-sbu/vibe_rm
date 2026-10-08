@@ -12,12 +12,11 @@ use crate::engine::{Engine, PLAYER_REF};
 use crate::world::ragdoll::RagdollPose;
 use crate::world::template::{self, Sources};
 
-/// How far actors notice enemies (game units), and how often they look. No
-/// source for either: a stand-in for detection (sight, light, sound, sneaking),
-/// which isn't implemented. Force greets and crime witnesses use it too.
-pub(crate) const DETECT_DISTANCE: f32 = 1400.0;
+/// How often actors look for enemies (no source). Whom they notice is
+/// detection's (`crate::detection`).
 const DETECT_INTERVAL: f32 = 1.0;
-/// Combat ends when the target gets this far away.
+/// Combat ends when the target gets this far away; nor do actors start fights,
+/// or join them, further off. (No source.)
 pub(crate) const LOSE_DISTANCE: f32 = 4000.0;
 /// Base melee reach (`fCombatDistance`), scaled by the weapon's reach.
 const COMBAT_DISTANCE: f32 = 141.0;
@@ -918,16 +917,15 @@ impl Engine {
         for (r, pos, stats) in lookers {
             let mut best: Option<(f32, FormId)> = None;
             let d = pos.distance(player);
-            let aggro = stats.aggro_attack.is_some_and(|r| d < r) && !self.law_abiding(&stats.factions) && !matches!(self.faction_reaction(&stats.factions, &player_factions), Some(2 | 3));
-            if d < DETECT_DISTANCE && !self.player_dead() && (aggro || self.hostile_to(&stats, &player_factions, true)) {
+            if d < LOSE_DISTANCE && self.finds_player(r) && self.would_attack_player(r) {
                 best = Some((d, PLAYER_REF));
             }
             for (o, opos, of) in &others {
                 let d = pos.distance(*opos);
-                if *o == r || d > DETECT_DISTANCE || best.is_some_and(|b| b.0 <= d) {
+                if *o == r || d > LOSE_DISTANCE || best.is_some_and(|b| b.0 <= d) {
                     continue;
                 }
-                if self.hostile_to(&stats, of, false) {
+                if self.hostile_to(&stats, of, false) && self.detects(r, *o) {
                     best = Some((d, *o));
                 }
             }
@@ -943,7 +941,21 @@ impl Engine {
         }
     }
 
-    /// The nearest fight within sight that `helper` would join, and whom it would
+    /// Whether `r` would attack the player on detecting them: hostile to them
+    /// (`hostile_to`), or they are within its aggro radius and it neither keeps
+    /// the law nor likes them.
+    pub(crate) fn would_attack_player(&mut self, r: FormId) -> bool {
+        if self.player_dead() {
+            return false;
+        }
+        let Some(a) = self.actor_ref(r).filter(|a| !a.dead && a.bleeding.is_none()) else { return false };
+        let (stats, d) = (a.stats.clone(), a.pos.distance(self.player.position));
+        let player_factions = self.player_factions();
+        let aggro = stats.aggro_attack.is_some_and(|r| d < r) && !self.law_abiding(&stats.factions) && !matches!(self.faction_reaction(&stats.factions, &player_factions), Some(2 | 3));
+        aggro || self.hostile_to(&stats, &player_factions, true)
+    }
+
+    /// The nearest fight `helper` detects (either side of it) that it would join, and whom it would
     /// attack: one where an ally (sharing a faction, or an allied one) or, for
     /// those who help friends too, a friend is fighting someone it isn't friendly
     /// with.
@@ -962,7 +974,7 @@ impl Engine {
         let mut best: Option<(f32, FormId, FormId)> = None;
         for &(fighter, fpos, target) in fights {
             let d = pos.distance(fpos);
-            if fighter == helper || target == helper || d > DETECT_DISTANCE || best.is_some_and(|b| b.0 <= d) {
+            if fighter == helper || target == helper || d > LOSE_DISTANCE || best.is_some_and(|b| b.0 <= d) {
                 continue;
             }
             if target == PLAYER_REF && self.player_dead() {
@@ -975,6 +987,9 @@ impl Engine {
                 _ => continue,
             };
             if stats.assistance < need || matches!(self.faction_reaction(&stats.factions, tf), Some(2 | 3)) {
+                continue;
+            }
+            if !self.detects(helper, fighter) && !self.detects(helper, target) {
                 continue;
             }
             best = Some((d, target, fighter));

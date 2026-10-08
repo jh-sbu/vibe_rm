@@ -26,6 +26,9 @@ pub struct Player {
     pub crouch: f32,
     /// Whether they left the ground by jumping this update.
     pub jumped: bool,
+    /// Moving over the ground this update, and running (or sprinting) while at it.
+    pub moving: bool,
+    pub running: bool,
 }
 
 pub const WALK_SPEED: f32 = 110.0;
@@ -40,7 +43,7 @@ const CROUCH_RATE: f32 = 4.0;
 
 impl Player {
     pub fn new(eye: Vec3) -> Self {
-        Player { position: eye - Vec3::Z * EYE_OFFSET, vertical_velocity: 0.0, grounded: false, noclip: false, sneaking: false, crouch: 0.0, jumped: false }
+        Player { position: eye - Vec3::Z * EYE_OFFSET, vertical_velocity: 0.0, grounded: false, noclip: false, sneaking: false, crouch: 0.0, jumped: false, moving: false, running: false }
     }
 
     pub fn eye(&self) -> Vec3 {
