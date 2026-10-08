@@ -2225,6 +2225,7 @@ impl Engine {
             self.update_detection(dt);
             self.detect_enemies(dt);
             self.update_arrests(dt);
+            self.update_witnesses();
         }
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);

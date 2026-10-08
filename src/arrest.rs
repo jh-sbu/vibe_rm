@@ -183,6 +183,7 @@ impl Engine {
                 Some(greeting) => {
                     log::info!("{r} stops the player: {} {}", greeting.0.editor_id, greeting.1.id);
                     self.crime.arrests.arresting = Some((r, faction));
+                    self.crimes_known(faction);
                     self.open_conversation(r, Some(greeting));
                 }
                 None => {
@@ -246,6 +247,7 @@ impl Engine {
     /// its guards stop pursuing and fighting them.
     pub(crate) fn crimes_settled(&mut self, faction: FormId) {
         self.crime.arrests.resisting.remove(&faction);
+        self.crimes_known(faction);
         let guards: Vec<FormId> = self
             .cells
             .values()

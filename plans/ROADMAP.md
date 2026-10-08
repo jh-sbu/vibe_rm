@@ -355,7 +355,11 @@ game each piece unlocks.
   goods taken, the jail outfit, served by sleeping in the cell bed.
   `SendPlayerToJail`, `SetPlayerResistingArrest`, `GetDaysInJail`,
   `GetArrestingActor`; console `alarm`, `jail`, `servetime`; vrm-tool
-  `quest-topics`.
+  `quest-topics`. Witnesses: killing the last one of a crime before the
+  guards hear of it takes its bounty back ("Last witness killed."); one of
+  them says the crime's line (`STEA` / `ASSA` / `MURD`, or the non-combat
+  `STFN` / `ASNC` / `MUNC`), and wronged witnesses who don't report crimes
+  attack if aggressive.
   Console `crime`, `player.setcrimegold`,
   `player.paycrimegold`, `crimefaction`; vrm-tool `faction-owners`,
   `crime-factions`. Open questions: `known_gaps/crime.md`
@@ -472,8 +476,8 @@ game each piece unlocks.
    spell / shout sounds), perks (the sneak tree's detection perks among them;
    see Detection), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-   (escaping jail, yielding, skill loss in jail; victims and witnesses
-   attacking; fences; see Done)
+   (escaping jail, yielding, skill loss in jail; witnesses running to the
+   guards; fences; see Done)
 6. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
 7. **Audio**: lip sync
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell

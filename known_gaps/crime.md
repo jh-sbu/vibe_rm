@@ -98,6 +98,21 @@ locations name it.
   holds' factions set Arrest and Attack on Sight (Winterhold Arrest only;
   `CrimeFactionImperial` Attack on Sight only).
 
+- Witnesses (CK wiki *Crime*): "if the last Actor who viewed a crime is
+  killed before guards arrive, the crime gold is removed"; an actor without
+  a crime faction who witnesses a crime warns the player or starts combat.
+  UESP: killing all the witnesses before they report it wipes the bounty,
+  with a message; essential actors can't be. Strings `sWitnessKilled`
+  ("Last witness killed."), `sAddCrimeGold` ("bounty added to"),
+  `sRemoveCrimeGold` ("bounty removed from").
+- Reaction topics (`vrm-tool topic-lines <data> STEA`...): `STEA` ("Hey!
+  Hands off!"), `ASSA` ("Help! I'm being attacked!" for victims by
+  `GetActorValue Confidence` < 3, "Last mistake." from 3; "Help! Someone's
+  being attacked!" for others, not guards), `MURD` ("Help! Murder!"), and
+  the non-combat `STFN` ("I guess you can have that."), `ASNC` ("None of my
+  business."), `MUNC` ("What's done is done."); the settings name `ASSA`
+  `CombatAssault` and `ASNC` `CombatAssaultNC`.
+
 ## Choices made without a source
 
 - Witnesses: living loaded actors who detect the player at the time
@@ -169,6 +184,19 @@ locations name it.
   days served. `abRealJail` is ignored.
 - Blocking branches (`DLBR` flag 0x2) are tried before `HELO` whenever the
   player talks to anyone, highest topic priority first.
+- A crime's witnesses are those who reported it to a faction; it is
+  unreported until a guard of that faction reaches the player to arrest
+  them, a witness is itself one of its guards, or the bounty is paid or
+  served. A witness leaving the loaded world has reached the guards (the
+  crime stands); when all of them have died, its gold is withdrawn (not its
+  infamy). Witnesses in bleedout aren't dead.
+- One witness reacts with a line, the victim if it saw it, else the nearest:
+  the combat topic when it reports or fights, the non-combat one otherwise.
+  Pickpocketing and trespass keep their own lines (`PICN`, `TRES`).
+- Witnesses who attack: wronged (the victim, or a member of the faction
+  that owns what was stolen), with no crime faction that tracks crime,
+  aggressive (aggression 1 or more) and not cowardly; the others only
+  speak (the "warning").
 - The console's `setcrimegold` / `paycrimegold` default to the crime faction
   of the nearest location up from the current one that names one (`FNAM`).
 
@@ -181,9 +209,11 @@ locations name it.
   strongholds' `DialogueCrimeOrcs`, bribes, persuasion and Thane influence
   (perks, speech checks and quest variables), the bounty collector, and
   `GetArrestingActor` while being taken to jail. The jail outfit stays on.
-- Horse theft, escape and werewolf crimes aren't committed anywhere.
-- Crime responses: victims and witnesses don't attack (the `PICC` lines,
-  morality / aggression); pickpocketing perks (Light Fingers, Night Thief,
+- Horse theft (`iCrimeGoldStealHorse` 100), escape and werewolf crimes aren't committed anywhere.
+- Crime responses: witnesses don't run to the guards (the guards near by
+  hear at once), children don't tell the nearest adult (UESP), morality
+  plays no part (UESP: it is for followers ordered to commit crimes), the
+  `PICC` lines aren't used; pickpocketing perks (Light Fingers, Night Thief,
   Cutpurse, Misdirection, Perfect Touch, Poisoned), skill gain and the
   thugs hired after a theft aren't there.
 - Trespassers aren't attacked or chased out after "Guards! Trespasser!", the
@@ -193,8 +223,6 @@ locations name it.
   wait for waiting and sleeping. Sleepers don't wake up to warn.
 - Merchants refusing stolen goods and fences buying them: no bartering yet
   (`GetAmountSoldStolen`).
-- A crime gets its gold at once; in the game it is withdrawn when the last
-  witness dies before reporting it (CK wiki), and guards respond to alarms.
 - Crimes by NPCs; `GetCrime`, `IsGuard`, `GetActorCrimePlayerEnemy`; the
   locations' unreported crime faction otherwise.
 - Bounties aren't saved.

@@ -40,5 +40,5 @@ public documentation and the game's data files only.
    forgive some hits before fighting back. Every hit starts a fight here.
 5. **Helping the player.** Followers would help the player through
    `CurrentFollowerFaction`'s relations; no follower system exists yet.
-6. **Assault dialogue.** `CombatAssault` / `CombatAssaultNC` and `AllyKilled` topics
-   aren't said.
+6. **Assault dialogue.** `CombatAssault` / `CombatAssaultNC` are said by a
+   witness of an assault (`known_gaps/crime.md`); `AllyKilled` isn't said.
