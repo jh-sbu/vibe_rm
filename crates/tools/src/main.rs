@@ -94,7 +94,9 @@ fn main() -> Result<()> {
             // Game settings whose editor id contains the pattern (case-insensitive).
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
-            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut lo = esp::LoadOrder::load(data, &names)?;
+            let vfs = vfs::Vfs::new(data, &names);
+            lo.load_strings("english", |p| vfs.read(p));
             let pat = args.get(2).map_or(String::new(), |p| p.to_ascii_lowercase());
             let mut rows: Vec<(String, String)> = Vec::new();
             for &id in lo.ids_of_type(b"GMST") {
@@ -108,6 +110,7 @@ fn main() -> Result<()> {
                     (Some(b'f'), Some(b)) => format!("{}", f32::from_le_bytes(b.try_into().unwrap())),
                     (Some(b'i' | b'u'), Some(b)) => format!("{}", i32::from_le_bytes(b.try_into().unwrap())),
                     (Some(b'b'), Some(b)) => format!("{}", u32::from_le_bytes(b.try_into().unwrap()) != 0),
+                    (Some(b's'), Some(_)) => format!("{:?}", lo.lstring(&rec, d)),
                     _ => format!("{} bytes", d.len()),
                 };
                 rows.push((name, value));
@@ -1643,6 +1646,52 @@ fn main() -> Result<()> {
             v.sort_by(|a, b| b.1.cmp(&a.1));
             for ((f, run_on), c) in v.iter().take(60) {
                 println!("{c:>7} func {f:>4} run_on {run_on}");
+            }
+        }
+        Some("ctda-uses") => {
+            // ctda-uses <data dir> <func index>...: every condition calling one of
+            // these functions, with the record holding it, its parameters (forms
+            // by editor id), run-on and comparison.
+            anyhow::ensure!(args.len() > 2, "usage: ctda-uses <data dir> <func index>...");
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let mut lo = esp::LoadOrder::load(data, &names)?;
+            let vfs = vfs::Vfs::new(data, &names);
+            lo.load_strings("english", |p| vfs.read(p));
+            let mut topic_of: std::collections::HashMap<esp::FormId, String> = Default::default();
+            for &t in lo.ids_of_type(b"DIAL") {
+                let name = lo.get(t).and_then(|r| r.editor_id().map(|e| e.to_string())).unwrap_or_else(|| format!("{t}"));
+                for &i in lo.topic_infos(t) {
+                    topic_of.insert(i, name.clone());
+                }
+            }
+            let funcs: Vec<u16> = args[2..].iter().map(|a| a.parse()).collect::<Result<_, _>>()?;
+            const OPS: [&str; 6] = ["==", "!=", ">", ">=", "<", "<="];
+            for tag in [b"INFO", b"PACK", b"IDLE", b"QUST", b"PERK", b"MGEF", b"SPEL", b"SCEN", b"FACT", b"DIAL", b"MESG", b"SMQN", b"SMBN", b"SMEN", b"COBJ"] {
+                for &id in lo.ids_of_type(tag) {
+                    let Some(r) = lo.get(id) else { continue };
+                    for s in r.subrecords().filter(|s| s.tag.0 == *b"CTDA" && s.data.len() >= 24) {
+                        let d = s.data;
+                        let f = u16::from_le_bytes([d[8], d[9]]);
+                        if !funcs.contains(&f) {
+                            continue;
+                        }
+                        let p = |o: usize| {
+                            let v = u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+                            lo.get(r.fid(esp::FormId(v))).and_then(|x| x.editor_id().map(|e| e.to_string())).unwrap_or_else(|| v.to_string())
+                        };
+                        let value = f32::from_le_bytes(d[4..8].try_into().unwrap());
+                        let run_on = u32::from_le_bytes(d[20..24].try_into().unwrap());
+                        let owner = r.editor_id().map(|e| e.to_string()).unwrap_or_else(|| format!("{id}"));
+                        let info_of = if tag == b"INFO" {
+                            let line = r.get(b"NAM1").map(|n| lo.lstring(&r, n)).unwrap_or_default();
+                            format!("{} \"{}\"", topic_of.get(&id).map_or("?", |t| t.as_str()), line.chars().take(80).collect::<String>())
+                        } else {
+                            String::new()
+                        };
+                        println!("{} {owner} [{f}({}, {}) run_on {run_on} {} {value}] {info_of}", String::from_utf8_lossy(tag), p(12), p(16), OPS[(d[0] >> 5) as usize % 6]);
+                    }
+                }
             }
         }
         Some("av-conditions") => {

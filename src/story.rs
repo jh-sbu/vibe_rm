@@ -393,9 +393,8 @@ impl Engine {
     /// container, 6 from a body). Taking `count` of something stolen is a
     /// crime, at the item's value.
     pub(crate) fn send_player_add_item(&mut self, item: FormId, count: i32, source: FormId, container: bool) {
-        // Bodies belong to nobody (not to the house they lie in).
-        let body = container && (self.actor_cells.contains_key(&source) || self.lo.tag_of(source).is_some_and(|t| t.0 == *b"ACHR"));
-        let owner = crate::ai::furniture::owner_of(&self.lo, source).filter(|_| !body);
+        let body = container && self.is_body(source);
+        let owner = self.source_owner(source, container);
         let how = match () {
             _ if owner.is_some_and(|o| self.is_stealing(item, o)) => 1,
             _ if body => 6,
@@ -406,7 +405,10 @@ impl Engine {
         if how == 1 {
             let value = crate::world::inventory::item_info(&self.lo, item).map_or(0, |i| i.value) * count.max(1);
             let faction = owner.filter(|&o| self.lo.tag_of(o).is_some_and(|t| t.0 == *b"FACT"));
-            self.commit_crime(crate::crime::CrimeType::Steal, owner_ref, faction, value);
+            let seen = self.commit_crime(crate::crime::CrimeType::Steal, owner_ref, faction, value);
+            if let Some(f) = owner_ref.and_then(|o| self.crime_faction(o)).or(faction) {
+                self.add_stolen_value(f, value, seen);
+            }
         }
         let mut e = StoryEvent::new(b"AIPL");
         e.refs = [owner_ref.unwrap_or_default(), if container { source } else { FormId::NULL }];
@@ -414,6 +416,23 @@ impl Engine {
         e.form = item;
         e.values[0] = how as f32;
         self.send_story_event(e);
+    }
+
+    /// Whether a container is a body (bodies belong to nobody, not to the
+    /// house they lie in).
+    pub(crate) fn is_body(&self, r: FormId) -> bool {
+        self.actor_cells.contains_key(&r) || self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR")
+    }
+
+    /// Who owns what the player takes from `source` (a reference picked up, or
+    /// a container or body).
+    pub(crate) fn source_owner(&self, source: FormId, container: bool) -> Option<FormId> {
+        crate::ai::furniture::owner_of(&self.lo, source).filter(|_| !(container && self.is_body(source)))
+    }
+
+    /// Whom `item` taken from `source` is stolen from, if it is stealing.
+    pub(crate) fn stolen_from(&self, item: FormId, source: FormId, container: bool) -> Option<FormId> {
+        self.source_owner(source, container).filter(|&o| self.is_stealing(item, o))
     }
 
     /// An actor greeting another (`AHEL`: R1 who says hello, R2 to whom, L1

@@ -69,6 +69,16 @@ pub fn book_pages(text: &str) -> Vec<String> {
     pages
 }
 
+/// A row of an inventory: so many of an item, belonging to `owner` if it is
+/// someone else's (stolen).
+#[derive(Debug, Clone)]
+pub struct ListedItem {
+    pub item: FormId,
+    pub owner: Option<FormId>,
+    pub count: i32,
+    pub info: ItemInfo,
+}
+
 impl Engine {
     /// Whether a reference is an item lying about that can be picked up.
     pub fn is_item_ref(&self, r: FormId) -> bool {
@@ -84,7 +94,8 @@ impl Engine {
         let Some(base) = self.base_of(r) else { return false };
         let Some(info) = item_info(&self.lo, base) else { return false };
         let count = self.lo.get(r).and_then(|rec| rec.get(b"XCNT").filter(|d| d.len() >= 4).map(|d| i32::from_le_bytes(d[0..4].try_into().unwrap()))).unwrap_or(1).max(1);
-        self.inventory_mut(PLAYER_REF).add(base, count);
+        let stolen = self.stolen_from(base, r, false);
+        self.inventory_mut(PLAYER_REF).add_owned(base, stolen, count);
         self.inventory_event(PLAYER_REF, true, base, count, None);
         self.set_disabled(r, true);
         self.send_player_add_item(base, count, r, false);
@@ -119,6 +130,20 @@ impl Engine {
         let cap = self.faction_favor_cap(owner);
         log::debug!("{item} (worth {value}) owned by faction {owner}: favor cap {cap:?}");
         cap.is_none_or(|cap| value > cap)
+    }
+
+    /// Whether what `owner` owns isn't the player's to take freely: another
+    /// person's, or a faction's that can own things and the player isn't in
+    /// (whatever its members' favor allows; see `is_stealing`).
+    pub(crate) fn owned_by_other(&self, owner: FormId) -> bool {
+        if owner == FormId(0x7) || self.player_factions().contains(&owner) {
+            return false;
+        }
+        match self.lo.get(owner) {
+            Some(rec) if rec.tag().0 == *b"FACT" => rec.get(b"DATA").filter(|d| d.len() >= 4).is_some_and(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()) & 0x8000 != 0),
+            Some(_) => true,
+            None => false,
+        }
     }
 
     /// The gold value up to which a faction's members let the player take its
@@ -157,9 +182,13 @@ impl Engine {
         !self.lo.get(book).and_then(|r| r.get(b"DATA").and_then(|d| d.first().copied())).is_some_and(|f| f & 0x2 != 0)
     }
 
-    /// Move up to `n` of `item` from one inventory to another; returns how many moved.
-    pub fn transfer_item(&mut self, from: FormId, to: FormId, item: FormId, n: i32) -> i32 {
-        let moved = self.remove_item(from, item, n, Some(to));
+    /// Move up to `n` of `item` from one inventory to another (of those
+    /// belonging to `stack`'s owner, if given: a row of the item menu);
+    /// returns how many moved. What the player steals is marked as the
+    /// owner's.
+    pub fn transfer_item(&mut self, from: FormId, to: FormId, item: FormId, n: i32, stack: Option<Option<FormId>>) -> i32 {
+        let mark = if to == PLAYER_REF { self.stolen_from(item, from, true) } else { None };
+        let moved: i32 = self.remove_stack(from, item, n, stack, Some(to), mark).iter().map(|(_, n)| n).sum();
         if moved > 0 && to == PLAYER_REF {
             self.send_player_add_item(item, moved, from, true);
             let name = item_info(&self.lo, item).map(|i| i.name).unwrap_or_default();
@@ -222,11 +251,22 @@ impl Engine {
         Ok(())
     }
 
-    /// An inventory's items with what they are, by kind then name.
-    pub fn listed_inventory(&mut self, r: FormId) -> Vec<(FormId, i32, ItemInfo)> {
-        let items = self.inventory_mut(r).items.clone();
-        let mut out: Vec<(FormId, i32, ItemInfo)> = items.into_iter().filter_map(|(f, n)| Some((f, n, item_info(&self.lo, f)?))).filter(|x| x.1 > 0).collect();
-        out.sort_by(|a, b| (a.2.kind, &a.2.name).cmp(&(b.2.kind, &b.2.name)));
+    /// An inventory's items with what they are, by kind then name; those
+    /// belonging to someone (stolen) in rows of their own after the rest.
+    pub fn listed_inventory(&mut self, r: FormId) -> Vec<ListedItem> {
+        let inv = self.inventory_mut(r).clone();
+        let mut out: Vec<ListedItem> = Vec::new();
+        for &(item, _) in &inv.items {
+            let Some(info) = item_info(&self.lo, item) else { continue };
+            let free = inv.count_owned(item, None);
+            if free > 0 {
+                out.push(ListedItem { item, owner: None, count: free, info: info.clone() });
+            }
+            for &(_, owner, count) in inv.owned.iter().filter(|(f, _, n)| *f == item && *n > 0) {
+                out.push(ListedItem { item, owner: Some(owner), count, info: info.clone() });
+            }
+        }
+        out.sort_by(|a, b| (a.info.kind, &a.info.name, a.owner.is_some()).cmp(&(b.info.kind, &b.info.name, b.owner.is_some())));
         out
     }
 

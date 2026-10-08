@@ -72,6 +72,9 @@ pub struct Inventory {
     pub items: Vec<(FormId, i32)>,
     /// Worn and wielded items: the outfit's armors, a weapon, a shield.
     pub equipped: Vec<FormId>,
+    /// How many of an item belong to someone else (item, owner, count): the
+    /// player's stolen goods, kept apart within `items`' counts.
+    pub owned: Vec<(FormId, FormId, i32)>,
 }
 
 /// What an actor holds in a hand, as `GetEquippedItemType` and the behaviour
@@ -129,17 +132,62 @@ impl Inventory {
         }
     }
 
-    /// Take up to `n` of `form` away; returns how many were taken. The last one
-    /// taken is unequipped.
-    pub fn remove(&mut self, form: FormId, n: i32) -> i32 {
-        let Some(i) = self.items.iter().position(|(f, _)| *f == form) else { return 0 };
-        let taken = n.clamp(0, self.items[i].1);
+    /// Add `n` of an item that belongs to `owner` (stolen); `None` is the same as `add`.
+    pub fn add_owned(&mut self, form: FormId, owner: Option<FormId>, n: i32) {
+        if n <= 0 || form.is_null() {
+            return;
+        }
+        self.add(form, n);
+        let Some(owner) = owner else { return };
+        match self.owned.iter_mut().find(|(f, o, _)| *f == form && *o == owner) {
+            Some((_, _, c)) => *c += n,
+            None => self.owned.push((form, owner, n)),
+        }
+    }
+
+    /// How many of an item belong to `owner`; with `None`, how many belong to nobody.
+    pub fn count_owned(&self, form: FormId, owner: Option<FormId>) -> i32 {
+        let owned = |o: Option<FormId>| self.owned.iter().filter(|(f, x, _)| *f == form && o.is_none_or(|o| *x == o)).map(|(_, _, n)| n).sum::<i32>();
+        match owner {
+            Some(o) => owned(Some(o)),
+            None => self.count(form) - owned(None),
+        }
+    }
+
+    /// Take up to `n` of `form` away, with whom each part belonged to: those
+    /// belonging to nobody first, then the owned (stolen) ones; or only those
+    /// `only` names (`Some(None)`: nobody's). The last one taken is unequipped.
+    pub fn remove_split(&mut self, form: FormId, n: i32, only: Option<Option<FormId>>) -> Vec<(Option<FormId>, i32)> {
+        let Some(i) = self.items.iter().position(|(f, _)| *f == form) else { return Vec::new() };
+        let mut left = n.max(0);
+        let mut out = Vec::new();
+        if only.is_none_or(|o| o.is_none()) {
+            let free = self.count_owned(form, None).min(left);
+            if free > 0 {
+                out.push((None, free));
+                left -= free;
+            }
+        }
+        for (_, o, c) in self.owned.iter_mut().filter(|(f, _, _)| *f == form) {
+            if left <= 0 {
+                break;
+            }
+            if only.is_some_and(|w| w != Some(*o)) {
+                continue;
+            }
+            let t = (*c).min(left);
+            *c -= t;
+            left -= t;
+            out.push((Some(*o), t));
+        }
+        self.owned.retain(|(_, _, c)| *c > 0);
+        let taken: i32 = out.iter().map(|(_, n)| n).sum();
         self.items[i].1 -= taken;
         if self.items[i].1 <= 0 {
             self.items.remove(i);
             self.equipped.retain(|f| *f != form);
         }
-        taken
+        out
     }
 
     pub fn is_equipped(&self, form: FormId) -> bool {

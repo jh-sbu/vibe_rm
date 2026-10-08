@@ -334,7 +334,10 @@ game each piece unlocks.
   `ModCrimeGold`, `SetCrimeGold(Violent)`, `PlayerPayCrimeGold`, infamy,
   `Actor.Get` / `SetCrimeFaction`; conditions `GetCrimeGold(Violent /
   Nonviolent)`, `GetIsCrimeFaction`, `CanPayCrimeGold`,
-  `GetInSharedCrimeFaction`. Console `crime`, `player.setcrimegold`,
+  `GetInSharedCrimeFaction`. Stolen goods stay marked as their owners' (red in
+  the menus, the red "Steal" / "Steal from" prompts) and are confiscated into
+  the faction's stolen goods chest on paying; `GetStolenItemValue(NoCrime)`.
+  Console `crime`, `player.setcrimegold`,
   `player.paycrimegold`, `crimefaction`; vrm-tool `faction-owners`,
   `crime-factions`. Open questions: `known_gaps/crime.md`
 - Trigger volumes: scripted box and sphere primitives (`XPRM`) send
@@ -451,7 +454,7 @@ game each piece unlocks.
    see Detection), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
    (guards arresting, jail, attack on sight; pickpocketing, trespass, lockpicking
-   owned locks; stolen items marked; see Done)
+   owned locks; fences; see Done)
 6. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
 7. **Audio**: lip sync
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell

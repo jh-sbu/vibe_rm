@@ -262,12 +262,10 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("objectreference", "removeallitems") => {
             if let Some(r) = me {
-                let items = std::mem::take(&mut e.inventory_mut(r).items);
-                e.inventory_mut(r).equipped.clear();
-                if let Some(to) = form_arg(args, 0) {
-                    for (f, n) in items {
-                        e.inventory_mut(to).add(f, n);
-                    }
+                let items = e.inventory_mut(r).items.clone();
+                let to = form_arg(args, 0);
+                for (f, n) in items {
+                    e.remove_stack(r, f, n, None, to, None);
                 }
             }
             none()
