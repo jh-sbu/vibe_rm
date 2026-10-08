@@ -15,9 +15,9 @@ use crate::world::template::{self, Sources};
 /// How often actors look for enemies (no source). Whom they notice is
 /// detection's (`crate::detection`).
 const DETECT_INTERVAL: f32 = 1.0;
-/// Combat ends when the target gets this far away; nor do actors start fights,
-/// or join them, further off. (No source.)
-pub(crate) const LOSE_DISTANCE: f32 = 4000.0;
+/// Actors don't start fights, or join them, further off than this (no source).
+/// Fights end by detection (`crate::detection`).
+pub(crate) const ENGAGE_DISTANCE: f32 = 4000.0;
 /// Base melee reach (`fCombatDistance`), scaled by the weapon's reach.
 const COMBAT_DISTANCE: f32 = 141.0;
 /// Seconds an attack keeps the attacker in place.
@@ -435,6 +435,9 @@ pub struct Combat {
     pub(crate) flee_distance: f32,
     pub(crate) safe: f32,
     threat_near: bool,
+    /// Seconds the target has gone undetected, and where it was last detected.
+    pub(crate) unseen: f32,
+    pub(crate) last_seen: Option<Vec3>,
 }
 
 /// What an actor's bashes cost (bash, power bash; before the attack's own
@@ -447,7 +450,7 @@ pub(crate) struct Bash {
 
 impl Combat {
     pub fn new(target: FormId) -> Combat {
-        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false, draw: Default::default(), clear_shot: false, fleeing: false, away_to: None, confidence_mod: 0.0, threat_check: 0.0, recheck: false, flee_distance: 0.0, safe: 0.0, threat_near: false }
+        Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false, draw: Default::default(), clear_shot: false, fleeing: false, away_to: None, confidence_mod: 0.0, threat_check: 0.0, recheck: false, flee_distance: 0.0, safe: 0.0, threat_near: false, unseen: 0.0, last_seen: None }
     }
 
     pub fn swinging(&self) -> bool {
@@ -786,7 +789,7 @@ impl Engine {
     /// actors attack their enemies, and the player unless they keep the law (belong
     /// to a faction that tracks crime: townsfolk, guards); very aggressive ones
     /// neutrals too; frenzied ones anyone. Allies and friends are left alone.
-    fn hostile_to(&mut self, a: &CombatStats, b_factions: &[FormId], b_is_player: bool) -> bool {
+    pub(crate) fn hostile_to(&mut self, a: &CombatStats, b_factions: &[FormId], b_is_player: bool) -> bool {
         let reaction = self.faction_reaction(&a.factions, b_factions);
         if matches!(reaction, Some(2 | 3)) && a.aggression < 3 {
             return false;
@@ -845,12 +848,21 @@ impl Engine {
         if a.dead || a.combat.as_ref().is_some_and(|c| c.target == target) {
             return false;
         }
+        // Searching for it (alert, or having lost it) or not: the detection
+        // topic for the change.
+        let topic = match a.search.as_ref() {
+            Some(s) if s.lost => b"LOTC",
+            Some(_) => b"ALTC",
+            None => b"NOTC",
+        };
+        a.end_search();
         a.interrupt(&mut self.furniture);
         a.combat = Some(super::threat::new_combat(&self.lo, target, &a.stats, rolls));
         let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());
         // Cowards run without drawing (unless cornered).
         let coward = a.stats.confidence == 0;
         log::info!("{actor} attacks {target}");
+        self.bark(actor, topic);
         if humanoid && !coward {
             self.draw_weapon(actor, true);
         } else if !coward && let Some(g) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)).and_then(|a| a.graph.as_mut()) {
@@ -861,6 +873,11 @@ impl Engine {
 
     /// Stop fighting: weapons away, back to its packages.
     pub fn end_combat(&mut self, actor: FormId) {
+        self.stop_fighting(actor, false);
+    }
+
+    /// Stop fighting, putting weapons away unless `keep_weapon` (to search).
+    pub(crate) fn stop_fighting(&mut self, actor: FormId, keep_weapon: bool) {
         let Some(key) = self.actor_cells.get(&actor).copied() else { return };
         let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return };
         if a.combat.is_none() {
@@ -871,7 +888,8 @@ impl Engine {
         a.halt(2.0);
         a.next_eval = 0.0;
         let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());
-        if humanoid {
+        if keep_weapon {
+        } else if humanoid {
             self.draw_weapon(actor, false);
         } else if let Some(g) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)).and_then(|a| a.graph.as_mut()) {
             g.send_event("combatStanceStop");
@@ -917,15 +935,15 @@ impl Engine {
         for (r, pos, stats) in lookers {
             let mut best: Option<(f32, FormId)> = None;
             let d = pos.distance(player);
-            if d < LOSE_DISTANCE && self.finds_player(r) && self.would_attack_player(r) {
+            if d < ENGAGE_DISTANCE && self.finds_player(r) && self.would_attack_player(r) {
                 best = Some((d, PLAYER_REF));
             }
             for (o, opos, of) in &others {
                 let d = pos.distance(*opos);
-                if *o == r || d > LOSE_DISTANCE || best.is_some_and(|b| b.0 <= d) {
+                if *o == r || d > ENGAGE_DISTANCE || best.is_some_and(|b| b.0 <= d) {
                     continue;
                 }
-                if self.hostile_to(&stats, of, false) && self.detects(r, *o) {
+                if self.hostile_to(&stats, of, false) && self.finds(r, *o) {
                     best = Some((d, *o));
                 }
             }
@@ -974,7 +992,7 @@ impl Engine {
         let mut best: Option<(f32, FormId, FormId)> = None;
         for &(fighter, fpos, target) in fights {
             let d = pos.distance(fpos);
-            if fighter == helper || target == helper || d > LOSE_DISTANCE || best.is_some_and(|b| b.0 <= d) {
+            if fighter == helper || target == helper || d > ENGAGE_DISTANCE || best.is_some_and(|b| b.0 <= d) {
                 continue;
             }
             if target == PLAYER_REF && self.player_dead() {

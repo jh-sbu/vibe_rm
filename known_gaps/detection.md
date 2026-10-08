@@ -68,28 +68,50 @@ stealth points.
 - Stealth points drain by `detection * fCombatStealthPointDrainMult` a second
   and refill by `max(-detection * fCombatStealthPointRegenMult,
   fCombatStealthPointRegenMin)` a second, from the most any actor who would
-  attack the player detects them by. With no such actor in range they are
-  full again at once (after the alert wait).
-- Only the player has stealth points. An NPC is detected by another as soon as
-  the detection value is above 0.
-- Detection of the player is worked out four times a second; enemies look
-  once a second as before. Fights still start, and are joined, only within
-  combat's 4000 units (no source), so that a faint detection outdoors (the
-  reach is 5250) doesn't start a fight that ends at once.
+  attack them detects them by. With no such actor in range they are full
+  again at once (after the alert wait). Actors have them too, kept while an
+  enemy is alert to them or fights them.
+- Detection of the player is worked out four times a second, of actors and
+  the detection states once a second; enemies look once a second as before.
+  Fights start, and are joined, only within 4000 units (no source).
+- **Alert**: a calm actor that would attack someone it detects (above 0) but
+  doesn't find yet becomes alert to the one it detects most: weapons out, it
+  walks to where they were, following them while it still detects them.
+  Damage doesn't alert: a hit starts a fight, as before.
+- **Lost**: a fighter whose target has gone undetected (0 or less) for
+  `fCombatStealthPointRegenDetectedEventWaitTime` (10 s; the wait is that
+  setting by its name) stops fighting and searches where it last detected
+  it. A target that dies or unloads ends the fight. Fights no longer end by
+  distance.
+- **Searching** (both): at the spot, it moves to random places on the navmesh
+  within 512 units of it every 3 to 8 seconds (invented: the CK wiki's
+  "Combat Search" page wasn't found). It attacks once it finds the target
+  (stealth points gone, or past the threshold) and gives up once it doesn't
+  detect it and the target's stealth points are full; or at once if the
+  target dies or it no longer would attack it.
+- Topics: `NormalToCombat`, `AlertToCombat`, `LostToCombat` on starting a
+  fight; `NormalToAlert`, `CombatToLost` on starting to search; `AlertIdle`
+  / `LostIdle` every `fCombatDetectionDialogueIdleMin` to `MaxElapsedTime`
+  seconds while searching; `AlertToNormal` / `LostToNormal` on giving up.
+  `CombatToNormal` isn't said.
 - The sneak eye opens with the most any actor detects the player by against
   the combat threshold, or with the stealth points lost, whichever is more.
 
 ## Open questions
 
-- **Action sounds**: weapons swung (all but daggers), spells and shouts. The
-  weapon's detection sound level (`WEAP` `DNAM`) maps through
-  `iSoundLevelLoud` / `Normal` / `Silent` / `VeryLoud`; only `Silent` (10) is
-  in Skyrim.esm, so attacks make no sound yet.
-- **Detection events**: projectile impacts alerting those who hear them.
-- **Alert and Lost states**: alerted actors searching towards what they
-  noticed, searching for a target lost, `fSneakAlertMod`, the transition
-  topics (`NormalToAlert`...), `GetIsAlerted`. Combat ends by distance as
-  before, not by losing detection.
+- **Weapons are silent, by decision.** Swinging a weapon (all but daggers)
+  should make action sound through the weapon's detection sound level
+  (`WEAP` `DNAM`) and `iSoundLevelLoud` / `Normal` / `Silent` / `VeryLoud`.
+  Only `iSoundLevelSilent` (10) is in Skyrim.esm; the other values live in
+  the executable and no public source gives them. Rather than invent them,
+  attacks make no sound until a source turns up.
+- **Detection events**: projectile impacts alerting those who hear them (the
+  same unknown sound levels decide how loud they are).
+- Spells and shouts as action sounds: no magic yet.
+- `GetIsAlerted` / `SetAlert` (the alert flag scripts set) aren't tied to the
+  Alert state; `fSneakAlertMod` (0) is left out.
+- The "Combat Search" behaviour itself (where searchers look, for how long)
+  is unsourced; see above.
 - `fSneakLightMoveMult`, `fSneakLightRunMult`, `fSneakCombatMod`,
   `fSneakStealthboyMult`, `iCombatStealthPointSneakDetectionThreshold`,
   `fSneakNoticedMin`: not in the plugins, defaults unknown; left out.
@@ -111,3 +133,5 @@ stealth points.
   formula is for actors.
 - Being hit: the CK wiki says it alerts the victim; a hit starts a fight
   as before.
+- Combat searches through load doors: a target that leaves the cell unloads
+  from the fight's view and the fight ends.

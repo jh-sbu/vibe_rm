@@ -90,7 +90,7 @@ impl Engine {
             return None;
         }
         let a = self.actor_ref(r)?;
-        if a.dead || a.bleeding.is_some() || a.combat.is_some() || a.exiting.is_some() || a.greet_wait > 0.0 {
+        if a.dead || a.bleeding.is_some() || a.combat.is_some() || a.search.is_some() || a.exiting.is_some() || a.greet_wait > 0.0 {
             return None;
         }
         let quest = a.current.and_then(|i| a.packages.get(i)).and_then(|p| p.quest);

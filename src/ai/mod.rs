@@ -281,6 +281,8 @@ pub struct ActorRuntime {
     turning: i8,
     /// The graph is sneaking (`SneakStart` sent).
     sneaking: bool,
+    /// Searching for someone it noticed or lost (detection's Alert and Lost).
+    pub(crate) search: Option<crate::detection::Search>,
     /// What to look at (world space), for humanoids' head tracking.
     pub look_at: Option<Vec3>,
     /// The goal was set by hand (console `travel`): packages leave it alone.
@@ -427,6 +429,7 @@ impl ActorRuntime {
             graph_heading: f32::NAN,
             turning: 0,
             sneaking: false,
+            search: None,
             look_at: None,
             pinned: false,
             hurry: false,
@@ -471,6 +474,25 @@ impl ActorRuntime {
         }
         let (walk, run) = self.moves.map_or_else(|| (self.walk_speed(), self.walk_speed() * 2.5), |(m, _)| (m.walk, m.run));
         if self.speed > (walk + run) / 2.0 { Gait::Run } else { Gait::Walk }
+    }
+
+    /// Walk to `at` to search there (its packages wait meanwhile).
+    pub(crate) fn search_at(&mut self, at: Vec3, furniture: &mut FurnitureWorld) {
+        if !self.in_furniture() && self.goal.is_some_and(|g| g.behaviour == Behaviour::Travel && self.pinned) {
+            self.goal = Some(Goal::travel(at));
+            return;
+        }
+        self.interrupt(furniture);
+        self.goal = Some(Goal::travel(at));
+        self.pinned = true;
+    }
+
+    /// Stop searching: back to its packages.
+    pub(crate) fn end_search(&mut self) {
+        if self.search.take().is_some() && self.pinned {
+            self.pinned = false;
+            self.next_eval = 0.0;
+        }
     }
 
     /// Ground speed it is moving at.
@@ -2067,9 +2089,10 @@ impl Engine {
                 } else if !self.ai_enabled || a.bleeding.is_some() {
                     a.halt(1.0);
                 } else if let Some(target) = a.combat.as_ref().map(|c| c.target) {
-                    // Fleeing actors leave the fight once safe (`threat`), not by distance.
-                    let lose = if a.combat.as_ref().is_some_and(|c| c.fleeing) { f32::INFINITY } else { combat::LOSE_DISTANCE };
-                    match positions.get(&target).filter(|p| p.distance(a.pos) < lose) {
+                    // Fighters lose a target that goes undetected (`detection`);
+                    // fleeing ones leave the fight once safe (`threat`). Here
+                    // only one gone (dead, unloaded) is lost.
+                    match positions.get(&target) {
                         Some(&tp) => {
                             if let Some(ev) = a.combat_step(dt, &mut world, tp) {
                                 // Attacks the graph has no state for fall back to the basic
@@ -2099,7 +2122,7 @@ impl Engine {
                             }
                         }
                         None => {
-                            log::debug!("{} loses {target} ({:?} away, {lose} the most)", a.ref_id, positions.get(&target).map(|p| p.distance(a.pos)));
+                            log::debug!("{} loses {target} (gone)", a.ref_id);
                             lost.push(a.ref_id)
                         }
                     }
@@ -2162,7 +2185,7 @@ impl Engine {
             self.refresh_equipment(key, index, actor);
         }
         for r in lost {
-            self.end_combat(r);
+            self.lose_target(r);
         }
         self.update_guards(dt, &started);
         self.resolve_swings(swings);

@@ -323,7 +323,7 @@ impl Engine {
     pub(crate) fn open_conversation(&mut self, npc_ref: FormId, greeting: Option<(Topic, Info)>) {
         let Some(npc) = self.base_of(npc_ref) else { return };
         self.talked_to_pc.insert(npc_ref);
-        let voice_type = self.npc_voice_type(npc).unwrap_or_default();
+        let voice_type = self.actor_voice_type(npc_ref).unwrap_or_default();
         let name = self.form_name(npc_ref);
         let mut conv = Conversation {
             npc_ref,

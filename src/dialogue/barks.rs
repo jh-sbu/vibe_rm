@@ -115,8 +115,10 @@ impl Engine {
     /// Say a line from the first topic of `subtype` with an INFO for `speaker`.
     /// True if something was said.
     pub fn bark(&mut self, speaker: FormId, subtype: &[u8; 4]) -> bool {
-        let Some(npc) = self.base_of(speaker) else { return false };
-        let Some(voice_type) = self.npc_voice_type(npc) else { return false };
+        let Some(voice_type) = self.actor_voice_type(speaker) else {
+            log::trace!("{speaker}: no voice type");
+            return false;
+        };
         for topic in self.bark_topics(subtype) {
             let Some(info) = self.select_info(&topic, speaker) else {
                 log::trace!("{speaker}: no {} line ({}, quest {} {})", topic.editor_id, topic.id, topic.quest, if self.scripts.quests.get(&topic.quest).is_some_and(|q| q.running) { "running" } else { "not running" });

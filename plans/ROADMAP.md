@@ -355,7 +355,14 @@ game each piece unlocks.
   joining fights, crime witnesses and force greets' "player must be detected"
   use it. Conditions `GetDetected`, `IsSneaking`, `GetLightLevel`; Papyrus
   `IsDetectedBy`, `IsSneaking`, `GetLightLevel`; the HUD's sneak eye. Console
-  `detect`. Open questions: `known_gaps/detection.md`
+  `detect`. Detection states: enemies alert to someone they detect but don't
+  find yet search where they were; fighters whose target goes undetected lose
+  it and search where they last saw it (fights no longer end by distance);
+  searchers attack on finding the target and give up once its stealth points
+  are full, with the detection topics (`NormalToAlert`, `AlertIdle`,
+  `CombatToLost`...). Actors have stealth points too. Voice types through
+  templates (leveled actors' barks and `GetIsVoiceType`). Open questions:
+  `known_gaps/detection.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -415,14 +422,16 @@ game each piece unlocks.
      and jail, item removal (dropping), spell cast, shouts; kill events' crime
      and relationship values; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
-3. **Detection (stealth)** (the detection value and stealth points done; see Done)
-   - Alert and Lost states: alerted actors searching towards what they noticed
-     and for targets lost, their topics (`NormalToAlert`...), `GetIsAlerted`;
-     combat ending on losing detection rather than by distance
-   - Action sounds (weapons' detection sound levels, spells, shouts) and
-     detection events (impacts); being hit alerting the victim
-   - Perks, muffle, invisibility; NPCs' own stealth points; finding bodies by
-     detection
+3. **Detection (stealth)** (see Done); what's left waits on other systems or
+   sources:
+   - Perks (Stealth, Muffled Movement, Silence, Quiet Casting, Shadow
+     Warrior) with the perk system; muffle, invisibility and blindness, and
+     spells and shouts as action sounds, with magic (the formula's slots for
+     them are in `crate::detection`)
+   - Weapon and impact sounds (action sounds, detection events): need the
+     `iSoundLevel*` values, which no public source gives; weapons are silent
+     until then
+   - Finding bodies by detection
 4. **AI depth**
    - Alias fills: created objects drawn in the world, cleaned up
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
@@ -437,7 +446,9 @@ game each piece unlocks.
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
    and enchantments, killmoves, the player's own weapon and
-   animations), magic, inventory (player's, equipping by hand, armor from
+   animations), magic (with detection's muffle, invisibility, blindness and
+   spell / shout sounds), perks (the sneak tree's detection perks among them;
+   see Detection), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
    (guards arresting, jail, attack on sight; pickpocketing, trespass, lockpicking
    owned locks; stolen items marked; see Done)
