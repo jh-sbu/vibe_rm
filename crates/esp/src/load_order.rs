@@ -134,6 +134,9 @@ impl LoadOrder {
         {
             for line in txt.lines() {
                 if let Some(n) = line.trim().strip_prefix('*') {
+                    if !exists(n) {
+                        log::warn!("{}: {n} is not in {}; skipping it", p.display(), data_dir.display());
+                    }
                     push(&mut list, n);
                 }
             }

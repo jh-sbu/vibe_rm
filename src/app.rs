@@ -24,7 +24,17 @@ fn init_data(opts: &Options) -> Result<(LoadOrder, vfs::Vfs)> {
         None => vfs::locate_data_dir().context("could not find a Skyrim Data directory; pass --data")?,
     };
     log::info!("data directory: {}", data_dir.display());
-    let names = LoadOrder::default_plugin_list(&data_dir, None);
+    if let Some(p) = &opts.plugins_txt {
+        anyhow::ensure!(p.is_file(), "plugins.txt not found: {}", p.display());
+    }
+    let mut names = LoadOrder::default_plugin_list(&data_dir, opts.plugins_txt.as_deref());
+    for p in &opts.plugins {
+        anyhow::ensure!(data_dir.join(p).is_file(), "plugin {p} not found in {}", data_dir.display());
+        if !names.iter().any(|n| n.eq_ignore_ascii_case(p)) {
+            names.push(p.clone());
+        }
+    }
+    log::info!("plugins: {}", names.join(", "));
     let t = Instant::now();
     let mut lo = LoadOrder::load(&data_dir, &names)?;
     log::info!("load order indexed: {} records in {:?}", lo.record_count(), t.elapsed());

@@ -60,6 +60,12 @@ out in it.
 The data directory is found from `--data`, `$SKYRIM_DATA`, or the default Steam
 locations on Linux.
 
+Mods: the base masters and Creation Club content (`Skyrim.ccc`) always load.
+`--plugins <plugins.txt>` adds that file's enabled (`*`) entries, and
+`--plugin MyMod.esp` (repeatable) adds a plugin from the data directory after those.
+A plugin's own `MyMod.bsa` / `MyMod - Textures.bsa` and loose files in `Data` are
+picked up too.
+
 Controls: click to capture the mouse, WASD to move, Space/Ctrl for up/down,
 Shift to go faster, T to fast-forward time, E to activate (talk, open, take, search),
 Tab for the inventory, Esc to release the mouse or quit.
