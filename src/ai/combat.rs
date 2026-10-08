@@ -20,6 +20,9 @@ const DETECT_INTERVAL: f32 = 1.0;
 pub(crate) const ENGAGE_DISTANCE: f32 = 4000.0;
 /// Base melee reach (`fCombatDistance`), scaled by the weapon's reach.
 const COMBAT_DISTANCE: f32 = 141.0;
+/// The push of the player's blow on what it strikes (kg m/s; twice that for a
+/// power attack; no source).
+const BLOW_PUSH: f32 = 4.0;
 /// Seconds an attack keeps the attacker in place.
 const SWING_TIME: f32 = 1.1;
 
@@ -2220,19 +2223,32 @@ impl Engine {
             ),
             None => (4.0, 120.0),
         };
-        let hit = self
-            .physics
-            .raycast(self.camera.position, self.camera.forward(), reach);
-        if let Some((_, Some(r))) = hit
-            && self.lo.tag_of(r).map(|t| t.0) == Some(*b"ACHR")
-            && !self.is_dead(r)
-        {
+        let dir = self.camera.forward();
+        let Some((_, Some(r))) = self.physics.raycast(self.camera.position, dir, reach) else {
+            return;
+        };
+        let actor = self.created(r).map_or_else(
+            || self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR"),
+            |c| c.actor,
+        );
+        if actor && !self.is_dead(r) {
             let damage = damage * mult;
             log::info!(
                 "player {} {r} for {damage:.0}",
                 if power { "power attacks" } else { "strikes" }
             );
             self.hit(r, PLAYER_REF, damage, power, stagger, None);
+        } else {
+            // Anything else (a body, clutter, a wall): pushed if it moves.
+            let push = if power { BLOW_PUSH * 2.0 } else { BLOW_PUSH };
+            log::info!("player strikes {r}");
+            self.strike(
+                r,
+                PLAYER_REF,
+                None,
+                dir * push * crate::physics::METRE,
+                power,
+            );
         }
     }
 

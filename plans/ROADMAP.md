@@ -221,8 +221,8 @@ game each piece unlocks.
   wires and bone alarms hang from rope links, beehives from a spring that
   breaks). Every NIF constraint type the vanilla meshes use is read, motors
   included (none are switched on). vrm-tool `model-users`. The player pushes them aside, actors walking into
-  them wake them, arrows knock them away (and send `OnHit` to whatever they
-  strike); where they come to rest is kept across loads. Papyrus
+  them wake them, arrows and the player's blows knock them away (and send `OnHit` to
+  whatever they strike, corpses too); where they come to rest is kept across loads. Papyrus
   `ApplyHavokImpulse`, `SetMotionType` (the weapon racks' scripts hold their
   weapons keyframed), `DropObject`. Objects made in the world (`PlaceAtMe`,
   dropped items) are drawn, fall, have their base's scripts and can be picked up;
@@ -534,7 +534,7 @@ game each piece unlocks.
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (their scripts hold them keyframed until
-     triggered), arrows knocking down beehives, melee blows and spells pushing them
+     triggered), arrows knocking down beehives, NPCs' blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal
    and objectives, help messages (`ShowAsHelpMessage`); support for the game's .swf assets still undecided
