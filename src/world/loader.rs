@@ -21,6 +21,9 @@ pub struct ModelCache {
 pub struct ModelAnim {
     pub parts: Vec<AnimPart>,
     pub sequences: Vec<model::Sequence>,
+    /// The behaviour graph project moving the parts (`meshes/...hkx`), and the
+    /// model's nodes as the skeleton its clips pose.
+    pub graph: Option<(String, Arc<crate::world::skeleton::Skeleton>)>,
 }
 
 pub struct AnimPart {
@@ -85,11 +88,13 @@ impl ModelCache {
             Option<CpuModel>,
             Option<crate::physics::shapes::CollisionModel>,
             Option<Arc<[nif::FurnitureMarker]>>,
+            Option<(String, Arc<crate::world::skeleton::Skeleton>)>,
         )> = missing
             .par_iter()
             .map(|p| {
                 let mut col = None;
                 let mut furn = None;
+                let mut graph = None;
                 // `path#blade` / `path#scb`: a weapon without / only its scabbard.
                 let (file, variant) = p
                     .split_once('#')
@@ -100,6 +105,12 @@ impl ModelCache {
                         Ok(n) => {
                             col = crate::physics::shapes::from_nif(&n);
                             furn = furniture_markers(&n);
+                            graph = n.behavior_graph().map(|f| {
+                                (
+                                    format!("meshes/{}", f.replace('\\', "/").to_ascii_lowercase()),
+                                    Arc::new(crate::world::skeleton::Skeleton::from_nif(&n)),
+                                )
+                            });
                             let m = match variant {
                                 Some("scb") => model::convert_filtered(&n, &|name| {
                                     name.to_ascii_lowercase().starts_with("scb")
@@ -107,11 +118,16 @@ impl ModelCache {
                                 Some(_) => model::convert_filtered(&n, &|name| {
                                     !name.to_ascii_lowercase().starts_with("scb")
                                 }),
-                                None => model::convert_split(
-                                    &n,
-                                    &|_| true,
-                                    &col.as_ref().map(|c| c.body_nodes()).unwrap_or_default(),
-                                ),
+                                None => {
+                                    // Nodes of bodies of their own, and those a
+                                    // behaviour graph moves, are drawn apart.
+                                    let mut split =
+                                        col.as_ref().map(|c| c.body_nodes()).unwrap_or_default();
+                                    if graph.is_some() {
+                                        split.extend(n.animated_nodes());
+                                    }
+                                    model::convert_split(&n, &|_| true, &split)
+                                }
                             };
                             for mesh in &m.meshes {
                                 log::trace!("mesh in {p}: {:?}", mesh.material);
@@ -126,14 +142,14 @@ impl ModelCache {
                 if m.is_none() {
                     log::debug!("model not found or unreadable: {p}");
                 }
-                ((*p).clone(), m, col, furn)
+                ((*p).clone(), m, col, furn, graph)
             })
             .collect();
         let t1 = std::time::Instant::now();
 
         // Textures referenced by the new models.
         let mut tex: HashSet<String> = HashSet::new();
-        for (_, m, _, _) in &cpu {
+        for (_, m, _, _, _) in &cpu {
             if let Some(m) = m {
                 let parts = m
                     .animated
@@ -157,7 +173,7 @@ impl ModelCache {
         load_textures(renderer, vfs, tex.into_iter().collect());
         let t2 = std::time::Instant::now();
 
-        for (p, mut m, col, furn) in cpu {
+        for (p, mut m, col, furn, graph) in cpu {
             self.collision.insert(p.clone(), col.map(Arc::new));
             self.furniture.insert(p.clone(), furn);
             if let Some(cpu) = m.as_mut().filter(|m| !m.animated.is_empty()) {
@@ -176,8 +192,14 @@ impl ModelCache {
                     })
                     .collect();
                 let sequences = std::mem::take(&mut cpu.sequences);
-                self.anims
-                    .insert(p.clone(), Arc::new(ModelAnim { parts, sequences }));
+                self.anims.insert(
+                    p.clone(),
+                    Arc::new(ModelAnim {
+                        parts,
+                        sequences,
+                        graph,
+                    }),
+                );
             }
             let g = m
                 .filter(|m| !m.meshes.is_empty() || !m.skinned.is_empty())

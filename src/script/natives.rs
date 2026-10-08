@@ -12,6 +12,13 @@ fn none() -> NativeResult {
     NativeResult::Value(Value::None)
 }
 
+fn str_arg(args: &[Value], i: usize) -> String {
+    match args.get(i) {
+        Some(Value::String(s)) => s.to_string(),
+        _ => String::new(),
+    }
+}
+
 fn form_arg(args: &[Value], i: usize) -> Option<FormId> {
     args.get(i).and_then(|a| a.as_form()).map(FormId)
 }
@@ -318,15 +325,27 @@ pub fn call(
                     Value::String(s) => Some(s.to_string()),
                     _ => None,
                 }),
-            ) {
-                e.play_animation_event(r, &ev);
+            ) && !e.play_animation_event(r, &ev)
+            {
+                // Not an actor: an object's graph.
+                e.play_object_animation(r, &ev);
             }
             none()
         }
-        ("objectreference", "playanimation")
-        | ("objectreference", "playanimationandwait")
-        | ("objectreference", "playgamebryoanimation")
-        | ("objectreference", "setanimationvariablebool")
+        // The wait for PlayAnimationAndWait's event isn't kept.
+        ("objectreference", "playanimation") | ("objectreference", "playanimationandwait") => {
+            let event = str_arg(args, 0);
+            v(Value::Bool(
+                me.is_some_and(|r| e.play_object_animation(r, &event)),
+            ))
+        }
+        ("objectreference", "playgamebryoanimation") => {
+            let name = str_arg(args, 0);
+            v(Value::Bool(
+                me.is_some_and(|r| e.play_gamebryo_animation(r, &name)),
+            ))
+        }
+        ("objectreference", "setanimationvariablebool")
         | ("objectreference", "setanimationvariablefloat")
         | ("objectreference", "setanimationvariableint")
         | ("objectreference", "setopen")

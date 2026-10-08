@@ -479,15 +479,20 @@ game each piece unlocks.
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
+- Objects' behaviour graphs (`BSBehaviorGraphExtraData`: traps, pressure plates, levers,
+  portcullises, puzzle pillars): the project runs on the model's own nodes, the nodes it
+  moves (those with transform controllers) drawn apart and their collision carried;
+  `PlayAnimation` / `PlayAnimationAndWait` / `Debug.SendAnimationEvent` send it events,
+  `PlayGamebryoAnimation` plays keyframe sequences. A pressure plate goes `Down`, its
+  rigged rockfall `break`s and the rocks fall. Open questions: `known_gaps/object-graphs.md`
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
    - Pose modifiers: twist, keyframe bones; foot IK gains from `hkbFootIkControlsModifier`,
      locking planted feet; creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
-   - Objects' behaviour graphs (`BSBehaviorGraphExtraData`): `PlayAnimation` on
-     traps, pressure plates (`Down` / `Up`), levers, rigged rockfalls (`break`,
-     whose supports hold the rocks up until then), swinging maces
+   - Objects' behaviour graphs (see Done): the events they raise (sounds, `OnAnimationEvent`),
+     `PlayAnimationAndWait`'s wait, graph state kept across loads
    - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
    - `Direction` (strafing), sprinting; character properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the

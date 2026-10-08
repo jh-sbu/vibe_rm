@@ -39,11 +39,9 @@ themselves.
 
 - `ProcessTrapHit`'s pushback isn't applied (actors have no body to push),
   and it sends no `OnHit`.
-- Traps moved by behaviour graphs (swinging maces and blades, rigged
-  rockfalls' supports, dart and flame traps' parts) don't move: objects don't
-  run graphs, so `PlayAnimation` does nothing. Ansilvund's rockfall fires
-  but its rocks stay on the rig's unbroken supports.
-- NIF animated collision (keyframed controllers) doesn't hit.
+- Parts moved by objects' behaviour graphs (swinging maces and blades, a
+  rig's supports) move their collision as fixed colliders set in place each
+  frame: they push nothing aside and don't hit (no trap events for them).
 - Disarming (`trapDisarmed`), trip wires' own scripts (`Tripwire` makes its
   wire dynamic) and the Light Foot perk (`HasPerk` is unimplemented).
 - Who gets a trap kill: no one.

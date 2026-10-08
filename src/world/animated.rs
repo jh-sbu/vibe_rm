@@ -1,5 +1,8 @@
-//! Keyframe-animated objects: doors that open and close, and statics that loop
-//! an "Idle" sequence (water wheels, flags, machinery).
+//! Animated objects: doors that open and close, statics that loop an "Idle"
+//! keyframe sequence (water wheels, flags, machinery), and objects run by a
+//! behaviour graph of their own (traps, pressure plates, levers), whose clips
+//! move the model's parts and the collision on them as `PlayAnimation`'s
+//! events drive it.
 
 use std::sync::Arc;
 
@@ -33,6 +36,18 @@ pub struct AnimatedObject {
     pub clear_for: f32,
     /// Sequence playing and its time.
     pub playing: Option<(usize, f32)>,
+    /// The behaviour graph running it, if its model has one.
+    pub graph: Option<ObjectGraph>,
+}
+
+/// An object's running behaviour graph.
+pub struct ObjectGraph {
+    anim: crate::world::behavior::GraphAnim,
+    skeleton: Arc<crate::world::skeleton::Skeleton>,
+    /// The skeleton bone of each part (in `anim.parts` order).
+    bones: Vec<Option<usize>>,
+    /// Colliders on the moving nodes: their bone and pose relative to it.
+    colliders: Vec<(ColliderHandle, usize, Mat4)>,
 }
 
 impl AnimatedObject {
@@ -128,6 +143,7 @@ impl Engine {
             auto: false,
             clear_for: 0.0,
             playing: None,
+            graph: None,
         };
         // Machinery and the like loop their idle animation.
         if !door {
@@ -181,6 +197,92 @@ impl Engine {
         self.physics.set_enabled(&colliders, !open);
         log::debug!("door {door} {}", if open { "opens" } else { "closes" });
         true
+    }
+
+    /// Start an object's behaviour graph, if its model has one: its parts and
+    /// the colliders on them follow the graph's pose from now on.
+    pub(crate) fn start_object_graph(
+        &mut self,
+        obj: &mut AnimatedObject,
+        tagged: &[(ColliderHandle, Option<String>)],
+    ) {
+        let Some((path, skeleton)) = obj.anim.graph.clone() else {
+            return;
+        };
+        let Some(project) = self.graphs.project(&self.vfs, &path) else {
+            log::debug!("{}: no behaviour project {path}", obj.ref_id);
+            return;
+        };
+        let Some(rig) = project.shared.project.character.as_ref().map(|c| {
+            let rig = c.rig.to_ascii_lowercase().replace('\\', "/");
+            let rig = rig.strip_suffix(".hkx").unwrap_or(&rig).to_owned();
+            format!("{}/{rig}.nif", project.dir)
+        }) else {
+            return;
+        };
+        let mut anim = crate::world::behavior::GraphAnim::new(
+            project,
+            &rig,
+            false,
+            &skeleton,
+            self.rng ^ obj.ref_id.0 as u64,
+        );
+        anim.label = obj.ref_id.to_string();
+        let bones: Vec<Option<usize>> = obj
+            .anim
+            .parts
+            .iter()
+            .map(|p| skeleton.find(&p.node))
+            .collect();
+        let rest = skeleton.model_space(&skeleton.bind_locals());
+        let colliders = tagged
+            .iter()
+            .filter_map(|(h, node)| {
+                let b = skeleton.find(node.as_deref()?)?;
+                let at = self.physics.world.colliders.get(*h)?.position().to_mat4();
+                Some((*h, b, (obj.transform * rest[b]).inverse() * at))
+            })
+            .collect();
+        log::debug!(
+            "{}: behaviour graph {path} ({} parts, {} colliders)",
+            obj.ref_id,
+            bones.iter().flatten().count(),
+            tagged.iter().filter(|t| t.1.is_some()).count()
+        );
+        obj.graph = Some(ObjectGraph {
+            anim,
+            skeleton,
+            bones,
+            colliders,
+        });
+    }
+
+    /// Papyrus `PlayAnimation(event)`: the event to the object's behaviour
+    /// graph. False if it has none.
+    pub fn play_object_animation(&mut self, r: FormId, event: &str) -> bool {
+        let Some((key, i)) = self.find_animated(r) else {
+            return false;
+        };
+        let Some(g) = self
+            .cells
+            .get_mut(&key)
+            .and_then(|rt| rt.animated[i].graph.as_mut())
+        else {
+            return false;
+        };
+        log::debug!("{r}: animation event {event}");
+        g.anim.send_event(event)
+    }
+
+    /// Papyrus `PlayGamebryoAnimation(name)`: one of the model's keyframe
+    /// sequences.
+    pub fn play_gamebryo_animation(&mut self, r: FormId, name: &str) -> bool {
+        let Some((key, i)) = self.find_animated(r) else {
+            return false;
+        };
+        self.cells
+            .get_mut(&key)
+            .is_some_and(|rt| rt.animated[i].play(name))
     }
 
     fn find_animated(&self, r: FormId) -> Option<(CellKey, usize)> {
@@ -262,6 +364,28 @@ impl Engine {
             if let Some(rc) = self.scene.cells.get_mut(key) {
                 for obj in &mut rt.animated {
                     obj.update(dt, &mut rc.instances);
+                    // Behaviour graphs pose the parts and carry their collision.
+                    let Some(g) = obj.graph.as_mut() else {
+                        continue;
+                    };
+                    let frame = g.anim.update(dt, &self.vfs, &mut self.anims, &g.skeleton);
+                    for (&ii, b) in obj.instances.iter().zip(&g.bones) {
+                        if let (Some(inst), Some(m)) =
+                            (rc.instances.get_mut(ii), b.and_then(|b| frame.pose.get(b)))
+                        {
+                            set_transform(inst, obj.transform * *m);
+                        }
+                    }
+                    for &(h, b, local) in &g.colliders {
+                        let (Some(m), Some(c)) =
+                            (frame.pose.get(b), self.physics.world.colliders.get_mut(h))
+                        else {
+                            continue;
+                        };
+                        let (pose, _) =
+                            crate::physics::shapes::decompose(obj.transform * *m * local);
+                        c.set_position(pose);
+                    }
                 }
             }
         }
