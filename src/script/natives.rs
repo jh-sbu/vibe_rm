@@ -71,8 +71,29 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("game", "getrealhoursspent") => v(Value::Float(e.scripts.real_time as f32 / 3600.0)),
         ("game", "isplayersleeping") | ("game", "isfasttravelenabled") => v(Value::Bool(false)),
-        ("game", "isactivatecontrolsenabled") | ("game", "ismovementcontrolsenabled") => v(Value::Bool(true)),
-        ("game", "disableplayercontrols") | ("game", "enableplayercontrols") | ("game", "setinchargen") => none(),
+        // Player controls: each flag given true disables (enables) that control,
+        // in the order of `DisabledControls::flags_mut`. Missing arguments take
+        // Papyrus's defaults.
+        ("game", "disableplayercontrols") | ("game", "enableplayercontrols") => {
+            let disable = func == "disableplayercontrols";
+            const DISABLE: [bool; 8] = [true, true, false, false, false, true, true, false];
+            for (i, flag) in e.disabled_controls.flags_mut().into_iter().enumerate() {
+                if args.get(i).map_or(!disable || DISABLE[i], |a| a.as_bool()) {
+                    *flag = disable;
+                }
+            }
+            log::info!("{func}: {}", e.disabled_controls.describe());
+            none()
+        }
+        ("game", "ismovementcontrolsenabled") => v(Value::Bool(!e.disabled_controls.movement)),
+        ("game", "isfightingcontrolsenabled") => v(Value::Bool(!e.disabled_controls.fighting)),
+        ("game", "iscamswitchcontrolsenabled") => v(Value::Bool(!e.disabled_controls.cam_switch)),
+        ("game", "islookingcontrolsenabled") => v(Value::Bool(!e.disabled_controls.looking)),
+        ("game", "issneakingcontrolsenabled") => v(Value::Bool(!e.disabled_controls.sneaking)),
+        ("game", "ismenucontrolsenabled") => v(Value::Bool(!e.disabled_controls.menu)),
+        ("game", "isactivatecontrolsenabled") => v(Value::Bool(!e.disabled_controls.activate)),
+        ("game", "isjournalcontrolsenabled") => v(Value::Bool(!e.disabled_controls.journal)),
+        ("game", "setinchargen") => none(),
         ("game", "getgamesettingfloat") => v(Value::Float(0.0)),
         ("game", "getgamesettingint") => v(Value::Int(0)),
         // ------------------------------------------------------------- Form

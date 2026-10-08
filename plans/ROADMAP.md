@@ -208,6 +208,11 @@ game each piece unlocks.
   `IsGuard`. Console `cgf <Class.Func> [@self] [args]` calls a native; vrm-tool
   `script-users` finds what attaches a script. Open questions:
   `known_gaps/combat-state.md`
+- Player controls from scripts: `DisablePlayerControls` / `EnablePlayerControls`
+  (Papyrus's defaults for missing arguments) stop the player moving, fighting
+  (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
+  and activating; the `Is...ControlsEnabled` queries. Console `epc`. Open
+  questions: `known_gaps/player-controls.md`
 - Synchronised blends of single-play clips (directional attacks) end instead of
   cycling, and their heaviest child raises the clip triggers
 - Character property bindings: bone switches bound to the character's bone weight
@@ -501,9 +506,8 @@ game each piece unlocks.
    guards; fences; see Done)
    - The player as an actor: a body (race, sex, outfit) and a third-person
      camera, not only the first-person controller
-   - Player control from scripts: `DisablePlayerControls` /
-     `EnablePlayerControls` (no-ops for now), `SetPlayerAIDriven`,
-     `SetHudCartMode`
+   - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`;
+     disabled fighting putting the weapon away, the POV type argument
    - Natives still missing that quests lean on: `SetMotionType`,
      `ForceActive`; sneak attacks (`OnHit`'s sneak flag is always false)
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)

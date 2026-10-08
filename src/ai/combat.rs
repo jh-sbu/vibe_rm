@@ -1580,6 +1580,9 @@ impl Engine {
     /// The attack button went down: a power attack if it is held long enough
     /// (`update_player_attack`), else a basic one when it comes up.
     pub fn player_attack_press(&mut self) {
+        if self.disabled_controls.fighting {
+            return;
+        }
         if self.player_blocking {
             self.player_bash();
             return;
@@ -1591,7 +1594,7 @@ impl Engine {
     /// bash reach, with a shield or a weapon and the stamina for it (power bashes
     /// need a perk the player doesn't have yet).
     pub fn player_bash(&mut self) {
-        if self.player_dead() || self.conversation.is_some() {
+        if self.player_dead() || self.conversation.is_some() || self.disabled_controls.fighting {
             return;
         }
         let set = self.combat_settings();
@@ -1647,6 +1650,9 @@ impl Engine {
     /// attack takes the race's standing power attack's damage multiplier and
     /// stagger, and stamina; without enough left it is a basic swing.
     pub fn player_attack(&mut self, power: bool) {
+        if self.disabled_controls.fighting {
+            return;
+        }
         if self.player_dead() || self.conversation.is_some() || self.player_blocking {
             return;
         }
