@@ -285,6 +285,12 @@ impl Engine {
             .is_some_and(|rt| rt.animated[i].play(name))
     }
 
+    /// Whether `r` is an object running a behaviour graph.
+    pub(crate) fn object_has_graph(&self, r: FormId) -> bool {
+        self.find_animated(r)
+            .is_some_and(|(k, i)| self.cells[&k].animated[i].graph.is_some())
+    }
+
     fn find_animated(&self, r: FormId) -> Option<(CellKey, usize)> {
         self.cells.iter().find_map(|(k, rt)| {
             rt.animated
@@ -343,6 +349,8 @@ impl Engine {
             }
         }
         let mut toggle = Vec::new();
+        let mut raised: Vec<(FormId, Vec<String>)> = Vec::new();
+        let mut sounds: Vec<(String, Vec3)> = Vec::new();
         for (key, rt) in self.cells.iter_mut() {
             for obj in &mut rt.animated {
                 if !obj.door || obj.playing.is_some() {
@@ -369,6 +377,26 @@ impl Engine {
                         continue;
                     };
                     let frame = g.anim.update(dt, &self.vfs, &mut self.anims, &g.skeleton);
+                    if !frame.raised.is_empty() {
+                        let mut events = Vec::new();
+                        for r in frame.raised {
+                            log::trace!("{} raised {}", obj.ref_id, r.event);
+                            // `SoundPlay` with the sound as payload, or in the
+                            // event's name (`SoundPlay.TRPBladeSwingSwing`).
+                            let sound = match r.event.split_once('.') {
+                                Some((k, s)) if k.eq_ignore_ascii_case("SoundPlay") => {
+                                    Some(s.to_owned())
+                                }
+                                _ if r.event.eq_ignore_ascii_case("SoundPlay") => r.payload,
+                                _ => None,
+                            };
+                            if let Some(s) = sound {
+                                sounds.push((s, obj.position));
+                            }
+                            events.push(r.event);
+                        }
+                        raised.push((obj.ref_id, events));
+                    }
                     for (&ii, b) in obj.instances.iter().zip(&g.bones) {
                         if let (Some(inst), Some(m)) =
                             (rc.instances.get_mut(ii), b.and_then(|b| frame.pose.get(b)))
@@ -391,6 +419,12 @@ impl Engine {
         }
         for (door, auto) in toggle {
             self.toggle_door(door, auto);
+        }
+        for (sound, at) in sounds {
+            self.play_sound_at(&sound, at);
+        }
+        for (r, events) in raised {
+            self.raise_anim_events(r, &events);
         }
     }
 }

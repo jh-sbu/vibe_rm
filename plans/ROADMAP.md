@@ -485,14 +485,20 @@ game each piece unlocks.
   `PlayAnimation` / `PlayAnimationAndWait` / `Debug.SendAnimationEvent` send it events,
   `PlayGamebryoAnimation` plays keyframe sequences. A pressure plate goes `Down`, its
   rigged rockfall `break`s and the rocks fall. Open questions: `known_gaps/object-graphs.md`
+- Animation events for scripts: `RegisterForAnimationEvent` /
+  `UnregisterForAnimationEvent` (forms, aliases, magic effects) send the events an
+  actor's or object's graph raises as `OnAnimationEvent`; `PlayAnimationAndWait`
+  suspends its script until the graph raises the awaited event (swinging blades
+  wait for `reset`, portcullises for `opening` / `closing`); objects' graphs play
+  their `SoundPlay.<sound>` events
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
    - Pose modifiers: twist, keyframe bones; foot IK gains from `hkbFootIkControlsModifier`,
      locking planted feet; creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
-   - Objects' behaviour graphs (see Done): the events they raise (sounds, `OnAnimationEvent`),
-     `PlayAnimationAndWait`'s wait, graph state kept across loads
+   - Objects' behaviour graphs (see Done): graph state kept across loads,
+     `SetAnimationVariable*`
    - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
    - `Direction` (strafing), sprinting; character properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the

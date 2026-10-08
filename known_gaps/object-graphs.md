@@ -1,7 +1,8 @@
 # Objects' behaviour graphs
 
 Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
-(splitting the moving nodes out), `crates/nif` (`BSBehaviorGraphExtraData`).
+(splitting the moving nodes out), `crates/nif` (`BSBehaviorGraphExtraData`),
+`src/anim_events.rs` (the events they raise, for scripts).
 1199 vanilla meshes carry the extra data (actors' skeletons among them).
 
 ## What is known
@@ -14,6 +15,11 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
   are `Base01` and the 20 nodes carrying a `NiTransformController`.
 - Scripts drive them with `PlayAnimation` events (`Down` / `Up` on pressure
   plates, `break` on a rigged rockfall, `open` / `close` on portcullises).
+- The graphs raise events scripts wait for (`PlayAnimationAndWait("Single",
+  "reset")` on a swinging blade; `open` / `opening` on a portcullis) or register
+  for (`BladeTrapHit`: `Apex`, `reset`), and sounds as `SoundPlay.<SNDR editor
+  id>` event names (`SoundPlay.TRPBladeSwingSwing`); actors' graphs give the
+  sound as the payload of a `SoundPlay` event instead.
 
 ## Choices made without a source
 
@@ -25,11 +31,16 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
 - Graphs start in their start state when the cell loads; nothing about them
   is kept across loads (a broken rig is whole again, as its script's state
   is).
+- `PlayAnimationAndWait` gives up after 10 s (`WAIT_LIMIT`) when its event
+  doesn't come; the game's wait has no limit, but a graph event missing here
+  would otherwise hang the script for good.
+- `RegisterForAnimationEvent` fails (false, nothing registered) when the
+  sender runs no graph (not loaded, or without one); registrations are kept
+  until unregistered, also across the sender unloading.
+- Graph events are matched to registrations and waits ignoring case (the blade
+  raises `Reset`, its script waits for `reset`).
 
 ## Open
 
-- Events the graphs raise (sounds, `OnAnimationEvent` for scripts that
-  register for them) are dropped.
-- `PlayAnimationAndWait` returns at once instead of waiting for its event.
 - `controls base skeleton` isn't read; graph variables scripts set
   (`SetAnimationVariable*`) are ignored.

@@ -123,6 +123,8 @@ pub struct Engine {
     pub player_blocking: bool,
     /// Traps touching their targets.
     pub(crate) traps: crate::traps::Traps,
+    /// Scripts registered for animation events, and the events to deliver.
+    pub(crate) anim_events: crate::anim_events::AnimEvents,
     /// Activate parents and the child activations waiting on their delay.
     pub(crate) activation: crate::activation::Activation,
     /// Activate held down, and what the player has grabbed.
@@ -293,6 +295,7 @@ impl Engine {
             grab: Default::default(),
             activation: Default::default(),
             traps: Default::default(),
+            anim_events: Default::default(),
             disabled_controls: Default::default(),
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
@@ -3068,6 +3071,10 @@ impl Engine {
                     if !vm.send_event_to(&mut host, obj, &script, ev, vec![]) {
                         vm.send_event(&mut host, obj, ev, vec![]);
                     }
+                }
+                let anim = std::mem::take(&mut host.engine.anim_events.pending);
+                for (obj, script, args) in anim {
+                    vm.send_event_to(&mut host, obj, &script, "OnAnimationEvent", args);
                 }
                 let events = std::mem::take(&mut host.engine.scripts.pending_events);
                 for (obj, ev, args) in events {

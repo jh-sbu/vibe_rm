@@ -332,12 +332,46 @@ pub fn call(
             }
             none()
         }
-        // The wait for PlayAnimationAndWait's event isn't kept.
+        // An object's graph, else an actor's.
         ("objectreference", "playanimation") | ("objectreference", "playanimationandwait") => {
             let event = str_arg(args, 0);
-            v(Value::Bool(
-                me.is_some_and(|r| e.play_object_animation(r, &event)),
-            ))
+            let Some(r) = me else {
+                return v(Value::Bool(false));
+            };
+            if !(e.play_object_animation(r, &event) || e.play_animation_event(r, &event)) {
+                return v(Value::Bool(false));
+            }
+            if func == "playanimation" {
+                return v(Value::Bool(true));
+            }
+            // Wait for the graph to raise asEventName.
+            let wait = str_arg(args, 1);
+            log::debug!("{r}: {event}, waiting for {wait}");
+            NativeResult::WaitFor {
+                key: crate::anim_events::wait_key(r, &wait),
+                timeout: crate::anim_events::WAIT_LIMIT,
+                value: Value::Bool(true),
+            }
+        }
+        ("form", "registerforanimationevent")
+        | ("alias", "registerforanimationevent")
+        | ("activemagiceffect", "registerforanimationevent")
+        | ("form", "unregisterforanimationevent")
+        | ("alias", "unregisterforanimationevent")
+        | ("activemagiceffect", "unregisterforanimationevent") => {
+            let (Some(Value::Object(receiver, script)), Some(sender)) = (this, form_arg(args, 0))
+            else {
+                return v(Value::Bool(false));
+            };
+            let event = str_arg(args, 1);
+            if func.starts_with("register") {
+                v(Value::Bool(
+                    e.register_anim_event(*receiver, script, sender, &event),
+                ))
+            } else {
+                e.unregister_anim_event(*receiver, script, sender, &event);
+                none()
+            }
         }
         ("objectreference", "playgamebryoanimation") => {
             let name = str_arg(args, 0);

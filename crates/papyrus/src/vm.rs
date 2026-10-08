@@ -228,6 +228,13 @@ pub enum NativeResult {
     Value(Value),
     /// Suspend the calling thread for this many real seconds, then return None.
     Wait(f32),
+    /// Return `value`, suspending the calling thread until the host calls
+    /// [`Vm::signal`] with `key`, or for `timeout` real seconds at most.
+    WaitFor {
+        key: u64,
+        timeout: f32,
+        value: Value,
+    },
 }
 
 /// The embedding application.
@@ -258,6 +265,8 @@ struct Frame {
 struct Thread {
     frames: Vec<Frame>,
     wake_at: f64,
+    /// The signal it waits for (`NativeResult::WaitFor`).
+    waiting_for: Option<u64>,
 }
 
 #[derive(Default)]
@@ -552,6 +561,7 @@ impl Vm {
                 self.threads.push(Thread {
                     frames: vec![frame],
                     wake_at: self.time,
+                    waiting_for: None,
                 });
                 n += 1;
             }
@@ -580,6 +590,7 @@ impl Vm {
             self.threads.push(Thread {
                 frames: vec![frame],
                 wake_at: self.time,
+                waiting_for: None,
             });
             return true;
         }
@@ -618,6 +629,25 @@ impl Vm {
         }
     }
 
+    /// Wake the threads waiting for `key` (`NativeResult::WaitFor`); they run
+    /// on the next [`Vm::run`]. Returns how many there were.
+    pub fn signal(&mut self, key: u64) -> usize {
+        let mut n = 0;
+        for t in &mut self.threads {
+            if t.waiting_for == Some(key) {
+                t.waiting_for = None;
+                t.wake_at = self.time;
+                n += 1;
+            }
+        }
+        n
+    }
+
+    /// Whether a thread waits for `key`.
+    pub fn is_waiting_for(&self, key: u64) -> bool {
+        self.threads.iter().any(|t| t.waiting_for == Some(key))
+    }
+
     pub fn thread_count(&self) -> usize {
         self.threads.len()
     }
@@ -632,6 +662,8 @@ impl Vm {
                 keep.push(t);
                 continue;
             }
+            // Woken by its signal or timed out.
+            t.waiting_for = None;
             if !self.step_thread(host, &mut t, budget) {
                 keep.push(t);
             }
@@ -935,6 +967,16 @@ impl Vm {
                                     );
                                     t.wake_at = self.time + secs.max(0.0) as f64;
                                     let _ = this;
+                                    return false;
+                                }
+                                NativeResult::WaitFor {
+                                    key,
+                                    timeout,
+                                    value,
+                                } => {
+                                    Self::set_in(&mut self.instances, &mut frame!(), &dest, value);
+                                    t.wake_at = self.time + timeout.max(0.0) as f64;
+                                    t.waiting_for = Some(key);
                                     return false;
                                 }
                             }
