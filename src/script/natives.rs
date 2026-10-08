@@ -426,7 +426,19 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             none()
         }
+        ("faction", "sendplayertojail") => {
+            if let Some(f) = me {
+                e.send_player_to_jail(f, args.first().is_none_or(|b| b.as_bool()));
+            }
+            none()
+        }
         ("faction", "canpaycrimegold") => v(Value::Bool(me.is_some_and(|f| e.can_pay_crime_gold(f)))),
+        ("actor", "setplayerresistingarrest") => {
+            if let Some(a) = me {
+                e.set_player_resisting_arrest(a);
+            }
+            none()
+        }
         ("actor", "getcrimefaction") => match me.and_then(|a| e.crime_faction(a)) {
             Some(f) => v(e.object_value(f)),
             None => none(),

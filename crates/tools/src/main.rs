@@ -1716,6 +1716,54 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("quest-topics") => {
+            // quest-topics <data dir> <quest editor id>: the quest's dialogue
+            // topics (subtype, branch), each response with its conditions, the
+            // topics it links to (TCLT) and its fragment script (TIF__...).
+            anyhow::ensure!(args.len() > 2, "usage: quest-topics <data dir> <quest>");
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let mut lo = esp::LoadOrder::load(data, &names)?;
+            let vfs = vfs::Vfs::new(data, &names);
+            lo.load_strings("english", |p| vfs.read(p));
+            let quest = lo.find_editor_id(&args[2]).context("quest not found")?;
+            const OPS: [&str; 6] = ["==", "!=", ">", ">=", "<", "<="];
+            let edid = |f: esp::FormId| lo.get(f).and_then(|x| x.editor_id().map(|e| e.to_string())).unwrap_or_else(|| f.to_string());
+            for &t in lo.ids_of_type(b"DIAL") {
+                let Some(dial) = lo.get(t) else { continue };
+                if dial.get(b"QNAM").filter(|d| d.len() >= 4).map(|d| dial.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))) != Some(quest) {
+                    continue;
+                }
+                let sub = dial.get(b"SNAM").map(|d| String::from_utf8_lossy(d).into_owned()).unwrap_or_default();
+                let branch = dial.get(b"BNAM").filter(|d| d.len() >= 4).map(|d| edid(dial.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))).unwrap_or_default();
+                let full = dial.get(b"FULL").map(|n| lo.lstring(&dial, n)).unwrap_or_default();
+                println!("{t} {} [{sub}] {branch} \"{full}\"", dial.editor_id().unwrap_or_default());
+                for &i in lo.topic_infos(t) {
+                    let Some(r) = lo.get(i) else { continue };
+                    let line = r.get(b"NAM1").map(|n| lo.lstring(&r, n)).unwrap_or_default();
+                    let prompt = r.get(b"RNAM").map(|n| lo.lstring(&r, n)).unwrap_or_default();
+                    let conds: Vec<String> = r
+                        .subrecords()
+                        .filter(|s| s.tag.0 == *b"CTDA" && s.data.len() >= 24)
+                        .map(|s| {
+                            let d = s.data;
+                            let p = |o: usize| {
+                                let v = u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+                                lo.get(r.fid(esp::FormId(v))).and_then(|x| x.editor_id().map(|e| e.to_string())).unwrap_or_else(|| v.to_string())
+                            };
+                            let f = u16::from_le_bytes([d[8], d[9]]);
+                            let name = functions::FUNCTIONS.iter().find(|x| x.0 == f).map_or(String::new(), |x| x.1.to_string());
+                            let run_on = u32::from_le_bytes(d[20..24].try_into().unwrap());
+                            format!("{name}({}, {}) on {run_on} {} {}{}", p(12), p(16), OPS[(d[0] >> 5) as usize % 6], f32::from_le_bytes(d[4..8].try_into().unwrap()), if d[0] & 1 != 0 { " OR" } else { "" })
+                        })
+                        .collect();
+                    let links: Vec<String> = r.subrecords().filter(|s| s.tag.0 == *b"TCLT" && s.data.len() >= 4).map(|s| edid(r.fid(s.form_id(0)))).collect();
+                    let script = r.get(b"VMAD").and_then(|v| v.windows(5).position(|w| w == b"TIF__").map(|p| String::from_utf8_lossy(&v[p..(p + 13).min(v.len())]).into_owned())).unwrap_or_default();
+                    let flags = r.get(b"ENAM").filter(|d| d.len() >= 2).map_or(0, |d| u16::from_le_bytes([d[0], d[1]]));
+                    println!("  {i} {prompt:?} \"{line}\" flags {flags:#x} [{}] -> {links:?} {script}", conds.join("; "));
+                }
+            }
+        }
         Some("ctda-uses") => {
             // ctda-uses <data dir> <func index>...: every condition calling one of
             // these functions, with the record holding it, its parameters (forms

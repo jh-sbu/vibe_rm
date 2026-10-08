@@ -346,7 +346,16 @@ game each piece unlocks.
   with each item's chance from the `fPickPocket*` settings, taken stolen;
   caught, a crime the victim reports and won't let the player try again.
   Console `pickpocket`; vrm-tool `trespass-cells`, `ctda-uses`,
-  `topic-lines`.
+  `topic-lines`. Arrests: guards (`IsGuard`: `IsGuardFaction`, the class
+  flag) near a reported crime run after the player calling on them to halt
+  and stop them with the arrest dialogue (blocking branches, `GetAlarmed`):
+  pay (on the spot, or let out at the jail), go to jail, or resist; walking
+  off is resisting. Factions' Arrest / Attack on Sight flags make guards
+  attack at a bounty. Jail: the sentence by bounty, belongings and stolen
+  goods taken, the jail outfit, served by sleeping in the cell bed.
+  `SendPlayerToJail`, `SetPlayerResistingArrest`, `GetDaysInJail`,
+  `GetArrestingActor`; console `alarm`, `jail`, `servetime`; vrm-tool
+  `quest-topics`.
   Console `crime`, `player.setcrimegold`,
   `player.paycrimegold`, `crimefaction`; vrm-tool `faction-owners`,
   `crime-factions`. Open questions: `known_gaps/crime.md`
@@ -463,8 +472,8 @@ game each piece unlocks.
    spell / shout sounds), perks (the sneak tree's detection perks among them;
    see Detection), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-   (guards arresting, jail, attack on sight; victims and witnesses attacking;
-   fences; see Done)
+   (escaping jail, yielding, skill loss in jail; victims and witnesses
+   attacking; fences; see Done)
 6. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
 7. **Audio**: lip sync
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell

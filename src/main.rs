@@ -8,6 +8,7 @@ mod detection;
 mod dialogue;
 mod console;
 mod created;
+mod arrest;
 mod crime;
 mod engine;
 mod footsteps;
