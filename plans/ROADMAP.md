@@ -226,7 +226,14 @@ game each piece unlocks.
   `ApplyHavokImpulse`, `SetMotionType` (the weapon racks' scripts hold their
   weapons keyframed), `DropObject`. Objects made in the world (`PlaceAtMe`,
   dropped items) are drawn, fall, have their base's scripts and can be picked up;
-  the inventory drops items on right click. Console `loose`, `[ref.]drop`, `pwalk`.
+  the inventory drops items on right click. Grabbing: holding Activate on a
+  loose object or a body lying as a ragdoll picks up the body under the
+  crosshair and carries it ahead of the view (lifting up to
+  `fZKeyMaxForceWeightHigh`, dragging what is heavier; corpses are dragged
+  by a limb, and lie where they are left); letting go drops it moving as it
+  was, and it slips away when stuck; a tap still takes or searches.
+  `OnGrab` / `OnRelease`, `Game.GetPlayerGrabbedRef`, condition
+  `IsPlayerGrabbedRef`. Console `loose`, `[ref.]drop`, `grab`, `pwalk`.
   Open questions: `known_gaps/loose-objects.md`
 - Synchronised blends of single-play clips (directional attacks) end instead of
   cycling, and their heaviest child raises the clip triggers
@@ -526,7 +533,7 @@ game each piece unlocks.
    - Sneak attacks (`OnHit`'s sneak flag is always false)
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
-     player grabbing objects, traps (their scripts hold them keyframed until
+     player throwing what they hold, traps (their scripts hold them keyframed until
      triggered), arrows knocking down beehives, melee blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal

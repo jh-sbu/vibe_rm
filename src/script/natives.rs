@@ -65,6 +65,9 @@ pub fn call(
         ("utility", "ismenumode") => v(Value::Bool(false)),
         ("utility", "isingamemode") => v(Value::Bool(true)),
         // ------------------------------------------------------------- Game
+        ("game", "getplayergrabbedref") => {
+            v(e.grabbed_ref().map_or(Value::None, |r| e.object_value(r)))
+        }
         ("game", "getplayer") => v(e.object_value(crate::engine::PLAYER_REF)),
         ("game", "getform") => v(e.object_value(FormId(arg(0).as_int() as u32))),
         ("game", "getformfromfile") => {

@@ -79,6 +79,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "pickpocket <ref> <item> [n]   try to take an item from a sneaking player's victim (psneak first)".into(),
             "cgf <Class.Func> [@self] [args]  call a Papyrus native (cgf Actor.GetCombatState @<ref>)".into(),
             "loose [n]             the loose objects nearest the player (position, mass, motion)".into(),
+            "grab [ref | off]      grab what the crosshair (or a ref) is on, say what is held, let go".into(),
             "epc                   enable all player controls (EnablePlayerControls)".into(),
             "detect                who detects the player, by how much; the player's light level and stealth points".into(),
         ],
@@ -314,6 +315,32 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let [r, secs] = args[..] else { return vec!["usage: guard <actor ref> <seconds>".into()] };
             let (Some(actor), Ok(x)) = (engine.resolve_form(r), secs.parse::<f32>()) else { return vec!["bad reference or seconds".into()] };
             if engine.force_guard(actor, x) { vec![format!("{r} holds its guard up for {x}s")] } else { vec![format!("{r} isn't fighting")] }
+        }
+        "grab" => {
+            // grab: grab what the crosshair is on (or say what is held); grab <ref>:
+            // look at it and grab it; grab off: let go.
+            if args.first().is_some_and(|a| a.eq_ignore_ascii_case("off")) {
+                match engine.release_grab() {
+                    Some(r) => vec![format!("let go of {r}")],
+                    None => vec!["holding nothing".into()],
+                }
+            } else if let Some(r) = args.first().and_then(|r| engine.resolve_form(r)) {
+                // grab <ref>: look at it first.
+                if !engine.look_at_bodies(r) {
+                    return vec![format!("{r} has no bodies loaded")];
+                }
+                match engine.start_grab() {
+                    Some(g) => vec![format!("grabbed {g}"), engine.describe_grab()],
+                    None => vec![format!("can't grab {r} from here: {}", engine.crosshair_on())],
+                }
+            } else if engine.grabbed_ref().is_some() {
+                vec![engine.describe_grab()]
+            } else {
+                match engine.start_grab() {
+                    Some(r) => vec![format!("grabbed {r}"), engine.describe_grab()],
+                    None => vec![format!("nothing to grab there: {}", engine.crosshair_on())],
+                }
+            }
         }
         "pblock" => {
             engine.player_blocking = !engine.player_blocking;

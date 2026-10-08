@@ -121,6 +121,8 @@ pub struct Engine {
     pub player_health: f32,
     /// The player holds their guard up (right mouse button).
     pub player_blocking: bool,
+    /// Activate held down, and what the player has grabbed.
+    pub(crate) grab: crate::grab::Grab,
     /// Player controls scripts have disabled.
     pub disabled_controls: crate::player::DisabledControls,
     /// The player's stamina, seconds before it comes back after being spent, how
@@ -284,6 +286,7 @@ impl Engine {
             combat_settings: Default::default(),
             detection: Default::default(),
             player_blocking: false,
+            grab: Default::default(),
             disabled_controls: Default::default(),
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
@@ -2017,6 +2020,7 @@ impl Engine {
         if let Some(env) = self.sky_environment() {
             self.scene.env = env;
         }
+        self.update_grab(dt);
         self.physics.step(dt);
         self.update_loose();
         self.update_whereabouts(dt);
@@ -2071,7 +2075,10 @@ impl Engine {
 
     fn update_look_target(&mut self) {
         let before = self.look_target.take().map(|t| t.0);
-        self.find_look_target();
+        // Holding something, the player has no prompt.
+        if self.grab.held.is_none() {
+            self.find_look_target();
+        }
         if self.look_target.as_ref().map(|t| t.0) != before {
             log::debug!("looking at {:?}", self.look_target);
         }

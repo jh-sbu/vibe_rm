@@ -66,13 +66,37 @@ otherwise undocumented; rapier stands in for it.
 - **What is remembered**: where a moved object comes to rest (or is when its
   cell unloads), as a scripted move would be.
 
+- **Grabbing** (`src/grab.rs`): holding Activate (E) for 0.3 s
+  (`GRAB_HOLD`) grabs; a shorter press activates. The point under the
+  crosshair is held where it was grabbed (at least 50 units ahead,
+  `HOLD_NEAREST`), pulled by a velocity-matching impulse each step through
+  that point (so things hang and swing from it) with their spin damped,
+  carrying the weight of the body and of the bodies joined to it (a whole
+  ragdoll). The force is capped at `fZKeyMaxForceWeightHigh` (150) times
+  gravity, so heavier things drag; `fZKeyMaxForce` (100) is in the data but
+  what it limits isn't public, so it is unused. Only `TESGrabReleaseEvent`
+  and the `IsPlayerGrabbedRef` / `GetPlayerGrabbedRef` condition numbers come
+  from CommonLibSSE; the rest is chosen. What is held drops (`OnRelease`) when
+  it gets 150 units from where it is pulled (`LET_GO`), when a menu or
+  conversation opens, the player dies or activation is disabled; it leaves
+  the hand at no more than 700 units / s (`DROP_SPEED`). Keyframed bodies are
+  grabbed but don't move (their `OnGrab` may make them dynamic, as
+  `defaultDisableHavokOnLoad` does when `havokOnZKey` is set: no vanilla
+  reference sets it); fixed ones can't be grabbed. The player's character
+  controller passes through what is held. Grabbing owned things isn't a crime.
+- **Corpses** lie where their ragdoll is: a dead actor's position follows its
+  first ragdoll body (dragged or fallen), on the lowest of them.
+
 ## Open
 
 - `SetMotionType(Motion_Dynamic)` on an object whose model is fixed (trap
   rubble, scripted collapses) does nothing: its collision is static.
 - Arrows striking a loose object fall instead of sticking in it.
-- Melee blows, spells, explosions and shouts don't push objects; the player
-  can't grab and carry them.
+- Melee blows, spells, explosions and shouts don't push objects.
+- Throwing what is held: no public source says the game has a control for
+  it (players drop things moving, or use Telekinesis); none is bound.
+- Display cases' lids keep their collision when opened, so what lies in
+  them can't be grabbed (Whiterun's barracks).
 - Dropped items aren't owned or stolen; the Story Manager's remove-item event
   isn't sent.
 - Actors don't step around clutter (navmeshes don't know of it); they shove it.

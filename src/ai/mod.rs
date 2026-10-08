@@ -2844,7 +2844,17 @@ impl Engine {
             for (index, (inst, a)) in rc.actors.iter_mut().zip(rt.actors.iter_mut()).enumerate() {
                 if a.dead {
                     if let Some((rd, mapping)) = &a.ragdoll {
-                        inst.pose = mapping.pose(&a.skeleton, &self.physics.ragdoll_bodies(rd));
+                        let bodies = self.physics.ragdoll_bodies(rd);
+                        inst.pose = mapping.pose(&a.skeleton, &bodies);
+                        // Where the body lies (dragged, fallen): its first body's
+                        // place, on the lowest of them.
+                        if let Some(first) = bodies.first() {
+                            let low = bodies
+                                .iter()
+                                .map(|m| m.w_axis.z)
+                                .fold(f32::INFINITY, f32::min);
+                            a.pos = first.w_axis.truncate().with_z(low);
+                        }
                     }
                     if std::mem::take(&mut a.objects_changed) {
                         held.push((*key, index, Vec::new()));

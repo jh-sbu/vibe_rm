@@ -284,7 +284,7 @@ impl Engine {
 
     /// Something moves a loose object while it is still being held in place
     /// after loading: let it go.
-    fn disturb(&mut self, r: FormId) {
+    pub(crate) fn disturb(&mut self, r: FormId) {
         for l in self
             .cells
             .values_mut()

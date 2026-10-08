@@ -535,6 +535,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         453 => b(false), // GetPlayerTeammate: no followers yet
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))), // GetIsCurrentPackage
         579 => Some(0.0), // GetEquippedShout
+        463 => b(e.grabbed_ref().is_some_and(|g| g == p1)), // IsPlayerGrabbedRef
         286 => b(subject.is_some_and(|s| e.is_sneaking(s))), // IsSneaking
         45 => b(subject.is_some_and(|s| e.detects(s, p1))), // GetDetected
         711 => Some(subject.map_or(0.0, |s| e.light_level(s))), // GetLightLevel
