@@ -2169,6 +2169,11 @@ impl Engine {
                 vm.attach(&mut host, obj, &s.name, &props);
             }
             vm.send_event(&mut host, obj, "OnInit", vec![]);
+            // Started by the Story Manager: the event, with its data.
+            let event = host.engine.scripts.quests.get(&q).and_then(|st| st.event.as_ref()).and_then(|e| host.engine.story_papyrus_event(e));
+            if let Some((name, args)) = event {
+                vm.send_event(&mut host, obj, name, args);
+            }
         }
         self.vm = vm;
         if let Some(s) = startup {

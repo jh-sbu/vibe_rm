@@ -1578,6 +1578,35 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("pex-events") => {
+            // pex-events <data dir> <prefix>: how many scripts define each function
+            // (any state) whose name starts with the prefix (`OnStory`), and which.
+            let data = std::path::Path::new(&args[1]);
+            let prefix = args.get(2).map_or("on", |p| p.as_str()).to_ascii_lowercase();
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let mut by: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+            for path in v.list("scripts/") {
+                if !path.ends_with(".pex") {
+                    continue;
+                }
+                let Some(p) = v.read(&path).and_then(|b| papyrus::pex::parse(&b).ok()) else { continue };
+                for o in &p.objects {
+                    let mut seen = std::collections::HashSet::new();
+                    for st in &o.states {
+                        for (n, _) in &st.functions {
+                            let name = p.str(*n).to_string();
+                            if name.to_ascii_lowercase().starts_with(&prefix) && seen.insert(name.clone()) {
+                                by.entry(name).or_default().push(p.str(o.name).to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            for (name, scripts) in by {
+                println!("{name}: {} {:?}", scripts.len(), &scripts[..scripts.len().min(8)]);
+            }
+        }
         Some("pex-dump") => {
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);

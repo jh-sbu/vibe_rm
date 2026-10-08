@@ -47,6 +47,12 @@ or prints one event's tree.
   leaving the hold), `EastmarchJailArenaFightQuest` (Windhelm) and
   `DB03GetArrestedQuest` (its node never passes); `ESJA` `EscapeJailQuest`
   and `EscapeJailAchievementQuest`. No node listens for `ADCR` or `STIJ`.
+- Papyrus: a quest started by an event gets `OnStory...` with the event's
+  data (`Quest.psc`'s parameter lists; `vrm-tool pex-events <data>
+  OnStory` lists the scripts using each: `OnStoryScript` 11 (the
+  Companions' radiant quests, Civil War missions, `ClearSkiesQuestScript`),
+  `OnStoryKillActor` 3, `OnStoryChangeLocation` 2...). Pay fine
+  (`OnStoryPayFine`): criminal, guard, crime group, crime gold.
 - Quests' own event conditions: the `QUST` CTDAs after `NEXT` and before the
   stages, checked when a node starts the quest (ADIA 104 quests, SCPT 124,
   CLOC 39...: `OWN=1 vrm-tool story`).
@@ -87,6 +93,11 @@ or prints one event's tree.
   `ADCR` for crimes witnesses report and escaping, not for scripts'
   `ModCrimeGold`. Location: the player's for an arrest, the jail cell's
   (`XLCN`) for the others.
+- The `OnStory...` event is sent right after `OnInit`, before the
+  startup stage. Its members follow the parameters' order (references,
+  locations, forms and values as R1 / R2, L1 / L2, F1, V1 / V2), the same
+  reading as the crime events'. `OnStoryIncreaseSkill`'s skill name has no
+  member yet.
 - Quests started from Papyrus (`Quest.Start`, story events) get their scripts
   and OnInit once the running scripts yield, in the same frame.
 
@@ -121,8 +132,7 @@ own or their templates'); a member is dead when their placed reference is.
   (`known_gaps/crime.md`); items aren't marked stolen in the inventory.
 
 - The other events wait for their systems: crafting (`CRFT`), increase
-  level / skill (`LEVL`, `SKIL`), paying a fine (`PFIN`: no source for its
-  data), item removal (`REMP`: dropping items), spell cast (`CAST`), new
+  level / skill (`LEVL`, `SKIL`), item removal (`REMP`: dropping items), spell cast (`CAST`), new
   voice power (`NVPE`), bribe, intimidate, flatter, lock pick.
 - Kill events' crime status (V1) only knows the player's murders; item
   pickups never say bought or pickpocketed (no barter or pickpocketing).
@@ -133,6 +143,3 @@ own or their templates'); a member is dead when their placed reference is.
 - `WarnIfNoChildQuestStarted`, and which runs on subject in node and quest
   event conditions.
 - Story Manager state (last run times, do-all rounds) isn't saved.
-- Quests started by an event don't get its Papyrus event (`OnStoryJail`,
-  `OnStoryArrest`... on the quest's scripts); the base game's crime quests
-  read the event through aliases and fragments instead.
