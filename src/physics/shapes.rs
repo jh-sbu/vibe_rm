@@ -139,11 +139,25 @@ pub fn from_nif(nif: &Nif) -> Option<CollisionModel> {
     let index = |r: Ref| bodies.iter().position(|&(b, _): &(Ref, Vec<Ref>)| b == r);
     let mut seen = std::collections::HashSet::new();
     for c in bodies.iter().flat_map(|(_, cs)| cs) {
-        let Some(Block::Constraint(c)) = nif.get(*c).filter(|_| seen.insert(c.0)) else {
-            continue;
-        };
-        if let (Some(a), Some(b)) = (index(c.entities[0]), index(c.entities[1])) {
-            m.joints.push(crate::world::ragdoll::joint(&c.kind, a, b));
+        match nif.get(*c).filter(|_| seen.insert(c.0)) {
+            Some(Block::Constraint(c)) => {
+                if let (Some(a), Some(b)) = (index(c.entities[0]), index(c.entities[1])) {
+                    let mut j = crate::world::ragdoll::joint(&c.kind, a, b);
+                    j.breaks = c.breaks.map(|b| b.threshold);
+                    m.joints.push(j);
+                }
+            }
+            // Each link held to the next by a ball joint.
+            Some(Block::ConstraintChain(ch)) => {
+                for (i, w) in ch.entities.windows(2).enumerate() {
+                    let pivots = ch.pivots.get(2 * i..2 * i + 2);
+                    if let (Some(a), Some(b), Some(p)) = (index(w[0]), index(w[1]), pivots) {
+                        m.joints
+                            .push(crate::world::ragdoll::ball(a, b, [p[0], p[1]]));
+                    }
+                }
+            }
+            _ => {}
         }
     }
     if m.parts.is_empty() { None } else { Some(m) }

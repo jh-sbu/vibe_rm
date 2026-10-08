@@ -15,7 +15,8 @@ use std::collections::HashMap;
 
 pub use blocks::*;
 pub use collision::{
-    CollisionObject, Constraint, ConstraintKind, HAVOK_SCALE, MotionSystem, RigidBody, Shape,
+    Breaking, CollisionObject, Constraint, ConstraintChain, ConstraintKind, HAVOK_SCALE,
+    MotionSystem, Motor, RigidBody, Shape,
 };
 use reader::Reader;
 pub use skin::{SkinData, SkinInstance, SkinPartition};

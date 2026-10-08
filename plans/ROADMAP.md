@@ -217,7 +217,10 @@ game each piece unlocks.
   (`MO_SYS_DYNAMIC`: clutter, food, weapons, baskets) are rapier bodies with the
   NIF's mass, friction and restitution (meshes as their convex hull), lying still
   where placed until disturbed; models of several bodies are joined by their
-  constraints (hand carts roll on hinged wheels, signs swing on chains). The player pushes them aside, actors walking into
+  constraints (hand carts roll on hinged wheels, signs swing on chains, trip
+  wires and bone alarms hang from rope links, beehives from a spring that
+  breaks). Every NIF constraint type the vanilla meshes use is read, motors
+  included (none are switched on). vrm-tool `model-users`. The player pushes them aside, actors walking into
   them wake them, arrows knock them away (and send `OnHit` to whatever they
   strike); where they come to rest is kept across loads. Papyrus
   `ApplyHavokImpulse`, `SetMotionType` (the weapon racks' scripts hold their
@@ -522,8 +525,9 @@ game each piece unlocks.
      disabled fighting putting the weapon away, the POV type argument
    - Sneak attacks (`OnHit`'s sneak flag is always false)
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
-     model), constraint motors and breakable constraints, the player grabbing
-     objects, melee blows and spells pushing them
+     model), simulating constraint motors (none in the vanilla meshes), the
+     player grabbing objects, traps (their scripts hold them keyframed until
+     triggered), arrows knocking down beehives, melee blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal
    and objectives, help messages (`ShowAsHelpMessage`); support for the game's .swf assets still undecided

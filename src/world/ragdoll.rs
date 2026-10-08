@@ -31,6 +31,21 @@ pub struct RagdollJoint {
     /// Angle limits (radians) about the frame's x, y and z axes; `None` for an axis
     /// that is locked (hinges turn about x only).
     pub limits: [Option<(f32, f32)>; 3],
+    /// How the bodies turn about the pivots.
+    pub kind: JointKind,
+    /// The linear impulse (Havok units, kg m/s) past which it breaks.
+    pub breaks: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum JointKind {
+    /// As `limits` say: about x alone (a hinge) or about all three (with
+    /// `limits[1]`: a ragdoll joint).
+    Limited,
+    /// A ball joint turning freely.
+    Ball,
+    /// The pivots held no further apart than this (game units): a stiff spring.
+    Rope(f32),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -48,6 +63,20 @@ fn frame(pivot: Vec3, x: Vec3, y: Vec3) -> (Vec3, Quat) {
         pivot * HAVOK_SCALE,
         Quat::from_mat3(&Mat3::from_cols(x, y, z)).normalize(),
     )
+}
+
+/// A ball joint between bodies `a` and `b` at the pivots (Havok units, each in
+/// its body).
+pub(crate) fn ball(a: usize, b: usize, pivot: [Vec3; 2]) -> RagdollJoint {
+    RagdollJoint {
+        a,
+        b,
+        frame_a: (pivot[0] * HAVOK_SCALE, Quat::IDENTITY),
+        frame_b: (pivot[1] * HAVOK_SCALE, Quat::IDENTITY),
+        limits: [None; 3],
+        kind: JointKind::Ball,
+        breaks: None,
+    }
 }
 
 /// The joint a NIF constraint between bodies `a` and `b` makes.
@@ -74,6 +103,8 @@ pub(crate) fn joint(kind: &ConstraintKind, a: usize, b: usize) -> RagdollJoint {
                 Some((-cone_max, *cone_max)),
                 Some((plane_min.max(-cone_max), plane_max.min(*cone_max))),
             ],
+            kind: JointKind::Limited,
+            breaks: None,
         },
         ConstraintKind::Hinge {
             pivot,
@@ -87,6 +118,13 @@ pub(crate) fn joint(kind: &ConstraintKind, a: usize, b: usize) -> RagdollJoint {
             frame_a: frame(pivot[0], axis[0], perp[0]),
             frame_b: frame(pivot[1], axis[1], perp[1]),
             limits: [Some((*min, *max)).filter(|_| min.is_finite()), None, None],
+            kind: JointKind::Limited,
+            breaks: None,
+        },
+        ConstraintKind::BallSocket { pivot } => ball(a, b, *pivot),
+        ConstraintKind::StiffSpring { pivot, length } => RagdollJoint {
+            kind: JointKind::Rope(length * HAVOK_SCALE),
+            ..ball(a, b, *pivot)
         },
     }
 }

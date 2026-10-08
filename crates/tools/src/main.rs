@@ -3311,6 +3311,57 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("model-users") => {
+            // model-users <data dir> <model path substring> [n]: base records whose
+            // model's path has the substring, and up to n placed references of them.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let want = args[2].to_ascii_lowercase();
+            let n: usize = args.get(3).and_then(|n| n.parse().ok()).unwrap_or(10);
+            let mut bases = std::collections::HashSet::new();
+            for tag in [
+                b"STAT", b"MSTT", b"ACTI", b"CONT", b"MISC", b"FURN", b"DOOR", b"TACT",
+            ] {
+                for &id in lo.ids_of_type(tag) {
+                    let Some(rec) = lo.get(id) else { continue };
+                    let Some(m) = rec.get(b"MODL") else { continue };
+                    let path = String::from_utf8_lossy(m)
+                        .trim_end_matches('\0')
+                        .to_ascii_lowercase();
+                    if path.contains(&want) {
+                        println!(
+                            "base {id} {} {} {path}",
+                            rec.tag(),
+                            rec.editor_id().unwrap_or_default()
+                        );
+                        bases.insert(id);
+                    }
+                }
+            }
+            let mut shown = 0;
+            for &id in lo.ids_of_type(b"REFR") {
+                let Some(rec) = lo.get(id) else { continue };
+                let Some(name) = rec.get(b"NAME").filter(|d| d.len() >= 4) else {
+                    continue;
+                };
+                let base = rec.fid(esp::FormId(u32::from_le_bytes(
+                    name[0..4].try_into().unwrap(),
+                )));
+                if !bases.contains(&base) {
+                    continue;
+                }
+                let cell = lo
+                    .cell_of_ref(id)
+                    .and_then(|c| lo.get(c).and_then(|r| r.editor_id().map(|e| e.to_string())))
+                    .unwrap_or_default();
+                println!("ref {id} -> {base} in {cell}");
+                shown += 1;
+                if shown >= n {
+                    break;
+                }
+            }
+        }
         Some("script-users") => {
             // script-users <data dir> <script> [n]: records (NPC_, ACHR, REFR, QUST...)
             // whose VMAD names the script.
