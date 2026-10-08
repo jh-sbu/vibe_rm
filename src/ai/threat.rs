@@ -42,11 +42,19 @@ pub(crate) fn confidence_value(lo: &LoadOrder, confidence: u8) -> f32 {
 /// A new fight: its confidence modifier, rolled between
 /// `fCombatConfidenceModifierMin` and `Max` (none for the foolhardy), and its
 /// first flee check at a random point within the update time.
-pub(crate) fn new_combat(lo: &LoadOrder, target: FormId, stats: &CombatStats, rolls: (u64, u64)) -> Combat {
+pub(crate) fn new_combat(
+    lo: &LoadOrder,
+    target: FormId,
+    stats: &CombatStats,
+    rolls: (u64, u64),
+) -> Combat {
     let unit = |r: u64| (r % 10_000) as f32 / 10_000.0;
     let mut c = Combat::new(target);
     if stats.confidence < 4 {
-        let (lo_m, hi_m) = (gmst_f32(lo, "fCombatConfidenceModifierMin", -0.25), gmst_f32(lo, "fCombatConfidenceModifierMax", 1.0));
+        let (lo_m, hi_m) = (
+            gmst_f32(lo, "fCombatConfidenceModifierMin", -0.25),
+            gmst_f32(lo, "fCombatConfidenceModifierMax", 1.0),
+        );
         c.confidence_mod = lo_m + unit(rolls.0) * (hi_m - lo_m);
     }
     c.threat_check = unit(rolls.1) * gmst_f32(lo, THREAT_RATIO_UPDATE.0, THREAT_RATIO_UPDATE.1);
@@ -66,7 +74,9 @@ struct Fighter {
 /// against it. `own`: its own strength, counted even while it flees (what it
 /// would bring if it turned back).
 fn group_threat_ratio(actor: FormId, own: f32, fighters: &[Fighter]) -> f32 {
-    let Some(me) = fighters.iter().find(|f| f.id == actor) else { return f32::INFINITY };
+    let Some(me) = fighters.iter().find(|f| f.id == actor) else {
+        return f32::INFINITY;
+    };
     let mut allies = vec![actor];
     let mut enemies: Vec<FormId> = me.target.into_iter().collect();
     // Who fights an enemy, or is fought by one, is an ally, and the other way
@@ -96,9 +106,18 @@ fn group_threat_ratio(actor: FormId, own: f32, fighters: &[Fighter]) -> f32 {
             break;
         }
     }
-    let strength = |ids: &[FormId]| -> f32 { ids.iter().filter_map(|id| fighters.iter().find(|f| f.id == *id)).map(|f| if f.id == actor { own } else { f.strength }).sum() };
+    let strength = |ids: &[FormId]| -> f32 {
+        ids.iter()
+            .filter_map(|id| fighters.iter().find(|f| f.id == *id))
+            .map(|f| if f.id == actor { own } else { f.strength })
+            .sum()
+    };
     let theirs = strength(&enemies);
-    if theirs <= 0.0 { f32::INFINITY } else { strength(&allies) / theirs }
+    if theirs <= 0.0 {
+        f32::INFINITY
+    } else {
+        strength(&allies) / theirs
+    }
 }
 
 impl Engine {
@@ -107,10 +126,16 @@ impl Engine {
     fn combat_strength(&self, actor: FormId) -> f32 {
         let reduction = self.protection(actor).reduction.min(0.99);
         let (health, dps) = if actor == PLAYER_REF {
-            let damage = self.player_weapon().map_or(self.player_stats().unarmed_damage, |w| super::combat::weapon_damage(&self.lo, w));
+            let damage = self
+                .player_weapon()
+                .map_or(self.player_stats().unarmed_damage, |w| {
+                    super::combat::weapon_damage(&self.lo, w)
+                });
             (self.player_health, damage / ATTACK_INTERVAL)
         } else {
-            let Some(a) = self.actor_ref(actor) else { return 0.0 };
+            let Some(a) = self.actor_ref(actor) else {
+                return 0.0;
+            };
             let interval = if a.bow { BOW_INTERVAL } else { ATTACK_INTERVAL };
             (a.health, self.attack_damage(a, None) / interval)
         };
@@ -120,12 +145,18 @@ impl Engine {
     /// GetThreatRatio: `actor`'s combat strength over `other`'s.
     pub fn threat_ratio(&self, actor: FormId, other: FormId) -> f32 {
         let theirs = self.combat_strength(other);
-        if theirs <= 0.0 { f32::INFINITY } else { self.combat_strength(actor) / theirs }
+        if theirs <= 0.0 {
+            f32::INFINITY
+        } else {
+            self.combat_strength(actor) / theirs
+        }
     }
 
     /// IsFleeing.
     pub fn is_fleeing(&self, actor: FormId) -> bool {
-        self.actor_ref(actor).and_then(|a| a.combat.as_ref()).is_some_and(|c| c.fleeing)
+        self.actor_ref(actor)
+            .and_then(|a| a.combat.as_ref())
+            .is_some_and(|c| c.fleeing)
     }
 
     /// Strength updates and flee checks for everyone fighting; those who start to
@@ -142,21 +173,35 @@ impl Engine {
         };
         // Strengths, each refreshed on its own timer.
         let mut due = Vec::new();
-        for a in self.cells.values_mut().flat_map(|rt| rt.actors.iter_mut()).filter(|a| a.combat.is_some() && !a.dead) {
+        for a in self
+            .cells
+            .values_mut()
+            .flat_map(|rt| rt.actors.iter_mut())
+            .filter(|a| a.combat.is_some() && !a.dead)
+        {
             a.strength_in -= dt;
             if a.strength_in <= 0.0 {
                 a.strength_in = strength_every;
                 due.push(a.ref_id);
             }
         }
-        let fresh: Vec<(FormId, f32)> = due.into_iter().map(|id| (id, self.combat_strength(id))).collect();
+        let fresh: Vec<(FormId, f32)> = due
+            .into_iter()
+            .map(|id| (id, self.combat_strength(id)))
+            .collect();
         let mut checks = Vec::new();
         let mut safe = Vec::new();
         for a in self.cells.values_mut().flat_map(|rt| rt.actors.iter_mut()) {
             if let Some(&(_, s)) = fresh.iter().find(|f| f.0 == a.ref_id) {
                 a.strength = s;
             }
-            let Some(c) = a.combat.as_mut().filter(|_| !a.dead && a.bleeding.is_none()) else { continue };
+            let Some(c) = a
+                .combat
+                .as_mut()
+                .filter(|_| !a.dead && a.bleeding.is_none())
+            else {
+                continue;
+            };
             if c.fleeing && c.safe >= safe_after {
                 safe.push(a.ref_id);
                 continue;
@@ -182,11 +227,19 @@ impl Engine {
             .filter(|a| !a.dead && a.bleeding.is_none())
             .filter_map(|a| {
                 let c = a.combat.as_ref()?;
-                Some(Fighter { id: a.ref_id, target: Some(c.target), strength: if c.fleeing { 0.0 } else { a.strength } })
+                Some(Fighter {
+                    id: a.ref_id,
+                    target: Some(c.target),
+                    strength: if c.fleeing { 0.0 } else { a.strength },
+                })
             })
             .collect();
         if fighters.iter().any(|f| f.target == Some(PLAYER_REF)) && !self.player_dead() {
-            fighters.push(Fighter { id: PLAYER_REF, target: None, strength: self.combat_strength(PLAYER_REF) });
+            fighters.push(Fighter {
+                id: PLAYER_REF,
+                target: None,
+                strength: self.combat_strength(PLAYER_REF),
+            });
         }
         let mut fled = Vec::new();
         for r in checks {
@@ -197,7 +250,11 @@ impl Engine {
             let threshold = a.stats.confidence_value + c.confidence_mod;
             // Only the hurt think of fleeing (cowards always do).
             let hurt = a.health < a.stats.max_health || a.stats.confidence == 0;
-            log::debug!("{r}: threat ratio {ratio:.3} against {threshold:.3}{}{}", if hurt { "" } else { " (unhurt)" }, if c.fleeing { ", fleeing" } else { "" });
+            log::debug!(
+                "{r}: threat ratio {ratio:.3} against {threshold:.3}{}{}",
+                if hurt { "" } else { " (unhurt)" },
+                if c.fleeing { ", fleeing" } else { "" }
+            );
             if !c.fleeing && hurt && ratio < threshold {
                 c.fleeing = true;
                 c.flee_distance = flee_distance;
@@ -207,7 +264,11 @@ impl Engine {
                     c.draw = Default::default();
                 }
                 a.set_guard(0.0);
-                log::info!("{r} flees (threat ratio {ratio:.3} < {threshold:.3}; health {:.0} / {:.0})", a.health, a.stats.max_health);
+                log::info!(
+                    "{r} flees (threat ratio {ratio:.3} < {threshold:.3}; health {:.0} / {:.0})",
+                    a.health,
+                    a.stats.max_health
+                );
                 fled.push(r);
             } else if c.fleeing && ratio >= threshold {
                 c.fleeing = false;
@@ -233,10 +294,26 @@ mod tests {
         let (a, b, c, p) = (FormId(1), FormId(2), FormId(3), FormId(0x14));
         // a and b fight the player; c fights a (so c is on the player's side).
         let fighters = [
-            Fighter { id: a, target: Some(p), strength: 100.0 },
-            Fighter { id: b, target: Some(p), strength: 300.0 },
-            Fighter { id: c, target: Some(a), strength: 200.0 },
-            Fighter { id: p, target: None, strength: 700.0 },
+            Fighter {
+                id: a,
+                target: Some(p),
+                strength: 100.0,
+            },
+            Fighter {
+                id: b,
+                target: Some(p),
+                strength: 300.0,
+            },
+            Fighter {
+                id: c,
+                target: Some(a),
+                strength: 200.0,
+            },
+            Fighter {
+                id: p,
+                target: None,
+                strength: 700.0,
+            },
         ];
         assert_eq!(group_threat_ratio(a, 100.0, &fighters), 400.0 / 900.0);
         assert_eq!(group_threat_ratio(c, 200.0, &fighters), 900.0 / 400.0);

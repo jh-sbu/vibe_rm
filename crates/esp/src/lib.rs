@@ -9,14 +9,16 @@ pub mod actor_value;
 mod form_id;
 mod load_order;
 pub mod navmesh;
-pub mod scene;
-pub mod story;
 mod plugin;
 mod record;
+pub mod scene;
+pub mod story;
 pub mod strings;
 
 pub use form_id::FormId;
-pub use load_order::{BASE_MASTERS, CellIndex, LoadOrder, LoadedRecord, PluginInfo, RecordRef, Slot, WorldIndex};
+pub use load_order::{
+    BASE_MASTERS, CellIndex, LoadOrder, LoadedRecord, PluginInfo, RecordRef, Slot, WorldIndex,
+};
 pub use plugin::{GroupHeader, Item, Plugin, PluginHeader, group_type};
 pub use record::{Record, RecordHeader, SubRecord, SubRecords, record_flags};
 

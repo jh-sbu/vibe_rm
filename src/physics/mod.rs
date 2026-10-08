@@ -124,14 +124,21 @@ impl Physics {
     /// Add the static collision of a placed object.
     /// Add a model's static collision. Returns the colliders with the animated node
     /// (e.g. a door leaf) each one moves with, if any.
-    pub fn add_static_tagged(&mut self, model: &CollisionModel, transform: Mat4, owner: esp::FormId) -> Vec<(ColliderHandle, Option<String>)> {
+    pub fn add_static_tagged(
+        &mut self,
+        model: &CollisionModel,
+        transform: Mat4,
+        owner: esp::FormId,
+    ) -> Vec<(ColliderHandle, Option<String>)> {
         let mut handles = Vec::new();
         for part in &model.parts {
             if !layer_blocks_player(part.layer) {
                 continue;
             }
             let (pose, scale) = shapes::decompose(transform * part.transform);
-            let Some(shape) = part.shape.build(scale) else { continue };
+            let Some(shape) = part.shape.build(scale) else {
+                continue;
+            };
             let c = ColliderBuilder::new(shape).position(pose).build();
             let h = self.world.insert_collider(c, None);
             self.owners.insert(h, owner);
@@ -151,12 +158,21 @@ impl Physics {
     }
 
     /// A capsule standing at `feet`, used for actors.
-    pub fn add_actor_capsule(&mut self, feet: Vec3, scale: f32, owner: esp::FormId) -> ColliderHandle {
+    pub fn add_actor_capsule(
+        &mut self,
+        feet: Vec3,
+        scale: f32,
+        owner: esp::FormId,
+    ) -> ColliderHandle {
         let r = 20.0 * scale;
         let half = 40.0 * scale;
         let c = ColliderBuilder::new(SharedShape::capsule_z(half, r))
             .position(Pose::from_translation(feet + Vec3::Z * (half + r)))
-            .collision_groups(InteractionGroups::new(ACTOR_GROUP, Group::ALL, InteractionTestMode::And))
+            .collision_groups(InteractionGroups::new(
+                ACTOR_GROUP,
+                Group::ALL,
+                InteractionTestMode::And,
+            ))
             .build();
         let h = self.world.insert_collider(c, None);
         self.owners.insert(h, owner);
@@ -167,14 +183,23 @@ impl Physics {
     /// Move an actor capsule so that its feet are at `feet`.
     pub fn move_actor_capsule(&mut self, h: ColliderHandle, feet: Vec3) {
         if let Some(c) = self.world.colliders.get_mut(h) {
-            let lift = c.shape().as_capsule().map(|cap| cap.half_height() + cap.radius).unwrap_or(0.0);
+            let lift = c
+                .shape()
+                .as_capsule()
+                .map(|cap| cap.half_height() + cap.radius)
+                .unwrap_or(0.0);
             c.set_translation(feet + Vec3::Z * lift);
         }
     }
 
     /// Move all colliders owned by a reference by `delta` (a rigid transform).
     pub fn transform_owner(&mut self, owner: esp::FormId, delta: Mat4) {
-        let hs: Vec<ColliderHandle> = self.owners.iter().filter(|(_, o)| **o == owner).map(|(h, _)| *h).collect();
+        let hs: Vec<ColliderHandle> = self
+            .owners
+            .iter()
+            .filter(|(_, o)| **o == owner)
+            .map(|(h, _)| *h)
+            .collect();
         for h in hs {
             if let Some(c) = self.world.colliders.get_mut(h) {
                 let (pose, _) = shapes::decompose(delta * c.position().to_mat4());
@@ -185,7 +210,12 @@ impl Physics {
 
     /// Enable or disable all colliders owned by a reference.
     pub fn set_owner_enabled(&mut self, owner: esp::FormId, enabled: bool) {
-        let hs: Vec<ColliderHandle> = self.owners.iter().filter(|(_, o)| **o == owner).map(|(h, _)| *h).collect();
+        let hs: Vec<ColliderHandle> = self
+            .owners
+            .iter()
+            .filter(|(_, o)| **o == owner)
+            .map(|(h, _)| *h)
+            .collect();
         for h in hs {
             if let Some(c) = self.world.colliders.get_mut(h) {
                 c.set_enabled(enabled);
@@ -211,7 +241,11 @@ impl Physics {
         let mut v = Vec::with_capacity(VERTS * VERTS);
         for r in 0..VERTS {
             for c in 0..VERTS {
-                v.push(Vec3::new(o.x + c as f32 * step, o.y + r as f32 * step, land.heights[r * VERTS + c]));
+                v.push(Vec3::new(
+                    o.x + c as f32 * step,
+                    o.y + r as f32 * step,
+                    land.heights[r * VERTS + c],
+                ));
             }
         }
         let mut t = Vec::with_capacity(32 * 32 * 2);
@@ -226,7 +260,9 @@ impl Physics {
             }
         }
         let shape = SharedShape::trimesh(v, t).ok()?;
-        let h = self.world.insert_collider(ColliderBuilder::new(shape).build(), None);
+        let h = self
+            .world
+            .insert_collider(ColliderBuilder::new(shape).build(), None);
         self.terrain.insert(h);
         Some(h)
     }
@@ -234,29 +270,59 @@ impl Physics {
     /// Update the broad phase after colliders were added.
     /// Drop a ragdoll in: each body placed where `body_world` (its bone's world
     /// transform times its offset, scale included) puts it.
-    pub fn spawn_ragdoll(&mut self, desc: &crate::world::ragdoll::RagdollDesc, body_world: impl Fn(usize) -> Mat4, velocity: Vec3, owner: esp::FormId) -> Ragdoll {
-        let groups = InteractionGroups::new(RAGDOLL_GROUP, Group::ALL ^ RAGDOLL_GROUP ^ ACTOR_GROUP, InteractionTestMode::And);
+    pub fn spawn_ragdoll(
+        &mut self,
+        desc: &crate::world::ragdoll::RagdollDesc,
+        body_world: impl Fn(usize) -> Mat4,
+        velocity: Vec3,
+        owner: esp::FormId,
+    ) -> Ragdoll {
+        let groups = InteractionGroups::new(
+            RAGDOLL_GROUP,
+            Group::ALL ^ RAGDOLL_GROUP ^ ACTOR_GROUP,
+            InteractionTestMode::And,
+        );
         let mut scale = 1.0;
         let mut bodies = Vec::with_capacity(desc.bodies.len());
         for (i, b) in desc.bodies.iter().enumerate() {
             let (pose, s) = shapes::decompose(body_world(i));
             scale = s;
-            let body = RigidBodyBuilder::dynamic().pose(pose).linvel(velocity).linear_damping(0.2).angular_damping(1.0).ccd_enabled(true);
-            let collider = ColliderBuilder::new(SharedShape::capsule(b.p1 * s, b.p2 * s, b.radius * s)).mass(b.mass).friction(0.8).collision_groups(groups);
+            let body = RigidBodyBuilder::dynamic()
+                .pose(pose)
+                .linvel(velocity)
+                .linear_damping(0.2)
+                .angular_damping(1.0)
+                .ccd_enabled(true);
+            let collider =
+                ColliderBuilder::new(SharedShape::capsule(b.p1 * s, b.p2 * s, b.radius * s))
+                    .mass(b.mass)
+                    .friction(0.8)
+                    .collision_groups(groups);
             let (h, c) = self.world.insert(body, collider);
             self.owners.insert(c, owner);
             bodies.push(h);
         }
         for j in &desc.joints {
             let frame = |f: (Vec3, glam::Quat)| Pose::from_parts(f.0 * scale, f.1);
-            let mask = if j.limits[1].is_some() { JointAxesMask::LOCKED_SPHERICAL_AXES } else { JointAxesMask::LOCKED_REVOLUTE_AXES };
-            let mut joint = GenericJointBuilder::new(mask).local_frame1(frame(j.frame_a)).local_frame2(frame(j.frame_b)).contacts_enabled(false);
-            for (axis, limit) in [JointAxis::AngX, JointAxis::AngY, JointAxis::AngZ].into_iter().zip(j.limits) {
+            let mask = if j.limits[1].is_some() {
+                JointAxesMask::LOCKED_SPHERICAL_AXES
+            } else {
+                JointAxesMask::LOCKED_REVOLUTE_AXES
+            };
+            let mut joint = GenericJointBuilder::new(mask)
+                .local_frame1(frame(j.frame_a))
+                .local_frame2(frame(j.frame_b))
+                .contacts_enabled(false);
+            for (axis, limit) in [JointAxis::AngX, JointAxis::AngY, JointAxis::AngZ]
+                .into_iter()
+                .zip(j.limits)
+            {
                 if let Some((lo, hi)) = limit {
                     joint = joint.limits(axis, [lo.min(hi), hi.max(lo)]);
                 }
             }
-            self.world.insert_impulse_joint(bodies[j.a], bodies[j.b], joint.build());
+            self.world
+                .insert_impulse_joint(bodies[j.a], bodies[j.b], joint.build());
         }
         Ragdoll { bodies, scale }
     }
@@ -265,7 +331,11 @@ impl Physics {
     pub fn ragdoll_bodies(&self, r: &Ragdoll) -> Vec<Mat4> {
         r.bodies
             .iter()
-            .map(|&h| self.world.bodies.get(h).map_or(Mat4::IDENTITY, |b| b.position().to_mat4() * Mat4::from_scale(Vec3::splat(r.scale))))
+            .map(|&h| {
+                self.world.bodies.get(h).map_or(Mat4::IDENTITY, |b| {
+                    b.position().to_mat4() * Mat4::from_scale(Vec3::splat(r.scale))
+                })
+            })
             .collect()
     }
 
@@ -284,7 +354,9 @@ impl Physics {
     pub fn move_player(&self, pos: Vec3, desired: Vec3, dt: f32) -> (Vec3, bool) {
         let pose = Pose::from_translation(pos);
         let qp = self.world.query_pipeline();
-        let m = self.controller.move_shape(dt, &qp, &*self.player_shape.0, &pose, desired, |_| {});
+        let m = self
+            .controller
+            .move_shape(dt, &qp, &*self.player_shape.0, &pose, desired, |_| {});
         (pos + m.translation, m.grounded)
     }
 
@@ -293,7 +365,12 @@ impl Physics {
     pub fn ground_ray(&self, origin: Vec3, dir: Vec3, max: f32) -> Option<(f32, Vec3)> {
         let ray = Ray::new(origin, dir);
         let not_actor = |h: ColliderHandle, _: &Collider| !self.capsules.contains(&h);
-        let (_, hit) = self.world.cast_ray_and_get_normal(&ray, max, true, QueryFilter::default().predicate(&not_actor))?;
+        let (_, hit) = self.world.cast_ray_and_get_normal(
+            &ray,
+            max,
+            true,
+            QueryFilter::default().predicate(&not_actor),
+        )?;
         Some((hit.time_of_impact, hit.normal))
     }
 
@@ -302,7 +379,12 @@ impl Physics {
     pub fn surface_below(&self, origin: Vec3, max: f32) -> Option<(f32, Surface)> {
         let ray = Ray::new(origin, -Vec3::Z);
         let not_actor = |h: ColliderHandle, _: &Collider| !self.capsules.contains(&h);
-        let (h, hit) = self.world.cast_ray_and_get_normal(&ray, max, true, QueryFilter::default().predicate(&not_actor))?;
+        let (h, hit) = self.world.cast_ray_and_get_normal(
+            &ray,
+            max,
+            true,
+            QueryFilter::default().predicate(&not_actor),
+        )?;
         if self.terrain.contains(&h) {
             return Some((hit.time_of_impact, Surface::Terrain));
         }
@@ -317,10 +399,21 @@ impl Physics {
 
     /// Cast a ray past what `owner` owns (its capsule, its ragdoll), returning
     /// the hit distance and the owning reference (if any).
-    pub fn raycast_excluding(&self, origin: Vec3, dir: Vec3, max: f32, owner: esp::FormId) -> Option<(f32, Option<esp::FormId>)> {
+    pub fn raycast_excluding(
+        &self,
+        origin: Vec3,
+        dir: Vec3,
+        max: f32,
+        owner: esp::FormId,
+    ) -> Option<(f32, Option<esp::FormId>)> {
         let ray = Ray::new(origin, dir);
         let not_owner = |h: ColliderHandle, _: &Collider| self.owners.get(&h) != Some(&owner);
-        let (h, toi) = self.world.cast_ray(&ray, max, true, QueryFilter::default().predicate(&not_owner))?;
+        let (h, toi) = self.world.cast_ray(
+            &ray,
+            max,
+            true,
+            QueryFilter::default().predicate(&not_owner),
+        )?;
         Some((toi, self.owners.get(&h).copied()))
     }
 
@@ -329,15 +422,30 @@ impl Physics {
     /// queries (the broad phase) also see it, and whether it is enabled.
     pub fn probe_ray(&self, origin: Vec3, dir: Vec3, max: f32) -> Vec<ProbeHit> {
         let ray = Ray::new(origin, dir);
-        let seen: std::collections::HashSet<ColliderHandle> =
-            self.world.intersect_ray(ray, max, true, QueryFilter::default()).map(|(h, _, _)| h).collect();
+        let seen: std::collections::HashSet<ColliderHandle> = self
+            .world
+            .intersect_ray(ray, max, true, QueryFilter::default())
+            .map(|(h, _, _)| h)
+            .collect();
         let mut hits: Vec<ProbeHit> = self
             .world
             .colliders
             .iter()
             .filter_map(|(h, co)| {
-                let hit = co.shape().cast_ray_and_get_normal(co.position(), &ray, max, true)?;
-                Some(ProbeHit { handle: h, toi: hit.time_of_impact, in_broad_phase: seen.contains(&h), enabled: co.is_enabled(), owner: self.owners.get(&h).copied(), bounds: { let b = co.compute_aabb(); (b.mins, b.maxs) } })
+                let hit = co
+                    .shape()
+                    .cast_ray_and_get_normal(co.position(), &ray, max, true)?;
+                Some(ProbeHit {
+                    handle: h,
+                    toi: hit.time_of_impact,
+                    in_broad_phase: seen.contains(&h),
+                    enabled: co.is_enabled(),
+                    owner: self.owners.get(&h).copied(),
+                    bounds: {
+                        let b = co.compute_aabb();
+                        (b.mins, b.maxs)
+                    },
+                })
             })
             .collect();
         hits.sort_by(|a, b| a.toi.total_cmp(&b.toi));
@@ -352,7 +460,9 @@ impl Physics {
     /// Cast a ray, returning the hit distance and the owning reference (if any).
     pub fn raycast(&self, origin: Vec3, dir: Vec3, max: f32) -> Option<(f32, Option<esp::FormId>)> {
         let ray = Ray::new(origin, dir);
-        let (h, toi) = self.world.cast_ray(&ray, max, true, QueryFilter::default())?;
+        let (h, toi) = self
+            .world
+            .cast_ray(&ray, max, true, QueryFilter::default())?;
         Some((toi, self.owners.get(&h).copied()))
     }
 }

@@ -13,13 +13,21 @@ use crate::{Error, Result};
 #[derive(Debug, Clone)]
 enum VecTrack {
     Constant(Vec3),
-    Spline { degree: usize, knots: Vec<f32>, points: Vec<Vec3> },
+    Spline {
+        degree: usize,
+        knots: Vec<f32>,
+        points: Vec<Vec3>,
+    },
 }
 
 #[derive(Debug, Clone)]
 enum RotTrack {
     Constant(Quat),
-    Spline { degree: usize, knots: Vec<f32>, points: Vec<Quat> },
+    Spline {
+        degree: usize,
+        knots: Vec<f32>,
+        points: Vec<Quat>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +53,11 @@ struct Cursor<'a> {
 
 impl Cursor<'_> {
     fn need(&self, n: usize) -> Result<()> {
-        if self.p + n > self.d.len() { Err(Error::Corrupt("spline data overrun".into())) } else { Ok(()) }
+        if self.p + n > self.d.len() {
+            Err(Error::Corrupt("spline data overrun".into()))
+        } else {
+            Ok(())
+        }
     }
     fn u8(&mut self) -> Result<u8> {
         self.need(1)?;
@@ -101,14 +113,22 @@ fn read_vec(c: &mut Cursor, quant: u8, types: u8, default: f32) -> Result<VecTra
             let mut p = base;
             for axis in 0..3 {
                 if spline & (1 << axis) != 0 {
-                    let q = if quant == 0 { c.u8()? as f32 / 255.0 } else { c.u16()? as f32 / 65535.0 };
+                    let q = if quant == 0 {
+                        c.u8()? as f32 / 255.0
+                    } else {
+                        c.u16()? as f32 / 65535.0
+                    };
                     p[axis] = min[axis] + (max[axis] - min[axis]) * q;
                 }
             }
             points.push(Vec3::from_array(p));
         }
         c.align(4);
-        Ok(VecTrack::Spline { degree, knots, points })
+        Ok(VecTrack::Spline {
+            degree,
+            knots,
+            points,
+        })
     } else {
         let mut v = [default; 3];
         for (axis, x) in v.iter_mut().enumerate() {
@@ -140,7 +160,11 @@ fn read_quat(c: &mut Cursor, quant: u8) -> Result<Quat> {
         1 => {
             // THREECOMP40
             let b = c.bytes(5)?;
-            let v = b[0] as u64 | (b[1] as u64) << 8 | (b[2] as u64) << 16 | (b[3] as u64) << 24 | (b[4] as u64) << 32;
+            let v = b[0] as u64
+                | (b[1] as u64) << 8
+                | (b[2] as u64) << 16
+                | (b[3] as u64) << 24
+                | (b[4] as u64) << 32;
             const MASK: u64 = (1 << 12) - 1;
             const FRAC: f32 = std::f32::consts::FRAC_1_SQRT_2 / 2047.0;
             let x = ((v & MASK) as f32 - 2047.0) * FRAC;
@@ -245,7 +269,11 @@ fn read_rot(c: &mut Cursor, quant: u8, types: u8) -> Result<RotTrack> {
                 points[i] = -points[i];
             }
         }
-        RotTrack::Spline { degree, knots, points }
+        RotTrack::Spline {
+            degree,
+            knots,
+            points,
+        }
     } else if types & 0x0F != 0 {
         c.align(align);
         RotTrack::Constant(read_quat(c, quant)?)
@@ -301,7 +329,11 @@ fn basis(span: usize, u: f32, p: usize, k: &[f32], n_out: &mut [f32; 8]) {
 fn eval_vec(t: &VecTrack, u: f32) -> Vec3 {
     match t {
         VecTrack::Constant(v) => *v,
-        VecTrack::Spline { degree, knots, points } => {
+        VecTrack::Spline {
+            degree,
+            knots,
+            points,
+        } => {
             let n = points.len() - 1;
             let p = (*degree).min(7).min(n);
             if p == 0 {
@@ -322,7 +354,11 @@ fn eval_vec(t: &VecTrack, u: f32) -> Vec3 {
 fn eval_rot(t: &RotTrack, u: f32) -> Quat {
     match t {
         RotTrack::Constant(q) => *q,
-        RotTrack::Spline { degree, knots, points } => {
+        RotTrack::Spline {
+            degree,
+            knots,
+            points,
+        } => {
             let n = points.len() - 1;
             let p = (*degree).min(7).min(n);
             if p == 0 {
@@ -341,7 +377,12 @@ fn eval_rot(t: &RotTrack, u: f32) -> Quat {
 }
 
 impl SplineAnimation {
-    pub fn read(p: &Packfile, a: u32, num_tracks: usize, _num_floats: usize) -> Result<SplineAnimation> {
+    pub fn read(
+        p: &Packfile,
+        a: u32,
+        num_tracks: usize,
+        _num_floats: usize,
+    ) -> Result<SplineAnimation> {
         let num_blocks = p.i32(a + 60).max(0) as usize;
         let mask_size = p.i32(a + 68).max(0) as usize;
         let block_duration = p.f32(a + 72);
@@ -349,15 +390,26 @@ impl SplineAnimation {
         let (bo, bn) = p.array(a + 88);
         let (da, dn) = p.array(a + 152);
         let data = match da {
-            Some(da) => p.data.get(da as usize..da as usize + dn).ok_or_else(|| Error::Corrupt("data out of range".into()))?,
+            Some(da) => p
+                .data
+                .get(da as usize..da as usize + dn)
+                .ok_or_else(|| Error::Corrupt("data out of range".into()))?,
             None => return Err(Error::Corrupt("no spline data".into())),
         };
         let mut blocks = Vec::with_capacity(num_blocks);
         for b in 0..num_blocks.min(bn) {
             let start = p.u32(bo.unwrap() + b as u32 * 4) as usize;
-            let masks: Vec<[u8; 4]> =
-                (0..num_tracks).map(|t| data.get(start + t * 4..start + t * 4 + 4).map(|m| m.try_into().unwrap()).unwrap_or([0; 4])).collect();
-            let mut c = Cursor { d: data, p: start + mask_size };
+            let masks: Vec<[u8; 4]> = (0..num_tracks)
+                .map(|t| {
+                    data.get(start + t * 4..start + t * 4 + 4)
+                        .map(|m| m.try_into().unwrap())
+                        .unwrap_or([0; 4])
+                })
+                .collect();
+            let mut c = Cursor {
+                d: data,
+                p: start + mask_size,
+            };
             let mut tracks = Vec::with_capacity(num_tracks);
             for m in &masks {
                 let quant = m[0];
@@ -368,16 +420,29 @@ impl SplineAnimation {
             }
             blocks.push(tracks);
         }
-        Ok(SplineAnimation { num_blocks: blocks.len(), block_duration, frame_duration, blocks })
+        Ok(SplineAnimation {
+            num_blocks: blocks.len(),
+            block_duration,
+            frame_duration,
+            blocks,
+        })
     }
 
     pub fn sample(&self, t: f32, out: &mut [QsTransform]) {
         if self.blocks.is_empty() {
             return;
         }
-        let b = if self.block_duration > 0.0 { ((t / self.block_duration) as usize).min(self.num_blocks - 1) } else { 0 };
+        let b = if self.block_duration > 0.0 {
+            ((t / self.block_duration) as usize).min(self.num_blocks - 1)
+        } else {
+            0
+        };
         let local = t - b as f32 * self.block_duration;
-        let u = if self.frame_duration > 0.0 { local / self.frame_duration } else { 0.0 };
+        let u = if self.frame_duration > 0.0 {
+            local / self.frame_duration
+        } else {
+            0.0
+        };
         for (o, tr) in out.iter_mut().zip(self.blocks[b].iter()) {
             o.translation = eval_vec(&tr.pos, u);
             o.rotation = eval_rot(&tr.rot, u);

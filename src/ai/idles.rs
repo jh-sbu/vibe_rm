@@ -43,8 +43,14 @@ impl IdleIndex {
             // ANAM: parent, previous sibling.
             let anam = rec.get(b"ANAM").unwrap_or(&[]);
             let link = |o: usize| {
-                let v = anam.get(o..o + 4).map_or(0, |d| u32::from_le_bytes(d.try_into().unwrap()));
-                if v == 0 { FormId::NULL } else { rec.fid(FormId(v)) }
+                let v = anam
+                    .get(o..o + 4)
+                    .map_or(0, |d| u32::from_le_bytes(d.try_into().unwrap()));
+                if v == 0 {
+                    FormId::NULL
+                } else {
+                    rec.fid(FormId(v))
+                }
             };
             let parent = link(0);
             previous.insert(id, link(4));
@@ -56,18 +62,32 @@ impl IdleIndex {
             if !parent.is_null() {
                 ix.children.entry(parent).or_default().push(id);
             }
-            ix.idles.insert(id, Idle { parent, event: text(b"ENAM"), behavior: text(b"DNAM").to_ascii_lowercase(), conditions });
+            ix.idles.insert(
+                id,
+                Idle {
+                    parent,
+                    event: text(b"ENAM"),
+                    behavior: text(b"DNAM").to_ascii_lowercase(),
+                    conditions,
+                },
+            );
         }
         // Put siblings in their authored order by following the previous-sibling links.
         for kids in ix.children.values_mut() {
             let mut ordered: Vec<FormId> = Vec::with_capacity(kids.len());
             let mut cur = FormId::NULL;
-            while let Some(&next) = kids.iter().find(|k| previous.get(k).copied().unwrap_or_default() == cur && !ordered.contains(k)) {
+            while let Some(&next) = kids.iter().find(|k| {
+                previous.get(k).copied().unwrap_or_default() == cur && !ordered.contains(k)
+            }) {
                 ordered.push(next);
                 cur = next;
             }
             // Broken chains (overrides that moved records) keep load order.
-            let rest: Vec<FormId> = kids.iter().filter(|k| !ordered.contains(k)).copied().collect();
+            let rest: Vec<FormId> = kids
+                .iter()
+                .filter(|k| !ordered.contains(k))
+                .copied()
+                .collect();
             ordered.extend(rest);
             *kids = ordered;
         }
@@ -76,30 +96,60 @@ impl IdleIndex {
 
     /// An idle, or an action (`AACT`, e.g. `ActionIdle`) whose idles hang off it.
     pub fn find(&self, lo: &LoadOrder, edid: &str) -> Option<FormId> {
-        lo.find_editor_id(edid).filter(|id| self.idles.contains_key(id) || self.children.contains_key(id))
+        lo.find_editor_id(edid)
+            .filter(|id| self.idles.contains_key(id) || self.children.contains_key(id))
     }
 
     /// Pick an idle under `root` as the game does: the first child (in authored
     /// order) whose conditions pass; a group descends into its children, falling
     /// back to its own event if none of them pass. `root`'s own conditions are not
     /// checked. Returns the idle and its event.
-    pub fn select(&self, e: &crate::engine::Engine, root: FormId, ctx: condition::Context) -> Option<(FormId, String)> {
+    pub fn select(
+        &self,
+        e: &crate::engine::Engine,
+        root: FormId,
+        ctx: condition::Context,
+    ) -> Option<(FormId, String)> {
         self.select_in(e, root, ctx, &is_humanoid_graph, 0)
     }
 
     /// Like [`IdleIndex::select`] for an actor of `project`: idles of its graphs.
-    pub fn select_for(&self, e: &crate::engine::Engine, root: FormId, ctx: condition::Context, project: &ProjectRuntime) -> Option<(FormId, String)> {
+    pub fn select_for(
+        &self,
+        e: &crate::engine::Engine,
+        root: FormId,
+        ctx: condition::Context,
+        project: &ProjectRuntime,
+    ) -> Option<(FormId, String)> {
         self.select_in(e, root, ctx, &|b: &str| b.is_empty() || project.plays(b), 0)
     }
 
     /// Like [`IdleIndex::select`] over `roots` as if they were siblings, checking
     /// their own conditions (e.g. `EatingRoot` then `DrinkingRoot`).
-    pub fn select_among(&self, e: &crate::engine::Engine, roots: &[FormId], ctx: condition::Context) -> Option<(FormId, String)> {
+    pub fn select_among(
+        &self,
+        e: &crate::engine::Engine,
+        roots: &[FormId],
+        ctx: condition::Context,
+    ) -> Option<(FormId, String)> {
         self.select_list(e, roots, ctx, &is_humanoid_graph, 0)
     }
 
-    fn select_in(&self, e: &crate::engine::Engine, root: FormId, ctx: condition::Context, graphs: &dyn Fn(&str) -> bool, depth: u32) -> Option<(FormId, String)> {
-        self.select_list(e, self.children.get(&root).map_or(&[], Vec::as_slice), ctx, graphs, depth)
+    fn select_in(
+        &self,
+        e: &crate::engine::Engine,
+        root: FormId,
+        ctx: condition::Context,
+        graphs: &dyn Fn(&str) -> bool,
+        depth: u32,
+    ) -> Option<(FormId, String)> {
+        self.select_list(
+            e,
+            self.children.get(&root).map_or(&[], Vec::as_slice),
+            ctx,
+            graphs,
+            depth,
+        )
     }
 
     fn select_list(
@@ -114,13 +164,18 @@ impl IdleIndex {
             return None;
         }
         for &kid in kids {
-            let Some(idle) = self.idles.get(&kid) else { continue };
+            let Some(idle) = self.idles.get(&kid) else {
+                continue;
+            };
             if !graphs(self.behavior_of(kid)) {
                 continue;
             }
             if !condition::evaluate(e, &idle.conditions, ctx) {
                 if log::log_enabled!(log::Level::Trace) {
-                    log::trace!("idle {kid} fails: {}", condition::explain(e, &idle.conditions, ctx));
+                    log::trace!(
+                        "idle {kid} fails: {}",
+                        condition::explain(e, &idle.conditions, ctx)
+                    );
                 }
                 continue;
             }
@@ -165,7 +220,9 @@ impl IdleIndex {
             // idles; generic ones like FurnitureSpecial gate other trees. Tables are
             // ordinary seats whose idles come from the chair tree (EnterTable).
             let edid = lo.get(kw).and_then(|k| k.editor_id()).unwrap_or_default();
-            if !edid.get(..2).is_some_and(|p| p.eq_ignore_ascii_case("is")) || edid.eq_ignore_ascii_case("IsTable") {
+            if !edid.get(..2).is_some_and(|p| p.eq_ignore_ascii_case("is"))
+                || edid.eq_ignore_ascii_case("IsTable")
+            {
                 continue;
             }
             for &root in self.by_keyword.get(&kw).into_iter().flatten() {

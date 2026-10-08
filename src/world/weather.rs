@@ -99,9 +99,10 @@ pub fn load_climate(lo: &LoadOrder, id: FormId) -> Option<Climate> {
 }
 
 const CLOUD_TAGS: [&[u8; 4]; 32] = [
-    b"00TX", b"10TX", b"20TX", b"30TX", b"40TX", b"50TX", b"60TX", b"70TX", b"80TX", b"90TX", b":0TX",
-    b";0TX", b"<0TX", b"=0TX", b">0TX", b"?0TX", b"@0TX", b"A0TX", b"B0TX", b"C0TX", b"D0TX", b"E0TX",
-    b"F0TX", b"G0TX", b"H0TX", b"I0TX", b"J0TX", b"K0TX", b"L0TX", b"M0TX", b"N0TX", b"O0TX",
+    b"00TX", b"10TX", b"20TX", b"30TX", b"40TX", b"50TX", b"60TX", b"70TX", b"80TX", b"90TX",
+    b":0TX", b";0TX", b"<0TX", b"=0TX", b">0TX", b"?0TX", b"@0TX", b"A0TX", b"B0TX", b"C0TX",
+    b"D0TX", b"E0TX", b"F0TX", b"G0TX", b"H0TX", b"I0TX", b"J0TX", b"K0TX", b"L0TX", b"M0TX",
+    b"N0TX", b"O0TX",
 ];
 
 pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
@@ -160,7 +161,10 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
         if disabled & (1 << i) != 0 {
             continue;
         }
-        let mut layer = CloudLayer { texture, ..Default::default() };
+        let mut layer = CloudLayer {
+            texture,
+            ..Default::default()
+        };
         for t in 0..4 {
             if let Some(p) = &pnam {
                 layer.colors[t] = rgb(p, (i * 4 + t) * 4);

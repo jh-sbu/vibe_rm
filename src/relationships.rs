@@ -37,7 +37,9 @@ impl Engine {
             for &id in self.lo.ids_of_type(b"RELA") {
                 let Some(rec) = self.lo.get(id) else { continue };
                 // DATA: parent NPC, child NPC, rank, unknown, flags, association type.
-                let Some(d) = rec.get(b"DATA").filter(|d| d.len() >= 10) else { continue };
+                let Some(d) = rec.get(b"DATA").filter(|d| d.len() >= 10) else {
+                    continue;
+                };
                 let a = rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())));
                 let b = rec.fid(FormId(u32::from_le_bytes(d[4..8].try_into().unwrap())));
                 ranks.insert(pair(a, b), rank_of_record(u16::from_le_bytes([d[8], d[9]])));
@@ -50,23 +52,43 @@ impl Engine {
     /// The NPC record a relationship is kept on: a reference's base (the
     /// player's is the player NPC record).
     fn relationship_npc(&self, r: FormId) -> Option<FormId> {
-        if self.lo.tag_of(r).is_some_and(|t| t.0 == *b"NPC_") { Some(r) } else { self.base_of(r) }
+        if self.lo.tag_of(r).is_some_and(|t| t.0 == *b"NPC_") {
+            Some(r)
+        } else {
+            self.base_of(r)
+        }
     }
 
     /// The rank between two actors (references or NPC records); acquaintances
     /// (0) when nothing is set.
     pub fn relationship_rank(&self, a: FormId, b: FormId) -> i32 {
-        let (Some(a), Some(b)) = (self.relationship_npc(a), self.relationship_npc(b)) else { return 0 };
+        let (Some(a), Some(b)) = (self.relationship_npc(a), self.relationship_npc(b)) else {
+            return 0;
+        };
         let p = pair(a, b);
-        self.relationships.changed.get(&p).or_else(|| self.authored_relationships().get(&p)).copied().unwrap_or(0)
+        self.relationships
+            .changed
+            .get(&p)
+            .or_else(|| self.authored_relationships().get(&p))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// The highest (or lowest) rank an actor has with anyone; 0 with no one.
     pub(crate) fn relationship_extreme(&self, a: FormId, highest: bool) -> i32 {
-        let Some(npc) = self.relationship_npc(a) else { return 0 };
+        let Some(npc) = self.relationship_npc(a) else {
+            return 0;
+        };
         let changed = &self.relationships.changed;
-        let authored = self.authored_relationships().iter().filter(|(p, _)| !changed.contains_key(p));
-        let mine = changed.iter().chain(authored).filter(|((x, y), _)| *x == npc || *y == npc).map(|(_, &r)| r);
+        let authored = self
+            .authored_relationships()
+            .iter()
+            .filter(|(p, _)| !changed.contains_key(p));
+        let mine = changed
+            .iter()
+            .chain(authored)
+            .filter(|((x, y), _)| *x == npc || *y == npc)
+            .map(|(_, &r)| r);
         if highest { mine.max() } else { mine.min() }.unwrap_or(0)
     }
 
@@ -90,7 +112,9 @@ impl Engine {
     /// Change the rank between two actors: a change relationship rank story
     /// event (`CHRR`: R1, R2, V1 the old rank, V2 the new) when it differs.
     pub fn set_relationship_rank(&mut self, a: FormId, b: FormId, rank: i32) {
-        let (Some(na), Some(nb)) = (self.relationship_npc(a), self.relationship_npc(b)) else { return };
+        let (Some(na), Some(nb)) = (self.relationship_npc(a), self.relationship_npc(b)) else {
+            return;
+        };
         let rank = rank.clamp(-4, 4);
         let old = self.relationship_rank(a, b);
         if old == rank {

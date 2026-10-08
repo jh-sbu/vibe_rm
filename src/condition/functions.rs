@@ -204,7 +204,12 @@ pub const FUNCTIONS: &[(u16, &str, &str, &str)] = &[
     (398, "IsWeaponInList", "ptFormList", ""),
     (402, "IsBribedbyPlayer", "", ""),
     (403, "GetRelationshipRank", "ptReference", ""),
-    (407, "GetVATSValue", "ptVATSValueFunction", "ptVATSValueParam"),
+    (
+        407,
+        "GetVATSValue",
+        "ptVATSValueFunction",
+        "ptVATSValueParam",
+    ),
     (408, "IsKiller", "ptActor", ""),
     (409, "IsKillerObject", "ptFormList", ""),
     (410, "GetFactionCombatReaction", "ptFaction", "ptFaction"),
@@ -292,15 +297,35 @@ pub const FUNCTIONS: &[(u16, &str, &str, &str)] = &[
     (584, "GetRelativeAngle", "ptReference", "ptAxis"),
     (589, "GetMovementDirection", "", ""),
     (590, "IsInScene", "", ""),
-    (591, "GetRefTypeDeadCount", "ptLocation", "ptLocationRefType"),
-    (592, "GetRefTypeAliveCount", "ptLocation", "ptLocationRefType"),
+    (
+        591,
+        "GetRefTypeDeadCount",
+        "ptLocation",
+        "ptLocationRefType",
+    ),
+    (
+        592,
+        "GetRefTypeAliveCount",
+        "ptLocation",
+        "ptLocationRefType",
+    ),
     (594, "GetIsFlying", "", ""),
     (595, "IsCurrentSpell", "ptEffectItem", "ptCastingSource"),
     (596, "SpellHasKeyword", "ptCastingSource", "ptKeyword"),
     (597, "GetEquippedItemType", "ptCastingSource", ""),
     (598, "GetLocationAliasCleared", "ptAlias", ""),
-    (600, "GetLocAliasRefTypeDeadCount", "ptAlias", "ptLocationRefType"),
-    (601, "GetLocAliasRefTypeAliveCount", "ptAlias", "ptLocationRefType"),
+    (
+        600,
+        "GetLocAliasRefTypeDeadCount",
+        "ptAlias",
+        "ptLocationRefType",
+    ),
+    (
+        601,
+        "GetLocAliasRefTypeAliveCount",
+        "ptAlias",
+        "ptLocationRefType",
+    ),
     (602, "IsWardState", "ptWardState", ""),
     (603, "IsInSameCurrentLocAsRef", "ptReference", "ptKeyword"),
     (604, "IsInSameCurrentLocAsRefAlias", "ptAlias", "ptKeyword"),
@@ -363,7 +388,12 @@ pub const FUNCTIONS: &[(u16, &str, &str, &str)] = &[
     (682, "WornHasKeyword", "ptKeyword", ""),
     (683, "GetPathingCurrentSpeed", "", ""),
     (684, "GetPathingCurrentSpeedAngle", "ptAxis", ""),
-    (691, "EPModSkillUsage_AdvanceObjectHasKeyword", "ptKeyword", ""),
+    (
+        691,
+        "EPModSkillUsage_AdvanceObjectHasKeyword",
+        "ptKeyword",
+        "",
+    ),
     (692, "EPModSkillUsage_IsAdvanceAction", "ptPlayerAction", ""),
     (693, "EPMagic_SpellHasKeyword", "ptKeyword", ""),
     (694, "GetNoBleedoutRecovery", "", ""),
@@ -409,7 +439,10 @@ pub const FUNCTIONS: &[(u16, &str, &str, &str)] = &[
 ];
 
 pub fn find(index: u16) -> Option<&'static (u16, &'static str, &'static str, &'static str)> {
-    FUNCTIONS.binary_search_by_key(&index, |f| f.0).ok().map(|i| &FUNCTIONS[i])
+    FUNCTIONS
+        .binary_search_by_key(&index, |f| f.0)
+        .ok()
+        .map(|i| &FUNCTIONS[i])
 }
 
 pub fn name(index: u16) -> &'static str {

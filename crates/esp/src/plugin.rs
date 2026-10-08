@@ -123,7 +123,13 @@ impl Plugin {
             }
         }
         let body_start = RECORD_HEADER_SIZE + hdr.data_size as usize;
-        Ok(Plugin { name, path, map, header, body_start })
+        Ok(Plugin {
+            name,
+            path,
+            map,
+            header,
+            body_start,
+        })
     }
 
     pub fn name(&self) -> &str {
@@ -141,13 +147,21 @@ impl Plugin {
 
     /// Items at the top level of the file (should all be groups).
     pub fn top_level(&self) -> Items<'_> {
-        Items { data: &self.map, pos: self.body_start, end: self.map.len() }
+        Items {
+            data: &self.map,
+            pos: self.body_start,
+            end: self.map.len(),
+        }
     }
 
     /// Items inside a group given its content offset (as returned by [`Item::Group`]).
     pub fn group_items(&self, header: &GroupHeader, content_offset: usize) -> Items<'_> {
         let end = content_offset + header.size as usize - GROUP_HEADER_SIZE;
-        Items { data: &self.map, pos: content_offset, end: end.min(self.map.len()) }
+        Items {
+            data: &self.map,
+            pos: content_offset,
+            end: end.min(self.map.len()),
+        }
     }
 
     /// Load a record at the given absolute offset.
@@ -155,7 +169,9 @@ impl Plugin {
         let hdr = RecordHeader::parse(&self.map[offset..]);
         let end = offset + RECORD_HEADER_SIZE + hdr.data_size as usize;
         if end > self.map.len() {
-            return Err(Error::Corrupt(format!("record at {offset:#x} overruns file")));
+            return Err(Error::Corrupt(format!(
+                "record at {offset:#x} overruns file"
+            )));
         }
         Record::from_raw(&self.map[offset..end])
     }
@@ -163,7 +179,10 @@ impl Plugin {
 
 impl std::fmt::Debug for Plugin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Plugin").field("name", &self.name).field("header", &self.header).finish()
+        f.debug_struct("Plugin")
+            .field("name", &self.name)
+            .field("header", &self.header)
+            .finish()
     }
 }
 

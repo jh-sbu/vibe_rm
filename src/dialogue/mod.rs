@@ -54,15 +54,29 @@ pub fn topic(lo: &LoadOrder, id: FormId) -> Option<Topic> {
     if r.tag().0 != *b"DIAL" {
         return None;
     }
-    let fid = |tag: &[u8; 4]| r.get(tag).map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))).unwrap_or_default();
+    let fid = |tag: &[u8; 4]| {
+        r.get(tag)
+            .map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+            .unwrap_or_default()
+    };
     Some(Topic {
         id,
         editor_id: r.editor_id().unwrap_or_default(),
-        prompt: r.get(b"FULL").map(|d| lo.lstring(&r, d)).unwrap_or_default(),
-        priority: r.get(b"PNAM").map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap())).unwrap_or(50.0),
+        prompt: r
+            .get(b"FULL")
+            .map(|d| lo.lstring(&r, d))
+            .unwrap_or_default(),
+        priority: r
+            .get(b"PNAM")
+            .map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap()))
+            .unwrap_or(50.0),
         quest: fid(b"QNAM"),
         branch: fid(b"BNAM"),
-        subtype: r.get(b"SNAM").and_then(|d| d.get(0..4)).map(|d| d.try_into().unwrap()).unwrap_or([0; 4]),
+        subtype: r
+            .get(b"SNAM")
+            .and_then(|d| d.get(0..4))
+            .map(|d| d.try_into().unwrap())
+            .unwrap_or([0; 4]),
     })
 }
 
@@ -70,11 +84,17 @@ pub fn info(lo: &LoadOrder, id: FormId) -> Option<Info> {
     let r = lo.get(id)?;
     let mut out = Info {
         id,
-        flags: r.get(b"ENAM").map(|d| u16::from_le_bytes([d[0], d[1]])).unwrap_or(0),
+        flags: r
+            .get(b"ENAM")
+            .map(|d| u16::from_le_bytes([d[0], d[1]]))
+            .unwrap_or(0),
         responses: Vec::new(),
         conditions: condition::parse_all(&r),
         choices: Vec::new(),
-        prompt: r.get(b"RNAM").map(|d| lo.lstring(&r, d)).filter(|s| !s.is_empty()),
+        prompt: r
+            .get(b"RNAM")
+            .map(|d| lo.lstring(&r, d))
+            .filter(|s| !s.is_empty()),
         script: None,
         begin_fragment: None,
         end_fragment: None,
@@ -86,7 +106,12 @@ pub fn info(lo: &LoadOrder, id: FormId) -> Option<Info> {
                 if let Some(c) = cur.take() {
                     out.responses.push(c);
                 }
-                cur = Some(Response { number: sr.u8(12), text: String::new(), emotion: sr.u32(0), emotion_value: sr.u32(4) });
+                cur = Some(Response {
+                    number: sr.u8(12),
+                    text: String::new(),
+                    emotion: sr.u32(0),
+                    emotion_value: sr.u32(4),
+                });
             }
             b"NAM1" => {
                 if let Some(c) = cur.as_mut() {
@@ -103,7 +128,10 @@ pub fn info(lo: &LoadOrder, id: FormId) -> Option<Info> {
     // Shared responses (DNAM) live on another INFO.
     if out.responses.is_empty()
         && let Some(d) = r.get(b"DNAM")
-        && let Some(shared) = info(lo, r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))))
+        && let Some(shared) = info(
+            lo,
+            r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))),
+        )
     {
         out.responses = shared.responses;
     }
@@ -192,15 +220,37 @@ fn skip_value(d: &[u8], p: &mut usize, ty: u8, format: i16) -> Option<()> {
 }
 
 /// Voice file for a response, following the Creation Kit naming scheme.
-pub fn voice_path(lo: &LoadOrder, npc_voice: FormId, topic: &Topic, info: FormId, response: u8) -> Option<String> {
+pub fn voice_path(
+    lo: &LoadOrder,
+    npc_voice: FormId,
+    topic: &Topic,
+    info: FormId,
+    response: u8,
+) -> Option<String> {
     let (plugin, local) = lo.origin(info)?;
     let vt = lo.get(npc_voice)?.editor_id()?;
-    let quest = lo.get(topic.quest).and_then(|q| q.editor_id()).unwrap_or_default();
+    let quest = lo
+        .get(topic.quest)
+        .and_then(|q| q.editor_id())
+        .unwrap_or_default();
     // Quest and topic editor ids share a 25 character budget; the quest keeps at least 10.
     let tlen = topic.editor_id.chars().count();
-    let q: String = quest.chars().take(25usize.saturating_sub(tlen).max(10)).collect();
-    let t: String = topic.editor_id.chars().take(25 - q.chars().count()).collect();
-    Some(format!("sound/voice/{}/{}/{}_{}_{:08x}_{}.fuz", plugin, vt, q, t, local, response).to_ascii_lowercase())
+    let q: String = quest
+        .chars()
+        .take(25usize.saturating_sub(tlen).max(10))
+        .collect();
+    let t: String = topic
+        .editor_id
+        .chars()
+        .take(25 - q.chars().count())
+        .collect();
+    Some(
+        format!(
+            "sound/voice/{}/{}/{}_{}_{:08x}_{}.fuz",
+            plugin, vt, q, t, local, response
+        )
+        .to_ascii_lowercase(),
+    )
 }
 
 /// One line being spoken.
@@ -230,12 +280,22 @@ pub struct Conversation {
 
 impl Engine {
     fn dialogue_ctx(&self, npc_ref: FormId) -> condition::Context {
-        condition::Context { subject: Some(npc_ref), target: Some(PLAYER_REF), ..Default::default() }
+        condition::Context {
+            subject: Some(npc_ref),
+            target: Some(PLAYER_REF),
+            ..Default::default()
+        }
     }
 
     /// First INFO of a topic whose conditions pass for this speaker.
     pub fn select_info(&mut self, topic: &Topic, npc_ref: FormId) -> Option<Info> {
-        if !topic.quest.is_null() && !self.scripts.quests.get(&topic.quest).is_some_and(|q| q.running) {
+        if !topic.quest.is_null()
+            && !self
+                .scripts
+                .quests
+                .get(&topic.quest)
+                .is_some_and(|q| q.running)
+        {
             return None;
         }
         let ctx = self.dialogue_ctx(npc_ref);
@@ -250,7 +310,9 @@ impl Engine {
         let ids: Vec<FormId> = self.lo.topic_infos(topic.id).to_vec();
         let mut passing = Vec::new();
         for id in ids {
-            let Some(i) = info(&self.lo, id) else { continue };
+            let Some(i) = info(&self.lo, id) else {
+                continue;
+            };
             let mut c = ctx;
             c.quest = Some(topic.quest);
             let pass = condition::evaluate(self, &i.conditions, c);
@@ -259,7 +321,12 @@ impl Engine {
             }
             if pass {
                 if log::log_enabled!(log::Level::Trace) {
-                    log::trace!("{} / {}: {}", topic.editor_id, topic.prompt, condition::explain(self, &i.conditions, c));
+                    log::trace!(
+                        "{} / {}: {}",
+                        topic.editor_id,
+                        topic.prompt,
+                        condition::explain(self, &i.conditions, c)
+                    );
                 }
                 if i.flags & info_flags::RANDOM == 0 {
                     if passing.is_empty() {
@@ -287,11 +354,16 @@ impl Engine {
             if flags & 0x1 == 0 {
                 continue;
             }
-            let Some(start) = r.get(b"SNAM").map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))) else {
+            let Some(start) = r
+                .get(b"SNAM")
+                .map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+            else {
                 continue;
             };
             drop(r);
-            let Some(t) = topic(&self.lo, start) else { continue };
+            let Some(t) = topic(&self.lo, start) else {
+                continue;
+            };
             if let Some(i) = self.select_info(&t, npc_ref) {
                 let prompt = i.prompt.clone().unwrap_or_else(|| t.prompt.clone());
                 if !prompt.is_empty() && !out.iter().any(|(x, _)| x.id == t.id) {
@@ -305,7 +377,13 @@ impl Engine {
 
     /// Topics of a given subtype (e.g. HELO greetings), highest priority first.
     fn topics_of_subtype(&self, sub: &[u8; 4]) -> Vec<Topic> {
-        let mut v: Vec<Topic> = self.lo.ids_of_type(b"DIAL").iter().filter_map(|&d| topic(&self.lo, d)).filter(|t| &t.subtype == sub).collect();
+        let mut v: Vec<Topic> = self
+            .lo
+            .ids_of_type(b"DIAL")
+            .iter()
+            .filter_map(|&d| topic(&self.lo, d))
+            .filter(|t| &t.subtype == sub)
+            .collect();
         v.sort_by(|a, b| b.priority.total_cmp(&a.priority));
         v
     }
@@ -333,10 +411,19 @@ impl Engine {
         let mut starts: Vec<Topic> = Vec::new();
         for &b in self.lo.ids_of_type(b"DLBR") {
             let Some(r) = self.lo.get(b) else { continue };
-            if r.get(b"DNAM").and_then(|d| d.first()).is_none_or(|f| f & 0x2 == 0) {
+            if r.get(b"DNAM")
+                .and_then(|d| d.first())
+                .is_none_or(|f| f & 0x2 == 0)
+            {
                 continue;
             }
-            let Some(start) = r.get(b"SNAM").filter(|d| d.len() >= 4).map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))) else { continue };
+            let Some(start) = r
+                .get(b"SNAM")
+                .filter(|d| d.len() >= 4)
+                .map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+            else {
+                continue;
+            };
             starts.extend(topic(&self.lo, start));
         }
         starts.sort_by(|a, b| b.priority.total_cmp(&a.priority));
@@ -348,7 +435,9 @@ impl Engine {
 
     /// Start a conversation with `npc_ref`, opening with `greeting`.
     pub(crate) fn open_conversation(&mut self, npc_ref: FormId, greeting: Option<(Topic, Info)>) {
-        let Some(npc) = self.base_of(npc_ref) else { return };
+        let Some(npc) = self.base_of(npc_ref) else {
+            return;
+        };
         self.talked_to_pc.insert(npc_ref);
         let voice_type = self.actor_voice_type(npc_ref).unwrap_or_default();
         let name = self.form_name(npc_ref);
@@ -376,7 +465,11 @@ impl Engine {
     fn refresh_options(&mut self) {
         let Some(c) = &self.conversation else { return };
         let npc_ref = c.npc_ref;
-        let choices = c.info.as_ref().map(|(_, i)| i.choices.clone()).unwrap_or_default();
+        let choices = c
+            .info
+            .as_ref()
+            .map(|(_, i)| i.choices.clone())
+            .unwrap_or_default();
         let mut opts = Vec::new();
         for ch in choices {
             if let Some(t) = topic(&self.lo, ch)
@@ -391,7 +484,10 @@ impl Engine {
         if opts.is_empty() {
             opts = self.top_level_topics(npc_ref);
         }
-        log::debug!("dialogue options: {:?}", opts.iter().map(|o| &o.1).collect::<Vec<_>>());
+        log::debug!(
+            "dialogue options: {:?}",
+            opts.iter().map(|o| &o.1).collect::<Vec<_>>()
+        );
         if let Some(c) = self.conversation.as_mut() {
             c.options = opts;
         }
@@ -416,7 +512,16 @@ impl Engine {
 
     /// Run an INFO's begin or end fragment, `speaker` saying it.
     pub(crate) fn run_info_fragment(&mut self, info: &Info, begin: bool, speaker: FormId) {
-        let (Some(script), Some(func)) = (&info.script, if begin { &info.begin_fragment } else { &info.end_fragment }) else { return };
+        let (Some(script), Some(func)) = (
+            &info.script,
+            if begin {
+                &info.begin_fragment
+            } else {
+                &info.end_fragment
+            },
+        ) else {
+            return;
+        };
         let speaker = self.object_value(speaker);
         let obj = papyrus::ObjectId::Form(info.id.0);
         let mut vm = std::mem::take(&mut self.vm);
@@ -430,7 +535,11 @@ impl Engine {
 
     fn begin_info(&mut self) {
         if let Some((_, info)) = self.conversation.as_ref().and_then(|c| c.info.clone()) {
-            let speaker = self.conversation.as_ref().map(|c| c.npc_ref).unwrap_or_default();
+            let speaker = self
+                .conversation
+                .as_ref()
+                .map(|c| c.npc_ref)
+                .unwrap_or_default();
             self.run_info_fragment(&info, true, speaker);
         }
         self.next_line();
@@ -439,7 +548,9 @@ impl Engine {
     /// Start the next queued response line (voice + subtitle).
     fn next_line(&mut self) {
         let now = self.scripts.real_time;
-        let Some(c) = self.conversation.as_mut() else { return };
+        let Some(c) = self.conversation.as_mut() else {
+            return;
+        };
         if c.queue.is_empty() {
             c.current = None;
             let info = c.info.clone();
@@ -464,7 +575,9 @@ impl Engine {
         let voice_type = c.voice_type;
         let npc_ref = c.npc_ref;
         let path = voice_path(&self.lo, voice_type, &topic, info_id, r.number);
-        let at = self.ref_position(npc_ref).map(|p| p + glam::Vec3::Z * 110.0);
+        let at = self
+            .ref_position(npc_ref)
+            .map(|p| p + glam::Vec3::Z * 110.0);
         let mut voice = None;
         let words = r.text.split_whitespace().count() as f64;
         let mut duration = (words * 0.32).max(2.0);
@@ -474,16 +587,31 @@ impl Engine {
             voice = audio.play(&self.vfs, p, 1.0, false, at, 400.0, 3000.0);
             duration = duration.max(1.0);
         }
-        log::info!("{}: {} [{}]", self.conversation.as_ref().map(|c| c.name.as_str()).unwrap_or(""), r.text, path.unwrap_or_default());
+        log::info!(
+            "{}: {} [{}]",
+            self.conversation
+                .as_ref()
+                .map(|c| c.name.as_str())
+                .unwrap_or(""),
+            r.text,
+            path.unwrap_or_default()
+        );
         if let Some(c) = self.conversation.as_mut() {
-            c.current = Some(Line { text: r.text, voice, ends_at: now + duration, emotion: (r.emotion, r.emotion_value) });
+            c.current = Some(Line {
+                text: r.text,
+                voice,
+                ends_at: now + duration,
+                emotion: (r.emotion, r.emotion_value),
+            });
         }
         // Gesture along with the line.
         self.talking_gesture(npc_ref);
     }
 
     pub fn end_conversation(&mut self) {
-        let Some(c) = self.conversation.take() else { return };
+        let Some(c) = self.conversation.take() else {
+            return;
+        };
         if let (Some(line), Some(a)) = (&c.current, &self.audio)
             && let Some(v) = line.voice
         {
@@ -491,7 +619,10 @@ impl Engine {
         }
         self.end_talking_gestures(c.npc_ref);
         // On a goodbye line: the speaker meant it to end.
-        let goodbye = c.info.as_ref().is_some_and(|(_, i)| i.flags & info_flags::GOODBYE != 0);
+        let goodbye = c
+            .info
+            .as_ref()
+            .is_some_and(|(_, i)| i.flags & info_flags::GOODBYE != 0);
         self.arrest_conversation_ended(c.npc_ref, goodbye);
     }
 

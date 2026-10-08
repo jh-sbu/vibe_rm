@@ -105,7 +105,10 @@ impl R<'_> {
         Some(match ty {
             1 => {
                 let (f, a) = self.object()?;
-                PropValue::Object { form: rec.fid(FormId(f)), alias: a }
+                PropValue::Object {
+                    form: rec.fid(FormId(f)),
+                    alias: a,
+                }
             }
             2 => PropValue::String(self.wstring()?),
             3 => PropValue::Int(self.u32()? as i32),
@@ -152,7 +155,10 @@ pub fn parse(rec: &LoadedRecord<'_>) -> Option<Vmad> {
     let mut r = R { d, p: 0, format: 2 };
     let version = r.i16()?;
     r.format = r.i16()?;
-    let mut v = Vmad { scripts: r.scripts(version, rec)?, ..Default::default() };
+    let mut v = Vmad {
+        scripts: r.scripts(version, rec)?,
+        ..Default::default()
+    };
     if rec.tag().0 == *b"QUST" && r.ok(3) {
         // Fragment data
         let _ver = r.u8()?;
@@ -165,7 +171,12 @@ pub fn parse(rec: &LoadedRecord<'_>) -> Option<Vmad> {
             r.u8()?;
             let script = r.wstring()?;
             let function = r.wstring()?;
-            v.fragments.push(QuestFragment { stage, log_entry, script, function });
+            v.fragments.push(QuestFragment {
+                stage,
+                log_entry,
+                script,
+                function,
+            });
         }
         // Aliases
         if let Some(na) = r.u16() {
@@ -173,7 +184,9 @@ pub fn parse(rec: &LoadedRecord<'_>) -> Option<Vmad> {
                 let Some((_, alias)) = r.object() else { break };
                 let aver = r.i16().unwrap_or(version);
                 r.format = r.i16().unwrap_or(r.format);
-                let Some(scripts) = r.scripts(aver, rec) else { break };
+                let Some(scripts) = r.scripts(aver, rec) else {
+                    break;
+                };
                 v.alias_scripts.push((alias as u32, scripts));
             }
         }
@@ -190,7 +203,10 @@ pub fn parse(rec: &LoadedRecord<'_>) -> Option<Vmad> {
 fn scene_fragments(r: &mut R<'_>) -> Option<SceneFragments> {
     r.u8()?;
     let flags = r.u8()?;
-    let mut f = SceneFragments { script: r.wstring()?, ..Default::default() };
+    let mut f = SceneFragments {
+        script: r.wstring()?,
+        ..Default::default()
+    };
     for bit in [1, 2] {
         if flags & bit != 0 {
             r.u8()?;
@@ -222,7 +238,13 @@ pub fn to_value(v: &PropValue, class_of: &dyn Fn(FormId) -> &'static str) -> Val
             if form.is_null() {
                 Value::None
             } else if *alias >= 0 {
-                Value::Object(ObjectId::Alias { quest: form.0, alias: *alias as u32 }, "ReferenceAlias".into())
+                Value::Object(
+                    ObjectId::Alias {
+                        quest: form.0,
+                        alias: *alias as u32,
+                    },
+                    "ReferenceAlias".into(),
+                )
             } else {
                 Value::Object(ObjectId::Form(form.0), class_of(*form).into())
             }
@@ -231,8 +253,8 @@ pub fn to_value(v: &PropValue, class_of: &dyn Fn(FormId) -> &'static str) -> Val
         PropValue::Int(i) => Value::Int(*i),
         PropValue::Float(f) => Value::Float(*f),
         PropValue::Bool(b) => Value::Bool(*b),
-        PropValue::Array(items) => {
-            Value::Array(std::rc::Rc::new(std::cell::RefCell::new(items.iter().map(|i| to_value(i, class_of)).collect())))
-        }
+        PropValue::Array(items) => Value::Array(std::rc::Rc::new(std::cell::RefCell::new(
+            items.iter().map(|i| to_value(i, class_of)).collect(),
+        ))),
     }
 }

@@ -21,12 +21,14 @@ impl NavTriangle {
 
     /// Neighbour across `edge` within the same mesh.
     pub fn neighbour(&self, edge: usize) -> Option<usize> {
-        (self.flags & Self::EDGE_LINK[edge] == 0 && self.edges[edge] >= 0).then_some(self.edges[edge] as usize)
+        (self.flags & Self::EDGE_LINK[edge] == 0 && self.edges[edge] >= 0)
+            .then_some(self.edges[edge] as usize)
     }
 
     /// Index into the edge link table for `edge`.
     pub fn link(&self, edge: usize) -> Option<usize> {
-        (self.flags & Self::EDGE_LINK[edge] != 0 && self.edges[edge] >= 0).then_some(self.edges[edge] as usize)
+        (self.flags & Self::EDGE_LINK[edge] != 0 && self.edges[edge] >= 0)
+            .then_some(self.edges[edge] as usize)
     }
 }
 
@@ -124,16 +126,32 @@ impl NavMesh {
         let n = c.count(10)?;
         let mut edge_links = Vec::with_capacity(n);
         for _ in 0..n {
-            edge_links.push(EdgeLink { kind: c.u32()?, navmesh: fid(FormId(c.u32()?)), triangle: c.u16()? });
+            edge_links.push(EdgeLink {
+                kind: c.u32()?,
+                navmesh: fid(FormId(c.u32()?)),
+                triangle: c.u16()?,
+            });
         }
         let n = c.count(10)?;
         let mut doors = Vec::with_capacity(n);
         for _ in 0..n {
             let triangle = c.u16()?;
             let _ = c.u32()?;
-            doors.push(DoorTriangle { triangle, door: fid(FormId(c.u32()?)) });
+            doors.push(DoorTriangle {
+                triangle,
+                door: fid(FormId(c.u32()?)),
+            });
         }
-        Some(NavMesh { version, world, cell, grid, vertices, triangles, edge_links, doors })
+        Some(NavMesh {
+            version,
+            world,
+            cell,
+            grid,
+            vertices,
+            triangles,
+            edge_links,
+            doors,
+        })
     }
 
     /// Check internal indices; returns a description of the first problem.
@@ -142,18 +160,26 @@ impl NavMesh {
         let nt = self.triangles.len();
         for (i, t) in self.triangles.iter().enumerate() {
             if t.vertices.iter().any(|&v| v as usize >= nv) {
-                return Err(format!("triangle {i} vertex out of range {:?} (n={nv})", t.vertices));
+                return Err(format!(
+                    "triangle {i} vertex out of range {:?} (n={nv})",
+                    t.vertices
+                ));
             }
             for e in 0..3 {
                 if let Some(n) = t.neighbour(e)
                     && n >= nt
                 {
-                    return Err(format!("triangle {i} edge {e} neighbour {n} out of range (n={nt})"));
+                    return Err(format!(
+                        "triangle {i} edge {e} neighbour {n} out of range (n={nt})"
+                    ));
                 }
                 if let Some(l) = t.link(e)
                     && l >= self.edge_links.len()
                 {
-                    return Err(format!("triangle {i} edge {e} link {l} out of range (n={})", self.edge_links.len()));
+                    return Err(format!(
+                        "triangle {i} edge {e} link {l} out of range (n={})",
+                        self.edge_links.len()
+                    ));
                 }
             }
         }

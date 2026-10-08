@@ -128,16 +128,36 @@ impl Class {
                 .map(|ins| {
                     let a = &ins.args;
                     match ins.op {
-                        23 => Op { code: 23, name: Some(name_of(&a[0])), name2: None, args: a[1..].iter().map(resolve).collect() },
-                        24 => Op { code: 24, name: Some(name_of(&a[0])), name2: None, args: a[1..].iter().map(resolve).collect() },
+                        23 => Op {
+                            code: 23,
+                            name: Some(name_of(&a[0])),
+                            name2: None,
+                            args: a[1..].iter().map(resolve).collect(),
+                        },
+                        24 => Op {
+                            code: 24,
+                            name: Some(name_of(&a[0])),
+                            name2: None,
+                            args: a[1..].iter().map(resolve).collect(),
+                        },
                         25 => Op {
                             code: 25,
                             name: Some(name_of(&a[0])),
                             name2: Some(name_of(&a[1])),
                             args: a[2..].iter().map(resolve).collect(),
                         },
-                        28 | 29 => Op { code: ins.op, name: Some(name_of(&a[0])), name2: None, args: a[1..].iter().map(resolve).collect() },
-                        op => Op { code: op, name: None, name2: None, args: a.iter().map(resolve).collect() },
+                        28 | 29 => Op {
+                            code: ins.op,
+                            name: Some(name_of(&a[0])),
+                            name2: None,
+                            args: a[1..].iter().map(resolve).collect(),
+                        },
+                        op => Op {
+                            code: op,
+                            name: None,
+                            name2: None,
+                            args: a.iter().map(resolve).collect(),
+                        },
                     }
                 })
                 .collect();
@@ -147,7 +167,11 @@ impl Class {
                 return_type: lc(s(f.return_type)),
                 global: f.is_global(),
                 native: f.is_native(),
-                params: f.params.iter().map(|(n, t)| (lc(s(*n)), lc(s(*t)))).collect(),
+                params: f
+                    .params
+                    .iter()
+                    .map(|(n, t)| (lc(s(*n)), lc(s(*t))))
+                    .collect(),
                 local_types,
                 code,
             })
@@ -175,7 +199,11 @@ impl Class {
         let parent = s(obj.parent);
         Some(Class {
             name: Arc::from(s(obj.name)),
-            parent: if parent.is_empty() { None } else { Some(lc(parent)) },
+            parent: if parent.is_empty() {
+                None
+            } else {
+                Some(lc(parent))
+            },
             variables: obj
                 .variables
                 .iter()
@@ -206,7 +234,13 @@ pub enum NativeResult {
 pub trait Host {
     fn load_script(&mut self, name: &str) -> Option<Vec<u8>>;
     /// Call a native function. `class` is the (lower-case) class that declares it.
-    fn call_native(&mut self, class: &str, func: &str, this: Option<&Value>, args: &[Value]) -> NativeResult;
+    fn call_native(
+        &mut self,
+        class: &str,
+        func: &str,
+        this: Option<&Value>,
+        args: &[Value],
+    ) -> NativeResult;
     /// Whether an object satisfies a native base type (`form`, `objectreference`, `actor`, ...).
     fn is_native_type(&self, obj: ObjectId, class: &str) -> bool;
 }
@@ -281,7 +315,13 @@ impl Vm {
     }
 
     /// Attach a script to an object, initialising variables and the given property values.
-    pub fn attach(&mut self, host: &mut dyn Host, obj: ObjectId, script: &str, props: &[(String, Value)]) -> bool {
+    pub fn attach(
+        &mut self,
+        host: &mut dyn Host,
+        obj: ObjectId,
+        script: &str,
+        props: &[(String, Value)],
+    ) -> bool {
         let key = lc(script);
         if self.instances.contains_key(&(obj, key.clone())) {
             return true;
@@ -302,21 +342,29 @@ impl Vm {
             }
             cur = c.parent.as_ref().and_then(|p| self.class(host, p));
         }
-        inst.vars.insert(Arc::from("::state"), Value::String(auto_state.unwrap_or_else(|| Arc::from(""))));
+        inst.vars.insert(
+            Arc::from("::state"),
+            Value::String(auto_state.unwrap_or_else(|| Arc::from(""))),
+        );
         for (pname, v) in props {
             let pkey = lc(pname);
             match self.find_property(host, &key, &pkey) {
                 Some((ty, Some(var), _)) => {
                     // An alias is a ReferenceAlias or a LocationAlias as the property says.
                     let v = match v {
-                        Value::Object(id @ ObjectId::Alias { .. }, _) if &*ty == "locationalias" => Value::Object(*id, "LocationAlias".into()),
+                        Value::Object(id @ ObjectId::Alias { .. }, _)
+                            if &*ty == "locationalias" =>
+                        {
+                            Value::Object(*id, "LocationAlias".into())
+                        }
                         _ => v.clone(),
                     };
                     inst.vars.insert(var, v);
                 }
                 _ => {
                     // Unknown or handler-backed property: store under the conventional name.
-                    inst.vars.insert(Arc::from(format!("::{pkey}_var")), v.clone());
+                    inst.vars
+                        .insert(Arc::from(format!("::{pkey}_var")), v.clone());
                 }
             }
         }
@@ -343,7 +391,10 @@ impl Vm {
         let alt = format!("::{key}_var");
         for c in self.attached.get(&obj)? {
             if let Some(i) = self.instances.get(&(obj, c.clone()))
-                && let Some(v) = i.vars.get(key.as_str()).or_else(|| i.vars.get(alt.as_str()))
+                && let Some(v) = i
+                    .vars
+                    .get(key.as_str())
+                    .or_else(|| i.vars.get(alt.as_str()))
             {
                 return Some(v.clone());
             }
@@ -362,14 +413,24 @@ impl Vm {
     }
 
     fn state_of(&self, obj: ObjectId, class: &Arc<str>) -> Arc<str> {
-        match self.instances.get(&(obj, class.clone())).and_then(|i| i.vars.get("::state")) {
+        match self
+            .instances
+            .get(&(obj, class.clone()))
+            .and_then(|i| i.vars.get("::state"))
+        {
             Some(Value::String(s)) => lc(s),
             _ => Arc::from(""),
         }
     }
 
     /// Find a function by name, walking up from `class`, preferring `state`.
-    fn resolve(&mut self, host: &mut dyn Host, class: &str, state: &str, name: &str) -> Option<Arc<Func>> {
+    fn resolve(
+        &mut self,
+        host: &mut dyn Host,
+        class: &str,
+        state: &str,
+        name: &str,
+    ) -> Option<Arc<Func>> {
         let mut cur: Option<Arc<str>> = Some(lc(class));
         for _ in 0..32 {
             let c = self.class(host, &cur?)?;
@@ -393,12 +454,20 @@ impl Vm {
         host: &mut dyn Host,
         class: &str,
         prop: &str,
-    ) -> Option<(Arc<str>, Option<Arc<str>>, (Option<Arc<Func>>, Option<Arc<Func>>))> {
+    ) -> Option<(
+        Arc<str>,
+        Option<Arc<str>>,
+        (Option<Arc<Func>>, Option<Arc<Func>>),
+    )> {
         let mut cur: Option<Arc<str>> = Some(lc(class));
         for _ in 0..32 {
             let c = self.class(host, &cur?)?;
             if let Some(p) = c.properties.get(prop) {
-                return Some((p.type_name.clone(), p.auto_var.clone(), (p.read.clone(), p.write.clone())));
+                return Some((
+                    p.type_name.clone(),
+                    p.auto_var.clone(),
+                    (p.read.clone(), p.write.clone()),
+                ));
             }
             cur = c.parent.clone();
         }
@@ -429,7 +498,13 @@ impl Vm {
     }
 
     /// Queue an event on every script attached to `obj` that handles it.
-    pub fn send_event(&mut self, host: &mut dyn Host, obj: ObjectId, event: &str, args: Vec<Value>) -> usize {
+    pub fn send_event(
+        &mut self,
+        host: &mut dyn Host,
+        obj: ObjectId,
+        event: &str,
+        args: Vec<Value>,
+    ) -> usize {
         let name = lc(event);
         let list: Vec<Arc<str>> = self.attached.get(&obj).cloned().unwrap_or_default();
         let mut n = 0;
@@ -440,7 +515,10 @@ impl Vm {
             {
                 log::trace!("event {event} -> {class} ({state:?}) on {obj:?}");
                 let frame = self.make_frame(f, Some((obj, class)), &args, None);
-                self.threads.push(Thread { frames: vec![frame], wake_at: self.time });
+                self.threads.push(Thread {
+                    frames: vec![frame],
+                    wake_at: self.time,
+                });
                 n += 1;
             }
         }
@@ -448,7 +526,14 @@ impl Vm {
     }
 
     /// Queue an event on one specific script instance.
-    pub fn send_event_to(&mut self, host: &mut dyn Host, obj: ObjectId, script: &str, event: &str, args: Vec<Value>) -> bool {
+    pub fn send_event_to(
+        &mut self,
+        host: &mut dyn Host,
+        obj: ObjectId,
+        script: &str,
+        event: &str,
+        args: Vec<Value>,
+    ) -> bool {
         let class = lc(script);
         if !self.instances.contains_key(&(obj, class.clone())) {
             return false;
@@ -458,23 +543,45 @@ impl Vm {
             && !f.native
         {
             let frame = self.make_frame(f, Some((obj, class)), &args, None);
-            self.threads.push(Thread { frames: vec![frame], wake_at: self.time });
+            self.threads.push(Thread {
+                frames: vec![frame],
+                wake_at: self.time,
+            });
             return true;
         }
         false
     }
 
     /// Start a call to a method on a specific script instance (e.g. quest fragments).
-    pub fn call_method(&mut self, host: &mut dyn Host, obj: ObjectId, script: &str, func: &str, args: Vec<Value>) -> bool {
+    pub fn call_method(
+        &mut self,
+        host: &mut dyn Host,
+        obj: ObjectId,
+        script: &str,
+        func: &str,
+        args: Vec<Value>,
+    ) -> bool {
         self.send_event_to(host, obj, script, func, args)
     }
 
-    fn make_frame(&self, f: Arc<Func>, this: Option<(ObjectId, Arc<str>)>, args: &[Value], ret: Option<Arg>) -> Frame {
+    fn make_frame(
+        &self,
+        f: Arc<Func>,
+        this: Option<(ObjectId, Arc<str>)>,
+        args: &[Value],
+        ret: Option<Arg>,
+    ) -> Frame {
         let mut locals: Vec<Value> = f.local_types.iter().map(|t| type_default(t)).collect();
         for (i, a) in args.iter().enumerate().take(f.params.len()) {
             locals[i] = a.clone();
         }
-        Frame { func: f, pc: 0, locals, this, ret }
+        Frame {
+            func: f,
+            pc: 0,
+            locals,
+            this,
+            ret,
+        }
     }
 
     pub fn thread_count(&self) -> usize {
@@ -523,7 +630,12 @@ impl Vm {
         }
     }
 
-    fn set_in(instances: &mut HashMap<(ObjectId, Arc<str>), Instance>, frame: &mut Frame, a: &Arg, v: Value) {
+    fn set_in(
+        instances: &mut HashMap<(ObjectId, Arc<str>), Instance>,
+        frame: &mut Frame,
+        a: &Arg,
+        v: Value,
+    ) {
         match a {
             Arg::Local(i) => frame.locals[*i] = v,
             Arg::Member(n) => {
@@ -548,8 +660,13 @@ impl Vm {
         match a {
             Arg::Local(i) => frame.func.local_types[*i].clone(),
             Arg::Member(n) => {
-                let class = frame.this.as_ref().map(|t| t.1.clone()).unwrap_or_else(|| frame.func.class.clone());
-                self.member_type(host, &class, n).unwrap_or_else(|| Arc::from(""))
+                let class = frame
+                    .this
+                    .as_ref()
+                    .map(|t| t.1.clone())
+                    .unwrap_or_else(|| frame.func.class.clone());
+                self.member_type(host, &class, n)
+                    .unwrap_or_else(|| Arc::from(""))
             }
             _ => Arc::from(""),
         }
@@ -570,10 +687,15 @@ impl Vm {
             t => match v {
                 Value::Object(o, _) => {
                     let ok = host.is_native_type(o, t) || {
-                        let list: Vec<Arc<str>> = self.attached.get(&o).cloned().unwrap_or_default();
+                        let list: Vec<Arc<str>> =
+                            self.attached.get(&o).cloned().unwrap_or_default();
                         list.iter().any(|c| self.derives(host, c, t))
                     };
-                    if ok { Value::Object(o, Arc::from(t)) } else { Value::None }
+                    if ok {
+                        Value::Object(o, Arc::from(t))
+                    } else {
+                        Value::None
+                    }
                 }
                 _ => Value::None,
             },
@@ -584,7 +706,9 @@ impl Vm {
     fn step_thread(&mut self, host: &mut dyn Host, t: &mut Thread, budget: usize) -> bool {
         let mut steps = 0;
         loop {
-            let Some(frame) = t.frames.last_mut() else { return true };
+            let Some(frame) = t.frames.last_mut() else {
+                return true;
+            };
             if frame.pc >= frame.func.code.len() {
                 // Implicit return None.
                 let f = t.frames.pop().unwrap();
@@ -618,9 +742,17 @@ impl Vm {
                         4 => Value::Float(x.as_float() - y.as_float()),
                         5 => Value::Int(x.as_int().wrapping_mul(y.as_int())),
                         6 => Value::Float(x.as_float() * y.as_float()),
-                        7 => Value::Int(if y.as_int() == 0 { 0 } else { x.as_int().wrapping_div(y.as_int()) }),
+                        7 => Value::Int(if y.as_int() == 0 {
+                            0
+                        } else {
+                            x.as_int().wrapping_div(y.as_int())
+                        }),
                         8 => Value::Float(x.as_float() / y.as_float()),
-                        _ => Value::Int(if y.as_int() == 0 { 0 } else { x.as_int().wrapping_rem(y.as_int()) }),
+                        _ => Value::Int(if y.as_int() == 0 {
+                            0
+                        } else {
+                            x.as_int().wrapping_rem(y.as_int())
+                        }),
                     };
                     Self::set_in(&mut self.instances, &mut frame!(), &op.args[0], r);
                 }
@@ -653,7 +785,9 @@ impl Vm {
                     } else {
                         let ord = match (&x, &y) {
                             (Value::Int(p), Value::Int(q)) => p.partial_cmp(q),
-                            (Value::String(p), Value::String(q)) => Some(p.to_ascii_lowercase().cmp(&q.to_ascii_lowercase())),
+                            (Value::String(p), Value::String(q)) => {
+                                Some(p.to_ascii_lowercase().cmp(&q.to_ascii_lowercase()))
+                            }
                             _ => x.as_float().partial_cmp(&y.as_float()),
                         };
                         match (op.code, ord) {
@@ -664,7 +798,12 @@ impl Vm {
                             _ => false,
                         }
                     };
-                    Self::set_in(&mut self.instances, &mut frame!(), &op.args[0], Value::Bool(r));
+                    Self::set_in(
+                        &mut self.instances,
+                        &mut frame!(),
+                        &op.args[0],
+                        Value::Bool(r),
+                    );
                 }
                 20 => {
                     let off = a(self, &frame!(), 0).as_int();
@@ -683,17 +822,23 @@ impl Vm {
                         23 => (Some(a(self, &frame!(), 0)), 1),
                         _ => (None, 0),
                     };
-                    let argv: Vec<Value> = op.args[dest_i + 2..].iter().map(|x| self.get(&frame!(), x)).collect();
+                    let argv: Vec<Value> = op.args[dest_i + 2..]
+                        .iter()
+                        .map(|x| self.get(&frame!(), x))
+                        .collect();
                     let dest = op.args[dest_i].clone();
                     let name = op.name.clone().unwrap_or_else(|| Arc::from(""));
-                    let mut call: Option<(Arc<Func>, Option<(ObjectId, Arc<str>)>, Option<Value>)> = None;
+                    let mut call: Option<(Arc<Func>, Option<(ObjectId, Arc<str>)>, Option<Value>)> =
+                        None;
                     match op.code {
                         23 => match target.unwrap() {
                             Value::Object(o, cls) => {
                                 let ic = self.instance_class(host, o, &cls);
                                 let state = self.state_of(o, &ic);
                                 match self.resolve(host, &ic, &state, &name) {
-                                    Some(f) => call = Some((f, Some((o, ic)), Some(Value::Object(o, cls)))),
+                                    Some(f) => {
+                                        call = Some((f, Some((o, ic)), Some(Value::Object(o, cls))))
+                                    }
                                     None => {
                                         if !matches!(&*name, "onbeginstate" | "onendstate") {
                                             self.warn_once(format!("unknown method {cls}.{name}"));
@@ -703,17 +848,26 @@ impl Vm {
                             }
                             Value::None => {
                                 let caller = frame!().func.name.clone();
-                                log::debug!("papyrus: cannot call {name}() on a None object (in {caller})");
+                                log::debug!(
+                                    "papyrus: cannot call {name}() on a None object (in {caller})"
+                                );
                             }
                             other => self.warn_once(format!("cannot call {name}() on {other:?}")),
                         },
                         24 => {
-                            let parent = self.class(host, &frame!().func.class).and_then(|c| c.parent.clone());
+                            let parent = self
+                                .class(host, &frame!().func.class)
+                                .and_then(|c| c.parent.clone());
                             if let Some(p) = parent {
-                                let state = frame!().this.as_ref().map(|(o, c)| self.state_of(*o, c)).unwrap_or_else(|| Arc::from(""));
+                                let state = frame!()
+                                    .this
+                                    .as_ref()
+                                    .map(|(o, c)| self.state_of(*o, c))
+                                    .unwrap_or_else(|| Arc::from(""));
                                 if let Some(f) = self.resolve(host, &p, &state, &name) {
                                     let this = frame!().this.clone();
-                                    let tv = this.as_ref().map(|(o, c)| Value::Object(*o, c.clone()));
+                                    let tv =
+                                        this.as_ref().map(|(o, c)| Value::Object(*o, c.clone()));
                                     call = Some((f, this, tv));
                                 }
                             }
@@ -729,10 +883,22 @@ impl Vm {
                     }
                     match call {
                         Some((f, this, this_val)) if f.native => {
-                            match host.call_native(&f.class, &f.name.to_ascii_lowercase(), this_val.as_ref(), &argv) {
-                                NativeResult::Value(v) => Self::set_in(&mut self.instances, &mut frame!(), &dest, v),
+                            match host.call_native(
+                                &f.class,
+                                &f.name.to_ascii_lowercase(),
+                                this_val.as_ref(),
+                                &argv,
+                            ) {
+                                NativeResult::Value(v) => {
+                                    Self::set_in(&mut self.instances, &mut frame!(), &dest, v)
+                                }
                                 NativeResult::Wait(secs) => {
-                                    Self::set_in(&mut self.instances, &mut frame!(), &dest, Value::None);
+                                    Self::set_in(
+                                        &mut self.instances,
+                                        &mut frame!(),
+                                        &dest,
+                                        Value::None,
+                                    );
                                     t.wake_at = self.time + secs.max(0.0) as f64;
                                     let _ = this;
                                     return false;
@@ -747,7 +913,9 @@ impl Vm {
                             let nf = self.make_frame(f, this, &argv, Some(dest));
                             t.frames.push(nf);
                         }
-                        None => Self::set_in(&mut self.instances, &mut frame!(), &dest, Value::None),
+                        None => {
+                            Self::set_in(&mut self.instances, &mut frame!(), &dest, Value::None)
+                        }
                     }
                 }
                 26 => {
@@ -758,7 +926,11 @@ impl Vm {
                     }
                 }
                 27 => {
-                    let r = Value::str(&format!("{}{}", a(self, &frame!(), 1), a(self, &frame!(), 2)));
+                    let r = Value::str(&format!(
+                        "{}{}",
+                        a(self, &frame!(), 1),
+                        a(self, &frame!(), 2)
+                    ));
                     Self::set_in(&mut self.instances, &mut frame!(), &op.args[0], r);
                 }
                 28 | 29 => {
@@ -767,7 +939,12 @@ impl Vm {
                     let name = op.name.clone().unwrap_or_else(|| Arc::from(""));
                     let Value::Object(o, cls) = obj else {
                         if op.code == 28 {
-                            Self::set_in(&mut self.instances, &mut frame!(), &op.args[1], Value::None);
+                            Self::set_in(
+                                &mut self.instances,
+                                &mut frame!(),
+                                &op.args[1],
+                                Value::None,
+                            );
                         }
                         continue;
                     };
@@ -775,7 +952,11 @@ impl Vm {
                     match self.find_property(host, &ic, &name) {
                         Some((_, Some(var), _)) => {
                             if op.code == 28 {
-                                let v = self.instances.get(&(o, ic.clone())).and_then(|i| i.vars.get(&var).cloned()).unwrap_or_default();
+                                let v = self
+                                    .instances
+                                    .get(&(o, ic.clone()))
+                                    .and_then(|i| i.vars.get(&var).cloned())
+                                    .unwrap_or_default();
                                 Self::set_in(&mut self.instances, &mut frame!(), &op.args[1], v);
                             } else {
                                 let v = a(self, &frame!(), 1);
@@ -787,8 +968,16 @@ impl Vm {
                         Some((_, None, (read, write))) => {
                             let handler = if op.code == 28 { read } else { write };
                             if let Some(f) = handler {
-                                let args = if op.code == 29 { vec![a(self, &frame!(), 1)] } else { Vec::new() };
-                                let ret = if op.code == 28 { Some(op.args[1].clone()) } else { None };
+                                let args = if op.code == 29 {
+                                    vec![a(self, &frame!(), 1)]
+                                } else {
+                                    Vec::new()
+                                };
+                                let ret = if op.code == 28 {
+                                    Some(op.args[1].clone())
+                                } else {
+                                    None
+                                };
                                 let nf = self.make_frame(f, Some((o, ic)), &args, ret);
                                 t.frames.push(nf);
                             }
@@ -796,7 +985,12 @@ impl Vm {
                         None => {
                             self.warn_once(format!("unknown property {ic}.{name}"));
                             if op.code == 28 {
-                                Self::set_in(&mut self.instances, &mut frame!(), &op.args[1], Value::None);
+                                Self::set_in(
+                                    &mut self.instances,
+                                    &mut frame!(),
+                                    &op.args[1],
+                                    Value::None,
+                                );
                             }
                         }
                     }
@@ -819,11 +1013,20 @@ impl Vm {
                         Value::Array(x) => x.borrow().len() as i32,
                         _ => 0,
                     };
-                    Self::set_in(&mut self.instances, &mut frame!(), &op.args[0], Value::Int(n));
+                    Self::set_in(
+                        &mut self.instances,
+                        &mut frame!(),
+                        &op.args[0],
+                        Value::Int(n),
+                    );
                 }
                 32 => {
                     let v = match (a(self, &frame!(), 1), a(self, &frame!(), 2)) {
-                        (Value::Array(x), i) => x.borrow().get(i.as_int().max(0) as usize).cloned().unwrap_or_default(),
+                        (Value::Array(x), i) => x
+                            .borrow()
+                            .get(i.as_int().max(0) as usize)
+                            .cloned()
+                            .unwrap_or_default(),
                         _ => Value::None,
                     };
                     Self::set_in(&mut self.instances, &mut frame!(), &op.args[0], v);
@@ -844,15 +1047,30 @@ impl Vm {
                             let start = a(self, &frame!(), 3).as_int();
                             let v = x.borrow();
                             if op.code == 34 {
-                                (start.max(0) as usize..v.len()).find(|&i| v[i] == needle).map(|i| i as i32).unwrap_or(-1)
+                                (start.max(0) as usize..v.len())
+                                    .find(|&i| v[i] == needle)
+                                    .map(|i| i as i32)
+                                    .unwrap_or(-1)
                             } else {
-                                let s = if start < 0 { v.len() as i32 - 1 } else { start.min(v.len() as i32 - 1) };
-                                (0..=s.max(-1)).rev().find(|&i| i >= 0 && v[i as usize] == needle).unwrap_or(-1)
+                                let s = if start < 0 {
+                                    v.len() as i32 - 1
+                                } else {
+                                    start.min(v.len() as i32 - 1)
+                                };
+                                (0..=s.max(-1))
+                                    .rev()
+                                    .find(|&i| i >= 0 && v[i as usize] == needle)
+                                    .unwrap_or(-1)
                             }
                         }
                         _ => -1,
                     };
-                    Self::set_in(&mut self.instances, &mut frame!(), &op.args[1], Value::Int(r));
+                    Self::set_in(
+                        &mut self.instances,
+                        &mut frame!(),
+                        &op.args[1],
+                        Value::Int(r),
+                    );
                 }
                 other => {
                     self.warn_once(format!("bad opcode {other}"));

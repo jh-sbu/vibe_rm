@@ -38,7 +38,13 @@ pub mod flags {
 pub fn normalize_path(p: &str) -> String {
     let mut s: String = p
         .chars()
-        .map(|c| if c == '\\' { '/' } else { c.to_ascii_lowercase() })
+        .map(|c| {
+            if c == '\\' {
+                '/'
+            } else {
+                c.to_ascii_lowercase()
+            }
+        })
         .collect();
     while s.starts_with('/') {
         s.remove(0);
@@ -184,14 +190,26 @@ impl Archive {
         if archive_flags & flags::INCLUDE_FILE_NAMES != 0 {
             for (dir, entry) in pending {
                 let name = latin1(c.cstr()?);
-                let full = if dir.is_empty() { name } else { format!("{dir}\\{name}") };
+                let full = if dir.is_empty() {
+                    name
+                } else {
+                    format!("{dir}\\{name}")
+                };
                 files.insert(normalize_path(&full), entry);
             }
         } else {
-            return Err(Error::Corrupt("archives without file names are not supported"));
+            return Err(Error::Corrupt(
+                "archives without file names are not supported",
+            ));
         }
 
-        Ok(Archive { path, map, version, archive_flags, files })
+        Ok(Archive {
+            path,
+            map,
+            version,
+            archive_flags,
+            files,
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -223,18 +241,26 @@ impl Archive {
     }
 
     fn read_entry(&self, e: &Entry) -> Result<Vec<u8>> {
-        let mut c = Cursor { d: &self.map, p: e.offset as usize };
+        let mut c = Cursor {
+            d: &self.map,
+            p: e.offset as usize,
+        };
         let mut size = e.size as usize;
         if self.archive_flags & flags::EMBED_FILE_NAMES != 0 && self.version >= 104 {
             let n = c.u8()? as usize;
             c.bytes(n)?;
-            size = size.checked_sub(n + 1).ok_or(Error::Corrupt("bad embedded name"))?;
+            size = size
+                .checked_sub(n + 1)
+                .ok_or(Error::Corrupt("bad embedded name"))?;
         }
         if !e.compressed {
             return Ok(c.bytes(size)?.to_vec());
         }
         let original = c.u32()? as usize;
-        let data = c.bytes(size.checked_sub(4).ok_or(Error::Corrupt("bad compressed size"))?)?;
+        let data = c.bytes(
+            size.checked_sub(4)
+                .ok_or(Error::Corrupt("bad compressed size"))?,
+        )?;
         let mut out = Vec::with_capacity(original);
         if self.version == 105 {
             lz4_flex::frame::FrameDecoder::new(data)

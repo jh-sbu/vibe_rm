@@ -66,7 +66,13 @@ pub enum ConstraintKind {
         twist_max: f32,
     },
     /// `bhkLimitedHingeConstraint`: rotation about one axis within an angle range.
-    Hinge { pivot: [Vec3; 2], axis: [Vec3; 2], perp: [Vec3; 2], min: f32, max: f32 },
+    Hinge {
+        pivot: [Vec3; 2],
+        axis: [Vec3; 2],
+        perp: [Vec3; 2],
+        min: f32,
+        max: f32,
+    },
 }
 
 pub(crate) fn constraint(r: &mut Reader, ragdoll: bool) -> Result<Constraint> {
@@ -86,7 +92,16 @@ pub(crate) fn constraint(r: &mut Reader, ragdoll: bool) -> Result<Constraint> {
         let twist_min = r.f32()?;
         let twist_max = r.f32()?;
         r.f32()?; // max friction
-        ConstraintKind::Ragdoll { pivot: [pva, pvb], twist: [ta, tb], plane: [pa, pb], cone_max, plane_min, plane_max, twist_min, twist_max }
+        ConstraintKind::Ragdoll {
+            pivot: [pva, pvb],
+            twist: [ta, tb],
+            plane: [pa, pb],
+            cone_max,
+            plane_min,
+            plane_max,
+            twist_min,
+            twist_max,
+        }
     } else {
         // Axis, perpendicular axes 1 and 2, pivot for A then B.
         let (aa, p1a, _, pva) = (v(r)?, v(r)?, v(r)?, v(r)?);
@@ -94,35 +109,93 @@ pub(crate) fn constraint(r: &mut Reader, ragdoll: bool) -> Result<Constraint> {
         let min = r.f32()?;
         let max = r.f32()?;
         r.f32()?; // max friction
-        ConstraintKind::Hinge { pivot: [pva, pvb], axis: [aa, ab], perp: [p1a, p1b], min, max }
+        ConstraintKind::Hinge {
+            pivot: [pva, pvb],
+            axis: [aa, ab],
+            perp: [p1a, p1b],
+            min,
+            max,
+        }
     };
     // The motor's settings follow; nothing here uses them.
-    Ok(Constraint { entities: [a, b], kind })
+    Ok(Constraint {
+        entities: [a, b],
+        kind,
+    })
 }
 
 #[derive(Debug, Clone)]
 pub enum Shape {
-    MoppBvTree { shape: Ref, scale: f32 },
-    CompressedMesh { data: Ref, radius: f32, scale: Vec4 },
+    MoppBvTree {
+        shape: Ref,
+        scale: f32,
+    },
+    CompressedMesh {
+        data: Ref,
+        radius: f32,
+        scale: Vec4,
+    },
     /// Triangles with their Havok material (`SKY_HAV_MAT_*`) each.
-    CompressedMeshData { vertices: Vec<Vec3>, triangles: Vec<[u32; 3]>, materials: Vec<u32> },
-    ConvexVertices { radius: f32, vertices: Vec<Vec3>, material: u32 },
-    Box { radius: f32, half_extents: Vec3, material: u32 },
-    Sphere { radius: f32, material: u32 },
-    Capsule { radius: f32, p1: Vec3, p2: Vec3, material: u32 },
-    List { shapes: Vec<Ref>, material: u32 },
-    Transform { shape: Ref, transform: Mat4 },
-    PackedTriStrips { data: Ref, scale: Vec4 },
-    PackedTriStripsData { vertices: Vec<Vec3>, triangles: Vec<[u32; 3]>, materials: Vec<u32> },
-    NiTriStrips { strips: Vec<Ref>, material: u32 },
-    ConvexList { shapes: Vec<Ref> },
+    CompressedMeshData {
+        vertices: Vec<Vec3>,
+        triangles: Vec<[u32; 3]>,
+        materials: Vec<u32>,
+    },
+    ConvexVertices {
+        radius: f32,
+        vertices: Vec<Vec3>,
+        material: u32,
+    },
+    Box {
+        radius: f32,
+        half_extents: Vec3,
+        material: u32,
+    },
+    Sphere {
+        radius: f32,
+        material: u32,
+    },
+    Capsule {
+        radius: f32,
+        p1: Vec3,
+        p2: Vec3,
+        material: u32,
+    },
+    List {
+        shapes: Vec<Ref>,
+        material: u32,
+    },
+    Transform {
+        shape: Ref,
+        transform: Mat4,
+    },
+    PackedTriStrips {
+        data: Ref,
+        scale: Vec4,
+    },
+    PackedTriStripsData {
+        vertices: Vec<Vec3>,
+        triangles: Vec<[u32; 3]>,
+        materials: Vec<u32>,
+    },
+    NiTriStrips {
+        strips: Vec<Ref>,
+        material: u32,
+    },
+    ConvexList {
+        shapes: Vec<Ref>,
+    },
 }
 
 pub(crate) fn collision_object(r: &mut Reader) -> Result<CollisionObject> {
     let target = r.block_ref()?;
     let flags = r.u16()?;
     let body = r.block_ref()?;
-    Ok(CollisionObject { target, flags, body })
+    Ok(CollisionObject {
+        target,
+        flags,
+        body,
+    })
 }
 
 pub(crate) fn rigid_body(r: &mut Reader, transform_applies: bool) -> Result<RigidBody> {
@@ -162,8 +235,23 @@ pub(crate) fn rigid_body(r: &mut Reader, transform_applies: bool) -> Result<Rigi
         r.u16()?;
     }
     let rotation = Quat::from_xyzw(q.x, q.y, q.z, q.w);
-    let rotation = if rotation.length_squared() > 0.5 { rotation.normalize() } else { Quat::IDENTITY };
-    Ok(RigidBody { shape, layer, translation: t.truncate(), rotation, mass, friction, restitution, motion, transform_applies, constraints })
+    let rotation = if rotation.length_squared() > 0.5 {
+        rotation.normalize()
+    } else {
+        Quat::IDENTITY
+    };
+    Ok(RigidBody {
+        shape,
+        layer,
+        translation: t.truncate(),
+        rotation,
+        mass,
+        friction,
+        restitution,
+        motion,
+        transform_applies,
+        constraints,
+    })
 }
 
 fn compressed_mesh_data(r: &mut Reader) -> Result<Shape> {
@@ -189,7 +277,10 @@ fn compressed_mesh_data(r: &mut Reader) -> Result<Shape> {
     for _ in 0..n_transforms {
         let t = r.vec4()?;
         let q = r.vec4()?;
-        transforms.push((t.truncate(), Quat::from_xyzw(q.x, q.y, q.z, q.w).normalize()));
+        transforms.push((
+            t.truncate(),
+            Quat::from_xyzw(q.x, q.y, q.z, q.w).normalize(),
+        ));
     }
     let n_big_verts = r.u32()? as usize;
     let mut vertices = Vec::new();
@@ -257,7 +348,11 @@ fn compressed_mesh_data(r: &mut Reader) -> Result<Shape> {
         materials.resize(triangles.len(), chunk_material);
     }
     r.u32()?; // convex piece count
-    Ok(Shape::CompressedMeshData { vertices, triangles, materials })
+    Ok(Shape::CompressedMeshData {
+        vertices,
+        triangles,
+        materials,
+    })
 }
 
 fn packed_tri_strips_data(r: &mut Reader) -> Result<Shape> {
@@ -284,8 +379,20 @@ fn packed_tri_strips_data(r: &mut Reader) -> Result<Shape> {
         subs.push((first + n, r.u32()?));
         first += n;
     }
-    let materials = triangles.iter().map(|t| subs.iter().find(|s| t[0] < s.0).or(subs.last()).map_or(0, |s| s.1)).collect();
-    Ok(Shape::PackedTriStripsData { vertices, triangles, materials })
+    let materials = triangles
+        .iter()
+        .map(|t| {
+            subs.iter()
+                .find(|s| t[0] < s.0)
+                .or(subs.last())
+                .map_or(0, |s| s.1)
+        })
+        .collect();
+    Ok(Shape::PackedTriStripsData {
+        vertices,
+        triangles,
+        materials,
+    })
 }
 
 pub(crate) fn parse_shape(ty: &str, r: &mut Reader) -> Result<Option<Shape>> {
@@ -309,7 +416,11 @@ pub(crate) fn parse_shape(ty: &str, r: &mut Reader) -> Result<Option<Shape>> {
             r.f32()?;
             r.vec4()?;
             let data = r.block_ref()?;
-            Shape::CompressedMesh { data, radius, scale }
+            Shape::CompressedMesh {
+                data,
+                radius,
+                scale,
+            }
         }
         "bhkCompressedMeshShapeData" => compressed_mesh_data(r)?,
         "bhkConvexVerticesShape" => {
@@ -323,7 +434,11 @@ pub(crate) fn parse_shape(ty: &str, r: &mut Reader) -> Result<Option<Shape>> {
             }
             let nn = r.u32()? as usize;
             r.skip(nn * 16)?;
-            Shape::ConvexVertices { radius, vertices, material }
+            Shape::ConvexVertices {
+                radius,
+                vertices,
+                material,
+            }
         }
         "bhkBoxShape" => {
             let material = r.u32()?;
@@ -331,7 +446,11 @@ pub(crate) fn parse_shape(ty: &str, r: &mut Reader) -> Result<Option<Shape>> {
             r.skip(8)?;
             let half_extents = r.vec3()?;
             r.f32()?;
-            Shape::Box { radius, half_extents, material }
+            Shape::Box {
+                radius,
+                half_extents,
+                material,
+            }
         }
         "bhkSphereShape" => {
             let material = r.u32()?;
@@ -346,7 +465,12 @@ pub(crate) fn parse_shape(ty: &str, r: &mut Reader) -> Result<Option<Shape>> {
             r.f32()?;
             let p2 = r.vec3()?;
             r.f32()?;
-            Shape::Capsule { radius, p1, p2, material }
+            Shape::Capsule {
+                radius,
+                p1,
+                p2,
+                material,
+            }
         }
         "bhkListShape" => {
             let shapes = r.ref_list()?;
@@ -365,7 +489,10 @@ pub(crate) fn parse_shape(ty: &str, r: &mut Reader) -> Result<Option<Shape>> {
             for v in &mut m {
                 *v = r.f32()?;
             }
-            Shape::Transform { shape, transform: Mat4::from_cols_array(&m) }
+            Shape::Transform {
+                shape,
+                transform: Mat4::from_cols_array(&m),
+            }
         }
         "bhkPackedNiTriStripsShape" => {
             if r.bs_version <= 34 {

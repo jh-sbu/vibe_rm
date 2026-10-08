@@ -38,9 +38,16 @@ pub fn apply(
     dt: f32,
 ) -> Vec<Vec3> {
     let bone = |i: i16| hk_to_nif.get(i as usize).copied().flatten();
-    let legs: Vec<_> = ik.legs.iter().filter_map(|l| Some((l, bone(l.hip)?, bone(l.knee)?, bone(l.ankle)?))).collect();
+    let legs: Vec<_> = ik
+        .legs
+        .iter()
+        .filter_map(|l| Some((l, bone(l.hip)?, bone(l.knee)?, bone(l.ankle)?)))
+        .collect();
     let model = skeleton.model_space(locals);
-    let ankles: Vec<Vec3> = legs.iter().map(|(_, _, _, a)| model[*a].w_axis.truncate()).collect();
+    let ankles: Vec<Vec3> = legs
+        .iter()
+        .map(|(_, _, _, a)| model[*a].w_axis.truncate())
+        .collect();
     state.offsets.resize(legs.len(), 0.0);
     let ease = step(0.25, dt);
     for (i, (leg, ..)) in legs.iter().enumerate() {
@@ -68,8 +75,16 @@ pub fn apply(
             continue;
         }
         let model = skeleton.model_space(locals);
-        let (h, k, a) = (model[hip].w_axis.truncate(), model[knee].w_axis.truncate(), model[ankle].w_axis.truncate());
-        let (rh, rk, ra) = (rotation(&model[hip]), rotation(&model[knee]), rotation(&model[ankle]));
+        let (h, k, a) = (
+            model[hip].w_axis.truncate(),
+            model[knee].w_axis.truncate(),
+            model[ankle].w_axis.truncate(),
+        );
+        let (rh, rk, ra) = (
+            rotation(&model[hip]),
+            rotation(&model[knee]),
+            rotation(&model[ankle]),
+        );
         let lift = state.offsets[i] - drop;
         let target = a + Vec3::Z * lift;
         // Knee: open or close it so that hip-to-ankle spans the distance to the target.
@@ -77,13 +92,25 @@ pub fn apply(
         if la < 1e-3 || lb < 1e-3 {
             continue;
         }
-        let d = (target - h).length().clamp((la - lb).abs() + 0.01, la + lb - 0.01);
-        let interior = |c: f32| ((la * la + lb * lb - c * c) / (2.0 * la * lb)).clamp(-1.0, 1.0).acos();
-        let (min_knee, max_knee) = (leg.min_knee_degrees.to_radians(), leg.max_knee_degrees.to_radians());
+        let d = (target - h)
+            .length()
+            .clamp((la - lb).abs() + 0.01, la + lb - 0.01);
+        let interior = |c: f32| {
+            ((la * la + lb * lb - c * c) / (2.0 * la * lb))
+                .clamp(-1.0, 1.0)
+                .acos()
+        };
+        let (min_knee, max_knee) = (
+            leg.min_knee_degrees.to_radians(),
+            leg.max_knee_degrees.to_radians(),
+        );
         let delta = interior(d).clamp(min_knee, max_knee) - interior((a - h).length());
         let thigh = (h - k).normalize();
         let shin = (a - k).normalize();
-        let axis = thigh.cross(shin).try_normalize().unwrap_or_else(|| (rk * leg.knee_axis).normalize());
+        let axis = thigh
+            .cross(shin)
+            .try_normalize()
+            .unwrap_or_else(|| (rk * leg.knee_axis).normalize());
         let bend = Quat::from_axis_angle(axis, delta);
         let a2 = k + bend * (a - k);
         // Hip: swing the leg so the ankle lands on the target.
@@ -91,15 +118,28 @@ pub fn apply(
         let rh2 = swing * rh;
         let rk2 = swing * bend * rk;
         // The foot keeps its animated orientation, tilted with the ground when planted.
-        let planted = ((leg.raised_ankle_height - (ankles[i].z - ik.original_ground_height)) / (leg.raised_ankle_height - leg.planted_ankle_height).max(1e-3)).clamp(0.0, 1.0);
-        let tilt = ground.get(i).copied().flatten().map_or(Quat::IDENTITY, |(_, n)| {
-            let full = Quat::from_rotation_arc(Vec3::Z, n.normalize());
-            let (axis, angle) = full.to_axis_angle();
-            let angle = angle.min(leg.max_ankle_degrees.to_radians()) * planted * ik.forward_align;
-            if angle.abs() < 1e-4 { Quat::IDENTITY } else { Quat::from_axis_angle(axis, angle) }
-        });
+        let planted = ((leg.raised_ankle_height - (ankles[i].z - ik.original_ground_height))
+            / (leg.raised_ankle_height - leg.planted_ankle_height).max(1e-3))
+        .clamp(0.0, 1.0);
+        let tilt = ground
+            .get(i)
+            .copied()
+            .flatten()
+            .map_or(Quat::IDENTITY, |(_, n)| {
+                let full = Quat::from_rotation_arc(Vec3::Z, n.normalize());
+                let (axis, angle) = full.to_axis_angle();
+                let angle =
+                    angle.min(leg.max_ankle_degrees.to_radians()) * planted * ik.forward_align;
+                if angle.abs() < 1e-4 {
+                    Quat::IDENTITY
+                } else {
+                    Quat::from_axis_angle(axis, angle)
+                }
+            });
         let ra2 = tilt * ra;
-        let parent = skeleton.bones[hip].parent.map_or(Quat::IDENTITY, |p| rotation(&model[p]));
+        let parent = skeleton.bones[hip]
+            .parent
+            .map_or(Quat::IDENTITY, |p| rotation(&model[p]));
         locals[hip].rotation = glam::Mat3::from_quat((parent.inverse() * rh2).normalize());
         locals[knee].rotation = glam::Mat3::from_quat((rh2.inverse() * rk2).normalize());
         locals[ankle].rotation = glam::Mat3::from_quat((rk2.inverse() * ra2).normalize());

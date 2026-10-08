@@ -30,7 +30,6 @@ pub struct AnimPart {
     pub model: Arc<GpuModel>,
 }
 
-
 fn furniture_markers(n: &nif::Nif) -> Option<Arc<[nif::FurnitureMarker]>> {
     n.blocks.iter().find_map(|b| match b {
         nif::Block::ExtraData(nif::ExtraData::Furniture(m)) => Some(m.as_slice().into()),
@@ -59,7 +58,10 @@ impl ModelCache {
         if let Some(m) = self.furniture.get(path) {
             return m.clone();
         }
-        let m = vfs.read(path).and_then(|d| nif::Nif::parse(&d).ok()).and_then(|n| furniture_markers(&n));
+        let m = vfs
+            .read(path)
+            .and_then(|d| nif::Nif::parse(&d).ok())
+            .and_then(|n| furniture_markers(&n));
         self.furniture.insert(path.to_owned(), m.clone());
         m
     }
@@ -68,39 +70,55 @@ impl ModelCache {
     pub fn load_all(&mut self, renderer: &mut Renderer, vfs: &vfs::Vfs, paths: &[String]) {
         let missing: Vec<&String> = {
             let mut seen = HashSet::new();
-            paths.iter().filter(|p| !self.map.contains_key(*p) && seen.insert(*p)).collect()
+            paths
+                .iter()
+                .filter(|p| !self.map.contains_key(*p) && seen.insert(*p))
+                .collect()
         };
         if missing.is_empty() {
             return;
         }
         let t0 = std::time::Instant::now();
         #[allow(clippy::type_complexity)]
-        let cpu: Vec<(String, Option<CpuModel>, Option<crate::physics::shapes::CollisionModel>, Option<Arc<[nif::FurnitureMarker]>>)> = missing
+        let cpu: Vec<(
+            String,
+            Option<CpuModel>,
+            Option<crate::physics::shapes::CollisionModel>,
+            Option<Arc<[nif::FurnitureMarker]>>,
+        )> = missing
             .par_iter()
             .map(|p| {
                 let mut col = None;
                 let mut furn = None;
                 // `path#blade` / `path#scb`: a weapon without / only its scabbard.
-                let (file, variant) = p.split_once('#').map_or((p.as_str(), None), |(f, v)| (f, Some(v)));
-                let m = vfs.read(file).and_then(|data| match nif::Nif::parse(&data) {
-                    Ok(n) => {
-                        col = crate::physics::shapes::from_nif(&n);
-                        furn = furniture_markers(&n);
-                        let m = match variant {
-                            Some("scb") => model::convert_filtered(&n, &|name| name.to_ascii_lowercase().starts_with("scb")),
-                            Some(_) => model::convert_filtered(&n, &|name| !name.to_ascii_lowercase().starts_with("scb")),
-                            None => model::convert(&n),
-                        };
-                        for mesh in &m.meshes {
-                            log::trace!("mesh in {p}: {:?}", mesh.material);
+                let (file, variant) = p
+                    .split_once('#')
+                    .map_or((p.as_str(), None), |(f, v)| (f, Some(v)));
+                let m = vfs
+                    .read(file)
+                    .and_then(|data| match nif::Nif::parse(&data) {
+                        Ok(n) => {
+                            col = crate::physics::shapes::from_nif(&n);
+                            furn = furniture_markers(&n);
+                            let m = match variant {
+                                Some("scb") => model::convert_filtered(&n, &|name| {
+                                    name.to_ascii_lowercase().starts_with("scb")
+                                }),
+                                Some(_) => model::convert_filtered(&n, &|name| {
+                                    !name.to_ascii_lowercase().starts_with("scb")
+                                }),
+                                None => model::convert(&n),
+                            };
+                            for mesh in &m.meshes {
+                                log::trace!("mesh in {p}: {:?}", mesh.material);
+                            }
+                            Some(m)
                         }
-                        Some(m)
-                    }
-                    Err(e) => {
-                        log::warn!("{p}: {e}");
-                        None
-                    }
-                });
+                        Err(e) => {
+                            log::warn!("{p}: {e}");
+                            None
+                        }
+                    });
                 if m.is_none() {
                     log::debug!("model not found or unreadable: {p}");
                 }
@@ -113,8 +131,16 @@ impl ModelCache {
         let mut tex: HashSet<String> = HashSet::new();
         for (_, m, _, _) in &cpu {
             if let Some(m) = m {
-                let parts = m.animated.iter().flat_map(|a| a.model.meshes.iter().map(|x| &x.material));
-                let mats = m.meshes.iter().map(|x| &x.material).chain(m.skinned.iter().map(|x| &x.material)).chain(parts);
+                let parts = m
+                    .animated
+                    .iter()
+                    .flat_map(|a| a.model.meshes.iter().map(|x| &x.material));
+                let mats = m
+                    .meshes
+                    .iter()
+                    .map(|x| &x.material)
+                    .chain(m.skinned.iter().map(|x| &x.material))
+                    .chain(parts);
                 for mat in mats {
                     for t in [&mat.diffuse, &mat.normal, &mat.glow].into_iter().flatten() {
                         if !renderer.textures.contains(t) {
@@ -137,17 +163,25 @@ impl ModelCache {
                     .map(|a| {
                         let mut g = renderer.upload_model(&a.model);
                         g.path = format!("{p}#{}", a.node);
-                        AnimPart { node: a.node, parent: a.parent, rest: a.rest, model: Arc::new(g) }
+                        AnimPart {
+                            node: a.node,
+                            parent: a.parent,
+                            rest: a.rest,
+                            model: Arc::new(g),
+                        }
                     })
                     .collect();
                 let sequences = std::mem::take(&mut cpu.sequences);
-                self.anims.insert(p.clone(), Arc::new(ModelAnim { parts, sequences }));
+                self.anims
+                    .insert(p.clone(), Arc::new(ModelAnim { parts, sequences }));
             }
-            let g = m.filter(|m| !m.meshes.is_empty() || !m.skinned.is_empty()).map(|m| {
-                let mut g = renderer.upload_model(&m);
-                g.path = p.clone();
-                Arc::new(g)
-            });
+            let g = m
+                .filter(|m| !m.meshes.is_empty() || !m.skinned.is_empty())
+                .map(|m| {
+                    let mut g = renderer.upload_model(&m);
+                    g.path = p.clone();
+                    Arc::new(g)
+                });
             self.map.insert(p, g);
         }
         log::info!(
@@ -166,7 +200,14 @@ pub fn load_textures(renderer: &mut Renderer, vfs: &vfs::Vfs, paths: Vec<String>
         .map(|p| {
             let d = vfs.read(&p).and_then(|data| match dds::parse(&data) {
                 Ok(d) => {
-                    log::trace!("texture {p}: {:?} {}x{} mips {} layers {}", d.format, d.width, d.height, d.mips, d.layers);
+                    log::trace!(
+                        "texture {p}: {:?} {}x{} mips {} layers {}",
+                        d.format,
+                        d.width,
+                        d.height,
+                        d.mips,
+                        d.layers
+                    );
                     Some(d)
                 }
                 Err(e) => {

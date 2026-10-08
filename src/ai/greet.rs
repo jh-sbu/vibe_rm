@@ -20,7 +20,10 @@ const COOLDOWN: f32 = 10.0;
 /// Within this much beyond the force greet distance counts as there.
 const SLACK: f32 = 48.0;
 /// The templates' own trigger location: within 500 units of the greeter.
-const DEFAULT_TRIGGER: Location = Location { kind: LocationKind::NearCurrent, radius: 500.0 };
+const DEFAULT_TRIGGER: Location = Location {
+    kind: LocationKind::NearCurrent,
+    radius: 500.0,
+};
 
 impl Engine {
     /// Decide which force greeters go up to the player, and greet those there
@@ -31,7 +34,11 @@ impl Engine {
         let mut checks: Vec<(FormId, ForceGreet)> = Vec::new();
         let mut ready: Vec<(FormId, ForceGreet)> = Vec::new();
         for a in self.cells.values_mut().flat_map(|rt| rt.actors.iter_mut()) {
-            let Some(g) = a.current.and_then(|i| a.packages.get(i)).and_then(|p| p.greet) else {
+            let Some(g) = a
+                .current
+                .and_then(|i| a.packages.get(i))
+                .and_then(|p| p.greet)
+            else {
                 a.greeting = false;
                 continue;
             };
@@ -41,7 +48,8 @@ impl Engine {
             }
             a.greet_wait = (a.greet_wait - dt).max(0.0);
             a.greet_check -= dt;
-            let close = g.seated || a.pos.truncate().distance(player.truncate()) <= g.distance + SLACK;
+            let close =
+                g.seated || a.pos.truncate().distance(player.truncate()) <= g.distance + SLACK;
             if a.greeting && close {
                 ready.push((a.ref_id, g));
             } else if a.greet_check <= 0.0 {
@@ -54,7 +62,14 @@ impl Engine {
             if let Some(a) = self.actor_mut(r)
                 && a.greeting != due
             {
-                log::debug!("{r} {} the player", if due { "sets off to greet" } else { "stops going to greet" });
+                log::debug!(
+                    "{r} {} the player",
+                    if due {
+                        "sets off to greet"
+                    } else {
+                        "stops going to greet"
+                    }
+                );
                 a.greeting = due;
                 // Choose the goal for it now.
                 a.next_eval = 0.0;
@@ -71,7 +86,11 @@ impl Engine {
                 }
                 continue;
             };
-            log::info!("{r} force greets the player ({} {})", greeting.0.editor_id, greeting.1.id);
+            log::info!(
+                "{r} force greets the player ({} {})",
+                greeting.0.editor_id,
+                greeting.1.id
+            );
             if let Some(a) = self.actor_mut(r) {
                 a.greeting = false;
                 a.greet_wait = COOLDOWN;
@@ -86,14 +105,27 @@ impl Engine {
 
     /// Whether `r` should greet the player now: the line it would open with.
     fn force_greet_due(&mut self, r: FormId, g: &ForceGreet) -> Option<(Topic, Info)> {
-        if self.conversation.is_some() || self.menu.is_some() || self.player_dead() || !self.ai_enabled {
+        if self.conversation.is_some()
+            || self.menu.is_some()
+            || self.player_dead()
+            || !self.ai_enabled
+        {
             return None;
         }
         let a = self.actor_ref(r)?;
-        if a.dead || a.bleeding.is_some() || a.combat.is_some() || a.search.is_some() || a.exiting.is_some() || a.greet_wait > 0.0 {
+        if a.dead
+            || a.bleeding.is_some()
+            || a.combat.is_some()
+            || a.search.is_some()
+            || a.exiting.is_some()
+            || a.greet_wait > 0.0
+        {
             return None;
         }
-        let quest = a.current.and_then(|i| a.packages.get(i)).and_then(|p| p.quest);
+        let quest = a
+            .current
+            .and_then(|i| a.packages.get(i))
+            .and_then(|p| p.quest);
         let (centre, radius) = self.location_target(a, g.trigger.unwrap_or(DEFAULT_TRIGGER), quest);
         let player = self.player_feet();
         if player.distance(centre) > radius {
@@ -120,6 +152,7 @@ impl Engine {
 
     /// The player's feet.
     pub(crate) fn player_feet(&self) -> Vec3 {
-        self.player.position - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius)
+        self.player.position
+            - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius)
     }
 }

@@ -132,7 +132,11 @@ pub fn parse(d: &[u8]) -> Result<Dds> {
             Format::Rgba8
         }
     } else if bit_count == 24 {
-        convert = if rmask == 0x00FF_0000 { Conv::Bgr } else { Conv::Rgb };
+        convert = if rmask == 0x00FF_0000 {
+            Conv::Bgr
+        } else {
+            Conv::Rgb
+        };
         Format::Rgba8
     } else if bit_count == 8 {
         convert = Conv::R8;
@@ -141,7 +145,15 @@ pub fn parse(d: &[u8]) -> Result<Dds> {
         bail!("unsupported uncompressed DDS ({bit_count} bpp, flags {pf_flags:#x})");
     };
 
-    let mut dds = Dds { width, height, mips, layers, cube, format, data: Vec::new() };
+    let mut dds = Dds {
+        width,
+        height,
+        mips,
+        layers,
+        cube,
+        format,
+        data: Vec::new(),
+    };
     let src_bpp = |level: u32| -> usize {
         let (w, h) = ((width >> level).max(1), (height >> level).max(1));
         match convert.src_bytes_per_pixel() {

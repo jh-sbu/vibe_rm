@@ -6,12 +6,21 @@ use crate::engine::{Engine, Location};
 
 pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     let mut parts = line.split_whitespace();
-    let Some(cmd) = parts.next() else { return Vec::new() };
+    let Some(cmd) = parts.next() else {
+        return Vec::new();
+    };
     let args: Vec<&str> = parts.collect();
     let lower = cmd.to_ascii_lowercase();
     // `<ref>.command` (`player.additem f 100`) acts on that reference.
-    if let Some((target, sub)) = lower.split_once('.').filter(|(_, sub)| ITEM_COMMANDS.contains(sub)) {
-        let r = if target == "player" { Some(crate::engine::PLAYER_REF) } else { engine.resolve_form(target) };
+    if let Some((target, sub)) = lower
+        .split_once('.')
+        .filter(|(_, sub)| ITEM_COMMANDS.contains(sub))
+    {
+        let r = if target == "player" {
+            Some(crate::engine::PLAYER_REF)
+        } else {
+            engine.resolve_form(target)
+        };
         return match r {
             Some(r) => item_command(engine, r, sub, &args),
             None => vec![format!("unknown reference '{target}'")],
@@ -483,39 +492,86 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
 }
 
 const ITEM_COMMANDS: [&str; 23] = [
-    "setcrimegold", "paycrimegold", "getrelationshiprank", "setrelationshiprank", "moveto", "enable", "disable", "placeatme", "additem", "removeitem", "showinventory", "inv", "openactorcontainer", "drawweapon", "sheatheweapon", "equipitem", "unequipitem",
-    "getav", "setav", "modav", "forceav", "damageav", "restoreav",
+    "setcrimegold",
+    "paycrimegold",
+    "getrelationshiprank",
+    "setrelationshiprank",
+    "moveto",
+    "enable",
+    "disable",
+    "placeatme",
+    "additem",
+    "removeitem",
+    "showinventory",
+    "inv",
+    "openactorcontainer",
+    "drawweapon",
+    "sheatheweapon",
+    "equipitem",
+    "unequipitem",
+    "getav",
+    "setav",
+    "modav",
+    "forceav",
+    "damageav",
+    "restoreav",
 ];
 
 /// Inventory and actor value commands on a reference (the player when none is given).
 fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -> Vec<String> {
     match cmd {
         "setcrimegold" => {
-            let Some(n) = args.first().and_then(|x| x.parse::<i32>().ok()) else { return vec!["usage: player.setcrimegold <amount> [faction] [violent 0/1]".into()] };
-            let Some(f) = args.get(1).and_then(|a| engine.resolve_form(a)).or_else(|| engine.location_crime_faction()) else { return vec!["no crime faction here; name one".into()] };
+            let Some(n) = args.first().and_then(|x| x.parse::<i32>().ok()) else {
+                return vec!["usage: player.setcrimegold <amount> [faction] [violent 0/1]".into()];
+            };
+            let Some(f) = args
+                .get(1)
+                .and_then(|a| engine.resolve_form(a))
+                .or_else(|| engine.location_crime_faction())
+            else {
+                return vec!["no crime faction here; name one".into()];
+            };
             engine.set_crime_gold(f, n, args.get(2).is_some_and(|v| *v == "1"));
             engine.describe_bounties()
         }
         "paycrimegold" => {
             let flag = |i: usize| args.get(i).is_none_or(|v| *v != "0");
-            let Some(f) = args.get(2).and_then(|a| engine.resolve_form(a)).or_else(|| engine.location_crime_faction()) else { return vec!["no crime faction here; name one".into()] };
+            let Some(f) = args
+                .get(2)
+                .and_then(|a| engine.resolve_form(a))
+                .or_else(|| engine.location_crime_faction())
+            else {
+                return vec!["no crime faction here; name one".into()];
+            };
             let paid = engine.pay_crime_gold(f, flag(0), flag(1));
             vec![format!("paid {paid} gold to {}", engine.form_name(f))]
         }
         "getrelationshiprank" | "setrelationshiprank" => {
-            let Some(other) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: [ref.]{cmd} <actor> [rank]")] };
+            let Some(other) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec![format!("usage: [ref.]{cmd} <actor> [rank]")];
+            };
             if cmd == "setrelationshiprank" {
-                let Some(rank) = args.get(1).and_then(|x| x.parse::<i32>().ok()) else { return vec!["usage: [ref.]setrelationshiprank <actor> <rank -4..4>".into()] };
+                let Some(rank) = args.get(1).and_then(|x| x.parse::<i32>().ok()) else {
+                    return vec!["usage: [ref.]setrelationshiprank <actor> <rank -4..4>".into()];
+                };
                 engine.set_relationship_rank(r, other, rank);
             }
-            vec![format!("{r} / {other}: rank {}", engine.relationship_rank(r, other))]
+            vec![format!(
+                "{r} / {other}: rank {}",
+                engine.relationship_rank(r, other)
+            )]
         }
         "getav" => {
-            let Some(i) = args.first().and_then(|n| esp::actor_value::index(n)) else { return vec!["usage: [ref.]getav <actor value>".into()] };
+            let Some(i) = args.first().and_then(|n| esp::actor_value::index(n)) else {
+                return vec!["usage: [ref.]getav <actor value>".into()];
+            };
             vec![format!("{r}: {}", engine.describe_actor_value(r, i))]
         }
         "setav" | "modav" | "forceav" | "damageav" | "restoreav" => {
-            let (Some(i), Some(x)) = (args.first().and_then(|n| esp::actor_value::index(n)), args.get(1).and_then(|x| x.parse::<f32>().ok())) else {
+            let (Some(i), Some(x)) = (
+                args.first().and_then(|n| esp::actor_value::index(n)),
+                args.get(1).and_then(|x| x.parse::<f32>().ok()),
+            ) else {
                 return vec![format!("usage: [ref.]{cmd} <actor value> <amount>")];
             };
             match cmd {
@@ -528,22 +584,41 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             vec![format!("{r}: {}", engine.describe_actor_value(r, i))]
         }
         "moveto" => {
-            let Some(t) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec!["usage: [ref.]moveto <target ref>".into()] };
-            let Some(p) = engine.ref_position(t) else { return vec![format!("{t} has no position")] };
+            let Some(t) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec!["usage: [ref.]moveto <target ref>".into()];
+            };
+            let Some(p) = engine.ref_position(t) else {
+                return vec![format!("{t} has no position")];
+            };
             let rot = engine.ref_rotation(t);
-            if engine.move_ref(r, t, p, rot) { vec![format!("{r} moved to {t}")] } else { vec![format!("can't move {r}")] }
+            if engine.move_ref(r, t, p, rot) {
+                vec![format!("{r} moved to {t}")]
+            } else {
+                vec![format!("can't move {r}")]
+            }
         }
         "enable" | "disable" => {
             engine.set_disabled(r, cmd == "disable");
             vec![format!("{r} {cmd}d")]
         }
         "placeatme" => {
-            let Some(base) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec!["usage: [ref.]placeatme <form> [count]".into()] };
+            let Some(base) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec!["usage: [ref.]placeatme <form> [count]".into()];
+            };
             let n = args.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
-            (0..n).map(|_| engine.create_ref(base, r, false).map_or_else(|| format!("can't place {base} at {r}"), |m| format!("placed {m} ({base}) at {r}"))).collect()
+            (0..n)
+                .map(|_| {
+                    engine.create_ref(base, r, false).map_or_else(
+                        || format!("can't place {base} at {r}"),
+                        |m| format!("placed {m} ({base}) at {r}"),
+                    )
+                })
+                .collect()
         }
         "additem" | "removeitem" => {
-            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: {cmd} <item> [count]")] };
+            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec![format!("usage: {cmd} <item> [count]")];
+            };
             let n = args.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
             if cmd == "additem" {
                 engine.add_item(r, item, n);
@@ -554,7 +629,9 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             }
         }
         "equipitem" | "unequipitem" => {
-            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec![format!("usage: {cmd} <item>")] };
+            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec![format!("usage: {cmd} <item>")];
+            };
             if r != crate::engine::PLAYER_REF {
                 return vec!["only the player's equipment can be changed for now".into()];
             }
@@ -562,14 +639,23 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             match engine.equip_item(r, item, on) {
                 Ok(()) => {
                     let p = engine.protection(r);
-                    vec![format!("{r}: {cmd} {item}; armor {:.0} ({} pieces), blows {:.0}% weaker", p.rating, p.pieces, p.reduction * 100.0)]
+                    vec![format!(
+                        "{r}: {cmd} {item}; armor {:.0} ({} pieces), blows {:.0}% weaker",
+                        p.rating,
+                        p.pieces,
+                        p.reduction * 100.0
+                    )]
                 }
                 Err(e) => vec![e],
             }
         }
         "drawweapon" | "sheatheweapon" => {
             let draw = cmd == "drawweapon";
-            if engine.draw_weapon(r, draw) { vec![format!("{r}: {cmd}")] } else { vec![format!("{r} can't {cmd}")] }
+            if engine.draw_weapon(r, draw) {
+                vec![format!("{r}: {cmd}")]
+            } else {
+                vec![format!("{r} can't {cmd}")]
+            }
         }
         "openactorcontainer" => {
             engine.menu = Some(crate::items::Menu::Container(r));
@@ -577,9 +663,29 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
         }
         _ => {
             let items = engine.listed_inventory(r);
-            let equipped = engine.inventories.get(&r).map(|i| i.equipped.clone()).unwrap_or_default();
-            let mut out: Vec<String> =
-                items.iter().map(|x| format!("{:5} {} ({}){}{}", x.count, x.info.name, x.item, if equipped.contains(&x.item) { " [equipped]" } else { "" }, x.owner.map_or(String::new(), |o| format!(" [stolen from {o}]")))).collect();
+            let equipped = engine
+                .inventories
+                .get(&r)
+                .map(|i| i.equipped.clone())
+                .unwrap_or_default();
+            let mut out: Vec<String> = items
+                .iter()
+                .map(|x| {
+                    format!(
+                        "{:5} {} ({}){}{}",
+                        x.count,
+                        x.info.name,
+                        x.item,
+                        if equipped.contains(&x.item) {
+                            " [equipped]"
+                        } else {
+                            ""
+                        },
+                        x.owner
+                            .map_or(String::new(), |o| format!(" [stolen from {o}]"))
+                    )
+                })
+                .collect();
             if out.is_empty() {
                 out.push(format!("{r} carries nothing"));
             }

@@ -50,7 +50,9 @@ impl Mixer {
                 let att = if d <= v.min_dist {
                     1.0
                 } else {
-                    (1.0 - (d - v.min_dist) / (v.max_dist - v.min_dist).max(1.0)).clamp(0.0, 1.0).powi(2)
+                    (1.0 - (d - v.min_dist) / (v.max_dist - v.min_dist).max(1.0))
+                        .clamp(0.0, 1.0)
+                        .powi(2)
                 };
                 let pan = ((p - listener).normalize_or_zero().dot(right)).clamp(-1.0, 1.0);
                 gl *= att * (1.0 - pan.max(0.0) * 0.6);
@@ -79,7 +81,8 @@ impl Mixer {
                 v.pos += step;
             }
         }
-        self.voices.retain(|v| v.looping || (v.pos as usize) < v.clip.frames());
+        self.voices
+            .retain(|v| v.looping || (v.pos as usize) < v.clip.frames());
         for s in out.iter_mut() {
             *s = (*s * self.master).clamp(-1.0, 1.0);
         }
@@ -87,7 +90,14 @@ impl Mixer {
 }
 
 enum Pending {
-    Play { id: VoiceId, volume: f32, looping: bool, at: Option<Vec3>, min_dist: f32, max_dist: f32 },
+    Play {
+        id: VoiceId,
+        volume: f32,
+        looping: bool,
+        at: Option<Vec3>,
+        min_dist: f32,
+        max_dist: f32,
+    },
 }
 
 pub struct Audio {
@@ -104,7 +114,13 @@ pub struct Audio {
 impl Audio {
     /// Open the default output device. Returns a silent instance if none is available.
     pub fn new() -> Audio {
-        let mixer = Arc::new(Mutex::new(Mixer { voices: Vec::new(), listener: Vec3::ZERO, listener_right: Vec3::X, rate: 44100, master: 0.8 }));
+        let mixer = Arc::new(Mutex::new(Mixer {
+            voices: Vec::new(),
+            listener: Vec3::ZERO,
+            listener_right: Vec3::X,
+            rate: 44100,
+            master: 0.8,
+        }));
         let mut rate = 44100;
         let stream = (|| -> Option<cpal::Stream> {
             // Prefer PulseAudio (also served by PipeWire), then the platform default.
@@ -115,7 +131,9 @@ impl Audio {
                 .filter(|h| format!("{h:?}").to_ascii_lowercase().contains("pulse"))
                 .find_map(|h| cpal::host_from_id(*h).ok())
                 .unwrap_or_else(cpal::default_host);
-            let device = host.default_output_device().or_else(|| cpal::default_host().default_output_device())?;
+            let device = host
+                .default_output_device()
+                .or_else(|| cpal::default_host().default_output_device())?;
             let cfg = device.default_output_config().ok()?;
             rate = cfg.sample_rate();
             let channels = cfg.channels() as usize;
@@ -175,7 +193,16 @@ impl Audio {
                 }
             })
             .expect("spawn decoder thread");
-        Audio { _stream: stream, mixer, rate, cache: HashMap::new(), waiting: HashMap::new(), req_tx, res_rx, next_id: 1 }
+        Audio {
+            _stream: stream,
+            mixer,
+            rate,
+            cache: HashMap::new(),
+            waiting: HashMap::new(),
+            req_tx,
+            res_rx,
+            next_id: 1,
+        }
     }
 
     pub fn set_listener(&self, pos: Vec3, right: Vec3) {
@@ -206,7 +233,14 @@ impl Audio {
         let key = vfs::normalize_path(path);
         let id = VoiceId(self.next_id);
         self.next_id += 1;
-        let p = Pending::Play { id, volume, looping, at, min_dist, max_dist };
+        let p = Pending::Play {
+            id,
+            volume,
+            looping,
+            at,
+            min_dist,
+            max_dist,
+        };
         match self.cache.get(&key) {
             Some(Some(clip)) => {
                 let clip = clip.clone();
@@ -225,9 +259,25 @@ impl Audio {
     }
 
     fn start(&self, clip: Arc<Clip>, p: Pending) {
-        let Pending::Play { id, volume, looping, at, min_dist, max_dist } = p;
+        let Pending::Play {
+            id,
+            volume,
+            looping,
+            at,
+            min_dist,
+            max_dist,
+        } = p;
         if let Ok(mut m) = self.mixer.lock() {
-            m.voices.push(Voice { id, clip, pos: 0.0, volume, looping, at, min_dist, max_dist });
+            m.voices.push(Voice {
+                id,
+                clip,
+                pos: 0.0,
+                volume,
+                looping,
+                at,
+                min_dist,
+                max_dist,
+            });
         }
     }
 
@@ -245,13 +295,23 @@ impl Audio {
     }
 
     pub fn is_playing(&self, id: VoiceId) -> bool {
-        self.waiting.values().flatten().any(|p| matches!(p, Pending::Play { id: i, .. } if *i == id))
-            || self.mixer.lock().map(|m| m.voices.iter().any(|v| v.id == id)).unwrap_or(false)
+        self.waiting
+            .values()
+            .flatten()
+            .any(|p| matches!(p, Pending::Play { id: i, .. } if *i == id))
+            || self
+                .mixer
+                .lock()
+                .map(|m| m.voices.iter().any(|v| v.id == id))
+                .unwrap_or(false)
     }
 
     /// Duration of a decoded clip, if known.
     pub fn clip_duration(&self, path: &str) -> Option<f32> {
-        self.cache.get(&vfs::normalize_path(path)).and_then(|c| c.as_ref()).map(|c| c.duration())
+        self.cache
+            .get(&vfs::normalize_path(path))
+            .and_then(|c| c.as_ref())
+            .map(|c| c.duration())
     }
 
     /// Collect finished decodes and start waiting voices.

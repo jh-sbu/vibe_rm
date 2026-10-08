@@ -11,7 +11,11 @@ pub struct Ref(pub i32);
 
 impl Ref {
     pub fn index(self) -> Option<usize> {
-        if self.0 >= 0 { Some(self.0 as usize) } else { None }
+        if self.0 >= 0 {
+            Some(self.0 as usize)
+        } else {
+            None
+        }
     }
     pub fn is_none(self) -> bool {
         self.0 < 0
@@ -31,7 +35,11 @@ pub struct Transform {
 
 impl Default for Transform {
     fn default() -> Self {
-        Transform { translation: Vec3::ZERO, rotation: Mat3::IDENTITY, scale: 1.0 }
+        Transform {
+            translation: Vec3::ZERO,
+            rotation: Mat3::IDENTITY,
+            scale: 1.0,
+        }
     }
 }
 
@@ -75,8 +83,12 @@ pub enum NodeKind {
     Value,
     Tree,
     /// Only one child is visible: the one at `index`.
-    Switch { index: u32 },
-    Billboard { mode: u16 },
+    Switch {
+        index: u32,
+    },
+    Billboard {
+        mode: u16,
+    },
     /// BSRangeNode family (BSBlastNode, BSDamageStage, BSDebrisNode).
     Range,
     Lod,
@@ -368,25 +380,59 @@ fn object_net(r: &mut Reader, lighting_shader: bool) -> Result<(u32, ObjectNet)>
     let name = r.string_value()?;
     let extra_data = r.ref_list()?;
     let controller = r.block_ref()?;
-    Ok((shader_type, ObjectNet { name, extra_data, controller }))
+    Ok((
+        shader_type,
+        ObjectNet {
+            name,
+            extra_data,
+            controller,
+        },
+    ))
 }
 
 fn av_object(r: &mut Reader) -> Result<AvObject> {
     let (_, net) = object_net(r, false)?;
-    let flags = if r.bs_version > 26 { r.u32()? } else { r.u16()? as u32 };
+    let flags = if r.bs_version > 26 {
+        r.u32()?
+    } else {
+        r.u16()? as u32
+    };
     let translation = r.vec3()?;
     let rotation = r.mat3()?;
     let scale = r.f32()?;
-    let properties = if r.bs_version <= 34 { r.ref_list()? } else { Vec::new() };
+    let properties = if r.bs_version <= 34 {
+        r.ref_list()?
+    } else {
+        Vec::new()
+    };
     let collision = r.block_ref()?;
-    Ok(AvObject { net, flags, transform: Transform { translation, rotation, scale }, properties, collision })
+    Ok(AvObject {
+        net,
+        flags,
+        transform: Transform {
+            translation,
+            rotation,
+            scale,
+        },
+        properties,
+        collision,
+    })
 }
 
 fn node(r: &mut Reader, kind: NodeKind) -> Result<Node> {
     let av = av_object(r)?;
     let children = r.ref_list()?;
-    let effects = if r.bs_version < 130 { r.ref_list()? } else { Vec::new() };
-    Ok(Node { av, kind, children, effects })
+    let effects = if r.bs_version < 130 {
+        r.ref_list()?
+    } else {
+        Vec::new()
+    };
+    Ok(Node {
+        av,
+        kind,
+        children,
+        effects,
+    })
 }
 
 fn bs_tri_shape(r: &mut Reader, ty: &str) -> Result<TriShape> {
@@ -400,7 +446,11 @@ fn bs_tri_shape(r: &mut Reader, ty: &str) -> Result<TriShape> {
     let shader = r.block_ref()?;
     let alpha = r.block_ref()?;
     let vertex_desc = r.u64()?;
-    let num_triangles = if r.bs_version >= 130 { r.u32()? as usize } else { r.u16()? as usize };
+    let num_triangles = if r.bs_version >= 130 {
+        r.u32()? as usize
+    } else {
+        r.u16()? as usize
+    };
     let num_vertices = r.u16()? as usize;
     let data_size = r.u32()? as usize;
     let mut geometry = Geometry::default();
@@ -446,11 +496,26 @@ fn bs_tri_shape(r: &mut Reader, ty: &str) -> Result<TriShape> {
         }
         _ => {}
     }
-    Ok(TriShape { av, bound_center, bound_radius, skin, shader, alpha, vertex_desc, geometry, dynamic })
+    Ok(TriShape {
+        av,
+        bound_center,
+        bound_radius,
+        skin,
+        shader,
+        alpha,
+        vertex_desc,
+        geometry,
+        dynamic,
+    })
 }
 
 /// Decode packed `BSVertexData` (SSE layout; also used for the skin partition copy).
-pub(crate) fn read_vertex_data(r: &mut Reader, desc: u64, n: usize, g: &mut Geometry) -> Result<()> {
+pub(crate) fn read_vertex_data(
+    r: &mut Reader,
+    desc: u64,
+    n: usize,
+    g: &mut Geometry,
+) -> Result<()> {
     let stride = ((desc & 0xF) * 4) as usize;
     let flags = ((desc >> 44) & 0xFFF) as u16;
     let off = |shift: u32| (((desc >> shift) & 0xF) * 4) as usize;
@@ -477,10 +542,12 @@ pub(crate) fn read_vertex_data(r: &mut Reader, desc: u64, n: usize, g: &mut Geom
             g.uvs.push(Vec2::new(h(v, uv_off), h(v, uv_off + 2)));
         }
         if has(vf::NORMAL) {
-            g.normals.push(Vec3::new(nb(v[n_off]), nb(v[n_off + 1]), nb(v[n_off + 2])));
+            g.normals
+                .push(Vec3::new(nb(v[n_off]), nb(v[n_off + 1]), nb(v[n_off + 2])));
             bitangent.y = nb(v[n_off + 3]);
             if has(vf::TANGENT) {
-                g.tangents.push(Vec3::new(nb(v[t_off]), nb(v[t_off + 1]), nb(v[t_off + 2])));
+                g.tangents
+                    .push(Vec3::new(nb(v[t_off]), nb(v[t_off + 1]), nb(v[t_off + 2])));
                 bitangent.z = nb(v[t_off + 3]);
                 g.bitangents.push(bitangent);
             }
@@ -494,8 +561,14 @@ pub(crate) fn read_vertex_data(r: &mut Reader, desc: u64, n: usize, g: &mut Geom
             ));
         }
         if has(vf::SKINNED) {
-            g.bone_weights.push([h(v, s_off), h(v, s_off + 2), h(v, s_off + 4), h(v, s_off + 6)]);
-            g.bone_indices.push([v[s_off + 8], v[s_off + 9], v[s_off + 10], v[s_off + 11]]);
+            g.bone_weights.push([
+                h(v, s_off),
+                h(v, s_off + 2),
+                h(v, s_off + 4),
+                h(v, s_off + 6),
+            ]);
+            g.bone_indices
+                .push([v[s_off + 8], v[s_off + 9], v[s_off + 10], v[s_off + 11]]);
         }
     }
     Ok(())
@@ -514,7 +587,13 @@ fn ni_geometry(r: &mut Reader) -> Result<NiGeometry> {
     } else {
         (Ref(-1), Ref(-1))
     };
-    Ok(NiGeometry { av, data, skin, shader, alpha })
+    Ok(NiGeometry {
+        av,
+        data,
+        skin,
+        shader,
+        alpha,
+    })
 }
 
 fn geometry_data(r: &mut Reader) -> Result<(Geometry, Vec3, f32)> {
@@ -553,7 +632,11 @@ fn geometry_data(r: &mut Reader) -> Result<(Geometry, Vec3, f32)> {
             g.colors.push(r.vec4()?);
         }
     }
-    let num_uv = if r.bs_version > 0 { vector_flags & 1 } else { vector_flags & 0x3F };
+    let num_uv = if r.bs_version > 0 {
+        vector_flags & 1
+    } else {
+        vector_flags & 0x3F
+    };
     for set in 0..num_uv {
         for _ in 0..n {
             let uv = r.vec2()?;
@@ -581,7 +664,11 @@ fn tri_shape_data(r: &mut Reader) -> Result<TriShapeData> {
         let c = r.u16()? as usize;
         r.skip(c * 2)?;
     }
-    Ok(TriShapeData { geometry, center, radius })
+    Ok(TriShapeData {
+        geometry,
+        center,
+        radius,
+    })
 }
 
 fn tri_strips_data(r: &mut Reader) -> Result<TriShapeData> {
@@ -603,11 +690,17 @@ fn tri_strips_data(r: &mut Reader) -> Result<TriShapeData> {
                 if a == b || b == c || a == c {
                     continue;
                 }
-                geometry.triangles.push(if i % 2 == 0 { [a, b, c] } else { [a, c, b] });
+                geometry
+                    .triangles
+                    .push(if i % 2 == 0 { [a, b, c] } else { [a, c, b] });
             }
         }
     }
-    Ok(TriShapeData { geometry, center, radius })
+    Ok(TriShapeData {
+        geometry,
+        center,
+        radius,
+    })
 }
 
 fn lighting_shader(r: &mut Reader) -> Result<LightingShader> {
@@ -702,9 +795,7 @@ fn effect_shader(r: &mut Reader) -> Result<EffectShader> {
 
 pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
     let node_kind = match ty {
-        "NiNode" | "BSFaceGenNiNode" | "NiBone" | "AvoidNode" => {
-            Some(NodeKind::Plain)
-        }
+        "NiNode" | "BSFaceGenNiNode" | "NiBone" | "AvoidNode" => Some(NodeKind::Plain),
         "BSFadeNode" => Some(NodeKind::Fade),
         "BSLeafAnimNode" => Some(NodeKind::LeafAnim),
         "RootCollisionNode" => Some(NodeKind::RootCollision),
@@ -776,7 +867,9 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             r.skip(12)?;
             Block::NiTriShape(g)
         }
-        "BSTriShape" | "BSDynamicTriShape" | "BSMeshLODTriShape" | "BSSubIndexTriShape" => Block::TriShape(bs_tri_shape(r, ty)?),
+        "BSTriShape" | "BSDynamicTriShape" | "BSMeshLODTriShape" | "BSSubIndexTriShape" => {
+            Block::TriShape(bs_tri_shape(r, ty)?)
+        }
         "NiTriShape" => Block::NiTriShape(ni_geometry(r)?),
         "NiTriStrips" => Block::NiTriStrips(ni_geometry(r)?),
         "NiTriShapeData" => Block::TriShapeData(tri_shape_data(r)?),
@@ -795,7 +888,11 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             let (_, net) = object_net(r, false)?;
             let flags = r.u16()?;
             let threshold = r.u8()?;
-            Block::Alpha(AlphaProperty { net, flags, threshold })
+            Block::Alpha(AlphaProperty {
+                net,
+                flags,
+                threshold,
+            })
         }
         "NiStringExtraData" => {
             let name = r.string_value()?;
@@ -820,7 +917,12 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
                 let heading = r.f32()?;
                 let anim_type = r.u16()?;
                 let entry = r.u16()?;
-                v.push(FurnitureMarker { offset, heading, anim_type, entry });
+                v.push(FurnitureMarker {
+                    offset,
+                    heading,
+                    anim_type,
+                    entry,
+                });
             }
             Block::ExtraData(ExtraData::Furniture(v))
         }
@@ -829,9 +931,15 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             crate::anim::multi_target_transform_controller(r)?;
             Block::Unknown(ty.into())
         }
-        "NiControllerSequence" => Block::ControllerSequence(Box::new(crate::anim::controller_sequence(r)?)),
-        "NiTransformInterpolator" => Block::TransformInterpolator(crate::anim::transform_interpolator(r)?),
-        "NiTransformData" | "NiKeyframeData" => Block::TransformData(Box::new(crate::anim::transform_data(r)?)),
+        "NiControllerSequence" => {
+            Block::ControllerSequence(Box::new(crate::anim::controller_sequence(r)?))
+        }
+        "NiTransformInterpolator" => {
+            Block::TransformInterpolator(crate::anim::transform_interpolator(r)?)
+        }
+        "NiTransformData" | "NiKeyframeData" => {
+            Block::TransformData(Box::new(crate::anim::transform_data(r)?))
+        }
         "NiTextKeyExtraData" => Block::TextKeys(crate::anim::text_key_extra_data(r)?),
         "NiDefaultAVObjectPalette" => {
             crate::anim::default_av_object_palette(r)?;
@@ -843,7 +951,10 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             let dimensions = r.vec3()?;
             Block::ExtraData(ExtraData::Bound { center, dimensions })
         }
-        "bhkCollisionObject" | "bhkSPCollisionObject" | "bhkBlendCollisionObject" | "bhkPCollisionObject" => {
+        "bhkCollisionObject"
+        | "bhkSPCollisionObject"
+        | "bhkBlendCollisionObject"
+        | "bhkPCollisionObject" => {
             let c = crate::collision::collision_object(r)?;
             if ty == "bhkBlendCollisionObject" {
                 r.skip(8)?; // heir gain, vel gain
@@ -856,8 +967,12 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
         "NiSkinPartition" => Block::SkinPartition(Box::new(crate::skin::skin_partition(r)?)),
         "bhkRigidBody" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, false)?)),
         "bhkRigidBodyT" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, true)?)),
-        "bhkRagdollConstraint" => Block::Constraint(Box::new(crate::collision::constraint(r, true)?)),
-        "bhkLimitedHingeConstraint" => Block::Constraint(Box::new(crate::collision::constraint(r, false)?)),
+        "bhkRagdollConstraint" => {
+            Block::Constraint(Box::new(crate::collision::constraint(r, true)?))
+        }
+        "bhkLimitedHingeConstraint" => {
+            Block::Constraint(Box::new(crate::collision::constraint(r, false)?))
+        }
         _ => match crate::collision::parse_shape(ty, r)? {
             Some(s) => Block::Shape(s),
             None => return Ok(None),

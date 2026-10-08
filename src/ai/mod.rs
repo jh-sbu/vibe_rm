@@ -82,7 +82,10 @@ impl Goal {
             behaviour: Behaviour::Travel,
             centre: to,
             radius: 0.0,
-            allow: Allow { wandering: false, ..package::Allow::default() },
+            allow: Allow {
+                wandering: false,
+                ..package::Allow::default()
+            },
             energy: 50.0,
             furniture: None,
             any_furniture: false,
@@ -110,7 +113,12 @@ pub struct PatrolPoint {
 enum State {
     Idle(f32),
     /// Following a path; `to_seat` when heading for the start of `ActorRuntime::seat`.
-    Walk { path: Vec<Vec3>, next: usize, budget: f32, to_seat: bool },
+    Walk {
+        path: Vec<Vec3>,
+        next: usize,
+        budget: f32,
+        to_seat: bool,
+    },
     /// At the start of the seat's enter animation, turning to face the right way.
     Approach(f32),
     /// Getting in: the graph plays the seat's enter animation (moving the actor by
@@ -148,8 +156,22 @@ impl Clips<'_> {
     /// for an actor of `project`.
     /// Furniture and idle markers are left with IdleChairExitStart / IdleStop,
     /// anim-object idles (standing eating, drinking) with AnimObjectIdleStop.
-    pub fn event(&mut self, event: &str, project: &ProjectRuntime, skeleton_path: &str, female: bool, skeleton: &Skeleton) -> Option<furniture::UseClips> {
-        self.event_with_exits(event, &["IdleChairExitStart", "AnimObjectIdleStop", "IdleStop"], project, skeleton_path, female, skeleton)
+    pub fn event(
+        &mut self,
+        event: &str,
+        project: &ProjectRuntime,
+        skeleton_path: &str,
+        female: bool,
+        skeleton: &Skeleton,
+    ) -> Option<furniture::UseClips> {
+        self.event_with_exits(
+            event,
+            &["IdleChairExitStart", "AnimObjectIdleStop", "IdleStop"],
+            project,
+            skeleton_path,
+            female,
+            skeleton,
+        )
     }
 
     /// Like [`Clips::event`], leaving through the first of behaviour events `exits`
@@ -168,13 +190,21 @@ impl Clips<'_> {
         let mut load = |c: &havok::behavior::PlayedClip| {
             crate::world::animation::project_clip_paths(&project.dir, &c.animation, female)
                 .iter()
-                .find_map(|p| self.anims.project_clip(self.vfs, p, skeleton_path, skeleton, c.speed, project))
+                .find_map(|p| {
+                    self.anims
+                        .project_clip(self.vfs, p, skeleton_path, skeleton, c.speed, project)
+                })
         };
         let (last, enter) = played.clips.split_last()?;
         let idle = load(last)?;
         let enter = enter.iter().map(&mut load).collect::<Option<Vec<_>>>()?;
         // The exit ends back in the default idle; only its one-shot clips matter.
-        let exit = played.exit.iter().filter(|c| c.mode == ClipMode::SinglePlay).filter_map(&mut load).collect();
+        let exit = played
+            .exit
+            .iter()
+            .filter(|c| c.mode == ClipMode::SinglePlay)
+            .filter_map(&mut load)
+            .collect();
         Some(furniture::UseClips {
             event: event.to_owned(),
             exits: exits.iter().map(|e| e.to_string()).collect(),
@@ -213,11 +243,19 @@ pub struct World<'a> {
 /// Signed angle (radians, -pi..pi) to turn from `heading` to face `dir`.
 fn angle_to(heading: f32, dir: Vec3) -> f32 {
     let d = (dir.x.atan2(dir.y) - heading).rem_euclid(std::f32::consts::TAU);
-    if d > std::f32::consts::PI { d - std::f32::consts::TAU } else { d }
+    if d > std::f32::consts::PI {
+        d - std::f32::consts::TAU
+    } else {
+        d
+    }
 }
 
 fn path_length(from: Vec3, path: &[Vec3]) -> f32 {
-    std::iter::once(&from).chain(path).zip(path).map(|(a, b)| a.distance(*b)).sum()
+    std::iter::once(&from)
+        .chain(path)
+        .zip(path)
+        .map(|(a, b)| a.distance(*b))
+        .sum()
 }
 
 fn uniform(rand: &mut dyn FnMut() -> u64, lo: f32, hi: f32) -> f32 {
@@ -361,7 +399,14 @@ pub struct ActorRuntime {
 }
 
 impl ActorRuntime {
-    pub fn new(ref_id: FormId, npc: FormId, skeleton: Arc<Skeleton>, transform: Mat4, packages: Vec<Package>, stagger: f32) -> Self {
+    pub fn new(
+        ref_id: FormId,
+        npc: FormId,
+        skeleton: Arc<Skeleton>,
+        transform: Mat4,
+        packages: Vec<Package>,
+        stagger: f32,
+    ) -> Self {
         let (scale, rot, pos) = transform.to_scale_rotation_translation();
         let f = rot * Vec3::Y;
         ActorRuntime {
@@ -450,7 +495,11 @@ impl ActorRuntime {
     }
 
     pub fn transform(&self) -> Mat4 {
-        Mat4::from_scale_rotation_translation(Vec3::splat(self.scale), Quat::from_rotation_z(-self.heading), self.pos)
+        Mat4::from_scale_rotation_translation(
+            Vec3::splat(self.scale),
+            Quat::from_rotation_z(-self.heading),
+            self.pos,
+        )
     }
 
     fn state_name(&self) -> &'static str {
@@ -475,13 +524,24 @@ impl ActorRuntime {
         if self.sneaking {
             return Gait::Sneak;
         }
-        let (walk, run) = self.moves.map_or_else(|| (self.walk_speed(), self.walk_speed() * 2.5), |(m, _)| (m.walk, m.run));
-        if self.speed > (walk + run) / 2.0 { Gait::Run } else { Gait::Walk }
+        let (walk, run) = self.moves.map_or_else(
+            || (self.walk_speed(), self.walk_speed() * 2.5),
+            |(m, _)| (m.walk, m.run),
+        );
+        if self.speed > (walk + run) / 2.0 {
+            Gait::Run
+        } else {
+            Gait::Walk
+        }
     }
 
     /// Walk to `at` to search there (its packages wait meanwhile).
     pub(crate) fn search_at(&mut self, at: Vec3, furniture: &mut FurnitureWorld) {
-        if !self.in_furniture() && self.goal.is_some_and(|g| g.behaviour == Behaviour::Travel && self.pinned) {
+        if !self.in_furniture()
+            && self
+                .goal
+                .is_some_and(|g| g.behaviour == Behaviour::Travel && self.pinned)
+        {
             self.goal = Some(Goal::travel(at));
             return;
         }
@@ -493,7 +553,10 @@ impl ActorRuntime {
     /// Run after `target` and stay close to it (a guard coming to arrest
     /// the player); its packages wait meanwhile.
     pub(crate) fn pursue(&mut self, target: FormId, furniture: &mut FurnitureWorld) {
-        let already = self.pinned && self.goal.is_some_and(|g| g.behaviour == Behaviour::Follow && g.target == Some(target));
+        let already = self.pinned
+            && self
+                .goal
+                .is_some_and(|g| g.behaviour == Behaviour::Follow && g.target == Some(target));
         if already {
             return;
         }
@@ -511,7 +574,10 @@ impl ActorRuntime {
 
     /// Stop pursuing: back to its packages.
     pub(crate) fn end_pursuit(&mut self) {
-        if self.pinned && self.search.is_none() && self.goal.is_some_and(|g| g.behaviour == Behaviour::Follow) {
+        if self.pinned
+            && self.search.is_none()
+            && self.goal.is_some_and(|g| g.behaviour == Behaviour::Follow)
+        {
             self.pinned = false;
             self.next_eval = 0.0;
         }
@@ -575,7 +641,9 @@ impl ActorRuntime {
     /// Standing: turn to whom it waits for once they are well off to one side,
     /// until facing them.
     fn face_target(&mut self, w: &World, dt: f32) {
-        let Some((id, turning)) = self.face else { return };
+        let Some((id, turning)) = self.face else {
+            return;
+        };
         let Some(&p) = w.targets.get(&id) else { return };
         let dir = (p - self.pos).truncate();
         if dir.length() < 1.0 {
@@ -598,13 +666,28 @@ impl ActorRuntime {
 
     /// Step aside from other actors (and the player) within reach, preferring to
     /// pass on the side we're already heading for. Stays on the navmesh.
-    fn keep_clear(&mut self, bodies: &[(FormId, Vec3)], nav: &nav::NavWorld, dt: f32, before: Vec3) {
+    fn keep_clear(
+        &mut self,
+        bodies: &[(FormId, Vec3)],
+        nav: &nav::NavWorld,
+        dt: f32,
+        before: Vec3,
+    ) {
         const REACH: f32 = 48.0;
         // Someone already standing at our destination: stop short of it.
-        if let State::Walk { path, next, to_seat: false, .. } = &mut self.state
+        if let State::Walk {
+            path,
+            next,
+            to_seat: false,
+            ..
+        } = &mut self.state
             && let Some(&dest) = path.last()
             && self.pos.truncate().distance(dest.truncate()) < REACH * 2.0
-            && bodies.iter().any(|&(id, p)| id != self.ref_id && p.truncate().distance(dest.truncate()) < REACH && (p.z - dest.z).abs() < 100.0)
+            && bodies.iter().any(|&(id, p)| {
+                id != self.ref_id
+                    && p.truncate().distance(dest.truncate()) < REACH
+                    && (p.z - dest.z).abs() < 100.0
+            })
         {
             *next = path.len();
             return;
@@ -669,14 +752,27 @@ impl ActorRuntime {
 
     /// At the start of the seat's enter animation: have the graph play it.
     fn begin_enter(&mut self, w: &mut World) {
-        let Some(seat) = self.seat.clone() else { return };
+        let Some(seat) = self.seat.clone() else {
+            return;
+        };
         if !self.graph_event(&seat.clips.event, &mut w.clips) {
-            log::debug!("{}: the graph won't take {} for {}", self.ref_id, seat.clips.event, seat.furniture);
+            log::debug!(
+                "{}: the graph won't take {} for {}",
+                self.ref_id,
+                seat.clips.event,
+                seat.furniture
+            );
             self.give_up_seat(w.furniture);
             self.state = State::Idle(uniform(w.rand, 2.0, 5.0));
             return;
         }
-        log::debug!("{} entering {} ({}, {:.1} s)", self.ref_id, seat.furniture, seat.clips.event, seat.clips.enter_time());
+        log::debug!(
+            "{} entering {} ({}, {:.1} s)",
+            self.ref_id,
+            seat.furniture,
+            seat.clips.event,
+            seat.clips.enter_time()
+        );
         self.out_of_furniture = false;
         self.state = State::Enter(seat.clips.enter_time());
     }
@@ -687,13 +783,22 @@ impl ActorRuntime {
             self.stand_up(w);
             return;
         };
-        let exit = seat.clips.exits.iter().find(|e| self.graph_event(e, &mut w.clips)).cloned();
+        let exit = seat
+            .clips
+            .exits
+            .iter()
+            .find(|e| self.graph_event(e, &mut w.clips))
+            .cloned();
         let Some(exit) = exit else {
             // Nothing to play (or no graph): just stand.
             self.stand_up(w);
             return;
         };
-        log::debug!("{} getting up ({exit}, {:.1} s)", self.ref_id, seat.clips.exit_time());
+        log::debug!(
+            "{} getting up ({exit}, {:.1} s)",
+            self.ref_id,
+            seat.clips.exit_time()
+        );
         self.out_of_furniture = false;
         self.state = State::Exit(seat.clips.exit_time() + 0.5);
     }
@@ -716,16 +821,29 @@ impl ActorRuntime {
                 self.plan(w);
                 false
             }
-            State::Walk { path, next, budget, to_seat } => {
+            State::Walk {
+                path,
+                next,
+                budget,
+                to_seat,
+            } => {
                 *budget -= dt;
                 if *budget < 0.0 || *next >= path.len() {
                     let arrived = *budget >= 0.0;
-                    log::debug!("{} walk ended ({})", self.ref_id, if arrived { "arrived" } else { "timeout" });
+                    log::debug!(
+                        "{} walk ended ({})",
+                        self.ref_id,
+                        if arrived { "arrived" } else { "timeout" }
+                    );
                     self.speed = 0.0;
-                    let follow = self.goal.is_some_and(|g| matches!(g.behaviour, Behaviour::Follow | Behaviour::Escort));
+                    let follow = self.goal.is_some_and(|g| {
+                        matches!(g.behaviour, Behaviour::Follow | Behaviour::Escort)
+                    });
                     if *to_seat && arrived {
                         self.state = State::Approach(0.0);
-                    } else if follow || (arrived && self.goal.is_some_and(|g| g.behaviour == Behaviour::Patrol)) {
+                    } else if follow
+                        || (arrived && self.goal.is_some_and(|g| g.behaviour == Behaviour::Patrol))
+                    {
                         // Keep up with the target / carry on along the route.
                         self.state = State::Idle(0.1);
                     } else {
@@ -807,7 +925,11 @@ impl ActorRuntime {
                 if remaining > 0.0 && !self.leave {
                     // Now and then pick an idle to play in the chair (the engine
                     // walks the idle tree, then calls `start_sub_idle`).
-                    if self.seat.as_ref().is_some_and(|s| s.kind == Use::Sit && !s.furniture.is_null()) {
+                    if self
+                        .seat
+                        .as_ref()
+                        .is_some_and(|s| s.kind == Use::Sit && !s.furniture.is_null())
+                    {
                         self.next_idle -= dt;
                         if self.next_idle <= 0.0 {
                             self.next_idle = uniform(w.rand, 5.0, 12.0);
@@ -849,13 +971,25 @@ impl ActorRuntime {
     /// Brought down in furniture (bleeding out): out of it at once, onto the floor
     /// where getting in began (clear of the bench or chair), without the exit
     /// animation.
-    pub(crate) fn fall_out_of_furniture(&mut self, furniture: &mut FurnitureWorld, nav: &nav::NavWorld) {
+    pub(crate) fn fall_out_of_furniture(
+        &mut self,
+        furniture: &mut FurnitureWorld,
+        nav: &nav::NavWorld,
+    ) {
         if !self.in_furniture() {
             return;
         }
         if let Some(seat) = &self.seat {
             let (start, _) = seat.enter_start();
-            log::debug!("{} drops out of {}: seat {:?} heading {:.0}, was at {:?}, enter start {:?}", self.ref_id, seat.furniture, seat.pos, seat.heading.to_degrees(), self.pos, start);
+            log::debug!(
+                "{} drops out of {}: seat {:?} heading {:.0}, was at {:?}, enter start {:?}",
+                self.ref_id,
+                seat.furniture,
+                seat.pos,
+                seat.heading.to_degrees(),
+                self.pos,
+                start
+            );
             self.pos = start.with_z(self.pos.z);
         }
         self.give_up_seat(furniture);
@@ -871,7 +1005,10 @@ impl ActorRuntime {
     /// At a UseWeapon goal's location, out of combat.
     fn practising(&self) -> bool {
         self.combat.is_none()
-            && self.goal.is_some_and(|g| g.practice.is_some() && self.pos.truncate().distance(g.centre.truncate()) <= g.radius.max(96.0))
+            && self.goal.is_some_and(|g| {
+                g.practice.is_some()
+                    && self.pos.truncate().distance(g.centre.truncate()) <= g.radius.max(96.0)
+            })
     }
 
     /// Choose what to do next from the current goal.
@@ -887,7 +1024,9 @@ impl ActorRuntime {
         // Actors standing about now and then play one of their idles first
         // (creatures more often: they have no furniture to use).
         let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
-        let wandering = self.goal.is_none_or(|g| matches!(g.behaviour, Behaviour::Sandbox | Behaviour::Hold));
+        let wandering = self
+            .goal
+            .is_none_or(|g| matches!(g.behaviour, Behaviour::Sandbox | Behaviour::Hold));
         let odds = if humanoid { 4 } else { 3 };
         if self.graph.is_some() && wandering && !fresh && (w.rand)() % odds == 0 {
             self.wants_action_idle = true;
@@ -941,7 +1080,11 @@ impl ActorRuntime {
                     None
                 } else if !ahead && t.is_some() && apart > goal.escort_wait {
                     // Wait for the escorted actor to catch up, facing them.
-                    log::debug!("{} waiting for {:?} ({apart:.0} behind)", self.ref_id, goal.target);
+                    log::debug!(
+                        "{} waiting for {:?} ({apart:.0} behind)",
+                        self.ref_id,
+                        goal.target
+                    );
                     self.face_towards(goal.target, face);
                     self.state = State::Idle(0.5);
                     return;
@@ -972,19 +1115,35 @@ impl ActorRuntime {
         match path {
             Some(path) if !path.is_empty() => {
                 let len = path_length(self.pos, &path);
-                let max = if travelling { MAX_TRAVEL_PATH } else { MAX_SANDBOX_PATH };
+                let max = if travelling {
+                    MAX_TRAVEL_PATH
+                } else {
+                    MAX_SANDBOX_PATH
+                };
                 if len > max {
                     log::debug!("{} path too long ({len:.0})", self.ref_id);
                     self.state = State::Idle(uniform(w.rand, 10.0, 20.0));
                     return;
                 }
-                log::debug!("{} walking {:.0} units via {} points ({:?}{})", self.ref_id, len, path.len(), goal.behaviour, if self.hurry { ", running" } else { "" });
+                log::debug!(
+                    "{} walking {:.0} units via {} points ({:?}{})",
+                    self.ref_id,
+                    len,
+                    path.len(),
+                    goal.behaviour,
+                    if self.hurry { ", running" } else { "" }
+                );
                 let mut budget = len / WALK_SPEED * 2.5 + 5.0;
                 // Look back at the target now and then.
                 if matches!(goal.behaviour, Behaviour::Follow | Behaviour::Escort) {
                     budget = budget.min(2.0);
                 }
-                self.state = State::Walk { path, next: 0, budget, to_seat: false };
+                self.state = State::Walk {
+                    path,
+                    next: 0,
+                    budget,
+                    to_seat: false,
+                };
             }
             _ => {
                 if target.is_some() {
@@ -998,7 +1157,9 @@ impl ActorRuntime {
 
     /// Now and then a sandboxing actor pausing on its feet has a bite or a drink.
     fn maybe_eat(&mut self, w: &mut World) {
-        let sandbox = self.goal.is_some_and(|g| g.behaviour == Behaviour::Sandbox && g.allow.eating);
+        let sandbox = self
+            .goal
+            .is_some_and(|g| g.behaviour == Behaviour::Sandbox && g.allow.eating);
         // Meals are the humanoid graphs' (creatures graze through their own idles).
         let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
         self.wants_meal = sandbox && humanoid && (w.rand)() % 4 == 0;
@@ -1007,20 +1168,30 @@ impl ActorRuntime {
     /// Where to go next on a patrol. At a point that is an idle marker (or other
     /// usable furniture) the actor uses it before moving on.
     fn patrol_target(&mut self, goal: &Goal, w: &mut World) -> PatrolStep {
-        let Some(start) = goal.target else { return PatrolStep::Done };
-        let Some(points) = w.patrols.get(&start).cloned() else { return PatrolStep::Done };
+        let Some(start) = goal.target else {
+            return PatrolStep::Done;
+        };
+        let Some(points) = w.patrols.get(&start).cloned() else {
+            return PatrolStep::Done;
+        };
         if points.is_empty() {
             return PatrolStep::Done;
         }
         let idx = match self.patrol {
             Some((s, i)) if s == start => i,
             _ if goal.start_nearest => {
-                let near = points.iter().enumerate().min_by(|a, b| a.1.pos.distance(self.pos).total_cmp(&b.1.pos.distance(self.pos)));
+                let near = points.iter().enumerate().min_by(|a, b| {
+                    a.1.pos
+                        .distance(self.pos)
+                        .total_cmp(&b.1.pos.distance(self.pos))
+                });
                 near.map_or(0, |(i, _)| i)
             }
             _ => 0,
         };
-        let Some(p) = points.get(idx).copied() else { return PatrolStep::Done };
+        let Some(p) = points.get(idx).copied() else {
+            return PatrolStep::Done;
+        };
         if self.pos.truncate().distance(p.pos.truncate()) > goal.radius.max(48.0) {
             self.patrol = Some((start, idx));
             return PatrolStep::Walk(p.pos);
@@ -1035,7 +1206,12 @@ impl ActorRuntime {
         };
         self.patrol = Some((start, next.unwrap_or(idx)));
         if w.furniture.get(p.ref_id).is_some() {
-            let at = Goal { behaviour: Behaviour::Patrol, centre: p.pos, furniture: Some(p.ref_id), ..*goal };
+            let at = Goal {
+                behaviour: Behaviour::Patrol,
+                centre: p.pos,
+                furniture: Some(p.ref_id),
+                ..*goal
+            };
             if self.seek_furniture(&at, false, w) {
                 return PatrolStep::Busy;
             }
@@ -1060,10 +1236,18 @@ impl ActorRuntime {
         }
         let (kinds, centre, radius, secs): (Vec<Use>, Vec3, f32, f32) = match goal.behaviour {
             // A specific target can be any marker (a creature's coffin, throne or alcove).
-            Behaviour::Sleep if goal.furniture.is_some() => {
-                (vec![Use::Sleep, Use::Sit, Use::Special], goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY)
-            }
-            Behaviour::Sleep => (vec![Use::Sleep], goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY),
+            Behaviour::Sleep if goal.furniture.is_some() => (
+                vec![Use::Sleep, Use::Sit, Use::Special],
+                goal.centre,
+                goal.radius.max(FURNITURE_SEARCH),
+                f32::INFINITY,
+            ),
+            Behaviour::Sleep => (
+                vec![Use::Sleep],
+                goal.centre,
+                goal.radius.max(FURNITURE_SEARCH),
+                f32::INFINITY,
+            ),
             // A Sit package's chair may be special furniture (a throne, a writing desk).
             Behaviour::Sit => {
                 // A specific target can be anything usable; otherwise a chair or special seat.
@@ -1072,7 +1256,12 @@ impl ActorRuntime {
                 } else {
                     vec![Use::Sit, Use::Special]
                 };
-                (kinds, goal.centre, goal.radius.max(FURNITURE_SEARCH), f32::INFINITY)
+                (
+                    kinds,
+                    goal.centre,
+                    goal.radius.max(FURNITURE_SEARCH),
+                    f32::INFINITY,
+                )
             }
             Behaviour::Sandbox => {
                 let mut kinds = Vec::new();
@@ -1089,17 +1278,29 @@ impl ActorRuntime {
                     return false;
                 }
                 // Restless actors wander more and sit for less long.
-                let chance = if goal.allow.wandering { 0.75 - goal.energy / 200.0 } else { 0.9 };
+                let chance = if goal.allow.wandering {
+                    0.75 - goal.energy / 200.0
+                } else {
+                    0.9
+                };
                 if uniform(w.rand, 0.0, 1.0) > chance {
                     return false;
                 }
                 let secs = (150.0 - goal.energy * 1.2) * uniform(w.rand, 0.6, 1.4);
-                (kinds, goal.centre, goal.radius.clamp(SANDBOX_MIN, SANDBOX_MAX), secs)
+                (
+                    kinds,
+                    goal.centre,
+                    goal.radius.clamp(SANDBOX_MIN, SANDBOX_MAX),
+                    secs,
+                )
             }
             // Patrol idle markers: the point's marker, for its idle time.
-            Behaviour::Patrol if goal.furniture.is_some() => {
-                (vec![Use::Idle, Use::Lean, Use::Special, Use::Sit], goal.centre, 96.0, uniform(w.rand, 6.0, 12.0))
-            }
+            Behaviour::Patrol if goal.furniture.is_some() => (
+                vec![Use::Idle, Use::Lean, Use::Special, Use::Sit],
+                goal.centre,
+                96.0,
+                uniform(w.rand, 6.0, 12.0),
+            ),
             Behaviour::Travel
             | Behaviour::Hold
             | Behaviour::Patrol
@@ -1119,7 +1320,10 @@ impl ActorRuntime {
             }));
         }
         if options.is_empty() {
-            log::debug!("{} no free {kinds:?} within {radius:.0} of {centre:?}", self.ref_id);
+            log::debug!(
+                "{} no free {kinds:?} within {radius:.0} of {centre:?}",
+                self.ref_id
+            );
             return false;
         }
         // Beds: own bed first, then nearest. Otherwise a random nearby choice.
@@ -1130,7 +1334,9 @@ impl ActorRuntime {
                 None => 2,
             };
             options.sort_by(|a, b| {
-                (rank(a.0), a.2.pos.distance(self.pos)).partial_cmp(&(rank(b.0), b.2.pos.distance(self.pos))).unwrap()
+                (rank(a.0), a.2.pos.distance(self.pos))
+                    .partial_cmp(&(rank(b.0), b.2.pos.distance(self.pos)))
+                    .unwrap()
             });
         } else {
             for i in (1..options.len()).rev() {
@@ -1138,11 +1344,32 @@ impl ActorRuntime {
             }
         }
         for (fid, mi, marker) in options.into_iter().take(6) {
-            let Some(f) = w.furniture.get(fid) else { continue };
-            let Some(project) = self.graph.as_ref().map(|g| g.project().clone()) else { return false };
-            let ways = furniture::ways_to_use(f, mi, &marker, self.child, &project, &self.skeleton_path, self.female, &self.skeleton, &mut w.clips, &mut *w.rand);
+            let Some(f) = w.furniture.get(fid) else {
+                continue;
+            };
+            let Some(project) = self.graph.as_ref().map(|g| g.project().clone()) else {
+                return false;
+            };
+            let ways = furniture::ways_to_use(
+                f,
+                mi,
+                &marker,
+                self.child,
+                &project,
+                &self.skeleton_path,
+                self.female,
+                &self.skeleton,
+                &mut w.clips,
+                &mut *w.rand,
+            );
             // Idle markers say how long they are used for.
-            let secs = if f.idle_time > 0.0 && matches!(goal.behaviour, Behaviour::Sandbox | Behaviour::Patrol) { f.idle_time } else { secs };
+            let secs = if f.idle_time > 0.0
+                && matches!(goal.behaviour, Behaviour::Sandbox | Behaviour::Patrol)
+            {
+                f.idle_time
+            } else {
+                secs
+            };
             // The entry whose starting spot is on the navmesh and nearest.
             let best = ways
                 .into_iter()
@@ -1150,10 +1377,17 @@ impl ActorRuntime {
                     let (start, _) = furniture::enter_start(&marker, &clips.enter);
                     (entry, clips, start)
                 })
-                .filter(|(_, _, start)| w.nav.height_at(*start).is_some_and(|z| (z - start.z).abs() < 48.0))
+                .filter(|(_, _, start)| {
+                    w.nav
+                        .height_at(*start)
+                        .is_some_and(|z| (z - start.z).abs() < 48.0)
+                })
                 .min_by(|a, b| a.2.distance(self.pos).total_cmp(&b.2.distance(self.pos)));
             let Some((entry, clips, start)) = best else {
-                log::debug!("{} can't use {fid} marker {mi}: no reachable entry", self.ref_id);
+                log::debug!(
+                    "{} can't use {fid} marker {mi}: no reachable entry",
+                    self.ref_id
+                );
                 continue;
             };
             let seat = Seat {
@@ -1183,18 +1417,33 @@ impl ActorRuntime {
                 w.furniture.reserve(fid, mi, self.ref_id);
                 self.seat = Some(seat);
                 self.settle(secs);
-                log::debug!("{} starts in {fid} marker {mi} ({:?})", self.ref_id, marker.kind);
+                log::debug!(
+                    "{} starts in {fid} marker {mi} ({:?})",
+                    self.ref_id,
+                    marker.kind
+                );
                 return true;
             }
-            let Some(route) = w.nav.find_path(self.pos, start) else { continue };
+            let Some(route) = w.nav.find_path(self.pos, start) else {
+                continue;
+            };
             let len = path_length(self.pos, &route);
             if len > MAX_TRAVEL_PATH {
                 continue;
             }
             w.furniture.reserve(fid, mi, self.ref_id);
-            log::debug!("{} heading for {fid} marker {mi} ({:?}, {entry:?} entry, {len:.0} units)", self.ref_id, marker.kind);
+            log::debug!(
+                "{} heading for {fid} marker {mi} ({:?}, {entry:?} entry, {len:.0} units)",
+                self.ref_id,
+                marker.kind
+            );
             self.seat = Some(seat);
-            self.state = State::Walk { path: route, next: 0, budget: len / WALK_SPEED * 2.5 + 5.0, to_seat: true };
+            self.state = State::Walk {
+                path: route,
+                next: 0,
+                budget: len / WALK_SPEED * 2.5 + 5.0,
+                to_seat: true,
+            };
             return true;
         }
         false
@@ -1203,12 +1452,21 @@ impl ActorRuntime {
     /// Walking speed: the movement type's, else the graph's or walk clip's root
     /// motion, so feet don't slide.
     pub fn walk_speed(&self) -> f32 {
-        if let Some(v) = self.moves.map(|(m, _)| m.walk).filter(|v| *v > 1.0).or(self.graph_walk_speed) {
+        if let Some(v) = self
+            .moves
+            .map(|(m, _)| m.walk)
+            .filter(|v| *v > 1.0)
+            .or(self.graph_walk_speed)
+        {
             return v;
         }
         self.walk
             .as_ref()
-            .and_then(|w| w.motion.as_ref().map(|m| m.end().0.truncate().length() / w.duration()))
+            .and_then(|w| {
+                w.motion
+                    .as_ref()
+                    .map(|m| m.end().0.truncate().length() / w.duration())
+            })
             .filter(|v| (20.0..400.0).contains(v))
             .unwrap_or(WALK_SPEED)
     }
@@ -1221,7 +1479,16 @@ impl ActorRuntime {
         let (feet, heading, scale) = (self.pos, self.heading, self.scale);
         let on = !self.in_furniture();
         let Some(g) = self.graph.as_mut() else { return };
-        let Some(ik) = g.project().shared.project.character.as_ref().and_then(|c| c.foot_ik.clone()) else { return };
+        let Some(ik) = g
+            .project()
+            .shared
+            .project
+            .character
+            .as_ref()
+            .and_then(|c| c.foot_ik.clone())
+        else {
+            return;
+        };
         g.foot_ik = on;
         if !on {
             return;
@@ -1232,7 +1499,11 @@ impl ActorRuntime {
             .map(|ankle| {
                 let w = model.transform_point3(*ankle);
                 let from = Vec3::new(w.x, w.y, feet.z + ik.raycast_up * scale);
-                let (toi, normal) = physics.ground_ray(from, -Vec3::Z, (ik.raycast_up + ik.raycast_down) * scale)?;
+                let (toi, normal) = physics.ground_ray(
+                    from,
+                    -Vec3::Z,
+                    (ik.raycast_up + ik.raycast_down) * scale,
+                )?;
                 // Into model space: relative to the feet, unscaled, unturned.
                 let z = (from.z - toi - feet.z) / scale;
                 Some((z, Quat::from_rotation_z(heading) * normal))
@@ -1245,11 +1516,23 @@ impl ActorRuntime {
     /// movement type's run, sneaking at its sneaking movement type's walk.
     pub fn move_speed(&self) -> f32 {
         let walk = self.walk_speed();
-        let (gait, sneak) = self.goal.map_or((package::Gait::Walk, false), |g| (g.gait, g.sneak));
+        let (gait, sneak) = self
+            .goal
+            .map_or((package::Gait::Walk, false), |g| (g.gait, g.sneak));
         if sneak {
-            return self.sneak_moves.map_or(walk * 0.75, |(m, _)| if gait == package::Gait::Run { m.run } else { m.walk });
+            return self.sneak_moves.map_or(walk * 0.75, |(m, _)| {
+                if gait == package::Gait::Run {
+                    m.run
+                } else {
+                    m.walk
+                }
+            });
         }
-        let run = self.moves.map(|(m, _)| m.run).filter(|r| *r > walk).unwrap_or(walk * 3.0);
+        let run = self
+            .moves
+            .map(|(m, _)| m.run)
+            .filter(|r| *r > walk)
+            .unwrap_or(walk * 3.0);
         if self.hurry {
             return run;
         }
@@ -1263,8 +1546,18 @@ impl ActorRuntime {
 
     /// Turn rate (radians per second) from the movement type, walking or standing.
     fn turn_rate(&self) -> f32 {
-        let m = if self.goal.is_some_and(|g| g.sneak) { self.sneak_moves.or(self.moves) } else { self.moves };
-        let r = m.map(|(m, _)| if self.speed > 5.0 { m.turn_moving } else { m.turn_walk });
+        let m = if self.goal.is_some_and(|g| g.sneak) {
+            self.sneak_moves.or(self.moves)
+        } else {
+            self.moves
+        };
+        let r = m.map(|(m, _)| {
+            if self.speed > 5.0 {
+                m.turn_moving
+            } else {
+                m.turn_walk
+            }
+        });
         r.filter(|r| *r > 0.1).unwrap_or(TURN_RATE)
     }
 
@@ -1292,17 +1585,32 @@ impl ActorRuntime {
     /// Drive the behaviour graph from the AI state, run it, and follow its root
     /// motion while in furniture. Anim objects come and go with its events.
     fn animate_graph(&mut self, dt: f32, clips: &mut Clips) -> Vec<Mat4> {
-        let walking = self.speed > 5.0 && matches!(self.state, State::Walk { .. } | State::Approach(_));
-        let furniture = self.in_furniture() && self.seat.as_ref().is_some_and(|s| !s.furniture.is_null());
+        let walking =
+            self.speed > 5.0 && matches!(self.state, State::Walk { .. } | State::Approach(_));
+        let furniture =
+            self.in_furniture() && self.seat.as_ref().is_some_and(|s| !s.furniture.is_null());
         // Turn rate in degrees per second, counter-clockwise (left) positive as Havok
         // has it; headings turn clockwise.
-        let turned = if self.graph_heading.is_finite() { wrap_angle(self.heading - self.graph_heading) } else { 0.0 };
+        let turned = if self.graph_heading.is_finite() {
+            wrap_angle(self.heading - self.graph_heading)
+        } else {
+            0.0
+        };
         self.graph_heading = self.heading;
-        let turn_delta = if dt > 1e-4 { -turned.to_degrees() / dt } else { 0.0 };
+        let turn_delta = if dt > 1e-4 {
+            -turned.to_degrees() / dt
+        } else {
+            0.0
+        };
         let still = !walking && !self.in_furniture();
         let model = self.transform();
         let sneak = self.goal.is_some_and(|g| g.sneak) && !self.in_furniture();
-        let state = if sneak { self.sneak_moves.or(self.moves) } else { self.moves }.map(|(_, s)| s);
+        let state = if sneak {
+            self.sneak_moves.or(self.moves)
+        } else {
+            self.moves
+        }
+        .map(|(_, s)| s);
         let g = self.graph.as_mut().expect("checked");
         if sneak != self.sneaking {
             g.send_event(if sneak { "SneakStart" } else { "SneakStop" });
@@ -1348,7 +1656,9 @@ impl ActorRuntime {
         }
         for r in frame.raised {
             let e = r.event.to_ascii_lowercase();
-            if self.combat.is_some() && log::log_enabled!(target: "combat_events", log::Level::Trace) {
+            if self.combat.is_some()
+                && log::log_enabled!(target: "combat_events", log::Level::Trace)
+            {
                 log::trace!(target: "combat_events", "{} raised {}{}", self.ref_id, r.event, r.payload.as_deref().map(|p| format!(" ({p})")).unwrap_or_default());
             }
             match e.as_str() {
@@ -1381,7 +1691,11 @@ impl ActorRuntime {
                         self.sounds.push(p);
                     }
                 }
-                _ if !self.footsteps.contains(&e) && self.footstep_set.as_ref().is_some_and(|s| s.has_tag(&e)) => self.footsteps.push(e),
+                _ if !self.footsteps.contains(&e)
+                    && self.footstep_set.as_ref().is_some_and(|s| s.has_tag(&e)) =>
+                {
+                    self.footsteps.push(e)
+                }
                 _ => {}
             }
         }
@@ -1391,7 +1705,12 @@ impl ActorRuntime {
     /// Play the idle `clips` describe in the furniture, then go back to the seat's
     /// loop. False when the actor isn't settled in, is already playing another
     /// idle, or the graph won't take it.
-    pub fn start_sub_idle(&mut self, clips: furniture::UseClips, lib: &mut Clips, rand: &mut dyn FnMut() -> u64) -> bool {
+    pub fn start_sub_idle(
+        &mut self,
+        clips: furniture::UseClips,
+        lib: &mut Clips,
+        rand: &mut dyn FnMut() -> u64,
+    ) -> bool {
         if !matches!(self.state, State::Use(_)) || self.leave || self.sub.is_some() {
             return false;
         }
@@ -1400,9 +1719,15 @@ impl ActorRuntime {
         }
         // A held idle is stopped after a while; a gesture runs its course.
         self.sub = Some(if clips.idle_loops {
-            SubIdle { left: uniform(rand, 8.0, 20.0), stop: clips.exits.clone() }
+            SubIdle {
+                left: uniform(rand, 8.0, 20.0),
+                stop: clips.exits.clone(),
+            }
         } else {
-            SubIdle { left: clips.enter_time() + clips.idle.duration() + clips.exit_time() + 0.5, stop: Vec::new() }
+            SubIdle {
+                left: clips.enter_time() + clips.idle.duration() + clips.exit_time() + 0.5,
+                stop: Vec::new(),
+            }
         });
         true
     }
@@ -1411,7 +1736,9 @@ impl ActorRuntime {
     /// (any more); leaving the furniture first stops it and lets it wind down.
     fn step_sub_idle(&mut self, dt: f32, clips: &mut Clips) -> bool {
         let waiting = self.graph.as_ref().is_some_and(|g| g.waiting());
-        let Some(sub) = &mut self.sub else { return false };
+        let Some(sub) = &mut self.sub else {
+            return false;
+        };
         // A stopped idle's way out may wait for its moment in the graph.
         if !(waiting && sub.stop.is_empty()) {
             sub.left -= dt;
@@ -1441,7 +1768,11 @@ impl ActorRuntime {
 /// `a` in -pi..pi.
 fn wrap_angle(a: f32) -> f32 {
     let a = a.rem_euclid(std::f32::consts::TAU);
-    if a > std::f32::consts::PI { a - std::f32::consts::TAU } else { a }
+    if a > std::f32::consts::PI {
+        a - std::f32::consts::TAU
+    } else {
+        a
+    }
 }
 
 fn xorshift(seed: u64) -> impl FnMut() -> u64 {
@@ -1464,11 +1795,24 @@ impl Engine {
     /// [`Engine::play_animation_event`], leaving a looping idle after `secs` (it is
     /// otherwise held until the AI moves on). True when the actor's graph took it.
     fn play_idle(&mut self, actor: FormId, event: &str, secs: Option<f32>) -> bool {
-        let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
-        let Some(rt) = self.cells.get_mut(&key) else { return false };
-        let Some(a) = rt.actors.iter_mut().find(|a| a.ref_id == actor) else { return false };
+        let Some(key) = self.actor_cells.get(&actor).copied() else {
+            return false;
+        };
+        let Some(rt) = self.cells.get_mut(&key) else {
+            return false;
+        };
+        let Some(a) = rt.actors.iter_mut().find(|a| a.ref_id == actor) else {
+            return false;
+        };
         let lower = event.to_ascii_lowercase();
-        if matches!(lower.as_str(), "idlestop" | "idlestopinstant" | "idleforcedefaultstate" | "idlechairexitstart" | "idlefurnitureexit") {
+        if matches!(
+            lower.as_str(),
+            "idlestop"
+                | "idlestopinstant"
+                | "idleforcedefaultstate"
+                | "idlechairexitstart"
+                | "idlefurnitureexit"
+        ) {
             if a.in_furniture() {
                 a.leave = true;
             } else if let Some(g) = &mut a.graph {
@@ -1476,11 +1820,27 @@ impl Engine {
             }
             return true;
         }
-        let Some(project) = a.graph.as_ref().map(|g| g.project().clone()) else { return false };
-        let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
+        let Some(project) = a.graph.as_ref().map(|g| g.project().clone()) else {
+            return false;
+        };
+        let mut clips = Clips {
+            vfs: &self.vfs,
+            anims: &mut self.anims,
+            behaviors: &mut self.behaviors,
+        };
         // Seated, the event is one of the seat's own idles (`idleChairArmsCrossedVar1`).
-        if matches!(a.state, State::Use(_)) && a.seat.as_ref().is_some_and(|s| s.kind != Use::Idle) {
-            let Some(c) = clips.event_with_exits(event, &SUB_IDLE_EXITS, &project, &a.skeleton_path, a.female, &a.skeleton) else { return false };
+        if matches!(a.state, State::Use(_)) && a.seat.as_ref().is_some_and(|s| s.kind != Use::Idle)
+        {
+            let Some(c) = clips.event_with_exits(
+                event,
+                &SUB_IDLE_EXITS,
+                &project,
+                &a.skeleton_path,
+                a.female,
+                &a.skeleton,
+            ) else {
+                return false;
+            };
             let started = a.start_sub_idle(c, &mut clips, &mut xorshift(self.rng));
             if started {
                 log::debug!("{actor} plays {event} in its seat");
@@ -1488,7 +1848,9 @@ impl Engine {
             return started;
         }
         // Planning: where the way in leaves the actor, how long it lasts.
-        let Some(c) = clips.event(event, &project, &a.skeleton_path, a.female, &a.skeleton) else { return false };
+        let Some(c) = clips.event(event, &project, &a.skeleton_path, a.female, &a.skeleton) else {
+            return false;
+        };
         if !a.graph_event(event, &mut clips) {
             log::debug!("{actor}: the graph won't take {event}");
             return false;
@@ -1502,11 +1864,28 @@ impl Engine {
             heading -= yaw;
         }
         // A one-shot gesture (no loop at the end) is played through once.
-        let duration = if c.idle_loops { secs.unwrap_or(f32::INFINITY) } else { c.idle.duration() };
-        log::debug!("{actor} plays {event} ({:.1} s in, {:.1} s out)", c.enter_time(), c.exit_time());
+        let duration = if c.idle_loops {
+            secs.unwrap_or(f32::INFINITY)
+        } else {
+            c.idle.duration()
+        };
+        log::debug!(
+            "{actor} plays {event} ({:.1} s in, {:.1} s out)",
+            c.enter_time(),
+            c.exit_time()
+        );
         let enter = c.enter_time();
         a.sub = None;
-        a.seat = Some(Seat { furniture: FormId::NULL, kind: Use::Idle, anim_type: 0, entry: furniture::Entry::Front, pos, heading, clips: Arc::new(c), duration });
+        a.seat = Some(Seat {
+            furniture: FormId::NULL,
+            kind: Use::Idle,
+            anim_type: 0,
+            entry: furniture::Entry::Front,
+            pos,
+            heading,
+            clips: Arc::new(c),
+            duration,
+        });
         a.state = State::Enter(enter);
         a.leave = false;
         true
@@ -1521,20 +1900,36 @@ impl Engine {
             .cells
             .values_mut()
             .flat_map(|rt| {
-                rt.actors.iter_mut().filter_map(|a| std::mem::take(&mut a.wants_action_idle).then(|| Some((a.ref_id, a.graph.as_ref()?.project().clone()))).flatten())
+                rt.actors.iter_mut().filter_map(|a| {
+                    std::mem::take(&mut a.wants_action_idle)
+                        .then(|| Some((a.ref_id, a.graph.as_ref()?.project().clone())))
+                        .flatten()
+                })
             })
             .collect();
         if wanting.is_empty() {
             return;
         }
-        let Some(root) = self.idles.get_or_insert_with(|| idles::IdleIndex::build(&self.lo)).find(&self.lo, "ActionIdle") else {
+        let Some(root) = self
+            .idles
+            .get_or_insert_with(|| idles::IdleIndex::build(&self.lo))
+            .find(&self.lo, "ActionIdle")
+        else {
             log::warn!("no ActionIdle in the idle tree");
             return;
         };
         for (r, project) in wanting {
             // Standing still, out of furniture.
-            let ctx = Context { subject: Some(r), idle: Some(IdleQuery::default()), ..Default::default() };
-            let Some((idle, event)) = self.idles.as_ref().and_then(|ix| ix.select_for(self, root, ctx, &project)) else {
+            let ctx = Context {
+                subject: Some(r),
+                idle: Some(IdleQuery::default()),
+                ..Default::default()
+            };
+            let Some((idle, event)) = self
+                .idles
+                .as_ref()
+                .and_then(|ix| ix.select_for(self, root, ctx, &project))
+            else {
                 log::debug!("{r}: no idle in ActionIdle for {}", project.name);
                 continue;
             };
@@ -1552,17 +1947,39 @@ impl Engine {
         let wanting: Vec<FormId> = self
             .cells
             .values_mut()
-            .flat_map(|rt| rt.actors.iter_mut().filter_map(|a| std::mem::take(&mut a.wants_meal).then_some(a.ref_id)))
+            .flat_map(|rt| {
+                rt.actors
+                    .iter_mut()
+                    .filter_map(|a| std::mem::take(&mut a.wants_meal).then_some(a.ref_id))
+            })
             .collect();
         if wanting.is_empty() {
             return;
         }
-        let Some(ix) = self.idles.as_ref() else { return };
-        let roots: Vec<FormId> = ["EatingRoot", "DrinkingRoot"].iter().filter_map(|n| ix.find(&self.lo, n)).collect();
+        let Some(ix) = self.idles.as_ref() else {
+            return;
+        };
+        let roots: Vec<FormId> = ["EatingRoot", "DrinkingRoot"]
+            .iter()
+            .filter_map(|n| ix.find(&self.lo, n))
+            .collect();
         for r in wanting {
-            let query = IdleQuery { eating: true, ..Default::default() };
-            let ctx = Context { subject: Some(r), idle: Some(query), ..Default::default() };
-            let Some((idle, event)) = self.idles.as_ref().and_then(|ix| ix.select_among(self, &roots, ctx)) else { continue };
+            let query = IdleQuery {
+                eating: true,
+                ..Default::default()
+            };
+            let ctx = Context {
+                subject: Some(r),
+                idle: Some(query),
+                ..Default::default()
+            };
+            let Some((idle, event)) = self
+                .idles
+                .as_ref()
+                .and_then(|ix| ix.select_among(self, &roots, ctx))
+            else {
+                continue;
+            };
             let secs = 10.0 + (self.rand() % 1500) as f32 / 100.0;
             if self.play_idle(r, &event, Some(secs)) {
                 log::debug!("{r} has a standing meal: {idle} ({event}) for {secs:.0} s");
@@ -1578,44 +1995,105 @@ impl Engine {
         let wanting: Vec<(crate::render::CellKey, FormId)> = self
             .cells
             .iter_mut()
-            .flat_map(|(k, rt)| rt.actors.iter_mut().filter_map(move |a| std::mem::take(&mut a.wants_idle).then_some((*k, a.ref_id))))
+            .flat_map(|(k, rt)| {
+                rt.actors.iter_mut().filter_map(move |a| {
+                    std::mem::take(&mut a.wants_idle).then_some((*k, a.ref_id))
+                })
+            })
             .collect();
         if wanting.is_empty() {
             return;
         }
-        let Some(root) = self.idles.as_ref().and_then(|ix| ix.find(&self.lo, "NonCombatIdles")) else { return };
+        let Some(root) = self
+            .idles
+            .as_ref()
+            .and_then(|ix| ix.find(&self.lo, "NonCombatIdles"))
+        else {
+            return;
+        };
         let special = self.lo.find_editor_id("FurnitureSpecial");
         for (key, r) in wanting {
             let roll = self.rand();
-            let Some(a) = self.cells.get(&key).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r)) else { continue };
+            let Some(a) = self
+                .cells
+                .get(&key)
+                .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r))
+            else {
+                continue;
+            };
             let Some(seat) = a.seat.clone() else { continue };
             // Wood piles, pour spots and the like are "sat in" too, but aren't seats.
             if special.is_some_and(|kw| self.has_keyword(seat.furniture, kw)) {
                 continue;
             }
-            let Some(project) = a.graph.as_ref().map(|g| g.project().clone()).filter(|p| p.humanoid()) else { continue };
+            let Some(project) = a
+                .graph
+                .as_ref()
+                .map(|g| g.project().clone())
+                .filter(|p| p.humanoid())
+            else {
+                continue;
+            };
             let query = IdleQuery {
                 anim_type: seat.anim_type,
                 entry: seat.entry.entry_type(),
                 state: 3.0,
                 // Sandboxing actors eat now and then (food or drink in hand); the
                 // rest of the time they sit, with the odd change of pose.
-                eating: a.goal.is_some_and(|g| g.allow.meal || (g.allow.eating && roll % 3 == 0)),
+                eating: a
+                    .goal
+                    .is_some_and(|g| g.allow.meal || (g.allow.eating && roll % 3 == 0)),
                 ..Default::default()
             };
-            let ctx = Context { subject: Some(r), target: Some(seat.furniture), idle: Some(query), ..Default::default() };
-            let Some((idle, event)) = self.idles.as_ref().and_then(|ix| ix.select(self, root, ctx)) else { continue };
-            let (skeleton_path, female, skeleton) = (a.skeleton_path.clone(), a.female, a.skeleton.clone());
-            let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
-            let Some(c) = clips.event_with_exits(&event, &SUB_IDLE_EXITS, &project, &skeleton_path, female, &skeleton) else {
+            let ctx = Context {
+                subject: Some(r),
+                target: Some(seat.furniture),
+                idle: Some(query),
+                ..Default::default()
+            };
+            let Some((idle, event)) = self
+                .idles
+                .as_ref()
+                .and_then(|ix| ix.select(self, root, ctx))
+            else {
+                continue;
+            };
+            let (skeleton_path, female, skeleton) =
+                (a.skeleton_path.clone(), a.female, a.skeleton.clone());
+            let mut clips = Clips {
+                vfs: &self.vfs,
+                anims: &mut self.anims,
+                behaviors: &mut self.behaviors,
+            };
+            let Some(c) = clips.event_with_exits(
+                &event,
+                &SUB_IDLE_EXITS,
+                &project,
+                &skeleton_path,
+                female,
+                &skeleton,
+            ) else {
                 log::debug!("{r}: no clips for furniture idle {idle} ({event})");
                 continue;
             };
             drop(clips);
-            log::debug!("{r} plays {event} in {} ({} enter, {} exit clips)", seat.furniture, c.enter.len(), c.exit.len());
+            log::debug!(
+                "{r} plays {event} in {} ({} enter, {} exit clips)",
+                seat.furniture,
+                c.enter.len(),
+                c.exit.len()
+            );
             let mut rand = xorshift(self.rand());
-            let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
-            if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r)) {
+            let mut clips = Clips {
+                vfs: &self.vfs,
+                anims: &mut self.anims,
+                behaviors: &mut self.behaviors,
+            };
+            if let Some(a) = self
+                .cells
+                .get_mut(&key)
+                .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r))
+            {
                 a.start_sub_idle(c, &mut clips, &mut rand);
             }
         }
@@ -1624,9 +2102,13 @@ impl Engine {
     /// Send a loaded actor to use specific furniture (Papyrus `Activate` by an NPC,
     /// the `use` console command). It stays until its package changes.
     pub fn use_furniture(&mut self, actor: FormId, furniture: FormId) -> bool {
-        let Some(f) = self.furniture.get(furniture) else { return false };
+        let Some(f) = self.furniture.get(furniture) else {
+            return false;
+        };
         let centre = f.markers.first().map_or(Vec3::ZERO, |m| m.pos);
-        let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
+        let Some(key) = self.actor_cells.get(&actor).copied() else {
+            return false;
+        };
         let mut seed = self.rand() | 1;
         let mut rand = move || {
             seed ^= seed << 13;
@@ -1639,26 +2121,54 @@ impl Engine {
         let mut w = World {
             nav: &self.nav,
             furniture: &mut self.furniture,
-            clips: Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors },
+            clips: Clips {
+                vfs: &self.vfs,
+                anims: &mut self.anims,
+                behaviors: &mut self.behaviors,
+            },
             may_use: &may_use,
             claimed: &claimed,
             patrols: &self.patrol_paths,
             targets: &targets,
             rand: &mut rand,
         };
-        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
+        let Some(a) = self
+            .cells
+            .get_mut(&key)
+            .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor))
+        else {
+            return false;
+        };
         a.give_up_seat(w.furniture);
-        let goal = Goal { behaviour: Behaviour::Sit, centre, radius: 64.0, furniture: Some(furniture), ..Goal::travel(centre) };
+        let goal = Goal {
+            behaviour: Behaviour::Sit,
+            centre,
+            radius: 64.0,
+            furniture: Some(furniture),
+            ..Goal::travel(centre)
+        };
         a.seek_furniture(&goal, false, &mut w)
     }
 
     /// Send an actor to `to` at a gait (testing): the goal is pinned, so its
     /// packages no longer replace it.
     pub fn travel_to(&mut self, actor: FormId, to: Vec3, gait: package::Gait, sneak: bool) -> bool {
-        let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
-        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
+        let Some(key) = self.actor_cells.get(&actor).copied() else {
+            return false;
+        };
+        let Some(a) = self
+            .cells
+            .get_mut(&key)
+            .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor))
+        else {
+            return false;
+        };
         a.interrupt(&mut self.furniture);
-        a.goal = Some(Goal { gait, sneak, ..Goal::travel(to) });
+        a.goal = Some(Goal {
+            gait,
+            sneak,
+            ..Goal::travel(to)
+        });
         a.pinned = true;
         true
     }
@@ -1667,10 +2177,24 @@ impl Engine {
     /// whenever the target is more than `wait` behind and running to catch up when it
     /// is more than `run` ahead.
     pub fn escort(&mut self, actor: FormId, target: FormId, to: Vec3, wait: f32, run: f32) -> bool {
-        let Some(key) = self.actor_cells.get(&actor).copied() else { return false };
-        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return false };
+        let Some(key) = self.actor_cells.get(&actor).copied() else {
+            return false;
+        };
+        let Some(a) = self
+            .cells
+            .get_mut(&key)
+            .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor))
+        else {
+            return false;
+        };
         a.interrupt(&mut self.furniture);
-        a.goal = Some(Goal { behaviour: Behaviour::Escort, target: Some(target), escort_wait: wait, escort_run: run, ..Goal::travel(to) });
+        a.goal = Some(Goal {
+            behaviour: Behaviour::Escort,
+            target: Some(target),
+            escort_wait: wait,
+            escort_run: run,
+            ..Goal::travel(to)
+        });
         a.pinned = true;
         true
     }
@@ -1684,7 +2208,9 @@ impl Engine {
             if out.len() >= 64 || out.iter().any(|p| p.ref_id == r) {
                 break;
             }
-            let Some(pos) = self.ref_position(r) else { break };
+            let Some(pos) = self.ref_position(r) else {
+                break;
+            };
             out.push(PatrolPoint { ref_id: r, pos });
             cur = self.linked_ref(r, Some(FormId::NULL));
         }
@@ -1703,7 +2229,14 @@ impl Engine {
     /// How fast a loaded actor is moving.
     pub fn actor_speed(&self, r: FormId) -> Option<f32> {
         let key = self.actor_cells.get(&r)?;
-        Some(self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?.speed)
+        Some(
+            self.cells
+                .get(key)?
+                .actors
+                .iter()
+                .find(|a| a.ref_id == r)?
+                .speed,
+        )
     }
 
     /// Gesture along with a line of dialogue: an idle from the `ActionTalking`
@@ -1711,30 +2244,89 @@ impl Engine {
     /// by the line's emotion and the pose the speaker is in).
     pub(crate) fn talking_gesture(&mut self, actor: FormId) {
         use crate::condition::{Context, IdleQuery};
-        let Some(key) = self.actor_cells.get(&actor).copied() else { return };
-        let Some(a) = self.cells.get(&key).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor)) else { return };
-        let Some(project) = a.graph.as_ref().map(|g| g.project().clone()) else { return };
+        let Some(key) = self.actor_cells.get(&actor).copied() else {
+            return;
+        };
+        let Some(a) = self
+            .cells
+            .get(&key)
+            .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor))
+        else {
+            return;
+        };
+        let Some(project) = a.graph.as_ref().map(|g| g.project().clone()) else {
+            return;
+        };
         let query = match &a.seat {
-            Some(s) if a.in_furniture() => IdleQuery { anim_type: s.anim_type, entry: s.entry.entry_type(), state: 3.0, ..Default::default() },
+            Some(s) if a.in_furniture() => IdleQuery {
+                anim_type: s.anim_type,
+                entry: s.entry.entry_type(),
+                state: 3.0,
+                ..Default::default()
+            },
             _ => IdleQuery::default(),
         };
-        let target = a.seat.as_ref().map(|s| s.furniture).filter(|f| !f.is_null());
-        let Some(root) = self.idles.get_or_insert_with(|| idles::IdleIndex::build(&self.lo)).find(&self.lo, "ActionTalking") else { return };
-        let ctx = Context { subject: Some(actor), target, idle: Some(query), ..Default::default() };
-        let Some((idle, event)) = self.idles.as_ref().and_then(|ix| ix.select_for(self, root, ctx, &project)) else {
+        let target = a
+            .seat
+            .as_ref()
+            .map(|s| s.furniture)
+            .filter(|f| !f.is_null());
+        let Some(root) = self
+            .idles
+            .get_or_insert_with(|| idles::IdleIndex::build(&self.lo))
+            .find(&self.lo, "ActionTalking")
+        else {
+            return;
+        };
+        let ctx = Context {
+            subject: Some(actor),
+            target,
+            idle: Some(query),
+            ..Default::default()
+        };
+        let Some((idle, event)) = self
+            .idles
+            .as_ref()
+            .and_then(|ix| ix.select_for(self, root, ctx, &project))
+        else {
             log::debug!("{actor}: no talking idle");
             return;
         };
-        let mut clips = Clips { vfs: &self.vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
-        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return };
+        let mut clips = Clips {
+            vfs: &self.vfs,
+            anims: &mut self.anims,
+            behaviors: &mut self.behaviors,
+        };
+        let Some(a) = self
+            .cells
+            .get_mut(&key)
+            .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor))
+        else {
+            return;
+        };
         let took = a.graph_event(&event, &mut clips);
-        log::debug!("{actor} talks with {idle} ({event}){}", if took { "" } else { ": the graph won't take it" });
+        log::debug!(
+            "{actor} talks with {idle} ({event}){}",
+            if took {
+                ""
+            } else {
+                ": the graph won't take it"
+            }
+        );
     }
 
     /// The conversation is over: standing speakers stop their dialogue idle.
     pub(crate) fn end_talking_gestures(&mut self, actor: FormId) {
-        let Some(key) = self.actor_cells.get(&actor).copied() else { return };
-        let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor)) else { return };
+        let Some(key) = self.actor_cells.get(&actor).copied() else {
+            return;
+        };
+        let Some(a) = self
+            .cells
+            .get_mut(&key)
+            .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor))
+        else {
+            return;
+        };
         if !a.in_furniture()
             && let Some(g) = &mut a.graph
         {
@@ -1745,7 +2337,14 @@ impl Engine {
     /// `GetSitting` / `GetSleeping` of a loaded actor: 0 not, 2 getting in, 3 in,
     /// 4 getting out (beds count as sleeping, other furniture as sitting).
     pub fn sit_sleep_state(&self, r: FormId, sleeping: bool) -> f32 {
-        let Some(a) = self.actor_cells.get(&r).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r)) else { return 0.0 };
+        let Some(a) = self
+            .actor_cells
+            .get(&r)
+            .and_then(|k| self.cells.get(k))
+            .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r))
+        else {
+            return 0.0;
+        };
         let Some(seat) = &a.seat else { return 0.0 };
         if (seat.kind == Use::Sleep) != sleeping || matches!(seat.kind, Use::Idle) {
             return 0.0;
@@ -1760,8 +2359,15 @@ impl Engine {
 
     /// Set a behaviour graph variable of a loaded actor; false if it has no graph.
     pub fn set_graph_variable(&mut self, r: FormId, name: &str, value: f32) -> bool {
-        let Some(key) = self.actor_cells.get(&r) else { return false };
-        let Some(g) = self.cells.get_mut(key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r)).and_then(|a| a.graph.as_mut()) else {
+        let Some(key) = self.actor_cells.get(&r) else {
+            return false;
+        };
+        let Some(g) = self
+            .cells
+            .get_mut(key)
+            .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r))
+            .and_then(|a| a.graph.as_mut())
+        else {
             return false;
         };
         g.set_variable(name, value);
@@ -1781,8 +2387,17 @@ impl Engine {
         if let Some((_, _, pkgs)) = self.scenes.packages.get(&r) {
             return pkgs.iter().any(|p| p.id == package);
         }
-        let Some(a) = self.actor_cells.get(&r).and_then(|k| self.cells.get(k)).and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r)) else { return false };
-        a.current.and_then(|i| a.packages.get(i)).is_some_and(|p| p.id == package)
+        let Some(a) = self
+            .actor_cells
+            .get(&r)
+            .and_then(|k| self.cells.get(k))
+            .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r))
+        else {
+            return false;
+        };
+        a.current
+            .and_then(|i| a.packages.get(i))
+            .is_some_and(|p| p.id == package)
     }
 
     pub fn actor_pose(&self, r: FormId) -> Option<(Vec3, f32)> {
@@ -1799,19 +2414,31 @@ impl Engine {
         }
     }
 
-    fn location_target(&self, a: &ActorRuntime, loc: package::Location, quest: Option<FormId>) -> (Vec3, f32) {
+    fn location_target(
+        &self,
+        a: &ActorRuntime,
+        loc: package::Location,
+        quest: Option<FormId>,
+    ) -> (Vec3, f32) {
         let centre = match loc.kind {
             LocationKind::NearReference(r) => self.ref_position(r),
-            LocationKind::NearLinkedRef(kw) => {
-                self.linked_ref(a.ref_id, (!kw.is_null()).then_some(kw)).and_then(|r| self.ref_position(r))
-            }
+            LocationKind::NearLinkedRef(kw) => self
+                .linked_ref(a.ref_id, (!kw.is_null()).then_some(kw))
+                .and_then(|r| self.ref_position(r)),
             LocationKind::NearCurrent | LocationKind::NearSelf => Some(a.pos),
-            LocationKind::NearAlias(alias) => quest.and_then(|q| self.alias_ref(q, alias)).and_then(|r| self.ref_position(r)),
+            LocationKind::NearAlias(alias) => quest
+                .and_then(|q| self.alias_ref(q, alias))
+                .and_then(|r| self.ref_position(r)),
             LocationKind::InCell(_) => return (a.editor_pos, loc.radius.max(SANDBOX_MAX)),
             // About its editor place when that is in the location, else at the location's marker.
             LocationKind::InLocAlias(alias) => {
-                let Some(l) = quest.and_then(|q| self.alias_ref(q, alias)) else { return (a.editor_pos, loc.radius) };
-                if self.editor_location(a.ref_id).is_some_and(|e| self.location_within(e, l)) {
+                let Some(l) = quest.and_then(|q| self.alias_ref(q, alias)) else {
+                    return (a.editor_pos, loc.radius);
+                };
+                if self
+                    .editor_location(a.ref_id)
+                    .is_some_and(|e| self.location_within(e, l))
+                {
                     return (a.editor_pos, loc.radius.max(SANDBOX_MAX));
                 }
                 self.location_marker(l).and_then(|m| self.ref_position(m))
@@ -1822,13 +2449,20 @@ impl Engine {
     }
 
     /// The reference a package target input names for actor `a`.
-    fn package_target_ref(&self, a: &ActorRuntime, p: &package::Package, t: Option<Target>) -> Option<FormId> {
+    fn package_target_ref(
+        &self,
+        a: &ActorRuntime,
+        p: &package::Package,
+        t: Option<Target>,
+    ) -> Option<FormId> {
         match t {
             Some(Target::Ref(r)) => Some(r),
             Some(Target::LinkedRef(kw)) => self.linked_ref(a.ref_id, kw),
             Some(Target::Alias(alias)) => p.quest.and_then(|q| self.alias_ref(q, alias)),
             // Patrolling from itself: along its own linked references.
-            Some(Target::SelfRef) if p.behaviour == Behaviour::Patrol => self.linked_ref(a.ref_id, Some(FormId::NULL)),
+            Some(Target::SelfRef) if p.behaviour == Behaviour::Patrol => {
+                self.linked_ref(a.ref_id, Some(FormId::NULL))
+            }
             Some(Target::SelfRef) => Some(a.ref_id),
             _ => None,
         }
@@ -1838,28 +2472,76 @@ impl Engine {
     /// own graph has (`ActionActivate`'s branches for its graph, with the creature
     /// as subject: their conditions name the furniture as its linked reference),
     /// unless found already.
-    fn creature_furniture_ways(&self, a: &ActorRuntime, furniture: FormId) -> Vec<(FormId, furniture::Way)> {
+    fn creature_furniture_ways(
+        &self,
+        a: &ActorRuntime,
+        furniture: FormId,
+    ) -> Vec<(FormId, furniture::Way)> {
         use crate::condition::{Context, IdleQuery};
-        let Some(project) = a.graph.as_ref().map(|g| g.project()).filter(|p| !p.humanoid()) else { return Vec::new() };
-        let Some(f) = self.furniture.get(furniture) else { return Vec::new() };
-        if f.ways.iter().any(|w| w.graph.as_deref() == Some(project.name.as_str())) {
+        let Some(project) = a
+            .graph
+            .as_ref()
+            .map(|g| g.project())
+            .filter(|p| !p.humanoid())
+        else {
+            return Vec::new();
+        };
+        let Some(f) = self.furniture.get(furniture) else {
+            return Vec::new();
+        };
+        if f.ways
+            .iter()
+            .any(|w| w.graph.as_deref() == Some(project.name.as_str()))
+        {
             return Vec::new();
         }
-        let Some(idles) = self.idles.as_ref() else { return Vec::new() };
-        let Some(root) = idles.find(&self.lo, "ActionActivate") else { return Vec::new() };
+        let Some(idles) = self.idles.as_ref() else {
+            return Vec::new();
+        };
+        let Some(root) = idles.find(&self.lo, "ActionActivate") else {
+            return Vec::new();
+        };
         let mut out = Vec::new();
         for (mi, m) in f.markers.iter().enumerate() {
-            let entry = furniture::Entry::of(m.entries).next().map_or(furniture::Entry::Front, |e| e.0);
+            let entry = furniture::Entry::of(m.entries)
+                .next()
+                .map_or(furniture::Entry::Front, |e| e.0);
             let ctx = |state: f32, quick: bool| Context {
                 subject: Some(a.ref_id),
                 target: Some(furniture),
-                idle: Some(IdleQuery { anim_type: m.anim_type, entry: entry.entry_type(), state, quick, child: Some(false), ..Default::default() }),
+                idle: Some(IdleQuery {
+                    anim_type: m.anim_type,
+                    entry: entry.entry_type(),
+                    state,
+                    quick,
+                    child: Some(false),
+                    ..Default::default()
+                }),
                 ..Default::default()
             };
-            let Some((_, enter)) = idles.select_for(self, root, ctx(2.0, true), project) else { continue };
-            let exit = idles.select_for(self, root, ctx(4.0, false), project).map(|(_, e)| e).filter(|e| *e != enter);
-            log::debug!("{} ({}) uses {furniture} marker {mi}: {enter} / {exit:?}", a.ref_id, project.name);
-            out.push((furniture, furniture::Way { marker: mi as u8, entry, child: false, enter, exit, graph: Some(project.name.clone()) }));
+            let Some((_, enter)) = idles.select_for(self, root, ctx(2.0, true), project) else {
+                continue;
+            };
+            let exit = idles
+                .select_for(self, root, ctx(4.0, false), project)
+                .map(|(_, e)| e)
+                .filter(|e| *e != enter);
+            log::debug!(
+                "{} ({}) uses {furniture} marker {mi}: {enter} / {exit:?}",
+                a.ref_id,
+                project.name
+            );
+            out.push((
+                furniture,
+                furniture::Way {
+                    marker: mi as u8,
+                    entry,
+                    child: false,
+                    enter,
+                    exit,
+                    graph: Some(project.name.clone()),
+                },
+            ));
         }
         if out.is_empty() {
             log::debug!("{} ({}): no way into {furniture}", a.ref_id, project.name);
@@ -1878,8 +2560,13 @@ impl Engine {
                     continue;
                 }
                 let pick = a.packages.iter().position(|p| {
-                    let ctx = crate::condition::Context { subject: Some(a.ref_id), quest: p.quest, ..Default::default() };
-                    p.schedule.matches(self.hour, self.day) && crate::condition::evaluate(self, &p.conditions, ctx)
+                    let ctx = crate::condition::Context {
+                        subject: Some(a.ref_id),
+                        quest: p.quest,
+                        ..Default::default()
+                    };
+                    p.schedule.matches(self.hour, self.day)
+                        && crate::condition::evaluate(self, &p.conditions, ctx)
                 });
                 let goal = pick.map(|pi| {
                     let p = &a.packages[pi];
@@ -1904,7 +2591,10 @@ impl Engine {
                     }
                     let (centre, radius) = match behaviour {
                         Behaviour::Patrol => (centre, p.point_radius),
-                        Behaviour::Follow => (target.and_then(|t| self.ref_position(t)).unwrap_or(centre), radius),
+                        Behaviour::Follow => (
+                            target.and_then(|t| self.ref_position(t)).unwrap_or(centre),
+                            radius,
+                        ),
                         _ => (centre, radius),
                     };
                     // Walking up to the player: stop within the force greet distance.
@@ -1920,7 +2610,10 @@ impl Engine {
                     });
                     Goal {
                         practice,
-                        any_furniture: matches!(p.target, Some(Target::ObjectType(package::OBJECT_TYPE_FURNITURE))),
+                        any_furniture: matches!(
+                            p.target,
+                            Some(Target::ObjectType(package::OBJECT_TYPE_FURNITURE))
+                        ),
                         behaviour,
                         centre,
                         radius,
@@ -1951,16 +2644,28 @@ impl Engine {
             }
         }
         for (key, i, pick, goal) in decisions {
-            let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else { continue };
+            let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else {
+                continue;
+            };
             // Force greeters keep a closer eye on the player.
             let greeter = pick.is_some_and(|pi| a.packages[pi].greet.is_some());
-            a.next_eval = if greeter { greet::EVAL_INTERVAL } else { EVAL_INTERVAL };
+            a.next_eval = if greeter {
+                greet::EVAL_INTERVAL
+            } else {
+                EVAL_INTERVAL
+            };
             if a.pinned || a.dead {
                 continue;
             }
             if pick != a.current {
                 if let Some(p) = pick.map(|pi| &a.packages[pi]) {
-                    log::debug!("{} -> package {} ({}, {:?})", a.ref_id, p.editor_id, p.template, goal);
+                    log::debug!(
+                        "{} -> package {} ({}, {:?})",
+                        a.ref_id,
+                        p.editor_id,
+                        p.template,
+                        goal
+                    );
                 }
                 // The first package an actor gets doesn't interrupt what it is doing
                 // (e.g. an idle a script started on load).
@@ -1987,7 +2692,11 @@ impl Engine {
         self.update_force_greets(dt);
         self.evaluate_packages(dt);
         self.update_practice_weapons();
-        let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self.barks.current.as_ref().map(|b| b.speaker));
+        let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self
+            .barks
+            .current
+            .as_ref()
+            .map(|b| b.speaker));
         let player = self.ref_position(PLAYER_REF).unwrap_or_default();
         let eye = self.player.eye();
         // Scene dialogue: whom actors look at (heads), and whether they turn to them.
@@ -1996,7 +2705,12 @@ impl Engine {
             .into_iter()
             .filter_map(|(r, (t, face))| {
                 // Loaded actors only: others are elsewhere.
-                let at = if t == PLAYER_REF { eye } else { self.actor_ref(t).map(|a| a.pos + Vec3::Z * 110.0 * a.scale)? };
+                let at = if t == PLAYER_REF {
+                    eye
+                } else {
+                    self.actor_ref(t)
+                        .map(|a| a.pos + Vec3::Z * 110.0 * a.scale)?
+                };
                 Some((r, (at, face)))
             })
             .collect();
@@ -2020,7 +2734,9 @@ impl Engine {
                     }
                 }
                 // Practice targets: where to aim at them.
-                Some(Goal { practice: Some(pg), .. }) => {
+                Some(Goal {
+                    practice: Some(pg), ..
+                }) => {
                     for t in pg.targets.into_iter().flatten() {
                         if let Some(p) = self.ref_position(t) {
                             targets.insert(t, practice::aim_point(&self.lo, t, p));
@@ -2040,8 +2756,14 @@ impl Engine {
         let nav = std::mem::take(&mut self.nav);
         let mut furniture = std::mem::take(&mut self.furniture);
         let (lo, vfs) = (&self.lo, &self.vfs);
-        let clips = Clips { vfs, anims: &mut self.anims, behaviors: &mut self.behaviors };
-        let may_use = |npc: FormId, kind: Use, owner: Option<FormId>| furniture::may_use(lo, npc, kind, owner);
+        let clips = Clips {
+            vfs,
+            anims: &mut self.anims,
+            behaviors: &mut self.behaviors,
+        };
+        let may_use = |npc: FormId, kind: Use, owner: Option<FormId>| {
+            furniture::may_use(lo, npc, kind, owner)
+        };
         let claimed = self
             .cells
             .values()
@@ -2070,31 +2792,55 @@ impl Engine {
         let mut started: Vec<(FormId, FormId)> = Vec::new();
         let mut lost: Vec<FormId> = Vec::new();
         // Where everyone is, for fights.
-        let mut positions: std::collections::HashMap<FormId, Vec3> =
-            self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.dead).map(|a| (a.ref_id, a.pos)).collect();
+        let mut positions: std::collections::HashMap<FormId, Vec3> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead)
+            .map(|a| (a.ref_id, a.pos))
+            .collect();
         if self.player_died_at.is_none() {
             // The player's feet.
-            let feet = self.player.position - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius);
+            let feet = self.player.position
+                - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius);
             positions.insert(PLAYER_REF, feet);
         }
         // Everyone's position last frame, for walkers to keep clear of.
-        let mut bodies: Vec<(FormId, Vec3)> = self.cells.values().flat_map(|rt| &rt.actors).map(|a| (a.ref_id, a.pos)).collect();
+        let mut bodies: Vec<(FormId, Vec3)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .map(|a| (a.ref_id, a.pos))
+            .collect();
         bodies.push((PLAYER_REF, player));
         if log::log_enabled!(log::Level::Trace) {
-            let free: Vec<&ActorRuntime> = self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.in_furniture()).collect();
+            let free: Vec<&ActorRuntime> = self
+                .cells
+                .values()
+                .flat_map(|rt| &rt.actors)
+                .filter(|a| !a.in_furniture())
+                .collect();
             let mut overlaps = 0;
             for (i, a) in free.iter().enumerate() {
                 for b in &free[i + 1..] {
                     if a.pos.distance(b.pos) < 35.0 {
                         overlaps += 1;
-                        log::trace!("overlap {} {:?} / {} {:?}", a.ref_id, a.state_name(), b.ref_id, b.state_name());
+                        log::trace!(
+                            "overlap {} {:?} / {} {:?}",
+                            a.ref_id,
+                            a.state_name(),
+                            b.ref_id,
+                            b.state_name()
+                        );
                     }
                 }
             }
             log::trace!("actor overlaps: {overlaps}");
         }
         for (key, rt) in self.cells.iter_mut() {
-            let Some(rc) = self.scene.cells.get_mut(key) else { continue };
+            let Some(rc) = self.scene.cells.get_mut(key) else {
+                continue;
+            };
             for (index, (inst, a)) in rc.actors.iter_mut().zip(rt.actors.iter_mut()).enumerate() {
                 if a.dead {
                     if let Some((rd, mapping)) = &a.ragdoll {
@@ -2112,7 +2858,9 @@ impl Engine {
                         let d = player - a.pos;
                         a.turn_towards(d.normalize_or_zero(), dt);
                     }
-                } else if let Some(&(at, true)) = scene_look.get(&a.ref_id).filter(|_| self.ai_enabled && a.combat.is_none() && !a.is_walking() && !a.in_furniture()) {
+                } else if let Some(&(at, true)) = scene_look.get(&a.ref_id).filter(|_| {
+                    self.ai_enabled && a.combat.is_none() && !a.is_walking() && !a.in_furniture()
+                }) {
                     // Saying a scene line to someone: stand and face them.
                     a.halt(1.0);
                     a.turn_towards((at - a.pos).truncate().extend(0.0).normalize_or_zero(), dt);
@@ -2127,10 +2875,23 @@ impl Engine {
                             if let Some(ev) = a.combat_step(dt, &mut world, tp) {
                                 // Attacks the graph has no state for fall back to the basic
                                 // one (not a bow's draw, release or lowering).
-                                let bow = matches!(ev.as_str(), "bowAttackStart" | "attackRelease" | "attackStop");
+                                let bow = matches!(
+                                    ev.as_str(),
+                                    "bowAttackStart" | "attackRelease" | "attackStop"
+                                );
                                 let own = a.graph_event(&ev, &mut world.clips);
-                                let took = own || (!bow && a.graph_event("attackStart", &mut world.clips));
-                                log::debug!("{} {}: {ev}{}", a.ref_id, if bow { "bow" } else { "swings" }, if took { "" } else { " (the graph won't take it)" });
+                                let took =
+                                    own || (!bow && a.graph_event("attackStart", &mut world.clips));
+                                log::debug!(
+                                    "{} {}: {ev}{}",
+                                    a.ref_id,
+                                    if bow { "bow" } else { "swings" },
+                                    if took {
+                                        ""
+                                    } else {
+                                        " (the graph won't take it)"
+                                    }
+                                );
                                 if own {
                                     let cost = a.combat.as_ref().map_or(0.0, |c| c.cost);
                                     a.spend_stamina(cost);
@@ -2184,23 +2945,47 @@ impl Engine {
                     && let Some(c) = a.combat.as_mut()
                     && !std::mem::replace(&mut c.struck, true)
                 {
-                    swings.push(combat::Swing { attacker: a.ref_id, target: c.target, attack: c.attack, pos: a.pos, heading: a.heading });
+                    swings.push(combat::Swing {
+                        attacker: a.ref_id,
+                        target: c.target,
+                        attack: c.attack,
+                        pos: a.pos,
+                        heading: a.heading,
+                    });
                 }
                 for s in a.sounds.drain(..) {
                     sounds.push((s, a.pos + Vec3::Z * 64.0 * a.scale));
                 }
-                if let Some(set) = a.footstep_set.as_ref().filter(|_| a.pos.distance(listener) < crate::footsteps::HEARING) {
+                if let Some(set) = a
+                    .footstep_set
+                    .as_ref()
+                    .filter(|_| a.pos.distance(listener) < crate::footsteps::HEARING)
+                {
                     let gait = a.gait();
-                    steps.extend(a.footsteps.drain(..).map(|tag| crate::footsteps::Step { tag, gait, at: a.pos, set: set.clone() }));
+                    steps.extend(a.footsteps.drain(..).map(|tag| crate::footsteps::Step {
+                        tag,
+                        gait,
+                        at: a.pos,
+                        set: set.clone(),
+                    }));
                 }
                 a.footsteps.clear();
-                if a.is_walking() || matches!(a.state, State::Approach(_) | State::Enter(_) | State::Exit(_) | State::Use(_)) || talking == Some(a.ref_id) {
+                if a.is_walking()
+                    || matches!(
+                        a.state,
+                        State::Approach(_) | State::Enter(_) | State::Exit(_) | State::Use(_)
+                    )
+                    || talking == Some(a.ref_id)
+                {
                     moved.push((a.ref_id, a.pos, a.capsule));
                 }
                 // Reached the door (or gave up out of sight): leave the cell.
                 if a.exiting.is_some()
                     && !a.is_walking()
-                    && a.goal.is_none_or(|g| g.centre.truncate().distance(a.pos.truncate()) < 64.0 || a.pos.distance(player) > 2500.0)
+                    && a.goal.is_none_or(|g| {
+                        g.centre.truncate().distance(a.pos.truncate()) < 64.0
+                            || a.pos.distance(player) > 2500.0
+                    })
                 {
                     gone.push(a.ref_id);
                 }

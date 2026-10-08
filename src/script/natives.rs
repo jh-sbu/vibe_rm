@@ -16,7 +16,13 @@ fn form_arg(args: &[Value], i: usize) -> Option<FormId> {
     args.get(i).and_then(|a| a.as_form()).map(FormId)
 }
 
-pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args: &[Value]) -> NativeResult {
+pub fn call(
+    e: &mut Engine,
+    class: &str,
+    func: &str,
+    this: Option<&Value>,
+    args: &[Value],
+) -> NativeResult {
     let me = this.and_then(|t| t.as_form()).map(FormId);
     let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
     match (class, func) {
@@ -104,11 +110,24 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             _ => false,
         })),
         ("form", "gettype") => v(Value::Int(0)),
-        ("form", "registerforsingleupdate") | ("form", "registerforupdate") | ("alias", "registerforsingleupdate") | ("alias", "registerforupdate") => {
+        ("form", "registerforsingleupdate")
+        | ("form", "registerforupdate")
+        | ("alias", "registerforsingleupdate")
+        | ("alias", "registerforupdate") => {
             if let Some(t) = this.and_then(|t| t.as_object()) {
                 let secs = arg(0).as_float() as f64;
-                let script = this.map(|t| if let Value::Object(_, c) = t { c.to_string() } else { String::new() }).unwrap_or_default();
-                e.scripts.timers.retain(|x| !(x.obj == t && x.event == "OnUpdate"));
+                let script = this
+                    .map(|t| {
+                        if let Value::Object(_, c) = t {
+                            c.to_string()
+                        } else {
+                            String::new()
+                        }
+                    })
+                    .unwrap_or_default();
+                e.scripts
+                    .timers
+                    .retain(|x| !(x.obj == t && x.event == "OnUpdate"));
                 e.scripts.timers.push(crate::script::Timer {
                     at: e.scripts.real_time + secs,
                     game_time: false,
@@ -123,8 +142,18 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("form", "registerforsingleupdategametime") | ("form", "registerforupdategametime") => {
             if let Some(t) = this.and_then(|t| t.as_object()) {
                 let hours = arg(0).as_float() as f64;
-                let script = this.map(|t| if let Value::Object(_, c) = t { c.to_string() } else { String::new() }).unwrap_or_default();
-                e.scripts.timers.retain(|x| !(x.obj == t && x.event == "OnUpdateGameTime"));
+                let script = this
+                    .map(|t| {
+                        if let Value::Object(_, c) = t {
+                            c.to_string()
+                        } else {
+                            String::new()
+                        }
+                    })
+                    .unwrap_or_default();
+                e.scripts
+                    .timers
+                    .retain(|x| !(x.obj == t && x.event == "OnUpdateGameTime"));
                 e.scripts.timers.push(crate::script::Timer {
                     at: e.game_hours_total() + hours,
                     game_time: true,
@@ -136,9 +165,15 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             none()
         }
-        ("form", "unregisterforupdate") | ("form", "unregisterforupdategametime") | ("alias", "unregisterforupdate") => {
+        ("form", "unregisterforupdate")
+        | ("form", "unregisterforupdategametime")
+        | ("alias", "unregisterforupdate") => {
             if let Some(t) = this.and_then(|t| t.as_object()) {
-                let ev = if func.ends_with("gametime") { "OnUpdateGameTime" } else { "OnUpdate" };
+                let ev = if func.ends_with("gametime") {
+                    "OnUpdateGameTime"
+                } else {
+                    "OnUpdate"
+                };
                 e.scripts.timers.retain(|x| !(x.obj == t && x.event == ev));
             }
             none()
@@ -156,26 +191,56 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             none()
         }
-        ("objectreference", "gettriggerobjectcount") => v(Value::Int(me.map_or(0, |f| e.trigger_object_count(f) as i32))),
-        ("objectreference", "isdisabled") => v(Value::Bool(me.map(|f| e.is_disabled(f)).unwrap_or(true))),
-        ("objectreference", "isenabled") => v(Value::Bool(me.map(|f| !e.is_disabled(f)).unwrap_or(false))),
-        ("objectreference", "getbaseobject") | ("actor", "getactorbase") | ("actor", "getleveledactorbase") => match me.and_then(|f| e.base_of(f)) {
+        ("objectreference", "gettriggerobjectcount") => v(Value::Int(
+            me.map_or(0, |f| e.trigger_object_count(f) as i32),
+        )),
+        ("objectreference", "isdisabled") => {
+            v(Value::Bool(me.map(|f| e.is_disabled(f)).unwrap_or(true)))
+        }
+        ("objectreference", "isenabled") => {
+            v(Value::Bool(me.map(|f| !e.is_disabled(f)).unwrap_or(false)))
+        }
+        ("objectreference", "getbaseobject")
+        | ("actor", "getactorbase")
+        | ("actor", "getleveledactorbase") => match me.and_then(|f| e.base_of(f)) {
             Some(b) => v(e.object_value(b)),
             None => none(),
         },
-        ("objectreference", "getpositionx") => v(Value::Float(me.and_then(|f| e.ref_position(f)).map(|p| p.x).unwrap_or(0.0))),
-        ("objectreference", "getpositiony") => v(Value::Float(me.and_then(|f| e.ref_position(f)).map(|p| p.y).unwrap_or(0.0))),
-        ("objectreference", "getpositionz") => v(Value::Float(me.and_then(|f| e.ref_position(f)).map(|p| p.z).unwrap_or(0.0))),
+        ("objectreference", "getpositionx") => v(Value::Float(
+            me.and_then(|f| e.ref_position(f))
+                .map(|p| p.x)
+                .unwrap_or(0.0),
+        )),
+        ("objectreference", "getpositiony") => v(Value::Float(
+            me.and_then(|f| e.ref_position(f))
+                .map(|p| p.y)
+                .unwrap_or(0.0),
+        )),
+        ("objectreference", "getpositionz") => v(Value::Float(
+            me.and_then(|f| e.ref_position(f))
+                .map(|p| p.z)
+                .unwrap_or(0.0),
+        )),
         ("objectreference", "getdistance") => {
-            let d = match (me.and_then(|f| e.ref_position(f)), form_arg(args, 0).and_then(|f| e.ref_position(f))) {
+            let d = match (
+                me.and_then(|f| e.ref_position(f)),
+                form_arg(args, 0).and_then(|f| e.ref_position(f)),
+            ) {
                 (Some(a), Some(b)) => a.distance(b),
                 _ => 0.0,
             };
             v(Value::Float(d))
         }
-        ("objectreference", "isininterior") => v(Value::Bool(matches!(e.location, crate::engine::Location::Interior(_)))),
+        ("objectreference", "isininterior") => v(Value::Bool(matches!(
+            e.location,
+            crate::engine::Location::Interior(_)
+        ))),
         ("objectreference", "is3dloaded") => v(Value::Bool(true)),
-        ("objectreference", "isactivationblocked") => v(Value::Bool(me.is_some_and(|f| e.scripts.blocked_activation.contains(&f)))),
+        ("objectreference", "isactivationblocked") => {
+            v(Value::Bool(me.is_some_and(|f| {
+                e.scripts.blocked_activation.contains(&f)
+            })))
+        }
         ("objectreference", "blockactivation") => {
             if let Some(f) = me {
                 if arg(0).as_bool() || args.is_empty() {
@@ -188,7 +253,9 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("objectreference", "activate") => {
             if let Some(t) = this.and_then(|t| t.as_object()) {
-                e.scripts.pending_events.push((t, "OnActivate".into(), vec![arg(0)]));
+                e.scripts
+                    .pending_events
+                    .push((t, "OnActivate".into(), vec![arg(0)]));
             }
             v(Value::Bool(true))
         }
@@ -199,17 +266,23 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             none()
         }
-        ("objectreference", "getlocklevel") => v(Value::Int(me.and_then(|f| e.lock_of(f)).map_or(0, |l| l.level as i32))),
+        ("objectreference", "getlocklevel") => v(Value::Int(
+            me.and_then(|f| e.lock_of(f)).map_or(0, |l| l.level as i32),
+        )),
         ("objectreference", "setlocklevel") => {
             if let Some(f) = me {
-                e.scripts.lock_levels.insert(f, arg(0).as_int().clamp(0, 255) as u8);
+                e.scripts
+                    .lock_levels
+                    .insert(f, arg(0).as_int().clamp(0, 255) as u8);
             }
             none()
         }
-        ("objectreference", "getlinkedref") => match me.and_then(|f| e.linked_ref(f, form_arg(args, 0))) {
-            Some(r) => v(e.object_value(r)),
-            None => none(),
-        },
+        ("objectreference", "getlinkedref") => {
+            match me.and_then(|f| e.linked_ref(f, form_arg(args, 0))) {
+                Some(r) => v(e.object_value(r)),
+                None => none(),
+            }
+        }
         ("objectreference", "getparentcell") => match me.and_then(|f| e.lo.cell_of_ref(f)) {
             Some(c) => v(e.object_value(c)),
             None => none(),
@@ -222,10 +295,13 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }))
         }
         ("debug", "sendanimationevent") => {
-            if let (Some(r), Some(ev)) = (form_arg(args, 0), args.get(1).and_then(|a| match a {
-                Value::String(s) => Some(s.to_string()),
-                _ => None,
-            })) {
+            if let (Some(r), Some(ev)) = (
+                form_arg(args, 0),
+                args.get(1).and_then(|a| match a {
+                    Value::String(s) => Some(s.to_string()),
+                    _ => None,
+                }),
+            ) {
                 e.play_animation_event(r, &ev);
             }
             none()
@@ -244,7 +320,9 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         | ("objectreference", "addtomap")
         | ("objectreference", "setplayerknows") => v(Value::Bool(true)),
         ("objectreference", "getopenstate") => v(Value::Int(3)),
-        (_, "addinventoryeventfilter") | (_, "removeinventoryeventfilter") | (_, "removeallinventoryeventfilters") => {
+        (_, "addinventoryeventfilter")
+        | (_, "removeinventoryeventfilter")
+        | (_, "removeallinventoryeventfilters") => {
             if let Some(obj) = this.and_then(|t| match t {
                 Value::Object(o, _) => Some(*o),
                 _ => None,
@@ -297,12 +375,21 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         })),
         ("actor", "getequippeditemtype") => {
             let left = arg(0).as_int() == 0;
-            v(Value::Int(me.and_then(|r| e.inventories.get(&r)).map_or(0, |i| i.hand(&e.lo, left) as i32)))
+            v(Value::Int(
+                me.and_then(|r| e.inventories.get(&r))
+                    .map_or(0, |i| i.hand(&e.lo, left) as i32),
+            ))
         }
         ("objectreference", "placeatme") | ("objectreference", "placeactoratme") => {
-            let count = if func == "placeatme" { args.get(1).map_or(1, |c| c.as_int().max(1)) } else { 1 };
+            let count = if func == "placeatme" {
+                args.get(1).map_or(1, |c| c.as_int().max(1))
+            } else {
+                1
+            };
             let made = match (me, form_arg(args, 0)) {
-                (Some(at), Some(base)) => (0..count).filter_map(|_| e.create_ref(base, at, false)).last(),
+                (Some(at), Some(base)) => (0..count)
+                    .filter_map(|_| e.create_ref(base, at, false))
+                    .last(),
                 _ => None,
             };
             v(made.map(|r| e.object_value(r)).unwrap_or(Value::None))
@@ -313,7 +400,11 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
                 && let Some(p) = e.ref_position(t)
             {
                 let off = glam::Vec3::new(arg(1).as_float(), arg(2).as_float(), arg(3).as_float());
-                let rot = if args.get(4).is_none_or(|m| m.as_bool()) { e.ref_rotation(t) } else { e.ref_rotation(r) };
+                let rot = if args.get(4).is_none_or(|m| m.as_bool()) {
+                    e.ref_rotation(t)
+                } else {
+                    e.ref_rotation(r)
+                };
                 e.move_ref(r, t, p + off, rot);
             }
             none()
@@ -327,7 +418,12 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("objectreference", "setposition") => {
             if let Some(r) = me {
                 let rot = e.ref_rotation(r);
-                e.move_ref(r, r, glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float()), rot);
+                e.move_ref(
+                    r,
+                    r,
+                    glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float()),
+                    rot,
+                );
             }
             none()
         }
@@ -336,17 +432,29 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             if let Some(r) = me
                 && let Some(p) = e.ref_position(r)
             {
-                let rot = glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float()) * std::f32::consts::PI / 180.0;
+                let rot = glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float())
+                    * std::f32::consts::PI
+                    / 180.0;
                 e.move_ref(r, r, p, rot);
             }
             none()
         }
-        ("objectreference", "getanglex") | ("objectreference", "getangley") | ("objectreference", "getanglez") => {
-            let rot = me.map(|r| e.ref_rotation(r)).unwrap_or_default().to_array().map(f32::to_degrees);
+        ("objectreference", "getanglex")
+        | ("objectreference", "getangley")
+        | ("objectreference", "getanglez") => {
+            let rot = me
+                .map(|r| e.ref_rotation(r))
+                .unwrap_or_default()
+                .to_array()
+                .map(f32::to_degrees);
             v(Value::Float(rot[usize::from(func.as_bytes()[8] - b'x')]))
         }
-        ("objectreference", "getcurrentlocation") | ("objectreference", "getediblelocation") => none(),
-        ("objectreference", "getreftype") | ("objectreference", "getowningfaction") | ("objectreference", "getactorowner") => none(),
+        ("objectreference", "getcurrentlocation") | ("objectreference", "getediblelocation") => {
+            none()
+        }
+        ("objectreference", "getreftype")
+        | ("objectreference", "getowningfaction")
+        | ("objectreference", "getactorowner") => none(),
         ("objectreference", "isnearplayer") => v(Value::Bool(true)),
         ("objectreference", "getheadingangle") => v(Value::Float(0.0)),
         // ------------------------------------------------------------- Actor
@@ -360,13 +468,25 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("actor", "isbleedingout") => v(Value::Bool(me.is_some_and(|r| e.is_bleeding_out(r)))),
         ("actor", "isguard") => v(Value::Bool(me.is_some_and(|r| e.is_guard(r)))),
         // Rank -1 (potential followers' `CurrentFollowerFaction`) isn't membership.
-        ("actor", "isinfaction") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(|(r, f)| e.npc_factions(r).iter().any(|&(x, rank)| x == f && rank >= 0)))),
-        ("actor", "getfactionrank") => {
-            v(Value::Int(me.zip(form_arg(args, 0)).and_then(|(r, f)| e.npc_factions(r).into_iter().find(|x| x.0 == f)).map_or(-1, |x| x.1 as i32)))
-        }
+        ("actor", "isinfaction") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(
+            |(r, f)| {
+                e.npc_factions(r)
+                    .iter()
+                    .any(|&(x, rank)| x == f && rank >= 0)
+            },
+        ))),
+        ("actor", "getfactionrank") => v(Value::Int(
+            me.zip(form_arg(args, 0))
+                .and_then(|(r, f)| e.npc_factions(r).into_iter().find(|x| x.0 == f))
+                .map_or(-1, |x| x.1 as i32),
+        )),
         ("actor", "isarrested") => v(Value::Bool(false)),
         // ------------------------------------------------------------ Combat
-        ("actor", "isincombat") => v(Value::Bool(me.is_some_and(|r| e.combat_state(r) != crate::ai::combat::CombatState::None))),
+        ("actor", "isincombat") => {
+            v(Value::Bool(me.is_some_and(|r| {
+                e.combat_state(r) != crate::ai::combat::CombatState::None
+            })))
+        }
         ("actor", "getcombatstate") => v(Value::Int(me.map_or(0, |r| e.combat_state(r) as i32))),
         ("actor", "getcombattarget") => match me.and_then(|r| e.combat_target(r)) {
             Some(t) => v(e.object_value(t)),
@@ -388,10 +508,18 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         // Actor values: the shared store (`actor_values`); names outside the known
         // values are plain numbers.
-        ("actor", "getactorvalue") | ("actor", "getav") | ("actor", "getbaseactorvalue") | ("actor", "getbaseav")
-        | ("actor", "getactorvaluepercentage") | ("actor", "getavpercentage") | ("actor", "getactorvaluemax") | ("actor", "getavmax") => {
+        ("actor", "getactorvalue")
+        | ("actor", "getav")
+        | ("actor", "getbaseactorvalue")
+        | ("actor", "getbaseav")
+        | ("actor", "getactorvaluepercentage")
+        | ("actor", "getavpercentage")
+        | ("actor", "getactorvaluemax")
+        | ("actor", "getavmax") => {
             let (actor, name) = (me.unwrap_or_default(), arg(0).to_string());
-            let Some(i) = esp::actor_value::index(&name) else { return v(Value::Float(e.actor_value_named(actor, &name))) };
+            let Some(i) = esp::actor_value::index(&name) else {
+                return v(Value::Float(e.actor_value_named(actor, &name)));
+            };
             v(Value::Float(match func {
                 f if f.contains("base") => e.av_base(actor, i),
                 f if f.contains("percentage") => e.actor_value_fraction(actor, i),
@@ -399,12 +527,29 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
                 _ => e.actor_value(actor, i),
             }))
         }
-        ("actor", "setactorvalue") | ("actor", "setav") | ("actor", "forceactorvalue") | ("actor", "forceav") | ("actor", "modactorvalue") | ("actor", "modav")
-        | ("actor", "damageactorvalue") | ("actor", "damageav") | ("actor", "restoreactorvalue") | ("actor", "restoreav") => {
-            let (actor, name, x) = (me.unwrap_or_default(), arg(0).to_string(), arg(1).as_float());
+        ("actor", "setactorvalue")
+        | ("actor", "setav")
+        | ("actor", "forceactorvalue")
+        | ("actor", "forceav")
+        | ("actor", "modactorvalue")
+        | ("actor", "modav")
+        | ("actor", "damageactorvalue")
+        | ("actor", "damageav")
+        | ("actor", "restoreactorvalue")
+        | ("actor", "restoreav") => {
+            let (actor, name, x) = (
+                me.unwrap_or_default(),
+                arg(0).to_string(),
+                arg(1).as_float(),
+            );
             let Some(i) = esp::actor_value::index(&name) else {
                 let key = (actor, name.to_ascii_lowercase());
-                let cur = e.scripts.other_actor_values.get(&key).copied().unwrap_or(0.0);
+                let cur = e
+                    .scripts
+                    .other_actor_values
+                    .get(&key)
+                    .copied()
+                    .unwrap_or(0.0);
                 let new = match func {
                     f if f.starts_with("set") || f.starts_with("force") => x,
                     f if f.starts_with("damage") => cur - x,
@@ -434,10 +579,14 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             none()
         }
         ("actor", "gethighestrelationshiprank") | ("actor", "getlowestrelationshiprank") => {
-            v(Value::Int(me.map_or(0, |a| e.relationship_extreme(a, func == "gethighestrelationshiprank"))))
+            v(Value::Int(me.map_or(0, |a| {
+                e.relationship_extreme(a, func == "gethighestrelationshiprank")
+            })))
         }
         // ------------------------------------------------------------- Crime
-        ("faction", "getcrimegold") | ("faction", "getcrimegoldviolent") | ("faction", "getcrimegoldnonviolent") => {
+        ("faction", "getcrimegold")
+        | ("faction", "getcrimegoldviolent")
+        | ("faction", "getcrimegoldnonviolent") => {
             let b = me.map(|f| e.bounty(f)).unwrap_or_default();
             v(Value::Int(match func {
                 "getcrimegoldviolent" => b.violent,
@@ -445,7 +594,9 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
                 _ => b.total(),
             }))
         }
-        ("faction", "getinfamy") | ("faction", "getinfamyviolent") | ("faction", "getinfamynonviolent") => {
+        ("faction", "getinfamy")
+        | ("faction", "getinfamyviolent")
+        | ("faction", "getinfamynonviolent") => {
             let b = me.map(|f| e.bounty(f)).unwrap_or_default();
             v(Value::Int(match func {
                 "getinfamyviolent" => b.infamy_violent,
@@ -467,7 +618,11 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("faction", "playerpaycrimegold") => {
             if let Some(f) = me {
-                e.pay_crime_gold(f, args.first().is_none_or(|b| b.as_bool()), args.get(1).is_none_or(|b| b.as_bool()));
+                e.pay_crime_gold(
+                    f,
+                    args.first().is_none_or(|b| b.as_bool()),
+                    args.get(1).is_none_or(|b| b.as_bool()),
+                );
             }
             none()
         }
@@ -477,7 +632,9 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             none()
         }
-        ("faction", "canpaycrimegold") => v(Value::Bool(me.is_some_and(|f| e.can_pay_crime_gold(f)))),
+        ("faction", "canpaycrimegold") => {
+            v(Value::Bool(me.is_some_and(|f| e.can_pay_crime_gold(f))))
+        }
         ("actor", "setplayerresistingarrest") => {
             if let Some(a) = me {
                 e.set_player_resisting_arrest(a);
@@ -495,9 +652,11 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             none()
         }
         // ---------------------------------------------------------- Location
-        ("location", "getkeyworddata") => {
-            v(Value::Float(me.zip(form_arg(args, 0)).and_then(|k| e.location_keyword_data.get(&k).copied()).unwrap_or(0.0)))
-        }
+        ("location", "getkeyworddata") => v(Value::Float(
+            me.zip(form_arg(args, 0))
+                .and_then(|k| e.location_keyword_data.get(&k).copied())
+                .unwrap_or(0.0),
+        )),
         ("location", "setkeyworddata") => {
             if let Some(k) = me.zip(form_arg(args, 0)) {
                 e.location_keyword_data.insert(k, arg(1).as_float());
@@ -513,19 +672,37 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("actor", "isplayerteammate") | ("actor", "isonmount") => v(Value::Bool(false)),
         ("actor", "issneaking") => v(Value::Bool(me.is_some_and(|r| e.is_sneaking(r)))),
-        ("actor", "isdetectedby") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(|(r, by)| e.detects(by, r)))),
+        ("actor", "isdetectedby") => v(Value::Bool(
+            me.zip(form_arg(args, 0))
+                .is_some_and(|(r, by)| e.detects(by, r)),
+        )),
         ("actor", "getlightlevel") => v(Value::Float(me.map_or(0.0, |r| e.light_level(r)))),
-        ("actor", "evaluatepackage") | ("actor", "setrestrained") | ("actor", "setdontmove") | ("actor", "setalert") => none(),
+        ("actor", "evaluatepackage")
+        | ("actor", "setrestrained")
+        | ("actor", "setdontmove")
+        | ("actor", "setalert") => none(),
         ("actor", "getsitstate") | ("actor", "getsleepstate") => v(Value::Int(0)),
-        ("actorbase", "getsex") => v(Value::Int(me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0))),
+        ("actorbase", "getsex") => v(Value::Int(
+            me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0),
+        )),
         ("actorbase", "isunique") => v(Value::Bool(true)),
         // ------------------------------------------------------------- Quest
-        ("quest", "getstage") | ("quest", "getcurrentstageid") => {
-            v(Value::Int(me.map(|q| e.scripts.quests.get(&q).map(|s| s.stage as i32).unwrap_or(0)).unwrap_or(0)))
-        }
+        ("quest", "getstage") | ("quest", "getcurrentstageid") => v(Value::Int(
+            me.map(|q| {
+                e.scripts
+                    .quests
+                    .get(&q)
+                    .map(|s| s.stage as i32)
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0),
+        )),
         ("quest", "getstagedone") | ("quest", "isstagedone") => {
             let st = arg(0).as_int() as u16;
-            v(Value::Bool(me.and_then(|q| e.scripts.quests.get(&q)).is_some_and(|s| s.done.contains(&st))))
+            v(Value::Bool(
+                me.and_then(|q| e.scripts.quests.get(&q))
+                    .is_some_and(|s| s.done.contains(&st)),
+            ))
         }
         ("quest", "setcurrentstageid") | ("quest", "setstage") => {
             if let Some(q) = me {
@@ -534,8 +711,14 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             v(Value::Bool(true))
         }
-        ("quest", "isrunning") | ("quest", "isactive") => v(Value::Bool(me.and_then(|q| e.scripts.quests.get(&q)).is_some_and(|s| s.running))),
-        ("quest", "iscompleted") => v(Value::Bool(me.and_then(|q| e.scripts.quests.get(&q)).is_some_and(|s| s.completed))),
+        ("quest", "isrunning") | ("quest", "isactive") => v(Value::Bool(
+            me.and_then(|q| e.scripts.quests.get(&q))
+                .is_some_and(|s| s.running),
+        )),
+        ("quest", "iscompleted") => v(Value::Bool(
+            me.and_then(|q| e.scripts.quests.get(&q))
+                .is_some_and(|s| s.completed),
+        )),
         ("quest", "start") => v(Value::Bool(me.is_some_and(|q| e.start_quest(q)))),
         ("quest", "stop") => {
             if let Some(q) = me {
@@ -549,10 +732,17 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             let mut ev = crate::story::StoryEvent::new(b"SCPT");
             ev.keyword = me.unwrap_or_default();
             ev.locs[0] = form_arg(args, 0).unwrap_or_default();
-            ev.refs = [form_arg(args, 1).unwrap_or_default(), form_arg(args, 2).unwrap_or_default()];
+            ev.refs = [
+                form_arg(args, 1).unwrap_or_default(),
+                form_arg(args, 2).unwrap_or_default(),
+            ];
             ev.values = [arg(3).as_int() as f32, arg(4).as_int() as f32];
             let started = e.send_story_event(ev);
-            if func == "sendstoryeventandwait" { v(Value::Bool(started)) } else { none() }
+            if func == "sendstoryeventandwait" {
+                v(Value::Bool(started))
+            } else {
+                none()
+            }
         }
         // ------------------------------------------------------------ Scene
         ("scene", "start") | ("scene", "forcestart") => {
@@ -568,8 +758,16 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             none()
         }
         ("scene", "isplaying") => v(Value::Bool(me.is_some_and(|s| e.is_scene_playing(s)))),
-        ("scene", "isactioncomplete") => v(Value::Bool(me.is_some_and(|s| e.is_scene_action_complete(s, arg(0).as_int() as u32)))),
-        ("scene", "getowningquest") => match me.and_then(|s| e.scene_def(s)).map(|d| d.scene.quest).filter(|q| !q.is_null()) {
+        ("scene", "isactioncomplete") => {
+            v(Value::Bool(me.is_some_and(|s| {
+                e.is_scene_action_complete(s, arg(0).as_int() as u32)
+            })))
+        }
+        ("scene", "getowningquest") => match me
+            .and_then(|s| e.scene_def(s))
+            .map(|d| d.scene.quest)
+            .filter(|q| !q.is_null())
+        {
             Some(q) => v(e.object_value(q)),
             None => none(),
         },
@@ -593,27 +791,45 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         }
         ("quest", "setobjectivecompleted") => {
             if let Some(q) = me {
-                e.scripts.quests.entry(q).or_default().objectives_completed.insert(arg(0).as_int());
+                e.scripts
+                    .quests
+                    .entry(q)
+                    .or_default()
+                    .objectives_completed
+                    .insert(arg(0).as_int());
             }
             none()
         }
-        ("quest", "isobjectivedisplayed") => {
-            v(Value::Bool(me.and_then(|q| e.scripts.quests.get(&q)).is_some_and(|s| s.objectives_displayed.contains(&arg(0).as_int()))))
-        }
-        ("quest", "isobjectivecompleted") => {
-            v(Value::Bool(me.and_then(|q| e.scripts.quests.get(&q)).is_some_and(|s| s.objectives_completed.contains(&arg(0).as_int()))))
-        }
+        ("quest", "isobjectivedisplayed") => v(Value::Bool(
+            me.and_then(|q| e.scripts.quests.get(&q))
+                .is_some_and(|s| s.objectives_displayed.contains(&arg(0).as_int())),
+        )),
+        ("quest", "isobjectivecompleted") => v(Value::Bool(
+            me.and_then(|q| e.scripts.quests.get(&q))
+                .is_some_and(|s| s.objectives_completed.contains(&arg(0).as_int())),
+        )),
         ("quest", "getalias") => match this.and_then(|t| t.as_form()) {
             Some(q) => {
                 let alias = arg(0).as_int() as u32;
-                let class = if e.is_location_alias(FormId(q), alias) { "LocationAlias" } else { "ReferenceAlias" };
-                v(Value::Object(ObjectId::Alias { quest: q, alias }, class.into()))
+                let class = if e.is_location_alias(FormId(q), alias) {
+                    "LocationAlias"
+                } else {
+                    "ReferenceAlias"
+                };
+                v(Value::Object(
+                    ObjectId::Alias { quest: q, alias },
+                    class.into(),
+                ))
             }
             None => none(),
         },
         // ---------------------------------------------------- GlobalVariable
-        ("globalvariable", "getvalue") => v(Value::Float(me.map(|g| e.global_value(g)).unwrap_or(0.0))),
-        ("globalvariable", "getvalueint") => v(Value::Int(me.map(|g| e.global_value(g) as i32).unwrap_or(0))),
+        ("globalvariable", "getvalue") => {
+            v(Value::Float(me.map(|g| e.global_value(g)).unwrap_or(0.0)))
+        }
+        ("globalvariable", "getvalueint") => v(Value::Int(
+            me.map(|g| e.global_value(g) as i32).unwrap_or(0),
+        )),
         ("globalvariable", "setvalue") | ("globalvariable", "setvalueint") => {
             if let Some(g) = me {
                 e.scripts.globals.insert(g, arg(0).as_float());
@@ -628,15 +844,21 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             v(Value::Float(cur + arg(0).as_float()))
         }
         // ------------------------------------------------------------- Alias
-        ("referencealias", "getreference") | ("referencealias", "getactorreference") | ("referencealias", "getactorref") => match this {
-            Some(Value::Object(ObjectId::Alias { quest, alias }, _)) => match e.alias_ref(FormId(*quest), *alias) {
-                Some(r) => v(e.object_value(r)),
-                None => none(),
-            },
+        ("referencealias", "getreference")
+        | ("referencealias", "getactorreference")
+        | ("referencealias", "getactorref") => match this {
+            Some(Value::Object(ObjectId::Alias { quest, alias }, _)) => {
+                match e.alias_ref(FormId(*quest), *alias) {
+                    Some(r) => v(e.object_value(r)),
+                    None => none(),
+                }
+            }
             _ => none(),
         },
         ("referencealias", "forcerefto") | ("referencealias", "forcereftoifempty") => {
-            if let (Some(Value::Object(ObjectId::Alias { quest, alias }, _)), Some(r)) = (this, form_arg(args, 0)) {
+            if let (Some(Value::Object(ObjectId::Alias { quest, alias }, _)), Some(r)) =
+                (this, form_arg(args, 0))
+            {
                 let q = e.scripts.quests.entry(FormId(*quest)).or_default();
                 if func == "forcerefto" || !q.aliases.contains_key(alias) {
                     q.aliases.insert(*alias, r);
@@ -646,28 +868,44 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             none()
         }
         ("locationalias", "getlocation") => match this {
-            Some(Value::Object(ObjectId::Alias { quest, alias }, _)) => match e.alias_ref(FormId(*quest), *alias) {
-                Some(l) => v(e.object_value(l)),
-                None => none(),
-            },
+            Some(Value::Object(ObjectId::Alias { quest, alias }, _)) => {
+                match e.alias_ref(FormId(*quest), *alias) {
+                    Some(l) => v(e.object_value(l)),
+                    None => none(),
+                }
+            }
             _ => none(),
         },
         ("locationalias", "forcelocationto") => {
-            if let (Some(Value::Object(ObjectId::Alias { quest, alias }, _)), Some(l)) = (this, form_arg(args, 0)) {
-                e.scripts.quests.entry(FormId(*quest)).or_default().aliases.insert(*alias, l);
+            if let (Some(Value::Object(ObjectId::Alias { quest, alias }, _)), Some(l)) =
+                (this, form_arg(args, 0))
+            {
+                e.scripts
+                    .quests
+                    .entry(FormId(*quest))
+                    .or_default()
+                    .aliases
+                    .insert(*alias, l);
                 e.scripts.alias_gen += 1;
             }
             none()
         }
         ("referencealias", "clear") | ("locationalias", "clear") => {
             if let Some(Value::Object(ObjectId::Alias { quest, alias }, _)) = this {
-                e.scripts.quests.entry(FormId(*quest)).or_default().aliases.remove(alias);
+                e.scripts
+                    .quests
+                    .entry(FormId(*quest))
+                    .or_default()
+                    .aliases
+                    .remove(alias);
                 e.scripts.alias_gen += 1;
             }
             none()
         }
         ("alias", "getowningquest") => match this {
-            Some(Value::Object(ObjectId::Alias { quest, .. }, _)) => v(e.object_value(FormId(*quest))),
+            Some(Value::Object(ObjectId::Alias { quest, .. }, _)) => {
+                v(e.object_value(FormId(*quest)))
+            }
             _ => none(),
         },
         // ------------------------------------------------------------- Misc
@@ -682,17 +920,23 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             v(Value::Int(0))
         }
-        ("formlist", "getsize") => v(Value::Int(me.map(|f| e.formlist(f).len() as i32).unwrap_or(0))),
-        ("formlist", "getat") => match me.and_then(|f| e.formlist(f).get(arg(0).as_int().max(0) as usize).copied()) {
-            Some(x) => v(e.object_value(x)),
-            None => none(),
-        },
+        ("formlist", "getsize") => v(Value::Int(
+            me.map(|f| e.formlist(f).len() as i32).unwrap_or(0),
+        )),
+        ("formlist", "getat") => {
+            match me.and_then(|f| e.formlist(f).get(arg(0).as_int().max(0) as usize).copied()) {
+                Some(x) => v(e.object_value(x)),
+                None => none(),
+            }
+        }
         ("formlist", "hasform") => v(Value::Bool(match (me, form_arg(args, 0)) {
             (Some(f), Some(x)) => e.formlist(f).contains(&x),
             _ => false,
         })),
         ("keyword", "getkeyword") => none(),
-        ("cell", "isattached") | ("cell", "isinterior") => v(Value::Bool(func == "isattached" || matches!(e.location, crate::engine::Location::Interior(_)))),
+        ("cell", "isattached") | ("cell", "isinterior") => v(Value::Bool(
+            func == "isattached" || matches!(e.location, crate::engine::Location::Interior(_)),
+        )),
         ("math", "abs") => v(Value::Float(arg(0).as_float().abs())),
         ("math", "sqrt") => v(Value::Float(arg(0).as_float().sqrt())),
         ("math", "pow") => v(Value::Float(arg(0).as_float().powf(arg(1).as_float()))),

@@ -72,7 +72,15 @@ struct ActionRun {
 
 impl ActionRun {
     fn new() -> Self {
-        ActionRun { state: State::Waiting, actor: None, started_at: 0.0, line: None, queue: Vec::new(), info: None, next_loop: None }
+        ActionRun {
+            state: State::Waiting,
+            actor: None,
+            started_at: 0.0,
+            line: None,
+            queue: Vec::new(),
+            info: None,
+            next_loop: None,
+        }
     }
 }
 
@@ -89,8 +97,15 @@ pub struct SceneRun {
 
 impl SceneRun {
     /// The actors filling the scene's aliases.
-    fn actors<'a>(&'a self, e: &'a Engine) -> impl Iterator<Item = (FormId, &'a esp::scene::Actor)> + 'a {
-        self.def.scene.actors.iter().filter_map(move |a| Some((e.alias_ref(self.def.scene.quest, a.alias)?, a)))
+    fn actors<'a>(
+        &'a self,
+        e: &'a Engine,
+    ) -> impl Iterator<Item = (FormId, &'a esp::scene::Actor)> + 'a {
+        self.def
+            .scene
+            .actors
+            .iter()
+            .filter_map(move |a| Some((e.alias_ref(self.def.scene.quest, a.alias)?, a)))
     }
 }
 
@@ -126,8 +141,16 @@ impl Engine {
         let def = self.lo.get(id).and_then(|rec| {
             let scene = esp::scene::parse(&rec, id)?;
             Some(Arc::new(SceneDef {
-                start: scene.phases.iter().map(|p| conditions(&rec, &p.start)).collect(),
-                completion: scene.phases.iter().map(|p| conditions(&rec, &p.completion)).collect(),
+                start: scene
+                    .phases
+                    .iter()
+                    .map(|p| conditions(&rec, &p.start))
+                    .collect(),
+                completion: scene
+                    .phases
+                    .iter()
+                    .map(|p| conditions(&rec, &p.completion))
+                    .collect(),
                 conditions: conditions(&rec, &scene.conditions),
                 vmad: crate::script::vmad::parse(&rec).unwrap_or_default(),
                 scene,
@@ -149,27 +172,52 @@ impl Engine {
             }
             self.scenes.by_quest = Some(m);
         }
-        self.scenes.by_quest.as_ref().and_then(|m| m.get(&q).cloned()).unwrap_or_default()
+        self.scenes
+            .by_quest
+            .as_ref()
+            .and_then(|m| m.get(&q).cloned())
+            .unwrap_or_default()
     }
 
     pub fn is_scene_playing(&self, s: FormId) -> bool {
-        self.scenes.running.iter().any(|r| r.scene == s && !r.stopping)
+        self.scenes
+            .running
+            .iter()
+            .any(|r| r.scene == s && !r.stopping)
     }
 
     /// The running scene `r` acts in.
     pub fn scene_of_actor(&self, r: FormId) -> Option<&SceneRun> {
-        self.scenes.running.iter().find(|run| !run.stopping && run.actors(self).any(|(a, _)| a == r))
+        self.scenes
+            .running
+            .iter()
+            .find(|run| !run.stopping && run.actors(self).any(|(a, _)| a == r))
     }
 
     pub fn is_scene_action_complete(&self, s: FormId, index: u32) -> bool {
-        self.scenes.running.iter().find(|r| r.scene == s).is_some_and(|run| {
-            run.def.scene.actions.iter().zip(&run.actions).any(|(a, ar)| a.index == index && matches!(ar.state, State::Done | State::Stopped))
-        })
+        self.scenes
+            .running
+            .iter()
+            .find(|r| r.scene == s)
+            .is_some_and(|run| {
+                run.def
+                    .scene
+                    .actions
+                    .iter()
+                    .zip(&run.actions)
+                    .any(|(a, ar)| {
+                        a.index == index && matches!(ar.state, State::Done | State::Stopped)
+                    })
+            })
     }
 
     /// Whether `r` is saying a scene line.
     pub fn is_scene_speaking(&self, r: FormId) -> bool {
-        self.scenes.running.iter().flat_map(|run| &run.actions).any(|a| a.line.as_ref().is_some_and(|l| l.speaker == r))
+        self.scenes
+            .running
+            .iter()
+            .flat_map(|run| &run.actions)
+            .any(|a| a.line.as_ref().is_some_and(|l| l.speaker == r))
     }
 
     /// Scene lines being said near the player, for subtitles.
@@ -180,13 +228,20 @@ impl Engine {
             .iter()
             .flat_map(|run| &run.actions)
             .filter_map(|a| a.line.as_ref())
-            .filter(|l| self.ref_position(l.speaker).is_some_and(|p| p.distance(player) < SUBTITLE_DISTANCE))
+            .filter(|l| {
+                self.ref_position(l.speaker)
+                    .is_some_and(|p| p.distance(player) < SUBTITLE_DISTANCE)
+            })
             .collect()
     }
 
     /// The scene packages `r` runs ahead of its own.
     pub(crate) fn scene_packages(&self, r: FormId) -> Vec<Package> {
-        self.scenes.packages.get(&r).map(|(_, _, p)| p.clone()).unwrap_or_default()
+        self.scenes
+            .packages
+            .get(&r)
+            .map(|(_, _, p)| p.clone())
+            .unwrap_or_default()
     }
 
     /// Start a scene (Papyrus `Start` / `ForceStart`): its quest must be running,
@@ -197,13 +252,27 @@ impl Engine {
         if self.is_scene_playing(s) {
             return true;
         }
-        let Some(def) = self.scene_def(s) else { return false };
+        let Some(def) = self.scene_def(s) else {
+            return false;
+        };
         let quest = def.scene.quest;
         if !self.scripts.quests.get(&quest).is_some_and(|q| q.running) {
-            log::debug!("scene {} not started: quest {quest} isn't running", def.scene.editor_id);
+            log::debug!(
+                "scene {} not started: quest {quest} isn't running",
+                def.scene.editor_id
+            );
             return false;
         }
-        if !force && !condition::evaluate(self, &def.conditions, condition::Context { quest: Some(quest), ..Default::default() }) {
+        if !force
+            && !condition::evaluate(
+                self,
+                &def.conditions,
+                condition::Context {
+                    quest: Some(quest),
+                    ..Default::default()
+                },
+            )
+        {
             log::debug!("scene {} not started: conditions fail", def.scene.editor_id);
             return false;
         }
@@ -211,7 +280,11 @@ impl Engine {
         for a in &def.scene.actors {
             match self.alias_ref(quest, a.alias) {
                 None if a.flags & actor_flags::OPTIONAL == 0 => {
-                    log::debug!("scene {} not started: alias {} is empty", def.scene.editor_id, a.alias);
+                    log::debug!(
+                        "scene {} not started: alias {} is empty",
+                        def.scene.editor_id,
+                        a.alias
+                    );
                     return false;
                 }
                 None => {}
@@ -224,7 +297,10 @@ impl Engine {
         }
         if !busy.is_empty() {
             if !force {
-                log::debug!("scene {} not started: its actors are in {busy:?}", def.scene.editor_id);
+                log::debug!(
+                    "scene {} not started: its actors are in {busy:?}",
+                    def.scene.editor_id
+                );
                 return false;
             }
             for b in busy {
@@ -233,7 +309,15 @@ impl Engine {
         }
         log::info!("scene {} starts", def.scene.editor_id);
         let actions = def.scene.actions.iter().map(|_| ActionRun::new()).collect();
-        self.scenes.running.push(SceneRun { scene: s, def, phase: None, begun: false, stopping: false, paused: false, actions });
+        self.scenes.running.push(SceneRun {
+            scene: s,
+            def,
+            phase: None,
+            begun: false,
+            stopping: false,
+            paused: false,
+            actions,
+        });
         true
     }
 
@@ -248,7 +332,10 @@ impl Engine {
     /// Start the scenes of a quest that begin with it.
     pub(crate) fn start_quest_scenes(&mut self, q: FormId) {
         for s in self.quest_scenes(q) {
-            if self.scene_def(s).is_some_and(|d| d.scene.flags & flags::BEGIN_ON_QUEST_START != 0) {
+            if self
+                .scene_def(s)
+                .is_some_and(|d| d.scene.flags & flags::BEGIN_ON_QUEST_START != 0)
+            {
                 self.start_scene(s, false);
             }
         }
@@ -256,7 +343,13 @@ impl Engine {
 
     /// Stop the scenes of a quest that stopped.
     pub(crate) fn stop_quest_scenes(&mut self, q: FormId) {
-        let ids: Vec<FormId> = self.scenes.running.iter().filter(|r| r.def.scene.quest == q).map(|r| r.scene).collect();
+        let ids: Vec<FormId> = self
+            .scenes
+            .running
+            .iter()
+            .filter(|r| r.def.scene.quest == q)
+            .map(|r| r.scene)
+            .collect();
         for s in ids {
             self.stop_scene(s);
         }
@@ -272,7 +365,12 @@ impl Engine {
                 let props: Vec<(String, papyrus::Value)> = s
                     .properties
                     .iter()
-                    .map(|(n, pv)| (n.clone(), crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f))))
+                    .map(|(n, pv)| {
+                        (
+                            n.clone(),
+                            crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
+                        )
+                    })
                     .collect();
                 vm.attach(&mut host, obj, &s.name, &props);
             }
@@ -323,28 +421,50 @@ impl Engine {
                 self.run_scene_fragment(&def, &f);
             }
         }
-        if self.scenes.running[i].stopping || !self.scripts.quests.get(&quest).is_some_and(|q| q.running) {
+        if self.scenes.running[i].stopping
+            || !self.scripts.quests.get(&quest).is_some_and(|q| q.running)
+        {
             return false;
         }
         // Actors' behaviour flags: dead, fighting or talking to the player.
         let mut pause = false;
         let talking = self.conversation.as_ref().map(|c| c.npc_ref);
-        let actors: Vec<(FormId, u32)> = self.scenes.running[i].actors(self).map(|(r, a)| (r, a.behaviour)).collect();
+        let actors: Vec<(FormId, u32)> = self.scenes.running[i]
+            .actors(self)
+            .map(|(r, a)| (r, a.behaviour))
+            .collect();
         for (r, b) in actors {
             let dead = self.is_dead(r);
             let fighting = self.actor_ref(r).is_some_and(|a| a.combat.is_some());
             let talks = talking == Some(r);
-            if (dead && b & actor_flags::DEATH_END != 0) || (fighting && b & actor_flags::COMBAT_END != 0) || (talks && b & actor_flags::DIALOGUE_END != 0) {
-                log::info!("scene {} ends: {r} {}", def.scene.editor_id, if dead { "died" } else if fighting { "is fighting" } else { "talks to the player" });
+            if (dead && b & actor_flags::DEATH_END != 0)
+                || (fighting && b & actor_flags::COMBAT_END != 0)
+                || (talks && b & actor_flags::DIALOGUE_END != 0)
+            {
+                log::info!(
+                    "scene {} ends: {r} {}",
+                    def.scene.editor_id,
+                    if dead {
+                        "died"
+                    } else if fighting {
+                        "is fighting"
+                    } else {
+                        "talks to the player"
+                    }
+                );
                 return false;
             }
-            pause |= (fighting && b & actor_flags::COMBAT_PAUSE != 0) || (talks && b & actor_flags::DIALOGUE_PAUSE != 0);
+            pause |= (fighting && b & actor_flags::COMBAT_PAUSE != 0)
+                || (talks && b & actor_flags::DIALOGUE_PAUSE != 0);
         }
         self.scenes.running[i].paused = pause;
         if pause {
             return true;
         }
-        let ctx = condition::Context { quest: Some(quest), ..Default::default() };
+        let ctx = condition::Context {
+            quest: Some(quest),
+            ..Default::default()
+        };
         // Several phases can pass in one update (skipped, or with nothing to wait for).
         for _ in 0..=def.scene.phases.len() {
             let phase = match self.scenes.running[i].phase {
@@ -358,16 +478,26 @@ impl Engine {
             };
             self.update_actions(i, &def, phase, now);
             let complete = if def.completion[phase].is_empty() {
-                def.scene.actions.iter().zip(&self.scenes.running[i].actions).all(|(a, ar)| {
-                    a.end_phase as usize != phase || a.flags & action_flags::LOOPING != 0 || matches!(ar.state, State::Done | State::Stopped)
-                })
+                def.scene
+                    .actions
+                    .iter()
+                    .zip(&self.scenes.running[i].actions)
+                    .all(|(a, ar)| {
+                        a.end_phase as usize != phase
+                            || a.flags & action_flags::LOOPING != 0
+                            || matches!(ar.state, State::Done | State::Stopped)
+                    })
             } else {
                 condition::evaluate(self, &def.completion[phase], ctx)
             };
             if !complete {
                 return true;
             }
-            log::debug!("scene {} phase {phase} ({}) complete", def.scene.editor_id, def.scene.phases[phase].name);
+            log::debug!(
+                "scene {} phase {phase} ({}) complete",
+                def.scene.editor_id,
+                def.scene.phases[phase].name
+            );
             self.run_phase_fragment(&def, phase, true);
             // Actions ending here stop (and those that should have ended by now).
             for k in 0..def.scene.actions.len() {
@@ -385,7 +515,10 @@ impl Engine {
     /// Enter the first phase from `from` whose start conditions pass; false past
     /// the last.
     fn enter_phase(&mut self, i: usize, from: usize, def: &Arc<SceneDef>) -> bool {
-        let ctx = condition::Context { quest: Some(def.scene.quest), ..Default::default() };
+        let ctx = condition::Context {
+            quest: Some(def.scene.quest),
+            ..Default::default()
+        };
         let mut p = from;
         while p < def.scene.phases.len() && !condition::evaluate(self, &def.start[p], ctx) {
             log::debug!("scene {} skips phase {p}", def.scene.editor_id);
@@ -394,14 +527,23 @@ impl Engine {
         if p >= def.scene.phases.len() {
             return false;
         }
-        log::debug!("scene {} phase {p} ({})", def.scene.editor_id, def.scene.phases[p].name);
+        log::debug!(
+            "scene {} phase {p} ({})",
+            def.scene.editor_id,
+            def.scene.phases[p].name
+        );
         self.scenes.running[i].phase = Some(p);
         self.run_phase_fragment(def, p, false);
         let now = self.scripts.real_time;
         for k in 0..def.scene.actions.len() {
             let a = &def.scene.actions[k];
-            if (a.start_phase as usize) <= p && (a.end_phase as usize) >= p && self.scenes.running[i].actions[k].state == State::Waiting {
-                let actor = (a.actor >= 0).then(|| self.alias_ref(def.scene.quest, a.actor as u32)).flatten();
+            if (a.start_phase as usize) <= p
+                && (a.end_phase as usize) >= p
+                && self.scenes.running[i].actions[k].state == State::Waiting
+            {
+                let actor = (a.actor >= 0)
+                    .then(|| self.alias_ref(def.scene.quest, a.actor as u32))
+                    .flatten();
                 let ar = &mut self.scenes.running[i].actions[k];
                 ar.state = State::Running;
                 ar.actor = actor;
@@ -414,7 +556,12 @@ impl Engine {
     /// Run the actions of the current phase.
     fn update_actions(&mut self, i: usize, def: &Arc<SceneDef>, phase: usize, now: f64) {
         for k in 0..def.scene.actions.len() {
-            if self.scenes.running.get(i).is_none_or(|r| r.actions[k].state != State::Running) {
+            if self
+                .scenes
+                .running
+                .get(i)
+                .is_none_or(|r| r.actions[k].state != State::Running)
+            {
                 continue;
             }
             let a = &def.scene.actions[k];
@@ -422,20 +569,45 @@ impl Engine {
             let started = self.scenes.running[i].actions[k].started_at;
             let done = match &a.kind {
                 ActionKind::Timer { seconds } => now - started >= *seconds as f64,
-                ActionKind::Dialogue { topic, .. } => self.update_dialogue_action(i, k, *topic, actor, a.flags & action_flags::LOOPING != 0, now),
-                ActionKind::Package { packages } => self.update_package_action(i, k, def, packages, actor, now),
+                ActionKind::Dialogue { topic, .. } => self.update_dialogue_action(
+                    i,
+                    k,
+                    *topic,
+                    actor,
+                    a.flags & action_flags::LOOPING != 0,
+                    now,
+                ),
+                ActionKind::Package { packages } => {
+                    self.update_package_action(i, k, def, packages, actor, now)
+                }
             };
             if done {
                 self.scenes.running[i].actions[k].state = State::Done;
-                log::debug!("scene {} action {} done (phase {phase})", def.scene.editor_id, a.index);
+                log::debug!(
+                    "scene {} action {} done (phase {phase})",
+                    def.scene.editor_id,
+                    a.index
+                );
             }
         }
     }
 
     /// Say the action's line; true once said (looping lines never finish).
-    fn update_dialogue_action(&mut self, i: usize, k: usize, topic: FormId, actor: Option<FormId>, looping: bool, now: f64) -> bool {
+    fn update_dialogue_action(
+        &mut self,
+        i: usize,
+        k: usize,
+        topic: FormId,
+        actor: Option<FormId>,
+        looping: bool,
+        now: f64,
+    ) -> bool {
         // Head tracking only, or nobody (or the player) to speak.
-        let Some(speaker) = actor.filter(|&r| !topic.is_null() && r != PLAYER_REF && !self.is_dead(r)) else { return true };
+        let Some(speaker) =
+            actor.filter(|&r| !topic.is_null() && r != PLAYER_REF && !self.is_dead(r))
+        else {
+            return true;
+        };
         // Speakers say their lines where they are loaded.
         if self.actor_ref(speaker).is_none() {
             return false;
@@ -462,7 +634,9 @@ impl Engine {
                 return true;
             }
             let (lo, hi) = match &self.scenes.running[i].def.scene.actions[k].kind {
-                ActionKind::Dialogue { loop_min, loop_max, .. } => (*loop_min as f64, (*loop_max).max(*loop_min) as f64),
+                ActionKind::Dialogue {
+                    loop_min, loop_max, ..
+                } => (*loop_min as f64, (*loop_max).max(*loop_min) as f64),
                 _ => (1.0, 1.0),
             };
             let wait = lo + (self.rand() % 1000) as f64 / 1000.0 * (hi - lo);
@@ -473,7 +647,9 @@ impl Engine {
             return false;
         }
         // Start the line.
-        let Some(t) = crate::dialogue::topic(&self.lo, topic) else { return true };
+        let Some(t) = crate::dialogue::topic(&self.lo, topic) else {
+            return true;
+        };
         let Some(info) = self.select_info(&t, speaker) else {
             log::debug!("scene line {}: no INFO for {speaker}", t.editor_id);
             return !looping;
@@ -494,7 +670,9 @@ impl Engine {
     fn next_scene_line(&mut self, i: usize, k: usize, speaker: FormId) {
         let ar = &mut self.scenes.running[i].actions[k];
         let r = ar.queue.remove(0);
-        let Some((topic, info)) = ar.info.clone() else { return };
+        let Some((topic, info)) = ar.info.clone() else {
+            return;
+        };
         let voice_type = self.actor_voice_type(speaker).unwrap_or_default();
         let path = crate::dialogue::voice_path(&self.lo, voice_type, &topic, info.id, r.number);
         let at = self.ref_position(speaker).map(|p| p + Vec3::Z * 110.0);
@@ -508,15 +686,36 @@ impl Engine {
         let name = self.form_name(speaker);
         log::info!("{name} (scene): {} [{}]", r.text, path.unwrap_or_default());
         let now = self.scripts.real_time;
-        self.scenes.running[i].actions[k].line = Some(SceneLine { speaker, name, text: r.text, voice, ends_at: now + duration });
+        self.scenes.running[i].actions[k].line = Some(SceneLine {
+            speaker,
+            name,
+            text: r.text,
+            voice,
+            ends_at: now + duration,
+        });
         self.talking_gesture(speaker);
     }
 
     /// Give the actor the action's packages; true once the one it runs is done.
-    fn update_package_action(&mut self, i: usize, k: usize, def: &Arc<SceneDef>, packages: &[FormId], actor: Option<FormId>, now: f64) -> bool {
-        let Some(r) = actor.filter(|&r| r != PLAYER_REF && !self.is_dead(r)) else { return true };
+    fn update_package_action(
+        &mut self,
+        i: usize,
+        k: usize,
+        def: &Arc<SceneDef>,
+        packages: &[FormId],
+        actor: Option<FormId>,
+        now: f64,
+    ) -> bool {
+        let Some(r) = actor.filter(|&r| r != PLAYER_REF && !self.is_dead(r)) else {
+            return true;
+        };
         let index = def.scene.actions[k].index;
-        if self.scenes.packages.get(&r).is_none_or(|(s, x, _)| (*s, *x) != (def.scene.id, index)) {
+        if self
+            .scenes
+            .packages
+            .get(&r)
+            .is_none_or(|(s, x, _)| (*s, *x) != (def.scene.id, index))
+        {
             let packs: Vec<Package> = packages
                 .iter()
                 .flat_map(|&p| package::expand(&self.lo, p))
@@ -525,7 +724,14 @@ impl Engine {
                     p
                 })
                 .collect();
-            log::debug!("scene {}: {r} runs {:?}", def.scene.editor_id, packs.iter().map(|p| p.editor_id.as_str()).collect::<Vec<_>>());
+            log::debug!(
+                "scene {}: {r} runs {:?}",
+                def.scene.editor_id,
+                packs
+                    .iter()
+                    .map(|p| p.editor_id.as_str())
+                    .collect::<Vec<_>>()
+            );
             self.scenes.packages.insert(r, (def.scene.id, index, packs));
             self.scenes.force_greeted.remove(&r);
             self.scripts.alias_gen += 1;
@@ -535,8 +741,16 @@ impl Engine {
         let started = self.scenes.running[i].actions[k].started_at;
         let talking = self.conversation.as_ref().map(|c| c.npc_ref);
         let greeted = self.scenes.force_greeted.contains(&r);
-        let Some(a) = self.actor_ref(r) else { return false };
-        let Some(p) = a.current.and_then(|c| a.packages.get(c)).filter(|p| packages.contains(&p.id)) else { return false };
+        let Some(a) = self.actor_ref(r) else {
+            return false;
+        };
+        let Some(p) = a
+            .current
+            .and_then(|c| a.packages.get(c))
+            .filter(|p| packages.contains(&p.id))
+        else {
+            return false;
+        };
         let Some(goal) = a.goal else { return false };
         match p.behaviour {
             Behaviour::Travel | Behaviour::Escort => {
@@ -545,18 +759,28 @@ impl Engine {
                 let here = self.current_place_of(r).map(|x| x.0);
                 let there = self.package_place(r, p);
                 let in_place = match there {
-                    Some((place, _)) => here.is_some_and(|h| crate::ai::schedule::same_space(h, place)),
+                    Some((place, _)) => {
+                        here.is_some_and(|h| crate::ai::schedule::same_space(h, place))
+                    }
                     None => true,
                 };
-                let centre = there.map(|t| t.1).filter(|c| !c.is_nan()).unwrap_or(goal.centre);
-                a.exiting.is_none() && in_place && !a.is_walking() && a.pos.truncate().distance(centre.truncate()) <= goal.radius + ARRIVED_SLACK
+                let centre = there
+                    .map(|t| t.1)
+                    .filter(|c| !c.is_nan())
+                    .unwrap_or(goal.centre);
+                a.exiting.is_none()
+                    && in_place
+                    && !a.is_walking()
+                    && a.pos.truncate().distance(centre.truncate()) <= goal.radius + ARRIVED_SLACK
             }
             Behaviour::Sit | Behaviour::Sleep => a.in_furniture(),
             Behaviour::ForceGreet => greeted && talking != Some(r),
             // Procedures not run here.
             Behaviour::Hold => now - started >= UNSUPPORTED_PACKAGE_SECS,
             // Never done: they run until their end phase ends.
-            Behaviour::Sandbox | Behaviour::Follow | Behaviour::Patrol | Behaviour::UseWeapon => false,
+            Behaviour::Sandbox | Behaviour::Follow | Behaviour::Patrol | Behaviour::UseWeapon => {
+                false
+            }
         }
     }
 
@@ -578,7 +802,11 @@ impl Engine {
         }
         if matches!(was, State::Running | State::Done)
             && let (ActionKind::Package { .. }, Some(r)) = (&a.kind, ar.actor)
-            && self.scenes.packages.get(&r).is_some_and(|(s, x, _)| (*s, *x) == (scene, a.index))
+            && self
+                .scenes
+                .packages
+                .get(&r)
+                .is_some_and(|(s, x, _)| (*s, *x) == (scene, a.index))
         {
             self.scenes.packages.remove(&r);
             self.scripts.alias_gen += 1;
@@ -606,14 +834,24 @@ impl Engine {
         let mut out = HashMap::new();
         for run in &self.scenes.running {
             for (a, ar) in run.def.scene.actions.iter().zip(&run.actions) {
-                let (ActionKind::Dialogue { headtrack, .. }, Some(r), State::Running | State::Done) = (&a.kind, ar.actor, ar.state) else { continue };
+                let (ActionKind::Dialogue { headtrack, .. }, Some(r), State::Running | State::Done) =
+                    (&a.kind, ar.actor, ar.state)
+                else {
+                    continue;
+                };
                 let target = if a.flags & action_flags::HEADTRACK_PLAYER != 0 {
                     Some(PLAYER_REF)
                 } else {
                     headtrack.and_then(|h| self.alias_ref(run.def.scene.quest, h))
                 };
                 if let Some(t) = target.filter(|&t| t != r) {
-                    out.insert(r, (t, a.flags & action_flags::FACE_TARGET != 0 && ar.line.is_some()));
+                    out.insert(
+                        r,
+                        (
+                            t,
+                            a.flags & action_flags::FACE_TARGET != 0 && ar.line.is_some(),
+                        ),
+                    );
                 }
             }
         }
@@ -622,7 +860,14 @@ impl Engine {
 
     /// Whether the player may talk to `r`: not while a scene it acts in says no.
     pub fn scene_blocks_activation(&self, r: FormId) -> bool {
-        self.scenes.running.iter().filter(|run| !run.stopping).any(|run| run.actors(self).any(|(a, f)| a == r && f.flags & actor_flags::NO_PLAYER_ACTIVATION != 0))
+        self.scenes
+            .running
+            .iter()
+            .filter(|run| !run.stopping)
+            .any(|run| {
+                run.actors(self)
+                    .any(|(a, f)| a == r && f.flags & actor_flags::NO_PLAYER_ACTIVATION != 0)
+            })
     }
 
     /// Running scenes, for the console.
@@ -631,7 +876,9 @@ impl Engine {
             .running
             .iter()
             .map(|r| {
-                let phase = r.phase.map_or("-".to_string(), |p| format!("{p} {:?}", r.def.scene.phases[p].name));
+                let phase = r.phase.map_or("-".to_string(), |p| {
+                    format!("{p} {:?}", r.def.scene.phases[p].name)
+                });
                 let actions: Vec<String> = r
                     .def
                     .scene
@@ -639,9 +886,20 @@ impl Engine {
                     .iter()
                     .zip(&r.actions)
                     .filter(|(_, ar)| ar.state == State::Running)
-                    .map(|(a, ar)| format!("{}:{}", a.index, ar.actor.map_or("-".into(), |x| x.to_string())))
+                    .map(|(a, ar)| {
+                        format!(
+                            "{}:{}",
+                            a.index,
+                            ar.actor.map_or("-".into(), |x| x.to_string())
+                        )
+                    })
                     .collect();
-                format!("{} {} phase {phase}{} running {actions:?}", r.def.scene.editor_id, r.scene, if r.paused { " (paused)" } else { "" })
+                format!(
+                    "{} {} phase {phase}{} running {actions:?}",
+                    r.def.scene.editor_id,
+                    r.scene,
+                    if r.paused { " (paused)" } else { "" }
+                )
             })
             .collect()
     }

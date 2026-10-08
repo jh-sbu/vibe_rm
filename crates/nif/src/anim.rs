@@ -96,7 +96,12 @@ pub(crate) fn controller_sequence(r: &mut Reader) -> Result<ControllerSequence> 
         let controller_type = r.string_value()?;
         r.string_value()?; // controller id
         r.string_value()?; // interpolator id
-        blocks.push(ControlledBlock { interpolator, controller, node, controller_type });
+        blocks.push(ControlledBlock {
+            interpolator,
+            controller,
+            node,
+            controller_type,
+        });
     }
     r.f32()?; // weight
     let text_keys = r.block_ref()?;
@@ -112,7 +117,15 @@ pub(crate) fn controller_sequence(r: &mut Reader) -> Result<ControllerSequence> 
             r.block_ref()?;
         }
     }
-    Ok(ControllerSequence { name, blocks, cycle, frequency, start, stop, text_keys })
+    Ok(ControllerSequence {
+        name,
+        blocks,
+        cycle,
+        frequency,
+        start,
+        stop,
+        text_keys,
+    })
 }
 
 fn quat_wxyz(r: &mut Reader) -> Result<Quat> {
@@ -128,11 +141,19 @@ pub(crate) fn transform_interpolator(r: &mut Reader) -> Result<TransformInterpol
     let rotation = quat_wxyz(r)?;
     let scale = r.f32()?;
     let data = r.block_ref()?;
-    Ok(TransformInterpolator { translation, rotation, scale, data })
+    Ok(TransformInterpolator {
+        translation,
+        rotation,
+        scale,
+        data,
+    })
 }
 
 /// A key group: count, interpolation, then (time, value[, forward, backward][, tbc]).
-fn key_group<T>(r: &mut Reader, mut value: impl FnMut(&mut Reader) -> Result<T>) -> Result<Vec<(f32, T)>> {
+fn key_group<T>(
+    r: &mut Reader,
+    mut value: impl FnMut(&mut Reader) -> Result<T>,
+) -> Result<Vec<(f32, T)>> {
     let n = r.u32()?;
     if n == 0 {
         return Ok(Vec::new());
@@ -186,7 +207,11 @@ pub(crate) fn transform_data(r: &mut Reader) -> Result<TransformData> {
     }
     let translations = key_group(r, |r| r.vec3())?;
     let scales = key_group(r, |r| r.f32())?;
-    Ok(TransformData { rotations, translations, scales })
+    Ok(TransformData {
+        rotations,
+        translations,
+        scales,
+    })
 }
 
 pub(crate) fn text_key_extra_data(r: &mut Reader) -> Result<Vec<(f32, String)>> {
@@ -230,8 +255,13 @@ impl TransformData {
             RotationKeys::None => None,
             RotationKeys::Quat(k) => lerp_keys(k, t, |a, b, f| a.slerp(b, f)),
             RotationKeys::Euler([x, y, z]) => {
-                let a = |k: &Vec<(f32, f32)>| lerp_keys(k, t, |a, b, f| a + (b - a) * f).unwrap_or(0.0);
-                Some(Quat::from_rotation_z(a(z)) * Quat::from_rotation_y(a(y)) * Quat::from_rotation_x(a(x)))
+                let a =
+                    |k: &Vec<(f32, f32)>| lerp_keys(k, t, |a, b, f| a + (b - a) * f).unwrap_or(0.0);
+                Some(
+                    Quat::from_rotation_z(a(z))
+                        * Quat::from_rotation_y(a(y))
+                        * Quat::from_rotation_x(a(x)),
+                )
             }
         };
         let tr = lerp_keys(&self.translations, t, |a, b, f| a.lerp(b, f));

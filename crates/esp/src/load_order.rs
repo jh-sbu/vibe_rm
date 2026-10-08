@@ -102,8 +102,13 @@ pub struct LoadOrder {
 }
 
 /// The base game masters, in their mandatory order.
-pub const BASE_MASTERS: &[&str] =
-    &["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"];
+pub const BASE_MASTERS: &[&str] = &[
+    "Skyrim.esm",
+    "Update.esm",
+    "Dawnguard.esm",
+    "HearthFires.esm",
+    "Dragonborn.esm",
+];
 
 impl LoadOrder {
     /// Determine the default load order for a data directory: base masters,
@@ -135,7 +140,11 @@ impl LoadOrder {
             for line in txt.lines() {
                 if let Some(n) = line.trim().strip_prefix('*') {
                     if !exists(n) {
-                        log::warn!("{}: {n} is not in {}; skipping it", p.display(), data_dir.display());
+                        log::warn!(
+                            "{}: {n} is not in {}; skipping it",
+                            p.display(),
+                            data_dir.display()
+                        );
                     }
                     push(&mut list, n);
                 }
@@ -162,8 +171,7 @@ impl LoadOrder {
         let mut next_full = 0u8;
         let mut next_light = 0u16;
         for p in opened {
-            let light =
-                p.header().is_light() || p.name().to_ascii_lowercase().ends_with(".esl");
+            let light = p.header().is_light() || p.name().to_ascii_lowercase().ends_with(".esl");
             let slot = if light {
                 next_light += 1;
                 Slot::Light(next_light - 1)
@@ -184,7 +192,12 @@ impl LoadOrder {
             }
             resolve.push(slot);
             let index = plugins.len();
-            plugins.push(PluginInfo { plugin: p, slot, index, resolve });
+            plugins.push(PluginInfo {
+                plugin: p,
+                slot,
+                index,
+                resolve,
+            });
         }
 
         let mut lo = LoadOrder {
@@ -236,11 +249,18 @@ impl LoadOrder {
                     }
                     group_type::CELL_CHILDREN => {
                         let c = self.plugins[pi].globalize(FormId(child.label_u32()));
-                        self.walk_group(pi, child, coff, world, Some((c, group_type::CELL_CHILDREN)))?;
+                        self.walk_group(
+                            pi,
+                            child,
+                            coff,
+                            world,
+                            Some((c, group_type::CELL_CHILDREN)),
+                        )?;
                     }
                     group_type::TOPIC_CHILDREN => {
                         let topic = self.plugins[pi].globalize(FormId(child.label_u32()));
-                        let items: Vec<Item> = self.plugins[pi].plugin.group_items(&child, coff).collect();
+                        let items: Vec<Item> =
+                            self.plugins[pi].plugin.group_items(&child, coff).collect();
                         for it in items {
                             if let Item::Record(rh, roff) = it {
                                 let id = self.plugins[pi].globalize(rh.form_id);
@@ -282,7 +302,11 @@ impl LoadOrder {
     ) -> Result<()> {
         let prev = self.records.insert(
             id,
-            RecordRef { plugin: pi as u16, offset: roff as u32, tag: rh.tag },
+            RecordRef {
+                plugin: pi as u16,
+                offset: roff as u32,
+                tag: rh.tag,
+            },
         );
         if prev.is_none() {
             self.by_type.entry(rh.tag).or_default().push(id);
@@ -351,7 +375,10 @@ impl LoadOrder {
         } else {
             (Slot::Full(top as u8), id.0 & 0x00FF_FFFF)
         };
-        self.plugins.iter().find(|p| p.slot == slot).map(|p| (p.plugin.name(), local))
+        self.plugins
+            .iter()
+            .find(|p| p.slot == slot)
+            .map(|p| (p.plugin.name(), local))
     }
 
     pub fn record_count(&self) -> usize {
@@ -369,7 +396,11 @@ impl LoadOrder {
         let r = self.records.get(&id)?;
         let info = &self.plugins[r.plugin as usize];
         match info.plugin.record_at(r.offset as usize) {
-            Ok(record) => Some(LoadedRecord { record, plugin: info, form_id: id }),
+            Ok(record) => Some(LoadedRecord {
+                record,
+                plugin: info,
+                form_id: id,
+            }),
             Err(e) => {
                 log::error!("failed to read record {id}: {e}");
                 None
@@ -378,7 +409,10 @@ impl LoadOrder {
     }
 
     pub fn ids_of_type(&self, tag: &[u8; 4]) -> &[FormId] {
-        self.by_type.get(&Tag(*tag)).map(|v| v.as_slice()).unwrap_or(&[])
+        self.by_type
+            .get(&Tag(*tag))
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
     pub fn cell(&self, id: FormId) -> Option<&CellIndex> {
         self.cells.get(&id)
@@ -388,7 +422,10 @@ impl LoadOrder {
     }
     /// INFO records belonging to a dialogue topic, in file order.
     pub fn topic_infos(&self, topic: FormId) -> &[FormId] {
-        self.topic_infos.get(&topic).map(|v| v.as_slice()).unwrap_or(&[])
+        self.topic_infos
+            .get(&topic)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn cell_of_ref(&self, id: FormId) -> Option<FormId> {
@@ -401,7 +438,10 @@ impl LoadOrder {
             for (&id, r) in &self.records {
                 // References, landscape, navmeshes and dialogue infos are by far the most
                 // numerous records and almost never carry useful editor ids.
-                if matches!(&r.tag.0, b"REFR" | b"ACHR" | b"LAND" | b"NAVM" | b"INFO" | b"PGRE" | b"PHZD") {
+                if matches!(
+                    &r.tag.0,
+                    b"REFR" | b"ACHR" | b"LAND" | b"NAVM" | b"INFO" | b"PGRE" | b"PHZD"
+                ) {
                     continue;
                 }
                 if let Some(rec) = self.get(id)
@@ -415,7 +455,9 @@ impl LoadOrder {
     }
 
     pub fn find_editor_id(&self, edid: &str) -> Option<FormId> {
-        self.editor_id_map().get(&edid.to_ascii_lowercase()).copied()
+        self.editor_id_map()
+            .get(&edid.to_ascii_lowercase())
+            .copied()
     }
 
     /// Load localised string tables for every localised plugin. `read` should
@@ -425,7 +467,12 @@ impl LoadOrder {
             if !info.plugin.header().is_localized() {
                 continue;
             }
-            let stem = info.plugin.name().rsplit_once('.').map(|x| x.0).unwrap_or(info.plugin.name());
+            let stem = info
+                .plugin
+                .name()
+                .rsplit_once('.')
+                .map(|x| x.0)
+                .unwrap_or(info.plugin.name());
             for ext in ["strings", "dlstrings", "ilstrings"] {
                 let path = format!("strings/{stem}_{language}.{ext}");
                 if let Some(data) = read(&path.to_ascii_lowercase()) {
@@ -457,4 +504,3 @@ impl LoadOrder {
         }
     }
 }
-

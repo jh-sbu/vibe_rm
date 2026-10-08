@@ -123,7 +123,13 @@ pub struct Detection {
 
 impl Default for Detection {
     fn default() -> Self {
-        Detection { settings: Default::default(), of_player: HashMap::new(), stealth: HashMap::new(), next_in: 0.0, states_in: 0.0 }
+        Detection {
+            settings: Default::default(),
+            of_player: HashMap::new(),
+            stealth: HashMap::new(),
+            next_in: 0.0,
+            states_in: 0.0,
+        }
     }
 }
 
@@ -148,7 +154,9 @@ impl Stealth {
                 self.points = (self.points - v * s.drain_mult * step).max(0.0);
                 self.regen_wait = s.alert_wait;
             }
-            Some(v) if self.regen_wait <= 0.0 => self.points = (self.points + (-v * s.regen_mult).max(s.regen_min) * step).min(100.0),
+            Some(v) if self.regen_wait <= 0.0 => {
+                self.points = (self.points + (-v * s.regen_mult).max(s.regen_min) * step).min(100.0)
+            }
             None if self.regen_wait <= 0.0 => self.points = 100.0,
             _ => {}
         }
@@ -199,7 +207,10 @@ struct Target {
 
 impl Engine {
     pub(crate) fn detection_settings(&self) -> DetectionSettings {
-        *self.detection.settings.get_or_init(|| DetectionSettings::load(&self.lo))
+        *self
+            .detection
+            .settings
+            .get_or_init(|| DetectionSettings::load(&self.lo))
     }
 
     fn observer(&self, r: FormId) -> Option<Observer> {
@@ -247,7 +258,9 @@ impl Engine {
 
     /// The weight of the armor an actor wears.
     fn armor_weight(&self, r: FormId) -> f32 {
-        let Some(inv) = self.inventories.get(&r) else { return 0.0 };
+        let Some(inv) = self.inventories.get(&r) else {
+            return 0.0;
+        };
         inv.equipped
             .iter()
             .filter(|&&f| self.lo.tag_of(f).is_some_and(|t| t.0 == *b"ARMO"))
@@ -258,7 +271,12 @@ impl Engine {
 
     /// How far detection reaches here: further outdoors.
     fn detection_range(&self, s: &DetectionSettings) -> f32 {
-        s.max_distance * if self.outdoors() { s.exterior_distance_mult } else { 1.0 }
+        s.max_distance
+            * if self.outdoors() {
+                s.exterior_distance_mult
+            } else {
+                1.0
+            }
     }
 
     fn outdoors(&self) -> bool {
@@ -270,7 +288,10 @@ impl Engine {
     fn clear_line(&self, from: Vec3, to: Vec3, from_whom: FormId, to_whom: FormId) -> bool {
         let d = to - from;
         let dist = d.length().max(1.0);
-        match self.physics.raycast_excluding(from, d / dist, (dist - 30.0).max(0.0), from_whom) {
+        match self
+            .physics
+            .raycast_excluding(from, d / dist, (dist - 30.0).max(0.0), from_whom)
+        {
             Some((_, owner)) => owner == Some(to_whom),
             None => true,
         }
@@ -289,9 +310,16 @@ impl Engine {
     fn light_parts(&self, p: Vec3, exclude: FormId) -> [f32; 3] {
         let level = |c: Vec3| c.dot(Vec3::new(0.2126, 0.7152, 0.0722)) * LIGHT_SCALE;
         let env = &self.scene.env;
-        let ambient = env.dalc.map_or(env.ambient, |d| d.iter().copied().sum::<Vec3>() / 6.0);
+        let ambient = env
+            .dalc
+            .map_or(env.ambient, |d| d.iter().copied().sum::<Vec3>() / 6.0);
         let sun_dir = env.sun_dir.normalize_or_zero();
-        let sun_lit = !self.outdoors() || (sun_dir.z > 0.0 && self.physics.raycast_excluding(p, sun_dir, SUN_RAY, exclude).is_none());
+        let sun_lit = !self.outdoors()
+            || (sun_dir.z > 0.0
+                && self
+                    .physics
+                    .raycast_excluding(p, sun_dir, SUN_RAY, exclude)
+                    .is_none());
         let sun = if sun_lit { env.sun_color } else { Vec3::ZERO };
         let mut light = Vec3::ZERO;
         for l in &self.scene.lights {
@@ -307,7 +335,11 @@ impl Engine {
                 continue;
             }
             let dir = (at - p) / d.max(1.0);
-            if self.physics.raycast_excluding(p, dir, (d - 10.0).max(0.0), exclude).is_some() {
+            if self
+                .physics
+                .raycast_excluding(p, dir, (d - 10.0).max(0.0), exclude)
+                .is_some()
+            {
                 continue;
             }
             light += Vec3::from_slice(&l.color[..3]) * att;
@@ -355,27 +387,54 @@ impl Engine {
         let flat = Vec3::new(to.x, to.y, 0.0).normalize_or_zero();
         let in_view = flat == Vec3::ZERO || facing.dot(flat) >= VIEW_HALF_ANGLE.to_radians().cos();
         let sees = los && in_view && !o.sleeping;
-        let movement = if t.moving { (s.weight_base + s.weight_mult * t.armor_weight) * if t.running { s.running_mult } else { 1.0 } } else { 0.0 };
-        let sound = s.sounds_mult * movement * if los { 1.0 } else { s.sound_los_mult };
-        let visual = if sees {
-            let light = self.light_level_at(t.at - Vec3::Z * 40.0, t.id);
-            (s.light_mod + light) * s.light_mult * if self.outdoors() { s.light_exterior_mult } else { 1.0 }
+        let movement = if t.moving {
+            (s.weight_base + s.weight_mult * t.armor_weight)
+                * if t.running { s.running_mult } else { 1.0 }
         } else {
             0.0
         };
-        let observer_skill = (s.perception_min + (s.perception_max - s.perception_min) * o.sneak / 100.0) * (1.0 + if o.sleeping { s.sleep_bonus } else { 0.0 });
-        let target_skill = if t.sneaking { t.sneak * s.skill_mult } else { 0.0 };
-        Some((s.base + attenuation * (sound + visual + observer_skill) + (observer_skill - target_skill), sees))
+        let sound = s.sounds_mult * movement * if los { 1.0 } else { s.sound_los_mult };
+        let visual = if sees {
+            let light = self.light_level_at(t.at - Vec3::Z * 40.0, t.id);
+            (s.light_mod + light)
+                * s.light_mult
+                * if self.outdoors() {
+                    s.light_exterior_mult
+                } else {
+                    1.0
+                }
+        } else {
+            0.0
+        };
+        let observer_skill = (s.perception_min
+            + (s.perception_max - s.perception_min) * o.sneak / 100.0)
+            * (1.0 + if o.sleeping { s.sleep_bonus } else { 0.0 });
+        let target_skill = if t.sneaking {
+            t.sneak * s.skill_mult
+        } else {
+            0.0
+        };
+        Some((
+            s.base
+                + attenuation * (sound + visual + observer_skill)
+                + (observer_skill - target_skill),
+            sees,
+        ))
     }
 
     /// Whether the player or a loaded actor is sneaking.
     pub(crate) fn is_sneaking(&self, r: FormId) -> bool {
-        if r == PLAYER_REF { self.player.sneaking } else { self.actor_ref(r).is_some_and(|a| a.is_sneaking()) }
+        if r == PLAYER_REF {
+            self.player.sneaking
+        } else {
+            self.actor_ref(r).is_some_and(|a| a.is_sneaking())
+        }
     }
 
     /// Whether `observer` detects `target` now (`GetDetected`, `IsDetectedBy`).
     pub(crate) fn detects(&self, observer: FormId, target: FormId) -> bool {
-        self.detection_value(observer, target).is_some_and(|v| v > 0.0)
+        self.detection_value(observer, target)
+            .is_some_and(|v| v > 0.0)
     }
 
     /// Someone's stealth points (100 hidden, 0 found).
@@ -387,13 +446,18 @@ impl Engine {
     /// stealth points are gone and it is detected, or it is detected past the
     /// combat threshold.
     fn enough_to_find(&self, v: f32, target: FormId) -> bool {
-        (v > 0.0 && self.stealth_points(target) <= 0.0) || v > self.detection_settings().combat_threshold
+        (v > 0.0 && self.stealth_points(target) <= 0.0)
+            || v > self.detection_settings().combat_threshold
     }
 
     /// Whether `observer` finds `target` (to attack it): from the last worked
     /// out detection of the player, else from detection now.
     pub(crate) fn finds(&self, observer: FormId, target: FormId) -> bool {
-        let v = if target == PLAYER_REF { self.detection.of_player.get(&observer).copied() } else { self.detection_value(observer, target) };
+        let v = if target == PLAYER_REF {
+            self.detection.of_player.get(&observer).copied()
+        } else {
+            self.detection_value(observer, target)
+        };
         v.is_some_and(|v| self.enough_to_find(v, target))
     }
 
@@ -406,7 +470,9 @@ impl Engine {
         if target == PLAYER_REF {
             return self.would_attack_player(r);
         }
-        let (Some(a), Some(t)) = (self.actor_ref(r), self.actor_ref(target)) else { return false };
+        let (Some(a), Some(t)) = (self.actor_ref(r), self.actor_ref(target)) else {
+            return false;
+        };
         if a.dead || t.dead {
             return false;
         }
@@ -433,13 +499,22 @@ impl Engine {
         }
         let step = PLAYER_INTERVAL - self.detection.next_in.min(0.0);
         self.detection.next_in = PLAYER_INTERVAL;
-        let Some(t) = self.target(PLAYER_REF) else { return };
-        let observers: Vec<FormId> = self.cells.values().flat_map(|rt| &rt.actors).map(|a| a.ref_id).collect();
+        let Some(t) = self.target(PLAYER_REF) else {
+            return;
+        };
+        let observers: Vec<FormId> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .map(|a| a.ref_id)
+            .collect();
         let mut of_player = HashMap::new();
         let mut most: Option<f32> = None;
         for r in observers {
             let Some(o) = self.observer(r) else { continue };
-            let Some((v, _)) = self.detection_between(&o, &t) else { continue };
+            let Some((v, _)) = self.detection_between(&o, &t) else {
+                continue;
+            };
             of_player.insert(r, v);
             if self.would_attack_player(r) {
                 most = Some(most.map_or(v, |m| m.max(v)));
@@ -448,9 +523,15 @@ impl Engine {
         let s = self.detection_settings();
         let fighting = self.fought(PLAYER_REF);
         self.detection.of_player = of_player;
-        let st = self.detection.stealth.entry(PLAYER_REF).or_insert(Stealth { points: 100.0, regen_wait: 0.0 });
+        let st = self.detection.stealth.entry(PLAYER_REF).or_insert(Stealth {
+            points: 100.0,
+            regen_wait: 0.0,
+        });
         if most.is_some_and(|v| v > 0.0) && st.regen_wait <= 0.0 && !fighting {
-            log::debug!("an enemy is alert to the player ({:.1})", most.unwrap_or_default());
+            log::debug!(
+                "an enemy is alert to the player ({:.1})",
+                most.unwrap_or_default()
+            );
         }
         st.step(most, fighting, &s, step);
         self.update_trespass();
@@ -458,7 +539,12 @@ impl Engine {
 
     /// Whether anyone is fighting `r` (not fleeing from it).
     fn fought(&self, r: FormId) -> bool {
-        self.cells.values().flat_map(|rt| &rt.actors).any(|a| !a.dead && a.combat.as_ref().is_some_and(|c| c.target == r && !c.fleeing))
+        self.cells.values().flat_map(|rt| &rt.actors).any(|a| {
+            !a.dead
+                && a.combat
+                    .as_ref()
+                    .is_some_and(|c| c.target == r && !c.fleeing)
+        })
     }
 
     /// Actors' stealth points as targets, and the detection states (CK wiki
@@ -470,8 +556,18 @@ impl Engine {
     /// give up once it is undetected with its stealth points full.
     fn update_detection_states(&mut self, step: f32) {
         let s = self.detection_settings();
-        let lost_wait = gmst_f32(&self.lo, "fCombatStealthPointRegenDetectedEventWaitTime", 10.0);
-        let actors: Vec<FormId> = self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.dead && a.bleeding.is_none()).map(|a| a.ref_id).collect();
+        let lost_wait = gmst_f32(
+            &self.lo,
+            "fCombatStealthPointRegenDetectedEventWaitTime",
+            10.0,
+        );
+        let actors: Vec<FormId> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.bleeding.is_none())
+            .map(|a| a.ref_id)
+            .collect();
         // Who would attack whom, and by how much they detect them.
         let mut values: HashMap<(FormId, FormId), f32> = HashMap::new();
         for &r in &actors {
@@ -479,7 +575,11 @@ impl Engine {
                 if t == r || !self.would_attack(r, t) {
                     continue;
                 }
-                let v = if t == PLAYER_REF { self.detection.of_player.get(&r).copied() } else { self.detection_value(r, t) };
+                let v = if t == PLAYER_REF {
+                    self.detection.of_player.get(&r).copied()
+                } else {
+                    self.detection_value(r, t)
+                };
                 if let Some(v) = v {
                     values.insert((r, t), v);
                 }
@@ -487,19 +587,34 @@ impl Engine {
         }
         // Actors' stealth points as targets.
         for &t in &actors {
-            let most = values.iter().filter(|((_, x), _)| *x == t).map(|(_, &v)| v).fold(None, |m: Option<f32>, v| Some(m.map_or(v, |m| m.max(v))));
+            let most = values
+                .iter()
+                .filter(|((_, x), _)| *x == t)
+                .map(|(_, &v)| v)
+                .fold(None, |m: Option<f32>, v| Some(m.map_or(v, |m| m.max(v))));
             let fighting = self.fought(t);
             if most.is_none() && !fighting && !self.detection.stealth.contains_key(&t) {
                 continue;
             }
-            let st = self.detection.stealth.entry(t).or_insert(Stealth { points: 100.0, regen_wait: 0.0 });
+            let st = self.detection.stealth.entry(t).or_insert(Stealth {
+                points: 100.0,
+                regen_wait: 0.0,
+            });
             st.step(most, fighting, &s, step);
             if st.points >= 100.0 && st.regen_wait <= 0.0 {
                 self.detection.stealth.remove(&t);
             }
         }
-        self.detection.stealth.retain(|&t, _| t == PLAYER_REF || actors.contains(&t));
-        let position = |e: &Engine, t: FormId| if t == PLAYER_REF { Some(e.player.position) } else { e.actor_ref(t).filter(|a| !a.dead).map(|a| a.pos) };
+        self.detection
+            .stealth
+            .retain(|&t, _| t == PLAYER_REF || actors.contains(&t));
+        let position = |e: &Engine, t: FormId| {
+            if t == PLAYER_REF {
+                Some(e.player.position)
+            } else {
+                e.actor_ref(t).filter(|a| !a.dead).map(|a| a.pos)
+            }
+        };
         for &r in &actors {
             let Some(a) = self.actor_ref(r) else { continue };
             let (combat, search) = (a.combat.as_ref().map(|c| (c.target, c.fleeing)), a.search);
@@ -509,9 +624,15 @@ impl Engine {
                 if fleeing {
                     continue;
                 }
-                let v = if t == PLAYER_REF { self.detection.of_player.get(&r).copied() } else { self.detection_value(r, t) };
+                let v = if t == PLAYER_REF {
+                    self.detection.of_player.get(&r).copied()
+                } else {
+                    self.detection_value(r, t)
+                };
                 let seen_at = v.filter(|&v| v > 0.0).and_then(|_| position(self, t));
-                let Some(c) = self.actor_mut(r).and_then(|a| a.combat.as_mut()) else { continue };
+                let Some(c) = self.actor_mut(r).and_then(|a| a.combat.as_mut()) else {
+                    continue;
+                };
                 if seen_at.is_some() {
                     c.unseen = 0.0;
                     c.last_seen = seen_at;
@@ -546,8 +667,15 @@ impl Engine {
                 if sr.dwell <= 0.0 {
                     let near = here.distance(sr.at) < SEARCH_RADIUS;
                     let mut rolls: Vec<u64> = (0..16).map(|_| self.rand()).collect();
-                    go = if near { self.nav.random_point(sr.at, SEARCH_RADIUS, || rolls.pop().unwrap_or(0)) } else { None }.or(Some(sr.at));
-                    sr.dwell = SEARCH_DWELL.0 + (self.rand() % 1000) as f32 / 1000.0 * (SEARCH_DWELL.1 - SEARCH_DWELL.0);
+                    go = if near {
+                        self.nav
+                            .random_point(sr.at, SEARCH_RADIUS, || rolls.pop().unwrap_or(0))
+                    } else {
+                        None
+                    }
+                    .or(Some(sr.at));
+                    sr.dwell = SEARCH_DWELL.0
+                        + (self.rand() % 1000) as f32 / 1000.0 * (SEARCH_DWELL.1 - SEARCH_DWELL.0);
                 }
                 let line = sr.idle_line <= 0.0;
                 if line {
@@ -592,7 +720,13 @@ impl Engine {
     fn start_search(&mut self, r: FormId, target: FormId, at: Vec3, lost: bool) {
         let idle_line = self.detection_idle_wait();
         let Some(a) = self.actor_mut(r) else { return };
-        a.search = Some(Search { target, at, lost, dwell: SEARCH_DWELL.1, idle_line });
+        a.search = Some(Search {
+            target,
+            at,
+            lost,
+            dwell: SEARCH_DWELL.1,
+            idle_line,
+        });
         log::info!("{r} {} {target}", if lost { "lost" } else { "is alert to" });
         self.search_towards(r, at);
         self.draw_weapon(r, true);
@@ -600,8 +734,14 @@ impl Engine {
     }
 
     fn search_towards(&mut self, r: FormId, to: Vec3) {
-        let Some(key) = self.actor_cells.get(&r).copied() else { return };
-        if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r)) {
+        let Some(key) = self.actor_cells.get(&r).copied() else {
+            return;
+        };
+        if let Some(a) = self
+            .cells
+            .get_mut(&key)
+            .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r))
+        {
             a.search_at(to, &mut self.furniture);
         }
     }
@@ -610,10 +750,19 @@ impl Engine {
     /// fighting and searches where it last saw it, if the target is still
     /// about.
     pub(crate) fn lose_target(&mut self, r: FormId) {
-        let Some(c) = self.actor_ref(r).and_then(|a| a.combat.as_ref()) else { return };
+        let Some(c) = self.actor_ref(r).and_then(|a| a.combat.as_ref()) else {
+            return;
+        };
         let (target, last) = (c.target, c.last_seen);
-        let about = target == PLAYER_REF && !self.player_dead() || self.actor_ref(target).is_some_and(|t| !t.dead);
-        let at = last.or_else(|| if target == PLAYER_REF { Some(self.player.position) } else { self.actor_ref(target).map(|t| t.pos) });
+        let about = target == PLAYER_REF && !self.player_dead()
+            || self.actor_ref(target).is_some_and(|t| !t.dead);
+        let at = last.or_else(|| {
+            if target == PLAYER_REF {
+                Some(self.player.position)
+            } else {
+                self.actor_ref(target).map(|t| t.pos)
+            }
+        });
         match at.filter(|_| about && self.ai_enabled) {
             Some(at) => {
                 self.stop_fighting(r, true);
@@ -647,7 +796,12 @@ impl Engine {
     /// player's stealth points have gone.
     pub fn sneak_eye(&self) -> f32 {
         let s = self.detection_settings();
-        let most = self.detection.of_player.values().copied().fold(f32::MIN, f32::max);
+        let most = self
+            .detection
+            .of_player
+            .values()
+            .copied()
+            .fold(f32::MIN, f32::max);
         let seen = (most / s.combat_threshold).clamp(0.0, 1.0);
         seen.max(1.0 - self.stealth_points(PLAYER_REF) / 100.0)
     }
@@ -659,7 +813,11 @@ impl Engine {
         let mut out = vec![format!(
             "player: light {:.0} (ambient {ambient:.0}, sun {sun:.0}, lights {lights:.0}), {}{}{}, armor {:.0}, sneak {:.0}; stealth points {:.0}; range {:.0}",
             self.light_level(PLAYER_REF),
-            if self.player.sneaking { "sneaking" } else { "standing" },
+            if self.player.sneaking {
+                "sneaking"
+            } else {
+                "standing"
+            },
             if self.player.moving { ", moving" } else { "" },
             if self.player.running { ", running" } else { "" },
             self.armor_weight(PLAYER_REF),
@@ -667,11 +825,17 @@ impl Engine {
             self.stealth_points(PLAYER_REF),
             self.detection_range(&s),
         )];
-        let Some(t) = self.target(PLAYER_REF) else { return out };
+        let Some(t) = self.target(PLAYER_REF) else {
+            return out;
+        };
         let mut rows: Vec<(f32, String)> = Vec::new();
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
-            let Some(o) = self.observer(a.ref_id) else { continue };
-            let Some((v, sees)) = self.detection_between(&o, &t) else { continue };
+            let Some(o) = self.observer(a.ref_id) else {
+                continue;
+            };
+            let Some((v, sees)) = self.detection_between(&o, &t) else {
+                continue;
+            };
             let dist = o.eye.distance(t.at);
             rows.push((
                 v,
@@ -682,7 +846,11 @@ impl Engine {
                     dist,
                     if sees { ", sees" } else { "" },
                     if o.sleeping { ", asleep" } else { "" },
-                    if self.finds_player(a.ref_id) { ", found" } else { "" }
+                    if self.finds_player(a.ref_id) {
+                        ", found"
+                    } else {
+                        ""
+                    }
                 ),
             ));
         }

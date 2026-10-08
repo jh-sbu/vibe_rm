@@ -95,7 +95,13 @@ pub fn load_cell(lo: &LoadOrder, cell: FormId) -> Option<CellContents> {
         }
     }
 
-    let mut out = CellContents { info, objects: Vec::new(), lights: Vec::new(), doors: Vec::new(), lighting };
+    let mut out = CellContents {
+        info,
+        objects: Vec::new(),
+        lights: Vec::new(),
+        doors: Vec::new(),
+        lighting,
+    };
     for &rid in index.persistent.iter().chain(index.temporary.iter()) {
         add_reference(lo, rid, &mut out.objects, &mut out.lights, &mut out.doors);
     }
@@ -139,13 +145,22 @@ pub fn add_reference(
         });
     }
     if tag == *b"DOOR" {
-        doors.push(Door { ref_id: rid, position: r.position, destination: r.teleport });
+        doors.push(Door {
+            ref_id: rid,
+            position: r.position,
+            destination: r.teleport,
+        });
     }
     if let Some(model) = records::model_path(&base) {
         let lower = model.as_str();
         if lower.contains("marker") && lower.starts_with("meshes/marker") {
             return;
         }
-        objects.push(PlacedObject { ref_id: rid, base: r.base, model, transform: r.transform() });
+        objects.push(PlacedObject {
+            ref_id: rid,
+            base: r.base,
+            model,
+            transform: r.transform(),
+        });
     }
 }

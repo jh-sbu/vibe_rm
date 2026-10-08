@@ -29,26 +29,48 @@ pub struct Modifiers {
 }
 
 fn f32_at(d: &[u8], o: usize) -> f32 {
-    d.get(o..o + 4).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
+    d.get(o..o + 4)
+        .map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
 }
 
 impl Engine {
     fn av_mods(&self, actor: FormId, index: u32) -> Modifiers {
-        self.scripts.actor_values.get(&(actor, index)).copied().unwrap_or_default()
+        self.scripts
+            .actor_values
+            .get(&(actor, index))
+            .copied()
+            .unwrap_or_default()
     }
 
     /// An actor value's base as the records give it: AI data (`AIDT`), skills
     /// and health / magicka / stamina offsets (`DNAM`) from the templates that give
     /// them, starting values and rates from the race (`DATA`).
     pub fn av_record_base(&self, actor: FormId, index: u32) -> f32 {
-        let Some(src) = self.templates_of(actor) else { return if index == av::SPEED_MULT { 100.0 } else { 0.0 } };
+        let Some(src) = self.templates_of(actor) else {
+            return if index == av::SPEED_MULT { 100.0 } else { 0.0 };
+        };
         let lo = &self.lo;
         let stats = || src.field(lo, template::STATS, b"DNAM").unwrap_or_default();
-        let race = || src.form(lo, template::TRAITS, b"RNAM").and_then(|r| lo.get(r)).and_then(|r| r.get(b"DATA").map(<[u8]>::to_vec)).unwrap_or_default();
-        let offset = |o: usize| stats().get(o..o + 2).map_or(0.0, |d| u16::from_le_bytes([d[0], d[1]]) as f32);
+        let race = || {
+            src.form(lo, template::TRAITS, b"RNAM")
+                .and_then(|r| lo.get(r))
+                .and_then(|r| r.get(b"DATA").map(<[u8]>::to_vec))
+                .unwrap_or_default()
+        };
+        let offset = |o: usize| {
+            stats()
+                .get(o..o + 2)
+                .map_or(0.0, |d| u16::from_le_bytes([d[0], d[1]]) as f32)
+        };
         match index {
-            av::AGGRESSION..=av::ASSISTANCE => src.field(lo, template::AI_DATA, b"AIDT").and_then(|d| d.get(index as usize).copied()).unwrap_or(0) as f32,
-            av::FIRST_SKILL..=av::LAST_SKILL => stats().get((index - av::FIRST_SKILL) as usize).copied().unwrap_or(15) as f32,
+            av::AGGRESSION..=av::ASSISTANCE => src
+                .field(lo, template::AI_DATA, b"AIDT")
+                .and_then(|d| d.get(index as usize).copied())
+                .unwrap_or(0) as f32,
+            av::FIRST_SKILL..=av::LAST_SKILL => stats()
+                .get((index - av::FIRST_SKILL) as usize)
+                .copied()
+                .unwrap_or(15) as f32,
             av::HEALTH if actor == PLAYER_REF => PLAYER_HEALTH,
             // As combat works them out (`CombatStats::of`).
             av::HEALTH => (f32_at(&race(), 36) + offset(36)).max(5.0),
@@ -66,7 +88,9 @@ impl Engine {
 
     /// `GetBaseActorValue`.
     pub fn av_base(&self, actor: FormId, index: u32) -> f32 {
-        self.av_mods(actor, index).base.unwrap_or_else(|| self.av_record_base(actor, index))
+        self.av_mods(actor, index)
+            .base
+            .unwrap_or_else(|| self.av_record_base(actor, index))
     }
 
     /// The most it can be (`GetPermanentActorValue`): the base and the permanent
@@ -78,7 +102,9 @@ impl Engine {
     /// Health and stamina of a loaded actor or the player (current, max).
     fn av_live(&self, actor: FormId, index: u32) -> Option<(f32, f32)> {
         match index {
-            av::HEALTH if actor == PLAYER_REF => Some((self.player_health, self.player_max_health())),
+            av::HEALTH if actor == PLAYER_REF => {
+                Some((self.player_health, self.player_max_health()))
+            }
             av::HEALTH => self.actor_health(actor),
             // The player's stamina is unset (infinite) until first worked out.
             av::STAMINA => self.stamina(actor).map(|(cur, max)| (cur.min(max), max)),
@@ -96,8 +122,14 @@ impl Engine {
 
     /// `GetActorValuePercent(age)`: what it is now over the most it can be (0..1).
     pub fn actor_value_fraction(&self, actor: FormId, index: u32) -> f32 {
-        let (current, max) = self.av_live(actor, index).unwrap_or_else(|| (self.actor_value(actor, index), self.av_max(actor, index)));
-        if max > 0.0 { (current / max).clamp(0.0, 1.0) } else { 0.0 }
+        let (current, max) = self
+            .av_live(actor, index)
+            .unwrap_or_else(|| (self.actor_value(actor, index), self.av_max(actor, index)));
+        if max > 0.0 {
+            (current / max).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
     }
 
     pub fn player_max_health(&self) -> f32 {
@@ -108,14 +140,22 @@ impl Engine {
     /// they can be.
     pub fn set_actor_value(&mut self, actor: FormId, index: u32, value: f32) {
         let before = self.av_max(actor, index);
-        self.scripts.actor_values.entry((actor, index)).or_default().base = Some(value);
+        self.scripts
+            .actor_values
+            .entry((actor, index))
+            .or_default()
+            .base = Some(value);
         self.actor_value_changed(actor, index, before);
     }
 
     /// `ModActorValue`: raise (or lower) the most it can be, and what it is now.
     pub fn mod_actor_value(&mut self, actor: FormId, index: u32, delta: f32) {
         let before = self.av_max(actor, index);
-        self.scripts.actor_values.entry((actor, index)).or_default().permanent += delta;
+        self.scripts
+            .actor_values
+            .entry((actor, index))
+            .or_default()
+            .permanent += delta;
         self.actor_value_changed(actor, index, before);
     }
 
@@ -140,7 +180,10 @@ impl Engine {
                     }
                 }
                 av::HEALTH => {
-                    if let Some(a) = self.actor_mut(actor).filter(|a| !a.dead && a.bleeding.is_none()) {
+                    if let Some(a) = self
+                        .actor_mut(actor)
+                        .filter(|a| !a.dead && a.bleeding.is_none())
+                    {
                         a.health = value.max(0.0);
                         if value <= 0.0 {
                             self.kill(actor, false);
@@ -175,7 +218,8 @@ impl Engine {
         let s = Arc::new(stats.unwrap());
         if actor == PLAYER_REF {
             if index == av::HEALTH {
-                self.player_health = (self.player_health + delta).clamp(0.0, self.player_max_health());
+                self.player_health =
+                    (self.player_health + delta).clamp(0.0, self.player_max_health());
             }
             if index == av::STAMINA {
                 self.player_stamina = (self.player_stamina + delta).clamp(0.0, s.max_stamina);
@@ -229,7 +273,12 @@ impl Engine {
     pub fn actor_value_named(&self, actor: FormId, name: &str) -> f32 {
         match av::index(name) {
             Some(i) => self.actor_value(actor, i),
-            None => self.scripts.other_actor_values.get(&(actor, name.to_ascii_lowercase())).copied().unwrap_or(0.0),
+            None => self
+                .scripts
+                .other_actor_values
+                .get(&(actor, name.to_ascii_lowercase()))
+                .copied()
+                .unwrap_or(0.0),
         }
     }
 

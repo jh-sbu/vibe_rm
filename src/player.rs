@@ -23,14 +23,42 @@ impl DisabledControls {
     /// The controls in Papyrus's argument order (movement, fighting, camera
     /// switch, looking, sneaking, menus, activation, journal tabs).
     pub fn flags_mut(&mut self) -> [&mut bool; 8] {
-        [&mut self.movement, &mut self.fighting, &mut self.cam_switch, &mut self.looking, &mut self.sneaking, &mut self.menu, &mut self.activate, &mut self.journal]
+        [
+            &mut self.movement,
+            &mut self.fighting,
+            &mut self.cam_switch,
+            &mut self.looking,
+            &mut self.sneaking,
+            &mut self.menu,
+            &mut self.activate,
+            &mut self.journal,
+        ]
     }
 
     pub fn describe(&self) -> String {
-        let names = ["movement", "fighting", "camera switch", "looking", "sneaking", "menus", "activation", "journal"];
+        let names = [
+            "movement",
+            "fighting",
+            "camera switch",
+            "looking",
+            "sneaking",
+            "menus",
+            "activation",
+            "journal",
+        ];
         let mut c = *self;
-        let off: Vec<&str> = c.flags_mut().into_iter().zip(names).filter(|(f, _)| **f).map(|(_, n)| n).collect();
-        if off.is_empty() { "all player controls enabled".into() } else { format!("disabled: {}", off.join(", ")) }
+        let off: Vec<&str> = c
+            .flags_mut()
+            .into_iter()
+            .zip(names)
+            .filter(|(f, _)| **f)
+            .map(|(_, n)| n)
+            .collect();
+        if off.is_empty() {
+            "all player controls enabled".into()
+        } else {
+            format!("disabled: {}", off.join(", "))
+        }
     }
 }
 
@@ -72,7 +100,17 @@ const CROUCH_RATE: f32 = 4.0;
 
 impl Player {
     pub fn new(eye: Vec3) -> Self {
-        Player { position: eye - Vec3::Z * EYE_OFFSET, vertical_velocity: 0.0, grounded: false, noclip: false, sneaking: false, crouch: 0.0, jumped: false, moving: false, running: false }
+        Player {
+            position: eye - Vec3::Z * EYE_OFFSET,
+            vertical_velocity: 0.0,
+            grounded: false,
+            noclip: false,
+            sneaking: false,
+            crouch: 0.0,
+            jumped: false,
+            moving: false,
+            running: false,
+        }
     }
 
     pub fn eye(&self) -> Vec3 {
@@ -80,16 +118,29 @@ impl Player {
     }
 
     /// `sneak_speed`: the share of their usual speed they keep sneaking.
-    pub fn update(&mut self, physics: &Physics, camera: &Camera, input: MoveInput, sneak_speed: f32, dt: f32) {
+    pub fn update(
+        &mut self,
+        physics: &Physics,
+        camera: &Camera,
+        input: MoveInput,
+        sneak_speed: f32,
+        dt: f32,
+    ) {
         self.jumped = false;
-        let crouch = if self.sneaking && !self.noclip { 1.0 } else { 0.0 };
+        let crouch = if self.sneaking && !self.noclip {
+            1.0
+        } else {
+            0.0
+        };
         self.crouch += (crouch - self.crouch).clamp(-CROUCH_RATE * dt, CROUCH_RATE * dt);
         if self.noclip {
             let mut speed = 600.0;
             if input.run {
                 speed *= 6.0;
             }
-            let v = camera.forward() * input.forward + camera.right() * input.right + Vec3::Z * input.up;
+            let v = camera.forward() * input.forward
+                + camera.right() * input.right
+                + Vec3::Z * input.up;
             self.position += v.normalize_or_zero() * speed * dt;
             self.vertical_velocity = 0.0;
             return;

@@ -8,15 +8,17 @@
 pub mod anim;
 pub mod blocks;
 pub mod collision;
-pub mod skin;
 mod reader;
+pub mod skin;
 
 use std::collections::HashMap;
 
 pub use blocks::*;
-pub use skin::{SkinData, SkinInstance, SkinPartition};
-pub use collision::{CollisionObject, Constraint, ConstraintKind, HAVOK_SCALE, MotionSystem, RigidBody, Shape};
+pub use collision::{
+    CollisionObject, Constraint, ConstraintKind, HAVOK_SCALE, MotionSystem, RigidBody, Shape,
+};
 use reader::Reader;
+pub use skin::{SkinData, SkinInstance, SkinPartition};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -59,7 +61,10 @@ pub enum BlockParse {
     /// Type not (fully) handled; skipped using the declared size.
     Skipped,
     /// Parsed but the consumed size didn't match the declared size.
-    SizeMismatch { consumed: usize, declared: usize },
+    SizeMismatch {
+        consumed: usize,
+        declared: usize,
+    },
     Failed,
 }
 
@@ -87,7 +92,8 @@ impl Nif {
     pub fn parse_with_report(data: &[u8]) -> Result<(Nif, Vec<BlockParse>)> {
         let mut r = Reader::new(data);
         let line = r.line()?;
-        if !line.starts_with("Gamebryo File Format") && !line.starts_with("NetImmerse File Format") {
+        if !line.starts_with("Gamebryo File Format") && !line.starts_with("NetImmerse File Format")
+        {
             return Err(Error::BadMagic);
         }
         let version = r.u32()?;
@@ -167,14 +173,22 @@ impl Nif {
             if end > data.len() {
                 return Err(Error::Eof(end));
             }
-            let mut sub = Reader { data: &data[..end], pos: start, bs_version, strings: &header.strings };
+            let mut sub = Reader {
+                data: &data[..end],
+                pos: start,
+                bs_version,
+                strings: &header.strings,
+            };
             let (block, status) = match blocks::parse_block(ty, &mut sub) {
                 Ok(Some(b)) => {
                     let consumed = sub.pos() - start;
                     let st = if consumed == size {
                         BlockParse::Exact
                     } else {
-                        BlockParse::SizeMismatch { consumed, declared: size }
+                        BlockParse::SizeMismatch {
+                            consumed,
+                            declared: size,
+                        }
                     };
                     (b, st)
                 }
@@ -201,7 +215,14 @@ impl Nif {
         if roots.is_empty() && !blocks.is_empty() {
             roots.push(0);
         }
-        Ok((Nif { header, blocks, roots }, report))
+        Ok((
+            Nif {
+                header,
+                blocks,
+                roots,
+            },
+            report,
+        ))
     }
 
     pub fn block_type_name(&self, i: usize) -> &str {
@@ -213,7 +234,8 @@ impl Nif {
     }
 
     pub fn string(&self, s: StringRef) -> Option<&str> {
-        s.0.and_then(|i| self.header.strings.get(i as usize)).map(String::as_str)
+        s.0.and_then(|i| self.header.strings.get(i as usize))
+            .map(String::as_str)
     }
 
     /// Count of block types by name, for diagnostics.

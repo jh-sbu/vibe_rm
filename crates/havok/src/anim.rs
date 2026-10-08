@@ -14,7 +14,11 @@ pub struct QsTransform {
 
 impl Default for QsTransform {
     fn default() -> Self {
-        QsTransform { translation: Vec3::ZERO, rotation: Quat::IDENTITY, scale: Vec3::ONE }
+        QsTransform {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        }
     }
 }
 
@@ -36,7 +40,11 @@ fn qs(p: &Packfile, o: u32) -> QsTransform {
     let t = vec4(p, o);
     let r = vec4(p, o + 16);
     let s = vec4(p, o + 32);
-    QsTransform { translation: t.truncate(), rotation: Quat::from_xyzw(r.x, r.y, r.z, r.w), scale: s.truncate() }
+    QsTransform {
+        translation: t.truncate(),
+        rotation: Quat::from_xyzw(r.x, r.y, r.z, r.w),
+        scale: s.truncate(),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -69,7 +77,10 @@ pub struct Binding {
 
 pub enum AnimationData {
     Spline(SplineAnimation),
-    Interleaved { frames: usize, transforms: Vec<QsTransform> },
+    Interleaved {
+        frames: usize,
+        transforms: Vec<QsTransform>,
+    },
 }
 
 pub struct Animation {
@@ -92,13 +103,23 @@ impl Animation {
                 if *frames == 0 {
                     return;
                 }
-                let f = if self.duration > 0.0 { t / self.duration * (*frames as f32 - 1.0) } else { 0.0 };
+                let f = if self.duration > 0.0 {
+                    t / self.duration * (*frames as f32 - 1.0)
+                } else {
+                    0.0
+                };
                 let f0 = (f.floor() as usize).min(frames - 1);
                 let f1 = (f0 + 1).min(frames - 1);
                 let a = f - f0 as f32;
                 for (i, o) in out.iter_mut().enumerate() {
-                    let x = transforms.get(f0 * self.num_tracks + i).copied().unwrap_or_default();
-                    let y = transforms.get(f1 * self.num_tracks + i).copied().unwrap_or_default();
+                    let x = transforms
+                        .get(f0 * self.num_tracks + i)
+                        .copied()
+                        .unwrap_or_default();
+                    let y = transforms
+                        .get(f1 * self.num_tracks + i)
+                        .copied()
+                        .unwrap_or_default();
                     *o = x.lerp(&y, a);
                 }
             }
@@ -135,9 +156,18 @@ impl AnimationContainer {
                 if let Some(b) = p.ptr(arr + i * 8) {
                     let anim = p.ptr(b + 24).unwrap_or(u32::MAX);
                     let (ta, tn) = p.array(b + 32);
-                    let track_to_bone = ta.map(|ta| (0..tn as u32).map(|k| p.i16(ta + k * 2)).collect()).unwrap_or_default();
+                    let track_to_bone = ta
+                        .map(|ta| (0..tn as u32).map(|k| p.i16(ta + k * 2)).collect())
+                        .unwrap_or_default();
                     let additive = p.u8(b + 64) == 1;
-                    bindings.push((anim, Binding { skeleton_name: p.string(b + 16).unwrap_or_default(), track_to_bone, additive }));
+                    bindings.push((
+                        anim,
+                        Binding {
+                            skeleton_name: p.string(b + 16).unwrap_or_default(),
+                            track_to_bone,
+                            additive,
+                        },
+                    ));
                 }
             }
         }
@@ -145,13 +175,18 @@ impl AnimationContainer {
         let (arr, n) = p.array(ac + 32);
         if let Some(arr) = arr {
             for i in 0..n as u32 {
-                let Some(a) = p.ptr(arr + i * 8) else { continue };
+                let Some(a) = p.ptr(arr + i * 8) else {
+                    continue;
+                };
                 let mut anim = read_animation(&p, a)?;
                 anim.binding = bindings.iter().find(|b| b.0 == a).map(|b| b.1.clone());
                 animations.push(anim);
             }
         }
-        Ok(AnimationContainer { skeletons, animations })
+        Ok(AnimationContainer {
+            skeletons,
+            animations,
+        })
     }
 }
 
@@ -163,9 +198,25 @@ fn read_skeleton(p: &Packfile, s: u32) -> Skeleton {
     let mut bones = Vec::with_capacity(bn);
     for i in 0..bn as u32 {
         let bname = ba.and_then(|ba| p.string(ba + i * 16)).unwrap_or_default();
-        let parent = if (i as usize) < pn { pa.map(|pa| p.i16(pa + i * 2)).unwrap_or(-1) } else { -1 };
-        let reference = if (i as usize) < rn { ra.map(|ra| qs(p, ra + i * 48)).unwrap_or_default() } else { QsTransform::default() };
-        bones.push(SkeletonBone { name: bname, parent: if parent >= 0 { Some(parent as usize) } else { None }, reference });
+        let parent = if (i as usize) < pn {
+            pa.map(|pa| p.i16(pa + i * 2)).unwrap_or(-1)
+        } else {
+            -1
+        };
+        let reference = if (i as usize) < rn {
+            ra.map(|ra| qs(p, ra + i * 48)).unwrap_or_default()
+        } else {
+            QsTransform::default()
+        };
+        bones.push(SkeletonBone {
+            name: bname,
+            parent: if parent >= 0 {
+                Some(parent as usize)
+            } else {
+                None
+            },
+            reference,
+        });
     }
     Skeleton { name, bones }
 }
@@ -184,21 +235,38 @@ fn read_animation(p: &Packfile, a: u32) -> Result<Animation> {
             if let Some(aa) = aa {
                 for k in 0..an as u32 {
                     let e = aa + k * 16;
-                    annotations.push(Annotation { time: p.f32(e), text: p.string(e + 8).unwrap_or_default() });
+                    annotations.push(Annotation {
+                        time: p.f32(e),
+                        text: p.string(e + 8).unwrap_or_default(),
+                    });
                 }
             }
         }
     }
     annotations.sort_by(|x, y| x.time.total_cmp(&y.time));
     let data = match class.as_str() {
-        "hkaSplineCompressedAnimation" => AnimationData::Spline(SplineAnimation::read(p, a, num_tracks, num_floats)?),
+        "hkaSplineCompressedAnimation" => {
+            AnimationData::Spline(SplineAnimation::read(p, a, num_tracks, num_floats)?)
+        }
         "hkaInterleavedUncompressedAnimation" => {
             let (arr, n) = p.array(a + 56);
-            let transforms: Vec<QsTransform> = arr.map(|arr| (0..n as u32).map(|i| qs(p, arr + i * 48)).collect()).unwrap_or_default();
-            let frames = if num_tracks > 0 { transforms.len() / num_tracks } else { 0 };
+            let transforms: Vec<QsTransform> = arr
+                .map(|arr| (0..n as u32).map(|i| qs(p, arr + i * 48)).collect())
+                .unwrap_or_default();
+            let frames = if num_tracks > 0 {
+                transforms.len() / num_tracks
+            } else {
+                0
+            };
             AnimationData::Interleaved { frames, transforms }
         }
         other => return Err(Error::Unsupported(format!("animation class {other}"))),
     };
-    Ok(Animation { duration, num_tracks, data, annotations, binding: None })
+    Ok(Animation {
+        duration,
+        num_tracks,
+        data,
+        annotations,
+        binding: None,
+    })
 }

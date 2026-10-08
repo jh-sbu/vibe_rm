@@ -59,7 +59,11 @@ pub struct Step {
 impl Engine {
     pub(crate) fn footstep_set(&mut self, fsts: FormId) -> Option<Arc<FootstepSet>> {
         let lo = &self.lo;
-        self.footsteps.sets.entry(fsts).or_insert_with(|| FootstepSet::load(lo, fsts).map(Arc::new)).clone()
+        self.footsteps
+            .sets
+            .entry(fsts)
+            .or_insert_with(|| FootstepSet::load(lo, fsts).map(Arc::new))
+            .clone()
     }
 
     /// The material type (MATT) of the ground just below a point: water for feet
@@ -92,7 +96,10 @@ impl Engine {
     pub(crate) fn surface_material(&self, surface: Surface, at: Vec3) -> FormId {
         match surface {
             Surface::Havok(id) => {
-                let materials = self.footsteps.materials.get_or_init(|| footsteps::havok_materials(&self.lo));
+                let materials = self
+                    .footsteps
+                    .materials
+                    .get_or_init(|| footsteps::havok_materials(&self.lo));
                 materials.get(&id).copied().unwrap_or(footsteps::STONE)
             }
             Surface::Terrain => self
@@ -110,12 +117,23 @@ impl Engine {
     }
 
     pub(crate) fn play_footstep(&mut self, step: &Step) {
-        let Some(ipds) = step.set.impacts(&step.tag, step.gait) else { return };
-        let Some(material) = self.ground_material(step.at) else { return };
+        let Some(ipds) = step.set.impacts(&step.tag, step.gait) else {
+            return;
+        };
+        let Some(material) = self.ground_material(step.at) else {
+            return;
+        };
         let sound = self.footsteps.impacts.sound(&self.lo, ipds, material);
         if log::log_enabled!(target: "footsteps", log::Level::Trace) {
-            let surface = self.physics.surface_below(step.at + Vec3::Z * 32.0, 96.0).map(|s| s.1);
-            let name = self.lo.get(material).and_then(|r| r.editor_id()).unwrap_or_default();
+            let surface = self
+                .physics
+                .surface_below(step.at + Vec3::Z * 32.0, 96.0)
+                .map(|s| s.1);
+            let name = self
+                .lo
+                .get(material)
+                .and_then(|r| r.editor_id())
+                .unwrap_or_default();
             log::trace!(target: "footsteps", "{} {:?} at {:.0} on {name} ({surface:?}): {sound:?}", step.tag, step.gait, step.at);
         }
         if let Some(s) = sound {
@@ -171,9 +189,17 @@ impl Engine {
         }
         self.footsteps.stride -= stride;
         self.footsteps.right = !self.footsteps.right;
-        let foot = if self.footsteps.right { "right" } else { "left" };
+        let foot = if self.footsteps.right {
+            "right"
+        } else {
+            "left"
+        };
         let sprinting = format!("footsprint{foot}");
-        if gait == Gait::Sprint && self.player_footstep_set().is_some_and(|s| s.has_tag(&sprinting)) {
+        if gait == Gait::Sprint
+            && self
+                .player_footstep_set()
+                .is_some_and(|s| s.has_tag(&sprinting))
+        {
             self.player_step(&sprinting, gait);
         } else {
             self.player_step(&format!("foot{foot}"), gait);
@@ -182,22 +208,38 @@ impl Engine {
 
     /// Sound one of the player's footstep events at their feet.
     fn player_step(&mut self, tag: &str, gait: Gait) {
-        let Some(set) = self.player_footstep_set() else { return };
-        let at = self.player.position - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius);
-        self.play_footstep(&Step { tag: tag.to_owned(), gait, at, set });
+        let Some(set) = self.player_footstep_set() else {
+            return;
+        };
+        let at = self.player.position
+            - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius);
+        self.play_footstep(&Step {
+            tag: tag.to_owned(),
+            gait,
+            at,
+            set,
+        });
     }
 
     /// The footstep set of what the player wears (worked out again when that changes).
     fn player_footstep_set(&mut self) -> Option<Arc<FootstepSet>> {
-        let worn = self.inventories.get(&PLAYER_REF).map(|i| i.equipped.clone()).unwrap_or_default();
+        let worn = self
+            .inventories
+            .get(&PLAYER_REF)
+            .map(|i| i.equipped.clone())
+            .unwrap_or_default();
         if let Some((w, set)) = &self.footsteps.player_set
             && *w == worn
         {
             return set.clone();
         }
         let race = self.npc_race(FormId(0x7)).unwrap_or(FormId(0x13746));
-        let skin = self.lo.get(race).and_then(|r| r.get(b"WNAM").map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))));
-        let fsts = crate::world::actor::footstep_set(&self.lo, &worn, skin.unwrap_or_default(), race);
+        let skin = self.lo.get(race).and_then(|r| {
+            r.get(b"WNAM")
+                .map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+        });
+        let fsts =
+            crate::world::actor::footstep_set(&self.lo, &worn, skin.unwrap_or_default(), race);
         let set = fsts.and_then(|f| self.footstep_set(f));
         self.footsteps.player_set = Some((worn, set.clone()));
         set

@@ -65,7 +65,8 @@ pub struct Arrow {
 }
 
 fn f32_at(d: &[u8], o: usize) -> f32 {
-    d.get(o..o + 4).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
+    d.get(o..o + 4)
+        .map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
 }
 
 /// What an `AMMO` record shoots (`DATA`: projectile, flags, damage).
@@ -73,7 +74,14 @@ pub fn arrow(lo: &LoadOrder, ammo: FormId) -> Option<Arrow> {
     let rec = lo.get(ammo).filter(|r| r.tag().0 == *b"AMMO")?;
     let d = rec.get(b"DATA").filter(|d| d.len() >= 12)?;
     let proj = rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())));
-    let mut a = Arrow { ammo, projectile: proj, damage: f32_at(d, 8), speed: 3600.0, gravity: 0.35, model: None };
+    let mut a = Arrow {
+        ammo,
+        projectile: proj,
+        damage: f32_at(d, 8),
+        speed: 3600.0,
+        gravity: 0.35,
+        model: None,
+    };
     if let Some(p) = lo.get(proj) {
         if let Some(pd) = p.get(b"DATA").filter(|d| d.len() >= 12) {
             a.gravity = f32_at(pd, 4);
@@ -89,12 +97,21 @@ pub fn arrow(lo: &LoadOrder, ammo: FormId) -> Option<Arrow> {
 
 /// Whether a weapon is a bow.
 pub fn is_bow(lo: &LoadOrder, weapon: FormId) -> bool {
-    lo.get(weapon).and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied())).is_some_and(|t| t == ANIM_BOW)
+    lo.get(weapon)
+        .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
+        .is_some_and(|t| t == ANIM_BOW)
 }
 
 /// A bow's draw speed (`DNAM` speed).
 pub(crate) fn bow_speed(lo: &LoadOrder, bow: FormId) -> f32 {
-    lo.get(bow).and_then(|r| r.get(b"DNAM").filter(|d| d.len() >= 8).map(|d| f32_at(d, 4))).filter(|s| *s > 0.05).unwrap_or(1.0)
+    lo.get(bow)
+        .and_then(|r| {
+            r.get(b"DNAM")
+                .filter(|d| d.len() >= 8)
+                .map(|d| f32_at(d, 4))
+        })
+        .filter(|s| *s > 0.05)
+        .unwrap_or(1.0)
 }
 
 /// An arrow in flight, or stuck where it struck.
@@ -132,8 +149,16 @@ fn segment_distance(a: Vec3, b: Vec3, c: Vec3, d: Vec3) -> (f32, f32) {
     let (u, v, w) = (b - a, d - c, a - c);
     let (aa, bb, cc, dd, ee) = (u.dot(u), u.dot(v), v.dot(v), u.dot(w), v.dot(w));
     let den = aa * cc - bb * bb;
-    let mut s = if den > 1e-6 { ((bb * ee - cc * dd) / den).clamp(0.0, 1.0) } else { 0.0 };
-    let t = if cc > 1e-6 { ((bb * s + ee) / cc).clamp(0.0, 1.0) } else { 0.0 };
+    let mut s = if den > 1e-6 {
+        ((bb * ee - cc * dd) / den).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let t = if cc > 1e-6 {
+        ((bb * s + ee) / cc).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     if aa > 1e-6 {
         s = ((bb * t - dd) / aa).clamp(0.0, 1.0);
     }
@@ -146,7 +171,13 @@ impl ActorRuntime {
     /// An archer's turn: close in until in range with a clear shot, then stand
     /// facing the target, draw, hold a moment to aim, and loose. Returns the
     /// graph event to send.
-    pub(crate) fn archer_step(&mut self, dt: f32, w: &mut World, target: Vec3, dist: f32) -> Option<String> {
+    pub(crate) fn archer_step(
+        &mut self,
+        dt: f32,
+        w: &mut World,
+        target: Vec3,
+        dist: f32,
+    ) -> Option<String> {
         let run = self.run_speed();
         let pos = self.pos;
         let close = dist < FALLBACK_RANGE * self.scale;
@@ -157,7 +188,11 @@ impl ActorRuntime {
         if c.away_to.is_some_and(|t| arrived_away(pos, t, target)) {
             c.away_to = None;
         }
-        if c.away_to.is_none() && close && draw == Draw::Idle && uniform(w.rand, 0.0, 1.0) < fallback * FALLBACK_RATE * dt {
+        if c.away_to.is_none()
+            && close
+            && draw == Draw::Idle
+            && uniform(w.rand, 0.0, 1.0) < fallback * FALLBACK_RATE * dt
+        {
             c.away_to = place_away(w, pos, target, FALLBACK_STEP);
             c.repath = 0.0;
             if c.away_to.is_some() {
@@ -203,8 +238,13 @@ impl ActorRuntime {
             Draw::Loosed(t, flown) => {
                 let t = t + dt;
                 // The graph's arrowRelease looses it; if that never comes, loose anyway.
-                let fire = !flown && (std::mem::take(&mut self.arrow_release) || t >= RELEASE_FALLBACK);
-                c.draw = if t > 0.8 { Draw::Idle } else { Draw::Loosed(t, flown || fire) };
+                let fire =
+                    !flown && (std::mem::take(&mut self.arrow_release) || t >= RELEASE_FALLBACK);
+                c.draw = if t > 0.8 {
+                    Draw::Idle
+                } else {
+                    Draw::Loosed(t, flown || fire)
+                };
                 if fire {
                     self.loose = true;
                 }
@@ -220,20 +260,27 @@ impl Engine {
     pub(crate) fn arrows_of(&self, actor: FormId) -> Option<Arrow> {
         let inv = self.inventories.get(&actor);
         let carried = inv.map(|i| &i.items[..]).unwrap_or_default();
-        let equipped = inv.and_then(|i| i.equipped.iter().copied().find(|&f| self.lo.tag_of(f).map(|t| t.0) == Some(*b"AMMO")));
-        let best = equipped.filter(|&f| carried.iter().any(|&(i, n)| i == f && n > 0)).or_else(|| {
-            carried
+        let equipped = inv.and_then(|i| {
+            i.equipped
                 .iter()
-                .filter(|&&(_, n)| n > 0)
-                .filter_map(|&(f, _)| {
-                    let rec = self.lo.get(f).filter(|r| r.tag().0 == *b"AMMO")?;
-                    let d = rec.get(b"DATA").filter(|d| d.len() >= 12)?;
-                    let flags = u32::from_le_bytes(d[4..8].try_into().unwrap());
-                    (flags & AMMO_NON_BOLT != 0).then_some((f, f32_at(d, 8)))
-                })
-                .max_by(|a, b| a.1.total_cmp(&b.1))
-                .map(|a| a.0)
+                .copied()
+                .find(|&f| self.lo.tag_of(f).map(|t| t.0) == Some(*b"AMMO"))
         });
+        let best = equipped
+            .filter(|&f| carried.iter().any(|&(i, n)| i == f && n > 0))
+            .or_else(|| {
+                carried
+                    .iter()
+                    .filter(|&&(_, n)| n > 0)
+                    .filter_map(|&(f, _)| {
+                        let rec = self.lo.get(f).filter(|r| r.tag().0 == *b"AMMO")?;
+                        let d = rec.get(b"DATA").filter(|d| d.len() >= 12)?;
+                        let flags = u32::from_le_bytes(d[4..8].try_into().unwrap());
+                        (flags & AMMO_NON_BOLT != 0).then_some((f, f32_at(d, 8)))
+                    })
+                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|a| a.0)
+            });
         match best {
             Some(a) => arrow(&self.lo, a),
             None if actor != PLAYER_REF => arrow(&self.lo, IRON_ARROW),
@@ -252,10 +299,21 @@ impl Engine {
             .values()
             .flat_map(|rt| &rt.actors)
             .filter(|a| a.bow && !a.dead)
-            .filter_map(|a| Some((a.ref_id, a.combat.as_ref()?.target, a.pos + Vec3::Z * 110.0 * a.scale)))
+            .filter_map(|a| {
+                Some((
+                    a.ref_id,
+                    a.combat.as_ref()?.target,
+                    a.pos + Vec3::Z * 110.0 * a.scale,
+                ))
+            })
             .collect();
         for (archer, target, eye) in archers {
-            let aim = if target == PLAYER_REF { Some(self.player.position + Vec3::Z * 20.0) } else { self.actor_ref(target).map(|t| t.pos + Vec3::Z * CAPSULE_CENTRE * t.scale) };
+            let aim = if target == PLAYER_REF {
+                Some(self.player.position + Vec3::Z * 20.0)
+            } else {
+                self.actor_ref(target)
+                    .map(|t| t.pos + Vec3::Z * CAPSULE_CENTRE * t.scale)
+            };
             let clear = aim.is_some_and(|aim| {
                 let to = aim - eye;
                 let (dir, dist) = (to.normalize_or_zero(), to.length());
@@ -263,7 +321,15 @@ impl Engine {
                 let up = right.cross(dir);
                 // The edge rays stop a little short: they pass beside the target,
                 // into the ground around it.
-                [(0.0, 0.0, 1.0), (edge, 0.0, 0.95), (-edge, 0.0, 0.95), (0.0, edge, 0.95), (0.0, -edge, 0.95)].iter().all(|&(r, u, reach)| {
+                [
+                    (0.0, 0.0, 1.0),
+                    (edge, 0.0, 0.95),
+                    (-edge, 0.0, 0.95),
+                    (0.0, edge, 0.95),
+                    (0.0, -edge, 0.95),
+                ]
+                .iter()
+                .all(|&(r, u, reach)| {
                     let d = (dir + right * r + up * u).normalize();
                     match self.physics.raycast_excluding(eye, d, dist * reach, archer) {
                         Some((_, owner)) => owner == Some(target),
@@ -278,14 +344,37 @@ impl Engine {
     }
 
     /// Loose an arrow from `from` towards `dir`.
-    fn spawn_arrow(&mut self, shooter: FormId, arrow: Arrow, from: Vec3, dir: Vec3, speed_mult: f32, damage: f32) {
+    fn spawn_arrow(
+        &mut self,
+        shooter: FormId,
+        arrow: Arrow,
+        from: Vec3,
+        dir: Vec3,
+        speed_mult: f32,
+        damage: f32,
+    ) {
         let model = arrow.model.clone().and_then(|m| {
-            self.models.load_all(&mut self.renderer, &self.vfs, std::slice::from_ref(&m));
+            self.models
+                .load_all(&mut self.renderer, &self.vfs, std::slice::from_ref(&m));
             self.models.get(&m)
         });
         let vel = dir.normalize_or_zero() * arrow.speed * speed_mult;
-        log::info!("{shooter} looses {} ({damage:.0} damage, {:.0} units/s)", arrow.ammo, vel.length());
-        self.projectiles.push(Projectile { shooter, arrow, pos: from, vel, damage, model, age: 0.0, stuck: None, dir: vel.normalize_or_zero() });
+        log::info!(
+            "{shooter} looses {} ({damage:.0} damage, {:.0} units/s)",
+            arrow.ammo,
+            vel.length()
+        );
+        self.projectiles.push(Projectile {
+            shooter,
+            arrow,
+            pos: from,
+            vel,
+            damage,
+            model,
+            age: 0.0,
+            stuck: None,
+            dir: vel.normalize_or_zero(),
+        });
     }
 
     /// Archers whose graph loosed an arrow this frame shoot at their target: from
@@ -317,23 +406,46 @@ impl Engine {
             } else if target == PLAYER_REF {
                 Some(self.player.position + Vec3::Z * 20.0)
             } else {
-                self.actor_ref(target).map(|t| t.pos + Vec3::Z * CAPSULE_CENTRE * t.scale)
+                self.actor_ref(target)
+                    .map(|t| t.pos + Vec3::Z * CAPSULE_CENTRE * t.scale)
             };
             let Some(aim) = aim else { continue };
-            let Some(arrow) = self.arrows_of(shooter) else { continue };
-            let bow = self.inventories.get(&shooter).and_then(|i| i.weapon(&self.lo));
+            let Some(arrow) = self.arrows_of(shooter) else {
+                continue;
+            };
+            let bow = self
+                .inventories
+                .get(&shooter)
+                .and_then(|i| i.weapon(&self.lo));
             // Practice shots harm nobody.
-            let damage = if practice.is_some() { 0.0 } else { bow.map_or(0.0, |b| crate::ai::combat::weapon_damage(&self.lo, b)) + arrow.damage };
+            let damage = if practice.is_some() {
+                0.0
+            } else {
+                bow.map_or(0.0, |b| crate::ai::combat::weapon_damage(&self.lo, b)) + arrow.damage
+            };
             let to = aim - eye;
             let flat = to.truncate();
             let from = eye + flat.normalize_or_zero().extend(0.0) * 30.0;
-            let pitch = elevation(flat.length(), to.z, arrow.speed, arrow.gravity * crate::physics::GRAVITY);
+            let pitch = elevation(
+                flat.length(),
+                to.z,
+                arrow.speed,
+                arrow.gravity * crate::physics::GRAVITY,
+            );
             // Spread: within a cone the spread angle wide, most shots near its middle.
-            let mut off = || ((self.rand() % 1001) as f32 + (self.rand() % 1001) as f32) / 2000.0 - 0.5;
+            let mut off =
+                || ((self.rand() % 1001) as f32 + (self.rand() % 1001) as f32) / 2000.0 - 0.5;
             let yaw = flat.y.atan2(flat.x) + off() * spread;
             let pitch = pitch + off() * spread;
-            let dir = Vec3::new(yaw.cos() * pitch.cos(), yaw.sin() * pitch.cos(), pitch.sin());
-            log::debug!("{shooter} shoots from {from:?} at {aim:?} ({target}), pitch {:.1} deg", pitch.to_degrees());
+            let dir = Vec3::new(
+                yaw.cos() * pitch.cos(),
+                yaw.sin() * pitch.cos(),
+                pitch.sin(),
+            );
+            log::debug!(
+                "{shooter} shoots from {from:?} at {aim:?} ({target}), pitch {:.1} deg",
+                pitch.to_degrees()
+            );
             self.spawn_arrow(shooter, arrow, from, dir, 1.0, damage);
         }
     }
@@ -346,7 +458,9 @@ impl Engine {
         if self.disabled_controls.fighting {
             return;
         }
-        let Some(bow) = self.player_weapon().filter(|&w| is_bow(&self.lo, w)) else { return };
+        let Some(bow) = self.player_weapon().filter(|&w| is_bow(&self.lo, w)) else {
+            return;
+        };
         let full = DRAW_TIME / bow_speed(&self.lo, bow);
         if held < full * 0.3 {
             return;
@@ -389,7 +503,14 @@ impl Engine {
             let world = self.physics.raycast_excluding(start, dir, len, p.shooter);
             // The player isn't in the physics world: test their capsule.
             let at_player = (p.shooter != PLAYER_REF)
-                .then(|| segment_distance(start, start + step, player - Vec3::Z * ph, player + Vec3::Z * ph))
+                .then(|| {
+                    segment_distance(
+                        start,
+                        start + step,
+                        player - Vec3::Z * ph,
+                        player + Vec3::Z * ph,
+                    )
+                })
                 .filter(|&(_, d)| d < pr)
                 .map(|(s, _)| s * len);
             match (world, at_player) {
@@ -418,12 +539,21 @@ impl Engine {
             }
         }
         for (shooter, at, age, owner, dir) in stuck {
-            let what = owner.and_then(|o| self.base_of(o).or(Some(o))).and_then(|b| self.lo.get(b)).map(|r| format!("{} {}", r.tag(), r.editor_id().unwrap_or_default()));
-            log::debug!("{shooter}'s arrow sticks at {at:?} after {age:.2}s in {owner:?} ({what:?}), flying {dir:?}");
+            let what = owner
+                .and_then(|o| self.base_of(o).or(Some(o)))
+                .and_then(|b| self.lo.get(b))
+                .map(|r| format!("{} {}", r.tag(), r.editor_id().unwrap_or_default()));
+            log::debug!(
+                "{shooter}'s arrow sticks at {at:?} after {age:.2}s in {owner:?} ({what:?}), flying {dir:?}"
+            );
         }
         // Keep the newest stuck arrows, a while.
         self.projectiles.retain(|p| p.stuck.is_none_or(|t| t > 0.0));
-        let stuck = self.projectiles.iter().filter(|p| p.stuck.is_some()).count();
+        let stuck = self
+            .projectiles
+            .iter()
+            .filter(|p| p.stuck.is_some())
+            .count();
         if stuck > MAX_STUCK {
             let mut drop = stuck - MAX_STUCK;
             self.projectiles.retain(|p| {
@@ -438,7 +568,8 @@ impl Engine {
             }
             log::info!("{shooter}'s arrow strikes {target}");
             self.hit(target, shooter, damage, false, 0.0, Some(arrow.projectile));
-            let chance = crate::ai::combat::gmst_i32(&self.lo, "iArrowInventoryChance", 33).clamp(0, 100) as u64;
+            let chance = crate::ai::combat::gmst_i32(&self.lo, "iArrowInventoryChance", 33)
+                .clamp(0, 100) as u64;
             if target != PLAYER_REF && self.rand() % 100 < chance {
                 self.add_item(target, arrow.ammo, 1);
             }
@@ -452,8 +583,15 @@ impl Engine {
                 // arrow behind its point, the head in what it struck.
                 let dir = p.dir.normalize_or(Vec3::Y);
                 let rot = Quat::from_rotation_arc(Vec3::Y, dir);
-                let mut inst = Instance::new(m, Mat4::from_rotation_translation(rot, p.pos - dir * ARROW_EMBED));
-                inst.lights = crate::render::pick_lights(&self.scene.lights, inst.world_center, inst.world_radius);
+                let mut inst = Instance::new(
+                    m,
+                    Mat4::from_rotation_translation(rot, p.pos - dir * ARROW_EMBED),
+                );
+                inst.lights = crate::render::pick_lights(
+                    &self.scene.lights,
+                    inst.world_center,
+                    inst.world_radius,
+                );
                 Some(inst)
             })
             .collect();

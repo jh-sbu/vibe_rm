@@ -11,7 +11,12 @@ pub struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Reader { data, pos: 0, bs_version: 0, strings: &[] }
+        Reader {
+            data,
+            pos: 0,
+            bs_version: 0,
+            strings: &[],
+        }
     }
     pub fn pos(&self) -> usize {
         self.pos
@@ -61,7 +66,12 @@ impl<'a> Reader<'a> {
         Ok(Vec3::new(self.f32()?, self.f32()?, self.f32()?))
     }
     pub fn vec4(&mut self) -> Result<Vec4> {
-        Ok(Vec4::new(self.f32()?, self.f32()?, self.f32()?, self.f32()?))
+        Ok(Vec4::new(
+            self.f32()?,
+            self.f32()?,
+            self.f32()?,
+            self.f32()?,
+        ))
     }
     /// Gamebryo matrices are row-major and transform column vectors.
     pub fn mat3(&mut self) -> Result<Mat3> {
@@ -104,7 +114,10 @@ impl<'a> Reader<'a> {
     }
     pub fn string_value(&mut self) -> Result<String> {
         let s = self.string_ref()?;
-        Ok(s.0.and_then(|i| self.strings.get(i as usize)).cloned().unwrap_or_default())
+        Ok(s.0
+            .and_then(|i| self.strings.get(i as usize))
+            .cloned()
+            .unwrap_or_default())
     }
     pub fn block_ref(&mut self) -> Result<crate::Ref> {
         Ok(crate::Ref(self.i32()?))

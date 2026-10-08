@@ -11,10 +11,14 @@ pub fn rgb(b: &[u8], o: usize) -> Vec3 {
 }
 
 fn f32_at(b: &[u8], o: usize) -> f32 {
-    b.get(o..o + 4).map(|s| f32::from_le_bytes(s.try_into().unwrap())).unwrap_or(0.0)
+    b.get(o..o + 4)
+        .map(|s| f32::from_le_bytes(s.try_into().unwrap()))
+        .unwrap_or(0.0)
 }
 fn u32_at(b: &[u8], o: usize) -> u32 {
-    b.get(o..o + 4).map(|s| u32::from_le_bytes(s.try_into().unwrap())).unwrap_or(0)
+    b.get(o..o + 4)
+        .map(|s| u32::from_le_bytes(s.try_into().unwrap()))
+        .unwrap_or(0)
 }
 fn i32_at(b: &[u8], o: usize) -> i32 {
     u32_at(b, o) as i32
@@ -189,7 +193,11 @@ impl Reference {
         rotation_from_euler(self.rotation)
     }
     pub fn transform(&self) -> Mat4 {
-        Mat4::from_scale_rotation_translation(Vec3::splat(self.scale), self.rotation_quat(), self.position)
+        Mat4::from_scale_rotation_translation(
+            Vec3::splat(self.scale),
+            self.rotation_quat(),
+            self.position,
+        )
     }
     pub fn deleted(&self) -> bool {
         self.flags & esp::record_flags::DELETED != 0
@@ -234,7 +242,11 @@ pub fn reference(rec: &LoadedRecord<'_>) -> Reference {
             }
             b"XLOC" if sr.data.len() >= 9 => {
                 let key = sr.form_id(4);
-                r.lock = Some(Lock { level: sr.u8(0), key: (!key.is_null()).then(|| rec.fid(key)), leveled: sr.u8(8) & 0x04 != 0 });
+                r.lock = Some(Lock {
+                    level: sr.u8(0),
+                    key: (!key.is_null()).then(|| rec.fid(key)),
+                    leveled: sr.u8(8) & 0x04 != 0,
+                });
             }
             b"XESP" => r.enable_parent = Some((rec.fid(sr.form_id(0)), sr.u8(4) & 1 != 0)),
             _ => {}
@@ -246,7 +258,11 @@ pub fn reference(rec: &LoadedRecord<'_>) -> Reference {
 /// Model path of a base object (`MODL`), normalised to a VFS path under `meshes/`.
 pub fn model_path(rec: &LoadedRecord<'_>) -> Option<String> {
     // Armor world models are MOD2 (male) / MOD4 (female); MODL holds ARMA ids.
-    let m = if rec.tag().0 == *b"ARMO" { rec.get(b"MOD2").or_else(|| rec.get(b"MOD4"))? } else { rec.get(b"MODL")? };
+    let m = if rec.tag().0 == *b"ARMO" {
+        rec.get(b"MOD2").or_else(|| rec.get(b"MOD4"))?
+    } else {
+        rec.get(b"MODL")?
+    };
     if m.len() < 2 || m.iter().take(m.len() - 1).any(|&b| b < 0x20) {
         log::debug!("{} {}: odd MODL {:?}", rec.tag(), rec.form_id, m);
         return None;
@@ -316,9 +332,31 @@ pub fn light_data(rec: &LoadedRecord<'_>) -> Option<LightData> {
 pub fn is_renderable_base(tag: &[u8; 4]) -> bool {
     matches!(
         tag,
-        b"STAT" | b"MSTT" | b"FURN" | b"DOOR" | b"CONT" | b"LIGH" | b"TREE" | b"FLOR" | b"ACTI"
-            | b"MISC" | b"WEAP" | b"ARMO" | b"BOOK" | b"ALCH" | b"INGR" | b"KEYM" | b"SLGM"
-            | b"AMMO" | b"SCRL" | b"TACT" | b"IDLM" | b"BNDS" | b"ADDN" | b"ARTO" | b"GRAS"
+        b"STAT"
+            | b"MSTT"
+            | b"FURN"
+            | b"DOOR"
+            | b"CONT"
+            | b"LIGH"
+            | b"TREE"
+            | b"FLOR"
+            | b"ACTI"
+            | b"MISC"
+            | b"WEAP"
+            | b"ARMO"
+            | b"BOOK"
+            | b"ALCH"
+            | b"INGR"
+            | b"KEYM"
+            | b"SLGM"
+            | b"AMMO"
+            | b"SCRL"
+            | b"TACT"
+            | b"IDLM"
+            | b"BNDS"
+            | b"ADDN"
+            | b"ARTO"
+            | b"GRAS"
     )
 }
 

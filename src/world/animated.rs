@@ -37,14 +37,23 @@ pub struct AnimatedObject {
 
 impl AnimatedObject {
     fn play(&mut self, name: &str) -> bool {
-        let Some(i) = self.anim.sequences.iter().position(|s| s.name.eq_ignore_ascii_case(name)) else { return false };
+        let Some(i) = self
+            .anim
+            .sequences
+            .iter()
+            .position(|s| s.name.eq_ignore_ascii_case(name))
+        else {
+            return false;
+        };
         self.playing = Some((i, self.anim.sequences[i].start));
         true
     }
 
     /// Advance the playing sequence and pose the parts.
     fn update(&mut self, dt: f32, instances: &mut [Instance]) {
-        let Some((si, t)) = &mut self.playing else { return };
+        let Some((si, t)) = &mut self.playing else {
+            return;
+        };
         let seq = &self.anim.sequences[*si];
         *t += dt;
         let len = (seq.stop - seq.start).max(1e-3);
@@ -57,7 +66,13 @@ impl AnimatedObject {
         }
         let t = *t;
         for (part, &ii) in self.anim.parts.iter().zip(&self.instances) {
-            let Some(ch) = seq.channels.iter().find(|c| c.node.eq_ignore_ascii_case(&part.node)) else { continue };
+            let Some(ch) = seq
+                .channels
+                .iter()
+                .find(|c| c.node.eq_ignore_ascii_case(&part.node))
+            else {
+                continue;
+            };
             if let Some(inst) = instances.get_mut(ii) {
                 set_transform(inst, self.transform * part.parent * ch.sample(t, part.rest));
             }
@@ -93,14 +108,21 @@ impl Engine {
             idx.push(instances.len());
             instances.push(inst);
         }
-        let door = self.base_of(ref_id).and_then(|b| self.lo.tag_of(b)).is_some_and(|t| t.0 == *b"DOOR");
+        let door = self
+            .base_of(ref_id)
+            .and_then(|b| self.lo.tag_of(b))
+            .is_some_and(|t| t.0 == *b"DOOR");
         let mut obj = AnimatedObject {
             ref_id,
             transform,
             position: transform.w_axis.truncate(),
             anim,
             instances: idx,
-            colliders: colliders.iter().filter(|(_, n)| n.is_some()).map(|(h, _)| *h).collect(),
+            colliders: colliders
+                .iter()
+                .filter(|(_, n)| n.is_some())
+                .map(|(h, _)| *h)
+                .collect(),
             door,
             open: false,
             auto: false,
@@ -122,15 +144,27 @@ impl Engine {
 
     /// Open or close a (non-load) door. Returns false if it isn't an animated door.
     pub fn toggle_door(&mut self, door: FormId, auto: bool) -> bool {
-        let Some((key, i)) = self.find_animated(door) else { return false };
-        let Some(rt) = self.cells.get_mut(&key) else { return false };
+        let Some((key, i)) = self.find_animated(door) else {
+            return false;
+        };
+        let Some(rt) = self.cells.get_mut(&key) else {
+            return false;
+        };
         let obj = &mut rt.animated[i];
         if !obj.door {
             return false;
         }
         let open = !obj.open;
         if !obj.play(if open { "Open" } else { "Close" }) {
-            log::debug!("door {door}: no {} sequence in {:?}", if open { "Open" } else { "Close" }, obj.anim.sequences.iter().map(|s| &s.name).collect::<Vec<_>>());
+            log::debug!(
+                "door {door}: no {} sequence in {:?}",
+                if open { "Open" } else { "Close" },
+                obj.anim
+                    .sequences
+                    .iter()
+                    .map(|s| &s.name)
+                    .collect::<Vec<_>>()
+            );
             return false;
         }
         obj.open = open;
@@ -150,14 +184,24 @@ impl Engine {
     }
 
     fn find_animated(&self, r: FormId) -> Option<(CellKey, usize)> {
-        self.cells.iter().find_map(|(k, rt)| rt.animated.iter().position(|a| a.ref_id == r).map(|i| (*k, i)))
+        self.cells.iter().find_map(|(k, rt)| {
+            rt.animated
+                .iter()
+                .position(|a| a.ref_id == r)
+                .map(|i| (*k, i))
+        })
     }
 
     /// Animate objects; open doors for actors walking up to them and close them after.
     pub(crate) fn update_animated(&mut self, dt: f32) {
         let player = self.ref_position(PLAYER_REF).unwrap_or_default();
-        let walkers: Vec<(FormId, Vec3)> =
-            self.cells.values().flat_map(|rt| &rt.actors).filter(|a| a.is_walking()).map(|a| (a.ref_id, a.pos)).collect();
+        let walkers: Vec<(FormId, Vec3)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| a.is_walking())
+            .map(|a| (a.ref_id, a.pos))
+            .collect();
         let near = |p: Vec3, d: f32, with_player: bool| {
             walkers.iter().any(|w| w.1.distance(p) < d) || (with_player && player.distance(p) < d)
         };
@@ -166,11 +210,17 @@ impl Engine {
         let mut opening = Vec::new();
         for obj in self.cells.values().flat_map(|rt| &rt.animated) {
             if obj.door && !obj.open && obj.playing.is_none() {
-                let at: Vec<FormId> = walkers.iter().filter(|w| w.1.distance(obj.position) < OPEN_DISTANCE).map(|w| w.0).collect();
+                let at: Vec<FormId> = walkers
+                    .iter()
+                    .filter(|w| w.1.distance(obj.position) < OPEN_DISTANCE)
+                    .map(|w| w.0)
+                    .collect();
                 if at.is_empty() {
                     continue;
                 }
-                if !self.is_locked(obj.ref_id) || at.iter().any(|&w| self.npc_may_open(w, obj.ref_id)) {
+                if !self.is_locked(obj.ref_id)
+                    || at.iter().any(|&w| self.npc_may_open(w, obj.ref_id))
+                {
                     opening.push(obj.ref_id);
                 } else {
                     log::trace!("locked door {} stays shut for {at:?}", obj.ref_id);
@@ -180,7 +230,10 @@ impl Engine {
         if log::log_enabled!(log::Level::Trace) {
             for rt in self.cells.values() {
                 for obj in rt.animated.iter().filter(|o| o.door && !o.open) {
-                    let d = walkers.iter().map(|w| w.1.distance(obj.position)).fold(f32::MAX, f32::min);
+                    let d = walkers
+                        .iter()
+                        .map(|w| w.1.distance(obj.position))
+                        .fold(f32::MAX, f32::min);
                     if d < 400.0 {
                         log::trace!("closed door {} nearest walker {d:.0}", obj.ref_id);
                     }

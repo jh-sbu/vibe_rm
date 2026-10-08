@@ -24,15 +24,25 @@ pub struct FootstepSet {
 impl FootstepSet {
     pub fn load(lo: &LoadOrder, fsts: FormId) -> Option<FootstepSet> {
         let rec = lo.get(fsts).filter(|r| r.tag().0 == *b"FSTS")?;
-        let counts: Vec<usize> = rec.get(b"XCNT")?.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize).collect();
-        let steps: Vec<FormId> = rec.get(b"DATA")?.chunks_exact(4).map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))).collect();
+        let counts: Vec<usize> = rec
+            .get(b"XCNT")?
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize)
+            .collect();
+        let steps: Vec<FormId> = rec
+            .get(b"DATA")?
+            .chunks_exact(4)
+            .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+            .collect();
         // The counts run walk to swim, but the footsteps are stored swim first.
         let mut set = FootstepSet::default();
         let mut next = steps.into_iter();
         for (g, &n) in counts.iter().enumerate().take(5).rev() {
             for fstp in next.by_ref().take(n) {
                 let Some(step) = lo.get(fstp) else { continue };
-                let (Some(tag), Some(d)) = (step.get(b"ANAM"), step.get(b"DATA")) else { continue };
+                let (Some(tag), Some(d)) = (step.get(b"ANAM"), step.get(b"DATA")) else {
+                    continue;
+                };
                 let ipds = step.fid(FormId(u32::from_le_bytes(d.get(..4)?.try_into().ok()?)));
                 set.groups[g].push((esp::decode_zstring(tag).to_ascii_lowercase(), ipds));
             }
@@ -64,7 +74,9 @@ impl Impacts {
     /// its parent material's (stone stairs sound as stone).
     pub fn sound(&mut self, lo: &LoadOrder, ipds: FormId, material: FormId) -> Option<FormId> {
         let pairs = self.sets.entry(ipds).or_insert_with(|| {
-            let Some(rec) = lo.get(ipds) else { return Vec::new() };
+            let Some(rec) = lo.get(ipds) else {
+                return Vec::new();
+            };
             rec.subrecords()
                 .filter(|s| s.tag.0 == *b"PNAM" && s.data.len() >= 8)
                 .map(|s| (rec.fid(s.form_id(0)), rec.fid(s.form_id(4))))
@@ -116,7 +128,11 @@ fn crc32(bytes: &[u8]) -> u32 {
     for &b in bytes {
         c ^= b as u32;
         for _ in 0..8 {
-            c = if c & 1 != 0 { (c >> 1) ^ 0xEDB8_8320 } else { c >> 1 };
+            c = if c & 1 != 0 {
+                (c >> 1) ^ 0xEDB8_8320
+            } else {
+                c >> 1
+            };
         }
     }
     c

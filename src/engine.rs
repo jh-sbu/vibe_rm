@@ -10,7 +10,9 @@ use rapier3d::prelude::ColliderHandle;
 
 use crate::physics::Physics;
 use crate::player::Player;
-use crate::render::{Camera, CellKey, Environment, GpuLight, Instance, RenderCell, Renderer, Scene};
+use crate::render::{
+    Camera, CellKey, Environment, GpuLight, Instance, RenderCell, Renderer, Scene,
+};
 use crate::world::cell::{self, Door, PlacedObject, PointLight};
 use crate::world::loader::{self, ModelCache};
 use crate::world::records::{self, Lighting};
@@ -193,18 +195,33 @@ pub const PLAYER_HEALTH: f32 = 100.0;
 const TIMESCALE: f64 = 20.0;
 
 pub fn grid_of(p: Vec2) -> (i32, i32) {
-    ((p.x / CELL_SIZE).floor() as i32, (p.y / CELL_SIZE).floor() as i32)
+    (
+        (p.x / CELL_SIZE).floor() as i32,
+        (p.y / CELL_SIZE).floor() as i32,
+    )
 }
 
 impl Engine {
-    pub fn new(lo: LoadOrder, vfs: vfs::Vfs, renderer: Renderer, hour: f32, weather: Option<String>, radius: i32) -> Self {
+    pub fn new(
+        lo: LoadOrder,
+        vfs: vfs::Vfs,
+        renderer: Renderer,
+        hour: f32,
+        weather: Option<String>,
+        radius: i32,
+    ) -> Self {
         Engine {
             lo,
             vfs,
             renderer,
             models: ModelCache::default(),
             scene: Scene::default(),
-            camera: Camera { position: Vec3::ZERO, yaw: 0.0, pitch: 0.0, fov_y: 65f32.to_radians() },
+            camera: Camera {
+                position: Vec3::ZERO,
+                yaw: 0.0,
+                pitch: 0.0,
+                fov_y: 65f32.to_radians(),
+            },
             hour,
             sky: None,
             forced_weather: weather,
@@ -237,7 +254,12 @@ impl Engine {
             rng: std::env::var("VRM_SEED")
                 .ok()
                 .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1))
+                .unwrap_or_else(|| {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as u64)
+                        .unwrap_or(1)
+                })
                 | 1,
             cond_rng: std::cell::Cell::new(0x9E37_79B9_7F4A_7C15),
             pending_moveto: None,
@@ -295,11 +317,21 @@ impl Engine {
             return Some(FormId(v));
         }
         // Editor ids first, then FormIDs written short (`f` for gold).
-        self.lo.find_editor_id(s).or_else(|| u32::from_str_radix(s, 16).ok().map(FormId).filter(|&f| self.lo.locate(f).is_some()))
+        self.lo.find_editor_id(s).or_else(|| {
+            u32::from_str_radix(s, 16)
+                .ok()
+                .map(FormId)
+                .filter(|&f| self.lo.locate(f).is_some())
+        })
     }
 
     pub fn camera_copy(&self) -> Camera {
-        Camera { position: self.camera.position, yaw: self.camera.yaw, pitch: self.camera.pitch, fov_y: self.camera.fov_y }
+        Camera {
+            position: self.camera.position,
+            yaw: self.camera.yaw,
+            pitch: self.camera.pitch,
+            fov_y: self.camera.fov_y,
+        }
     }
 
     /// Play a sound descriptor (by editor id) once at a point: one of its files.
@@ -322,14 +354,28 @@ impl Engine {
         let Some(desc) = desc.clone() else { return };
         let i = (self.rand() % desc.files.len() as u64) as usize;
         if let Some(a) = self.audio.as_mut() {
-            a.play(&self.vfs, &desc.files[i], desc.volume, false, Some(at), desc.min_dist, desc.max_dist);
+            a.play(
+                &self.vfs,
+                &desc.files[i],
+                desc.volume,
+                false,
+                Some(at),
+                desc.min_dist,
+                desc.max_dist,
+            );
         }
     }
 
     /// Start looping sounds emitted by objects (sound markers, lights, activators, ...).
     fn start_cell_sounds(&mut self, key: CellKey, refs: &[FormId]) {
-        let refs: Vec<FormId> = refs.iter().copied().filter(|&r| !self.is_disabled(r)).collect();
-        let Some(audio) = self.audio.as_mut() else { return };
+        let refs: Vec<FormId> = refs
+            .iter()
+            .copied()
+            .filter(|&r| !self.is_disabled(r))
+            .collect();
+        let Some(audio) = self.audio.as_mut() else {
+            return;
+        };
         let mut voices = Vec::new();
         for &r in &refs {
             let Some(rec) = self.lo.get(r) else { continue };
@@ -337,18 +383,34 @@ impl Engine {
             if rf.deleted() {
                 continue;
             }
-            let Some(base) = self.lo.get(rf.base) else { continue };
+            let Some(base) = self.lo.get(rf.base) else {
+                continue;
+            };
             let snd = match &base.tag().0 {
                 b"SOUN" => Some(rf.base),
-                b"LIGH" | b"ACTI" | b"MSTT" | b"FURN" => base.get(b"SNAM").map(|d| base.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))),
+                b"LIGH" | b"ACTI" | b"MSTT" | b"FURN" => base
+                    .get(b"SNAM")
+                    .map(|d| base.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))),
                 _ => None,
             };
-            let Some(desc) = snd.and_then(|s| crate::world::sound::descriptor(&self.lo, &self.vfs, s)) else { continue };
+            let Some(desc) =
+                snd.and_then(|s| crate::world::sound::descriptor(&self.lo, &self.vfs, s))
+            else {
+                continue;
+            };
             if !desc.looping {
                 continue;
             }
             let file = &desc.files[r.0 as usize % desc.files.len()];
-            if let Some(v) = audio.play(&self.vfs, file, desc.volume, true, Some(rf.position), desc.min_dist, desc.max_dist) {
+            if let Some(v) = audio.play(
+                &self.vfs,
+                file,
+                desc.volume,
+                true,
+                Some(rf.position),
+                desc.min_dist,
+                desc.max_dist,
+            ) {
                 voices.push((r, v));
             }
         }
@@ -361,15 +423,24 @@ impl Engine {
     fn location_music(&self) -> Option<FormId> {
         let cell = match self.location {
             Location::Interior(c) => Some(c),
-            Location::Exterior { world, center } => self.lo.world(world).and_then(|w| w.cells.get(&center).copied()),
+            Location::Exterior { world, center } => self
+                .lo
+                .world(world)
+                .and_then(|w| w.cells.get(&center).copied()),
             Location::Nowhere => None,
         }?;
         let rec = self.lo.get(cell)?;
         if let Some(d) = rec.get(b"XCMO") {
             return Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))));
         }
-        let regions: Vec<FormId> =
-            rec.get(b"XCLR").map(|d| d.chunks_exact(4).map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))).collect()).unwrap_or_default();
+        let regions: Vec<FormId> = rec
+            .get(b"XCLR")
+            .map(|d| {
+                d.chunks_exact(4)
+                    .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+                    .collect()
+            })
+            .unwrap_or_default();
         for r in regions {
             let Some(reg) = self.lo.get(r) else { continue };
             let mut in_music = false;
@@ -387,12 +458,23 @@ impl Engine {
     /// Choose a track file from a music type, honouring track conditions.
     fn pick_track(&mut self, music: FormId) -> Option<String> {
         let rec = self.lo.get(music)?;
-        let tracks: Vec<FormId> = rec.get(b"TNAM")?.chunks_exact(4).map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))).collect();
+        let tracks: Vec<FormId> = rec
+            .get(b"TNAM")?
+            .chunks_exact(4)
+            .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+            .collect();
         drop(rec);
-        let ctx = crate::condition::Context { subject: Some(PLAYER_REF), ..Default::default() };
+        let ctx = crate::condition::Context {
+            subject: Some(PLAYER_REF),
+            ..Default::default()
+        };
         let mut candidates: Vec<FormId> = tracks
             .into_iter()
-            .filter(|t| self.lo.get(*t).is_some_and(|r| crate::condition::evaluate(self, &crate::condition::parse_all(&r), ctx)))
+            .filter(|t| {
+                self.lo.get(*t).is_some_and(|r| {
+                    crate::condition::evaluate(self, &crate::condition::parse_all(&r), ctx)
+                })
+            })
             .collect();
         log::debug!("music candidates: {}", candidates.len());
         for _ in 0..4 {
@@ -401,13 +483,26 @@ impl Engine {
             }
             let i = (self.rand() % candidates.len() as u64) as usize;
             let t = self.lo.get(candidates[i])?;
-            let kind = t.get(b"CNAM").map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap())).unwrap_or(crate::world::sound::MUST_SINGLE);
+            let kind = t
+                .get(b"CNAM")
+                .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
+                .unwrap_or(crate::world::sound::MUST_SINGLE);
             if kind == crate::world::sound::MUST_PALETTE {
-                candidates = t.get(b"SNAM").map(|d| d.chunks_exact(4).map(|c| t.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))).collect()).unwrap_or_default();
+                candidates = t
+                    .get(b"SNAM")
+                    .map(|d| {
+                        d.chunks_exact(4)
+                            .map(|c| t.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 continue;
             }
             if let Some(f) = t.get(b"ANAM") {
-                return Some(crate::world::sound::sound_path(&esp::decode_zstring(f), &self.vfs));
+                return Some(crate::world::sound::sound_path(
+                    &esp::decode_zstring(f),
+                    &self.vfs,
+                ));
             }
             log::debug!("music: silent track {}", t.editor_id().unwrap_or_default());
             return None;
@@ -421,13 +516,20 @@ impl Engine {
         }
         let now = self.scripts.real_time;
         let want = self.location_music();
-        let playing = self.music.voice.is_some_and(|v| self.audio.as_ref().unwrap().is_playing(v));
+        let playing = self
+            .music
+            .voice
+            .is_some_and(|v| self.audio.as_ref().unwrap().is_playing(v));
         if want != self.music.music_type {
             if let Some(v) = self.music.voice.take() {
                 self.audio.as_ref().unwrap().stop(v);
             }
             self.music.music_type = want;
-            log::debug!("music type -> {:?}", want.and_then(|w| self.lo.get(w)).and_then(|r| r.editor_id()));
+            log::debug!(
+                "music type -> {:?}",
+                want.and_then(|w| self.lo.get(w))
+                    .and_then(|r| r.editor_id())
+            );
             self.music.next_at = now + 1.0;
             return;
         }
@@ -438,7 +540,11 @@ impl Engine {
             {
                 log::info!("music: {track}");
                 let vfs = &self.vfs;
-                self.music.voice = self.audio.as_mut().unwrap().play(vfs, &track, 0.45, false, None, 0.0, 0.0);
+                self.music.voice = self
+                    .audio
+                    .as_mut()
+                    .unwrap()
+                    .play(vfs, &track, 0.45, false, None, 0.0, 0.0);
             }
             // Silence between tracks, like the original.
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
@@ -468,7 +574,11 @@ impl Engine {
         }
         let want_set: HashSet<(i32, i32, i32)> = want.iter().copied().collect();
         // Load missing blocks, nearest (finest) first, a few per frame.
-        let mut missing: Vec<(i32, i32, i32)> = want.iter().copied().filter(|k| !lod.is_loaded(*k)).collect();
+        let mut missing: Vec<(i32, i32, i32)> = want
+            .iter()
+            .copied()
+            .filter(|k| !lod.is_loaded(*k))
+            .collect();
         missing.sort_by_key(|k| k.0);
         let mut loaded_any = false;
         for (level, x, y) in missing.into_iter().take(4) {
@@ -488,7 +598,10 @@ impl Engine {
             let mut tex = HashSet::new();
             for m in &models {
                 for mesh in &m.meshes {
-                    for t in [&mesh.material.diffuse, &mesh.material.normal].into_iter().flatten() {
+                    for t in [&mesh.material.diffuse, &mesh.material.normal]
+                        .into_iter()
+                        .flatten()
+                    {
                         if !self.renderer.textures.contains(t) {
                             tex.insert(t.clone());
                         }
@@ -497,12 +610,19 @@ impl Engine {
             }
             loader::load_textures(&mut self.renderer, &self.vfs, tex.into_iter().collect());
             for m in &models {
-                log::debug!("lod block {level}.{x}.{y}: {} meshes, bound center {:?} r {}", m.meshes.len(), m.bound_center, m.bound_radius);
+                log::debug!(
+                    "lod block {level}.{x}.{y}: {} meshes, bound center {:?} r {}",
+                    m.meshes.len(),
+                    m.bound_center,
+                    m.bound_radius
+                );
             }
             let instances = models
                 .into_iter()
                 .filter(|m| !m.meshes.is_empty())
-                .map(|m| crate::world::lod::instance(std::sync::Arc::new(self.renderer.upload_model(&m))))
+                .map(|m| {
+                    crate::world::lod::instance(std::sync::Arc::new(self.renderer.upload_model(&m)))
+                })
                 .collect();
             lod.insert((level, x, y), instances);
             loaded_any = true;
@@ -517,7 +637,10 @@ impl Engine {
         }
         if lod.dirty {
             lod.dirty = false;
-            self.scene.lod = lod.instances().map(|i| crate::render::Instance::new(i.model.clone(), i.transform)).collect();
+            self.scene.lod = lod
+                .instances()
+                .map(|i| crate::render::Instance::new(i.model.clone(), i.transform))
+                .collect();
         }
     }
 
@@ -547,9 +670,13 @@ impl Engine {
     /// The share of their speed the player keeps sneaking: the NPC sneaking
     /// movement type's forward speeds against the default's.
     fn player_sneak_speed(&mut self) -> f32 {
-        let types = self.move_types.get_or_insert_with(|| crate::world::movement::movement_types(&self.lo));
+        let types = self
+            .move_types
+            .get_or_insert_with(|| crate::world::movement::movement_types(&self.lo));
         match (types.get("npcsneaking"), types.get("npcdefault")) {
-            (Some(s), Some(d)) if d.walk > 0.0 && d.run > 0.0 => (s.walk / d.walk + s.run / d.run) / 2.0,
+            (Some(s), Some(d)) if d.walk > 0.0 && d.run > 0.0 => {
+                (s.walk / d.walk + s.run / d.run) / 2.0
+            }
             _ => 0.6,
         }
     }
@@ -562,7 +689,8 @@ impl Engine {
         self.player.crouch = sneaking as u8 as f32;
         // Settling onto the ground isn't a landing.
         self.footsteps.airborne = f32::NEG_INFINITY;
-        self.player.position = feet + Vec3::Z * (self.physics.player_half_height + self.physics.player_radius + 2.0);
+        self.player.position =
+            feet + Vec3::Z * (self.physics.player_half_height + self.physics.player_radius + 2.0);
         self.camera.yaw = yaw;
         self.camera.pitch = 0.0;
         self.camera.position = self.player.eye();
@@ -571,11 +699,21 @@ impl Engine {
     // ------------------------------------------------------------------ cells
 
     /// Instantiate objects into a render cell plus physics, returning runtime data.
-    fn instantiate(&mut self, key: CellKey, objects: &[PlacedObject], lights: Vec<PointLight>, doors: Vec<Door>) {
+    fn instantiate(
+        &mut self,
+        key: CellKey,
+        objects: &[PlacedObject],
+        lights: Vec<PointLight>,
+        doors: Vec<Door>,
+    ) {
         let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let mut rc = RenderCell::default();
-        let mut rt = CellRuntime { lights, doors, ..Default::default() };
+        let mut rt = CellRuntime {
+            lights,
+            doors,
+            ..Default::default()
+        };
         for o in objects {
             rt.refs.push(o.ref_id);
             if let Some(m) = self.models.get(&o.model) {
@@ -592,7 +730,9 @@ impl Engine {
             if !tagged.is_empty() && self.is_disabled(o.ref_id) {
                 self.physics.set_owner_enabled(o.ref_id, false);
             }
-            if let Some(obj) = self.animated_object(o.ref_id, &o.model, o.transform, &mut rc.instances, &tagged) {
+            if let Some(obj) =
+                self.animated_object(o.ref_id, &o.model, o.transform, &mut rc.instances, &tagged)
+            {
                 if obj.open {
                     self.physics.set_enabled(&obj.colliders, false);
                 }
@@ -601,7 +741,10 @@ impl Engine {
         }
         if !rt.animated.is_empty() {
             let doors = rt.animated.iter().filter(|a| a.door).count();
-            log::debug!("{key:?}: {} animated objects ({doors} doors)", rt.animated.len());
+            log::debug!(
+                "{key:?}: {} animated objects ({doors} doors)",
+                rt.animated.len()
+            );
         }
         self.scene.cells.insert(key, rc);
         self.cells.insert(key, rt);
@@ -615,9 +758,13 @@ impl Engine {
             let mut base = records::reference(&rec).base;
             // Actors take their base's scripts from its script part (templates).
             if rec.tag().0 == *b"ACHR" {
-                base = self.templates_of(r).map_or(FormId::NULL, |t| t.of(crate::world::template::SCRIPT));
+                base = self
+                    .templates_of(r)
+                    .map_or(FormId::NULL, |t| t.of(crate::world::template::SCRIPT));
             }
-            let mut scripts = crate::script::vmad::parse(&rec).map(|v| v.scripts).unwrap_or_default();
+            let mut scripts = crate::script::vmad::parse(&rec)
+                .map(|v| v.scripts)
+                .unwrap_or_default();
             if let Some(b) = self.lo.get(base)
                 && let Some(bv) = crate::script::vmad::parse(&b)
             {
@@ -637,7 +784,12 @@ impl Engine {
                     let props: Vec<(String, papyrus::Value)> = s
                         .properties
                         .iter()
-                        .map(|(n, pv)| (n.clone(), crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f))))
+                        .map(|(n, pv)| {
+                            (
+                                n.clone(),
+                                crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
+                            )
+                        })
                         .collect();
                     vm.attach(&mut host, obj, &s.name, &props);
                 }
@@ -671,13 +823,22 @@ impl Engine {
     /// editor location (NaN: anywhere on the cell's navmesh).
     pub(crate) fn spawn_actors(&mut self, key: CellKey, refs: &[(FormId, Option<Vec3>)]) {
         let mut descs = Vec::new();
-        let cell_meshes = self.cells.get(&key).map(|rt| rt.navmeshes.clone()).unwrap_or_default();
+        let cell_meshes = self
+            .cells
+            .get(&key)
+            .map(|rt| rt.navmeshes.clone())
+            .unwrap_or_default();
         for &(r, at) in refs {
-            let is_actor = self.lo.tag_of(r).map_or_else(|| self.created(r).is_some_and(|c| c.actor), |t| t.0 == *b"ACHR");
+            let is_actor = self.lo.tag_of(r).map_or_else(
+                || self.created(r).is_some_and(|c| c.actor),
+                |t| t.0 == *b"ACHR",
+            );
             if !is_actor || self.actor_cells.contains_key(&r) || self.is_disabled(r) {
                 continue;
             }
-            let Some(rf) = self.reference_of(r) else { continue };
+            let Some(rf) = self.reference_of(r) else {
+                continue;
+            };
             if let Some(mut d) = crate::world::actor::describe_reference(&self.lo, &rf) {
                 let editor_pos = d.transform.w_axis.truncate();
                 if let Some(p) = at {
@@ -688,7 +849,9 @@ impl Engine {
                         rng ^= rng << 17;
                         rng
                     };
-                    let spot = if self.world_state.dead.contains_key(&r) || self.world_state.moved.get(&r).is_some_and(|m| m.pos == p) {
+                    let spot = if self.world_state.dead.contains_key(&r)
+                        || self.world_state.moved.get(&r).is_some_and(|m| m.pos == p)
+                    {
                         // A body lies where it fell.
                         Some(p)
                     } else if p.is_nan() {
@@ -706,28 +869,49 @@ impl Engine {
         if descs.is_empty() {
             return;
         }
-        let paths: Vec<String> = descs.iter().flat_map(|(d, _)| d.models.iter().map(|(m, _)| m.clone())).collect();
+        let paths: Vec<String> = descs
+            .iter()
+            .flat_map(|(d, _)| d.models.iter().map(|(m, _)| m.clone()))
+            .collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let mut actors = Vec::new();
         let mut runtimes = Vec::new();
         for (ai, (d, editor_pos)) in descs.iter().enumerate() {
-            let Some(skel) = self.skeleton(&d.skeleton) else { continue };
+            let Some(skel) = self.skeleton(&d.skeleton) else {
+                continue;
+            };
             let idle = crate::world::animation::idle_clip(&d.skeleton, d.female)
                 .iter()
                 .find_map(|c| self.anims.clip(&self.vfs, c, &d.skeleton, &skel));
-            let project = d.behavior.as_deref().and_then(|p| self.graphs.project(&self.vfs, p));
+            let project = d
+                .behavior
+                .as_deref()
+                .and_then(|p| self.graphs.project(&self.vfs, p));
             // With root motion from the project's animation data: the AI walks at its speed.
-            let motion_project = project.as_ref().filter(|p| !p.humanoid()).map(|p| p.name.clone());
+            let motion_project = project
+                .as_ref()
+                .filter(|p| !p.humanoid())
+                .map(|p| p.name.clone());
             let walk = crate::world::animation::locomotion_clip(&d.skeleton, d.female, false)
                 .iter()
                 .find_map(|c| match &motion_project {
-                    Some(p) => self.anims.clip_in_project(&self.vfs, c, &d.skeleton, &skel, Some(p)),
+                    Some(p) => {
+                        self.anims
+                            .clip_in_project(&self.vfs, c, &d.skeleton, &skel, Some(p))
+                    }
                     None => self.anims.clip(&self.vfs, c, &d.skeleton, &skel),
                 });
             // Desynchronise actors sharing a clip.
             let start = (ai as f32 * 1.618) % 7.0;
             let packages = self.actor_packages(d.ref_id, d.npc);
-            let mut rt = crate::ai::ActorRuntime::new(d.ref_id, d.npc, skel.clone(), d.transform, packages, start * 0.3);
+            let mut rt = crate::ai::ActorRuntime::new(
+                d.ref_id,
+                d.npc,
+                skel.clone(),
+                d.transform,
+                packages,
+                start * 0.3,
+            );
             rt.alias_gen = self.scripts.alias_gen;
             rt.editor_pos = *editor_pos;
             rt.skeleton_path = d.skeleton.clone();
@@ -738,7 +922,11 @@ impl Engine {
             rt.health = self.returning_health(d.ref_id, stats.max_health);
             rt.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.inventory.weapon(&self.lo));
-            if let Some(bow) = d.inventory.weapon(&self.lo).filter(|&w| crate::ai::archery::is_bow(&self.lo, w)) {
+            if let Some(bow) = d
+                .inventory
+                .weapon(&self.lo)
+                .filter(|&w| crate::ai::archery::is_bow(&self.lo, w))
+            {
                 rt.bow = true;
                 rt.bow_speed = crate::ai::archery::bow_speed(&self.lo, bow);
                 log::debug!("{} wields bow {bow} (speed {})", d.ref_id, rt.bow_speed);
@@ -750,32 +938,66 @@ impl Engine {
                 .inventory
                 .weapon(&self.lo)
                 .and_then(|w| self.lo.get(w))
-                .and_then(|r| r.get(b"DNAM").filter(|x| x.len() >= 12).map(|x| f32::from_le_bytes(x[8..12].try_into().unwrap())))
+                .and_then(|r| {
+                    r.get(b"DNAM")
+                        .filter(|x| x.len() >= 12)
+                        .map(|x| f32::from_le_bytes(x[8..12].try_into().unwrap()))
+                })
                 .unwrap_or(0.0);
-            rt.anim = idle.clone().map(|c| crate::world::animation::ActorAnim::new(c, &skel, start));
+            rt.anim = idle
+                .clone()
+                .map(|c| crate::world::animation::ActorAnim::new(c, &skel, start));
             let mut first_pose = None;
             // Actors run their race's behaviour graph, set up as the game does for NPCs.
             if let Some(project) = project {
                 // Speeds and turn rates of the graph's default and sneaking movement types.
-                let types = self.move_types.get_or_insert_with(|| crate::world::movement::movement_types(&self.lo));
-                let character = project.shared.project.character.as_ref().map_or("", |c| c.name.as_str());
-                let (default, sneak) = crate::world::movement::graph_movement_types(project.shared.variables(), character);
+                let types = self
+                    .move_types
+                    .get_or_insert_with(|| crate::world::movement::movement_types(&self.lo));
+                let character = project
+                    .shared
+                    .project
+                    .character
+                    .as_ref()
+                    .map_or("", |c| c.name.as_str());
+                let (default, sneak) = crate::world::movement::graph_movement_types(
+                    project.shared.variables(),
+                    character,
+                );
                 rt.moves = default.and_then(|(n, v)| Some((*types.get(&n)?, v)));
                 rt.sneak_moves = sneak.and_then(|(n, v)| Some((*types.get(&n)?, v)));
                 let humanoid = project.humanoid();
-                let mut g = crate::world::behavior::GraphAnim::new(project, &d.skeleton, d.female, &skel, self.rng ^ d.ref_id.0 as u64);
+                let mut g = crate::world::behavior::GraphAnim::new(
+                    project,
+                    &d.skeleton,
+                    d.female,
+                    &skel,
+                    self.rng ^ d.ref_id.0 as u64,
+                );
                 g.label = d.ref_id.to_string();
                 if humanoid {
-                    for (var, value) in [("IsNPC", 1.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)] {
+                    for (var, value) in
+                        [("IsNPC", 1.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)]
+                    {
                         g.set_variable(var, value);
                     }
                     // NPC weight (0..100) picks between skinny and muscular body poses.
-                    let weight = self.lo.get(d.npc).and_then(|r| r.get(b"NAM7").filter(|b| b.len() >= 4).map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap())));
+                    let weight = self.lo.get(d.npc).and_then(|r| {
+                        r.get(b"NAM7")
+                            .filter(|b| b.len() >= 4)
+                            .map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap()))
+                    });
                     g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
                     // What the hands hold (sheathed): the graph picks equip / unequip
                     // and weapon-drawn behaviours by it.
-                    g.set_variable("iLeftHandType", d.inventory.hand(&self.lo, true) as i32 as f32);
-                    g.set_variable("iRightHandType", d.inventory.hand(&self.lo, false) as i32 as f32);
+                    g.set_variable(
+                        "iLeftHandType",
+                        d.inventory.hand(&self.lo, true) as i32 as f32,
+                    );
+                    g.set_variable(
+                        "iRightHandType",
+                        d.inventory.hand(&self.lo, false) as i32 as f32,
+                    );
                 }
                 // Desynchronise actors standing about.
                 rt.graph_walk_speed = g.walk_speed(&self.vfs, &mut self.anims, &skel);
@@ -784,7 +1006,13 @@ impl Engine {
             }
             rt.idle = idle;
             rt.walk = walk;
-            log::debug!("{}: walks at {:.0} units/s; movement {:?}, sneaking {:?}", d.ref_id, rt.walk_speed(), rt.moves, rt.sneak_moves);
+            log::debug!(
+                "{}: walks at {:.0} units/s; movement {:?}, sneaking {:?}",
+                d.ref_id,
+                rt.walk_speed(),
+                rt.moves,
+                rt.sneak_moves
+            );
             let (scale, _, feet) = d.transform.to_scale_rotation_translation();
             rt.capsule = Some(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
             let pose = first_pose.unwrap_or_else(|| skel.model_space(&skel.bind_locals()));
@@ -798,12 +1026,19 @@ impl Engine {
                 };
                 // Rigid models (weapons, shields) hang from the bone they name.
                 if model.skinned.is_empty() && !model.parts.is_empty() {
-                    match self.parent_bone(m).and_then(|b| skel.find(&b).map(|i| (b, i))) {
+                    match self
+                        .parent_bone(m)
+                        .and_then(|b| skel.find(&b).map(|i| (b, i)))
+                    {
                         Some((_, bone)) => {
                             equipment.push((model.clone(), bone, glam::Mat4::IDENTITY));
                             rigid.push((*item, m.clone()));
                         }
-                        None => log::debug!("{}: rigid model {m} has no parent bone in {}", d.name, d.skeleton),
+                        None => log::debug!(
+                            "{}: rigid model {m} has no parent bone in {}",
+                            d.name,
+                            d.skeleton
+                        ),
                     }
                     continue;
                 }
@@ -813,12 +1048,20 @@ impl Engine {
                         .iter()
                         .map(|n| {
                             skel.find(n).unwrap_or_else(|| {
-                                log::debug!("{}: bone {n:?} of {m} not in skeleton {}", d.name, d.skeleton);
+                                log::debug!(
+                                    "{}: bone {n:?} of {m} not in skeleton {}",
+                                    d.name,
+                                    d.skeleton
+                                );
                                 usize::MAX
                             })
                         })
                         .collect();
-                    meshes.push(crate::render::ActorMesh { model: model.clone(), part: pi, bone_map });
+                    meshes.push(crate::render::ActorMesh {
+                        model: model.clone(),
+                        part: pi,
+                        bone_map,
+                    });
                 }
             }
             log::debug!(
@@ -826,10 +1069,17 @@ impl Engine {
                 d.ref_id,
                 d.name,
                 d.npc,
-                self.lo.get(d.npc).and_then(|r| r.editor_id()).unwrap_or_default(),
+                self.lo
+                    .get(d.npc)
+                    .and_then(|r| r.editor_id())
+                    .unwrap_or_default(),
                 meshes.len(),
                 equipment.len(),
-                d.inventory.weapon(&self.lo).and_then(|w| self.lo.get(w)?.editor_id().map(|e| e.to_string())),
+                d.inventory.weapon(&self.lo).and_then(|w| self
+                    .lo
+                    .get(w)?
+                    .editor_id()
+                    .map(|e| e.to_string())),
                 d.transform.w_axis.truncate(),
                 rt.packages.len()
             );
@@ -860,10 +1110,17 @@ impl Engine {
         let corpses: Vec<FormId> = runtimes
             .iter()
             .map(|a| a.ref_id)
-            .filter(|&r| self.world_state.dead.contains_key(&r) || self.lo.get(r).is_some_and(|rec| rec.flags() & esp::record_flags::STARTS_DEAD != 0))
+            .filter(|&r| {
+                self.world_state.dead.contains_key(&r)
+                    || self
+                        .lo
+                        .get(r)
+                        .is_some_and(|rec| rec.flags() & esp::record_flags::STARTS_DEAD != 0)
+            })
             .collect();
         if let Some(rt) = self.cells.get_mut(&key) {
-            rt.colliders.extend(runtimes.iter().filter_map(|a| a.capsule));
+            rt.colliders
+                .extend(runtimes.iter().filter_map(|a| a.capsule));
             rt.actors.extend(runtimes);
         }
         for r in corpses {
@@ -877,8 +1134,12 @@ impl Engine {
     fn find_furniture_ways(&mut self, key: CellKey) {
         use crate::ai::furniture::{Entry, Way};
         use crate::condition::{Context, IdleQuery};
-        let Some(idles) = self.idles.as_ref() else { return };
-        let Some(root) = idles.find(&self.lo, "ActivateRootChar") else { return };
+        let Some(idles) = self.idles.as_ref() else {
+            return;
+        };
+        let Some(root) = idles.find(&self.lo, "ActivateRootChar") else {
+            return;
+        };
         let mut found: Vec<(FormId, Way)> = Vec::new();
         for f in self.furniture.items.iter().filter(|f| f.cell == key) {
             for (mi, m) in f.markers.iter().enumerate() {
@@ -890,14 +1151,39 @@ impl Engine {
                     for child in [false, true] {
                         let ctx = |state: f32| Context {
                             target: Some(f.ref_id),
-                            idle: Some(IdleQuery { anim_type, entry: u32::from(bit) << 16, state, child: Some(child), ..Default::default() }),
+                            idle: Some(IdleQuery {
+                                anim_type,
+                                entry: u32::from(bit) << 16,
+                                state,
+                                child: Some(child),
+                                ..Default::default()
+                            }),
                             ..Default::default()
                         };
-                        let Some((_, enter)) = idles.select(self, root, ctx(2.0)) else { continue };
+                        let Some((_, enter)) = idles.select(self, root, ctx(2.0)) else {
+                            continue;
+                        };
                         // A subtree without an exit idle offers its enter idle again.
-                        let exit = idles.select(self, root, ctx(4.0)).map(|(_, e)| e).filter(|e| *e != enter);
-                        log::trace!("{} marker {mi} {entry:?}{}: {enter} / {exit:?}", f.ref_id, if child { " (child)" } else { "" });
-                        found.push((f.ref_id, Way { marker: mi as u8, entry, child, enter, exit, graph: None }));
+                        let exit = idles
+                            .select(self, root, ctx(4.0))
+                            .map(|(_, e)| e)
+                            .filter(|e| *e != enter);
+                        log::trace!(
+                            "{} marker {mi} {entry:?}{}: {enter} / {exit:?}",
+                            f.ref_id,
+                            if child { " (child)" } else { "" }
+                        );
+                        found.push((
+                            f.ref_id,
+                            Way {
+                                marker: mi as u8,
+                                entry,
+                                child,
+                                enter,
+                                exit,
+                                graph: None,
+                            },
+                        ));
                     }
                 }
             }
@@ -907,11 +1193,27 @@ impl Engine {
             .items
             .iter()
             .filter(|f| f.cell == key)
-            .flat_map(|f| f.markers.iter().enumerate().map(move |(i, m)| (f.ref_id, i, m.kind)))
+            .flat_map(|f| {
+                f.markers
+                    .iter()
+                    .enumerate()
+                    .map(move |(i, m)| (f.ref_id, i, m.kind))
+            })
             .filter(|m| m.2 != crate::ai::furniture::Use::Idle)
             .collect();
-        let missing: Vec<_> = markers.iter().filter(|(r, i, _)| !found.iter().any(|(fr, w)| fr == r && w.marker as usize == *i && !w.child)).collect();
-        log::debug!("{key:?}: {} of {} furniture markers have no way on: {missing:?}", missing.len(), markers.len());
+        let missing: Vec<_> = markers
+            .iter()
+            .filter(|(r, i, _)| {
+                !found
+                    .iter()
+                    .any(|(fr, w)| fr == r && w.marker as usize == *i && !w.child)
+            })
+            .collect();
+        log::debug!(
+            "{key:?}: {} of {} furniture markers have no way on: {missing:?}",
+            missing.len(),
+            markers.len()
+        );
         for (r, way) in found {
             if let Some(f) = self.furniture.items.iter_mut().find(|f| f.ref_id == r) {
                 f.ways.push(way);
@@ -927,9 +1229,17 @@ impl Engine {
         }
         let r = (|| {
             let nif = nif::Nif::parse(&self.vfs.read(model)?).ok()?;
-            let root = nif.roots.first().and_then(|&r| nif.get(nif::Ref(r as i32)))?.av()?;
+            let root = nif
+                .roots
+                .first()
+                .and_then(|&r| nif.get(nif::Ref(r as i32)))?
+                .av()?;
             root.net.extra_data.iter().find_map(|&e| match nif.get(e) {
-                Some(nif::Block::ExtraData(nif::ExtraData::String { name, value })) if name == "Prn" => Some(value.clone()),
+                Some(nif::Block::ExtraData(nif::ExtraData::String { name, value }))
+                    if name == "Prn" =>
+                {
+                    Some(value.clone())
+                }
                 _ => None,
             })
         })();
@@ -962,10 +1272,18 @@ impl Engine {
     /// Rebuild the rigid attachments of actor `index` in cell `key` from the anim
     /// objects it holds.
     pub(crate) fn attach_anim_objects(&mut self, key: CellKey, index: usize, objects: &[String]) {
-        let found: Vec<(String, String)> = objects.iter().filter_map(|o| self.anim_object(o)).collect();
+        let found: Vec<(String, String)> =
+            objects.iter().filter_map(|o| self.anim_object(o)).collect();
         let paths: Vec<String> = found.iter().map(|(m, _)| m.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
-        let Some(skel) = self.cells.get(&key).and_then(|rt| rt.actors.get(index)).map(|a| a.skeleton.clone()) else { return };
+        let Some(skel) = self
+            .cells
+            .get(&key)
+            .and_then(|rt| rt.actors.get(index))
+            .map(|a| a.skeleton.clone())
+        else {
+            return;
+        };
         let mut attachments = Vec::new();
         for (model, bone) in &found {
             let (Some(m), Some(b)) = (self.models.get(model), skel.find(bone)) else {
@@ -974,7 +1292,12 @@ impl Engine {
             };
             attachments.push((m, b, glam::Mat4::IDENTITY));
         }
-        if let Some(inst) = self.scene.cells.get_mut(&key).and_then(|rc| rc.actors.get_mut(index)) {
+        if let Some(inst) = self
+            .scene
+            .cells
+            .get_mut(&key)
+            .and_then(|rc| rc.actors.get_mut(index))
+        {
             inst.attachments = attachments;
         }
     }
@@ -989,14 +1312,24 @@ impl Engine {
 
     /// The behaviour event an IDLE record plays.
     pub fn idle_event(&mut self, idle: FormId) -> Option<String> {
-        self.idles.get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo)).humanoid_event(idle)
+        self.idles
+            .get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo))
+            .humanoid_event(idle)
     }
 
     fn load_furniture(&mut self, key: CellKey, refs: &[FormId]) {
-        let off: Vec<FormId> = refs.iter().copied().filter(|&r| self.is_disabled(r)).collect();
-        let idles = self.idles.get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo));
+        let off: Vec<FormId> = refs
+            .iter()
+            .copied()
+            .filter(|&r| self.is_disabled(r))
+            .collect();
+        let idles = self
+            .idles
+            .get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo));
         let (models, vfs) = (&mut self.models, &self.vfs);
-        self.furniture.add_cell(&self.lo, idles, key, refs, |path| models.furniture(vfs, path));
+        self.furniture.add_cell(&self.lo, idles, key, refs, |path| {
+            models.furniture(vfs, path)
+        });
         for r in off {
             self.furniture.set_disabled(r, true);
         }
@@ -1032,7 +1365,13 @@ impl Engine {
     }
 
     pub(crate) fn rebuild_lights(&mut self) {
-        let lights: Vec<PointLight> = self.cells.values().flat_map(|c| c.lights.iter()).filter(|l| !self.is_disabled(l.ref_id)).copied().collect();
+        let lights: Vec<PointLight> = self
+            .cells
+            .values()
+            .flat_map(|c| c.lights.iter())
+            .filter(|l| !self.is_disabled(l.ref_id))
+            .copied()
+            .collect();
         self.scene.lights = lights
             .iter()
             .map(|l| GpuLight {
@@ -1061,13 +1400,28 @@ impl Engine {
         self.scene.lod.clear();
         self.scene.env = interior_environment(&contents.lighting);
         let key = CellKey::Interior(cell_id);
-        let (mut objects, mut lights, mut doors) = (contents.objects.clone(), contents.lights.clone(), contents.doors.clone());
-        self.apply_moves(crate::ai::schedule::Place::Interior(cell_id), &mut objects, &mut lights, &mut doors);
+        let (mut objects, mut lights, mut doors) = (
+            contents.objects.clone(),
+            contents.lights.clone(),
+            contents.doors.clone(),
+        );
+        self.apply_moves(
+            crate::ai::schedule::Place::Interior(cell_id),
+            &mut objects,
+            &mut lights,
+            &mut doors,
+        );
         self.instantiate(key, &objects, lights, doors);
         let refs: Vec<FormId> = self
             .lo
             .cell(cell_id)
-            .map(|c| c.persistent.iter().chain(c.temporary.iter()).copied().collect())
+            .map(|c| {
+                c.persistent
+                    .iter()
+                    .chain(c.temporary.iter())
+                    .copied()
+                    .collect()
+            })
             .unwrap_or_default();
         self.load_navmeshes(key, cell_id);
         self.load_furniture(key, &refs);
@@ -1080,14 +1434,19 @@ impl Engine {
             && let Some(h) = contents.info.water_height
             && h < 1.0e30
         {
-            let wt = if contents.info.water_type.is_null() { FormId(0x18) } else { contents.info.water_type };
+            let wt = if contents.info.water_type.is_null() {
+                FormId(0x18)
+            } else {
+                contents.info.water_type
+            };
             self.add_water(key, vec![(-50_000.0, -50_000.0, 100_000.0, h, wt)]);
         }
         self.rebuild_lights();
         self.location = Location::Interior(cell_id);
         self.physics.step(1.0 / 60.0);
 
-        let (pos, yaw) = spawn.unwrap_or_else(|| self.default_interior_spawn(cell_id, &contents.objects));
+        let (pos, yaw) =
+            spawn.unwrap_or_else(|| self.default_interior_spawn(cell_id, &contents.objects));
         self.place_player(pos, yaw);
         log::info!("interior loaded in {:?}", t.elapsed());
         Ok(())
@@ -1114,7 +1473,11 @@ impl Engine {
     pub fn enter_exterior(&mut self, world: FormId, feet: Vec3, yaw: f32) -> Result<()> {
         let t = Instant::now();
         self.unload_all();
-        let wi = self.lo.world(world).context("worldspace not indexed")?.clone();
+        let wi = self
+            .lo
+            .world(world)
+            .context("worldspace not indexed")?
+            .clone();
         // Bucket the worldspace's persistent references by grid cell.
         if let Some(pc) = wi.persistent_cell
             && let Some(idx) = self.lo.cell(pc)
@@ -1122,7 +1485,10 @@ impl Engine {
             for &r in idx.persistent.iter().chain(idx.temporary.iter()) {
                 if let Some(rec) = self.lo.get(r) {
                     let rf = records::reference(&rec);
-                    self.world_persistent.entry(grid_of(rf.position.truncate())).or_default().push(r);
+                    self.world_persistent
+                        .entry(grid_of(rf.position.truncate()))
+                        .or_default()
+                        .push(r);
                 }
             }
         }
@@ -1184,13 +1550,29 @@ impl Engine {
                 cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
             }
         }
-        self.apply_moves(crate::ai::schedule::Place::Exterior(world, (x, y)), &mut objects, &mut lights, &mut doors);
+        self.apply_moves(
+            crate::ai::schedule::Place::Exterior(world, (x, y)),
+            &mut objects,
+            &mut lights,
+            &mut doors,
+        );
         self.instantiate(key, &objects, lights, doors);
         let mut refs: Vec<FormId> = cell_id
             .and_then(|c| self.lo.cell(c))
-            .map(|c| c.persistent.iter().chain(c.temporary.iter()).copied().collect())
+            .map(|c| {
+                c.persistent
+                    .iter()
+                    .chain(c.temporary.iter())
+                    .copied()
+                    .collect()
+            })
             .unwrap_or_default();
-        refs.extend(self.world_persistent.get(&(x, y)).cloned().unwrap_or_default());
+        refs.extend(
+            self.world_persistent
+                .get(&(x, y))
+                .cloned()
+                .unwrap_or_default(),
+        );
         if let Some(cid) = cell_id {
             self.load_navmeshes(key, cid);
         }
@@ -1203,8 +1585,14 @@ impl Engine {
 
         // Landscape
         let dnam = self.world_field(world, b"DNAM", 0x1).map(|d| d.0);
-        let default_height = dnam.as_ref().map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap())).unwrap_or(-2048.0);
-        let default_water = dnam.as_ref().map(|d| f32::from_le_bytes(d[4..8].try_into().unwrap())).unwrap_or(0.0);
+        let default_height = dnam
+            .as_ref()
+            .map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap()))
+            .unwrap_or(-2048.0);
+        let default_water = dnam
+            .as_ref()
+            .map(|d| f32::from_le_bytes(d[4..8].try_into().unwrap()))
+            .unwrap_or(0.0);
         let world_water = self.world_form(world, b"NAM2", 0x8);
         let land = cell_id
             .and_then(|c| self.lo.cell(c).and_then(|c| c.land))
@@ -1241,8 +1629,15 @@ impl Engine {
         {
             let h = info.water_height.unwrap_or(default_water);
             if h < 1.0e30 {
-                let wt = if info.water_type.is_null() { world_water.unwrap_or(FormId(0x18)) } else { info.water_type };
-                self.add_water(key, vec![(x as f32 * CELL_SIZE, y as f32 * CELL_SIZE, CELL_SIZE, h, wt)]);
+                let wt = if info.water_type.is_null() {
+                    world_water.unwrap_or(FormId(0x18))
+                } else {
+                    info.water_type
+                };
+                self.add_water(
+                    key,
+                    vec![(x as f32 * CELL_SIZE, y as f32 * CELL_SIZE, CELL_SIZE, h, wt)],
+                );
             }
         }
     }
@@ -1250,7 +1645,11 @@ impl Engine {
     fn add_water(&mut self, key: CellKey, planes: Vec<(f32, f32, f32, f32, FormId)>) {
         let mut params = Vec::new();
         if let Some(rt) = self.cells.get_mut(&key) {
-            rt.water.extend(planes.iter().map(|&(x, y, size, h, _)| (glam::Vec2::new(x, y), size, h)));
+            rt.water.extend(
+                planes
+                    .iter()
+                    .map(|&(x, y, size, h, _)| (glam::Vec2::new(x, y), size, h)),
+            );
         }
         for (x, y, size, h, wt) in planes {
             if let Some(p) = records::water_params(&self.lo, wt) {
@@ -1276,7 +1675,9 @@ impl Engine {
     /// Exterior streaming: keep cells around the player loaded. Loads at most a
     /// couple of cells per call to bound frame hitches.
     pub fn update_streaming(&mut self) {
-        let Location::Exterior { world, center } = self.location else { return };
+        let Location::Exterior { world, center } = self.location else {
+            return;
+        };
         let g = grid_of(self.player.position.truncate());
         if g != center {
             self.location = Location::Exterior { world, center: g };
@@ -1298,14 +1699,17 @@ impl Engine {
                 }
             }
             // Nearest first.
-            self.pending_loads.sort_by_key(|(x, y)| std::cmp::Reverse((x - g.0).abs() + (y - g.1).abs()));
+            self.pending_loads
+                .sort_by_key(|(x, y)| std::cmp::Reverse((x - g.0).abs() + (y - g.1).abs()));
             if !to_unload.is_empty() {
                 self.rebuild_lights();
             }
         }
         let mut loaded = false;
         for _ in 0..2 {
-            let Some((x, y)) = self.pending_loads.pop() else { break };
+            let Some((x, y)) = self.pending_loads.pop() else {
+                break;
+            };
             self.load_exterior_cell(world, x, y);
             loaded = true;
         }
@@ -1325,15 +1729,25 @@ impl Engine {
             p.y,
             grid_of(p),
             self.player.position.z,
-            self.ground_height(p).map_or("none".into(), |h| format!("{h:.1}")),
-            self.water_level(p.extend(0.0)).map_or("none".into(), |h| format!("{h:.1}"))
+            self.ground_height(p)
+                .map_or("none".into(), |h| format!("{h:.1}")),
+            self.water_level(p.extend(0.0))
+                .map_or("none".into(), |h| format!("{h:.1}"))
         )];
-        let cell_of = |h: ColliderHandle| self.cells.iter().find(|(_, rt)| rt.colliders.contains(&h)).map(|(k, _)| *k);
+        let cell_of = |h: ColliderHandle| {
+            self.cells
+                .iter()
+                .find(|(_, rt)| rt.colliders.contains(&h))
+                .map(|(k, _)| *k)
+        };
         for hit in self.physics.probe_ray(origin, -Vec3::Z, 2.0 * top) {
             let what = match hit.owner {
                 Some(r) => {
                     let base = self.base_of(r);
-                    let edid = base.and_then(|b| self.lo.get(b)).and_then(|b| b.editor_id()).unwrap_or_default();
+                    let edid = base
+                        .and_then(|b| self.lo.get(b))
+                        .and_then(|b| b.editor_id())
+                        .unwrap_or_default();
                     format!("{r} ({edid})")
                 }
                 None => "no owner (terrain?)".into(),
@@ -1353,7 +1767,11 @@ impl Engine {
                 cell_of(hit.handle),
                 hit.bounds.0,
                 hit.bounds.1,
-                if hit.in_broad_phase { "" } else { ", NOT IN BROAD PHASE" },
+                if hit.in_broad_phase {
+                    ""
+                } else {
+                    ", NOT IN BROAD PHASE"
+                },
                 if hit.enabled { "" } else { ", disabled" },
             ));
         }
@@ -1361,33 +1779,62 @@ impl Engine {
         keys.sort_by_key(|k| format!("{k:?}"));
         for k in keys {
             let rt = &self.cells[&k];
-            let stale = rt.colliders.iter().filter(|h| !self.physics.has_collider(**h)).count();
+            let stale = rt
+                .colliders
+                .iter()
+                .filter(|h| !self.physics.has_collider(**h))
+                .count();
             out.push(format!(
                 "  {k:?}: {} colliders ({stale} gone), land {}",
                 rt.colliders.len(),
                 if rt.land.is_some() { "yes" } else { "no" }
             ));
         }
-        let listed: HashSet<ColliderHandle> = self.cells.values().flat_map(|rt| rt.colliders.iter().copied()).collect();
+        let listed: HashSet<ColliderHandle> = self
+            .cells
+            .values()
+            .flat_map(|rt| rt.colliders.iter().copied())
+            .collect();
         let total = self.physics.world.colliders.len();
-        let orphans = self.physics.world.colliders.iter().filter(|(h, _)| !listed.contains(h)).count();
-        out.push(format!("  {total} colliders in the world, {orphans} not listed by any loaded cell"));
+        let orphans = self
+            .physics
+            .world
+            .colliders
+            .iter()
+            .filter(|(h, _)| !listed.contains(h))
+            .count();
+        out.push(format!(
+            "  {total} colliders in the world, {orphans} not listed by any loaded cell"
+        ));
         out
     }
 
     pub fn ground_height(&self, p: Vec2) -> Option<f32> {
         let (x, y) = grid_of(p);
-        self.cells.get(&CellKey::Exterior(x, y)).and_then(|c| c.land.as_ref()).map(|l| l.height_at(p))
+        self.cells
+            .get(&CellKey::Exterior(x, y))
+            .and_then(|c| c.land.as_ref())
+            .map(|l| l.height_at(p))
     }
 
     /// Read a worldspace subrecord, following the parent worldspace when the
     /// matching "use parent" flag (PNAM) is set.
-    pub fn world_field(&self, world: FormId, tag: &[u8; 4], parent_flag: u16) -> Option<(Vec<u8>, FormId)> {
+    pub fn world_field(
+        &self,
+        world: FormId,
+        tag: &[u8; 4],
+        parent_flag: u16,
+    ) -> Option<(Vec<u8>, FormId)> {
         let mut w = world;
         for _ in 0..4 {
             let rec = self.lo.get(w)?;
-            let parent = rec.get(b"WNAM").map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))));
-            let flags = rec.get(b"PNAM").map(|d| u16::from_le_bytes([d[0], d[1]])).unwrap_or(0);
+            let parent = rec
+                .get(b"WNAM")
+                .map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))));
+            let flags = rec
+                .get(b"PNAM")
+                .map(|d| u16::from_le_bytes([d[0], d[1]]))
+                .unwrap_or(0);
             match parent {
                 Some(p) if flags & parent_flag != 0 => w = p,
                 _ => {
@@ -1410,8 +1857,13 @@ impl Engine {
     /// Pick the climate's weather for a worldspace and load its sky textures.
     pub fn setup_weather(&mut self, world: FormId) {
         let clmt = self.world_form(world, b"CNAM", 0x10);
-        let climate = clmt.and_then(|c| weather::load_climate(&self.lo, c)).unwrap_or_default();
-        let forced = self.forced_weather.as_ref().and_then(|w| self.resolve_form(w));
+        let climate = clmt
+            .and_then(|c| weather::load_climate(&self.lo, c))
+            .unwrap_or_default();
+        let forced = self
+            .forced_weather
+            .as_ref()
+            .and_then(|w| self.resolve_form(w));
         let wid = forced.or_else(|| climate.weathers.iter().max_by_key(|w| w.1).map(|w| w.0));
         let Some(w) = wid.and_then(|w| weather::load_weather(&self.lo, w)) else {
             self.sky = None;
@@ -1420,13 +1872,28 @@ impl Engine {
         log::info!("weather {} ({} cloud layers)", w.editor_id, w.clouds.len());
         let mut tex: Vec<String> = vec![climate.sun_texture.clone()];
         tex.extend(w.clouds.iter().take(4).map(|c| c.texture.clone()));
-        let missing: Vec<String> = tex.iter().filter(|t| !self.renderer.textures.contains(t)).cloned().collect();
+        let missing: Vec<String> = tex
+            .iter()
+            .filter(|t| !self.renderer.textures.contains(t))
+            .cloned()
+            .collect();
         loader::load_textures(&mut self.renderer, &self.vfs, missing);
         let get = |p: &String| self.renderer.textures.get(p).flatten();
         let sun = get(&climate.sun_texture).unwrap_or_else(|| self.renderer.white.clone());
-        let clouds = w.clouds.iter().take(4).filter_map(|c| get(&c.texture)).collect();
-        let (dev, sampler, black) = (&self.renderer.device, &self.renderer.sampler, self.renderer.black.clone());
-        self.renderer.sky.set_textures(dev, sampler, sun, clouds, black);
+        let clouds = w
+            .clouds
+            .iter()
+            .take(4)
+            .filter_map(|c| get(&c.texture))
+            .collect();
+        let (dev, sampler, black) = (
+            &self.renderer.device,
+            &self.renderer.sampler,
+            self.renderer.black.clone(),
+        );
+        self.renderer
+            .sky
+            .set_textures(dev, sampler, sun, clouds, black);
         self.sky = Some((w, climate));
     }
 
@@ -1501,7 +1968,8 @@ impl Engine {
             self.test_jump = false;
         }
         let sneak_speed = self.player_sneak_speed();
-        self.player.update(&self.physics, &cam, input, sneak_speed, dt);
+        self.player
+            .update(&self.physics, &cam, input, sneak_speed, dt);
         let stride = (self.player.position - before).truncate().length();
         self.player.moving = dt > 0.0 && stride / dt > 1.0;
         self.player.running = self.player.moving && (run || sprint);
@@ -1537,19 +2005,39 @@ impl Engine {
     }
 
     fn find_look_target(&mut self) {
-        let Some((_, Some(owner))) = self.physics.raycast(self.camera.position, self.camera.forward(), 220.0) else {
+        let Some((_, Some(owner))) =
+            self.physics
+                .raycast(self.camera.position, self.camera.forward(), 220.0)
+        else {
             return;
         };
-        let Some(rec) = self.lo.get(owner) else { return };
+        let Some(rec) = self.lo.get(owner) else {
+            return;
+        };
         let rf = records::reference(&rec);
-        let Some(base) = self.lo.get(rf.base) else { return };
-        let mut name = self.actor_name(owner).unwrap_or_else(|| base.get(b"FULL").map(|d| self.lo.lstring(&base, d)).unwrap_or_default());
+        let Some(base) = self.lo.get(rf.base) else {
+            return;
+        };
+        let mut name = self.actor_name(owner).unwrap_or_else(|| {
+            base.get(b"FULL")
+                .map(|d| self.lo.lstring(&base, d))
+                .unwrap_or_default()
+        });
         if base.tag().0 == *b"DOOR"
             && let Some((dest, _, _)) = rf.teleport
         {
-            let target = self.lo.cell_of_ref(dest).and_then(|c| records::cell_info(&self.lo, c));
+            let target = self
+                .lo
+                .cell_of_ref(dest)
+                .and_then(|c| records::cell_info(&self.lo, c));
             let cname = target
-                .map(|c| if c.name.is_empty() { c.editor_id } else { c.name })
+                .map(|c| {
+                    if c.name.is_empty() {
+                        c.editor_id
+                    } else {
+                        c.name
+                    }
+                })
                 .filter(|n| !n.is_empty())
                 .unwrap_or_else(|| "Skyrim".into());
             name = format!("Door to {cname}");
@@ -1561,8 +2049,12 @@ impl Engine {
 
     /// The verb shown in the activation prompt.
     pub fn look_verb(&self) -> &'static str {
-        let Some((id, _)) = &self.look_target else { return "" };
-        let Some(rec) = self.lo.get(*id) else { return "Activate" };
+        let Some((id, _)) = &self.look_target else {
+            return "";
+        };
+        let Some(rec) = self.lo.get(*id) else {
+            return "Activate";
+        };
         if rec.tag().0 == *b"ACHR" {
             return if self.is_dead(*id) {
                 "Search"
@@ -1574,13 +2066,18 @@ impl Engine {
         }
         let base = records::reference(&rec).base;
         drop(rec);
-        let owned = crate::ai::furniture::owner_of(&self.lo, *id).is_some_and(|o| self.owned_by_other(o));
+        let owned =
+            crate::ai::furniture::owner_of(&self.lo, *id).is_some_and(|o| self.owned_by_other(o));
         match self.lo.tag_of(base).map(|t| t.0) {
             Some(t) if t == *b"DOOR" => "Open",
             Some(t) if t == *b"CONT" && owned => "Steal from",
             Some(t) if t == *b"CONT" => "Search",
             Some(t) if t == *b"FURN" => {
-                let sleep = self.furniture.get(*id).is_some_and(|f| f.markers.iter().any(|m| m.kind == crate::ai::furniture::Use::Sleep));
+                let sleep = self.furniture.get(*id).is_some_and(|f| {
+                    f.markers
+                        .iter()
+                        .any(|m| m.kind == crate::ai::furniture::Use::Sleep)
+                });
                 if sleep { "Sleep" } else { "Sit" }
             }
             Some(t) if t == *b"BOOK" => "Read",
@@ -1603,8 +2100,15 @@ impl Engine {
                 .lo
                 .get(c)
                 .map(|r| {
-                    let n = r.get(b"FULL").map(|d| self.lo.lstring(&r, d)).unwrap_or_default();
-                    if n.is_empty() { r.editor_id().unwrap_or_default() } else { n }
+                    let n = r
+                        .get(b"FULL")
+                        .map(|d| self.lo.lstring(&r, d))
+                        .unwrap_or_default();
+                    if n.is_empty() {
+                        r.editor_id().unwrap_or_default()
+                    } else {
+                        n
+                    }
                 })
                 .unwrap_or_default(),
             Location::Nowhere => String::new(),
@@ -1613,7 +2117,9 @@ impl Engine {
 
     /// Activate whatever the player is looking at.
     pub fn activate(&mut self) -> Result<()> {
-        let Some((owner, name)) = self.look_target.clone() else { return Ok(()) };
+        let Some((owner, name)) = self.look_target.clone() else {
+            return Ok(());
+        };
         if self.disabled_controls.activate {
             log::debug!("activation disabled: {owner} ({name})");
             return Ok(());
@@ -1626,7 +2132,9 @@ impl Engine {
         log::info!("activate {owner} ({name})");
         // Actors in a scene that says so can't be talked to.
         if is_actor && !self.is_dead(owner) && self.scene_blocks_activation(owner) {
-            let text = self.gmst_string("sSceneBlockingActorActivation").unwrap_or_default();
+            let text = self
+                .gmst_string("sSceneBlockingActorActivation")
+                .unwrap_or_default();
             if !text.is_empty() {
                 self.scripts.notify(text.replace("%s", &name));
             }
@@ -1636,11 +2144,18 @@ impl Engine {
             let mut vm = std::mem::take(&mut self.vm);
             let player = self.object_value(PLAYER_REF);
             let mut host = crate::script::EngineHost { engine: self };
-            vm.send_event(&mut host, papyrus::ObjectId::Form(owner.0), "OnActivate", vec![player.clone()]);
+            vm.send_event(
+                &mut host,
+                papyrus::ObjectId::Form(owner.0),
+                "OnActivate",
+                vec![player.clone()],
+            );
             self.vm = vm;
             // And to the aliases it fills.
             for obj in self.objects_of_ref(owner).into_iter().skip(1) {
-                self.scripts.pending_events.push((obj, "OnActivate".into(), vec![player.clone()]));
+                self.scripts
+                    .pending_events
+                    .push((obj, "OnActivate".into(), vec![player.clone()]));
             }
         }
         if self.scripts.blocked_activation.contains(&owner) {
@@ -1670,7 +2185,10 @@ impl Engine {
             return Ok(());
         }
         if base_tag.map(|t| t.0) == Some(*b"BOOK") {
-            self.menu = Some(crate::items::Menu::Book { book: rf.base, reference: Some(owner) });
+            self.menu = Some(crate::items::Menu::Book {
+                book: rf.base,
+                reference: Some(owner),
+            });
             return Ok(());
         }
         if self.is_item_ref(owner) {
@@ -1695,7 +2213,10 @@ impl Engine {
 
     /// Move the player to a door destination (as stored in XTEL).
     pub fn teleport_through(&mut self, dest_door: FormId, pos: Vec3, yaw: f32) -> Result<()> {
-        let cell_id = self.lo.cell_of_ref(dest_door).context("destination door has no cell")?;
+        let cell_id = self
+            .lo
+            .cell_of_ref(dest_door)
+            .context("destination door has no cell")?;
         let idx = self.lo.cell(cell_id).cloned().unwrap_or_default();
         match idx.world {
             Some(world) => self.enter_exterior(world, pos, yaw),
@@ -1705,7 +2226,12 @@ impl Engine {
 
     /// Doors with teleport destinations in the loaded cells.
     pub fn load_doors(&self) -> Vec<Door> {
-        self.cells.values().flat_map(|c| c.doors.iter()).filter(|d| d.destination.is_some() && !self.is_disabled(d.ref_id)).cloned().collect()
+        self.cells
+            .values()
+            .flat_map(|c| c.doors.iter())
+            .filter(|d| d.destination.is_some() && !self.is_disabled(d.ref_id))
+            .cloned()
+            .collect()
     }
 
     /// `coc`-style entry: an interior cell, or an exterior cell by editor id.
@@ -1713,7 +2239,11 @@ impl Engine {
         let idx = self.lo.cell(id).cloned().unwrap_or_default();
         match (idx.world, idx.grid) {
             (Some(w), Some((x, y))) => {
-                let p = Vec3::new(x as f32 * CELL_SIZE + CELL_SIZE * 0.5, y as f32 * CELL_SIZE + CELL_SIZE * 0.5, -100_000.0);
+                let p = Vec3::new(
+                    x as f32 * CELL_SIZE + CELL_SIZE * 0.5,
+                    y as f32 * CELL_SIZE + CELL_SIZE * 0.5,
+                    -100_000.0,
+                );
                 self.enter_exterior(w, p, 0.0)
             }
             _ => self.enter_interior(id, None),
@@ -1748,18 +2278,27 @@ impl Engine {
         if let Some(c) = self.created(id) {
             return if c.actor { "Actor" } else { "ObjectReference" };
         }
-        self.lo.tag_of(id).map(|t| crate::script::types::class_for_tag(&t.0)).unwrap_or("Form")
+        self.lo
+            .tag_of(id)
+            .map(|t| crate::script::types::class_for_tag(&t.0))
+            .unwrap_or("Form")
     }
 
     pub fn object_value(&self, id: FormId) -> papyrus::Value {
-        if id.is_null() || (self.lo.locate(id).is_none() && id != PLAYER_REF && self.created(id).is_none()) {
+        if id.is_null()
+            || (self.lo.locate(id).is_none() && id != PLAYER_REF && self.created(id).is_none())
+        {
             return papyrus::Value::None;
         }
         papyrus::Value::Object(papyrus::ObjectId::Form(id.0), self.native_class(id).into())
     }
 
     pub fn form_from_file(&self, local: u32, file: &str) -> Option<FormId> {
-        let p = self.lo.plugins().iter().find(|p| p.plugin.name().eq_ignore_ascii_case(file))?;
+        let p = self
+            .lo
+            .plugins()
+            .iter()
+            .find(|p| p.plugin.name().eq_ignore_ascii_case(file))?;
         let id = match p.slot {
             esp::Slot::Full(i) => FormId(((i as u32) << 24) | (local & 0x00FF_FFFF)),
             esp::Slot::Light(j) => FormId(0xFE00_0000 | ((j as u32) << 12) | (local & 0xFFF)),
@@ -1771,7 +2310,9 @@ impl Engine {
         if let Some(name) = self.actor_name(id) {
             return name;
         }
-        let Some(rec) = self.lo.get(id) else { return String::new() };
+        let Some(rec) = self.lo.get(id) else {
+            return String::new();
+        };
         let rec = if matches!(&rec.tag().0, b"REFR" | b"ACHR") {
             match self.lo.get(records::reference(&rec).base) {
                 Some(b) => b,
@@ -1780,18 +2321,24 @@ impl Engine {
         } else {
             rec
         };
-        rec.get(b"FULL").map(|d| self.lo.lstring(&rec, d)).unwrap_or_default()
+        rec.get(b"FULL")
+            .map(|d| self.lo.lstring(&rec, d))
+            .unwrap_or_default()
     }
 
     /// An actor's name: from the template that gives it its base data ("Use
     /// Base Data"), so leveled and templated actors (bandits) are named.
     /// `None` for anything but an actor reference (or the player).
     pub fn actor_name(&self, r: FormId) -> Option<String> {
-        let is_actor = r == PLAYER_REF || self.created(r).is_some_and(|c| c.actor) || self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR");
+        let is_actor = r == PLAYER_REF
+            || self.created(r).is_some_and(|c| c.actor)
+            || self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR");
         if !is_actor {
             return None;
         }
-        let rec = self.templates_of(r)?.record(&self.lo, crate::world::template::BASE_DATA, b"FULL")?;
+        let rec =
+            self.templates_of(r)?
+                .record(&self.lo, crate::world::template::BASE_DATA, b"FULL")?;
         rec.get(b"FULL").map(|d| self.lo.lstring(&rec, d))
     }
 
@@ -1817,13 +2364,27 @@ impl Engine {
         if let Some(c) = self.created(form).filter(|c| !c.actor) {
             return self.has_keyword(c.base, kw);
         }
-        if form == PLAYER_REF || self.created(form).is_some() || self.lo.get(form).is_some_and(|r| r.tag().0 == *b"ACHR") {
+        if form == PLAYER_REF
+            || self.created(form).is_some()
+            || self.lo.get(form).is_some_and(|r| r.tag().0 == *b"ACHR")
+        {
             // Actors: their keywords part's, and their race's.
-            let Some(t) = self.templates_of(form) else { return false };
-            let race = self.lo.get(t.of(crate::world::template::TRAITS)).and_then(|r| r.get(b"RNAM").map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))));
-            return t.keywords(&self.lo).contains(&kw) || race.is_some_and(|r| self.has_keyword(r, kw));
+            let Some(t) = self.templates_of(form) else {
+                return false;
+            };
+            let race = self
+                .lo
+                .get(t.of(crate::world::template::TRAITS))
+                .and_then(|r| {
+                    r.get(b"RNAM")
+                        .map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+                });
+            return t.keywords(&self.lo).contains(&kw)
+                || race.is_some_and(|r| self.has_keyword(r, kw));
         }
-        let Some(rec) = self.lo.get(form) else { return false };
+        let Some(rec) = self.lo.get(form) else {
+            return false;
+        };
         let rec = if matches!(&rec.tag().0, b"REFR" | b"ACHR") {
             match self.lo.get(records::reference(&rec).base) {
                 Some(b) => b,
@@ -1832,7 +2393,10 @@ impl Engine {
         } else {
             rec
         };
-        rec.get(b"KWDA").is_some_and(|d| d.chunks_exact(4).any(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))) == kw))
+        rec.get(b"KWDA").is_some_and(|d| {
+            d.chunks_exact(4)
+                .any(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))) == kw)
+        })
     }
 
     pub fn base_of(&self, r: FormId) -> Option<FormId> {
@@ -1848,7 +2412,10 @@ impl Engine {
 
     pub fn ref_position(&self, r: FormId) -> Option<Vec3> {
         if r == PLAYER_REF {
-            return Some(self.player.position - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius));
+            return Some(
+                self.player.position
+                    - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius),
+            );
         }
         if let Some(p) = self.moved_refs.get(&r) {
             return Some(*p);
@@ -1889,7 +2456,10 @@ impl Engine {
     }
 
     pub fn npc_is_female(&self, npc: FormId) -> bool {
-        self.lo.get(npc).and_then(|r| r.get(b"ACBS").map(|d| d[0] & 1 != 0)).unwrap_or(false)
+        self.lo
+            .get(npc)
+            .and_then(|r| r.get(b"ACBS").map(|d| d[0] & 1 != 0))
+            .unwrap_or(false)
     }
 
     pub fn global_value(&self, g: FormId) -> f32 {
@@ -1911,14 +2481,21 @@ impl Engine {
     }
 
     pub fn message_text(&self, m: FormId) -> String {
-        let Some(rec) = self.lo.get(m) else { return String::new() };
-        rec.get(b"DESC").map(|d| self.lo.lstring(&rec, d)).unwrap_or_default()
+        let Some(rec) = self.lo.get(m) else {
+            return String::new();
+        };
+        rec.get(b"DESC")
+            .map(|d| self.lo.lstring(&rec, d))
+            .unwrap_or_default()
     }
 
     /// The inventory of a reference; a container's starts out with its contents.
     pub fn inventory_mut(&mut self, r: FormId) -> &mut crate::world::inventory::Inventory {
         if !self.inventories.contains_key(&r) {
-            let inv = self.base_of(r).map(|b| crate::world::inventory::container_inventory(&self.lo, b, r.0 as u64)).unwrap_or_default();
+            let inv = self
+                .base_of(r)
+                .map(|b| crate::world::inventory::container_inventory(&self.lo, b, r.0 as u64))
+                .unwrap_or_default();
             self.inventories.insert(r, inv);
         }
         self.inventories.get_mut(&r).unwrap()
@@ -1926,8 +2503,16 @@ impl Engine {
 
     /// How many of `item` (or of the forms in a form list) a reference holds.
     pub fn item_count(&self, r: FormId, item: FormId) -> i32 {
-        let base = || self.base_of(r).map(|b| crate::world::inventory::container_inventory(&self.lo, b, r.0 as u64));
-        let held = self.inventories.get(&r).cloned().or_else(base).unwrap_or_default();
+        let base = || {
+            self.base_of(r)
+                .map(|b| crate::world::inventory::container_inventory(&self.lo, b, r.0 as u64))
+        };
+        let held = self
+            .inventories
+            .get(&r)
+            .cloned()
+            .or_else(base)
+            .unwrap_or_default();
         if self.lo.tag_of(item).map(|t| t.0) == Some(*b"FLST") {
             self.formlist(item).into_iter().map(|f| held.count(f)).sum()
         } else {
@@ -1939,7 +2524,11 @@ impl Engine {
     /// leveled list what it rolls.
     pub fn add_item(&mut self, r: FormId, item: FormId, count: i32) {
         let items: Vec<(FormId, i32)> = match self.lo.tag_of(item).map(|t| t.0) {
-            Some(t) if &t == b"FLST" => self.formlist(item).into_iter().map(|f| (f, count)).collect(),
+            Some(t) if &t == b"FLST" => self
+                .formlist(item)
+                .into_iter()
+                .map(|f| (f, count))
+                .collect(),
             Some(t) if &t == b"LVLI" => {
                 let seed = self.rand();
                 crate::world::actor::resolve_items(&self.lo, item, count, seed, 0)
@@ -1955,10 +2544,18 @@ impl Engine {
     /// Take up to `count` of `item` (or of a form list's forms) from a reference,
     /// handing them to `to` if given. Returns how many were taken.
     pub fn remove_item(&mut self, r: FormId, item: FormId, count: i32, to: Option<FormId>) -> i32 {
-        let forms = if self.lo.tag_of(item).map(|t| t.0) == Some(*b"FLST") { self.formlist(item) } else { vec![item] };
+        let forms = if self.lo.tag_of(item).map(|t| t.0) == Some(*b"FLST") {
+            self.formlist(item)
+        } else {
+            vec![item]
+        };
         let mut total = 0;
         for f in forms {
-            total += self.remove_stack(r, f, count, None, to, None).iter().map(|(_, n)| n).sum::<i32>();
+            total += self
+                .remove_stack(r, f, count, None, to, None)
+                .iter()
+                .map(|(_, n)| n)
+                .sum::<i32>();
         }
         total
     }
@@ -1968,7 +2565,15 @@ impl Engine {
     /// `to` if given. Owned (stolen) items stay owned there unless `to` is their
     /// owner; the rest become `mark`'s (stolen from them). Returns what moved,
     /// by owner.
-    pub(crate) fn remove_stack(&mut self, r: FormId, item: FormId, count: i32, only: Option<Option<FormId>>, to: Option<FormId>, mark: Option<FormId>) -> Vec<(Option<FormId>, i32)> {
+    pub(crate) fn remove_stack(
+        &mut self,
+        r: FormId,
+        item: FormId,
+        count: i32,
+        only: Option<Option<FormId>>,
+        to: Option<FormId>,
+        mark: Option<FormId>,
+    ) -> Vec<(Option<FormId>, i32)> {
         let parts = self.inventory_mut(r).remove_split(item, count, only);
         let n: i32 = parts.iter().map(|(_, n)| n).sum();
         self.inventory_event(r, false, item, n, to);
@@ -1984,12 +2589,19 @@ impl Engine {
     }
 
     pub fn formlist(&self, f: FormId) -> Vec<FormId> {
-        let Some(rec) = self.lo.get(f) else { return Vec::new() };
-        rec.subrecords().filter(|s| s.tag.0 == *b"LNAM").map(|s| rec.fid(s.form_id(0))).collect()
+        let Some(rec) = self.lo.get(f) else {
+            return Vec::new();
+        };
+        rec.subrecords()
+            .filter(|s| s.tag.0 == *b"LNAM")
+            .map(|s| rec.fid(s.form_id(0)))
+            .collect()
     }
 
     pub fn objective_text(&self, q: FormId, objective: i32) -> String {
-        let Some(rec) = self.lo.get(q) else { return String::new() };
+        let Some(rec) = self.lo.get(q) else {
+            return String::new();
+        };
         let mut current = None;
         for sr in rec.subrecords() {
             match &sr.tag.0 {
@@ -2011,8 +2623,15 @@ impl Engine {
             if let Some(d) = self.scripts.disabled.get(&r) {
                 return *d != opposite;
             }
-            let Some(rec) = self.lo.get(r) else { return opposite };
-            let parent = rec.get(b"XESP").filter(|d| d.len() >= 5).map(|d| (rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))), d[4] & 1 != 0));
+            let Some(rec) = self.lo.get(r) else {
+                return opposite;
+            };
+            let parent = rec.get(b"XESP").filter(|d| d.len() >= 5).map(|d| {
+                (
+                    rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))),
+                    d[4] & 1 != 0,
+                )
+            });
             match parent {
                 Some((p, opp)) if !p.is_null() => {
                     opposite ^= opp;
@@ -2032,7 +2651,9 @@ impl Engine {
                 for &r in self.lo.ids_of_type(tag) {
                     let Some(rec) = self.lo.get(r) else { continue };
                     if let Some(d) = rec.get(b"XESP").filter(|d| d.len() >= 4) {
-                        out.entry(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))).or_default().push(r);
+                        out.entry(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+                            .or_default()
+                            .push(r);
                     }
                 }
             }
@@ -2046,8 +2667,15 @@ impl Engine {
         let mut affected = vec![r];
         let mut i = 0;
         while i < affected.len() && affected.len() < 100_000 {
-            let kids = self.enable_children().get(&affected[i]).cloned().unwrap_or_default();
-            affected.extend(kids.into_iter().filter(|k| !self.scripts.disabled.contains_key(k)));
+            let kids = self
+                .enable_children()
+                .get(&affected[i])
+                .cloned()
+                .unwrap_or_default();
+            affected.extend(
+                kids.into_iter()
+                    .filter(|k| !self.scripts.disabled.contains_key(k)),
+            );
             i += 1;
         }
         let mut lights_changed = false;
@@ -2056,14 +2684,26 @@ impl Engine {
         for r in affected {
             let off = self.is_disabled(r);
             sounds.push((r, off));
-            lights_changed |= self.cells.values().any(|c| c.lights.iter().any(|l| l.ref_id == r));
+            lights_changed |= self
+                .cells
+                .values()
+                .any(|c| c.lights.iter().any(|l| l.ref_id == r));
             self.furniture.set_disabled(r, off);
             // Enabled actors whose place is loaded appear.
-            if !off && !self.actor_cells.contains_key(&r) && self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR") {
-                let at = self.whereabouts.of.get(&r).copied().or_else(|| self.body_of(r)).or_else(|| {
-                    let pos = self.reference_of(r)?.position;
-                    Some((self.place_of_ref(r, pos)?, pos))
-                });
+            if !off
+                && !self.actor_cells.contains_key(&r)
+                && self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR")
+            {
+                let at = self
+                    .whereabouts
+                    .of
+                    .get(&r)
+                    .copied()
+                    .or_else(|| self.body_of(r))
+                    .or_else(|| {
+                        let pos = self.reference_of(r)?.position;
+                        Some((self.place_of_ref(r, pos)?, pos))
+                    });
                 if let Some((place, pos)) = at
                     && let Some(key) = self.key_of_place(place)
                 {
@@ -2084,10 +2724,19 @@ impl Engine {
             self.spawn_actors(key, &[(r, Some(pos))]);
         }
         // Looping sounds of what is now enabled start, of what is disabled stop.
-        let loaded: HashMap<FormId, CellKey> = self.cells.iter().flat_map(|(k, rt)| rt.refs.iter().map(move |r| (*r, *k))).collect();
+        let loaded: HashMap<FormId, CellKey> = self
+            .cells
+            .iter()
+            .flat_map(|(k, rt)| rt.refs.iter().map(move |r| (*r, *k)))
+            .collect();
         for (r, off) in sounds {
             let Some(&key) = loaded.get(&r) else { continue };
-            let playing: Vec<crate::audio::VoiceId> = self.cells[&key].sounds.iter().filter(|(s, _)| *s == r).map(|(_, v)| *v).collect();
+            let playing: Vec<crate::audio::VoiceId> = self.cells[&key]
+                .sounds
+                .iter()
+                .filter(|(s, _)| *s == r)
+                .map(|(_, v)| *v)
+                .collect();
             if off {
                 if let Some(a) = &self.audio {
                     playing.iter().for_each(|v| a.stop(*v));
@@ -2128,10 +2777,17 @@ impl Engine {
             let conds = self.quest_event_conditions(q);
             if !conds.is_empty() {
                 let outer = std::mem::replace(&mut self.story.active, event.clone());
-                let ctx = crate::condition::Context { subject: Some(PLAYER_REF), quest: Some(q), ..Default::default() };
+                let ctx = crate::condition::Context {
+                    subject: Some(PLAYER_REF),
+                    quest: Some(q),
+                    ..Default::default()
+                };
                 let pass = crate::condition::evaluate(self, &conds, ctx);
                 if !pass {
-                    log::debug!("{q}: event conditions fail: {}", crate::condition::explain(self, &conds, ctx));
+                    log::debug!(
+                        "{q}: event conditions fail: {}",
+                        crate::condition::explain(self, &conds, ctx)
+                    );
                 }
                 self.story.active = outer;
                 if !pass {
@@ -2159,19 +2815,30 @@ impl Engine {
         let Some(rec) = self.lo.get(q) else { return };
         let vmad = crate::script::vmad::parse(&rec).unwrap_or_default();
         // Startup stage: INDX flags (third byte) 0x2 marks "start up stage".
-        let startup = rec.subrecords().find(|sr| sr.tag.0 == *b"INDX" && sr.u8(2) & 0x2 != 0).map(|sr| sr.u16(0));
+        let startup = rec
+            .subrecords()
+            .find(|sr| sr.tag.0 == *b"INDX" && sr.u8(2) & 0x2 != 0)
+            .map(|sr| sr.u16(0));
         drop(rec);
         let mut vm = std::mem::take(&mut self.vm);
         {
             let obj = papyrus::ObjectId::Form(q.0);
             // Alias scripts run on the alias objects.
             for (alias, scripts) in &vmad.alias_scripts {
-                let aobj = papyrus::ObjectId::Alias { quest: q.0, alias: *alias };
+                let aobj = papyrus::ObjectId::Alias {
+                    quest: q.0,
+                    alias: *alias,
+                };
                 for s in scripts {
                     let props: Vec<(String, papyrus::Value)> = s
                         .properties
                         .iter()
-                        .map(|(n, pv)| (n.clone(), crate::script::vmad::to_value(pv, &|f| host_class(&self.lo, f))))
+                        .map(|(n, pv)| {
+                            (
+                                n.clone(),
+                                crate::script::vmad::to_value(pv, &|f| host_class(&self.lo, f)),
+                            )
+                        })
                         .collect();
                     let mut host = crate::script::EngineHost { engine: self };
                     vm.attach(&mut host, aobj, &s.name, &props);
@@ -2182,13 +2849,24 @@ impl Engine {
                 let props: Vec<(String, papyrus::Value)> = s
                     .properties
                     .iter()
-                    .map(|(n, pv)| (n.clone(), crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f))))
+                    .map(|(n, pv)| {
+                        (
+                            n.clone(),
+                            crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
+                        )
+                    })
                     .collect();
                 vm.attach(&mut host, obj, &s.name, &props);
             }
             vm.send_event(&mut host, obj, "OnInit", vec![]);
             // Started by the Story Manager: the event, with its data.
-            let event = host.engine.scripts.quests.get(&q).and_then(|st| st.event.as_ref()).and_then(|e| host.engine.story_papyrus_event(e));
+            let event = host
+                .engine
+                .scripts
+                .quests
+                .get(&q)
+                .and_then(|st| st.event.as_ref())
+                .and_then(|e| host.engine.story_papyrus_event(e));
             if let Some((name, args)) = event {
                 vm.send_event(&mut host, obj, name, args);
             }
@@ -2225,7 +2903,9 @@ impl Engine {
             st.done.insert(stage);
         }
         let Some(rec) = self.lo.get(q) else { return };
-        let Some(vmad) = crate::script::vmad::parse(&rec) else { return };
+        let Some(vmad) = crate::script::vmad::parse(&rec) else {
+            return;
+        };
         let edid = rec.editor_id().unwrap_or_default();
         drop(rec);
         log::info!("quest {edid} stage {stage}");
@@ -2233,7 +2913,13 @@ impl Engine {
         {
             let mut host = crate::script::EngineHost { engine: self };
             for f in vmad.fragments.iter().filter(|f| f.stage == stage) {
-                vm.call_method(&mut host, papyrus::ObjectId::Form(q.0), &f.script, &f.function, vec![]);
+                vm.call_method(
+                    &mut host,
+                    papyrus::ObjectId::Form(q.0),
+                    &f.script,
+                    &f.function,
+                    vec![],
+                );
             }
         }
         self.vm = vm;
@@ -2262,7 +2948,11 @@ impl Engine {
         // Timers
         let mut fired = Vec::new();
         self.scripts.timers.retain_mut(|t| {
-            let due = if t.game_time { game_now >= t.at } else { now >= t.at };
+            let due = if t.game_time {
+                game_now >= t.at
+            } else {
+                now >= t.at
+            };
             if due {
                 fired.push((t.obj, t.script.clone(), t.event));
                 if let Some(r) = t.repeat {
@@ -2289,7 +2979,10 @@ impl Engine {
                 vm.run(&mut host, now, 20_000);
             }
             let stages = std::mem::take(&mut self.scripts.pending_stages);
-            if stages.is_empty() && self.scripts.pending_events.is_empty() && self.scripts.pending_quest_inits.is_empty() {
+            if stages.is_empty()
+                && self.scripts.pending_events.is_empty()
+                && self.scripts.pending_quest_inits.is_empty()
+            {
                 break;
             }
             self.vm = vm;
@@ -2304,9 +2997,13 @@ impl Engine {
             && let Some(p) = self.ref_position(t)
         {
             let cell = self.lo.cell_of_ref(t);
-            let interior = cell.and_then(|c| self.lo.cell(c)).is_some_and(|c| c.world.is_none());
+            let interior = cell
+                .and_then(|c| self.lo.cell(c))
+                .is_some_and(|c| c.world.is_none());
             let res = match (interior, cell) {
-                (true, Some(c)) if self.location != Location::Interior(c) => self.enter_interior(c, Some((p, 0.0))),
+                (true, Some(c)) if self.location != Location::Interior(c) => {
+                    self.enter_interior(c, Some((p, 0.0)))
+                }
                 _ => {
                     self.place_player(p, self.camera.yaw);
                     Ok(())
@@ -2327,7 +3024,15 @@ impl Engine {
             .ids_of_type(b"QUST")
             .iter()
             .copied()
-            .filter(|&q| self.lo.get(q).and_then(|r| r.get(b"DNAM").map(|d| u16::from_le_bytes([d[0], d[1]]) & 0x1 != 0)).unwrap_or(false))
+            .filter(|&q| {
+                self.lo
+                    .get(q)
+                    .and_then(|r| {
+                        r.get(b"DNAM")
+                            .map(|d| u16::from_le_bytes([d[0], d[1]]) & 0x1 != 0)
+                    })
+                    .unwrap_or(false)
+            })
             .collect();
         log::info!("starting {} start-game-enabled quests", quests.len());
         for q in quests {
@@ -2341,7 +3046,9 @@ fn host_class(lo: &LoadOrder, f: FormId) -> &'static str {
     if f == PLAYER_REF {
         return "Actor";
     }
-    lo.tag_of(f).map(|t| crate::script::types::class_for_tag(&t.0)).unwrap_or("Form")
+    lo.tag_of(f)
+        .map(|t| crate::script::types::class_for_tag(&t.0))
+        .unwrap_or("Form")
 }
 
 pub fn interior_environment(l: &Lighting) -> Environment {
@@ -2354,7 +3061,11 @@ pub fn interior_environment(l: &Lighting) -> Environment {
         fog_near_color: l.fog_near_color,
         fog_far_color: l.fog_far_color,
         fog_near: l.fog_near,
-        fog_far: if l.fog_far > l.fog_near { l.fog_far } else { l.fog_near + 1.0 },
+        fog_far: if l.fog_far > l.fog_near {
+            l.fog_far
+        } else {
+            l.fog_near + 1.0
+        },
         fog_power: if l.fog_power > 0.0 { l.fog_power } else { 1.0 },
         fog_max: if l.fog_max > 0.0 { l.fog_max } else { 1.0 },
         clear_color: l.fog_far_color,

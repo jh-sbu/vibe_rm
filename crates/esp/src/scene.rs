@@ -62,10 +62,21 @@ pub struct Actor {
 pub enum ActionKind {
     /// Say a line of the topic (none: only head tracking), looping every
     /// `loop_min..loop_max` seconds when flagged.
-    Dialogue { topic: FormId, headtrack: Option<u32>, loop_min: f32, loop_max: f32, emotion: u32, emotion_value: u32 },
+    Dialogue {
+        topic: FormId,
+        headtrack: Option<u32>,
+        loop_min: f32,
+        loop_max: f32,
+        emotion: u32,
+        emotion_value: u32,
+    },
     /// Run the first of these packages whose conditions pass.
-    Package { packages: Vec<FormId> },
-    Timer { seconds: f32 },
+    Package {
+        packages: Vec<FormId>,
+    },
+    Timer {
+        seconds: f32,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -120,7 +131,11 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Scene> {
     if rec.tag().0 != *b"SCEN" {
         return None;
     }
-    let mut s = Scene { id, editor_id: rec.editor_id().unwrap_or_default(), ..Default::default() };
+    let mut s = Scene {
+        id,
+        editor_id: rec.editor_id().unwrap_or_default(),
+        ..Default::default()
+    };
     let mut part = Part::Head;
     // The action being read, and whether its ENAM was seen (a later SNAM is a
     // timer's seconds, not the start phase).
@@ -128,7 +143,12 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Scene> {
     let mut last: Option<CondList> = None;
     for sr in rec.subrecords() {
         let tag = &sr.tag.0;
-        let u32_of = || sr.data.get(0..4).map(|b| u32::from_le_bytes(b.try_into().unwrap())).unwrap_or(0);
+        let u32_of = || {
+            sr.data
+                .get(0..4)
+                .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+                .unwrap_or(0)
+        };
         let f32_of = || f32::from_bits(u32_of());
         match (&part, tag) {
             (Part::Head, b"FNAM") => s.flags = u32_of(),
@@ -145,12 +165,22 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Scene> {
             (Part::Phase(n), b"NEXT") => part = Part::Phase(n + 1),
             (Part::Phase(n), b"CTDA") if *n < 2 => {
                 let p = s.phases.last_mut()?;
-                let (list, which) = if *n == 0 { (&mut p.start, CondList::Start) } else { (&mut p.completion, CondList::Completion) };
-                list.push(RawCondition { ctda: sr.data.to_vec(), ..Default::default() });
+                let (list, which) = if *n == 0 {
+                    (&mut p.start, CondList::Start)
+                } else {
+                    (&mut p.completion, CondList::Completion)
+                };
+                list.push(RawCondition {
+                    ctda: sr.data.to_vec(),
+                    ..Default::default()
+                });
                 last = Some(which);
             }
             (Part::Tail, b"CTDA") => {
-                s.conditions.push(RawCondition { ctda: sr.data.to_vec(), ..Default::default() });
+                s.conditions.push(RawCondition {
+                    ctda: sr.data.to_vec(),
+                    ..Default::default()
+                });
                 last = Some(CondList::Scene);
             }
             (Part::Phase(_) | Part::Tail, b"CIS1" | b"CIS2") => {
@@ -171,7 +201,10 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Scene> {
             }
             (Part::Head | Part::Actors, b"ALID") => {
                 part = Part::Actors;
-                s.actors.push(Actor { alias: u32_of(), ..Default::default() });
+                s.actors.push(Actor {
+                    alias: u32_of(),
+                    ..Default::default()
+                });
             }
             (Part::Actors, b"LNAM") => {
                 if let Some(a) = s.actors.last_mut() {
@@ -186,18 +219,40 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Scene> {
             (Part::Head | Part::Actors | Part::Tail, b"ANAM") if sr.data.len() >= 2 => {
                 part = Part::Action;
                 let kind = match u16::from_le_bytes([sr.data[0], sr.data[1]]) {
-                    0 => ActionKind::Dialogue { topic: FormId(0), headtrack: None, loop_min: 0.0, loop_max: 0.0, emotion: 0, emotion_value: 0 },
-                    1 => ActionKind::Package { packages: Vec::new() },
+                    0 => ActionKind::Dialogue {
+                        topic: FormId(0),
+                        headtrack: None,
+                        loop_min: 0.0,
+                        loop_max: 0.0,
+                        emotion: 0,
+                        emotion_value: 0,
+                    },
+                    1 => ActionKind::Package {
+                        packages: Vec::new(),
+                    },
                     _ => ActionKind::Timer { seconds: 0.0 },
                 };
-                action = Some((Action { kind, name: String::new(), actor: -1, index: 0, flags: 0, start_phase: 0, end_phase: 0 }, false));
+                action = Some((
+                    Action {
+                        kind,
+                        name: String::new(),
+                        actor: -1,
+                        index: 0,
+                        flags: 0,
+                        start_phase: 0,
+                        end_phase: 0,
+                    },
+                    false,
+                ));
             }
             (Part::Action, b"ANAM") => {
                 s.actions.extend(action.take().map(|(a, _)| a));
                 part = Part::Tail;
             }
             (Part::Action, _) => {
-                let Some((a, ended)) = action.as_mut() else { continue };
+                let Some((a, ended)) = action.as_mut() else {
+                    continue;
+                };
                 match (tag, &mut a.kind) {
                     (b"NAM0", _) => a.name = sr.zstring(),
                     (b"ALID", _) => a.actor = u32_of() as i32,
@@ -209,13 +264,21 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Scene> {
                         a.end_phase = u32_of();
                         *ended = true;
                     }
-                    (b"PNAM", ActionKind::Package { packages }) => packages.push(rec.fid(FormId(u32_of()))),
-                    (b"DATA", ActionKind::Dialogue { topic, .. }) => *topic = rec.fid(FormId(u32_of())),
-                    (b"HTID", ActionKind::Dialogue { headtrack, .. }) => *headtrack = Some(u32_of()).filter(|&h| h as i32 >= 0),
+                    (b"PNAM", ActionKind::Package { packages }) => {
+                        packages.push(rec.fid(FormId(u32_of())))
+                    }
+                    (b"DATA", ActionKind::Dialogue { topic, .. }) => {
+                        *topic = rec.fid(FormId(u32_of()))
+                    }
+                    (b"HTID", ActionKind::Dialogue { headtrack, .. }) => {
+                        *headtrack = Some(u32_of()).filter(|&h| h as i32 >= 0)
+                    }
                     (b"DMAX", ActionKind::Dialogue { loop_max, .. }) => *loop_max = f32_of(),
                     (b"DMIN", ActionKind::Dialogue { loop_min, .. }) => *loop_min = f32_of(),
                     (b"DEMO", ActionKind::Dialogue { emotion, .. }) => *emotion = u32_of(),
-                    (b"DEVA", ActionKind::Dialogue { emotion_value, .. }) => *emotion_value = u32_of(),
+                    (b"DEVA", ActionKind::Dialogue { emotion_value, .. }) => {
+                        *emotion_value = u32_of()
+                    }
                     _ => {}
                 }
             }

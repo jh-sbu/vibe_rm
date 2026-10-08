@@ -28,7 +28,8 @@ pub struct StringTable {
 impl StringTable {
     pub fn parse(data: &[u8], kind: StringsKind) -> Option<Self> {
         let rd = |o: usize| -> Option<u32> {
-            data.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            data.get(o..o + 4)
+                .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
         };
         let count = rd(0)? as usize;
         let _size = rd(4)?;

@@ -3,7 +3,9 @@
 /// The most specific native Papyrus class for a record type.
 pub fn class_for_tag(tag: &[u8; 4]) -> &'static str {
     match tag {
-        b"REFR" | b"PGRE" | b"PHZD" | b"PMIS" | b"PARW" | b"PBAR" | b"PBEA" | b"PCON" | b"PFLA" => "ObjectReference",
+        b"REFR" | b"PGRE" | b"PHZD" | b"PMIS" | b"PARW" | b"PBAR" | b"PBEA" | b"PCON" | b"PFLA" => {
+            "ObjectReference"
+        }
         b"ACHR" => "Actor",
         b"NPC_" => "ActorBase",
         b"QUST" => "Quest",
@@ -85,7 +87,8 @@ pub fn native_parent(class: &str) -> Option<&'static str> {
         "actorbase" => "form",
         "referencealias" | "locationalias" => "alias",
         "activator" | "talkingactivator" | "furniture" | "flora" => "form",
-        "potion" | "ingredient" | "scroll" | "soulgem" | "book" | "armor" | "weapon" | "ammo" | "key" | "miscobject" => "form",
+        "potion" | "ingredient" | "scroll" | "soulgem" | "book" | "armor" | "weapon" | "ammo"
+        | "key" | "miscobject" => "form",
         "alias" | "activemagiceffect" => return None,
         "form" => return None,
         _ => "form",

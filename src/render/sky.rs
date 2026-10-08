@@ -39,7 +39,11 @@ impl SkyRenderer {
         let mut entries = vec![wgpu::BindGroupLayoutEntry {
             binding: 0,
             visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
             count: None,
         }];
         for b in 1..=5 {
@@ -60,7 +64,10 @@ impl SkyRenderer {
             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
             count: None,
         });
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("sky"), entries: &entries });
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sky"),
+            entries: &entries,
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
             bind_group_layouts: &[Some(&bgl)],
@@ -69,7 +76,12 @@ impl SkyRenderer {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sky"),
             layout: Some(&layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: super::DEPTH_FORMAT,
@@ -83,7 +95,11 @@ impl SkyRenderer {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format: color_format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
             }),
             multiview_mask: None,
             cache: None,
@@ -94,7 +110,14 @@ impl SkyRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        SkyRenderer { pipeline, bgl, ubuf, bind_group: None, state: None, cloud_count: 0 }
+        SkyRenderer {
+            pipeline,
+            bgl,
+            ubuf,
+            bind_group: None,
+            state: None,
+            cloud_count: 0,
+        }
     }
 
     pub fn is_active(&self) -> bool {
@@ -124,19 +147,49 @@ impl SkyRenderer {
             label: Some("sky"),
             layout: &self.bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.ubuf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&sun.view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&c0.view) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&c1.view) },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&c2.view) },
-                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&c3.view) },
-                wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.ubuf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&sun.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&c0.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&c1.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&c2.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&c3.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
             ],
         }));
     }
 
-    pub fn draw(&self, queue: &wgpu::Queue, pass: &mut wgpu::RenderPass, view_proj: Mat4, cam_pos: Vec3, time: f32) {
-        let (Some(bg), Some(st)) = (&self.bind_group, &self.state) else { return };
+    pub fn draw(
+        &self,
+        queue: &wgpu::Queue,
+        pass: &mut wgpu::RenderPass,
+        view_proj: Mat4,
+        cam_pos: Vec3,
+        time: f32,
+    ) {
+        let (Some(bg), Some(st)) = (&self.bind_group, &self.state) else {
+            return;
+        };
         let mut cloud_color = [[0f32; 4]; 4];
         for (i, c) in st.clouds.iter().take(4).enumerate() {
             cloud_color[i] = [c.1.x, c.1.y, c.1.z, c.2];
