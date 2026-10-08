@@ -317,7 +317,11 @@ game each piece unlocks.
   More events: the player taking items (`AIPL`: picked up, from containers and
   bodies, stolen), NPCs greeting the player (`AHEL`), finding bodies (`DEAD`),
   assaults (`ASSU`, crime when the victim keeps the law), relationship rank
-  changes (`CHRR`). Quests' own event conditions. Relationships (`RELA`):
+  changes (`CHRR`). Crime events: crime gold added (`ADCR`), the player
+  giving themselves up to the guard arresting them (`ARRT`: Thieves Guild
+  `TG00`'s arrest monitor), jailed (`JAIL`: `JailQuest`, the Windhelm jail
+  fight), escaping (`ESJA`: "Retrieve your possessions", the achievement)
+  and serving the sentence (`STIJ`). Quests' own event conditions. Relationships (`RELA`):
   `GetRelationshipRank` and highest / lowest, Papyrus get / set. Conditions
   `GetIsCurrentPackage`, `IsInList`, `DoesNotExist`, location keyword data.
   Console `storyevent` (with `v1=`, `f1=`...), `setrelationshiprank`;
@@ -444,10 +448,10 @@ game each piece unlocks.
      INFO speaker / listener idles; listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
-2. **Story Manager** (core and nine events done; see Done)
-   - Events waiting on their systems: crafting, level / skill increases, arrest
-     and jail, item removal (dropping), spell cast, shouts; kill events' crime
-     and relationship values; hellos between NPCs and creatures'
+2. **Story Manager** (core and fourteen events done; see Done)
+   - Events waiting on their systems: crafting, level / skill increases, item
+     removal (dropping), spell cast, shouts, paying fines (`PFIN`), bribe /
+     intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:

@@ -150,6 +150,9 @@ pub struct Crimes {
     pub arrests: crate::arrest::Arrests,
     /// Crimes reported whose witnesses the guards haven't heard from yet.
     pub unreported: Vec<Unreported>,
+    /// The last crime reported to each faction: what an arrest is for (the
+    /// arrest event's crime).
+    pub last_crime: HashMap<FormId, CrimeType>,
 }
 
 /// A crime reported to a faction before the guards have come: the CK wiki's
@@ -226,6 +229,7 @@ impl Engine {
     /// they stole from it is forgotten. There is no jail yet.
     pub fn pay_crime_gold(&mut self, faction: FormId, remove_stolen: bool, go_to_jail: bool) -> i32 {
         let owed = self.bounty(faction).total();
+        self.arrested_by(faction);
         let paid = self.remove_item(PLAYER_REF, GOLD, owed, None);
         if let Some(b) = self.crime.bounties.get_mut(&faction) {
             b.violent = 0;
@@ -338,9 +342,11 @@ impl Engine {
         }
         for (f, values, seen_by) in &told {
             let (f, gold) = (*f, values.gold(kind, value));
+            self.crime.last_crime.insert(f, kind);
             if gold > 0 {
                 self.mod_crime_gold(f, gold, kind.violent());
                 self.notify_crime_gold(f, gold, "sAddCrimeGold", "bounty added to");
+                self.send_crime_gold_event(victim, f, gold, kind);
                 // A guard seeing it is the guards knowing of it.
                 if !seen_by.iter().any(|&w| self.is_guard(w)) {
                     self.crime.unreported.push(Unreported { faction: f, gold, violent: kind.violent(), witnesses: seen_by.clone() });

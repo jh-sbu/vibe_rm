@@ -33,6 +33,20 @@ or prints one event's tree.
   the one greeted, L1); dead body (`DEAD`: R1 who found it, R2 the body,
   L1); assault (`ASSU`: R1 victim, R2 attacker, L1, V1 crime); change
   relationship rank (`CHRR`: R1, R2, V1 old rank, V2 new).
+- Crime events (CK wiki, the Papyrus `OnStory*` events' parameters):
+  crime gold (`ADCR`: victim, criminal, faction, gold, crime -1 none, 0
+  steal, 1 pickpocket, 2 trespass, 3 attack, 4 murder, 5 escape), arrest
+  (`ARRT`: arresting guard, criminal, location, crime), jail (`JAIL`: guard,
+  crime group, location, crime gold), escaped jail (`ESJA`: location, crime
+  group), served time (`STIJ`: location, crime group, crime gold, days). The
+  data's from-event aliases settle `ARRT` R1 guard / R2 criminal and `JAIL`
+  L1 the jail's location (`JailQuest`'s `EscapeLocation`). Usage: `ARRT`
+  starts `TG00ArrestMonitor` (`TG00` before stage 10) and `DGArrestQuest`
+  (criminals other than the player); `JAIL` `JailQuest` (on escaping,
+  "Retrieve your possessions" from the hold's prison chest; it ends on
+  leaving the hold), `EastmarchJailArenaFightQuest` (Windhelm) and
+  `DB03GetArrestedQuest` (its node never passes); `ESJA` `EscapeJailQuest`
+  and `EscapeJailAchievementQuest`. No node listens for `ADCR` or `STIJ`.
 - Quests' own event conditions: the `QUST` CTDAs after `NEXT` and before the
   stages, checked when a node starts the quest (ADIA 104 quests, SCPT 124,
   CLOC 39...: `OWN=1 vrm-tool story`).
@@ -65,6 +79,14 @@ or prints one event's tree.
   its eyes and the body (once a second), once for each finder and body.
 - Relationships are symmetric, kept on NPC records (`SetRelationshipRank`
   on a reference changes it for its NPC).
+- Crime events' members beyond those: the other references R1, R2 in
+  order, forms (the faction, the crime group) as F1, values V1, V2 in
+  order. The crime group is the crime faction (not its `CRGR` list). The
+  arrest event is sent when the player pays or goes to jail through the
+  guard who stopped them, for the last crime reported to that faction;
+  `ADCR` for crimes witnesses report and escaping, not for scripts'
+  `ModCrimeGold`. Location: the player's for an arrest, the jail cell's
+  (`XLCN`) for the others.
 - Quests started from Papyrus (`Quest.Start`, story events) get their scripts
   and OnInit once the running scripts yield, in the same frame.
 
@@ -99,8 +121,8 @@ own or their templates'); a member is dead when their placed reference is.
   (`known_gaps/crime.md`); items aren't marked stolen in the inventory.
 
 - The other events wait for their systems: crafting (`CRFT`), increase
-  level / skill (`LEVL`, `SKIL`), arrest / jail / escape (`ARRT`, `JAIL`,
-  `ESJA`), item removal (`REMP`: dropping items), spell cast (`CAST`), new
+  level / skill (`LEVL`, `SKIL`), paying a fine (`PFIN`: no source for its
+  data), item removal (`REMP`: dropping items), spell cast (`CAST`), new
   voice power (`NVPE`), bribe, intimidate, flatter, lock pick.
 - Kill events' crime status (V1) only knows the player's murders; item
   pickups never say bought or pickpocketed (no barter or pickpocketing).
@@ -111,3 +133,6 @@ own or their templates'); a member is dead when their placed reference is.
 - `WarnIfNoChildQuestStarted`, and which runs on subject in node and quest
   event conditions.
 - Story Manager state (last run times, do-all rounds) isn't saved.
+- Quests started by an event don't get its Papyrus event (`OnStoryJail`,
+  `OnStoryArrest`... on the quest's scripts); the base game's crime quests
+  read the event through aliases and fragments instead.
