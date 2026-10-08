@@ -312,12 +312,28 @@ pub struct TriShapeData {
 
 #[derive(Debug, Clone)]
 pub enum ExtraData {
-    String { name: String, value: String },
-    Integer { name: String, value: u32 },
+    String {
+        name: String,
+        value: String,
+    },
+    Integer {
+        name: String,
+        value: u32,
+    },
     BsxFlags(u32),
-    Bound { center: Vec3, dimensions: Vec3 },
+    /// The behaviour graph (project) animating the model, relative to `meshes`.
+    BehaviorGraph {
+        file: String,
+        controls_base_skeleton: bool,
+    },
+    Bound {
+        center: Vec3,
+        dimensions: Vec3,
+    },
     Furniture(Vec<FurnitureMarker>),
-    Other { name: String },
+    Other {
+        name: String,
+    },
 }
 
 /// One furniture marker position (`BSFurnitureMarker`), in the model's space.
@@ -905,6 +921,15 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             let name = r.string_value()?;
             let value = r.u32()?;
             Block::ExtraData(ExtraData::Integer { name, value })
+        }
+        "BSBehaviorGraphExtraData" => {
+            r.string_value()?;
+            let file = r.string_value()?;
+            let controls_base_skeleton = r.u8()? != 0;
+            Block::ExtraData(ExtraData::BehaviorGraph {
+                file,
+                controls_base_skeleton,
+            })
         }
         "BSXFlags" => {
             r.string_value()?;

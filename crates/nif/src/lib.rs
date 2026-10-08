@@ -72,6 +72,42 @@ pub enum BlockParse {
 impl Nif {
     /// Names of nodes moved by transform controllers in the model's sequences.
     pub fn animated_nodes(&self) -> std::collections::HashSet<String> {
+        let mut out = self.graph_nodes();
+        out.extend(self.sequence_nodes());
+        out
+    }
+
+    /// The behaviour graph project animating the model (`BSBehaviorGraphExtraData`).
+    pub fn behavior_graph(&self) -> Option<&str> {
+        self.blocks.iter().find_map(|b| match b {
+            Block::ExtraData(ExtraData::BehaviorGraph { file, .. }) => Some(file.as_str()),
+            _ => None,
+        })
+    }
+
+    /// In a model with a behaviour graph, the nodes with a transform controller
+    /// of their own: the bones the graph's clips move (a rigged rockfall's
+    /// pieces, a pressure plate's springs).
+    fn graph_nodes(&self) -> std::collections::HashSet<String> {
+        if self.behavior_graph().is_none() {
+            return Default::default();
+        }
+        self.blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Node(n) => Some(&n.av),
+                _ => None,
+            })
+            .filter(|av| {
+                matches!(self.get(av.net.controller),
+                    Some(Block::Unknown(t)) if t == "NiTransformController")
+            })
+            .map(|av| av.net.name.clone())
+            .collect()
+    }
+
+    /// Nodes keyframe sequences move.
+    fn sequence_nodes(&self) -> std::collections::HashSet<String> {
         self.blocks
             .iter()
             .filter_map(|b| match b {

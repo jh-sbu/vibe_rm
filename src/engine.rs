@@ -793,9 +793,10 @@ impl Engine {
             if !tagged.is_empty() && self.is_disabled(o.ref_id) {
                 self.physics.set_owner_enabled(o.ref_id, false);
             }
-            if let Some(obj) =
+            if let Some(mut obj) =
                 self.animated_object(o.ref_id, &o.model, o.transform, &mut rc.instances, &tagged)
             {
+                self.start_object_graph(&mut obj, &tagged);
                 if obj.open {
                     self.physics.set_enabled(&obj.colliders, false);
                 }
