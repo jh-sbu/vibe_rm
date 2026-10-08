@@ -49,6 +49,46 @@ pub struct RigidBody {
 pub struct Constraint {
     pub entities: [Ref; 2],
     pub kind: ConstraintKind,
+    /// Its motor (limited hinges and ragdoll constraints may have one).
+    pub motor: Option<Motor>,
+    /// `bhkBreakableConstraint`: the threshold past which it breaks, and
+    /// whether it is removed then (else only disabled).
+    pub breaks: Option<Breaking>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Breaking {
+    pub threshold: f32,
+    pub remove: bool,
+}
+
+/// A constraint motor (`bhkConstraintMotorDesc`).
+#[derive(Debug, Clone, Copy)]
+pub enum Motor {
+    Position {
+        min_force: f32,
+        max_force: f32,
+        tau: f32,
+        damping: f32,
+        proportional_recovery: f32,
+        constant_recovery: f32,
+        enabled: bool,
+    },
+    Velocity {
+        min_force: f32,
+        max_force: f32,
+        tau: f32,
+        target_velocity: f32,
+        use_target: bool,
+        enabled: bool,
+    },
+    SpringDamping {
+        min_force: f32,
+        max_force: f32,
+        spring_constant: f32,
+        spring_damping: f32,
+        enabled: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -74,6 +114,18 @@ pub enum ConstraintKind {
         min: f32,
         max: f32,
     },
+    /// `bhkBallAndSocketConstraint`: the pivots held together, turning freely.
+    BallSocket { pivot: [Vec3; 2] },
+    /// `bhkStiffSpringConstraint`: the pivots held `length` apart (Havok units).
+    StiffSpring { pivot: [Vec3; 2], length: f32 },
+}
+
+/// `bhkBallSocketConstraintChain`: entity `i` held to entity `i + 1` by a ball
+/// joint at `pivots[2i]` (in `i`) and `pivots[2i + 1]` (in `i + 1`).
+#[derive(Debug, Clone)]
+pub struct ConstraintChain {
+    pub entities: Vec<Ref>,
+    pub pivots: Vec<Vec3>,
 }
 
 /// The constraint blocks read.
@@ -82,67 +134,165 @@ pub(crate) enum ConstraintType {
     Ragdoll,
     LimitedHinge,
     Hinge,
+    BallSocket,
+    StiffSpring,
+    Breakable,
 }
 
-pub(crate) fn constraint(r: &mut Reader, ty: ConstraintType) -> Result<Constraint> {
+/// `bhkConstraintCInfo`: the two entities (and a priority).
+fn constraint_info(r: &mut Reader) -> Result<[Ref; 2]> {
     let n = r.u32()?;
     let a = r.block_ref()?;
     let b = r.block_ref()?;
     debug_assert_eq!(n, 2);
     r.u32()?; // priority
-    let v = |r: &mut Reader| -> Result<Vec3> { Ok(r.vec4()?.truncate()) };
-    let kind = if ty == ConstraintType::Ragdoll {
-        // Twist, plane, motor, pivot for A then B.
-        let (ta, pa, _, pva) = (v(r)?, v(r)?, v(r)?, v(r)?);
-        let (tb, pb, _, pvb) = (v(r)?, v(r)?, v(r)?, v(r)?);
-        let cone_max = r.f32()?;
-        let plane_min = r.f32()?;
-        let plane_max = r.f32()?;
-        let twist_min = r.f32()?;
-        let twist_max = r.f32()?;
-        r.f32()?; // max friction
-        ConstraintKind::Ragdoll {
-            pivot: [pva, pvb],
-            twist: [ta, tb],
-            plane: [pa, pb],
-            cone_max,
-            plane_min,
-            plane_max,
-            twist_min,
-            twist_max,
-        }
-    } else {
-        // Axis, perpendicular axes 1 and 2, pivot for A then B.
-        let (aa, p1a, _, pva) = (v(r)?, v(r)?, v(r)?, v(r)?);
-        let (ab, p1b, _, pvb) = (v(r)?, v(r)?, v(r)?, v(r)?);
-        if ty == ConstraintType::Hinge {
-            return Ok(Constraint {
-                entities: [a, b],
-                kind: ConstraintKind::Hinge {
-                    pivot: [pva, pvb],
-                    axis: [aa, ab],
-                    perp: [p1a, p1b],
-                    min: f32::NEG_INFINITY,
-                    max: f32::INFINITY,
-                },
-            });
-        }
-        let min = r.f32()?;
-        let max = r.f32()?;
-        r.f32()?; // max friction
-        ConstraintKind::Hinge {
-            pivot: [pva, pvb],
-            axis: [aa, ab],
-            perp: [p1a, p1b],
-            min,
-            max,
-        }
-    };
-    // The motor's settings follow; nothing here uses them.
-    Ok(Constraint {
-        entities: [a, b],
-        kind,
+    Ok([a, b])
+}
+
+fn motor(r: &mut Reader) -> Result<Option<Motor>> {
+    Ok(match r.u8()? {
+        1 => Some(Motor::Position {
+            min_force: r.f32()?,
+            max_force: r.f32()?,
+            tau: r.f32()?,
+            damping: r.f32()?,
+            proportional_recovery: r.f32()?,
+            constant_recovery: r.f32()?,
+            enabled: r.u8()? != 0,
+        }),
+        2 => Some(Motor::Velocity {
+            min_force: r.f32()?,
+            max_force: r.f32()?,
+            tau: r.f32()?,
+            target_velocity: r.f32()?,
+            use_target: r.u8()? != 0,
+            enabled: r.u8()? != 0,
+        }),
+        3 => Some(Motor::SpringDamping {
+            min_force: r.f32()?,
+            max_force: r.f32()?,
+            spring_constant: r.f32()?,
+            spring_damping: r.f32()?,
+            enabled: r.u8()? != 0,
+        }),
+        _ => None,
     })
+}
+
+/// A constraint's descriptor (and motor) after its entities.
+fn descriptor(r: &mut Reader, ty: ConstraintType) -> Result<(ConstraintKind, Option<Motor>)> {
+    let v = |r: &mut Reader| -> Result<Vec3> { Ok(r.vec4()?.truncate()) };
+    Ok(match ty {
+        ConstraintType::Ragdoll => {
+            // Twist, plane, motor, pivot for A then B.
+            let (ta, pa, _, pva) = (v(r)?, v(r)?, v(r)?, v(r)?);
+            let (tb, pb, _, pvb) = (v(r)?, v(r)?, v(r)?, v(r)?);
+            let cone_max = r.f32()?;
+            let plane_min = r.f32()?;
+            let plane_max = r.f32()?;
+            let twist_min = r.f32()?;
+            let twist_max = r.f32()?;
+            r.f32()?; // max friction
+            let kind = ConstraintKind::Ragdoll {
+                pivot: [pva, pvb],
+                twist: [ta, tb],
+                plane: [pa, pb],
+                cone_max,
+                plane_min,
+                plane_max,
+                twist_min,
+                twist_max,
+            };
+            (kind, motor(r)?)
+        }
+        ConstraintType::LimitedHinge | ConstraintType::Hinge => {
+            // Axis, perpendicular axes 1 and 2, pivot for A then B.
+            let (aa, p1a, _, pva) = (v(r)?, v(r)?, v(r)?, v(r)?);
+            let (ab, p1b, _, pvb) = (v(r)?, v(r)?, v(r)?, v(r)?);
+            let (min, max, motor) = if ty == ConstraintType::Hinge {
+                (f32::NEG_INFINITY, f32::INFINITY, None)
+            } else {
+                let (min, max) = (r.f32()?, r.f32()?);
+                r.f32()?; // max friction
+                (min, max, motor(r)?)
+            };
+            let kind = ConstraintKind::Hinge {
+                pivot: [pva, pvb],
+                axis: [aa, ab],
+                perp: [p1a, p1b],
+                min,
+                max,
+            };
+            (kind, motor)
+        }
+        ConstraintType::BallSocket => (
+            ConstraintKind::BallSocket {
+                pivot: [v(r)?, v(r)?],
+            },
+            None,
+        ),
+        ConstraintType::StiffSpring => {
+            let pivot = [v(r)?, v(r)?];
+            (
+                ConstraintKind::StiffSpring {
+                    pivot,
+                    length: r.f32()?,
+                },
+                None,
+            )
+        }
+        ConstraintType::Breakable => unreachable!("wraps another constraint"),
+    })
+}
+
+pub(crate) fn constraint(r: &mut Reader, ty: ConstraintType) -> Result<Option<Constraint>> {
+    let entities = constraint_info(r)?;
+    if ty != ConstraintType::Breakable {
+        let (kind, motor) = descriptor(r, ty)?;
+        return Ok(Some(Constraint {
+            entities,
+            kind,
+            motor,
+            breaks: None,
+        }));
+    }
+    // `bhkWrappedConstraintData`: the wrapped constraint's type and its own
+    // entities and descriptor; then the threshold.
+    let inner = match r.u32()? {
+        0 => Some(ConstraintType::BallSocket),
+        1 => Some(ConstraintType::Hinge),
+        2 => Some(ConstraintType::LimitedHinge),
+        7 => Some(ConstraintType::Ragdoll),
+        8 => Some(ConstraintType::StiffSpring),
+        _ => None, // prismatic, malleable...: not read
+    };
+    let Some(inner) = inner else { return Ok(None) };
+    constraint_info(r)?;
+    let (kind, motor) = descriptor(r, inner)?;
+    let threshold = r.f32()?;
+    let remove = r.u8()? != 0;
+    Ok(Some(Constraint {
+        entities,
+        kind,
+        motor,
+        breaks: Some(Breaking { threshold, remove }),
+    }))
+}
+
+pub(crate) fn constraint_chain(r: &mut Reader) -> Result<ConstraintChain> {
+    let n = r.u32()? as usize;
+    let mut pivots = Vec::with_capacity(n);
+    for _ in 0..n {
+        pivots.push(r.vec4()?.truncate());
+    }
+    r.skip(16)?; // tau, damping, constraint force mixing, max error distance
+    let n = r.u32()? as usize;
+    let mut entities = Vec::with_capacity(n);
+    for _ in 0..n {
+        entities.push(r.block_ref()?);
+    }
+    constraint_info(r)?;
+    Ok(ConstraintChain { entities, pivots })
 }
 
 #[derive(Debug, Clone)]

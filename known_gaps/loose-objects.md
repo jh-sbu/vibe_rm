@@ -31,7 +31,27 @@ otherwise undocumented; rapier stands in for it.
   Only the reference's place (its root body's) is remembered: on reload the
   other bodies start where the model puts them.
 - **Constraint pivots** are taken in the body's node frame (`bhkRigidBody`) or
-  the `bhkRigidBodyT` frame, as the cart's and signs' data fit.
+  the `bhkRigidBodyT` frame, as the cart's, signs' and breakable boards' data
+  fit.
+- **Constraint types.** Ball-and-socket constraints and socket chains (rope
+  links: pivots in pairs, link `i` to link `i + 1`) are free ball joints; a
+  stiff spring is a rope joint, so its bodies can come closer than its length
+  (Havok holds them at it). Prismatic and malleable constraints, wrapped or
+  not, aren't read (none in the vanilla meshes).
+- **Motors** are read (type, forces, tau, damping, target) but not simulated:
+  every vanilla limited hinge and ragdoll constraint has none, and Papyrus
+  can't drive them. Mapping a position motor's tau / damping / recovery
+  velocities onto rapier's stiffness and damping would need a source.
+- **Breaking.** A `bhkBreakableConstraint`'s threshold is compared with the
+  joint's linear impulse in the last step (locked axes and linear limits),
+  taken as kg m/s (Havok's documentation calls it an impulse threshold; which
+  impulse the game sums isn't public). Broken joints are removed whether or not
+  "remove when broken" is set, and stay broken across loads. The beehive's
+  spring (threshold 20) breaks under a hard push; an arrow (`ARROW_MASS`)
+  doesn't knock it down, and its hit lands before its script makes it dynamic.
+  The breakable boards' joints (threshold 10000) won't break by weight here.
+- **`SetMotionType`** leaves the bodies the NIF fixes in place (a beehive's
+  mount, a sign's bracket, a trip wire's pegs) as they are.
 - **Masses** are the NIF's, as given (a kettle weighs 68, a wooden plate 10,
   a hand cart 70 with 15 for each wheel); pushes on several bodies are shared
   by mass.

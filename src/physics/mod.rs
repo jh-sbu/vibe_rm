@@ -65,8 +65,17 @@ pub struct Ragdoll {
 /// scaled as the bodies are: ball joints for ragdoll constraints, hinges for
 /// hinges; the bodies it joins don't collide.
 fn joint(j: &crate::world::ragdoll::RagdollJoint, scale: f32) -> GenericJoint {
+    use crate::world::ragdoll::JointKind;
     let frame = |f: (Vec3, glam::Quat)| Pose::from_parts(f.0 * scale, f.1);
-    let mask = if j.limits[1].is_some() {
+    if let JointKind::Rope(length) = j.kind {
+        return RopeJointBuilder::new(length * scale)
+            .local_anchor1(j.frame_a.0 * scale)
+            .local_anchor2(j.frame_b.0 * scale)
+            .contacts_enabled(false)
+            .build()
+            .data;
+    }
+    let mask = if j.limits[1].is_some() || j.kind == JointKind::Ball {
         JointAxesMask::LOCKED_SPHERICAL_AXES
     } else {
         JointAxesMask::LOCKED_REVOLUTE_AXES
@@ -120,6 +129,13 @@ pub struct Physics {
     terrain: std::collections::HashSet<ColliderHandle>,
     pub player_radius: f32,
     pub player_half_height: f32,
+    /// Joints that break past an impulse (game units: kg units / s), whose
+    /// object and joint index they are; and those that broke in the last step.
+    breakable: Vec<(ImpulseJointHandle, f32, esp::FormId, usize)>,
+    pub broken: Vec<(esp::FormId, usize)>,
+    /// Loose objects' bodies their NIF fixes in place (a sign's bracket, a
+    /// beehive's mount): `set_motion` leaves them be.
+    anchored: std::collections::HashSet<RigidBodyHandle>,
 }
 
 impl Physics {
@@ -153,6 +169,9 @@ impl Physics {
             terrain: Default::default(),
             player_radius,
             player_half_height,
+            breakable: Vec::new(),
+            broken: Vec::new(),
+            anchored: Default::default(),
         }
     }
 
@@ -197,6 +216,7 @@ impl Physics {
         model: &CollisionModel,
         transform: Mat4,
         owner: esp::FormId,
+        broken: &[usize],
     ) -> Vec<Option<RigidBodyHandle>> {
         let scale = shapes::decompose(transform).1;
         let mut out = Vec::with_capacity(model.bodies.len());
@@ -232,6 +252,9 @@ impl Physics {
                 RigidBodyBuilder::fixed()
             };
             let h = self.world.insert_body(body.pose(pose));
+            if !desc.dynamic {
+                self.anchored.insert(h);
+            }
             let mass = desc.mass.max(0.1) / parts.len() as f32;
             for (p, local, shape) in parts {
                 let c = ColliderBuilder::new(shape)
@@ -246,9 +269,15 @@ impl Physics {
             }
             out.push(Some(h));
         }
-        for j in &model.joints {
+        for (i, j) in model.joints.iter().enumerate() {
+            if broken.contains(&i) {
+                continue;
+            }
             if let (Some(Some(a)), Some(Some(b))) = (out.get(j.a), out.get(j.b)) {
-                self.world.insert_impulse_joint(*a, *b, joint(j, scale));
+                let h = self.world.insert_impulse_joint(*a, *b, joint(j, scale));
+                if let Some(t) = j.breaks {
+                    self.breakable.push((h, t * METRE, owner, i));
+                }
             }
         }
         out
@@ -263,6 +292,7 @@ impl Physics {
             .map(|b| b.colliders().to_vec())
             .unwrap_or_default();
         self.world.remove_body_with_colliders(h, true);
+        self.anchored.remove(&h);
         for c in colliders {
             self.owners.remove(&c);
             self.materials.remove(&c);
@@ -338,10 +368,11 @@ impl Physics {
         !bodies.is_empty()
     }
 
-    /// Change how what `owner` owns moves. False if it has no body.
+    /// Change how what `owner` owns moves (but the bodies its NIF fixes). False
+    /// if it has no body.
     pub fn set_motion(&mut self, owner: esp::FormId, motion: Motion) -> bool {
         let bodies = self.owner_bodies(owner);
-        for &h in &bodies {
+        for &h in bodies.iter().filter(|h| !self.anchored.contains(h)) {
             if let Some(b) = self.world.bodies.get_mut(h) {
                 let t = match motion {
                     Motion::Dynamic => RigidBodyType::Dynamic,
@@ -371,7 +402,12 @@ impl Physics {
 
     /// How what `owner` owns moves, if it has a body.
     pub fn motion(&self, owner: esp::FormId) -> Option<Motion> {
-        let b = self.world.bodies.get(*self.owner_bodies(owner).first()?)?;
+        let bodies = self.owner_bodies(owner);
+        let h = bodies
+            .iter()
+            .find(|h| !self.anchored.contains(h))
+            .or(bodies.first())?;
+        let b = self.world.bodies.get(*h)?;
         Some(match b.body_type() {
             RigidBodyType::Dynamic => Motion::Dynamic,
             RigidBodyType::Fixed => Motion::Fixed,
@@ -596,6 +632,39 @@ impl Physics {
     pub fn step(&mut self, dt: f32) {
         self.world.integration_parameters.dt = dt.clamp(1.0 / 240.0, 1.0 / 30.0);
         self.world.step();
+        self.break_joints();
+    }
+
+    /// Breakable joints whose last step's linear impulse passed their
+    /// threshold come apart (`broken`).
+    fn break_joints(&mut self) {
+        let mut gone = Vec::new();
+        self.breakable.retain(|&(h, threshold, owner, i)| {
+            let Some(j) = self.world.impulse_joints.get(h) else {
+                return false;
+            };
+            // Locked axes' impulses and the linear limits' (a rope's length).
+            let locked = Vec3::new(j.impulses[0], j.impulses[1], j.impulses[2]);
+            let limits = Vec3::new(
+                j.data.limits[0].impulse,
+                j.data.limits[1].impulse,
+                j.data.limits[2].impulse,
+            );
+            let impulse = (locked.length_squared() + limits.length_squared()).sqrt();
+            if impulse > 1.0 {
+                log::trace!("{owner} joint {i} impulse {impulse:.0}");
+            }
+            if impulse <= threshold {
+                return true;
+            }
+            log::info!("{owner}: joint {i} breaks ({impulse:.0} > {threshold:.0})");
+            gone.push((h, owner, i));
+            false
+        });
+        for (h, owner, i) in gone {
+            self.world.remove_impulse_joint(h);
+            self.broken.push((owner, i));
+        }
     }
 
     /// Move the player capsule (centre position) by `desired`. Returns (new position, grounded).

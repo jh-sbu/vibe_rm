@@ -80,7 +80,13 @@ impl Engine {
         let Some(c) = self.models.collision(model).filter(|c| c.is_loose()) else {
             return false;
         };
-        let handles = self.physics.add_loose(&c, transform, r);
+        let broken = self
+            .world_state
+            .broken_joints
+            .get(&r)
+            .cloned()
+            .unwrap_or_default();
+        let handles = self.physics.add_loose(&c, transform, r, &broken);
         let mut bodies: Vec<LooseBody> = Vec::new();
         let mut index = vec![None; handles.len()];
         for (i, h) in handles.iter().enumerate() {
@@ -209,6 +215,9 @@ impl Engine {
         }
         for (h, asleep) in release {
             self.physics.release(h, asleep);
+        }
+        for (r, i) in std::mem::take(&mut self.physics.broken) {
+            self.world_state.broken_joints.entry(r).or_default().push(i);
         }
         for (h, m, hold) in lost {
             self.physics.set_body_pose(h, m);

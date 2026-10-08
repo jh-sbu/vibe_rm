@@ -350,6 +350,7 @@ pub enum Block {
     SkinPartition(Box<crate::skin::SkinPartition>),
     RigidBody(Box<crate::collision::RigidBody>),
     Constraint(Box<crate::collision::Constraint>),
+    ConstraintChain(Box<crate::collision::ConstraintChain>),
     Shape(crate::collision::Shape),
     ControllerManager(Vec<Ref>),
     ControllerSequence(Box<crate::anim::ControllerSequence>),
@@ -967,18 +968,29 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
         "NiSkinPartition" => Block::SkinPartition(Box::new(crate::skin::skin_partition(r)?)),
         "bhkRigidBody" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, false)?)),
         "bhkRigidBodyT" => Block::RigidBody(Box::new(crate::collision::rigid_body(r, true)?)),
-        "bhkRagdollConstraint" => Block::Constraint(Box::new(crate::collision::constraint(
-            r,
-            crate::collision::ConstraintType::Ragdoll,
-        )?)),
-        "bhkLimitedHingeConstraint" => Block::Constraint(Box::new(crate::collision::constraint(
-            r,
-            crate::collision::ConstraintType::LimitedHinge,
-        )?)),
-        "bhkHingeConstraint" => Block::Constraint(Box::new(crate::collision::constraint(
-            r,
-            crate::collision::ConstraintType::Hinge,
-        )?)),
+        "bhkRagdollConstraint"
+        | "bhkLimitedHingeConstraint"
+        | "bhkHingeConstraint"
+        | "bhkBallAndSocketConstraint"
+        | "bhkStiffSpringConstraint"
+        | "bhkBreakableConstraint" => {
+            use crate::collision::ConstraintType as T;
+            let t = match ty {
+                "bhkRagdollConstraint" => T::Ragdoll,
+                "bhkLimitedHingeConstraint" => T::LimitedHinge,
+                "bhkHingeConstraint" => T::Hinge,
+                "bhkBallAndSocketConstraint" => T::BallSocket,
+                "bhkStiffSpringConstraint" => T::StiffSpring,
+                _ => T::Breakable,
+            };
+            match crate::collision::constraint(r, t)? {
+                Some(c) => Block::Constraint(Box::new(c)),
+                None => return Ok(None),
+            }
+        }
+        "bhkBallSocketConstraintChain" => {
+            Block::ConstraintChain(Box::new(crate::collision::constraint_chain(r)?))
+        }
         _ => match crate::collision::parse_shape(ty, r)? {
             Some(s) => Block::Shape(s),
             None => return Ok(None),

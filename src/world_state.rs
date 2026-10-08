@@ -25,6 +25,8 @@ pub struct WorldState {
     pub wounds: HashMap<FormId, Wounds>,
     /// References scripts moved (`MoveTo`, `SetPosition`, `SetAngle`): where to.
     pub moved: HashMap<FormId, Moved>,
+    /// Loose objects' breakable joints that broke (by index in the model).
+    pub broken_joints: HashMap<FormId, Vec<usize>>,
 }
 
 /// Where a moved reference is now.
