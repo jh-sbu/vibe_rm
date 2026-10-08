@@ -316,6 +316,7 @@ impl Engine {
         let Some(inside) = self.lo.get(jail).and_then(|r| crate::world::records::reference(&r).teleport).map(|t| t.0) else { return };
         let bounty = self.bounty(faction);
         let owed = bounty.total();
+        let guard = self.arrested_by(faction);
         let days = (owed / 100).clamp(1, MAX_SENTENCE);
         self.set_crime_gold(faction, 0, true);
         self.set_crime_gold(faction, 0, false);
@@ -342,7 +343,23 @@ impl Engine {
         self.crimes_settled(faction);
         self.crime.arrests.jailed = Some(Sentence { faction, days, inside, owed: bounty });
         log::info!("the player is jailed by {faction} for {days} days ({owed} gold)");
+        let place = self.jail_location(inside);
+        self.send_jail_event(guard, faction, place, owed);
         self.queue_player_through(jail);
+    }
+
+    /// The player gives themselves up to the guard arresting them for
+    /// `faction`, if one is: the arrest event. Returns the guard.
+    pub(crate) fn arrested_by(&mut self, faction: FormId) -> Option<FormId> {
+        let (guard, _) = self.crime.arrests.arresting.filter(|a| a.1 == faction)?;
+        let crime = self.crime.last_crime.get(&faction).map_or(-1, |&k| k as i32);
+        self.send_arrest_event(guard, faction, crime);
+        Some(guard)
+    }
+
+    /// Where a jail is: the location of the cell its inner prison marker is in.
+    fn jail_location(&self, inside: FormId) -> Option<FormId> {
+        self.lo.cell_of_ref(inside).and_then(|c| self.cell_location(c))
     }
 
     /// The jail's interior: where its inner prison marker is.
@@ -375,10 +392,14 @@ impl Engine {
         b.violent += s.owed.violent;
         b.nonviolent += s.owed.nonviolent;
         let gold = CrimeValues::of(&self.lo, s.faction).map_or(100, |v| v.gold(crate::crime::CrimeType::Escape, 0));
+        self.crime.last_crime.insert(s.faction, crate::crime::CrimeType::Escape);
         if gold > 0 {
             self.mod_crime_gold(s.faction, gold, false);
             self.notify_crime_gold(s.faction, gold, "sAddCrimeGold", "bounty added to");
+            self.send_crime_gold_event(None, s.faction, gold, crate::crime::CrimeType::Escape);
         }
+        let place = self.jail_location(s.inside);
+        self.send_escape_jail_event(s.faction, place);
         self.raise_alarm(s.faction);
     }
 
@@ -404,6 +425,8 @@ impl Engine {
             }
         }
         log::info!("the player serves {} days for {}", s.days, s.faction);
+        let place = self.jail_location(s.inside);
+        self.send_served_time_event(s.faction, place, s.owed.total(), s.days);
         self.scripts.notify(format!("You served {} days in jail.", s.days));
         self.queue_player_through(s.inside);
     }

@@ -74,10 +74,15 @@ fn main() -> Result<()> {
         }
         Some("esp-dump") => {
             // esp-dump <data dir> <form id | editor id>: subrecords, the first 48
-            // bytes of each (FULL=1: all of them).
+            // bytes of each (FULL=1: all of them); LSTR=1 adds the localised string
+            // of 4-byte FULL / NNAM / CNAM / DESC / ITXT / RNAM fields.
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
-            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut lo = esp::LoadOrder::load(data, &names)?;
+            if std::env::var("LSTR").is_ok() {
+                let vfs = vfs::Vfs::new(data, &names);
+                lo.load_strings("english", |p| vfs.read(p));
+            }
             let id = match u32::from_str_radix(&args[2], 16) {
                 Ok(v) if args[2].len() == 8 => esp::FormId(v),
                 _ => lo.find_editor_id(&args[2]).context("editor id not found")?,
@@ -88,6 +93,10 @@ fn main() -> Result<()> {
                 let hex: String = sr.data.iter().take(std::env::var("FULL").map(|_| 100000).unwrap_or(48)).map(|b| format!("{b:02x}")).collect();
                 let txt: String = sr.data.iter().take(std::env::var("FULL").map(|_| 100000).unwrap_or(48)).map(|&b| if (32..127).contains(&b) { b as char } else { '.' }).collect();
                 println!("  {} [{}] {hex} {txt}", sr.tag, sr.data.len());
+                let lstr = [b"FULL", b"NNAM", b"CNAM", b"DESC", b"ITXT", b"RNAM"];
+                if std::env::var("LSTR").is_ok() && sr.data.len() == 4 && lstr.iter().any(|t| sr.tag.0 == **t) {
+                    println!("    = {:?}", lo.lstring(&rec, sr.data));
+                }
             }
         }
         Some("gmst") => {

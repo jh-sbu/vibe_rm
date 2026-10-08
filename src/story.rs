@@ -475,4 +475,57 @@ impl Engine {
         e.values = [crime as f32, rank as f32];
         self.send_story_event(e);
     }
+
+    /// Crime gold added for a crime the player committed (`ADCR`: R1 the
+    /// victim, R2 the criminal, F1 the faction, V1 the gold, V2 the crime:
+    /// 0 steal, 1 pickpocket, 2 trespass, 3 attack, 4 murder, 5 escape).
+    pub(crate) fn send_crime_gold_event(&mut self, victim: Option<FormId>, faction: FormId, gold: i32, crime: crate::crime::CrimeType) {
+        let mut e = StoryEvent::new(b"ADCR");
+        e.refs = [victim.unwrap_or_default(), PLAYER_REF];
+        e.form = faction;
+        e.values = [gold as f32, crime as i32 as f32];
+        self.send_story_event(e);
+    }
+
+    /// A guard arrests the player (`ARRT`: R1 the guard, R2 the criminal, L1
+    /// where, V1 the crime as for `ADCR`, -1 none). `faction` isn't event
+    /// data; it is logged.
+    pub(crate) fn send_arrest_event(&mut self, guard: FormId, faction: FormId, crime: i32) {
+        log::info!("{guard} arrests the player for {faction} (crime {crime})");
+        let mut e = StoryEvent::new(b"ARRT");
+        e.refs = [guard, PLAYER_REF];
+        e.locs[0] = self.ref_current_location(PLAYER_REF).unwrap_or_default();
+        e.values[0] = crime as f32;
+        self.send_story_event(e);
+    }
+
+    /// The player is put in jail (`JAIL`: R1 the guard, F1 the crime group,
+    /// L1 the jail's location, V1 the crime gold it is for).
+    pub(crate) fn send_jail_event(&mut self, guard: Option<FormId>, faction: FormId, jail: Option<FormId>, gold: i32) {
+        let mut e = StoryEvent::new(b"JAIL");
+        e.refs[0] = guard.unwrap_or_default();
+        e.form = faction;
+        e.locs[0] = jail.unwrap_or_default();
+        e.values[0] = gold as f32;
+        self.send_story_event(e);
+    }
+
+    /// The player escapes jail (`ESJA`: L1 the jail's location, F1 the crime
+    /// group).
+    pub(crate) fn send_escape_jail_event(&mut self, faction: FormId, jail: Option<FormId>) {
+        let mut e = StoryEvent::new(b"ESJA");
+        e.form = faction;
+        e.locs[0] = jail.unwrap_or_default();
+        self.send_story_event(e);
+    }
+
+    /// The player served their sentence (`STIJ`: L1 the jail's location, F1
+    /// the crime group, V1 the crime gold, V2 the days).
+    pub(crate) fn send_served_time_event(&mut self, faction: FormId, jail: Option<FormId>, gold: i32, days: i32) {
+        let mut e = StoryEvent::new(b"STIJ");
+        e.form = faction;
+        e.locs[0] = jail.unwrap_or_default();
+        e.values = [gold as f32, days as f32];
+        self.send_story_event(e);
+    }
 }

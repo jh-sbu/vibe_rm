@@ -306,8 +306,13 @@ impl Vm {
         for (pname, v) in props {
             let pkey = lc(pname);
             match self.find_property(host, &key, &pkey) {
-                Some((_, Some(var), _)) => {
-                    inst.vars.insert(var, v.clone());
+                Some((ty, Some(var), _)) => {
+                    // An alias is a ReferenceAlias or a LocationAlias as the property says.
+                    let v = match v {
+                        Value::Object(id @ ObjectId::Alias { .. }, _) if &*ty == "locationalias" => Value::Object(*id, "LocationAlias".into()),
+                        _ => v.clone(),
+                    };
+                    inst.vars.insert(var, v);
                 }
                 _ => {
                     // Unknown or handler-backed property: store under the conventional name.
