@@ -99,25 +99,10 @@ impl Engine {
         if player.distance(centre) > radius {
             return None;
         }
-        if g.must_detect && !self.sees_player(r, a.pos + Vec3::Z * 110.0 * a.scale) {
+        if g.must_detect && !self.detects(r, PLAYER_REF) {
             return None;
         }
         self.greet_line(r, g.topic)
-    }
-
-    /// Whether `r` (looking from `eye`) can see the player: near enough, with
-    /// nothing in between (combat's unsourced detection distance). Stands in
-    /// for detection, which isn't implemented.
-    fn sees_player(&self, r: FormId, eye: Vec3) -> bool {
-        let to = self.player.eye() - eye;
-        let dist = to.length();
-        if dist > super::combat::DETECT_DISTANCE {
-            return false;
-        }
-        match self.physics.raycast_excluding(eye, to / dist.max(1.0), (dist - 20.0).max(0.0), r) {
-            Some((_, owner)) => owner == Some(PLAYER_REF),
-            None => true,
-        }
     }
 
     /// The topic and line a force greet opens with: the package's topic, or the

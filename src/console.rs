@@ -64,7 +64,9 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "crime                 the player's bounties; player.setcrimegold <n> [faction] [violent]".into(),
             "player.paycrimegold <remove stolen 0/1> <jail 0/1> [faction]   pay off a bounty (the hold here by default)".into(),
             "crimefaction <ref> [faction]   show or set an actor's crime faction".into(),
+            "detect                who detects the player, by how much; the player's light level and stealth points".into(),
         ],
+        "detect" => engine.describe_detection(),
         "crime" => engine.describe_bounties(),
         "crimefaction" => {
             let Some(r) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec!["usage: crimefaction <ref> [faction]".into()] };

@@ -397,7 +397,10 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         372 => b(subject.is_some_and(|s| e.formlist(p1).iter().any(|&f| f == s || subj_base == Some(f)))), // IsInList
         453 => b(false),                                                  // GetPlayerTeammate: no followers yet
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))),       // GetIsCurrentPackage
-        579 | 286 => Some(0.0),                                           // equipped shout, sneaking
+        579 => Some(0.0),                                                 // GetEquippedShout
+        286 => b(subject.is_some_and(|s| e.is_sneaking(s))),              // IsSneaking
+        45 => b(subject.is_some_and(|s| e.detects(s, p1))),               // GetDetected
+        711 => Some(subject.map_or(0.0, |s| e.light_level(s))),           // GetLightLevel
         255 => b(subject.is_some_and(|s| e.offers_services_now(s))),   // GetOffersServicesNow
         // Nobody fights, swims, bleeds out, feeds or takes commands yet.
         289 | 101 | 185 | 580 | 700 | 226 => b(false),

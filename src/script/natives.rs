@@ -456,7 +456,10 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             }
             none()
         }
-        ("actor", "isplayerteammate") | ("actor", "issneaking") | ("actor", "isonmount") => v(Value::Bool(false)),
+        ("actor", "isplayerteammate") | ("actor", "isonmount") => v(Value::Bool(false)),
+        ("actor", "issneaking") => v(Value::Bool(me.is_some_and(|r| e.is_sneaking(r)))),
+        ("actor", "isdetectedby") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(|(r, by)| e.detects(by, r)))),
+        ("actor", "getlightlevel") => v(Value::Float(me.map_or(0.0, |r| e.light_level(r)))),
         ("actor", "evaluatepackage") | ("actor", "setrestrained") | ("actor", "setdontmove") | ("actor", "setalert") | ("actor", "stopcombat") => none(),
         ("actor", "getsitstate") | ("actor", "getsleepstate") => v(Value::Int(0)),
         ("actorbase", "getsex") => v(Value::Int(me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0))),

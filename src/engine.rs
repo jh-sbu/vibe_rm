@@ -111,6 +111,8 @@ pub struct Engine {
     pub(crate) faction_relations: crate::ai::combat::FactionRelations,
     /// Armor and block game settings, read on first use.
     pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
+    /// Who detects the player, and the player's stealth points.
+    pub(crate) detection: crate::detection::Detection,
     /// The player's health, and when they died (if they have).
     pub player_health: f32,
     /// The player holds their guard up (right mouse button).
@@ -252,6 +254,7 @@ impl Engine {
             alias_packs: Default::default(),
             faction_relations: Default::default(),
             combat_settings: Default::default(),
+            detection: Default::default(),
             player_blocking: false,
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
@@ -1485,7 +1488,10 @@ impl Engine {
         }
         let sneak_speed = self.player_sneak_speed();
         self.player.update(&self.physics, &cam, input, sneak_speed, dt);
-        self.update_player_footsteps(dt, (self.player.position - before).truncate().length(), run, sprint);
+        let stride = (self.player.position - before).truncate().length();
+        self.player.moving = dt > 0.0 && stride / dt > 1.0;
+        self.player.running = self.player.moving && (run || sprint);
+        self.update_player_footsteps(dt, stride, run, sprint);
         self.camera.position = self.player.eye();
         self.update_streaming();
         self.update_lod();

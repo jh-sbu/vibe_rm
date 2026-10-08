@@ -98,6 +98,22 @@ impl Ui {
             painter.line_segment([Pos2::new(c.x + 2.0, c.y), Pos2::new(c.x + 6.0, c.y)], s);
             painter.line_segment([Pos2::new(c.x, c.y - 6.0), Pos2::new(c.x, c.y - 2.0)], s);
             painter.line_segment([Pos2::new(c.x, c.y + 2.0), Pos2::new(c.x, c.y + 6.0)], s);
+            // Sneaking: the eye above it opens as the player is noticed (a flat
+            // line while hidden).
+            if engine.player.sneaking {
+                let open = engine.sneak_eye();
+                let (w, h, centre) = (22.0, 9.0 * open, Pos2::new(c.x, c.y - 28.0));
+                let lid = |sign: f32| -> Vec<Pos2> {
+                    (0..=16).map(|i| i as f32 / 8.0 - 1.0).map(|x| Pos2::new(centre.x + x * w, centre.y + sign * h * (1.0 - x * x))).collect()
+                };
+                let colour = Color32::from_rgba_unmultiplied(235, 235, 235, 220);
+                for sign in [-1.0, 1.0] {
+                    painter.add(egui::Shape::line(lid(sign), Stroke::new(2.0, colour)));
+                }
+                if open > 0.5 {
+                    painter.circle_filled(centre, 3.5 * open, colour);
+                }
+            }
         }
         // Activation prompt
         if let Some((_, name)) = &engine.look_target {

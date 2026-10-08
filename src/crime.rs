@@ -7,7 +7,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use esp::{FormId, LoadOrder};
-use glam::Vec3;
 
 use crate::engine::{Engine, PLAYER_REF};
 
@@ -49,15 +48,6 @@ const TRACK_CRIME: u32 = 0x40;
 const DO_NOT_REPORT_MEMBERS: u32 = 0x800;
 const USE_DEFAULTS: u32 = 0x1000;
 
-/// Who witnesses a crime stands in for detection, which isn't implemented;
-/// none of these has a source. How far a witness sees the player: combat's
-/// detection distance (itself unsourced), a third of it while the player
-/// sneaks (invented).
-const WITNESS_DISTANCE: f32 = crate::ai::combat::DETECT_DISTANCE;
-/// Within this the witness notices whichever way it faces; beyond it the
-/// player must be ahead of it (within `WITNESS_HALF_ANGLE`). Invented.
-const WITNESS_NEAR: f32 = 200.0;
-const WITNESS_HALF_ANGLE: f32 = 95.0;
 
 /// A crime faction's crime values (`CRVA`), or the defaults when it says to
 /// use them (`DATA` 0x1000; the values UESP gives for the holds).
@@ -226,38 +216,10 @@ impl Engine {
         fa == fb || group(fa).is_some_and(|g| self.formlist(g).contains(&fb)) || group(fb).is_some_and(|g| self.formlist(g).contains(&fa))
     }
 
-    /// Living actors who see the player now: within sight (less while
-    /// sneaking), ahead of them unless close, nothing in between.
+    /// Living actors who detect the player now (stealth points don't count
+    /// for crimes: the CK wiki's Stealth Points page).
     fn witnesses(&self) -> Vec<FormId> {
-        let eye = self.player.eye();
-        let reach = if self.player.sneaking { WITNESS_DISTANCE / 3.0 } else { WITNESS_DISTANCE };
-        let cos_half = WITNESS_HALF_ANGLE.to_radians().cos();
-        let mut out = Vec::new();
-        for a in self.cells.values().flat_map(|rt| &rt.actors) {
-            if a.dead || a.bleeding.is_some() || self.is_disabled(a.ref_id) {
-                continue;
-            }
-            // Eye height as for finding bodies (no source).
-            let from = a.pos + Vec3::Z * 110.0 * a.scale;
-            let to = eye - from;
-            let dist = to.length().max(1.0);
-            if dist > reach {
-                continue;
-            }
-            let facing = Vec3::new(a.heading.sin(), a.heading.cos(), 0.0);
-            let flat = Vec3::new(to.x, to.y, 0.0).normalize_or_zero();
-            if dist > WITNESS_NEAR && facing.dot(flat) < cos_half {
-                continue;
-            }
-            let clear = match self.physics.raycast_excluding(from, to / dist, (dist - 30.0).max(0.0), a.ref_id) {
-                Some((_, owner)) => owner == Some(PLAYER_REF),
-                None => true,
-            };
-            if clear {
-                out.push(a.ref_id);
-            }
-        }
-        out
+        self.cells.values().flat_map(|rt| &rt.actors).map(|a| a.ref_id).filter(|&r| self.detects(r, PLAYER_REF)).collect()
     }
 
     /// The player commits a crime against `victim` (an actor) or against what

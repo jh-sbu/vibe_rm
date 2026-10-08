@@ -28,9 +28,8 @@ packages fill those inputs (`vrm-tool force-greets <data>`).
 - Greeting again: after a forced conversation the greeter waits 10 s before it
   may come again (while the package still applies and the player is still in the
   trigger location). Whether the game waits, and for how long, is unverified.
-- Detection is approximated: within the combat detection distance with a clear
-  line from the greeter's eyes to the player's. There is no sneaking detection.
-  The distance (1400 units) has no source; see the roadmap's Detection item.
+- "Player must be detected" is the greeter's detection of the player above 0
+  (`known_gaps/detection.md`), without stealth points.
 - Not modelled: "moving into a new space", the player keyword check, riding,
   "Greet Using Preferred Path?", ForceGreetWaitSitting (treated as standing).
 - Trigger locations by alias (kind 8) fall back to the greeter's editor location;

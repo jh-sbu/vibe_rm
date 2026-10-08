@@ -109,6 +109,7 @@ pub const FIRST_SKILL: u32 = 6;
 pub const BLOCK: u32 = 9;
 pub const HEAVY_ARMOR: u32 = 11;
 pub const LIGHT_ARMOR: u32 = 12;
+pub const SNEAK: u32 = 15;
 pub const LAST_SKILL: u32 = 23;
 pub const HEALTH: u32 = 24;
 pub const MAGICKA: u32 = 25;

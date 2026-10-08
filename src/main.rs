@@ -4,6 +4,7 @@ mod ai;
 mod app;
 mod audio;
 mod condition;
+mod detection;
 mod dialogue;
 mod console;
 mod created;

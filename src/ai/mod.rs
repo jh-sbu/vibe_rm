@@ -473,6 +473,16 @@ impl ActorRuntime {
         if self.speed > (walk + run) / 2.0 { Gait::Run } else { Gait::Walk }
     }
 
+    /// Ground speed it is moving at.
+    pub(crate) fn speed(&self) -> f32 {
+        self.speed
+    }
+
+    /// Its graph is sneaking.
+    pub(crate) fn is_sneaking(&self) -> bool {
+        self.sneaking
+    }
+
     /// Getting into, using or getting out of furniture.
     pub fn in_furniture(&self) -> bool {
         matches!(self.state, State::Enter(_) | State::Use(_) | State::Exit(_))
@@ -2162,6 +2172,7 @@ impl Engine {
         self.update_stamina(dt);
         self.update_threat(dt);
         if self.ai_enabled {
+            self.update_detection(dt);
             self.detect_enemies(dt);
         }
         for (sound, at) in sounds {

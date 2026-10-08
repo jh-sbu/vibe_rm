@@ -343,6 +343,19 @@ game each piece unlocks.
   `GetTriggerObjectCount`. Papyrus variables and locals start at their type's
   default (an `Int` at 0, not None). vrm-tool `triggers`. Open questions:
   `known_gaps/triggers.md`
+- Detection: one detection value per observer and target from the CK wiki's
+  formula and the game settings (`fSneakBaseValue`, `fSneakMaxDistance` and
+  its exterior multiplier, distance attenuation; sound from movement, worn
+  armor weight and running, muffled out of sight; sight within a view cone
+  with a clear line, by the light level where the target stands: ambient,
+  unshaded sun and point lights; the observer's Sneak against the sneaking
+  target's). Sleepers see nothing. The player's stealth points drain and refill
+  with the most any enemy detects them by; enemies attack once they are gone
+  or past `iCombatStealthPointDetectionThreshold`. Combat noticing enemies,
+  joining fights, crime witnesses and force greets' "player must be detected"
+  use it. Conditions `GetDetected`, `IsSneaking`, `GetLightLevel`; Papyrus
+  `IsDetectedBy`, `IsSneaking`, `GetLightLevel`; the HUD's sneak eye. Console
+  `detect`. Open questions: `known_gaps/detection.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -402,19 +415,14 @@ game each piece unlocks.
      and jail, item removal (dropping), spell cast, shouts; kill events' crime
      and relationship values; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
-3. **Detection (stealth)**: who notices the player and each other. Several systems
-   stand in for it with distances that have no source (see their gaps): combat
-   noticing enemies and fights to join (`DETECT_DISTANCE`, 1400 units),
-   crime witnesses (that distance, an invented third while sneaking, a view cone
-   and eye height), force greets' "player must be detected", NPCs finding bodies
-   (1000 units). Replace them with one detection check built from the game
-   settings (`fSneakMaxDistance`, `fSneakExteriorDistanceMult`, `fSneakLight*`,
-   `fDetectionSneakLightMod`, `fSneakSkillMult`, `fSneakBaseValue`,
-   `fSneakRunningMult`, `fSneakActionMult`, `fSneakSoundLosMult`, `fSneakSounds*`,
-   `fPlayerDetectionSneak*`...) and what public sources say of how they combine
-   (light, distance, view, sound, sneak skill against perception); detection
-   conditions (`GetDetected`, `GetDetectionLevel`, `IsActorDetected`...), the
-   HUD's sneak eye, sleepers' reduced detection
+3. **Detection (stealth)** (the detection value and stealth points done; see Done)
+   - Alert and Lost states: alerted actors searching towards what they noticed
+     and for targets lost, their topics (`NormalToAlert`...), `GetIsAlerted`;
+     combat ending on losing detection rather than by distance
+   - Action sounds (weapons' detection sound levels, spells, shouts) and
+     detection events (impacts); being hit alerting the victim
+   - Perks, muffle, invisibility; NPCs' own stealth points; finding bodies by
+     detection
 4. **AI depth**
    - Alias fills: created objects drawn in the world, cleaned up
    - Remaining procedures: guard (restricted areas), use magic, dialogue,

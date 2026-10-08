@@ -15,8 +15,8 @@ public documentation and the game's data files only.
 ## What the implementation does
 
 - Every detection pass (once a second), an actor not in combat with assistance
-  looks at the fights within its detection distance (1400 units; no source, a
-  stand-in until detection exists: roadmap Detection). The player
+  looks at the fights within 4000 units (combat's lose distance; no source)
+  where it detects either side (`known_gaps/detection.md`). The player
   fights whoever fights them.
 - It joins the nearest fight where the fighter is an ally (assistance ≥ 1) or a
   friend (assistance 2), attacking the fighter's target unless that target is its
@@ -27,9 +27,9 @@ public documentation and the game's data files only.
 
 ## Gaps
 
-1. **Detection.** The game presumably needs the helper to detect the fight (sight,
-   sound). We use distance only, like enemy detection; both wait on the
-   roadmap's Detection item.
+1. **Detection.** The helper must detect a fighter, through the detection
+   formula; fights make no noise of their own yet (no action sounds or
+   detection events).
 2. **Relationships.** `RELA` ranks (ally, confidant, friend...) between two NPCs
    probably count too. Only factions are used.
 3. **Crime.** The player's assaults and murders now add crime gold
