@@ -197,13 +197,7 @@ impl Engine {
     /// sleep package that locks doors puts it, and the doors on the far side of
     /// them, those of them with locks.
     fn home_doors(&mut self, achr: FormId, npc: FormId) -> Vec<FormId> {
-        let packages = self.npc_packages_cached(achr, npc);
-        // Sleeping near its editor location (or elsewhere unnamed): its own cell.
-        let editor = self.lo.cell_of_ref(achr).map(Place::Interior);
-        let place = packages.iter().find(|p| p.lock_doors).and_then(|p| self.package_place(achr, p).map(|p| p.0).or(editor));
-        let Some(Place::Interior(cell)) = place.filter(|p| matches!(p, Place::Interior(c) if self.lo.cell(*c).is_some_and(|i| i.world.is_none()))) else {
-            return Vec::new();
-        };
+        let Some(cell) = self.home_cell(achr, npc) else { return Vec::new() };
         let Some(idx) = self.lo.cell(cell) else { return Vec::new() };
         let mut out = Vec::new();
         for &r in idx.persistent.iter().chain(&idx.temporary) {
@@ -217,6 +211,19 @@ impl Engine {
             }
         }
         out
+    }
+
+    /// An actor's home: the interior where its sleep package that locks doors
+    /// puts it.
+    fn home_cell(&mut self, achr: FormId, npc: FormId) -> Option<FormId> {
+        let packages = self.npc_packages_cached(achr, npc);
+        // Sleeping near its editor location (or elsewhere unnamed): its own cell.
+        let editor = self.lo.cell_of_ref(achr).map(Place::Interior);
+        let place = packages.iter().find(|p| p.lock_doors).and_then(|p| self.package_place(achr, p).map(|p| p.0).or(editor));
+        match place {
+            Some(Place::Interior(c)) if self.lo.cell(c).is_some_and(|i| i.world.is_none()) => Some(c),
+            _ => None,
+        }
     }
 
     /// Lock and unlock homes as actors' packages change: unlocking when a package
@@ -240,6 +247,12 @@ impl Engine {
             let (old, new) = (find(old), find(new));
             let opens = old.is_some_and(|p| p.unlock_on_change) || new.is_some_and(|p| p.unlock_at_start);
             let shuts = new.is_some_and(|p| p.lock_doors);
+            // Its home is private while it runs a package that locks doors.
+            let home = if shuts { self.home_cell(achr, npc) } else { None };
+            match home {
+                Some(c) => self.crime.private_homes.insert(achr, c),
+                None => self.crime.private_homes.remove(&achr),
+            };
             if !opens && !shuts {
                 continue;
             }

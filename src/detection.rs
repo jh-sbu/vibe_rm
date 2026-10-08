@@ -453,6 +453,7 @@ impl Engine {
             log::debug!("an enemy is alert to the player ({:.1})", most.unwrap_or_default());
         }
         st.step(most, fighting, &s, step);
+        self.update_trespass();
     }
 
     /// Whether anyone is fighting `r` (not fleeing from it).
