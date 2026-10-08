@@ -313,6 +313,8 @@ pub struct ActorRuntime {
     pub(crate) strength: f32,
     pub(crate) strength_in: f32,
     pub(crate) combat: Option<combat::Combat>,
+    /// The combat state scripts last heard of (`OnCombatStateChanged`).
+    pub(crate) combat_reported: combat::CombatState,
     pub(crate) weapon_reach: f32,
     /// Stamina left, and seconds before it starts coming back after being spent;
     /// what a power attack costs before the attack's own multiplier (by weapon
@@ -399,6 +401,7 @@ impl ActorRuntime {
             strength: 0.0,
             strength_in: 0.0,
             combat: None,
+            combat_reported: Default::default(),
             weapon_reach: 0.0,
             stamina: 50.0,
             stamina_wait: 0.0,
@@ -2227,6 +2230,7 @@ impl Engine {
             self.update_arrests(dt);
             self.update_witnesses();
         }
+        self.report_combat_states();
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);
         }

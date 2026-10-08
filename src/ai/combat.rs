@@ -448,6 +448,27 @@ pub(crate) struct Bash {
     pub reach: f32,
 }
 
+/// Papyrus combat states (`GetCombatState`, `OnCombatStateChanged`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CombatState {
+    #[default]
+    None = 0,
+    Fighting = 1,
+    Searching = 2,
+}
+
+impl ActorRuntime {
+    /// Its combat state and target: fighting, or searching for the target
+    /// it lost (an alert actor that hasn't found anyone yet isn't in combat).
+    pub(crate) fn combat_state(&self) -> (CombatState, Option<FormId>) {
+        match (&self.combat, &self.search) {
+            (Some(c), _) => (CombatState::Fighting, Some(c.target)),
+            (None, Some(s)) if s.lost => (CombatState::Searching, Some(s.target)),
+            _ => (CombatState::None, None),
+        }
+    }
+}
+
 impl Combat {
     pub fn new(target: FormId) -> Combat {
         Combat { target, path: Vec::new(), next: 0, repath: 0.0, cooldown: 0.8, swing: 0.0, attack: None, struck: false, cost: 0.0, guard: 0.0, guard_shown: false, target_guarding: false, bash: None, counter: false, draw: Default::default(), clear_shot: false, fleeing: false, away_to: None, confidence_mod: 0.0, threat_check: 0.0, recheck: false, flee_distance: 0.0, safe: 0.0, threat_near: false, unseen: 0.0, last_seen: None }
@@ -1049,20 +1070,23 @@ impl Engine {
             if bash {
                 self.bash_hit(s.target, s.attacker, damage, power, stagger);
             } else {
-                self.hit(s.target, s.attacker, damage, power, stagger);
+                self.hit(s.target, s.attacker, damage, power, stagger, None);
             }
         }
     }
 
     /// A blow landing: armor takes its share, then the target's guard if it is
     /// blocking towards the attacker. Blocked blows don't make it flinch, but a
-    /// blocked power attack breaks its guard with a stagger.
-    pub(crate) fn hit(&mut self, target: FormId, attacker: FormId, damage: f32, power: bool, stagger: f32) {
+    /// blocked power attack breaks its guard with a stagger. `projectile`: the
+    /// arrow's, for a shot.
+    pub(crate) fn hit(&mut self, target: FormId, attacker: FormId, damage: f32, power: bool, stagger: f32, projectile: Option<FormId>) {
         let mut damage = self.after_armor(target, damage);
         // Attacks that can stagger do so only some of the time (iStaggerAttackChance).
         let staggers = (self.rand() % 100) < self.combat_settings().stagger_chance;
         let mut stagger = if staggers { stagger } else { 0.0 };
-        if let Some(share) = self.block_share(target, attacker, power) {
+        let share = self.block_share(target, attacker, power);
+        self.send_hit_event(target, attacker, projectile, power, false, share.is_some());
+        if let Some(share) = share {
             log::info!("{target} blocks {attacker}{}: {:.0}% of {damage:.0} stopped", if power { "'s power attack" } else { "" }, share * 100.0);
             // Holding the blow back takes stamina.
             let set = self.combat_settings();
@@ -1089,6 +1113,7 @@ impl Engine {
     pub(crate) fn bash_hit(&mut self, target: FormId, attacker: FormId, damage: f32, power: bool, stagger: f32) {
         let damage = self.after_armor(target, damage);
         log::info!("{attacker} {} {target} for {damage:.1}", if power { "power bashes" } else { "bashes" });
+        self.send_hit_event(target, attacker, None, power, true, false);
         if let Some(a) = self.actor_mut(target) {
             a.set_guard(0.0);
             if let Some(c) = a.combat.as_mut().filter(|c| c.swinging()) {
@@ -1410,6 +1435,7 @@ impl Engine {
         if let Some(g) = a.graph.as_mut() {
             g.send_event("bleedOutStart");
         }
+        self.send_script_event(actor, "OnEnterBleedout", Vec::new());
         let fighting: Vec<FormId> =
             self.cells.values().flat_map(|rt| &rt.actors).filter(|a| a.combat.as_ref().is_some_and(|c| c.target == actor)).map(|a| a.ref_id).collect();
         for f in fighting {
@@ -1483,6 +1509,64 @@ impl Engine {
             log::debug!("{target}'s armor ({:.0}, {} pieces) takes {:.0}% of {damage:.0}", p.rating, p.pieces, p.reduction * 100.0);
         }
         damage * (1.0 - p.reduction)
+    }
+
+    /// `OnHit` (aggressor, source, projectile, power attack, sneak attack,
+    /// bash, blocked) to what was struck: the source is the attacker's weapon.
+    fn send_hit_event(&mut self, target: FormId, attacker: FormId, projectile: Option<FormId>, power: bool, bash: bool, blocked: bool) {
+        let weapon = if attacker == PLAYER_REF { self.player_weapon() } else { self.inventories.get(&attacker).and_then(|i| i.weapon(&self.lo)) };
+        let form = |e: &Self, f: Option<FormId>| f.map_or(papyrus::Value::None, |f| e.object_value(f));
+        let args = vec![
+            self.object_value(attacker),
+            form(self, weapon),
+            form(self, projectile),
+            papyrus::Value::Bool(power),
+            papyrus::Value::Bool(false),
+            papyrus::Value::Bool(bash),
+            papyrus::Value::Bool(blocked),
+        ];
+        self.send_script_event(target, "OnHit", args);
+    }
+
+    /// An actor's combat state (Papyrus `GetCombatState`): fighting, or
+    /// searching for a target it lost. The player is in combat while anyone
+    /// fights them, searching while anyone searches for them.
+    pub fn combat_state(&self, actor: FormId) -> CombatState {
+        if actor == PLAYER_REF {
+            let mut state = CombatState::None;
+            for a in self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.dead) {
+                match a.combat_state() {
+                    (CombatState::Fighting, Some(PLAYER_REF)) => return CombatState::Fighting,
+                    (CombatState::Searching, Some(PLAYER_REF)) => state = CombatState::Searching,
+                    _ => {}
+                }
+            }
+            return state;
+        }
+        self.actor_ref(actor).map_or(CombatState::None, |a| a.combat_state().0)
+    }
+
+    /// Whom an actor fights (or searches for, having lost them).
+    pub fn combat_target(&self, actor: FormId) -> Option<FormId> {
+        self.actor_ref(actor).and_then(|a| a.combat_state().1)
+    }
+
+    /// Tell actors' scripts of changes to their combat state
+    /// (`OnCombatStateChanged`: target, state).
+    pub(crate) fn report_combat_states(&mut self) {
+        let mut changed: Vec<(FormId, Option<FormId>, CombatState)> = Vec::new();
+        for a in self.cells.values_mut().flat_map(|rt| rt.actors.iter_mut()) {
+            let (state, target) = if a.dead { (CombatState::None, None) } else { a.combat_state() };
+            if state != a.combat_reported {
+                a.combat_reported = state;
+                changed.push((a.ref_id, target, state));
+            }
+        }
+        for (actor, target, state) in changed {
+            log::debug!("{actor} combat state {state:?} ({target:?})");
+            let target = target.map_or(papyrus::Value::None, |t| self.object_value(t));
+            self.send_script_event(actor, "OnCombatStateChanged", vec![target, papyrus::Value::Int(state as i32)]);
+        }
     }
 
     pub fn is_bleeding_out(&self, actor: FormId) -> bool {
@@ -1592,7 +1676,7 @@ impl Engine {
         {
             let damage = damage * mult;
             log::info!("player {} {r} for {damage:.0}", if power { "power attacks" } else { "strikes" });
-            self.hit(r, PLAYER_REF, damage, power, stagger);
+            self.hit(r, PLAYER_REF, damage, power, stagger, None);
         }
     }
 
