@@ -410,8 +410,14 @@ impl Engine {
                 self.add_stolen_value(f, value, seen);
             }
         }
+        self.send_player_add_item_as(item, owner_ref, if container { source } else { FormId::NULL }, how);
+    }
+
+    /// A player add item event (`AIPL`, see `send_player_add_item`) with the
+    /// way it was acquired given (3: pickpocketed).
+    pub(crate) fn send_player_add_item_as(&mut self, item: FormId, owner_ref: Option<FormId>, container: FormId, how: i32) {
         let mut e = StoryEvent::new(b"AIPL");
-        e.refs = [owner_ref.unwrap_or_default(), if container { source } else { FormId::NULL }];
+        e.refs = [owner_ref.unwrap_or_default(), container];
         e.locs[0] = self.current_location().unwrap_or_default();
         e.form = item;
         e.values[0] = how as f32;

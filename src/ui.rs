@@ -263,8 +263,17 @@ impl Ui {
         let all = ctx.input(|i| i.modifiers.shift);
         let rect = ctx.content_rect();
         let mut reading: Option<FormId> = None;
+        // Picking a pocket: what isn't worn or wielded, each with its chance.
+        let victim = match menu {
+            Menu::Pickpocket(v) => Some(v),
+            _ => None,
+        };
         let list = |ui: &mut egui::Ui, engine: &mut Engine, owner: FormId, to: Option<FormId>, moves: &mut Vec<(FormId, FormId, FormId, i32, Option<FormId>)>, read: &mut Option<FormId>| {
-            let items = engine.listed_inventory(owner);
+            let mut items = engine.listed_inventory(owner);
+            if Some(owner) == victim {
+                let worn = engine.inventories.get(&owner).map(|i| i.equipped.clone()).unwrap_or_default();
+                items.retain(|x| !worn.contains(&x.item));
+            }
             let weight: f32 = items.iter().map(|x| x.info.weight * x.count as f32).sum();
             ui.set_min_width(420.0);
             egui::ScrollArea::vertical().max_height(rect.height() * 0.6).auto_shrink([false, true]).id_salt(owner.0).show(ui, |ui| {
@@ -278,7 +287,11 @@ impl Ui {
                         let (f, n, info) = (&row.item, &row.count, &row.info);
                         // Red: stolen goods the player carries, and what taking would be stealing.
                         let red = if owner == PLAYER_REF { row.owner.is_some() } else { to == Some(PLAYER_REF) && engine.stolen_from(*f, owner, true).is_some() };
-                        let mut text = egui::RichText::new(&info.name);
+                        let red = red || Some(owner) == victim;
+                        let mut text = egui::RichText::new(match victim.filter(|&v| v == owner) {
+                            Some(v) => format!("{} ({:.0}%)", info.name, engine.pickpocket_chance(v, *f, if all { *n } else { 1 })),
+                            None => info.name.clone(),
+                        });
                         if red {
                             text = text.color(Color32::from_rgb(230, 70, 60));
                         }
@@ -306,7 +319,7 @@ impl Ui {
                 self.lockpick_view(ctx, engine);
                 return;
             }
-            Menu::Container(c) => Some(c),
+            Menu::Container(c) | Menu::Pickpocket(c) => Some(c),
             Menu::Inventory => None,
             Menu::Book { book, reference } => {
                 let (title, text) = engine.book_text(book);
@@ -359,7 +372,7 @@ impl Ui {
                 .show(ctx, |ui| {
                     list(ui, engine, c, Some(PLAYER_REF), &mut moves, &mut reading);
                     ui.horizontal(|ui| {
-                        if ui.button("Take all").clicked() {
+                        if victim.is_none() && ui.button("Take all").clicked() {
                             for row in engine.listed_inventory(c) {
                                 moves.push((c, PLAYER_REF, row.item, row.count, row.owner));
                             }
@@ -369,6 +382,18 @@ impl Ui {
                 });
         }
         for (from, to, item, n, stack) in moves {
+            if let Some(v) = victim {
+                if engine.menu.is_none() {
+                    break;
+                }
+                if from == v {
+                    engine.try_pickpocket(v, item, n, Some(stack));
+                } else {
+                    let msg = engine.gmst_string("sInvalidPickpocket").unwrap_or_default();
+                    engine.scripts.notify(msg);
+                }
+                continue;
+            }
             engine.transfer_item(from, to, item, n, Some(stack));
         }
         if close {

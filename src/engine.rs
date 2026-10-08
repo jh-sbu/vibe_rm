@@ -1550,7 +1550,13 @@ impl Engine {
         let Some((id, _)) = &self.look_target else { return "" };
         let Some(rec) = self.lo.get(*id) else { return "Activate" };
         if rec.tag().0 == *b"ACHR" {
-            return if self.is_dead(*id) { "Search" } else { "Talk" };
+            return if self.is_dead(*id) {
+                "Search"
+            } else if self.can_pickpocket(*id) {
+                "Pickpocket"
+            } else {
+                "Talk"
+            };
         }
         let base = records::reference(&rec).base;
         drop(rec);
@@ -1572,9 +1578,9 @@ impl Engine {
     }
 
     /// Whether the activation prompt's verb is a crime (shown red: the game's
-    /// `sSteal` / `sStealFrom`).
+    /// `sSteal` / `sStealFrom` / `sPickpocket`).
     pub fn look_verb_is_crime(&self) -> bool {
-        matches!(self.look_verb(), "Steal" | "Steal from")
+        matches!(self.look_verb(), "Steal" | "Steal from" | "Pickpocket")
     }
 
     pub fn location_name(&self) -> String {
@@ -1625,6 +1631,9 @@ impl Engine {
         if is_actor && self.is_dead(owner) {
             // Searching the body.
             self.menu = Some(crate::items::Menu::Container(owner));
+            return Ok(());
+        }
+        if is_actor && self.start_pickpocket(owner, &name) {
             return Ok(());
         }
         if is_actor {

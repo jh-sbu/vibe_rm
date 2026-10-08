@@ -16,6 +16,7 @@ mod locations;
 mod locks;
 mod render;
 mod physics;
+mod pickpocket;
 mod player;
 mod relationships;
 #[cfg(feature = "remote-console")]

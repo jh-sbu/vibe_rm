@@ -17,6 +17,8 @@ pub enum Menu {
     Book { book: FormId, reference: Option<FormId> },
     /// Picking a lock (`Engine::lockpick` holds the state).
     Lockpick,
+    /// Picking someone's pocket.
+    Pickpocket(FormId),
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,
