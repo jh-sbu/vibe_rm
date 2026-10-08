@@ -140,7 +140,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         }
         "activate" => {
             let Some(r) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: activate <ref>".into()] };
-            let name = engine.base_of(r).and_then(|b| engine.lo.get(b)).and_then(|b| b.get(b"FULL").map(|d| engine.lo.lstring(&b, d))).unwrap_or_default();
+            let name = engine.form_name(r);
             engine.look_target = Some((r, name));
             match engine.activate() {
                 Ok(()) => vec![format!("activated {r}")],

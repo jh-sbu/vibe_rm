@@ -1515,14 +1515,21 @@ impl Engine {
     }
 
     fn update_look_target(&mut self) {
-        self.look_target = None;
+        let before = self.look_target.take().map(|t| t.0);
+        self.find_look_target();
+        if self.look_target.as_ref().map(|t| t.0) != before {
+            log::debug!("looking at {:?}", self.look_target);
+        }
+    }
+
+    fn find_look_target(&mut self) {
         let Some((_, Some(owner))) = self.physics.raycast(self.camera.position, self.camera.forward(), 220.0) else {
             return;
         };
         let Some(rec) = self.lo.get(owner) else { return };
         let rf = records::reference(&rec);
         let Some(base) = self.lo.get(rf.base) else { return };
-        let mut name = base.get(b"FULL").map(|d| self.lo.lstring(&base, d)).unwrap_or_default();
+        let mut name = self.actor_name(owner).unwrap_or_else(|| base.get(b"FULL").map(|d| self.lo.lstring(&base, d)).unwrap_or_default());
         if base.tag().0 == *b"DOOR"
             && let Some((dest, _, _)) = rf.teleport
         {
@@ -1720,6 +1727,9 @@ impl Engine {
     }
 
     pub fn form_name(&self, id: FormId) -> String {
+        if let Some(name) = self.actor_name(id) {
+            return name;
+        }
         let Some(rec) = self.lo.get(id) else { return String::new() };
         let rec = if matches!(&rec.tag().0, b"REFR" | b"ACHR") {
             match self.lo.get(records::reference(&rec).base) {
@@ -1730,6 +1740,18 @@ impl Engine {
             rec
         };
         rec.get(b"FULL").map(|d| self.lo.lstring(&rec, d)).unwrap_or_default()
+    }
+
+    /// An actor's name: from the template that gives it its base data ("Use
+    /// Base Data"), so leveled and templated actors (bandits) are named.
+    /// `None` for anything but an actor reference (or the player).
+    pub fn actor_name(&self, r: FormId) -> Option<String> {
+        let is_actor = r == PLAYER_REF || self.created(r).is_some_and(|c| c.actor) || self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR");
+        if !is_actor {
+            return None;
+        }
+        let rec = self.templates_of(r)?.record(&self.lo, crate::world::template::BASE_DATA, b"FULL")?;
+        rec.get(b"FULL").map(|d| self.lo.lstring(&rec, d))
     }
 
     /// Where an actor takes each part of its definition from: a reference (picking
