@@ -67,9 +67,14 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "alarm [faction] / jail [faction] / servetime   send the faction's guards to arrest the player, jail them, serve the sentence".into(),
             "pickpocket <ref> <item> [n]   try to take an item from a sneaking player's victim (psneak first)".into(),
             "cgf <Class.Func> [@self] [args]  call a Papyrus native (cgf Actor.GetCombatState @<ref>)".into(),
+            "epc                   enable all player controls (EnablePlayerControls)".into(),
             "detect                who detects the player, by how much; the player's light level and stealth points".into(),
         ],
         "detect" => engine.describe_detection(),
+        "epc" | "enableplayercontrols" => {
+            engine.disabled_controls = Default::default();
+            vec![engine.disabled_controls.describe()]
+        }
         "cgf" => {
             let Some((class, func)) = args.first().and_then(|f| f.split_once('.')) else { return vec!["usage: cgf <Class.Func> [@self] [args]".into()] };
             let form = |s: &str| if s.eq_ignore_ascii_case("player") { Some(crate::engine::PLAYER_REF) } else { engine.resolve_form(s) };

@@ -117,6 +117,8 @@ pub struct Engine {
     pub player_health: f32,
     /// The player holds their guard up (right mouse button).
     pub player_blocking: bool,
+    /// Player controls scripts have disabled.
+    pub disabled_controls: crate::player::DisabledControls,
     /// The player's stamina, seconds before it comes back after being spent, how
     /// long they have held the attack button (a power attack when long enough),
     /// and their stats (race, NPC record), read on first use.
@@ -256,6 +258,7 @@ impl Engine {
             combat_settings: Default::default(),
             detection: Default::default(),
             player_blocking: false,
+            disabled_controls: Default::default(),
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
             player_stamina_wait: 0.0,
@@ -1452,7 +1455,18 @@ impl Engine {
     // --------------------------------------------------------------- gameplay
 
     /// Advance the simulation by `dt` seconds.
-    pub fn update(&mut self, input: crate::player::MoveInput, dt: f32, time_scale: f32) {
+    pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
+        let off = self.disabled_controls;
+        if off.movement {
+            input = crate::player::MoveInput::default();
+        }
+        if off.fighting {
+            self.player_blocking = false;
+            self.player_attack_held = None;
+        }
+        if off.sneaking {
+            self.player.sneaking = false;
+        }
         self.renderer.time += dt;
         let h = self.hour + dt * time_scale / 3600.0;
         if h >= 24.0 {
@@ -1600,6 +1614,10 @@ impl Engine {
     /// Activate whatever the player is looking at.
     pub fn activate(&mut self) -> Result<()> {
         let Some((owner, name)) = self.look_target.clone() else { return Ok(()) };
+        if self.disabled_controls.activate {
+            log::debug!("activation disabled: {owner} ({name})");
+            return Ok(());
+        }
         let rec = self.lo.get(owner).context("reference vanished")?;
         let is_actor = rec.tag().0 == *b"ACHR";
         let rf = records::reference(&rec);

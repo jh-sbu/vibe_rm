@@ -343,6 +343,9 @@ impl Engine {
     /// fully drawn flies slower and strikes softer, in proportion; loosed
     /// straight away, it isn't nocked and nothing flies.
     pub fn player_loose(&mut self, held: f32) {
+        if self.disabled_controls.fighting {
+            return;
+        }
         let Some(bow) = self.player_weapon().filter(|&w| is_bow(&self.lo, w)) else { return };
         let full = DRAW_TIME / bow_speed(&self.lo, bow);
         if held < full * 0.3 {

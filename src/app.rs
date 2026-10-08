@@ -338,6 +338,7 @@ impl ApplicationHandler for App {
         let Some(s) = &mut self.state else { return };
         if let DeviceEvent::MouseMotion { delta } = event
             && s.grabbed
+            && !s.engine.disabled_controls.looking
         {
             let sens = 0.0025;
             s.engine.camera.yaw += delta.0 as f32 * sens;
@@ -407,7 +408,7 @@ impl ApplicationHandler for App {
                             {
                                 log::error!("activation failed: {e:#}");
                             }
-                            if code == KeyCode::Tab && !event.repeat {
+                            if code == KeyCode::Tab && !event.repeat && !s.engine.disabled_controls.menu {
                                 s.engine.menu = Some(crate::items::Menu::Inventory);
                             }
                             // Menus take the mouse.
@@ -421,7 +422,7 @@ impl ApplicationHandler for App {
                                 return;
                             }
                             // Ctrl sneaks (noclip flies down with it instead).
-                            if code == KeyCode::ControlLeft && !event.repeat && !s.engine.player.noclip {
+                            if code == KeyCode::ControlLeft && !event.repeat && !s.engine.player.noclip && !s.engine.disabled_controls.sneaking {
                                 s.engine.player.sneaking = !s.engine.player.sneaking;
                             }
                             if code == KeyCode::KeyN && !event.repeat {

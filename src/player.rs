@@ -5,6 +5,35 @@ use glam::Vec3;
 use crate::physics::{GRAVITY, Physics};
 use crate::render::Camera;
 
+/// Which of the player's controls scripts have disabled
+/// (`Game.DisablePlayerControls` / `EnablePlayerControls`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DisabledControls {
+    pub movement: bool,
+    pub fighting: bool,
+    pub cam_switch: bool,
+    pub looking: bool,
+    pub sneaking: bool,
+    pub menu: bool,
+    pub activate: bool,
+    pub journal: bool,
+}
+
+impl DisabledControls {
+    /// The controls in Papyrus's argument order (movement, fighting, camera
+    /// switch, looking, sneaking, menus, activation, journal tabs).
+    pub fn flags_mut(&mut self) -> [&mut bool; 8] {
+        [&mut self.movement, &mut self.fighting, &mut self.cam_switch, &mut self.looking, &mut self.sneaking, &mut self.menu, &mut self.activate, &mut self.journal]
+    }
+
+    pub fn describe(&self) -> String {
+        let names = ["movement", "fighting", "camera switch", "looking", "sneaking", "menus", "activation", "journal"];
+        let mut c = *self;
+        let off: Vec<&str> = c.flags_mut().into_iter().zip(names).filter(|(f, _)| **f).map(|(_, n)| n).collect();
+        if off.is_empty() { "all player controls enabled".into() } else { format!("disabled: {}", off.join(", ")) }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MoveInput {
     pub forward: f32,
