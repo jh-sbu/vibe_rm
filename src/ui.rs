@@ -122,7 +122,8 @@ impl Ui {
             painter.text(pos + egui::vec2(1.5, 1.5), Align2::CENTER_CENTER, name, FontId::proportional(24.0), Color32::BLACK);
             painter.text(pos, Align2::CENTER_CENTER, name, FontId::proportional(24.0), Color32::WHITE);
             let hint = format!("E  {verb}");
-            painter.text(pos + egui::vec2(0.0, 28.0), Align2::CENTER_CENTER, hint, FontId::proportional(16.0), Color32::from_gray(200));
+            let colour = if engine.look_verb_is_crime() { Color32::from_rgb(230, 70, 60) } else { Color32::from_gray(200) };
+            painter.text(pos + egui::vec2(0.0, 28.0), Align2::CENTER_CENTER, hint, FontId::proportional(16.0), colour);
         }
         // What an NPC nearby says by itself, as a subtitle.
         let mut subtitles: Vec<(&str, &str)> = engine.scene_lines().into_iter().map(|l| (l.name.as_str(), l.text.as_str())).collect();
@@ -257,14 +258,14 @@ impl Ui {
         use crate::engine::PLAYER_REF;
         use crate::items::Menu;
         let Some(menu) = engine.menu else { return };
-        let mut moves: Vec<(FormId, FormId, FormId, i32)> = Vec::new();
+        let mut moves: Vec<(FormId, FormId, FormId, i32, Option<FormId>)> = Vec::new();
         let mut close = self.menu_shown && ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Tab));
         let all = ctx.input(|i| i.modifiers.shift);
         let rect = ctx.content_rect();
         let mut reading: Option<FormId> = None;
-        let list = |ui: &mut egui::Ui, engine: &mut Engine, owner: FormId, to: Option<FormId>, moves: &mut Vec<(FormId, FormId, FormId, i32)>, read: &mut Option<FormId>| {
+        let list = |ui: &mut egui::Ui, engine: &mut Engine, owner: FormId, to: Option<FormId>, moves: &mut Vec<(FormId, FormId, FormId, i32, Option<FormId>)>, read: &mut Option<FormId>| {
             let items = engine.listed_inventory(owner);
-            let weight: f32 = items.iter().map(|(_, n, i)| i.weight * *n as f32).sum();
+            let weight: f32 = items.iter().map(|x| x.info.weight * x.count as f32).sum();
             ui.set_min_width(420.0);
             egui::ScrollArea::vertical().max_height(rect.height() * 0.6).auto_shrink([false, true]).id_salt(owner.0).show(ui, |ui| {
                 egui::Grid::new(("items", owner.0)).striped(true).num_columns(4).show(ui, |ui| {
@@ -273,10 +274,17 @@ impl Ui {
                     ui.label(egui::RichText::new("Weight").strong());
                     ui.label(egui::RichText::new("Value").strong());
                     ui.end_row();
-                    for (f, n, info) in &items {
-                        let r = ui.add(egui::Label::new(&info.name).sense(egui::Sense::click()));
+                    for row in &items {
+                        let (f, n, info) = (&row.item, &row.count, &row.info);
+                        // Red: stolen goods the player carries, and what taking would be stealing.
+                        let red = if owner == PLAYER_REF { row.owner.is_some() } else { to == Some(PLAYER_REF) && engine.stolen_from(*f, owner, true).is_some() };
+                        let mut text = egui::RichText::new(&info.name);
+                        if red {
+                            text = text.color(Color32::from_rgb(230, 70, 60));
+                        }
+                        let r = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
                         match to {
-                            Some(to) if r.clicked() => moves.push((owner, to, *f, if all { *n } else { 1 })),
+                            Some(to) if r.clicked() => moves.push((owner, to, *f, if all { *n } else { 1 }, row.owner)),
                             // Books in one's own inventory are read.
                             None if r.clicked() && info.kind == crate::world::inventory::ItemKind::Book => {
                                 *read = Some(*f);
@@ -352,16 +360,16 @@ impl Ui {
                     list(ui, engine, c, Some(PLAYER_REF), &mut moves, &mut reading);
                     ui.horizontal(|ui| {
                         if ui.button("Take all").clicked() {
-                            for (f, n, _) in engine.listed_inventory(c) {
-                                moves.push((c, PLAYER_REF, f, n));
+                            for row in engine.listed_inventory(c) {
+                                moves.push((c, PLAYER_REF, row.item, row.count, row.owner));
                             }
                         }
                         close |= ui.button("Close").clicked();
                     });
                 });
         }
-        for (from, to, item, n) in moves {
-            engine.transfer_item(from, to, item, n);
+        for (from, to, item, n, stack) in moves {
+            engine.transfer_item(from, to, item, n, Some(stack));
         }
         if close {
             engine.menu = None;

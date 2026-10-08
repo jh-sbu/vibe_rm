@@ -519,7 +519,7 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             let items = engine.listed_inventory(r);
             let equipped = engine.inventories.get(&r).map(|i| i.equipped.clone()).unwrap_or_default();
             let mut out: Vec<String> =
-                items.iter().map(|(f, n, i)| format!("{n:5} {} ({f}){}", i.name, if equipped.contains(f) { " [equipped]" } else { "" })).collect();
+                items.iter().map(|x| format!("{:5} {} ({}){}{}", x.count, x.info.name, x.item, if equipped.contains(&x.item) { " [equipped]" } else { "" }, x.owner.map_or(String::new(), |o| format!(" [stolen from {o}]")))).collect();
             if out.is_empty() {
                 out.push(format!("{r} carries nothing"));
             }

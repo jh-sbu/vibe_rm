@@ -318,6 +318,10 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 None => 0,
             } as f32)
         }
+        // GetStolenItemValueNoCrime / GetStolenItemValue: what the player stole
+        // from the faction's people unseen / seen.
+        366 | 373 if subject == Some(PLAYER_REF) => Some(e.crime.stolen_value.get(&p1).map_or(0, |v| if c.func == 366 { v.0 } else { v.1 }) as f32),
+        366 | 373 => Some(0.0),
         152 => b(subject.and_then(|s| e.crime_faction(s)) == Some(p1)),   // GetIsCrimeFaction
         497 => b(subject.and_then(|s| e.crime_faction(s)).is_some_and(|f| e.can_pay_crime_gold(f))), // CanPayCrimeGold
         652 => b(subject.is_some_and(|s| e.in_shared_crime_faction(s, p1))), // GetInSharedCrimeFaction

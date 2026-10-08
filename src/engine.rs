@@ -1553,8 +1553,11 @@ impl Engine {
             return if self.is_dead(*id) { "Search" } else { "Talk" };
         }
         let base = records::reference(&rec).base;
+        drop(rec);
+        let owned = crate::ai::furniture::owner_of(&self.lo, *id).is_some_and(|o| self.owned_by_other(o));
         match self.lo.tag_of(base).map(|t| t.0) {
             Some(t) if t == *b"DOOR" => "Open",
+            Some(t) if t == *b"CONT" && owned => "Steal from",
             Some(t) if t == *b"CONT" => "Search",
             Some(t) if t == *b"FURN" => {
                 let sleep = self.furniture.get(*id).is_some_and(|f| f.markers.iter().any(|m| m.kind == crate::ai::furniture::Use::Sleep));
@@ -1563,8 +1566,15 @@ impl Engine {
             Some(t) if t == *b"BOOK" => "Read",
             Some(t) if t == *b"FLOR" => "Harvest",
             Some(t) if t == *b"ACTI" => "Activate",
+            _ if self.is_item_ref(*id) && self.stolen_from(base, *id, false).is_some() => "Steal",
             _ => "Take",
         }
+    }
+
+    /// Whether the activation prompt's verb is a crime (shown red: the game's
+    /// `sSteal` / `sStealFrom`).
+    pub fn look_verb_is_crime(&self) -> bool {
+        matches!(self.look_verb(), "Steal" | "Steal from")
     }
 
     pub fn location_name(&self) -> String {
@@ -1917,15 +1927,29 @@ impl Engine {
         let forms = if self.lo.tag_of(item).map(|t| t.0) == Some(*b"FLST") { self.formlist(item) } else { vec![item] };
         let mut total = 0;
         for f in forms {
-            let n = self.inventory_mut(r).remove(f, count);
-            self.inventory_event(r, false, f, n, to);
-            if let Some(to) = to.filter(|_| n > 0) {
-                self.inventory_mut(to).add(f, n);
-                self.inventory_event(to, true, f, n, Some(r));
-            }
-            total += n;
+            total += self.remove_stack(r, f, count, None, to, None).iter().map(|(_, n)| n).sum::<i32>();
         }
         total
+    }
+
+    /// Take up to `count` of `item` from a reference (only those `only` names
+    /// the owner of, if given: see `Inventory::remove_split`), handing them to
+    /// `to` if given. Owned (stolen) items stay owned there unless `to` is their
+    /// owner; the rest become `mark`'s (stolen from them). Returns what moved,
+    /// by owner.
+    pub(crate) fn remove_stack(&mut self, r: FormId, item: FormId, count: i32, only: Option<Option<FormId>>, to: Option<FormId>, mark: Option<FormId>) -> Vec<(Option<FormId>, i32)> {
+        let parts = self.inventory_mut(r).remove_split(item, count, only);
+        let n: i32 = parts.iter().map(|(_, n)| n).sum();
+        self.inventory_event(r, false, item, n, to);
+        if let Some(to) = to.filter(|_| n > 0) {
+            let to_base = self.base_of(to);
+            for &(owner, k) in &parts {
+                let owner = owner.or(mark).filter(|&o| Some(o) != to_base);
+                self.inventory_mut(to).add_owned(item, owner, k);
+            }
+            self.inventory_event(to, true, item, n, Some(r));
+        }
+        parts
     }
 
     pub fn formlist(&self, f: FormId) -> Vec<FormId> {

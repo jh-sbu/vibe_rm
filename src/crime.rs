@@ -1,6 +1,7 @@
 //! Crime: the player's crimes seen by actors who report them to their crime
 //! faction (`CRIF`), which adds crime gold (a bounty) from its crime values
-//! (`FACT` `CRVA`). Theft, assault and murder are crimes so far; scripts and
+//! (`FACT` `CRVA`). Theft, assault and murder are crimes so far; stolen
+//! goods stay marked as their owners' (`Inventory::owned`); scripts and
 //! conditions read and change the gold (`GetCrimeGold`, `ModCrimeGold`,
 //! `PlayerPayCrimeGold`...).
 
@@ -131,6 +132,9 @@ pub struct Crimes {
     pub crime_factions: HashMap<FormId, Option<FormId>>,
     /// Actors the player assaulted (a crime): killing them is murder.
     assaulted: HashSet<FormId>,
+    /// The value of what the player has stolen from each crime faction's
+    /// people, unwitnessed and witnessed (CommonLibSSE `StolenItemValueStruct`).
+    pub stolen_value: BTreeMap<FormId, (i32, i32)>,
 }
 
 impl Engine {
@@ -175,8 +179,10 @@ impl Engine {
     }
 
     /// The player pays off their bounty with a faction: the gold they carry
-    /// goes towards it and it is cleared. Stolen items aren't tracked, and there
-    /// is no jail yet.
+    /// goes towards it and it is cleared. With `remove_stolen`, every stolen
+    /// item they carry is taken into the faction's stolen goods container
+    /// (`STOL`; UESP: confiscated to the jail's evidence chest), and what
+    /// they stole from it is forgotten. There is no jail yet.
     pub fn pay_crime_gold(&mut self, faction: FormId, remove_stolen: bool, go_to_jail: bool) -> i32 {
         let owed = self.bounty(faction).total();
         let paid = self.remove_item(PLAYER_REF, GOLD, owed, None);
@@ -184,8 +190,31 @@ impl Engine {
             b.violent = 0;
             b.nonviolent = 0;
         }
-        log::info!("player pays {paid} of {owed} crime gold to {faction} (remove stolen {remove_stolen}, jail {go_to_jail}: neither done)");
+        if remove_stolen {
+            self.confiscate_stolen(faction);
+        }
+        log::info!("player pays {paid} of {owed} crime gold to {faction} (remove stolen {remove_stolen}, jail {go_to_jail}: not done)");
         paid
+    }
+
+    /// Take every stolen item from the player into a crime faction's stolen
+    /// goods container (`STOL`), still marked as their owners'.
+    pub fn confiscate_stolen(&mut self, faction: FormId) -> i32 {
+        let chest = self.lo.get(faction).and_then(|r| r.get(b"STOL").filter(|d| d.len() >= 4).map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))).filter(|f| !f.is_null());
+        let stolen: Vec<(FormId, FormId, i32)> = self.inventory_mut(PLAYER_REF).owned.clone();
+        let mut n = 0;
+        for (item, owner, count) in stolen {
+            n += self.remove_stack(PLAYER_REF, item, count, Some(Some(owner)), chest, None).iter().map(|(_, k)| k).sum::<i32>();
+        }
+        self.crime.stolen_value.remove(&faction);
+        log::info!("{n} stolen items confiscated into {chest:?}");
+        n
+    }
+
+    /// The player stole `value` worth from `faction`'s people, seen or not.
+    pub(crate) fn add_stolen_value(&mut self, faction: FormId, value: i32, witnessed: bool) {
+        let v = self.crime.stolen_value.entry(faction).or_default();
+        if witnessed { v.1 += value } else { v.0 += value }
     }
 
     /// Whether the player carries enough gold to pay their bounty with a faction.

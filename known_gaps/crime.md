@@ -35,6 +35,12 @@ locations name it.
 - Conditions: `GetCrimeGold`, `GetCrimeGoldViolent`, `GetCrimeGoldNonviolent`
   (the faction, else the subject's crime faction), `GetIsCrimeFaction`,
   `CanPayCrimeGold`, `GetInSharedCrimeFaction`.
+- Stolen items (UESP Crime): marked stolen for good; confiscated into the
+  jail's evidence chest (the faction's `STOL`) on paying or going to jail.
+  The prompts are `sSteal` / `sStealFrom` (red). The player keeps a value
+  stolen per faction, unwitnessed and witnessed (CommonLibSSE
+  `StolenItemValueStruct`), which `GetStolenItemValueNoCrime` and
+  `GetStolenItemValue` read (no condition in the base game uses them).
 
 ## Choices made without a source
 
@@ -51,6 +57,15 @@ locations name it.
 - `GetCrimeGold` with no faction on the player sums every faction.
 - `PlayerPayCrimeGold` takes what gold the player has towards the bounty and
   clears it, enough or not.
+- Stolen goods carry their owner in the inventory (`Inventory::owned`,
+  standing for the game's ownership on the stack) and keep it wherever the
+  player puts them, unless they go back to the owner; taking from a container
+  judges the theft by the container's owner, so a stolen item in the player's
+  own chest isn't stolen again. Removing items by script takes those
+  belonging to nobody first.
+- Paying with "remove stolen" takes every stolen item, whoever it was stolen
+  from, and forgets the stolen value with that faction. The value stolen
+  counts against the owner's crime faction (or the owning faction).
 - The console's `setcrimegold` / `paycrimegold` default to the crime faction
   of the nearest location up from the current one that names one (`FNAM`).
 
@@ -61,8 +76,8 @@ locations name it.
   (`DialogueCrimeGuards`) only sees the gold through its conditions.
 - Pickpocketing, trespassing (`fAITrespassWarningTimer`), lockpicking owned
   locks, horse theft, escape and werewolf crimes aren't committed anywhere.
-- Stolen items aren't marked in the inventory (`GetStolenItemValue*`), nor
-  taken away when paying.
+- Merchants refusing stolen goods and fences buying them: no bartering yet
+  (`GetAmountSoldStolen`).
 - A crime gets its gold at once; in the game it is withdrawn when the last
   witness dies before reporting it (CK wiki), and guards respond to alarms.
 - Crimes by NPCs; `GetCrime`, `IsGuard`, `GetActorCrimePlayerEnemy`; the
