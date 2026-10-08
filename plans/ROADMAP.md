@@ -476,20 +476,51 @@ game each piece unlocks.
    - Templates: spells (with magic)
    - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
      guard / wait / find / acquire procedures
+   - Vehicles: carts pulled by horses (`TetherToHorse`; the carriage held to the
+     horse by physics constraints), passengers riding seated in them (`SetVehicle`)
+   - Dragons: flying, circling, landing and perching; breath and shout attacks
+     (with magic)
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
-   and enchantments, killmoves, the player's own weapon and
+   and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (with detection's muffle, invisibility, blindness and
-   spell / shout sounds), perks (the sneak tree's detection perks among them;
+   spell / shout sounds), shouts, perks (the sneak tree's detection perks among them;
    see Detection), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
-6. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
+   - The player as an actor: a body (race, sex, outfit) and a third-person
+     camera, not only the first-person controller
+   - Player control from scripts: `DisablePlayerControls` /
+     `EnablePlayerControls` (no-ops for now), `SetPlayerAIDriven`,
+     `SetHudCartMode`
+   - Natives still missing that quests lean on: `StartCombat`,
+     `SetMotionType`, `ForceActive`
+   - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
+6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal
+   and objectives, help messages (`ShowAsHelpMessage`); support for the game's .swf assets still undecided
+   - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
+     player's face built live from FaceGen data (sliders, head parts, tints);
+     NPCs only use pre-baked heads
 7. **Audio**: lip sync
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
-   caster batches), HDR/image spaces, particles, distant LOD (BTR/BTO/trees),
+   caster batches), HDR/image spaces, image space modifiers (fades and blur:
+   `FadeOutGame`, `PlayerImodAnimation`), camera shake (`ShakeCamera`), particles
+   (fire, smoke, explosions), distant LOD (BTR/BTO/trees),
    grass, decals, environment maps
 9. **Saves**: an engine-native save format (reading .ess later), writing out
-   the scripts' state, inventories and `WorldState`
+   the scripts' state, inventories and `WorldState`; `RequestSave` /
+   `RequestAutoSave`
 10. **Performance**: async loading, GPU-driven culling
+11. **New game and the opening** (an eventual goal; it needs most of the items above)
+   - A new game separate from the developer launch, which drops the player at
+     Tamriel (4, -12) outside Riverwood with only start-game-enabled quests running
+   - How the game starts `MQ101` (not start-game-enabled) and where it places
+     the player (`PlayerRef` has no placement in the data): needs a public
+     source; record it in `known_gaps/`
+   - Alternate start mods as the nearer target: their own start-game-enabled
+     quest, a `MoveTo` and message boxes, all of which run already
+   - The real opening in steps: new game and placement; the cart ride with a
+     default race (vehicles, player control); the execution and Alduin
+     (killmoves, dragons, particles, image spaces); Helgen Keep (the player's
+     combat, magic, leveling, help messages, journal); character creation last
