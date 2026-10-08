@@ -61,6 +61,9 @@ pub struct Sentence {
     pub faction: FormId,
     pub days: i32,
     pub inside: FormId,
+    /// The bounty the sentence is for: it stands again if the player escapes
+    /// (UESP: "If you do escape, your bounty will remain").
+    pub owed: crate::crime::Bounty,
 }
 
 /// The lockpick the player keeps in jail (`Lockpick`).
@@ -136,6 +139,9 @@ impl Engine {
     pub(crate) fn update_arrests(&mut self, dt: f32) {
         if let Some(door) = self.crime.arrests.pending.take() {
             self.send_player_through(door);
+        }
+        if self.crime.arrests.jailed.is_some_and(|s| self.location != crate::engine::Location::Interior(self.jail_cell(s))) {
+            self.escape_jail();
         }
         let ids: Vec<(FormId, Pursuit)> = self.crime.arrests.alarmed.iter().map(|(&r, &p)| (r, p)).collect();
         let player = self.player_feet();
@@ -308,7 +314,8 @@ impl Engine {
             return;
         };
         let Some(inside) = self.lo.get(jail).and_then(|r| crate::world::records::reference(&r).teleport).map(|t| t.0) else { return };
-        let owed = self.bounty(faction).total();
+        let bounty = self.bounty(faction);
+        let owed = bounty.total();
         let days = (owed / 100).clamp(1, MAX_SENTENCE);
         self.set_crime_gold(faction, 0, true);
         self.set_crime_gold(faction, 0, false);
@@ -333,9 +340,46 @@ impl Engine {
             }
         }
         self.crimes_settled(faction);
-        self.crime.arrests.jailed = Some(Sentence { faction, days, inside });
+        self.crime.arrests.jailed = Some(Sentence { faction, days, inside, owed: bounty });
         log::info!("the player is jailed by {faction} for {days} days ({owed} gold)");
         self.queue_player_through(jail);
+    }
+
+    /// The jail's interior: where its inner prison marker is.
+    fn jail_cell(&self, s: Sentence) -> FormId {
+        self.lo.cell_of_ref(s.inside).unwrap_or_default()
+    }
+
+    /// The player unlocked a door or container: in jail, unlocking anything
+    /// there (the cell door) is escaping (UESP: "unlocking the door to a jail
+    /// cell is considered a crime").
+    pub(crate) fn player_unlocked(&mut self, lock: FormId) {
+        if self.in_jail_with(lock) {
+            self.escape_jail();
+        }
+    }
+
+    /// Whether the player is jailed where `r` is.
+    pub(crate) fn in_jail_with(&self, r: FormId) -> bool {
+        self.crime.arrests.jailed.is_some_and(|s| self.lo.cell_of_ref(r) == Some(self.jail_cell(s)))
+    }
+
+    /// The player escapes jail: the sentence is over unserved, the bounty it
+    /// was for stands again with the faction's escape gold on top (UESP:
+    /// 100), and its guards near by come for them. Their belongings stay in
+    /// the chest.
+    pub fn escape_jail(&mut self) {
+        let Some(s) = self.crime.arrests.jailed.take() else { return };
+        log::info!("the player escapes {}'s jail", s.faction);
+        let b = self.crime.bounties.entry(s.faction).or_default();
+        b.violent += s.owed.violent;
+        b.nonviolent += s.owed.nonviolent;
+        let gold = CrimeValues::of(&self.lo, s.faction).map_or(100, |v| v.gold(crate::crime::CrimeType::Escape, 0));
+        if gold > 0 {
+            self.mod_crime_gold(s.faction, gold, false);
+            self.notify_crime_gold(s.faction, gold, "sAddCrimeGold", "bounty added to");
+        }
+        self.raise_alarm(s.faction);
     }
 
     /// Whether activating `bed` serves the player's sentence: a bed in the
