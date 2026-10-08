@@ -148,6 +148,20 @@ pub struct Crimes {
     pub reacting_victim: Option<FormId>,
     /// Guards coming to arrest the player, and arrests resisted.
     pub arrests: crate::arrest::Arrests,
+    /// Crimes reported whose witnesses the guards haven't heard from yet.
+    pub unreported: Vec<Unreported>,
+}
+
+/// A crime reported to a faction before the guards have come: the CK wiki's
+/// *Crime*: if the last actor who saw it is killed before the guards
+/// arrive, its crime gold is removed.
+#[derive(Debug, Clone)]
+pub struct Unreported {
+    pub faction: FormId,
+    pub gold: i32,
+    pub violent: bool,
+    /// Those who saw it and told the faction.
+    pub witnesses: Vec<FormId>,
 }
 
 /// The player found trespassing in a cell: warned (level 0), warned a last
@@ -305,13 +319,10 @@ impl Engine {
         if kind == CrimeType::Murder {
             witnesses.retain(|&w| Some(w) != victim);
         }
-        let mut told: Vec<(FormId, CrimeValues)> = Vec::new();
-        for w in witnesses {
+        let mut told: Vec<(FormId, CrimeValues, Vec<FormId>)> = Vec::new();
+        for &w in &witnesses {
             let Some(f) = self.crime_faction(w) else { continue };
             let Some(values) = CrimeValues::of(&self.lo, f) else { continue };
-            if told.iter().any(|(t, _)| *t == f) {
-                continue;
-            }
             let member = victim_faction == Some(f);
             if !member && values.flags & kind.ignore_flag() != 0 {
                 continue;
@@ -320,21 +331,125 @@ impl Engine {
                 continue;
             }
             log::info!("{w} reports {kind:?} to {f}");
-            told.push((f, values));
+            match told.iter_mut().find(|t| t.0 == f) {
+                Some(t) => t.2.push(w),
+                None => told.push((f, values, vec![w])),
+            }
         }
-        for &(f, values) in &told {
-            let gold = values.gold(kind, value);
+        for (f, values, seen_by) in &told {
+            let (f, gold) = (*f, values.gold(kind, value));
             if gold > 0 {
                 self.mod_crime_gold(f, gold, kind.violent());
-                let name = self.form_name(f);
-                self.scripts.notify(format!("Bounty added: {gold} ({name})"));
+                self.notify_crime_gold(f, gold, "sAddCrimeGold", "bounty added to");
+                // A guard seeing it is the guards knowing of it.
+                if !seen_by.iter().any(|&w| self.is_guard(w)) {
+                    self.crime.unreported.push(Unreported { faction: f, gold, violent: kind.violent(), witnesses: seen_by.clone() });
+                }
             }
             self.raise_alarm(f);
         }
         if !told.is_empty() {
             log::info!("{kind:?} reported to {:?}", told.iter().map(|t| t.0).collect::<Vec<_>>());
         }
+        let reporters: Vec<FormId> = told.iter().flat_map(|t| t.2.iter().copied()).collect();
+        if !matches!(kind, CrimeType::Pickpocket | CrimeType::Trespass) {
+            self.react_to_crime(kind, victim, owner, &witnesses, &reporters);
+        }
         !told.is_empty()
+    }
+
+    /// "Bounty added to" / "removed from" a faction, with the gold.
+    fn notify_crime_gold(&mut self, faction: FormId, gold: i32, setting: &str, default: &str) {
+        let what = self.gmst_string(setting).unwrap_or_else(|| default.into());
+        let name = self.form_name(faction);
+        self.scripts.notify(format!("{gold} {what} {name}"));
+    }
+
+    /// Those who saw a crime react: wronged witnesses (the victim, or members
+    /// of the faction owning what was stolen) that don't report crimes attack
+    /// the player if they are aggressive and no cowards (the CK wiki's
+    /// *Crime*: a witness without a crime faction warns the player or starts
+    /// combat). One of them, the victim first, else the nearest, says the
+    /// crime's line: the combat topic (`STEA`, `ASSA`, `MURD`) when it reports
+    /// the crime or fights, the non-combat one (`STFN`, `ASNC`, `MUNC`)
+    /// otherwise.
+    fn react_to_crime(&mut self, kind: CrimeType, victim: Option<FormId>, owner: Option<FormId>, witnesses: &[FormId], reporters: &[FormId]) {
+        let alive = |e: &Self, w: FormId| e.actor_ref(w).is_some_and(|a| !a.dead && a.bleeding.is_none());
+        let mut fighters = Vec::new();
+        for &w in witnesses {
+            let wronged = Some(w) == victim || owner.is_some_and(|o| self.npc_factions(w).iter().any(|&(f, rank)| f == o && rank >= 0));
+            let keeps_law = self.crime_faction(w).is_some_and(|f| CrimeValues::of(&self.lo, f).is_some());
+            if !wronged || keeps_law || !alive(self, w) {
+                continue;
+            }
+            let Some(a) = self.actor_ref(w) else { continue };
+            if a.stats.aggression >= 1 && a.stats.confidence > 0 && a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF) {
+                fighters.push(w);
+            }
+        }
+        for &w in &fighters {
+            log::info!("{w} attacks the player for their {kind:?}");
+            self.start_combat(w, PLAYER_REF);
+        }
+        let player = self.ref_position(PLAYER_REF).unwrap_or_default();
+        let speaker = victim.filter(|&v| witnesses.contains(&v) && alive(self, v)).or_else(|| {
+            witnesses
+                .iter()
+                .copied()
+                .filter(|&w| alive(self, w))
+                .min_by(|&a, &b| {
+                    let d = |r: FormId| self.ref_position(r).map_or(f32::MAX, |p| p.distance(player));
+                    d(a).total_cmp(&d(b))
+                })
+        });
+        let Some(speaker) = speaker else { return };
+        let combat = reporters.contains(&speaker) || fighters.contains(&speaker);
+        let topic = match (kind, combat) {
+            (CrimeType::Steal, true) => b"STEA",
+            (CrimeType::Steal, false) => b"STFN",
+            (CrimeType::Murder, true) => b"MURD",
+            (CrimeType::Murder, false) => b"MUNC",
+            (_, true) => b"ASSA",
+            (_, false) => b"ASNC",
+        };
+        self.crime.reacting_victim = victim;
+        self.bark(speaker, topic);
+        self.crime.reacting_victim = None;
+    }
+
+    /// Witnesses of unreported crimes who die are no longer witnesses; when
+    /// the last of a crime's is killed, its gold is taken back ("Last witness
+    /// killed."). A witness gone from the loaded world has reached the
+    /// guards: the crime stands.
+    pub(crate) fn update_witnesses(&mut self) {
+        if self.crime.unreported.is_empty() {
+            return;
+        }
+        let mut list = std::mem::take(&mut self.crime.unreported);
+        let mut withdrawn = Vec::new();
+        list.retain_mut(|u| {
+            u.witnesses.retain(|&w| self.actor_ref(w).is_none_or(|a| !a.dead));
+            if u.witnesses.is_empty() {
+                withdrawn.push(u.clone());
+                return false;
+            }
+            u.witnesses.iter().all(|&w| self.actor_ref(w).is_some())
+        });
+        self.crime.unreported.extend(list);
+        for u in withdrawn {
+            log::info!("the last witness of a crime reported to {} is dead: {} gold withdrawn", u.faction, u.gold);
+            self.mod_crime_gold(u.faction, -u.gold, u.violent);
+            let msg = self.gmst_string("sWitnessKilled").unwrap_or_else(|| "Last witness killed.".into());
+            self.scripts.notify(msg);
+            self.notify_crime_gold(u.faction, u.gold, "sRemoveCrimeGold", "bounty removed from");
+        }
+    }
+
+    /// The guards of a faction have heard of the player's crimes against it
+    /// (one reached them, or they were settled): killing witnesses no longer
+    /// helps.
+    pub(crate) fn crimes_known(&mut self, faction: FormId) {
+        self.crime.unreported.retain(|u| u.faction != faction);
     }
 
     /// The player assaulted an actor (a crime: see `send_assault`).
@@ -445,6 +560,9 @@ impl Engine {
         let a = &self.crime.arrests;
         for (g, p) in &a.alarmed {
             out.push(format!("{} {g} comes to arrest the player for {}", self.form_name(*g), p.faction));
+        }
+        for u in &self.crime.unreported {
+            out.push(format!("{} gold with {} unreported, witnesses {:?}", u.gold, u.faction, u.witnesses));
         }
         for f in &a.resisting {
             out.push(format!("resisting arrest by {f}"));
