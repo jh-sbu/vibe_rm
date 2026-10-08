@@ -260,6 +260,52 @@ impl Engine {
         self.story.active.as_ref().or_else(|| quest.and_then(|q| self.scripts.quests.get(&q)).and_then(|s| s.event.as_ref()))
     }
 
+    /// The Papyrus event a quest started by `e` gets (`Quest.OnStory...`) and
+    /// its arguments: the members in the order its parameters name them.
+    /// None for `SKIL` (a skill's name, not a member) and unknown types.
+    pub(crate) fn story_papyrus_event(&self, e: &StoryEvent) -> Option<(&'static str, Vec<papyrus::Value>)> {
+        let (name, members): (&str, &[&[u8; 2]]) = match &e.code {
+            b"ADCR" => ("OnStoryCrimeGold", &[b"R1", b"R2", b"F1", b"V1", b"V2"]),
+            b"ADIA" => ("OnStoryDialogue", &[b"L1", b"R1", b"R2"]),
+            b"AFAV" => ("OnStoryActivateActor", &[b"L1", b"R1"]),
+            b"AHEL" => ("OnStoryHello", &[b"L1", b"R1", b"R2"]),
+            b"AIPL" => ("OnStoryAddToPlayer", &[b"R1", b"R2", b"L1", b"F1", b"V1"]),
+            b"ARRT" => ("OnStoryArrest", &[b"R1", b"R2", b"L1", b"V1"]),
+            b"ASSU" => ("OnStoryAssaultActor", &[b"R1", b"R2", b"L1", b"V1"]),
+            b"BRIB" => ("OnStoryBribeNPC", &[b"R1"]),
+            b"CAST" => ("OnStoryCastMagic", &[b"R1", b"R2", b"L1", b"F1"]),
+            b"CHRR" => ("OnStoryRelationshipChange", &[b"R1", b"R2", b"V1", b"V2"]),
+            b"CLOC" => ("OnStoryChangeLocation", &[b"R1", b"L1", b"L2"]),
+            b"CRFT" => ("OnStoryCraftItem", &[b"R1", b"L1", b"F1"]),
+            b"CURE" => ("OnStoryCure", &[b"F1"]),
+            b"DEAD" => ("OnStoryDiscoverDeadBody", &[b"R1", b"R2", b"L1"]),
+            b"ESJA" => ("OnStoryEscapeJail", &[b"L1", b"F1"]),
+            b"FLAT" => ("OnStoryFlatterNPC", &[b"R1"]),
+            b"INFC" => ("OnStoryInfection", &[b"R1", b"F1"]),
+            b"INTM" => ("OnStoryIntimidateNPC", &[b"R1"]),
+            b"JAIL" => ("OnStoryJail", &[b"R1", b"F1", b"L1", b"V1"]),
+            b"KILL" => ("OnStoryKillActor", &[b"R1", b"R2", b"L1", b"V1", b"V2"]),
+            b"LEVL" => ("OnStoryIncreaseLevel", &[b"V1"]),
+            b"LOCK" => ("OnStoryPickLock", &[b"R1", b"R2"]),
+            b"NVPE" => ("OnStoryNewVoicePower", &[b"R1", b"F1"]),
+            b"PFIN" => ("OnStoryPayFine", &[b"R1", b"R2", b"F1", b"V1"]),
+            b"PRFV" => ("OnStoryPlayerGetsFavor", &[b"R1"]),
+            b"REMP" => ("OnStoryRemoveFromPlayer", &[b"R1", b"R2", b"L1", b"F1", b"V1"]),
+            b"SCPT" => ("OnStoryScript", &[b"K1", b"L1", b"R1", b"R2", b"V1", b"V2"]),
+            b"STIJ" => ("OnStoryServedTime", &[b"L1", b"F1", b"V1", b"V2"]),
+            b"TRES" => ("OnStoryTrespass", &[b"R1", b"R2", b"L1", b"V1"]),
+            _ => return None,
+        };
+        let args = members
+            .iter()
+            .map(|&&m| match m[0] {
+                b'V' => papyrus::Value::Int(e.member_value(m) as i32),
+                _ => e.member_form(m).map_or(papyrus::Value::None, |f| self.object_value(f)),
+            })
+            .collect();
+        Some((name, args))
+    }
+
     /// Events the world sends by itself (called every frame).
     pub(crate) fn update_story(&mut self) {
         // The player arriving somewhere new.
@@ -496,6 +542,16 @@ impl Engine {
         e.refs = [guard, PLAYER_REF];
         e.locs[0] = self.ref_current_location(PLAYER_REF).unwrap_or_default();
         e.values[0] = crime as f32;
+        self.send_story_event(e);
+    }
+
+    /// The player pays a bounty (`PFIN`: R1 the criminal, R2 the guard, F1
+    /// the crime group, V1 the crime gold).
+    pub(crate) fn send_pay_fine_event(&mut self, guard: Option<FormId>, faction: FormId, gold: i32) {
+        let mut e = StoryEvent::new(b"PFIN");
+        e.refs = [PLAYER_REF, guard.unwrap_or_default()];
+        e.form = faction;
+        e.values[0] = gold as f32;
         self.send_story_event(e);
     }
 
