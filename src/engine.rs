@@ -748,10 +748,11 @@ impl Engine {
         let mut loose = Vec::new();
         for o in objects {
             rt.refs.push(o.ref_id);
+            let hidden = self.is_disabled(o.ref_id);
             if let Some(m) = self.models.get(&o.model) {
                 let mut inst = Instance::new(m, o.transform);
                 inst.ref_id = o.ref_id.0;
-                inst.hidden = self.is_disabled(o.ref_id);
+                inst.hidden = hidden;
                 rc.instances.push(inst);
             }
             if self
@@ -759,7 +760,20 @@ impl Engine {
                 .collision(&o.model)
                 .is_some_and(|c| c.is_loose())
             {
-                loose.push((o.ref_id, o.model.clone(), o.transform));
+                // The root model's instance, and those of its bodies' nodes.
+                let mut drawn: Vec<(Option<String>, usize)> = Vec::new();
+                if self.models.get(&o.model).is_some() {
+                    drawn.push((None, rc.instances.len() - 1));
+                }
+                for part in self.models.anim(&o.model).iter().flat_map(|a| &a.parts) {
+                    let mut inst =
+                        Instance::new(part.model.clone(), o.transform * part.parent * part.rest);
+                    inst.ref_id = o.ref_id.0;
+                    inst.hidden = hidden;
+                    drawn.push((Some(part.node.clone()), rc.instances.len()));
+                    rc.instances.push(inst);
+                }
+                loose.push((o.ref_id, o.model.clone(), o.transform, drawn));
                 continue;
             }
             let tagged = match self.models.collision(&o.model) {
@@ -781,8 +795,8 @@ impl Engine {
         }
         self.scene.cells.insert(key, rc);
         self.cells.insert(key, rt);
-        for (r, model, transform) in loose {
-            self.add_loose(key, r, &model, transform, fresh);
+        for (r, model, transform, drawn) in loose {
+            self.add_loose(key, r, &model, transform, fresh, drawn);
         }
     }
 

@@ -227,11 +227,22 @@ pub fn convert(nif: &Nif) -> CpuModel {
 
 /// [`convert`], keeping only the shapes whose names pass `keep`.
 pub fn convert_filtered(nif: &Nif, keep: &dyn Fn(&str) -> bool) -> CpuModel {
+    convert_split(nif, keep, &Default::default())
+}
+
+/// [`convert_filtered`], also drawing the subtrees of the `split` nodes apart
+/// (as animated nodes' are): the bodies of a loose object of several.
+pub fn convert_split(
+    nif: &Nif,
+    keep: &dyn Fn(&str) -> bool,
+    split: &std::collections::HashSet<String>,
+) -> CpuModel {
     let sequences = sequences(nif);
     let animated_nodes: std::collections::HashSet<&str> = sequences
         .iter()
         .flat_map(|s| &s.channels)
         .map(|c| c.node.as_str())
+        .chain(split.iter().map(|s| s.as_str()))
         .collect();
     let mut w = Walk {
         meshes: Vec::new(),
@@ -243,6 +254,9 @@ pub fn convert_filtered(nif: &Nif, keep: &dyn Fn(&str) -> bool) -> CpuModel {
     for &root in &nif.roots {
         w.walk(nif, Ref(root as i32), Mat4::IDENTITY, 0);
     }
+    // Parts within parts (a sign hung from a chain of rings, each a body of
+    // its own) are drawn as parts of the model too.
+    w.animated = flatten_parts(std::mem::take(&mut w.animated));
     // Rigid models hung from a bone (bows) and trees (skinned to branch bones for
     // wind) may be skinned to bones of their own: drawn in their rest pose.
     if !w.skinned.is_empty() && (has_parent_bone(nif) || is_tree(nif)) {
@@ -378,6 +392,22 @@ struct Walk<'a> {
     animated: Vec<AnimatedPart>,
     animated_nodes: &'a std::collections::HashSet<&'a str>,
     keep: &'a dyn Fn(&str) -> bool,
+}
+
+/// Parts and the parts within them, side by side: the inner ones' parent
+/// transforms made model-space.
+fn flatten_parts(parts: Vec<AnimatedPart>) -> Vec<AnimatedPart> {
+    let mut out = Vec::new();
+    for mut p in parts {
+        let inner = std::mem::take(&mut p.model.animated);
+        let base = p.parent * p.rest;
+        out.push(p);
+        out.extend(flatten_parts(inner).into_iter().map(|mut c| {
+            c.parent = base * c.parent;
+            c
+        }));
+    }
+    out
 }
 
 pub fn bounds_of(spheres: impl Iterator<Item = (Vec3, f32)>) -> (Vec3, f32) {

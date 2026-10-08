@@ -61,6 +61,31 @@ pub struct Ragdoll {
     pub scale: f32,
 }
 
+/// A joint from a NIF constraint (x: the twist / hinge axis), its pivots
+/// scaled as the bodies are: ball joints for ragdoll constraints, hinges for
+/// hinges; the bodies it joins don't collide.
+fn joint(j: &crate::world::ragdoll::RagdollJoint, scale: f32) -> GenericJoint {
+    let frame = |f: (Vec3, glam::Quat)| Pose::from_parts(f.0 * scale, f.1);
+    let mask = if j.limits[1].is_some() {
+        JointAxesMask::LOCKED_SPHERICAL_AXES
+    } else {
+        JointAxesMask::LOCKED_REVOLUTE_AXES
+    };
+    let mut joint = GenericJointBuilder::new(mask)
+        .local_frame1(frame(j.frame_a))
+        .local_frame2(frame(j.frame_b))
+        .contacts_enabled(false);
+    for (axis, limit) in [JointAxis::AngX, JointAxis::AngY, JointAxis::AngZ]
+        .into_iter()
+        .zip(j.limits)
+    {
+        if let Some((lo, hi)) = limit {
+            joint = joint.limits(axis, [lo.min(hi), hi.max(lo)]);
+        }
+    }
+    joint.build()
+}
+
 /// What a collider is made of.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Surface {
@@ -162,49 +187,71 @@ impl Physics {
         handles
     }
 
-    /// Add a loose object (`CollisionModel::is_loose`) as a body of its own at
-    /// `transform` (scale included), held in place until `release`d. Its mass
-    /// is the NIF's (kg).
+    /// Add a loose object (`CollisionModel::is_loose`) at `transform` (scale
+    /// included): a body for each of the model's rigid bodies, joined as its
+    /// constraints join them, the simulated ones held in place until
+    /// `release`d. Masses are the NIF's (kg). Returns the bodies, by the model's
+    /// body index (none for one without shapes).
     pub fn add_loose(
         &mut self,
         model: &CollisionModel,
         transform: Mat4,
         owner: esp::FormId,
-    ) -> Option<RigidBodyHandle> {
-        let (pose, scale) = shapes::decompose(transform);
-        let parts: Vec<_> = model
-            .parts
-            .iter()
-            .filter_map(|p| {
-                let (local, s) =
-                    shapes::decompose(Mat4::from_scale(Vec3::splat(scale)) * p.transform);
-                Some((p, local, p.shape.build_solid(s)?))
-            })
-            .collect();
-        if parts.is_empty() {
-            return None;
+    ) -> Vec<Option<RigidBodyHandle>> {
+        let scale = shapes::decompose(transform).1;
+        let mut out = Vec::with_capacity(model.bodies.len());
+        for (i, desc) in model.bodies.iter().enumerate() {
+            let (pose, _) = shapes::decompose(transform * desc.frame);
+            let inv = pose.to_mat4().inverse();
+            let parts: Vec<_> = model
+                .parts
+                .iter()
+                .filter(|p| p.body == i && (desc.dynamic || layer_blocks_player(p.layer)))
+                .filter_map(|p| {
+                    let (local, s) = shapes::decompose(inv * transform * p.transform);
+                    let shape = if desc.dynamic {
+                        p.shape.build_solid(s)
+                    } else {
+                        p.shape.build(s)
+                    }?;
+                    Some((p, local, shape))
+                })
+                .collect();
+            if parts.is_empty() {
+                out.push(None);
+                continue;
+            }
+            let body = if desc.dynamic {
+                RigidBodyBuilder::dynamic()
+                    .linear_damping(0.1)
+                    .angular_damping(0.5)
+                    .ccd_enabled(true)
+                    .locked_axes(LockedAxes::all())
+                    .sleeping(true)
+            } else {
+                RigidBodyBuilder::fixed()
+            };
+            let h = self.world.insert_body(body.pose(pose));
+            let mass = desc.mass.max(0.1) / parts.len() as f32;
+            for (p, local, shape) in parts {
+                let c = ColliderBuilder::new(shape)
+                    .position(local)
+                    .mass(mass)
+                    .friction(p.friction.clamp(0.0, 1.5))
+                    .restitution(p.restitution.clamp(0.0, 0.9))
+                    .build();
+                let ch = self.world.insert_collider(c, Some(h));
+                self.owners.insert(ch, owner);
+                self.materials.insert(ch, p.materials.clone());
+            }
+            out.push(Some(h));
         }
-        let mass = model.parts[0].mass.max(0.1) / parts.len() as f32;
-        let body = RigidBodyBuilder::dynamic()
-            .pose(pose)
-            .linear_damping(0.1)
-            .angular_damping(0.5)
-            .ccd_enabled(true)
-            .locked_axes(LockedAxes::all())
-            .sleeping(true);
-        let h = self.world.insert_body(body);
-        for (p, local, shape) in parts {
-            let c = ColliderBuilder::new(shape)
-                .position(local)
-                .mass(mass)
-                .friction(p.friction.clamp(0.0, 1.5))
-                .restitution(p.restitution.clamp(0.0, 0.9))
-                .build();
-            let ch = self.world.insert_collider(c, Some(h));
-            self.owners.insert(ch, owner);
-            self.materials.insert(ch, p.materials.clone());
+        for j in &model.joints {
+            if let (Some(Some(a)), Some(Some(b))) = (out.get(j.a), out.get(j.b)) {
+                self.world.insert_impulse_joint(*a, *b, joint(j, scale));
+            }
         }
-        Some(h)
+        out
     }
 
     /// Remove a loose object's body and its colliders.
@@ -266,10 +313,20 @@ impl Physics {
     /// of mass. False if it has no body.
     pub fn apply_impulse(&mut self, owner: esp::FormId, impulse: Vec3) -> bool {
         let bodies = self.owner_bodies(owner);
+        let mass_of = |w: &PhysicsWorld, h: RigidBodyHandle| {
+            w.bodies
+                .get(h)
+                .filter(|b| b.is_dynamic())
+                .map_or(0.0, |b| b.mass())
+        };
+        let total: f32 = bodies.iter().map(|&h| mass_of(&self.world, h)).sum();
         for &h in &bodies {
+            let share = mass_of(&self.world, h) / total.max(1e-3);
             if let Some(b) = self.world.bodies.get_mut(h)
                 && b.is_dynamic()
             {
+                // Shared by the object's bodies by mass (all of it for one).
+                let impulse = impulse * share;
                 b.apply_impulse(impulse, true);
                 log::debug!(
                     "{owner}: impulse {impulse:?} on {:.2} kg: {:?}",
@@ -512,26 +569,8 @@ impl Physics {
             bodies.push(h);
         }
         for j in &desc.joints {
-            let frame = |f: (Vec3, glam::Quat)| Pose::from_parts(f.0 * scale, f.1);
-            let mask = if j.limits[1].is_some() {
-                JointAxesMask::LOCKED_SPHERICAL_AXES
-            } else {
-                JointAxesMask::LOCKED_REVOLUTE_AXES
-            };
-            let mut joint = GenericJointBuilder::new(mask)
-                .local_frame1(frame(j.frame_a))
-                .local_frame2(frame(j.frame_b))
-                .contacts_enabled(false);
-            for (axis, limit) in [JointAxis::AngX, JointAxis::AngY, JointAxis::AngZ]
-                .into_iter()
-                .zip(j.limits)
-            {
-                if let Some((lo, hi)) = limit {
-                    joint = joint.limits(axis, [lo.min(hi), hi.max(lo)]);
-                }
-            }
             self.world
-                .insert_impulse_joint(bodies[j.a], bodies[j.b], joint.build());
+                .insert_impulse_joint(bodies[j.a], bodies[j.b], joint(j, scale));
         }
         Ragdoll { bodies, scale }
     }

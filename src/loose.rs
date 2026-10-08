@@ -1,7 +1,8 @@
 //! Loose objects: clutter, weapons, food and the like whose models' rigid
-//! bodies are simulated (`MO_SYS_DYNAMIC`). Each is a body in the physics world,
-//! asleep until disturbed; its drawn instances follow the body, and where it
-//! comes to rest is remembered like a scripted move.
+//! bodies are simulated (`MO_SYS_DYNAMIC`). Each of a model's bodies is a body
+//! in the physics world (a cart's frame and wheels, joined by hinges), asleep
+//! until disturbed; the parts of the model drawn on each body's node follow it,
+//! and where the object comes to rest is remembered like a scripted move.
 
 use esp::FormId;
 use glam::{EulerRot, Mat4, Quat, Vec3};
@@ -26,16 +27,30 @@ const DROP_HEIGHT: f32 = 70.0;
 /// something disturbs them.
 const SETTLE_STEPS: u32 = 3;
 
+/// One of a loose object's bodies.
+pub(crate) struct LooseBody {
+    pub handle: RigidBodyHandle,
+    /// Its frame in the model (`BodyDesc::frame`), and where it is in the world
+    /// now (the object's scale included).
+    pub frame: Mat4,
+    pub world: Mat4,
+    /// The render instances (of its cell) drawn with it.
+    pub instances: Vec<usize>,
+}
+
 /// A loose object in a loaded cell.
 pub(crate) struct Loose {
     pub ref_id: FormId,
-    pub body: RigidBodyHandle,
-    pub scale: f32,
-    /// Where it is drawn now (scale included), and where it was placed.
+    pub bodies: Vec<LooseBody>,
+    /// The body whose place is the reference's (the model root's).
+    pub root: usize,
+    /// Where the reference is now (scale included; from the root body), and
+    /// where it was placed.
     pub transform: Mat4,
     pub start: Mat4,
-    /// It has moved since it last came to rest.
+    /// It has moved since it last came to rest; times it fell out of the world.
     pub moved: bool,
+    pub lost: u32,
     /// Steps since it was added (`SETTLE_STEPS`), and whether it was just made
     /// (it falls rather than lying still).
     pub age: u32,
@@ -49,9 +64,10 @@ pub(crate) fn euler_of(q: Quat) -> Vec3 {
 }
 
 impl Engine {
-    /// Make a loose object's body if its model has one; false for anything
-    /// else. One just made (`fresh`) falls at once; others lie still until
-    /// disturbed.
+    /// Make a loose object's bodies if its model has them; false for anything
+    /// else. `instances`: its render instances in the cell, by the node they
+    /// are drawn on (none for the model's root). One just made (`fresh`) falls
+    /// at once; others lie still until disturbed.
     pub(crate) fn add_loose(
         &mut self,
         key: CellKey,
@@ -59,25 +75,54 @@ impl Engine {
         model: &str,
         transform: Mat4,
         fresh: bool,
+        instances: Vec<(Option<String>, usize)>,
     ) -> bool {
         let Some(c) = self.models.collision(model).filter(|c| c.is_loose()) else {
             return false;
         };
-        let Some(body) = self.physics.add_loose(&c, transform, r) else {
+        let handles = self.physics.add_loose(&c, transform, r);
+        let mut bodies: Vec<LooseBody> = Vec::new();
+        let mut index = vec![None; handles.len()];
+        for (i, h) in handles.iter().enumerate() {
+            if let Some(h) = *h {
+                index[i] = Some(bodies.len());
+                let frame = c.bodies[i].frame;
+                bodies.push(LooseBody {
+                    handle: h,
+                    frame,
+                    world: transform * frame,
+                    instances: Vec::new(),
+                });
+            }
+        }
+        if bodies.is_empty() {
             return false;
-        };
+        }
+        let root = c
+            .bodies
+            .iter()
+            .position(|b| b.root)
+            .and_then(|i| index[i])
+            .unwrap_or(0);
+        for (node, i) in instances {
+            let body = node
+                .and_then(|n| c.bodies.iter().position(|b| b.node == n))
+                .and_then(|b| index[b])
+                .unwrap_or(root);
+            bodies[body].instances.push(i);
+        }
         if self.is_disabled(r) {
             self.physics.set_owner_enabled(r, false);
         }
-        let scale = transform.to_scale_rotation_translation().0.x;
         if let Some(rt) = self.cells.get_mut(&key) {
             rt.loose.push(Loose {
                 ref_id: r,
-                body,
-                scale,
+                bodies,
+                root,
                 transform,
                 start: transform,
                 moved: false,
+                lost: 0,
                 age: 0,
                 fresh,
             });
@@ -88,36 +133,65 @@ impl Engine {
     /// Draw loose objects where their bodies are; remember where those that
     /// moved come to rest.
     pub(crate) fn update_loose(&mut self) {
-        let mut moves: Vec<(FormId, Mat4)> = Vec::new();
         let mut settled: Vec<(FormId, Vec3, Vec3)> = Vec::new();
-        let mut lost: Vec<(RigidBodyHandle, Mat4)> = Vec::new();
+        let mut lost: Vec<(RigidBodyHandle, Mat4, bool)> = Vec::new();
         let mut release: Vec<(RigidBodyHandle, bool)> = Vec::new();
-        for rt in self.cells.values_mut() {
+        let mut moved_refs: Vec<(FormId, Vec3)> = Vec::new();
+        for (key, rt) in self.cells.iter_mut() {
+            let mut rc = self.scene.cells.get_mut(key);
             for l in rt.loose.iter_mut() {
                 if l.age < SETTLE_STEPS {
                     l.age += 1;
                     if l.age == SETTLE_STEPS {
-                        release.push((l.body, !l.fresh));
+                        release.extend(l.bodies.iter().map(|b| (b.handle, !l.fresh)));
                     }
                     continue;
                 }
-                let Some((pose, asleep)) = self.physics.body_pose(l.body) else {
-                    continue;
-                };
-                let now = pose * Mat4::from_scale(Vec3::splat(l.scale));
+                let scale =
+                    Mat4::from_scale(Vec3::splat(l.transform.to_scale_rotation_translation().0.x));
+                let mut asleep = true;
+                let mut changed = false;
+                for b in l.bodies.iter_mut() {
+                    let Some((pose, sleeping)) = self.physics.body_pose(b.handle) else {
+                        continue;
+                    };
+                    asleep &= sleeping;
+                    let now = pose * scale;
+                    if now.abs_diff_eq(b.world, 1e-3) {
+                        continue;
+                    }
+                    let delta = now * b.world.inverse();
+                    b.world = now;
+                    changed = true;
+                    if let Some(rc) = rc.as_deref_mut() {
+                        for &i in &b.instances {
+                            if let Some(inst) = rc.instances.get_mut(i) {
+                                inst.transform = delta * inst.transform;
+                                inst.world_center =
+                                    inst.transform.transform_point3(inst.model.bound_center);
+                            }
+                        }
+                    }
+                }
+                let root = &l.bodies[l.root];
+                let now = root.world * root.frame.inverse();
                 let (pos, start) = (now.w_axis.truncate(), l.start.w_axis.truncate());
                 if pos.z < start.z - LOST_DEPTH {
-                    log::info!("{} fell out of the world; put back", l.ref_id);
-                    lost.push((
-                        l.body,
-                        l.start * Mat4::from_scale(Vec3::splat(1.0 / l.scale)),
-                    ));
+                    l.lost += 1;
+                    // Again: it is caught in the world's collision; it stays put.
+                    let hold = l.lost > 1;
+                    log::info!(
+                        "{} fell out of the world; put back{}",
+                        l.ref_id,
+                        if hold { " and held" } else { "" }
+                    );
+                    lost.extend(l.bodies.iter().map(|b| (b.handle, l.start * b.frame, hold)));
                     continue;
                 }
-                if !now.abs_diff_eq(l.transform, 1e-3) {
-                    moves.push((l.ref_id, now * l.transform.inverse()));
+                if changed {
                     l.transform = now;
                     l.moved = true;
+                    moved_refs.push((l.ref_id, pos));
                 }
                 if asleep && l.moved {
                     l.moved = false;
@@ -136,34 +210,19 @@ impl Engine {
         for (h, asleep) in release {
             self.physics.release(h, asleep);
         }
-        for (h, m) in lost {
+        for (h, m, hold) in lost {
             self.physics.set_body_pose(h, m);
             if let Some(b) = self.physics.world.bodies.get_mut(h) {
+                if hold {
+                    b.set_body_type(rapier3d::prelude::RigidBodyType::Fixed, false);
+                }
                 b.sleep();
             }
         }
-        for (r, delta) in moves {
-            for rc in self.scene.cells.values_mut() {
-                for inst in rc.instances.iter_mut().filter(|i| i.ref_id == r.0) {
-                    inst.transform = delta * inst.transform;
-                    inst.world_center = inst.transform.transform_point3(inst.model.bound_center);
-                }
-            }
-            if let Some(p) = self.loose_transform(r) {
-                self.moved_refs.insert(r, p.w_axis.truncate());
-            }
-        }
+        self.moved_refs.extend(moved_refs);
         for (r, pos, rot) in settled {
             self.remember_rest(r, pos, rot);
         }
-    }
-
-    fn loose_transform(&self, r: FormId) -> Option<Mat4> {
-        self.cells
-            .values()
-            .flat_map(|rt| &rt.loose)
-            .find(|l| l.ref_id == r)
-            .map(|l| l.transform)
     }
 
     /// Keep where a loose object lies across loads.
@@ -192,7 +251,9 @@ impl Engine {
                 let (_, rot, pos) = l.transform.to_scale_rotation_translation();
                 self.remember_rest(l.ref_id, pos, euler_of(rot));
             }
-            self.physics.remove_body(l.body);
+            for b in &l.bodies {
+                self.physics.remove_body(b.handle);
+            }
         }
     }
 
@@ -206,6 +267,9 @@ impl Engine {
             .filter(|l| l.ref_id == r)
         {
             l.transform = delta * l.transform;
+            for b in l.bodies.iter_mut() {
+                b.world = delta * b.world;
+            }
         }
     }
 
@@ -219,7 +283,9 @@ impl Engine {
             .filter(|l| l.ref_id == r && l.age < SETTLE_STEPS)
         {
             l.age = SETTLE_STEPS;
-            self.physics.release(l.body, false);
+            for b in &l.bodies {
+                self.physics.release(b.handle, false);
+            }
         }
     }
 
@@ -258,21 +324,30 @@ impl Engine {
         let mut out = vec![format!("{} loose objects loaded", all.len())];
         for l in all.into_iter().take(n) {
             let p = at(l);
-            let asleep = self.physics.body_pose(l.body).is_some_and(|(_, s)| s);
-            let (mass, speed) = self.physics.body_mass_speed(l.body);
+            let asleep = l
+                .bodies
+                .iter()
+                .all(|b| self.physics.body_pose(b.handle).is_some_and(|(_, s)| s));
+            let mass: f32 = l
+                .bodies
+                .iter()
+                .map(|b| self.physics.body_mass_speed(b.handle).0)
+                .sum();
+            let speed = self.physics.body_mass_speed(l.bodies[l.root].handle).1;
             let name = self
                 .base_of(l.ref_id)
                 .and_then(|b| self.lo.get(b))
                 .and_then(|r| r.editor_id().map(|e| e.to_string()))
                 .unwrap_or_default();
             out.push(format!(
-                "{} {name} at {:.0} {:.0} {:.0} ({:.0} away, {:.0} from its place), {:.1} kg, {:.1} u/s, {:?}{}",
+                "{} {name} at {:.0} {:.0} {:.0} ({:.0} away, {:.0} from its place), {} bodies, {:.1} kg, {:.1} u/s, {:?}{}",
                 l.ref_id,
                 p.x,
                 p.y,
                 p.z,
                 p.distance(player),
                 p.distance(l.start.w_axis.truncate()),
+                l.bodies.len(),
                 mass,
                 speed,
                 self.physics.motion(l.ref_id),
