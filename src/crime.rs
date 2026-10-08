@@ -14,7 +14,7 @@ use crate::engine::{Engine, PLAYER_REF};
 /// Crime types, as the engine numbers them (`GetCrime`, CommonLibSSE
 /// `PackageNS::CRIME_TYPE`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // escape and werewolves aren't committed yet
+#[allow(dead_code)] // werewolves aren't committed yet
 pub enum CrimeType {
     Steal = 0,
     Pickpocket = 1,
@@ -359,7 +359,7 @@ impl Engine {
     }
 
     /// "Bounty added to" / "removed from" a faction, with the gold.
-    fn notify_crime_gold(&mut self, faction: FormId, gold: i32, setting: &str, default: &str) {
+    pub(crate) fn notify_crime_gold(&mut self, faction: FormId, gold: i32, setting: &str, default: &str) {
         let what = self.gmst_string(setting).unwrap_or_else(|| default.into());
         let name = self.form_name(faction);
         self.scripts.notify(format!("{gold} {what} {name}"));

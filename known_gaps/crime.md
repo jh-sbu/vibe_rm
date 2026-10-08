@@ -105,6 +105,11 @@ locations name it.
   with a message; essential actors can't be. Strings `sWitnessKilled`
   ("Last witness killed."), `sAddCrimeGold` ("bounty added to"),
   `sRemoveCrimeGold` ("bounty removed from").
+- Escaping jail (UESP *Skyrim:Jail*): "Simply activating an escape route
+  or unlocking the door to a jail cell is considered a crime" (100, the
+  factions' escape gold); "If you do escape, your bounty will remain"; the
+  belongings stay in the evidence and belongings chests. The cell doors run
+  `JailDoorScript`, which only makes a detection event (sound level 25).
 - Reaction topics (`vrm-tool topic-lines <data> STEA`...): `STEA` ("Hey!
   Hands off!"), `ASSA` ("Help! I'm being attacked!" for victims by
   `GetActorValue Confidence` < 3, "Last mistake." from 3; "Help! Someone's
@@ -184,6 +189,11 @@ locations name it.
   days served. `abRealJail` is ignored.
 - Blocking branches (`DLBR` flag 0x2) are tried before `HELO` whenever the
   player talks to anyone, highest topic priority first.
+- Escaping: unlocking a lock in the jail's interior (picked or with a key),
+  or the player being anywhere else, while jailed. The bounty the sentence
+  was for comes back without adding infamy, then the escape gold (with
+  infamy, no witnesses needed), and the guards near by are alarmed.
+  Picking the jail's locks while jailed isn't the lockpicking crime too.
 - A crime's witnesses are those who reported it to a faction; it is
   unreported until a guard of that faction reaches the player to arrest
   them, a witness is itself one of its guards, or the bounty is paid or
@@ -203,13 +213,15 @@ locations name it.
 ## Open questions
 
 - Arrests: yielding by sheathing (the player has no drawn state), guards
-  following the player through doors, escaping jail (the 100 gold escape
-  crime, cell doors, the guards opening up after five hits), skill progress
+  following the player through doors, escape routes (crumbling walls,
+  sewers: as activators they count only once the player is out), the guards
+  opening the cell after five hits, The Chill's escape without a bounty,
+  skill progress
   lost in jail, the follower wait marker, Cidhna Mine and the Orc
   strongholds' `DialogueCrimeOrcs`, bribes, persuasion and Thane influence
   (perks, speech checks and quest variables), the bounty collector, and
   `GetArrestingActor` while being taken to jail. The jail outfit stays on.
-- Horse theft (`iCrimeGoldStealHorse` 100), escape and werewolf crimes aren't committed anywhere.
+- Horse theft (`iCrimeGoldStealHorse` 100) and werewolf crimes aren't committed anywhere.
 - Crime responses: witnesses don't run to the guards (the guards near by
   hear at once), children don't tell the nearest adult (UESP), morality
   plays no part (UESP: it is for followers ordered to commit crimes), the

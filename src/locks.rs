@@ -72,6 +72,7 @@ impl Engine {
         let lock = self.lock_of(r).unwrap_or(Lock { level: 0, key: None, leveled: false });
         if let Some(key) = lock.key.filter(|&k| self.item_count(PLAYER_REF, k) > 0) {
             self.set_locked(r, false);
+            self.player_unlocked(r);
             log::info!("{r} opened with {key} ({})", self.form_name(key));
             return true;
         }
@@ -102,7 +103,11 @@ impl Engine {
     /// Starting to pick a lock someone else owns is a crime, whether or not
     /// it opens (UESP Crime: "Lockpicking", 5 gold). There is no crime type of
     /// its own, so it is reported as trespass, whose gold is the same.
+    /// In jail, the jail's locks are the escape crime's instead (on opening).
     fn lockpicking_crime(&mut self, lock: FormId, then: FormId) {
+        if self.in_jail_with(lock) {
+            return;
+        }
         let Some(owner) = self.lock_owner(lock, then).filter(|&o| self.owned_by_other(o)) else { return };
         let is_faction = self.lo.tag_of(owner).is_some_and(|t| t.0 == *b"FACT");
         let victim = if is_faction { None } else { self.npc_refs_index().get(&owner).copied() };
@@ -154,6 +159,7 @@ impl Engine {
             if lp.turn >= 1.0 {
                 log::info!("picked {} open", lp.lock);
                 self.set_locked(lp.lock, false);
+                self.player_unlocked(lp.lock);
                 self.menu = None;
                 let name = self.form_name(lp.then);
                 self.look_target = Some((lp.then, name));

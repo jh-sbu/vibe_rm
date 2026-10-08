@@ -359,7 +359,8 @@ game each piece unlocks.
   guards hear of it takes its bounty back ("Last witness killed."); one of
   them says the crime's line (`STEA` / `ASSA` / `MURD`, or the non-combat
   `STFN` / `ASNC` / `MUNC`), and wronged witnesses who don't report crimes
-  attack if aggressive.
+  attack if aggressive. Escaping jail (unlocking the cell, or leaving):
+  the bounty stands again with the escape gold, the guards come.
   Console `crime`, `player.setcrimegold`,
   `player.paycrimegold`, `crimefaction`; vrm-tool `faction-owners`,
   `crime-factions`. Open questions: `known_gaps/crime.md`
@@ -476,7 +477,7 @@ game each piece unlocks.
    spell / shout sounds), perks (the sneak tree's detection perks among them;
    see Detection), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-   (escaping jail, yielding, skill loss in jail; witnesses running to the
+   (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
 6. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
 7. **Audio**: lip sync
