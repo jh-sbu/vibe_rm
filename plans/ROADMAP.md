@@ -417,7 +417,11 @@ game each piece unlocks.
   their delays, unless its activation is blocked, so pressure plates set off
   trap linkers and linkers their rockfalls; "Parent Activate Only" references
   can't be activated by the player. Console `sv` (a reference's script
-  variables); vrm-tool `pex-calls`. Papyrus variables and locals start at their type's
+  variables); vrm-tool `pex-calls`.
+- Trap hits: loose objects whose scripts handle trap events send
+  `OnTrapHitStart` / `OnTrapHit` / `OnTrapHitStop` while touching living
+  actors or the player; `ProcessTrapHit` deals their damage and stagger.
+  Open questions: `known_gaps/traps.md` Papyrus variables and locals start at their type's
   default (an `Int` at 0, not None). vrm-tool `triggers`. Open questions:
   `known_gaps/triggers.md`
 - Detection: one detection value per observer and target from the CK wiki's
@@ -543,9 +547,9 @@ game each piece unlocks.
    - Sneak attacks (`OnHit`'s sneak flag is always false)
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
-     player throwing what they hold, traps (triggering and firing work; trap
-     hits, `OnTrapHitStart` / `OnTrapHit` and `ProcessTrapHit`, don't hurt yet,
-     and rigs and maces wait on objects' behaviour graphs), arrows knocking down beehives, NPCs' blows and spells pushing them
+     player throwing what they hold, traps (rigs, maces and blades wait on
+     objects' behaviour graphs; pushback, disarming, trip wires; see
+     `known_gaps/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal
    and objectives, help messages (`ShowAsHelpMessage`); support for the game's .swf assets still undecided

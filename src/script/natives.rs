@@ -254,6 +254,14 @@ pub fn call(
             }
             none()
         }
+        ("objectreference", "processtraphit") => {
+            // ProcessTrapHit(akTrap, afDamage, afPushback, afXVel, afYVel, afZVel,
+            // afXPos, afYPos, afZPos, aeMaterial, afStagger)
+            if let Some(t) = me {
+                e.process_trap_hit(t, form_arg(args, 0), arg(1).as_float(), arg(10).as_float());
+            }
+            none()
+        }
         ("objectreference", "activate") => {
             // Activate(akActivator, abDefaultProcessingOnly)
             match me {

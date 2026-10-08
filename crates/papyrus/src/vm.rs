@@ -417,6 +417,25 @@ impl Vm {
         out
     }
 
+    /// Whether a script on `obj`, or one it extends, has a function `name` in
+    /// any state (an event handler, say).
+    pub fn handles(&self, obj: ObjectId, name: &str) -> bool {
+        let name = lc(name);
+        self.attached_scripts(obj).iter().any(|script| {
+            let mut cur = Some(script.clone());
+            for _ in 0..32 {
+                let Some(c) = cur.and_then(|k| self.classes.get(&k).cloned().flatten()) else {
+                    return false;
+                };
+                if c.states.values().any(|fs| fs.contains_key(&name)) {
+                    return true;
+                }
+                cur = c.parent.as_deref().map(lc);
+            }
+            false
+        })
+    }
+
     pub fn has_instance(&self, obj: ObjectId, script: &str) -> bool {
         self.instances.contains_key(&(obj, lc(script)))
     }

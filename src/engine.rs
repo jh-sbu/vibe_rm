@@ -121,6 +121,8 @@ pub struct Engine {
     pub player_health: f32,
     /// The player holds their guard up (right mouse button).
     pub player_blocking: bool,
+    /// Traps touching their targets.
+    pub(crate) traps: crate::traps::Traps,
     /// Activate parents and the child activations waiting on their delay.
     pub(crate) activation: crate::activation::Activation,
     /// Activate held down, and what the player has grabbed.
@@ -290,6 +292,7 @@ impl Engine {
             player_blocking: false,
             grab: Default::default(),
             activation: Default::default(),
+            traps: Default::default(),
             disabled_controls: Default::default(),
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
@@ -2029,6 +2032,7 @@ impl Engine {
         self.update_grab(dt);
         self.physics.step(dt);
         self.update_loose();
+        self.update_traps();
         self.update_whereabouts(dt);
         self.update_actors(dt);
         self.update_triggers();
