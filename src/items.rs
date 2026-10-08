@@ -19,6 +19,8 @@ pub enum Menu {
     Lockpick,
     /// Picking someone's pocket.
     Pickpocket(FormId),
+    /// Asking whether to serve the jail sentence (`sServeSentenceQuestion`).
+    ServeSentence,
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,

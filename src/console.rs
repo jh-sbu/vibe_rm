@@ -64,11 +64,25 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "crime                 the player's bounties; player.setcrimegold <n> [faction] [violent]".into(),
             "player.paycrimegold <remove stolen 0/1> <jail 0/1> [faction]   pay off a bounty (the hold here by default)".into(),
             "crimefaction <ref> [faction]   show or set an actor's crime faction".into(),
+            "alarm [faction] / jail [faction] / servetime   send the faction's guards to arrest the player, jail them, serve the sentence".into(),
             "pickpocket <ref> <item> [n]   try to take an item from a sneaking player's victim (psneak first)".into(),
             "detect                who detects the player, by how much; the player's light level and stealth points".into(),
         ],
         "detect" => engine.describe_detection(),
         "crime" => engine.describe_bounties(),
+        "alarm" | "jail" => {
+            let Some(f) = args.first().and_then(|a| engine.resolve_form(a)).or_else(|| engine.location_crime_faction()) else { return vec!["no crime faction here; name one".into()] };
+            if lower == "alarm" {
+                engine.raise_alarm(f);
+            } else {
+                engine.send_player_to_jail(f, true);
+            }
+            engine.describe_bounties()
+        }
+        "servetime" => {
+            engine.serve_sentence();
+            engine.describe_bounties()
+        }
         "pickpocket" => {
             let (Some(r), Some(item)) = (args.first().and_then(|a| engine.resolve_form(a)), args.get(1).and_then(|a| engine.resolve_form(a))) else {
                 return vec!["usage: pickpocket <ref> <item> [n]".into()];

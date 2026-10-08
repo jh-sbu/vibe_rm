@@ -970,7 +970,7 @@ impl Engine {
         let (stats, d) = (a.stats.clone(), a.pos.distance(self.player.position));
         let player_factions = self.player_factions();
         let aggro = stats.aggro_attack.is_some_and(|r| d < r) && !self.law_abiding(&stats.factions) && !matches!(self.faction_reaction(&stats.factions, &player_factions), Some(2 | 3));
-        aggro || self.hostile_to(&stats, &player_factions, true)
+        aggro || self.hostile_to(&stats, &player_factions, true) || self.crime_hostile(r)
     }
 
     /// The nearest fight `helper` detects (either side of it) that it would join, and whom it would

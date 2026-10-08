@@ -310,13 +310,40 @@ impl Engine {
         v
     }
 
-    /// Talk to an NPC: it greets the player with its first `HELO` line.
+    /// Talk to an NPC: a blocking branch's topic it has a line for comes
+    /// first (`DLBR` flag 0x2: the guards' arrest, quests stopping the
+    /// player...), else it greets the player with its first `HELO` line. A
+    /// guard come to arrest the player starts the arrest.
     pub fn start_conversation(&mut self, npc_ref: FormId) {
-        let greeting = self.bark_topics(b"HELO").into_iter().find_map(|t| {
+        let greeting = self.blocking_greeting(npc_ref).or_else(|| {
+            self.bark_topics(b"HELO").into_iter().find_map(|t| {
+                let i = self.select_info(&t, npc_ref)?;
+                Some((t, i))
+            })
+        });
+        if let Some(p) = self.crime.arrests.alarmed.get(&npc_ref) {
+            self.crime.arrests.arresting = Some((npc_ref, p.faction));
+        }
+        self.open_conversation(npc_ref, greeting);
+    }
+
+    /// The starting topic of a blocking branch (`DLBR` `DNAM` 0x2) the
+    /// speaker has a line for, the highest priority first.
+    pub(crate) fn blocking_greeting(&mut self, npc_ref: FormId) -> Option<(Topic, Info)> {
+        let mut starts: Vec<Topic> = Vec::new();
+        for &b in self.lo.ids_of_type(b"DLBR") {
+            let Some(r) = self.lo.get(b) else { continue };
+            if r.get(b"DNAM").and_then(|d| d.first()).is_none_or(|f| f & 0x2 == 0) {
+                continue;
+            }
+            let Some(start) = r.get(b"SNAM").filter(|d| d.len() >= 4).map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))) else { continue };
+            starts.extend(topic(&self.lo, start));
+        }
+        starts.sort_by(|a, b| b.priority.total_cmp(&a.priority));
+        starts.into_iter().find_map(|t| {
             let i = self.select_info(&t, npc_ref)?;
             Some((t, i))
-        });
-        self.open_conversation(npc_ref, greeting);
+        })
     }
 
     /// Start a conversation with `npc_ref`, opening with `greeting`.
@@ -463,6 +490,9 @@ impl Engine {
             a.stop(v);
         }
         self.end_talking_gestures(c.npc_ref);
+        // On a goodbye line: the speaker meant it to end.
+        let goodbye = c.info.as_ref().is_some_and(|(_, i)| i.flags & info_flags::GOODBYE != 0);
+        self.arrest_conversation_ended(c.npc_ref, goodbye);
     }
 
     /// Advance the conversation (called every frame).

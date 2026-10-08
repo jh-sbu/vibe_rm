@@ -119,7 +119,7 @@ impl Engine {
     }
 
     /// The player's feet.
-    fn player_feet(&self) -> Vec3 {
+    pub(crate) fn player_feet(&self) -> Vec3 {
         self.player.position - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius)
     }
 }

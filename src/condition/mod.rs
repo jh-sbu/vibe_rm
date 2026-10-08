@@ -302,7 +302,10 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         494 => Some(e.av_max(subject?, c.p1)),                            // GetPermanentActorValue
         640 => Some(e.actor_value_fraction(subject?, c.p1)),              // GetActorValuePercent
         365 => b(ctx.idle.and_then(|q| q.child).unwrap_or_else(|| subj_base.and_then(|n| e.npc_race(n)).is_some_and(|r| e.race_is_child(r)))), // IsChild
-        125 => b(false),                                                  // IsGuard
+        125 => b(subject.is_some_and(|s| e.is_guard(s))),                 // IsGuard
+        61 => b(subject.is_some_and(|s| e.is_alarmed(s))),                // GetAlarmed
+        499 => Some(e.crime.arrests.days_in_jail as f32),                 // GetDaysInJail
+        657 => b(subject.is_some_and(|s| e.crime.arrests.arresting.is_some_and(|a| a.0 == s))), // GetArrestingActor
         459 | 375 | 376 => {
             // GetCrimeGold (Violent / Nonviolent): the player's with the faction
             // given, else the subject's crime faction; the player's own, all.

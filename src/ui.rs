@@ -319,6 +319,24 @@ impl Ui {
                 self.lockpick_view(ctx, engine);
                 return;
             }
+            Menu::ServeSentence => {
+                let question = engine.gmst_string("sServeSentenceQuestion").unwrap_or_else(|| "Do you want to serve your time in jail?".into());
+                let mut serve = false;
+                egui::Window::new("Jail").anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).resizable(false).collapsible(false).title_bar(false).show(ctx, |ui| {
+                    ui.label(egui::RichText::new(question).size(17.0));
+                    ui.horizontal(|ui| {
+                        serve = ui.button("Yes").clicked();
+                        close |= ui.button("No").clicked();
+                    });
+                });
+                if serve {
+                    engine.serve_sentence();
+                }
+                if serve || close {
+                    engine.menu = None;
+                }
+                return;
+            }
             Menu::Container(c) | Menu::Pickpocket(c) => Some(c),
             Menu::Inventory => None,
             Menu::Book { book, reference } => {

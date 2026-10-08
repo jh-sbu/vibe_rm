@@ -1647,6 +1647,10 @@ impl Engine {
             self.menu = Some(crate::items::Menu::Container(owner));
             return Ok(());
         }
+        if self.serves_sentence_in(owner) {
+            self.menu = Some(crate::items::Menu::ServeSentence);
+            return Ok(());
+        }
         if base_tag.map(|t| t.0) == Some(*b"BOOK") {
             self.menu = Some(crate::items::Menu::Book { book: rf.base, reference: Some(owner) });
             return Ok(());

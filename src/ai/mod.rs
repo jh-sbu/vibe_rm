@@ -487,6 +487,33 @@ impl ActorRuntime {
         self.pinned = true;
     }
 
+    /// Run after `target` and stay close to it (a guard coming to arrest
+    /// the player); its packages wait meanwhile.
+    pub(crate) fn pursue(&mut self, target: FormId, furniture: &mut FurnitureWorld) {
+        let already = self.pinned && self.goal.is_some_and(|g| g.behaviour == Behaviour::Follow && g.target == Some(target));
+        if already {
+            return;
+        }
+        self.search = None;
+        self.interrupt(furniture);
+        self.goal = Some(Goal {
+            behaviour: Behaviour::Follow,
+            target: Some(target),
+            follow_radius: (64.0, 128.0),
+            gait: package::Gait::Run,
+            ..Goal::travel(self.pos)
+        });
+        self.pinned = true;
+    }
+
+    /// Stop pursuing: back to its packages.
+    pub(crate) fn end_pursuit(&mut self) {
+        if self.pinned && self.search.is_none() && self.goal.is_some_and(|g| g.behaviour == Behaviour::Follow) {
+            self.pinned = false;
+            self.next_eval = 0.0;
+        }
+    }
+
     /// Stop searching: back to its packages.
     pub(crate) fn end_search(&mut self) {
         if self.search.take().is_some() && self.pinned {
@@ -2197,6 +2224,7 @@ impl Engine {
         if self.ai_enabled {
             self.update_detection(dt);
             self.detect_enemies(dt);
+            self.update_arrests(dt);
         }
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);

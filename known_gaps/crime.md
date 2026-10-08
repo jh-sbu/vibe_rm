@@ -1,6 +1,6 @@
 # Crime
 
-Implemented in `src/crime.rs`; `vrm-tool crime-factions <data>` lists the
+Implemented in `src/crime.rs` and `src/arrest.rs`; `vrm-tool crime-factions <data>` lists the
 factions that track crime with their crime gold, crime group, jail and stolen
 goods chest, how many NPCs name each as their crime faction and how many
 locations name it.
@@ -70,6 +70,34 @@ locations name it.
   Topics: `PICN` (non-combat: "I guess I can look the other way, this
   time.") and `PICC` (combat; victims and witnesses by `IsActorAVictim`).
 
+- Arrest (UESP Crime / Jail, CK wiki Faction): guards "will attempt to
+  arrest you" in the hold where the player has a bounty and chase them; the
+  faction's Arrest flag makes its guards arrest, Attack on Sight makes them
+  attack once the bounty is high enough, and without Arrest they attack
+  whenever there is a bounty. Resisting turns the guards hostile;
+  cancelling the arrest dialogue is resisting. Paying a low bounty is on
+  the spot, else the player is "transported outside the nearest town jail";
+  either way stolen goods are confiscated. Jail: at most seven days, served
+  for 700 or more; "sleep in a cell bed"; one lockpick kept; the rest kept
+  in a chest by the cell.
+- The arrest itself is data (`vrm-tool quest-topics <data>
+  DialogueCrimeGuards`): blocking branches `DGCrimeForcegreet` (its start
+  topic, subtype `PFGT`, on `GetAlarmed` and `GetCrimeGold`) and
+  `DGCrimeBlockingHello` (the wanted player talking to a guard, "Wait... I
+  know you"), the pursuit lines (`PURS`), and fragments calling
+  `PlayerPayCrimeGold(true, GetAlarmed)`, `SendPlayerToJail(true, true)` and
+  `SetPlayerResistingArrest`. The topic quest's condition is `IsGuard`.
+- Guards: the hold guards are members of `IsGuardFaction` at rank 0 (their
+  templates list it at -1); their class is the soldiers' `CWSoldierClass`.
+  Four classes carry the class Guard flag (`CLAS` `DATA`'s last byte 0x1:
+  `GuardImperial`, `GuardSonsSkyrim`, `GuardOrc1H` / `2H`).
+- A faction's `JAIL` is a prison marker (a `DOOR` marker, base 0x4) linked
+  by `XTEL` to its pair in the jail cell, like a load door; `PLCN` is the
+  player's belongings chest, `STOL` the evidence chest, `JOUT` the jail
+  outfit (`BeggarOutfit` in Whiterun), `WAIT` the follower wait marker. The
+  holds' factions set Arrest and Attack on Sight (Winterhold Arrest only;
+  `CrimeFactionImperial` Attack on Sight only).
+
 ## Choices made without a source
 
 - Witnesses: living loaded actors who detect the player at the time
@@ -117,14 +145,42 @@ locations name it.
   victim as a witness, the victim says `PICN` (`IsActorAVictim` true for it)
   and won't be pickpocketed by the player again (for the session). Being
   caught doesn't start a fight.
+- `IsGuard`: a member of `IsGuardFaction` or of a class flagged Guard.
+- The guards of the faction told, within 2048 units of the player, awake
+  and not fighting, come to arrest them (UESP: witnesses report to the
+  guards); they run to the player calling a `PURS` line every 6 to 10
+  seconds and the nearest within 160 units opens the blocking topic that
+  passes. They give up when the bounty is gone, they start fighting or
+  they unload.
+- Attack on Sight from a bounty of 1000 (`ATTACK_ON_SIGHT_GOLD`; UESP's
+  murder entry). Guards of a faction without Arrest attack at any bounty.
+- Resisting (the fragment, or the arrest conversation ending without the
+  bounty settled and not on a goodbye line, so "never mind" lets the player
+  go) makes the faction's guards attack until it is paid; only guards, not
+  UESP's "NPCs with high responsibility".
+- Paying with "go to jail" sends the player through the jail's inner prison
+  marker to the outer one (UESP: outside the jail); it is the alarmed
+  guard's line that passes true.
+- `SendPlayerToJail`: a day per 100 gold, one to seven; stolen goods to
+  `STOL`, everything else but one lockpick to `PLCN`, the `JOUT` outfit
+  worn, through the prison marker. Activating a bed in the jail's cell asks
+  `sServeSentenceQuestion`; serving adds the days, gives back the chest's
+  contents and lets the player out the same way. `GetDaysInJail` counts
+  days served. `abRealJail` is ignored.
+- Blocking branches (`DLBR` flag 0x2) are tried before `HELO` whenever the
+  player talks to anyone, highest topic priority first.
 - The console's `setcrimegold` / `paycrimegold` default to the crime faction
   of the nearest location up from the current one that names one (`FNAM`).
 
 ## Open questions
 
-- No arrests: guards don't come to the player, there is no jail, no
-  "attack on sight" (`CRVA` flag) and the arrest dialogue
-  (`DialogueCrimeGuards`) only sees the gold through its conditions.
+- Arrests: yielding by sheathing (the player has no drawn state), guards
+  following the player through doors, escaping jail (the 100 gold escape
+  crime, cell doors, the guards opening up after five hits), skill progress
+  lost in jail, the follower wait marker, Cidhna Mine and the Orc
+  strongholds' `DialogueCrimeOrcs`, bribes, persuasion and Thane influence
+  (perks, speech checks and quest variables), the bounty collector, and
+  `GetArrestingActor` while being taken to jail. The jail outfit stays on.
 - Horse theft, escape and werewolf crimes aren't committed anywhere.
 - Crime responses: victims and witnesses don't attack (the `PICC` lines,
   morality / aggression); pickpocketing perks (Light Fingers, Night Thief,

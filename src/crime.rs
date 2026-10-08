@@ -146,6 +146,8 @@ pub struct Crimes {
     /// The victim of the crime being reacted to, while its lines are picked
     /// (`IsActorAVictim`).
     pub reacting_victim: Option<FormId>,
+    /// Guards coming to arrest the player, and arrests resisted.
+    pub arrests: crate::arrest::Arrests,
 }
 
 /// The player found trespassing in a cell: warned (level 0), warned a last
@@ -218,7 +220,15 @@ impl Engine {
         if remove_stolen {
             self.confiscate_stolen(faction);
         }
-        log::info!("player pays {paid} of {owed} crime gold to {faction} (remove stolen {remove_stolen}, jail {go_to_jail}: not done)");
+        self.crimes_settled(faction);
+        // UESP: paying a guard who came for them, the player is taken to the
+        // jail and let go outside it: through the jail's prison marker from
+        // its far side.
+        let outside = self.jail_marker(faction).filter(|_| go_to_jail);
+        if let Some(inside) = outside.and_then(|j| self.lo.get(j).and_then(|r| crate::world::records::reference(&r).teleport)).map(|t| t.0) {
+            self.queue_player_through(inside);
+        }
+        log::info!("player pays {paid} of {owed} crime gold to {faction} (remove stolen {remove_stolen}, taken to the jail {go_to_jail})");
         paid
     }
 
@@ -319,6 +329,7 @@ impl Engine {
                 let name = self.form_name(f);
                 self.scripts.notify(format!("Bounty added: {gold} ({name})"));
             }
+            self.raise_alarm(f);
         }
         if !told.is_empty() {
             log::info!("{kind:?} reported to {:?}", told.iter().map(|t| t.0).collect::<Vec<_>>());
@@ -430,6 +441,16 @@ impl Engine {
             .collect();
         if out.is_empty() {
             out.push("no bounty".into());
+        }
+        let a = &self.crime.arrests;
+        for (g, p) in &a.alarmed {
+            out.push(format!("{} {g} comes to arrest the player for {}", self.form_name(*g), p.faction));
+        }
+        for f in &a.resisting {
+            out.push(format!("resisting arrest by {f}"));
+        }
+        if let Some(s) = a.jailed {
+            out.push(format!("jailed by {} for {} days", s.faction, s.days));
         }
         out
     }

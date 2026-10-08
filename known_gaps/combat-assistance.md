@@ -32,10 +32,10 @@ public documentation and the game's data files only.
    detection events).
 2. **Relationships.** `RELA` ranks (ally, confidant, friend...) between two NPCs
    probably count too. Only factions are used.
-3. **Crime.** The player's assaults and murders now add crime gold
-   (`known_gaps/crime.md`), but guards don't come: the townsfolk who join an
-   attack on the player do so through assistance alone, and stay hostile only
-   for that fight.
+3. **Crime.** The player's assaults and murders add crime gold and send the
+   guards near by to arrest them (`known_gaps/crime.md`); the townsfolk who
+   join an attack on the player do so through assistance alone, and stay
+   hostile only for that fight.
 4. **Friendly hits.** `iFriendHitCombatAllowed` (4 in Skyrim.esm) suggests friends
    forgive some hits before fighting back. Every hit starts a fight here.
 5. **Helping the player.** Followers would help the player through
