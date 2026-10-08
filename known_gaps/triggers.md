@@ -11,12 +11,23 @@ their bases and scripts.
   portal boxes) with no script. Common scripts: `defaultsetStageTrigSCRIPT`
   (453), `WICommentTriggerScript`, `defaultAddMusicSCRIPT`, `WETriggerScript`,
   `defaultStartSceneTrigScript`, enable / disable linked ref triggers.
+- Phantoms (`bhkSimpleShapePhantom`, collision layer 12, trigger): 185 in
+  the vanilla meshes; a scripted reference with one is a trigger volume of
+  its shapes. Pressure plates, oil pools, trip wires.
+- Activate parents (`XAPR`: parent form, delay in seconds; `XAPD` flags, 1
+  "Parent Activate Only", per UESP): the CK's Activate Parents. Trap trigger
+  scripts block their own activation and unblock it around `Activate(self)`,
+  so passing activation on to children is taken as default processing,
+  which blocking stops; children get the parent as their activator (the trap
+  scripts read `TriggerType` off it).
 - Scripted box and sphere volumes send `OnTriggerEnter` / `OnTriggerLeave`
   (with the actor as `akActionRef`) to the reference's scripts and the
   aliases it fills; `GetTriggerObjectCount`.
 
 ## Choices made without a source
 
+- Phantom volumes reach a body within 20 units of one of its three points,
+  as primitives do; a phantom on an animated node doesn't move with it.
 - Who sets them off: the player and loaded, living actors, tested at three
   heights over their feet with 20 units of reach (a capsule, roughly). Bodies,
   items and projectiles don't.

@@ -77,6 +77,9 @@ pub struct CollisionModel {
     /// joints between them.
     pub bodies: Vec<BodyDesc>,
     pub joints: Vec<crate::world::ragdoll::RagdollJoint>,
+    /// Phantoms (`bhkSimpleShapePhantom`): shapes that collide with nothing
+    /// but notice what overlaps them (pressure plates, trip wires).
+    pub phantoms: Vec<CollisionPart>,
 }
 
 /// One of a model's rigid bodies.
@@ -160,7 +163,11 @@ pub fn from_nif(nif: &Nif) -> Option<CollisionModel> {
             _ => {}
         }
     }
-    if m.parts.is_empty() { None } else { Some(m) }
+    if m.parts.is_empty() && m.phantoms.is_empty() {
+        None
+    } else {
+        Some(m)
+    }
 }
 
 fn walk(
@@ -182,6 +189,20 @@ fn walk(
         node = Some(av.net.name.clone());
     }
     let world = parent * crate::render::model::local_transform(av, depth);
+    if let Some(Block::CollisionObject(co)) = nif.get(av.collision)
+        && let Some(Block::Phantom(ph)) = nif.get(co.body)
+    {
+        // Its transform's translation is in Havok units.
+        let mut t = ph.transform;
+        t.w_axis = (t.w_axis.truncate() * HAVOK_SCALE).extend(1.0);
+        let mut shapes = CollisionModel::default();
+        add_shape(nif, ph.shape, world * t, &mut shapes, 0);
+        for mut p in shapes.parts {
+            p.layer = ph.layer;
+            p.node.clone_from(&node);
+            out.phantoms.push(p);
+        }
+    }
     if let Some(Block::CollisionObject(co)) = nif.get(av.collision)
         && let Some(Block::RigidBody(rb)) = nif.get(co.body)
     {

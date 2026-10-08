@@ -402,6 +402,21 @@ impl Vm {
         None
     }
 
+    /// Every variable of every script on `obj` (script, compiled name, value),
+    /// sorted.
+    pub fn vars(&self, obj: ObjectId) -> Vec<(Arc<str>, Arc<str>, Value)> {
+        let mut out = Vec::new();
+        for c in self.attached.get(&obj).into_iter().flatten() {
+            if let Some(i) = self.instances.get(&(obj, c.clone())) {
+                for (n, v) in &i.vars {
+                    out.push((c.clone(), n.clone(), v.clone()));
+                }
+            }
+        }
+        out.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+        out
+    }
+
     pub fn has_instance(&self, obj: ObjectId, script: &str) -> bool {
         self.instances.contains_key(&(obj, lc(script)))
     }

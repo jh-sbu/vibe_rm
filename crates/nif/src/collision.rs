@@ -27,6 +27,33 @@ pub enum MotionSystem {
     Other(u8),
 }
 
+/// A phantom (`bhkSimpleShapePhantom`): a shape that collides with nothing
+/// but notices what overlaps it (pressure plates, trip wires); its transform
+/// in Havok units, from the collision object's node.
+#[derive(Debug, Clone)]
+pub struct Phantom {
+    pub shape: Ref,
+    pub layer: u8,
+    pub transform: Mat4,
+}
+
+pub(crate) fn simple_shape_phantom(r: &mut Reader) -> Result<Phantom> {
+    let shape = r.block_ref()?;
+    let layer = r.u8()?;
+    r.skip(3)?; // flags + group
+    r.skip(20)?; // world object cinfo
+    r.skip(8)?; // unused
+    let mut m = [0f32; 16];
+    for v in &mut m {
+        *v = r.f32()?;
+    }
+    Ok(Phantom {
+        shape,
+        layer,
+        transform: Mat4::from_cols_array(&m),
+    })
+}
+
 #[derive(Debug, Clone)]
 pub struct RigidBody {
     pub shape: Ref,

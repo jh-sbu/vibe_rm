@@ -2436,6 +2436,43 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("pex-calls") => {
+            // pex-calls <data dir> <method>: the scripts calling a method or
+            // global function (any class) by that name, with each call's line.
+            anyhow::ensure!(args.len() > 2, "usage: pex-calls <data dir> <method>");
+            let data = std::path::Path::new(&args[1]);
+            let name = args[2].to_ascii_lowercase();
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            for path in v.list("scripts/") {
+                if !path.ends_with(".pex") {
+                    continue;
+                }
+                let Some(p) = v.read(&path).and_then(|b| papyrus::pex::parse(&b).ok()) else {
+                    continue;
+                };
+                let text = papyrus::pex::disassemble(&p);
+                let script = p.objects.first().map_or("", |o| p.str(o.name));
+                for line in text.lines() {
+                    let mut words = line.split_whitespace().skip(1);
+                    let (Some(op), Some(called)) = (words.next(), words.next()) else {
+                        continue;
+                    };
+                    let called = called.trim_end_matches(',').to_ascii_lowercase();
+                    let hit = match op {
+                        "callmethod" => called == name,
+                        // callstatic <class>, <name>, ...
+                        "callstatic" => words
+                            .next()
+                            .is_some_and(|w| w.trim_end_matches(',').eq_ignore_ascii_case(&name)),
+                        _ => false,
+                    };
+                    if hit {
+                        println!("{script}: {}", line.trim());
+                    }
+                }
+            }
+        }
         Some("pex-dump") => {
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);

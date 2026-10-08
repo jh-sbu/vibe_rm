@@ -121,6 +121,8 @@ pub struct Engine {
     pub player_health: f32,
     /// The player holds their guard up (right mouse button).
     pub player_blocking: bool,
+    /// Activate parents and the child activations waiting on their delay.
+    pub(crate) activation: crate::activation::Activation,
     /// Activate held down, and what the player has grabbed.
     pub(crate) grab: crate::grab::Grab,
     /// Player controls scripts have disabled.
@@ -287,6 +289,7 @@ impl Engine {
             detection: Default::default(),
             player_blocking: false,
             grab: Default::default(),
+            activation: Default::default(),
             disabled_controls: Default::default(),
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
@@ -1494,6 +1497,7 @@ impl Engine {
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_actors(key, &actors);
         self.load_triggers(key, &refs);
+        self.load_activate_parents(&refs);
         self.attach_cell_scripts(&refs);
         self.attach_cell_scripts(&made_ids);
         self.start_cell_sounds(key, &refs);
@@ -1650,6 +1654,7 @@ impl Engine {
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_actors(key, &actors);
         self.load_triggers(key, &refs);
+        self.load_activate_parents(&refs);
         self.attach_cell_scripts(&refs);
         self.attach_cell_scripts(&made_ids);
         self.start_cell_sounds(key, &refs);
@@ -2016,6 +2021,7 @@ impl Engine {
         }
         self.hour = h.rem_euclid(24.0);
         self.update_scripts(dt);
+        self.update_activations();
         self.update_scenes();
         if let Some(env) = self.sky_environment() {
             self.scene.env = env;
@@ -2094,6 +2100,9 @@ impl Engine {
         let Some(rf) = self.reference_of(owner) else {
             return;
         };
+        if crate::activation::parent_activate_only(&self.lo, owner) {
+            return;
+        }
         let Some(base) = self.lo.get(rf.base) else {
             return;
         };
@@ -2243,6 +2252,7 @@ impl Engine {
         if self.scripts.blocked_activation.contains(&owner) {
             return Ok(());
         }
+        self.activate_children(owner);
         if is_actor && self.is_dead(owner) {
             // Searching the body.
             self.menu = Some(crate::items::Menu::Container(owner));
