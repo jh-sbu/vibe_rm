@@ -120,7 +120,7 @@ impl Player {
     /// `sneak_speed`: the share of their usual speed they keep sneaking.
     pub fn update(
         &mut self,
-        physics: &Physics,
+        physics: &mut Physics,
         camera: &Camera,
         input: MoveInput,
         sneak_speed: f32,

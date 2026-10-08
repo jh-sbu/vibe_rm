@@ -13,6 +13,12 @@ pub struct CollisionPart {
     pub shape: ShapeDesc,
     pub layer: u8,
     pub dynamic: bool,
+    /// Which of the model's rigid bodies it belongs to, and that body's mass
+    /// (kg), friction and restitution.
+    pub body: usize,
+    pub mass: f32,
+    pub friction: f32,
+    pub restitution: f32,
     /// The keyframe-animated node this part moves with (a door leaf), if any.
     pub node: Option<String>,
     /// Havok materials (`SKY_HAV_MAT_*`): one per triangle of a mesh, or one for
@@ -34,6 +40,15 @@ pub enum ShapeDesc {
 }
 
 impl ShapeDesc {
+    /// The shape for a moving body: meshes become their convex hull (rapier's
+    /// triangle meshes have no volume to give a body its mass and inertia).
+    pub fn build_solid(&self, scale: f32) -> Option<SharedShape> {
+        match self {
+            ShapeDesc::TriMesh { vertices, .. } => ShapeDesc::Convex(vertices.clone()).build(scale),
+            _ => self.build(scale),
+        }
+    }
+
     pub fn build(&self, scale: f32) -> Option<SharedShape> {
         let s = scale;
         match self {
@@ -60,9 +75,22 @@ pub struct CollisionModel {
     pub parts: Vec<CollisionPart>,
 }
 
+impl CollisionModel {
+    /// A loose object: one rigid body, simulated (`MO_SYS_DYNAMIC` and the
+    /// like), and not moved by an animation. Clutter, weapons, food...
+    pub fn is_loose(&self) -> bool {
+        !self.parts.is_empty()
+            && self
+                .parts
+                .iter()
+                .all(|p| p.dynamic && p.body == self.parts[0].body && p.node.is_none())
+    }
+}
+
 pub fn from_nif(nif: &Nif) -> Option<CollisionModel> {
     let mut m = CollisionModel::default();
     let animated = nif.animated_nodes();
+    let mut bodies = 0;
     for &root in &nif.roots {
         walk(
             nif,
@@ -72,6 +100,7 @@ pub fn from_nif(nif: &Nif) -> Option<CollisionModel> {
             0,
             &animated,
             None,
+            &mut bodies,
         );
     }
     if m.parts.is_empty() { None } else { Some(m) }
@@ -85,6 +114,7 @@ fn walk(
     depth: u32,
     animated: &std::collections::HashSet<String>,
     mut node: Option<String>,
+    bodies: &mut usize,
 ) {
     if depth > 64 {
         return;
@@ -108,12 +138,26 @@ fn walk(
         for p in &mut out.parts[before..] {
             p.layer = rb.layer;
             p.dynamic = dynamic;
+            p.body = *bodies;
+            p.mass = rb.mass;
+            p.friction = rb.friction;
+            p.restitution = rb.restitution;
             p.node.clone_from(&node);
         }
+        *bodies += 1;
     }
     if let Block::Node(n) = block {
         for &c in &n.children {
-            walk(nif, c, world, out, depth + 1, animated, node.clone());
+            walk(
+                nif,
+                c,
+                world,
+                out,
+                depth + 1,
+                animated,
+                node.clone(),
+                bodies,
+            );
         }
     }
 }
@@ -124,6 +168,10 @@ fn push(out: &mut CollisionModel, transform: Mat4, shape: ShapeDesc, materials: 
         shape,
         layer: 0,
         dynamic: false,
+        body: 0,
+        mass: 0.0,
+        friction: 0.5,
+        restitution: 0.4,
         node: None,
         materials: materials.into(),
     });

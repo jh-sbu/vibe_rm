@@ -15,6 +15,7 @@ mod footsteps;
 mod items;
 mod locations;
 mod locks;
+mod loose;
 mod physics;
 mod pickpocket;
 mod player;

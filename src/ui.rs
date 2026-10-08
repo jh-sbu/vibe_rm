@@ -378,7 +378,8 @@ impl Ui {
         }
     }
 
-    /// The inventory, or a container beside it: click an item to move one (shift: all).
+    /// The inventory, or a container beside it: click an item to move one (shift:
+    /// all); right-click one of the player's own to drop it.
     fn item_menu(&mut self, ctx: &egui::Context, engine: &mut Engine) {
         use crate::engine::PLAYER_REF;
         use crate::items::Menu;
@@ -389,6 +390,7 @@ impl Ui {
         let all = ctx.input(|i| i.modifiers.shift);
         let rect = ctx.content_rect();
         let mut reading: Option<FormId> = None;
+        let mut drops: Vec<(FormId, i32)> = Vec::new();
         // Picking a pocket: what isn't worn or wielded, each with its chance.
         let victim = match menu {
             Menu::Pickpocket(v) => Some(v),
@@ -399,7 +401,8 @@ impl Ui {
                     owner: FormId,
                     to: Option<FormId>,
                     moves: &mut Vec<(FormId, FormId, FormId, i32, Option<FormId>)>,
-                    read: &mut Option<FormId>| {
+                    read: &mut Option<FormId>,
+                    drops: &mut Vec<(FormId, i32)>| {
             let mut items = engine.listed_inventory(owner);
             if Some(owner) == victim {
                 let worn = engine
@@ -460,6 +463,9 @@ impl Ui {
                                         if all { *n } else { 1 },
                                         row.owner,
                                     )),
+                                    None if r.secondary_clicked() => {
+                                        drops.push((*f, if all { *n } else { 1 }))
+                                    }
                                     // Books in one's own inventory are read.
                                     None if r.clicked()
                                         && info.kind == crate::world::inventory::ItemKind::Book =>
@@ -562,7 +568,15 @@ impl Ui {
             .resizable(false)
             .collapsible(false)
             .show(ctx, |ui| {
-                list(ui, engine, PLAYER_REF, container, &mut moves, &mut reading)
+                list(
+                    ui,
+                    engine,
+                    PLAYER_REF,
+                    container,
+                    &mut moves,
+                    &mut reading,
+                    &mut drops,
+                )
             });
         if let Some(c) = container {
             let name = engine
@@ -579,7 +593,15 @@ impl Ui {
             .resizable(false)
             .collapsible(false)
             .show(ctx, |ui| {
-                list(ui, engine, c, Some(PLAYER_REF), &mut moves, &mut reading);
+                list(
+                    ui,
+                    engine,
+                    c,
+                    Some(PLAYER_REF),
+                    &mut moves,
+                    &mut reading,
+                    &mut drops,
+                );
                 ui.horizontal(|ui| {
                     if victim.is_none() && ui.button("Take all").clicked() {
                         for row in engine.listed_inventory(c) {
@@ -604,6 +626,9 @@ impl Ui {
                 continue;
             }
             engine.transfer_item(from, to, item, n, Some(stack));
+        }
+        for (item, n) in drops {
+            engine.drop_item(PLAYER_REF, item, n);
         }
         if close {
             engine.menu = None;

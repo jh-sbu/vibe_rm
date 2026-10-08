@@ -97,7 +97,10 @@ impl Engine {
     pub fn is_item_ref(&self, r: FormId) -> bool {
         self.base_of(r)
             .is_some_and(|b| item_info(&self.lo, b).is_some())
-            && self.lo.tag_of(r).map(|t| t.0) == Some(*b"REFR")
+            && match self.created(r) {
+                Some(c) => !c.actor && c.container.is_none(),
+                None => self.lo.tag_of(r).map(|t| t.0) == Some(*b"REFR"),
+            }
     }
 
     /// Pick up an item reference: into the player's inventory (as many as the
@@ -120,6 +123,7 @@ impl Engine {
                     .filter(|d| d.len() >= 4)
                     .map(|d| i32::from_le_bytes(d[0..4].try_into().unwrap()))
             })
+            .or_else(|| self.created(r).map(|c| c.count))
             .unwrap_or(1)
             .max(1);
         let stolen = self.stolen_from(base, r, false);

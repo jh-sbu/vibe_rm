@@ -39,6 +39,8 @@ pub(crate) struct CellRuntime {
     pub(crate) water: Vec<(glam::Vec2, f32, f32)>,
     /// Scripted trigger volumes.
     pub(crate) triggers: Vec<crate::triggers::Trigger>,
+    /// Loose objects (simulated bodies).
+    pub(crate) loose: Vec<crate::loose::Loose>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -135,6 +137,8 @@ pub struct Engine {
     pub test_camera: Option<(Vec3, f32, f32)>,
     /// A jump asked for from the console, taken once the player is on the ground.
     pub test_jump: bool,
+    /// Frames left of the player walking forward (console `pwalk`).
+    pub test_walk: u32,
     pub player_died_at: Option<f64>,
     /// Lines NPCs say by themselves (greetings, idle chatter).
     pub barks: crate::dialogue::barks::Barks,
@@ -289,6 +293,7 @@ impl Engine {
             projectiles: Vec::new(),
             test_camera: None,
             test_jump: false,
+            test_walk: 0,
             player_health: PLAYER_HEALTH,
             player_died_at: None,
             npc_refs: Default::default(),
@@ -312,7 +317,7 @@ impl Engine {
     pub fn resolve_form(&self, s: &str) -> Option<FormId> {
         if s.len() == 8
             && let Ok(v) = u32::from_str_radix(s, 16)
-            && self.lo.locate(FormId(v)).is_some()
+            && (self.lo.locate(FormId(v)).is_some() || self.created(FormId(v)).is_some())
         {
             return Some(FormId(v));
         }
@@ -652,6 +657,7 @@ impl Engine {
         let keys: Vec<CellKey> = self.cells.keys().copied().collect();
         for k in keys {
             self.remember_actors(k);
+            self.unload_loose(k);
         }
         self.scene.cells.clear();
         self.scene.lights.clear();
@@ -706,14 +712,40 @@ impl Engine {
         lights: Vec<PointLight>,
         doors: Vec<Door>,
     ) {
+        self.scene.cells.insert(key, RenderCell::default());
+        self.cells.insert(
+            key,
+            CellRuntime {
+                lights,
+                doors,
+                ..Default::default()
+            },
+        );
+        self.add_objects(key, objects, false);
+        if let Some(rt) = self.cells.get(&key) {
+            let doors = rt.animated.iter().filter(|a| a.door).count();
+            if !rt.animated.is_empty() {
+                log::debug!(
+                    "{key:?}: {} animated objects ({doors} doors)",
+                    rt.animated.len()
+                );
+            }
+            if !rt.loose.is_empty() {
+                log::debug!("{key:?}: {} loose objects", rt.loose.len());
+            }
+        }
+    }
+
+    /// Draw objects in a loaded cell, with their collision: loose objects as
+    /// bodies of their own (falling at once when `fresh`ly made).
+    pub(crate) fn add_objects(&mut self, key: CellKey, objects: &[PlacedObject], fresh: bool) {
         let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
-        let mut rc = RenderCell::default();
-        let mut rt = CellRuntime {
-            lights,
-            doors,
-            ..Default::default()
+        let (Some(mut rc), Some(mut rt)) = (self.scene.cells.remove(&key), self.cells.remove(&key))
+        else {
+            return;
         };
+        let mut loose = Vec::new();
         for o in objects {
             rt.refs.push(o.ref_id);
             if let Some(m) = self.models.get(&o.model) {
@@ -721,6 +753,14 @@ impl Engine {
                 inst.ref_id = o.ref_id.0;
                 inst.hidden = self.is_disabled(o.ref_id);
                 rc.instances.push(inst);
+            }
+            if self
+                .models
+                .collision(&o.model)
+                .is_some_and(|c| c.is_loose())
+            {
+                loose.push((o.ref_id, o.model.clone(), o.transform));
+                continue;
             }
             let tagged = match self.models.collision(&o.model) {
                 Some(c) => self.physics.add_static_tagged(&c, o.transform, o.ref_id),
@@ -739,32 +779,37 @@ impl Engine {
                 rt.animated.push(obj);
             }
         }
-        if !rt.animated.is_empty() {
-            let doors = rt.animated.iter().filter(|a| a.door).count();
-            log::debug!(
-                "{key:?}: {} animated objects ({doors} doors)",
-                rt.animated.len()
-            );
-        }
         self.scene.cells.insert(key, rc);
         self.cells.insert(key, rt);
+        for (r, model, transform) in loose {
+            self.add_loose(key, r, &model, transform, fresh);
+        }
     }
 
     /// Attach scripts for references in a newly loaded cell and send load events.
-    fn attach_cell_scripts(&mut self, refs: &[FormId]) {
+    pub(crate) fn attach_cell_scripts(&mut self, refs: &[FormId]) {
         let mut vm = std::mem::take(&mut self.vm);
         for &r in refs {
-            let Some(rec) = self.lo.get(r) else { continue };
-            let mut base = records::reference(&rec).base;
-            // Actors take their base's scripts from its script part (templates).
-            if rec.tag().0 == *b"ACHR" {
-                base = self
-                    .templates_of(r)
-                    .map_or(FormId::NULL, |t| t.of(crate::world::template::SCRIPT));
-            }
-            let mut scripts = crate::script::vmad::parse(&rec)
-                .map(|v| v.scripts)
-                .unwrap_or_default();
+            let (mut scripts, base) = match self.lo.get(r) {
+                Some(rec) => {
+                    let own = crate::script::vmad::parse(&rec)
+                        .map(|v| v.scripts)
+                        .unwrap_or_default();
+                    // Actors take their base's scripts from its script part (templates).
+                    let base = if rec.tag().0 == *b"ACHR" {
+                        self.templates_of(r)
+                            .map_or(FormId::NULL, |t| t.of(crate::world::template::SCRIPT))
+                    } else {
+                        records::reference(&rec).base
+                    };
+                    (own, base)
+                }
+                // Created objects have their base's.
+                None => match self.created(r) {
+                    Some(c) if !c.actor => (Vec::new(), c.base),
+                    _ => continue,
+                },
+            };
             if let Some(b) = self.lo.get(base)
                 && let Some(bv) = crate::script::vmad::parse(&b)
             {
@@ -1344,6 +1389,7 @@ impl Engine {
     fn unload_cell(&mut self, key: CellKey) {
         self.remember_actors(key);
         self.scene.cells.remove(&key);
+        self.unload_loose(key);
         if let Some(rt) = self.cells.remove(&key) {
             self.physics.remove_colliders(&rt.colliders);
             if let Some(a) = &self.audio {
@@ -1411,6 +1457,9 @@ impl Engine {
             &mut lights,
             &mut doors,
         );
+        let made = self.created_objects(crate::ai::schedule::Place::Interior(cell_id));
+        let made_ids: Vec<FormId> = made.iter().map(|o| o.ref_id).collect();
+        objects.extend(made);
         self.instantiate(key, &objects, lights, doors);
         let refs: Vec<FormId> = self
             .lo
@@ -1429,6 +1478,7 @@ impl Engine {
         self.spawn_actors(key, &actors);
         self.load_triggers(key, &refs);
         self.attach_cell_scripts(&refs);
+        self.attach_cell_scripts(&made_ids);
         self.start_cell_sounds(key, &refs);
         if contents.info.has_water
             && let Some(h) = contents.info.water_height
@@ -1556,6 +1606,9 @@ impl Engine {
             &mut lights,
             &mut doors,
         );
+        let made = self.created_objects(crate::ai::schedule::Place::Exterior(world, (x, y)));
+        let made_ids: Vec<FormId> = made.iter().map(|o| o.ref_id).collect();
+        objects.extend(made);
         self.instantiate(key, &objects, lights, doors);
         let mut refs: Vec<FormId> = cell_id
             .and_then(|c| self.lo.cell(c))
@@ -1581,6 +1634,7 @@ impl Engine {
         self.spawn_actors(key, &actors);
         self.load_triggers(key, &refs);
         self.attach_cell_scripts(&refs);
+        self.attach_cell_scripts(&made_ids);
         self.start_cell_sounds(key, &refs);
 
         // Landscape
@@ -1923,6 +1977,10 @@ impl Engine {
 
     /// Advance the simulation by `dt` seconds.
     pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
+        if self.test_walk > 0 {
+            self.test_walk -= 1;
+            input.forward = 1.0;
+        }
         let off = self.disabled_controls;
         if off.movement {
             input = crate::player::MoveInput::default();
@@ -1946,6 +2004,7 @@ impl Engine {
             self.scene.env = env;
         }
         self.physics.step(dt);
+        self.update_loose();
         self.update_whereabouts(dt);
         self.update_actors(dt);
         self.update_triggers();
@@ -1969,7 +2028,7 @@ impl Engine {
         }
         let sneak_speed = self.player_sneak_speed();
         self.player
-            .update(&self.physics, &cam, input, sneak_speed, dt);
+            .update(&mut self.physics, &cam, input, sneak_speed, dt);
         let stride = (self.player.position - before).truncate().length();
         self.player.moving = dt > 0.0 && stride / dt > 1.0;
         self.player.running = self.player.moving && (run || sprint);
@@ -2011,10 +2070,9 @@ impl Engine {
         else {
             return;
         };
-        let Some(rec) = self.lo.get(owner) else {
+        let Some(rf) = self.reference_of(owner) else {
             return;
         };
-        let rf = records::reference(&rec);
         let Some(base) = self.lo.get(rf.base) else {
             return;
         };
@@ -2052,10 +2110,11 @@ impl Engine {
         let Some((id, _)) = &self.look_target else {
             return "";
         };
-        let Some(rec) = self.lo.get(*id) else {
-            return "Activate";
-        };
-        if rec.tag().0 == *b"ACHR" {
+        let actor = self.created(*id).map_or_else(
+            || self.lo.tag_of(*id).is_some_and(|t| t.0 == *b"ACHR"),
+            |c| c.actor,
+        );
+        if actor {
             return if self.is_dead(*id) {
                 "Search"
             } else if self.can_pickpocket(*id) {
@@ -2064,8 +2123,9 @@ impl Engine {
                 "Talk"
             };
         }
-        let base = records::reference(&rec).base;
-        drop(rec);
+        let Some(base) = self.base_of(*id) else {
+            return "Activate";
+        };
         let owned =
             crate::ai::furniture::owner_of(&self.lo, *id).is_some_and(|o| self.owned_by_other(o));
         match self.lo.tag_of(base).map(|t| t.0) {
@@ -2124,10 +2184,11 @@ impl Engine {
             log::debug!("activation disabled: {owner} ({name})");
             return Ok(());
         }
-        let rec = self.lo.get(owner).context("reference vanished")?;
-        let is_actor = rec.tag().0 == *b"ACHR";
-        let rf = records::reference(&rec);
-        drop(rec);
+        let rf = self.reference_of(owner).context("reference vanished")?;
+        let is_actor = self.created(owner).map_or_else(
+            || self.lo.tag_of(owner).is_some_and(|t| t.0 == *b"ACHR"),
+            |c| c.actor,
+        );
         let base_tag = self.lo.tag_of(rf.base);
         log::info!("activate {owner} ({name})");
         // Actors in a scene that says so can't be talked to.

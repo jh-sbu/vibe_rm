@@ -3,7 +3,8 @@
 //! `PlaceActorAtMe`. Their form ids count up from `FF000800` as the game's do.
 //! Actors join the persistent actors' whereabouts, so they appear where they
 //! were made and follow their packages; items made in a container go to its
-//! inventory. Items and objects made in the world aren't drawn yet.
+//! inventory. Items and objects made in the world are drawn where they were
+//! made (loose ones falling from there) and when their cell loads.
 
 use std::collections::HashMap;
 
@@ -28,6 +29,8 @@ pub struct Created {
     /// The location of the reference it was made at.
     pub location: Option<FormId>,
     pub actor: bool,
+    /// How many items it stands for (as a placed reference's `XCNT`).
+    pub count: i32,
 }
 
 #[derive(Default)]
@@ -117,6 +120,7 @@ impl Engine {
                 container: Some(at),
                 location,
                 actor,
+                count: 1,
             };
             self.created_refs.refs.insert(id, c);
             log::debug!("created {id} ({base}) in {at}");
@@ -137,13 +141,92 @@ impl Engine {
                 container: None,
                 location,
                 actor,
+                count: 1,
             },
         );
         log::debug!("created {id} ({base}) at {at} {place:?} {position:?}");
         if actor {
             self.add_created_actor(id, place, position);
+        } else {
+            self.show_created(id, place);
         }
         Some(id)
+    }
+
+    /// Make `count` of `base` lying at `position` in `place` (one reference for
+    /// the stack), drawn at once if the place is loaded, falling.
+    pub(crate) fn create_object_at(
+        &mut self,
+        base: FormId,
+        place: Place,
+        position: Vec3,
+        rotation: Vec3,
+        count: i32,
+    ) -> FormId {
+        if self.created_refs.next == 0 {
+            self.created_refs.next = FIRST;
+        }
+        let id = FormId(self.created_refs.next);
+        self.created_refs.next += 1;
+        let c = Created {
+            base,
+            position,
+            rotation,
+            place: Some(place),
+            container: None,
+            location: None,
+            actor: false,
+            count: count.max(1),
+        };
+        self.created_refs.refs.insert(id, c);
+        self.created_refs.refs.get_mut(&id).unwrap().location = self.ref_current_location(id);
+        log::debug!("created {id} ({base} x{count}) at {position:?} in {place:?}");
+        self.show_created(id, place);
+        id
+    }
+
+    /// Draw a created object if its place is loaded.
+    fn show_created(&mut self, id: FormId, place: Place) {
+        if let Some(key) = self.key_of_place(place) {
+            let objects: Vec<_> = self.created_object(id).into_iter().collect();
+            self.add_objects(key, &objects, true);
+            self.attach_cell_scripts(&[id]);
+        }
+    }
+
+    /// A created object (not an actor, nor in a container) to draw.
+    fn created_object(&self, r: FormId) -> Option<crate::world::cell::PlacedObject> {
+        let c = self
+            .created(r)
+            .filter(|c| !c.actor && c.container.is_none())?;
+        let base = self.lo.get(c.base)?;
+        if !records::is_renderable_base(&base.tag().0) {
+            return None;
+        }
+        Some(crate::world::cell::PlacedObject {
+            ref_id: r,
+            base: c.base,
+            model: records::model_path(&base)?,
+            transform: glam::Mat4::from_rotation_translation(
+                records::rotation_from_euler(c.rotation),
+                c.position,
+            ),
+        })
+    }
+
+    /// The created objects in a place, to draw as its cell loads.
+    pub(crate) fn created_objects(&self, place: Place) -> Vec<crate::world::cell::PlacedObject> {
+        let mut ids: Vec<FormId> = self
+            .created_refs
+            .refs
+            .iter()
+            .filter(|(_, c)| c.place == Some(place))
+            .map(|(&r, _)| r)
+            .collect();
+        ids.sort_unstable();
+        ids.into_iter()
+            .filter_map(|r| self.created_object(r))
+            .collect()
     }
 
     /// A created actor joins the persistent actors, spawned now if its place is loaded.
