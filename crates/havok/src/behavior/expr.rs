@@ -49,7 +49,9 @@ enum Tok {
 }
 
 fn tokens(s: &str) -> Option<Vec<Tok>> {
-    const SYMS: [&str; 16] = ["==", "!=", "<=", ">=", "&&", "||", "<", ">", "!", "=", "+", "-", "*", "/", "(", ")"];
+    const SYMS: [&str; 16] = [
+        "==", "!=", "<=", ">=", "&&", "||", "<", ">", "!", "=", "+", "-", "*", "/", "(", ")",
+    ];
     let mut out = Vec::new();
     let b = s.as_bytes();
     let mut i = 0;
@@ -68,7 +70,9 @@ fn tokens(s: &str) -> Option<Vec<Tok>> {
         // a word that parses as a number is one.
         if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
             let start = i;
-            while i < b.len() && ((b[i] as char).is_ascii_alphanumeric() || b[i] == b'_' || b[i] == b'.') {
+            while i < b.len()
+                && ((b[i] as char).is_ascii_alphanumeric() || b[i] == b'_' || b[i] == b'.')
+            {
                 i += 1;
             }
             let w = &s[start..i];
@@ -105,7 +109,14 @@ impl Parser {
         const LEVELS: [&[(&str, Op)]; 5] = [
             &[("||", Op::Or)],
             &[("&&", Op::And)],
-            &[("==", Op::Eq), ("!=", Op::Ne), ("<=", Op::Le), (">=", Op::Ge), ("<", Op::Lt), (">", Op::Gt)],
+            &[
+                ("==", Op::Eq),
+                ("!=", Op::Ne),
+                ("<=", Op::Le),
+                (">=", Op::Ge),
+                ("<", Op::Lt),
+                (">", Op::Gt),
+            ],
             &[("+", Op::Add), ("-", Op::Sub)],
             &[("*", Op::Mul), ("/", Op::Div)],
         ];
@@ -175,7 +186,10 @@ impl Parser {
 
 /// Parse a condition expression.
 pub fn parse(s: &str) -> Option<Expr> {
-    let mut p = Parser { toks: tokens(s)?, at: 0 };
+    let mut p = Parser {
+        toks: tokens(s)?,
+        at: 0,
+    };
     let e = p.binary(0)?;
     p.done().then_some(e)
 }
@@ -185,14 +199,20 @@ pub fn parse(s: &str) -> Option<Expr> {
 pub fn parse_statement(s: &str) -> Option<Statement> {
     let toks = tokens(s)?;
     if let [Tok::Name(var), Tok::Sym("="), ..] = &toks[..] {
-        let mut p = Parser { toks: toks[2..].to_vec(), at: 0 };
+        let mut p = Parser {
+            toks: toks[2..].to_vec(),
+            at: 0,
+        };
         let e = p.binary(0)?;
         return p.done().then(|| Statement::Assign(var.clone(), e));
     }
     if let [Tok::Name(event), Tok::Name(kw), ..] = &toks[..]
         && kw.eq_ignore_ascii_case("if")
     {
-        let mut p = Parser { toks: toks[2..].to_vec(), at: 0 };
+        let mut p = Parser {
+            toks: toks[2..].to_vec(),
+            at: 0,
+        };
         let e = p.binary(0)?;
         return p.done().then(|| Statement::Raise(event.clone(), e));
     }
@@ -284,7 +304,9 @@ mod tests {
         assert!(t("IsNPC == 1"));
         assert!(!t("IsNPC == 0"));
         assert!(t("( !bBlendOutSlow ) && ( IsNPC == 1 )"));
-        assert!(t("(iWantBlock == 0) || (iLeftHandType == 7) || (iLeftHandType == 12)"));
+        assert!(t(
+            "(iWantBlock == 0) || (iLeftHandType == 7) || (iLeftHandType == 12)"
+        ));
         assert!(t("(staggerDirection < .25) || (staggerDirection > .75)"));
         assert!(t("!bIsSynced && !bIsRiding"));
         assert!(!t("Speed < fMinSpeed + 1"));
@@ -292,17 +314,35 @@ mod tests {
 
     #[test]
     fn statements() {
-        let Some(Statement::Assign(v, e)) = parse_statement("turnSpeedMult = fabs(TurnDelta/112.5)") else { panic!() };
+        let Some(Statement::Assign(v, e)) =
+            parse_statement("turnSpeedMult = fabs(TurnDelta/112.5)")
+        else {
+            panic!()
+        };
         assert_eq!(v, "turnSpeedMult");
         assert_eq!(e.eval(&vars), 2.0);
-        let Some(Statement::Assign(v, e)) = parse_statement("1stPRot = sind( Direction * 360 ) * RotMax * clamp(Speed, 0, 1)") else { panic!() };
+        let Some(Statement::Assign(v, e)) =
+            parse_statement("1stPRot = sind( Direction * 360 ) * RotMax * clamp(Speed, 0, 1)")
+        else {
+            panic!()
+        };
         assert_eq!(v, "1stPRot");
         assert!((e.eval(&vars) - 10.0).abs() < 1e-4);
-        let Some(Statement::Raise(ev, c)) = parse_statement("SoundPlay.WPNBowZoomIn if (iWantBlock)") else { panic!() };
+        let Some(Statement::Raise(ev, c)) =
+            parse_statement("SoundPlay.WPNBowZoomIn if (iWantBlock)")
+        else {
+            panic!()
+        };
         assert_eq!(ev, "SoundPlay.WPNBowZoomIn");
         assert!(!c.test(&vars));
-        assert!(matches!(parse_statement("weaponSheathe if(1)"), Some(Statement::Raise(_, _))));
-        assert!(matches!(parse_statement("iCombatStance = 1 "), Some(Statement::Assign(_, Expr::Num(1.0)))));
+        assert!(matches!(
+            parse_statement("weaponSheathe if(1)"),
+            Some(Statement::Raise(_, _))
+        ));
+        assert!(matches!(
+            parse_statement("iCombatStance = 1 "),
+            Some(Statement::Assign(_, Expr::Num(1.0)))
+        ));
         assert!(parse("a == (").is_none());
     }
 }

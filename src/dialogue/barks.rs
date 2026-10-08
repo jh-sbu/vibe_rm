@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use esp::FormId;
 use glam::Vec3;
 
-use super::{voice_path, Topic};
+use super::{Topic, voice_path};
 use crate::engine::Engine;
 
 /// How close the player comes before an NPC greets them.
@@ -76,7 +76,11 @@ impl Engine {
             }
             return;
         }
-        if self.conversation.is_some() || now < self.barks.quiet_until || !self.ai_enabled || !self.scene_lines().is_empty() {
+        if self.conversation.is_some()
+            || now < self.barks.quiet_until
+            || !self.ai_enabled
+            || !self.scene_lines().is_empty()
+        {
             return;
         }
         let player = self.player.position;
@@ -94,16 +98,28 @@ impl Engine {
             if self.scene_of_actor(r).is_some() {
                 continue;
             }
-            if d < GREETING_DISTANCE && self.barks.greeted.get(&r).is_none_or(|t| now - t > GREETING_INTERVAL) {
+            if d < GREETING_DISTANCE
+                && self
+                    .barks
+                    .greeted
+                    .get(&r)
+                    .is_none_or(|t| now - t > GREETING_INTERVAL)
+            {
                 self.barks.greeted.insert(r, now);
                 self.send_actor_hello(r, crate::engine::PLAYER_REF);
                 if self.bark(r, b"HELO") {
                     return;
                 }
             }
-            let due = *self.barks.chatter_at.entry(r).or_insert_with(|| now + CHATTER_INTERVAL.0 + (r.0 % 13) as f64);
+            let due = *self
+                .barks
+                .chatter_at
+                .entry(r)
+                .or_insert_with(|| now + CHATTER_INTERVAL.0 + (r.0 % 13) as f64);
             if now >= due {
-                let wait = CHATTER_INTERVAL.0 + (self.rand() % 1000) as f64 / 1000.0 * (CHATTER_INTERVAL.1 - CHATTER_INTERVAL.0);
+                let wait = CHATTER_INTERVAL.0
+                    + (self.rand() % 1000) as f64 / 1000.0
+                        * (CHATTER_INTERVAL.1 - CHATTER_INTERVAL.0);
                 self.barks.chatter_at.insert(r, now + wait);
                 if self.bark(r, b"IDLE") {
                     return;
@@ -121,11 +137,28 @@ impl Engine {
         };
         for topic in self.bark_topics(subtype) {
             let Some(info) = self.select_info(&topic, speaker) else {
-                log::trace!("{speaker}: no {} line ({}, quest {} {})", topic.editor_id, topic.id, topic.quest, if self.scripts.quests.get(&topic.quest).is_some_and(|q| q.running) { "running" } else { "not running" });
+                log::trace!(
+                    "{speaker}: no {} line ({}, quest {} {})",
+                    topic.editor_id,
+                    topic.id,
+                    topic.quest,
+                    if self
+                        .scripts
+                        .quests
+                        .get(&topic.quest)
+                        .is_some_and(|q| q.running)
+                    {
+                        "running"
+                    } else {
+                        "not running"
+                    }
+                );
                 continue;
             };
             // Barks are single lines; multi-line INFOs start with their first.
-            let Some(r) = info.responses.first().cloned() else { continue };
+            let Some(r) = info.responses.first().cloned() else {
+                continue;
+            };
             let path = voice_path(&self.lo, voice_type, &topic, info.id, r.number);
             let at = self.ref_position(speaker).map(|p| p + Vec3::Z * 110.0);
             let now = self.scripts.real_time;
@@ -138,8 +171,19 @@ impl Engine {
             // Silent lines (and without audio) last a reading time.
             let duration = (r.text.split_whitespace().count() as f64 * 0.32).max(2.0);
             let name = self.form_name(speaker);
-            log::info!("{name} ({}): {} [{}]", String::from_utf8_lossy(subtype), r.text, path.unwrap_or_default());
-            self.barks.current = Some(Bark { speaker, name, text: r.text, voice, ends_at: now + duration });
+            log::info!(
+                "{name} ({}): {} [{}]",
+                String::from_utf8_lossy(subtype),
+                r.text,
+                path.unwrap_or_default()
+            );
+            self.barks.current = Some(Bark {
+                speaker,
+                name,
+                text: r.text,
+                voice,
+                ends_at: now + duration,
+            });
             self.talking_gesture(speaker);
             return true;
         }

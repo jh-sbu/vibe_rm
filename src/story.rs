@@ -30,7 +30,10 @@ pub struct StoryEvent {
 
 impl StoryEvent {
     pub fn new(code: &[u8; 4]) -> Self {
-        StoryEvent { code: *code, ..Default::default() }
+        StoryEvent {
+            code: *code,
+            ..Default::default()
+        }
     }
 
     /// The form a member names (`R1`, `L2`, `K1`, `F1`), if set.
@@ -111,7 +114,9 @@ impl Engine {
         for tag in [b"SMEN", b"SMBN", b"SMQN"] {
             for &id in self.lo.ids_of_type(tag) {
                 let Some(rec) = self.lo.get(id) else { continue };
-                let Some(node) = esp::story::parse(&rec, id) else { continue };
+                let Some(node) = esp::story::parse(&rec, id) else {
+                    continue;
+                };
                 let conditions = node
                     .conditions
                     .iter()
@@ -143,13 +148,22 @@ impl Engine {
         for v in sm.roots.values_mut() {
             v.sort();
         }
-        log::info!("story manager: {} nodes, {} event types", sm.nodes.len(), sm.roots.len());
+        log::info!(
+            "story manager: {} nodes, {} event types",
+            sm.nodes.len(),
+            sm.roots.len()
+        );
     }
 
     /// Run an event down the Story Manager's tree. True if a quest started.
     pub fn send_story_event(&mut self, event: StoryEvent) -> bool {
         self.build_story();
-        let roots = self.story.roots.get(&event.code).cloned().unwrap_or_default();
+        let roots = self
+            .story
+            .roots
+            .get(&event.code)
+            .cloned()
+            .unwrap_or_default();
         let outer = self.story.active.replace(event.clone());
         let mut started = false;
         for r in roots {
@@ -169,21 +183,42 @@ impl Engine {
     }
 
     fn story_node_passes(&self, def: &NodeDef) -> bool {
-        condition::evaluate(self, &def.conditions, condition::Context { subject: Some(PLAYER_REF), ..Default::default() })
+        condition::evaluate(
+            self,
+            &def.conditions,
+            condition::Context {
+                subject: Some(PLAYER_REF),
+                ..Default::default()
+            },
+        )
     }
 
     /// Quests of a node and below that are running.
     fn story_running_under(&self, id: FormId) -> usize {
-        let Some(def) = self.story.nodes.get(&id) else { return 0 };
+        let Some(def) = self.story.nodes.get(&id) else {
+            return 0;
+        };
         match &def.node.kind {
-            NodeKind::Quest { quests, .. } => quests.iter().filter(|q| self.scripts.quests.get(&q.quest).is_some_and(|s| s.running)).count(),
-            _ => self.story.children.get(&id).map_or(0, |k| k.iter().map(|&c| self.story_running_under(c)).sum()),
+            NodeKind::Quest { quests, .. } => quests
+                .iter()
+                .filter(|q| self.scripts.quests.get(&q.quest).is_some_and(|s| s.running))
+                .count(),
+            _ => self
+                .story
+                .children
+                .get(&id)
+                .map_or(0, |k| k.iter().map(|&c| self.story_running_under(c)).sum()),
         }
     }
 
     fn run_story_node(&mut self, id: FormId, event: &StoryEvent) -> Outcome {
-        let none = Outcome { started: false, consumed: false };
-        let Some(def) = self.story.nodes.get(&id).cloned() else { return none };
+        let none = Outcome {
+            started: false,
+            consumed: false,
+        };
+        let Some(def) = self.story.nodes.get(&id).cloned() else {
+            return none;
+        };
         let node = &def.node;
         if !self.story_node_passes(&def) {
             return none;
@@ -205,16 +240,30 @@ impl Engine {
                         return o;
                     }
                 }
-                Outcome { started, consumed: false }
+                Outcome {
+                    started,
+                    consumed: false,
+                }
             }
             NodeKind::Quest { quests, num_to_run } => {
                 let mut order: Vec<usize> = (0..quests.len()).collect();
                 if node.node_flags & flags::RANDOM != 0 {
                     self.shuffle(&mut order);
                 }
-                let want = if node.quest_flags & flags::NUM_QUESTS_TO_RUN != 0 { (*num_to_run).max(1) } else { 1 };
+                let want = if node.quest_flags & flags::NUM_QUESTS_TO_RUN != 0 {
+                    (*num_to_run).max(1)
+                } else {
+                    1
+                };
                 let all_before_repeat = node.quest_flags & flags::DO_ALL_BEFORE_REPEATING != 0;
-                if all_before_repeat && quests.iter().all(|q| self.story.ran.get(&id).is_some_and(|r| r.contains(&q.quest))) {
+                if all_before_repeat
+                    && quests.iter().all(|q| {
+                        self.story
+                            .ran
+                            .get(&id)
+                            .is_some_and(|r| r.contains(&q.quest))
+                    })
+                {
                     self.story.ran.remove(&id);
                 }
                 let now = self.game_hours_total();
@@ -224,16 +273,36 @@ impl Engine {
                     if self.scripts.quests.get(&q.quest).is_some_and(|s| s.running) {
                         continue;
                     }
-                    if q.reset_hours > 0.0 && self.story.last_run.get(&q.quest).is_some_and(|&t| now - t < q.reset_hours as f64) {
+                    if q.reset_hours > 0.0
+                        && self
+                            .story
+                            .last_run
+                            .get(&q.quest)
+                            .is_some_and(|&t| now - t < q.reset_hours as f64)
+                    {
                         continue;
                     }
-                    if all_before_repeat && self.story.ran.get(&id).is_some_and(|r| r.contains(&q.quest)) {
+                    if all_before_repeat
+                        && self
+                            .story
+                            .ran
+                            .get(&id)
+                            .is_some_and(|r| r.contains(&q.quest))
+                    {
                         continue;
                     }
                     if !self.start_quest_with(q.quest, Some(event.clone())) {
                         continue;
                     }
-                    log::info!("story manager: {} starts {} ({})", event.name(), self.lo.get(q.quest).and_then(|r| r.editor_id()).unwrap_or_default(), node.editor_id);
+                    log::info!(
+                        "story manager: {} starts {} ({})",
+                        event.name(),
+                        self.lo
+                            .get(q.quest)
+                            .and_then(|r| r.editor_id())
+                            .unwrap_or_default(),
+                        node.editor_id
+                    );
                     self.story.last_run.insert(q.quest, now);
                     self.story.ran.entry(id).or_default().insert(q.quest);
                     shares |= q.flags & flags::QUEST_SHARES_EVENT != 0;
@@ -242,7 +311,10 @@ impl Engine {
                         break;
                     }
                 }
-                Outcome { started: n > 0, consumed: n > 0 && !shares }
+                Outcome {
+                    started: n > 0,
+                    consumed: n > 0 && !shares,
+                }
             }
         }
     }
@@ -257,13 +329,20 @@ impl Engine {
     /// The event a condition reads: the one being run down the tree, else the
     /// one that started the quest.
     pub(crate) fn story_event_for(&self, quest: Option<FormId>) -> Option<&StoryEvent> {
-        self.story.active.as_ref().or_else(|| quest.and_then(|q| self.scripts.quests.get(&q)).and_then(|s| s.event.as_ref()))
+        self.story.active.as_ref().or_else(|| {
+            quest
+                .and_then(|q| self.scripts.quests.get(&q))
+                .and_then(|s| s.event.as_ref())
+        })
     }
 
     /// The Papyrus event a quest started by `e` gets (`Quest.OnStory...`) and
     /// its arguments: the members in the order its parameters name them.
     /// None for `SKIL` (a skill's name, not a member) and unknown types.
-    pub(crate) fn story_papyrus_event(&self, e: &StoryEvent) -> Option<(&'static str, Vec<papyrus::Value>)> {
+    pub(crate) fn story_papyrus_event(
+        &self,
+        e: &StoryEvent,
+    ) -> Option<(&'static str, Vec<papyrus::Value>)> {
         let (name, members): (&str, &[&[u8; 2]]) = match &e.code {
             b"ADCR" => ("OnStoryCrimeGold", &[b"R1", b"R2", b"F1", b"V1", b"V2"]),
             b"ADIA" => ("OnStoryDialogue", &[b"L1", b"R1", b"R2"]),
@@ -290,7 +369,10 @@ impl Engine {
             b"NVPE" => ("OnStoryNewVoicePower", &[b"R1", b"F1"]),
             b"PFIN" => ("OnStoryPayFine", &[b"R1", b"R2", b"F1", b"V1"]),
             b"PRFV" => ("OnStoryPlayerGetsFavor", &[b"R1"]),
-            b"REMP" => ("OnStoryRemoveFromPlayer", &[b"R1", b"R2", b"L1", b"F1", b"V1"]),
+            b"REMP" => (
+                "OnStoryRemoveFromPlayer",
+                &[b"R1", b"R2", b"L1", b"F1", b"V1"],
+            ),
             b"SCPT" => ("OnStoryScript", &[b"K1", b"L1", b"R1", b"R2", b"V1", b"V2"]),
             b"STIJ" => ("OnStoryServedTime", &[b"L1", b"F1", b"V1", b"V2"]),
             b"TRES" => ("OnStoryTrespass", &[b"R1", b"R2", b"L1", b"V1"]),
@@ -300,7 +382,9 @@ impl Engine {
             .iter()
             .map(|&&m| match m[0] {
                 b'V' => papyrus::Value::Int(e.member_value(m) as i32),
-                _ => e.member_form(m).map_or(papyrus::Value::None, |f| self.object_value(f)),
+                _ => e
+                    .member_form(m)
+                    .map_or(papyrus::Value::None, |f| self.object_value(f)),
             })
             .collect();
         Some((name, args))
@@ -339,7 +423,16 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .map(|a| (a.ref_id, a.pos, a.dead, a.combat.is_none() && a.bleeding.is_none() && a.graph.as_ref().is_some_and(|g| g.project().humanoid())))
+            .map(|a| {
+                (
+                    a.ref_id,
+                    a.pos,
+                    a.dead,
+                    a.combat.is_none()
+                        && a.bleeding.is_none()
+                        && a.graph.as_ref().is_some_and(|g| g.project().humanoid()),
+                )
+            })
             .collect();
         let mut found = Vec::new();
         for &(body, at, dead, _) in &actors {
@@ -347,14 +440,23 @@ impl Engine {
                 continue;
             }
             for &(finder, from, finder_dead, calm) in &actors {
-                if finder_dead || !calm || self.story.found_bodies.contains(&(finder, body)) || from.distance(at) > BODY_NOTICE_DISTANCE {
+                if finder_dead
+                    || !calm
+                    || self.story.found_bodies.contains(&(finder, body))
+                    || from.distance(at) > BODY_NOTICE_DISTANCE
+                {
                     continue;
                 }
                 // Nothing in between, eye to body.
                 let eye = from + glam::Vec3::Z * 110.0;
                 let to = at + glam::Vec3::Z * 20.0 - eye;
                 let dist = to.length().max(1.0);
-                let seen = match self.physics.raycast_excluding(eye, to / dist, (dist - 20.0).max(0.0), finder) {
+                let seen = match self.physics.raycast_excluding(
+                    eye,
+                    to / dist,
+                    (dist - 20.0).max(0.0),
+                    finder,
+                ) {
                     Some((_, owner)) => owner == Some(body),
                     None => true,
                 };
@@ -385,15 +487,25 @@ impl Engine {
         );
         let interior = matches!(self.location, crate::engine::Location::Interior(_));
         let suffix = if interior { "Interior" } else { "" };
-        let chance = crate::ai::combat::gmst_f32(&self.lo, &format!("fAISocialchanceForConversation{suffix}"), 10.0);
-        let radius = crate::ai::combat::gmst_f32(&self.lo, &format!("fAISocialRadiusToTriggerConversation{suffix}"), 500.0);
+        let chance = crate::ai::combat::gmst_f32(
+            &self.lo,
+            &format!("fAISocialchanceForConversation{suffix}"),
+            10.0,
+        );
+        let radius = crate::ai::combat::gmst_f32(
+            &self.lo,
+            &format!("fAISocialRadiusToTriggerConversation{suffix}"),
+            500.0,
+        );
         let talking = self.conversation.as_ref().map(|c| c.npc_ref);
         // Who could talk: loaded humanoids, alive, calm, not in a scene or a conversation.
         let free: Vec<(FormId, glam::Vec3)> = self
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.combat.is_none() && a.bleeding.is_none() && a.exiting.is_none())
+            .filter(|a| {
+                !a.dead && a.combat.is_none() && a.bleeding.is_none() && a.exiting.is_none()
+            })
             .filter(|a| a.graph.as_ref().is_some_and(|g| g.project().humanoid()))
             .filter(|a| talking != Some(a.ref_id))
             .map(|a| (a.ref_id, a.pos))
@@ -409,10 +521,15 @@ impl Engine {
         for r in due {
             let wait = lo + (self.rand() % 1000) as f64 / 1000.0 * (hi - lo).max(0.0);
             self.story.next_social.insert(r, now + wait);
-            if (self.rand() % 100) as f32 >= chance || self.scene_of_actor(r).is_some() || self.is_barking(r) {
+            if (self.rand() % 100) as f32 >= chance
+                || self.scene_of_actor(r).is_some()
+                || self.is_barking(r)
+            {
                 continue;
             }
-            let Some(&(_, pos)) = free.iter().find(|(x, _)| *x == r) else { continue };
+            let Some(&(_, pos)) = free.iter().find(|(x, _)| *x == r) else {
+                continue;
+            };
             let mut near: Vec<(f32, FormId)> = free
                 .iter()
                 .filter(|(o, _)| *o != r)
@@ -420,7 +537,9 @@ impl Engine {
                 .filter(|(d, o)| *d <= radius && self.scene_of_actor(*o).is_none())
                 .collect();
             near.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let Some(&(_, other)) = near.first() else { continue };
+            let Some(&(_, other)) = near.first() else {
+                continue;
+            };
             let mut e = StoryEvent::new(b"ADIA");
             e.refs = [r, other];
             e.locs[0] = self.ref_current_location(r).unwrap_or_default();
@@ -438,7 +557,13 @@ impl Engine {
     /// item, V1 how it was acquired (1 stolen, 4 picked up, 5 from a
     /// container, 6 from a body). Taking `count` of something stolen is a
     /// crime, at the item's value.
-    pub(crate) fn send_player_add_item(&mut self, item: FormId, count: i32, source: FormId, container: bool) {
+    pub(crate) fn send_player_add_item(
+        &mut self,
+        item: FormId,
+        count: i32,
+        source: FormId,
+        container: bool,
+    ) {
         let body = container && self.is_body(source);
         let owner = self.source_owner(source, container);
         let how = match () {
@@ -447,21 +572,35 @@ impl Engine {
             _ if container => 5,
             _ => 4,
         };
-        let owner_ref = owner.filter(|&o| o != FormId(0x7)).and_then(|o| self.npc_refs_index().get(&o).copied());
+        let owner_ref = owner
+            .filter(|&o| o != FormId(0x7))
+            .and_then(|o| self.npc_refs_index().get(&o).copied());
         if how == 1 {
-            let value = crate::world::inventory::item_info(&self.lo, item).map_or(0, |i| i.value) * count.max(1);
+            let value = crate::world::inventory::item_info(&self.lo, item).map_or(0, |i| i.value)
+                * count.max(1);
             let faction = owner.filter(|&o| self.lo.tag_of(o).is_some_and(|t| t.0 == *b"FACT"));
             let seen = self.commit_crime(crate::crime::CrimeType::Steal, owner_ref, faction, value);
             if let Some(f) = owner_ref.and_then(|o| self.crime_faction(o)).or(faction) {
                 self.add_stolen_value(f, value, seen);
             }
         }
-        self.send_player_add_item_as(item, owner_ref, if container { source } else { FormId::NULL }, how);
+        self.send_player_add_item_as(
+            item,
+            owner_ref,
+            if container { source } else { FormId::NULL },
+            how,
+        );
     }
 
     /// A player add item event (`AIPL`, see `send_player_add_item`) with the
     /// way it was acquired given (3: pickpocketed).
-    pub(crate) fn send_player_add_item_as(&mut self, item: FormId, owner_ref: Option<FormId>, container: FormId, how: i32) {
+    pub(crate) fn send_player_add_item_as(
+        &mut self,
+        item: FormId,
+        owner_ref: Option<FormId>,
+        container: FormId,
+        how: i32,
+    ) {
         let mut e = StoryEvent::new(b"AIPL");
         e.refs = [owner_ref.unwrap_or_default(), container];
         e.locs[0] = self.current_location().unwrap_or_default();
@@ -479,12 +618,19 @@ impl Engine {
     /// Who owns what the player takes from `source` (a reference picked up, or
     /// a container or body).
     pub(crate) fn source_owner(&self, source: FormId, container: bool) -> Option<FormId> {
-        crate::ai::furniture::owner_of(&self.lo, source).filter(|_| !(container && self.is_body(source)))
+        crate::ai::furniture::owner_of(&self.lo, source)
+            .filter(|_| !(container && self.is_body(source)))
     }
 
     /// Whom `item` taken from `source` is stolen from, if it is stealing.
-    pub(crate) fn stolen_from(&self, item: FormId, source: FormId, container: bool) -> Option<FormId> {
-        self.source_owner(source, container).filter(|&o| self.is_stealing(item, o))
+    pub(crate) fn stolen_from(
+        &self,
+        item: FormId,
+        source: FormId,
+        container: bool,
+    ) -> Option<FormId> {
+        self.source_owner(source, container)
+            .filter(|&o| self.is_stealing(item, o))
     }
 
     /// An actor greeting another (`AHEL`: R1 who says hello, R2 to whom, L1
@@ -514,7 +660,13 @@ impl Engine {
     /// A kill (`KILL`: R1 the victim, R2 the killer, L1 where, V1 the crime
     /// status: 0 none, 1 an unreported murder, 2 a reported one; V2 the
     /// relationship rank between them before).
-    pub(crate) fn send_kill_event(&mut self, victim: FormId, killer: Option<FormId>, crime: i32, rank: i32) {
+    pub(crate) fn send_kill_event(
+        &mut self,
+        victim: FormId,
+        killer: Option<FormId>,
+        crime: i32,
+        rank: i32,
+    ) {
         let mut e = StoryEvent::new(b"KILL");
         e.refs = [victim, killer.unwrap_or_default()];
         e.locs[0] = self.ref_current_location(victim).unwrap_or_default();
@@ -525,7 +677,13 @@ impl Engine {
     /// Crime gold added for a crime the player committed (`ADCR`: R1 the
     /// victim, R2 the criminal, F1 the faction, V1 the gold, V2 the crime:
     /// 0 steal, 1 pickpocket, 2 trespass, 3 attack, 4 murder, 5 escape).
-    pub(crate) fn send_crime_gold_event(&mut self, victim: Option<FormId>, faction: FormId, gold: i32, crime: crate::crime::CrimeType) {
+    pub(crate) fn send_crime_gold_event(
+        &mut self,
+        victim: Option<FormId>,
+        faction: FormId,
+        gold: i32,
+        crime: crate::crime::CrimeType,
+    ) {
         let mut e = StoryEvent::new(b"ADCR");
         e.refs = [victim.unwrap_or_default(), PLAYER_REF];
         e.form = faction;
@@ -547,7 +705,12 @@ impl Engine {
 
     /// The player pays a bounty (`PFIN`: R1 the criminal, R2 the guard, F1
     /// the crime group, V1 the crime gold).
-    pub(crate) fn send_pay_fine_event(&mut self, guard: Option<FormId>, faction: FormId, gold: i32) {
+    pub(crate) fn send_pay_fine_event(
+        &mut self,
+        guard: Option<FormId>,
+        faction: FormId,
+        gold: i32,
+    ) {
         let mut e = StoryEvent::new(b"PFIN");
         e.refs = [PLAYER_REF, guard.unwrap_or_default()];
         e.form = faction;
@@ -557,7 +720,13 @@ impl Engine {
 
     /// The player is put in jail (`JAIL`: R1 the guard, F1 the crime group,
     /// L1 the jail's location, V1 the crime gold it is for).
-    pub(crate) fn send_jail_event(&mut self, guard: Option<FormId>, faction: FormId, jail: Option<FormId>, gold: i32) {
+    pub(crate) fn send_jail_event(
+        &mut self,
+        guard: Option<FormId>,
+        faction: FormId,
+        jail: Option<FormId>,
+        gold: i32,
+    ) {
         let mut e = StoryEvent::new(b"JAIL");
         e.refs[0] = guard.unwrap_or_default();
         e.form = faction;
@@ -577,7 +746,13 @@ impl Engine {
 
     /// The player served their sentence (`STIJ`: L1 the jail's location, F1
     /// the crime group, V1 the crime gold, V2 the days).
-    pub(crate) fn send_served_time_event(&mut self, faction: FormId, jail: Option<FormId>, gold: i32, days: i32) {
+    pub(crate) fn send_served_time_event(
+        &mut self,
+        faction: FormId,
+        jail: Option<FormId>,
+        gold: i32,
+        days: i32,
+    ) {
         let mut e = StoryEvent::new(b"STIJ");
         e.form = faction;
         e.locs[0] = jail.unwrap_or_default();

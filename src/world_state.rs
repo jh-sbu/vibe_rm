@@ -65,20 +65,34 @@ impl Engine {
     /// Before a cell unloads: where its dead actors' bodies came to rest (and
     /// how), and how hurt the living are.
     pub(crate) fn remember_actors(&mut self, key: crate::render::CellKey) {
-        let Some(place) = self.place_of_key(key) else { return };
-        let Some(rt) = self.cells.get(&key) else { return };
+        let Some(place) = self.place_of_key(key) else {
+            return;
+        };
+        let Some(rt) = self.cells.get(&key) else {
+            return;
+        };
         let now = self.scripts.real_time;
         let mut rest = Vec::new();
         let mut hurt = Vec::new();
         for a in &rt.actors {
             if !a.dead {
-                let w = (a.health < a.stats.max_health - 0.5)
-                    .then(|| Wounds { health: a.health, max: a.stats.max_health, rate: a.stats.health_regen / 100.0, at: now });
+                let w = (a.health < a.stats.max_health - 0.5).then(|| Wounds {
+                    health: a.health,
+                    max: a.stats.max_health,
+                    rate: a.stats.health_regen / 100.0,
+                    at: now,
+                });
                 hurt.push((a.ref_id, w));
                 continue;
             }
-            let bodies = a.ragdoll.as_ref().map(|(rd, _)| self.physics.ragdoll_bodies(rd));
-            let mut pos = bodies.as_ref().and_then(|b| b.first()).map_or(a.pos, |m| m.w_axis.truncate());
+            let bodies = a
+                .ragdoll
+                .as_ref()
+                .map(|(rd, _)| self.physics.ragdoll_bodies(rd));
+            let mut pos = bodies
+                .as_ref()
+                .and_then(|b| b.first())
+                .map_or(a.pos, |m| m.w_axis.truncate());
             if let Some(z) = self.nav.height_at(pos) {
                 pos.z = z;
             }
@@ -101,7 +115,10 @@ impl Engine {
     /// The health a loading actor comes back with (its most, unless it left hurt).
     pub(crate) fn returning_health(&mut self, actor: FormId, max: f32) -> f32 {
         let now = self.scripts.real_time;
-        self.world_state.wounds.remove(&actor).map_or(max, |w| w.health_at(now).min(max))
+        self.world_state
+            .wounds
+            .remove(&actor)
+            .map_or(max, |w| w.health_at(now).min(max))
     }
 
     /// Where a dead actor's body lies.
@@ -122,7 +139,9 @@ impl Engine {
         if let Some(m) = self.world_state.moved.get(&r) {
             return m.rot;
         }
-        self.reference_of(r).map(|rf| rf.rotation).unwrap_or_default()
+        self.reference_of(r)
+            .map(|rf| rf.rotation)
+            .unwrap_or_default()
     }
 
     /// The place a position is in, in the worldspace or interior of `like`.
@@ -141,21 +160,37 @@ impl Engine {
             self.queue_player_moveto(near);
             return true;
         }
-        let Some((like, _)) = self.current_place_of(near).or_else(|| self.current_place_of(r)) else { return false };
+        let Some((like, _)) = self
+            .current_place_of(near)
+            .or_else(|| self.current_place_of(r))
+        else {
+            return false;
+        };
         self.move_ref_to(r, Self::place_at(like, pos), pos, rot)
     }
 
     /// Back where it was placed in the editor (`MoveToMyEditorLocation`).
     pub fn move_to_editor_location(&mut self, r: FormId) -> bool {
-        let Some(rf) = self.lo.get(r).map(|rec| crate::world::records::reference(&rec)) else { return false };
-        let Some(place) = self.editor_place_of(r, rf.position) else { return false };
+        let Some(rf) = self
+            .lo
+            .get(r)
+            .map(|rec| crate::world::records::reference(&rec))
+        else {
+            return false;
+        };
+        let Some(place) = self.editor_place_of(r, rf.position) else {
+            return false;
+        };
         let done = self.move_ref_to(r, place, rf.position, rf.rotation);
         self.world_state.moved.remove(&r);
         done
     }
 
     fn move_ref_to(&mut self, r: FormId, place: Place, pos: Vec3, rot: Vec3) -> bool {
-        let actor = self.created(r).map_or_else(|| self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR"), |c| c.actor);
+        let actor = self.created(r).map_or_else(
+            || self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR"),
+            |c| c.actor,
+        );
         let old = self.ref_transform(r);
         self.world_state.moved.insert(r, Moved { place, pos, rot });
         if let Some(c) = self.created_refs.refs.get_mut(&r) {
@@ -175,7 +210,11 @@ impl Engine {
         let rf = self.reference_of(r)?;
         let pos = self.ref_position(r)?;
         let rot = self.ref_rotation(r);
-        Some(Mat4::from_scale_rotation_translation(Vec3::splat(rf.scale), crate::world::records::rotation_from_euler(rot), pos))
+        Some(Mat4::from_scale_rotation_translation(
+            Vec3::splat(rf.scale),
+            crate::world::records::rotation_from_euler(rot),
+            pos,
+        ))
     }
 
     fn move_actor(&mut self, r: FormId, place: Place, pos: Vec3, rot: Vec3) {
@@ -204,7 +243,11 @@ impl Engine {
 
     fn move_object(&mut self, r: FormId, place: Place, old: Mat4, pos: Vec3, rot: Vec3) {
         let scale = old.to_scale_rotation_translation().0.x;
-        let new = Mat4::from_scale_rotation_translation(Vec3::splat(scale), crate::world::records::rotation_from_euler(rot), pos);
+        let new = Mat4::from_scale_rotation_translation(
+            Vec3::splat(scale),
+            crate::world::records::rotation_from_euler(rot),
+            pos,
+        );
         let delta = new * old.inverse();
         let loaded = self.cells.values().any(|rt| rt.refs.contains(&r));
         let shown = self.key_of_place(place).is_some();
@@ -258,11 +301,21 @@ impl Engine {
         if self.world_state.moved.is_empty() {
             return;
         }
-        let away = |r: &FormId| self.world_state.moved.get(r).is_some_and(|m| m.place != place);
+        let away = |r: &FormId| {
+            self.world_state
+                .moved
+                .get(r)
+                .is_some_and(|m| m.place != place)
+        };
         objects.retain(|o| !away(&o.ref_id));
         lights.retain(|l| !away(&l.ref_id));
         doors.retain(|d| !away(&d.ref_id));
-        for (&r, m) in self.world_state.moved.iter().filter(|(_, m)| m.place == place) {
+        for (&r, m) in self
+            .world_state
+            .moved
+            .iter()
+            .filter(|(_, m)| m.place == place)
+        {
             if self.created(r).is_some() || self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR") {
                 continue;
             }
@@ -273,11 +326,21 @@ impl Engine {
             crate::world::cell::add_reference(&self.lo, r, &mut o, &mut l, &mut d);
             for mut x in o {
                 let scale = x.transform.to_scale_rotation_translation().0.x;
-                x.transform = Mat4::from_scale_rotation_translation(Vec3::splat(scale), crate::world::records::rotation_from_euler(m.rot), m.pos);
+                x.transform = Mat4::from_scale_rotation_translation(
+                    Vec3::splat(scale),
+                    crate::world::records::rotation_from_euler(m.rot),
+                    m.pos,
+                );
                 objects.push(x);
             }
-            lights.extend(l.into_iter().map(|x| crate::world::cell::PointLight { position: m.pos, ..x }));
-            doors.extend(d.into_iter().map(|x| crate::world::cell::Door { position: m.pos, ..x }));
+            lights.extend(l.into_iter().map(|x| crate::world::cell::PointLight {
+                position: m.pos,
+                ..x
+            }));
+            doors.extend(d.into_iter().map(|x| crate::world::cell::Door {
+                position: m.pos,
+                ..x
+            }));
         }
     }
 }

@@ -64,7 +64,12 @@ impl Project {
         let graph = &self.graphs[gi].1;
         match &graph.generators[g] {
             Generator::Clip { .. } => Some((gi, g)),
-            Generator::StateMachine { start, start_variable, states, .. } => {
+            Generator::StateMachine {
+                start,
+                start_variable,
+                states,
+                ..
+            } => {
                 // A bound start state takes the variable's initial value, which
                 // describes a standing third-person actor (`i1stPerson` = 0, ...).
                 let bound = start_variable.and_then(|v| graph.variable_defaults.get(v).copied());
@@ -74,15 +79,18 @@ impl Project {
                 entered.push((gi, g, s.id));
                 self.descend(gi, s.generator?, stack, nested, entered, depth + 1)
             }
-            Generator::Blender { .. } | Generator::Selector { .. } | Generator::Wrap { .. } | Generator::BoneSwitch { .. } => {
+            Generator::Blender { .. }
+            | Generator::Selector { .. }
+            | Generator::Wrap { .. }
+            | Generator::BoneSwitch { .. } => {
                 graph.generators[g].children().into_iter().find_map(|c| {
-                let (mark, emark) = (stack.len(), entered.len());
-                let r = self.descend(gi, c, stack, nested, entered, depth + 1);
-                if r.is_none() {
-                    stack.truncate(mark);
-                    entered.truncate(emark);
-                }
-                r
+                    let (mark, emark) = (stack.len(), entered.len());
+                    let r = self.descend(gi, c, stack, nested, entered, depth + 1);
+                    if r.is_none() {
+                        stack.truncate(mark);
+                        entered.truncate(emark);
+                    }
+                    r
                 })
             }
             Generator::Reference { behavior, .. } => {
@@ -99,12 +107,23 @@ impl Project {
     /// A clip generator named `name` (case-insensitive), e.g. loose idles whose
     /// event names their clip (`idle_A_leg_shift` -> `MT_idle_A_leg_shift`).
     pub fn clip_named(&self, name: &str) -> Option<PlayedClip> {
-        self.graphs.iter().flat_map(|(_, g)| &g.generators).find_map(|g| match g {
-            Generator::Clip { name: n, animation, mode, speed, .. } if n.eq_ignore_ascii_case(name) => {
-                Some(PlayedClip { animation: animation.clone(), mode: *mode, speed: *speed })
-            }
-            _ => None,
-        })
+        self.graphs
+            .iter()
+            .flat_map(|(_, g)| &g.generators)
+            .find_map(|g| match g {
+                Generator::Clip {
+                    name: n,
+                    animation,
+                    mode,
+                    speed,
+                    ..
+                } if n.eq_ignore_ascii_case(name) => Some(PlayedClip {
+                    animation: animation.clone(),
+                    mode: *mode,
+                    speed: *speed,
+                }),
+                _ => None,
+            })
     }
 
     /// Clips played after `event`, in order: the clip the event leads to, then the
@@ -112,7 +131,10 @@ impl Project {
     /// into a loop), stopping at the first looping clip. One sequence per place in
     /// the project that handles the event.
     pub fn clips_for_event(&self, event: &str) -> Vec<Vec<PlayedClip>> {
-        self.play_event(event).into_iter().map(|p| p.clips).collect()
+        self.play_event(event)
+            .into_iter()
+            .map(|p| p.clips)
+            .collect()
     }
 
     /// Like [`Project::clips_for_event`], keeping where each sequence ends up so
@@ -120,9 +142,13 @@ impl Project {
     pub fn play_event(&self, event: &str) -> Vec<Playback> {
         let mut out: Vec<Playback> = Vec::new();
         for (gi, (_, graph)) in self.graphs.iter().enumerate() {
-            let Some(eid) = graph.event_id(event) else { continue };
+            let Some(eid) = graph.event_id(event) else {
+                continue;
+            };
             for (sm, state, t) in graph.transitions_on(eid) {
-                let Some(start) = state.generator else { continue };
+                let Some(start) = state.generator else {
+                    continue;
+                };
                 let pb = self.follow((gi, vec![(sm, state.id)]), start, t.to_nested);
                 if !pb.clips.is_empty() && !out.iter().any(|o| o.clips == pb.clips) {
                     out.push(pb);
@@ -140,7 +166,12 @@ impl Project {
         let eid = graph.event_id(event)?;
         for depth in (0..stack.len()).rev() {
             let (sm, cur) = stack[depth];
-            let Generator::StateMachine { states, wildcards, .. } = &graph.generators[sm] else { continue };
+            let Generator::StateMachine {
+                states, wildcards, ..
+            } = &graph.generators[sm]
+            else {
+                continue;
+            };
             let here = states.iter().find(|s| s.id == cur);
             let tr = here
                 .into_iter()
@@ -163,11 +194,23 @@ impl Project {
     fn enter_events(&self, entered: &[Entered], clip: usize, out: &mut Vec<RaisedEvent>) {
         for &(gi, sm, id) in entered {
             let graph = &self.graphs[gi].1;
-            let Generator::StateMachine { states, .. } = &graph.generators[sm] else { continue };
-            let Some(state) = states.iter().find(|s| s.id == id) else { continue };
+            let Generator::StateMachine { states, .. } = &graph.generators[sm] else {
+                continue;
+            };
+            let Some(state) = states.iter().find(|s| s.id == id) else {
+                continue;
+            };
             for e in &state.enter_events {
-                let Some(event) = graph.event_name(e.event) else { continue };
-                out.push(RaisedEvent { clip, time: 0.0, from_end: false, event: event.to_owned(), payload: e.payload.clone() });
+                let Some(event) = graph.event_name(e.event) else {
+                    continue;
+                };
+                out.push(RaisedEvent {
+                    clip,
+                    time: 0.0,
+                    from_end: false,
+                    event: event.to_owned(),
+                    payload: e.payload.clone(),
+                });
             }
         }
     }
@@ -177,17 +220,37 @@ impl Project {
         let (mut gi, mut stack) = cursor;
         let mut seq: Vec<PlayedClip> = Vec::new();
         let mut events: Vec<RaisedEvent> = Vec::new();
-        let mut entered: Vec<Entered> = stack.last().map(|&(sm, id)| (gi, sm, id)).into_iter().collect();
+        let mut entered: Vec<Entered> = stack
+            .last()
+            .map(|&(sm, id)| (gi, sm, id))
+            .into_iter()
+            .collect();
         let mut next = Some(start);
         while let Some(g) = next.take() {
             if seq.len() >= 6 {
                 break;
             }
-            let Some((cgi, clip)) = self.descend(gi, g, &mut stack, &mut nested, &mut entered, 0) else { break };
+            let Some((cgi, clip)) = self.descend(gi, g, &mut stack, &mut nested, &mut entered, 0)
+            else {
+                break;
+            };
             gi = cgi;
             let graph = &self.graphs[gi].1;
-            let Generator::Clip { animation, mode, speed, triggers, .. } = &graph.generators[clip] else { break };
-            let played = PlayedClip { animation: animation.clone(), mode: *mode, speed: *speed };
+            let Generator::Clip {
+                animation,
+                mode,
+                speed,
+                triggers,
+                ..
+            } = &graph.generators[clip]
+            else {
+                break;
+            };
+            let played = PlayedClip {
+                animation: animation.clone(),
+                mode: *mode,
+                speed: *speed,
+            };
             if seq.contains(&played) {
                 break;
             }
@@ -196,7 +259,13 @@ impl Project {
             for t in triggers {
                 if let Some(event) = graph.event_name(t.event) {
                     let (time, from_end) = (t.time, t.from_end);
-                    events.push(RaisedEvent { clip: seq.len(), time, from_end, event: event.to_owned(), payload: t.payload.clone() });
+                    events.push(RaisedEvent {
+                        clip: seq.len(),
+                        time,
+                        from_end,
+                        event: event.to_owned(),
+                        payload: t.payload.clone(),
+                    });
                 }
             }
             seq.push(played);
@@ -207,13 +276,20 @@ impl Project {
             'triggers: for t in triggers {
                 for depth in (0..stack.len()).rev() {
                     let (sm, cur) = stack[depth];
-                    let Generator::StateMachine { states, wildcards, .. } = &graph.generators[sm] else { continue };
+                    let Generator::StateMachine {
+                        states, wildcards, ..
+                    } = &graph.generators[sm]
+                    else {
+                        continue;
+                    };
                     let here = states.iter().find(|s| s.id == cur);
                     let tr = here
                         .into_iter()
                         .flat_map(|s| &s.transitions)
                         .chain(wildcards)
-                        .find(|x| x.event == t.event && x.to_state != cur && x.flags & FLAG_DISABLED == 0);
+                        .find(|x| {
+                            x.event == t.event && x.to_state != cur && x.flags & FLAG_DISABLED == 0
+                        });
                     if let Some(tr) = tr
                         && let Some(s) = states.iter().find(|s| s.id == tr.to_state)
                     {
@@ -227,7 +303,11 @@ impl Project {
                 }
             }
         }
-        Playback { clips: seq, events, cursor: (gi, stack) }
+        Playback {
+            clips: seq,
+            events,
+            cursor: (gi, stack),
+        }
     }
 }
 
@@ -253,15 +333,34 @@ mod tests {
     }
 
     fn state(id: i32, generator: GenId, transitions: Vec<Transition>) -> State {
-        State { id, name: format!("s{id}"), generator: Some(generator), transitions, enter_events: Vec::new(), exit_events: Vec::new() }
+        State {
+            id,
+            name: format!("s{id}"),
+            generator: Some(generator),
+            transitions,
+            enter_events: Vec::new(),
+            exit_events: Vec::new(),
+        }
     }
 
     /// Root SM: default idle (state 0) and a furniture SM (state 1) entered with a
     /// nested target. The furniture SM's states 7/8 are an enter clip whose
     /// `00NextClip` trigger moves on to a loop, and an exit reached by IdleChairExitStart.
     fn project() -> Project {
-        let events = ["IdleKneeling", "00NextClip", "IdleChairExitStart", "IdleOther"].map(String::from).to_vec();
-        let next = Trigger { time: -0.2, from_end: true, event: 1, payload: None };
+        let events = [
+            "IdleKneeling",
+            "00NextClip",
+            "IdleChairExitStart",
+            "IdleOther",
+        ]
+        .map(String::from)
+        .to_vec();
+        let next = Trigger {
+            time: -0.2,
+            from_end: true,
+            event: 1,
+            payload: None,
+        };
         let generators = vec![
             /* 0 */
             Generator::StateMachine {
@@ -287,7 +386,11 @@ mod tests {
                 ],
                 wildcards: vec![],
             },
-            /* 3 */ Generator::Reference { name: "Other".into(), behavior: "Behaviors\\Other.hkx".into() },
+            /* 3 */
+            Generator::Reference {
+                name: "Other".into(),
+                behavior: "Behaviors\\Other.hkx".into(),
+            },
             /* 4 */ clip("KneelEnter", ClipMode::SinglePlay, vec![next]),
             /* 5 */ clip("KneelIdle", ClipMode::Looping, vec![]),
             /* 6 */ clip("KneelExit", ClipMode::SinglePlay, vec![]),
@@ -299,10 +402,26 @@ mod tests {
             min_cyclic: 0.0,
             max_cyclic: 1.0,
             flags: 0,
-            children: vec![BlendChild { generator: Some(1), weight: 1.0, weight_variable: None, bone_weights: None }],
+            children: vec![BlendChild {
+                generator: Some(1),
+                weight: 1.0,
+                weight_variable: None,
+                bone_weights: None,
+            }],
         };
-        let other = BehaviorGraph::new("Other", Some(0), vec![blend, clip("OtherLoop", ClipMode::Looping, vec![])], vec![]);
-        Project { graphs: vec![("behaviors\\master.hkx".into(), master), ("behaviors\\other.hkx".into(), other)], character: None }
+        let other = BehaviorGraph::new(
+            "Other",
+            Some(0),
+            vec![blend, clip("OtherLoop", ClipMode::Looping, vec![])],
+            vec![],
+        );
+        Project {
+            graphs: vec![
+                ("behaviors\\master.hkx".into(), master),
+                ("behaviors\\other.hkx".into(), other),
+            ],
+            character: None,
+        }
     }
 
     fn names(clips: &[PlayedClip]) -> Vec<&str> {
@@ -314,7 +433,10 @@ mod tests {
         let p = project();
         let plays = p.play_event("idlekneeling");
         assert_eq!(plays.len(), 1);
-        assert_eq!(names(&plays[0].clips), ["Animations\\KneelEnter.hkx", "Animations\\KneelIdle.hkx"]);
+        assert_eq!(
+            names(&plays[0].clips),
+            ["Animations\\KneelEnter.hkx", "Animations\\KneelIdle.hkx"]
+        );
         let exit = p.then_event(&plays[0], "IdleChairExitStart").unwrap();
         assert_eq!(names(&exit.clips), ["Animations\\KneelExit.hkx"]);
     }
@@ -328,7 +450,10 @@ mod tests {
 
     #[test]
     fn clip_lookup_by_name() {
-        assert_eq!(project().clip_named("kneelidle").unwrap().animation, "Animations\\KneelIdle.hkx");
+        assert_eq!(
+            project().clip_named("kneelidle").unwrap().animation,
+            "Animations\\KneelIdle.hkx"
+        );
         assert!(project().play_event("Unknown").is_empty());
     }
 
@@ -336,17 +461,34 @@ mod tests {
     fn state_enter_events_and_trigger_payloads() {
         let mut p = project();
         let master = &mut p.graphs[0].1;
-        master.events.extend(["AnimObjLoad", "AnimObjDraw"].map(String::from));
+        master
+            .events
+            .extend(["AnimObjLoad", "AnimObjDraw"].map(String::from));
         let (load, draw) = (4, 5);
-        let Generator::StateMachine { states, .. } = &mut master.generators[2] else { unreachable!() };
+        let Generator::StateMachine { states, .. } = &mut master.generators[2] else {
+            unreachable!()
+        };
         // Entering state 7 loads the object; the loop clip draws it 1.5 s in.
-        states[1].enter_events.push(EventProperty { event: load, payload: Some("AnimObjectBroom".into()) });
-        let Generator::Clip { triggers, .. } = &mut master.generators[5] else { unreachable!() };
-        triggers.push(Trigger { time: 1.5, from_end: false, event: draw, payload: Some("AnimObjectBroom".into()) });
+        states[1].enter_events.push(EventProperty {
+            event: load,
+            payload: Some("AnimObjectBroom".into()),
+        });
+        let Generator::Clip { triggers, .. } = &mut master.generators[5] else {
+            unreachable!()
+        };
+        triggers.push(Trigger {
+            time: 1.5,
+            from_end: false,
+            event: draw,
+            payload: Some("AnimObjectBroom".into()),
+        });
 
         let plays = p.play_event("IdleKneeling");
-        let events: Vec<(usize, &str, Option<&str>)> =
-            plays[0].events.iter().map(|e| (e.clip, e.event.as_str(), e.payload.as_deref())).collect();
+        let events: Vec<(usize, &str, Option<&str>)> = plays[0]
+            .events
+            .iter()
+            .map(|e| (e.clip, e.event.as_str(), e.payload.as_deref()))
+            .collect();
         assert_eq!(
             events,
             [
@@ -365,7 +507,9 @@ mod tests {
         let mut p = project();
         let master = &mut p.graphs[0].1;
         master.add_variable("i1stPerson", VarType::Int, 8.0);
-        let Generator::StateMachine { start_variable, .. } = &mut master.generators[2] else { unreachable!() };
+        let Generator::StateMachine { start_variable, .. } = &mut master.generators[2] else {
+            unreachable!()
+        };
         *start_variable = Some(0);
         let plays = p.play_event("IdleOther");
         assert_eq!(names(&plays[0].clips), ["Animations\\KneelIdle.hkx"]);

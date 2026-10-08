@@ -8,7 +8,7 @@ pub mod expr;
 pub mod resolve;
 pub mod runtime;
 
-pub use resolve::{PlayedClip, Playback, RaisedEvent};
+pub use resolve::{Playback, PlayedClip, RaisedEvent};
 
 use crate::{Packfile, Result};
 
@@ -93,7 +93,17 @@ impl Interval {
 
 impl Transition {
     pub fn new(event: i32, to_state: i32, to_nested: Option<i32>) -> Transition {
-        Transition { event, to_state, to_nested, flags: if to_nested.is_some() { FLAG_TO_NESTED_STATE_ID_IS_VALID } else { 0 }, ..Default::default() }
+        Transition {
+            event,
+            to_state,
+            to_nested,
+            flags: if to_nested.is_some() {
+                FLAG_TO_NESTED_STATE_ID_IS_VALID
+            } else {
+                0
+            },
+            ..Default::default()
+        }
     }
 
     pub fn disabled(&self) -> bool {
@@ -180,18 +190,42 @@ pub enum Generator {
         wildcards: Vec<Transition>,
     },
     /// Weighted blend of children (`hkbBlenderGenerator`, `hkbPoseMatchingGenerator`).
-    Blender { name: String, parameter: f32, min_cyclic: f32, max_cyclic: f32, flags: u16, children: Vec<BlendChild> },
+    Blender {
+        name: String,
+        parameter: f32,
+        min_cyclic: f32,
+        max_cyclic: f32,
+        flags: u16,
+        children: Vec<BlendChild>,
+    },
     /// One child at a time, picked by a (bound) index.
-    Selector { name: String, children: Vec<GenId>, index: i8 },
+    Selector {
+        name: String,
+        children: Vec<GenId>,
+        index: i8,
+    },
     /// A generator wrapping one child: `hkbModifierGenerator` (running a modifier
     /// alongside it) and Bethesda's tagging / sync / cyclic-blend wrappers.
-    Wrap { name: String, class: String, child: Option<GenId>, modifier: Option<ModId> },
+    Wrap {
+        name: String,
+        class: String,
+        child: Option<GenId>,
+        modifier: Option<ModId>,
+    },
     /// `BSBoneSwitchGenerator`: children replace the default on their bones. A
     /// child's weights may instead come from a character property (`properties`,
     /// e.g. the left arm for a torch), as the character file sets it.
-    BoneSwitch { name: String, default: Option<GenId>, children: Vec<(GenId, Vec<f32>)>, properties: Vec<Option<String>> },
+    BoneSwitch {
+        name: String,
+        default: Option<GenId>,
+        children: Vec<(GenId, Vec<f32>)>,
+        properties: Vec<Option<String>>,
+    },
     /// Another behaviour file (e.g. `Behaviors\MT_Behavior.hkx`).
-    Reference { name: String, behavior: String },
+    Reference {
+        name: String,
+        behavior: String,
+    },
     Other(String),
 }
 
@@ -212,10 +246,18 @@ impl Generator {
     /// Child generators other than states, the default / dominant one first.
     pub fn children(&self) -> Vec<GenId> {
         match self {
-            Generator::Blender { children, .. } => children.iter().filter_map(|c| c.generator).collect(),
+            Generator::Blender { children, .. } => {
+                children.iter().filter_map(|c| c.generator).collect()
+            }
             Generator::Selector { children, .. } => children.clone(),
             Generator::Wrap { child, .. } => child.iter().copied().collect(),
-            Generator::BoneSwitch { default, children, .. } => default.iter().copied().chain(children.iter().map(|c| c.0)).collect(),
+            Generator::BoneSwitch {
+                default, children, ..
+            } => default
+                .iter()
+                .copied()
+                .chain(children.iter().map(|c| c.0))
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -229,21 +271,45 @@ pub enum Modifier {
     Expressions(Vec<String>),
     /// `BSEventEveryNEventsModifier`: raise `send` after every `n` (randomised from
     /// `min..=n`) occurrences of `check`.
-    EveryN { check: i32, send: EventProperty, n: u8, min: u8, random: bool },
+    EveryN {
+        check: i32,
+        send: EventProperty,
+        n: u8,
+        min: u8,
+        random: bool,
+    },
     /// `hkbTimerModifier`: raise `alarm` `seconds` after activation.
-    Timer { seconds: f32, alarm: EventProperty },
+    Timer {
+        seconds: f32,
+        alarm: EventProperty,
+    },
     /// `hkbEventDrivenModifier`: `child` runs between `activate` and `deactivate` events.
-    EventDriven { child: Option<ModId>, activate: i32, deactivate: i32, active_by_default: bool },
+    EventDriven {
+        child: Option<ModId>,
+        activate: i32,
+        deactivate: i32,
+        active_by_default: bool,
+    },
     /// `BSEventOnDeactivateModifier`: raise `event` when deactivated.
     OnDeactivate(EventProperty),
     /// `BSIsActiveModifier`: bound `bIsActiveN` outputs follow whether it runs.
-    IsActive { invert: [bool; 5] },
+    IsActive {
+        invert: [bool; 5],
+    },
     /// `BSSpeedSamplerModifier`: the bound `speedOut` follows `goalSpeed` (the
     /// locomotion blends' parameter, in units per second).
-    SpeedSampler { goal_speed: f32 },
+    SpeedSampler {
+        goal_speed: f32,
+    },
     /// `hkbDampingModifier`: `dampedValue` chases `rawValue` through a PID step
     /// every update.
-    Damping { kp: f32, ki: f32, kd: f32, raw: f32, damped: f32 },
+    Damping {
+        kp: f32,
+        ki: f32,
+        kd: f32,
+        raw: f32,
+        damped: f32,
+    },
     /// `BSLookAtModifier`: turn a chain of bones (spine, neck, head) and the eyes
     /// towards a target. The engine applies it to the pose.
     LookAt(LookAt),
@@ -313,7 +379,12 @@ pub struct BehaviorGraph {
 
 impl BehaviorGraph {
     /// A graph built in code (tests, tools): no variables, bindings or modifiers.
-    pub fn new(name: &str, root: Option<GenId>, generators: Vec<Generator>, events: Vec<String>) -> BehaviorGraph {
+    pub fn new(
+        name: &str,
+        root: Option<GenId>,
+        generators: Vec<Generator>,
+        events: Vec<String>,
+    ) -> BehaviorGraph {
         BehaviorGraph {
             name: name.to_owned(),
             root,
@@ -332,7 +403,11 @@ impl BehaviorGraph {
     pub fn add_variable(&mut self, name: &str, ty: VarType, value: f32) -> usize {
         self.variables.push(name.to_owned());
         self.variable_types.push(ty);
-        self.variable_defaults.push(if ty == VarType::Real { value.to_bits() as i32 } else { value as i32 });
+        self.variable_defaults.push(if ty == VarType::Real {
+            value.to_bits() as i32
+        } else {
+            value as i32
+        });
         self.variables.len() - 1
     }
 
@@ -347,7 +422,11 @@ impl BehaviorGraph {
 
     /// Variable bound to `member` of generator `g`.
     pub fn bound(&self, g: GenId, member: &str) -> Option<usize> {
-        self.bindings.get(g)?.iter().find(|b| b.member == member).map(|b| b.variable)
+        self.bindings
+            .get(g)?
+            .iter()
+            .find(|b| b.member == member)
+            .map(|b| b.variable)
     }
 }
 
@@ -375,84 +454,147 @@ impl<'a> Reader<'a> {
 
     /// Pointer array (hkArray of object pointers) at `o`.
     fn ptr_array(&self, o: u32) -> Vec<u32> {
-        let (Some(data), n) = self.p.array(o) else { return Vec::new() };
-        (0..n as u32).filter_map(|i| self.p.ptr(data + i * ARRAY_PTR_SIZE)).collect()
+        let (Some(data), n) = self.p.array(o) else {
+            return Vec::new();
+        };
+        (0..n as u32)
+            .filter_map(|i| self.p.ptr(data + i * ARRAY_PTR_SIZE))
+            .collect()
     }
 
     fn transitions(&self, array_obj: Option<u32>) -> Vec<Transition> {
-        let Some(a) = array_obj else { return Vec::new() };
-        let (Some(data), n) = self.p.array(a + 0x10) else { return Vec::new() };
+        let Some(a) = array_obj else {
+            return Vec::new();
+        };
+        let (Some(data), n) = self.p.array(a + 0x10) else {
+            return Vec::new();
+        };
         (0..n as u32)
             .map(|i| {
                 let t = data + i * 0x48;
                 let flags = self.p.u16(t + 0x42);
-                let effect = self.p.ptr(t + 0x20).filter(|&e| self.class(e) == "hkbBlendingTransitionEffect");
-                let condition = self.p.ptr(t + 0x28).filter(|&c| self.class(c) == "hkbExpressionCondition");
+                let effect = self
+                    .p
+                    .ptr(t + 0x20)
+                    .filter(|&e| self.class(e) == "hkbBlendingTransitionEffect");
+                let condition = self
+                    .p
+                    .ptr(t + 0x28)
+                    .filter(|&c| self.class(c) == "hkbExpressionCondition");
                 Transition {
                     event: self.p.i32(t + 0x30),
                     to_state: self.p.i32(t + 0x34),
-                    to_nested: (flags & FLAG_TO_NESTED_STATE_ID_IS_VALID != 0).then(|| self.p.i32(t + 0x3C)),
+                    to_nested: (flags & FLAG_TO_NESTED_STATE_ID_IS_VALID != 0)
+                        .then(|| self.p.i32(t + 0x3C)),
                     flags,
                     blend: effect.map(|e| self.p.f32(e + 0x50)),
-                    blend_variable: effect.and_then(|e| self.bindings_of(e).into_iter().find(|b| b.member == "duration")).map(|b| b.variable),
+                    blend_variable: effect
+                        .and_then(|e| {
+                            self.bindings_of(e)
+                                .into_iter()
+                                .find(|b| b.member == "duration")
+                        })
+                        .map(|b| b.variable),
                     condition: condition.and_then(|c| self.p.string(c + 0x10)),
                     priority: self.p.i16(t + 0x40),
                     trigger: (flags & FLAG_USE_TRIGGER_INTERVAL != 0).then(|| self.interval(t)),
-                    initiate: (flags & FLAG_USE_INITIATE_INTERVAL != 0).then(|| self.interval(t + 0x10)),
+                    initiate: (flags & FLAG_USE_INITIATE_INTERVAL != 0)
+                        .then(|| self.interval(t + 0x10)),
                 }
             })
             .collect()
     }
 
     fn interval(&self, o: u32) -> Interval {
-        Interval { enter_event: self.p.i32(o), exit_event: self.p.i32(o + 4), enter_time: self.p.f32(o + 8), exit_time: self.p.f32(o + 0xC) }
+        Interval {
+            enter_event: self.p.i32(o),
+            exit_event: self.p.i32(o + 4),
+            enter_time: self.p.f32(o + 8),
+            exit_time: self.p.f32(o + 0xC),
+        }
     }
 
     /// Variable bindings of the bindable object at `o`.
     fn bindings_of(&self, o: u32) -> Vec<Binding> {
-        let Some(set) = self.p.ptr(o + 0x10) else { return Vec::new() };
-        let (Some(data), n) = self.p.array(set + 0x10) else { return Vec::new() };
+        let Some(set) = self.p.ptr(o + 0x10) else {
+            return Vec::new();
+        };
+        let (Some(data), n) = self.p.array(set + 0x10) else {
+            return Vec::new();
+        };
         (0..n as u32)
             .map(|i| data + i * 0x28)
             // Binding type 0: a variable (1 would be a character property).
             .filter(|&b| self.p.u8(b + 0x21) == 0)
-            .filter_map(|b| Some(Binding { member: self.p.string(b)?, variable: usize::try_from(self.p.i32(b + 0x1C)).ok()? }))
+            .filter_map(|b| {
+                Some(Binding {
+                    member: self.p.string(b)?,
+                    variable: usize::try_from(self.p.i32(b + 0x1C)).ok()?,
+                })
+            })
             .collect()
     }
 
     /// The character property bound to `member` of the object at `o`, if any.
     fn character_property(&self, o: u32, member: &str) -> Option<String> {
         let set = self.p.ptr(o + 0x10)?;
-        let (Some(data), n) = self.p.array(set + 0x10) else { return None };
+        let (Some(data), n) = self.p.array(set + 0x10) else {
+            return None;
+        };
         (0..n as u32)
             .map(|i| data + i * 0x28)
             .filter(|&b| self.p.u8(b + 0x21) == 1 && self.p.string(b).is_some_and(|m| m == member))
-            .find_map(|b| self.character_properties.get(usize::try_from(self.p.i32(b + 0x1C)).ok()?).cloned())
+            .find_map(|b| {
+                self.character_properties
+                    .get(usize::try_from(self.p.i32(b + 0x1C)).ok()?)
+                    .cloned()
+            })
     }
 
     /// String payload of the `hkbEventPayload` pointed to from `slot`.
     fn payload(&self, slot: u32) -> Option<String> {
-        self.p.ptr(slot).filter(|&o| self.class(o) == "hkbStringEventPayload").and_then(|o| self.p.string(o + 0x10))
+        self.p
+            .ptr(slot)
+            .filter(|&o| self.class(o) == "hkbStringEventPayload")
+            .and_then(|o| self.p.string(o + 0x10))
     }
 
     /// `hkbEventProperty` (id, payload) at `o`.
     fn event_property(&self, o: u32) -> EventProperty {
-        EventProperty { event: self.p.i32(o), payload: self.payload(o + 8) }
+        EventProperty {
+            event: self.p.i32(o),
+            payload: self.payload(o + 8),
+        }
     }
 
     fn event_properties(&self, array_obj: Option<u32>) -> Vec<EventProperty> {
-        let Some(a) = array_obj else { return Vec::new() };
-        let (Some(data), n) = self.p.array(a + 0x10) else { return Vec::new() };
-        (0..n as u32).map(|i| self.event_property(data + i * 0x10)).collect()
+        let Some(a) = array_obj else {
+            return Vec::new();
+        };
+        let (Some(data), n) = self.p.array(a + 0x10) else {
+            return Vec::new();
+        };
+        (0..n as u32)
+            .map(|i| self.event_property(data + i * 0x10))
+            .collect()
     }
 
     fn triggers(&self, array_obj: Option<u32>) -> Vec<Trigger> {
-        let Some(a) = array_obj else { return Vec::new() };
-        let (Some(data), n) = self.p.array(a + 0x10) else { return Vec::new() };
+        let Some(a) = array_obj else {
+            return Vec::new();
+        };
+        let (Some(data), n) = self.p.array(a + 0x10) else {
+            return Vec::new();
+        };
         (0..n as u32)
             .map(|i| {
                 let t = data + i * 0x20;
-                Trigger { time: self.p.f32(t), event: self.p.i32(t + 8), from_end: self.p.u8(t + 0x18) != 0, payload: self.payload(t + 0x10) }
+                Trigger {
+                    time: self.p.f32(t),
+                    event: self.p.i32(t + 8),
+                    from_end: self.p.u8(t + 0x18) != 0,
+                    payload: self.payload(t + 0x10),
+                }
             })
             .collect()
     }
@@ -460,7 +602,9 @@ impl<'a> Reader<'a> {
     /// `hkbBoneWeightArray` at `o`.
     fn bone_weights(&self, o: Option<u32>) -> Option<Vec<f32>> {
         let o = o?;
-        let (Some(data), n) = self.p.array(o + 0x30) else { return None };
+        let (Some(data), n) = self.p.array(o + 0x30) else {
+            return None;
+        };
         Some((0..n as u32).map(|i| self.p.f32(data + i * 4)).collect())
     }
 
@@ -476,13 +620,23 @@ impl<'a> Reader<'a> {
         let p = self.p;
         let class = self.class(o);
         let m = match class {
-            "hkbModifierList" => Modifier::List(self.ptr_array(o + 0x50).into_iter().map(|m| self.modifier(m)).collect()),
+            "hkbModifierList" => Modifier::List(
+                self.ptr_array(o + 0x50)
+                    .into_iter()
+                    .map(|m| self.modifier(m))
+                    .collect(),
+            ),
             "hkbEvaluateExpressionModifier" => {
                 let lines = p
                     .ptr(o + 0x50)
                     .map(|a| {
                         let (data, n) = p.array(a + 0x10);
-                        data.map(|d| (0..n as u32).filter_map(|i| p.string(d + i * 0x18)).collect()).unwrap_or_default()
+                        data.map(|d| {
+                            (0..n as u32)
+                                .filter_map(|i| p.string(d + i * 0x18))
+                                .collect()
+                        })
+                        .unwrap_or_default()
                     })
                     .unwrap_or_default();
                 Modifier::Expressions(lines)
@@ -494,7 +648,10 @@ impl<'a> Reader<'a> {
                 min: p.u8(o + 0x71),
                 random: p.u8(o + 0x72) != 0,
             },
-            "hkbTimerModifier" => Modifier::Timer { seconds: p.f32(o + 0x50), alarm: self.event_property(o + 0x58) },
+            "hkbTimerModifier" => Modifier::Timer {
+                seconds: p.f32(o + 0x50),
+                alarm: self.event_property(o + 0x58),
+            },
             "hkbEventDrivenModifier" => Modifier::EventDriven {
                 child: p.ptr(o + 0x50).map(|m| self.modifier(m)),
                 activate: p.i32(o + 0x58),
@@ -502,9 +659,13 @@ impl<'a> Reader<'a> {
                 active_by_default: p.u8(o + 0x60) != 0,
             },
             "BSEventOnDeactivateModifier" => Modifier::OnDeactivate(self.event_property(o + 0x50)),
-            "BSIsActiveModifier" => Modifier::IsActive { invert: std::array::from_fn(|i| p.u8(o + 0x51 + 2 * i as u32) != 0) },
+            "BSIsActiveModifier" => Modifier::IsActive {
+                invert: std::array::from_fn(|i| p.u8(o + 0x51 + 2 * i as u32) != 0),
+            },
             // After hkbModifier (enable at 0x48): state, direction, goal speed, speed out.
-            "BSSpeedSamplerModifier" => Modifier::SpeedSampler { goal_speed: p.f32(o + 0x50) },
+            "BSSpeedSamplerModifier" => Modifier::SpeedSampler {
+                goal_speed: p.f32(o + 0x50),
+            },
             // kP, kI, kD, scalar / vector flags, raw and damped values.
             "hkbDampingModifier" if p.u8(o + 0x5C) != 0 => Modifier::Damping {
                 kp: p.f32(o + 0x50),
@@ -523,7 +684,11 @@ impl<'a> Reader<'a> {
                                 let b = d + i * 0x40;
                                 LookAtBone {
                                     index: p.i16(b),
-                                    forward: glam::Vec3::new(p.f32(b + 0x10), p.f32(b + 0x14), p.f32(b + 0x18)),
+                                    forward: glam::Vec3::new(
+                                        p.f32(b + 0x10),
+                                        p.f32(b + 0x14),
+                                        p.f32(b + 0x18),
+                                    ),
                                     limit_degrees: p.f32(b + 0x20),
                                     on_gain: p.f32(b + 0x24),
                                     off_gain: p.f32(b + 0x28),
@@ -595,7 +760,10 @@ impl<'a> Reader<'a> {
                 Generator::StateMachine {
                     name,
                     start: p.i32(o + 0x68),
-                    start_variable: self.bindings[id].iter().find(|b| b.member == "startStateId").map(|b| b.variable),
+                    start_variable: self.bindings[id]
+                        .iter()
+                        .find(|b| b.member == "startStateId")
+                        .map(|b| b.variable),
                     // syncVariableIndex at 0x7C; startStateMode at 0x86.
                     start_mode: match (p.u8(o + 0x86), p.i32(o + 0x7C)) {
                         (1, v) if v >= 0 => StartMode::Sync(v as usize),
@@ -613,7 +781,11 @@ impl<'a> Reader<'a> {
                     children.push(BlendChild {
                         generator,
                         weight: p.f32(c + 0x40),
-                        weight_variable: self.bindings_of(c).into_iter().find(|b| b.member == "weight").map(|b| b.variable),
+                        weight_variable: self
+                            .bindings_of(c)
+                            .into_iter()
+                            .find(|b| b.member == "weight")
+                            .map(|b| b.variable),
                         bone_weights: self.bone_weights(p.ptr(c + 0x38)),
                     });
                 }
@@ -628,7 +800,11 @@ impl<'a> Reader<'a> {
             }
             "hkbManualSelectorGenerator" => {
                 let gens = self.ptr_array(o + 0x48);
-                Generator::Selector { name, children: gens.into_iter().map(|g| self.generator(g)).collect(), index: p.u8(o + 0x58) as i8 }
+                Generator::Selector {
+                    name,
+                    children: gens.into_iter().map(|g| self.generator(g)).collect(),
+                    index: p.u8(o + 0x58) as i8,
+                }
             }
             "BSBoneSwitchGenerator" => {
                 let default = p.ptr(o + 0x50).map(|g| self.generator(g));
@@ -641,16 +817,35 @@ impl<'a> Reader<'a> {
                         children.push((self.generator(g), weights));
                     }
                 }
-                Generator::BoneSwitch { name, default, children, properties }
+                Generator::BoneSwitch {
+                    name,
+                    default,
+                    children,
+                    properties,
+                }
             }
             "hkbModifierGenerator" => {
                 let modifier = p.ptr(o + 0x48).map(|m| self.modifier(m));
-                Generator::Wrap { name, class: class.to_owned(), child: p.ptr(o + 0x50).map(|g| self.generator(g)), modifier }
+                Generator::Wrap {
+                    name,
+                    class: class.to_owned(),
+                    child: p.ptr(o + 0x50).map(|g| self.generator(g)),
+                    modifier,
+                }
             }
-            "BSSynchronizedClipGenerator" | "BSCyclicBlendTransitionGenerator" | "BSiStateTaggingGenerator" | "BSOffsetAnimationGenerator" => {
-                Generator::Wrap { name, class: class.to_owned(), child: p.ptr(o + 0x50).map(|g| self.generator(g)), modifier: None }
-            }
-            "hkbBehaviorReferenceGenerator" => Generator::Reference { name, behavior: p.string(o + 0x48).unwrap_or_default() },
+            "BSSynchronizedClipGenerator"
+            | "BSCyclicBlendTransitionGenerator"
+            | "BSiStateTaggingGenerator"
+            | "BSOffsetAnimationGenerator" => Generator::Wrap {
+                name,
+                class: class.to_owned(),
+                child: p.ptr(o + 0x50).map(|g| self.generator(g)),
+                modifier: None,
+            },
+            "hkbBehaviorReferenceGenerator" => Generator::Reference {
+                name,
+                behavior: p.string(o + 0x48).unwrap_or_default(),
+            },
             _ => Generator::Other(class.to_owned()),
         };
         self.generators[id] = g;
@@ -670,7 +865,12 @@ impl BehaviorGraph {
         let string_array = |at: u32| -> Vec<String> {
             let Some(s) = strings else { return Vec::new() };
             let (ptr, n) = p.array(s + at);
-            ptr.map(|d| (0..n as u32).map(|i| p.string(d + i * 8).unwrap_or_default()).collect()).unwrap_or_default()
+            ptr.map(|d| {
+                (0..n as u32)
+                    .map(|i| p.string(d + i * 8).unwrap_or_default())
+                    .collect()
+            })
+            .unwrap_or_default()
         };
         let events = string_array(0x10);
         let variables = string_array(0x30);
@@ -694,12 +894,17 @@ impl BehaviorGraph {
             .and_then(|d| p.ptr(d + 0x70))
             .map(|values| {
                 let (ptr, n) = p.array(values + 0x10);
-                ptr.map(|d| (0..n as u32).map(|i| p.i32(d + i * 4)).collect()).unwrap_or_default()
+                ptr.map(|d| (0..n as u32).map(|i| p.i32(d + i * 4)).collect())
+                    .unwrap_or_default()
             })
             .unwrap_or_default();
         let mut r = Reader {
             p: &p,
-            classes: p.objects.iter().map(|o| (o.offset, o.class.as_str())).collect(),
+            classes: p
+                .objects
+                .iter()
+                .map(|o| (o.offset, o.class.as_str()))
+                .collect(),
             ids: Default::default(),
             generators: Vec::new(),
             bindings: Vec::new(),
@@ -724,11 +929,16 @@ impl BehaviorGraph {
     }
 
     pub fn event_id(&self, name: &str) -> Option<i32> {
-        self.events.iter().position(|e| e.eq_ignore_ascii_case(name)).map(|i| i as i32)
+        self.events
+            .iter()
+            .position(|e| e.eq_ignore_ascii_case(name))
+            .map(|i| i as i32)
     }
 
     pub fn event_name(&self, id: i32) -> Option<&str> {
-        self.events.get(usize::try_from(id).ok()?).map(String::as_str)
+        self.events
+            .get(usize::try_from(id).ok()?)
+            .map(String::as_str)
     }
 
     /// Every (state machine, state reached, transition) for transitions on `event`,
@@ -736,11 +946,20 @@ impl BehaviorGraph {
     pub fn transitions_on(&self, event: i32) -> Vec<(GenId, &State, Transition)> {
         let mut out: Vec<(GenId, &State, Transition)> = Vec::new();
         for (gi, g) in self.generators.iter().enumerate() {
-            let Generator::StateMachine { states, wildcards, .. } = g else { continue };
-            let targets = wildcards.iter().chain(states.iter().flat_map(|s| &s.transitions));
+            let Generator::StateMachine {
+                states, wildcards, ..
+            } = g
+            else {
+                continue;
+            };
+            let targets = wildcards
+                .iter()
+                .chain(states.iter().flat_map(|s| &s.transitions));
             for t in targets.filter(|t| t.event == event && !t.disabled()) {
                 if let Some(s) = states.iter().find(|s| s.id == t.to_state)
-                    && !out.iter().any(|(g, x, y)| *g == gi && x.id == s.id && y.to_nested == t.to_nested)
+                    && !out
+                        .iter()
+                        .any(|(g, x, y)| *g == gi && x.id == s.id && y.to_nested == t.to_nested)
                 {
                     out.push((gi, s, t.clone()));
                 }
@@ -807,21 +1026,31 @@ pub struct FootIkLeg {
 /// Strings at `o`: an hkArray of hkStringPtr.
 fn string_array(p: &Packfile, o: u32) -> Vec<String> {
     let (data, n) = p.array(o);
-    data.map(|d| (0..n as u32).filter_map(|i| p.string(d + i * 8)).collect()).unwrap_or_default()
+    data.map(|d| (0..n as u32).filter_map(|i| p.string(d + i * 8)).collect())
+        .unwrap_or_default()
 }
 
 /// The first character file a project file (`hkbProjectStringData`) lists.
 pub fn project_character_file(bytes: &[u8]) -> Result<String> {
     let p = Packfile::parse(bytes)?;
-    let o = p.objects_of("hkbProjectStringData").next().ok_or_else(|| crate::Error::Corrupt("no hkbProjectStringData".into()))?;
+    let o = p
+        .objects_of("hkbProjectStringData")
+        .next()
+        .ok_or_else(|| crate::Error::Corrupt("no hkbProjectStringData".into()))?;
     // hkReferencedObject header, then animation, behavior and character filenames.
-    string_array(&p, o + 0x30).into_iter().next().ok_or_else(|| crate::Error::Corrupt("project lists no character".into()))
+    string_array(&p, o + 0x30)
+        .into_iter()
+        .next()
+        .ok_or_else(|| crate::Error::Corrupt("project lists no character".into()))
 }
 
 impl Character {
     pub fn parse(bytes: &[u8]) -> Result<Character> {
         let p = Packfile::parse(bytes)?;
-        let o = p.objects_of("hkbCharacterStringData").next().ok_or_else(|| crate::Error::Corrupt("no hkbCharacterStringData".into()))?;
+        let o = p
+            .objects_of("hkbCharacterStringData")
+            .next()
+            .ok_or_else(|| crate::Error::Corrupt("no hkbCharacterStringData".into()))?;
         // Seven arrays (skins, animations, properties, retargeting, LODs, mirroring)
         // after the header, then name, rig, ragdoll and behaviour file names.
         let s = |at: u32| p.string(o + at).unwrap_or_default();
@@ -881,15 +1110,29 @@ impl Character {
                     if v < 0 || v as usize >= nv as usize {
                         continue;
                     }
-                    let Some(obj) = p.ptr(variants + v as u32 * 8).filter(|&o| p.object_class(o) == Some("hkbBoneWeightArray")) else { continue };
+                    let Some(obj) = p
+                        .ptr(variants + v as u32 * 8)
+                        .filter(|&o| p.object_class(o) == Some("hkbBoneWeightArray"))
+                    else {
+                        continue;
+                    };
                     let (data, n) = p.array(obj + 0x30);
                     if let Some(d) = data {
-                        bone_weights.insert(name.to_ascii_lowercase(), (0..n as u32).map(|k| p.f32(d + k * 4)).collect());
+                        bone_weights.insert(
+                            name.to_ascii_lowercase(),
+                            (0..n as u32).map(|k| p.f32(d + k * 4)).collect(),
+                        );
                     }
                 }
             }
         }
-        Ok(Character { name: s(0xa0), rig: s(0xa8), behavior: s(0xb8), foot_ik, bone_weights })
+        Ok(Character {
+            name: s(0xa0),
+            rig: s(0xa8),
+            behavior: s(0xb8),
+            foot_ik,
+            bone_weights,
+        })
     }
 }
 
@@ -903,8 +1146,12 @@ impl Project {
             if project.graphs.iter().any(|(p, _)| *p == rel) {
                 continue;
             }
-            let Some(bytes) = read(&rel.replace('\\', "/")) else { continue };
-            let Ok(g) = BehaviorGraph::parse(&bytes) else { continue };
+            let Some(bytes) = read(&rel.replace('\\', "/")) else {
+                continue;
+            };
+            let Ok(g) = BehaviorGraph::parse(&bytes) else {
+                continue;
+            };
             for node in &g.generators {
                 if let Generator::Reference { behavior, .. } = node {
                     queue.push(behavior.to_ascii_lowercase().replace('/', "\\"));
@@ -920,9 +1167,11 @@ impl Project {
     /// character's root behaviour graph and everything that references.
     pub fn load_project(file: &str, read: impl Fn(&str) -> Option<Vec<u8>>) -> Result<Project> {
         let norm = |p: &str| p.to_ascii_lowercase().replace('\\', "/");
-        let bytes = read(&norm(file)).ok_or_else(|| crate::Error::Corrupt(format!("{file} not found")))?;
+        let bytes =
+            read(&norm(file)).ok_or_else(|| crate::Error::Corrupt(format!("{file} not found")))?;
         let character_file = project_character_file(&bytes)?;
-        let bytes = read(&norm(&character_file)).ok_or_else(|| crate::Error::Corrupt(format!("{character_file} not found")))?;
+        let bytes = read(&norm(&character_file))
+            .ok_or_else(|| crate::Error::Corrupt(format!("{character_file} not found")))?;
         let character = Character::parse(&bytes)?;
         let mut project = Project::load(&character.behavior, read);
         project.character = Some(character);

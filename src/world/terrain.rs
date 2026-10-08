@@ -45,7 +45,9 @@ impl Land {
     /// The landscape texture (LTEX) showing most at a point of the cell: the
     /// nearest vertex's layer that the ones above it cover least.
     pub fn texture_at(&self, p: Vec2) -> Option<FormId> {
-        let local = ((p - self.origin()) / (CELL_SIZE / 32.0)).round().clamp(Vec2::ZERO, Vec2::splat(32.0));
+        let local = ((p - self.origin()) / (CELL_SIZE / 32.0))
+            .round()
+            .clamp(Vec2::ZERO, Vec2::splat(32.0));
         let (gc, gr) = (local.x as usize, local.y as usize);
         let (qx, qy) = ((gc / 16).min(1), (gr / 16).min(1));
         let quad = &self.quadrants[qy * 2 + qx];
@@ -90,14 +92,23 @@ pub fn land_texture(lo: &LoadOrder, ltex: FormId) -> Option<(String, Option<Stri
     let txst = rec.fid(FormId(u32::from_le_bytes(tnam.get(..4)?.try_into().ok()?)));
     let t = lo.get(txst)?;
     let diffuse = t.get(b"TX00").map(esp::decode_zstring)?;
-    let normal = t.get(b"TX01").map(esp::decode_zstring).filter(|s| !s.is_empty());
+    let normal = t
+        .get(b"TX01")
+        .map(esp::decode_zstring)
+        .filter(|s| !s.is_empty());
     Some((
         crate::world::records::texture_path(&diffuse),
         normal.map(|n| crate::world::records::texture_path(&n)),
     ))
 }
 
-pub fn load_land(lo: &LoadOrder, land: FormId, x: i32, y: i32, default_height: f32) -> Option<Land> {
+pub fn load_land(
+    lo: &LoadOrder,
+    land: FormId,
+    x: i32,
+    y: i32,
+    default_height: f32,
+) -> Option<Land> {
     let rec = lo.get(land)?;
     let mut heights = vec![default_height; VERTS * VERTS];
     let mut normals = vec![Vec3::Z; VERTS * VERTS];
@@ -134,7 +145,11 @@ pub fn load_land(lo: &LoadOrder, land: FormId, x: i32, y: i32, default_height: f
             }
             b"VCLR" if sr.data.len() >= VERTS * VERTS * 3 => {
                 for i in 0..VERTS * VERTS {
-                    colors[i] = Vec3::new(sr.data[i * 3] as f32, sr.data[i * 3 + 1] as f32, sr.data[i * 3 + 2] as f32) / 255.0;
+                    colors[i] = Vec3::new(
+                        sr.data[i * 3] as f32,
+                        sr.data[i * 3 + 1] as f32,
+                        sr.data[i * 3 + 2] as f32,
+                    ) / 255.0;
                 }
             }
             b"BTXT" => {
@@ -147,7 +162,12 @@ pub fn load_land(lo: &LoadOrder, land: FormId, x: i32, y: i32, default_height: f
                 let q = sr.u8(4) as usize;
                 let layer = sr.u16(6);
                 if q < 4 {
-                    extra.push((q, layer, rec.fid(sr.form_id(0)), vec![0.0; QUAD_VERTS * QUAD_VERTS]));
+                    extra.push((
+                        q,
+                        layer,
+                        rec.fid(sr.form_id(0)),
+                        vec![0.0; QUAD_VERTS * QUAD_VERTS],
+                    ));
                     cur_extra = Some(extra.len() - 1);
                 } else {
                     cur_extra = None;
@@ -168,17 +188,36 @@ pub fn load_land(lo: &LoadOrder, land: FormId, x: i32, y: i32, default_height: f
         }
     }
     let resolve = |id: Option<FormId>| -> (String, Option<String>) {
-        id.and_then(|id| land_texture(lo, id)).unwrap_or_else(|| (DEFAULT_TEXTURE.to_owned(), None))
+        id.and_then(|id| land_texture(lo, id))
+            .unwrap_or_else(|| (DEFAULT_TEXTURE.to_owned(), None))
     };
     for (q, quad) in quadrants.iter_mut().enumerate() {
         let (d, n) = resolve(base[q]);
-        quad.layers.push(Layer { diffuse: d, normal: n, opacity: vec![1.0; QUAD_VERTS * QUAD_VERTS], ltex: base[q] });
-        let mut layers: Vec<&(usize, u16, FormId, Vec<f32>)> = extra.iter().filter(|e| e.0 == q).collect();
+        quad.layers.push(Layer {
+            diffuse: d,
+            normal: n,
+            opacity: vec![1.0; QUAD_VERTS * QUAD_VERTS],
+            ltex: base[q],
+        });
+        let mut layers: Vec<&(usize, u16, FormId, Vec<f32>)> =
+            extra.iter().filter(|e| e.0 == q).collect();
         layers.sort_by_key(|e| e.1);
         for e in layers.into_iter().take(MAX_LAYERS - 1) {
             let (d, n) = resolve(Some(e.2));
-            quad.layers.push(Layer { diffuse: d, normal: n, opacity: e.3.clone(), ltex: Some(e.2) });
+            quad.layers.push(Layer {
+                diffuse: d,
+                normal: n,
+                opacity: e.3.clone(),
+                ltex: Some(e.2),
+            });
         }
     }
-    Some(Land { x, y, heights, normals, colors, quadrants })
+    Some(Land {
+        x,
+        y,
+        heights,
+        normals,
+        colors,
+        quadrants,
+    })
 }

@@ -24,8 +24,19 @@ pub const KEYWORDS: u16 = 0x1000;
 const FLAG_COUNT: usize = 13;
 /// The parts by flag bit, as the Creation Kit names them.
 pub const NAMES: [&str; FLAG_COUNT] = [
-    "traits", "stats", "factions", "spells", "ai data", "ai packages", "model / animation", "base data",
-    "inventory", "script", "def pack list", "attack data", "keywords",
+    "traits",
+    "stats",
+    "factions",
+    "spells",
+    "ai data",
+    "ai packages",
+    "model / animation",
+    "base data",
+    "inventory",
+    "script",
+    "def pack list",
+    "attack data",
+    "keywords",
 ];
 const MAX_DEPTH: usize = 8;
 
@@ -52,7 +63,10 @@ impl Sources {
     }
 
     fn resolve(lo: &LoadOrder, npc: FormId, seed: u64, depth: usize) -> Sources {
-        let own = Sources { by_flag: [npc; FLAG_COUNT], chain: vec![npc] };
+        let own = Sources {
+            by_flag: [npc; FLAG_COUNT],
+            chain: vec![npc],
+        };
         let Some(rec) = lo.get(npc) else { return own };
         let flags = template_flags(&rec);
         let template = rec
@@ -95,22 +109,32 @@ impl Sources {
 
     /// The record with the subrecord `tag` for part `flag`: the part's source, else
     /// (lacking it) the templates after it.
-    pub fn record<'a>(&self, lo: &'a LoadOrder, flag: u16, tag: &[u8; 4]) -> Option<LoadedRecord<'a>> {
+    pub fn record<'a>(
+        &self,
+        lo: &'a LoadOrder,
+        flag: u16,
+        tag: &[u8; 4],
+    ) -> Option<LoadedRecord<'a>> {
         let from = self.of(flag);
         let start = self.chain.iter().position(|&n| n == from).unwrap_or(0);
-        self.chain[start..].iter().filter_map(|&n| lo.get(n)).find(|r| r.get(tag).is_some())
+        self.chain[start..]
+            .iter()
+            .filter_map(|&n| lo.get(n))
+            .find(|r| r.get(tag).is_some())
     }
 
     /// The subrecord `tag` of part `flag` (see `record`).
     pub fn field(&self, lo: &LoadOrder, flag: u16, tag: &[u8; 4]) -> Option<Vec<u8>> {
-        self.record(lo, flag, tag).and_then(|r| r.get(tag).map(<[u8]>::to_vec))
+        self.record(lo, flag, tag)
+            .and_then(|r| r.get(tag).map(<[u8]>::to_vec))
     }
 
     /// A form id held by the subrecord `tag` of part `flag`.
     pub fn form(&self, lo: &LoadOrder, flag: u16, tag: &[u8; 4]) -> Option<FormId> {
         let r = self.record(lo, flag, tag)?;
         let d = r.get(tag).filter(|d| d.len() >= 4)?;
-        Some(r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))).filter(|f| !f.is_null())
+        Some(r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+            .filter(|f| !f.is_null())
     }
 
     /// Factions and ranks: the factions part's, or the next template's when it lists
@@ -134,17 +158,29 @@ impl Sources {
 
     /// The factions it belongs to (rank 0 or more).
     pub fn member_of(&self, lo: &LoadOrder) -> Vec<FormId> {
-        self.factions(lo).into_iter().filter(|(_, r)| *r >= 0).map(|(f, _)| f).collect()
+        self.factions(lo)
+            .into_iter()
+            .filter(|(_, r)| *r >= 0)
+            .map(|(f, _)| f)
+            .collect()
     }
 
     /// Keywords (`KWDA`) of the keywords part.
     pub fn keywords(&self, lo: &LoadOrder) -> Vec<FormId> {
-        let Some(rec) = lo.get(self.of(KEYWORDS)) else { return Vec::new() };
-        rec.get(b"KWDA").unwrap_or(&[]).chunks_exact(4).map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))).collect()
+        let Some(rec) = lo.get(self.of(KEYWORDS)) else {
+            return Vec::new();
+        };
+        rec.get(b"KWDA")
+            .unwrap_or(&[])
+            .chunks_exact(4)
+            .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+            .collect()
     }
 }
 
 /// An NPC's template flags (`ACBS` bytes 18..20).
 pub fn template_flags(rec: &LoadedRecord<'_>) -> u16 {
-    rec.get(b"ACBS").filter(|d| d.len() >= 20).map_or(0, |d| u16::from_le_bytes([d[18], d[19]]))
+    rec.get(b"ACBS")
+        .filter(|d| d.len() >= 20)
+        .map_or(0, |d| u16::from_le_bytes([d[18], d[19]]))
 }

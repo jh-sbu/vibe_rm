@@ -131,9 +131,22 @@ pub struct Instance {
 impl Instance {
     pub fn new(model: Arc<GpuModel>, transform: Mat4) -> Self {
         let world_center = transform.transform_point3(model.bound_center);
-        let scale = transform.x_axis.truncate().length().max(transform.y_axis.truncate().length()).max(transform.z_axis.truncate().length());
+        let scale = transform
+            .x_axis
+            .truncate()
+            .length()
+            .max(transform.y_axis.truncate().length())
+            .max(transform.z_axis.truncate().length());
         let world_radius = model.bound_radius * scale;
-        Instance { ref_id: 0, hidden: false, model, transform, lights: [0xFFFF; 8], world_center, world_radius }
+        Instance {
+            ref_id: 0,
+            hidden: false,
+            model,
+            transform,
+            lights: [0xFFFF; 8],
+            world_center,
+            world_radius,
+        }
     }
 }
 
@@ -213,7 +226,10 @@ impl ActorInstance {
     /// World position of the light it carries.
     pub fn held_light_pos(&self) -> Option<Vec3> {
         let l = self.held_light?;
-        Some((self.transform * self.pose.get(l.bone).copied().unwrap_or(Mat4::IDENTITY)).transform_point3(l.offset))
+        Some(
+            (self.transform * self.pose.get(l.bone).copied().unwrap_or(Mat4::IDENTITY))
+                .transform_point3(l.offset),
+        )
     }
 
     pub fn center(&self) -> Vec3 {
@@ -267,7 +283,11 @@ impl Scene {
             let t = oc.dot(dir);
             let d2 = oc.length_squared() - t * t;
             if t > 0.0 && d2 < a.radius * a.radius {
-                let names: Vec<&str> = a.meshes.iter().map(|m| m.model.skinned[m.part].name.as_str()).collect();
+                let names: Vec<&str> = a
+                    .meshes
+                    .iter()
+                    .map(|m| m.model.skinned[m.part].name.as_str())
+                    .collect();
                 hits.push((t, format!("actor: {names:?}")));
             }
         }
@@ -276,7 +296,11 @@ impl Scene {
     }
 
     pub fn instances(&self) -> impl Iterator<Item = &Instance> {
-        self.cells.values().flat_map(|c| c.instances.iter()).chain(self.lod.iter()).chain(self.dynamic.iter())
+        self.cells
+            .values()
+            .flat_map(|c| c.instances.iter())
+            .chain(self.lod.iter())
+            .chain(self.dynamic.iter())
     }
     pub fn instance_count(&self) -> usize {
         self.cells.values().map(|c| c.instances.len()).sum()
@@ -318,7 +342,10 @@ impl Scene {
         let moving = &lights[first.min(lights.len())..];
         let touched = |center: Vec3, radius: f32, current: &[u16; 8]| {
             current.iter().any(|&i| i != 0xFFFF && i as usize >= first)
-                || moving.iter().any(|l| Vec3::new(l.pos_radius[0], l.pos_radius[1], l.pos_radius[2]).distance(center) < l.pos_radius[3] + radius)
+                || moving.iter().any(|l| {
+                    Vec3::new(l.pos_radius[0], l.pos_radius[1], l.pos_radius[2]).distance(center)
+                        < l.pos_radius[3] + radius
+                })
         };
         for inst in self.cells.values_mut().flat_map(|c| c.instances.iter_mut()) {
             if touched(inst.world_center, inst.world_radius, &inst.lights) {
@@ -361,7 +388,11 @@ pub struct Camera {
 
 impl Camera {
     pub fn forward(&self) -> Vec3 {
-        Vec3::new(self.yaw.sin() * self.pitch.cos(), self.yaw.cos() * self.pitch.cos(), self.pitch.sin())
+        Vec3::new(
+            self.yaw.sin() * self.pitch.cos(),
+            self.yaw.cos() * self.pitch.cos(),
+            self.pitch.sin(),
+        )
     }
     pub fn right(&self) -> Vec3 {
         Vec3::new(self.yaw.cos(), -self.yaw.sin(), 0.0)
@@ -386,7 +417,15 @@ impl Frustum {
         let r3 = m.row(3);
         let norm = |p: Vec4| p / p.truncate().length();
         // Reverse-Z infinite: near plane is z <= w  (r3 - r2), no far plane.
-        Frustum { planes: [norm(r3 + r0), norm(r3 - r0), norm(r3 + r1), norm(r3 - r1), norm(r3 - r2)] }
+        Frustum {
+            planes: [
+                norm(r3 + r0),
+                norm(r3 - r0),
+                norm(r3 + r1),
+                norm(r3 - r1),
+                norm(r3 - r2),
+            ],
+        }
     }
     fn sphere_visible(&self, c: Vec3, r: f32) -> bool {
         self.planes.iter().all(|p| p.truncate().dot(c) + p.w >= -r)
@@ -444,7 +483,13 @@ pub struct FrameStats {
 }
 
 impl Renderer {
-    pub fn new(device: wgpu::Device, queue: wgpu::Queue, color_format: wgpu::TextureFormat, width: u32, height: u32) -> Self {
+    pub fn new(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        color_format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("object"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/object.wgsl").into()),
@@ -553,8 +598,19 @@ impl Renderer {
         });
         let palette_cap = 4096;
         let palette_buf = Self::make_palette(&device, palette_cap);
-        let shadows = shadow::ShadowMaps::new(&device, &material_bgl, std::mem::size_of::<terrain::TerrainVertex>() as u64);
-        let frame_bg = Self::make_frame_bg(&device, &frame_bgl, &frame_buf, &light_buf, &palette_buf, &shadows);
+        let shadows = shadow::ShadowMaps::new(
+            &device,
+            &material_bgl,
+            std::mem::size_of::<terrain::TerrainVertex>() as u64,
+        );
+        let frame_bg = Self::make_frame_bg(
+            &device,
+            &frame_bgl,
+            &frame_buf,
+            &light_buf,
+            &palette_buf,
+            &shadows,
+        );
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("main"),
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -573,15 +629,33 @@ impl Renderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let white = Arc::new(texture::solid(&device, &queue, [255, 255, 255, 255], "white"));
-        let flat_normal = Arc::new(texture::solid(&device, &queue, [128, 128, 255, 0], "flat_normal"));
+        let white = Arc::new(texture::solid(
+            &device,
+            &queue,
+            [255, 255, 255, 255],
+            "white",
+        ));
+        let flat_normal = Arc::new(texture::solid(
+            &device,
+            &queue,
+            [128, 128, 255, 0],
+            "flat_normal",
+        ));
         let black = Arc::new(texture::solid(&device, &queue, [0, 0, 0, 255], "black"));
         let depth_view = Self::make_depth(&device, width, height);
-        let skin_instance_buf = Self::make_vbuf(&device, 1024 * std::mem::size_of::<SkinInstanceData>(), "skin instances");
+        let skin_instance_buf = Self::make_vbuf(
+            &device,
+            1024 * std::mem::size_of::<SkinInstanceData>(),
+            "skin instances",
+        );
         let terrain = terrain::TerrainPipeline::new(&device, &frame_bgl, color_format);
         let sky = sky::SkyRenderer::new(&device, color_format);
         let water = water::WaterPipeline::new(&device, &frame_bgl, color_format);
-        let shadow_instance_buf = Self::make_vbuf(&device, 16384 * std::mem::size_of::<InstanceData>(), "shadow instances");
+        let shadow_instance_buf = Self::make_vbuf(
+            &device,
+            16384 * std::mem::size_of::<InstanceData>(),
+            "shadow instances",
+        );
         Renderer {
             water,
             sky,
@@ -652,11 +726,26 @@ impl Renderer {
             label: Some("frame"),
             layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: frame.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: palette.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&shadows.array_view) },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&shadows.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: frame.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: lights.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: palette.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&shadows.array_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&shadows.sampler),
+                },
             ],
         })
     }
@@ -665,7 +754,11 @@ impl Renderer {
         device
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("depth"),
-                size: wgpu::Extent3d { width: w.max(1), height: h.max(1), depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: w.max(1),
+                    height: h.max(1),
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -741,46 +834,55 @@ impl Renderer {
                 },
             }),
         };
-        self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("object"),
-            layout: Some(&self.pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &self.shader,
-                entry_point: Some(if key.skinned { "vs_skinned" } else { "vs_main" }),
-                compilation_options: Default::default(),
-                buffers: if key.skinned { &skinned_buffers } else { &static_buffers },
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: if key.double_sided { None } else { Some(wgpu::Face::Back) },
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(key.z_write),
-                depth_compare: Some(if key.z_test {
-                    wgpu::CompareFunction::GreaterEqual
-                } else {
-                    wgpu::CompareFunction::Always
+        self.device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("object"),
+                layout: Some(&self.pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &self.shader,
+                    entry_point: Some(if key.skinned { "vs_skinned" } else { "vs_main" }),
+                    compilation_options: Default::default(),
+                    buffers: if key.skinned {
+                        &skinned_buffers
+                    } else {
+                        &static_buffers
+                    },
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: if key.double_sided {
+                        None
+                    } else {
+                        Some(wgpu::Face::Back)
+                    },
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(key.z_write),
+                    depth_compare: Some(if key.z_test {
+                        wgpu::CompareFunction::GreaterEqual
+                    } else {
+                        wgpu::CompareFunction::Always
+                    }),
+                    stencil: Default::default(),
+                    bias: Default::default(),
                 }),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &self.shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: self.color_format,
-                    blend,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        })
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &self.shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.color_format,
+                        blend,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
     }
 
     /// Upload a parsed DDS into the texture cache.
@@ -789,7 +891,11 @@ impl Renderer {
         self.textures.insert(path.to_owned(), t);
     }
 
-    fn texture_or(&self, path: &Option<String>, fallback: &Arc<GpuTexture>) -> (Arc<GpuTexture>, bool) {
+    fn texture_or(
+        &self,
+        path: &Option<String>,
+        fallback: &Arc<GpuTexture>,
+    ) -> (Arc<GpuTexture>, bool) {
         match path.as_ref().and_then(|p| self.textures.get(p)).flatten() {
             Some(t) => (t, true),
             None => (fallback.clone(), false),
@@ -807,8 +913,18 @@ impl Renderer {
             params: [
                 m.alpha,
                 m.alpha_test.unwrap_or(-1.0),
-                if has_normal && m.kind == ShaderKind::Lit { 1.0 } else { 0.0 },
-                if has_glow && m.shader_type != 4 { 1.0 } else if has_glow { 2.0 } else { 0.0 },
+                if has_normal && m.kind == ShaderKind::Lit {
+                    1.0
+                } else {
+                    0.0
+                },
+                if has_glow && m.shader_type != 4 {
+                    1.0
+                } else if has_glow {
+                    2.0
+                } else {
+                    0.0
+                },
             ],
             flags: [
                 m.flags1,
@@ -825,20 +941,37 @@ impl Renderer {
             falloff: m.falloff.to_array(),
             tint: m.tint.extend(1.0).to_array(),
         };
-        let ubuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("material"),
-            contents: bytemuck::bytes_of(&u),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let ubuf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("material"),
+                contents: bytemuck::bytes_of(&u),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("material"),
             layout: &self.material_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&diffuse.view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&normal.view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&glow.view) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-                wgpu::BindGroupEntry { binding: 4, resource: ubuf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&normal.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&glow.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: ubuf.as_entire_binding(),
+                },
             ],
         });
         let key = PipelineKey {
@@ -848,22 +981,30 @@ impl Renderer {
             z_write: m.z_write || m.blend == BlendMode::Opaque,
             z_test: m.z_test || m.blend == BlendMode::Opaque,
         };
-        GpuMaterial { bind_group, key, alpha_test: m.alpha_test.is_some() }
+        GpuMaterial {
+            bind_group,
+            key,
+            alpha_test: m.alpha_test.is_some(),
+        }
     }
 
     pub fn upload_model(&self, cpu: &CpuModel) -> GpuModel {
         let mut parts = Vec::with_capacity(cpu.meshes.len());
         for m in &cpu.meshes {
-            let vbuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&m.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-            let ibuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&m.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+            let vbuf = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    contents: bytemuck::cast_slice(&m.vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+            let ibuf = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    contents: bytemuck::cast_slice(&m.indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                });
             parts.push(GpuPart {
                 vbuf,
                 ibuf,
@@ -875,16 +1016,20 @@ impl Renderer {
         }
         let mut skinned = Vec::with_capacity(cpu.skinned.len());
         for m in &cpu.skinned {
-            let vbuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&m.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-            let ibuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&m.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+            let vbuf = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    contents: bytemuck::cast_slice(&m.vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+            let ibuf = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    contents: bytemuck::cast_slice(&m.indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                });
             let mut mat = self.create_material(&m.material);
             mat.key.skinned = true;
             skinned.push(GpuSkinnedPart {
@@ -897,7 +1042,13 @@ impl Renderer {
                 name: m.name.clone(),
             });
         }
-        GpuModel { path: String::new(), parts, skinned, bound_center: cpu.bound_center, bound_radius: cpu.bound_radius }
+        GpuModel {
+            path: String::new(),
+            parts,
+            skinned,
+            bound_center: cpu.bound_center,
+            bound_radius: cpu.bound_radius,
+        }
     }
 
     pub fn render(&mut self, scene: &Scene, camera: &Camera, target: &wgpu::TextureView) {
@@ -954,15 +1105,21 @@ impl Renderer {
             shadow_params,
             cam_fwd: camera.forward().extend(0.0).to_array(),
         };
-        self.queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&fu));
+        self.queue
+            .write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&fu));
         let nl = scene.lights.len().min(MAX_LIGHTS);
         if nl > 0 {
-            self.queue.write_buffer(&self.light_buf, 0, bytemuck::cast_slice(&scene.lights[..nl]));
+            self.queue.write_buffer(
+                &self.light_buf,
+                0,
+                bytemuck::cast_slice(&scene.lights[..nl]),
+            );
         }
 
         // Batch visible instances by (model, part).
         let mut stats = FrameStats::default();
-        let mut opaque: HashMap<(*const GpuModel, usize), (&GpuPart, Vec<InstanceData>)> = HashMap::new();
+        let mut opaque: HashMap<(*const GpuModel, usize), (&GpuPart, Vec<InstanceData>)> =
+            HashMap::new();
         let mut blended: Vec<(f32, &GpuPart, InstanceData)> = Vec::new();
         for inst in scene.instances() {
             if inst.hidden {
@@ -974,10 +1131,17 @@ impl Renderer {
             }
             let mp = Arc::as_ptr(&inst.model);
             let l = inst.lights;
-            let data = InstanceData { model: inst.transform.to_cols_array_2d(), lights: pack_lights(l) };
+            let data = InstanceData {
+                model: inst.transform.to_cols_array_2d(),
+                lights: pack_lights(l),
+            };
             for (pi, part) in inst.model.parts.iter().enumerate() {
                 if part.material.key.blend == BlendMode::Opaque {
-                    opaque.entry((mp, pi)).or_insert_with(|| (part, Vec::new())).1.push(data);
+                    opaque
+                        .entry((mp, pi))
+                        .or_insert_with(|| (part, Vec::new()))
+                        .1
+                        .push(data);
                 } else {
                     let c = inst.transform.transform_point3(part.bound_center);
                     blended.push((c.distance_squared(camera.position), part, data));
@@ -990,11 +1154,20 @@ impl Renderer {
                 continue;
             }
             for (model, bone, local) in actor.attachments.iter().chain(&actor.equipment) {
-                let xf = actor.transform * actor.pose.get(*bone).copied().unwrap_or(Mat4::IDENTITY) * *local;
-                let data = InstanceData { model: xf.to_cols_array_2d(), lights: pack_lights(actor.lights) };
+                let xf = actor.transform
+                    * actor.pose.get(*bone).copied().unwrap_or(Mat4::IDENTITY)
+                    * *local;
+                let data = InstanceData {
+                    model: xf.to_cols_array_2d(),
+                    lights: pack_lights(actor.lights),
+                };
                 for (pi, part) in model.parts.iter().enumerate() {
                     if part.material.key.blend == BlendMode::Opaque {
-                        opaque.entry((Arc::as_ptr(model), pi)).or_insert_with(|| (part, Vec::new())).1.push(data);
+                        opaque
+                            .entry((Arc::as_ptr(model), pi))
+                            .or_insert_with(|| (part, Vec::new()))
+                            .1
+                            .push(data);
                     } else {
                         let c = xf.transform_point3(part.bound_center);
                         blended.push((c.distance_squared(camera.position), part, data));
@@ -1019,7 +1192,9 @@ impl Renderer {
                 }
             }
             for mesh in &actor.meshes {
-                let Some(part) = mesh.model.skinned.get(mesh.part) else { continue };
+                let Some(part) = mesh.model.skinned.get(mesh.part) else {
+                    continue;
+                };
                 let base = palette.len() as u32;
                 for (i, &b) in mesh.bone_map.iter().enumerate() {
                     let s2b = part.skin_to_bone.get(i).copied().unwrap_or(Mat4::IDENTITY);
@@ -1033,7 +1208,10 @@ impl Renderer {
                 if mesh.bone_map.is_empty() {
                     palette.push(actor.transform);
                 }
-                skin_inst.push(SkinInstanceData { palette_base: base, lights: pack_lights(actor.lights) });
+                skin_inst.push(SkinInstanceData {
+                    palette_base: base,
+                    lights: pack_lights(actor.lights),
+                });
                 let i = skin_inst.len() as u32 - 1;
                 if visible {
                     skin_draws.push((part, i));
@@ -1046,18 +1224,30 @@ impl Renderer {
         if palette.len() > self.palette_cap {
             self.palette_cap = palette.len().next_power_of_two();
             self.palette_buf = Self::make_palette(&self.device, self.palette_cap);
-            self.frame_bg = Self::make_frame_bg(&self.device, &self.frame_bgl, &self.frame_buf, &self.light_buf, &self.palette_buf, &self.shadows);
+            self.frame_bg = Self::make_frame_bg(
+                &self.device,
+                &self.frame_bgl,
+                &self.frame_buf,
+                &self.light_buf,
+                &self.palette_buf,
+                &self.shadows,
+            );
         }
         if !palette.is_empty() {
-            self.queue.write_buffer(&self.palette_buf, 0, bytemuck::cast_slice(&palette));
+            self.queue
+                .write_buffer(&self.palette_buf, 0, bytemuck::cast_slice(&palette));
         }
         if skin_inst.len() > self.skin_instance_cap {
             self.skin_instance_cap = skin_inst.len().next_power_of_two();
-            self.skin_instance_buf =
-                Self::make_vbuf(&self.device, self.skin_instance_cap * std::mem::size_of::<SkinInstanceData>(), "skin instances");
+            self.skin_instance_buf = Self::make_vbuf(
+                &self.device,
+                self.skin_instance_cap * std::mem::size_of::<SkinInstanceData>(),
+                "skin instances",
+            );
         }
         if !skin_inst.is_empty() {
-            self.queue.write_buffer(&self.skin_instance_buf, 0, bytemuck::cast_slice(&skin_inst));
+            self.queue
+                .write_buffer(&self.skin_instance_buf, 0, bytemuck::cast_slice(&skin_inst));
         }
         for (part, _) in &skin_draws {
             self.pipeline(part.material.key);
@@ -1067,7 +1257,8 @@ impl Renderer {
         let mut all: Vec<InstanceData> = Vec::new();
         let mut draws: Vec<(&GpuPart, std::ops::Range<u32>)> = Vec::new();
         let mut opaque_sorted: Vec<_> = opaque.into_values().collect();
-        opaque_sorted.sort_by_key(|(part, _)| (part.material.key.double_sided, part.material.key.z_write));
+        opaque_sorted
+            .sort_by_key(|(part, _)| (part.material.key.double_sided, part.material.key.z_write));
         for (part, v) in opaque_sorted {
             let start = all.len() as u32;
             all.extend(v);
@@ -1089,7 +1280,8 @@ impl Renderer {
             });
         }
         if !all.is_empty() {
-            self.queue.write_buffer(&self.instance_buf, 0, bytemuck::cast_slice(&all));
+            self.queue
+                .write_buffer(&self.instance_buf, 0, bytemuck::cast_slice(&all));
         }
         // Make sure all pipelines exist before borrowing them in the pass.
         for (part, _) in &draws {
@@ -1109,13 +1301,21 @@ impl Renderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: c.x as f64, g: c.y as f64, b: c.z as f64, a: 1.0 }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: c.x as f64,
+                            g: c.y as f64,
+                            b: c.z as f64,
+                            a: 1.0,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.0), store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -1123,7 +1323,13 @@ impl Renderer {
                 multiview_mask: None,
             });
             if env.sky && self.sky.is_active() {
-                self.sky.draw(&self.queue, &mut pass, view_proj, camera.position, self.time);
+                self.sky.draw(
+                    &self.queue,
+                    &mut pass,
+                    view_proj,
+                    camera.position,
+                    self.time,
+                );
             }
             pass.set_bind_group(0, &self.frame_bg, &[]);
             if scene.cells.values().any(|c| !c.terrain.is_empty()) {
@@ -1141,18 +1347,19 @@ impl Renderer {
             }
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             let current: std::cell::Cell<Option<PipelineKey>> = std::cell::Cell::new(None);
-            let mut draw = |pass: &mut wgpu::RenderPass, part: &GpuPart, range: std::ops::Range<u32>| {
-                if current.get() != Some(part.material.key) {
-                    pass.set_pipeline(&self.pipelines[&part.material.key]);
-                    current.set(Some(part.material.key));
-                }
-                pass.set_bind_group(1, &part.material.bind_group, &[]);
-                pass.set_vertex_buffer(0, part.vbuf.slice(..));
-                pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..part.index_count, 0, range.clone());
-                stats.draws += 1;
-                stats.instances += range.end - range.start;
-            };
+            let mut draw =
+                |pass: &mut wgpu::RenderPass, part: &GpuPart, range: std::ops::Range<u32>| {
+                    if current.get() != Some(part.material.key) {
+                        pass.set_pipeline(&self.pipelines[&part.material.key]);
+                        current.set(Some(part.material.key));
+                    }
+                    pass.set_bind_group(1, &part.material.bind_group, &[]);
+                    pass.set_vertex_buffer(0, part.vbuf.slice(..));
+                    pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..part.index_count, 0, range.clone());
+                    stats.draws += 1;
+                    stats.instances += range.end - range.start;
+                };
             for (part, range) in &draws[..opaque_count] {
                 draw(&mut pass, part, range.clone());
             }
@@ -1213,7 +1420,18 @@ impl Renderer {
             .values()
             .flat_map(|c| c.actors.iter())
             .flat_map(|a| {
-                a.attachments.iter().chain(&a.equipment).map(move |(m, bone, local)| (a.transform * a.pose.get(*bone).copied().unwrap_or(Mat4::IDENTITY) * *local, m, a.lights))
+                a.attachments
+                    .iter()
+                    .chain(&a.equipment)
+                    .map(move |(m, bone, local)| {
+                        (
+                            a.transform
+                                * a.pose.get(*bone).copied().unwrap_or(Mat4::IDENTITY)
+                                * *local,
+                            m,
+                            a.lights,
+                        )
+                    })
             })
             .collect();
         for (ci, c) in cascades.iter().enumerate() {
@@ -1223,16 +1441,28 @@ impl Renderer {
             }
             // Things small next to the cascade's texels don't cast into it, nor
             // clutter into the far cascades.
-            let min_radius = (c.radius * 2.0 / shadow::SIZE as f32 * 6.0).max(shadow::MIN_CASTER[ci]);
-            let mut batches: HashMap<(*const GpuModel, usize), (&GpuPart, Vec<InstanceData>)> = HashMap::new();
+            let min_radius =
+                (c.radius * 2.0 / shadow::SIZE as f32 * 6.0).max(shadow::MIN_CASTER[ci]);
+            let mut batches: HashMap<(*const GpuModel, usize), (&GpuPart, Vec<InstanceData>)> =
+                HashMap::new();
             for inst in scene.cells.values().flat_map(|c| c.instances.iter()) {
-                if inst.hidden || inst.world_radius < min_radius || !c.sees(inst.world_center, inst.world_radius) {
+                if inst.hidden
+                    || inst.world_radius < min_radius
+                    || !c.sees(inst.world_center, inst.world_radius)
+                {
                     continue;
                 }
-                let data = InstanceData { model: inst.transform.to_cols_array_2d(), lights: [0; 4] };
+                let data = InstanceData {
+                    model: inst.transform.to_cols_array_2d(),
+                    lights: [0; 4],
+                };
                 for (pi, part) in inst.model.parts.iter().enumerate() {
                     if part.material.key.blend == BlendMode::Opaque {
-                        batches.entry((Arc::as_ptr(&inst.model), pi)).or_insert_with(|| (part, Vec::new())).1.push(data);
+                        batches
+                            .entry((Arc::as_ptr(&inst.model), pi))
+                            .or_insert_with(|| (part, Vec::new()))
+                            .1
+                            .push(data);
                     }
                 }
             }
@@ -1240,10 +1470,17 @@ impl Renderer {
                 if !c.sees(xf.transform_point3(model.bound_center), model.bound_radius) {
                     continue;
                 }
-                let data = InstanceData { model: xf.to_cols_array_2d(), lights: [0; 4] };
+                let data = InstanceData {
+                    model: xf.to_cols_array_2d(),
+                    lights: [0; 4],
+                };
                 for (pi, part) in model.parts.iter().enumerate() {
                     if part.material.key.blend == BlendMode::Opaque {
-                        batches.entry((Arc::as_ptr(model), pi)).or_insert_with(|| (part, Vec::new())).1.push(data);
+                        batches
+                            .entry((Arc::as_ptr(model), pi))
+                            .or_insert_with(|| (part, Vec::new()))
+                            .1
+                            .push(data);
                     }
                 }
             }
@@ -1259,16 +1496,27 @@ impl Renderer {
         }
         if all.len() > self.shadow_instance_cap {
             self.shadow_instance_cap = all.len().next_power_of_two();
-            self.shadow_instance_buf = Self::make_vbuf(&self.device, self.shadow_instance_cap * std::mem::size_of::<InstanceData>(), "shadow instances");
+            self.shadow_instance_buf = Self::make_vbuf(
+                &self.device,
+                self.shadow_instance_cap * std::mem::size_of::<InstanceData>(),
+                "shadow instances",
+            );
         }
         if !all.is_empty() {
-            self.queue.write_buffer(&self.shadow_instance_buf, 0, bytemuck::cast_slice(&all));
+            self.queue
+                .write_buffer(&self.shadow_instance_buf, 0, bytemuck::cast_slice(&all));
         }
         if log::log_enabled!(log::Level::Trace) {
             for (ci, d) in per_cascade.iter().enumerate() {
                 let inst: u32 = d.iter().map(|(_, r)| r.end - r.start).sum();
-                let tris: u64 = d.iter().map(|(p, r)| (p.index_count / 3) as u64 * (r.end - r.start) as u64).sum();
-                log::trace!("shadow cascade {ci}: {} draws, {inst} instances, {tris} triangles", d.len());
+                let tris: u64 = d
+                    .iter()
+                    .map(|(p, r)| (p.index_count / 3) as u64 * (r.end - r.start) as u64)
+                    .sum();
+                log::trace!(
+                    "shadow cascade {ci}: {} draws, {inst} instances, {tris} triangles",
+                    d.len()
+                );
             }
         }
         let sh = &self.shadows;
@@ -1276,13 +1524,23 @@ impl Renderer {
             if !update[ci] {
                 continue;
             }
-            self.queue.write_buffer(&sh.uniforms[ci], 0, bytemuck::bytes_of(&c.view_proj.to_cols_array_2d()));
+            self.queue.write_buffer(
+                &sh.uniforms[ci],
+                0,
+                bytemuck::bytes_of(&c.view_proj.to_cols_array_2d()),
+            );
             let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("shadow pass"),
                 layout: &sh.bgl,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: sh.uniforms[ci].as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: self.palette_buf.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: sh.uniforms[ci].as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.palette_buf.as_entire_binding(),
+                    },
                 ],
             });
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1290,7 +1548,10 @@ impl Renderer {
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &sh.layers[ci],
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -1338,7 +1599,11 @@ impl Renderer {
     pub fn bench(&mut self, scene: &Scene, camera: &Camera, frames: u32) -> std::time::Duration {
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("bench"),
-            size: wgpu::Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -1362,10 +1627,19 @@ impl Renderer {
     }
 
     /// Render a frame into an offscreen texture and return RGBA8 pixels.
-    pub fn render_to_image(&mut self, scene: &Scene, camera: &Camera, overlay: impl FnOnce(&mut Self, &wgpu::TextureView)) -> Vec<u8> {
+    pub fn render_to_image(
+        &mut self,
+        scene: &Scene,
+        camera: &Camera,
+        overlay: impl FnOnce(&mut Self, &wgpu::TextureView),
+    ) -> Vec<u8> {
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen"),
-            size: wgpu::Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -1386,12 +1660,25 @@ impl Renderer {
         });
         let mut enc = self.device.create_command_encoder(&Default::default());
         enc.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: 0, origin: Default::default(), aspect: Default::default() },
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex,
+                mip_level: 0,
+                origin: Default::default(),
+                aspect: Default::default(),
+            },
             wgpu::TexelCopyBufferInfo {
                 buffer: &buf,
-                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(bpr), rows_per_image: Some(self.height) },
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bpr),
+                    rows_per_image: Some(self.height),
+                },
             },
-            wgpu::Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
         );
         self.queue.submit([enc.finish()]);
         let slice = buf.slice(..);
@@ -1413,7 +1700,9 @@ impl Renderer {
                         [c(0), c(10), c(20)]
                     }
                     F::Rgba16Float => {
-                        let c = |i: usize| unorm(f16_to_f32(u16::from_le_bytes([px[i * 2], px[i * 2 + 1]])));
+                        let c = |i: usize| {
+                            unorm(f16_to_f32(u16::from_le_bytes([px[i * 2], px[i * 2 + 1]])))
+                        };
                         [c(0), c(1), c(2)]
                     }
                     _ => [px[0], px[1], px[2]],
@@ -1426,7 +1715,11 @@ impl Renderer {
 }
 
 fn f16_to_f32(h: u16) -> f32 {
-    let (sign, exp, man) = ((h >> 15) as u32, (h >> 10 & 0x1f) as i32, (h & 0x3ff) as f32);
+    let (sign, exp, man) = (
+        (h >> 15) as u32,
+        (h >> 10 & 0x1f) as i32,
+        (h & 0x3ff) as f32,
+    );
     let mag = match exp {
         0 => man * 2f32.powi(-24),
         31 => f32::INFINITY,

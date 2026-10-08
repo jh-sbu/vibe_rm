@@ -11,7 +11,9 @@ pub mod behavior;
 mod packfile;
 mod spline;
 
-pub use anim::{Animation, AnimationContainer, Annotation, Binding, QsTransform, Skeleton, SkeletonBone};
+pub use anim::{
+    Animation, AnimationContainer, Annotation, Binding, QsTransform, Skeleton, SkeletonBone,
+};
 pub use packfile::{Object, Packfile};
 
 #[derive(Debug, thiserror::Error)]

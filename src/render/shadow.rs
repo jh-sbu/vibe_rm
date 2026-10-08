@@ -30,7 +30,10 @@ impl Cascade {
     pub fn sees(&self, c: Vec3, r: f32) -> bool {
         let p = self.view.transform_point3(c);
         // Looking down -Z from beyond the slice: anything between the sun and the slice.
-        p.x.abs() < self.radius + r && p.y.abs() < self.radius + r && -p.z > -r && -p.z < 2.0 * self.radius + CASTER_REACH + r
+        p.x.abs() < self.radius + r
+            && p.y.abs() < self.radius + r
+            && -p.z > -r
+            && -p.z < 2.0 * self.radius + CASTER_REACH + r
     }
 }
 
@@ -51,12 +54,19 @@ pub fn cascades(camera: &Camera, aspect: f32, sun_dir: Vec3) -> [Cascade; CASCAD
         let far = SPLITS[i];
         let corners = [near, far].into_iter().flat_map(|d| {
             let c = camera.position + fwd * d;
-            [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)].map(|(sx, sy)| c + right * (sx * tx * d) + up * (sy * ty * d))
+            [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)]
+                .map(|(sx, sy)| c + right * (sx * tx * d) + up * (sy * ty * d))
         });
         let corners: Vec<Vec3> = corners.collect();
         let centre = corners.iter().copied().sum::<Vec3>() / corners.len() as f32;
         // Round the radius so the cascade's size (and texel size) stays put.
-        let radius = (corners.iter().map(|c| c.distance(centre)).fold(0.0, f32::max) / 64.0).ceil() * 64.0;
+        let radius = (corners
+            .iter()
+            .map(|c| c.distance(centre))
+            .fold(0.0, f32::max)
+            / 64.0)
+            .ceil()
+            * 64.0;
         near = far;
         // Snap the centre to the texel grid in light space.
         let texel = 2.0 * radius / SIZE as f32;
@@ -66,8 +76,19 @@ pub fn cascades(camera: &Camera, aspect: f32, sun_dir: Vec3) -> [Cascade; CASCAD
         let centre = rot.inverse().transform_point3(lc);
         let eye = centre + l * (radius + CASTER_REACH);
         let view = glam::camera::rh::view::look_to_mat4(eye, -l, light_up);
-        let proj = glam::camera::rh::proj::directx::orthographic(-radius, radius, -radius, radius, 0.0, 2.0 * radius + CASTER_REACH);
-        Cascade { view_proj: proj * view, view, radius }
+        let proj = glam::camera::rh::proj::directx::orthographic(
+            -radius,
+            radius,
+            -radius,
+            radius,
+            0.0,
+            2.0 * radius + CASTER_REACH,
+        );
+        Cascade {
+            view_proj: proj * view,
+            view,
+            radius,
+        }
     })
 }
 
@@ -85,10 +106,18 @@ pub struct ShadowMaps {
 }
 
 impl ShadowMaps {
-    pub fn new(device: &wgpu::Device, material_bgl: &wgpu::BindGroupLayout, terrain_stride: u64) -> ShadowMaps {
+    pub fn new(
+        device: &wgpu::Device,
+        material_bgl: &wgpu::BindGroupLayout,
+        terrain_stride: u64,
+    ) -> ShadowMaps {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("shadow maps"),
-            size: wgpu::Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: CASCADES as u32 },
+            size: wgpu::Extent3d {
+                width: SIZE,
+                height: SIZE,
+                depth_or_array_layers: CASCADES as u32,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -125,13 +154,21 @@ impl ShadowMaps {
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
             ],
@@ -166,46 +203,116 @@ impl ShadowMaps {
             depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: Default::default(),
             // Slope-scaled bias keeps lit surfaces from shadowing themselves.
-            bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.5, clamp: 0.0 },
+            bias: wgpu::DepthBiasState {
+                constant: 2,
+                slope_scale: 2.5,
+                clamp: 0.0,
+            },
         };
         // Position and UV of the object vertex formats (see `object.wgsl`).
         let vertex_attrs = [
-            wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 0 },
-            wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x2, offset: 48, shader_location: 4 },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x3,
+                offset: 0,
+                shader_location: 0,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x2,
+                offset: 48,
+                shader_location: 4,
+            },
         ];
         let inst_attrs = wgpu::vertex_attr_array![6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4];
         let skin_attrs = [
-            wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 0 },
-            wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x2, offset: 48, shader_location: 4 },
-            wgpu::VertexAttribute { format: wgpu::VertexFormat::Uint32x4, offset: 72, shader_location: 11 },
-            wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x4, offset: 88, shader_location: 12 },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x3,
+                offset: 0,
+                shader_location: 0,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x2,
+                offset: 48,
+                shader_location: 4,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Uint32x4,
+                offset: 72,
+                shader_location: 11,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 88,
+                shader_location: 12,
+            },
         ];
         let skin_inst_attrs = wgpu::vertex_attr_array![13 => Uint32];
-        let pipeline = |label: &str, layout: &wgpu::PipelineLayout, entry: &str, buffers: &[Option<wgpu::VertexBufferLayout>], fragment: bool| {
+        let pipeline = |label: &str,
+                        layout: &wgpu::PipelineLayout,
+                        entry: &str,
+                        buffers: &[Option<wgpu::VertexBufferLayout>],
+                        fragment: bool| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(layout),
-                vertex: wgpu::VertexState { module: &shader, entry_point: Some(entry), compilation_options: Default::default(), buffers },
-                primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    buffers,
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
                 depth_stencil: Some(depth()),
                 multisample: Default::default(),
-                fragment: fragment.then(|| wgpu::FragmentState { module: &shader, entry_point: Some("fs_alpha"), compilation_options: Default::default(), targets: &[] }),
+                fragment: fragment.then(|| wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_alpha"),
+                    compilation_options: Default::default(),
+                    targets: &[],
+                }),
                 multiview_mask: None,
                 cache: None,
             })
         };
         let static_buffers = [
-            Some(wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<Vertex>() as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &vertex_attrs }),
-            Some(wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<InstanceData>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &inst_attrs }),
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Vertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &vertex_attrs,
+            }),
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<InstanceData>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &inst_attrs,
+            }),
         ];
-        let depth_pipeline = pipeline("shadow depth", &with_material, "vs_static", &static_buffers, false);
-        let static_pipeline = pipeline("shadow static", &with_material, "vs_static", &static_buffers, true);
+        let depth_pipeline = pipeline(
+            "shadow depth",
+            &with_material,
+            "vs_static",
+            &static_buffers,
+            false,
+        );
+        let static_pipeline = pipeline(
+            "shadow static",
+            &with_material,
+            "vs_static",
+            &static_buffers,
+            true,
+        );
         let skinned_pipeline = pipeline(
             "shadow skinned",
             &with_material,
             "vs_skinned",
             &[
-                Some(wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<SkinVertex>() as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &skin_attrs }),
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<SkinVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &skin_attrs,
+                }),
                 Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<SkinInstanceData>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
@@ -219,17 +326,39 @@ impl ShadowMaps {
             "shadow terrain",
             &terrain_layout,
             "vs_terrain",
-            &[Some(wgpu::VertexBufferLayout { array_stride: terrain_stride, step_mode: wgpu::VertexStepMode::Vertex, attributes: &terrain_attrs })],
+            &[Some(wgpu::VertexBufferLayout {
+                array_stride: terrain_stride,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &terrain_attrs,
+            })],
             false,
         );
-        ShadowMaps { array_view, layers, sampler, bgl, uniforms, depth_pipeline, static_pipeline, skinned_pipeline, terrain_pipeline }
+        ShadowMaps {
+            array_view,
+            layers,
+            sampler,
+            bgl,
+            uniforms,
+            depth_pipeline,
+            static_pipeline,
+            skinned_pipeline,
+            terrain_pipeline,
+        }
     }
 }
 
 /// Frame uniform data for sampling the cascades: their matrices, where each ends,
 /// and (enabled, texel size, cascade radii...) parameters.
-pub fn frame_data(c: &[Cascade; CASCADES], enabled: bool) -> ([[[f32; 4]; 4]; CASCADES], [f32; 4], [f32; 4]) {
+pub fn frame_data(
+    c: &[Cascade; CASCADES],
+    enabled: bool,
+) -> ([[[f32; 4]; 4]; CASCADES], [f32; 4], [f32; 4]) {
     let mats = c.map(|c| c.view_proj.to_cols_array_2d());
-    let params = Vec4::new(if enabled { 1.0 } else { 0.0 }, 1.0 / SIZE as f32, c[0].radius, c[CASCADES - 1].radius);
+    let params = Vec4::new(
+        if enabled { 1.0 } else { 0.0 },
+        1.0 / SIZE as f32,
+        c[0].radius,
+        c[CASCADES - 1].radius,
+    );
     (mats, SPLITS, params.to_array())
 }

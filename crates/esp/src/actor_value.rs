@@ -142,7 +142,10 @@ pub fn index(name: &str) -> Option<u32> {
         "criticalchance" => "CritChance",
         _ => name,
     };
-    NAMES.iter().position(|n| n.eq_ignore_ascii_case(alias)).map(|i| i as u32)
+    NAMES
+        .iter()
+        .position(|n| n.eq_ignore_ascii_case(alias))
+        .map(|i| i as u32)
 }
 
 #[cfg(test)]

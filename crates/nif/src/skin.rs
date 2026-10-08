@@ -53,7 +53,11 @@ fn ni_transform(r: &mut Reader) -> Result<Transform> {
     let rotation: Mat3 = r.mat3()?;
     let translation = r.vec3()?;
     let scale = r.f32()?;
-    Ok(Transform { translation, rotation, scale })
+    Ok(Transform {
+        translation,
+        rotation,
+        scale,
+    })
 }
 
 pub(crate) fn skin_instance(r: &mut Reader, dismember: bool) -> Result<SkinInstance> {
@@ -65,7 +69,12 @@ pub(crate) fn skin_instance(r: &mut Reader, dismember: bool) -> Result<SkinInsta
         let n = r.u32()? as usize;
         r.skip(n * 4)?;
     }
-    Ok(SkinInstance { data, partition, skeleton_root, bones })
+    Ok(SkinInstance {
+        data,
+        partition,
+        skeleton_root,
+        bones,
+    })
 }
 
 pub(crate) fn skin_data(r: &mut Reader) -> Result<SkinData> {
@@ -85,20 +94,37 @@ pub(crate) fn skin_data(r: &mut Reader) -> Result<SkinData> {
                 weights.push((r.u16()?, r.f32()?));
             }
         }
-        bones.push(BoneData { transform, bound_center, bound_radius, weights });
+        bones.push(BoneData {
+            transform,
+            bound_center,
+            bound_radius,
+            weights,
+        });
     }
-    Ok(SkinData { skin_transform, bones })
+    Ok(SkinData {
+        skin_transform,
+        bones,
+    })
 }
 
 pub(crate) fn skin_partition(r: &mut Reader) -> Result<SkinPartition> {
     let np = r.u32()? as usize;
-    let mut sp = SkinPartition { vertex_desc: 0, geometry: Geometry::default(), partitions: Vec::with_capacity(np) };
+    let mut sp = SkinPartition {
+        vertex_desc: 0,
+        geometry: Geometry::default(),
+        partitions: Vec::with_capacity(np),
+    };
     if r.bs_version == 100 {
         let data_size = r.u32()? as usize;
         let vertex_size = r.u32()? as usize;
         sp.vertex_desc = r.u64()?;
         if data_size > 0 && vertex_size > 0 {
-            crate::blocks::read_vertex_data(r, sp.vertex_desc, data_size / vertex_size, &mut sp.geometry)?;
+            crate::blocks::read_vertex_data(
+                r,
+                sp.vertex_desc,
+                data_size / vertex_size,
+                &mut sp.geometry,
+            )?;
         }
     }
     for _ in 0..np {
@@ -179,7 +205,15 @@ pub(crate) fn skin_partition(r: &mut Reader) -> Result<SkinPartition> {
             }
             triangles = tris;
         }
-        sp.partitions.push(Partition { num_vertices, bones, vertex_map, weights, bone_indices, triangles, weights_per_vertex: wpv });
+        sp.partitions.push(Partition {
+            num_vertices,
+            bones,
+            vertex_map,
+            weights,
+            bone_indices,
+            triangles,
+            weights_per_vertex: wpv,
+        });
     }
     Ok(sp)
 }

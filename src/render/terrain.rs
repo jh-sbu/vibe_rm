@@ -36,7 +36,11 @@ pub struct TerrainPipeline {
 }
 
 impl TerrainPipeline {
-    pub fn new(device: &wgpu::Device, frame_bgl: &wgpu::BindGroupLayout, color_format: wgpu::TextureFormat) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        frame_bgl: &wgpu::BindGroupLayout,
+        color_format: wgpu::TextureFormat,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("terrain"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/terrain.wgsl").into()),
@@ -59,7 +63,10 @@ impl TerrainPipeline {
             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
             count: None,
         });
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("terrain"), entries: &entries });
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("terrain"),
+            entries: &entries,
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("terrain"),
             bind_group_layouts: &[Some(frame_bgl), Some(&bgl)],
@@ -97,7 +104,11 @@ impl TerrainPipeline {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format: color_format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
             }),
             multiview_mask: None,
             cache: None,
@@ -118,7 +129,12 @@ impl TerrainPipeline {
             contents: bytemuck::cast_slice(&indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        TerrainPipeline { pipeline, bgl, ibuf, index_count: indices.len() as u32 }
+        TerrainPipeline {
+            pipeline,
+            bgl,
+            ibuf,
+            index_count: indices.len() as u32,
+        }
     }
 }
 
@@ -138,14 +154,21 @@ impl super::Renderer {
                     let gr = qy * 16 + r;
                     let gi = gr * VERTS + gc;
                     let step = CELL_SIZE / 32.0;
-                    let p = Vec3::new(origin.x + gc as f32 * step, origin.y + gr as f32 * step, land.heights[gi]);
+                    let p = Vec3::new(
+                        origin.x + gc as f32 * step,
+                        origin.y + gr as f32 * step,
+                        land.heights[gi],
+                    );
                     min = min.min(p);
                     max = max.max(p);
                     let mut w = [0f32; 8];
                     for (li, layer) in quad.layers.iter().enumerate().skip(1).take(MAX_LAYERS - 1) {
                         w[li - 1] = layer.opacity[r * QUAD_VERTS + c];
                     }
-                    let uv = [gc as f32 / 32.0 * UV_REPEAT_PER_CELL, -(gr as f32) / 32.0 * UV_REPEAT_PER_CELL];
+                    let uv = [
+                        gc as f32 / 32.0 * UV_REPEAT_PER_CELL,
+                        -(gr as f32) / 32.0 * UV_REPEAT_PER_CELL,
+                    ];
                     verts.push(TerrainVertex {
                         pos: p.to_array(),
                         normal: land.normals[gi].to_array(),
@@ -156,15 +179,19 @@ impl super::Renderer {
                     });
                 }
             }
-            let vbuf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("terrain"),
-                contents: bytemuck::cast_slice(&verts),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+            let vbuf = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("terrain"),
+                    contents: bytemuck::cast_slice(&verts),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
             let mut views: Vec<Arc<super::texture::GpuTexture>> = Vec::with_capacity(16);
             for i in 0..MAX_LAYERS {
                 let l = quad.layers.get(i);
-                let d = l.and_then(|l| self.textures.get(&l.diffuse).flatten()).unwrap_or_else(|| self.white.clone());
+                let d = l
+                    .and_then(|l| self.textures.get(&l.diffuse).flatten())
+                    .unwrap_or_else(|| self.white.clone());
                 views.push(d);
             }
             for i in 0..MAX_LAYERS {
@@ -178,15 +205,26 @@ impl super::Renderer {
             let mut entries: Vec<wgpu::BindGroupEntry> = views
                 .iter()
                 .enumerate()
-                .map(|(i, t)| wgpu::BindGroupEntry { binding: i as u32, resource: wgpu::BindingResource::TextureView(&t.view) })
+                .map(|(i, t)| wgpu::BindGroupEntry {
+                    binding: i as u32,
+                    resource: wgpu::BindingResource::TextureView(&t.view),
+                })
                 .collect();
-            entries.push(wgpu::BindGroupEntry { binding: 16, resource: wgpu::BindingResource::Sampler(&self.sampler) });
+            entries.push(wgpu::BindGroupEntry {
+                binding: 16,
+                resource: wgpu::BindingResource::Sampler(&self.sampler),
+            });
             let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("terrain"),
                 layout: &self.terrain.bgl,
                 entries: &entries,
             });
-            out.push(TerrainChunk { vbuf, bind_group, center: (min + max) * 0.5, radius: (max - min).length() * 0.5 });
+            out.push(TerrainChunk {
+                vbuf,
+                bind_group,
+                center: (min + max) * 0.5,
+                radius: (max - min).length() * 0.5,
+            });
         }
         out
     }

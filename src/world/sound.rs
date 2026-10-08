@@ -16,7 +16,11 @@ pub struct SoundDesc {
 pub fn sound_path(s: &str, vfs: &vfs::Vfs) -> String {
     let n = vfs::normalize_path(s);
     let n = n.strip_prefix("data/").unwrap_or(&n).to_owned();
-    let n = if n.starts_with("sound/") || n.starts_with("music/") { n } else { format!("sound/{n}") };
+    let n = if n.starts_with("sound/") || n.starts_with("music/") {
+        n
+    } else {
+        format!("sound/{n}")
+    };
     // Records name .wav files that ship as .xwm.
     if !vfs.exists(&n)
         && let Some(stem) = n.strip_suffix(".wav")
@@ -40,9 +44,21 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
     if rec.tag().0 != *b"SNDR" {
         return None;
     }
-    let files: Vec<String> = rec.subrecords().filter(|s| s.tag.0 == *b"ANAM").map(|s| sound_path(&s.zstring(), vfs)).collect();
-    let looping = rec.get(b"LNAM").is_some_and(|l| l.len() >= 2 && l[1] & 0x38 != 0);
-    let mut desc = SoundDesc { files, looping, min_dist: 200.0, max_dist: 2000.0, volume: 1.0 };
+    let files: Vec<String> = rec
+        .subrecords()
+        .filter(|s| s.tag.0 == *b"ANAM")
+        .map(|s| sound_path(&s.zstring(), vfs))
+        .collect();
+    let looping = rec
+        .get(b"LNAM")
+        .is_some_and(|l| l.len() >= 2 && l[1] & 0x38 != 0);
+    let mut desc = SoundDesc {
+        files,
+        looping,
+        min_dist: 200.0,
+        max_dist: 2000.0,
+        volume: 1.0,
+    };
     if let Some(b) = rec.get(b"BNAM")
         && b.len() >= 6
     {
@@ -57,7 +73,11 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
         desc.min_dist = f32::from_le_bytes(a[4..8].try_into().unwrap());
         desc.max_dist = f32::from_le_bytes(a[8..12].try_into().unwrap());
     }
-    if desc.files.is_empty() { None } else { Some(desc) }
+    if desc.files.is_empty() {
+        None
+    } else {
+        Some(desc)
+    }
 }
 
 pub const MUST_SINGLE: u32 = 0x6ED7_E048;

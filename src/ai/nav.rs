@@ -39,7 +39,16 @@ impl Mesh {
         }
         let cols = (((max.x - min.x) / BUCKET).floor() as usize + 1).min(512);
         let rows = (((max.y - min.y) / BUCKET).floor() as usize + 1).min(512);
-        let mut mesh = Mesh { verts, tris: m.triangles, links: m.edge_links, min, max, cols, rows, buckets: vec![Vec::new(); cols * rows] };
+        let mut mesh = Mesh {
+            verts,
+            tris: m.triangles,
+            links: m.edge_links,
+            min,
+            max,
+            cols,
+            rows,
+            buckets: vec![Vec::new(); cols * rows],
+        };
         for (i, t) in mesh.tris.iter().enumerate() {
             let p = t.vertices.map(|v| mesh.verts[v as usize].truncate());
             let lo = p[0].min(p[1]).min(p[2]);
@@ -56,8 +65,12 @@ impl Mesh {
     }
 
     fn bucket_of(&self, p: Vec2) -> (usize, usize) {
-        let c = ((p.x - self.min.x) / BUCKET).floor().clamp(0.0, (self.cols - 1) as f32) as usize;
-        let r = ((p.y - self.min.y) / BUCKET).floor().clamp(0.0, (self.rows - 1) as f32) as usize;
+        let c = ((p.x - self.min.x) / BUCKET)
+            .floor()
+            .clamp(0.0, (self.cols - 1) as f32) as usize;
+        let r = ((p.y - self.min.y) / BUCKET)
+            .floor()
+            .clamp(0.0, (self.rows - 1) as f32) as usize;
         (c, r)
     }
 
@@ -124,7 +137,9 @@ impl NavWorld {
     /// Load the navmeshes of a cell. Returns the ids that were added.
     pub fn load_cell(&mut self, lo: &esp::LoadOrder, cell: FormId) -> Vec<FormId> {
         let mut added = Vec::new();
-        let Some(idx) = lo.cell(cell) else { return added };
+        let Some(idx) = lo.cell(cell) else {
+            return added;
+        };
         for &id in &idx.navmeshes {
             if self.meshes.contains_key(&id) {
                 continue;
@@ -133,7 +148,11 @@ impl NavWorld {
             if r.header.is_deleted() {
                 continue;
             }
-            if let Some(m) = r.get(b"NVNM").and_then(|d| NavMesh::parse(d, |f| r.fid(f))).and_then(Mesh::new) {
+            if let Some(m) = r
+                .get(b"NVNM")
+                .and_then(|d| NavMesh::parse(d, |f| r.fid(f)))
+                .and_then(Mesh::new)
+            {
                 self.meshes.insert(id, m);
                 added.push(id);
             }
@@ -152,7 +171,11 @@ impl NavWorld {
         let q = p.truncate();
         let mut best: Option<(Node, f32, f32)> = None;
         for (&id, m) in &self.meshes {
-            if q.x < m.min.x - 1.0 || q.y < m.min.y - 1.0 || q.x > m.max.x + 1.0 || q.y > m.max.y + 1.0 {
+            if q.x < m.min.x - 1.0
+                || q.y < m.min.y - 1.0
+                || q.x > m.max.x + 1.0
+                || q.y > m.max.y + 1.0
+            {
                 continue;
             }
             let (c, r) = m.bucket_of(q);
@@ -171,7 +194,11 @@ impl NavWorld {
         // Off the mesh: snap to the nearest triangle centroid close by.
         let mut near: Option<(Node, f32, f32)> = None;
         for (&id, m) in &self.meshes {
-            if q.x < m.min.x - BUCKET || q.y < m.min.y - BUCKET || q.x > m.max.x + BUCKET || q.y > m.max.y + BUCKET {
+            if q.x < m.min.x - BUCKET
+                || q.y < m.min.y - BUCKET
+                || q.x > m.max.x + BUCKET
+                || q.y > m.max.y + BUCKET
+            {
                 continue;
             }
             let (c, r) = m.bucket_of(q);
@@ -204,13 +231,27 @@ impl NavWorld {
             let a = m.verts[t.vertices[e] as usize];
             let b = m.verts[t.vertices[(e + 1) % 3] as usize];
             if let Some(nb) = t.neighbour(e) {
-                out.push((Node { mesh: n.mesh, tri: nb as u16 }, a, b));
+                out.push((
+                    Node {
+                        mesh: n.mesh,
+                        tri: nb as u16,
+                    },
+                    a,
+                    b,
+                ));
             } else if let Some(l) = t.link(e) {
                 let link = m.links[l];
                 if let Some(other) = self.meshes.get(&link.navmesh)
                     && (link.triangle as usize) < other.tris.len()
                 {
-                    out.push((Node { mesh: link.navmesh, tri: link.triangle }, a, b));
+                    out.push((
+                        Node {
+                            mesh: link.navmesh,
+                            tri: link.triangle,
+                        },
+                        a,
+                        b,
+                    ));
                 }
             }
         }
@@ -232,7 +273,10 @@ impl NavWorld {
         let mut entry: HashMap<Node, Vec3> = HashMap::new();
         cost.insert(start, 0.0);
         entry.insert(start, from);
-        open.push(Open { f: from.distance(to), node: start });
+        open.push(Open {
+            f: from.distance(to),
+            node: start,
+        });
         let mut buf = Vec::new();
         let mut expansions = 0;
         let mut found = false;
@@ -255,8 +299,15 @@ impl NavWorld {
                     cost.insert(nb, ng);
                     entry.insert(nb, mid);
                     came.insert(nb, (node, a, b));
-                    let h = if nb == goal { mid.distance(to) } else { mid.distance(to).min(centre(nb).distance(to) + 1.0) };
-                    open.push(Open { f: ng + h, node: nb });
+                    let h = if nb == goal {
+                        mid.distance(to)
+                    } else {
+                        mid.distance(to).min(centre(nb).distance(to) + 1.0)
+                    };
+                    open.push(Open {
+                        f: ng + h,
+                        node: nb,
+                    });
                 }
             }
         }
@@ -269,7 +320,11 @@ impl NavWorld {
         while let Some(&(prev, a, b)) = came.get(&n) {
             let c = centre(prev);
             let d = ((a + b) * 0.5 - c).truncate();
-            let (l, r) = if d.perp_dot((a - c).truncate()) > 0.0 { (a, b) } else { (b, a) };
+            let (l, r) = if d.perp_dot((a - c).truncate()) > 0.0 {
+                (a, b)
+            } else {
+                (b, a)
+            };
             portals.push((l, r));
             n = prev;
         }
@@ -295,11 +350,20 @@ impl NavWorld {
     }
 
     /// A random point on the navmesh within `radius` of `centre` (in XY).
-    pub fn random_point(&self, centre: Vec3, radius: f32, mut rand: impl FnMut() -> u64) -> Option<Vec3> {
+    pub fn random_point(
+        &self,
+        centre: Vec3,
+        radius: f32,
+        mut rand: impl FnMut() -> u64,
+    ) -> Option<Vec3> {
         let c = centre.truncate();
         let mut candidates: Vec<(FormId, u16)> = Vec::new();
         for (&id, m) in &self.meshes {
-            if c.x + radius < m.min.x || c.y + radius < m.min.y || c.x - radius > m.max.x || c.y - radius > m.max.y {
+            if c.x + radius < m.min.x
+                || c.y + radius < m.min.y
+                || c.x - radius > m.max.x
+                || c.y - radius > m.max.y
+            {
                 continue;
             }
             for (i, t) in m.tris.iter().enumerate() {
@@ -307,7 +371,9 @@ impl NavWorld {
                     continue;
                 }
                 let cen = m.centroid(i);
-                if cen.truncate().distance(c) <= radius && (cen.z - centre.z).abs() < radius.max(300.0) {
+                if cen.truncate().distance(c) <= radius
+                    && (cen.z - centre.z).abs() < radius.max(300.0)
+                {
                     candidates.push((id, i as u16));
                 }
             }
@@ -394,8 +460,14 @@ mod tests {
     #[test]
     fn funnel_straight_corridor() {
         // Travelling +Y, the left side is -X.
-        let portals: Vec<(Vec3, Vec3)> =
-            (1..5).map(|i| (Vec3::new(-50.0, i as f32 * 100.0, 0.0), Vec3::new(50.0, i as f32 * 100.0, 0.0))).collect();
+        let portals: Vec<(Vec3, Vec3)> = (1..5)
+            .map(|i| {
+                (
+                    Vec3::new(-50.0, i as f32 * 100.0, 0.0),
+                    Vec3::new(50.0, i as f32 * 100.0, 0.0),
+                )
+            })
+            .collect();
         let p = string_pull(Vec3::ZERO, Vec3::new(0.0, 600.0, 0.0), &portals);
         assert_eq!(p, vec![Vec3::new(0.0, 600.0, 0.0)]);
     }

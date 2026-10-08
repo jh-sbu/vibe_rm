@@ -81,11 +81,27 @@ impl Engine {
         if actor == PLAYER_REF {
             return false;
         }
-        if self.npc_factions(actor).iter().any(|&(f, rank)| f == IS_GUARD_FACTION && rank >= 0) {
+        if self
+            .npc_factions(actor)
+            .iter()
+            .any(|&(f, rank)| f == IS_GUARD_FACTION && rank >= 0)
+        {
             return true;
         }
-        let Some(class) = self.templates_of(actor).and_then(|t| t.form(&self.lo, crate::world::template::TRAITS, b"CNAM")) else { return false };
-        self.lo.get(class).and_then(|r| r.get(b"DATA").filter(|d| d.len() >= 36).map(|d| d[35] & 1 != 0)).unwrap_or(false)
+        let Some(class) = self
+            .templates_of(actor)
+            .and_then(|t| t.form(&self.lo, crate::world::template::TRAITS, b"CNAM"))
+        else {
+            return false;
+        };
+        self.lo
+            .get(class)
+            .and_then(|r| {
+                r.get(b"DATA")
+                    .filter(|d| d.len() >= 36)
+                    .map(|d| d[35] & 1 != 0)
+            })
+            .unwrap_or(false)
     }
 
     /// Whether `r` is a guard coming to arrest the player (`GetAlarmed`).
@@ -97,13 +113,19 @@ impl Engine {
     /// faction they owe that doesn't arrest (no Arrest flag), whose arrest
     /// they resisted, or whose Attack on Sight bounty they have passed.
     pub(crate) fn crime_hostile(&self, r: FormId) -> bool {
-        let Some(f) = self.crime_faction(r) else { return false };
+        let Some(f) = self.crime_faction(r) else {
+            return false;
+        };
         let owed = self.bounty(f).total();
         if owed <= 0 || !self.is_guard(r) {
             return false;
         }
-        let Some(v) = CrimeValues::of(&self.lo, f) else { return false };
-        !v.arrest || self.crime.arrests.resisting.contains(&f) || (v.attack_on_sight && owed >= ATTACK_ON_SIGHT_GOLD)
+        let Some(v) = CrimeValues::of(&self.lo, f) else {
+            return false;
+        };
+        !v.arrest
+            || self.crime.arrests.resisting.contains(&f)
+            || (v.attack_on_sight && owed >= ATTACK_ON_SIGHT_GOLD)
     }
 
     /// A crime was reported to `faction`: its guards hear of it (UESP: the
@@ -119,14 +141,30 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.bleeding.is_none() && a.combat.is_none() && a.pos.distance(player) < ALARM_DISTANCE)
+            .filter(|a| {
+                !a.dead
+                    && a.bleeding.is_none()
+                    && a.combat.is_none()
+                    && a.pos.distance(player) < ALARM_DISTANCE
+            })
             .map(|a| a.ref_id)
-            .filter(|&r| !self.crime.arrests.alarmed.contains_key(&r) && self.crime_faction(r) == Some(faction) && self.is_guard(r) && self.sit_sleep_state(r, true) != 3.0)
+            .filter(|&r| {
+                !self.crime.arrests.alarmed.contains_key(&r)
+                    && self.crime_faction(r) == Some(faction)
+                    && self.is_guard(r)
+                    && self.sit_sleep_state(r, true) != 3.0
+            })
             .collect();
         log::debug!("alarm for {faction}: {} loaded guards of it", guards.len());
         for g in guards {
             log::info!("{g} comes to arrest the player for {faction}");
-            self.crime.arrests.alarmed.insert(g, Pursuit { faction, bark_in: 0.0 });
+            self.crime.arrests.alarmed.insert(
+                g,
+                Pursuit {
+                    faction,
+                    bark_in: 0.0,
+                },
+            );
         }
     }
 
@@ -140,16 +178,33 @@ impl Engine {
         if let Some(door) = self.crime.arrests.pending.take() {
             self.send_player_through(door);
         }
-        if self.crime.arrests.jailed.is_some_and(|s| self.location != crate::engine::Location::Interior(self.jail_cell(s))) {
+        if self
+            .crime
+            .arrests
+            .jailed
+            .is_some_and(|s| self.location != crate::engine::Location::Interior(self.jail_cell(s)))
+        {
             self.escape_jail();
         }
-        let ids: Vec<(FormId, Pursuit)> = self.crime.arrests.alarmed.iter().map(|(&r, &p)| (r, p)).collect();
+        let ids: Vec<(FormId, Pursuit)> = self
+            .crime
+            .arrests
+            .alarmed
+            .iter()
+            .map(|(&r, &p)| (r, p))
+            .collect();
         let player = self.player_feet();
         let mut reached = Vec::new();
         for (r, mut p) in ids {
-            let live = self.actor_ref(r).filter(|a| !a.dead && a.bleeding.is_none());
+            let live = self
+                .actor_ref(r)
+                .filter(|a| !a.dead && a.bleeding.is_none());
             let fighting = live.is_some_and(|a| a.combat.is_some());
-            if live.is_none() || fighting || self.bounty(p.faction).total() <= 0 || self.player_dead() {
+            if live.is_none()
+                || fighting
+                || self.bounty(p.faction).total() <= 0
+                || self.player_dead()
+            {
                 self.calm_guard(r);
                 continue;
             }
@@ -169,7 +224,11 @@ impl Engine {
             if p.bark_in <= 0.0 {
                 let k = (self.rand() % 1000) as f32 / 1000.0;
                 p.bark_in = PURSUE_BARK.0 + (PURSUE_BARK.1 - PURSUE_BARK.0) * k;
-                log::debug!("{r} pursuing the player, {:.0} units off ({:.0} up)", pos.truncate().distance(player.truncate()), player.z - pos.z);
+                log::debug!(
+                    "{r} pursuing the player, {:.0} units off ({:.0} up)",
+                    pos.truncate().distance(player.truncate()),
+                    player.z - pos.z
+                );
                 if self.barks.current.is_none() && self.conversation.is_none() {
                     self.bark(r, b"PURS");
                 }
@@ -187,7 +246,11 @@ impl Engine {
         {
             match self.blocking_greeting(r) {
                 Some(greeting) => {
-                    log::info!("{r} stops the player: {} {}", greeting.0.editor_id, greeting.1.id);
+                    log::info!(
+                        "{r} stops the player: {} {}",
+                        greeting.0.editor_id,
+                        greeting.1.id
+                    );
                     self.crime.arrests.arresting = Some((r, faction));
                     self.crimes_known(faction);
                     self.open_conversation(r, Some(greeting));
@@ -209,9 +272,20 @@ impl Engine {
     }
 
     /// The loaded actor `r` with the furniture world, to change both.
-    fn actor_mut_any(&mut self, r: FormId) -> Option<(&mut crate::ai::ActorRuntime, &mut crate::ai::furniture::FurnitureWorld)> {
+    fn actor_mut_any(
+        &mut self,
+        r: FormId,
+    ) -> Option<(
+        &mut crate::ai::ActorRuntime,
+        &mut crate::ai::furniture::FurnitureWorld,
+    )> {
         let key = self.actor_cells.get(&r).copied()?;
-        let a = self.cells.get_mut(&key)?.actors.iter_mut().find(|a| a.ref_id == r)?;
+        let a = self
+            .cells
+            .get_mut(&key)?
+            .actors
+            .iter_mut()
+            .find(|a| a.ref_id == r)?;
         Some((a, &mut self.furniture))
     }
 
@@ -219,11 +293,23 @@ impl Engine {
     /// arresting guard): that faction's guards attack them until the bounty
     /// is paid (UESP: "the guards ... in the area" turn hostile).
     pub fn set_player_resisting_arrest(&mut self, guard: FormId) {
-        let Some(f) = self.crime_faction(guard).or(self.crime.arrests.arresting.map(|a| a.1)) else { return };
+        let Some(f) = self
+            .crime_faction(guard)
+            .or(self.crime.arrests.arresting.map(|a| a.1))
+        else {
+            return;
+        };
         log::info!("the player resists arrest by {f}");
         self.crime.arrests.resisting.insert(f);
         self.crime.arrests.arresting = None;
-        let guards: Vec<FormId> = self.crime.arrests.alarmed.iter().filter(|(_, p)| p.faction == f).map(|(&r, _)| r).collect();
+        let guards: Vec<FormId> = self
+            .crime
+            .arrests
+            .alarmed
+            .iter()
+            .filter(|(_, p)| p.faction == f)
+            .map(|(&r, _)| r)
+            .collect();
         for g in guards.into_iter().chain(std::iter::once(guard)) {
             self.calm_guard(g);
             if self.crime_hostile(g) {
@@ -237,7 +323,9 @@ impl Engine {
     /// goodbye line) is resisting (UESP: cancelling the dialogue makes the
     /// guards attack). A guard letting them go stops pursuing.
     pub(crate) fn arrest_conversation_ended(&mut self, npc: FormId, goodbye: bool) {
-        let Some((guard, f)) = self.crime.arrests.arresting.filter(|a| a.0 == npc) else { return };
+        let Some((guard, f)) = self.crime.arrests.arresting.filter(|a| a.0 == npc) else {
+            return;
+        };
         self.crime.arrests.arresting = None;
         if self.bounty(f).total() <= 0 || self.crime.arrests.resisting.contains(&f) {
             self.calm_guard(guard);
@@ -265,7 +353,14 @@ impl Engine {
         for g in guards {
             self.end_combat(g);
         }
-        let alarmed: Vec<FormId> = self.crime.arrests.alarmed.iter().filter(|(_, p)| p.faction == faction).map(|(&r, _)| r).collect();
+        let alarmed: Vec<FormId> = self
+            .crime
+            .arrests
+            .alarmed
+            .iter()
+            .filter(|(_, p)| p.faction == faction)
+            .map(|(&r, _)| r)
+            .collect();
         for g in alarmed {
             self.calm_guard(g);
         }
@@ -286,7 +381,11 @@ impl Engine {
     fn send_player_through(&mut self, door: FormId) {
         // Taken away: the guard's conversation is over.
         self.end_conversation();
-        let Some((dest, pos, rot)) = self.lo.get(door).and_then(|r| crate::world::records::reference(&r).teleport) else {
+        let Some((dest, pos, rot)) = self
+            .lo
+            .get(door)
+            .and_then(|r| crate::world::records::reference(&r).teleport)
+        else {
             log::warn!("{door} leads nowhere");
             return;
         };
@@ -299,7 +398,8 @@ impl Engine {
     fn faction_form(&self, faction: FormId, tag: &[u8; 4]) -> Option<FormId> {
         let rec = self.lo.get(faction)?;
         let d = rec.get(tag).filter(|d| d.len() >= 4)?;
-        Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))).filter(|f| !f.is_null())
+        Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+            .filter(|f| !f.is_null())
     }
 
     /// Send the player to a crime faction's jail (`SendPlayerToJail`): the
@@ -313,7 +413,14 @@ impl Engine {
             log::warn!("{faction} has no jail");
             return;
         };
-        let Some(inside) = self.lo.get(jail).and_then(|r| crate::world::records::reference(&r).teleport).map(|t| t.0) else { return };
+        let Some(inside) = self
+            .lo
+            .get(jail)
+            .and_then(|r| crate::world::records::reference(&r).teleport)
+            .map(|t| t.0)
+        else {
+            return;
+        };
         let bounty = self.bounty(faction);
         let owed = bounty.total();
         let guard = self.arrested_by(faction);
@@ -332,7 +439,20 @@ impl Engine {
             }
         }
         if let Some(outfit) = self.faction_form(faction, b"JOUT") {
-            let items: Vec<FormId> = self.lo.get(outfit).map(|r| r.subrecords().filter(|s| s.tag.0 == *b"INAM").flat_map(|s| s.data.chunks_exact(4).map(|c| r.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))).collect::<Vec<_>>()).unwrap_or_default();
+            let items: Vec<FormId> = self
+                .lo
+                .get(outfit)
+                .map(|r| {
+                    r.subrecords()
+                        .filter(|s| s.tag.0 == *b"INAM")
+                        .flat_map(|s| {
+                            s.data
+                                .chunks_exact(4)
+                                .map(|c| r.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
             for item in items {
                 self.add_item(PLAYER_REF, item, 1);
                 if let Err(e) = self.equip_item(PLAYER_REF, item, true) {
@@ -341,7 +461,12 @@ impl Engine {
             }
         }
         self.crimes_settled(faction);
-        self.crime.arrests.jailed = Some(Sentence { faction, days, inside, owed: bounty });
+        self.crime.arrests.jailed = Some(Sentence {
+            faction,
+            days,
+            inside,
+            owed: bounty,
+        });
         log::info!("the player is jailed by {faction} for {days} days ({owed} gold)");
         let place = self.jail_location(inside);
         self.send_jail_event(guard, faction, place, owed);
@@ -352,14 +477,20 @@ impl Engine {
     /// `faction`, if one is: the arrest event. Returns the guard.
     pub(crate) fn arrested_by(&mut self, faction: FormId) -> Option<FormId> {
         let (guard, _) = self.crime.arrests.arresting.filter(|a| a.1 == faction)?;
-        let crime = self.crime.last_crime.get(&faction).map_or(-1, |&k| k as i32);
+        let crime = self
+            .crime
+            .last_crime
+            .get(&faction)
+            .map_or(-1, |&k| k as i32);
         self.send_arrest_event(guard, faction, crime);
         Some(guard)
     }
 
     /// Where a jail is: the location of the cell its inner prison marker is in.
     fn jail_location(&self, inside: FormId) -> Option<FormId> {
-        self.lo.cell_of_ref(inside).and_then(|c| self.cell_location(c))
+        self.lo
+            .cell_of_ref(inside)
+            .and_then(|c| self.cell_location(c))
     }
 
     /// The jail's interior: where its inner prison marker is.
@@ -378,7 +509,10 @@ impl Engine {
 
     /// Whether the player is jailed where `r` is.
     pub(crate) fn in_jail_with(&self, r: FormId) -> bool {
-        self.crime.arrests.jailed.is_some_and(|s| self.lo.cell_of_ref(r) == Some(self.jail_cell(s)))
+        self.crime
+            .arrests
+            .jailed
+            .is_some_and(|s| self.lo.cell_of_ref(r) == Some(self.jail_cell(s)))
     }
 
     /// The player escapes jail: the sentence is over unserved, the bounty it
@@ -386,13 +520,18 @@ impl Engine {
     /// 100), and its guards near by come for them. Their belongings stay in
     /// the chest.
     pub fn escape_jail(&mut self) {
-        let Some(s) = self.crime.arrests.jailed.take() else { return };
+        let Some(s) = self.crime.arrests.jailed.take() else {
+            return;
+        };
         log::info!("the player escapes {}'s jail", s.faction);
         let b = self.crime.bounties.entry(s.faction).or_default();
         b.violent += s.owed.violent;
         b.nonviolent += s.owed.nonviolent;
-        let gold = CrimeValues::of(&self.lo, s.faction).map_or(100, |v| v.gold(crate::crime::CrimeType::Escape, 0));
-        self.crime.last_crime.insert(s.faction, crate::crime::CrimeType::Escape);
+        let gold = CrimeValues::of(&self.lo, s.faction)
+            .map_or(100, |v| v.gold(crate::crime::CrimeType::Escape, 0));
+        self.crime
+            .last_crime
+            .insert(s.faction, crate::crime::CrimeType::Escape);
         if gold > 0 {
             self.mod_crime_gold(s.faction, gold, false);
             self.notify_crime_gold(s.faction, gold, "sAddCrimeGold", "bounty added to");
@@ -406,16 +545,26 @@ impl Engine {
     /// Whether activating `bed` serves the player's sentence: a bed in the
     /// jail they are in (UESP: "sleep in a cell bed").
     pub fn serves_sentence_in(&self, bed: FormId) -> bool {
-        let Some(s) = self.crime.arrests.jailed else { return false };
-        let sleep = self.furniture.get(bed).is_some_and(|f| f.markers.iter().any(|m| m.kind == crate::ai::furniture::Use::Sleep));
-        sleep && self.lo.cell_of_ref(bed).is_some() && self.lo.cell_of_ref(bed) == self.lo.cell_of_ref(s.inside)
+        let Some(s) = self.crime.arrests.jailed else {
+            return false;
+        };
+        let sleep = self.furniture.get(bed).is_some_and(|f| {
+            f.markers
+                .iter()
+                .any(|m| m.kind == crate::ai::furniture::Use::Sleep)
+        });
+        sleep
+            && self.lo.cell_of_ref(bed).is_some()
+            && self.lo.cell_of_ref(bed) == self.lo.cell_of_ref(s.inside)
     }
 
     /// Serve the sentence: the days pass, the player gets their belongings
     /// back from the belongings chest and is let out through the prison
     /// marker. Skill progress lost (UESP) isn't kept yet.
     pub fn serve_sentence(&mut self) {
-        let Some(s) = self.crime.arrests.jailed.take() else { return };
+        let Some(s) = self.crime.arrests.jailed.take() else {
+            return;
+        };
         self.day += s.days as u32;
         self.crime.arrests.days_in_jail += s.days;
         if let Some(chest) = self.faction_form(s.faction, b"PLCN") {
@@ -427,7 +576,8 @@ impl Engine {
         log::info!("the player serves {} days for {}", s.days, s.faction);
         let place = self.jail_location(s.inside);
         self.send_served_time_event(s.faction, place, s.owed.total(), s.days);
-        self.scripts.notify(format!("You served {} days in jail.", s.days));
+        self.scripts
+            .notify(format!("You served {} days in jail.", s.days));
         self.queue_player_through(s.inside);
     }
 }

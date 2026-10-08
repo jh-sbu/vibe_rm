@@ -66,7 +66,11 @@ impl Value {
             Value::Bool(b) => *b as i32,
             Value::Int(i) => *i,
             Value::Float(f) => *f as i32,
-            Value::String(s) => s.trim().parse::<i32>().or_else(|_| s.trim().parse::<f32>().map(|f| f as i32)).unwrap_or(0),
+            Value::String(s) => s
+                .trim()
+                .parse::<i32>()
+                .or_else(|_| s.trim().parse::<f32>().map(|f| f as i32))
+                .unwrap_or(0),
             _ => 0,
         }
     }

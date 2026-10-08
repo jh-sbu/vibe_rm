@@ -49,7 +49,8 @@ pub fn trigger_of(lo: &esp::LoadOrder, r: FormId) -> Option<Trigger> {
         return None;
     }
     let rf = crate::world::records::reference(&rec);
-    let scripted = rec.get(b"VMAD").is_some() || lo.get(rf.base).is_some_and(|b| b.get(b"VMAD").is_some());
+    let scripted =
+        rec.get(b"VMAD").is_some() || lo.get(rf.base).is_some_and(|b| b.get(b"VMAD").is_some());
     if !scripted {
         return None;
     }
@@ -66,7 +67,10 @@ pub fn trigger_of(lo: &esp::LoadOrder, r: FormId) -> Option<Trigger> {
 impl Engine {
     /// Set up the trigger volumes among a loaded cell's references.
     pub(crate) fn load_triggers(&mut self, key: CellKey, refs: &[FormId]) {
-        let triggers: Vec<Trigger> = refs.iter().filter_map(|&r| trigger_of(&self.lo, r)).collect();
+        let triggers: Vec<Trigger> = refs
+            .iter()
+            .filter_map(|&r| trigger_of(&self.lo, r))
+            .collect();
         if !triggers.is_empty() {
             log::debug!("{key:?}: {} trigger volumes", triggers.len());
         }
@@ -78,7 +82,13 @@ impl Engine {
     /// Send enter / leave events for who stepped in or out (called every frame).
     pub(crate) fn update_triggers(&mut self) {
         // Who can set them off: the player and the loaded, living actors.
-        let mut bodies: Vec<(FormId, Vec3)> = self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.dead).map(|a| (a.ref_id, a.pos)).collect();
+        let mut bodies: Vec<(FormId, Vec3)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead)
+            .map(|a| (a.ref_id, a.pos))
+            .collect();
         if self.player_died_at.is_none()
             && let Some(p) = self.ref_position(PLAYER_REF)
         {
@@ -96,7 +106,11 @@ impl Engine {
                     t.inside.clear();
                     continue;
                 }
-                let now: Vec<FormId> = bodies.iter().filter(|(_, p)| BODY_POINTS.iter().any(|h| t.contains(*p + Vec3::Z * h))).map(|(b, _)| *b).collect();
+                let now: Vec<FormId> = bodies
+                    .iter()
+                    .filter(|(_, p)| BODY_POINTS.iter().any(|h| t.contains(*p + Vec3::Z * h)))
+                    .map(|(b, _)| *b)
+                    .collect();
                 for &b in now.iter().filter(|b| !t.inside.contains(b)) {
                     events.push((r, b, true));
                 }
@@ -107,17 +121,31 @@ impl Engine {
             }
         }
         for (r, who, enter) in events {
-            log::debug!("{who} {} trigger {r} {:?}", if enter { "enters" } else { "leaves" }, self.vm.attached_scripts(papyrus::ObjectId::Form(r.0)));
+            log::debug!(
+                "{who} {} trigger {r} {:?}",
+                if enter { "enters" } else { "leaves" },
+                self.vm.attached_scripts(papyrus::ObjectId::Form(r.0))
+            );
             let action = self.object_value(who);
-            let event = if enter { "OnTriggerEnter" } else { "OnTriggerLeave" };
+            let event = if enter {
+                "OnTriggerEnter"
+            } else {
+                "OnTriggerLeave"
+            };
             for obj in self.objects_of_ref(r) {
-                self.scripts.pending_events.push((obj, event.into(), vec![action.clone()]));
+                self.scripts
+                    .pending_events
+                    .push((obj, event.into(), vec![action.clone()]));
             }
         }
     }
 
     /// How many are inside trigger `r` (`GetTriggerObjectCount`).
     pub fn trigger_object_count(&self, r: FormId) -> usize {
-        self.cells.values().flat_map(|rt| &rt.triggers).find(|t| t.ref_id == r).map_or(0, |t| t.inside.len())
+        self.cells
+            .values()
+            .flat_map(|rt| &rt.triggers)
+            .find(|t| t.ref_id == r)
+            .map_or(0, |t| t.inside.len())
     }
 }

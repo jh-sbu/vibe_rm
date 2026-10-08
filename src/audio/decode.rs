@@ -60,7 +60,10 @@ pub fn wav(d: &[u8]) -> Option<Clip> {
             let frames = data.len() / (2 * ch);
             samples.reserve(frames * 2);
             for f in 0..frames {
-                let s = |c: usize| i16::from_le_bytes([data[(f * ch + c) * 2], data[(f * ch + c) * 2 + 1]]) as f32 / 32768.0;
+                let s = |c: usize| {
+                    i16::from_le_bytes([data[(f * ch + c) * 2], data[(f * ch + c) * 2 + 1]]) as f32
+                        / 32768.0
+                };
                 let (l, r) = if ch == 1 { (s(0), s(0)) } else { (s(0), s(1)) };
                 samples.push(l);
                 samples.push(r);
@@ -92,7 +95,18 @@ pub fn fuz_audio(d: &[u8]) -> Option<&[u8]> {
 /// Decode anything FFmpeg understands (xWMA, ADPCM WAV, ...) via the `ffmpeg` executable.
 pub fn ffmpeg(d: &[u8], rate: u32) -> Option<Clip> {
     let mut child = Command::new("ffmpeg")
-        .args(["-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-f", "f32le", "-ac", "2", "-ar"])
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            "pipe:0",
+            "-f",
+            "f32le",
+            "-ac",
+            "2",
+            "-ar",
+        ])
         .arg(rate.to_string())
         .arg("pipe:1")
         .stdin(Stdio::piped())
@@ -112,7 +126,10 @@ pub fn ffmpeg(d: &[u8], rate: u32) -> Option<Clip> {
     if out.is_empty() {
         return None;
     }
-    let samples = out.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
+    let samples = out
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect();
     Some(Clip { samples, rate })
 }
 
@@ -145,15 +162,33 @@ mod tests {
             eprintln!("no game data; skipping");
             return;
         };
-        let wav_path = v.list("sound/fx/").into_iter().find(|p| p.ends_with(".wav")).expect("a wav");
+        let wav_path = v
+            .list("sound/fx/")
+            .into_iter()
+            .find(|p| p.ends_with(".wav"))
+            .expect("a wav");
         let w = decode(&wav_path, &v.read(&wav_path).unwrap(), 44100).expect("wav decodes");
         assert!(w.frames() > 0);
-        let xwm_path = v.list("music/").into_iter().find(|p| p.ends_with(".xwm")).expect("an xwm");
-        let x = decode(&xwm_path, &v.read(&xwm_path).unwrap(), 44100).expect("xwm decodes via ffmpeg");
+        let xwm_path = v
+            .list("music/")
+            .into_iter()
+            .find(|p| p.ends_with(".xwm"))
+            .expect("an xwm");
+        let x =
+            decode(&xwm_path, &v.read(&xwm_path).unwrap(), 44100).expect("xwm decodes via ffmpeg");
         assert!(x.duration() > 1.0, "{xwm_path}: {}s", x.duration());
-        let fuz_path = v.list("sound/voice/skyrim.esm/").into_iter().find(|p| p.ends_with(".fuz")).expect("a fuz");
+        let fuz_path = v
+            .list("sound/voice/skyrim.esm/")
+            .into_iter()
+            .find(|p| p.ends_with(".fuz"))
+            .expect("a fuz");
         let f = decode(&fuz_path, &v.read(&fuz_path).unwrap(), 44100).expect("fuz decodes");
         assert!(f.duration() > 0.1);
-        eprintln!("{wav_path}: {:.2}s, {xwm_path}: {:.2}s, {fuz_path}: {:.2}s", w.duration(), x.duration(), f.duration());
+        eprintln!(
+            "{wav_path}: {:.2}s, {xwm_path}: {:.2}s, {fuz_path}: {:.2}s",
+            w.duration(),
+            x.duration(),
+            f.duration()
+        );
     }
 }

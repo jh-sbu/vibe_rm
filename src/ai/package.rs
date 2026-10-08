@@ -295,7 +295,10 @@ fn location(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Location> {
         12 => LocationKind::NearSelf,
         k => LocationKind::Other(k),
     };
-    Some(Location { kind, radius: i32::from_le_bytes(d[8..12].try_into().unwrap()).max(0) as f32 })
+    Some(Location {
+        kind,
+        radius: i32::from_le_bytes(d[8..12].try_into().unwrap()).max(0) as f32,
+    })
 }
 
 fn target(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Target> {
@@ -327,9 +330,15 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
                 kind = sr.zstring();
                 values.push(Input::Other);
             }
-            b"CNAM" if kind == "Bool" && !sr.data.is_empty() => *values.last_mut().unwrap() = Input::Bool(sr.data[0] != 0),
-            b"CNAM" if kind == "Float" && sr.data.len() >= 4 => *values.last_mut().unwrap() = Input::Float(sr.f32(0)),
-            b"CNAM" if kind == "Int" && sr.data.len() >= 4 => *values.last_mut().unwrap() = Input::Int(sr.i32(0)),
+            b"CNAM" if kind == "Bool" && !sr.data.is_empty() => {
+                *values.last_mut().unwrap() = Input::Bool(sr.data[0] != 0)
+            }
+            b"CNAM" if kind == "Float" && sr.data.len() >= 4 => {
+                *values.last_mut().unwrap() = Input::Float(sr.f32(0))
+            }
+            b"CNAM" if kind == "Int" && sr.data.len() >= 4 => {
+                *values.last_mut().unwrap() = Input::Int(sr.i32(0))
+            }
             b"PLDT" if !values.is_empty() => {
                 if let Some(l) = location(rec, sr.data) {
                     *values.last_mut().unwrap() = Input::Location(l);
@@ -357,7 +366,9 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
 /// Input names of a template package, by index (`UNAM` + `BNAM` after the procedure tree).
 fn input_names(lo: &LoadOrder, template: FormId) -> std::collections::HashMap<u8, String> {
     let mut out = std::collections::HashMap::new();
-    let Some(rec) = lo.get(template) else { return out };
+    let Some(rec) = lo.get(template) else {
+        return out;
+    };
     let mut tree = false;
     let mut index = None;
     for sr in rec.subrecords() {
@@ -367,7 +378,11 @@ fn input_names(lo: &LoadOrder, template: FormId) -> std::collections::HashMap<u8
             b"BNAM" if tree => {
                 if let Some(i) = index.take() {
                     // "Allow Sitting*", "AllowSitting", "Energy*" -> "allowsitting", "energy".
-                    let name: String = sr.zstring().chars().filter(char::is_ascii_alphanumeric).collect();
+                    let name: String = sr
+                        .zstring()
+                        .chars()
+                        .filter(char::is_ascii_alphanumeric)
+                        .collect();
                     out.insert(i, name.to_ascii_lowercase());
                 }
             }
@@ -383,14 +398,22 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         return None;
     }
     let editor_id = rec.editor_id().unwrap_or_default();
-    let mut schedule = Schedule { month: -1, day_of_week: -1, hour: -1, minute: -1, duration: 0 };
+    let mut schedule = Schedule {
+        month: -1,
+        day_of_week: -1,
+        hour: -1,
+        minute: -1,
+        duration: 0,
+    };
     let mut template = FormId::NULL;
     let (mut gait, mut sneak) = (Gait::Walk, false);
     let mut pkdt_flags = 0;
     let mut quest = None;
     for sr in rec.subrecords() {
         match &sr.tag.0 {
-            b"QNAM" if sr.data.len() >= 4 => quest = Some(rec.fid(sr.form_id(0))).filter(|q| !q.is_null()),
+            b"QNAM" if sr.data.len() >= 4 => {
+                quest = Some(rec.fid(sr.form_id(0))).filter(|q| !q.is_null())
+            }
             b"PSDT" if sr.data.len() >= 12 => {
                 schedule = Schedule {
                     month: sr.data[0] as i8,
@@ -418,17 +441,28 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
             _ => {}
         }
     }
-    let template_name = lo.get(template).and_then(|t| t.editor_id()).unwrap_or_default();
+    let template_name = lo
+        .get(template)
+        .and_then(|t| t.editor_id())
+        .unwrap_or_default();
     // A package without a template has its own procedure tree (`ambushSleepPackage`).
     let tree_src = if template.is_null() { id } else { template };
     let behaviour = match behaviour_of(&template_name) {
         // Templates not known by name: by their tree's main procedure.
-        Behaviour::Hold => procedure_tree(lo, tree_src).as_ref().and_then(main_procedure).map_or(Behaviour::Hold, |p| behaviour_of_procedure(&p.procedure)),
+        Behaviour::Hold => procedure_tree(lo, tree_src)
+            .as_ref()
+            .and_then(main_procedure)
+            .map_or(Behaviour::Hold, |p| behaviour_of_procedure(&p.procedure)),
         b => b,
     };
     let names = input_names(lo, tree_src);
     let inputs = inputs(&rec);
-    let named = |n: &str| inputs.iter().find(|(i, _)| names.get(i).is_some_and(|x| x == n)).map(|(_, v)| *v);
+    let named = |n: &str| {
+        inputs
+            .iter()
+            .find(|(i, _)| names.get(i).is_some_and(|x| x == n))
+            .map(|(_, v)| *v)
+    };
     let flag = |n: &str| match named(n) {
         Some(Input::Bool(b)) => Some(b),
         _ => None,
@@ -439,7 +473,10 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         (&mut allow.sleeping, &["allowsleeping"]),
         (&mut allow.eating, &["alloweating"]),
         (&mut allow.idle_markers, &["allowidlemarkers"]),
-        (&mut allow.special_furniture, &["allowspecialfurniture", "allowfurniture"]),
+        (
+            &mut allow.special_furniture,
+            &["allowspecialfurniture", "allowfurniture"],
+        ),
         (&mut allow.wandering, &["allowwandering"]),
     ];
     for (field, keys) in fields {
@@ -467,7 +504,10 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     };
     let point_radius = float(&["patrolradius", "pointradius"], 50.0);
     let repeat = ["repeatable"].iter().find_map(|k| flag(k)).unwrap_or(true);
-    let start_nearest = ["startatnearest", "startatnearestpoint"].iter().find_map(|k| flag(k)).unwrap_or(false);
+    let start_nearest = ["startatnearest", "startatnearestpoint"]
+        .iter()
+        .find_map(|k| flag(k))
+        .unwrap_or(false);
     let follow_radius = (float(&["minradius"], 128.0), float(&["maxradius"], 384.0));
     let escort_wait = float(&["distancetowaitforfollowers"], 512.0);
     let escort_run = float(&["runifbehinddistance"], 500.0);
@@ -483,8 +523,12 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
             _ => GreetTopic::Subtype(*b"HELO"),
         },
         trigger: located(&["triggerlocationplayerherecausesforcegreet"]),
-        distance: located(&["forcegreetdistancedontchangerefjustradius"]).map_or(300.0, |l| l.radius),
-        must_detect: ["playermustbedetected", "obsplayermustbedetected"].iter().find_map(|k| flag(k)).unwrap_or(false),
+        distance: located(&["forcegreetdistancedontchangerefjustradius"])
+            .map_or(300.0, |l| l.radius),
+        must_detect: ["playermustbedetected", "obsplayermustbedetected"]
+            .iter()
+            .find_map(|k| flag(k))
+            .unwrap_or(false),
         sandbox: flag("sandboxwhilewaiting").unwrap_or(false),
         seated: template_name.eq_ignore_ascii_case("forcegreetfromsitting"),
     });
@@ -498,7 +542,10 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
             _ => None,
         };
         let pause = (float(&["minpause"], 2.0), float(&["maxpause"], 6.0));
-        let attacks = (int("minattacksperbarrage").unwrap_or(1).max(1), int("maxattacksperbarrage").unwrap_or(3).max(1));
+        let attacks = (
+            int("minattacksperbarrage").unwrap_or(1).max(1),
+            int("maxattacksperbarrage").unwrap_or(3).max(1),
+        );
         UseWeapon {
             weapon: match target("weapontype") {
                 Some(Target::ObjectType(19)) => WeaponKind::Melee,
@@ -506,19 +553,24 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
                 Some(Target::Object(f)) => WeaponKind::Specific(f),
                 _ => WeaponKind::Any,
             },
-            targets: [target("targettoattack").or_else(|| target("target01")), target("target02"), target("target03")],
+            targets: [
+                target("targettoattack").or_else(|| target("target01")),
+                target("target02"),
+                target("target03"),
+            ],
             pause: (pause.0.min(pause.1), pause.0.max(pause.1)),
             attacks: (attacks.0.min(attacks.1), attacks.0.max(attacks.1)),
         }
     });
     // The first location input is the package's main location (a force greeter's
     // wait location, where to use a weapon); likewise for targets.
-    let location = located(&["npcwaitlocationnpchangsouthere", "useweaponlocation"]).or_else(|| {
-        inputs.iter().find_map(|(_, v)| match v {
-            Input::Location(l) => Some(*l),
-            _ => None,
-        })
-    });
+    let location =
+        located(&["npcwaitlocationnpchangsouthere", "useweaponlocation"]).or_else(|| {
+            inputs.iter().find_map(|(_, v)| match v {
+                Input::Location(l) => Some(*l),
+                _ => None,
+            })
+        });
     let target = inputs.iter().find_map(|(_, v)| match v {
         Input::Target(t) => Some(*t),
         _ => None,
@@ -575,7 +627,16 @@ fn procedure_tree(lo: &LoadOrder, template: FormId) -> Option<Node> {
             _ if !tree => {}
             // The input names follow the tree.
             b"UNAM" => break,
-            b"ANAM" => flat.push((Node { kind: sr.zstring(), conditions: Vec::new(), children: Vec::new(), procedure: String::new(), args: Vec::new() }, 0)),
+            b"ANAM" => flat.push((
+                Node {
+                    kind: sr.zstring(),
+                    conditions: Vec::new(),
+                    children: Vec::new(),
+                    procedure: String::new(),
+                    args: Vec::new(),
+                },
+                0,
+            )),
             b"PRCB" if sr.data.len() >= 4 => {
                 if let Some(n) = flat.last_mut() {
                     n.1 = sr.u32(0) as usize;
@@ -628,7 +689,16 @@ fn behaviour_of_procedure(name: &str) -> Behaviour {
 /// The procedure a branch is about, for the behaviours the AI has: the first
 /// found in this order (a guard post's patrol over its guarding).
 fn main_procedure(node: &Node) -> Option<&Node> {
-    const ORDER: [&str; 8] = ["Patrol", "Follow", "Sit", "Sleep", "Sandbox", "Escort", "Travel", "HoldPosition"];
+    const ORDER: [&str; 8] = [
+        "Patrol",
+        "Follow",
+        "Sit",
+        "Sleep",
+        "Sandbox",
+        "Escort",
+        "Travel",
+        "HoldPosition",
+    ];
     fn all<'a>(n: &'a Node, out: &mut Vec<&'a Node>) {
         if !n.procedure.is_empty() {
             out.push(n);
@@ -637,7 +707,10 @@ fn main_procedure(node: &Node) -> Option<&Node> {
     }
     let mut procs = Vec::new();
     all(node, &mut procs);
-    ORDER.iter().find_map(|name| procs.iter().find(|p| p.procedure == *name).copied()).or(procs.first().copied())
+    ORDER
+        .iter()
+        .find_map(|name| procs.iter().find(|p| p.procedure == *name).copied())
+        .or(procs.first().copied())
 }
 
 /// A package whose template picks one of several branches by their conditions
@@ -647,15 +720,26 @@ fn main_procedure(node: &Node) -> Option<&Node> {
 /// the first whose conditions pass runs, as the first passing branch would.
 /// Others stay one package.
 pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
-    let Some(base) = parse(lo, id) else { return Vec::new() };
-    let Some(rec) = lo.get(id) else { return Vec::new() };
-    let template = rec.get(b"PKCU").filter(|d| d.len() >= 8).map(|d| rec.fid(FormId(u32::from_le_bytes(d[4..8].try_into().unwrap()))));
+    let Some(base) = parse(lo, id) else {
+        return Vec::new();
+    };
+    let Some(rec) = lo.get(id) else {
+        return Vec::new();
+    };
+    let template = rec
+        .get(b"PKCU")
+        .filter(|d| d.len() >= 8)
+        .map(|d| rec.fid(FormId(u32::from_le_bytes(d[4..8].try_into().unwrap()))));
     let tree = procedure_tree(lo, template.filter(|t| !t.is_null()).unwrap_or(id));
-    let Some(root) = tree.filter(|t| t.kind == "Stacked" && t.children.len() > 1) else { return vec![base] };
+    let Some(root) = tree.filter(|t| t.kind == "Stacked" && t.children.len() > 1) else {
+        return vec![base];
+    };
     let values: std::collections::HashMap<u8, Input> = inputs(&rec).into_iter().collect();
     let mut out = Vec::new();
     for (n, branch) in root.children.iter().enumerate() {
-        let Some(proc) = main_procedure(branch) else { continue };
+        let Some(proc) = main_procedure(branch) else {
+            continue;
+        };
         let arg = |i: usize| proc.args.get(i).and_then(|a| values.get(a)).copied();
         let flag = |i: usize, default: bool| match arg(i) {
             Some(Input::Bool(b)) => b,
@@ -716,7 +800,9 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
             let resolve = |input: u8| match values.get(&input) {
                 Some(Input::Target(Target::Ref(r))) => Some(Ok(*r)),
                 Some(Input::Target(Target::SelfRef)) => Some(Err(condition::RefOf::Subject)),
-                Some(Input::Target(Target::LinkedRef(kw))) => Some(Err(condition::RefOf::LinkedRef(kw.unwrap_or(FormId::NULL)))),
+                Some(Input::Target(Target::LinkedRef(kw))) => {
+                    Some(Err(condition::RefOf::LinkedRef(kw.unwrap_or(FormId::NULL))))
+                }
                 _ => None,
             };
             if let Some(input) = c.pack_input {
@@ -746,7 +832,11 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
 pub fn npc_packages(lo: &LoadOrder, src: &crate::world::template::Sources) -> Vec<Package> {
     use crate::world::template::{AI_PACKAGES, DEF_PACK_LIST};
     let mut out: Vec<Package> = match lo.get(src.of(AI_PACKAGES)) {
-        Some(rec) => rec.subrecords().filter(|s| s.tag.0 == *b"PKID").flat_map(|s| expand(lo, rec.fid(s.form_id(0)))).collect(),
+        Some(rec) => rec
+            .subrecords()
+            .filter(|s| s.tag.0 == *b"PKID")
+            .flat_map(|s| expand(lo, rec.fid(s.form_id(0))))
+            .collect(),
         None => Vec::new(),
     };
     if let Some(list) = src.form(lo, DEF_PACK_LIST, b"DPLT").and_then(|l| lo.get(l)) {
@@ -763,7 +853,13 @@ mod tests {
 
     #[test]
     fn schedule_wraps_midnight() {
-        let s = Schedule { month: -1, day_of_week: -1, hour: 22, minute: -1, duration: 8 * 60 };
+        let s = Schedule {
+            month: -1,
+            day_of_week: -1,
+            hour: 22,
+            minute: -1,
+            duration: 8 * 60,
+        };
         assert!(s.matches(23.0, 0));
         assert!(s.matches(3.0, 0));
         assert!(!s.matches(7.0, 0));

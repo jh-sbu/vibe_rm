@@ -20,11 +20,17 @@ pub struct Object {
 }
 
 fn u32_at(d: &[u8], o: usize) -> Result<u32> {
-    d.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap())).ok_or_else(|| Error::Corrupt(format!("read past end at {o:#x}")))
+    d.get(o..o + 4)
+        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .ok_or_else(|| Error::Corrupt(format!("read past end at {o:#x}")))
 }
 
 fn cstr(d: &[u8], o: usize) -> String {
-    let end = d[o..].iter().position(|&c| c == 0).map(|p| o + p).unwrap_or(d.len());
+    let end = d[o..]
+        .iter()
+        .position(|&c| c == 0)
+        .map(|p| o + p)
+        .unwrap_or(d.len());
     String::from_utf8_lossy(&d[o..end]).into_owned()
 }
 
@@ -47,7 +53,9 @@ impl Packfile {
         let ptr_size = d[16];
         let little = d[17];
         if ptr_size != 8 || little != 1 {
-            return Err(Error::Unsupported(format!("pointer size {ptr_size}, little endian {little}")));
+            return Err(Error::Unsupported(format!(
+                "pointer size {ptr_size}, little endian {little}"
+            )));
         }
         let num_sections = u32_at(d, 20)? as usize;
         let version = cstr(d, 40);
@@ -62,7 +70,8 @@ impl Packfile {
             let o = header_size + i * 0x30;
             let name = cstr(d, o);
             let start = u32_at(d, o + 20)? as usize;
-            let rel = |k: usize| -> Result<usize> { Ok(start + u32_at(d, o + 24 + k * 4)? as usize) };
+            let rel =
+                |k: usize| -> Result<usize> { Ok(start + u32_at(d, o + 24 + k * 4)? as usize) };
             sections.push(Section {
                 name,
                 start,
@@ -74,10 +83,19 @@ impl Packfile {
             });
             let _ = sections.last().map(|s| s.exports);
         }
-        let classnames = sections.iter().find(|s| s.name == "__classnames__").ok_or_else(|| Error::Corrupt("no classnames".into()))?;
-        let data_idx = sections.iter().position(|s| s.name == "__data__").ok_or_else(|| Error::Corrupt("no data section".into()))?;
+        let classnames = sections
+            .iter()
+            .find(|s| s.name == "__classnames__")
+            .ok_or_else(|| Error::Corrupt("no classnames".into()))?;
+        let data_idx = sections
+            .iter()
+            .position(|s| s.name == "__data__")
+            .ok_or_else(|| Error::Corrupt("no data section".into()))?;
         let ds = &sections[data_idx];
-        let data = d.get(ds.start..ds.local).ok_or_else(|| Error::Corrupt("data section out of range".into()))?.to_vec();
+        let data = d
+            .get(ds.start..ds.local)
+            .ok_or_else(|| Error::Corrupt("data section out of range".into()))?
+            .to_vec();
 
         let mut pointers = HashMap::new();
         // Local fixups: (src, dst) pairs.
@@ -117,7 +135,12 @@ impl Packfile {
             objects.push(Object { offset: src, class });
             o += 12;
         }
-        Ok(Packfile { version, data, pointers, objects })
+        Ok(Packfile {
+            version,
+            data,
+            pointers,
+            objects,
+        })
     }
 
     pub fn ptr(&self, slot: u32) -> Option<u32> {
@@ -129,14 +152,20 @@ impl Packfile {
     }
     pub fn u16(&self, o: u32) -> u16 {
         let o = o as usize;
-        self.data.get(o..o + 2).map(|b| u16::from_le_bytes(b.try_into().unwrap())).unwrap_or(0)
+        self.data
+            .get(o..o + 2)
+            .map(|b| u16::from_le_bytes(b.try_into().unwrap()))
+            .unwrap_or(0)
     }
     pub fn i16(&self, o: u32) -> i16 {
         self.u16(o) as i16
     }
     pub fn u32(&self, o: u32) -> u32 {
         let o = o as usize;
-        self.data.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap())).unwrap_or(0)
+        self.data
+            .get(o..o + 4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            .unwrap_or(0)
     }
     pub fn i32(&self, o: u32) -> i32 {
         self.u32(o) as i32
@@ -157,10 +186,16 @@ impl Packfile {
     }
 
     pub fn object_class(&self, offset: u32) -> Option<&str> {
-        self.objects.iter().find(|x| x.offset == offset).map(|x| x.class.as_str())
+        self.objects
+            .iter()
+            .find(|x| x.offset == offset)
+            .map(|x| x.class.as_str())
     }
 
     pub fn objects_of<'a>(&'a self, class: &'a str) -> impl Iterator<Item = u32> + 'a {
-        self.objects.iter().filter(move |o| o.class == class).map(|o| o.offset)
+        self.objects
+            .iter()
+            .filter(move |o| o.class == class)
+            .map(|o| o.offset)
     }
 }

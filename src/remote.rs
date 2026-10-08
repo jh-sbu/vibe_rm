@@ -21,9 +21,14 @@ impl RemoteConsole {
     /// Listens at `$VRM_SOCKET`, else `$XDG_RUNTIME_DIR/vibe_rm.sock` (`/tmp` without
     /// one), or `vibe_rm-<pid>.sock` there while another instance holds that.
     pub fn start() -> std::io::Result<Self> {
-        let mut path = std::env::var_os("VRM_SOCKET").map(PathBuf::from).unwrap_or_else(|| {
-            std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("vibe_rm.sock")
-        });
+        let mut path = std::env::var_os("VRM_SOCKET")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::var_os("XDG_RUNTIME_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(std::env::temp_dir)
+                    .join("vibe_rm.sock")
+            });
         if UnixStream::connect(&path).is_ok() {
             path.set_file_name(format!("vibe_rm-{}.sock", std::process::id()));
         }
@@ -31,12 +36,14 @@ impl RemoteConsole {
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path)?;
         let (tx, requests) = channel();
-        std::thread::Builder::new().name("remote-console".into()).spawn(move || {
-            for stream in listener.incoming().flatten() {
-                let tx = tx.clone();
-                std::thread::spawn(move || serve(stream, tx));
-            }
-        })?;
+        std::thread::Builder::new()
+            .name("remote-console".into())
+            .spawn(move || {
+                for stream in listener.incoming().flatten() {
+                    let tx = tx.clone();
+                    std::thread::spawn(move || serve(stream, tx));
+                }
+            })?;
         log::info!("remote console listening on {}", path.display());
         Ok(RemoteConsole { requests, path })
     }
@@ -57,7 +64,9 @@ impl Drop for RemoteConsole {
 }
 
 fn serve(stream: UnixStream, tx: Sender<Request>) {
-    let Ok(mut out) = stream.try_clone() else { return };
+    let Ok(mut out) = stream.try_clone() else {
+        return;
+    };
     for line in BufReader::new(stream).lines() {
         let Ok(line) = line else { return };
         let line = line.trim();

@@ -12,7 +12,14 @@ impl Engine {
     pub fn lock_of(&self, r: FormId) -> Option<Lock> {
         let own = self.lo.get(r).and_then(|rec| records::reference(&rec).lock);
         match self.scripts.lock_levels.get(&r) {
-            Some(&level) => Some(Lock { level, ..own.unwrap_or(Lock { level, key: None, leveled: false }) }),
+            Some(&level) => Some(Lock {
+                level,
+                ..own.unwrap_or(Lock {
+                    level,
+                    key: None,
+                    leveled: false,
+                })
+            }),
             None => own,
         }
     }
@@ -36,9 +43,20 @@ impl Engine {
     /// The lock the player must get past to use a door, if it's locked: a load
     /// door and the one on the far side share a lock (which either may hold), but
     /// a locked house or shop always lets the player out into the open.
-    pub(crate) fn door_lock_for_player(&self, door: FormId, partner: Option<FormId>) -> Option<FormId> {
-        let Some(partner) = partner else { return self.is_locked(door).then_some(door) };
-        let outside = |r: FormId| self.lo.cell_of_ref(r).and_then(|c| self.lo.cell(c)).is_some_and(|i| i.world.is_some());
+    pub(crate) fn door_lock_for_player(
+        &self,
+        door: FormId,
+        partner: Option<FormId>,
+    ) -> Option<FormId> {
+        let Some(partner) = partner else {
+            return self.is_locked(door).then_some(door);
+        };
+        let outside = |r: FormId| {
+            self.lo
+                .cell_of_ref(r)
+                .and_then(|c| self.lo.cell(c))
+                .is_some_and(|i| i.world.is_some())
+        };
         if outside(partner) && !outside(door) {
             return None;
         }
@@ -53,13 +71,21 @@ impl Engine {
         if !self.is_locked(r) {
             return true;
         }
-        let Some(npc) = self.base_of(achr) else { return false };
+        let Some(npc) = self.base_of(achr) else {
+            return false;
+        };
         if let Some(owner) = crate::ai::furniture::owner_of(&self.lo, r)
-            && (owner == npc || self.npc_factions(achr).iter().any(|&(f, rank)| f == owner && rank >= 0))
+            && (owner == npc
+                || self
+                    .npc_factions(achr)
+                    .iter()
+                    .any(|&(f, rank)| f == owner && rank >= 0))
         {
             return true;
         }
-        self.lock_of(r).and_then(|l| l.key).is_some_and(|k| self.item_count(achr, k) > 0)
+        self.lock_of(r)
+            .and_then(|l| l.key)
+            .is_some_and(|k| self.item_count(achr, k) > 0)
     }
 
     /// The player activating a locked door or container (`then`: what they
@@ -69,7 +95,11 @@ impl Engine {
         if !self.is_locked(r) {
             return true;
         }
-        let lock = self.lock_of(r).unwrap_or(Lock { level: 0, key: None, leveled: false });
+        let lock = self.lock_of(r).unwrap_or(Lock {
+            level: 0,
+            key: None,
+            leveled: false,
+        });
         if let Some(key) = lock.key.filter(|&k| self.item_count(PLAYER_REF, k) > 0) {
             self.set_locked(r, false);
             self.player_unlocked(r);
@@ -77,13 +107,19 @@ impl Engine {
             return true;
         }
         if lock.level == Lock::NEEDS_KEY {
-            let msg = self.gmst_string("sImpossibleLock").unwrap_or_else(|| "Requires key".into());
+            let msg = self
+                .gmst_string("sImpossibleLock")
+                .unwrap_or_else(|| "Requires key".into());
             self.scripts.notify(msg);
             return false;
         }
         if self.item_count(PLAYER_REF, LOCKPICK) <= 0 {
-            let level = self.gmst_string(lock_level_setting(lock.level)).unwrap_or_default();
-            let msg = self.gmst_string("sOutOfLockpicks").unwrap_or_else(|| "You have no lockpicks".into());
+            let level = self
+                .gmst_string(lock_level_setting(lock.level))
+                .unwrap_or_default();
+            let msg = self
+                .gmst_string("sOutOfLockpicks")
+                .unwrap_or_else(|| "You have no lockpicks".into());
             self.scripts.notify(format!("{msg} ({level})"));
             return false;
         }
@@ -96,8 +132,14 @@ impl Engine {
     /// activated, or a load door's other side (`XOWN`, else their cell's owner:
     /// a house's own door outside often has none).
     fn lock_owner(&self, lock: FormId, then: FormId) -> Option<FormId> {
-        let partner = self.lo.get(then).and_then(|rec| records::reference(&rec).teleport.map(|t| t.0));
-        [Some(lock), Some(then), partner].into_iter().flatten().find_map(|r| crate::ai::furniture::owner_of(&self.lo, r))
+        let partner = self
+            .lo
+            .get(then)
+            .and_then(|rec| records::reference(&rec).teleport.map(|t| t.0));
+        [Some(lock), Some(then), partner]
+            .into_iter()
+            .flatten()
+            .find_map(|r| crate::ai::furniture::owner_of(&self.lo, r))
     }
 
     /// Starting to pick a lock someone else owns is a crime, whether or not
@@ -108,11 +150,25 @@ impl Engine {
         if self.in_jail_with(lock) {
             return;
         }
-        let Some(owner) = self.lock_owner(lock, then).filter(|&o| self.owned_by_other(o)) else { return };
+        let Some(owner) = self
+            .lock_owner(lock, then)
+            .filter(|&o| self.owned_by_other(o))
+        else {
+            return;
+        };
         let is_faction = self.lo.tag_of(owner).is_some_and(|t| t.0 == *b"FACT");
-        let victim = if is_faction { None } else { self.npc_refs_index().get(&owner).copied() };
+        let victim = if is_faction {
+            None
+        } else {
+            self.npc_refs_index().get(&owner).copied()
+        };
         log::info!("picking {lock}, owned by {owner}");
-        self.commit_crime(crate::crime::CrimeType::Trespass, victim, is_faction.then_some(owner), 0);
+        self.commit_crime(
+            crate::crime::CrimeType::Trespass,
+            victim,
+            is_faction.then_some(owner),
+            0,
+        );
     }
 
     /// Put a lock in front of the player to pick (UESP *Skyrim:Lockpicking*): a sweet
@@ -125,27 +181,56 @@ impl Engine {
         let difficulty = difficulty(level);
         let skill = self.player_skill(LOCKPICKING_SKILL);
         let gmst = |n: &str, d: f32| crate::ai::combat::gmst_f32(&self.lo, n, d);
-        let partial_setting = ["fPartialPickVeryEasy", "fPartialPickEasy", "fPartialPickAverage", "fPartialPickHard", "fPartialPickVeryHard"][difficulty - 1];
-        let sweet = 60.0 * 0.5f32.powi(difficulty as i32) * (0.82 + gmst("fLockpickSkillSweetSpotMult", 0.006) * skill);
+        let partial_setting = [
+            "fPartialPickVeryEasy",
+            "fPartialPickEasy",
+            "fPartialPickAverage",
+            "fPartialPickHard",
+            "fPartialPickVeryHard",
+        ][difficulty - 1];
+        let sweet = 60.0
+            * 0.5f32.powi(difficulty as i32)
+            * (0.82 + gmst("fLockpickSkillSweetSpotMult", 0.006) * skill);
         let partial = gmst(partial_setting, 26.0 - 4.0 * difficulty as f32)
-            * (gmst("fLockpickSkillPartialPickBase", 0.775) + gmst("fLockpickSkillPartialPickMult", 0.015) * skill);
+            * (gmst("fLockpickSkillPartialPickBase", 0.775)
+                + gmst("fLockpickSkillPartialPickMult", 0.015) * skill);
         let durability = [2.0, 1.0, 0.75, 0.5, 0.25][difficulty - 1] * (1.0 + 0.5 * skill / 100.0);
         let room = 90.0 - sweet / 2.0;
         let centre = (self.rand() % 10_000) as f32 / 10_000.0 * 2.0 * room - room;
-        log::info!("picking {lock} (difficulty {difficulty}, skill {skill:.0}): sweet spot {sweet:.1} deg at {centre:.1}, partial {partial:.1}, pick lasts {durability:.2} s");
-        self.lockpick = Some(Lockpick { lock, then, level, centre, sweet, partial, durability, pick: 0.0, turn: 0.0, strain: 0.0, turning: false, hold: 0.0 });
+        log::info!(
+            "picking {lock} (difficulty {difficulty}, skill {skill:.0}): sweet spot {sweet:.1} deg at {centre:.1}, partial {partial:.1}, pick lasts {durability:.2} s"
+        );
+        self.lockpick = Some(Lockpick {
+            lock,
+            then,
+            level,
+            centre,
+            sweet,
+            partial,
+            durability,
+            pick: 0.0,
+            turn: 0.0,
+            strain: 0.0,
+            turning: false,
+            hold: 0.0,
+        });
         self.menu = Some(crate::items::Menu::Lockpick);
     }
 
     /// One of the player's skills (the player's `NPC_` `DNAM`).
     fn player_skill(&self, index: usize) -> f32 {
-        self.lo.get(FormId(0x7)).and_then(|r| r.get(b"DNAM").and_then(|d| d.get(index).copied())).unwrap_or(15) as f32
+        self.lo
+            .get(FormId(0x7))
+            .and_then(|r| r.get(b"DNAM").and_then(|d| d.get(index).copied()))
+            .unwrap_or(15) as f32
     }
 
     /// Turn the lock as far as the pick lets it: all the way opens it; held against
     /// the pick, the pick wears out and snaps, and the lock springs back.
     pub(crate) fn update_lockpick(&mut self, dt: f32) {
-        let Some(mut lp) = self.lockpick.take() else { return };
+        let Some(mut lp) = self.lockpick.take() else {
+            return;
+        };
         if self.menu != Some(crate::items::Menu::Lockpick) {
             return;
         }
@@ -179,7 +264,9 @@ impl Engine {
                     let left = self.item_count(PLAYER_REF, LOCKPICK);
                     log::info!("lockpick broke ({left} left)");
                     if left <= 0 {
-                        let msg = self.gmst_string("sOutOfLockpicks").unwrap_or_else(|| "You have no lockpicks".into());
+                        let msg = self
+                            .gmst_string("sOutOfLockpicks")
+                            .unwrap_or_else(|| "You have no lockpicks".into());
                         self.scripts.notify(msg);
                         self.menu = None;
                         return;
@@ -203,15 +290,22 @@ impl Engine {
     /// sleep package that locks doors puts it, and the doors on the far side of
     /// them, those of them with locks.
     fn home_doors(&mut self, achr: FormId, npc: FormId) -> Vec<FormId> {
-        let Some(cell) = self.home_cell(achr, npc) else { return Vec::new() };
-        let Some(idx) = self.lo.cell(cell) else { return Vec::new() };
+        let Some(cell) = self.home_cell(achr, npc) else {
+            return Vec::new();
+        };
+        let Some(idx) = self.lo.cell(cell) else {
+            return Vec::new();
+        };
         let mut out = Vec::new();
         for &r in idx.persistent.iter().chain(&idx.temporary) {
             let Some(rec) = self.lo.get(r) else { continue };
             let rf = records::reference(&rec);
-            let Some((partner, _, _)) = rf.teleport else { continue };
+            let Some((partner, _, _)) = rf.teleport else {
+                continue;
+            };
             for d in [r, partner] {
-                if self.lo.get(d).is_some_and(|rec| rec.get(b"XLOC").is_some()) && !out.contains(&d) {
+                if self.lo.get(d).is_some_and(|rec| rec.get(b"XLOC").is_some()) && !out.contains(&d)
+                {
                     out.push(d);
                 }
             }
@@ -225,9 +319,14 @@ impl Engine {
         let packages = self.npc_packages_cached(achr, npc);
         // Sleeping near its editor location (or elsewhere unnamed): its own cell.
         let editor = self.lo.cell_of_ref(achr).map(Place::Interior);
-        let place = packages.iter().find(|p| p.lock_doors).and_then(|p| self.package_place(achr, p).map(|p| p.0).or(editor));
+        let place = packages
+            .iter()
+            .find(|p| p.lock_doors)
+            .and_then(|p| self.package_place(achr, p).map(|p| p.0).or(editor));
         match place {
-            Some(Place::Interior(c)) if self.lo.cell(c).is_some_and(|i| i.world.is_none()) => Some(c),
+            Some(Place::Interior(c)) if self.lo.cell(c).is_some_and(|i| i.world.is_none()) => {
+                Some(c)
+            }
             _ => None,
         }
     }
@@ -236,7 +335,10 @@ impl Engine {
     /// that unlocks doors starts or one that unlocks them on change ends, then
     /// locking as sleepers who lock their doors turn in (so a household stays
     /// locked while any of it sleeps).
-    pub(crate) fn package_door_locks(&mut self, before: &std::collections::HashMap<FormId, Option<FormId>>) {
+    pub(crate) fn package_door_locks(
+        &mut self,
+        before: &std::collections::HashMap<FormId, Option<FormId>>,
+    ) {
         let changed: Vec<(FormId, Option<FormId>, Option<FormId>)> = self
             .whereabouts
             .package
@@ -247,14 +349,21 @@ impl Engine {
         let mut unlock = Vec::new();
         let mut lock = Vec::new();
         for (achr, old, new) in changed {
-            let Some(npc) = self.lo.get(achr).map(|rec| records::reference(&rec).base) else { continue };
+            let Some(npc) = self.lo.get(achr).map(|rec| records::reference(&rec).base) else {
+                continue;
+            };
             let packages = self.actor_packages(achr, npc);
             let find = |id: Option<FormId>| id.and_then(|id| packages.iter().find(|p| p.id == id));
             let (old, new) = (find(old), find(new));
-            let opens = old.is_some_and(|p| p.unlock_on_change) || new.is_some_and(|p| p.unlock_at_start);
+            let opens =
+                old.is_some_and(|p| p.unlock_on_change) || new.is_some_and(|p| p.unlock_at_start);
             let shuts = new.is_some_and(|p| p.lock_doors);
             // Its home is private while it runs a package that locks doors.
-            let home = if shuts { self.home_cell(achr, npc) } else { None };
+            let home = if shuts {
+                self.home_cell(achr, npc)
+            } else {
+                None
+            };
             match home {
                 Some(c) => self.crime.private_homes.insert(achr, c),
                 None => self.crime.private_homes.remove(&achr),

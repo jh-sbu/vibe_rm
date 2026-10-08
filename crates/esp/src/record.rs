@@ -84,7 +84,11 @@ impl<'a> Record<'a> {
         self.header.flags
     }
     pub fn subrecords(&self) -> SubRecords<'_> {
-        SubRecords { data: &self.data, pos: 0, next_size: None }
+        SubRecords {
+            data: &self.data,
+            pos: 0,
+            next_size: None,
+        }
     }
     /// First subrecord with the given tag.
     pub fn get(&self, tag: &[u8; 4]) -> Option<&[u8]> {
@@ -106,10 +110,18 @@ impl<'a> SubRecord<'a> {
         self.data.get(o).copied().unwrap_or(0)
     }
     pub fn u16(&self, o: usize) -> u16 {
-        if o + 2 <= self.data.len() { le_u16(self.data, o) } else { 0 }
+        if o + 2 <= self.data.len() {
+            le_u16(self.data, o)
+        } else {
+            0
+        }
     }
     pub fn u32(&self, o: usize) -> u32 {
-        if o + 4 <= self.data.len() { le_u32(self.data, o) } else { 0 }
+        if o + 4 <= self.data.len() {
+            le_u32(self.data, o)
+        } else {
+            0
+        }
     }
     pub fn i32(&self, o: usize) -> i32 {
         self.u32(o) as i32

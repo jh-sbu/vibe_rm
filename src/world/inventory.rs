@@ -35,8 +35,14 @@ pub fn item_info(lo: &LoadOrder, form: FormId) -> Option<ItemInfo> {
     let rec = lo.get(form)?;
     let tag = rec.tag().0;
     let data = rec.get(b"DATA").unwrap_or(&[]);
-    let f32_at = |d: &[u8], o: usize| d.get(o..o + 4).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()));
-    let i32_at = |d: &[u8], o: usize| d.get(o..o + 4).map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap()));
+    let f32_at = |d: &[u8], o: usize| {
+        d.get(o..o + 4)
+            .map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
+    };
+    let i32_at = |d: &[u8], o: usize| {
+        d.get(o..o + 4)
+            .map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap()))
+    };
     let (kind, value, weight) = match &tag {
         b"WEAP" => (ItemKind::Weapon, i32_at(data, 0), f32_at(data, 4)),
         b"ARMO" => (ItemKind::Armor, i32_at(data, 0), f32_at(data, 4)),
@@ -45,7 +51,11 @@ pub fn item_info(lo: &LoadOrder, form: FormId) -> Option<ItemInfo> {
         b"SLGM" => (ItemKind::SoulGem, i32_at(data, 0), f32_at(data, 4)),
         b"INGR" => (ItemKind::Ingredient, i32_at(data, 0), f32_at(data, 4)),
         // Value in the enchanted item data (ENIT).
-        b"ALCH" => (ItemKind::Potion, i32_at(rec.get(b"ENIT").unwrap_or(&[]), 0), f32_at(data, 0)),
+        b"ALCH" => (
+            ItemKind::Potion,
+            i32_at(rec.get(b"ENIT").unwrap_or(&[]), 0),
+            f32_at(data, 0),
+        ),
         b"SCRL" => (ItemKind::Scroll, i32_at(data, 0), f32_at(data, 4)),
         b"BOOK" => (ItemKind::Book, i32_at(data, 8), f32_at(data, 12)),
         // SSE: projectile, flags, damage, value, weight.
@@ -59,8 +69,20 @@ pub fn item_info(lo: &LoadOrder, form: FormId) -> Option<ItemInfo> {
         }
         _ => return None,
     };
-    let name = rec.get(b"FULL").map(|d| lo.lstring(&rec, d)).unwrap_or_default();
-    Some(ItemInfo { name: if name.is_empty() { rec.editor_id().unwrap_or_default().to_owned() } else { name }, kind, value, weight })
+    let name = rec
+        .get(b"FULL")
+        .map(|d| lo.lstring(&rec, d))
+        .unwrap_or_default();
+    Some(ItemInfo {
+        name: if name.is_empty() {
+            rec.editor_id().unwrap_or_default().to_owned()
+        } else {
+            name
+        },
+        kind,
+        value,
+        weight,
+    })
 }
 
 /// Biped slot 39 (shield).
@@ -113,13 +135,20 @@ impl HandType {
     }
 
     fn one_handed(self) -> bool {
-        matches!(self, HandType::Sword | HandType::Dagger | HandType::Axe | HandType::Mace)
+        matches!(
+            self,
+            HandType::Sword | HandType::Dagger | HandType::Axe | HandType::Mace
+        )
     }
 }
 
 impl Inventory {
     pub fn count(&self, form: FormId) -> i32 {
-        self.items.iter().filter(|(f, _)| *f == form).map(|(_, n)| n).sum()
+        self.items
+            .iter()
+            .filter(|(f, _)| *f == form)
+            .map(|(_, n)| n)
+            .sum()
     }
 
     pub fn add(&mut self, form: FormId, n: i32) {
@@ -139,8 +168,14 @@ impl Inventory {
             return;
         }
         self.add(form, n);
-        let Some(owner) = owner.filter(|_| form != FormId(0xF)) else { return };
-        match self.owned.iter_mut().find(|(f, o, _)| *f == form && *o == owner) {
+        let Some(owner) = owner.filter(|_| form != FormId(0xF)) else {
+            return;
+        };
+        match self
+            .owned
+            .iter_mut()
+            .find(|(f, o, _)| *f == form && *o == owner)
+        {
             Some((_, _, c)) => *c += n,
             None => self.owned.push((form, owner, n)),
         }
@@ -148,7 +183,13 @@ impl Inventory {
 
     /// How many of an item belong to `owner`; with `None`, how many belong to nobody.
     pub fn count_owned(&self, form: FormId, owner: Option<FormId>) -> i32 {
-        let owned = |o: Option<FormId>| self.owned.iter().filter(|(f, x, _)| *f == form && o.is_none_or(|o| *x == o)).map(|(_, _, n)| n).sum::<i32>();
+        let owned = |o: Option<FormId>| {
+            self.owned
+                .iter()
+                .filter(|(f, x, _)| *f == form && o.is_none_or(|o| *x == o))
+                .map(|(_, _, n)| n)
+                .sum::<i32>()
+        };
         match owner {
             Some(o) => owned(Some(o)),
             None => self.count(form) - owned(None),
@@ -158,8 +199,15 @@ impl Inventory {
     /// Take up to `n` of `form` away, with whom each part belonged to: those
     /// belonging to nobody first, then the owned (stolen) ones; or only those
     /// `only` names (`Some(None)`: nobody's). The last one taken is unequipped.
-    pub fn remove_split(&mut self, form: FormId, n: i32, only: Option<Option<FormId>>) -> Vec<(Option<FormId>, i32)> {
-        let Some(i) = self.items.iter().position(|(f, _)| *f == form) else { return Vec::new() };
+    pub fn remove_split(
+        &mut self,
+        form: FormId,
+        n: i32,
+        only: Option<Option<FormId>>,
+    ) -> Vec<(Option<FormId>, i32)> {
+        let Some(i) = self.items.iter().position(|(f, _)| *f == form) else {
+            return Vec::new();
+        };
         let mut left = n.max(0);
         let mut out = Vec::new();
         if only.is_none_or(|o| o.is_none()) {
@@ -210,7 +258,10 @@ impl Inventory {
 
     /// The equipped weapon, if any.
     pub fn weapon(&self, lo: &LoadOrder) -> Option<FormId> {
-        self.equipped.iter().copied().find(|&f| lo.tag_of(f).map(|t| t.0) == Some(*b"WEAP"))
+        self.equipped
+            .iter()
+            .copied()
+            .find(|&f| lo.tag_of(f).map(|t| t.0) == Some(*b"WEAP"))
     }
 }
 
@@ -219,7 +270,15 @@ impl Inventory {
 pub fn listed_items(lo: &LoadOrder, rec: &LoadedRecord<'_>, seed: u64) -> Vec<(FormId, i32)> {
     rec.subrecords()
         .filter(|s| s.tag.0 == *b"CNTO" && s.data.len() >= 8)
-        .flat_map(|s| resolve_items(lo, rec.fid(s.form_id(0)), i32::from_le_bytes(s.data[4..8].try_into().unwrap()), seed, 0))
+        .flat_map(|s| {
+            resolve_items(
+                lo,
+                rec.fid(s.form_id(0)),
+                i32::from_le_bytes(s.data[4..8].try_into().unwrap()),
+                seed,
+                0,
+            )
+        })
         .collect()
 }
 
@@ -235,11 +294,16 @@ pub fn container_inventory(lo: &LoadOrder, cont: FormId, seed: u64) -> Inventory
 }
 
 fn weapon_anim_type(rec: &LoadedRecord<'_>) -> u8 {
-    rec.get(b"DNAM").and_then(|d| d.first().copied()).unwrap_or(0)
+    rec.get(b"DNAM")
+        .and_then(|d| d.first().copied())
+        .unwrap_or(0)
 }
 
 pub fn armor_slots(rec: &LoadedRecord<'_>) -> u32 {
-    rec.get(b"BOD2").or_else(|| rec.get(b"BODT")).filter(|d| d.len() >= 4).map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
+    rec.get(b"BOD2")
+        .or_else(|| rec.get(b"BODT"))
+        .filter(|d| d.len() >= 4)
+        .map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
 }
 
 /// The model of a weapon (following its template when it has none of its own).
@@ -247,7 +311,11 @@ pub fn weapon_model(lo: &LoadOrder, weap: FormId) -> Option<String> {
     let mut id = weap;
     for _ in 0..4 {
         let rec = lo.get(id)?;
-        if let Some(m) = rec.get(b"MODL").map(esp::decode_zstring).filter(|m| !m.is_empty()) {
+        if let Some(m) = rec
+            .get(b"MODL")
+            .map(esp::decode_zstring)
+            .filter(|m| !m.is_empty())
+        {
             return Some(super::records::mesh_path(&m));
         }
         let t = rec.get(b"CNAM").filter(|d| d.len() >= 4)?;
@@ -264,7 +332,9 @@ fn skills(npc: &LoadedRecord<'_>) -> [f32; 4] {
 
 /// A combat style's equipment score multipliers (`CSGD`): melee, ranged.
 fn style_weights(lo: &LoadOrder, style: FormId) -> (f32, f32) {
-    let csgd = lo.get(style).and_then(|r| r.get(b"CSGD").filter(|d| d.len() >= 24).map(|d| d.to_vec()));
+    let csgd = lo
+        .get(style)
+        .and_then(|r| r.get(b"CSGD").filter(|d| d.len() >= 24).map(|d| d.to_vec()));
     let f = |d: &[u8], o: usize| f32::from_le_bytes(d[o..o + 4].try_into().unwrap());
     csgd.map_or((1.0, 1.0), |d| (f(&d, 12), f(&d, 20)))
 }
@@ -281,14 +351,25 @@ pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, sty
     let archer = ranged > melee;
     let mut best: Option<(bool, f32, FormId, HandType)> = None;
     for &(f, _) in &inv.items {
-        let Some(rec) = lo.get(f).filter(|r| r.tag().0 == *b"WEAP") else { continue };
+        let Some(rec) = lo.get(f).filter(|r| r.tag().0 == *b"WEAP") else {
+            continue;
+        };
         let hand = HandType::of_weapon(weapon_anim_type(&rec));
         // DNAM flags (offset 12): 0x80 non-playable.
-        let unplayable = rec.get(b"DNAM").and_then(|d| d.get(12)).is_some_and(|f| f & 0x80 != 0);
-        if unplayable || matches!(hand, HandType::Empty | HandType::Staff | HandType::Crossbow) || weapon_model(lo, f).is_none() {
+        let unplayable = rec
+            .get(b"DNAM")
+            .and_then(|d| d.get(12))
+            .is_some_and(|f| f & 0x80 != 0);
+        if unplayable
+            || matches!(hand, HandType::Empty | HandType::Staff | HandType::Crossbow)
+            || weapon_model(lo, f).is_none()
+        {
             continue;
         }
-        let damage = rec.get(b"DATA").filter(|d| d.len() >= 10).map_or(0.0, |d| u16::from_le_bytes([d[8], d[9]]) as f32);
+        let damage = rec
+            .get(b"DATA")
+            .filter(|d| d.len() >= 10)
+            .map_or(0.0, |d| u16::from_le_bytes([d[8], d[9]]) as f32);
         let s = match hand {
             HandType::Greatsword | HandType::Battleaxe => skill[1],
             HandType::Bow => skill[2],
@@ -296,7 +377,9 @@ pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, sty
         };
         let preferred = (hand == HandType::Bow) == archer;
         let score = (damage + 1.0) * (0.5 + s / 100.0);
-        log::trace!("{skill_npc} could wield {f} ({hand:?}, damage {damage}, skill {s}, preferred {preferred}): {score:.1}");
+        log::trace!(
+            "{skill_npc} could wield {f} ({hand:?}, damage {damage}, skill {s}, preferred {preferred}): {score:.1}"
+        );
         if best.is_none_or(|b| (preferred, score) > (b.0, b.1)) {
             best = Some((preferred, score, f, hand));
         }
@@ -305,16 +388,30 @@ pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, sty
     if let Some((_, _, f, _)) = best {
         inv.equipped.push(f);
     }
-    let has_shield = inv.equipped.iter().any(|&f| lo.get(f).is_some_and(|r| r.tag().0 == *b"ARMO" && armor_slots(&r) & SLOT_SHIELD != 0));
+    let has_shield = inv.equipped.iter().any(|&f| {
+        lo.get(f)
+            .is_some_and(|r| r.tag().0 == *b"ARMO" && armor_slots(&r) & SLOT_SHIELD != 0)
+    });
     if !one_handed {
         // Two hands on the weapon: a shield from the outfit goes unworn.
-        inv.equipped.retain(|&f| !lo.get(f).is_some_and(|r| r.tag().0 == *b"ARMO" && armor_slots(&r) & SLOT_SHIELD != 0));
+        inv.equipped.retain(|&f| {
+            !lo.get(f)
+                .is_some_and(|r| r.tag().0 == *b"ARMO" && armor_slots(&r) & SLOT_SHIELD != 0)
+        });
     } else if !has_shield && skill[3] > 0.0 {
-        let rating = |r: &LoadedRecord<'_>| r.get(b"DNAM").filter(|d| d.len() >= 4).map_or(0, |d| i32::from_le_bytes(d[0..4].try_into().unwrap()));
+        let rating = |r: &LoadedRecord<'_>| {
+            r.get(b"DNAM")
+                .filter(|d| d.len() >= 4)
+                .map_or(0, |d| i32::from_le_bytes(d[0..4].try_into().unwrap()))
+        };
         let shield = inv
             .items
             .iter()
-            .filter_map(|&(f, _)| lo.get(f).filter(|r| r.tag().0 == *b"ARMO" && armor_slots(r) & SLOT_SHIELD != 0).map(|r| (rating(&r), f)))
+            .filter_map(|&(f, _)| {
+                lo.get(f)
+                    .filter(|r| r.tag().0 == *b"ARMO" && armor_slots(r) & SLOT_SHIELD != 0)
+                    .map(|r| (rating(&r), f))
+            })
             .max_by_key(|s| s.0);
         if let Some((_, f)) = shield {
             inv.equipped.push(f);

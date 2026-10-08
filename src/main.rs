@@ -1,27 +1,27 @@
 mod actor_values;
-mod aliases;
 mod ai;
+mod aliases;
 mod app;
+mod arrest;
 mod audio;
 mod condition;
-mod detection;
-mod dialogue;
 mod console;
 mod created;
-mod arrest;
 mod crime;
+mod detection;
+mod dialogue;
 mod engine;
 mod footsteps;
 mod items;
 mod locations;
 mod locks;
-mod render;
 mod physics;
 mod pickpocket;
 mod player;
 mod relationships;
 #[cfg(feature = "remote-console")]
 mod remote;
+mod render;
 mod scene;
 mod script;
 mod story;
@@ -72,7 +72,13 @@ pub struct Options {
 }
 
 fn parse_args() -> Result<Options> {
-    let mut o = Options { width: 1280, height: 720, radius: 2, hour: 12.0, ..Default::default() };
+    let mut o = Options {
+        width: 1280,
+        height: 720,
+        radius: 2,
+        hour: 12.0,
+        ..Default::default()
+    };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let mut val = || args.next().with_context(|| format!("{a} needs a value"));
@@ -88,7 +94,10 @@ fn parse_args() -> Result<Options> {
                 o.grid = Some((x.trim().parse()?, y.trim().parse()?));
             }
             "--pos" => {
-                let v: Vec<f32> = val()?.split(',').map(|s| s.trim().parse()).collect::<Result<_, _>>()?;
+                let v: Vec<f32> = val()?
+                    .split(',')
+                    .map(|s| s.trim().parse())
+                    .collect::<Result<_, _>>()?;
                 anyhow::ensure!(v.len() == 3, "--pos x,y,z");
                 o.position = Some(glam::Vec3::new(v[0], v[1], v[2]));
             }
@@ -118,7 +127,9 @@ fn parse_args() -> Result<Options> {
             "--player-at-camera" => o.player_at_camera = true,
             "--pick" => {
                 let v = val()?;
-                let (x, y) = v.split_once(',').context("--pick x,y (0..1 screen coords)")?;
+                let (x, y) = v
+                    .split_once(',')
+                    .context("--pick x,y (0..1 screen coords)")?;
                 o.pick = Some((x.parse()?, y.parse()?));
             }
             "-h" | "--help" => {
@@ -142,8 +153,10 @@ fn parse_args() -> Result<Options> {
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu_core=warn,wgpu_hal=warn,naga=warn"))
-        .init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info,wgpu_core=warn,wgpu_hal=warn,naga=warn"),
+    )
+    .init();
     let opts = parse_args()?;
     app::run(opts)
 }

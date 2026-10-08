@@ -47,8 +47,17 @@ impl Engine {
     pub(crate) fn alias_packages(&mut self, achr: FormId) -> Vec<Package> {
         if self.alias_packs.built != Some(self.scripts.alias_gen) {
             let mut fills: HashMap<FormId, Vec<(u8, FormId, u32)>> = HashMap::new();
-            for (&q, st) in self.scripts.quests.iter().filter(|(_, st)| st.running && !st.aliases.is_empty()) {
-                let priority = self.lo.get(q).and_then(|r| r.get(b"DNAM").and_then(|d| d.get(2).copied())).unwrap_or(0);
+            for (&q, st) in self
+                .scripts
+                .quests
+                .iter()
+                .filter(|(_, st)| st.running && !st.aliases.is_empty())
+            {
+                let priority = self
+                    .lo
+                    .get(q)
+                    .and_then(|r| r.get(b"DNAM").and_then(|d| d.get(2).copied()))
+                    .unwrap_or(0);
                 for (&alias, &r) in &st.aliases {
                     fills.entry(r).or_default().push((priority, q, alias));
                 }
@@ -61,14 +70,21 @@ impl Engine {
             self.alias_packs.fills = fills;
             self.alias_packs.built = Some(self.scripts.alias_gen);
         }
-        let Some(fills) = self.alias_packs.fills.get(&achr).cloned() else { return Vec::new() };
+        let Some(fills) = self.alias_packs.fills.get(&achr).cloned() else {
+            return Vec::new();
+        };
         log::trace!("{achr} fills {fills:?}");
         let mut out = Vec::new();
         for (_, q, alias) in fills {
             let packs = match self.alias_packs.packages.get(&(q, alias)) {
                 Some(p) => p.clone(),
                 None => {
-                    let ids = self.lo.get(q).map(|r| quest_alias_packages(&r)).and_then(|mut m| m.remove(&alias)).unwrap_or_default();
+                    let ids = self
+                        .lo
+                        .get(q)
+                        .map(|r| quest_alias_packages(&r))
+                        .and_then(|mut m| m.remove(&alias))
+                        .unwrap_or_default();
                     let p: Arc<Vec<Package>> = Arc::new(
                         ids.into_iter()
                             .flat_map(|id| package::expand(&self.lo, id))
@@ -84,7 +100,10 @@ impl Engine {
             };
             out.extend(packs.iter().cloned());
         }
-        log::trace!("{achr} alias packages {:?}", out.iter().map(|p| p.editor_id.as_str()).collect::<Vec<_>>());
+        log::trace!(
+            "{achr} alias packages {:?}",
+            out.iter().map(|p| p.editor_id.as_str()).collect::<Vec<_>>()
+        );
         out
     }
 
@@ -101,16 +120,31 @@ impl Engine {
     /// keeping their current package if it is still on it.
     pub(crate) fn refresh_alias_packages(&mut self) {
         let generation = self.scripts.alias_gen;
-        let stale: Vec<(FormId, FormId)> =
-            self.cells.values().flat_map(|rt| &rt.actors).filter(|a| a.alias_gen != generation).map(|a| (a.ref_id, a.npc)).collect();
+        let stale: Vec<(FormId, FormId)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| a.alias_gen != generation)
+            .map(|a| (a.ref_id, a.npc))
+            .collect();
         for (r, npc) in stale {
             let packages = self.actor_packages(r, npc);
             let Some(a) = self.actor_mut(r) else { continue };
             a.alias_gen = generation;
-            if a.packages.iter().map(|p| p.id).eq(packages.iter().map(|p| p.id)) {
+            if a.packages
+                .iter()
+                .map(|p| p.id)
+                .eq(packages.iter().map(|p| p.id))
+            {
                 continue;
             }
-            log::debug!("{r} packages now {:?}", packages.iter().map(|p| p.editor_id.as_str()).collect::<Vec<_>>());
+            log::debug!(
+                "{r} packages now {:?}",
+                packages
+                    .iter()
+                    .map(|p| p.editor_id.as_str())
+                    .collect::<Vec<_>>()
+            );
             let current = a.current.and_then(|i| a.packages.get(i)).map(|p| p.id);
             a.current = current.and_then(|id| packages.iter().position(|p| p.id == id));
             a.packages = packages;

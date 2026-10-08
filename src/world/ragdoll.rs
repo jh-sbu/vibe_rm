@@ -44,7 +44,10 @@ fn frame(pivot: Vec3, x: Vec3, y: Vec3) -> (Vec3, Quat) {
     let x = x.normalize_or(Vec3::X);
     let z = x.cross(y).normalize_or(x.any_orthonormal_vector());
     let y = z.cross(x);
-    (pivot * HAVOK_SCALE, Quat::from_mat3(&Mat3::from_cols(x, y, z)).normalize())
+    (
+        pivot * HAVOK_SCALE,
+        Quat::from_mat3(&Mat3::from_cols(x, y, z)).normalize(),
+    )
 }
 
 impl RagdollDesc {
@@ -56,26 +59,58 @@ impl RagdollDesc {
         let mut constraints: Vec<Ref> = Vec::new();
         for block in &nif.blocks {
             let Block::Node(n) = block else { continue };
-            let Some(Block::CollisionObject(co)) = nif.get(n.av.collision) else { continue };
-            let Some(Block::RigidBody(rb)) = nif.get(co.body) else { continue };
-            let Some(Shape::Capsule { radius, p1, p2, .. }) = nif.get(rb.shape).and_then(|b| match b {
-                Block::Shape(s) => Some(s.clone()),
-                _ => None,
-            }) else {
+            let Some(Block::CollisionObject(co)) = nif.get(n.av.collision) else {
                 continue;
             };
-            let Some(bone) = skeleton.find(&n.av.net.name) else { continue };
-            let body_model = Mat4::from_rotation_translation(rb.rotation, rb.translation * HAVOK_SCALE);
+            let Some(Block::RigidBody(rb)) = nif.get(co.body) else {
+                continue;
+            };
+            let Some(Shape::Capsule { radius, p1, p2, .. }) =
+                nif.get(rb.shape).and_then(|b| match b {
+                    Block::Shape(s) => Some(s.clone()),
+                    _ => None,
+                })
+            else {
+                continue;
+            };
+            let Some(bone) = skeleton.find(&n.av.net.name) else {
+                continue;
+            };
+            let body_model =
+                Mat4::from_rotation_translation(rb.rotation, rb.translation * HAVOK_SCALE);
             let offset = bind[bone].inverse() * body_model;
             by_block.insert(co.body.0, desc.bodies.len());
-            desc.bodies.push(RagdollBody { bone, offset, p1: p1 * HAVOK_SCALE, p2: p2 * HAVOK_SCALE, radius: radius * HAVOK_SCALE, mass: rb.mass.max(0.5) });
+            desc.bodies.push(RagdollBody {
+                bone,
+                offset,
+                p1: p1 * HAVOK_SCALE,
+                p2: p2 * HAVOK_SCALE,
+                radius: radius * HAVOK_SCALE,
+                mass: rb.mass.max(0.5),
+            });
             constraints.extend(rb.constraints.iter().copied());
         }
         for c in constraints {
-            let Some(Block::Constraint(c)) = nif.get(c) else { continue };
-            let (Some(&a), Some(&b)) = (by_block.get(&c.entities[0].0), by_block.get(&c.entities[1].0)) else { continue };
+            let Some(Block::Constraint(c)) = nif.get(c) else {
+                continue;
+            };
+            let (Some(&a), Some(&b)) = (
+                by_block.get(&c.entities[0].0),
+                by_block.get(&c.entities[1].0),
+            ) else {
+                continue;
+            };
             let joint = match &c.kind {
-                ConstraintKind::Ragdoll { pivot, twist, plane, cone_max, plane_min, plane_max, twist_min, twist_max } => RagdollJoint {
+                ConstraintKind::Ragdoll {
+                    pivot,
+                    twist,
+                    plane,
+                    cone_max,
+                    plane_min,
+                    plane_max,
+                    twist_min,
+                    twist_max,
+                } => RagdollJoint {
                     a,
                     b,
                     frame_a: frame(pivot[0], twist[0], plane[0]),
@@ -88,7 +123,13 @@ impl RagdollDesc {
                         Some((plane_min.max(-cone_max), plane_max.min(*cone_max))),
                     ],
                 },
-                ConstraintKind::Hinge { pivot, axis, perp, min, max } => RagdollJoint {
+                ConstraintKind::Hinge {
+                    pivot,
+                    axis,
+                    perp,
+                    min,
+                    max,
+                } => RagdollJoint {
                     a,
                     b,
                     frame_a: frame(pivot[0], axis[0], perp[0]),
@@ -136,14 +177,23 @@ impl RagdollPose {
                 }
             })
             .collect();
-        RagdollPose { driven, locals, base: pose.to_vec(), inv_actor: actor.inverse(), offsets_inv: desc.bodies.iter().map(|b| b.offset.inverse()).collect() }
+        RagdollPose {
+            driven,
+            locals,
+            base: pose.to_vec(),
+            inv_actor: actor.inverse(),
+            offsets_inv: desc.bodies.iter().map(|b| b.offset.inverse()).collect(),
+        }
     }
 
     /// The model-space pose for bodies now at `bodies` (world, scale included).
     pub fn pose(&self, skeleton: &Skeleton, bodies: &[Mat4]) -> Vec<Mat4> {
         let mut out: Vec<Mat4> = Vec::with_capacity(skeleton.bones.len());
         for (i, b) in skeleton.bones.iter().enumerate() {
-            let m = match (self.driven[i].and_then(|k| Some((bodies.get(k)?, self.offsets_inv.get(k)?))), b.parent) {
+            let m = match (
+                self.driven[i].and_then(|k| Some((bodies.get(k)?, self.offsets_inv.get(k)?))),
+                b.parent,
+            ) {
                 (Some((w, off)), _) => self.inv_actor * *w * *off,
                 (None, Some(p)) if self.has_driven_ancestor(skeleton, i) => out[p] * self.locals[i],
                 _ => self.base.get(i).copied().unwrap_or(Mat4::IDENTITY),

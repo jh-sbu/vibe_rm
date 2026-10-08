@@ -25,7 +25,10 @@ pub enum NodeKind {
     Branch,
     /// Quests, each with its flags (`FNAM`) and hours before it may run again
     /// (`RNAM`); how many to start (`MNAM`, with the flag).
-    Quest { quests: Vec<NodeQuest>, num_to_run: u32 },
+    Quest {
+        quests: Vec<NodeQuest>,
+        num_to_run: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -62,7 +65,10 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Node> {
     let mut kind = match &rec.tag().0 {
         b"SMEN" => NodeKind::Event([0; 4]),
         b"SMBN" => NodeKind::Branch,
-        b"SMQN" => NodeKind::Quest { quests: Vec::new(), num_to_run: 0 },
+        b"SMQN" => NodeKind::Quest {
+            quests: Vec::new(),
+            num_to_run: 0,
+        },
         _ => return None,
     };
     let mut n = Node {
@@ -77,7 +83,12 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Node> {
         conditions: Vec::new(),
     };
     for sr in rec.subrecords() {
-        let u32_of = || sr.data.get(0..4).map(|b| u32::from_le_bytes(b.try_into().unwrap())).unwrap_or(0);
+        let u32_of = || {
+            sr.data
+                .get(0..4)
+                .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+                .unwrap_or(0)
+        };
         let form = || rec.fid(FormId(u32_of()));
         match (&sr.tag.0, &mut kind) {
             (b"PNAM", _) => n.parent = form(),
@@ -87,7 +98,10 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Node> {
                 n.node_flags = u16::from_le_bytes([sr.data[0], sr.data[1]]);
                 n.quest_flags = u16::from_le_bytes([sr.data[2], sr.data[3]]);
             }
-            (b"CTDA", _) => n.conditions.push(RawCondition { ctda: sr.data.to_vec(), ..Default::default() }),
+            (b"CTDA", _) => n.conditions.push(RawCondition {
+                ctda: sr.data.to_vec(),
+                ..Default::default()
+            }),
             (b"CIS1", _) => {
                 if let Some(c) = n.conditions.last_mut() {
                     c.cis1 = Some(sr.zstring());
@@ -98,9 +112,15 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Node> {
                     c.cis2 = Some(sr.zstring());
                 }
             }
-            (b"ENAM", NodeKind::Event(e)) if sr.data.len() >= 4 => e.copy_from_slice(&sr.data[0..4]),
+            (b"ENAM", NodeKind::Event(e)) if sr.data.len() >= 4 => {
+                e.copy_from_slice(&sr.data[0..4])
+            }
             (b"MNAM", NodeKind::Quest { num_to_run, .. }) => *num_to_run = u32_of(),
-            (b"NNAM", NodeKind::Quest { quests, .. }) => quests.push(NodeQuest { quest: form(), flags: 0, reset_hours: 0.0 }),
+            (b"NNAM", NodeKind::Quest { quests, .. }) => quests.push(NodeQuest {
+                quest: form(),
+                flags: 0,
+                reset_hours: 0.0,
+            }),
             (b"FNAM", NodeKind::Quest { quests, .. }) => {
                 if let Some(q) = quests.last_mut() {
                     q.flags = u32_of();
@@ -120,5 +140,8 @@ pub fn parse(rec: &LoadedRecord<'_>, id: FormId) -> Option<Node> {
 
 /// An event type or member code as text (`CLOC`, `R1`).
 pub fn code(b: &[u8]) -> String {
-    b.iter().take_while(|&&c| c != 0).map(|&c| c as char).collect()
+    b.iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as char)
+        .collect()
 }

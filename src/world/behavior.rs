@@ -26,14 +26,27 @@ pub struct GraphLibrary {
 /// to the project's clip generators. The data repeats the clips' own triggers (those
 /// timed from the end as absolute times), so an event the clip already raises with
 /// the same payload is left out. Returns how many were added.
-fn add_clip_triggers(p: &mut havok::behavior::Project, triggers: &HashMap<String, Vec<(f32, String)>>) -> usize {
+fn add_clip_triggers(
+    p: &mut havok::behavior::Project,
+    triggers: &HashMap<String, Vec<(f32, String)>>,
+) -> usize {
     use havok::behavior::{Generator, Trigger};
     let mut added = 0;
     for (_, g) in &mut p.graphs {
         for gi in 0..g.generators.len() {
-            let Generator::Clip { name, triggers: own, .. } = &g.generators[gi] else { continue };
-            let Some(list) = triggers.get(&name.to_ascii_lowercase()) else { continue };
-            let own: Vec<(i32, Option<String>)> = own.iter().map(|t| (t.event, t.payload.clone())).collect();
+            let Generator::Clip {
+                name,
+                triggers: own,
+                ..
+            } = &g.generators[gi]
+            else {
+                continue;
+            };
+            let Some(list) = triggers.get(&name.to_ascii_lowercase()) else {
+                continue;
+            };
+            let own: Vec<(i32, Option<String>)> =
+                own.iter().map(|t| (t.event, t.payload.clone())).collect();
             let mut extra = Vec::new();
             for (time, text) in list {
                 let (event, payload) = match text.split_once('.') {
@@ -50,10 +63,19 @@ fn add_clip_triggers(p: &mut havok::behavior::Project, triggers: &HashMap<String
                         g.events.len() as i32 - 1
                     }
                 };
-                if own.iter().any(|(e, p)| *e == id && p.as_deref().map(str::to_ascii_lowercase) == payload.as_deref().map(str::to_ascii_lowercase)) {
+                if own.iter().any(|(e, p)| {
+                    *e == id
+                        && p.as_deref().map(str::to_ascii_lowercase)
+                            == payload.as_deref().map(str::to_ascii_lowercase)
+                }) {
                     continue;
                 }
-                extra.push(Trigger { time: *time, from_end: false, event: id, payload });
+                extra.push(Trigger {
+                    time: *time,
+                    from_end: false,
+                    event: id,
+                    payload,
+                });
             }
             added += extra.len();
             if let Generator::Clip { triggers: have, .. } = &mut g.generators[gi] {
@@ -102,9 +124,14 @@ impl GraphLibrary {
             let (dir, name) = file.rsplit_once('/')?;
             let read = |rel: &str| vfs.read(&format!("{dir}/{rel}"));
             let bytes = read(name)?;
-            let character_file = havok::behavior::project_character_file(&bytes).map_err(|e| log::warn!("{file}: {e}")).ok()?;
-            let character =
-                havok::behavior::Character::parse(&read(&character_file.to_ascii_lowercase().replace('\\', "/"))?).map_err(|e| log::warn!("{file}: {e}")).ok()?;
+            let character_file = havok::behavior::project_character_file(&bytes)
+                .map_err(|e| log::warn!("{file}: {e}"))
+                .ok()?;
+            let character = havok::behavior::Character::parse(&read(
+                &character_file.to_ascii_lowercase().replace('\\', "/"),
+            )?)
+            .map_err(|e| log::warn!("{file}: {e}"))
+            .ok()?;
             let key = (dir.to_owned(), character.behavior.to_ascii_lowercase());
             let shared = match self.graphs.get(&key) {
                 Some(s) => s.clone(),
@@ -118,7 +145,12 @@ impl GraphLibrary {
                     // play as clip triggers (weapon draw, hit frames, footsteps, sounds).
                     let stem = name.strip_suffix(".hkx").unwrap_or(name);
                     if let Some(text) = vfs.read(&format!("meshes/animationdata/{stem}.txt")) {
-                        let added = add_clip_triggers(&mut p, &crate::world::animation::parse_clip_triggers(&String::from_utf8_lossy(&text)));
+                        let added = add_clip_triggers(
+                            &mut p,
+                            &crate::world::animation::parse_clip_triggers(
+                                &String::from_utf8_lossy(&text),
+                            ),
+                        );
                         log::debug!("{file}: {added} clip triggers from animation data");
                     }
                     p.character = Some(character);
@@ -128,9 +160,22 @@ impl GraphLibrary {
                 }
             };
             let name = name.strip_suffix(".hkx").unwrap_or(name).to_owned();
-            let base = dir.strip_prefix("meshes/").unwrap_or(dir).replace('/', "\\");
-            let files = shared.project.graphs.iter().map(|(rel, _)| format!("{base}\\{rel}")).collect();
-            Some(Arc::new(ProjectRuntime { shared, dir: dir.to_owned(), name, files }))
+            let base = dir
+                .strip_prefix("meshes/")
+                .unwrap_or(dir)
+                .replace('/', "\\");
+            let files = shared
+                .project
+                .graphs
+                .iter()
+                .map(|(rel, _)| format!("{base}\\{rel}"))
+                .collect();
+            Some(Arc::new(ProjectRuntime {
+                shared,
+                dir: dir.to_owned(),
+                name,
+                files,
+            }))
         })();
         log::debug!("{file}: behaviour runtime in {:?}", t.elapsed());
         self.projects.insert(file, p.clone());
@@ -190,13 +235,22 @@ impl Source<'_> {
         if let Some(c) = self.clips.get(animation) {
             return c.clone();
         }
-        let c = project_clip_paths(&self.project.dir, animation, self.female).iter().find_map(|p| {
-            if self.project.humanoid() {
-                self.anims.clip(self.vfs, p, self.skeleton_path, self.skeleton)
-            } else {
-                self.anims.clip_in_project(self.vfs, p, self.skeleton_path, self.skeleton, Some(&self.project.name))
-            }
-        });
+        let c = project_clip_paths(&self.project.dir, animation, self.female)
+            .iter()
+            .find_map(|p| {
+                if self.project.humanoid() {
+                    self.anims
+                        .clip(self.vfs, p, self.skeleton_path, self.skeleton)
+                } else {
+                    self.anims.clip_in_project(
+                        self.vfs,
+                        p,
+                        self.skeleton_path,
+                        self.skeleton,
+                        Some(&self.project.name),
+                    )
+                }
+            });
         self.clips.insert(animation.into(), c.clone());
         c
     }
@@ -213,7 +267,13 @@ impl havok::behavior::runtime::ClipSource for Source<'_> {
 }
 
 impl GraphAnim {
-    pub fn new(project: Arc<ProjectRuntime>, skeleton_path: &str, female: bool, skeleton: &Skeleton, seed: u64) -> GraphAnim {
+    pub fn new(
+        project: Arc<ProjectRuntime>,
+        skeleton_path: &str,
+        female: bool,
+        skeleton: &Skeleton,
+        seed: u64,
+    ) -> GraphAnim {
         GraphAnim {
             label: String::new(),
             inst: Instance::new(project.shared.clone(), seed),
@@ -234,27 +294,73 @@ impl GraphAnim {
         }
     }
 
-    fn source<'a>(&'a mut self, vfs: &'a vfs::Vfs, anims: &'a mut AnimationLibrary, skeleton: &'a Skeleton) -> (&'a mut Instance, Source<'a>) {
-        let GraphAnim { inst, project, skeleton_path, female, clips, .. } = self;
+    fn source<'a>(
+        &'a mut self,
+        vfs: &'a vfs::Vfs,
+        anims: &'a mut AnimationLibrary,
+        skeleton: &'a Skeleton,
+    ) -> (&'a mut Instance, Source<'a>) {
+        let GraphAnim {
+            inst,
+            project,
+            skeleton_path,
+            female,
+            clips,
+            ..
+        } = self;
         let project: &'a Arc<ProjectRuntime> = project;
-        (inst, Source { clips, vfs, anims, skeleton, project, skeleton_path, female: *female })
+        (
+            inst,
+            Source {
+                clips,
+                vfs,
+                anims,
+                skeleton,
+                project,
+                skeleton_path,
+                female: *female,
+            },
+        )
     }
 
     /// Root motion of the clip a sample plays: the project's animation data names
     /// clips by their generator (`Forward_Walk` plays `WalkForward.hkx`).
-    fn motion(&mut self, graph: usize, generator: usize, anims: &mut AnimationLibrary, vfs: &vfs::Vfs) -> Option<Arc<Motion>> {
+    fn motion(
+        &mut self,
+        graph: usize,
+        generator: usize,
+        anims: &mut AnimationLibrary,
+        vfs: &vfs::Vfs,
+    ) -> Option<Arc<Motion>> {
         if let Some(m) = self.motions.get(&(graph, generator)) {
             return m.clone();
         }
-        let name = self.project.shared.project.graphs.get(graph).and_then(|(_, g)| g.generators.get(generator)).map(|g| g.name().to_ascii_lowercase());
-        let m = name.and_then(|n| anims.project_motions(vfs, &self.project.name).get(n.strip_suffix(".hkx").unwrap_or(&n)).cloned());
+        let name = self
+            .project
+            .shared
+            .project
+            .graphs
+            .get(graph)
+            .and_then(|(_, g)| g.generators.get(generator))
+            .map(|g| g.name().to_ascii_lowercase());
+        let m = name.and_then(|n| {
+            anims
+                .project_motions(vfs, &self.project.name)
+                .get(n.strip_suffix(".hkx").unwrap_or(&n))
+                .cloned()
+        });
         self.motions.insert((graph, generator), m.clone());
         m
     }
 
     /// Ground speed of the graph's slowest forward locomotion: a scratch instance of
     /// the graph is set walking and its clips' root motion measured.
-    pub fn walk_speed(&mut self, vfs: &vfs::Vfs, anims: &mut AnimationLibrary, skeleton: &Skeleton) -> Option<f32> {
+    pub fn walk_speed(
+        &mut self,
+        vfs: &vfs::Vfs,
+        anims: &mut AnimationLibrary,
+        skeleton: &Skeleton,
+    ) -> Option<f32> {
         let mut probe = Instance::new(self.project.shared.clone(), 0);
         let samples = {
             let (_, mut src) = self.source(vfs, anims, skeleton);
@@ -268,12 +374,24 @@ impl GraphAnim {
         };
         let (mut speed, mut weight) = (0.0, 0.0);
         for s in samples.iter().filter(|s| !s.additive && s.mask.is_none()) {
-            let Some(m) = self.motion(s.graph, s.generator, anims, vfs) else { continue };
-            let Some(d) = self.clips.get(&s.animation).cloned().flatten().map(|c| c.duration()) else { continue };
+            let Some(m) = self.motion(s.graph, s.generator, anims, vfs) else {
+                continue;
+            };
+            let Some(d) = self
+                .clips
+                .get(&s.animation)
+                .cloned()
+                .flatten()
+                .map(|c| c.duration())
+            else {
+                continue;
+            };
             speed += m.end().0.truncate().length() / d * s.weight;
             weight += s.weight;
         }
-        (weight > 0.5).then(|| speed / weight).filter(|v| (10.0..400.0).contains(v))
+        (weight > 0.5)
+            .then(|| speed / weight)
+            .filter(|v| (10.0..400.0).contains(v))
     }
 
     pub fn project(&self) -> &Arc<ProjectRuntime> {
@@ -294,7 +412,13 @@ impl GraphAnim {
     }
 
     /// Handle an event now; true when the graph took it (changed state).
-    pub fn handle_event(&mut self, name: &str, vfs: &vfs::Vfs, anims: &mut AnimationLibrary, skeleton: &Skeleton) -> bool {
+    pub fn handle_event(
+        &mut self,
+        name: &str,
+        vfs: &vfs::Vfs,
+        anims: &mut AnimationLibrary,
+        skeleton: &Skeleton,
+    ) -> bool {
         let (inst, mut src) = self.source(vfs, anims, skeleton);
         inst.handle_event(name, &mut src)
     }
@@ -309,12 +433,19 @@ impl GraphAnim {
     }
 
     /// Advance the graph and blend its clips.
-    pub fn update(&mut self, dt: f32, vfs: &vfs::Vfs, anims: &mut AnimationLibrary, skeleton: &Skeleton) -> Frame {
+    pub fn update(
+        &mut self,
+        dt: f32,
+        vfs: &vfs::Vfs,
+        anims: &mut AnimationLibrary,
+        skeleton: &Skeleton,
+    ) -> Frame {
         let (inst, mut src) = self.source(vfs, anims, skeleton);
         inst.update(dt, &mut src);
         let samples = inst.samples();
         let raised = inst.take_raised();
-        let clips: Vec<Option<Arc<BoundClip>>> = samples.iter().map(|s| src.clip(&s.animation)).collect();
+        let clips: Vec<Option<Arc<BoundClip>>> =
+            samples.iter().map(|s| src.clip(&s.animation)).collect();
 
         // Per bone: weight, translation, rotation (sign-aligned sum), scale.
         let n = self.bind.len();
@@ -331,7 +462,9 @@ impl GraphAnim {
             }
             clip.anim.sample(s.time, &mut self.scratch);
             for (track, q) in self.scratch.iter().enumerate() {
-                let Some(Some(b)) = clip.track_to_bone.get(track) else { continue };
+                let Some(Some(b)) = clip.track_to_bone.get(track) else {
+                    continue;
+                };
                 let factor = match (&s.mask, clip.track_to_hk.get(track).copied().flatten()) {
                     (Some(m), Some(hk)) => m.get(hk).copied().unwrap_or(0.0),
                     _ => 1.0,
@@ -340,7 +473,11 @@ impl GraphAnim {
                 if w <= 0.0 {
                     continue;
                 }
-                let r = if q.rotation.is_finite() { q.rotation } else { Quat::IDENTITY };
+                let r = if q.rotation.is_finite() {
+                    q.rotation
+                } else {
+                    Quat::IDENTITY
+                };
                 let v = glam::Vec4::from(r);
                 let v = if rot[*b].dot(v) < 0.0 { -v } else { v };
                 weight[*b] += w;
@@ -348,8 +485,12 @@ impl GraphAnim {
                 rot[*b] += v * w;
                 scale[*b] += q.scale.x * w;
             }
-            let m = self.motion(s.graph, s.generator, anims, vfs).or_else(|| clip.motion.clone());
-            let (d, yaw) = m.map_or((Vec3::ZERO, 0.0), |m| m.delta(s.prev_time, s.time, s.wrapped, clip.duration()));
+            let m = self
+                .motion(s.graph, s.generator, anims, vfs)
+                .or_else(|| clip.motion.clone());
+            let (d, yaw) = m.map_or((Vec3::ZERO, 0.0), |m| {
+                m.delta(s.prev_time, s.time, s.wrapped, clip.duration())
+            });
             motion.0 += d * s.weight;
             motion.1 += yaw * s.weight;
             motion_weight += s.weight;
@@ -359,11 +500,21 @@ impl GraphAnim {
             motion.1 /= motion_weight;
         }
         if log::log_enabled!(log::Level::Trace) {
-            let bare: Vec<&str> = (0..n).filter(|&b| weight[b] <= 1e-6).filter_map(|b| skeleton.bone_name(b)).collect();
+            let bare: Vec<&str> = (0..n)
+                .filter(|&b| weight[b] <= 1e-6)
+                .filter_map(|b| skeleton.bone_name(b))
+                .collect();
             let what: Vec<String> = samples
                 .iter()
                 .zip(&clips)
-                .map(|(s, c)| format!("{:.2} {}{}", s.weight, s.animation, if c.is_some() { "" } else { " (missing)" }))
+                .map(|(s, c)| {
+                    format!(
+                        "{:.2} {}{}",
+                        s.weight,
+                        s.animation,
+                        if c.is_some() { "" } else { " (missing)" }
+                    )
+                })
                 .collect();
             log::trace!("{}: {what:?}; bones without weight: {bare:?}", self.label);
         }
@@ -374,44 +525,90 @@ impl GraphAnim {
                     let t = self.bind[b];
                     return (t.translation, Quat::from_mat3(&t.rotation), t.scale);
                 }
-                (trans[b] / w, Quat::from_vec4(rot[b]).normalize(), scale[b] / w)
+                (
+                    trans[b] / w,
+                    Quat::from_vec4(rot[b]).normalize(),
+                    scale[b] / w,
+                )
             })
             .collect();
         // Additive clips (body weight offsets...) go on top, scaled by their weight.
         for (s, clip) in samples.iter().zip(&clips) {
-            let Some(clip) = clip.as_ref().filter(|_| s.additive) else { continue };
+            let Some(clip) = clip.as_ref().filter(|_| s.additive) else {
+                continue;
+            };
             clip.anim.sample(s.time, &mut self.scratch);
             for (track, q) in self.scratch.iter().enumerate() {
-                let Some(Some(b)) = clip.track_to_bone.get(track) else { continue };
+                let Some(Some(b)) = clip.track_to_bone.get(track) else {
+                    continue;
+                };
                 let factor = match (&s.mask, clip.track_to_hk.get(track).copied().flatten()) {
                     (Some(m), Some(hk)) => m.get(hk).copied().unwrap_or(0.0),
                     _ => 1.0,
                 };
                 // Relative to the layer it sits in: normalised per bone like the poses.
-                let w = if weight[*b] > 1e-6 { (s.weight * factor / weight[*b]).clamp(0.0, 1.0) } else { 0.0 };
+                let w = if weight[*b] > 1e-6 {
+                    (s.weight * factor / weight[*b]).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
                 if w <= 0.0 {
                     continue;
                 }
-                let r = if q.rotation.is_finite() { q.rotation } else { Quat::IDENTITY };
+                let r = if q.rotation.is_finite() {
+                    q.rotation
+                } else {
+                    Quat::IDENTITY
+                };
                 let l = &mut locals[*b];
                 l.0 += q.translation * w;
                 l.1 = (l.1 * Quat::IDENTITY.slerp(r, w)).normalize();
                 l.2 *= 1.0 + (q.scale.x - 1.0) * w;
             }
         }
-        let mut locals: Vec<Transform> =
-            locals.into_iter().map(|(t, q, s)| Transform { translation: t, rotation: glam::Mat3::from_quat(q), scale: s }).collect();
+        let mut locals: Vec<Transform> = locals
+            .into_iter()
+            .map(|(t, q, s)| Transform {
+                translation: t,
+                rotation: glam::Mat3::from_quat(q),
+                scale: s,
+            })
+            .collect();
         // Feet on the ground, then head tracking on top (the first look-at modifier running).
-        if let Some(ik) = self.project.shared.project.character.as_ref().and_then(|c| c.foot_ik.as_ref()) {
-            let map = self.hk_bones.get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
+        if let Some(ik) = self
+            .project
+            .shared
+            .project
+            .character
+            .as_ref()
+            .and_then(|c| c.foot_ik.as_ref())
+        {
+            let map = self
+                .hk_bones
+                .get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
             let ground: &[Option<(f32, Vec3)>] = if self.foot_ik { &self.ground } else { &[] };
             self.ankles = footik::apply(&mut self.feet, ik, map, skeleton, &mut locals, ground, dt);
         }
         if let Some(l) = self.inst.look_ats().first() {
-            let map = self.hk_bones.get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
-            let outside = lookat::apply(&mut self.look, l, map, skeleton, &mut locals, self.look_target, dt);
-            self.inst.set_variable("LookAtOutOfRange", if outside { 1.0 } else { 0.0 });
+            let map = self
+                .hk_bones
+                .get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
+            let outside = lookat::apply(
+                &mut self.look,
+                l,
+                map,
+                skeleton,
+                &mut locals,
+                self.look_target,
+                dt,
+            );
+            self.inst
+                .set_variable("LookAtOutOfRange", if outside { 1.0 } else { 0.0 });
         }
-        Frame { pose: skeleton.model_space(&locals), motion, raised }
+        Frame {
+            pose: skeleton.model_space(&locals),
+            motion,
+            raised,
+        }
     }
 }

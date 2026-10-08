@@ -10,12 +10,20 @@ pub struct GpuTexture {
     pub view: wgpu::TextureView,
 }
 
-pub fn upload_dds(device: &wgpu::Device, queue: &wgpu::Queue, d: &dds::Dds, label: &str) -> GpuTexture {
+pub fn upload_dds(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    d: &dds::Dds,
+    label: &str,
+) -> GpuTexture {
     let (bw, _) = d.format.block();
     // Block-compressed textures must have block-aligned base dimensions;
     // drop mips that would violate that by skipping leading levels if needed.
     let mut first = 0;
-    while bw > 1 && (d.mip_size(first).0 % bw != 0 || d.mip_size(first).1 % bw != 0) && first + 1 < d.mips {
+    while bw > 1
+        && (d.mip_size(first).0 % bw != 0 || d.mip_size(first).1 % bw != 0)
+        && first + 1 < d.mips
+    {
         first += 1;
     }
     let (w, h) = d.mip_size(first);
@@ -28,7 +36,11 @@ pub fn upload_dds(device: &wgpu::Device, queue: &wgpu::Queue, d: &dds::Dds, labe
     let layers = d.layers;
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
-        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: layers },
+        size: wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: layers,
+        },
         mip_level_count: mips,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -48,7 +60,11 @@ pub fn upload_dds(device: &wgpu::Device, queue: &wgpu::Queue, d: &dds::Dds, labe
                     wgpu::TexelCopyTextureInfo {
                         texture: &texture,
                         mip_level: level - first,
-                        origin: wgpu::Origin3d { x: 0, y: 0, z: layer },
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer,
+                        },
                         aspect: wgpu::TextureAspect::All,
                     },
                     data,

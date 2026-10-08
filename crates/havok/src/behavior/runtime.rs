@@ -126,10 +126,12 @@ impl Shared {
                 .events
                 .iter()
                 .map(|name| {
-                    *s.event_index.entry(name.to_ascii_lowercase()).or_insert_with(|| {
-                        s.event_names.push(name.clone());
-                        s.event_names.len() - 1
-                    })
+                    *s.event_index
+                        .entry(name.to_ascii_lowercase())
+                        .or_insert_with(|| {
+                            s.event_names.push(name.clone());
+                            s.event_names.len() - 1
+                        })
                 })
                 .collect();
             s.maps.push(Maps { vars, events });
@@ -139,8 +141,15 @@ impl Shared {
                         let mut promoted = Vec::new();
                         for st in states {
                             for (_, nested) in nested_machines(g, st.generator) {
-                                let Generator::StateMachine { wildcards, .. } = &g.generators[nested] else { continue };
-                                for w in wildcards.iter().filter(|w| w.global_wildcard() && !w.disabled()) {
+                                let Generator::StateMachine { wildcards, .. } =
+                                    &g.generators[nested]
+                                else {
+                                    continue;
+                                };
+                                for w in wildcards
+                                    .iter()
+                                    .filter(|w| w.global_wildcard() && !w.disabled())
+                                {
                                     let mut t = w.clone();
                                     t.to_nested = Some(w.to_state);
                                     t.to_state = st.id;
@@ -149,7 +158,9 @@ impl Shared {
                             }
                             for t in st.transitions.iter().chain(wildcards_of(node)) {
                                 if let Some(c) = &t.condition {
-                                    s.conditions.entry(c.clone()).or_insert_with(|| expr::parse(c));
+                                    s.conditions
+                                        .entry(c.clone())
+                                        .or_insert_with(|| expr::parse(c));
                                 }
                             }
                         }
@@ -157,18 +168,32 @@ impl Shared {
                             s.promoted.insert((gi, id), promoted);
                         }
                     }
-                    Generator::BoneSwitch { children, properties, .. } => {
+                    Generator::BoneSwitch {
+                        children,
+                        properties,
+                        ..
+                    } => {
                         let character = s.project.character.as_ref();
                         let weights: Vec<Arc<[f32]>> = children
                             .iter()
                             .enumerate()
                             .map(|(i, c)| {
-                                let bound = properties.get(i).and_then(|p| p.as_ref()).and_then(|p| character?.bone_weights.get(&p.to_ascii_lowercase()));
+                                let bound =
+                                    properties.get(i).and_then(|p| p.as_ref()).and_then(|p| {
+                                        character?.bone_weights.get(&p.to_ascii_lowercase())
+                                    });
                                 bound.unwrap_or(&c.1).as_slice().into()
                             })
                             .collect();
                         let n = weights.iter().map(|w| w.len()).max().unwrap_or(0);
-                        let mask: Vec<f32> = (0..n).map(|b| 1.0 - weights.iter().map(|w| w.get(b).copied().unwrap_or(0.0)).fold(0.0, f32::max)).collect();
+                        let mask: Vec<f32> = (0..n)
+                            .map(|b| {
+                                1.0 - weights
+                                    .iter()
+                                    .map(|w| w.get(b).copied().unwrap_or(0.0))
+                                    .fold(0.0, f32::max)
+                            })
+                            .collect();
                         s.default_masks.insert((gi, id), mask.into());
                         s.switch_weights.insert((gi, id), weights);
                     }
@@ -178,7 +203,9 @@ impl Shared {
             for m in &g.modifiers {
                 if let Modifier::Expressions(lines) = m {
                     for l in lines {
-                        s.statements.entry(l.clone()).or_insert_with(|| expr::parse_statement(l));
+                        s.statements
+                            .entry(l.clone())
+                            .or_insert_with(|| expr::parse_statement(l));
                     }
                 }
             }
@@ -188,7 +215,10 @@ impl Shared {
 
     /// Variables shared across the project's graphs, with their defaults.
     pub fn variables(&self) -> impl Iterator<Item = (&str, f32)> {
-        self.var_names.iter().map(String::as_str).zip(self.var_defaults.iter().copied())
+        self.var_names
+            .iter()
+            .map(String::as_str)
+            .zip(self.var_defaults.iter().copied())
     }
 
     pub fn event_id(&self, name: &str) -> Option<usize> {
@@ -238,15 +268,26 @@ struct Node {
 enum Kind {
     Clip(ClipState),
     Machine(MachineState),
-    Blend { children: Vec<Option<Node>>, phase: f32 },
-    Select { index: usize, child: Option<Box<Node>> },
-    Wrap { child: Option<Box<Node>>, modifier: Option<ModState> },
-    Switch { default: Option<Box<Node>>, children: Vec<Node> },
+    Blend {
+        children: Vec<Option<Node>>,
+        phase: f32,
+    },
+    Select {
+        index: usize,
+        child: Option<Box<Node>>,
+    },
+    Wrap {
+        child: Option<Box<Node>>,
+        modifier: Option<ModState>,
+    },
+    Switch {
+        default: Option<Box<Node>>,
+        children: Vec<Node>,
+    },
     Empty,
 }
 
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct ClipState {
     animation: Arc<str>,
     /// Progress through the (cropped) clip, 0..length.
@@ -281,7 +322,16 @@ struct MachineState {
 
 impl MachineState {
     fn new(state: i32, child: Option<Box<Node>>) -> MachineState {
-        MachineState { state, child, from: None, elapsed: 0.0, seen: Vec::new(), seq: 0, pending: None, locked: false }
+        MachineState {
+            state,
+            child,
+            from: None,
+            elapsed: 0.0,
+            seen: Vec::new(),
+            seq: 0,
+            pending: None,
+            locked: false,
+        }
     }
 
     fn see(&mut self, event: i32) {
@@ -299,7 +349,11 @@ impl MachineState {
             return i.contains_time(self.elapsed);
         }
         let last = |e: i32| self.seen.iter().find(|(x, _)| *x == e).map(|s| s.1);
-        let opened = if i.enter_event < 0 { Some(0) } else { last(i.enter_event) };
+        let opened = if i.enter_event < 0 {
+            Some(0)
+        } else {
+            last(i.enter_event)
+        };
         opened.is_some_and(|o| last(i.exit_event).is_none_or(|x| x < o))
     }
 }
@@ -324,11 +378,26 @@ struct ModState {
 #[derive(Debug)]
 enum ModKind {
     List(Vec<ModState>),
-    Timer { elapsed: f32, fired: bool },
-    EveryN { count: u32, target: u32 },
-    Driven { active: bool, child: Option<Box<ModState>> },
-    Expressions { was_true: Vec<bool> },
-    Damping { damped: f32, error_sum: f32, previous: f32 },
+    Timer {
+        elapsed: f32,
+        fired: bool,
+    },
+    EveryN {
+        count: u32,
+        target: u32,
+    },
+    Driven {
+        active: bool,
+        child: Option<Box<ModState>>,
+    },
+    Expressions {
+        was_true: Vec<bool>,
+    },
+    Damping {
+        damped: f32,
+        error_sum: f32,
+        previous: f32,
+    },
     Plain,
 }
 
@@ -357,7 +426,12 @@ struct Ctx<'a> {
 
 impl Ctx<'_> {
     fn var(&self, gi: usize, local: usize) -> f32 {
-        self.shared.maps[gi].vars.get(local).and_then(|&v| self.values.get(v)).copied().unwrap_or(0.0)
+        self.shared.maps[gi]
+            .vars
+            .get(local)
+            .and_then(|&v| self.values.get(v))
+            .copied()
+            .unwrap_or(0.0)
     }
 
     fn set_var(&mut self, gi: usize, local: usize, value: f32) {
@@ -367,24 +441,36 @@ impl Ctx<'_> {
     }
 
     fn bound(&self, gi: usize, g: GenId, member: &str) -> Option<f32> {
-        self.shared.graph(gi).bound(g, member).map(|v| self.var(gi, v))
+        self.shared
+            .graph(gi)
+            .bound(g, member)
+            .map(|v| self.var(gi, v))
     }
 
     /// Value of the variable bound to `member` of modifier `m`.
     fn modifier_bound(&self, gi: usize, m: ModId, member: &str) -> Option<f32> {
-        let v = self.shared.graph(gi).modifier_bindings[m].iter().find(|b| b.member == member)?.variable;
+        let v = self.shared.graph(gi).modifier_bindings[m]
+            .iter()
+            .find(|b| b.member == member)?
+            .variable;
         Some(self.var(gi, v))
     }
 
     /// Write `value` to the variable bound to `member` of modifier `m`, if any.
     fn set_modifier_output(&mut self, gi: usize, m: ModId, member: &str, value: f32) {
-        if let Some(v) = self.shared.graph(gi).modifier_bindings[m].iter().find(|b| b.member == member).map(|b| b.variable) {
+        if let Some(v) = self.shared.graph(gi).modifier_bindings[m]
+            .iter()
+            .find(|b| b.member == member)
+            .map(|b| b.variable)
+        {
             self.set_var(gi, v, value);
         }
     }
 
     fn by_name(&self, name: &str) -> f32 {
-        self.shared.variable_id(name).map_or(0.0, |v| self.values[v])
+        self.shared
+            .variable_id(name)
+            .map_or(0.0, |v| self.values[v])
     }
 
     fn condition(&self, c: &str) -> bool {
@@ -397,8 +483,16 @@ impl Ctx<'_> {
 
     /// Raise a graph event: handled by the graph next, and reported to the engine.
     fn raise(&mut self, gi: usize, local: i32, payload: Option<String>) {
-        let Some(&id) = usize::try_from(local).ok().and_then(|l| self.shared.maps[gi].events.get(l)) else { return };
-        self.raised.push(Raised { event: self.shared.event_names[id].clone(), payload });
+        let Some(&id) = usize::try_from(local)
+            .ok()
+            .and_then(|l| self.shared.maps[gi].events.get(l))
+        else {
+            return;
+        };
+        self.raised.push(Raised {
+            event: self.shared.event_names[id].clone(),
+            payload,
+        });
         self.queue.push_back(Event { id });
     }
 
@@ -410,7 +504,11 @@ impl Ctx<'_> {
     }
 
     fn local_event(&self, gi: usize, global: usize) -> Option<i32> {
-        self.shared.maps[gi].events.iter().position(|&e| e == global).map(|i| i as i32)
+        self.shared.maps[gi]
+            .events
+            .iter()
+            .position(|&e| e == global)
+            .map(|i| i as i32)
     }
 
     // ------------------------------------------------------------ activation
@@ -421,11 +519,22 @@ impl Ctx<'_> {
             Kind::Empty
         } else {
             match &graph.generators[g] {
-                Generator::Clip { animation, mode, speed, crop_start, crop_end, start_time, .. } => {
+                Generator::Clip {
+                    animation,
+                    mode,
+                    speed,
+                    crop_start,
+                    crop_end,
+                    start_time,
+                    ..
+                } => {
                     let speed = self.bound(gi, g, "playbackSpeed").unwrap_or(*speed);
                     let full = self.clips.duration(animation).unwrap_or(0.0);
                     let length = (full - crop_start - crop_end).max(0.0);
-                    let start = self.bound(gi, g, "startTime").unwrap_or(*start_time).clamp(0.0, length);
+                    let start = self
+                        .bound(gi, g, "startTime")
+                        .unwrap_or(*start_time)
+                        .clamp(0.0, length);
                     let additive = self.clips.additive(animation);
                     Kind::Clip(ClipState {
                         animation: animation.as_str().into(),
@@ -440,12 +549,20 @@ impl Ctx<'_> {
                         started: false,
                     })
                 }
-                Generator::StateMachine { start, start_variable, start_mode, states, .. } => {
+                Generator::StateMachine {
+                    start,
+                    start_variable,
+                    start_mode,
+                    states,
+                    ..
+                } => {
                     // A bound start state takes the variable's value (`i1stPerson`...).
                     let bound = start_variable.map(|v| self.var(gi, v) as i32);
                     let by_mode = match *start_mode {
                         StartMode::Sync(v) => Some(self.var(gi, v) as i32),
-                        StartMode::Random if !states.is_empty() => Some(states[(self.rand() % states.len() as u64) as usize].id),
+                        StartMode::Random if !states.is_empty() => {
+                            Some(states[(self.rand() % states.len() as u64) as usize].id)
+                        }
                         _ => None,
                     };
                     let want = nested.take().or(bound).or(by_mode).unwrap_or(*start);
@@ -455,7 +572,8 @@ impl Ctx<'_> {
                             for e in s.enter_events.clone() {
                                 self.raise(gi, e.event, e.payload);
                             }
-                            let child = generator.map(|c| Box::new(self.activate(gi, c, nested, depth + 1)));
+                            let child = generator
+                                .map(|c| Box::new(self.activate(gi, c, nested, depth + 1)));
                             Kind::Machine(MachineState::new(id, child))
                         }
                         None => Kind::Empty,
@@ -469,37 +587,68 @@ impl Ctx<'_> {
                         .into_iter()
                         .map(|c| {
                             let mut none = None;
-                            let n = if std::mem::take(&mut first) { &mut *nested } else { &mut none };
+                            let n = if std::mem::take(&mut first) {
+                                &mut *nested
+                            } else {
+                                &mut none
+                            };
                             c.map(|c| self.activate(gi, c, n, depth + 1))
                         })
                         .collect();
-                    Kind::Blend { children, phase: 0.0 }
+                    Kind::Blend {
+                        children,
+                        phase: 0.0,
+                    }
                 }
-                Generator::Selector { children, index, .. } => {
-                    let i = self.bound(gi, g, "selectedGeneratorIndex").map_or(*index as i32, |v| v as i32);
+                Generator::Selector {
+                    children, index, ..
+                } => {
+                    let i = self
+                        .bound(gi, g, "selectedGeneratorIndex")
+                        .map_or(*index as i32, |v| v as i32);
                     let i = (i.max(0) as usize).min(children.len().saturating_sub(1));
-                    let child = children.get(i).copied().map(|c| Box::new(self.activate(gi, c, nested, depth + 1)));
+                    let child = children
+                        .get(i)
+                        .copied()
+                        .map(|c| Box::new(self.activate(gi, c, nested, depth + 1)));
                     Kind::Select { index: i, child }
                 }
-                Generator::Wrap { child, modifier, .. } => {
+                Generator::Wrap {
+                    child, modifier, ..
+                } => {
                     let (child, modifier) = (*child, *modifier);
                     let modifier = modifier.map(|m| self.activate_modifier(gi, m, 0));
-                    Kind::Wrap { child: child.map(|c| Box::new(self.activate(gi, c, nested, depth + 1))), modifier }
+                    Kind::Wrap {
+                        child: child.map(|c| Box::new(self.activate(gi, c, nested, depth + 1))),
+                        modifier,
+                    }
                 }
-                Generator::BoneSwitch { default, children, .. } => {
+                Generator::BoneSwitch {
+                    default, children, ..
+                } => {
                     let kids: Vec<GenId> = children.iter().map(|c| c.0).collect();
                     let default = *default;
                     Kind::Switch {
                         default: default.map(|c| Box::new(self.activate(gi, c, nested, depth + 1))),
-                        children: kids.into_iter().map(|c| self.activate(gi, c, &mut None, depth + 1)).collect(),
+                        children: kids
+                            .into_iter()
+                            .map(|c| self.activate(gi, c, &mut None, depth + 1))
+                            .collect(),
                     }
                 }
                 Generator::Reference { behavior, .. } => {
-                    let target = self.shared.project.graph_index(behavior).and_then(|o| Some((o, self.shared.graph(o).root?)));
+                    let target = self
+                        .shared
+                        .project
+                        .graph_index(behavior)
+                        .and_then(|o| Some((o, self.shared.graph(o).root?)));
                     match target {
                         Some((o, root)) => {
                             let n = self.activate(o, root, nested, depth + 1);
-                            Kind::Wrap { child: Some(Box::new(n)), modifier: None }
+                            Kind::Wrap {
+                                child: Some(Box::new(n)),
+                                modifier: None,
+                            }
                         }
                         None => Kind::Empty,
                     }
@@ -516,18 +665,37 @@ impl Ctx<'_> {
             _ if depth > 16 => ModKind::Plain,
             Modifier::List(list) => {
                 let list = list.clone();
-                ModKind::List(list.into_iter().map(|c| self.activate_modifier(gi, c, depth + 1)).collect())
+                ModKind::List(
+                    list.into_iter()
+                        .map(|c| self.activate_modifier(gi, c, depth + 1))
+                        .collect(),
+                )
             }
-            Modifier::Timer { .. } => ModKind::Timer { elapsed: 0.0, fired: false },
+            Modifier::Timer { .. } => ModKind::Timer {
+                elapsed: 0.0,
+                fired: false,
+            },
             Modifier::EveryN { n, min, random, .. } => {
                 let (n, min, random) = (*n, *min, *random);
-                ModKind::EveryN { count: 0, target: self.every_n_target(n, min, random) }
+                ModKind::EveryN {
+                    count: 0,
+                    target: self.every_n_target(n, min, random),
+                }
             }
-            Modifier::EventDriven { child, active_by_default, .. } => {
+            Modifier::EventDriven {
+                child,
+                active_by_default,
+                ..
+            } => {
                 let (child, active) = (*child, *active_by_default);
-                ModKind::Driven { active, child: child.map(|c| Box::new(self.activate_modifier(gi, c, depth + 1))) }
+                ModKind::Driven {
+                    active,
+                    child: child.map(|c| Box::new(self.activate_modifier(gi, c, depth + 1))),
+                }
             }
-            Modifier::Expressions(lines) => ModKind::Expressions { was_true: vec![false; lines.len()] },
+            Modifier::Expressions(lines) => ModKind::Expressions {
+                was_true: vec![false; lines.len()],
+            },
             Modifier::IsActive { .. } => {
                 self.is_active_outputs(gi, m, true);
                 ModKind::Plain
@@ -535,7 +703,11 @@ impl Ctx<'_> {
             Modifier::Damping { damped, .. } => {
                 // Picks up from the bound output (a re-entered state carries on smoothly).
                 let damped = self.modifier_bound(gi, m, "dampedValue").unwrap_or(*damped);
-                ModKind::Damping { damped, error_sum: 0.0, previous: 0.0 }
+                ModKind::Damping {
+                    damped,
+                    error_sum: 0.0,
+                    previous: 0.0,
+                }
             }
             _ => ModKind::Plain,
         };
@@ -544,16 +716,27 @@ impl Ctx<'_> {
 
     fn every_n_target(&mut self, n: u8, min: u8, random: bool) -> u32 {
         let (lo, hi) = (min.max(1).min(n.max(1)) as u32, n.max(1) as u32);
-        if random && hi > lo { lo + (self.rand() % (hi - lo + 1) as u64) as u32 } else { hi }
+        if random && hi > lo {
+            lo + (self.rand() % (hi - lo + 1) as u64) as u32
+        } else {
+            hi
+        }
     }
 
     fn is_active_outputs(&mut self, gi: usize, m: ModId, active: bool) {
         let graph = self.shared.graph(gi);
-        let Modifier::IsActive { invert } = &graph.modifiers[m] else { return };
+        let Modifier::IsActive { invert } = &graph.modifiers[m] else {
+            return;
+        };
         let invert = *invert;
         let outs: Vec<(usize, usize)> = graph.modifier_bindings[m]
             .iter()
-            .filter_map(|b| Some((b.member.strip_prefix("bIsActive")?.parse::<usize>().ok()?, b.variable)))
+            .filter_map(|b| {
+                Some((
+                    b.member.strip_prefix("bIsActive")?.parse::<usize>().ok()?,
+                    b.variable,
+                ))
+            })
             .collect();
         for (i, v) in outs {
             let on = active != invert.get(i).copied().unwrap_or(false);
@@ -573,7 +756,10 @@ impl Ctx<'_> {
                     self.deactivate(*f);
                 }
             }
-            Kind::Blend { children, .. } => children.into_iter().flatten().for_each(|c| self.deactivate(c)),
+            Kind::Blend { children, .. } => children
+                .into_iter()
+                .flatten()
+                .for_each(|c| self.deactivate(c)),
             Kind::Select { child, .. } => {
                 if let Some(c) = child {
                     self.deactivate(*c);
@@ -632,10 +818,15 @@ impl Ctx<'_> {
                 if took == Took::Transition {
                     return true;
                 }
-                let Kind::Machine(m) = &mut node.kind else { unreachable!() };
+                let Kind::Machine(m) = &mut node.kind else {
+                    unreachable!()
+                };
                 m.child.as_mut().is_some_and(|c| self.handle(c, ev)) || took == Took::Pending
             }
-            Kind::Blend { children, .. } => children.iter_mut().flatten().fold(false, |acc, c| self.handle(c, ev) | acc),
+            Kind::Blend { children, .. } => children
+                .iter_mut()
+                .flatten()
+                .fold(false, |acc, c| self.handle(c, ev) | acc),
             Kind::Select { child, .. } => child.as_mut().is_some_and(|c| self.handle(c, ev)),
             Kind::Wrap { child, modifier } => {
                 if let Some(m) = modifier {
@@ -662,7 +853,16 @@ impl Ctx<'_> {
         let local = self.local_event(gi, ev.id);
         match (&mut m.kind, &self.shared.graph(gi).modifiers[m.m]) {
             (ModKind::List(list), _) => list.iter_mut().for_each(|c| self.modifier_event(c, ev)),
-            (ModKind::EveryN { count, target }, Modifier::EveryN { check, send, n, min, random }) if local == Some(*check) => {
+            (
+                ModKind::EveryN { count, target },
+                Modifier::EveryN {
+                    check,
+                    send,
+                    n,
+                    min,
+                    random,
+                },
+            ) if local == Some(*check) => {
                 *count += 1;
                 if *count >= *target {
                     let (send, n, min, random) = (send.clone(), *n, *min, *random);
@@ -671,7 +871,14 @@ impl Ctx<'_> {
                     self.raise(gi, send.event, send.payload);
                 }
             }
-            (ModKind::Driven { active, child }, Modifier::EventDriven { activate, deactivate, .. }) => {
+            (
+                ModKind::Driven { active, child },
+                Modifier::EventDriven {
+                    activate,
+                    deactivate,
+                    ..
+                },
+            ) => {
                 if local == Some(*activate) {
                     *active = true;
                 } else if local == Some(*deactivate) {
@@ -687,7 +894,9 @@ impl Ctx<'_> {
 
     /// Take the machine's pending transition if its initiate interval has opened.
     fn take_pending(&mut self, node: &mut Node) -> bool {
-        let Kind::Machine(m) = &mut node.kind else { return false };
+        let Kind::Machine(m) = &mut node.kind else {
+            return false;
+        };
         match &m.pending {
             Some(t) if !m.locked && t.initiate.as_ref().is_none_or(|i| m.within(i)) => {
                 let t = m.pending.take().unwrap();
@@ -702,12 +911,19 @@ impl Ctx<'_> {
     /// a condition-only transition whose condition holds).
     fn try_transition(&mut self, node: &mut Node, event: Option<usize>) -> Took {
         let (gi, sm) = (node.gi, node.g);
-        let Kind::Machine(m) = &node.kind else { return Took::Nothing };
+        let Kind::Machine(m) = &node.kind else {
+            return Took::Nothing;
+        };
         if m.locked {
             return Took::Nothing;
         }
         let graph = self.shared.graph(gi);
-        let Generator::StateMachine { states, wildcards, .. } = &graph.generators[sm] else { return Took::Nothing };
+        let Generator::StateMachine {
+            states, wildcards, ..
+        } = &graph.generators[sm]
+        else {
+            return Took::Nothing;
+        };
         let local = match event {
             Some(e) => match self.local_event(gi, e) {
                 Some(l) => l,
@@ -717,13 +933,23 @@ impl Ctx<'_> {
         };
         let current = m.state;
         let here = states.iter().find(|s| s.id == current);
-        let promoted = self.shared.promoted.get(&(gi, sm)).map(Vec::as_slice).unwrap_or(&[]);
+        let promoted = self
+            .shared
+            .promoted
+            .get(&(gi, sm))
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
         let candidates = here
             .into_iter()
             .flat_map(|s| s.transitions.iter().map(|t| (t, false)))
             .chain(wildcards.iter().map(|t| (t, true)))
             // A nested machine already running handles its own wildcards.
-            .chain(promoted.iter().filter(|(s, _)| *s != current).map(|(_, t)| (t, true)));
+            .chain(
+                promoted
+                    .iter()
+                    .filter(|(s, _)| *s != current)
+                    .map(|(_, t)| (t, true)),
+            );
         let mut chosen: Option<Transition> = None;
         for (t, wildcard) in candidates {
             if t.event != local || t.disabled() {
@@ -756,9 +982,13 @@ impl Ctx<'_> {
             chosen = Some(t.clone());
             break;
         }
-        let Some(t) = chosen else { return Took::Nothing };
+        let Some(t) = chosen else {
+            return Took::Nothing;
+        };
         if t.initiate.as_ref().is_some_and(|i| !m.within(i)) {
-            let Kind::Machine(m) = &mut node.kind else { unreachable!() };
+            let Kind::Machine(m) = &mut node.kind else {
+                unreachable!()
+            };
             m.pending = Some(t);
             return Took::Pending;
         }
@@ -769,13 +999,21 @@ impl Ctx<'_> {
     fn transition(&mut self, node: &mut Node, t: &Transition) {
         let (gi, sm) = (node.gi, node.g);
         let graph = self.shared.graph(gi);
-        let Generator::StateMachine { states, .. } = &graph.generators[sm] else { return };
-        let Kind::Machine(m) = &mut node.kind else { return };
+        let Generator::StateMachine { states, .. } = &graph.generators[sm] else {
+            return;
+        };
+        let Kind::Machine(m) = &mut node.kind else {
+            return;
+        };
         let old = states.iter().find(|s| s.id == m.state);
         let new = states.iter().find(|s| s.id == t.to_state).expect("checked");
         let exits = old.map(|s| s.exit_events.clone()).unwrap_or_default();
         let (enters, generator, id) = (new.enter_events.clone(), new.generator, new.id);
-        let blend = t.blend_variable.map(|v| self.var(gi, v)).or(t.blend).unwrap_or(0.0);
+        let blend = t
+            .blend_variable
+            .map(|v| self.var(gi, v))
+            .or(t.blend)
+            .unwrap_or(0.0);
         let old_child = m.child.take();
         let old_from = m.from.take();
         for e in exits {
@@ -785,12 +1023,22 @@ impl Ctx<'_> {
             self.raise(gi, e.event, e.payload);
         }
         if let Some(trace) = self.trace.as_deref_mut() {
-            let name = |id: i32| states.iter().find(|s| s.id == id).map_or("?", |s| s.name.as_str());
+            let name = |id: i32| {
+                states
+                    .iter()
+                    .find(|s| s.id == id)
+                    .map_or("?", |s| s.name.as_str())
+            };
             let why = match graph.event_name(t.event) {
                 Some(e) => e.to_owned(),
                 None => format!("if {:?}", t.condition.as_deref().unwrap_or("")),
             };
-            trace.push(format!("{}: {} -> {} ({why}, blend {blend})", graph.generators[sm].name(), old.map_or("?", |s| s.name.as_str()), name(id)));
+            trace.push(format!(
+                "{}: {} -> {} ({why}, blend {blend})",
+                graph.generators[sm].name(),
+                old.map_or("?", |s| s.name.as_str()),
+                name(id)
+            ));
         }
         let mut nested = t.to_nested;
         let child = generator.map(|c| Box::new(self.activate(gi, c, &mut nested, 1)));
@@ -806,11 +1054,17 @@ impl Ctx<'_> {
             None => None,
         };
         let locked = t.uninterruptible() && from.is_some();
-        let Kind::Machine(m) = &mut node.kind else { return };
+        let Kind::Machine(m) = &mut node.kind else {
+            return;
+        };
         *m = MachineState::new(id, child);
         m.from = from;
         m.locked = locked;
-        if let Generator::StateMachine { start_mode: StartMode::Sync(v), .. } = &graph.generators[sm] {
+        if let Generator::StateMachine {
+            start_mode: StartMode::Sync(v),
+            ..
+        } = &graph.generators[sm]
+        {
             self.set_var(gi, *v, id as f32);
         }
     }
@@ -833,7 +1087,9 @@ impl Ctx<'_> {
                         self.advance(f, dt);
                     }
                 }
-                let Kind::Machine(m) = &mut node.kind else { unreachable!() };
+                let Kind::Machine(m) = &mut node.kind else {
+                    unreachable!()
+                };
                 if let Some(c) = &mut m.child {
                     self.advance(c, dt);
                 }
@@ -843,23 +1099,36 @@ impl Ctx<'_> {
             }
             Kind::Blend { children, phase } => {
                 let graph = self.shared.graph(gi);
-                let Generator::Blender { flags, .. } = &graph.generators[g] else { return };
+                let Generator::Blender { flags, .. } = &graph.generators[g] else {
+                    return;
+                };
                 if flags & BLEND_SYNC != 0 {
                     // Synchronised cyclic children share a phase; the cycle length is
                     // the weighted mix of theirs.
                     let weights = self.blend_weights(gi, g, &[]);
-                    let lengths: Vec<f32> = children.iter().map(|c| c.as_ref().map_or(0.0, |c| self.cycle_length(c))).collect();
+                    let lengths: Vec<f32> = children
+                        .iter()
+                        .map(|c| c.as_ref().map_or(0.0, |c| self.cycle_length(c)))
+                        .collect();
                     let total: f32 = weights.iter().zip(&lengths).map(|(w, l)| w * l).sum();
                     if total > 1e-4 {
                         *phase += dt / total;
                         // Single-play children (attacks) end rather than cycle.
                         let looping = children.iter().flatten().any(|c| self.loops(c));
                         let wrapped = looping && *phase >= 1.0;
-                        *phase = if looping { *phase % 1.0 } else { phase.min(1.0) };
+                        *phase = if looping {
+                            *phase % 1.0
+                        } else {
+                            phase.min(1.0)
+                        };
                         let p = *phase;
                         // The heaviest child raises the blend's triggers (as Havok's
                         // sync master), the others just follow its phase.
-                        let master = weights.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i);
+                        let master = weights
+                            .iter()
+                            .enumerate()
+                            .max_by(|a, b| a.1.total_cmp(b.1))
+                            .map(|(i, _)| i);
                         for (i, c) in children.iter_mut().enumerate() {
                             if let Some(c) = c {
                                 self.set_phase(c, p, wrapped, Some(i) == master);
@@ -874,13 +1143,30 @@ impl Ctx<'_> {
             }
             Kind::Select { index, child } => {
                 let graph = self.shared.graph(gi);
-                let Generator::Selector { children, index: fixed, .. } = &graph.generators[g] else { return };
-                let want = self.bound(gi, g, "selectedGeneratorIndex").map_or(*fixed as i32, |v| v as i32);
+                let Generator::Selector {
+                    children,
+                    index: fixed,
+                    ..
+                } = &graph.generators[g]
+                else {
+                    return;
+                };
+                let want = self
+                    .bound(gi, g, "selectedGeneratorIndex")
+                    .map_or(*fixed as i32, |v| v as i32);
                 let want = (want.max(0) as usize).min(children.len().saturating_sub(1));
-                if want != *index && let Some(&c) = children.get(want) {
+                if want != *index
+                    && let Some(&c) = children.get(want)
+                {
                     if let Some(trace) = self.trace.as_deref_mut() {
-                        let var = graph.bound(g, "selectedGeneratorIndex").and_then(|v| graph.variables.get(v));
-                        trace.push(format!("{}: child {} -> {want} ({var:?})", graph.generators[g].name(), *index));
+                        let var = graph
+                            .bound(g, "selectedGeneratorIndex")
+                            .and_then(|v| graph.variables.get(v));
+                        trace.push(format!(
+                            "{}: child {} -> {want} ({var:?})",
+                            graph.generators[g].name(),
+                            *index
+                        ));
                     }
                     if let Some(old) = child.take() {
                         self.deactivate(*old);
@@ -914,7 +1200,9 @@ impl Ctx<'_> {
 
     fn advance_clip(&mut self, gi: usize, g: GenId, c: &mut ClipState, dt: f32) {
         let graph = self.shared.graph(gi);
-        let Generator::Clip { speed, .. } = &graph.generators[g] else { return };
+        let Generator::Clip { speed, .. } = &graph.generators[g] else {
+            return;
+        };
         let speed = self.bound(gi, g, "playbackSpeed").unwrap_or(*speed).abs();
         let first = !c.started;
         c.started = true;
@@ -937,12 +1225,19 @@ impl Ctx<'_> {
     /// fires on start).
     fn clip_triggers(&mut self, gi: usize, g: GenId, c: &ClipState, first: bool) {
         let graph = self.shared.graph(gi);
-        let Generator::Clip { triggers, .. } = &graph.generators[g] else { return };
+        let Generator::Clip { triggers, .. } = &graph.generators[g] else {
+            return;
+        };
         let mut due = Vec::new();
         for tr in triggers {
             // Trigger times are clip-local; played backwards, local time runs down
             // from the end (a trigger at 0 fires as the clip finishes).
-            let local = if tr.from_end { c.length + tr.time } else { tr.time }.clamp(0.0, c.length);
+            let local = if tr.from_end {
+                c.length + tr.time
+            } else {
+                tr.time
+            }
+            .clamp(0.0, c.length);
             let at = if c.reverse { c.length - local } else { local };
             let hit = if c.wrapped {
                 at > c.prev || at <= c.t
@@ -974,7 +1269,10 @@ impl Ctx<'_> {
                     self.clip_triggers(gi, g, &c, first);
                 }
             }
-            Kind::Wrap { child: Some(c), modifier } => {
+            Kind::Wrap {
+                child: Some(c),
+                modifier,
+            } => {
                 if let Some(m) = modifier {
                     self.advance_modifier(m, 0.0);
                 }
@@ -982,10 +1280,17 @@ impl Ctx<'_> {
             }
             Kind::Select { child: Some(c), .. } => self.set_phase(c, phase, wrapped, fire),
             // A blend inside a synchronised one (left / centre / right leans) follows its phase.
-            Kind::Blend { children, phase: own } => {
+            Kind::Blend {
+                children,
+                phase: own,
+            } => {
                 *own = phase;
                 let weights = self.blend_weights(gi, g, &[]);
-                let master = weights.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i);
+                let master = weights
+                    .iter()
+                    .enumerate()
+                    .max_by(|a, b| a.1.total_cmp(b.1))
+                    .map(|(i, _)| i);
                 for (i, c) in children.iter_mut().enumerate() {
                     if let Some(c) = c {
                         self.set_phase(c, phase, wrapped, fire && Some(i) == master);
@@ -1002,7 +1307,9 @@ impl Ctx<'_> {
     fn loops(&self, node: &Node) -> bool {
         match &node.kind {
             Kind::Clip(c) => c.looping,
-            Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => self.loops(c),
+            Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => {
+                self.loops(c)
+            }
             Kind::Blend { children, .. } => children.iter().flatten().any(|c| self.loops(c)),
             _ => false,
         }
@@ -1011,14 +1318,26 @@ impl Ctx<'_> {
     fn cycle_length(&self, node: &Node) -> f32 {
         match &node.kind {
             Kind::Clip(c) => {
-                let Generator::Clip { speed, .. } = &self.shared.graph(node.gi).generators[node.g] else { return c.length };
-                let speed = self.bound(node.gi, node.g, "playbackSpeed").unwrap_or(*speed).abs();
+                let Generator::Clip { speed, .. } = &self.shared.graph(node.gi).generators[node.g]
+                else {
+                    return c.length;
+                };
+                let speed = self
+                    .bound(node.gi, node.g, "playbackSpeed")
+                    .unwrap_or(*speed)
+                    .abs();
                 if speed > 1e-3 { c.length / speed } else { 0.0 }
             }
-            Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => self.cycle_length(c),
+            Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => {
+                self.cycle_length(c)
+            }
             Kind::Blend { children, .. } => {
                 let weights = self.blend_weights(node.gi, node.g, &[]);
-                children.iter().zip(&weights).map(|(c, w)| c.as_ref().map_or(0.0, |c| self.cycle_length(c)) * w).sum()
+                children
+                    .iter()
+                    .zip(&weights)
+                    .map(|(c, w)| c.as_ref().map_or(0.0, |c| self.cycle_length(c)) * w)
+                    .sum()
             }
             _ => 0.0,
         }
@@ -1027,7 +1346,10 @@ impl Ctx<'_> {
     fn advance_modifier(&mut self, m: &mut ModState, dt: f32) {
         let gi = m.gi;
         let graph = self.shared.graph(gi);
-        if let Some(v) = graph.modifier_bindings[m.m].iter().find(|b| b.member == "enable").map(|b| b.variable)
+        if let Some(v) = graph.modifier_bindings[m.m]
+            .iter()
+            .find(|b| b.member == "enable")
+            .map(|b| b.variable)
             && self.var(gi, v) == 0.0
         {
             return;
@@ -1042,15 +1364,35 @@ impl Ctx<'_> {
                     self.raise(gi, alarm.event, alarm.payload);
                 }
             }
-            (ModKind::Driven { active: true, child: Some(c) }, _) => self.advance_modifier(c, dt),
+            (
+                ModKind::Driven {
+                    active: true,
+                    child: Some(c),
+                },
+                _,
+            ) => self.advance_modifier(c, dt),
             (_, Modifier::SpeedSampler { goal_speed }) => {
-                let goal = self.modifier_bound(gi, m.m, "goalSpeed").unwrap_or(*goal_speed);
+                let goal = self
+                    .modifier_bound(gi, m.m, "goalSpeed")
+                    .unwrap_or(*goal_speed);
                 self.set_modifier_output(gi, m.m, "speedOut", goal);
             }
-            (ModKind::Damping { damped, error_sum, previous }, Modifier::Damping { kp, ki, kd, raw, .. }) => {
+            (
+                ModKind::Damping {
+                    damped,
+                    error_sum,
+                    previous,
+                },
+                Modifier::Damping {
+                    kp, ki, kd, raw, ..
+                },
+            ) => {
                 // Havok's step is per frame at 30 Hz: take as many as the update covers.
                 let raw = self.modifier_bound(gi, m.m, "rawValue").unwrap_or(*raw);
-                let steps = (dt * 30.0).round().clamp(if dt > 0.0 { 1.0 } else { 0.0 }, 8.0) as usize;
+                let steps = (dt * 30.0)
+                    .round()
+                    .clamp(if dt > 0.0 { 1.0 } else { 0.0 }, 8.0)
+                    as usize;
                 for _ in 0..steps {
                     let error = raw - *damped;
                     *error_sum += error;
@@ -1062,7 +1404,9 @@ impl Ctx<'_> {
             }
             (ModKind::Expressions { was_true }, Modifier::Expressions(lines)) => {
                 for (i, line) in lines.iter().enumerate() {
-                    let Some(Some(st)) = self.shared.statements.get(line) else { continue };
+                    let Some(Some(st)) = self.shared.statements.get(line) else {
+                        continue;
+                    };
                     match st {
                         Statement::Assign(var, e) => {
                             let v = e.eval(&|n| self.by_name(n));
@@ -1072,8 +1416,14 @@ impl Ctx<'_> {
                         }
                         Statement::Raise(event, cond) => {
                             let now = cond.test(&|n| self.by_name(n));
-                            if now && !was_true[i] && let Some(id) = self.shared.event_id(event) {
-                                self.raised.push(Raised { event: self.shared.event_names[id].clone(), payload: None });
+                            if now
+                                && !was_true[i]
+                                && let Some(id) = self.shared.event_id(event)
+                            {
+                                self.raised.push(Raised {
+                                    event: self.shared.event_names[id].clone(),
+                                    payload: None,
+                                });
                                 self.queue.push_back(Event { id });
                             }
                             was_true[i] = now;
@@ -1090,8 +1440,21 @@ impl Ctx<'_> {
     /// keep their own weight (0..1) and don't take part in the normalisation.
     fn blend_weights(&self, gi: usize, g: GenId, additive: &[bool]) -> Vec<f32> {
         let graph = self.shared.graph(gi);
-        let Generator::Blender { parameter, min_cyclic, max_cyclic, flags, children, .. } = &graph.generators[g] else { return Vec::new() };
-        let raw: Vec<f32> = children.iter().map(|c| c.weight_variable.map_or(c.weight, |v| self.var(gi, v))).collect();
+        let Generator::Blender {
+            parameter,
+            min_cyclic,
+            max_cyclic,
+            flags,
+            children,
+            ..
+        } = &graph.generators[g]
+        else {
+            return Vec::new();
+        };
+        let raw: Vec<f32> = children
+            .iter()
+            .map(|c| c.weight_variable.map_or(c.weight, |v| self.var(gi, v)))
+            .collect();
         let mut w = vec![0.0; children.len()];
         if flags & BLEND_PARAMETRIC != 0 && !children.is_empty() {
             // Children sit at their weights along the blend parameter; blend the two
@@ -1107,7 +1470,11 @@ impl Ctx<'_> {
             if p <= raw[first] {
                 if flags & BLEND_CYCLIC != 0 && max_cyclic > min_cyclic && order.len() > 1 {
                     let span = raw[first] + (max_cyclic - min_cyclic) - raw[last];
-                    let f = if span > 0.0 { (p + (max_cyclic - min_cyclic) - raw[last]) / span } else { 1.0 };
+                    let f = if span > 0.0 {
+                        (p + (max_cyclic - min_cyclic) - raw[last]) / span
+                    } else {
+                        1.0
+                    };
                     w[last] = 1.0 - f;
                     w[first] = f;
                 } else {
@@ -1116,7 +1483,11 @@ impl Ctx<'_> {
             } else if p >= raw[last] {
                 if flags & BLEND_CYCLIC != 0 && max_cyclic > min_cyclic && order.len() > 1 {
                     let span = raw[first] + (max_cyclic - min_cyclic) - raw[last];
-                    let f = if span > 0.0 { (p - raw[last]) / span } else { 0.0 };
+                    let f = if span > 0.0 {
+                        (p - raw[last]) / span
+                    } else {
+                        0.0
+                    };
                     w[last] = 1.0 - f;
                     w[first] = f;
                 } else {
@@ -1126,7 +1497,11 @@ impl Ctx<'_> {
                 for pair in order.windows(2) {
                     let (a, b) = (pair[0], pair[1]);
                     if p >= raw[a] && p <= raw[b] {
-                        let f = if raw[b] > raw[a] { (p - raw[a]) / (raw[b] - raw[a]) } else { 0.0 };
+                        let f = if raw[b] > raw[a] {
+                            (p - raw[a]) / (raw[b] - raw[a])
+                        } else {
+                            0.0
+                        };
                         w[a] = 1.0 - f;
                         w[b] = f;
                         break;
@@ -1135,7 +1510,12 @@ impl Ctx<'_> {
             }
         } else {
             let add = |i: usize| additive.get(i).copied().unwrap_or(false);
-            let total: f32 = raw.iter().enumerate().filter(|(i, _)| !add(*i)).map(|(_, x)| x.max(0.0)).sum();
+            let total: f32 = raw
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !add(*i))
+                .map(|(_, x)| x.max(0.0))
+                .sum();
             for (i, (o, r)) in w.iter_mut().zip(&raw).enumerate() {
                 *o = if add(i) {
                     r.clamp(0.0, 1.0)
@@ -1145,7 +1525,9 @@ impl Ctx<'_> {
                     0.0
                 };
             }
-            if total <= 1e-6 && let Some(i) = (0..w.len()).find(|&i| !add(i)) {
+            if total <= 1e-6
+                && let Some(i) = (0..w.len()).find(|&i| !add(i))
+            {
                 w[i] = 1.0;
             }
         }
@@ -1161,7 +1543,13 @@ impl Ctx<'_> {
         let (gi, g) = (node.gi, node.g);
         match &node.kind {
             Kind::Clip(c) => {
-                let file_time = |t: f32| if c.reverse { c.offset + c.length - t } else { c.offset + t };
+                let file_time = |t: f32| {
+                    if c.reverse {
+                        c.offset + c.length - t
+                    } else {
+                        c.offset + t
+                    }
+                };
                 out.push(Sample {
                     graph: gi,
                     generator: g,
@@ -1190,8 +1578,13 @@ impl Ctx<'_> {
             }
             Kind::Blend { children, .. } => {
                 let graph = self.shared.graph(gi);
-                let Generator::Blender { children: defs, .. } = &graph.generators[g] else { return };
-                let additive: Vec<bool> = children.iter().map(|c| c.as_ref().is_some_and(is_additive)).collect();
+                let Generator::Blender { children: defs, .. } = &graph.generators[g] else {
+                    return;
+                };
+                let additive: Vec<bool> = children
+                    .iter()
+                    .map(|c| c.as_ref().is_some_and(is_additive))
+                    .collect();
                 let w = self.blend_weights(gi, g, &additive);
                 for ((c, wi), def) in children.iter().zip(w).zip(defs) {
                     let Some(c) = c else { continue };
@@ -1215,7 +1608,9 @@ impl Ctx<'_> {
                 }
             }
             Kind::Switch { default, children } => {
-                let Some(weights) = self.shared.switch_weights.get(&(gi, g)) else { return };
+                let Some(weights) = self.shared.switch_weights.get(&(gi, g)) else {
+                    return;
+                };
                 if let Some(d) = default {
                     match self.shared.default_masks.get(&(gi, g)) {
                         Some(dm) if !dm.is_empty() => {
@@ -1238,7 +1633,9 @@ impl Ctx<'_> {
 fn combine(outer: Option<&Arc<[f32]>>, inner: &[f32]) -> Arc<[f32]> {
     match outer {
         None => inner.into(),
-        Some(o) => (0..o.len().max(inner.len())).map(|b| o.get(b).copied().unwrap_or(1.0) * inner.get(b).copied().unwrap_or(1.0)).collect(),
+        Some(o) => (0..o.len().max(inner.len()))
+            .map(|b| o.get(b).copied().unwrap_or(1.0) * inner.get(b).copied().unwrap_or(1.0))
+            .collect(),
     }
 }
 
@@ -1258,13 +1655,26 @@ impl Instance {
     /// before then (`i1stPerson`, `IsNPC`...) pick its start states.
     pub fn new(shared: Arc<Shared>, seed: u64) -> Instance {
         let values = shared.var_defaults.clone();
-        Instance { shared, values, root: None, queue: VecDeque::new(), raised: Vec::new(), rng: seed | 1, trace: None }
+        Instance {
+            shared,
+            values,
+            root: None,
+            queue: VecDeque::new(),
+            raised: Vec::new(),
+            rng: seed | 1,
+            trace: None,
+        }
     }
 
     /// The active tree, activating the root graph the first time.
     fn take_root(&mut self, clips: &mut dyn ClipSource) -> Option<Node> {
         if self.root.is_none() {
-            let r = self.shared.project.graphs.first().and_then(|(_, g)| g.root)?;
+            let r = self
+                .shared
+                .project
+                .graphs
+                .first()
+                .and_then(|(_, g)| g.root)?;
             let mut ctx = self.ctx(clips);
             return Some(ctx.activate(0, r, &mut None, 0));
         }
@@ -1324,8 +1734,12 @@ impl Instance {
     /// Handle an event now (with everything it sets off). True when it changed
     /// some state machine's state: the graph accepted it.
     pub fn handle_event(&mut self, name: &str, clips: &mut dyn ClipSource) -> bool {
-        let Some(id) = self.shared.event_id(name) else { return false };
-        let Some(mut root) = self.take_root(clips) else { return false };
+        let Some(id) = self.shared.event_id(name) else {
+            return false;
+        };
+        let Some(mut root) = self.take_root(clips) else {
+            return false;
+        };
         let accepted = {
             let mut ctx = self.ctx(clips);
             let r = ctx.handle(&mut root, &Event { id });
@@ -1339,7 +1753,9 @@ impl Instance {
     /// Advance by `dt` seconds: queued events, clips, triggers, modifiers,
     /// condition transitions.
     pub fn update(&mut self, dt: f32, clips: &mut dyn ClipSource) {
-        let Some(mut root) = self.take_root(clips) else { return };
+        let Some(mut root) = self.take_root(clips) else {
+            return;
+        };
         {
             let mut ctx = self.ctx(clips);
             ctx.drain(&mut root);
@@ -1374,8 +1790,12 @@ impl Instance {
             match &n.kind {
                 Kind::Machine(m) => m.pending.is_some() || m.child.as_deref().is_some_and(walk),
                 Kind::Blend { children, .. } => children.iter().flatten().any(walk),
-                Kind::Select { child, .. } | Kind::Wrap { child, .. } => child.as_deref().is_some_and(walk),
-                Kind::Switch { default, children } => default.as_deref().is_some_and(walk) || children.iter().any(walk),
+                Kind::Select { child, .. } | Kind::Wrap { child, .. } => {
+                    child.as_deref().is_some_and(walk)
+                }
+                Kind::Switch { default, children } => {
+                    default.as_deref().is_some_and(walk) || children.iter().any(walk)
+                }
                 Kind::Clip(_) | Kind::Empty => false,
             }
         }
@@ -1395,13 +1815,22 @@ impl Instance {
             let enabled = shared.graph(m.gi).modifier_bindings[m.m]
                 .iter()
                 .find(|b| b.member == "enable")
-                .is_none_or(|b| shared.maps[m.gi].vars.get(b.variable).and_then(|&v| values.get(v)).is_some_and(|v| *v != 0.0));
+                .is_none_or(|b| {
+                    shared.maps[m.gi]
+                        .vars
+                        .get(b.variable)
+                        .and_then(|&v| values.get(v))
+                        .is_some_and(|v| *v != 0.0)
+                });
             if !enabled {
                 return;
             }
             match &m.kind {
                 ModKind::List(l) => l.iter().for_each(|c| mods(shared, c, values, out)),
-                ModKind::Driven { active: true, child: Some(c) } => mods(shared, c, values, out),
+                ModKind::Driven {
+                    active: true,
+                    child: Some(c),
+                } => mods(shared, c, values, out),
                 _ => out.push((m.gi, m.m)),
             }
         }
@@ -1412,7 +1841,10 @@ impl Instance {
                         walk(shared, c, values, out);
                     }
                 }
-                Kind::Blend { children, .. } => children.iter().flatten().for_each(|c| walk(shared, c, values, out)),
+                Kind::Blend { children, .. } => children
+                    .iter()
+                    .flatten()
+                    .for_each(|c| walk(shared, c, values, out)),
                 Kind::Select { child: Some(c), .. } => walk(shared, c, values, out),
                 Kind::Wrap { child, modifier } => {
                     if let Some(m) = modifier {
@@ -1439,10 +1871,19 @@ impl Instance {
             .into_iter()
             .filter_map(|(gi, m)| {
                 let graph = self.shared.graph(gi);
-                let Modifier::LookAt(l) = &graph.modifiers[m] else { return None };
+                let Modifier::LookAt(l) = &graph.modifiers[m] else {
+                    return None;
+                };
                 let mut l = l.clone();
                 for b in &graph.modifier_bindings[m] {
-                    let Some(v) = self.shared.maps[gi].vars.get(b.variable).and_then(|&v| self.values.get(v)).copied() else { continue };
+                    let Some(v) = self.shared.maps[gi]
+                        .vars
+                        .get(b.variable)
+                        .and_then(|&v| self.values.get(v))
+                        .copied()
+                    else {
+                        continue;
+                    };
                     let member = b.member.as_str();
                     match member {
                         "lookAtTarget" => l.look_at_target = v != 0.0,
@@ -1451,11 +1892,21 @@ impl Instance {
                         "limitAngleDegrees" => l.limit_degrees = v,
                         _ => {
                             // bones:N/field, eyeBones:N/field
-                            let Some((list, rest)) = member.split_once(':') else { continue };
-                            let Some((i, field)) = rest.split_once('/') else { continue };
+                            let Some((list, rest)) = member.split_once(':') else {
+                                continue;
+                            };
+                            let Some((i, field)) = rest.split_once('/') else {
+                                continue;
+                            };
                             let Ok(i) = i.parse::<usize>() else { continue };
-                            let bones = if list == "eyeBones" { &mut l.eye_bones } else { &mut l.bones };
-                            let Some(bone) = bones.get_mut(i) else { continue };
+                            let bones = if list == "eyeBones" {
+                                &mut l.eye_bones
+                            } else {
+                                &mut l.bones
+                            };
+                            let Some(bone) = bones.get_mut(i) else {
+                                continue;
+                            };
                             match field {
                                 "enabled" => bone.enabled = v != 0.0,
                                 "onGain" => bone.on_gain = v,
@@ -1485,8 +1936,12 @@ impl Instance {
                         walk(shared, c, out);
                     }
                 }
-                Kind::Blend { children, .. } => children.iter().flatten().for_each(|c| walk(shared, c, out)),
-                Kind::Select { child: Some(c), .. } | Kind::Wrap { child: Some(c), .. } => walk(shared, c, out),
+                Kind::Blend { children, .. } => {
+                    children.iter().flatten().for_each(|c| walk(shared, c, out))
+                }
+                Kind::Select { child: Some(c), .. } | Kind::Wrap { child: Some(c), .. } => {
+                    walk(shared, c, out)
+                }
                 Kind::Switch { default, children } => {
                     if let Some(d) = default {
                         walk(shared, d, out);
@@ -1508,7 +1963,9 @@ impl Ctx<'_> {
     /// Handle queued events (and those they raise), up to a limit per update.
     fn drain(&mut self, root: &mut Node) {
         for _ in 0..64 {
-            let Some(ev) = self.queue.pop_front() else { return };
+            let Some(ev) = self.queue.pop_front() else {
+                return;
+            };
             self.handle(root, &ev);
         }
         self.queue.clear();
@@ -1533,7 +1990,14 @@ mod tests {
     }
 
     fn state(id: i32, g: GenId, transitions: Vec<Transition>) -> State {
-        State { id, name: format!("s{id}"), generator: Some(g), transitions, enter_events: vec![], exit_events: vec![] }
+        State {
+            id,
+            name: format!("s{id}"),
+            generator: Some(g),
+            transitions,
+            enter_events: vec![],
+            exit_events: vec![],
+        }
     }
 
     fn durations(name: &str) -> Option<f32> {
@@ -1548,10 +2012,27 @@ mod tests {
     /// Idle (0) -> Sit event -> Enter clip whose end trigger moves on to a Loop;
     /// Stand event blends (0.5 s) to an Exit clip, which returns to idle at its end.
     fn graph() -> BehaviorGraph {
-        let events = ["Sit", "Next", "Stand", "Done", "Draw"].map(String::from).to_vec();
-        let next = Trigger { time: 0.0, from_end: true, event: 1, payload: None };
-        let done = Trigger { time: 0.0, from_end: true, event: 3, payload: None };
-        let draw = Trigger { time: 0.5, from_end: false, event: 4, payload: Some("Tankard".into()) };
+        let events = ["Sit", "Next", "Stand", "Done", "Draw"]
+            .map(String::from)
+            .to_vec();
+        let next = Trigger {
+            time: 0.0,
+            from_end: true,
+            event: 1,
+            payload: None,
+        };
+        let done = Trigger {
+            time: 0.0,
+            from_end: true,
+            event: 3,
+            payload: None,
+        };
+        let draw = Trigger {
+            time: 0.5,
+            from_end: false,
+            event: 4,
+            payload: Some("Tankard".into()),
+        };
         let mut stand = Transition::new(2, 3, None);
         stand.blend = Some(0.5);
         let gens = vec![
@@ -1584,14 +2065,20 @@ mod tests {
     }
 
     fn instance(g: BehaviorGraph) -> Instance {
-        let shared = Shared::new(Arc::new(Project { graphs: vec![("g".into(), g)], character: None }));
+        let shared = Shared::new(Arc::new(Project {
+            graphs: vec![("g".into(), g)],
+            character: None,
+        }));
         let mut i = Instance::new(shared, 1);
         i.update(0.0, &mut durations);
         i
     }
 
     fn playing(i: &Instance) -> Vec<(String, f32)> {
-        i.samples().iter().map(|s| (s.animation.to_string(), (s.weight * 100.0).round() / 100.0)).collect()
+        i.samples()
+            .iter()
+            .map(|s| (s.animation.to_string(), (s.weight * 100.0).round() / 100.0))
+            .collect()
     }
 
     #[test]
@@ -1602,11 +2089,20 @@ mod tests {
         assert_eq!(playing(&i), [("Enter".into(), 1.0)]);
         // Half way through the enter clip its draw trigger fires.
         i.update(0.6, &mut durations);
-        assert_eq!(i.take_raised(), [Raised { event: "Draw".into(), payload: Some("Tankard".into()) }]);
+        assert_eq!(
+            i.take_raised(),
+            [Raised {
+                event: "Draw".into(),
+                payload: Some("Tankard".into())
+            }]
+        );
         // Its end trigger moves on to the loop.
         i.update(0.5, &mut durations);
         assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
-        assert!(!i.handle_event("Sit", &mut durations), "no transition on Sit from the loop");
+        assert!(
+            !i.handle_event("Sit", &mut durations),
+            "no transition on Sit from the loop"
+        );
         // Stand blends over 0.5 s.
         i.update(1.0, &mut durations);
         assert!(i.handle_event("Stand", &mut durations));
@@ -1640,7 +2136,12 @@ mod tests {
     #[test]
     fn parametric_blend_and_reverse_clip() {
         // A parametric blend of three clips at 0, 1 and 2 driven by Direction.
-        let child = |g, w| BlendChild { generator: Some(g), weight: w, weight_variable: None, bone_weights: None };
+        let child = |g, w| BlendChild {
+            generator: Some(g),
+            weight: w,
+            weight_variable: None,
+            bone_weights: None,
+        };
         let mut back = clip("Back", ClipMode::SinglePlay, vec![]);
         if let Generator::Clip { speed, .. } = &mut back {
             *speed = -1.0;
@@ -1660,12 +2161,23 @@ mod tests {
         ];
         let mut g = BehaviorGraph::new("G", Some(0), gens, vec![]);
         let v = g.add_variable("Direction", VarType::Real, 1.5);
-        g.bindings[0].push(Binding { member: "blendParameter".into(), variable: v });
+        g.bindings[0].push(Binding {
+            member: "blendParameter".into(),
+            variable: v,
+        });
         let mut i = instance(g);
         assert_eq!(playing(&i), [("Back".into(), 0.5), ("C".into(), 0.5)]);
         i.update(0.25, &mut durations);
-        let back = i.samples().into_iter().find(|s| &*s.animation == "Back").unwrap();
-        assert!((back.time - 0.75).abs() < 1e-5, "reversed clip runs from its end: {}", back.time);
+        let back = i
+            .samples()
+            .into_iter()
+            .find(|s| &*s.animation == "Back")
+            .unwrap();
+        assert!(
+            (back.time - 0.75).abs() < 1e-5,
+            "reversed clip runs from its end: {}",
+            back.time
+        );
     }
 
     #[test]
@@ -1704,8 +2216,18 @@ mod tests {
     /// Out for state 1 (an exit clip) within Open .. Close.
     fn windowed(trigger: bool) -> BehaviorGraph {
         let events = ["Out", "Open", "Close", "Kill"].map(String::from).to_vec();
-        let at = |time, event| Trigger { time, from_end: false, event, payload: None };
-        let window = Interval { enter_event: 1, exit_event: 2, enter_time: 0.0, exit_time: 0.0 };
+        let at = |time, event| Trigger {
+            time,
+            from_end: false,
+            event,
+            payload: None,
+        };
+        let window = Interval {
+            enter_event: 1,
+            exit_event: 2,
+            enter_time: 0.0,
+            exit_time: 0.0,
+        };
         let mut out = Transition::new(0, 1, None);
         if trigger {
             out.trigger = Some(window);
@@ -1721,7 +2243,11 @@ mod tests {
                 start: 0,
                 start_variable: None,
                 start_mode: Default::default(),
-                states: vec![state(0, 1, vec![out]), state(1, 2, vec![]), state(2, 3, vec![])],
+                states: vec![
+                    state(0, 1, vec![out]),
+                    state(1, 2, vec![]),
+                    state(2, 3, vec![]),
+                ],
                 wildcards: vec![kill],
             },
             clip("Loop", ClipMode::Looping, vec![at(1.0, 1), at(1.5, 2)]),
@@ -1750,7 +2276,10 @@ mod tests {
         i.update(0.2, &mut durations);
         assert!(!i.handle_event("Out", &mut durations));
         i.update(1.0, &mut durations);
-        assert!(i.handle_event("Out", &mut durations), "inside Open .. Close");
+        assert!(
+            i.handle_event("Out", &mut durations),
+            "inside Open .. Close"
+        );
         assert_eq!(i.active_states(), ["s1"]);
         // After Close it's ignored again.
         let mut i = instance(windowed(true));
@@ -1767,9 +2296,15 @@ mod tests {
         let mut i = instance(g);
         assert!(i.handle_event("Kill", &mut durations));
         i.update(0.2, &mut durations);
-        assert!(!i.handle_event("Kill", &mut durations), "locked while blending");
+        assert!(
+            !i.handle_event("Kill", &mut durations),
+            "locked while blending"
+        );
         i.update(0.4, &mut durations);
         assert_eq!(playing(&i), [("Dying".into(), 1.0)]);
-        assert!(i.handle_event("Kill", &mut durations), "free once the blend ends");
+        assert!(
+            i.handle_event("Kill", &mut durations),
+            "free once the blend ends"
+        );
     }
 }

@@ -47,19 +47,33 @@ impl ActorRuntime {
         let mut p = self.practice.unwrap_or_default();
         // A new barrage: at one of the targets.
         if p.left == 0 && matches!(p.phase, Phase::Ready) && p.wait <= 0.0 {
-            let targets: Vec<FormId> = goal.targets.iter().flatten().copied().filter(|t| w.targets.contains_key(t)).collect();
+            let targets: Vec<FormId> = goal
+                .targets
+                .iter()
+                .flatten()
+                .copied()
+                .filter(|t| w.targets.contains_key(t))
+                .collect();
             if targets.is_empty() {
                 return;
             }
             p.target = Some(targets[((w.rand)() % targets.len() as u64) as usize]);
-            p.left = goal.attacks.0 + ((w.rand)() % u64::from(goal.attacks.1 - goal.attacks.0 + 1)) as u32;
-            log::debug!("{} practises on {:?}: {} attacks", self.ref_id, p.target, p.left);
+            p.left = goal.attacks.0
+                + ((w.rand)() % u64::from(goal.attacks.1 - goal.attacks.0 + 1)) as u32;
+            log::debug!(
+                "{} practises on {:?}: {} attacks",
+                self.ref_id,
+                p.target,
+                p.left
+            );
         }
         let Some(aim) = p.target.and_then(|t| w.targets.get(&t).copied()) else {
             self.practice = Some(p);
             return;
         };
-        let off = self.turn_towards((aim - self.pos).with_z(0.0).normalize_or_zero(), dt).abs();
+        let off = self
+            .turn_towards((aim - self.pos).with_z(0.0).normalize_or_zero(), dt)
+            .abs();
         if !self.drawn {
             if self.graph_event("WeapEquip", &mut w.clips) {
                 self.drawn = true;
@@ -74,7 +88,8 @@ impl ActorRuntime {
             Phase::Ready if self.bow => {
                 self.arrow_release = false;
                 if self.graph_event("bowAttackStart", &mut w.clips) {
-                    p.phase = Phase::Drawing(0.0, DRAW_TIME / self.bow_speed + uniform(w.rand, 0.4, 1.2));
+                    p.phase =
+                        Phase::Drawing(0.0, DRAW_TIME / self.bow_speed + uniform(w.rand, 0.4, 1.2));
                 } else {
                     p.wait = 0.5;
                 }
@@ -99,7 +114,8 @@ impl ActorRuntime {
             }
             Phase::Loosed(t, flown) => {
                 let t = t + dt;
-                let fire = !flown && (std::mem::take(&mut self.arrow_release) || t >= RELEASE_FALLBACK);
+                let fire =
+                    !flown && (std::mem::take(&mut self.arrow_release) || t >= RELEASE_FALLBACK);
                 if fire {
                     self.loose = true;
                     self.practice_aim = Some(aim);
@@ -120,7 +136,11 @@ impl ActorRuntime {
 
     /// Done practising: put the weapon away.
     pub(crate) fn end_practice(&mut self, w: &mut World) {
-        if self.practice.take().is_some() && self.drawn && self.combat.is_none() && self.graph_event("Unequip", &mut w.clips) {
+        if self.practice.take().is_some()
+            && self.drawn
+            && self.combat.is_none()
+            && self.graph_event("Unequip", &mut w.clips)
+        {
             self.drawn = false;
         }
     }
@@ -144,7 +164,10 @@ impl crate::engine::Engine {
                     let best = carried
                         .iter()
                         .filter(|(f, n)| *n > 0 && weapon_is(&self.lo, *f, kind))
-                        .max_by(|x, y| crate::ai::combat::weapon_damage(&self.lo, x.0).total_cmp(&crate::ai::combat::weapon_damage(&self.lo, y.0)));
+                        .max_by(|x, y| {
+                            crate::ai::combat::weapon_damage(&self.lo, x.0)
+                                .total_cmp(&crate::ai::combat::weapon_damage(&self.lo, y.0))
+                        });
                     if let Some(&(w, _)) = best {
                         swaps.push((a.ref_id, w, Some(current)));
                     }
@@ -158,7 +181,14 @@ impl crate::engine::Engine {
             }
         }
         for (actor, weapon, was) in swaps {
-            log::debug!("{actor} takes {weapon} in hand{}", if was.is_some() { " to practise" } else { " again" });
+            log::debug!(
+                "{actor} takes {weapon} in hand{}",
+                if was.is_some() {
+                    " to practise"
+                } else {
+                    " again"
+                }
+            );
             self.wield(actor, weapon);
             if let Some(a) = self.actor_mut(actor) {
                 a.practice_weapon = match was {
@@ -173,7 +203,13 @@ impl crate::engine::Engine {
 /// Whether `w` is a weapon of `kind`.
 fn weapon_is(lo: &esp::LoadOrder, w: FormId, kind: super::package::WeaponKind) -> bool {
     use super::package::WeaponKind;
-    let Some(anim) = lo.get(w).filter(|r| r.tag().0 == *b"WEAP").and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied())) else { return false };
+    let Some(anim) = lo
+        .get(w)
+        .filter(|r| r.tag().0 == *b"WEAP")
+        .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
+    else {
+        return false;
+    };
     match kind {
         WeaponKind::Any => true,
         WeaponKind::Melee => (1..=6).contains(&anim),

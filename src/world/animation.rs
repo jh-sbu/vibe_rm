@@ -35,7 +35,10 @@ impl BoundClip {
             anim: self.anim.clone(),
             track_to_bone: self.track_to_bone.clone(),
             track_to_hk: self.track_to_hk.clone(),
-            motion: self.motion.as_ref().map(|m| Arc::new(m.reversed(self.duration()))),
+            motion: self
+                .motion
+                .as_ref()
+                .map(|m| Arc::new(m.reversed(self.duration()))),
             reversed: !self.reversed,
             additive: self.additive,
         }
@@ -79,7 +82,10 @@ impl Motion {
             // Into the frame at `a`: undo its counter-clockwise yaw (a clockwise turn).
             let d = pb - pa;
             let (s, c) = ya.sin_cos();
-            (Vec3::new(d.x * c + d.y * s, -d.x * s + d.y * c, d.z), yb - ya)
+            (
+                Vec3::new(d.x * c + d.y * s, -d.x * s + d.y * c, d.z),
+                yb - ya,
+            )
         };
         if !wrapped {
             return step(from, to);
@@ -88,7 +94,10 @@ impl Motion {
         let (t1, y1) = step(from, duration);
         let (t2, y2) = step(0.0, to);
         let (s, c) = y1.sin_cos();
-        (t1 + Vec3::new(t2.x * c - t2.y * s, t2.x * s + t2.y * c, t2.z), y1 + y2)
+        (
+            t1 + Vec3::new(t2.x * c - t2.y * s, t2.x * s + t2.y * c, t2.z),
+            y1 + y2,
+        )
     }
 
     /// Motion of the clip played backwards over `duration`: relative to the pose the
@@ -104,8 +113,16 @@ impl Motion {
         };
         // Keys at forward time t land at duration - t; forward rest (t = 0) is the last one.
         let rev = |t: f32| (duration - t).max(0.0);
-        let mut translations: Vec<(f32, Vec3)> = self.translations.iter().map(|&(t, p)| (rev(t), local(p))).collect();
-        let mut rotations: Vec<(f32, f32)> = self.rotations.iter().map(|&(t, y)| (rev(t), y - end_yaw)).collect();
+        let mut translations: Vec<(f32, Vec3)> = self
+            .translations
+            .iter()
+            .map(|&(t, p)| (rev(t), local(p)))
+            .collect();
+        let mut rotations: Vec<(f32, f32)> = self
+            .rotations
+            .iter()
+            .map(|&(t, y)| (rev(t), y - end_yaw))
+            .collect();
         if !self.translations.is_empty() {
             translations.push((duration, local(Vec3::ZERO)));
         }
@@ -114,7 +131,10 @@ impl Motion {
         }
         translations.sort_by(|a, b| a.0.total_cmp(&b.0));
         rotations.sort_by(|a, b| a.0.total_cmp(&b.0));
-        Motion { translations, rotations }
+        Motion {
+            translations,
+            rotations,
+        }
     }
 }
 
@@ -123,7 +143,9 @@ impl Motion {
 fn parse_clip_ids(text: &str) -> HashMap<String, u32> {
     let lines: Vec<&str> = text.lines().map(str::trim).collect();
     let mut out = HashMap::new();
-    let Some(files) = lines.get(1).and_then(|l| l.parse::<usize>().ok()) else { return out };
+    let Some(files) = lines.get(1).and_then(|l| l.parse::<usize>().ok()) else {
+        return out;
+    };
     // Header: 1, file count, files, has-clip-data flag. Then blank-separated entries:
     // name, id, speed, crop start, crop end, trigger count, triggers.
     let mut i = 2 + files + 1;
@@ -133,7 +155,10 @@ fn parse_clip_ids(text: &str) -> HashMap<String, u32> {
             continue;
         }
         let name = lines[i].to_ascii_lowercase();
-        let (Ok(id), Ok(triggers)) = (lines[i + 1].parse::<u32>(), lines[i + 5].parse::<usize>()) else { break };
+        let (Ok(id), Ok(triggers)) = (lines[i + 1].parse::<u32>(), lines[i + 5].parse::<usize>())
+        else {
+            break;
+        };
         out.insert(name.strip_suffix(".hkx").unwrap_or(&name).to_owned(), id);
         i += 6 + triggers;
     }
@@ -146,14 +171,18 @@ fn parse_clip_ids(text: &str) -> HashMap<String, u32> {
 pub fn parse_clip_triggers(text: &str) -> HashMap<String, Vec<(f32, String)>> {
     let lines: Vec<&str> = text.lines().map(str::trim).collect();
     let mut out: HashMap<String, Vec<(f32, String)>> = HashMap::new();
-    let Some(files) = lines.get(1).and_then(|l| l.parse::<usize>().ok()) else { return out };
+    let Some(files) = lines.get(1).and_then(|l| l.parse::<usize>().ok()) else {
+        return out;
+    };
     let mut i = 2 + files + 1;
     while i + 5 < lines.len() {
         if lines[i].is_empty() {
             i += 1;
             continue;
         }
-        let (Ok(_), Ok(n)) = (lines[i + 1].parse::<u32>(), lines[i + 5].parse::<usize>()) else { break };
+        let (Ok(_), Ok(n)) = (lines[i + 1].parse::<u32>(), lines[i + 5].parse::<usize>()) else {
+            break;
+        };
         let triggers = lines[i + 6..(i + 6 + n).min(lines.len())]
             .iter()
             .filter_map(|l| {
@@ -162,7 +191,9 @@ pub fn parse_clip_triggers(text: &str) -> HashMap<String, Vec<(f32, String)>> {
             })
             .collect::<Vec<_>>();
         if !triggers.is_empty() {
-            out.entry(lines[i].to_ascii_lowercase()).or_default().extend(triggers);
+            out.entry(lines[i].to_ascii_lowercase())
+                .or_default()
+                .extend(triggers);
         }
         i += 6 + n;
     }
@@ -174,17 +205,25 @@ pub fn parse_clip_triggers(text: &str) -> HashMap<String, Vec<(f32, String)>> {
 fn parse_motions(text: &str) -> HashMap<u32, Motion> {
     let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
     let mut out = HashMap::new();
-    let nums = |l: &str| l.split_whitespace().filter_map(|x| x.parse::<f32>().ok()).collect::<Vec<_>>();
+    let nums = |l: &str| {
+        l.split_whitespace()
+            .filter_map(|x| x.parse::<f32>().ok())
+            .collect::<Vec<_>>()
+    };
     while let Some(id) = lines.next().and_then(|l| l.parse::<u32>().ok()) {
         let _duration = lines.next();
         let mut m = Motion::default();
-        let Some(n) = lines.next().and_then(|l| l.parse::<usize>().ok()) else { break };
+        let Some(n) = lines.next().and_then(|l| l.parse::<usize>().ok()) else {
+            break;
+        };
         for l in lines.by_ref().take(n) {
             if let [t, x, y, z] = nums(l)[..] {
                 m.translations.push((t, Vec3::new(x, y, z)));
             }
         }
-        let Some(n) = lines.next().and_then(|l| l.parse::<usize>().ok()) else { break };
+        let Some(n) = lines.next().and_then(|l| l.parse::<usize>().ok()) else {
+            break;
+        };
         let mut last = 0.0f32;
         for l in lines.by_ref().take(n) {
             if let [t, _, _, z, w] = nums(l)[..] {
@@ -247,14 +286,27 @@ impl ActorAnim {
         self.fade_len = fade.max(1e-3);
     }
 
-    fn apply(clip: &BoundClip, t: f32, scratch: &mut Vec<havok::QsTransform>, locals: &mut [Transform]) {
-        let t = if clip.reversed { clip.duration() - t } else { t };
+    fn apply(
+        clip: &BoundClip,
+        t: f32,
+        scratch: &mut Vec<havok::QsTransform>,
+        locals: &mut [Transform],
+    ) {
+        let t = if clip.reversed {
+            clip.duration() - t
+        } else {
+            t
+        };
         clip.anim.sample(t, scratch);
         for (track, q) in scratch.iter().enumerate() {
             if let Some(Some(b)) = clip.track_to_bone.get(track) {
                 locals[*b] = Transform {
                     translation: q.translation,
-                    rotation: glam::Mat3::from_quat(if q.rotation.is_finite() { q.rotation } else { Quat::IDENTITY }),
+                    rotation: glam::Mat3::from_quat(if q.rotation.is_finite() {
+                        q.rotation
+                    } else {
+                        Quat::IDENTITY
+                    }),
                     scale: q.scale.x,
                 };
             }
@@ -310,9 +362,18 @@ impl BehaviorLibrary {
     /// Clips an animation event plays on actors of `project`, ending in a loop
     /// where there is one, and the clips played from there by the first of `exits`
     /// the graph handles.
-    pub fn event_clips(&mut self, project: &ProjectRuntime, event: &str, exits: &[&str]) -> Option<Arc<EventClips>> {
+    pub fn event_clips(
+        &mut self,
+        project: &ProjectRuntime,
+        event: &str,
+        exits: &[&str],
+    ) -> Option<Arc<EventClips>> {
         use havok::behavior::ClipMode;
-        let key = (project.name.clone(), event.to_ascii_lowercase(), exits.join(",").to_ascii_lowercase());
+        let key = (
+            project.name.clone(),
+            event.to_ascii_lowercase(),
+            exits.join(",").to_ascii_lowercase(),
+        );
         if let Some(r) = self.events.get(&key) {
             return r.clone();
         }
@@ -320,7 +381,10 @@ impl BehaviorLibrary {
         let project = &project.shared.project;
         let plays = project.play_event(event);
         // Prefer a sequence that settles into a loop.
-        let play = plays.iter().find(|p| p.clips.last().is_some_and(|c| c.mode == ClipMode::Looping)).or(plays.first());
+        let play = plays
+            .iter()
+            .find(|p| p.clips.last().is_some_and(|c| c.mode == ClipMode::Looping))
+            .or(plays.first());
         let r = match play {
             Some(p) => {
                 let mut exit = exits
@@ -330,7 +394,11 @@ impl BehaviorLibrary {
                         // A looping exit clip that leaves the furniture by its own
                         // trigger (woodchopping's stop) plays once.
                         let mut clips = x.clips;
-                        for e in x.events.iter().filter(|e| e.event.eq_ignore_ascii_case("IdleFurnitureExit")) {
+                        for e in x
+                            .events
+                            .iter()
+                            .filter(|e| e.event.eq_ignore_ascii_case("IdleFurnitureExit"))
+                        {
                             if let Some(c) = clips.get_mut(e.clip) {
                                 c.mode = ClipMode::SinglePlay;
                             }
@@ -344,13 +412,24 @@ impl BehaviorLibrary {
                 let last = p.clips.len().saturating_sub(1);
                 let mut loop_once = false;
                 if exit.is_empty() && p.clips.last().is_some_and(|c| c.mode == ClipMode::Looping) {
-                    let own = p.events.iter().filter(|e| e.clip == last).filter_map(|e| project.then_event(p, &e.event));
-                    if let Some(x) = own.map(|x| x.clips).find(|c| c.first().is_some_and(|c| c.mode == ClipMode::SinglePlay)) {
+                    let own = p
+                        .events
+                        .iter()
+                        .filter(|e| e.clip == last)
+                        .filter_map(|e| project.then_event(p, &e.event));
+                    if let Some(x) = own
+                        .map(|x| x.clips)
+                        .find(|c| c.first().is_some_and(|c| c.mode == ClipMode::SinglePlay))
+                    {
                         exit = x;
                         loop_once = true;
                     }
                 }
-                Some(EventClips { clips: p.clips.clone(), exit, loop_once })
+                Some(EventClips {
+                    clips: p.clips.clone(),
+                    exit,
+                    loop_once,
+                })
             }
             // No graph handles it (some IDLE records name events nothing listens to).
             None => None,
@@ -393,7 +472,11 @@ impl AnimationLibrary {
         }
         let s = vfs
             .read(path)
-            .and_then(|b| havok::AnimationContainer::parse(&b).map_err(|e| log::warn!("{path}: {e}")).ok())
+            .and_then(|b| {
+                havok::AnimationContainer::parse(&b)
+                    .map_err(|e| log::warn!("{path}: {e}"))
+                    .ok()
+            })
             .and_then(|c| c.skeletons.into_iter().next())
             .map(Arc::new);
         self.havok_skeletons.insert(path.to_owned(), s.clone());
@@ -401,28 +484,49 @@ impl AnimationLibrary {
     }
 
     /// NIF bone for each bone of the Havok skeleton next to `nif_skeleton_path`.
-    pub fn havok_bone_map(&mut self, vfs: &vfs::Vfs, nif_skeleton_path: &str, skeleton: &Skeleton) -> Vec<Option<usize>> {
-        let hk = nif_skeleton_path.strip_suffix(".nif").and_then(|s| self.havok_skeleton(vfs, &format!("{s}.hkx")));
-        hk.map(|hk| hk.bones.iter().map(|b| skeleton.find(&b.name)).collect()).unwrap_or_default()
+    pub fn havok_bone_map(
+        &mut self,
+        vfs: &vfs::Vfs,
+        nif_skeleton_path: &str,
+        skeleton: &Skeleton,
+    ) -> Vec<Option<usize>> {
+        let hk = nif_skeleton_path
+            .strip_suffix(".nif")
+            .and_then(|s| self.havok_skeleton(vfs, &format!("{s}.hkx")));
+        hk.map(|hk| hk.bones.iter().map(|b| skeleton.find(&b.name)).collect())
+            .unwrap_or_default()
     }
 
     /// Root motion of a behaviour project's clips (`animationdata/boundanims/anims_<project>.txt`),
     /// by clip generator name (lowercase, without extension).
-    pub fn project_motions(&mut self, vfs: &vfs::Vfs, project: &str) -> Arc<HashMap<String, Arc<Motion>>> {
+    pub fn project_motions(
+        &mut self,
+        vfs: &vfs::Vfs,
+        project: &str,
+    ) -> Arc<HashMap<String, Arc<Motion>>> {
         if let Some(m) = self.motions.get(project) {
             return m.clone();
         }
-        let read = |p: String| vfs.read(&p).map(|b| String::from_utf8_lossy(&b).into_owned());
-        let ids = read(format!("meshes/animationdata/{project}.txt")).map(|t| parse_clip_ids(&t)).unwrap_or_default();
-        let motions: HashMap<u32, Arc<Motion>> = read(format!("meshes/animationdata/boundanims/anims_{project}.txt"))
-            .map(|t| parse_motions(&t))
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(id, m)| (id, Arc::new(m)))
-            .collect();
+        let read = |p: String| {
+            vfs.read(&p)
+                .map(|b| String::from_utf8_lossy(&b).into_owned())
+        };
+        let ids = read(format!("meshes/animationdata/{project}.txt"))
+            .map(|t| parse_clip_ids(&t))
+            .unwrap_or_default();
+        let motions: HashMap<u32, Arc<Motion>> = read(format!(
+            "meshes/animationdata/boundanims/anims_{project}.txt"
+        ))
+        .map(|t| parse_motions(&t))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(id, m)| (id, Arc::new(m)))
+        .collect();
         // Several clip generators can share one clip id (e.g. Chair_FrontExit / Chair_FrontQuickExit).
-        let by_name: HashMap<String, Arc<Motion>> =
-            ids.into_iter().filter_map(|(name, id)| Some((name, motions.get(&id)?.clone()))).collect();
+        let by_name: HashMap<String, Arc<Motion>> = ids
+            .into_iter()
+            .filter_map(|(name, id)| Some((name, motions.get(&id)?.clone())))
+            .collect();
         log::debug!("{project}: root motion for {} clips", by_name.len());
         let m = Arc::new(by_name);
         self.motions.insert(project.to_owned(), m.clone());
@@ -430,9 +534,21 @@ impl AnimationLibrary {
     }
 
     /// Load `clip` for an actor whose NIF skeleton lives at `nif_skeleton_path`.
-    pub fn clip(&mut self, vfs: &vfs::Vfs, clip: &str, nif_skeleton_path: &str, skeleton: &Skeleton) -> Option<Arc<BoundClip>> {
+    pub fn clip(
+        &mut self,
+        vfs: &vfs::Vfs,
+        clip: &str,
+        nif_skeleton_path: &str,
+        skeleton: &Skeleton,
+    ) -> Option<Arc<BoundClip>> {
         // Humanoid clips take root motion from the matching default project.
-        let project = clip.contains("actors/character/").then(|| if clip.contains("/female/") { "defaultfemale" } else { "defaultmale" });
+        let project = clip.contains("actors/character/").then(|| {
+            if clip.contains("/female/") {
+                "defaultfemale"
+            } else {
+                "defaultmale"
+            }
+        });
         self.clip_in_project(vfs, clip, nif_skeleton_path, skeleton, project)
     }
 
@@ -446,35 +562,58 @@ impl AnimationLibrary {
         skeleton: &Skeleton,
         project: Option<&str>,
     ) -> Option<Arc<BoundClip>> {
-        let key = (format!("{clip}@{}", project.unwrap_or_default()), nif_skeleton_path.to_owned());
+        let key = (
+            format!("{clip}@{}", project.unwrap_or_default()),
+            nif_skeleton_path.to_owned(),
+        );
         if let Some(c) = self.clips.get(&key) {
             return c.clone();
         }
-        let hkx_skel = nif_skeleton_path.strip_suffix(".nif").map(|s| format!("{s}.hkx"));
+        let hkx_skel = nif_skeleton_path
+            .strip_suffix(".nif")
+            .map(|s| format!("{s}.hkx"));
         let hk = hkx_skel.and_then(|p| self.havok_skeleton(vfs, &p));
         let result = (|| {
             let bytes = vfs.read(clip)?;
-            let container = havok::AnimationContainer::parse(&bytes).map_err(|e| log::warn!("{clip}: {e}")).ok()?;
+            let container = havok::AnimationContainer::parse(&bytes)
+                .map_err(|e| log::warn!("{clip}: {e}"))
+                .ok()?;
             let anim = container.animations.into_iter().next()?;
             let hk = hk.as_ref()?;
             let track_to_hk: Vec<Option<usize>> = (0..anim.num_tracks)
                 .map(|t| match &anim.binding {
-                    Some(b) if !b.track_to_bone.is_empty() => b.track_to_bone.get(t).map(|&x| x as usize),
+                    Some(b) if !b.track_to_bone.is_empty() => {
+                        b.track_to_bone.get(t).map(|&x| x as usize)
+                    }
                     _ => Some(t),
                 })
                 .collect();
-            let track_to_bone = track_to_hk.iter().map(|b| skeleton.find(&hk.bones.get((*b)?)?.name)).collect();
+            let track_to_bone = track_to_hk
+                .iter()
+                .map(|b| skeleton.find(&hk.bones.get((*b)?)?.name))
+                .collect();
             Some((anim, track_to_bone, track_to_hk))
         })()
         .map(|(anim, track_to_bone, track_to_hk)| {
             let motion = project.map(|project| {
-                let stem = clip.rsplit('/').next().unwrap_or(clip).trim_end_matches(".hkx");
+                let stem = clip
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(clip)
+                    .trim_end_matches(".hkx");
                 let m = self.project_motions(vfs, project).get(stem).cloned();
                 log::trace!("{clip}: {project} motion for {stem:?}: {}", m.is_some());
                 m
             });
             let additive = anim.binding.as_ref().is_some_and(|b| b.additive);
-            Arc::new(BoundClip { anim: Arc::new(anim), track_to_bone, track_to_hk, motion: motion.flatten(), reversed: false, additive })
+            Arc::new(BoundClip {
+                anim: Arc::new(anim),
+                track_to_bone,
+                track_to_hk,
+                motion: motion.flatten(),
+                reversed: false,
+                additive,
+            })
         });
         if result.is_none() {
             log::debug!("could not load clip {clip} for {nif_skeleton_path}");
@@ -485,7 +624,15 @@ impl AnimationLibrary {
 
     /// A clip of `project`'s graphs (root motion from its animation data), played
     /// backwards when `speed` is negative.
-    pub fn project_clip(&mut self, vfs: &vfs::Vfs, clip: &str, nif_skeleton_path: &str, skeleton: &Skeleton, speed: f32, project: &ProjectRuntime) -> Option<Arc<BoundClip>> {
+    pub fn project_clip(
+        &mut self,
+        vfs: &vfs::Vfs,
+        clip: &str,
+        nif_skeleton_path: &str,
+        skeleton: &Skeleton,
+        speed: f32,
+        project: &ProjectRuntime,
+    ) -> Option<Arc<BoundClip>> {
         let forward = |lib: &mut Self| {
             if project.humanoid() {
                 lib.clip(vfs, clip, nif_skeleton_path, skeleton)
@@ -496,7 +643,10 @@ impl AnimationLibrary {
         if speed >= 0.0 {
             return forward(self);
         }
-        let key = (format!("{clip}@{}#reversed", project.name), nif_skeleton_path.to_owned());
+        let key = (
+            format!("{clip}@{}#reversed", project.name),
+            nif_skeleton_path.to_owned(),
+        );
         if let Some(c) = self.clips.get(&key) {
             return c.clone();
         }
@@ -508,11 +658,18 @@ impl AnimationLibrary {
 
 /// Forward walk (or run) clip candidates for an actor given its skeleton path.
 pub fn locomotion_clip(skeleton_path: &str, female: bool, run: bool) -> Vec<String> {
-    let base = skeleton_path.split("/character assets").next().unwrap_or("").to_owned();
+    let base = skeleton_path
+        .split("/character assets")
+        .next()
+        .unwrap_or("")
+        .to_owned();
     let gait = if run { "run" } else { "walk" };
     if base.ends_with("actors/character") {
         let g = if female { "female" } else { "male" };
-        vec![format!("{base}/animations/{g}/mt_{gait}forward.hkx"), format!("{base}/animations/male/mt_{gait}forward.hkx")]
+        vec![
+            format!("{base}/animations/{g}/mt_{gait}forward.hkx"),
+            format!("{base}/animations/male/mt_{gait}forward.hkx"),
+        ]
     } else {
         vec![
             format!("{base}/animations/{gait}forward.hkx"),
@@ -524,12 +681,22 @@ pub fn locomotion_clip(skeleton_path: &str, female: bool, run: bool) -> Vec<Stri
 
 /// Default idle clip for an actor given its skeleton path.
 pub fn idle_clip(skeleton_path: &str, female: bool) -> Vec<String> {
-    let base = skeleton_path.split("/character assets").next().unwrap_or("").to_owned();
+    let base = skeleton_path
+        .split("/character assets")
+        .next()
+        .unwrap_or("")
+        .to_owned();
     if base.ends_with("actors/character") {
         let g = if female { "female" } else { "male" };
-        vec![format!("{base}/animations/{g}/mt_idle.hkx"), format!("{base}/animations/mt_idle_a_base.hkx")]
+        vec![
+            format!("{base}/animations/{g}/mt_idle.hkx"),
+            format!("{base}/animations/mt_idle_a_base.hkx"),
+        ]
     } else {
-        vec![format!("{base}/animations/mt_idle.hkx"), format!("{base}/animations/idle.hkx")]
+        vec![
+            format!("{base}/animations/mt_idle.hkx"),
+            format!("{base}/animations/idle.hkx"),
+        ]
     }
 }
 
@@ -578,11 +745,17 @@ mod tests {
         let (_, yaw) = m.delta(1.5, 0.5, true, 2.0);
         assert!((yaw - std::f32::consts::FRAC_PI_4).abs() < 1e-5);
         // A straight walk carries on straight across the wrap.
-        let walk = Motion { translations: vec![(2.0, Vec3::new(0.0, 2.0, 0.0))], rotations: vec![] };
+        let walk = Motion {
+            translations: vec![(2.0, Vec3::new(0.0, 2.0, 0.0))],
+            rotations: vec![],
+        };
         let (t, _) = walk.delta(1.5, 0.5, true, 2.0);
         assert!((t - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-5, "{t}");
         // Turning in place by a quarter every loop: half a loop after a wrap faces on.
-        let turn = Motion { translations: vec![], rotations: vec![(2.0, std::f32::consts::FRAC_PI_2)] };
+        let turn = Motion {
+            translations: vec![],
+            rotations: vec![(2.0, std::f32::consts::FRAC_PI_2)],
+        };
         assert!((turn.delta(1.0, 1.0, true, 2.0).1 - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
     }
 
@@ -590,7 +763,10 @@ mod tests {
     fn reversed_motion_returns_to_the_start() {
         // Two steps forward, turning a quarter counter-clockwise on the way.
         let m = Motion {
-            translations: vec![(1.0, Vec3::new(0.0, 5.0, 0.0)), (2.0, Vec3::new(0.0, 10.0, 0.0))],
+            translations: vec![
+                (1.0, Vec3::new(0.0, 5.0, 0.0)),
+                (2.0, Vec3::new(0.0, 10.0, 0.0)),
+            ],
             rotations: vec![(2.0, std::f32::consts::FRAC_PI_2)],
         };
         let r = m.reversed(2.0);

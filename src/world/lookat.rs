@@ -41,17 +41,28 @@ pub fn apply(
     // the actor stops looking.
     let mut outside = false;
     let target = target.filter(|t| {
-        let Some(head) = bones.last().and_then(|b| hk_to_nif.get(b.index as usize).copied().flatten()) else { return false };
+        let Some(head) = bones
+            .last()
+            .and_then(|b| hk_to_nif.get(b.index as usize).copied().flatten())
+        else {
+            return false;
+        };
         let pos = skeleton.model_space(locals)[head].w_axis.truncate();
         let to = (*t - pos).truncate().normalize_or_zero();
         let angle = to.angle_to(glam::Vec2::Y).abs().to_degrees();
-        let limit = if state.in_range { l.limit_degrees + l.limit_threshold_degrees } else { l.limit_degrees };
+        let limit = if state.in_range {
+            l.limit_degrees + l.limit_threshold_degrees
+        } else {
+            l.limit_degrees
+        };
         state.in_range = angle <= limit;
         outside = !state.in_range;
         state.in_range || l.continue_outside_limit
     });
     for (i, bone) in bones.iter().enumerate() {
-        let Some(Some(b)) = hk_to_nif.get(bone.index as usize).copied() else { continue };
+        let Some(Some(b)) = hk_to_nif.get(bone.index as usize).copied() else {
+            continue;
+        };
         let model = skeleton.model_space(locals);
         let (_, rot, pos) = model[b].to_scale_rotation_translation();
         let desired = match target.filter(|_| bone.enabled) {
@@ -61,7 +72,11 @@ pub fn apply(
                 let full = Quat::from_rotation_arc(fwd, to);
                 let (axis, angle) = full.to_axis_angle();
                 let limit = bone.limit_degrees.to_radians();
-                if angle > limit { Quat::from_axis_angle(axis, limit) } else { full }
+                if angle > limit {
+                    Quat::from_axis_angle(axis, limit)
+                } else {
+                    full
+                }
             }
             None => Quat::IDENTITY,
         };
@@ -77,7 +92,9 @@ pub fn apply(
             continue;
         }
         // Turn in model space, then back into the parent's space.
-        let parent = skeleton.bones[b].parent.map_or(Quat::IDENTITY, |p| model[p].to_scale_rotation_translation().1);
+        let parent = skeleton.bones[b].parent.map_or(Quat::IDENTITY, |p| {
+            model[p].to_scale_rotation_translation().1
+        });
         let local = (parent.inverse() * q * rot).normalize();
         locals[b].rotation = glam::Mat3::from_quat(local);
     }

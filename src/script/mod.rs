@@ -93,7 +93,13 @@ impl papyrus::Host for EngineHost<'_> {
         self.engine.vfs.read(&format!("scripts/{name}.pex"))
     }
 
-    fn call_native(&mut self, class: &str, func: &str, this: Option<&Value>, args: &[Value]) -> papyrus::NativeResult {
+    fn call_native(
+        &mut self,
+        class: &str,
+        func: &str,
+        this: Option<&Value>,
+        args: &[Value],
+    ) -> papyrus::NativeResult {
         natives::call(self.engine, class, func, this, args)
     }
 

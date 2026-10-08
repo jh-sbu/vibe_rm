@@ -73,7 +73,10 @@ impl Engine {
         if r == PLAYER_REF {
             return match self.location {
                 Location::Interior(c) => Some((Place::Interior(c), pos)),
-                Location::Exterior { world, .. } => Some((Place::Exterior(world, crate::engine::grid_of(pos.truncate())), pos)),
+                Location::Exterior { world, .. } => Some((
+                    Place::Exterior(world, crate::engine::grid_of(pos.truncate())),
+                    pos,
+                )),
                 _ => None,
             };
         }
@@ -88,7 +91,11 @@ impl Engine {
         let tag = self.lo.tag_of(base)?.0;
         let actor = matches!(&tag, b"NPC_" | b"LVLN");
         // Locations: at their marker.
-        let at = if self.is_location(at) { self.location_marker(at)? } else { at };
+        let at = if self.is_location(at) {
+            self.location_marker(at)?
+        } else {
+            at
+        };
         if self.created_refs.next == 0 {
             self.created_refs.next = FIRST;
         }
@@ -96,16 +103,42 @@ impl Engine {
         self.created_refs.next += 1;
         let location = self.ref_current_location(at);
         if inside && !actor {
-            let item = if &tag == b"LVLI" { crate::world::actor::resolve_leveled(&self.lo, base, b"LVLI", id.0 as u64)? } else { base };
+            let item = if &tag == b"LVLI" {
+                crate::world::actor::resolve_leveled(&self.lo, base, b"LVLI", id.0 as u64)?
+            } else {
+                base
+            };
             self.inventory_mut(at).add(item, 1);
-            let c = Created { base: item, position: Vec3::ZERO, rotation: Vec3::ZERO, place: None, container: Some(at), location, actor };
+            let c = Created {
+                base: item,
+                position: Vec3::ZERO,
+                rotation: Vec3::ZERO,
+                place: None,
+                container: Some(at),
+                location,
+                actor,
+            };
             self.created_refs.refs.insert(id, c);
             log::debug!("created {id} ({base}) in {at}");
             return Some(id);
         }
         let (place, position) = self.current_place_of(at)?;
-        let rotation = self.reference_of(at).map(|r| r.rotation).unwrap_or_default();
-        self.created_refs.refs.insert(id, Created { base, position, rotation, place: Some(place), container: None, location, actor });
+        let rotation = self
+            .reference_of(at)
+            .map(|r| r.rotation)
+            .unwrap_or_default();
+        self.created_refs.refs.insert(
+            id,
+            Created {
+                base,
+                position,
+                rotation,
+                place: Some(place),
+                container: None,
+                location,
+                actor,
+            },
+        );
         log::debug!("created {id} ({base}) at {at} {place:?} {position:?}");
         if actor {
             self.add_created_actor(id, place, position);

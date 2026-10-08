@@ -21,7 +21,9 @@ impl Engine {
         self.player.sneaking
             && !self.is_dead(r)
             && !self.crime.pickpocket_caught.contains(&r)
-            && self.actor_ref(r).is_some_and(|a| a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF))
+            && self
+                .actor_ref(r)
+                .is_some_and(|a| a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF))
     }
 
     /// The chance (percent) of taking `count` of `item` from `victim`:
@@ -35,16 +37,24 @@ impl Engine {
     pub fn pickpocket_chance(&self, victim: FormId, item: FormId, count: i32) -> f32 {
         let g = |name: &str, default: f32| crate::ai::combat::gmst_f32(&self.lo, name, default);
         let info = crate::world::inventory::item_info(&self.lo, item);
-        let (weight, gold) = if item == crate::crime::GOLD { (0.0, count as f32) } else { (info.map_or(0.0, |i| i.weight) * count as f32, 0.0) };
+        let (weight, gold) = if item == crate::crime::GOLD {
+            (0.0, count as f32)
+        } else {
+            (info.map_or(0.0, |i| i.weight) * count as f32, 0.0)
+        };
         let mut chance = g("fPickPocketActorSkillBase", 20.0)
             + g("fPickPocketActorSkillMult", 1.0) * self.actor_value(PLAYER_REF, PICKPOCKET_AV)
-            + g("fPickPocketTargetSkillMult", -0.25) * (g("fPickPocketTargetSkillBase", 20.0) + self.actor_value(victim, PICKPOCKET_AV))
+            + g("fPickPocketTargetSkillMult", -0.25)
+                * (g("fPickPocketTargetSkillBase", 20.0) + self.actor_value(victim, PICKPOCKET_AV))
             + g("fPickPocketWeightMult", -4.0) * weight
             + g("fPickPocketAmountMult", -0.1) * gold;
         if self.detects(victim, PLAYER_REF) {
             chance -= DETECTED_PENALTY;
         }
-        chance.clamp(g("fPickPocketMinChance", 0.0), g("fPickPocketMaxChance", 90.0))
+        chance.clamp(
+            g("fPickPocketMinChance", 0.0),
+            g("fPickPocketMaxChance", 90.0),
+        )
     }
 
     /// Try to take `count` of `item` (of the stack belonging to `stack`'s owner,
@@ -52,23 +62,43 @@ impl Engine {
     /// the menu closes and the pickpocketing is reported, the victim knowing
     /// of it (`sPickpocketFail`), and the victim says so (`PICN`). True if
     /// taken.
-    pub fn try_pickpocket(&mut self, victim: FormId, item: FormId, count: i32, stack: Option<Option<FormId>>) -> bool {
+    pub fn try_pickpocket(
+        &mut self,
+        victim: FormId,
+        item: FormId,
+        count: i32,
+        stack: Option<Option<FormId>>,
+    ) -> bool {
         let chance = self.pickpocket_chance(victim, item, count);
         let roll = (self.rand() % 100) as f32;
-        log::info!("pickpocketing {count} x {item} from {victim}: chance {chance:.0}, rolled {roll:.0}");
+        log::info!(
+            "pickpocketing {count} x {item} from {victim}: chance {chance:.0}, rolled {roll:.0}"
+        );
         if roll < chance {
             let owner = self.base_of(victim);
-            let moved: i32 = self.remove_stack(victim, item, count, stack, Some(PLAYER_REF), owner).iter().map(|(_, n)| n).sum();
+            let moved: i32 = self
+                .remove_stack(victim, item, count, stack, Some(PLAYER_REF), owner)
+                .iter()
+                .map(|(_, n)| n)
+                .sum();
             if moved > 0 {
                 self.send_player_add_item_as(item, Some(victim), victim, 3);
-                let name = crate::world::inventory::item_info(&self.lo, item).map(|i| i.name).unwrap_or_default();
-                self.scripts.notify(if moved > 1 { format!("{name} ({moved}) added") } else { format!("{name} added") });
+                let name = crate::world::inventory::item_info(&self.lo, item)
+                    .map(|i| i.name)
+                    .unwrap_or_default();
+                self.scripts.notify(if moved > 1 {
+                    format!("{name} ({moved}) added")
+                } else {
+                    format!("{name} added")
+                });
             }
             return moved > 0;
         }
         self.menu = None;
         self.crime.pickpocket_caught.insert(victim);
-        let msg = self.gmst_string("sPickpocketFail").unwrap_or_else(|| "You've been caught pickpocketing.".into());
+        let msg = self
+            .gmst_string("sPickpocketFail")
+            .unwrap_or_else(|| "You've been caught pickpocketing.".into());
         self.scripts.notify(msg);
         self.commit_crime(CrimeType::Pickpocket, Some(victim), None, 0);
         self.crime.reacting_victim = Some(victim);
@@ -84,7 +114,9 @@ impl Engine {
             return false;
         }
         if self.crime.pickpocket_caught.contains(&victim) {
-            let msg = self.gmst_string("sNoPickPocketAgain").unwrap_or_else(|| " has already caught you.".into());
+            let msg = self
+                .gmst_string("sNoPickPocketAgain")
+                .unwrap_or_else(|| " has already caught you.".into());
             self.scripts.notify(format!("{name}{msg}"));
             return true;
         }

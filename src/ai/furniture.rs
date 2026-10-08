@@ -34,16 +34,26 @@ pub enum Entry {
 }
 
 impl Entry {
-    pub const ALL: [(Entry, u16); 4] = [(Entry::Front, 1), (Entry::Behind, 2), (Entry::Right, 4), (Entry::Left, 8)];
+    pub const ALL: [(Entry, u16); 4] = [
+        (Entry::Front, 1),
+        (Entry::Behind, 2),
+        (Entry::Right, 4),
+        (Entry::Left, 8),
+    ];
 
     /// `IsFurnitureEntryType` value of the side.
     pub fn entry_type(self) -> u32 {
-        Self::ALL.iter().find(|(e, _)| *e == self).map_or(0, |(_, bit)| u32::from(*bit) << 16)
+        Self::ALL
+            .iter()
+            .find(|(e, _)| *e == self)
+            .map_or(0, |(_, bit)| u32::from(*bit) << 16)
     }
 
     /// Sides a marker can be used from: its entry flags, or the front if it has none.
     pub fn of(entries: u16) -> impl Iterator<Item = (Entry, u16)> {
-        Self::ALL.into_iter().filter(move |&(e, bit)| entries & bit != 0 || (entries & 0xF == 0 && e == Entry::Front))
+        Self::ALL.into_iter().filter(move |&(e, bit)| {
+            entries & bit != 0 || (entries & 0xF == 0 && e == Entry::Front)
+        })
     }
 }
 
@@ -115,7 +125,13 @@ pub struct Seat {
 impl Seat {
     /// Pose (feet, heading) at which the enter animation starts.
     pub fn enter_start(&self) -> (Vec3, f32) {
-        let m = Marker { pos: self.pos, heading: self.heading, kind: Use::Sit, entries: 0, anim_type: 1 };
+        let m = Marker {
+            pos: self.pos,
+            heading: self.heading,
+            kind: Use::Sit,
+            entries: 0,
+            anim_type: 1,
+        };
         enter_start(&m, &self.clips.enter)
     }
 }
@@ -148,14 +164,22 @@ impl UseClips {
 /// Rotate an actor-space offset (+Y forward, +X right) into the world by `heading`.
 pub fn to_world(offset: Vec3, heading: f32) -> Vec3 {
     let (s, c) = heading.sin_cos();
-    Vec3::new(offset.x * c + offset.y * s, -offset.x * s + offset.y * c, offset.z)
+    Vec3::new(
+        offset.x * c + offset.y * s,
+        -offset.x * s + offset.y * c,
+        offset.z,
+    )
 }
 
 /// Pose (feet, heading) at which to start the `enter` clips so that they end on the marker.
 pub fn enter_start(m: &Marker, enter: &[Arc<BoundClip>]) -> (Vec3, f32) {
     // Each clip moves the actor relative to where the previous one left it.
     // Motion yaw is counter-clockwise; headings are clockwise.
-    let ends: Vec<(Vec3, f32)> = enter.iter().filter_map(|c| c.motion.as_ref()).map(|mo| mo.end()).collect();
+    let ends: Vec<(Vec3, f32)> = enter
+        .iter()
+        .filter_map(|c| c.motion.as_ref())
+        .map(|mo| mo.end())
+        .collect();
     let total_yaw: f32 = ends.iter().map(|e| e.1).sum();
     let h0 = m.heading + total_yaw;
     let mut h = h0;
@@ -170,10 +194,14 @@ pub fn enter_start(m: &Marker, enter: &[Arc<BoundClip>]) -> (Vec3, f32) {
 /// Owner of a reference (`XOWN`), falling back to its cell's owner.
 pub(crate) fn owner_of(lo: &LoadOrder, r: FormId) -> Option<FormId> {
     let own = |rec: &esp::LoadedRecord<'_>| {
-        rec.get(b"XOWN").filter(|d| d.len() >= 4).map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+        rec.get(b"XOWN")
+            .filter(|d| d.len() >= 4)
+            .map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
     };
     let rec = lo.get(r)?;
-    own(&rec).or_else(|| lo.get(lo.cell_of_ref(r)?).and_then(|c| own(&c))).filter(|f| !f.is_null())
+    own(&rec)
+        .or_else(|| lo.get(lo.cell_of_ref(r)?).and_then(|c| own(&c)))
+        .filter(|f| !f.is_null())
 }
 
 /// Whether `npc` may use `kind` of furniture owned by `owner`. Beds must be its own
@@ -189,7 +217,11 @@ pub fn may_use(lo: &LoadOrder, npc: FormId, kind: Use, owner: Option<FormId>) ->
         return faction_owned;
     }
     let Some(rec) = lo.get(npc) else { return false };
-    faction_owned && rec.subrecords().filter(|s| s.tag.0 == *b"SNAM" && s.data.len() >= 4).any(|s| rec.fid(s.form_id(0)) == owner)
+    faction_owned
+        && rec
+            .subrecords()
+            .filter(|s| s.tag.0 == *b"SNAM" && s.data.len() >= 4)
+            .any(|s| rec.fid(s.form_id(0)) == owner)
 }
 
 impl FurnitureWorld {
@@ -213,7 +245,9 @@ impl FurnitureWorld {
             if rf.deleted() {
                 continue;
             }
-            let Some(base) = lo.get(rf.base) else { continue };
+            let Some(base) = lo.get(rf.base) else {
+                continue;
+            };
             if base.tag().0 == *b"IDLM" {
                 self.add_idle_marker(lo, idles, key, r, &rf, &base);
                 continue;
@@ -226,16 +260,28 @@ impl FurnitureWorld {
             let special = idles.furniture_event(lo, &base);
             // Wood piles, pour spots, levers...: their own idles, but no keyword idle event.
             let keyword_special = furniture_special.is_some_and(|kw| {
-                base.get(b"KWDA").unwrap_or(&[]).chunks_exact(4).any(|c| base.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))) == kw)
+                base.get(b"KWDA")
+                    .unwrap_or(&[])
+                    .chunks_exact(4)
+                    .any(|c| base.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))) == kw)
             });
-            let bench = base.get(b"WBDT").is_some_and(|d| !d.is_empty() && d[0] != 0);
+            let bench = base
+                .get(b"WBDT")
+                .is_some_and(|d| !d.is_empty() && d[0] != 0);
             if bench && special.is_none() {
                 continue;
             }
-            let Some(model) = records::model_path(&base) else { continue };
-            let Some(nif_markers) = markers(&model) else { continue };
+            let Some(model) = records::model_path(&base) else {
+                continue;
+            };
+            let Some(nif_markers) = markers(&model) else {
+                continue;
+            };
             // Active markers: bits 0..23 of MNAM (none set means all).
-            let active = base.get(b"MNAM").filter(|d| d.len() >= 4).map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()) & 0xFF_FFFF);
+            let active = base
+                .get(b"MNAM")
+                .filter(|d| d.len() >= 4)
+                .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()) & 0xFF_FFFF);
             let transform: Mat4 = rf.transform();
             let ref_fwd = transform.transform_vector3(Vec3::Y);
             let ref_heading = ref_fwd.x.atan2(ref_fwd.y);
@@ -257,7 +303,13 @@ impl FurnitureWorld {
                     // Marker headings turn clockwise from the model's +Y, like ours: the
                     // smithing workbench's marker stands at -X with heading +90 degrees,
                     // facing the bench (chairs and beds only use 0 or 180).
-                    Some(Marker { pos, heading: ref_heading + m.heading, kind, entries: m.entry, anim_type: u32::from(m.anim_type) })
+                    Some(Marker {
+                        pos,
+                        heading: ref_heading + m.heading,
+                        kind,
+                        entries: m.entry,
+                        anim_type: u32::from(m.anim_type),
+                    })
                 })
                 .collect();
             if list.is_empty() {
@@ -288,14 +340,25 @@ impl FurnitureWorld {
             .get(b"IDLA")
             .unwrap_or(&[])
             .chunks_exact(4)
-            .filter_map(|c| idles.humanoid_event(base.fid(FormId(u32::from_le_bytes(c.try_into().unwrap())))))
+            .filter_map(|c| {
+                idles.humanoid_event(base.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+            })
             .collect();
         if events.is_empty() {
             return;
         }
-        let idle_time = base.get(b"IDLT").filter(|d| d.len() >= 4).map_or(0.0, |d| f32::from_le_bytes(d[0..4].try_into().unwrap()));
+        let idle_time = base
+            .get(b"IDLT")
+            .filter(|d| d.len() >= 4)
+            .map_or(0.0, |d| f32::from_le_bytes(d[0..4].try_into().unwrap()));
         let fwd = rf.transform().transform_vector3(Vec3::Y);
-        let marker = Marker { pos: rf.position, heading: fwd.x.atan2(fwd.y), kind: Use::Idle, entries: 1, anim_type: 0 };
+        let marker = Marker {
+            pos: rf.position,
+            heading: fwd.x.atan2(fwd.y),
+            kind: Use::Idle,
+            entries: 1,
+            anim_type: 0,
+        };
         self.items.push(Furniture {
             ref_id: r,
             cell: key,
@@ -313,13 +376,20 @@ impl FurnitureWorld {
     }
 
     pub fn remove_cell(&mut self, key: CellKey) {
-        let gone: Vec<FormId> = self.items.iter().filter(|f| f.cell == key).map(|f| f.ref_id).collect();
+        let gone: Vec<FormId> = self
+            .items
+            .iter()
+            .filter(|f| f.cell == key)
+            .map(|f| f.ref_id)
+            .collect();
         self.items.retain(|f| f.cell != key);
         self.users.retain(|(f, _), _| !gone.contains(f));
     }
 
     pub fn get(&self, r: FormId) -> Option<&Furniture> {
-        self.items.iter().find(|f| f.ref_id == r && !self.disabled.contains(&r))
+        self.items
+            .iter()
+            .find(|f| f.ref_id == r && !self.disabled.contains(&r))
     }
 
     pub fn set_disabled(&mut self, r: FormId, off: bool) {
@@ -354,7 +424,11 @@ impl FurnitureWorld {
         may_use: impl Fn(&Furniture, Use) -> bool,
     ) -> Vec<(FormId, u8, Marker)> {
         let mut out = Vec::new();
-        for f in self.items.iter().filter(|f| !self.disabled.contains(&f.ref_id)) {
+        for f in self
+            .items
+            .iter()
+            .filter(|f| !self.disabled.contains(&f.ref_id))
+        {
             for (i, m) in f.markers.iter().enumerate() {
                 if m.kind == kind
                     && m.pos.truncate().distance(centre.truncate()) <= radius
@@ -387,10 +461,20 @@ pub fn ways_to_use(
 ) -> Vec<(Entry, UseClips)> {
     // Creatures only use the furniture their own ways were picked for.
     let graph = (!project.humanoid()).then_some(project.name.as_str());
-    if graph.is_some() && (m.kind == Use::Idle || !f.ways.iter().any(|w| w.marker == mi && w.graph.as_deref() == graph)) {
+    if graph.is_some()
+        && (m.kind == Use::Idle
+            || !f
+                .ways
+                .iter()
+                .any(|w| w.marker == mi && w.graph.as_deref() == graph))
+    {
         return Vec::new();
     }
-    if graph.is_none() && (m.kind == Use::Idle || (m.kind == Use::Special && !f.ways.iter().any(|w| w.marker == mi))) || (m.kind == Use::Special && !f.ways.iter().any(|w| w.marker == mi)) {
+    if graph.is_none()
+        && (m.kind == Use::Idle
+            || (m.kind == Use::Special && !f.ways.iter().any(|w| w.marker == mi)))
+        || (m.kind == Use::Special && !f.ways.iter().any(|w| w.marker == mi))
+    {
         // One of the marker's idles, or special furniture's keyword idle event.
         if f.events.is_empty() {
             return Vec::new();
@@ -408,12 +492,31 @@ pub fn ways_to_use(
         .filter(|w| w.marker == mi && w.child == child && w.graph.as_deref() == graph)
         .filter_map(|w| {
             // The tree's exit (IdleChairFrontExit...), else the generic ones.
-            let exits: Vec<&str> = w.exit.as_deref().into_iter().chain(["IdleChairExitStart", "IdleStop"]).collect();
-            Some((w.entry, clips.event_with_exits(&w.enter, &exits, project, skeleton_path, female, skeleton)?))
+            let exits: Vec<&str> = w
+                .exit
+                .as_deref()
+                .into_iter()
+                .chain(["IdleChairExitStart", "IdleStop"])
+                .collect();
+            Some((
+                w.entry,
+                clips.event_with_exits(
+                    &w.enter,
+                    &exits,
+                    project,
+                    skeleton_path,
+                    female,
+                    skeleton,
+                )?,
+            ))
         })
         .collect();
     if ways.is_empty() {
-        log::debug!("{}: marker {mi} ({:?}) has no usable way on", f.ref_id, m.kind);
+        log::debug!(
+            "{}: marker {mi} ({:?}) has no usable way on",
+            f.ref_id,
+            m.kind
+        );
     }
     ways
 }

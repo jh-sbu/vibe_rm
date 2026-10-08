@@ -34,10 +34,18 @@ impl Skeleton {
         if depth > 128 {
             return;
         }
-        let Some(Block::Node(n)) = nif.get(r) else { return };
+        let Some(Block::Node(n)) = nif.get(r) else {
+            return;
+        };
         let idx = self.bones.len();
-        self.bones.push(Bone { name: n.av.net.name.clone(), parent, bind: n.av.transform });
-        self.by_name.entry(n.av.net.name.to_ascii_lowercase()).or_insert(idx);
+        self.bones.push(Bone {
+            name: n.av.net.name.clone(),
+            parent,
+            bind: n.av.transform,
+        });
+        self.by_name
+            .entry(n.av.net.name.to_ascii_lowercase())
+            .or_insert(idx);
         for &c in &n.children {
             self.add(nif, c, Some(idx), depth + 1);
         }

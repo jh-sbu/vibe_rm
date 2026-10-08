@@ -47,7 +47,11 @@ impl LocationIndex {
                     b"ACUN" | b"LCUN" => {
                         for c in d.chunks_exact(12) {
                             let at = f(u32_at(c, 8));
-                            ix.editor.entry(f(u32_at(c, 4))).or_insert(if at.is_null() { l } else { at });
+                            ix.editor.entry(f(u32_at(c, 4))).or_insert(if at.is_null() {
+                                l
+                            } else {
+                                at
+                            });
                         }
                     }
                     b"ACSR" | b"LCSR" => {
@@ -61,7 +65,9 @@ impl LocationIndex {
                             }
                         }
                     }
-                    b"PNAM" if d.len() >= 4 => ix.children.entry(f(u32_at(d, 0))).or_default().push(l),
+                    b"PNAM" if d.len() >= 4 => {
+                        ix.children.entry(f(u32_at(d, 0))).or_default().push(l)
+                    }
                     _ => {}
                 }
             }
@@ -71,12 +77,19 @@ impl LocationIndex {
         for tag in [b"ACHR", b"REFR"] {
             for &r in lo.ids_of_type(tag) {
                 let Some(rec) = lo.get(r) else { continue };
-                let Some(d) = rec.get(b"XLRT").filter(|d| d.len() >= 4) else { continue };
+                let Some(d) = rec.get(b"XLRT").filter(|d| d.len() >= 4) else {
+                    continue;
+                };
                 let ty = rec.fid(FormId(u32_at(d, 0)));
-                let own = rec.get(b"XLCN").filter(|d| d.len() >= 4).map(|d| rec.fid(FormId(u32_at(d, 0))));
+                let own = rec
+                    .get(b"XLCN")
+                    .filter(|d| d.len() >= 4)
+                    .map(|d| rec.fid(FormId(u32_at(d, 0))));
                 let pos = records::reference(&rec).position;
                 drop(rec);
-                let Some(l) = own.or_else(|| ref_cell_location(lo, r, pos)) else { continue };
+                let Some(l) = own.or_else(|| ref_cell_location(lo, r, pos)) else {
+                    continue;
+                };
                 ix.editor.entry(r).or_insert(l);
                 ix.typed.entry(l).or_default().push((ty, r));
                 let types = ix.ref_types.entry(r).or_default();
@@ -85,7 +98,11 @@ impl LocationIndex {
                 }
             }
         }
-        log::debug!("location index: {} references placed, {} with ref types", ix.editor.len(), ix.ref_types.len());
+        log::debug!(
+            "location index: {} references placed, {} with ref types",
+            ix.editor.len(),
+            ix.ref_types.len()
+        );
         ix
     }
 }
@@ -96,7 +113,10 @@ fn ref_cell_location(lo: &esp::LoadOrder, r: FormId, pos: glam::Vec3) -> Option<
     let cell = lo.cell_of_ref(r)?;
     let idx = lo.cell(cell)?;
     let cell = match (idx.world, idx.grid) {
-        (Some(w), None) => *lo.world(w)?.cells.get(&crate::engine::grid_of(pos.truncate()))?,
+        (Some(w), None) => *lo
+            .world(w)?
+            .cells
+            .get(&crate::engine::grid_of(pos.truncate()))?,
         _ => cell,
     };
     let rec = lo.get(cell)?;
@@ -106,7 +126,8 @@ fn ref_cell_location(lo: &esp::LoadOrder, r: FormId, pos: glam::Vec3) -> Option<
 
 impl Engine {
     pub(crate) fn locations(&self) -> &LocationIndex {
-        self.location_index.get_or_init(|| LocationIndex::build(&self.lo))
+        self.location_index
+            .get_or_init(|| LocationIndex::build(&self.lo))
     }
 
     /// A form field of a record.
@@ -123,7 +144,10 @@ impl Engine {
 
     /// The location of the exterior cell at a grid square.
     fn grid_location(&self, world: FormId, grid: (i32, i32)) -> Option<FormId> {
-        self.lo.world(world).and_then(|w| w.cells.get(&grid).copied()).and_then(|c| self.cell_location(c))
+        self.lo
+            .world(world)
+            .and_then(|w| w.cells.get(&grid).copied())
+            .and_then(|c| self.cell_location(c))
     }
 
     /// The location a reference belongs to in the editor.
@@ -152,7 +176,9 @@ impl Engine {
         if let Some(key) = self.actor_cells.get(&r) {
             return match (*key, self.location) {
                 (CellKey::Interior(c), _) => self.cell_location(c),
-                (CellKey::Exterior(x, y), crate::engine::Location::Exterior { world, .. }) => self.grid_location(world, (x, y)),
+                (CellKey::Exterior(x, y), crate::engine::Location::Exterior { world, .. }) => {
+                    self.grid_location(world, (x, y))
+                }
                 _ => None,
             };
         }
@@ -167,7 +193,12 @@ impl Engine {
 
     /// The location ref types of a reference.
     pub fn ref_types(&self, r: FormId) -> Vec<FormId> {
-        let mut out = self.locations().ref_types.get(&r).cloned().unwrap_or_default();
+        let mut out = self
+            .locations()
+            .ref_types
+            .get(&r)
+            .cloned()
+            .unwrap_or_default();
         if let Some(t) = self.form_field(r, b"XLRT")
             && !out.contains(&t)
         {
@@ -188,7 +219,14 @@ impl Engine {
             if seen > 4096 {
                 break;
             }
-            out.extend(ix.typed.get(&l).into_iter().flatten().filter(|(t, _)| *t == ty).map(|(_, r)| *r));
+            out.extend(
+                ix.typed
+                    .get(&l)
+                    .into_iter()
+                    .flatten()
+                    .filter(|(t, _)| *t == ty)
+                    .map(|(_, r)| *r),
+            );
             if let Some(c) = ix.children.get(&l) {
                 stack.extend(c.iter().rev());
             }
@@ -220,7 +258,11 @@ impl Engine {
         if let Some(&(_, r)) = ix.typed.get(&l).and_then(|v| v.first()) {
             return Some(r);
         }
-        ix.children.get(&l).into_iter().flatten().find_map(|&c| self.form_field(c, b"MNAM"))
+        ix.children
+            .get(&l)
+            .into_iter()
+            .flatten()
+            .find_map(|&c| self.form_field(c, b"MNAM"))
     }
 
     pub fn is_location(&self, f: FormId) -> bool {

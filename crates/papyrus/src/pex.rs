@@ -85,7 +85,10 @@ pub struct Pex {
 
 impl Pex {
     pub fn str(&self, i: u16) -> &str {
-        self.strings.get(i as usize).map(String::as_str).unwrap_or("")
+        self.strings
+            .get(i as usize)
+            .map(String::as_str)
+            .unwrap_or("")
     }
 }
 
@@ -111,10 +114,42 @@ pub fn op_args(op: u8) -> Option<(usize, bool)> {
 }
 
 pub const OP_NAMES: [&str; 36] = [
-    "nop", "iadd", "fadd", "isub", "fsub", "imul", "fmul", "idiv", "fdiv", "imod", "not", "ineg", "fneg", "assign", "cast",
-    "cmp_eq", "cmp_lt", "cmp_le", "cmp_gt", "cmp_ge", "jmp", "jmpt", "jmpf", "callmethod", "callparent", "callstatic",
-    "return", "strcat", "propget", "propset", "array_create", "array_length", "array_getelement", "array_setelement",
-    "array_findelement", "array_rfindelement",
+    "nop",
+    "iadd",
+    "fadd",
+    "isub",
+    "fsub",
+    "imul",
+    "fmul",
+    "idiv",
+    "fdiv",
+    "imod",
+    "not",
+    "ineg",
+    "fneg",
+    "assign",
+    "cast",
+    "cmp_eq",
+    "cmp_lt",
+    "cmp_le",
+    "cmp_gt",
+    "cmp_ge",
+    "jmp",
+    "jmpt",
+    "jmpf",
+    "callmethod",
+    "callparent",
+    "callstatic",
+    "return",
+    "strcat",
+    "propget",
+    "propset",
+    "array_create",
+    "array_length",
+    "array_getelement",
+    "array_setelement",
+    "array_findelement",
+    "array_rfindelement",
 ];
 
 struct R<'a> {
@@ -124,7 +159,11 @@ struct R<'a> {
 
 impl R<'_> {
     fn need(&self, n: usize) -> Result<()> {
-        if self.p + n > self.d.len() { Err(Error::Corrupt(format!("unexpected end at {}", self.p))) } else { Ok(()) }
+        if self.p + n > self.d.len() {
+            Err(Error::Corrupt(format!("unexpected end at {}", self.p)))
+        } else {
+            Ok(())
+        }
     }
     fn u8(&mut self) -> Result<u8> {
         self.need(1)?;
@@ -139,17 +178,24 @@ impl R<'_> {
     fn u32(&mut self) -> Result<u32> {
         self.need(4)?;
         self.p += 4;
-        Ok(u32::from_be_bytes(self.d[self.p - 4..self.p].try_into().unwrap()))
+        Ok(u32::from_be_bytes(
+            self.d[self.p - 4..self.p].try_into().unwrap(),
+        ))
     }
     fn u64(&mut self) -> Result<u64> {
         self.need(8)?;
         self.p += 8;
-        Ok(u64::from_be_bytes(self.d[self.p - 8..self.p].try_into().unwrap()))
+        Ok(u64::from_be_bytes(
+            self.d[self.p - 8..self.p].try_into().unwrap(),
+        ))
     }
     fn wstring(&mut self) -> Result<String> {
         let n = self.u16()? as usize;
         self.need(n)?;
-        let s = self.d[self.p..self.p + n].iter().map(|&c| c as char).collect();
+        let s = self.d[self.p..self.p + n]
+            .iter()
+            .map(|&c| c as char)
+            .collect();
         self.p += n;
         Ok(s)
     }
@@ -201,7 +247,15 @@ impl R<'_> {
             }
             code.push(Instruction { op, args });
         }
-        Ok(Function { return_type, doc, user_flags, flags, params, locals, code })
+        Ok(Function {
+            return_type,
+            doc,
+            user_flags,
+            flags,
+            params,
+            locals,
+            code,
+        })
     }
 }
 
@@ -252,7 +306,12 @@ pub fn parse(d: &[u8]) -> Result<Pex> {
         let nv = r.u16()?;
         let mut variables = Vec::with_capacity(nv as usize);
         for _ in 0..nv {
-            variables.push(Variable { name: r.u16()?, type_name: r.u16()?, user_flags: r.u32()?, init: r.data()? });
+            variables.push(Variable {
+                name: r.u16()?,
+                type_name: r.u16()?,
+                user_flags: r.u32()?,
+                init: r.data()?,
+            });
         }
         let np = r.u16()?;
         let mut properties = Vec::with_capacity(np as usize);
@@ -262,7 +321,16 @@ pub fn parse(d: &[u8]) -> Result<Pex> {
             let doc = r.u16()?;
             let user_flags = r.u32()?;
             let flags = r.u8()?;
-            let mut p = Property { name, type_name, doc, user_flags, flags, auto_var: None, read: None, write: None };
+            let mut p = Property {
+                name,
+                type_name,
+                doc,
+                user_flags,
+                flags,
+                auto_var: None,
+                read: None,
+                write: None,
+            };
             if flags & 4 != 0 {
                 p.auto_var = Some(r.u16()?);
             } else {
@@ -285,11 +353,27 @@ pub fn parse(d: &[u8]) -> Result<Pex> {
                 let fname = r.u16()?;
                 functions.push((fname, r.function()?));
             }
-            states.push(State { name: sname, functions });
+            states.push(State {
+                name: sname,
+                functions,
+            });
         }
-        objects.push(Object { name, parent, doc, user_flags, auto_state, variables, properties, states });
+        objects.push(Object {
+            name,
+            parent,
+            doc,
+            user_flags,
+            auto_state,
+            variables,
+            properties,
+            states,
+        });
     }
-    Ok(Pex { source, strings, objects })
+    Ok(Pex {
+        source,
+        strings,
+        objects,
+    })
 }
 
 /// Human-readable disassembly, for tooling.
@@ -307,21 +391,54 @@ pub fn disassemble(p: &Pex) -> String {
         }
     };
     for obj in &p.objects {
-        let _ = writeln!(o, "scriptname {} extends {}", p.str(obj.name), p.str(obj.parent));
+        let _ = writeln!(
+            o,
+            "scriptname {} extends {}",
+            p.str(obj.name),
+            p.str(obj.parent)
+        );
         for v in &obj.variables {
-            let _ = writeln!(o, "  var {} {} = {}", p.str(v.type_name), p.str(v.name), data(&v.init));
+            let _ = writeln!(
+                o,
+                "  var {} {} = {}",
+                p.str(v.type_name),
+                p.str(v.name),
+                data(&v.init)
+            );
         }
         for pr in &obj.properties {
-            let _ = writeln!(o, "  property {} {} auto={:?}", p.str(pr.type_name), p.str(pr.name), pr.auto_var.map(|a| p.str(a)));
+            let _ = writeln!(
+                o,
+                "  property {} {} auto={:?}",
+                p.str(pr.type_name),
+                p.str(pr.name),
+                pr.auto_var.map(|a| p.str(a))
+            );
         }
         for st in &obj.states {
             let _ = writeln!(o, "  state {:?}", p.str(st.name));
             for (fname, f) in &st.functions {
-                let params: Vec<String> = f.params.iter().map(|(n, t)| format!("{} {}", p.str(*t), p.str(*n))).collect();
-                let _ = writeln!(o, "    function {} {}({}) flags={}", p.str(f.return_type), p.str(*fname), params.join(", "), f.flags);
+                let params: Vec<String> = f
+                    .params
+                    .iter()
+                    .map(|(n, t)| format!("{} {}", p.str(*t), p.str(*n)))
+                    .collect();
+                let _ = writeln!(
+                    o,
+                    "    function {} {}({}) flags={}",
+                    p.str(f.return_type),
+                    p.str(*fname),
+                    params.join(", "),
+                    f.flags
+                );
                 for (i, ins) in f.code.iter().enumerate() {
                     let args: Vec<String> = ins.args.iter().map(data).collect();
-                    let _ = writeln!(o, "      {i:4} {} {}", OP_NAMES[ins.op as usize], args.join(", "));
+                    let _ = writeln!(
+                        o,
+                        "      {i:4} {} {}",
+                        OP_NAMES[ins.op as usize],
+                        args.join(", ")
+                    );
                 }
             }
         }
