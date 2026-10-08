@@ -87,7 +87,27 @@ impl Engine {
             return false;
         }
         self.start_lockpick(r, then, lock.level);
+        self.lockpicking_crime(r, then);
         false
+    }
+
+    /// Who owns a lock: the reference holding it, the door or container
+    /// activated, or a load door's other side (`XOWN`, else their cell's owner:
+    /// a house's own door outside often has none).
+    fn lock_owner(&self, lock: FormId, then: FormId) -> Option<FormId> {
+        let partner = self.lo.get(then).and_then(|rec| records::reference(&rec).teleport.map(|t| t.0));
+        [Some(lock), Some(then), partner].into_iter().flatten().find_map(|r| crate::ai::furniture::owner_of(&self.lo, r))
+    }
+
+    /// Starting to pick a lock someone else owns is a crime, whether or not
+    /// it opens (UESP Crime: "Lockpicking", 5 gold). There is no crime type of
+    /// its own, so it is reported as trespass, whose gold is the same.
+    fn lockpicking_crime(&mut self, lock: FormId, then: FormId) {
+        let Some(owner) = self.lock_owner(lock, then).filter(|&o| self.owned_by_other(o)) else { return };
+        let is_faction = self.lo.tag_of(owner).is_some_and(|t| t.0 == *b"FACT");
+        let victim = if is_faction { None } else { self.npc_refs_index().get(&owner).copied() };
+        log::info!("picking {lock}, owned by {owner}");
+        self.commit_crime(crate::crime::CrimeType::Trespass, victim, is_faction.then_some(owner), 0);
     }
 
     /// Put a lock in front of the player to pick (UESP *Skyrim:Lockpicking*): a sweet

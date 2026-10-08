@@ -66,6 +66,11 @@ locations name it.
 - Paying with "remove stolen" takes every stolen item, whoever it was stolen
   from, and forgets the stolen value with that faction. The value stolen
   counts against the owner's crime faction (or the owning faction).
+- Lockpicking (UESP: 5 gold, "even if nothing was taken") has no crime type
+  of its own (`sCrimeType*` names steal, pickpocket, trespass, attack,
+  murder, escape, werewolf), so it is reported as trespass, whose default gold
+  is the same. It is committed on starting to pick a lock whose door,
+  container or load door's far side someone else owns, once per attempt.
 - The console's `setcrimegold` / `paycrimegold` default to the crime faction
   of the nearest location up from the current one that names one (`FNAM`).
 
@@ -74,8 +79,8 @@ locations name it.
 - No arrests: guards don't come to the player, there is no jail, no
   "attack on sight" (`CRVA` flag) and the arrest dialogue
   (`DialogueCrimeGuards`) only sees the gold through its conditions.
-- Pickpocketing, trespassing (`fAITrespassWarningTimer`), lockpicking owned
-  locks, horse theft, escape and werewolf crimes aren't committed anywhere.
+- Pickpocketing, trespassing (`fAITrespassWarningTimer`), horse theft,
+  escape and werewolf crimes aren't committed anywhere.
 - Merchants refusing stolen goods and fences buying them: no bartering yet
   (`GetAmountSoldStolen`).
 - A crime gets its gold at once; in the game it is withdrawn when the last
