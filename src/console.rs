@@ -66,9 +66,37 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "crimefaction <ref> [faction]   show or set an actor's crime faction".into(),
             "alarm [faction] / jail [faction] / servetime   send the faction's guards to arrest the player, jail them, serve the sentence".into(),
             "pickpocket <ref> <item> [n]   try to take an item from a sneaking player's victim (psneak first)".into(),
+            "cgf <Class.Func> [@self] [args]  call a Papyrus native (cgf Actor.GetCombatState @<ref>)".into(),
             "detect                who detects the player, by how much; the player's light level and stealth points".into(),
         ],
         "detect" => engine.describe_detection(),
+        "cgf" => {
+            let Some((class, func)) = args.first().and_then(|f| f.split_once('.')) else { return vec!["usage: cgf <Class.Func> [@self] [args]".into()] };
+            let form = |s: &str| if s.eq_ignore_ascii_case("player") { Some(crate::engine::PLAYER_REF) } else { engine.resolve_form(s) };
+            let mut this = None;
+            let mut values = Vec::new();
+            for a in &args[1..] {
+                if let Some(r) = a.strip_prefix('@') {
+                    let Some(f) = form(r) else { return vec![format!("unknown reference '{r}'")] };
+                    this = Some(engine.object_value(f));
+                } else if let Some(f) = form(a).filter(|_| a.len() == 8 || a.eq_ignore_ascii_case("player")) {
+                    values.push(engine.object_value(f));
+                } else if let Ok(i) = a.parse::<i32>() {
+                    values.push(papyrus::Value::Int(i));
+                } else if let Ok(x) = a.parse::<f32>() {
+                    values.push(papyrus::Value::Float(x));
+                } else if let Some(f) = form(a) {
+                    values.push(engine.object_value(f));
+                } else {
+                    values.push(papyrus::Value::str(a));
+                }
+            }
+            let (class, func) = (class.to_ascii_lowercase(), func.to_ascii_lowercase());
+            match crate::script::natives::call(engine, &class, &func, this.as_ref(), &values) {
+                papyrus::NativeResult::Value(v) => vec![format!("{} >> {v}", args[0])],
+                _ => vec![format!("{} waits; nothing to return", args[0])],
+            }
+        }
         "crime" => engine.describe_bounties(),
         "alarm" | "jail" => {
             let Some(f) = args.first().and_then(|a| engine.resolve_form(a)).or_else(|| engine.location_crime_faction()) else { return vec!["no crime faction here; name one".into()] };

@@ -198,6 +198,16 @@ game each piece unlocks.
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
+- Combat state for scripts: fighting, or searching for a target it lost
+  (`GetCombatState`; the player is in combat while anyone fights them). Papyrus
+  `StartCombat`, `StopCombat` (searchers give up too), `IsInCombat`,
+  `GetCombatState`, `GetCombatTarget`, and the events `OnCombatStateChanged`
+  (on each change of state), `OnHit` (aggressor, weapon, the arrow's projectile,
+  power attack, bash, blocked) and `OnEnterBleedout`. Conditions `IsInCombat`,
+  `IsWeaponOut`, `IsBleedingOut`; Papyrus `IsInFaction`, `GetFactionRank`,
+  `IsGuard`. Console `cgf <Class.Func> [@self] [args]` calls a native; vrm-tool
+  `script-users` finds what attaches a script. Open questions:
+  `known_gaps/combat-state.md`
 - Synchronised blends of single-play clips (directional attacks) end instead of
   cycling, and their heaviest child raises the clip triggers
 - Character property bindings: bone switches bound to the character's bone weight
@@ -494,8 +504,8 @@ game each piece unlocks.
    - Player control from scripts: `DisablePlayerControls` /
      `EnablePlayerControls` (no-ops for now), `SetPlayerAIDriven`,
      `SetHudCartMode`
-   - Natives still missing that quests lean on: `StartCombat`,
-     `SetMotionType`, `ForceActive`
+   - Natives still missing that quests lean on: `SetMotionType`,
+     `ForceActive`; sneak attacks (`OnHit`'s sneak flag is always false)
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal
    and objectives, help messages (`ShowAsHelpMessage`); support for the game's .swf assets still undecided

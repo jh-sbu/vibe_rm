@@ -438,6 +438,7 @@ impl Vm {
             if let Some(f) = self.resolve(host, &class, &state, &name)
                 && !f.native
             {
+                log::trace!("event {event} -> {class} ({state:?}) on {obj:?}");
                 let frame = self.make_frame(f, Some((obj, class)), &args, None);
                 self.threads.push(Thread { frames: vec![frame], wake_at: self.time });
                 n += 1;

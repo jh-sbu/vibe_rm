@@ -337,8 +337,33 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             none()
         }
         ("actor", "isbleedingout") => v(Value::Bool(me.is_some_and(|r| e.is_bleeding_out(r)))),
-        ("actor", "isincombat") | ("actor", "isinfaction") | ("actor", "isguard") | ("actor", "isarrested") => {
-            v(Value::Bool(false))
+        ("actor", "isguard") => v(Value::Bool(me.is_some_and(|r| e.is_guard(r)))),
+        // Rank -1 (potential followers' `CurrentFollowerFaction`) isn't membership.
+        ("actor", "isinfaction") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(|(r, f)| e.npc_factions(r).iter().any(|&(x, rank)| x == f && rank >= 0)))),
+        ("actor", "getfactionrank") => {
+            v(Value::Int(me.zip(form_arg(args, 0)).and_then(|(r, f)| e.npc_factions(r).into_iter().find(|x| x.0 == f)).map_or(-1, |x| x.1 as i32)))
+        }
+        ("actor", "isarrested") => v(Value::Bool(false)),
+        // ------------------------------------------------------------ Combat
+        ("actor", "isincombat") => v(Value::Bool(me.is_some_and(|r| e.combat_state(r) != crate::ai::combat::CombatState::None))),
+        ("actor", "getcombatstate") => v(Value::Int(me.map_or(0, |r| e.combat_state(r) as i32))),
+        ("actor", "getcombattarget") => match me.and_then(|r| e.combat_target(r)) {
+            Some(t) => v(e.object_value(t)),
+            None => none(),
+        },
+        ("actor", "startcombat") => {
+            if let (Some(a), Some(t)) = (me, form_arg(args, 0)) {
+                e.start_combat(a, t);
+            }
+            none()
+        }
+        // Fighting or searching, it calms down (it may find a reason to fight again).
+        ("actor", "stopcombat") => {
+            if let Some(a) = me {
+                e.end_combat(a);
+                e.stop_searching(a);
+            }
+            none()
         }
         // Actor values: the shared store (`actor_values`); names outside the known
         // values are plain numbers.
@@ -377,7 +402,6 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
             none()
         }
         ("actor", "getlevel") => v(Value::Int(1)),
-        ("actor", "getfactionrank") => v(Value::Int(-1)),
         ("actor", "getrelationshiprank") => v(Value::Int(match (me, form_arg(args, 0)) {
             (Some(a), Some(b)) => e.relationship_rank(a, b),
             _ => 0,
@@ -470,7 +494,7 @@ pub fn call(e: &mut Engine, class: &str, func: &str, this: Option<&Value>, args:
         ("actor", "issneaking") => v(Value::Bool(me.is_some_and(|r| e.is_sneaking(r)))),
         ("actor", "isdetectedby") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(|(r, by)| e.detects(by, r)))),
         ("actor", "getlightlevel") => v(Value::Float(me.map_or(0.0, |r| e.light_level(r)))),
-        ("actor", "evaluatepackage") | ("actor", "setrestrained") | ("actor", "setdontmove") | ("actor", "setalert") | ("actor", "stopcombat") => none(),
+        ("actor", "evaluatepackage") | ("actor", "setrestrained") | ("actor", "setdontmove") | ("actor", "setalert") => none(),
         ("actor", "getsitstate") | ("actor", "getsleepstate") => v(Value::Int(0)),
         ("actorbase", "getsex") => v(Value::Int(me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0))),
         ("actorbase", "isunique") => v(Value::Bool(true)),

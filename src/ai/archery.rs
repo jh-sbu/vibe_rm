@@ -56,6 +56,8 @@ pub enum Draw {
 #[derive(Debug, Clone)]
 pub struct Arrow {
     pub ammo: FormId,
+    /// The projectile it flies as (`PROJ`).
+    pub projectile: FormId,
     pub damage: f32,
     pub speed: f32,
     pub gravity: f32,
@@ -71,7 +73,7 @@ pub fn arrow(lo: &LoadOrder, ammo: FormId) -> Option<Arrow> {
     let rec = lo.get(ammo).filter(|r| r.tag().0 == *b"AMMO")?;
     let d = rec.get(b"DATA").filter(|d| d.len() >= 12)?;
     let proj = rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())));
-    let mut a = Arrow { ammo, damage: f32_at(d, 8), speed: 3600.0, gravity: 0.35, model: None };
+    let mut a = Arrow { ammo, projectile: proj, damage: f32_at(d, 8), speed: 3600.0, gravity: 0.35, model: None };
     if let Some(p) = lo.get(proj) {
         if let Some(pd) = p.get(b"DATA").filter(|d| d.len() >= 12) {
             a.gravity = f32_at(pd, 4);
@@ -362,7 +364,7 @@ impl Engine {
     /// up in their inventory, `iArrowInventoryChance`), the player, or the world
     /// (stuck there a while). The scene's moving instances follow them.
     pub(crate) fn update_projectiles(&mut self, dt: f32) {
-        let mut hits: Vec<(FormId, FormId, f32, FormId)> = Vec::new();
+        let mut hits: Vec<(FormId, FormId, f32, Arrow)> = Vec::new();
         let mut stuck: Vec<(FormId, Vec3, f32, Option<FormId>, Vec3)> = Vec::new();
         let player = self.player.position;
         let (pr, ph) = (self.physics.player_radius, self.physics.player_half_height);
@@ -389,7 +391,7 @@ impl Engine {
                 .map(|(s, _)| s * len);
             match (world, at_player) {
                 (_, Some(t)) if world.is_none_or(|(w, _)| t < w) => {
-                    hits.push((PLAYER_REF, p.shooter, p.damage, p.arrow.ammo));
+                    hits.push((PLAYER_REF, p.shooter, p.damage, p.arrow.clone()));
                     p.pos = start + dir * t;
                     p.stuck = Some(0.0);
                 }
@@ -397,7 +399,7 @@ impl Engine {
                     p.pos = start + dir * t;
                     match owner.filter(|o| self.lo.tag_of(*o).map(|t| t.0) == Some(*b"ACHR")) {
                         Some(actor) => {
-                            hits.push((actor, p.shooter, p.damage, p.arrow.ammo));
+                            hits.push((actor, p.shooter, p.damage, p.arrow.clone()));
                             p.stuck = Some(0.0);
                         }
                         None => {
@@ -427,15 +429,15 @@ impl Engine {
                 !gone
             });
         }
-        for (target, shooter, damage, ammo) in hits {
+        for (target, shooter, damage, arrow) in hits {
             if target != PLAYER_REF && self.is_dead(target) {
                 continue;
             }
             log::info!("{shooter}'s arrow strikes {target}");
-            self.hit(target, shooter, damage, false, 0.0);
+            self.hit(target, shooter, damage, false, 0.0, Some(arrow.projectile));
             let chance = crate::ai::combat::gmst_i32(&self.lo, "iArrowInventoryChance", 33).clamp(0, 100) as u64;
             if target != PLAYER_REF && self.rand() % 100 < chance {
-                self.add_item(target, ammo, 1);
+                self.add_item(target, arrow.ammo, 1);
             }
         }
         self.scene.dynamic = self

@@ -623,6 +623,13 @@ impl Engine {
         }
     }
 
+    /// Papyrus `StopCombat`: a searcher gives up without a word.
+    pub fn stop_searching(&mut self, r: FormId) {
+        if self.actor_ref(r).is_some_and(|a| a.search.is_some()) {
+            self.calm_down(r, None);
+        }
+    }
+
     /// A searcher gives up: weapons away, back to its packages.
     fn calm_down(&mut self, r: FormId, topic: Option<&[u8; 4]>) {
         let Some(a) = self.actor_mut(r) else { return };

@@ -2222,6 +2222,32 @@ fn main() -> Result<()> {
                 println!("{id} {}", lo.get(id).and_then(|r| r.editor_id()).unwrap_or_default());
             }
         }
+        Some("script-users") => {
+            // script-users <data dir> <script> [n]: records (NPC_, ACHR, REFR, QUST...)
+            // whose VMAD names the script.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let want = args[2].to_ascii_lowercase().into_bytes();
+            let n: usize = args.get(3).and_then(|n| n.parse().ok()).unwrap_or(20);
+            let mut shown = 0;
+            for tag in [b"NPC_", b"ACHR", b"REFR", b"QUST", b"ACTI", b"MGEF"] {
+                for &id in lo.ids_of_type(tag) {
+                    let Some(rec) = lo.get(id) else { continue };
+                    let Some(vmad) = rec.get(b"VMAD") else { continue };
+                    let lower = vmad.to_ascii_lowercase();
+                    if !lower.windows(want.len()).any(|w| w == want.as_slice()) {
+                        continue;
+                    }
+                    let cell = lo.cell_of_ref(id).and_then(|c| lo.get(c).and_then(|r| r.editor_id().map(|e| e.to_string()))).unwrap_or_default();
+                    println!("{id} {} {} {cell}", rec.tag(), rec.editor_id().unwrap_or_default());
+                    shown += 1;
+                    if shown >= n {
+                        return Ok(());
+                    }
+                }
+            }
+        }
         Some("triggers") => {
             // triggers <data dir>: references with a primitive (XPRM) by shape, the
             // scripts on them (or their base) by name, and their bases' types.

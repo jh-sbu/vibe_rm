@@ -412,8 +412,10 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         45 => b(subject.is_some_and(|s| e.detects(s, p1))),               // GetDetected
         711 => Some(subject.map_or(0.0, |s| e.light_level(s))),           // GetLightLevel
         255 => b(subject.is_some_and(|s| e.offers_services_now(s))),   // GetOffersServicesNow
-        // Nobody fights, swims, bleeds out, feeds or takes commands yet.
-        289 | 101 | 185 | 580 | 700 | 226 => b(false),
+        289 => b(subject.is_some_and(|s| e.combat_state(s) != crate::ai::combat::CombatState::None)), // IsInCombat
+        580 => b(subject.is_some_and(|s| e.is_bleeding_out(s))),          // IsBleedingOut
+        // Nobody casts, swims, feeds or takes commands yet.
+        101 | 185 | 700 | 226 => b(false),
         // Behaviour graph variables of the subject's graph (the idle-picking
         // fallback below answers for actors without one).
         675 | 447 if subject.is_some_and(|s| e.graph_variable(s, "").is_some()) => {
@@ -431,7 +433,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         65 => Some(subject.and_then(|s| e.lock_of(s)).map_or(0.0, |l| l.level as f32)), // GetLockLevel
         47 => Some(subject.map_or(0, |s| e.item_count(s, p1)) as f32), // GetItemCount
         182 => b(subject.and_then(|s| e.inventories.get(&s)).is_some_and(|i| i.is_equipped(p1))), // GetEquipped
-        263 => b(false), // IsWeaponOut
+        263 => b(subject.is_some_and(|s| e.weapon_drawn(s))), // IsWeaponOut
         // Outside idle picking, sitting / sleeping come from what the actor is doing.
         159 | 49 if ctx.idle.is_none() => Some(subject.map_or(0.0, |s| e.sit_sleep_state(s, c.func == 49))),
         237 => b(false), // GetIsGhost

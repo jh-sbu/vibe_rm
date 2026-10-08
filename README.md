@@ -50,7 +50,7 @@ cargo build --release
 ```
 
 Testing aids: `--console "<command>"` runs console commands after loading (e.g.
-`use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`; `"@<frame> <command>"`
+`use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`, `cgf Actor.GetCombatState @<actor>` to call a Papyrus native; `"@<frame> <command>"`
 runs it at that frame of `--wait`), `--watch-angle`
 orbits the `--watch` camera, `--player-at-camera` puts the player there (NPCs look at it),
 the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, `VRM_SEED=<n>` fixes the engine's random seed, and
