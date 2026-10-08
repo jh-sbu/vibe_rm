@@ -869,6 +869,58 @@ impl Physics {
         Some(off)
     }
 
+    /// What body `h` touches (within `margin`) of the actors' capsules and the
+    /// player's (centred at `player`, if given): the actor (none for the
+    /// player), the contact point, the body's velocity there (game units / s)
+    /// and the Havok material of its collider.
+    pub fn body_touches(
+        &self,
+        h: RigidBodyHandle,
+        player: Option<Vec3>,
+        margin: f32,
+    ) -> Vec<(Option<esp::FormId>, Vec3, Vec3, u32)> {
+        let Some(b) = self.world.bodies.get(h) else {
+            return Vec::new();
+        };
+        let mut out: Vec<(Option<esp::FormId>, Vec3, Vec3, u32)> = Vec::new();
+        for &ch in b.colliders() {
+            let Some(c) = self.world.colliders.get(ch) else {
+                continue;
+            };
+            let aabb = c.compute_aabb().loosened(margin);
+            let material = self
+                .materials
+                .get(&ch)
+                .and_then(|m| m.first().copied())
+                .unwrap_or(0);
+            let mut touch = |who: Option<esp::FormId>, pose: &Pose, shape: &dyn Shape| {
+                if out.iter().any(|(w, ..)| *w == who) {
+                    return;
+                }
+                if let Ok(Some(k)) =
+                    rapier3d::parry::query::contact(c.position(), c.shape(), pose, shape, margin)
+                {
+                    out.push((who, k.point1, b.velocity_at_point(k.point1), material));
+                }
+            };
+            for &cap in &self.capsules {
+                let Some(o) = self.world.colliders.get(cap).filter(|o| o.is_enabled()) else {
+                    continue;
+                };
+                if o.compute_aabb().intersects(&aabb) {
+                    touch(self.owners.get(&cap).copied(), o.position(), o.shape());
+                }
+            }
+            if let Some(p) = player {
+                let pose = Pose::from_translation(p);
+                if self.player_shape.compute_aabb(&pose).intersects(&aabb) {
+                    touch(None, &pose, &*self.player_shape.0);
+                }
+            }
+        }
+        out
+    }
+
     /// Slow a body to at most `speed` (game units / s).
     pub fn cap_speed(&mut self, h: RigidBodyHandle, speed: f32) {
         if let Some(b) = self.world.bodies.get_mut(h) {
@@ -940,6 +992,22 @@ mod tests {
         let target = Vec3::new(30.0, 0.0, 40.0);
         let at = hold(&mut p, h, target, 150.0 * GRAVITY, 120);
         assert!(at.distance(target) < 2.0, "{at:?}");
+    }
+
+    #[test]
+    fn touching_capsules_and_the_player() {
+        let (mut p, h) = ball(5.0);
+        let actor = esp::FormId(0x1234);
+        // An actor standing beside the ball, the player further off.
+        p.add_actor_capsule(Vec3::new(24.0, 0.0, -40.0), 1.0, actor);
+        p.set_body_pose(h, Mat4::IDENTITY);
+        let far = Vec3::new(-200.0, 0.0, 0.0);
+        let touches = p.body_touches(h, Some(far), 2.0);
+        assert_eq!(touches.len(), 1);
+        assert_eq!(touches[0].0, Some(actor));
+        // The player's capsule right on it.
+        let touches = p.body_touches(h, Some(Vec3::new(0.0, 25.0, 0.0)), 2.0);
+        assert!(touches.iter().any(|t| t.0.is_none()));
     }
 
     #[test]

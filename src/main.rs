@@ -28,6 +28,7 @@ mod render;
 mod scene;
 mod script;
 mod story;
+mod traps;
 mod triggers;
 mod ui;
 mod world;
