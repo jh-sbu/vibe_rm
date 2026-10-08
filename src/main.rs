@@ -35,6 +35,10 @@ use anyhow::{Context, Result};
 #[derive(Debug, Default, Clone)]
 pub struct Options {
     pub data_dir: Option<std::path::PathBuf>,
+    /// `plugins.txt` whose `*`-enabled entries load after the base game.
+    pub plugins_txt: Option<std::path::PathBuf>,
+    /// Extra plugins to load after those, in the order given.
+    pub plugins: Vec<String>,
     pub cell: Option<String>,
     pub world: Option<String>,
     pub grid: Option<(i32, i32)>,
@@ -74,6 +78,8 @@ fn parse_args() -> Result<Options> {
         let mut val = || args.next().with_context(|| format!("{a} needs a value"));
         match a.as_str() {
             "--data" => o.data_dir = Some(val()?.into()),
+            "--plugins" => o.plugins_txt = Some(val()?.into()),
+            "--plugin" => o.plugins.push(val()?),
             "--cell" => o.cell = Some(val()?),
             "--world" => o.world = Some(val()?),
             "--grid" => {
@@ -119,6 +125,8 @@ fn parse_args() -> Result<Options> {
                 println!(
                     "VibeRM - a Creation Engine (Skyrim SE) compatible engine\n\n\
                      Options:\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
+                     --plugins <txt>     Load the enabled (*) plugins of a plugins.txt\n  \
+                     --plugin <file>     Load a plugin from Data (repeatable)\n  \
                      --cell <edid|formid> Interior cell to load\n  --world <edid>      Worldspace (default Tamriel)\n  \
                      --grid x,y          Exterior cell coordinates\n  --pos x,y,z         Camera position\n  \
                      --yaw/--pitch deg   Camera orientation\n  --radius n          Exterior cell load radius\n  --hour h            Time of day (0-24)\n  \
