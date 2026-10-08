@@ -15,7 +15,7 @@ public documentation and the game's data files only.
 ## What the implementation does
 
 - Every detection pass (once a second), an actor not in combat with assistance
-  looks at the fights within 4000 units (combat's lose distance; no source)
+  looks at the fights within 4000 units (no source)
   where it detects either side (`known_gaps/detection.md`). The player
   fights whoever fights them.
 - It joins the nearest fight where the fighter is an ally (assistance ≥ 1) or a

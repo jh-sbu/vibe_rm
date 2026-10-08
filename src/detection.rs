@@ -114,18 +114,67 @@ pub struct Detection {
     /// Loaded actors' detection of the player (those within range), as last
     /// worked out.
     pub(crate) of_player: HashMap<FormId, f32>,
-    /// The player's stealth points (100 hidden, 0 found), and seconds before they
-    /// may refill after an enemy became alert to them.
-    pub(crate) stealth_points: f32,
-    regen_wait: f32,
+    /// Stealth points of the player and of actors enemies have been alert to
+    /// (100 when missing).
+    stealth: HashMap<FormId, Stealth>,
     next_in: f32,
+    states_in: f32,
 }
 
 impl Default for Detection {
     fn default() -> Self {
-        Detection { settings: Default::default(), of_player: HashMap::new(), stealth_points: 100.0, regen_wait: 0.0, next_in: 0.0 }
+        Detection { settings: Default::default(), of_player: HashMap::new(), stealth: HashMap::new(), next_in: 0.0, states_in: 0.0 }
     }
 }
+
+/// Someone's stealth points (100 hidden, 0 found), and seconds before they may
+/// refill after an enemy became alert to them.
+#[derive(Debug, Clone, Copy)]
+struct Stealth {
+    points: f32,
+    regen_wait: f32,
+}
+
+impl Stealth {
+    /// Drain or refill by the most any enemy detects them by (`None`: no enemy
+    /// within reach, nobody to hide from); none while an enemy fights them.
+    fn step(&mut self, most: Option<f32>, fighting: bool, s: &DetectionSettings, step: f32) {
+        if fighting {
+            self.points = 0.0;
+            return;
+        }
+        match most {
+            Some(v) if v > 0.0 => {
+                self.points = (self.points - v * s.drain_mult * step).max(0.0);
+                self.regen_wait = s.alert_wait;
+            }
+            Some(v) if self.regen_wait <= 0.0 => self.points = (self.points + (-v * s.regen_mult).max(s.regen_min) * step).min(100.0),
+            None if self.regen_wait <= 0.0 => self.points = 100.0,
+            _ => {}
+        }
+    }
+}
+
+/// An actor searching for someone: alert to them (it almost detected them) or
+/// having lost them in a fight. The CK wiki's Detection page.
+#[derive(Debug, Clone, Copy)]
+pub struct Search {
+    pub target: FormId,
+    /// Where it searches: where it last noticed them.
+    pub at: Vec3,
+    pub lost: bool,
+    /// Seconds before it looks somewhere else near `at`, and before its next
+    /// idle line (`AlertIdle` / `LostIdle`).
+    dwell: f32,
+    idle_line: f32,
+}
+
+/// How often actors' detection states are worked out (seconds; no source).
+const STATE_INTERVAL: f32 = 1.0;
+/// How far round the spot it is searching a searcher looks, and how long it
+/// stays at each place (seconds). No source.
+const SEARCH_RADIUS: f32 = 512.0;
+const SEARCH_DWELL: (f32, f32) = (3.0, 8.0);
 
 /// Who is looking: a living loaded actor.
 struct Observer {
@@ -329,19 +378,55 @@ impl Engine {
         self.detection_value(observer, target).is_some_and(|v| v > 0.0)
     }
 
-    /// Whether `observer`'s last worked out detection of the player is enough
-    /// for it to attack: the player's stealth points are gone and it detects
-    /// them, or it detects them past the combat threshold.
-    pub(crate) fn finds_player(&self, observer: FormId) -> bool {
-        let s = self.detection_settings();
-        self.detection.of_player.get(&observer).is_some_and(|&v| (v > 0.0 && self.detection.stealth_points <= 0.0) || v > s.combat_threshold)
+    /// Someone's stealth points (100 hidden, 0 found).
+    pub(crate) fn stealth_points(&self, r: FormId) -> f32 {
+        self.detection.stealth.get(&r).map_or(100.0, |s| s.points)
     }
 
-    /// Work out loaded actors' detection of the player now and then, and drain or
-    /// refill the player's stealth points by the most any enemy has. In combat
-    /// with anyone, the player has none.
+    /// Whether a detection value against `target` is enough to attack it: its
+    /// stealth points are gone and it is detected, or it is detected past the
+    /// combat threshold.
+    fn enough_to_find(&self, v: f32, target: FormId) -> bool {
+        (v > 0.0 && self.stealth_points(target) <= 0.0) || v > self.detection_settings().combat_threshold
+    }
+
+    /// Whether `observer` finds `target` (to attack it): from the last worked
+    /// out detection of the player, else from detection now.
+    pub(crate) fn finds(&self, observer: FormId, target: FormId) -> bool {
+        let v = if target == PLAYER_REF { self.detection.of_player.get(&observer).copied() } else { self.detection_value(observer, target) };
+        v.is_some_and(|v| self.enough_to_find(v, target))
+    }
+
+    pub(crate) fn finds_player(&self, observer: FormId) -> bool {
+        self.finds(observer, PLAYER_REF)
+    }
+
+    /// Whether `r` would attack `target` on finding it.
+    fn would_attack(&mut self, r: FormId, target: FormId) -> bool {
+        if target == PLAYER_REF {
+            return self.would_attack_player(r);
+        }
+        let (Some(a), Some(t)) = (self.actor_ref(r), self.actor_ref(target)) else { return false };
+        if a.dead || t.dead {
+            return false;
+        }
+        let (stats, theirs) = (a.stats.clone(), t.stats.factions.clone());
+        self.hostile_to(&stats, &theirs, false)
+    }
+
+    /// Work out loaded actors' detection of the player four times a second and
+    /// drain or refill the player's stealth points by the most any enemy has;
+    /// once a second, the same for actors as targets, and actors' detection
+    /// states (`update_detection_states`).
     pub(crate) fn update_detection(&mut self, dt: f32) {
-        self.detection.regen_wait = (self.detection.regen_wait - dt).max(0.0);
+        for st in self.detection.stealth.values_mut() {
+            st.regen_wait = (st.regen_wait - dt).max(0.0);
+        }
+        self.detection.states_in -= dt;
+        if self.detection.states_in <= 0.0 {
+            self.detection.states_in = STATE_INTERVAL;
+            self.update_detection_states(STATE_INTERVAL);
+        }
         self.detection.next_in -= dt;
         if self.detection.next_in > 0.0 {
             return;
@@ -361,26 +446,191 @@ impl Engine {
             }
         }
         let s = self.detection_settings();
-        let fighting = self.cells.values().flat_map(|rt| &rt.actors).any(|a| !a.dead && a.combat.as_ref().is_some_and(|c| c.target == PLAYER_REF && !c.fleeing));
-        let d = &mut self.detection;
-        d.of_player = of_player;
-        if fighting {
-            d.stealth_points = 0.0;
-            return;
+        let fighting = self.fought(PLAYER_REF);
+        self.detection.of_player = of_player;
+        let st = self.detection.stealth.entry(PLAYER_REF).or_insert(Stealth { points: 100.0, regen_wait: 0.0 });
+        if most.is_some_and(|v| v > 0.0) && st.regen_wait <= 0.0 && !fighting {
+            log::debug!("an enemy is alert to the player ({:.1})", most.unwrap_or_default());
         }
-        match most {
-            Some(v) if v > 0.0 => {
-                if d.regen_wait <= 0.0 {
-                    log::debug!("an enemy is alert to the player ({v:.1})");
+        st.step(most, fighting, &s, step);
+    }
+
+    /// Whether anyone is fighting `r` (not fleeing from it).
+    fn fought(&self, r: FormId) -> bool {
+        self.cells.values().flat_map(|rt| &rt.actors).any(|a| !a.dead && a.combat.as_ref().is_some_and(|c| c.target == r && !c.fleeing))
+    }
+
+    /// Actors' stealth points as targets, and the detection states (CK wiki
+    /// "Detection"): a calm actor that would attack someone it detects but
+    /// doesn't find yet becomes alert and goes to look where they were; a
+    /// fighter whose target has gone undetected for
+    /// `fCombatStealthPointRegenDetectedEventWaitTime` loses it and searches
+    /// where it last saw it. Searchers attack once they find their target, and
+    /// give up once it is undetected with its stealth points full.
+    fn update_detection_states(&mut self, step: f32) {
+        let s = self.detection_settings();
+        let lost_wait = gmst_f32(&self.lo, "fCombatStealthPointRegenDetectedEventWaitTime", 10.0);
+        let actors: Vec<FormId> = self.cells.values().flat_map(|rt| &rt.actors).filter(|a| !a.dead && a.bleeding.is_none()).map(|a| a.ref_id).collect();
+        // Who would attack whom, and by how much they detect them.
+        let mut values: HashMap<(FormId, FormId), f32> = HashMap::new();
+        for &r in &actors {
+            for &t in actors.iter().chain(std::iter::once(&PLAYER_REF)) {
+                if t == r || !self.would_attack(r, t) {
+                    continue;
                 }
-                d.stealth_points = (d.stealth_points - v * s.drain_mult * step).max(0.0);
-                d.regen_wait = s.alert_wait;
+                let v = if t == PLAYER_REF { self.detection.of_player.get(&r).copied() } else { self.detection_value(r, t) };
+                if let Some(v) = v {
+                    values.insert((r, t), v);
+                }
             }
-            Some(v) if d.regen_wait <= 0.0 => d.stealth_points = (d.stealth_points + (-v * s.regen_mult).max(s.regen_min) * step).min(100.0),
-            Some(_) => {}
-            // No enemy near: nobody to hide from.
-            None if d.regen_wait <= 0.0 => d.stealth_points = 100.0,
-            None => {}
+        }
+        // Actors' stealth points as targets.
+        for &t in &actors {
+            let most = values.iter().filter(|((_, x), _)| *x == t).map(|(_, &v)| v).fold(None, |m: Option<f32>, v| Some(m.map_or(v, |m| m.max(v))));
+            let fighting = self.fought(t);
+            if most.is_none() && !fighting && !self.detection.stealth.contains_key(&t) {
+                continue;
+            }
+            let st = self.detection.stealth.entry(t).or_insert(Stealth { points: 100.0, regen_wait: 0.0 });
+            st.step(most, fighting, &s, step);
+            if st.points >= 100.0 && st.regen_wait <= 0.0 {
+                self.detection.stealth.remove(&t);
+            }
+        }
+        self.detection.stealth.retain(|&t, _| t == PLAYER_REF || actors.contains(&t));
+        let position = |e: &Engine, t: FormId| if t == PLAYER_REF { Some(e.player.position) } else { e.actor_ref(t).filter(|a| !a.dead).map(|a| a.pos) };
+        for &r in &actors {
+            let Some(a) = self.actor_ref(r) else { continue };
+            let (combat, search) = (a.combat.as_ref().map(|c| (c.target, c.fleeing)), a.search);
+            if let Some((t, fleeing)) = combat {
+                // Fighting: keep track of the target; lose it once undetected long
+                // enough. (Fleeing actors leave by the threat instead.)
+                if fleeing {
+                    continue;
+                }
+                let v = if t == PLAYER_REF { self.detection.of_player.get(&r).copied() } else { self.detection_value(r, t) };
+                let seen_at = v.filter(|&v| v > 0.0).and_then(|_| position(self, t));
+                let Some(c) = self.actor_mut(r).and_then(|a| a.combat.as_mut()) else { continue };
+                if seen_at.is_some() {
+                    c.unseen = 0.0;
+                    c.last_seen = seen_at;
+                } else {
+                    c.unseen += step;
+                    if c.unseen >= lost_wait {
+                        self.lose_target(r);
+                    }
+                }
+            } else if let Some(mut sr) = search {
+                let alive = position(self, sr.target);
+                if alive.is_none() || !self.would_attack(r, sr.target) {
+                    self.calm_down(r, None);
+                    continue;
+                }
+                let v = values.get(&(r, sr.target)).copied();
+                if v.is_some_and(|v| self.enough_to_find(v, sr.target)) {
+                    // `detect_enemies` starts the fight.
+                    continue;
+                }
+                if v.is_some_and(|v| v > 0.0) {
+                    sr.at = alive.unwrap_or(sr.at);
+                    sr.dwell = 0.0;
+                } else if self.stealth_points(sr.target) >= 100.0 {
+                    self.calm_down(r, Some(if sr.lost { b"LOTN" } else { b"ALTN" }));
+                    continue;
+                }
+                sr.dwell -= step;
+                sr.idle_line -= step;
+                let here = self.actor_ref(r).map_or(sr.at, |a| a.pos);
+                let mut go = None;
+                if sr.dwell <= 0.0 {
+                    let near = here.distance(sr.at) < SEARCH_RADIUS;
+                    let mut rolls: Vec<u64> = (0..16).map(|_| self.rand()).collect();
+                    go = if near { self.nav.random_point(sr.at, SEARCH_RADIUS, || rolls.pop().unwrap_or(0)) } else { None }.or(Some(sr.at));
+                    sr.dwell = SEARCH_DWELL.0 + (self.rand() % 1000) as f32 / 1000.0 * (SEARCH_DWELL.1 - SEARCH_DWELL.0);
+                }
+                let line = sr.idle_line <= 0.0;
+                if line {
+                    sr.idle_line = self.detection_idle_wait();
+                }
+                if let Some(a) = self.actor_mut(r) {
+                    a.search = Some(sr);
+                }
+                if let Some(to) = go {
+                    self.search_towards(r, to);
+                }
+                if line {
+                    self.bark(r, if sr.lost { b"LOIL" } else { b"ALIL" });
+                }
+            } else {
+                // Calm: alert to the enemy it detects most without finding.
+                let best = values
+                    .iter()
+                    .map(|(&(o, t), &v)| (o, t, v))
+                    .filter(|&(o, t, v)| o == r && v > 0.0 && !self.enough_to_find(v, t))
+                    .max_by(|a, b| a.2.total_cmp(&b.2))
+                    .map(|(_, t, _)| t);
+                if let Some(t) = best
+                    && let Some(at) = position(self, t)
+                {
+                    self.start_search(r, t, at, false);
+                }
+            }
+        }
+    }
+
+    /// Seconds before a searcher's next idle line
+    /// (`fCombatDetectionDialogueIdleMin` / `MaxElapsedTime`).
+    fn detection_idle_wait(&mut self) -> f32 {
+        let lo = gmst_f32(&self.lo, "fCombatDetectionDialogueIdleMinElapsedTime", 10.0);
+        let hi = gmst_f32(&self.lo, "fCombatDetectionDialogueIdleMaxElapsedTime", 25.0);
+        lo + (self.rand() % 1000) as f32 / 1000.0 * (hi - lo).max(0.0)
+    }
+
+    /// `r` starts searching for `target` at `at`: alert, or having lost it in
+    /// a fight. Weapons out.
+    fn start_search(&mut self, r: FormId, target: FormId, at: Vec3, lost: bool) {
+        let idle_line = self.detection_idle_wait();
+        let Some(a) = self.actor_mut(r) else { return };
+        a.search = Some(Search { target, at, lost, dwell: SEARCH_DWELL.1, idle_line });
+        log::info!("{r} {} {target}", if lost { "lost" } else { "is alert to" });
+        self.search_towards(r, at);
+        self.draw_weapon(r, true);
+        self.bark(r, if lost { b"COLO" } else { b"NOTA" });
+    }
+
+    fn search_towards(&mut self, r: FormId, to: Vec3) {
+        let Some(key) = self.actor_cells.get(&r).copied() else { return };
+        if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r)) {
+            a.search_at(to, &mut self.furniture);
+        }
+    }
+
+    /// A fighter loses its target (undetected too long, or too far): it stops
+    /// fighting and searches where it last saw it, if the target is still
+    /// about.
+    pub(crate) fn lose_target(&mut self, r: FormId) {
+        let Some(c) = self.actor_ref(r).and_then(|a| a.combat.as_ref()) else { return };
+        let (target, last) = (c.target, c.last_seen);
+        let about = target == PLAYER_REF && !self.player_dead() || self.actor_ref(target).is_some_and(|t| !t.dead);
+        let at = last.or_else(|| if target == PLAYER_REF { Some(self.player.position) } else { self.actor_ref(target).map(|t| t.pos) });
+        match at.filter(|_| about && self.ai_enabled) {
+            Some(at) => {
+                self.stop_fighting(r, true);
+                self.start_search(r, target, at, true);
+            }
+            None => self.end_combat(r),
+        }
+    }
+
+    /// A searcher gives up: weapons away, back to its packages.
+    fn calm_down(&mut self, r: FormId, topic: Option<&[u8; 4]>) {
+        let Some(a) = self.actor_mut(r) else { return };
+        let target = a.search.map(|s| s.target);
+        a.end_search();
+        log::info!("{r} stops searching for {target:?}");
+        self.draw_weapon(r, false);
+        if let Some(t) = topic {
+            self.bark(r, t);
         }
     }
 
@@ -391,7 +641,7 @@ impl Engine {
         let s = self.detection_settings();
         let most = self.detection.of_player.values().copied().fold(f32::MIN, f32::max);
         let seen = (most / s.combat_threshold).clamp(0.0, 1.0);
-        seen.max(1.0 - self.detection.stealth_points / 100.0)
+        seen.max(1.0 - self.stealth_points(PLAYER_REF) / 100.0)
     }
 
     /// Console: each loaded actor's detection of the player and what goes into it.
@@ -406,7 +656,7 @@ impl Engine {
             if self.player.running { ", running" } else { "" },
             self.armor_weight(PLAYER_REF),
             self.actor_value(PLAYER_REF, av::SNEAK),
-            self.detection.stealth_points,
+            self.stealth_points(PLAYER_REF),
             self.detection_range(&s),
         )];
         let Some(t) = self.target(PLAYER_REF) else { return out };

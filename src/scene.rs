@@ -495,7 +495,7 @@ impl Engine {
         let ar = &mut self.scenes.running[i].actions[k];
         let r = ar.queue.remove(0);
         let Some((topic, info)) = ar.info.clone() else { return };
-        let voice_type = self.base_of(speaker).and_then(|n| self.npc_voice_type(n)).unwrap_or_default();
+        let voice_type = self.actor_voice_type(speaker).unwrap_or_default();
         let path = crate::dialogue::voice_path(&self.lo, voice_type, &topic, info.id, r.number);
         let at = self.ref_position(speaker).map(|p| p + Vec3::Z * 110.0);
         let mut voice = None;

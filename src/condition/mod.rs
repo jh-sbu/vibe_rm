@@ -288,7 +288,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Rank -1 (potential followers' `CurrentFollowerFaction`) isn't membership.
         71 => b(subject.is_some_and(|s| e.npc_factions(s).iter().any(|&(f, r)| f == p1 && r >= 0))), // GetInFaction
         73 => Some(subject.and_then(|s| e.npc_factions(s).into_iter().find(|(f, _)| *f == p1).map(|x| x.1 as f32)).unwrap_or(-1.0)), // GetFactionRank
-        426 => b(subj_base.and_then(|n| e.npc_voice_type(n)).is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
+        426 => b(subject.and_then(|s| e.actor_voice_type(s)).is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))),          // HasKeyword
         300 => b(matches!(e.location, crate::engine::Location::Interior(_))), // IsInInterior
         67 => b(subject.and_then(|s| e.lo.cell_of_ref(s)) == Some(p1)),   // GetInCell
@@ -491,6 +491,14 @@ impl Engine {
         let rec = self.lo.get(npc)?;
         let d = rec.get(b"VTCK")?;
         Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))))
+    }
+
+    /// An actor's voice type: its base's, else the one its templates give it
+    /// for traits (leveled actors such as bandits).
+    pub fn actor_voice_type(&self, r: FormId) -> Option<FormId> {
+        self.base_of(r)
+            .and_then(|n| self.npc_voice_type(n))
+            .or_else(|| self.templates_of(r)?.form(&self.lo, crate::world::template::TRAITS, b"VTCK"))
     }
 
     pub fn race_is_child(&self, race: FormId) -> bool {
