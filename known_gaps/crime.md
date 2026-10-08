@@ -58,6 +58,18 @@ locations name it.
   trespass-cells` counts interiors by these flags (8 off limits, none warn
   to leave); `ctda-uses <data> 144 145` lists the lines.
 
+- Pickpocketing (UESP Skyrim:Pickpocket): only while sneaking; chance `15 +
+  skill - target skill / 4 - 4 x weight - gold / 10`, less 25 when the
+  target detects the player, at most 90; a failure is detected by the target
+  and reported (25 gold). The game settings give the same numbers as
+  `fPickPocketActorSkillBase` 20 + `ActorSkillMult` 1 x skill +
+  `TargetSkillMult` -0.25 x (`TargetSkillBase` 20 + target skill) +
+  `WeightMult` -4 x weight + `AmountMult` -0.1 x gold, between
+  `fPickPocketMinChance` 0 and `MaxChance` 90. Strings `sPickpocket` (red
+  prompt), `sPickpocketFail`, `sNoPickPocketAgain`, `sInvalidPickpocket`.
+  Topics: `PICN` (non-combat: "I guess I can look the other way, this
+  time.") and `PICC` (combat; victims and witnesses by `IsActorAVictim`).
+
 ## Choices made without a source
 
 - Witnesses: living loaded actors who detect the player at the time
@@ -97,6 +109,14 @@ locations name it.
   as any crime) at level 2 against the cell's owner. UESP's 30 seconds
   isn't matched: it is 10 by the setting. Leaving the cell starts it over;
   after level 2 nothing more happens there.
+- Pickpocketing: equipped items can't be taken (UESP: the Perfect Touch
+  perk allows it); taking several at once counts their weight (or the gold)
+  together; UESP's "Sneak_bonus" is left out (not explained). Taken items
+  are the victim's, stolen (gold never is marked); the add item event says
+  pickpocketed (3). Caught, the menu closes, the crime is reported with the
+  victim as a witness, the victim says `PICN` (`IsActorAVictim` true for it)
+  and won't be pickpocketed by the player again (for the session). Being
+  caught doesn't start a fight.
 - The console's `setcrimegold` / `paycrimegold` default to the crime faction
   of the nearest location up from the current one that names one (`FNAM`).
 
@@ -105,8 +125,11 @@ locations name it.
 - No arrests: guards don't come to the player, there is no jail, no
   "attack on sight" (`CRVA` flag) and the arrest dialogue
   (`DialogueCrimeGuards`) only sees the gold through its conditions.
-- Pickpocketing, horse theft, escape and werewolf crimes aren't committed
-  anywhere.
+- Horse theft, escape and werewolf crimes aren't committed anywhere.
+- Crime responses: victims and witnesses don't attack (the `PICC` lines,
+  morality / aggression); pickpocketing perks (Light Fingers, Night Thief,
+  Cutpurse, Misdirection, Perfect Touch, Poisoned), skill gain and the
+  thugs hired after a theft aren't there.
 - Trespassers aren't attacked or chased out after "Guards! Trespasser!", the
   "Warn To Leave" flag (`DATA` 0x200, unused in the base game) does nothing,
   the warning lines near restricted places ("That's close enough", guard

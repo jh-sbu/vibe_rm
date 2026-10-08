@@ -132,13 +132,14 @@ impl Inventory {
         }
     }
 
-    /// Add `n` of an item that belongs to `owner` (stolen); `None` is the same as `add`.
+    /// Add `n` of an item that belongs to `owner` (stolen); `None` is the same
+    /// as `add`. Gold is never marked.
     pub fn add_owned(&mut self, form: FormId, owner: Option<FormId>, n: i32) {
         if n <= 0 || form.is_null() {
             return;
         }
         self.add(form, n);
-        let Some(owner) = owner else { return };
+        let Some(owner) = owner.filter(|_| form != FormId(0xF)) else { return };
         match self.owned.iter_mut().find(|(f, o, _)| *f == form && *o == owner) {
             Some((_, _, c)) => *c += n,
             None => self.owned.push((form, owner, n)),

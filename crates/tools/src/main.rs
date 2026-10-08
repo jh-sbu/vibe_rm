@@ -1678,6 +1678,44 @@ fn main() -> Result<()> {
                 println!("{n:6} {k}");
             }
         }
+        Some("topic-lines") => {
+            // topic-lines <data dir> <subtype>: the responses of every topic of
+            // a subtype (SNAM, e.g. TRES, PICN) in order, with their
+            // conditions (function index, parameters, run-on, comparison).
+            anyhow::ensure!(args.len() > 2, "usage: topic-lines <data dir> <subtype>");
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let mut lo = esp::LoadOrder::load(data, &names)?;
+            let vfs = vfs::Vfs::new(data, &names);
+            lo.load_strings("english", |p| vfs.read(p));
+            const OPS: [&str; 6] = ["==", "!=", ">", ">=", "<", "<="];
+            for &t in lo.ids_of_type(b"DIAL") {
+                let Some(dial) = lo.get(t) else { continue };
+                if dial.get(b"SNAM") != Some(args[2].as_bytes()) {
+                    continue;
+                }
+                println!("{t} {}", dial.editor_id().unwrap_or_default());
+                for &i in lo.topic_infos(t) {
+                    let Some(r) = lo.get(i) else { continue };
+                    let line = r.get(b"NAM1").map(|n| lo.lstring(&r, n)).unwrap_or_default();
+                    let conds: Vec<String> = r
+                        .subrecords()
+                        .filter(|s| s.tag.0 == *b"CTDA" && s.data.len() >= 24)
+                        .map(|s| {
+                            let d = s.data;
+                            let p = |o: usize| {
+                                let v = u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+                                lo.get(r.fid(esp::FormId(v))).and_then(|x| x.editor_id().map(|e| e.to_string())).unwrap_or_else(|| v.to_string())
+                            };
+                            let f = u16::from_le_bytes([d[8], d[9]]);
+                            let run_on = u32::from_le_bytes(d[20..24].try_into().unwrap());
+                            format!("{f}({}, {}) on {run_on} {} {}{}", p(12), p(16), OPS[(d[0] >> 5) as usize % 6], f32::from_le_bytes(d[4..8].try_into().unwrap()), if d[0] & 1 != 0 { " OR" } else { "" })
+                        })
+                        .collect();
+                    println!("  {i} \"{line}\" [{}]", conds.join("; "));
+                }
+            }
+        }
         Some("ctda-uses") => {
             // ctda-uses <data dir> <func index>...: every condition calling one of
             // these functions, with the record holding it, its parameters (forms

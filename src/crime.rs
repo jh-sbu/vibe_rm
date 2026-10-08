@@ -14,7 +14,7 @@ use crate::engine::{Engine, PLAYER_REF};
 /// Crime types, as the engine numbers them (`GetCrime`, CommonLibSSE
 /// `PackageNS::CRIME_TYPE`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // pickpocketing, escape and werewolves aren't committed yet
+#[allow(dead_code)] // escape and werewolves aren't committed yet
 pub enum CrimeType {
     Steal = 0,
     Pickpocket = 1,
@@ -140,6 +140,12 @@ pub struct Crimes {
     pub private_homes: HashMap<FormId, FormId>,
     /// The player trespassing where someone has seen them.
     pub trespass: Option<Trespass>,
+    /// Those who caught the player picking their pocket (they won't let them
+    /// try again).
+    pub pickpocket_caught: HashSet<FormId>,
+    /// The victim of the crime being reacted to, while its lines are picked
+    /// (`IsActorAVictim`).
+    pub reacting_victim: Option<FormId>,
 }
 
 /// The player found trespassing in a cell: warned (level 0), warned a last
@@ -276,12 +282,12 @@ impl Engine {
     /// (`DATA` ignore flags) or, the victim being a member, doesn't report
     /// crimes against members (0x800) and the witness isn't the victim; each
     /// faction told adds its crime gold for it once. The victim of an assault
-    /// knows of it whether or not it sees the player. Returns whether anyone
-    /// reported it.
+    /// or of pickpocketing knows of it whether or not it sees the player.
+    /// Returns whether anyone reported it.
     pub(crate) fn commit_crime(&mut self, kind: CrimeType, victim: Option<FormId>, owner: Option<FormId>, value: i32) -> bool {
         let victim_faction = victim.and_then(|v| self.crime_faction(v)).or(owner);
         let mut witnesses = self.witnesses();
-        if kind == CrimeType::Attack
+        if matches!(kind, CrimeType::Attack | CrimeType::Pickpocket)
             && let Some(v) = victim.filter(|v| !witnesses.contains(v) && !self.is_dead(*v))
         {
             witnesses.push(v);

@@ -342,7 +342,11 @@ game each piece unlocks.
   public areas), whoever sees the player warns them with the Trespass topic
   (`GetTrespassWarningLevel`, `IsTrespassing`), warns again, then calls the
   guards and reports it (`fAITrespassWarningTimer`); off limits at once.
-  vrm-tool `trespass-cells`, `ctda-uses`.
+  Pickpocketing while sneaking: the victim's pockets (not what it wears)
+  with each item's chance from the `fPickPocket*` settings, taken stolen;
+  caught, a crime the victim reports and won't let the player try again.
+  Console `pickpocket`; vrm-tool `trespass-cells`, `ctda-uses`,
+  `topic-lines`.
   Console `crime`, `player.setcrimegold`,
   `player.paycrimegold`, `crimefaction`; vrm-tool `faction-owners`,
   `crime-factions`. Open questions: `known_gaps/crime.md`
@@ -459,7 +463,8 @@ game each piece unlocks.
    spell / shout sounds), perks (the sneak tree's detection perks among them;
    see Detection), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-   (guards arresting, jail, attack on sight; pickpocketing; fences; see Done)
+   (guards arresting, jail, attack on sight; victims and witnesses attacking;
+   fences; see Done)
 6. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
 7. **Audio**: lip sync
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
