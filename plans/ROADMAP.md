@@ -337,7 +337,12 @@ game each piece unlocks.
   `GetInSharedCrimeFaction`. Stolen goods stay marked as their owners' (red in
   the menus, the red "Steal" / "Steal from" prompts) and are confiscated into
   the faction's stolen goods chest on paying; `GetStolenItemValue(NoCrime)`.
-  Picking a lock someone else owns is a crime when seen.
+  Picking a lock someone else owns is a crime when seen. Trespassing: in an
+  off limits cell, or a home while its owner's package locks the doors (not
+  public areas), whoever sees the player warns them with the Trespass topic
+  (`GetTrespassWarningLevel`, `IsTrespassing`), warns again, then calls the
+  guards and reports it (`fAITrespassWarningTimer`); off limits at once.
+  vrm-tool `trespass-cells`, `ctda-uses`.
   Console `crime`, `player.setcrimegold`,
   `player.paycrimegold`, `crimefaction`; vrm-tool `faction-owners`,
   `crime-factions`. Open questions: `known_gaps/crime.md`
@@ -454,8 +459,7 @@ game each piece unlocks.
    spell / shout sounds), perks (the sneak tree's detection perks among them;
    see Detection), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
-   (guards arresting, jail, attack on sight; pickpocketing, trespass; fences;
-   see Done)
+   (guards arresting, jail, attack on sight; pickpocketing; fences; see Done)
 6. **UI**: inventory (categories, equipping, item details), map, bars; support for the game's .swf assets still undecided
 7. **Audio**: lip sync
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell

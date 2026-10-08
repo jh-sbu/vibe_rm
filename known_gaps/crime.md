@@ -42,6 +42,22 @@ locations name it.
   `StolenItemValueStruct`), which `GetStolenItemValueNoCrime` and
   `GetStolenItemValue` read (no condition in the base game uses them).
 
+- Trespass (UESP Crime): one warning to leave, then a bounty (5) "after 30
+  seconds" if the player lingers, NPCs calling the guards or attacking;
+  some areas give the bounty at once. Cells: "Public Area" (`DATA` 0x20):
+  nobody is ever trespassing there; "Off Limits" (record flag 0x20000,
+  CommonLibSSE `TESObjectCELL`): caught trespassing is a crime at once,
+  without the warning (GECK / CK wiki, through search excerpts). Community
+  research (Nexus "Trespassing Mechanic Research Findings", the Fandom wiki):
+  trespass comes from packages with the Lock Doors option; once the owner
+  locks up, the cell is private and being there is trespassing; public
+  cells still lock their doors. The Trespass topic (`TRES`, in
+  `DialogueGeneric`) has lines by `GetTrespassWarningLevel` 0 (leave), 1
+  (last warning), 2 ("Guards! Trespasser!"), on `IsTrespassing` of the
+  player; `fAITrespassWarningTimer` is 5 in Skyrim.esm. `vrm-tool
+  trespass-cells` counts interiors by these flags (8 off limits, none warn
+  to leave); `ctda-uses <data> 144 145` lists the lines.
+
 ## Choices made without a source
 
 - Witnesses: living loaded actors who detect the player at the time
@@ -71,6 +87,16 @@ locations name it.
   murder, escape, werewolf), so it is reported as trespass, whose default gold
   is the same. It is committed on starting to pick a lock whose door,
   container or load door's far side someone else owns, once per attempt.
+- Trespassing: an interior that isn't a public area, either off limits or
+  owned by someone other than the player (and their factions) while an
+  actor whose home it is (where its lock-doors sleep package puts it) runs
+  a package that locks doors. Who owns it isn't otherwise checked.
+- The warner is whoever in the cell detects the player most, awake and not
+  fighting; level 0, then 1 and 2 each `fAITrespassWarningTimer` later and
+  once someone sees the player again, the crime reported (by all witnesses,
+  as any crime) at level 2 against the cell's owner. UESP's 30 seconds
+  isn't matched: it is 10 by the setting. Leaving the cell starts it over;
+  after level 2 nothing more happens there.
 - The console's `setcrimegold` / `paycrimegold` default to the crime faction
   of the nearest location up from the current one that names one (`FNAM`).
 
@@ -79,8 +105,13 @@ locations name it.
 - No arrests: guards don't come to the player, there is no jail, no
   "attack on sight" (`CRVA` flag) and the arrest dialogue
   (`DialogueCrimeGuards`) only sees the gold through its conditions.
-- Pickpocketing, trespassing (`fAITrespassWarningTimer`), horse theft,
-  escape and werewolf crimes aren't committed anywhere.
+- Pickpocketing, horse theft, escape and werewolf crimes aren't committed
+  anywhere.
+- Trespassers aren't attacked or chased out after "Guards! Trespasser!", the
+  "Warn To Leave" flag (`DATA` 0x200, unused in the base game) does nothing,
+  the warning lines near restricted places ("That's close enough", guard
+  posts) need guard packages, and `sNoWaitTrespass` / `sNoSleepTrespass`
+  wait for waiting and sleeping. Sleepers don't wake up to warn.
 - Merchants refusing stolen goods and fences buying them: no bartering yet
   (`GetAmountSoldStolen`).
 - A crime gets its gold at once; in the game it is withdrawn when the last

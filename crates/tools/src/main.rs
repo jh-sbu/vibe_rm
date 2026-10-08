@@ -1648,6 +1648,36 @@ fn main() -> Result<()> {
                 println!("{c:>7} func {f:>4} run_on {run_on}");
             }
         }
+        Some("trespass-cells") => {
+            // trespass-cells <data dir>: interior cells by the flags trespass
+            // reads: Off Limits (record flag 0x20000), Public Area (DATA 0x20),
+            // Warn To Leave (DATA 0x200), and their owner (XOWN).
+            anyhow::ensure!(args.len() > 1, "usage: trespass-cells <data dir>");
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let edid = |f: esp::FormId| lo.get(f).and_then(|r| r.editor_id().map(|e| e.to_string())).unwrap_or_else(|| format!("{f}"));
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            for &c in lo.ids_of_type(b"CELL") {
+                let Some(r) = lo.get(c) else { continue };
+                let data_flags = r.get(b"DATA").map_or(0, |d| d.iter().take(2).enumerate().fold(0u32, |a, (i, b)| a | (*b as u32) << (8 * i)));
+                if data_flags & 1 == 0 {
+                    continue;
+                }
+                let owner = r.get(b"XOWN").filter(|d| d.len() >= 4).map(|d| r.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))));
+                let off = r.flags() & 0x20000 != 0;
+                let public = data_flags & 0x20 != 0;
+                let warn = data_flags & 0x200 != 0;
+                let key = format!("{}{}{}{}", if off { "off-limits " } else { "" }, if public { "public " } else { "" }, if warn { "warn-to-leave " } else { "" }, if owner.is_some() { "owned" } else { "unowned" });
+                *counts.entry(key).or_default() += 1;
+                if off || warn {
+                    println!("{} {}{}{} owner {}", r.editor_id().unwrap_or_default(), if off { "off-limits " } else { "" }, if public { "public " } else { "" }, if warn { "warn-to-leave" } else { "" }, owner.map(edid).unwrap_or_default());
+                }
+            }
+            for (k, n) in counts {
+                println!("{n:6} {k}");
+            }
+        }
         Some("ctda-uses") => {
             // ctda-uses <data dir> <func index>...: every condition calling one of
             // these functions, with the record holding it, its parameters (forms

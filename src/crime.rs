@@ -14,7 +14,7 @@ use crate::engine::{Engine, PLAYER_REF};
 /// Crime types, as the engine numbers them (`GetCrime`, CommonLibSSE
 /// `PackageNS::CRIME_TYPE`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // pickpocketing, trespass, escape and werewolves aren't committed yet
+#[allow(dead_code)] // pickpocketing, escape and werewolves aren't committed yet
 pub enum CrimeType {
     Steal = 0,
     Pickpocket = 1,
@@ -135,7 +135,26 @@ pub struct Crimes {
     /// The value of what the player has stolen from each crime faction's
     /// people, unwitnessed and witnessed (CommonLibSSE `StolenItemValueStruct`).
     pub stolen_value: BTreeMap<FormId, (i32, i32)>,
+    /// Actors running a package that locks doors, and their homes: private
+    /// while they do (see `trespassing`).
+    pub private_homes: HashMap<FormId, FormId>,
+    /// The player trespassing where someone has seen them.
+    pub trespass: Option<Trespass>,
 }
+
+/// The player found trespassing in a cell: warned (level 0), warned a last
+/// time (1), the crime reported (2); the next step comes at `next`
+/// (`GetTrespassWarningLevel`, the Trespass topic's lines).
+#[derive(Debug, Clone, Copy)]
+pub struct Trespass {
+    pub cell: FormId,
+    pub level: i32,
+    pub next: f64,
+}
+
+/// Interior cell flags: Public Area (`DATA`), Off Limits (record header).
+const CELL_PUBLIC: u32 = 0x20;
+const CELL_OFF_LIMITS: u32 = 0x20000;
 
 impl Engine {
     /// The faction an actor reports crimes to and is protected by: its own
@@ -315,6 +334,83 @@ impl Engine {
             return 0;
         }
         if self.commit_crime(CrimeType::Murder, Some(victim), None, 0) { 2 } else { 1 }
+    }
+
+    /// Whether the player is trespassing: in an interior that isn't a public
+    /// area and is either off limits or private, someone else's home whose
+    /// owner (or one of whose household) runs a package that locks the doors
+    /// (sleeping, or the shop shut).
+    pub fn trespassing(&self) -> bool {
+        let crate::engine::Location::Interior(cell) = self.location else { return false };
+        let Some(rec) = self.lo.get(cell) else { return false };
+        let data = rec.get(b"DATA").map_or(0, |d| d.iter().take(2).enumerate().fold(0u32, |a, (i, b)| a | (*b as u32) << (8 * i)));
+        if data & CELL_PUBLIC != 0 {
+            return false;
+        }
+        if rec.flags() & CELL_OFF_LIMITS != 0 {
+            return true;
+        }
+        drop(rec);
+        let owned = crate::ai::furniture::owner_of(&self.lo, cell).is_some_and(|o| self.owned_by_other(o));
+        owned && self.crime.private_homes.values().any(|&c| c == cell)
+    }
+
+    /// The player trespassing: the one in the cell who detects them most (awake
+    /// and not fighting) tells them to leave with the Trespass topic, then
+    /// gives a last warning `fAITrespassWarningTimer` seconds later, then,
+    /// as long again, calls for the guards and the crime is reported (UESP:
+    /// one warning, then a bounty). In an off limits cell being seen is the
+    /// crime at once. Each step waits for someone to see them; it all starts
+    /// over once they are out of the cell.
+    pub(crate) fn update_trespass(&mut self) {
+        let crate::engine::Location::Interior(cell) = self.location else {
+            self.crime.trespass = None;
+            return;
+        };
+        if !self.trespassing() || self.player_dead() {
+            self.crime.trespass = None;
+            return;
+        }
+        if self.crime.trespass.is_some_and(|t| t.cell != cell) {
+            self.crime.trespass = None;
+        }
+        if self.crime.trespass.is_some_and(|t| t.level >= 2) {
+            return;
+        }
+        let now = self.scripts.real_time;
+        if self.crime.trespass.is_some_and(|t| now < t.next) {
+            return;
+        }
+        let in_cell = |r: FormId| self.actor_cells.get(&r).is_some_and(|k| *k == crate::render::CellKey::Interior(cell));
+        let warner = self
+            .detection
+            .of_player
+            .iter()
+            .filter(|&(&r, &v)| v > 0.0 && in_cell(r) && self.actor_ref(r).is_some_and(|a| !a.dead && a.combat.is_none()) && self.sit_sleep_state(r, true) != 3.0)
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .map(|(&r, _)| r);
+        let Some(warner) = warner else { return };
+        let off_limits = self.lo.get(cell).is_some_and(|r| r.flags() & CELL_OFF_LIMITS != 0);
+        let level = match self.crime.trespass {
+            _ if off_limits => 2,
+            None => 0,
+            Some(t) => t.level + 1,
+        };
+        let wait = crate::ai::combat::gmst_f32(&self.lo, "fAITrespassWarningTimer", 5.0) as f64;
+        self.crime.trespass = Some(Trespass { cell, level, next: now + wait });
+        log::info!("{warner} finds the player trespassing in {cell}: warning level {level}");
+        self.bark(warner, b"TRES");
+        if level >= 2 {
+            let owner = crate::ai::furniture::owner_of(&self.lo, cell);
+            let faction = owner.filter(|&o| self.lo.tag_of(o).is_some_and(|t| t.0 == *b"FACT"));
+            let victim = owner.filter(|_| faction.is_none()).and_then(|o| self.npc_refs_index().get(&o).copied());
+            self.commit_crime(CrimeType::Trespass, victim, faction, 0);
+        }
+    }
+
+    /// The player's trespass warning level (`GetTrespassWarningLevel`).
+    pub fn trespass_warning_level(&self) -> i32 {
+        self.crime.trespass.map_or(0, |t| t.level)
     }
 
     /// The bounties owed, for the console.
