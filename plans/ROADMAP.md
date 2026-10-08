@@ -213,6 +213,17 @@ game each piece unlocks.
   (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
   and activating; the `Is...ControlsEnabled` queries. Console `epc`. Open
   questions: `known_gaps/player-controls.md`
+- Loose objects: references whose model has one simulated rigid body
+  (`MO_SYS_DYNAMIC`: clutter, food, weapons, baskets) are rapier bodies with the
+  NIF's mass, friction and restitution (meshes as their convex hull), lying still
+  where placed until disturbed. The player pushes them aside, actors walking into
+  them wake them, arrows knock them away (and send `OnHit` to whatever they
+  strike); where they come to rest is kept across loads. Papyrus
+  `ApplyHavokImpulse`, `SetMotionType` (the weapon racks' scripts hold their
+  weapons keyframed), `DropObject`. Objects made in the world (`PlaceAtMe`,
+  dropped items) are drawn, fall, have their base's scripts and can be picked up;
+  the inventory drops items on right click. Console `loose`, `[ref.]drop`, `pwalk`.
+  Open questions: `known_gaps/loose-objects.md`
 - Synchronised blends of single-play clips (directional attacks) end instead of
   cycling, and their heaviest child raises the clip triggers
 - Character property bindings: bone switches bound to the character's bone weight
@@ -467,7 +478,7 @@ game each piece unlocks.
    - Later / separate: NiTransformController (non-sequence), texture / material controllers
 2. **Story Manager** (core and fifteen events done; see Done)
    - Events waiting on their systems: crafting, level / skill increases, item
-     removal (dropping), spell cast, shouts, bribe /
+     removal (dropping now exists; the event's data needs a source), spell cast, shouts, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
@@ -481,7 +492,7 @@ game each piece unlocks.
      until then
    - Finding bodies by detection
 4. **AI depth**
-   - Alias fills: created objects drawn in the world, cleaned up
+   - Alias fills: created objects cleaned up
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
      activate / carry, flee, orbit packages; ambush triggers (sleepers'
      reduced detection: see Detection);
@@ -508,8 +519,10 @@ game each piece unlocks.
      camera, not only the first-person controller
    - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`;
      disabled fighting putting the weapon away, the POV type argument
-   - Natives still missing that quests lean on: `SetMotionType`,
-     `ForceActive`; sneak attacks (`OnHit`'s sneak flag is always false)
+   - Sneak attacks (`OnHit`'s sneak flag is always false)
+   - Physics: making fixed objects dynamic (`SetMotionType` on a static
+     model), Havok constraints between an object's bodies (chains, hanging
+     signs), the player grabbing objects, melee blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal
    and objectives, help messages (`ShowAsHelpMessage`); support for the game's .swf assets still undecided

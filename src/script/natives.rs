@@ -320,6 +320,29 @@ pub fn call(
         | ("objectreference", "addtomap")
         | ("objectreference", "setplayerknows") => v(Value::Bool(true)),
         ("objectreference", "getopenstate") => v(Value::Int(3)),
+        // ------------------------------------------------------------ Havok
+        ("objectreference", "applyhavokimpulse") => {
+            if let Some(r) = me {
+                let dir = glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float());
+                e.apply_havok_impulse(r, dir, arg(3).as_float());
+            }
+            none()
+        }
+        ("objectreference", "dropobject") => {
+            let made = match (me, form_arg(args, 0)) {
+                (Some(r), Some(item)) => {
+                    e.drop_item(r, item, if args.len() > 1 { arg(1).as_int() } else { 1 })
+                }
+                _ => None,
+            };
+            v(made.map_or(Value::None, |r| e.object_value(r)))
+        }
+        ("objectreference", "setmotiontype") => {
+            if let Some(r) = me {
+                e.set_motion_type(r, arg(0).as_int());
+            }
+            none()
+        }
         (_, "addinventoryeventfilter")
         | (_, "removeinventoryeventfilter")
         | (_, "removeallinventoryeventfilters") => {

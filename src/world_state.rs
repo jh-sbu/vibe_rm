@@ -145,7 +145,7 @@ impl Engine {
     }
 
     /// The place a position is in, in the worldspace or interior of `like`.
-    fn place_at(like: Place, pos: Vec3) -> Place {
+    pub(crate) fn place_at(like: Place, pos: Vec3) -> Place {
         match like {
             Place::Interior(c) => Place::Interior(c),
             Place::Exterior(w, _) => Place::Exterior(w, crate::engine::grid_of(pos.truncate())),
@@ -259,6 +259,7 @@ impl Engine {
                 }
             }
             self.physics.transform_owner(r, delta);
+            self.loose_moved(r, delta);
             let mut lights = false;
             for rt in self.cells.values_mut() {
                 for l in rt.lights.iter_mut().filter(|l| l.ref_id == r) {

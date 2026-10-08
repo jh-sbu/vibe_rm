@@ -53,6 +53,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
             "[ref.]moveto <target>  move a reference (or the player) to another".into(),
             "<ref>.enable / disable  enable or disable a reference (and those enabled with it)".into(),
+            "[ref.]drop <item> [n]  drop items in front of the player (or an actor)".into(),
             "[ref.]placeatme <form> [n]  make new references there (actors join the world)".into(),
             "player.equipitem / unequipitem <item>   wear armor, wield a weapon, ready ammo".into(),
             "activate <ref>        activate a reference as the player".into(),
@@ -62,6 +63,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "pbash                 the player bashes (attacking with the guard up)".into(),
             "pshoot [secs]         the player looses an arrow drawn so long (default full)".into(),
             "psneak / pjump        the player sneaks (toggle) / jumps when next on the ground".into(),
+            "pwalk [frames]        the player walks forward (default 60 frames; tcl first under --wait)".into(),
             "tcam x y z yaw pitch  hold the --wait camera there (degrees; yaw 0 = north)".into(),
             "stamina <ref|player> [n]  show or set stamina".into(),
             "probe [x y]           collision under the player (or x y) and per-cell colliders".into(),
@@ -76,10 +78,12 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "alarm [faction] / jail [faction] / servetime   send the faction's guards to arrest the player, jail them, serve the sentence".into(),
             "pickpocket <ref> <item> [n]   try to take an item from a sneaking player's victim (psneak first)".into(),
             "cgf <Class.Func> [@self] [args]  call a Papyrus native (cgf Actor.GetCombatState @<ref>)".into(),
+            "loose [n]             the loose objects nearest the player (position, mass, motion)".into(),
             "epc                   enable all player controls (EnablePlayerControls)".into(),
             "detect                who detects the player, by how much; the player's light level and stealth points".into(),
         ],
         "detect" => engine.describe_detection(),
+        "loose" => engine.describe_loose(args.first().and_then(|a| a.parse().ok()).unwrap_or(8)),
         "epc" | "enableplayercontrols" => {
             engine.disabled_controls = Default::default();
             vec![engine.disabled_controls.describe()]
@@ -335,6 +339,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             engine.player.sneaking = !engine.player.sneaking;
             vec![format!("player {}", if engine.player.sneaking { "sneaks" } else { "stands up" })]
         }
+        "pwalk" => {
+            engine.test_walk = args.first().and_then(|a| a.parse().ok()).unwrap_or(60);
+            vec![format!("player walks forward {} frames", engine.test_walk)]
+        }
         "pjump" => {
             engine.test_jump = true;
             vec!["player jumps".into()]
@@ -491,7 +499,8 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 23] = [
+const ITEM_COMMANDS: [&str; 24] = [
+    "drop",
     "setcrimegold",
     "paycrimegold",
     "getrelationshiprank",
@@ -600,6 +609,16 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
         "enable" | "disable" => {
             engine.set_disabled(r, cmd == "disable");
             vec![format!("{r} {cmd}d")]
+        }
+        "drop" => {
+            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec!["usage: [ref.]drop <item> [count]".into()];
+            };
+            let n = args.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
+            match engine.drop_item(r, item, n) {
+                Some(m) => vec![format!("{r} dropped {item} as {m}")],
+                None => vec![format!("{r} has no {item} to drop")],
+            }
         }
         "placeatme" => {
             let Some(base) = args.first().and_then(|a| engine.resolve_form(a)) else {

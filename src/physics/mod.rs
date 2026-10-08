@@ -40,6 +40,20 @@ fn layer_blocks_player(layer: u8) -> bool {
 const ACTOR_GROUP: Group = Group::GROUP_3;
 const RAGDOLL_GROUP: Group = Group::GROUP_2;
 
+/// The player's mass pushing loose objects about (kg; no source).
+const PLAYER_MASS: f32 = 80.0;
+
+/// How a loose object's body moves (Papyrus `SetMotionType`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Motion {
+    /// Simulated: falls, rolls, is pushed.
+    Dynamic,
+    /// Held where it is put, pushing others aside (scripts and animations move it).
+    Keyframed,
+    /// Immovable.
+    Fixed,
+}
+
 /// A ragdoll in the simulation: one body per ragdoll body of the description, and
 /// the actor's scale.
 pub struct Ragdoll {
@@ -148,6 +162,166 @@ impl Physics {
         handles
     }
 
+    /// Add a loose object (`CollisionModel::is_loose`) as a body of its own at
+    /// `transform` (scale included), held in place until `release`d. Its mass
+    /// is the NIF's (kg).
+    pub fn add_loose(
+        &mut self,
+        model: &CollisionModel,
+        transform: Mat4,
+        owner: esp::FormId,
+    ) -> Option<RigidBodyHandle> {
+        let (pose, scale) = shapes::decompose(transform);
+        let parts: Vec<_> = model
+            .parts
+            .iter()
+            .filter_map(|p| {
+                let (local, s) =
+                    shapes::decompose(Mat4::from_scale(Vec3::splat(scale)) * p.transform);
+                Some((p, local, p.shape.build_solid(s)?))
+            })
+            .collect();
+        if parts.is_empty() {
+            return None;
+        }
+        let mass = model.parts[0].mass.max(0.1) / parts.len() as f32;
+        let body = RigidBodyBuilder::dynamic()
+            .pose(pose)
+            .linear_damping(0.1)
+            .angular_damping(0.5)
+            .ccd_enabled(true)
+            .locked_axes(LockedAxes::all())
+            .sleeping(true);
+        let h = self.world.insert_body(body);
+        for (p, local, shape) in parts {
+            let c = ColliderBuilder::new(shape)
+                .position(local)
+                .mass(mass)
+                .friction(p.friction.clamp(0.0, 1.5))
+                .restitution(p.restitution.clamp(0.0, 0.9))
+                .build();
+            let ch = self.world.insert_collider(c, Some(h));
+            self.owners.insert(ch, owner);
+            self.materials.insert(ch, p.materials.clone());
+        }
+        Some(h)
+    }
+
+    /// Remove a loose object's body and its colliders.
+    pub fn remove_body(&mut self, h: RigidBodyHandle) {
+        let colliders: Vec<ColliderHandle> = self
+            .world
+            .bodies
+            .get(h)
+            .map(|b| b.colliders().to_vec())
+            .unwrap_or_default();
+        self.world.remove_body_with_colliders(h, true);
+        for c in colliders {
+            self.owners.remove(&c);
+            self.materials.remove(&c);
+        }
+    }
+
+    /// Where a body is (no scale), and whether it is asleep.
+    pub fn body_pose(&self, h: RigidBodyHandle) -> Option<(Mat4, bool)> {
+        let b = self.world.bodies.get(h)?;
+        Some((b.position().to_mat4(), b.is_sleeping()))
+    }
+
+    /// Put a body somewhere (no scale), at rest.
+    pub fn set_body_pose(&mut self, h: RigidBodyHandle, m: Mat4) {
+        if let Some(b) = self.world.bodies.get_mut(h) {
+            let (pose, _) = shapes::decompose(m);
+            b.set_position(pose, true);
+            b.set_linvel(Vec3::ZERO, true);
+            b.set_angvel(Vec3::ZERO, true);
+        }
+    }
+
+    /// Let a loose object's body move, asleep (`asleep`) until disturbed or
+    /// moving already.
+    pub fn release(&mut self, h: RigidBodyHandle, asleep: bool) {
+        if let Some(b) = self.world.bodies.get_mut(h) {
+            b.set_locked_axes(LockedAxes::empty(), !asleep);
+            if asleep {
+                b.sleep();
+            }
+        }
+    }
+
+    /// The bodies of what `owner` owns (its loose object).
+    fn owner_bodies(&self, owner: esp::FormId) -> Vec<RigidBodyHandle> {
+        let mut out: Vec<RigidBodyHandle> = self
+            .owners
+            .iter()
+            .filter(|(_, o)| **o == owner)
+            .filter_map(|(h, _)| self.world.colliders.get(*h)?.parent())
+            .collect();
+        out.sort_unstable_by_key(|h| h.into_raw_parts());
+        out.dedup();
+        out
+    }
+
+    /// Push what `owner` owns: an impulse (kg game units / s) through its centre
+    /// of mass. False if it has no body.
+    pub fn apply_impulse(&mut self, owner: esp::FormId, impulse: Vec3) -> bool {
+        let bodies = self.owner_bodies(owner);
+        for &h in &bodies {
+            if let Some(b) = self.world.bodies.get_mut(h)
+                && b.is_dynamic()
+            {
+                b.apply_impulse(impulse, true);
+                log::debug!(
+                    "{owner}: impulse {impulse:?} on {:.2} kg: {:?}",
+                    b.mass(),
+                    b.linvel()
+                );
+            }
+        }
+        !bodies.is_empty()
+    }
+
+    /// Change how what `owner` owns moves. False if it has no body.
+    pub fn set_motion(&mut self, owner: esp::FormId, motion: Motion) -> bool {
+        let bodies = self.owner_bodies(owner);
+        for &h in &bodies {
+            if let Some(b) = self.world.bodies.get_mut(h) {
+                let t = match motion {
+                    Motion::Dynamic => RigidBodyType::Dynamic,
+                    Motion::Keyframed => RigidBodyType::KinematicPositionBased,
+                    Motion::Fixed => RigidBodyType::Fixed,
+                };
+                b.set_body_type(t, true);
+            }
+        }
+        !bodies.is_empty()
+    }
+
+    /// Whether what `owner` owns is a simulated (dynamic) body.
+    pub fn is_dynamic_owner(&self, owner: esp::FormId) -> bool {
+        self.owner_bodies(owner)
+            .iter()
+            .any(|&h| self.world.bodies.get(h).is_some_and(|b| b.is_dynamic()))
+    }
+
+    /// A body's mass (kg) and speed (game units / s).
+    pub fn body_mass_speed(&self, h: RigidBodyHandle) -> (f32, f32) {
+        self.world
+            .bodies
+            .get(h)
+            .map_or((0.0, 0.0), |b| (b.mass(), b.linvel().length()))
+    }
+
+    /// How what `owner` owns moves, if it has a body.
+    pub fn motion(&self, owner: esp::FormId) -> Option<Motion> {
+        let b = self.world.bodies.get(*self.owner_bodies(owner).first()?)?;
+        Some(match b.body_type() {
+            RigidBodyType::Dynamic => Motion::Dynamic,
+            RigidBodyType::Fixed => Motion::Fixed,
+            _ => Motion::Keyframed,
+        })
+    }
+
     /// Turn colliders on or off (e.g. an open door's leaves).
     pub fn set_enabled(&mut self, handles: &[ColliderHandle], enabled: bool) {
         for &h in handles {
@@ -189,6 +363,28 @@ impl Physics {
                 .map(|cap| cap.half_height() + cap.radius)
                 .unwrap_or(0.0);
             c.set_translation(feet + Vec3::Z * lift);
+            let (pose, shape) = (*c.position(), c.shared_shape().clone());
+            self.wake_touching(pose, &shape);
+        }
+    }
+
+    /// Wake the sleeping loose objects a shape overlaps (an actor walking into
+    /// them): the physics engine doesn't for colliders moved by hand.
+    fn wake_touching(&mut self, pose: Pose, shape: &SharedShape) {
+        let qp = self.world.query_pipeline();
+        let hs: Vec<RigidBodyHandle> = qp
+            .intersect_shape(pose, &*shape.0)
+            .filter_map(|(_, c)| c.parent())
+            .collect();
+        for h in hs {
+            if self
+                .world
+                .bodies
+                .get(h)
+                .is_some_and(|b| b.is_dynamic() && b.is_sleeping())
+            {
+                self.world.wake_up(h, true);
+            }
         }
     }
 
@@ -200,8 +396,16 @@ impl Physics {
             .filter(|(_, o)| **o == owner)
             .map(|(h, _)| *h)
             .collect();
+        for h in self.owner_bodies(owner) {
+            if let Some(b) = self.world.bodies.get(h) {
+                let m = delta * b.position().to_mat4();
+                self.set_body_pose(h, m);
+            }
+        }
         for h in hs {
-            if let Some(c) = self.world.colliders.get_mut(h) {
+            if let Some(c) = self.world.colliders.get_mut(h)
+                && c.parent().is_none()
+            {
                 let (pose, _) = shapes::decompose(delta * c.position().to_mat4());
                 c.set_position(pose);
             }
@@ -219,6 +423,11 @@ impl Physics {
         for h in hs {
             if let Some(c) = self.world.colliders.get_mut(h) {
                 c.set_enabled(enabled);
+            }
+        }
+        for h in self.owner_bodies(owner) {
+            if let Some(b) = self.world.bodies.get_mut(h) {
+                b.set_enabled(enabled);
             }
         }
     }
@@ -351,12 +560,33 @@ impl Physics {
     }
 
     /// Move the player capsule (centre position) by `desired`. Returns (new position, grounded).
-    pub fn move_player(&self, pos: Vec3, desired: Vec3, dt: f32) -> (Vec3, bool) {
+    /// Loose objects in the way are pushed aside.
+    pub fn move_player(&mut self, pos: Vec3, desired: Vec3, dt: f32) -> (Vec3, bool) {
         let pose = Pose::from_translation(pos);
-        let qp = self.world.query_pipeline();
-        let m = self
-            .controller
-            .move_shape(dt, &qp, &*self.player_shape.0, &pose, desired, |_| {});
+        let mut hits = Vec::new();
+        let m = {
+            let qp = self.world.query_pipeline();
+            self.controller
+                .move_shape(dt, &qp, &*self.player_shape.0, &pose, desired, |c| {
+                    hits.push(c)
+                })
+        };
+        if !hits.is_empty() {
+            let w = &mut self.world;
+            let mut qp = w.broad_phase.as_query_pipeline_mut(
+                w.narrow_phase.query_dispatcher(),
+                &mut w.bodies,
+                &mut w.colliders,
+                QueryFilter::default(),
+            );
+            self.controller.solve_character_collision_impulses(
+                dt,
+                &mut qp,
+                &*self.player_shape.0,
+                PLAYER_MASS,
+                &hits,
+            );
+        }
         (pos + m.translation, m.grounded)
     }
 

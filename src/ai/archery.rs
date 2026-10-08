@@ -31,6 +31,8 @@ pub(crate) const RELEASE_FALLBACK: f32 = 0.3;
 /// Seconds an arrow may fly, and stays stuck where it struck; the most kept stuck.
 const FLIGHT_TIME: f32 = 8.0;
 const STUCK_TIME: f32 = 60.0;
+/// An arrow's mass, for the push it gives what it strikes (kg; no source).
+const ARROW_MASS: f32 = 0.1;
 const MAX_STUCK: usize = 64;
 /// Height of the middle of an actor's body (its collision capsule) at scale 1.
 const CAPSULE_CENTRE: f32 = 60.0;
@@ -483,6 +485,8 @@ impl Engine {
     pub(crate) fn update_projectiles(&mut self, dt: f32) {
         let mut hits: Vec<(FormId, FormId, f32, Arrow)> = Vec::new();
         let mut stuck: Vec<(FormId, Vec3, f32, Option<FormId>, Vec3)> = Vec::new();
+        // References struck (shooter, what, its projectile, the arrow's velocity).
+        let mut struck: Vec<(FormId, FormId, FormId, Vec3)> = Vec::new();
         let player = self.player.position;
         let (pr, ph) = (self.physics.player_radius, self.physics.player_half_height);
         for p in self.projectiles.iter_mut() {
@@ -527,6 +531,14 @@ impl Engine {
                             p.stuck = Some(0.0);
                         }
                         None => {
+                            if let Some(o) = owner {
+                                struck.push((p.shooter, o, p.arrow.projectile, p.vel));
+                            }
+                            // A loose object is knocked away; the arrow falls.
+                            if owner.is_some_and(|o| self.physics.is_dynamic_owner(o)) {
+                                p.stuck = Some(0.0);
+                                continue;
+                            }
                             stuck.push((p.shooter, p.pos, p.age, owner, dir));
                             p.stuck = Some(STUCK_TIME);
                         }
@@ -537,6 +549,10 @@ impl Engine {
             if p.age > FLIGHT_TIME && p.stuck.is_none() {
                 p.stuck = Some(0.0);
             }
+        }
+        for (shooter, what, projectile, vel) in struck {
+            self.physics.apply_impulse(what, vel * ARROW_MASS);
+            self.send_hit_event(what, shooter, Some(projectile), false, false, false);
         }
         for (shooter, at, age, owner, dir) in stuck {
             let what = owner

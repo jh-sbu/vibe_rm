@@ -2003,7 +2003,7 @@ impl Engine {
 
     /// `OnHit` (aggressor, source, projectile, power attack, sneak attack,
     /// bash, blocked) to what was struck: the source is the attacker's weapon.
-    fn send_hit_event(
+    pub(crate) fn send_hit_event(
         &mut self,
         target: FormId,
         attacker: FormId,
