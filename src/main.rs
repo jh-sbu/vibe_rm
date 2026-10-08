@@ -12,6 +12,7 @@ mod detection;
 mod dialogue;
 mod engine;
 mod footsteps;
+mod grab;
 mod items;
 mod locations;
 mod locks;

@@ -136,6 +136,9 @@ pub struct Physics {
     /// Loose objects' bodies their NIF fixes in place (a sign's bracket, a
     /// beehive's mount): `set_motion` leaves them be.
     anchored: std::collections::HashSet<RigidBodyHandle>,
+    /// The body the player holds (`crate::grab`): the character controller
+    /// passes through it rather than standing on it or pushing it.
+    pub held: Option<RigidBodyHandle>,
 }
 
 impl Physics {
@@ -172,6 +175,7 @@ impl Physics {
             breakable: Vec::new(),
             broken: Vec::new(),
             anchored: Default::default(),
+            held: None,
         }
     }
 
@@ -383,6 +387,18 @@ impl Physics {
             }
         }
         !bodies.is_empty()
+    }
+
+    /// The middle of what `owner` owns that moves (its bodies' mean position).
+    pub fn owner_center(&self, owner: esp::FormId) -> Option<Vec3> {
+        let at: Vec<Vec3> = self
+            .owner_bodies(owner)
+            .iter()
+            .filter_map(|&h| self.world.bodies.get(h))
+            .filter(|b| !b.is_fixed())
+            .map(|b| b.center_of_mass())
+            .collect();
+        (!at.is_empty()).then(|| at.iter().sum::<Vec3>() / at.len() as f32)
     }
 
     /// Whether what `owner` owns is a simulated (dynamic) body.
@@ -672,8 +688,12 @@ impl Physics {
     pub fn move_player(&mut self, pos: Vec3, desired: Vec3, dt: f32) -> (Vec3, bool) {
         let pose = Pose::from_translation(pos);
         let mut hits = Vec::new();
+        let filter = match self.held {
+            Some(h) => QueryFilter::default().exclude_rigid_body(h),
+            None => QueryFilter::default(),
+        };
         let m = {
-            let qp = self.world.query_pipeline();
+            let qp = self.world.query_pipeline_with_filter(filter);
             self.controller
                 .move_shape(dt, &qp, &*self.player_shape.0, &pose, desired, |c| {
                     hits.push(c)
@@ -685,7 +705,7 @@ impl Physics {
                 w.narrow_phase.query_dispatcher(),
                 &mut w.bodies,
                 &mut w.colliders,
-                QueryFilter::default(),
+                filter,
             );
             self.controller.solve_character_collision_impulses(
                 dt,
@@ -795,6 +815,89 @@ impl Physics {
         self.world.colliders.contains(h)
     }
 
+    /// Cast a ray: the hit distance, the owning reference (if any) and the
+    /// body hit (none for the world's fixed collision).
+    pub fn raycast_body(
+        &self,
+        origin: Vec3,
+        dir: Vec3,
+        max: f32,
+    ) -> Option<(f32, Option<esp::FormId>, Option<RigidBodyHandle>)> {
+        let ray = Ray::new(origin, dir);
+        let (h, toi) = self
+            .world
+            .cast_ray(&ray, max, true, QueryFilter::default())?;
+        let body = self.world.colliders.get(h).and_then(|c| c.parent());
+        Some((toi, self.owners.get(&h).copied(), body))
+    }
+
+    /// Whether a body is simulated, and its point at `world` in its own frame.
+    pub fn body_local_point(&self, h: RigidBodyHandle, world: Vec3) -> Option<(bool, Vec3)> {
+        let b = self.world.bodies.get(h)?;
+        Some((b.is_dynamic(), b.position().inverse_transform_point(world)))
+    }
+
+    /// Pull a held body's point `local` (in its frame) towards `target` for the
+    /// next step of `dt`, as if `mass` hung there (the whole object, or the
+    /// whole ragdoll), with at most `max_force`, its weight held up within it;
+    /// its spin damped. Returns how far the point is from the target, none if
+    /// the body is gone.
+    pub fn drive_held(
+        &mut self,
+        h: RigidBodyHandle,
+        local: Vec3,
+        target: Vec3,
+        mass: f32,
+        max_force: f32,
+        dt: f32,
+    ) -> Option<f32> {
+        /// How fast the point closes on the target (per second), its top speed
+        /// (game units / s), and the spin kept per step (no source).
+        const GAIN: f32 = 12.0;
+        const TOP_SPEED: f32 = 1200.0;
+        const SPIN_KEPT: f32 = 0.85;
+        let b = self.world.bodies.get_mut(h)?;
+        let p = b.position().transform_point(local);
+        let off = target.distance(p);
+        if !b.is_dynamic() {
+            return Some(off);
+        }
+        let desired = ((target - p) * GAIN).clamp_length_max(TOP_SPEED);
+        let need = (desired - b.velocity_at_point(p)) * mass + Vec3::Z * GRAVITY * mass * dt;
+        b.apply_impulse_at_point(need.clamp_length_max(max_force * dt), p, true);
+        b.set_angvel(b.angvel() * SPIN_KEPT, true);
+        Some(off)
+    }
+
+    /// Slow a body to at most `speed` (game units / s).
+    pub fn cap_speed(&mut self, h: RigidBodyHandle, speed: f32) {
+        if let Some(b) = self.world.bodies.get_mut(h) {
+            let v = b.linvel().clamp_length_max(speed);
+            b.set_linvel(v, true);
+        }
+    }
+
+    /// The mass of a body and of the bodies joined to it, all told (kg).
+    pub fn joined_mass(&self, h: RigidBodyHandle) -> f32 {
+        let mut seen = vec![h];
+        let mut i = 0;
+        while let Some(&b) = seen.get(i) {
+            i += 1;
+            for (a, c, _, _) in self.world.impulse_joints.attached_joints(b) {
+                for o in [a, c] {
+                    if !seen.contains(&o) {
+                        seen.push(o);
+                    }
+                }
+            }
+        }
+        seen.iter()
+            .filter_map(|&b| self.world.bodies.get(b))
+            .filter(|b| b.is_dynamic())
+            .map(|b| b.mass())
+            .sum()
+    }
+
     /// Cast a ray, returning the hit distance and the owning reference (if any).
     pub fn raycast(&self, origin: Vec3, dir: Vec3, max: f32) -> Option<(f32, Option<esp::FormId>)> {
         let ray = Ray::new(origin, dir);
@@ -806,3 +909,43 @@ impl Physics {
 }
 
 pub type CollisionCache = HashMap<String, Option<Arc<CollisionModel>>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A free ball of `mass` at the origin, and the world.
+    fn ball(mass: f32) -> (Physics, RigidBodyHandle) {
+        let mut p = Physics::new();
+        let h = p.world.insert_body(RigidBodyBuilder::dynamic());
+        p.world
+            .insert_collider(ColliderBuilder::ball(5.0).mass(mass).build(), Some(h));
+        (p, h)
+    }
+
+    /// Hold the ball's centre towards `target` for `steps` steps; where it ends.
+    fn hold(p: &mut Physics, h: RigidBodyHandle, target: Vec3, max_force: f32, steps: u32) -> Vec3 {
+        let dt = 1.0 / 60.0;
+        for _ in 0..steps {
+            let mass = p.joined_mass(h);
+            p.drive_held(h, Vec3::ZERO, target, mass, max_force, dt);
+            p.step(dt);
+        }
+        p.body_pose(h).unwrap().0.w_axis.truncate()
+    }
+
+    #[test]
+    fn held_body_comes_to_the_target() {
+        let (mut p, h) = ball(5.0);
+        let target = Vec3::new(30.0, 0.0, 40.0);
+        let at = hold(&mut p, h, target, 150.0 * GRAVITY, 120);
+        assert!(at.distance(target) < 2.0, "{at:?}");
+    }
+
+    #[test]
+    fn too_heavy_to_lift() {
+        let (mut p, h) = ball(300.0);
+        let at = hold(&mut p, h, Vec3::new(0.0, 0.0, 40.0), 150.0 * GRAVITY, 60);
+        assert!(at.z < 0.0, "{at:?}");
+    }
+}

@@ -541,7 +541,7 @@ impl ApplicationHandler for App {
                             }
                             if code == KeyCode::KeyE
                                 && !event.repeat
-                                && let Err(e) = s.engine.activate()
+                                && let Err(e) = s.engine.activate_press()
                             {
                                 log::error!("activation failed: {e:#}");
                             }
@@ -576,6 +576,11 @@ impl ApplicationHandler for App {
                             s.keys.insert(code);
                         }
                         ElementState::Released => {
+                            if code == KeyCode::KeyE
+                                && let Err(e) = s.engine.activate_release()
+                            {
+                                log::error!("activation failed: {e:#}");
+                            }
                             s.keys.remove(&code);
                         }
                     }
