@@ -338,6 +338,8 @@ pub struct ActorRuntime {
     pub(crate) drawn: bool,
     /// Sounds the graph asked for this frame (`SoundPlay` payloads: SNDR editor ids).
     pub(crate) sounds: Vec<String>,
+    /// Every event the graph raised this frame, for scripts (`OnAnimationEvent`).
+    pub(crate) graph_events: Vec<String>,
     /// The footstep set of what it wears, and its footstep events (lowercase) the
     /// graph raised this frame.
     pub(crate) footstep_set: Option<Arc<crate::world::footsteps::FootstepSet>>,
@@ -468,6 +470,7 @@ impl ActorRuntime {
             equipment_changed: false,
             drawn: false,
             sounds: Vec::new(),
+            graph_events: Vec::new(),
             footstep_set: None,
             footsteps: Vec::new(),
             objects: Vec::new(),
@@ -1655,6 +1658,7 @@ impl ActorRuntime {
             self.heading -= yaw;
         }
         for r in frame.raised {
+            self.graph_events.push(r.event.clone());
             let e = r.event.to_ascii_lowercase();
             if self.combat.is_some()
                 && log::log_enabled!(target: "combat_events", log::Level::Trace)
@@ -2785,6 +2789,7 @@ impl Engine {
         let mut held = Vec::new();
         let mut equip = Vec::new();
         let mut sounds: Vec<(String, Vec3)> = Vec::new();
+        let mut anim_events: Vec<(FormId, Vec<String>)> = Vec::new();
         let mut steps: Vec<crate::footsteps::Step> = Vec::new();
         let listener = self.camera.position;
         let mut swings: Vec<combat::Swing> = Vec::new();
@@ -2966,6 +2971,9 @@ impl Engine {
                 for s in a.sounds.drain(..) {
                     sounds.push((s, a.pos + Vec3::Z * 64.0 * a.scale));
                 }
+                if !a.graph_events.is_empty() {
+                    anim_events.push((a.ref_id, std::mem::take(&mut a.graph_events)));
+                }
                 if let Some(set) = a
                     .footstep_set
                     .as_ref()
@@ -3028,6 +3036,9 @@ impl Engine {
         self.report_combat_states();
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);
+        }
+        for (r, events) in anim_events {
+            self.raise_anim_events(r, &events);
         }
         for step in &steps {
             self.play_footstep(step);

@@ -2,6 +2,7 @@ mod activation;
 mod actor_values;
 mod ai;
 mod aliases;
+mod anim_events;
 mod app;
 mod arrest;
 mod audio;
