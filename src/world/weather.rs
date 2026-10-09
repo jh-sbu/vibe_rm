@@ -49,6 +49,8 @@ pub struct Weather {
     /// Directional ambient per time of day: X+, X-, Y+, Y-, Z+, Z-.
     pub dalc: [[Vec3; 6]; 4],
     pub wind_speed: f32,
+    /// IMSP: the image space per time of day (sunrise, day, sunset, night).
+    pub image_spaces: [FormId; 4],
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +117,7 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
         clouds: Vec::new(),
         dalc: [[Vec3::splat(0.3); 6]; 4],
         wind_speed: 0.0,
+        image_spaces: [FormId::NULL; 4],
     };
     let mut layer_tex: Vec<Option<String>> = vec![None; 32];
     let mut pnam: Option<Vec<u8>> = None;
@@ -147,6 +150,16 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
             b"JNAM" => jnam = Some(sr.data.to_vec()),
             b"NAM1" => disabled = sr.u32(0),
             b"DATA" => w.wind_speed = sr.u8(0) as f32 / 255.0,
+            b"IMSP" => {
+                for (t, f) in w
+                    .image_spaces
+                    .iter_mut()
+                    .enumerate()
+                    .take(sr.data.len() / 4)
+                {
+                    *f = rec.fid(sr.form_id(t * 4));
+                }
+            }
             b"DALC" if dalc_i < 4 => {
                 for a in 0..6 {
                     w.dalc[dalc_i][a] = rgb(sr.data, a * 4);

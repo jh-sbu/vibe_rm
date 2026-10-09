@@ -531,6 +531,10 @@ game each piece unlocks.
   ones hold until removed); Papyrus `Apply`, `ApplyCrossFade`, `PopTo`,
   `Remove`, `RemoveCrossFade`. `Game.FadeOutGame` (to and from black or white)
   and `Game.ShakeCamera`. Console `imod`, `rimod`, `imods`, `fadeout`, `shake`.
+  The base image space (IMGS) under them: the interior's (XCIM, else
+  `DefaultImageSpaceInterior`) or the weather's for the time of day (IMSP),
+  its saturation, brightness, contrast (about the frame's average) and tint
+  drawn every frame; vrm-tool `image-spaces`.
   Open questions: `known_gaps/image-space.md`
 
 ## Next
@@ -612,8 +616,9 @@ game each piece unlocks.
      NPCs only use pre-baked heads
 7. **Audio**: lip sync
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
-   caster batches), HDR/image spaces (the base IMGS under the modifiers; the
-   modifiers' radial blur, depth of field, motion blur; see Done), particles
+   caster batches), HDR: eye adaptation, bloom, tone mapping and the image
+   spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
+   radial blur and motion blur (cinematic values and tint: see Done), particles
    (fire, smoke, explosions), distant LOD (BTR/BTO/trees),
    grass, decals, environment maps
 9. **Saves**: an engine-native save format (reading .ess later), writing out

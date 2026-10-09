@@ -3348,6 +3348,118 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("image-spaces") => {
+            // image-spaces <data dir> [imgs]: one image space's values, or over all of
+            // them: HNAM / CNAM / TNAM / DNAM ranges, which cells and weathers use
+            // them, and interiors without one (XCIM).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let floats = |d: &[u8]| -> Vec<f32> {
+                d.chunks_exact(4)
+                    .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                    .collect()
+            };
+            let fields: [(&[u8; 4], &[&str]); 4] = [
+                (
+                    b"HNAM",
+                    &[
+                        "eye adapt speed",
+                        "bloom blur radius",
+                        "bloom threshold",
+                        "bloom scale",
+                        "receive bloom threshold",
+                        "white",
+                        "sunlight scale",
+                        "sky scale",
+                        "eye adapt strength",
+                    ],
+                ),
+                (b"CNAM", &["saturation", "brightness", "contrast"]),
+                (b"TNAM", &["tint amount", "tint r", "tint g", "tint b"]),
+                (b"DNAM", &["dof strength", "dof distance", "dof range"]),
+            ];
+            if let Some(name) = args.get(2) {
+                let id = match u32::from_str_radix(name, 16) {
+                    Ok(v) if name.len() == 8 => esp::FormId(v),
+                    _ => lo.find_editor_id(name).context("editor id not found")?,
+                };
+                let r = lo.get(id).context("record not found")?;
+                println!("{} {id}", r.editor_id().unwrap_or_default());
+                for (tag, labels) in fields {
+                    let Some(d) = r.get(tag) else { continue };
+                    for (l, v) in labels.iter().zip(floats(d)) {
+                        println!("  {l}: {v}");
+                    }
+                }
+                return Ok(());
+            }
+            let mut ranges: std::collections::BTreeMap<String, (f32, f32, usize)> =
+                Default::default();
+            let ids = lo.ids_of_type(b"IMGS");
+            println!("{} image spaces", ids.len());
+            for &id in ids {
+                let Some(r) = lo.get(id) else { continue };
+                for (tag, labels) in fields {
+                    let Some(d) = r.get(tag) else {
+                        ranges
+                            .entry(format!("no {tag:?}", tag = String::from_utf8_lossy(tag)))
+                            .or_insert((0.0, 0.0, 0))
+                            .2 += 1;
+                        continue;
+                    };
+                    for (l, v) in labels.iter().zip(floats(d)) {
+                        let e = ranges
+                            .entry(l.to_string())
+                            .or_insert((f32::MAX, f32::MIN, 0));
+                        e.0 = e.0.min(v);
+                        e.1 = e.1.max(v);
+                        e.2 += 1;
+                    }
+                }
+            }
+            for (k, (lo, hi, n)) in &ranges {
+                println!("  {k}: {lo} .. {hi} ({n})");
+            }
+            let (mut with, mut without) = (0, Vec::new());
+            for &id in lo.ids_of_type(b"CELL") {
+                let Some(r) = lo.get(id) else { continue };
+                if r.get(b"DATA").is_none_or(|d| d[0] & 1 == 0) {
+                    continue;
+                }
+                if r.get(b"XCIM").is_some() {
+                    with += 1;
+                } else {
+                    without.push(r.editor_id().unwrap_or_default());
+                }
+            }
+            println!(
+                "interiors: {with} with XCIM, {} without (e.g. {:?})",
+                without.len(),
+                &without[..without.len().min(8)]
+            );
+            let mut weathers = 0;
+            let mut no_imsp = Vec::new();
+            for &id in lo.ids_of_type(b"WTHR") {
+                let Some(r) = lo.get(id) else { continue };
+                weathers += 1;
+                if r.get(b"IMSP").is_none() {
+                    no_imsp.push(r.editor_id().unwrap_or_default());
+                }
+            }
+            println!("weathers: {weathers}, without IMSP {no_imsp:?}");
+            for &id in lo.ids_of_type(b"WRLD") {
+                let Some(r) = lo.get(id) else { continue };
+                let tags: Vec<String> = r
+                    .subrecords()
+                    .map(|s| s.tag.to_string())
+                    .filter(|t| ["INAM", "XCIM", "ZNAM"].contains(&t.as_str()))
+                    .collect();
+                if !tags.is_empty() {
+                    println!("  world {} has {tags:?}", r.editor_id().unwrap_or_default());
+                }
+            }
+        }
         Some("model-users") => {
             // model-users <data dir> <model path substring> [n]: base records whose
             // model's path has the substring, and up to n placed references of them.

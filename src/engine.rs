@@ -1521,6 +1521,7 @@ impl Engine {
         self.lod = None;
         self.scene.lod.clear();
         self.scene.env = interior_environment(&contents.lighting);
+        self.set_interior_image_space(Some(contents.info.image_space));
         let key = CellKey::Interior(cell_id);
         let (mut objects, mut lights, mut doors) = (
             contents.objects.clone(),
@@ -1620,6 +1621,7 @@ impl Engine {
             }
         }
         self.setup_weather(world);
+        self.set_interior_image_space(None);
         self.scene.env = self.sky_environment().unwrap_or_default();
         // Distant LOD (child worldspaces may use their parent's).
         let lod_world = self

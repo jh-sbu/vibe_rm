@@ -7,6 +7,8 @@ struct Post {
     fade: vec4<f32>,
     // blur radius px, double vision offset px, texel size
     blur: vec4<f32>,
+    // x: the smallest mip, holding the frame's average
+    levels: vec4<f32>,
 };
 
 @group(0) @binding(0) var src: texture_2d<f32>;
@@ -55,6 +57,12 @@ fn from_display(c: vec3<f32>) -> vec3<f32> {
     return select(c, pow(max(c, vec3<f32>(0.0)), vec3<f32>(2.2)), post.cinematic.w > 0.5);
 }
 
+// Halving a mip: the bilinear tap between four texels averages them.
+@fragment
+fn fs_down(in: VsOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(textureSampleLevel(src, samp, in.uv, 0.0).rgb, 1.0);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var c: vec3<f32>;
@@ -64,12 +72,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     } else {
         c = blurred(in.uv);
     }
+    // Contrast about the frame's average luminance.
+    let avg = textureSampleLevel(src, samp, vec2<f32>(0.5), post.levels.x).rgb;
+    let pivot = to_display(vec3<f32>(dot(avg, vec3<f32>(0.2125, 0.7154, 0.0721)))).x;
     c = to_display(c);
     let lum = dot(c, vec3<f32>(0.2125, 0.7154, 0.0721));
     c = mix(vec3<f32>(lum), c, post.cinematic.x);
     c = mix(c, lum * post.tint.rgb, post.tint.a);
     c = c * post.cinematic.y;
-    c = (c - 0.5) * post.cinematic.z + 0.5;
+    c = (c - pivot) * post.cinematic.z + pivot;
     c = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
     c = mix(c, post.fade.rgb, post.fade.a);
     return vec4<f32>(from_display(c), 1.0);

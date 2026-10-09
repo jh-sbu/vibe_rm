@@ -1,8 +1,9 @@
 //! Image space effects drawn over the finished frame: the cinematic values
 //! (saturation, brightness, contrast), tint, fade colour, blur and double
-//! vision that image space modifiers and screen fades drive
+//! vision that the base image space, its modifiers and screen fades drive
 //! (`crate::imagespace`). With nothing to apply the frame renders straight to
-//! its target.
+//! its target. The frame is reduced to its average by a mip chain; contrast
+//! works about the average's luminance.
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -15,6 +16,8 @@ struct PostUniform {
     fade: [f32; 4],
     /// Blur radius and double vision offset in pixels, texel size.
     blur: [f32; 4],
+    /// The index of the smallest mip (the frame's average colour); the rest unused.
+    levels: [f32; 4],
 }
 
 /// What the frame gets drawn through.
@@ -60,13 +63,25 @@ impl PostEffect {
     }
 }
 
+/// The frame rendered before the effects.
+struct Target {
+    size: [u32; 2],
+    /// Mip 0, rendered into.
+    view: wgpu::TextureView,
+    /// All the mips, for the post pass.
+    bind_group: wgpu::BindGroup,
+    /// Each mip below the first: (its view, the bind group sampling the one above).
+    mips: Vec<(wgpu::TextureView, wgpu::BindGroup)>,
+}
+
 pub struct PostPass {
     pipeline: wgpu::RenderPipeline,
+    /// Halving a mip into the next.
+    downsample: wgpu::RenderPipeline,
     bgl: wgpu::BindGroupLayout,
     ubuf: wgpu::Buffer,
     sampler: wgpu::Sampler,
-    /// The frame rendered before the effects: (size, its view, bind group).
-    target: Option<([u32; 2], wgpu::TextureView, wgpu::BindGroup)>,
+    target: Option<Target>,
     format: wgpu::TextureFormat,
 }
 
@@ -137,6 +152,31 @@ impl PostPass {
             multiview_mask: None,
             cache: None,
         });
+        let downsample = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("post downsample"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_down"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         let ubuf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("post"),
             size: std::mem::size_of::<PostUniform>() as u64,
@@ -151,6 +191,7 @@ impl PostPass {
         });
         PostPass {
             pipeline,
+            downsample,
             bgl,
             ubuf,
             sampler,
@@ -162,7 +203,8 @@ impl PostPass {
     /// The texture to render the frame into before the effects.
     pub fn target(&mut self, device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
         let size = [width, height];
-        if self.target.as_ref().is_none_or(|t| t.0 != size) {
+        if self.target.as_ref().is_none_or(|t| t.size != size) {
+            let levels = 32 - width.max(height).max(1).leading_zeros();
             let tex = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("pre-post"),
                 size: wgpu::Extent3d {
@@ -170,7 +212,7 @@ impl PostPass {
                     height,
                     depth_or_array_layers: 1,
                 },
-                mip_level_count: 1,
+                mip_level_count: levels,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: self.format,
@@ -178,28 +220,45 @@ impl PostPass {
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
-            let view = tex.create_view(&Default::default());
-            let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("post"),
-                layout: &self.bgl,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: self.ubuf.as_entire_binding(),
-                    },
-                ],
+            let mip = |level: u32| {
+                tex.create_view(&wgpu::TextureViewDescriptor {
+                    base_mip_level: level,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                })
+            };
+            let bind = |view: &wgpu::TextureView| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("post"),
+                    layout: &self.bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: self.ubuf.as_entire_binding(),
+                        },
+                    ],
+                })
+            };
+            let views: Vec<wgpu::TextureView> = (0..levels).map(mip).collect();
+            let mips = (1..levels as usize)
+                .map(|i| (views[i].clone(), bind(&views[i - 1])))
+                .collect();
+            self.target = Some(Target {
+                size,
+                view: views[0].clone(),
+                bind_group: bind(&tex.create_view(&Default::default())),
+                mips,
             });
-            self.target = Some((size, view, bg));
         }
-        self.target.as_ref().unwrap().1.clone()
+        self.target.as_ref().unwrap().view.clone()
     }
 
     /// Draw the frame rendered into [`PostPass::target`] onto `out` through `fx`.
@@ -210,9 +269,10 @@ impl PostPass {
         out: &wgpu::TextureView,
         fx: &PostEffect,
     ) {
-        let Some((size, _, bg)) = &self.target else {
+        let Some(target) = &self.target else {
             return;
         };
+        let size = target.size;
         // Effects work on display values: sRGB and float targets hold linear ones.
         let linear = self.format.is_srgb()
             || matches!(
@@ -235,8 +295,30 @@ impl PostPass {
                 1.0 / size[0] as f32,
                 1.0 / size[1] as f32,
             ],
+            levels: [target.mips.len() as f32, 0.0, 0.0, 0.0],
         };
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
+        for (view, bg) in &target.mips {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("post downsample"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.downsample);
+            pass.set_bind_group(0, bg, &[]);
+            pass.draw(0..3, 0..1);
+        }
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("post"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -254,7 +336,7 @@ impl PostPass {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, bg, &[]);
+        pass.set_bind_group(0, &target.bind_group, &[]);
         pass.draw(0..3, 0..1);
     }
 }
