@@ -320,7 +320,34 @@ pub enum Modifier {
     /// `BSLookAtModifier`: turn a chain of bones (spine, neck, head) and the eyes
     /// towards a target. The engine applies it to the pose.
     LookAt(LookAt),
+    /// `hkbFootIkControlsModifier`: foot placement runs while it does, with its gains.
+    /// The engine applies it to the pose.
+    FootIkControls(FootIkGains),
     Other(String),
+}
+
+/// `hkbFootIkGains` (bound members, such as
+/// `controlData/gains/worldFromModelFeedbackGain`, are read from the graph's
+/// variables at run time). Gains are per frame at 30 Hz.
+#[derive(Debug, Clone, Default)]
+pub struct FootIkGains {
+    /// Fading foot placement in and out.
+    pub on_off: f32,
+    /// Ground offsets easing up and down.
+    pub ground_ascending: f32,
+    pub ground_descending: f32,
+    /// How much of the leg IK applies to a planted / raised foot.
+    pub foot_planted: f32,
+    pub foot_raised: f32,
+    pub foot_unlock: f32,
+    /// The body (model) following the feet's error.
+    pub world_from_model_feedback: f32,
+    /// How much of that error to take below rather than above (0.5 even).
+    pub error_up_down_bias: f32,
+    pub align_world_from_model: f32,
+    pub hip_orientation: f32,
+    pub max_knee_angle_difference: f32,
+    pub ankle_orientation: f32,
 }
 
 /// `BSLookAtModifier` settings (bound members, such as `lookAtTarget` and
@@ -716,6 +743,24 @@ impl<'a> Reader<'a> {
                     on_gain: p.f32(o + 0x84),
                     off_gain: p.f32(o + 0x88),
                     use_bone_gains: p.u8(o + 0x8C) != 0,
+                })
+            }
+            // After hkbModifier: hkbFootIkControlData's gains, then the legs.
+            "hkbFootIkControlsModifier" => {
+                let f = |i: u32| p.f32(o + 0x50 + i * 4);
+                Modifier::FootIkControls(FootIkGains {
+                    on_off: f(0),
+                    ground_ascending: f(1),
+                    ground_descending: f(2),
+                    foot_planted: f(3),
+                    foot_raised: f(4),
+                    foot_unlock: f(5),
+                    world_from_model_feedback: f(6),
+                    error_up_down_bias: f(7),
+                    align_world_from_model: f(8),
+                    hip_orientation: f(9),
+                    max_knee_angle_difference: f(10),
+                    ankle_orientation: f(11),
                 })
             }
             other => Modifier::Other(other.to_owned()),

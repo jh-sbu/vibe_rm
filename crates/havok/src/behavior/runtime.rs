@@ -1828,10 +1828,9 @@ impl Instance {
         std::mem::take(&mut self.raised)
     }
 
-    /// Names of the active states, outermost first (for debugging).
-    /// Look-at modifiers running now (enabled), with their bound members resolved:
-    /// target on / off, per-bone `enabled` and gains.
-    pub fn look_ats(&self) -> Vec<LookAt> {
+    /// Modifiers running now and enabled (graph, modifier), lists and event-driven
+    /// modifiers opened up.
+    fn running_modifiers(&self) -> Vec<(usize, ModId)> {
         fn mods(shared: &Shared, m: &ModState, values: &[f32], out: &mut Vec<(usize, ModId)>) {
             let enabled = shared.graph(m.gi).modifier_bindings[m.m]
                 .iter()
@@ -1889,6 +1888,25 @@ impl Instance {
             walk(&self.shared, r, &self.values, &mut active);
         }
         active
+    }
+
+    /// Bound members of modifier `m` and their variables' values.
+    fn bound_members(&self, gi: usize, m: ModId) -> impl Iterator<Item = (&str, f32)> {
+        self.shared.graph(gi).modifier_bindings[m]
+            .iter()
+            .filter_map(move |b| {
+                let v = self.shared.maps[gi]
+                    .vars
+                    .get(b.variable)
+                    .and_then(|&v| self.values.get(v))?;
+                Some((b.member.as_str(), *v))
+            })
+    }
+
+    /// Look-at modifiers running now (enabled), with their bound members resolved:
+    /// target on / off, per-bone `enabled` and gains.
+    pub fn look_ats(&self) -> Vec<LookAt> {
+        self.running_modifiers()
             .into_iter()
             .filter_map(|(gi, m)| {
                 let graph = self.shared.graph(gi);
@@ -1896,16 +1914,7 @@ impl Instance {
                     return None;
                 };
                 let mut l = l.clone();
-                for b in &graph.modifier_bindings[m] {
-                    let Some(v) = self.shared.maps[gi]
-                        .vars
-                        .get(b.variable)
-                        .and_then(|&v| self.values.get(v))
-                        .copied()
-                    else {
-                        continue;
-                    };
-                    let member = b.member.as_str();
+                for (member, v) in self.bound_members(gi, m) {
                     match member {
                         "lookAtTarget" => l.look_at_target = v != 0.0,
                         "onGain" => l.on_gain = v,
@@ -1943,6 +1952,39 @@ impl Instance {
             .collect()
     }
 
+    /// The foot IK controls running now (enabled), with bound gains resolved; foot
+    /// placement is off without one.
+    pub fn foot_ik_controls(&self) -> Option<FootIkGains> {
+        self.running_modifiers().into_iter().find_map(|(gi, m)| {
+            let Modifier::FootIkControls(g) = &self.shared.graph(gi).modifiers[m] else {
+                return None;
+            };
+            let mut g = g.clone();
+            for (member, v) in self.bound_members(gi, m) {
+                let Some(field) = member.strip_prefix("controlData/gains/") else {
+                    continue;
+                };
+                *match field {
+                    "onOffGain" => &mut g.on_off,
+                    "groundAscendingGain" => &mut g.ground_ascending,
+                    "groundDescendingGain" => &mut g.ground_descending,
+                    "footPlantedGain" => &mut g.foot_planted,
+                    "footRaisedGain" => &mut g.foot_raised,
+                    "footUnlockGain" => &mut g.foot_unlock,
+                    "worldFromModelFeedbackGain" => &mut g.world_from_model_feedback,
+                    "errorUpDownBias" => &mut g.error_up_down_bias,
+                    "alignWorldFromModelGain" => &mut g.align_world_from_model,
+                    "hipOrientationGain" => &mut g.hip_orientation,
+                    "maxKneeAngleDifference" => &mut g.max_knee_angle_difference,
+                    "ankleOrientationGain" => &mut g.ankle_orientation,
+                    _ => continue,
+                } = v;
+            }
+            Some(g)
+        })
+    }
+
+    /// Names of the active states, outermost first (for debugging).
     pub fn active_states(&self) -> Vec<String> {
         fn walk(shared: &Shared, n: &Node, out: &mut Vec<String>) {
             match &n.kind {

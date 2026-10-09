@@ -62,9 +62,14 @@ game each piece unlocks.
 - Head tracking: humanoids' `BSLookAtModifier` (spine, neck, head and eye bones, each
   within its limit, eased by the graph's gains, off past the overall limit) turns NPCs
   towards the player close by and while talking (`bHeadTracking`, `LookAtOutOfRange`)
-- Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses): rays through
+- Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
-  IK raising the others within their knee limits, planted feet tilted with the slope
+  IK raising the others within their knee limits, planted feet tilted with the slope;
+  only while the graph runs its `hkbFootIkControlsModifier` (humanoids' switched on by
+  the engine through `bHumanoidFootIKEnable`, off in furniture and while the graph sets
+  `bHumanoidFootIKDisable`), eased by its gains: on / off, ground ascending /
+  descending, body feedback and up / down bias, planted / raised, ankle orientation
+  (open questions: `known_gaps/foot-ik.md`)
 - Talking gestures: each line of dialogue picks from the `ActionTalking` tree (hands on hips,
   hand gestures, angry / happy / expressive idles) by the line's emotion (`TRDT`) and the
   speaker's graph variables (`GetGraphVariableInt` / `Float` now read the actor's graph);
@@ -619,8 +624,9 @@ game each piece unlocks.
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
-   - Pose modifiers: twist, keyframe bones; foot IK gains from `hkbFootIkControlsModifier`,
-     locking planted feet; creatures' look-at modifiers (unbound:
+   - Pose modifiers: twist, keyframe bones; foot IK locking planted feet, aligning the
+     body with the ground (`alignWorldFromModelGain`), legs' ungrounded events;
+     creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
    - Objects' behaviour graphs (see Done): graph state in saves (kept across
      cell loads in memory)
