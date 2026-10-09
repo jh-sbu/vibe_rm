@@ -13,10 +13,10 @@
 //! region's, and every few hours the region's weather is rolled again. An
 //! override (`abOverride`) holds the weather until `ReleaseOverride`. Indoors
 //! the weather goes on but no sky shows. Outdoors the weathers' sounds
-//! (SNAM: rain, wind...) loop at their share of the transition, and thunder
-//! rolls now and then while it's on, and its precipitation (MNAM: rain,
-//! snow) falls as particles from its begin fade in, the outgoing weather's
-//! until its end fade out. Open questions: `known_gaps/weather.md`.
+//! (SNAM: rain, wind...) loop at their share of the transition, thunder
+//! rolls now and then while it's on, lightning flashing, and its
+//! precipitation (MNAM: rain, snow) falls as particles from its begin fade
+//! in, the outgoing weather's until its end fade out. Open questions: `known_gaps/weather.md`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -34,6 +34,8 @@ const ROLL_HOURS: (f32, f32) = (2.0, 6.0);
 /// Seconds between thunder at a weather's thunder frequency 0 and 255 (made
 /// up: the storms have 246, Storm Call's weather 15).
 const THUNDER_SECONDS: (f32, f32) = (5.0, 30.0);
+/// How long a lightning flash lights the world (made up).
+const FLASH_SECONDS: f32 = 0.6;
 /// A weather's trans delta is the thousandths of a transition per game minute
 /// (made up: 125, the usual value, takes 8 game minutes).
 const TRANS_DELTA_PER_MINUTE: f32 = 1.0 / 1000.0;
@@ -66,6 +68,8 @@ pub struct WeatherState {
     loops: Vec<(FormId, FormId, crate::audio::VoiceId)>,
     /// Seconds until the next thunder, while there is thunder.
     thunder_in: Option<f32>,
+    /// A lightning flash: seconds since it struck, its colour.
+    flash: Option<(f32, glam::Vec3)>,
 }
 
 /// The regional weather list of a region record, if it has one: (priority,
@@ -204,6 +208,12 @@ impl Engine {
                 }
             }
         }
+        self.update_loops(wanted);
+        self.update_thunder(thunder, dt);
+    }
+
+    /// Keep the weather loops `wanted` (weather, sound, volume) playing.
+    fn update_loops(&mut self, wanted: Vec<(FormId, FormId, f32)>) {
         let Some(audio) = self.audio.as_ref() else {
             return;
         };
@@ -239,6 +249,17 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// Roll thunder now and then while `thunder` (the weather, its share of
+    /// the transition) is on: a lightning flash and one of its thunder sounds.
+    fn update_thunder(&mut self, thunder: Option<(Arc<Weather>, f32)>, dt: f32) {
+        if let Some(f) = &mut self.weather.flash {
+            f.0 += dt;
+            if f.0 > FLASH_SECONDS {
+                self.weather.flash = None;
+            }
+        }
         let Some((w, weight)) = thunder else {
             self.weather.thunder_in = None;
             return;
@@ -257,6 +278,7 @@ impl Engine {
             return;
         }
         self.weather.thunder_in = Some(next);
+        self.weather.flash = Some((0.0, w.lightning_color * weight));
         let sounds: Vec<FormId> = w
             .sounds
             .iter()
@@ -576,6 +598,22 @@ impl Engine {
         }
     }
 
+    /// Console `thunder`: roll the thunder at the next update, while there is
+    /// thunder.
+    pub fn thunder_now(&mut self) -> bool {
+        let on = self.weather.thunder_in.is_some();
+        if on {
+            self.weather.thunder_in = Some(0.0);
+        }
+        on
+    }
+
+    /// The light a lightning flash adds now.
+    fn flash_now(&self) -> Option<glam::Vec3> {
+        let (t, color) = self.weather.flash?;
+        Some(color * flash_curve(t))
+    }
+
     /// The precipitation falling now: [`precipitation_amounts`].
     fn precipitation_now(&self) -> [f32; 2] {
         let ws = &self.weather;
@@ -599,7 +637,21 @@ impl Engine {
 
     /// Evaluate the weather at the current hour into a render environment.
     pub fn sky_environment(&mut self) -> Option<Environment> {
-        let st = self.sky_now()?;
+        let mut st = self.sky_now()?;
+        // Lightning lights the sky, the clouds and the world for a moment.
+        if let Some(f) = self.flash_now() {
+            st.sky_upper += f * 0.5;
+            st.sky_lower += f * 0.3;
+            st.horizon += f * 0.4;
+            for c in st.clouds.iter_mut().chain(st.outgoing_clouds.iter_mut()) {
+                c.1 += f * 0.6;
+            }
+            st.ambient += f * 0.4;
+            st.effect_lighting += f * 0.4;
+            for d in &mut st.dalc {
+                *d += f * 0.4;
+            }
+        }
         let env = Environment {
             sun_dir: st.light_dir,
             sun_color: st.sunlight,
@@ -712,6 +764,18 @@ impl Engine {
             ));
         }
         out
+    }
+}
+
+/// A lightning flash's brightness `t` seconds after it struck: a flicker,
+/// then a fading second stroke (made up).
+fn flash_curve(t: f32) -> f32 {
+    match t {
+        t if t < 0.0 => 0.0,
+        t if t < 0.08 => 1.0,
+        t if t < 0.16 => 0.25,
+        t if t < FLASH_SECONDS => 0.8 * (1.0 - (t - 0.16) / (FLASH_SECONDS - 0.16)),
+        _ => 0.0,
     }
 }
 
