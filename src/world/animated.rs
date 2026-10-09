@@ -244,13 +244,20 @@ impl Engine {
         }) else {
             return;
         };
-        let mut anim = crate::world::behavior::GraphAnim::new(
-            project,
-            &rig,
-            false,
-            &skeleton,
-            self.rng ^ obj.ref_id.0 as u64,
-        );
+        // Run on from where it was when its cell unloaded.
+        let mut anim = match self.world_state.object_graphs.remove(&obj.ref_id) {
+            Some(g) if Arc::ptr_eq(g.project(), &project) => {
+                log::debug!("{}: graph resumes in {:?}", obj.ref_id, g.active_states());
+                g
+            }
+            _ => crate::world::behavior::GraphAnim::new(
+                project,
+                &rig,
+                false,
+                &skeleton,
+                self.rng ^ obj.ref_id.0 as u64,
+            ),
+        };
         anim.label = obj.ref_id.to_string();
         let bones: Vec<Option<usize>> = obj
             .anim
@@ -288,6 +295,19 @@ impl Engine {
             moved,
             dt: 0.0,
         });
+    }
+
+    /// Keep the behaviour graphs of `key`'s objects as they are, for when it
+    /// loads again.
+    pub(crate) fn park_object_graphs(&mut self, key: CellKey) {
+        let Some(rt) = self.cells.get_mut(&key) else {
+            return;
+        };
+        for obj in &mut rt.animated {
+            if let Some(g) = obj.graph.take() {
+                self.world_state.object_graphs.insert(obj.ref_id, g.anim);
+            }
+        }
     }
 
     /// Papyrus `PlayAnimation(event)`: the event to the object's behaviour

@@ -33,9 +33,11 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
 - Collision on those nodes is moved as fixed colliders, set in place each
   frame (nothing is pushed by them; bodies resting on them fall when they
   move away).
-- Graphs start in their start state when the cell loads; nothing about them
-  is kept across loads (a broken rig is whole again, as its script's state
-  is).
+- Graphs are kept as they were when their cell unloads and run on from there
+  when it loads again (a broken rig stays broken); time doesn't pass for them
+  meanwhile. References' scripts stay attached across unloads too, keeping
+  their variables and state (`OnInit` runs once; `OnLoad` / `OnCellAttach`
+  again). Nothing is written to saves yet.
 - `PlayAnimationAndWait` gives up after 10 s (`WAIT_LIMIT`) when its event
   doesn't come; the game's wait has no limit, but a graph event missing here
   would otherwise hang the script for good.
