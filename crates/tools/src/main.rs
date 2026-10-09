@@ -507,6 +507,30 @@ fn main() -> Result<()> {
                 println!("{m:>10} {n:>9} {p}");
             }
         }
+        Some("nif-verts") => {
+            // nif-verts <data dir> <vfs path>: each shape's vertices (position,
+            // uv, colour).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let n = nif::Nif::parse(&v.read(&args[2]).context("not found")?)?;
+            for b in &n.blocks {
+                let g = match b {
+                    nif::Block::TriShape(t) => &t.geometry,
+                    _ => continue,
+                };
+                for (i, p) in g.positions.iter().enumerate() {
+                    println!(
+                        "{i:3} pos {:7.2} {:7.2} {:7.2} uv {:?} color {:?}",
+                        p.x,
+                        p.y,
+                        p.z,
+                        g.uvs.get(i),
+                        g.colors.get(i)
+                    );
+                }
+            }
+        }
         Some("nif-dump") => {
             // nif-dump <data dir> <vfs path>
             let data = std::path::Path::new(&args[1]);
@@ -3605,6 +3629,59 @@ fn main() -> Result<()> {
                     statics,
                 );
             }
+        }
+        Some("grass") => {
+            // grass <data dir>: every grass (GRAS) with its DATA (density, min /
+            // max slope, units from water and its type, position / height / colour
+            // range, wave period, flags), model and how many landscape textures
+            // (LTEX GNAM) list it; then the most grasses one LTEX lists.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut users = std::collections::HashMap::<esp::FormId, usize>::new();
+            let mut most = 0;
+            for &id in lo.ids_of_type(b"LTEX") {
+                let Some(rec) = lo.get(id) else { continue };
+                let mut n = 0;
+                for s in rec.subrecords().filter(|s| s.tag.0 == *b"GNAM") {
+                    *users.entry(rec.fid(s.form_id(0))).or_default() += 1;
+                    n += 1;
+                }
+                most = most.max(n);
+            }
+            for &id in lo.ids_of_type(b"GRAS") {
+                let Some(rec) = lo.get(id) else { continue };
+                let d = rec.get(b"DATA").unwrap_or_default();
+                if d.len() < 32 {
+                    println!("{id} DATA {} bytes", d.len());
+                    continue;
+                }
+                let f = |i: usize| f32::from_le_bytes(d[i..i + 4].try_into().unwrap());
+                let model = rec
+                    .get(b"MODL")
+                    .map(|m| {
+                        String::from_utf8_lossy(m)
+                            .trim_end_matches('\0')
+                            .to_string()
+                    })
+                    .unwrap_or_default();
+                println!(
+                    "{id} {:<28} dens {:3} slope {:2}-{:2} water {:4} type {} pos {:5.1} h {:4.2} col {:4.2} wave {:5.1} flags {:02x} ltex {:3} {model}",
+                    rec.editor_id().unwrap_or_default(),
+                    d[0],
+                    d[1],
+                    d[2],
+                    u16::from_le_bytes([d[4], d[5]]),
+                    u32::from_le_bytes(d[8..12].try_into().unwrap()),
+                    f(12),
+                    f(16),
+                    f(20),
+                    f(24),
+                    d[28],
+                    users.get(&id).copied().unwrap_or(0),
+                );
+            }
+            println!("most grasses on one LTEX: {most}");
         }
         Some("image-spaces") => {
             // image-spaces <data dir> [imgs]: one image space's values, or over all of

@@ -66,6 +66,8 @@ pub struct MaterialDesc {
     /// Under a billboard node: its model-space origin and mode. The mesh's
     /// vertices are then in the node's space, turned to the camera when drawn.
     pub billboard: Option<(Vec3, u16)>,
+    /// Grass: drawn instanced by its blades, swaying by its vertex alpha.
+    pub grass: bool,
 }
 
 /// A material's animated values: its shader property's float and colour
@@ -147,6 +149,7 @@ impl Default for MaterialDesc {
             lod: false,
             anim: None,
             billboard: None,
+            grass: false,
         }
     }
 }

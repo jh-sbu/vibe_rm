@@ -96,7 +96,8 @@ impl ModelCache {
                 let mut furn = None;
                 let mut graph = None;
                 // `path#blade` / `path#scb`: a weapon without / only its scabbard;
-                // `path#rigid`: skinned shapes posed at rest (sky models).
+                // `path#rigid`: skinned shapes posed at rest (sky models);
+                // `path#grass`: drawn as grass ([`crate::world::grass`]).
                 let (file, variant) = p
                     .split_once('#')
                     .map_or((p.as_str(), None), |(f, v)| (f, Some(v)));
@@ -114,6 +115,15 @@ impl ModelCache {
                             });
                             let m = match variant {
                                 Some("rigid") => model::convert_rigid(&n),
+                                // Grass: its vertex alpha is how far it sways.
+                                Some("grass") => {
+                                    let mut m = model::convert(&n);
+                                    for mesh in &mut m.meshes {
+                                        mesh.material.grass = true;
+                                        mesh.material.flags1 &= !nif::sf1::VERTEX_ALPHA;
+                                    }
+                                    m
+                                }
                                 Some("scb") => model::convert_filtered(&n, &|name| {
                                     name.to_ascii_lowercase().starts_with("scb")
                                 }),
