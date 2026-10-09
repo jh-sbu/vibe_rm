@@ -286,8 +286,12 @@ pub struct ActorRuntime {
     pub packages: Vec<Package>,
     pub current: Option<usize>,
     pub goal: Option<Goal>,
-    /// Feet position and heading (radians clockwise from +Y).
+    /// Feet position and heading (radians clockwise from +Y). The height is the
+    /// navmesh's, which pathing and movement keep to.
     pub pos: Vec3,
+    /// How far the collision surface under the feet lies above `pos` (eased): the
+    /// body stands on it, as the game's character controller would.
+    pub lift: f32,
     pub heading: f32,
     pub scale: f32,
     pub editor_pos: Vec3,
@@ -505,15 +509,47 @@ impl ActorRuntime {
             state: State::Idle(1.0 + stagger),
             next_eval: stagger,
             speed: 0.0,
+            lift: 0.0,
         }
+    }
+
+    /// Where the feet stand: on the collision surface over the navmesh.
+    pub fn feet(&self) -> Vec3 {
+        self.pos + Vec3::Z * self.lift
     }
 
     pub fn transform(&self) -> Mat4 {
         Mat4::from_scale_rotation_translation(
             Vec3::splat(self.scale),
             Quat::from_rotation_z(-self.heading),
-            self.pos,
+            self.feet(),
         )
+    }
+
+    /// Stand on the collision surface (statics and terrain) where the navmesh
+    /// lies above or below it: the highest one within a step of the navmesh
+    /// height, as far as the character's foot IK rays reach (40 up, 32 down for
+    /// humanoids; 100 / 128 for giants). Furniture places the actor itself.
+    fn stand_on_ground(&mut self, physics: &crate::physics::Physics, dt: f32) {
+        if self.in_furniture() {
+            self.lift = 0.0;
+            return;
+        }
+        let (up, down) = self
+            .graph
+            .as_ref()
+            .and_then(|g| g.project().shared.project.character.as_ref())
+            .and_then(|c| c.foot_ik.as_ref())
+            .map_or((40.0, 64.0), |ik| (ik.raycast_up, ik.raycast_down));
+        let (up, down) = (up * self.scale, down * self.scale);
+        let from = self.pos + Vec3::Z * up;
+        let want = physics
+            .ground_ray(from, -Vec3::Z, up + down)
+            .map_or(0.0, |(toi, _)| up - toi);
+        log::trace!("{} stands {want:.1} above the navmesh", self.ref_id);
+        // Quick to step up, a little slower to settle down.
+        let gain: f32 = if want > self.lift { 0.5 } else { 0.3 };
+        self.lift += (want - self.lift) * (1.0 - (1.0 - gain).powf(dt * 30.0));
     }
 
     fn state_name(&self) -> &'static str {
@@ -1527,7 +1563,7 @@ impl ActorRuntime {
     /// animations, swimming).
     fn find_ground(&mut self, physics: &crate::physics::Physics) {
         let model = self.transform();
-        let (feet, heading, scale) = (self.pos, self.heading, self.scale);
+        let (feet, heading, scale) = (self.feet(), self.heading, self.scale);
         let in_furniture = self.in_furniture();
         let Some(g) = self.graph.as_mut() else { return };
         let on = !in_furniture
@@ -3040,6 +3076,7 @@ impl Engine {
                 if let Some(&(at, _)) = scene_look.get(&a.ref_id) {
                     a.look_at = Some(at);
                 }
+                a.stand_on_ground(&self.physics, dt);
                 a.find_ground(&self.physics);
                 inst.transform = a.transform();
                 if let Some(pose) = a.animate(dt, &mut world.clips) {
@@ -3094,7 +3131,7 @@ impl Engine {
                     )
                     || talking == Some(a.ref_id)
                 {
-                    moved.push((a.ref_id, a.pos, a.capsule));
+                    moved.push((a.ref_id, a.feet(), a.capsule));
                 }
                 // Reached the door (or gave up out of sight): leave the cell.
                 if a.exiting.is_some()

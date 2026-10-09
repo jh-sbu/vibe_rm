@@ -41,8 +41,8 @@ and the member names it carries. What each gain does inside Havok isn't public.
 - Not used: foot unlock, align world-from-model (horses 0.15: pitching the
   body with the ground), hip orientation and max knee angle difference (0
   everywhere), and the legs' `ungroundedEvent`s.
-- **Actors stand at the navmesh's height**, not on the collision surface the
-  game's character controller would put them on. Where the navmesh lies below
-  the ground (rocks, the giants' campfire mound), the feet find ground above
-  them and lift onto it. A body only rises by `1 - bias`, and giants' bias is
-  1, so their legs bend there instead.
+- **Actors stand on the collision surface** within a step of the navmesh's
+  height. The step is the character's foot IK ray reach (humanoids 40 up and
+  32 down, giants 100 / 128; 40 / 64 without foot IK data). The game's
+  character controller does this with its capsule, whose step height isn't
+  public. Pathing still runs at the navmesh's height.
