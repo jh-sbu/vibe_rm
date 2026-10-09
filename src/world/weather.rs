@@ -87,6 +87,8 @@ pub struct Weather {
     pub precipitation: FormId,
     /// TNAM: the sky statics (placed cloud statics) shown in this weather.
     pub sky_statics: Vec<FormId>,
+    /// MODL: the aurora's model (a VFS path).
+    pub aurora: Option<String>,
 }
 
 /// Shader particle geometry (SPGD): the rain or snow a weather draws. DATA
@@ -150,6 +152,10 @@ pub mod flags {
     pub const CLOUDY: u8 = 1 << 1;
     pub const RAINY: u8 = 1 << 2;
     pub const SNOW: u8 = 1 << 3;
+    /// The aurora shows by day as well as by night.
+    pub const PERM_AURORA: u8 = 1 << 4;
+    /// The aurora turns with the sun.
+    pub const AURORA_FOLLOWS_SUN: u8 = 1 << 5;
 }
 
 impl Weather {
@@ -237,6 +243,7 @@ impl Weather {
             lightning_color: Vec3::ONE,
             precipitation: FormId::NULL,
             sky_statics: Vec::new(),
+            aurora: None,
         }
     }
 }
@@ -244,6 +251,7 @@ impl Weather {
 pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
     let rec = lo.get(id)?;
     let mut w = Weather::new(id, rec.editor_id().unwrap_or_default());
+    w.aurora = super::records::model_path(&rec);
     let mut layer_tex: Vec<Option<String>> = vec![None; 32];
     let mut pnam: Option<Vec<u8>> = None;
     let mut jnam: Option<Vec<u8>> = None;

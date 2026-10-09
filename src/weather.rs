@@ -19,7 +19,9 @@
 //! in, the outgoing weather's until its end fade out. Sky statics (the cloud
 //! statics placed about the world) show only in the weathers listing them
 //! (TNAM), fading with their share of the transition and drawn in the
-//! weather's sky statics colour. Open questions: `known_gaps/weather.md`.
+//! weather's sky statics colour. A weather's aurora (MODL) hangs in the sky
+//! about the camera at night (always with `PERM_AURORA`), turning with the
+//! sun with `AURORA_FOLLOWS_SUN`. Open questions: `known_gaps/weather.md`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -43,6 +45,10 @@ const WIND_UNITS: f32 = 1000.0;
 /// Seconds the wind takes to swing across its direction range and back
 /// (made up).
 const WIND_SWAY_SECONDS: f32 = 30.0;
+/// The sky's models (auroras, about 600 units across) are scaled by this to
+/// hang beyond the world (made up: the game draws its sky in a pass of its
+/// own).
+const SKY_MODEL_SCALE: f32 = 300.0;
 /// How long a lightning flash lights the world (made up).
 const FLASH_SECONDS: f32 = 0.6;
 /// A weather's trans delta is the thousandths of a transition per game minute
@@ -172,6 +178,7 @@ impl Engine {
     pub(crate) fn weather_indoors(&mut self) {
         self.weather.outdoors = false;
         self.renderer.sky.disable();
+        self.scene.sky.clear();
         self.update_weather_sounds(0.0);
     }
 
@@ -703,6 +710,7 @@ impl Engine {
             .precip
             .set_intensity(precip, st.effect_lighting);
         self.update_sky_statics(st.sky_statics);
+        self.update_auroras(st.stars, st.sun_dir);
         self.renderer.sky.set_state(st);
         Some(env)
     }
@@ -743,6 +751,45 @@ impl Engine {
                 + lists(&ws.outgoing, inst.base) as u8 as f32 * (1.0 - pct);
             inst.tint = color.extend(share);
         }
+    }
+
+    /// The weathers' auroras in the sky: at night (or always with
+    /// `PERM_AURORA`), at their share of the transition.
+    fn update_auroras(&mut self, night: f32, sun_dir: glam::Vec3) {
+        let ws = &self.weather;
+        let pct = if ws.outgoing.is_some() { ws.pct } else { 1.0 };
+        let wanted: Vec<(String, f32, bool)> = [(&ws.current, pct), (&ws.outgoing, 1.0 - pct)]
+            .into_iter()
+            .filter_map(|(w, share)| {
+                let w = w.as_ref()?;
+                let path = w.aurora.clone()?;
+                let shown = if w.flags & weather::flags::PERM_AURORA != 0 {
+                    1.0
+                } else {
+                    night
+                };
+                let follows = w.flags & weather::flags::AURORA_FOLLOWS_SUN != 0;
+                Some((format!("{path}#rigid"), share * shown, follows))
+            })
+            .filter(|w| w.1 > 0.0)
+            .collect();
+        let paths: Vec<String> = wanted.iter().map(|w| w.0.clone()).collect();
+        self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        self.scene.sky = wanted
+            .into_iter()
+            .filter_map(|(path, alpha, follows)| {
+                let turn = if follows {
+                    glam::Mat4::from_rotation_z(sun_dir.y.atan2(sun_dir.x))
+                } else {
+                    glam::Mat4::IDENTITY
+                };
+                let scale = glam::Mat4::from_scale(glam::Vec3::splat(SKY_MODEL_SCALE));
+                let mut inst = crate::render::Instance::new(self.models.get(&path)?, turn * scale);
+                inst.sky = true;
+                inst.tint = glam::Vec4::new(1.0, 1.0, 1.0, alpha);
+                Some(inst)
+            })
+            .collect();
     }
 
     /// Console `weather`: the weathers, the transition and the region.

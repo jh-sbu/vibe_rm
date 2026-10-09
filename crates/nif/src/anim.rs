@@ -395,3 +395,29 @@ impl TransformData {
         (rot, tr, sc)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Timing;
+
+    fn timing(cycle: u16) -> Timing {
+        Timing {
+            flags: 8 | (cycle << 1),
+            frequency: 1.0,
+            phase: 0.0,
+            start: 0.0,
+            stop: 10.0,
+        }
+    }
+
+    #[test]
+    fn key_time_cycles() {
+        assert_eq!(timing(0).key_time(12.0), 2.0);
+        assert_eq!(timing(1).key_time(12.0), 8.0);
+        assert_eq!(timing(2).key_time(12.0), 10.0);
+        let mut t = timing(0);
+        t.frequency = 2.0;
+        t.phase = 1.0;
+        assert_eq!(t.key_time(5.0), 1.0);
+    }
+}

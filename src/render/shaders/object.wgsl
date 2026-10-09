@@ -96,6 +96,7 @@ struct VIn {
     @location(9) m3: vec4<f32>,
     @location(10) light_idx: vec4<u32>,
     @location(15) tint: vec4<f32>,
+    @location(16) params: vec4<f32>,
 };
 
 struct VOut {
@@ -113,6 +114,8 @@ struct VOut {
     @location(9) mz: vec3<f32>,
     // The instance's tint (colour, opacity).
     @location(10) tint: vec4<f32>,
+    // How much fog it takes (0 for the sky's models).
+    @location(11) fog: f32,
 };
 
 @vertex
@@ -130,6 +133,7 @@ fn vs_main(v: VIn) -> VOut {
     o.color = v.color;
     o.light_idx = v.light_idx;
     o.tint = v.tint;
+    o.fog = v.params.x;
     return o;
 }
 
@@ -167,6 +171,7 @@ fn vs_skinned(v: SkinIn) -> VOut {
     o.my = m[1].xyz;
     o.mz = m[2].xyz;
     o.tint = vec4<f32>(1.0);
+    o.fog = 1.0;
     return o;
 }
 
@@ -265,7 +270,7 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         }
         c *= in.tint.rgb;
         a *= in.tint.a;
-        return vec4<f32>(apply_fog(c, in.world_pos), clamp(a, 0.0, 1.0));
+        return vec4<f32>(mix(c, apply_fog(c, in.world_pos), in.fog), clamp(a, 0.0, 1.0));
     }
 
     if (mat.params.y >= 0.0 && alpha < mat.params.y) {

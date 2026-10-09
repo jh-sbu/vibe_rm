@@ -278,6 +278,23 @@ pub fn convert(nif: &Nif) -> CpuModel {
     convert_filtered(nif, &|_| true)
 }
 
+/// [`convert`], with skinned shapes posed by their bones' rest transforms
+/// as static meshes (sky models skinned to a bone of their own: auroras).
+pub fn convert_rigid(nif: &Nif) -> CpuModel {
+    let mut m = convert(nif);
+    if !m.skinned.is_empty() {
+        let nodes = node_transforms(nif);
+        for s in std::mem::take(&mut m.skinned) {
+            if let Some(mesh) = rigidify(&s, &nodes) {
+                m.meshes.push(mesh);
+            }
+        }
+        (m.bound_center, m.bound_radius) =
+            bounds_of(m.meshes.iter().map(|m| (m.bound_center, m.bound_radius)));
+    }
+    m
+}
+
 /// [`convert`], keeping only the shapes whose names pass `keep`.
 pub fn convert_filtered(nif: &Nif, keep: &dyn Fn(&str) -> bool) -> CpuModel {
     convert_split(nif, keep, &Default::default())
