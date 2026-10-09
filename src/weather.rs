@@ -37,6 +37,12 @@ const ROLL_HOURS: (f32, f32) = (2.0, 6.0);
 /// Seconds between thunder at a weather's thunder frequency 0 and 255 (made
 /// up: the storms have 246, Storm Call's weather 15).
 const THUNDER_SECONDS: (f32, f32) = (5.0, 30.0);
+/// Units a second the wind blows rain and snow sideways at wind speed 1
+/// (made up: a storm's 0.2 slants rain falling at 674 by about 17 degrees).
+const WIND_UNITS: f32 = 1000.0;
+/// Seconds the wind takes to swing across its direction range and back
+/// (made up).
+const WIND_SWAY_SECONDS: f32 = 30.0;
 /// How long a lightning flash lights the world (made up).
 const FLASH_SECONDS: f32 = 0.6;
 /// A weather's trans delta is the thousandths of a transition per game minute
@@ -500,6 +506,26 @@ impl Engine {
         }
     }
 
+    /// The wind blowing now (units a second along x and y): each weather's
+    /// speed toward its direction, swaying across its range over time, mixed
+    /// by the transition.
+    pub fn wind_now(&self) -> glam::Vec2 {
+        let ws = &self.weather;
+        let t = self.renderer.time;
+        let blow = |w: &Weather| {
+            let sway = (t * std::f32::consts::TAU / WIND_SWAY_SECONDS).sin();
+            wind_velocity(
+                w.wind_speed,
+                w.wind_direction.0 + 0.5 * w.wind_direction.1 * sway,
+            )
+        };
+        let cur = ws.current.as_deref().map_or(glam::Vec2::ZERO, blow);
+        match ws.outgoing.as_deref() {
+            Some(o) => blow(o).lerp(cur, ws.pct),
+            None => cur,
+        }
+    }
+
     /// `Weather.GetSkyMode`: 1 indoors, 3 under a full sky (0 none).
     pub fn sky_mode(&self) -> i32 {
         match self.location {
@@ -814,6 +840,13 @@ impl Engine {
 
 /// A lightning flash's brightness `t` seconds after it struck: a flicker,
 /// then a fading second stroke (made up).
+/// The wind at a speed (0..1) blowing toward a heading (degrees clockwise
+/// from north, +y), in units a second.
+fn wind_velocity(speed: f32, heading: f32) -> glam::Vec2 {
+    let a = heading.to_radians();
+    glam::Vec2::new(a.sin(), a.cos()) * speed * WIND_UNITS
+}
+
 fn flash_curve(t: f32) -> f32 {
     match t {
         t if t < 0.0 => 0.0,

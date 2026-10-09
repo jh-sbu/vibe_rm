@@ -90,8 +90,7 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
     the outgoing one's falls to nothing at its end fade out. Any weather
     with an MNAM draws it, whatever its flags (`SovngardeClear`'s stardust).
   - Particles hang in a box the SPGD's size about the camera, faded out
-    towards its edges. Wind doesn't blow them, and nothing keeps rain off
-    under roofs or overhangs.
+    towards its edges. Nothing keeps rain off under roofs or overhangs.
 - **Lightning.** Each thunder roll flashes at once in the weather's DATA
   lightning colour (bytes 12..14, UESP; the storms' 219, 220, 238), at its
   share of the transition: a flicker, a dim gap and a fading second stroke
@@ -118,8 +117,16 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   source describes it. The references are persistent and flagged 0x10000
   (full LOD?) but load with their cells like any other here, so the far ones
   don't show.
+- **Wind.** DATA bytes 17 and 18 are the wind direction and its range
+  (CommonLibSSE's `TESWeather::Data`; UESP's layout puts them at 16 and 17).
+  They're read as 256ths of 360 and 180 degrees (`GetWindDirection` gives
+  0..360). Every vanilla weather has 43 and 43 (60 and 30 degrees) or 0 and
+  0. The direction is taken as a heading (clockwise from north, +y) the wind
+  blows toward; whether it's where the wind comes from isn't known. It sways
+  across its range over 30 seconds (made up). Rain and snow drift with it at
+  the wind speed (0..1) times 1000 units a second (made up: a storm's 0.2
+  slants falling rain by about 17 degrees), the rain's streaks slanted along
+  their fall. Nothing else feels the wind yet (trees, grass, clouds).
 - **Not drawn:** auroras, the weather's volumetric lighting, sun glare and
-  damage, wind direction (DATA bytes 17 and 18 per CommonLibSSE's
-  `TESWeather::Data`; UESP puts them at 16 and 17. Rain and snow fall
-  straight).
+  damage.
 - **Not in saves**: the weather state lives only in memory.

@@ -2,12 +2,13 @@
 //! around the camera. Nothing is simulated: each particle's place comes from
 //! its index and the time (falling at the gravity velocity, wrapping round
 //! the box, snow turning about its falling centre), so the box follows the
-//! camera while the particles stay put in the world.
+//! camera while the particles stay put in the world. The wind carries them
+//! all sideways together, and rain streaks along its slanted fall.
 
 use std::sync::Arc;
 
 use bytemuck::Zeroable;
-use glam::Vec3;
+use glam::{DVec2, Vec2, Vec3};
 use wgpu::util::DeviceExt;
 
 use super::texture::GpuTexture;
@@ -27,12 +28,15 @@ struct PrecipUniform {
     /// Size x, size y, box size, snow (0 / 1).
     shape: [f32; 4],
     /// The fall so far (wrapped to the box), the turn so far (degrees),
-    /// start rotation range, unused.
+    /// start rotation range, gravity velocity.
     motion: [f32; 4],
     /// Centre offset min, max; subtextures x, y.
     offsets: [f32; 4],
     /// Colour, alpha.
     color: [f32; 4],
+    /// How far the wind has carried them (wrapped to the box), and the
+    /// wind's velocity.
+    wind: [f32; 4],
 }
 
 /// One weather's precipitation, ready to draw.
@@ -50,6 +54,9 @@ pub struct PrecipRenderer {
     /// The incoming weather's and the outgoing one's.
     layers: [Option<Layer>; 2],
     color: Vec3,
+    wind: Vec2,
+    /// How far the wind has carried everything.
+    drift: DVec2,
 }
 
 impl PrecipRenderer {
@@ -137,6 +144,8 @@ impl PrecipRenderer {
             bgl,
             layers: [None, None],
             color: Vec3::ONE,
+            wind: Vec2::ZERO,
+            drift: DVec2::ZERO,
         }
     }
 
@@ -197,6 +206,13 @@ impl PrecipRenderer {
         self.color = color;
     }
 
+    /// The wind blowing now (units a second) over `dt` seconds.
+    pub fn blow(&mut self, wind: Vec2, dt: f32) {
+        self.wind = wind;
+        // Wrapped at a distance every box size divides, to keep it small.
+        self.drift = (self.drift + wind.as_dvec2() * dt as f64).rem_euclid(DVec2::splat(1.0e7));
+    }
+
     /// The layers' particle counts now.
     pub fn particle_counts(&self) -> [u32; 2] {
         self.layers.each_ref().map(|l| l.as_ref().map_or(0, count))
@@ -221,7 +237,7 @@ impl PrecipRenderer {
                     box_size,
                     p.snow as u32 as f32,
                 ],
-                motion: [fall, turn, p.start_rotation, 0.0],
+                motion: [fall, turn, p.start_rotation, p.gravity],
                 offsets: [
                     p.center_offset.0,
                     p.center_offset.1,
@@ -229,6 +245,12 @@ impl PrecipRenderer {
                     p.subtextures.1 as f32,
                 ],
                 color: self.color.extend(1.0).to_array(),
+                wind: [
+                    self.drift.x.rem_euclid(box_size as f64) as f32,
+                    self.drift.y.rem_euclid(box_size as f64) as f32,
+                    self.wind.x,
+                    self.wind.y,
+                ],
             };
             queue.write_buffer(&l.ubuf, 0, bytemuck::bytes_of(&u));
             pass.set_pipeline(&self.pipeline);
