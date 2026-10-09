@@ -343,8 +343,9 @@ fn style_weights(lo: &LoadOrder, style: FormId) -> (f32, f32) {
 /// was equipped by hand: a melee weapon unless its combat style favours ranged
 /// ones (guards carry their bow but wear their sword), the one that scores best in
 /// its hands (base damage scaled by the NPC's skill with it), and with a one-handed
-/// weapon (or none) its best shield. Staffs, crossbows and unplayable weapons
-/// (creature attacks) are left alone.
+/// weapon (or none) its best shield. Staffs, crossbows and weapons without a
+/// model (creature attacks) are left alone; unplayable ones with a model are the
+/// NPCs' own (giants' clubs, Dremora greatswords, the Keepers' dragonbone).
 pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, style: FormId) {
     let skill = lo.get(skill_npc).map_or([15.0; 4], |r| skills(&r));
     let (melee, ranged) = style_weights(lo, style);
@@ -355,13 +356,7 @@ pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, sty
             continue;
         };
         let hand = HandType::of_weapon(weapon_anim_type(&rec));
-        // DNAM flags (offset 12): 0x80 non-playable.
-        let unplayable = rec
-            .get(b"DNAM")
-            .and_then(|d| d.get(12))
-            .is_some_and(|f| f & 0x80 != 0);
-        if unplayable
-            || matches!(hand, HandType::Empty | HandType::Staff | HandType::Crossbow)
+        if matches!(hand, HandType::Empty | HandType::Staff | HandType::Crossbow)
             || weapon_model(lo, f).is_none()
         {
             continue;

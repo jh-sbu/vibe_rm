@@ -2784,6 +2784,32 @@ fn main() -> Result<()> {
                 println!("{r} {} -> {base} {tag} {edid}{placement}", rec.tag());
             }
         }
+        Some("unplayable-weapons") => {
+            // unplayable-weapons <data dir>: non-playable weapons (DNAM flag 0x80) with
+            // their animation type and model.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            for &id in lo.ids_of_type(b"WEAP") {
+                let Some(rec) = lo.get(id) else { continue };
+                let Some(d) = rec.get(b"DNAM").filter(|d| d.len() > 12) else {
+                    continue;
+                };
+                if d[12] & 0x80 == 0 {
+                    continue;
+                }
+                let model = rec
+                    .get(b"MODL")
+                    .map(esp::decode_zstring)
+                    .unwrap_or_default();
+                println!(
+                    "{id} {:28} anim {} {}",
+                    rec.editor_id().unwrap_or_default(),
+                    d[0],
+                    model
+                );
+            }
+        }
         Some("esp-list") => {
             // esp-list <data dir> <TAG> [edid substring]: records of a type with their text subrecords.
             let data = std::path::Path::new(&args[1]);
