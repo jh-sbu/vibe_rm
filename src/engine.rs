@@ -54,6 +54,8 @@ pub struct Engine {
     pub vfs: vfs::Vfs,
     pub renderer: Renderer,
     pub models: ModelCache,
+    /// The landscape textures' grasses, loaded as cells need them.
+    pub grass: crate::world::grass::GrassTypes,
     pub scene: Scene,
     pub camera: Camera,
     /// Game time of day in hours.
@@ -234,6 +236,7 @@ impl Engine {
             vfs,
             renderer,
             models: ModelCache::default(),
+            grass: Default::default(),
             scene: Scene::default(),
             camera: Camera {
                 position: Vec3::ZERO,
@@ -1850,6 +1853,13 @@ impl Engine {
                 rc.terrain = chunks;
             }
             let h = self.physics.add_terrain(&l);
+            let water = cell_id
+                .and_then(|c| records::cell_info(&self.lo, c))
+                .map_or(Some(default_water), |i| {
+                    Some(i.water_height.unwrap_or(default_water))
+                })
+                .filter(|&h| h < 1.0e30);
+            self.load_grass(key, &l, water);
             if let Some(rt) = self.cells.get_mut(&key) {
                 rt.colliders.extend(h);
                 rt.land = Some(l);
@@ -1872,6 +1882,39 @@ impl Engine {
                     vec![(x as f32 * CELL_SIZE, y as f32 * CELL_SIZE, CELL_SIZE, h, wt)],
                 );
             }
+        }
+    }
+
+    /// Scatter the grass of a cell's landscape textures over it.
+    fn load_grass(&mut self, key: CellKey, land: &terrain::Land, water: Option<f32>) {
+        if std::env::var_os("VRM_NO_GRASS").is_some() {
+            return;
+        }
+        let blades = crate::world::grass::scatter(&self.lo, &mut self.grass, land, water);
+        let paths: Vec<String> = blades
+            .keys()
+            .map(|&g| format!("{}#grass", self.grass.grasses[g].model))
+            .collect();
+        self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        log::debug!(
+            "grass in {key:?}: {}",
+            blades
+                .iter()
+                .map(|(&g, b)| format!("{} x{}", self.grass.grasses[g].model, b.len()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let mut batches = Vec::new();
+        for (g, b) in blades {
+            let path = format!("{}#grass", self.grass.grasses[g].model);
+            if let Some(m) = self.models.get(&path)
+                && let Some(batch) = self.renderer.build_grass(m, &b)
+            {
+                batches.push(batch);
+            }
+        }
+        if let Some(rc) = self.scene.cells.get_mut(&key) {
+            rc.grass = batches;
         }
     }
 
@@ -2132,6 +2175,8 @@ impl Engine {
         }
         let wind = self.wind_now();
         self.renderer.precip.blow(wind, dt);
+        self.renderer.wind = wind;
+        self.renderer.grass_clock += dt * crate::world::grass::wave_rate(wind);
         self.update_particles(dt);
         self.update_grab(dt);
         self.physics.step(dt);

@@ -10,13 +10,14 @@ struct Frame {
     fog_near_color: vec4<f32>,
     fog_far_color: vec4<f32>,
     fog: vec4<f32>,         // near, far, power, max
-    misc: vec4<f32>,        // time, light count, exterior flag, unused
+    misc: vec4<f32>,        // time, light count, exterior flag, grass wave clock (cycles)
     amb: array<vec4<f32>, 6>, // directional ambient X+ X- Y+ Y- Z+ Z-; amb[0].w > 0.5 enables
     lod_clip: vec4<f32>,    // xy min, xy max of the loaded full-detail area
     shadow_vp: array<mat4x4<f32>, 4>, // sun shadow cascades
     shadow_splits: vec4<f32>,         // view depth where each cascade ends
     shadow_params: vec4<f32>,         // enabled, texel size (uv), ...
     cam_fwd: vec4<f32>,
+    wind: vec4<f32>,        // wind velocity xy (units a second), grass fade start, fade range
 };
 
 struct Light {
@@ -120,6 +121,8 @@ struct VOut {
     @location(10) tint: vec4<f32>,
     // How much fog it takes (0 for the sky's models).
     @location(11) fog: f32,
+    // Opacity before the alpha test (grass fading with distance).
+    @location(12) fade: f32,
 };
 
 // A billboard's axes in the world.
@@ -185,6 +188,75 @@ fn vs_main(v: VIn) -> VOut {
     o.light_idx = v.light_idx;
     o.tint = v.tint;
     o.fog = v.params.x;
+    o.fade = 1.0;
+    return o;
+}
+
+struct GrassIn {
+    @location(0) pos: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) tangent: vec3<f32>,
+    @location(3) bitangent: vec3<f32>,
+    @location(4) uv: vec2<f32>,
+    @location(5) color: vec4<f32>,
+    @location(6) pos_scale: vec4<f32>,  // position, scale across
+    @location(7) up_yaw: vec4<f32>,     // up axis, turn about it
+    @location(8) tint_wave: vec4<f32>,  // tint, wave period (units; 0: still)
+    @location(9) scale_up: vec4<f32>,   // scale up
+};
+
+// Grass: each blade stood on the ground along its up axis, turned and
+// scaled, its top swaying in waves running with the wind (vertex alpha is how
+// far each vertex sways), fading out beyond the grass fade distance.
+@vertex
+fn vs_grass(v: GrassIn) -> VOut {
+    let up = normalize(v.up_yaw.xyz);
+    // The rotation taking +Z to `up` (about Z x up).
+    let k = vec3<f32>(-up.y, up.x, 0.0);
+    let f = 1.0 / (1.0 + up.z);
+    let tilt = mat3x3<f32>(
+        vec3<f32>(1.0 - k.y * k.y * f, k.x * k.y * f, -k.y),
+        vec3<f32>(k.x * k.y * f, 1.0 - k.x * k.x * f, k.x),
+        up,
+    );
+    let cy = cos(v.up_yaw.w);
+    let sy = sin(v.up_yaw.w);
+    let turn = mat3x3<f32>(vec3<f32>(cy, sy, 0.0), vec3<f32>(-sy, cy, 0.0), vec3<f32>(0.0, 0.0, 1.0));
+    let m3 = tilt * turn;
+    let local = vec3<f32>(v.pos.xy * v.pos_scale.w, v.pos.z * v.scale_up.x);
+    var world = v.pos_scale.xyz + m3 * local;
+    let wave = v.tint_wave.w;
+    if (wave > 0.0) {
+        let wind = frame.wind.xy;
+        let speed = length(wind);
+        var dir = vec2<f32>(1.0, 0.0);
+        if (speed > 1.0) {
+            dir = wind / speed;
+        }
+        let strength = 0.25 + clamp(speed / 1000.0, 0.0, 1.0);
+        // The waves run along a fixed axis: following the wind's direction,
+        // a slight turn would sweep the far-off origin's waves past at speed.
+        let along = dot(v.pos_scale.xy, vec2<f32>(0.6, 0.8)) / wave;
+        let phase = (fract(along) - fract(frame.misc.w)) * 6.2831853;
+        let bend = v.color.a * strength * 10.0 * (0.6 + 0.4 * sin(phase));
+        world += vec3<f32>(dir * bend, 0.0);
+    }
+    var o: VOut;
+    o.clip = frame.view_proj * vec4<f32>(world, 1.0);
+    o.world_pos = world;
+    o.normal = m3 * v.normal;
+    o.tangent = m3 * v.tangent;
+    o.bitangent = m3 * v.bitangent;
+    o.mx = m3[0];
+    o.my = m3[1];
+    o.mz = m3[2];
+    o.uv = v.uv * mat.uv.zw + mat.uv.xy;
+    o.color = v.color;
+    o.light_idx = vec4<u32>(0xFFFFFFFFu);
+    o.tint = vec4<f32>(v.tint_wave.rgb, 1.0);
+    o.fog = 1.0;
+    let dist = distance(world, frame.cam_pos.xyz);
+    o.fade = 1.0 - clamp((dist - frame.wind.z) / max(frame.wind.w, 1.0), 0.0, 1.0);
     return o;
 }
 
@@ -223,6 +295,7 @@ fn vs_skinned(v: SkinIn) -> VOut {
     o.mz = m[2].xyz;
     o.tint = vec4<f32>(1.0);
     o.fog = 1.0;
+    o.fade = 1.0;
     return o;
 }
 
@@ -327,6 +400,7 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         return vec4<f32>(mix(c, apply_fog(c, in.world_pos), in.fog), clamp(a, 0.0, 1.0));
     }
 
+    alpha *= in.fade;
     if (mat.params.y >= 0.0 && alpha < mat.params.y) {
         discard;
     }

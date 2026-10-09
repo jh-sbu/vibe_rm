@@ -43,6 +43,9 @@ struct FrameUniform {
     shadow_splits: [f32; 4],
     shadow_params: [f32; 4],
     cam_fwd: [f32; 4],
+    /// The wind's velocity (units a second), where grass starts fading and
+    /// over how far.
+    wind: [f32; 4],
 }
 
 #[repr(C)]
@@ -79,6 +82,29 @@ struct InstanceData {
     params: [f32; 4],
 }
 
+/// One grass blade's instance ([`crate::world::grass::Blade`]).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct GrassInstance {
+    /// Position, scale across.
+    pos_scale: [f32; 4],
+    /// Up axis, turn about it.
+    up_yaw: [f32; 4],
+    /// Tint, wave period.
+    tint_wave: [f32; 4],
+    /// Scale up.
+    scale_up: [f32; 4],
+}
+
+/// One grass's blades over a cell, in an instance buffer of their own.
+pub struct GrassBatch {
+    pub model: Arc<GpuModel>,
+    buf: wgpu::Buffer,
+    count: u32,
+    pub center: Vec3,
+    pub radius: f32,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct SkinInstanceData {
@@ -93,6 +119,8 @@ pub struct PipelineKey {
     pub double_sided: bool,
     pub z_write: bool,
     pub z_test: bool,
+    /// Grass, instanced by [`GrassInstance`].
+    pub grass: bool,
     /// Drawn over the surface it lies on (`sf1::DECAL` / `DYNAMIC_DECAL`):
     /// its depth biased towards the camera.
     pub decal: bool,
@@ -341,6 +369,7 @@ pub struct RenderCell {
     pub actors: Vec<ActorInstance>,
     pub terrain: Vec<terrain::TerrainChunk>,
     pub water: Vec<water::WaterPlane>,
+    pub grass: Vec<GrassBatch>,
 }
 
 #[derive(Default)]
@@ -579,6 +608,10 @@ pub struct Renderer {
     post: post::PostPass,
     /// Seconds since start, for animated effects.
     pub time: f32,
+    /// The wind's velocity (units a second), swaying grass.
+    pub wind: glam::Vec2,
+    /// Cycles grass waves have run, at a rate rising with the wind.
+    pub grass_clock: f32,
     /// Materials whose controllers animate them, updated each frame.
     animated: std::sync::Mutex<Vec<std::sync::Weak<GpuMaterial>>>,
     /// The frame's particle quads, and how many vertices it holds.
@@ -792,6 +825,8 @@ impl Renderer {
             precip,
             post,
             time: 0.0,
+            wind: glam::Vec2::ZERO,
+            grass_clock: 0.0,
             animated: Default::default(),
             particle_vbuf: Self::make_vbuf(
                 &device,
@@ -936,6 +971,7 @@ impl Renderer {
             11 => Uint32x4, 12 => Float32x4
         ];
         let skin_inst_attrs = wgpu::vertex_attr_array![13 => Uint32, 14 => Uint32x4];
+        let grass_attrs = wgpu::vertex_attr_array![6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4];
         let static_buffers = [
             Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Vertex>() as u64,
@@ -960,6 +996,14 @@ impl Renderer {
                 attributes: &skin_inst_attrs,
             }),
         ];
+        let grass_buffers = [
+            static_buffers[0].clone(),
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<GrassInstance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &grass_attrs,
+            }),
+        ];
         let blend = match key.blend {
             BlendMode::Opaque => None,
             BlendMode::Blend(src, dst) => Some(wgpu::BlendState {
@@ -981,10 +1025,18 @@ impl Renderer {
                 layout: Some(&self.pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &self.shader,
-                    entry_point: Some(if key.skinned { "vs_skinned" } else { "vs_main" }),
+                    entry_point: Some(if key.skinned {
+                        "vs_skinned"
+                    } else if key.grass {
+                        "vs_grass"
+                    } else {
+                        "vs_main"
+                    }),
                     compilation_options: Default::default(),
                     buffers: if key.skinned {
                         &skinned_buffers
+                    } else if key.grass {
+                        &grass_buffers
                     } else {
                         &static_buffers
                     },
@@ -1155,6 +1207,7 @@ impl Renderer {
             z_write: m.z_write || m.blend == BlendMode::Opaque,
             z_test: m.z_test || m.blend == BlendMode::Opaque,
             decal: m.flags1 & (nif::sf1::DECAL | nif::sf1::DYNAMIC_DECAL) != 0,
+            grass: m.grass,
         };
         GpuMaterial {
             bind_group,
@@ -1163,6 +1216,45 @@ impl Renderer {
             anim: m.anim.clone().map(|a| (a, u, ubuf)),
             billboard: m.billboard.is_some(),
         }
+    }
+
+    /// One grass's blades over a cell, for [`RenderCell::grass`].
+    pub fn build_grass(
+        &self,
+        model: Arc<GpuModel>,
+        blades: &[crate::world::grass::Blade],
+    ) -> Option<GrassBatch> {
+        if blades.is_empty() {
+            return None;
+        }
+        let data: Vec<GrassInstance> = blades
+            .iter()
+            .map(|b| GrassInstance {
+                pos_scale: b.pos.extend(b.scale.x).to_array(),
+                up_yaw: b.up.extend(b.yaw).to_array(),
+                tint_wave: b.tint.extend(b.wave).to_array(),
+                scale_up: [b.scale.y, 0.0, 0.0, 0.0],
+            })
+            .collect();
+        let (lo, hi) = blades.iter().fold(
+            (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)),
+            |(lo, hi), b| (lo.min(b.pos), hi.max(b.pos)),
+        );
+        let reach = model.bound_center.length() + model.bound_radius * 1.5;
+        let buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("grass"),
+                contents: bytemuck::cast_slice(&data),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        Some(GrassBatch {
+            model,
+            buf,
+            count: data.len() as u32,
+            center: (lo + hi) * 0.5,
+            radius: (hi - lo).length() * 0.5 + reach,
+        })
     }
 
     /// A material for a model's part, kept for animating if it has controllers.
@@ -1297,7 +1389,7 @@ impl Renderer {
             fog_near_color: env.fog_near_color.extend(1.0).to_array(),
             fog_far_color: env.fog_far_color.extend(1.0).to_array(),
             fog: [env.fog_near, env.fog_far, env.fog_power, env.fog_max],
-            misc: [self.time, scene.lights.len() as f32, 0.0, 0.0],
+            misc: [self.time, scene.lights.len() as f32, 0.0, self.grass_clock],
             amb: match env.dalc {
                 Some(d) => {
                     let mut a = [[0f32; 4]; 6];
@@ -1313,6 +1405,12 @@ impl Renderer {
             shadow_splits,
             shadow_params,
             cam_fwd: camera.forward().extend(0.0).to_array(),
+            wind: [
+                self.wind.x,
+                self.wind.y,
+                crate::world::grass::FADE_START,
+                crate::world::grass::FADE_RANGE,
+            ],
         };
         self.queue
             .write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&fu));
@@ -1533,9 +1631,24 @@ impl Renderer {
             self.queue
                 .write_buffer(&self.instance_buf, 0, bytemuck::cast_slice(&all));
         }
+        // Grass near enough to show, and in view.
+        let grass_reach = crate::world::grass::FADE_START + crate::world::grass::FADE_RANGE;
+        let grass: Vec<(&GpuPart, &GrassBatch)> = scene
+            .cells
+            .values()
+            .flat_map(|c| c.grass.iter())
+            .filter(|b| {
+                b.center.distance(camera.position) - b.radius < grass_reach
+                    && frustum.sphere_visible(b.center, b.radius)
+            })
+            .flat_map(|b| b.model.parts.iter().map(move |p| (p, b)))
+            .collect();
         // Make sure all pipelines exist before borrowing them in the pass.
         for (d, _) in &draws {
             self.pipeline(d.material().key);
+        }
+        for (part, _) in &grass {
+            self.pipeline(part.material.key);
         }
 
         let mut enc = self.device.create_command_encoder(&Default::default());
@@ -1625,6 +1738,21 @@ impl Renderer {
             for (d, range) in &draws[..opaque_count] {
                 draw(&mut pass, d, range.clone());
             }
+            let (mut grass_draws, mut grass_instances) = (0, 0);
+            for (part, batch) in &grass {
+                if current.get() != Some(part.material.key) {
+                    pass.set_pipeline(&self.pipelines[&part.material.key]);
+                    current.set(Some(part.material.key));
+                }
+                pass.set_bind_group(1, &part.material.bind_group, &[]);
+                pass.set_vertex_buffer(0, part.vbuf.slice(..));
+                pass.set_vertex_buffer(1, batch.buf.slice(..));
+                pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..part.index_count, 0, 0..batch.count);
+                grass_draws += 1;
+                grass_instances += batch.count;
+            }
+            pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             let mut skinned_draws = 0;
             if !skin_draws.is_empty() {
                 pass.set_vertex_buffer(1, self.skin_instance_buf.slice(..));
@@ -1658,7 +1786,8 @@ impl Renderer {
                 draw(&mut pass, d, range.clone());
             }
             drop(draw);
-            stats.draws += skinned_draws;
+            stats.draws += skinned_draws + grass_draws;
+            stats.instances += grass_instances;
             if env.sky {
                 self.precip.draw(&self.queue, &mut pass, self.time);
             }
