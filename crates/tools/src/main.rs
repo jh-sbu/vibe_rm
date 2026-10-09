@@ -612,6 +612,47 @@ fn main() -> Result<()> {
                 println!("[{i}] {}: {s}", n.block_type_name(i));
             }
         }
+        Some("nif-skin") => {
+            // nif-skin <data dir> <vfs path>: skin partitions' bone lists and the vertex
+            // bone indices they use.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let n = nif::Nif::parse(&v.read(&args[2]).context("not found")?)?;
+            for (i, b) in n.blocks.iter().enumerate() {
+                let nif::Block::SkinPartition(p) = b else {
+                    continue;
+                };
+                let g = &p.geometry;
+                println!(
+                    "[{i}] {} vertices, {} partitions",
+                    g.positions.len(),
+                    p.partitions.len()
+                );
+                for (k, part) in p.partitions.iter().enumerate() {
+                    let mut used = std::collections::BTreeSet::new();
+                    for t in &part.triangles {
+                        for &vi in t {
+                            if let Some(bi) = g.bone_indices.get(vi as usize) {
+                                for (j, &x) in bi.iter().enumerate() {
+                                    if g.bone_weights[vi as usize][j] > 0.0 {
+                                        used.insert(x);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    println!(
+                        "  {k}: {} bones {:?}, {} vertices, vertex map {}, indices used {:?}",
+                        part.bones.len(),
+                        part.bones,
+                        part.num_vertices,
+                        part.vertex_map.len(),
+                        used
+                    );
+                }
+            }
+        }
         Some("nif-raw") => {
             // nif-raw <data dir> <vfs path> <block type>: hex dump blocks of a type as floats
             let data = std::path::Path::new(&args[1]);

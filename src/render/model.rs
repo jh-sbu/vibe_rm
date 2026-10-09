@@ -1116,20 +1116,25 @@ fn build_skinned(
                     if gi >= n {
                         continue;
                     }
-                    let (bi, w) = if sse {
-                        (
-                            g.bone_indices.get(gi).copied().unwrap_or_default(),
-                            g.bone_weights.get(gi).copied().unwrap_or_default(),
-                        )
+                    // SSE vertices index the skin instance's bones; LE partitions'
+                    // index their own bone list (the giant's body tells them apart:
+                    // its partitions list bones out of order).
+                    if sse {
+                        bones[gi] = g
+                            .bone_indices
+                            .get(gi)
+                            .copied()
+                            .unwrap_or_default()
+                            .map(u32::from);
+                        weights[gi] = g.bone_weights.get(gi).copied().unwrap_or_default();
                     } else {
-                        (
-                            part.bone_indices.get(local).copied().unwrap_or_default(),
-                            part.weights.get(local).copied().unwrap_or_default(),
-                        )
-                    };
-                    for k in 0..4 {
-                        bones[gi][k] = part.bones.get(bi[k] as usize).copied().unwrap_or(0) as u32;
-                        weights[gi][k] = w[k];
+                        let bi = part.bone_indices.get(local).copied().unwrap_or_default();
+                        let w = part.weights.get(local).copied().unwrap_or_default();
+                        for k in 0..4 {
+                            bones[gi][k] =
+                                part.bones.get(bi[k] as usize).copied().unwrap_or(0) as u32;
+                            weights[gi][k] = w[k];
+                        }
                     }
                 }
                 for t in &part.triangles {
