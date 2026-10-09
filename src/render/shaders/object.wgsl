@@ -95,6 +95,7 @@ struct VIn {
     @location(8) m2: vec4<f32>,
     @location(9) m3: vec4<f32>,
     @location(10) light_idx: vec4<u32>,
+    @location(15) tint: vec4<f32>,
 };
 
 struct VOut {
@@ -110,6 +111,8 @@ struct VOut {
     @location(7) mx: vec3<f32>,
     @location(8) my: vec3<f32>,
     @location(9) mz: vec3<f32>,
+    // The instance's tint (colour, opacity).
+    @location(10) tint: vec4<f32>,
 };
 
 @vertex
@@ -126,6 +129,7 @@ fn vs_main(v: VIn) -> VOut {
     o.uv = v.uv * mat.uv.zw + mat.uv.xy;
     o.color = v.color;
     o.light_idx = v.light_idx;
+    o.tint = v.tint;
     return o;
 }
 
@@ -162,6 +166,7 @@ fn vs_skinned(v: SkinIn) -> VOut {
     o.mx = m[0].xyz;
     o.my = m[1].xyz;
     o.mz = m[2].xyz;
+    o.tint = vec4<f32>(1.0);
     return o;
 }
 
@@ -258,6 +263,8 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         if (mat.params.y >= 0.0 && a < mat.params.y) {
             discard;
         }
+        c *= in.tint.rgb;
+        a *= in.tint.a;
         return vec4<f32>(apply_fog(c, in.world_pos), clamp(a, 0.0, 1.0));
     }
 
@@ -334,5 +341,5 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     }
     diffuse += emit;
     let color = albedo * diffuse + specular * mat.specular.rgb;
-    return vec4<f32>(apply_fog(color, in.world_pos), alpha);
+    return vec4<f32>(apply_fog(color * in.tint.rgb, in.world_pos), alpha * in.tint.a);
 }

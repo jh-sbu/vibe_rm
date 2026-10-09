@@ -105,7 +105,21 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   second, in real time (the scale is made up; the storm's fastest layer,
   178, drifts across a texture in about four minutes). The layers' texture
   scales over the sky (1, 0.8, 1.3, 0.6) are this engine's own.
-- **Not drawn:** auroras, sky statics, the weather's volumetric lighting, sun
-  glare and damage, wind direction (DATA bytes 16 and 17: rain and snow fall
+- **Sky statics.** A weather's TNAM entries are statics (STAT), 48 to 144
+  per weather: the big cloud meshes (`Sky\CloudDistant01.nif`,
+  `Sky\CloudShape06_O.nif`...) placed about the worldspaces, 1060 references
+  of 161 bases in the vanilla data (`vrm-tool weathers`, `vrm-tool
+  model-users <data> "sky\"`). A reference whose base any weather lists is
+  shown only while a weather listing it is on, at that weather's share of
+  the transition, drawn in the weather's sky statics colour (NAM0 colour 13:
+  bright by day, grey in storms, dark blue at night). That they are hidden
+  in the other weathers rather than always drawn, and that the colour
+  multiplies them, is inferred from the field's name and values; no public
+  source describes it. The references are persistent and flagged 0x10000
+  (full LOD?) but load with their cells like any other here, so the far ones
+  don't show.
+- **Not drawn:** auroras, the weather's volumetric lighting, sun glare and
+  damage, wind direction (DATA bytes 17 and 18 per CommonLibSSE's
+  `TESWeather::Data`; UESP puts them at 16 and 17. Rain and snow fall
   straight).
 - **Not in saves**: the weather state lives only in memory.

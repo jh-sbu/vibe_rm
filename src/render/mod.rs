@@ -68,6 +68,8 @@ struct MaterialUniform {
 struct InstanceData {
     model: [[f32; 4]; 4],
     lights: [u32; 4],
+    /// Colour and opacity the instance is drawn with ([`Instance::tint`]).
+    tint: [f32; 4],
 }
 
 #[repr(C)]
@@ -122,7 +124,12 @@ pub struct GpuModel {
 
 pub struct Instance {
     pub ref_id: u32,
+    /// The reference's base form (0 when it has none).
+    pub base: u32,
     pub hidden: bool,
+    /// Multiplies its colour and opacity (sky statics fading with the
+    /// weather); drawn only while the opacity is above 0.
+    pub tint: Vec4,
     pub model: Arc<GpuModel>,
     pub transform: Mat4,
     pub lights: [u16; 8],
@@ -142,7 +149,9 @@ impl Instance {
         let world_radius = model.bound_radius * scale;
         Instance {
             ref_id: 0,
+            base: 0,
             hidden: false,
+            tint: Vec4::ONE,
             model,
             transform,
             lights: [0xFFFF; 8],
@@ -799,7 +808,8 @@ impl Renderer {
             0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Float32x2, 5 => Float32x4
         ];
         let inst_attrs = wgpu::vertex_attr_array![
-            6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4, 10 => Uint32x4
+            6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4, 10 => Uint32x4,
+            15 => Float32x4
         ];
         let skin_attrs = wgpu::vertex_attr_array![
             0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Float32x2, 5 => Float32x4,
@@ -1133,7 +1143,7 @@ impl Renderer {
             HashMap::new();
         let mut blended: Vec<(f32, &GpuPart, InstanceData)> = Vec::new();
         for inst in scene.instances() {
-            if inst.hidden {
+            if inst.hidden || inst.tint.w <= 0.0 {
                 continue;
             }
             if !frustum.sphere_visible(inst.world_center, inst.world_radius) {
@@ -1145,6 +1155,7 @@ impl Renderer {
             let data = InstanceData {
                 model: inst.transform.to_cols_array_2d(),
                 lights: pack_lights(l),
+                tint: inst.tint.to_array(),
             };
             for (pi, part) in inst.model.parts.iter().enumerate() {
                 if part.material.key.blend == BlendMode::Opaque {
@@ -1171,6 +1182,7 @@ impl Renderer {
                 let data = InstanceData {
                     model: xf.to_cols_array_2d(),
                     lights: pack_lights(actor.lights),
+                    tint: [1.0; 4],
                 };
                 for (pi, part) in model.parts.iter().enumerate() {
                     if part.material.key.blend == BlendMode::Opaque {
@@ -1475,6 +1487,7 @@ impl Renderer {
                 let data = InstanceData {
                     model: inst.transform.to_cols_array_2d(),
                     lights: [0; 4],
+                    tint: [1.0; 4],
                 };
                 for (pi, part) in inst.model.parts.iter().enumerate() {
                     if part.material.key.blend == BlendMode::Opaque {
@@ -1493,6 +1506,7 @@ impl Renderer {
                 let data = InstanceData {
                     model: xf.to_cols_array_2d(),
                     lights: [0; 4],
+                    tint: [1.0; 4],
                 };
                 for (pi, part) in model.parts.iter().enumerate() {
                     if part.material.key.blend == BlendMode::Opaque {

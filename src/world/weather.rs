@@ -82,6 +82,8 @@ pub struct Weather {
     pub lightning_color: Vec3,
     /// MNAM: the precipitation (SPGD) drawn while it rains or snows.
     pub precipitation: FormId,
+    /// TNAM: the sky statics (placed cloud statics) shown in this weather.
+    pub sky_statics: Vec<FormId>,
 }
 
 /// Shader particle geometry (SPGD): the rain or snow a weather draws. DATA
@@ -230,6 +232,7 @@ impl Weather {
             sounds: Vec::new(),
             lightning_color: Vec3::ONE,
             precipitation: FormId::NULL,
+            sky_statics: Vec::new(),
         }
     }
 }
@@ -285,6 +288,7 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
                 w.sounds.push((rec.fid(sr.form_id(0)), sr.u32(4)));
             }
             b"MNAM" => w.precipitation = rec.fid(sr.form_id(0)),
+            b"TNAM" if sr.data.len() >= 4 => w.sky_statics.push(rec.fid(sr.form_id(0))),
             b"IMSP" => {
                 for (t, f) in w
                     .image_spaces
@@ -351,6 +355,8 @@ pub struct SkyState {
     pub ambient: Vec3,
     /// Lighting for effects (the precipitation's colour).
     pub effect_lighting: Vec3,
+    /// The colour sky statics are drawn in.
+    pub sky_statics: Vec3,
     pub dalc: [Vec3; 6],
     pub sun_dir: Vec3,
     pub light_dir: Vec3,
@@ -390,6 +396,7 @@ impl SkyState {
             sun_color: v(a.sun_color, b.sun_color),
             ambient: v(a.ambient, b.ambient),
             effect_lighting: v(a.effect_lighting, b.effect_lighting),
+            sky_statics: v(a.sky_statics, b.sky_statics),
             dalc: std::array::from_fn(|i| v(a.dalc[i], b.dalc[i])),
             sun_dir: b.sun_dir,
             light_dir: b.light_dir,
@@ -482,6 +489,7 @@ pub fn evaluate(w: &Weather, c: &Climate, hour: f32) -> SkyState {
         sun_color: col(color::SUN),
         ambient: col(color::AMBIENT),
         effect_lighting: col(color::EFFECT_LIGHTING),
+        sky_statics: col(color::SKY_STATICS),
         dalc,
         sun_dir,
         light_dir,

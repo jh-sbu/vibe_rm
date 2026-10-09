@@ -782,6 +782,7 @@ impl Engine {
             if let Some(m) = self.models.get(&o.model) {
                 let mut inst = Instance::new(m, o.transform);
                 inst.ref_id = o.ref_id.0;
+                inst.base = o.base.0;
                 inst.hidden = hidden;
                 rc.instances.push(inst);
             }
