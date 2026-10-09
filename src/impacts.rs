@@ -5,9 +5,10 @@
 //! canine...), the blocking shield's or weapon's (`BAMT`), or the surface's
 //! for an arrow in the world. The impact plays its sound, runs its effect
 //! model (blood sprays: addon-node particle systems emitting for the
-//! impact's duration) and leaves its decal on the surface it lands on: for a
-//! wound, the blood thrown onto the floor or wall behind. See
-//! `known_gaps/impacts.md`.
+//! impact's duration; spells' meshes), its nodes' own controllers and its
+//! shaders' on a clock of its own, and leaves its decal on the surface it
+//! lands on: for a wound, the blood thrown onto the floor or wall behind.
+//! See `known_gaps/impacts.md`.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -18,6 +19,7 @@ use glam::{Mat4, Quat, Vec3};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::render::{CellKey, Instance};
 use crate::world::decal::DecalData;
+use crate::world::loader::ModelAnim;
 use crate::world::records;
 
 /// Runtime decals kept at once (the oldest go first).
@@ -28,7 +30,7 @@ const BLOOD_REACH: f32 = 320.0;
 const MAX_SKIN_DECALS_PER_ACTOR: usize = 8;
 /// Decals kept on all actors' bodies.
 const MAX_SKIN_DECALS: usize = 48;
-/// The longest an effect runs, whatever its particles.
+/// The longest an effect runs, whatever its particles and meshes.
 const MAX_EFFECT_TIME: f32 = 8.0;
 
 /// Which way an impact's effect points (`DATA` orientation).
@@ -97,11 +99,70 @@ impl Impact {
     }
 }
 
-/// An impact's effect running.
+/// An impact's effect running: its model's meshes and particle systems,
+/// the nodes with controllers of their own (parts) moved, scaled and shown
+/// by them, and its materials' controllers, all from when it started.
 struct Effect {
-    inst: Instance,
+    /// Where it was placed.
+    transform: Mat4,
+    /// The model's still meshes and particle systems, if any.
+    root: Option<Instance>,
+    anim: Option<Arc<ModelAnim>>,
+    /// Each part (in `anim.parts` order) and whether it shows.
+    parts: Vec<(Instance, bool)>,
     age: f32,
     duration: f32,
+}
+
+impl Effect {
+    /// Pose the parts at the effect's age (each after the part it lies in);
+    /// world-space particles stay where they were emitted.
+    fn pose(&mut self) {
+        let Some(anim) = &self.anim else { return };
+        let t = anim.start + self.age;
+        let mut poses: Vec<Mat4> = Vec::with_capacity(anim.parts.len());
+        for (i, part) in anim.parts.iter().enumerate() {
+            let own = anim.controllers.iter().filter(|c| c.block == part.block);
+            let mut local = part.rest;
+            let mut shown = true;
+            for c in own {
+                if let Some(m) = c.transform(t, part.rest) {
+                    local = m;
+                }
+                if let Some(v) = c.visible(t) {
+                    shown &= v;
+                }
+            }
+            let parent = match part.within {
+                Some((o, rel)) if o < i => {
+                    shown &= self.parts[o].1;
+                    poses[o] * rel
+                }
+                _ => part.parent,
+            };
+            let pose = parent * local;
+            poses.push(pose);
+            let (inst, visible) = &mut self.parts[i];
+            *visible = shown;
+            let to = self.transform * pose;
+            let delta = to.inverse() * inst.transform;
+            for (state, sys) in inst.particles.iter_mut().zip(&inst.model.particles) {
+                if sys.desc.world_space {
+                    state.carry(delta);
+                }
+            }
+            inst.transform = to;
+            inst.world_center = to.transform_point3(inst.model.bound_center);
+        }
+    }
+
+    /// Its instances and whether each shows.
+    fn instances_mut(&mut self) -> impl Iterator<Item = (&mut Instance, bool)> {
+        self.root
+            .iter_mut()
+            .map(|i| (i, true))
+            .chain(self.parts.iter_mut().map(|(i, v)| (i, *v)))
+    }
 }
 
 #[derive(Default)]
@@ -358,17 +419,16 @@ impl Engine {
     }
 
     fn start_effect(&mut self, impact: &Impact, l: Landing) {
-        let Some(path) = impact.model.clone() else {
+        let Some(model) = impact.model.as_ref() else {
             return;
         };
+        let path = format!("{model}#effect");
         self.models
             .load_all(&mut self.renderer, &self.vfs, std::slice::from_ref(&path));
-        let Some(model) = self.models.get(&path) else {
-            log::debug!("impact effect {path}: no model");
-            return;
-        };
-        if model.particles.is_empty() {
-            log::debug!("impact effect {path}: no particle systems");
+        let root = self.models.get(&path);
+        let anim = self.models.anim(&path);
+        if root.is_none() && anim.is_none() {
+            log::debug!("impact effect {model}: nothing to show");
             return;
         }
         let n = l.normal.normalize_or(-l.dir);
@@ -378,33 +438,56 @@ impl Engine {
             Orientation::ProjectileReflection => l.dir - 2.0 * l.dir.dot(n) * n,
         }
         .normalize_or(Vec3::Z);
-        // The effects' emitters point along their +Z.
+        // The effects point along their +Z.
         let spin = Quat::from_rotation_z(self.frand() * std::f32::consts::TAU);
         let rot = Quat::from_rotation_arc(Vec3::Z, facing) * spin;
+        let transform = Mat4::from_rotation_translation(rot, l.at);
+        let seed = self.rand() as u32;
+        let mut systems = 0u32;
+        // Its animation may start later than 0 (its text keys' `start`).
+        let start = anim.as_ref().map_or(0.0, |a| a.start);
+        // Each instance on the effect's clock, its particle systems fresh.
+        let mut instance = |model: &crate::render::GpuModel, at: Mat4| {
+            let model = self.renderer.started_model(model, start);
+            let mut inst = Instance::new(Arc::new(model), at);
+            inst.particles = (0..inst.model.particles.len())
+                .map(|_| {
+                    systems += 1;
+                    let mut s = crate::render::particles::ParticleState::new(
+                        seed ^ systems.wrapping_mul(0x9E37_79B9),
+                    );
+                    s.time = start;
+                    s
+                })
+                .collect();
+            inst
+        };
+        let root = root.map(|m| instance(&m, transform));
+        let parts = anim
+            .iter()
+            .flat_map(|a| &a.parts)
+            .map(|p| (instance(&p.model, transform * p.parent * p.rest), true))
+            .collect();
         log::debug!(
-            "impact effect {path}: {} particle systems, {:.2}s, facing {facing:.2}",
-            model.particles.len(),
+            "impact effect {model}: {systems} particle systems, {} parts, {} controllers, from {start:.2}s for {:.2}s, facing {facing:.2}",
+            anim.as_ref().map_or(0, |a| a.parts.len()),
+            anim.as_ref().map_or(0, |a| a.controllers.len()),
             impact.duration
         );
-        let mut inst = Instance::new(model, Mat4::from_rotation_translation(rot, l.at));
-        inst.lights =
-            crate::render::pick_lights(&self.scene.lights, inst.world_center, inst.world_radius);
-        let seed = self.rand() as u32;
-        inst.particles = (0..inst.model.particles.len())
-            .map(|i| {
-                crate::render::particles::ParticleState::new(
-                    seed ^ (i as u32).wrapping_mul(0x9E37_79B9),
-                )
-            })
-            .collect();
-        self.impacts.effects.push(Effect {
-            inst,
+        let mut effect = Effect {
+            transform,
+            root,
+            anim,
+            parts,
             age: 0.0,
             duration: impact.duration.max(0.05),
-        });
+        };
+        effect.pose();
+        self.impacts.effects.push(effect);
     }
 
-    /// Run the impact effects' particles; those done are dropped.
+    /// Run the impact effects (their parts' controllers and particles); those
+    /// done are dropped.
     pub(crate) fn update_impact_effects(
         &mut self,
         dt: f32,
@@ -414,33 +497,57 @@ impl Engine {
     ) {
         self.impacts.effects.retain_mut(|e| {
             e.age += dt;
-            let model_from_world = glam::Mat3::from_mat4(e.inst.transform).inverse();
+            e.pose();
+            let (age, duration) = (e.age, e.duration);
             let mut alive = false;
-            for (state, sys) in e.inst.particles.iter_mut().zip(&e.inst.model.particles) {
-                state.stopped = e.age > e.duration;
-                state.step(&sys.desc, dt, model_from_world);
-                if state.count() == 0 {
-                    continue;
-                }
-                alive = true;
-                let mut vertices = Vec::new();
-                state.quads(&sys.desc, e.inst.transform, right, up, &mut vertices);
-                if !vertices.is_empty() {
-                    batches.push(crate::render::particles::ParticleBatch {
-                        material: sys.material.clone(),
-                        vertices,
-                        center: e.inst.transform.transform_point3(sys.desc.bound_center),
-                    });
+            for (inst, shown) in e.instances_mut() {
+                let model_from_world = glam::Mat3::from_mat4(inst.transform).inverse();
+                for (state, sys) in inst.particles.iter_mut().zip(&inst.model.particles) {
+                    state.stopped = age > duration || !shown;
+                    state.step(&sys.desc, dt, model_from_world);
+                    if state.count() == 0 {
+                        continue;
+                    }
+                    alive = true;
+                    let mut vertices = Vec::new();
+                    state.quads(&sys.desc, inst.transform, right, up, &mut vertices);
+                    if !vertices.is_empty() {
+                        batches.push(crate::render::particles::ParticleBatch {
+                            material: sys.material.clone(),
+                            vertices,
+                            center: inst.transform.transform_point3(sys.desc.bound_center),
+                        });
+                    }
                 }
             }
+            let age = e.age;
             log::trace!(
-                "effect {} at {:.2}s: {} particles",
-                e.inst.model.path,
-                e.age,
-                e.inst.particles.iter().map(|p| p.count()).sum::<usize>()
+                "effect at {age:.2}s: {} particles",
+                e.instances_mut()
+                    .flat_map(|(i, _)| i.particles.iter().map(|p| p.count()))
+                    .sum::<usize>()
             );
             (alive || e.age <= e.duration) && e.age < MAX_EFFECT_TIME
         });
+    }
+
+    /// Draw the impact effects' meshes (for their duration, the parts their
+    /// controllers show) among the frame's moving instances.
+    pub(crate) fn draw_impact_effects(&mut self) {
+        let lights = &self.scene.lights;
+        for e in &mut self.impacts.effects {
+            if e.age > e.duration {
+                continue;
+            }
+            for (inst, shown) in e.instances_mut() {
+                if !shown || inst.model.parts.is_empty() {
+                    continue;
+                }
+                let mut i = Instance::new(inst.model.clone(), inst.transform);
+                i.lights = crate::render::pick_lights(lights, i.world_center, i.world_radius);
+                self.scene.dynamic.push(i);
+            }
+        }
     }
 
     /// The loaded cell a point lies in.

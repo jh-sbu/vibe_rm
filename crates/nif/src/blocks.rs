@@ -381,6 +381,7 @@ pub enum Block {
     TransformData(Box<crate::anim::TransformData>),
     TextKeys(Vec<(f32, String)>),
     ShaderController(crate::anim::ShaderController),
+    NodeController(crate::anim::NodeController),
     ValueInterpolator(crate::anim::ValueInterpolator),
     ValueKeys(crate::anim::ValueKeys),
     ParticleSystem(Box<crate::psys::ParticleSystem>),
@@ -1003,6 +1004,14 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
                 ty.starts_with("BSLighting"),
             )?)
         }
+        "NiTransformController" => Block::NodeController(crate::anim::node_controller(
+            r,
+            crate::anim::NodeControllerKind::Transform,
+        )?),
+        "NiVisController" => Block::NodeController(crate::anim::node_controller(
+            r,
+            crate::anim::NodeControllerKind::Visibility,
+        )?),
         "NiFloatInterpolator" | "NiPoint3Interpolator" => Block::ValueInterpolator(
             crate::anim::value_interpolator(r, ty == "NiPoint3Interpolator")?,
         ),

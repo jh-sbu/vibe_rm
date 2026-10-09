@@ -2211,6 +2211,7 @@ impl Engine {
         self.update_triggers();
         self.update_story();
         self.update_projectiles(dt);
+        self.draw_impact_effects();
         self.update_held_lights();
         self.update_animated(dt);
         self.update_skin_decals();

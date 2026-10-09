@@ -90,6 +90,12 @@ impl Timing {
     pub fn active(&self) -> bool {
         self.flags & 8 != 0
     }
+
+    /// Timed from when its object is started (`APP_INIT`), as effects'
+    /// controllers are, rather than from the application's clock.
+    pub fn app_init(&self) -> bool {
+        self.flags & 1 != 0
+    }
 }
 
 /// A shader property's float or colour controller (`BSEffectShaderProperty*`,
@@ -108,6 +114,36 @@ pub struct ShaderController {
     pub color: bool,
     /// On a lighting shader (else an effect shader).
     pub lighting: bool,
+}
+
+/// What a node's own controller drives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeControllerKind {
+    /// `NiTransformController`: its transform, by a transform interpolator.
+    Transform,
+    /// `NiVisController`: whether it shows, by a bool interpolator.
+    Visibility,
+}
+
+/// A controller on a node (`NiTransformController`, `NiVisController`),
+/// chained from the node's `controller`.
+#[derive(Debug, Clone)]
+pub struct NodeController {
+    pub next: Ref,
+    pub timing: Timing,
+    pub interpolator: Ref,
+    pub kind: NodeControllerKind,
+}
+
+pub(crate) fn node_controller(r: &mut Reader, kind: NodeControllerKind) -> Result<NodeController> {
+    let (next, timing) = timing(r)?;
+    let interpolator = r.block_ref()?;
+    Ok(NodeController {
+        next,
+        timing,
+        interpolator,
+        kind,
+    })
 }
 
 /// `NiFloatInterpolator` / `NiPoint3Interpolator`: a pose value and its keys.

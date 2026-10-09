@@ -40,11 +40,33 @@ places impacts isn't public.
 - **Limits**: 64 runtime decals across the loaded cells, the oldest going
   first; they don't fade (the INI's decal lifetime and counts aren't in the
   data) and go with their cell when it unloads.
-- **Effects** run only their particle systems (the models' meshes and
-  keyframe animation aren't drawn), oriented with their +Z along the
-  orientation (the reflection is about the surface normal: for a blow on
-  an actor, back towards the attacker), turned at random about it, for
-  their duration, then until their particles die (8 s at most).
+- **Effects** are oriented with their +Z along the orientation (the
+  reflection is about the surface normal: for a blow on an actor, back
+  towards the attacker), turned at random about it. The blood sprays'
+  emitters and the shock disc (surface normal) fit +Z; the shout push's
+  dust (`PushDirtDust02`, projectile vector) is a ring about +Y, the way
+  projectiles' models point, and the ice shards (`IcicleImpact01`,
+  projectile vector) fly out along +Z, into what was struck. Which axis
+  each orientation takes is unknown.
+- **Effects' clock.** An effect plays from its text keys' `start` (0.83 s
+  in for the ice shards; else 0): its meshes are drawn for the impact's
+  duration, its particles emit for it and live on (8 s at most in all).
+  The `end` key isn't used. All of the model's own controllers run from
+  then, active or not: in the vanilla effect models nearly all are inactive
+  `APP_INIT` (flags 0x45), which the engine is taken to start with the
+  effect; the active ones (0x48, 0x4C) run from then too rather than on the
+  application's clock. Manager-controlled ones (sequences') don't run.
+- **Parts.** The nodes with transform or visibility controllers of their
+  own are drawn apart and posed by them (after the part they lie in);
+  addon nodes and billboards among them take their models along. A hidden
+  part stops its particles emitting. Particles of world-space systems
+  (the sprays') stay where they were emitted as their part moves; others
+  move with it. Skinned meshes in effect models aren't drawn, nor
+  procedural lightning (`BSProceduralLightningController`: the shock
+  impacts' bolts) or alpha test controllers.
+- **Soft effects**: flat glows lying on the surface (the shock disc) show
+  a hard edge where geometry cuts them; the soft effect flag (SLSF1 bit
+  30) and its falloff depth aren't used.
 - **Blood on bodies.** The game builds skinned decal geometry on the
   actor's meshes (its INI's skin decal counts aren't in the data). Here a
   wound is a decal box like the world's: from 10 units in front of where
@@ -59,4 +81,5 @@ places impacts isn't public.
   first; they go when the actor unloads.
 - **Not done**: hazards (`NAM2`), the second
   sound (`NAM1`), the impact result (bounce, impale, stick), sound levels
-  for detection, spells' and explosions' impacts, footsteps' decals.
+  for detection, spells' and explosions' impacts (their models play through
+  console `impact`), footsteps' decals.

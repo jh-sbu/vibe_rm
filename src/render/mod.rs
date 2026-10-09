@@ -137,16 +137,39 @@ pub struct GpuMaterial {
     /// Cut out by alpha testing (casts shadows through its texture).
     pub alpha_test: bool,
     /// Controllers animating its uniform, from its values at rest.
-    anim: Option<(Arc<model::MaterialAnim>, MaterialUniform, wgpu::Buffer)>,
+    anim: Option<Box<MaterialClock>>,
     /// Turned to the camera in the vertex shader (casts no shadow).
     pub billboard: bool,
 }
 
+/// An animated material's controllers and what they animate.
+struct MaterialClock {
+    anim: Arc<model::MaterialAnim>,
+    /// Its values at rest.
+    base: MaterialUniform,
+    buf: wgpu::Buffer,
+    /// What it was made from (for one on a clock of its own).
+    desc: MaterialDesc,
+    /// When it started (an effect's, all its controllers running from
+    /// then); else the started controllers run on the renderer's clock.
+    start: Option<f32>,
+}
+
+impl MaterialClock {
+    fn at(&self, now: f32) -> MaterialUniform {
+        match self.start {
+            Some(s) => self.base.animated(&self.anim, now - s, true),
+            None => self.base.animated(&self.anim, now, false),
+        }
+    }
+}
+
 impl MaterialUniform {
-    /// The values with a material's controllers applied at `t` seconds.
-    fn animated(&self, anim: &model::MaterialAnim, t: f32) -> MaterialUniform {
+    /// The values with a material's controllers applied at `t` seconds (only
+    /// those started unless `all`).
+    fn animated(&self, anim: &model::MaterialAnim, t: f32, all: bool) -> MaterialUniform {
         let mut u = *self;
-        for c in &anim.channels {
+        for c in anim.channels.iter().filter(|c| all || c.started) {
             let Some(v) = c.keys.sample(c.timing.key_time(t)) else {
                 continue;
             };
@@ -1244,7 +1267,15 @@ impl Renderer {
             bind_group,
             key,
             alpha_test: m.alpha_test.is_some(),
-            anim: m.anim.clone().map(|a| (a, u, ubuf)),
+            anim: m.anim.clone().map(|anim| {
+                Box::new(MaterialClock {
+                    anim,
+                    base: u,
+                    buf: ubuf,
+                    desc: m.clone(),
+                    start: None,
+                })
+            }),
             billboard: m.billboard.is_some(),
         }
     }
@@ -1293,10 +1324,57 @@ impl Renderer {
         let mut mat = self.create_material(m);
         mat.key.skinned = skinned;
         let mat = Arc::new(mat);
-        if mat.anim.is_some() {
+        if mat.anim.as_ref().is_some_and(|a| a.anim.started()) {
             self.animated.lock().unwrap().push(Arc::downgrade(&mat));
         }
         mat
+    }
+
+    /// A model sharing `model`'s geometry, its animated materials on a clock
+    /// of their own, `at` seconds in now, with all their controllers: an
+    /// effect's.
+    pub fn started_model(&self, model: &GpuModel, at: f32) -> GpuModel {
+        let restart = |m: &Arc<GpuMaterial>| -> Arc<GpuMaterial> {
+            let Some(clock) = &m.anim else {
+                return m.clone();
+            };
+            let mut mat = self.create_material(&clock.desc);
+            mat.key = m.key;
+            if let Some(c) = mat.anim.as_mut() {
+                c.start = Some(self.time - at);
+                self.queue
+                    .write_buffer(&c.buf, 0, bytemuck::bytes_of(&c.at(self.time)));
+            }
+            let mat = Arc::new(mat);
+            self.animated.lock().unwrap().push(Arc::downgrade(&mat));
+            mat
+        };
+        GpuModel {
+            path: model.path.clone(),
+            parts: model
+                .parts
+                .iter()
+                .map(|p| GpuPart {
+                    vbuf: p.vbuf.clone(),
+                    ibuf: p.ibuf.clone(),
+                    index_count: p.index_count,
+                    material: restart(&p.material),
+                    bound_center: p.bound_center,
+                    bound_radius: p.bound_radius,
+                })
+                .collect(),
+            skinned: Vec::new(),
+            particles: model
+                .particles
+                .iter()
+                .map(|p| particles::GpuParticles {
+                    desc: p.desc.clone(),
+                    material: p.material.clone(),
+                })
+                .collect(),
+            bound_center: model.bound_center,
+            bound_radius: model.bound_radius,
+        }
     }
 
     /// Bring the animated materials still in use to the time now.
@@ -1304,9 +1382,9 @@ impl Renderer {
         let mut list = self.animated.lock().unwrap();
         list.retain(|w| {
             let Some(m) = w.upgrade() else { return false };
-            if let Some((anim, base, buf)) = &m.anim {
-                let u = base.animated(anim, self.time);
-                self.queue.write_buffer(buf, 0, bytemuck::bytes_of(&u));
+            if let Some(c) = &m.anim {
+                self.queue
+                    .write_buffer(&c.buf, 0, bytemuck::bytes_of(&c.at(self.time)));
             }
             true
         });
