@@ -115,8 +115,11 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   in the other weathers rather than always drawn, and that the colour
   multiplies them, is inferred from the field's name and values; no public
   source describes it. The references are persistent and flagged 0x10000
-  (full LOD?) but load with their cells like any other here, so the far ones
-  don't show.
+  (taken as "full LOD": drawn however far; `vrm-tool full-lod` counts 780
+  such sky statics in Tamriel, the rest mostly dragon perches). Those load
+  with the worldspace, drawn only (no collision or scripts); other flagged
+  references load with their cells as before. Without distant terrain the
+  far clouds can hang over nothing at the horizon.
 - **Wind.** DATA bytes 17 and 18 are the wind direction and its range
   (CommonLibSSE's `TESWeather::Data`; UESP's layout puts them at 16 and 17).
   They're read as 256ths of 360 and 180 degrees (`GetWindDirection` gives

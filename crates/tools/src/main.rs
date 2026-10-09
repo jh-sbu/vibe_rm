@@ -3348,6 +3348,58 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("full-lod") => {
+            // full-lod <data dir> [world]: the worldspace's references flagged
+            // 0x10000 (full LOD), counted by where they live (persistent cell or
+            // not) and their base's model folder.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let world = lo
+                .find_editor_id(args.get(2).map_or("Tamriel", |s| s.as_str()))
+                .context("world not found")?;
+            let wi = lo.world(world).context("not a worldspace")?;
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            let mut count = |cell: esp::FormId, persistent: bool| {
+                let Some(idx) = lo.cell(cell) else { return };
+                for &r in idx.persistent.iter().chain(idx.temporary.iter()) {
+                    let Some(rec) = lo.get(r) else { continue };
+                    if rec.flags() & 0x10000 == 0 {
+                        continue;
+                    }
+                    let base = rec.get(b"NAME").filter(|d| d.len() >= 4).map(|d| {
+                        rec.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))
+                    });
+                    let model = base
+                        .and_then(|b| lo.get(b))
+                        .and_then(|b| {
+                            b.get(b"MODL")
+                                .map(|m| String::from_utf8_lossy(m).to_ascii_lowercase())
+                        })
+                        .unwrap_or_default();
+                    let folder = model.rsplit_once('\\').map_or("", |(f, _)| f).to_string();
+                    *counts
+                        .entry(format!(
+                            "{} {folder}",
+                            if persistent {
+                                "persistent"
+                            } else {
+                                "temporary "
+                            }
+                        ))
+                        .or_default() += 1;
+                }
+            };
+            if let Some(pc) = wi.persistent_cell {
+                count(pc, true);
+            }
+            for &c in wi.cells.values() {
+                count(c, false);
+            }
+            for (k, n) in counts {
+                println!("{n:6} {k}");
+            }
+        }
         Some("weathers") => {
             // weathers <data dir>: every weather's DATA wind (speed, direction byte 17,
             // range byte 18), flags (classification, aurora bits), aurora model,

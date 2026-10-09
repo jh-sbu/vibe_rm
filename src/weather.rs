@@ -715,12 +715,10 @@ impl Engine {
         Some(env)
     }
 
-    /// Show the loaded sky statics at their weathers' share of the transition,
-    /// in the sky statics colour; those no weather on lists are hidden.
-    fn update_sky_statics(&mut self, color: glam::Vec3) {
+    /// The bases any weather lists as a sky static (TNAM).
+    pub(crate) fn sky_static_bases(&mut self) -> &HashSet<u32> {
         let lo = &self.lo;
-        let ws = &mut self.weather;
-        ws.sky_static_bases.get_or_insert_with(|| {
+        self.weather.sky_static_bases.get_or_insert_with(|| {
             lo.ids_of_type(b"WTHR")
                 .iter()
                 .filter_map(|&id| lo.get(id))
@@ -731,7 +729,14 @@ impl Engine {
                         .collect::<Vec<_>>()
                 })
                 .collect()
-        });
+        })
+    }
+
+    /// Show the loaded sky statics at their weathers' share of the transition,
+    /// in the sky statics colour; those no weather on lists are hidden.
+    fn update_sky_statics(&mut self, color: glam::Vec3) {
+        self.sky_static_bases();
+        let ws = &self.weather;
         let bases = ws.sky_static_bases.as_ref().unwrap();
         let lists = |w: &Option<Arc<Weather>>, base: u32| {
             w.as_ref()
@@ -743,6 +748,7 @@ impl Engine {
             .cells
             .values_mut()
             .flat_map(|c| c.instances.iter_mut())
+            .chain(self.scene.far.iter_mut())
         {
             if !bases.contains(&inst.base) {
                 continue;
