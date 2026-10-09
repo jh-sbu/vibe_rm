@@ -47,6 +47,34 @@ impl Engine {
         self.actor_ref(r).is_some_and(|a| a.graph.is_some()) || self.object_has_graph(r)
     }
 
+    /// The graph `r` runs: an object's, else an actor's.
+    fn graph_mut(&mut self, r: FormId) -> Option<&mut crate::world::behavior::GraphAnim> {
+        if self.object_has_graph(r) {
+            return self.object_graph_mut(r);
+        }
+        self.actor_mut(r)?.graph.as_mut()
+    }
+
+    /// Papyrus `GetAnimationVariable*`: 0 when `r` runs no graph or its graph
+    /// has no such variable.
+    pub(crate) fn anim_variable(&mut self, r: FormId, name: &str) -> f32 {
+        self.graph_mut(r)
+            .and_then(|g| g.variable(name))
+            .unwrap_or(0.0)
+    }
+
+    /// Papyrus `SetAnimationVariable*`.
+    pub(crate) fn set_anim_variable(&mut self, r: FormId, name: &str, value: f32) {
+        match self.graph_mut(r) {
+            Some(g) => {
+                if !g.set_variable(name, value) {
+                    log::debug!("{r}: no graph variable {name}");
+                }
+            }
+            None => log::debug!("{r}: no graph for variable {name}"),
+        }
+    }
+
     /// Papyrus `RegisterForAnimationEvent`: false, registering nothing, when the
     /// sender has no graph running (not loaded, or without one).
     pub(crate) fn register_anim_event(

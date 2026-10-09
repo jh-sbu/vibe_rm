@@ -47,5 +47,6 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
 
 ## Open
 
-- `controls base skeleton` isn't read; graph variables scripts set
-  (`SetAnimationVariable*`) are ignored.
+- `controls base skeleton` isn't read.
+- Graph variables scripts set on actors (`SetAnimationVariable*`) may be
+  overwritten by the ones the AI sets every frame (`isInFurniture`...).
