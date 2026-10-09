@@ -75,6 +75,7 @@ struct Material {
     flags: vec4<u32>,       // shader flags 1, shader flags 2, kind (0 lit, 1 effect), unused
     falloff: vec4<f32>,     // effect: start angle, stop angle, start opacity, stop opacity (cosines)
     tint: vec4<f32>,        // skin / hair tint
+    billboard: vec4<f32>,   // a billboard's model-space origin, mode + 1 (0: none)
 };
 
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
@@ -118,11 +119,53 @@ struct VOut {
     @location(11) fog: f32,
 };
 
+// A billboard's axes in the world.
+// Modes 1, 5 and 9 turn about the up axis only (5 about the model's own);
+// 3 and 4 face the camera's position, the others its view direction.
+fn billboard_axes(model: mat4x4<f32>, pivot: vec3<f32>, mode: u32) -> mat3x3<f32> {
+    var up = vec3<f32>(0.0, 0.0, 1.0);
+    if (mode == 5u) {
+        up = normalize(model[2].xyz);
+    }
+    var toward = -frame.cam_fwd.xyz;
+    if (mode == 3u || mode == 4u || mode == 1u || mode == 5u || mode == 9u) {
+        toward = normalize(frame.cam_pos.xyz - pivot);
+    }
+    if (mode == 1u || mode == 5u || mode == 9u) {
+        toward = toward - up * dot(toward, up);
+        if (length(toward) < 0.0001) {
+            toward = vec3<f32>(0.0, -1.0, 0.0);
+        }
+        toward = normalize(toward);
+    } else {
+        var right = cross(toward, up);
+        if (length(right) < 0.0001) {
+            right = vec3<f32>(1.0, 0.0, 0.0);
+        }
+        up = normalize(cross(normalize(right), toward));
+    }
+    let across = normalize(cross(up, toward));
+    // A billboard's own x is across, y up and z towards the camera (its
+    // mesh lies in its xy plane; nodes rest turned so that y is the model's z).
+    return mat3x3<f32>(across, up, toward);
+}
+
 @vertex
 fn vs_main(v: VIn) -> VOut {
-    let model = mat4x4<f32>(v.m0, v.m1, v.m2, v.m3);
+    var model = mat4x4<f32>(v.m0, v.m1, v.m2, v.m3);
+    if (mat.billboard.w > 0.5) {
+        let pivot = (model * vec4<f32>(mat.billboard.xyz, 1.0)).xyz;
+        let scale = length(v.m0.xyz);
+        let axes = billboard_axes(model, pivot, u32(mat.billboard.w - 1.0)) * scale;
+        model = mat4x4<f32>(
+            vec4<f32>(axes[0], 0.0),
+            vec4<f32>(axes[1], 0.0),
+            vec4<f32>(axes[2], 0.0),
+            vec4<f32>(pivot, 1.0),
+        );
+    }
     let world = model * vec4<f32>(v.pos, 1.0);
-    let m3 = mat3x3<f32>(v.m0.xyz, v.m1.xyz, v.m2.xyz);
+    let m3 = mat3x3<f32>(model[0].xyz, model[1].xyz, model[2].xyz);
     var o: VOut;
     o.clip = frame.view_proj * world;
     o.world_pos = world.xyz;

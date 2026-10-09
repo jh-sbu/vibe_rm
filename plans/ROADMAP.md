@@ -479,6 +479,15 @@ game each piece unlocks.
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
+- Particle systems: `NiParticleSystem` with its data, emitters (box, cylinder, sphere),
+  birth rate and visibility controllers, gravity, drag, rotation, scale, simple colour,
+  subtexture flipping and spawning on death, run on the CPU near the camera and drawn as
+  camera-facing (or motion-aligned) quads with their effect materials: fires burn and
+  smoke. Greyscale palettes are looked up clamped. Open questions:
+  `known_gaps/particles.md`
+- Billboard nodes (`NiBillboardNode`): their subtrees turned to the camera in the vertex
+  shader about the node's origin (facing the view direction or the camera, or turning about
+  the up axis only, by mode): fires' glows and flame cards
 - Shader property controllers (`BSEffectShaderProperty*` / `BSLightingShaderProperty*`
   float and colour controllers with `NiFloatData` / `NiPosData` keys): UV scrolling and
   scaling, emissive colour and multiple, alpha and falloff animate on every material
@@ -645,8 +654,9 @@ game each piece unlocks.
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), HDR: eye adaptation, bloom, tone mapping and the image
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
-   radial blur and motion blur (cinematic values and tint: see Done), particles
-   (fire, smoke, explosions), distant LOD (BTR/BTO/trees),
+   radial blur and motion blur (cinematic values and tint: see Done), particles'
+   remaining modifiers (colliders, mesh emitters' surfaces, strips, LOD; see
+   `known_gaps/particles.md`), distant LOD (BTR/BTO/trees),
    grass, decals, environment maps; weather: auroras' brightness and order against the
    clouds (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out

@@ -62,6 +62,8 @@ struct MaterialUniform {
     flags: [u32; 4],
     falloff: [f32; 4],
     tint: [f32; 4],
+    /// A billboard's model-space origin and mode + 1 (0: not one).
+    billboard: [f32; 4],
 }
 
 #[repr(C)]
@@ -98,6 +100,8 @@ pub struct GpuMaterial {
     pub alpha_test: bool,
     /// Controllers animating its uniform, from its values at rest.
     anim: Option<(Arc<model::MaterialAnim>, MaterialUniform, wgpu::Buffer)>,
+    /// Turned to the camera in the vertex shader (casts no shadow).
+    pub billboard: bool,
 }
 
 impl MaterialUniform {
@@ -1051,6 +1055,9 @@ impl Renderer {
             ],
             falloff: m.falloff.to_array(),
             tint: m.tint.extend(1.0).to_array(),
+            billboard: m
+                .billboard
+                .map_or([0.0; 4], |(p, mode)| p.extend(mode as f32 + 1.0).to_array()),
         };
         let ubuf = self
             .device
@@ -1097,6 +1104,7 @@ impl Renderer {
             key,
             alpha_test: m.alpha_test.is_some(),
             anim: m.anim.clone().map(|a| (a, u, ubuf)),
+            billboard: m.billboard.is_some(),
         }
     }
 
@@ -1662,7 +1670,7 @@ impl Renderer {
                     params: [1.0, 0.0, 0.0, 0.0],
                 };
                 for (pi, part) in inst.model.parts.iter().enumerate() {
-                    if part.material.key.blend == BlendMode::Opaque {
+                    if part.material.key.blend == BlendMode::Opaque && !part.material.billboard {
                         batches
                             .entry((Arc::as_ptr(&inst.model), pi))
                             .or_insert_with(|| (part, Vec::new()))
@@ -1682,7 +1690,7 @@ impl Renderer {
                     params: [1.0, 0.0, 0.0, 0.0],
                 };
                 for (pi, part) in model.parts.iter().enumerate() {
-                    if part.material.key.blend == BlendMode::Opaque {
+                    if part.material.key.blend == BlendMode::Opaque && !part.material.billboard {
                         batches
                             .entry((Arc::as_ptr(model), pi))
                             .or_insert_with(|| (part, Vec::new()))
