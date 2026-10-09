@@ -377,6 +377,11 @@ pub enum Block {
     ShaderController(crate::anim::ShaderController),
     ValueInterpolator(crate::anim::ValueInterpolator),
     ValueKeys(crate::anim::ValueKeys),
+    ParticleSystem(Box<crate::psys::ParticleSystem>),
+    ParticleData(Box<crate::psys::ParticleData>),
+    ParticleModifier(Box<crate::psys::Modifier>),
+    ParticleController(crate::psys::ParticleController),
+    BoolInterpolator(crate::psys::BoolInterpolator),
     Unknown(String),
 }
 
@@ -386,6 +391,7 @@ impl Block {
             Block::Node(n) => Some(&n.av),
             Block::TriShape(t) => Some(&t.av),
             Block::NiTriShape(g) | Block::NiTriStrips(g) => Some(&g.av),
+            Block::ParticleSystem(p) => Some(&p.av),
             _ => None,
         }
     }
@@ -411,7 +417,7 @@ fn object_net(r: &mut Reader, lighting_shader: bool) -> Result<(u32, ObjectNet)>
     ))
 }
 
-fn av_object(r: &mut Reader) -> Result<AvObject> {
+pub(crate) fn av_object(r: &mut Reader) -> Result<AvObject> {
     let (_, net) = object_net(r, false)?;
     let flags = if r.bs_version > 26 {
         r.u32()?
@@ -1039,10 +1045,13 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
         "bhkBallSocketConstraintChain" => {
             Block::ConstraintChain(Box::new(crate::collision::constraint_chain(r)?))
         }
-        _ => match crate::collision::parse_shape(ty, r)? {
-            Some(s) => Block::Shape(s),
-            None => return Ok(None),
-        },
+        _ => {
+            if let Some(s) = crate::collision::parse_shape(ty, r)? {
+                Block::Shape(s)
+            } else {
+                return crate::psys::parse(ty, r);
+            }
+        }
     };
     Ok(Some(b))
 }

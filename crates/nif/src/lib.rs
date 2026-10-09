@@ -8,6 +8,7 @@
 pub mod anim;
 pub mod blocks;
 pub mod collision;
+pub mod psys;
 mod reader;
 pub mod skin;
 
