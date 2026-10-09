@@ -63,7 +63,35 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   one and a half times that (made up: the storms have 246, Storm Call's
   `FXMagicStormRain` 15, so lower is taken as more often). The first roll
   after thunder comes on waits.
-- **Not drawn:** rain and snow (precipitation particles, MNAM), lightning
-  flashes, auroras, sky statics, the weather's volumetric lighting, sun
+- **Precipitation.** A weather's MNAM names its shader particle geometry
+  (SPGD). DATA is read in UESP's layout: gravity velocity, rotation
+  velocity, particle size X / Y, center offset min / max, initial rotation
+  range, subtextures X / Y, type (0 rain, 1 snow), box size, density
+  (`DustParticles` and `FogParticles` stop at 40 bytes and aren't drawn).
+  What's settled is only the layout; how the game uses the values isn't
+  public:
+  - Gravity velocity is taken as units a second (rain's 674 is about the
+    terminal velocity of a drop).
+  - Snow's rotation velocity (100) is taken as degrees a second each flake
+    circles its falling centre, at a radius between the center offsets
+    (50..185), starting at an angle in the initial rotation range (360).
+    Whether it instead spins the sprite isn't known.
+  - Particle size is multiplied by 10 into units (made up: rain 3.5 x 20, a
+    streak about the length a drop falls in a frame; snow flakes 11.5).
+  - Density is multiplied by 2500 into a particle count (made up), capped
+    at 32768.
+  - Rain's texture (`FXRaindrops.dds`) is dark and faint (alpha under 0.4
+    in streaks a texel or two wide). Drawn like snow it couldn't be seen,
+    so it is drawn in the weather's effect lighting colour, its alpha
+    doubled and its mip 0 sampled. Snow is its texture times the effect
+    lighting. Both are alpha blended and fogged.
+  - The amount falling follows the precipitation fades: the incoming
+    weather's rises from its begin fade in to the end of the transition,
+    the outgoing one's falls to nothing at its end fade out. Any weather
+    with an MNAM draws it, whatever its flags (`SovngardeClear`'s stardust).
+  - Particles hang in a box the SPGD's size about the camera, faded out
+    towards its edges. Wind doesn't blow them, and nothing keeps rain off
+    under roofs or overhangs.
+- **Not drawn:** lightning flashes, auroras, sky statics, the weather's volumetric lighting, sun
   glare and damage, cloud speeds (RNAM / QNAM) and wind direction.
 - **Not in saves**: the weather state lives only in memory.
