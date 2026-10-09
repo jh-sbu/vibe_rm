@@ -85,9 +85,20 @@ pub struct MaterialChannel {
     pub variable: u32,
     pub color: bool,
     pub lighting: bool,
+    /// Running from the start (active); else started with its model, as an
+    /// effect's (`APP_INIT`) are.
+    pub started: bool,
 }
 
-/// The active controllers chained from a shader property's `controller`.
+impl MaterialAnim {
+    /// Some of its controllers run on the application's clock.
+    pub fn started(&self) -> bool {
+        self.channels.iter().any(|c| c.started)
+    }
+}
+
+/// The controllers chained from a shader property's `controller`: the active
+/// ones and those started with their model (effects').
 fn material_anim(nif: &Nif, mut controller: Ref) -> Option<std::sync::Arc<MaterialAnim>> {
     let mut channels = Vec::new();
     let mut seen = 0;
@@ -97,7 +108,7 @@ fn material_anim(nif: &Nif, mut controller: Ref) -> Option<std::sync::Arc<Materi
             break;
         }
         controller = c.next;
-        if !c.timing.active() {
+        if !c.timing.active() && !c.timing.app_init() {
             continue;
         }
         let Some(Block::ValueInterpolator(i)) = nif.get(c.interpolator) else {
@@ -115,6 +126,7 @@ fn material_anim(nif: &Nif, mut controller: Ref) -> Option<std::sync::Arc<Materi
             variable: c.variable,
             color: c.color,
             lighting: c.lighting,
+            started: c.timing.active(),
         });
     }
     (!channels.is_empty()).then(|| std::sync::Arc::new(MaterialAnim { channels }))
@@ -205,10 +217,15 @@ pub struct CpuModel {
 /// Meshes under an animated node, in that node's space.
 pub struct AnimatedPart {
     pub node: String,
+    /// The node's block (names may repeat).
+    pub block: i32,
     /// Model-space transform of the node's parent, and the node's own rest transform.
     pub parent: Mat4,
     pub rest: Mat4,
     pub model: CpuModel,
+    /// The part it lies in (an earlier one) and its parent's transform in
+    /// that part's node, for following that part's animation too.
+    pub within: Option<(usize, Mat4)>,
 }
 
 /// A keyframe channel animating one node.
@@ -290,6 +307,129 @@ fn sequences(nif: &Nif) -> Vec<Sequence> {
         }
     }
     out
+}
+
+/// A node's own controller (outside any sequence): an effect's nodes moving,
+/// scaling and showing over time.
+pub struct NodeChannel {
+    pub node: String,
+    /// The node's block (names may repeat).
+    pub block: i32,
+    pub timing: nif::anim::Timing,
+    pub drive: NodeDrive,
+}
+
+pub enum NodeDrive {
+    Transform(Channel),
+    /// Shown while the keys (else the value) are 1.
+    Visibility {
+        value: bool,
+        keys: Option<nif::anim::ValueKeys>,
+    },
+}
+
+impl NodeChannel {
+    /// Whether the node shows at `t` seconds from its start.
+    pub fn visible(&self, t: f32) -> Option<bool> {
+        let NodeDrive::Visibility { value, keys } = &self.drive else {
+            return None;
+        };
+        let Some(keys) = keys else {
+            return Some(*value);
+        };
+        // Bool keys step: the last at or before the time (else the first).
+        let at = self.timing.key_time(t);
+        let key = keys.keys.iter().rev().find(|(kt, _)| *kt <= at);
+        key.or(keys.keys.first()).map(|(_, v)| v.x > 0.5)
+    }
+
+    /// The node's local transform at `t` seconds from its start.
+    pub fn transform(&self, t: f32, rest: Mat4) -> Option<Mat4> {
+        let NodeDrive::Transform(c) = &self.drive else {
+            return None;
+        };
+        Some(c.sample(self.timing.key_time(t), rest))
+    }
+}
+
+/// The nodes' own transform and visibility controllers, those a sequence
+/// doesn't drive (manager-controlled): active, or started with the model.
+pub fn node_controllers(nif: &Nif) -> Vec<NodeChannel> {
+    let mut out = Vec::new();
+    for (i, b) in nif.blocks.iter().enumerate() {
+        let Block::Node(n) = b else { continue };
+        let mut c = n.av.net.controller;
+        let mut seen = 0;
+        while let Some(Block::NodeController(nc)) = nif.get(c) {
+            seen += 1;
+            if seen > 16 {
+                break;
+            }
+            c = nc.next;
+            let t = nc.timing;
+            const MANAGER_CONTROLLED: u16 = 0x20;
+            if t.flags & MANAGER_CONTROLLED != 0 || !(t.active() || t.app_init()) {
+                continue;
+            }
+            let drive = match (nc.kind, nif.get(nc.interpolator)) {
+                (
+                    nif::anim::NodeControllerKind::Transform,
+                    Some(Block::TransformInterpolator(i)),
+                ) => {
+                    let data = match nif.get(i.data) {
+                        Some(Block::TransformData(d)) => Some(std::sync::Arc::new((**d).clone())),
+                        _ => None,
+                    };
+                    NodeDrive::Transform(Channel {
+                        node: n.av.net.name.clone(),
+                        interpolator: i.clone(),
+                        data,
+                    })
+                }
+                (nif::anim::NodeControllerKind::Visibility, Some(Block::BoolInterpolator(i))) => {
+                    NodeDrive::Visibility {
+                        value: i.value,
+                        keys: match nif.get(i.data) {
+                            Some(Block::ValueKeys(k)) if !k.keys.is_empty() => Some(k.clone()),
+                            _ => None,
+                        },
+                    }
+                }
+                _ => continue,
+            };
+            out.push(NodeChannel {
+                node: n.av.net.name.clone(),
+                block: i as i32,
+                timing: t,
+                drive,
+            });
+        }
+    }
+    out
+}
+
+/// When a model's animation starts: its text keys' `start` (an effect's
+/// keys may begin later than 0), else 0.
+pub fn animation_start(nif: &Nif) -> f32 {
+    nif.blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::TextKeys(keys) => keys
+                .iter()
+                .find(|(_, k)| k.trim_start().to_ascii_lowercase().starts_with("start"))
+                .map(|(t, _)| *t),
+            _ => None,
+        })
+        .filter(|t| t.is_finite())
+        .unwrap_or(0.0)
+}
+
+/// [`convert`] for an effect's model: the nodes with controllers of their
+/// own drawn apart, to be moved, scaled and shown by them.
+pub fn convert_effect(nif: &Nif) -> (CpuModel, Vec<NodeChannel>) {
+    let controllers = node_controllers(nif);
+    let split = controllers.iter().map(|c| c.node.clone()).collect();
+    (convert_split(nif, &|_| true, &split), controllers)
 }
 
 pub fn convert(nif: &Nif) -> CpuModel {
@@ -524,19 +664,28 @@ struct Walk<'a> {
     root: Mat4,
 }
 
-/// Parts and the parts within them, side by side: the inner ones' parent
-/// transforms made model-space.
+/// Parts and the parts within them, side by side, each after the part it
+/// lies in: the inner ones' parent transforms made model-space (at rest),
+/// and kept in their outer part's node for following its animation.
 fn flatten_parts(parts: Vec<AnimatedPart>) -> Vec<AnimatedPart> {
-    let mut out = Vec::new();
-    for mut p in parts {
-        let inner = std::mem::take(&mut p.model.animated);
-        let base = p.parent * p.rest;
-        out.push(p);
-        out.extend(flatten_parts(inner).into_iter().map(|mut c| {
-            c.parent = base * c.parent;
-            c
-        }));
+    fn flatten(
+        parts: Vec<AnimatedPart>,
+        outer: Option<(usize, Mat4)>,
+        out: &mut Vec<AnimatedPart>,
+    ) {
+        for mut p in parts {
+            let inner = std::mem::take(&mut p.model.animated);
+            if let Some((i, base)) = outer {
+                p.within = Some((i, p.parent));
+                p.parent = base * p.parent;
+            }
+            let base = p.parent * p.rest;
+            out.push(p);
+            flatten(inner, Some((out.len() - 1, base)), out);
+        }
     }
+    let mut out = Vec::new();
+    flatten(parts, None, &mut out);
     out
 }
 
@@ -586,6 +735,8 @@ impl Walk<'_> {
             && matches!(block, Block::Node(_))
             && self.animated_nodes.contains(av.net.name.as_str())
         {
+            // In the part's own space: its particles' emitter objects too.
+            let node = parent * local_transform(av, depth);
             let mut sub = Walk {
                 meshes: Vec::new(),
                 particles: Vec::new(),
@@ -594,15 +745,38 @@ impl Walk<'_> {
                 addons: Vec::new(),
                 animated_nodes: self.animated_nodes,
                 keep: self.keep,
-                root: self.root,
+                root: node.inverse() * self.root,
             };
             if let Block::Node(n) = block {
                 for &c in &n.children {
                     sub.walk(nif, c, Mat4::IDENTITY, depth + 1);
                 }
+                match n.kind {
+                    // An addon node moving: its model goes with it.
+                    NodeKind::Value { value, .. } => sub.addons.push((value, Mat4::IDENTITY)),
+                    // A billboard moving: turned about the part's origin.
+                    NodeKind::Billboard { mode } => {
+                        for m in &mut sub.meshes {
+                            if m.material.billboard.is_none() {
+                                m.material.billboard = Some((Vec3::ZERO, mode));
+                                m.bound_radius += m.bound_center.length();
+                                m.bound_center = Vec3::ZERO;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
-            let (bound_center, bound_radius) =
-                bounds_of(sub.meshes.iter().map(|m| (m.bound_center, m.bound_radius)));
+            let (bound_center, bound_radius) = bounds_of(
+                sub.meshes
+                    .iter()
+                    .map(|m| (m.bound_center, m.bound_radius))
+                    .chain(
+                        sub.particles
+                            .iter()
+                            .map(|p| (p.bound_center, p.bound_radius)),
+                    ),
+            );
             let model = CpuModel {
                 meshes: sub.meshes,
                 skinned: sub.skinned,
@@ -615,9 +789,11 @@ impl Walk<'_> {
             };
             self.animated.push(AnimatedPart {
                 node: av.net.name.clone(),
+                block: r.0,
                 parent,
                 rest: av.transform.to_mat4(),
                 model,
+                within: None,
             });
             return;
         }

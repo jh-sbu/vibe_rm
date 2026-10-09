@@ -530,8 +530,15 @@ game each piece unlocks.
   sprays, emitting for the impact's duration) and its decal lands, for a wound on the
   floor or wall behind the target (at most 64 kept) and on its body: a box held by the
   bone passing nearest the wound, moving with the pose and ragdoll (8 an actor, 48 in all).
+  Effect models play on a clock of their own from their text keys' `start`: their
+  meshes drawn for the impact's duration, the nodes with controllers of their own
+  (`NiTransformController`, `NiVisController`) moved, scaled and shown by them (the
+  sprays' emitters swept round, ice shards flying), their shader controllers
+  started with them (`APP_INIT` ones too), world-space particles left where they
+  were emitted as their emitters move.
   Console `impact`; `VRM_NO_IMPACTS=1`
-  leaves out effects and decals. Open questions: `known_gaps/impacts.md`
+  leaves out effects and decals; vrm-tool `impacts`. Open questions:
+  `known_gaps/impacts.md`
 - Objects' behaviour graphs (`BSBehaviorGraphExtraData`: traps, pressure plates, levers,
   portcullises, puzzle pillars): the project runs on the model's own nodes, the nodes it
   moves (those with transform controllers) drawn apart and their collision carried;
@@ -630,7 +637,8 @@ game each piece unlocks.
    - Engine variables and events still missing: combat, first person;
      INFO speaker / listener idles; listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes
-   - Later / separate: NiTransformController (non-sequence), texture flip controllers
+   - Later / separate: NiTransformController and NiVisController (non-sequence)
+     outside effects (impact effects run them: see Done), texture flip controllers
      (`NiFlipController`), shader controllers inside sequences (only the
      property's own controller chain runs, on the global clock)
 2. **Story Manager** (core and fifteen events done; see Done)
@@ -696,7 +704,8 @@ game each piece unlocks.
    radial blur and motion blur (cinematic values and tint: see Done), particles'
    remaining modifiers (colliders, mesh emitters' surfaces, strips, LOD; see
    `known_gaps/particles.md`), distant LOD (BTR/BTO/trees),
-   grass shadows and the grass cache, impact effects' meshes and spells' impacts; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
+   grass shadows and the grass cache, spells' impacts, soft effects (effect
+   shaders fading where they meet geometry: SLSF1 bit 30, soft falloff depth); eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /

@@ -28,8 +28,9 @@ are used below is this engine's reading.
 ## Open (choices made here)
 
 - **Space.** Particles are simulated in the model's space and drawn through
-  the instance's transform, `world_space` or not; nothing that carries
-  particles moves yet.
+  the instance's transform. A world-space system's particles are carried
+  back to where they were when its instance moves (impact effects' moving
+  parts); other moving instances don't carry particles yet.
 - **Emission.** The emitter controller's interpolator is the birth rate
   (particles a second, fractions carried over), its visibility keys switch
   it, both on the controller's own clock (frequency, phase, cycle). Emitting

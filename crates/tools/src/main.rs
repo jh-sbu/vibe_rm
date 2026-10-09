@@ -2239,6 +2239,71 @@ fn main() -> Result<()> {
             }
             println!("{users} models with value nodes; values without an addon: {missing:?}");
         }
+        Some("impacts") => {
+            // impacts <data dir>: each impact (IPCT) with its model and the
+            // model's block types (how many of each), and how many impacts use
+            // each block type.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let v = vfs::Vfs::new(data, &names);
+            let mut totals = std::collections::BTreeMap::<String, usize>::new();
+            for &id in lo.ids_of_type(b"IPCT") {
+                let Some(rec) = lo.get(id) else { continue };
+                let model = rec.get(b"MODL").map(esp::decode_zstring);
+                // DATA: duration, orientation (0 surface normal, 1 projectile
+                // vector, 2 projectile reflection).
+                let (duration, orientation) = rec
+                    .get(b"DATA")
+                    .filter(|d| d.len() >= 8)
+                    .map(|d| {
+                        (
+                            f32::from_le_bytes(d[0..4].try_into().unwrap()),
+                            u32::from_le_bytes(d[4..8].try_into().unwrap()),
+                        )
+                    })
+                    .unwrap_or_default();
+                print!(
+                    "{id} {:<40} {duration:.2}s orientation {orientation} {model:?}",
+                    rec.editor_id().unwrap_or_default()
+                );
+                let Some(m) = model.filter(|m| !m.is_empty()) else {
+                    println!();
+                    continue;
+                };
+                let path = format!("meshes/{}", m.to_ascii_lowercase().replace('\\', "/"));
+                let Some(n) = v.read(&path).and_then(|b| nif::Nif::parse(&b).ok()) else {
+                    println!(" (missing)");
+                    continue;
+                };
+                let mut counts = std::collections::BTreeMap::<String, usize>::new();
+                for i in 0..n.blocks.len() {
+                    *counts.entry(n.block_type_name(i).to_owned()).or_default() += 1;
+                }
+                for t in counts.keys() {
+                    *totals.entry(t.clone()).or_default() += 1;
+                }
+                println!(" {counts:?}");
+                // The blocks with controllers of their own, and those controllers.
+                for (i, b) in n.blocks.iter().enumerate() {
+                    let Some(av) = b.av() else { continue };
+                    let mut c = av.net.controller;
+                    while let Some(nif::Block::NodeController(nc)) = n.get(c) {
+                        println!(
+                            "    {} {:?}: {:?} flags {:#x} {}..{}",
+                            n.block_type_name(i),
+                            av.net.name,
+                            nc.kind,
+                            nc.timing.flags,
+                            nc.timing.start,
+                            nc.timing.stop
+                        );
+                        c = nc.next;
+                    }
+                }
+            }
+            println!("impacts using each block type: {totals:#?}");
+        }
         Some("decals") => {
             // decals <data dir> [texture set]: texture sets with decal data
             // (DODT) and the references placing them: how many, the subrecords

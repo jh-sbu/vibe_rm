@@ -101,7 +101,7 @@ impl Nif {
             })
             .filter(|av| {
                 matches!(self.get(av.net.controller),
-                    Some(Block::Unknown(t)) if t == "NiTransformController")
+                    Some(Block::NodeController(c)) if c.kind == anim::NodeControllerKind::Transform)
             })
             .map(|av| av.net.name.clone())
             .collect()

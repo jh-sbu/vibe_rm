@@ -65,6 +65,10 @@ fn attach_addons(
 pub struct ModelAnim {
     pub parts: Vec<AnimPart>,
     pub sequences: Vec<model::Sequence>,
+    /// An effect's nodes' own controllers (`path#effect`).
+    pub controllers: Vec<model::NodeChannel>,
+    /// The time its animation starts at (its text keys' `start`).
+    pub start: f32,
     /// The behaviour graph project moving the parts (`meshes/...hkx`), and the
     /// model's nodes as the skeleton its clips pose.
     pub graph: Option<(String, Arc<crate::world::skeleton::Skeleton>)>,
@@ -72,9 +76,14 @@ pub struct ModelAnim {
 
 pub struct AnimPart {
     pub node: String,
+    /// The node's block in the model.
+    pub block: i32,
     pub parent: glam::Mat4,
     pub rest: glam::Mat4,
     pub model: Arc<GpuModel>,
+    /// The part it lies in and its parent's transform in that part's node
+    /// (kept for effects: [`model::AnimatedPart::within`]).
+    pub within: Option<(usize, glam::Mat4)>,
 }
 
 fn furniture_markers(n: &nif::Nif) -> Option<Arc<[nif::FurnitureMarker]>> {
@@ -139,15 +148,21 @@ impl ModelCache {
             Option<crate::physics::shapes::CollisionModel>,
             Option<Arc<[nif::FurnitureMarker]>>,
             Option<(String, Arc<crate::world::skeleton::Skeleton>)>,
+            Vec<model::NodeChannel>,
+            f32,
         )> = missing
             .par_iter()
             .map(|p| {
                 let mut col = None;
                 let mut furn = None;
                 let mut graph = None;
+                let mut controllers = Vec::new();
+                let mut start = 0.0;
                 // `path#blade` / `path#scb`: a weapon without / only its scabbard;
                 // `path#rigid`: skinned shapes posed at rest (sky models);
-                // `path#grass`: drawn as grass ([`crate::world::grass`]).
+                // `path#grass`: drawn as grass ([`crate::world::grass`]);
+                // `path#effect`: an effect's, its nodes' controllers kept
+                // ([`model::convert_effect`]).
                 let (file, variant) = p
                     .split_once('#')
                     .map_or((p.as_str(), None), |(f, v)| (f, Some(v)));
@@ -165,6 +180,12 @@ impl ModelCache {
                             });
                             let m = match variant {
                                 Some("rigid") => model::convert_rigid(&n),
+                                Some("effect") => {
+                                    let (m, c) = model::convert_effect(&n);
+                                    controllers = c;
+                                    start = model::animation_start(&n);
+                                    m
+                                }
                                 // Grass: its vertex alpha is how far it sways.
                                 Some("grass") => {
                                     let mut m = model::convert(&n);
@@ -208,19 +229,19 @@ impl ModelCache {
                 if m.is_none() {
                     log::debug!("model not found or unreadable: {p}");
                 }
-                ((*p).clone(), m, col, furn, graph)
+                ((*p).clone(), m, col, furn, graph, controllers, start)
             })
             .collect();
         let t1 = std::time::Instant::now();
 
         // Textures referenced by the new models.
         let mut tex: HashSet<String> = HashSet::new();
-        for (_, m, _, _, _) in &cpu {
+        for (_, m, _, _, _, _, _) in &cpu {
             if let Some(m) = m {
-                let parts = m
-                    .animated
-                    .iter()
-                    .flat_map(|a| a.model.meshes.iter().map(|x| &x.material));
+                let parts = m.animated.iter().flat_map(|a| {
+                    let particles = a.model.particles.iter().map(|x| &x.material);
+                    a.model.meshes.iter().map(|x| &x.material).chain(particles)
+                });
                 let mats = m
                     .meshes
                     .iter()
@@ -249,21 +270,27 @@ impl ModelCache {
         load_textures(renderer, vfs, tex.into_iter().collect());
         let t2 = std::time::Instant::now();
 
-        for (p, mut m, col, furn, graph) in cpu {
+        for (p, mut m, col, furn, graph, controllers, start) in cpu {
             self.collision.insert(p.clone(), col.map(Arc::new));
             self.furniture.insert(p.clone(), furn);
-            if let Some(cpu) = m.as_mut().filter(|m| !m.animated.is_empty()) {
+            // An effect's animation is kept whatever it has (its start), and
+            // its parts all (those holding only particles, addons or other
+            // parts too).
+            let effect = p.ends_with("#effect");
+            if let Some(cpu) = m.as_mut().filter(|m| effect || !m.animated.is_empty()) {
                 let parts = std::mem::take(&mut cpu.animated)
                     .into_iter()
-                    .filter(|a| !a.model.meshes.is_empty())
+                    .filter(|a| effect || !a.model.meshes.is_empty())
                     .map(|a| {
                         let mut g = renderer.upload_model(&a.model);
                         g.path = format!("{p}#{}", a.node);
                         AnimPart {
                             node: a.node,
+                            block: a.block,
                             parent: a.parent,
                             rest: a.rest,
                             model: Arc::new(g),
+                            within: a.within.filter(|_| effect),
                         }
                     })
                     .collect();
@@ -273,6 +300,8 @@ impl ModelCache {
                     Arc::new(ModelAnim {
                         parts,
                         sequences,
+                        controllers,
+                        start,
                         graph,
                     }),
                 );

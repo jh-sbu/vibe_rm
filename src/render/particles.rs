@@ -154,6 +154,9 @@ pub struct ParticleDesc {
     pub spawn_on_death: Option<SpawnDesc>,
     /// The system node's scale, sizing its particles.
     pub size_scale: f32,
+    /// Its particles stay where they were emitted when the system moves
+    /// (else they move with it).
+    pub world_space: bool,
     /// The system's bounds in model space.
     pub bound_center: Vec3,
     pub bound_radius: f32,
@@ -291,6 +294,7 @@ pub fn describe(
         subtex_anim: None,
         spawn_on_death: None,
         size_scale: world.x_axis.truncate().length(),
+        world_space: sys.world_space,
         bound_center: world.transform_point3(sys.bound_center),
         bound_radius: sys.bound_radius * world.x_axis.truncate().length(),
     };
@@ -467,6 +471,15 @@ impl ParticleState {
 
     pub fn count(&self) -> usize {
         self.particles.len()
+    }
+
+    /// The system moved by `delta` (its old space in its new one): its
+    /// particles are kept where they were.
+    pub fn carry(&mut self, delta: Mat4) {
+        for p in &mut self.particles {
+            p.position = delta.transform_point3(p.position);
+            p.velocity = delta.transform_vector3(p.velocity);
+        }
     }
 
     fn rand(&mut self) -> f32 {
