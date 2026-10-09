@@ -9,7 +9,8 @@ struct Sky {
     sun_dir: vec4<f32>,      // xyz, visibility
     sun_color: vec4<f32>,
     cloud_color: array<vec4<f32>, 8>,  // rgb, alpha: incoming layers, then outgoing
-    params: vec4<f32>,       // time, wind speed, cloud layer count, stars
+    cloud_speed: array<vec4<f32>, 8>,  // xy: drift in UV a second
+    params: vec4<f32>,       // time, unused, cloud layer count, stars
     params2: vec4<f32>,      // outgoing weather's layer count
 };
 
@@ -76,23 +77,23 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
         }
     }
 
-    // Cloud layers projected onto a plane overhead, scrolling with the wind.
+    // Cloud layers projected onto a plane overhead, each drifting at its own speed.
     if (e > 0.0) {
         let n = u32(sky.params.z);
-        let scroll = sky.params.x * (0.002 + sky.params.y * 0.01);
+        let t = sky.params.x;
         let base_uv = dir.xy / (e + 0.08) * 0.35;
         let fade = smoothstep(0.0, 0.12, e);
         var cc = color;
         // The outgoing weather's layers under the incoming one's.
         let o = u32(sky.params2.x);
-        if (o > 0u) { cc = cloud(t_o0, base_uv + vec2<f32>(scroll, 0.0), sky.cloud_color[4], cc); }
-        if (o > 1u) { cc = cloud(t_o1, base_uv * 0.8 + vec2<f32>(scroll * 0.7, scroll * 0.2), sky.cloud_color[5], cc); }
-        if (o > 2u) { cc = cloud(t_o2, base_uv * 1.3 + vec2<f32>(scroll * 1.2, 0.0), sky.cloud_color[6], cc); }
-        if (o > 3u) { cc = cloud(t_o3, base_uv * 0.6 + vec2<f32>(0.0, scroll * 0.5), sky.cloud_color[7], cc); }
-        if (n > 0u) { cc = cloud(t_c0, base_uv + vec2<f32>(scroll, 0.0), sky.cloud_color[0], cc); }
-        if (n > 1u) { cc = cloud(t_c1, base_uv * 0.8 + vec2<f32>(scroll * 0.7, scroll * 0.2), sky.cloud_color[1], cc); }
-        if (n > 2u) { cc = cloud(t_c2, base_uv * 1.3 + vec2<f32>(scroll * 1.2, 0.0), sky.cloud_color[2], cc); }
-        if (n > 3u) { cc = cloud(t_c3, base_uv * 0.6 + vec2<f32>(0.0, scroll * 0.5), sky.cloud_color[3], cc); }
+        if (o > 0u) { cc = cloud(t_o0, base_uv + sky.cloud_speed[4].xy * t, sky.cloud_color[4], cc); }
+        if (o > 1u) { cc = cloud(t_o1, base_uv * 0.8 + sky.cloud_speed[5].xy * t, sky.cloud_color[5], cc); }
+        if (o > 2u) { cc = cloud(t_o2, base_uv * 1.3 + sky.cloud_speed[6].xy * t, sky.cloud_color[6], cc); }
+        if (o > 3u) { cc = cloud(t_o3, base_uv * 0.6 + sky.cloud_speed[7].xy * t, sky.cloud_color[7], cc); }
+        if (n > 0u) { cc = cloud(t_c0, base_uv + sky.cloud_speed[0].xy * t, sky.cloud_color[0], cc); }
+        if (n > 1u) { cc = cloud(t_c1, base_uv * 0.8 + sky.cloud_speed[1].xy * t, sky.cloud_color[1], cc); }
+        if (n > 2u) { cc = cloud(t_c2, base_uv * 1.3 + sky.cloud_speed[2].xy * t, sky.cloud_color[2], cc); }
+        if (n > 3u) { cc = cloud(t_c3, base_uv * 0.6 + sky.cloud_speed[3].xy * t, sky.cloud_color[3], cc); }
         color = mix(color, cc, fade);
     }
     return vec4<f32>(color, 1.0);

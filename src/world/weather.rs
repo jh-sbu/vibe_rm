@@ -1,7 +1,7 @@
 //! Weather (WTHR) and climate (CLMT) evaluation: sky colours, fog, sun and clouds over the day.
 
 use esp::{FormId, LoadOrder};
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 use super::records::rgb;
 
@@ -36,6 +36,23 @@ pub struct CloudLayer {
     pub texture: String,
     pub colors: [Vec3; 4],
     pub alphas: [f32; 4],
+    /// QNAM / RNAM: how fast it drifts along x and y (-0.1..0.1).
+    pub speed: Vec2,
+}
+
+/// A cloud layer at one moment.
+#[derive(Debug, Clone)]
+pub struct CloudState {
+    pub texture: String,
+    pub color: Vec3,
+    pub alpha: f32,
+    pub speed: Vec2,
+}
+
+/// A cloud speed byte (QNAM, RNAM) as xEdit reads it: 127 still, 0..254
+/// from -0.1 to 0.1.
+fn cloud_speed(b: u8) -> f32 {
+    (b as f32 - 127.0) / 1270.0
 }
 
 #[derive(Debug, Clone)]
@@ -223,6 +240,7 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
     let mut layer_tex: Vec<Option<String>> = vec![None; 32];
     let mut pnam: Option<Vec<u8>> = None;
     let mut jnam: Option<Vec<u8>> = None;
+    let mut speeds: (Option<Vec<u8>>, Option<Vec<u8>>) = (None, None);
     let mut disabled = 0u32;
     let mut dalc_i = 0;
     for sr in rec.subrecords() {
@@ -249,6 +267,8 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
             }
             b"PNAM" => pnam = Some(sr.data.to_vec()),
             b"JNAM" => jnam = Some(sr.data.to_vec()),
+            b"QNAM" => speeds.0 = Some(sr.data.to_vec()),
+            b"RNAM" => speeds.1 = Some(sr.data.to_vec()),
             b"NAM1" => disabled = sr.u32(0),
             b"DATA" if sr.data.len() >= 12 => {
                 w.wind_speed = sr.u8(0) as f32 / 255.0;
@@ -289,8 +309,14 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
         if disabled & (1 << i) != 0 {
             continue;
         }
+        let speed = |s: &Option<Vec<u8>>| {
+            s.as_ref()
+                .and_then(|s| s.get(i))
+                .map_or(0.0, |&b| cloud_speed(b))
+        };
         let mut layer = CloudLayer {
             texture,
+            speed: Vec2::new(speed(&speeds.0), speed(&speeds.1)),
             ..Default::default()
         };
         for t in 0..4 {
@@ -330,10 +356,9 @@ pub struct SkyState {
     pub light_dir: Vec3,
     pub sun_visible: f32,
     pub stars: f32,
-    /// Cloud layers: (texture, colour, alpha).
-    pub clouds: Vec<(String, Vec3, f32)>,
+    pub clouds: Vec<CloudState>,
     /// The outgoing weather's layers fading out under them in a transition.
-    pub outgoing_clouds: Vec<(String, Vec3, f32)>,
+    pub outgoing_clouds: Vec<CloudState>,
 }
 
 impl SkyState {
@@ -343,9 +368,12 @@ impl SkyState {
         let t = t.clamp(0.0, 1.0);
         let v = |x: Vec3, y: Vec3| x.lerp(y, t);
         let f = |x: f32, y: f32| x + (y - x) * t;
-        let fade = |c: &[(String, Vec3, f32)], k: f32| -> Vec<(String, Vec3, f32)> {
+        let fade = |c: &[CloudState], k: f32| -> Vec<CloudState> {
             c.iter()
-                .map(|(n, col, al)| (n.clone(), *col, al * k))
+                .map(|l| CloudState {
+                    alpha: l.alpha * k,
+                    ..l.clone()
+                })
                 .collect()
         };
         SkyState {
@@ -432,7 +460,12 @@ pub fn evaluate(w: &Weather, c: &Climate, hour: f32) -> SkyState {
         .map(|l| {
             let color: Vec3 = (0..4).map(|t| l.colors[t] * tw[t]).sum();
             let alpha: f32 = (0..4).map(|t| l.alphas[t] * tw[t]).sum();
-            (l.texture.clone(), color, alpha)
+            CloudState {
+                texture: l.texture.clone(),
+                color,
+                alpha,
+                speed: l.speed,
+            }
         })
         .collect();
     SkyState {

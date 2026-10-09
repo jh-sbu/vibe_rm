@@ -19,6 +19,8 @@ struct SkyUniform {
     sun_color: [f32; 4],
     /// The incoming weather's four layers, then the outgoing one's.
     cloud_color: [[f32; 4]; 8],
+    /// xy: each layer's drift (UV a second).
+    cloud_speed: [[f32; 4]; 8],
     params: [f32; 4],
     /// x: the outgoing weather's layer count.
     params2: [f32; 4],
@@ -26,6 +28,9 @@ struct SkyUniform {
 
 /// Cloud layers drawn per weather (two weathers during a transition).
 const LAYERS: usize = 4;
+/// UV a second per unit of a layer's speed (made up: the fastest, 0.1,
+/// drifts a hundredth of the texture a second).
+const CLOUD_SCROLL: f32 = 0.1;
 
 pub struct SkyRenderer {
     pipeline: wgpu::RenderPipeline,
@@ -202,11 +207,18 @@ impl SkyRenderer {
             return;
         };
         let mut cloud_color = [[0f32; 4]; 8];
-        for (i, c) in st.clouds.iter().take(LAYERS).enumerate() {
-            cloud_color[i] = [c.1.x, c.1.y, c.1.z, c.2];
-        }
-        for (i, c) in st.outgoing_clouds.iter().take(LAYERS).enumerate() {
-            cloud_color[LAYERS + i] = [c.1.x, c.1.y, c.1.z, c.2];
+        let mut cloud_speed = [[0f32; 4]; 8];
+        let layers = (st.clouds.iter().take(LAYERS).enumerate()).chain(
+            st.outgoing_clouds
+                .iter()
+                .take(LAYERS)
+                .enumerate()
+                .map(|(i, c)| (LAYERS + i, c)),
+        );
+        for (i, c) in layers {
+            cloud_color[i] = c.color.extend(c.alpha).to_array();
+            let v = c.speed * CLOUD_SCROLL;
+            cloud_speed[i] = [v.x, v.y, 0.0, 0.0];
         }
         let u = SkyUniform {
             inv_view_proj: view_proj.inverse().to_cols_array_2d(),
@@ -217,7 +229,8 @@ impl SkyRenderer {
             sun_dir: st.sun_dir.extend(st.sun_visible).to_array(),
             sun_color: st.sun_color.extend(1.0).to_array(),
             cloud_color,
-            params: [time, 0.3, self.cloud_count as f32, st.stars],
+            cloud_speed,
+            params: [time, 0.0, self.cloud_count as f32, st.stars],
             params2: [
                 if st.outgoing_clouds.is_empty() {
                     0.0
