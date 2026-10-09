@@ -528,7 +528,9 @@ game each piece unlocks.
   struck (the target race's `NAM4`, the blocking shield's or weapon's `BAMT`, the
   surface's for arrows in the world): its sound plays, its effect model runs (blood
   sprays, emitting for the impact's duration) and its decal lands, for a wound on the
-  floor or wall behind the target (at most 64 kept). Console `impact`; `VRM_NO_IMPACTS=1`
+  floor or wall behind the target (at most 64 kept) and on its body: a box held by the
+  bone passing nearest the wound, moving with the pose and ragdoll (8 an actor, 48 in all).
+  Console `impact`; `VRM_NO_IMPACTS=1`
   leaves out effects and decals. Open questions: `known_gaps/impacts.md`
 - Objects' behaviour graphs (`BSBehaviorGraphExtraData`: traps, pressure plates, levers,
   portcullises, puzzle pillars): the project runs on the model's own nodes, the nodes it
@@ -694,7 +696,7 @@ game each piece unlocks.
    radial blur and motion blur (cinematic values and tint: see Done), particles'
    remaining modifiers (colliders, mesh emitters' surfaces, strips, LOD; see
    `known_gaps/particles.md`), distant LOD (BTR/BTO/trees),
-   grass shadows and the grass cache, skinned decals (blood on actors), impact effects' meshes and spells' impacts; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
+   grass shadows and the grass cache, impact effects' meshes and spells' impacts; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /

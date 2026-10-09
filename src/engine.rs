@@ -2213,6 +2213,7 @@ impl Engine {
         self.update_projectiles(dt);
         self.update_held_lights();
         self.update_animated(dt);
+        self.update_skin_decals();
         let cam = self.camera_copy();
         let mut input = input;
         if input.sprint && (input.forward != 0.0 || input.right != 0.0) && !self.player.noclip {

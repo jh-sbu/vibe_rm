@@ -45,6 +45,17 @@ places impacts isn't public.
   orientation (the reflection is about the surface normal: for a blow on
   an actor, back towards the attacker), turned at random about it, for
   their duration, then until their particles die (8 s at most).
-- **Not done**: skinned decals on actors, hazards (`NAM2`), the second
+- **Blood on bodies.** The game builds skinned decal geometry on the
+  actor's meshes (its INI's skin decal counts aren't in the data). Here a
+  wound is a decal box like the world's: from 10 units in front of where
+  the blow lands along the blow, at least 24 units deep, held in the frame
+  of the bone whose length passes nearest its middle (equipment, camera,
+  look-at and pauldron nodes left out) and moved with the pose (and the
+  ragdoll) each frame, drawn by the same screen-space pass. So whatever is
+  in the box takes it, as the world's decals do: a blade passing through
+  it, or a limb swinging into it, shows blood for that moment. Blocked
+  blows leave none. At most 8 an actor and 48 in all, the oldest going
+  first; they go when the actor unloads.
+- **Not done**: hazards (`NAM2`), the second
   sound (`NAM1`), the impact result (bounce, impale, stick), sound levels
   for detection, spells' and explosions' impacts, footsteps' decals.

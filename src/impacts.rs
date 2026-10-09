@@ -24,6 +24,10 @@ use crate::world::records;
 const MAX_DECALS: usize = 64;
 /// How far blood thrown from a wound reaches for a surface.
 const BLOOD_REACH: f32 = 320.0;
+/// Decals kept on one actor's body (the oldest go first).
+const MAX_SKIN_DECALS_PER_ACTOR: usize = 8;
+/// Decals kept on all actors' bodies.
+const MAX_SKIN_DECALS: usize = 48;
 /// The longest an effect runs, whatever its particles.
 const MAX_EFFECT_TIME: f32 = 8.0;
 
@@ -106,6 +110,55 @@ pub struct ImpactState {
     effects: Vec<Effect>,
     /// The cells holding the runtime decals, oldest first.
     decals: VecDeque<CellKey>,
+    /// Decals on actors' bodies, by actor, oldest first.
+    skin: HashMap<FormId, VecDeque<SkinDecal>>,
+    /// The actors given each body decal, oldest first.
+    skin_order: VecDeque<FormId>,
+}
+
+/// Bones a wound is held by: not those of equipment, cameras and the like.
+fn holds_wounds(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    ![
+        "weapon",
+        "shield",
+        "quiver",
+        "camera",
+        "magic",
+        "animobject",
+        "sheath",
+        "scb",
+        "look",
+        "pauldron",
+    ]
+    .iter()
+    .any(|k| n.contains(k))
+}
+
+/// An actor's drawn instance (its pose this frame) and skeleton.
+fn actor_pose<'a>(
+    actor_cells: &HashMap<FormId, CellKey>,
+    cells: &'a HashMap<CellKey, crate::engine::CellRuntime>,
+    scene: &'a crate::render::Scene,
+    actor: FormId,
+) -> Option<(
+    &'a crate::render::ActorInstance,
+    &'a crate::world::skeleton::Skeleton,
+)> {
+    let key = actor_cells.get(&actor)?;
+    let rt = cells.get(key)?;
+    let i = rt.actors.iter().position(|a| a.ref_id == actor)?;
+    let inst = scene.cells.get(key)?.actors.get(i)?;
+    Some((inst, &rt.actors[i].skeleton))
+}
+
+/// A decal on an actor's body: its box held in a bone's space, moving with
+/// the pose.
+struct SkinDecal {
+    bone: usize,
+    /// The box in the bone's model-space frame.
+    local: Mat4,
+    decal: crate::render::decal::GpuDecal,
 }
 
 /// Where an impact lands: the point, the way the blow or arrow travelled
@@ -115,8 +168,9 @@ pub struct Landing {
     pub at: Vec3,
     pub dir: Vec3,
     pub normal: Vec3,
-    /// It struck an actor: its decal goes on what lies behind.
-    pub on_actor: bool,
+    /// The actor it struck (unguarded): blood goes on its body and on what
+    /// lies behind it.
+    pub actor: Option<FormId>,
 }
 
 /// A form held by a record's subrecord.
@@ -209,7 +263,7 @@ impl Engine {
             at,
             dir,
             normal: -dir,
-            on_actor: !blocked,
+            actor: (!blocked).then_some(target),
         };
         self.impact(ipds, material, landing);
     }
@@ -241,7 +295,7 @@ impl Engine {
             at,
             dir,
             normal,
-            on_actor: target.is_some(),
+            actor: target,
         };
         self.impact(ipds, material, landing);
     }
@@ -269,7 +323,7 @@ impl Engine {
                 at,
                 dir,
                 normal,
-                on_actor: false,
+                actor: None,
             },
         );
         format!("{ipct} at {at:.0}")
@@ -295,6 +349,9 @@ impl Engine {
         }
         self.start_effect(&impact, landing);
         self.impact_decal(&impact, landing);
+        if let Some(actor) = landing.actor {
+            self.skin_decal(&impact, actor, landing);
+        }
     }
 
     fn start_effect(&mut self, impact: &Impact, l: Landing) {
@@ -404,7 +461,7 @@ impl Engine {
         let Some(data) = impact.decal.as_ref() else {
             return;
         };
-        let (origin, dir, reach) = if l.on_actor {
+        let (origin, dir, reach) = if l.actor.is_some() {
             // Thrown on and down, landing a little way behind.
             let down = 0.6 + self.frand() * 1.4;
             let side = l.dir.cross(Vec3::Z).normalize_or_zero() * (self.frand() - 0.5) * 0.6;
@@ -460,6 +517,105 @@ impl Engine {
                 rc.decals.remove(i);
             }
         }
+    }
+
+    /// Put the impact's decal on `actor`'s body where the blow or arrow
+    /// went in, held by the bone nearest the wound.
+    fn skin_decal(&mut self, impact: &Impact, actor: FormId, l: Landing) {
+        let Some(data) = impact.decal.as_ref() else {
+            return;
+        };
+        // The box reaches from outside the body to its middle along the blow.
+        let center = l.at + l.dir * 10.0;
+        let (bone, bone_world, bone_name) = {
+            let Some((inst, skeleton)) =
+                actor_pose(&self.actor_cells, &self.cells, &self.scene, actor)
+            else {
+                return;
+            };
+            let bone_at = |i: usize| inst.transform * inst.pose[i];
+            let at = |i: usize| bone_at(i).w_axis.truncate();
+            // The bone whose length (to its children) passes nearest the
+            // wound's middle: a spine bone for a blow to the chest, not an arm
+            // hanging beside it.
+            let n = inst.pose.len().min(skeleton.bones.len());
+            let mut reach = vec![f32::MAX; n];
+            for i in 0..n {
+                reach[i] = reach[i].min(at(i).distance(center));
+                if let Some(p) = skeleton.bones[i].parent.filter(|&p| p < n) {
+                    let (a, b) = (at(p), at(i));
+                    let ab = b - a;
+                    let t = ((center - a).dot(ab) / ab.length_squared().max(1e-6)).clamp(0.0, 1.0);
+                    reach[p] = reach[p].min((a + ab * t).distance(center));
+                }
+            }
+            let Some(bone) = (0..n)
+                .filter(|&i| holds_wounds(&skeleton.bones[i].name))
+                .min_by(|&a, &b| reach[a].total_cmp(&reach[b]))
+            else {
+                return;
+            };
+            (bone, bone_at(bone), skeleton.bones[bone].name.clone())
+        };
+        let roll = Quat::from_rotation_y(self.frand() * std::f32::consts::TAU);
+        let rot = Quat::from_rotation_arc(Vec3::Y, l.dir.normalize_or(Vec3::Y)) * roll;
+        let w = data.min_width + (data.max_width - data.min_width) * self.frand();
+        let h = data.min_height + (data.max_height - data.min_height) * self.frand();
+        let size = Vec3::new(w, data.depth.max(24.0), h);
+        let world = Mat4::from_scale_rotation_translation(size, rot, center);
+        let sub = (self.rand() % 4) as u32;
+        let decal = self.gpu_decal(impact.id, data, world, sub);
+        log::debug!("skin decal on {actor} at {center:.0}, bone {bone_name}");
+        let skin = &mut self.impacts.skin;
+        let mine = skin.entry(actor).or_default();
+        mine.push_back(SkinDecal {
+            bone,
+            local: bone_world.inverse() * world,
+            decal,
+        });
+        if mine.len() > MAX_SKIN_DECALS_PER_ACTOR {
+            mine.pop_front();
+        }
+        self.impacts.skin_order.push_back(actor);
+        while skin.values().map(VecDeque::len).sum::<usize>() > MAX_SKIN_DECALS {
+            let Some(oldest) = self.impacts.skin_order.pop_front() else {
+                break;
+            };
+            if let Some(d) = skin.get_mut(&oldest) {
+                d.pop_front();
+            }
+        }
+        skin.retain(|_, d| !d.is_empty());
+    }
+
+    /// Place the decals on actors' bodies where their bones are this frame;
+    /// those of actors no longer loaded are dropped.
+    pub(crate) fn update_skin_decals(&mut self) {
+        let mut out = Vec::new();
+        let (cells, actor_cells, scene) = (&self.cells, &self.actor_cells, &self.scene);
+        self.impacts.skin.retain(|&actor, decals| {
+            let Some((inst, _)) = actor_pose(actor_cells, cells, scene, actor) else {
+                return false;
+            };
+            for d in decals.iter() {
+                let Some(pose) = inst.pose.get(d.bone) else {
+                    continue;
+                };
+                let transform = inst.transform * *pose * d.local;
+                let (scale, _, center) = transform.to_scale_rotation_translation();
+                let radius = scale.length() * 0.5;
+                let mut g = d.decal.clone();
+                g.transform = transform;
+                g.center = center;
+                g.radius = radius;
+                g.lights = crate::render::pick_lights(&scene.lights, center, radius);
+                out.push(g);
+            }
+            true
+        });
+        let skin = &self.impacts.skin;
+        self.impacts.skin_order.retain(|a| skin.contains_key(a));
+        self.scene.actor_decals = out;
     }
 
     /// A random value in [0, 1).

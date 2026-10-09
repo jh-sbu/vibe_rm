@@ -392,6 +392,8 @@ pub struct Scene {
     pub far: Vec<Instance>,
     /// Particles to draw this frame.
     pub particles: Vec<particles::ParticleBatch>,
+    /// Decals on actors' bodies, placed by this frame's poses.
+    pub actor_decals: Vec<decal::GpuDecal>,
     /// World-space XY rectangle (min x, min y, max x, max y) where LOD is hidden.
     pub lod_clip: [f32; 4],
     pub lights: Vec<GpuLight>,
@@ -1687,6 +1689,7 @@ impl Renderer {
             .cells
             .values()
             .flat_map(|c| c.decals.iter())
+            .chain(&scene.actor_decals)
             .filter(|d| !d.hidden && frustum.sphere_visible(d.center, d.radius))
             .map(|d| (d, d.instance()))
             .collect();
