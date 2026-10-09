@@ -41,3 +41,8 @@ and the member names it carries. What each gain does inside Havok isn't public.
 - Not used: foot unlock, align world-from-model (horses 0.15: pitching the
   body with the ground), hip orientation and max knee angle difference (0
   everywhere), and the legs' `ungroundedEvent`s.
+- **Actors stand at the navmesh's height**, not on the collision surface the
+  game's character controller would put them on. Where the navmesh lies below
+  the ground (rocks, the giants' campfire mound), the feet find ground above
+  them and lift onto it. A body only rises by `1 - bias`, and giants' bias is
+  1, so their legs bend there instead.
