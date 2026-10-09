@@ -21,6 +21,11 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
   id>` event names (`SoundPlay.TRPBladeSwingSwing`); actors' graphs give the
   sound as the payload of a `SoundPlay` event instead.
 
+- Clip generators' modes (`hkbClipGenerator.mode`, byte at 0x72): 0 single
+  play, 1 looping, 2 user controlled (the time is `userControlledTimeFraction`
+  of the length, 0x6C, or the variable bound to it), 3 ping-pong. A
+  sarcophagus lid's start state holds its trigger clip user controlled at 0.
+
 ## Choices made without a source
 
 - The nodes drawn apart and moved are those with a transform controller of

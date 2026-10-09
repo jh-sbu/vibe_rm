@@ -48,6 +48,30 @@ pub struct ObjectGraph {
     bones: Vec<Option<usize>>,
     /// Colliders on the moving nodes: their bone and pose relative to it.
     colliders: Vec<(ColliderHandle, usize, Mat4)>,
+    /// Each collider's world pose before and after the last update, and that
+    /// update's time step (for their velocity: trap hits).
+    moved: Vec<(Mat4, Mat4)>,
+    dt: f32,
+}
+
+/// A collider moved by an object's behaviour graph in the last update.
+pub(crate) struct GraphPart {
+    pub ref_id: FormId,
+    pub collider: ColliderHandle,
+    /// World poses before and after, and the time between.
+    pub from: Mat4,
+    pub to: Mat4,
+    pub dt: f32,
+}
+
+impl GraphPart {
+    /// The part's velocity at world point `p` (game units / s).
+    pub fn velocity_at(&self, p: Vec3) -> Vec3 {
+        let before = self
+            .from
+            .transform_point3(self.to.inverse().transform_point3(p));
+        (p - before) / self.dt.max(1e-4)
+    }
 }
 
 impl AnimatedObject {
@@ -235,12 +259,19 @@ impl Engine {
             .map(|p| skeleton.find(&p.node))
             .collect();
         let rest = skeleton.model_space(&skeleton.bind_locals());
-        let colliders = tagged
+        let colliders: Vec<(ColliderHandle, usize, Mat4)> = tagged
             .iter()
             .filter_map(|(h, node)| {
                 let b = skeleton.find(node.as_deref()?)?;
                 let at = self.physics.world.colliders.get(*h)?.position().to_mat4();
                 Some((*h, b, (obj.transform * rest[b]).inverse() * at))
+            })
+            .collect();
+        let moved = colliders
+            .iter()
+            .map(|&(_, b, local)| {
+                let at = obj.transform * rest[b] * local;
+                (at, at)
             })
             .collect();
         log::debug!(
@@ -254,6 +285,8 @@ impl Engine {
             skeleton,
             bones,
             colliders,
+            moved,
+            dt: 0.0,
         });
     }
 
@@ -283,6 +316,28 @@ impl Engine {
         self.cells
             .get_mut(&key)
             .is_some_and(|rt| rt.animated[i].play(name))
+    }
+
+    /// The colliders objects' behaviour graphs moved in their last update.
+    pub(crate) fn moving_graph_parts(&self) -> Vec<GraphPart> {
+        let mut out = Vec::new();
+        for obj in self.cells.values().flat_map(|rt| &rt.animated) {
+            let Some(g) = &obj.graph else {
+                continue;
+            };
+            for (&(collider, ..), &(from, to)) in g.colliders.iter().zip(&g.moved) {
+                if from != to {
+                    out.push(GraphPart {
+                        ref_id: obj.ref_id,
+                        collider,
+                        from,
+                        to,
+                        dt: g.dt,
+                    });
+                }
+            }
+        }
+        out
     }
 
     /// Whether `r` is an object running a behaviour graph.
@@ -404,14 +459,19 @@ impl Engine {
                             set_transform(inst, obj.transform * *m);
                         }
                     }
-                    for &(h, b, local) in &g.colliders {
+                    // The first update jumps from the bind pose to the graph's:
+                    // no motion.
+                    let first = g.dt == 0.0;
+                    g.dt = dt;
+                    for (&(h, b, local), moved) in g.colliders.iter().zip(&mut g.moved) {
                         let (Some(m), Some(c)) =
                             (frame.pose.get(b), self.physics.world.colliders.get_mut(h))
                         else {
                             continue;
                         };
-                        let (pose, _) =
-                            crate::physics::shapes::decompose(obj.transform * *m * local);
+                        let at = obj.transform * *m * local;
+                        *moved = (if first { at } else { moved.1 }, at);
+                        let (pose, _) = crate::physics::shapes::decompose(at);
                         c.set_position(pose);
                     }
                 }

@@ -19,6 +19,11 @@ pub type ModId = usize;
 pub enum ClipMode {
     SinglePlay,
     Looping,
+    /// Held at `userControlledTimeFraction` of its length (a variable can be
+    /// bound to it): sarcophagus lids rest on their trigger clip's first frame.
+    UserControlled,
+    /// Forwards, then backwards, and again.
+    PingPong,
     Other,
 }
 
@@ -173,6 +178,8 @@ pub enum Generator {
         animation: String,
         mode: ClipMode,
         speed: f32,
+        /// `userControlledTimeFraction`, for [`ClipMode::UserControlled`].
+        user_fraction: f32,
         triggers: Vec<Trigger>,
         /// Seconds cut from the start / end of the animation.
         crop_start: f32,
@@ -736,9 +743,12 @@ impl<'a> Reader<'a> {
                 mode: match p.u8(o + 0x72) {
                     0 => ClipMode::SinglePlay,
                     1 => ClipMode::Looping,
+                    2 => ClipMode::UserControlled,
+                    3 => ClipMode::PingPong,
                     _ => ClipMode::Other,
                 },
                 speed: p.f32(o + 0x64),
+                user_fraction: p.f32(o + 0x6C),
                 triggers: self.triggers(p.ptr(o + 0x50)),
                 crop_start: p.f32(o + 0x58),
                 crop_end: p.f32(o + 0x5C),

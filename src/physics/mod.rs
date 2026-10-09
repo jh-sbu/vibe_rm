@@ -882,43 +882,56 @@ impl Physics {
         let Some(b) = self.world.bodies.get(h) else {
             return Vec::new();
         };
-        let mut out: Vec<(Option<esp::FormId>, Vec3, Vec3, u32)> = Vec::new();
+        let mut out = Vec::new();
         for &ch in b.colliders() {
-            let Some(c) = self.world.colliders.get(ch) else {
-                continue;
-            };
-            let aabb = c.compute_aabb().loosened(margin);
-            let material = self
-                .materials
-                .get(&ch)
-                .and_then(|m| m.first().copied())
-                .unwrap_or(0);
-            let mut touch = |who: Option<esp::FormId>, pose: &Pose, shape: &dyn Shape| {
-                if out.iter().any(|(w, ..)| *w == who) {
-                    return;
-                }
-                if let Ok(Some(k)) =
-                    rapier3d::parry::query::contact(c.position(), c.shape(), pose, shape, margin)
-                {
-                    out.push((who, k.point1, b.velocity_at_point(k.point1), material));
-                }
-            };
-            for &cap in &self.capsules {
-                let Some(o) = self.world.colliders.get(cap).filter(|o| o.is_enabled()) else {
-                    continue;
-                };
-                if o.compute_aabb().intersects(&aabb) {
-                    touch(self.owners.get(&cap).copied(), o.position(), o.shape());
-                }
-            }
-            if let Some(p) = player {
-                let pose = Pose::from_translation(p);
-                if self.player_shape.compute_aabb(&pose).intersects(&aabb) {
-                    touch(None, &pose, &*self.player_shape.0);
-                }
-            }
+            self.collider_touches(ch, player, margin, &|p| b.velocity_at_point(p), &mut out);
         }
         out
+    }
+
+    /// [`Physics::body_touches`] for one collider, its velocity at a point
+    /// given by `vel`; added to `out`, one touch per actor (or the player).
+    pub fn collider_touches(
+        &self,
+        ch: ColliderHandle,
+        player: Option<Vec3>,
+        margin: f32,
+        vel: &dyn Fn(Vec3) -> Vec3,
+        out: &mut Vec<(Option<esp::FormId>, Vec3, Vec3, u32)>,
+    ) {
+        let Some(c) = self.world.colliders.get(ch) else {
+            return;
+        };
+        let aabb = c.compute_aabb().loosened(margin);
+        let material = self
+            .materials
+            .get(&ch)
+            .and_then(|m| m.first().copied())
+            .unwrap_or(0);
+        let mut touch = |who: Option<esp::FormId>, pose: &Pose, shape: &dyn Shape| {
+            if out.iter().any(|(w, ..)| *w == who) {
+                return;
+            }
+            if let Ok(Some(k)) =
+                rapier3d::parry::query::contact(c.position(), c.shape(), pose, shape, margin)
+            {
+                out.push((who, k.point1, vel(k.point1), material));
+            }
+        };
+        for &cap in &self.capsules {
+            let Some(o) = self.world.colliders.get(cap).filter(|o| o.is_enabled()) else {
+                continue;
+            };
+            if o.compute_aabb().intersects(&aabb) {
+                touch(self.owners.get(&cap).copied(), o.position(), o.shape());
+            }
+        }
+        if let Some(p) = player {
+            let pose = Pose::from_translation(p);
+            if self.player_shape.compute_aabb(&pose).intersects(&aabb) {
+                touch(None, &pose, &*self.player_shape.0);
+            }
+        }
     }
 
     /// Slow a body to at most `speed` (game units / s).

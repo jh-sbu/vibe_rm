@@ -840,9 +840,27 @@ impl Engine {
             if let Some(b) = self.lo.get(base)
                 && let Some(bv) = crate::script::vmad::parse(&b)
             {
+                // A reference's own copy of a base script keeps the base's
+                // properties it doesn't set (its VMAD holds only those it
+                // overrides: a swinging blade's sets its `TrapLevel`, its base
+                // the damage and sounds).
                 for s in bv.scripts {
-                    if !scripts.iter().any(|x| x.name.eq_ignore_ascii_case(&s.name)) {
-                        scripts.push(s);
+                    match scripts
+                        .iter_mut()
+                        .find(|x| x.name.eq_ignore_ascii_case(&s.name))
+                    {
+                        Some(own) => {
+                            for (n, v) in s.properties {
+                                if !own
+                                    .properties
+                                    .iter()
+                                    .any(|(o, _)| o.eq_ignore_ascii_case(&n))
+                                {
+                                    own.properties.push((n, v));
+                                }
+                            }
+                        }
+                        None => scripts.push(s),
                     }
                 }
             }

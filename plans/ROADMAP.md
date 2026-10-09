@@ -490,7 +490,9 @@ game each piece unlocks.
   actor's or object's graph raises as `OnAnimationEvent`; `PlayAnimationAndWait`
   suspends its script until the graph raises the awaited event (swinging blades
   wait for `reset`, portcullises for `opening` / `closing`); objects' graphs play
-  their `SoundPlay.<sound>` events
+  their `SoundPlay.<sound>` events. Parts the graphs move hit as keyframed traps
+  (swinging blades and battering rams deal their damage); user-controlled and
+  ping-pong clips; references' scripts keep their base's properties they don't set
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -558,8 +560,7 @@ game each piece unlocks.
    - Sneak attacks (`OnHit`'s sneak flag is always false)
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
-     player throwing what they hold, traps (rigs, maces and blades wait on
-     objects' behaviour graphs; pushback, disarming, trip wires; see
+     player throwing what they hold, traps (pushback, disarming, trip wires; see
      `known_gaps/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal
