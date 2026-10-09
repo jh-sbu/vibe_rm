@@ -374,6 +374,9 @@ pub enum Block {
     TransformInterpolator(crate::anim::TransformInterpolator),
     TransformData(Box<crate::anim::TransformData>),
     TextKeys(Vec<(f32, String)>),
+    ShaderController(crate::anim::ShaderController),
+    ValueInterpolator(crate::anim::ValueInterpolator),
+    ValueKeys(crate::anim::ValueKeys),
     Unknown(String),
 }
 
@@ -968,6 +971,22 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             Block::TransformData(Box::new(crate::anim::transform_data(r)?))
         }
         "NiTextKeyExtraData" => Block::TextKeys(crate::anim::text_key_extra_data(r)?),
+        "BSEffectShaderPropertyFloatController"
+        | "BSEffectShaderPropertyColorController"
+        | "BSLightingShaderPropertyFloatController"
+        | "BSLightingShaderPropertyColorController" => {
+            Block::ShaderController(crate::anim::shader_controller(
+                r,
+                ty.ends_with("ColorController"),
+                ty.starts_with("BSLighting"),
+            )?)
+        }
+        "NiFloatInterpolator" | "NiPoint3Interpolator" => Block::ValueInterpolator(
+            crate::anim::value_interpolator(r, ty == "NiPoint3Interpolator")?,
+        ),
+        "NiFloatData" | "NiPosData" => {
+            Block::ValueKeys(crate::anim::value_keys(r, ty == "NiPosData")?)
+        }
         "NiDefaultAVObjectPalette" => {
             crate::anim::default_av_object_palette(r)?;
             Block::Unknown(ty.into())
