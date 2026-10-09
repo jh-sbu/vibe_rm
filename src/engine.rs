@@ -1239,41 +1239,62 @@ impl Engine {
                 let anim_type = m.anim_type;
                 for (entry, bit) in Entry::of(m.entries) {
                     for child in [false, true] {
-                        let ctx = |state: f32| Context {
+                        let ctx = |state: f32, holding: bool, instant: bool| Context {
                             target: Some(f.ref_id),
                             idle: Some(IdleQuery {
                                 anim_type,
                                 entry: u32::from(bit) << 16,
                                 state,
                                 child: Some(child),
+                                holding,
+                                instant,
                                 ..Default::default()
                             }),
                             ..Default::default()
                         };
-                        let Some((_, enter)) = idles.select(self, root, ctx(2.0)) else {
-                            continue;
-                        };
-                        // A subtree without an exit idle offers its enter idle again.
-                        let exit = idles
-                            .select(self, root, ctx(4.0))
-                            .map(|(_, e)| e)
-                            .filter(|e| *e != enter);
-                        log::trace!(
-                            "{} marker {mi} {entry:?}{}: {enter} / {exit:?}",
-                            f.ref_id,
-                            if child { " (child)" } else { "" }
-                        );
-                        found.push((
-                            f.ref_id,
-                            Way {
-                                marker: mi as u8,
-                                entry,
-                                child,
-                                enter,
-                                exit,
-                                graph: None,
-                            },
-                        ));
+                        // The way on for users without what the subtree asks about,
+                        // then for those holding it (a wood pile's put-down).
+                        let empty = idles.select(self, root, ctx(2.0, false, false));
+                        let laden = idles
+                            .select(self, root, ctx(2.0, true, false))
+                            .filter(|l| empty.as_ref().is_none_or(|e| e.0 != l.0));
+                        let enters: Vec<String> =
+                            empty.iter().chain(&laden).map(|e| e.1.clone()).collect();
+                        let instant_exit = idles
+                            .select(self, root, ctx(4.0, false, true))
+                            .map(|(_, e)| e);
+                        for (held, (idle, enter)) in [(false, empty), (true, laden)]
+                            .into_iter()
+                            .filter_map(|(h, w)| Some((h, w?)))
+                        {
+                            let holding = idles.counted_item(idle).map(|item| (item, held));
+                            if held && holding.is_none() {
+                                continue;
+                            }
+                            // A subtree without an exit idle offers its enter idle again.
+                            let exit = idles
+                                .select(self, root, ctx(4.0, held, false))
+                                .map(|(_, e)| e)
+                                .filter(|e| !enters.contains(e));
+                            log::trace!(
+                                "{} marker {mi} {entry:?}{}: {enter} / {exit:?} {holding:?}",
+                                f.ref_id,
+                                if child { " (child)" } else { "" }
+                            );
+                            found.push((
+                                f.ref_id,
+                                Way {
+                                    marker: mi as u8,
+                                    entry,
+                                    child,
+                                    enter,
+                                    exit,
+                                    graph: None,
+                                    holding,
+                                    instant_exit: instant_exit.clone(),
+                                },
+                            ));
+                        }
                     }
                 }
             }

@@ -2327,6 +2327,7 @@ impl Engine {
         };
         a.objects_changed |= !a.objects.is_empty();
         a.objects.clear();
+        a.carrying = false;
         let velocity = Vec3::new(a.heading.sin(), a.heading.cos(), 0.0) * a.speed;
         let skeleton = a.skeleton.clone();
         let capsule = a.capsule;

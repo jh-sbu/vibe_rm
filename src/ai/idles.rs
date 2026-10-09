@@ -15,6 +15,8 @@ fn is_humanoid_graph(behavior: &str) -> bool {
 
 /// Condition function `HasKeyword`.
 const HAS_KEYWORD: u16 = 560;
+/// Condition function `GetItemCount`.
+const GET_ITEM_COUNT: u16 = 47;
 /// Events that leave furniture rather than enter it.
 const EXIT_EVENTS: [&str; 3] = ["idlechairexitstart", "idlefurnitureexit", "idlestop"];
 
@@ -92,6 +94,17 @@ impl IdleIndex {
             *kids = ordered;
         }
         ix
+    }
+
+    /// The item an idle's own `GetItemCount` condition asks its subject about
+    /// (firewood for a wood pile's pick-up and put-down).
+    pub fn counted_item(&self, idle: FormId) -> Option<FormId> {
+        self.idles
+            .get(&idle)?
+            .conditions
+            .iter()
+            .find(|c| c.func == GET_ITEM_COUNT && c.run_on == 0)
+            .map(|c| FormId(c.p1))
     }
 
     /// An idle, or an action (`AACT`, e.g. `ActionIdle`) whose idles hang off it.
