@@ -411,6 +411,13 @@ impl Engine {
         self.menu.is_some() || !self.messages.boxes.is_empty()
     }
 
+    /// Menu mode: a menu that pauses the game is open (every one but dialogue's:
+    /// CommonLibSSE's menus' `kPausesGame`). The world stands still; scripts
+    /// run on, `Wait` waiting for it to end (`Utility.IsInMenuMode`).
+    pub fn in_menu_mode(&self) -> bool {
+        self.menu_up() || self.console_open
+    }
+
     /// The help message showing now, if any (the latest).
     pub fn current_help(&self) -> Option<&str> {
         let now = self.scripts.real_time;

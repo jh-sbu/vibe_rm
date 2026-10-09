@@ -517,6 +517,14 @@ game each piece unlocks.
   miscellaneous ones together, finished ones apart, log and objectives. Console
   `sqs`, `sqo`, `journal`, `msgbox`, `inputevent`; vrm-tool `messages`,
   `quest-log`. Open questions: `known_gaps/messages.md`
+- Menu mode: every menu but dialogue pauses the game (message boxes, journal,
+  inventory, containers, books, lockpicking, the console: CommonLibSSE's
+  `kPausesGame`). The world, the game clock and real-time timers stand still;
+  scripts run on, `Utility.Wait` waits for menu mode to end while
+  `WaitMenuMode` counts on (`NativeResult::WaitMenuMode`, `Vm::menu_time`);
+  `IsInMenuMode`, `GetCurrentRealTime` with menus included. Offscreen runs press
+  the last button of a box left up (`--hold-boxes` keeps it). Console
+  `menumode`, `closemenu`
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -590,7 +598,6 @@ game each piece unlocks.
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, bars, quest
    targets on a compass and the map (`QSTA`), tracking quests (`SetActive`);
-   menu mode pausing the world (`IsInMenuMode`, `Wait` vs `WaitMenuMode`);
    support for the game's .swf assets still undecided (journal, message boxes
    and help messages: see Done)
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the

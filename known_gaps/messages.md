@@ -46,9 +46,21 @@ quest-log`, console `sqs`).
   they were when added (the INDX "keep instance data" flag isn't read).
   `<Global=...>` works in any quest's text, not only for the globals the quest
   lists (`QTGL`).
-- **Menu mode.** Message boxes and the journal don't pause the world, and
-  `Utility.IsInMenuMode` stays false while they're up, so `Wait` and
-  `WaitMenuMode` both count down.
+- **Menu mode** (settled: every menu here but dialogue pauses the game, per
+  the `kPausesGame` flags in CommonLibSSE's menu headers: `MessageBoxMenu`,
+  `JournalMenu`, `InventoryMenu`, `ContainerMenu`, `BookMenu`,
+  `LockpickingMenu`, `Console`; `DialogueMenu` doesn't). In menu mode the world,
+  the game clock and the real-time clock timers and `Wait` count on stand
+  still; scripts and events run on, `WaitMenuMode` counts real time, and
+  `GetCurrentRealTime` / `GetRealHoursSpent` include menus (the CK wiki: `Wait`
+  doesn't return in menu mode, `WaitMenuMode` does). Still open: whether world
+  sounds already playing pause with the game (here they play on, as music
+  does), and notifications and help messages, whose times stand still in menus
+  here.
+- **Offscreen runs answer message boxes.** Nobody can press a button in a
+  `--screenshot --wait` run and the boxes pause the world (the Survival Mode
+  prompt comes up at the start), so a box left up two seconds gets its last
+  button pressed unless `--hold-boxes`. Not the game's behaviour; a test hook.
 - **Controls in text.** `[Activate]` and the rest show this engine's keys
   (`messages::control_key`); gamepad-only names (`[XButton]`...) stay as
   written.

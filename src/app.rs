@@ -188,6 +188,8 @@ pub fn run(opts: Options) -> Result<()> {
         for (_, line) in now {
             run_console(&mut engine, line);
         }
+        // Frames the message box in front has been up.
+        let mut box_up = 0;
         if let Some(frames) = opts.wait {
             // Advance the world without moving the camera.
             let (pos, yaw, pitch) = (
@@ -205,6 +207,7 @@ pub fn run(opts: Options) -> Result<()> {
                 for (_, line) in later.iter().filter(|(f, _)| *f == i) {
                     run_console(&mut engine, line);
                 }
+                answer_boxes(&mut engine, &opts, &mut box_up);
                 engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
                 engine.camera.position = pos;
                 engine.camera.yaw = yaw;
@@ -249,6 +252,7 @@ pub fn run(opts: Options) -> Result<()> {
         for &c in &opts.choose {
             engine.choose_topic(c);
             for _ in 0..600 {
+                answer_boxes(&mut engine, &opts, &mut box_up);
                 engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
             }
         }
@@ -259,6 +263,7 @@ pub fn run(opts: Options) -> Result<()> {
                 ..Default::default()
             };
             for i in 0..frames {
+                answer_boxes(&mut engine, &opts, &mut box_up);
                 engine.update(input, 1.0 / 60.0, 20.0);
                 if i % 30 == 0 {
                     log::info!(
@@ -336,6 +341,28 @@ pub fn run(opts: Options) -> Result<()> {
     };
     event_loop.run_app(&mut app)?;
     Ok(())
+}
+
+/// Offscreen, nobody answers message boxes, and they pause the world (the
+/// Survival Mode prompt comes up at the start): press the last button of one
+/// left up for two seconds unless `--hold-boxes` (`@<frame> msgbox <button>`
+/// presses one).
+fn answer_boxes(engine: &mut Engine, opts: &Options, box_up: &mut u32) {
+    *box_up = if engine.messages.boxes.is_empty() {
+        0
+    } else {
+        *box_up + 1
+    };
+    if *box_up > 120 && !opts.hold_boxes {
+        let b = engine
+            .messages
+            .boxes
+            .front()
+            .and_then(|b| b.buttons.last().cloned());
+        log::info!("offscreen: pressing {b:?} on the message box left up");
+        engine.choose_message_button(b.map_or(0, |b| b.0));
+        *box_up = 0;
+    }
 }
 
 pub(crate) fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) -> Result<()> {
@@ -655,6 +682,7 @@ impl ApplicationHandler for App {
                 if let Some(r) = &s.remote {
                     r.poll(&mut s.engine);
                 }
+                s.engine.console_open = s.ui.console.open;
                 s.engine.update(input, dt, scale);
                 // A menu or message box opened by a script takes the mouse.
                 if s.engine.menu_up() && s.grabbed {

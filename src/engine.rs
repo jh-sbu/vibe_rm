@@ -107,6 +107,8 @@ pub struct Engine {
     pub audio: Option<crate::audio::Audio>,
     music: MusicState,
     pub conversation: Option<crate::dialogue::Conversation>,
+    /// The console is open (it pauses the game: `Engine::in_menu_mode`).
+    pub console_open: bool,
     /// Actors the player has had a conversation with (`GetTalkedToPC`).
     pub(crate) talked_to_pc: std::collections::HashSet<FormId>,
     /// Quest alias packages: who fills which aliases, and their packages.
@@ -280,6 +282,7 @@ impl Engine {
             audio: None,
             music: MusicState::default(),
             conversation: None,
+            console_open: false,
             menu: None,
             lockpick: None,
             messages: Default::default(),
@@ -2049,6 +2052,11 @@ impl Engine {
 
     /// Advance the simulation by `dt` seconds.
     pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
+        self.scripts.wall_time += dt as f64;
+        if self.in_menu_mode() {
+            self.update_menu_mode(dt);
+            return;
+        }
         if self.test_walk > 0 {
             self.test_walk -= 1;
             input.forward = 1.0;
@@ -2128,6 +2136,17 @@ impl Engine {
             self.player_stamina = self.player_stats().max_stamina;
             self.scripts.notify("You come to.");
         }
+    }
+
+    /// A frame in menu mode: the world and its clocks stand still; scripts run
+    /// (only `WaitMenuMode` counts time), the lock being picked turns, sound plays.
+    fn update_menu_mode(&mut self, dt: f32) {
+        self.update_scripts(0.0);
+        self.update_lockpick(dt);
+        if let Some(a) = self.audio.as_mut() {
+            a.update();
+        }
+        self.update_music();
     }
 
     fn update_look_target(&mut self) {
@@ -3105,6 +3124,7 @@ impl Engine {
             true
         });
         let mut vm = std::mem::take(&mut self.vm);
+        vm.menu_time = self.scripts.wall_time;
         for _ in 0..4 {
             {
                 let mut host = crate::script::EngineHost { engine: self };

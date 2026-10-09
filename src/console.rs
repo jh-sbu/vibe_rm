@@ -60,6 +60,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sqs <quest>           a quest's stages, log entries and fragments".into(),
             "sqo / journal [open]  displayed objectives / the journal's quests (or open it)".into(),
             "msgbox [button]       the message box up / press one of its buttons".into(),
+            "menumode / closemenu  whether the game is paused by a menu / close the menu".into(),
             "inputevent <event>    as if the player did an input event (Activate, Jump...)".into(),
             "[ref.]getav <av> / setav, modav, forceav, damageav, restoreav <av> <n>   actor values".into(),
             "pblock                toggle the player's guard (right mouse button)".into(),
@@ -230,6 +231,19 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 }
             }
             if out.is_empty() { vec!["the journal is empty".into()] } else { out }
+        }
+        "menumode" => vec![format!(
+            "menu mode {} (menu {:?}, {} message boxes), hour {:.3}, real time {:.2}s, menus included {:.2}s",
+            engine.in_menu_mode(),
+            engine.menu,
+            engine.messages.boxes.len(),
+            engine.hour,
+            engine.scripts.real_time,
+            engine.scripts.wall_time
+        )],
+        "closemenu" => {
+            let menu = engine.menu.take();
+            vec![format!("closed {menu:?}")]
         }
         "msgbox" => {
             let Some(b) = engine.messages.boxes.front().cloned() else {

@@ -228,6 +228,8 @@ pub enum NativeResult {
     Value(Value),
     /// Suspend the calling thread for this many real seconds, then return None.
     Wait(f32),
+    /// As `Wait`, counted on [`Vm::menu_time`] (which runs on in menu mode).
+    WaitMenuMode(f32),
     /// Return `value`, suspending the calling thread until the host calls
     /// [`Vm::signal`] with `key`, or for `timeout` real seconds at most.
     WaitFor {
@@ -265,6 +267,8 @@ struct Frame {
 struct Thread {
     frames: Vec<Frame>,
     wake_at: f64,
+    /// `wake_at` is on [`Vm::menu_time`], not [`Vm::time`].
+    menu_clock: bool,
     /// The signal it waits for (`NativeResult::WaitFor`).
     waiting_for: Option<u64>,
     /// Where the waiting call's result goes (`Vm::signal_with`).
@@ -283,6 +287,9 @@ pub struct Vm {
     attached: HashMap<ObjectId, Vec<Arc<str>>>,
     threads: Vec<Thread>,
     pub time: f64,
+    /// Real seconds menus included, which `WaitMenuMode` counts on; the host
+    /// keeps it, stopping `time` in menu mode.
+    pub menu_time: f64,
     warned: HashSet<String>,
     /// Total instructions executed (for diagnostics).
     pub executed: u64,
@@ -563,6 +570,7 @@ impl Vm {
                 self.threads.push(Thread {
                     frames: vec![frame],
                     wake_at: self.time,
+                    menu_clock: false,
                     waiting_for: None,
                     wait_dest: None,
                 });
@@ -593,6 +601,7 @@ impl Vm {
             self.threads.push(Thread {
                 frames: vec![frame],
                 wake_at: self.time,
+                menu_clock: false,
                 waiting_for: None,
                 wait_dest: None,
             });
@@ -641,6 +650,7 @@ impl Vm {
             if t.waiting_for == Some(key) {
                 t.waiting_for = None;
                 t.wake_at = self.time;
+                t.menu_clock = false;
                 n += 1;
             }
         }
@@ -655,6 +665,7 @@ impl Vm {
             if t.waiting_for == Some(key) {
                 t.waiting_for = None;
                 t.wake_at = self.time;
+                t.menu_clock = false;
                 if let (Some(dest), Some(frame)) = (t.wait_dest.take(), t.frames.last_mut()) {
                     Self::set_in(&mut self.instances, frame, &dest, value.clone());
                 }
@@ -679,12 +690,13 @@ impl Vm {
         let pending = std::mem::take(&mut self.threads);
         let mut keep = Vec::with_capacity(pending.len());
         for mut t in pending {
-            if t.wake_at > now {
+            if t.wake_at > if t.menu_clock { self.menu_time } else { now } {
                 keep.push(t);
                 continue;
             }
             // Woken by its signal or timed out.
             t.waiting_for = None;
+            t.menu_clock = false;
             if !self.step_thread(host, &mut t, budget) {
                 keep.push(t);
             }
@@ -988,6 +1000,17 @@ impl Vm {
                                     );
                                     t.wake_at = self.time + secs.max(0.0) as f64;
                                     let _ = this;
+                                    return false;
+                                }
+                                NativeResult::WaitMenuMode(secs) => {
+                                    Self::set_in(
+                                        &mut self.instances,
+                                        &mut frame!(),
+                                        &dest,
+                                        Value::None,
+                                    );
+                                    t.wake_at = self.menu_time + secs.max(0.0) as f64;
+                                    t.menu_clock = true;
                                     return false;
                                 }
                                 NativeResult::WaitFor {
