@@ -172,6 +172,11 @@ fn vs_main(v: VIn) -> VOut {
     o.normal = m3 * v.normal;
     o.tangent = m3 * v.tangent;
     o.bitangent = m3 * v.bitangent;
+    // Model-space normal maps: their meshes carry the shape's axes in the
+    // model as tangent and bitangent (see `build_mesh`).
+    o.mx = m3 * v.tangent;
+    o.my = m3 * v.bitangent;
+    o.mz = m3 * cross(v.tangent, v.bitangent);
     o.uv = v.uv * mat.uv.zw + mat.uv.xy;
     o.color = v.color;
     o.light_idx = v.light_idx;

@@ -738,6 +738,10 @@ fn build_mesh(g: &Geometry, world: Mat4, material: MaterialDesc) -> Option<CpuMe
     }
     let nm = Mat3::from_mat4(world).inverse().transpose();
     let rot = Mat3::from_mat4(world);
+    // Model-space normal maps are in the shape's space, which `world` bakes
+    // away: their meshes, which don't use tangents, carry the shape's x and y
+    // axes in the model in their place (the shader takes z as x × y).
+    let model_space = material.flags1 & sf1::MODEL_SPACE_NORMALS != 0;
     let mut vertices = Vec::with_capacity(n);
     let mut min = Vec3::splat(f32::MAX);
     let mut max = Vec3::splat(f32::MIN);
@@ -750,16 +754,20 @@ fn build_mesh(g: &Geometry, world: Mat4, material: MaterialDesc) -> Option<CpuMe
             .get(i)
             .map(|v| (nm * *v).normalize_or_zero())
             .unwrap_or(Vec3::Z);
-        let tangent = g
-            .tangents
-            .get(i)
-            .map(|v| (rot * *v).normalize_or_zero())
-            .unwrap_or(Vec3::X);
-        let bitangent = g
-            .bitangents
-            .get(i)
-            .map(|v| (rot * *v).normalize_or_zero())
-            .unwrap_or(Vec3::Y);
+        let (tangent, bitangent) = if model_space {
+            (nm.x_axis.normalize_or_zero(), nm.y_axis.normalize_or_zero())
+        } else {
+            (
+                g.tangents
+                    .get(i)
+                    .map(|v| (rot * *v).normalize_or_zero())
+                    .unwrap_or(Vec3::X),
+                g.bitangents
+                    .get(i)
+                    .map(|v| (rot * *v).normalize_or_zero())
+                    .unwrap_or(Vec3::Y),
+            )
+        };
         let uv = g.uvs.get(i).copied().unwrap_or(Vec2::ZERO);
         let color = g.colors.get(i).copied().unwrap_or(Vec4::ONE);
         vertices.push(Vertex {
