@@ -86,6 +86,54 @@ pub fn call(
             }
         }
         ("game", "getrealhoursspent") => v(Value::Float(e.scripts.wall_time as f32 / 3600.0)),
+        // (abFadingOut, abBlackFade, afSecsBeforeFade, afFadeDuration)
+        ("game", "fadeoutgame") => {
+            e.fade_out_game(
+                arg(0).as_bool(),
+                arg(1).as_bool(),
+                arg(2).as_float(),
+                arg(3).as_float(),
+            );
+            none()
+        }
+        // (akSource = None, afStrength = 0.5, afDuration = 0.0)
+        ("game", "shakecamera") => {
+            let strength = args.get(1).map_or(0.5, |a| a.as_float());
+            e.shake_camera(form_arg(args, 0), strength, arg(2).as_float());
+            none()
+        }
+        ("imagespacemodifier", "apply") => {
+            if let Some(m) = me {
+                e.apply_imod(m, args.first().map_or(1.0, |a| a.as_float()));
+            }
+            none()
+        }
+        ("imagespacemodifier", "applycrossfade") => {
+            if let Some(m) = me {
+                e.apply_imod_cross_fade(m, args.first().map_or(1.0, |a| a.as_float()));
+            }
+            none()
+        }
+        ("imagespacemodifier", "remove") => {
+            if let Some(m) = me {
+                e.remove_imod(m);
+            }
+            none()
+        }
+        // This modifier off, another on (akNewModifier, afStrength = 1.0).
+        ("imagespacemodifier", "popto") => {
+            if let Some(m) = me {
+                e.remove_imod(m);
+            }
+            if let Some(next) = form_arg(args, 0) {
+                e.apply_imod(next, args.get(1).map_or(1.0, |a| a.as_float()));
+            }
+            none()
+        }
+        ("imagespacemodifier", "removecrossfade") => {
+            e.remove_imod_cross_fade(args.first().map_or(1.0, |a| a.as_float()));
+            none()
+        }
         ("game", "isplayersleeping") | ("game", "isfasttravelenabled") => v(Value::Bool(false)),
         // Player controls: each flag given true disables (enables) that control,
         // in the order of `DisabledControls::flags_mut`. Missing arguments take

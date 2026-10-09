@@ -525,6 +525,13 @@ game each piece unlocks.
   `IsInMenuMode`, `GetCurrentRealTime` with menus included. Offscreen runs press
   the last button of a box left up (`--hold-boxes` keeps it). Console
   `menumode`, `closemenu`
+- Image space modifiers (IMAD): the frame drawn through a post pass when one is
+  on: saturation, brightness, contrast, tint, fade colour, blur, double vision
+  from their curves (animatable ones play over their duration and end, static
+  ones hold until removed); Papyrus `Apply`, `ApplyCrossFade`, `PopTo`,
+  `Remove`, `RemoveCrossFade`. `Game.FadeOutGame` (to and from black or white)
+  and `Game.ShakeCamera`. Console `imod`, `rimod`, `imods`, `fadeout`, `shake`.
+  Open questions: `known_gaps/image-space.md`
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -605,8 +612,8 @@ game each piece unlocks.
      NPCs only use pre-baked heads
 7. **Audio**: lip sync
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
-   caster batches), HDR/image spaces, image space modifiers (fades and blur:
-   `FadeOutGame`, `PlayerImodAnimation`), camera shake (`ShakeCamera`), particles
+   caster batches), HDR/image spaces (the base IMGS under the modifiers; the
+   modifiers' radial blur, depth of field, motion blur; see Done), particles
    (fire, smoke, explosions), distant LOD (BTR/BTO/trees),
    grass, decals, environment maps
 9. **Saves**: an engine-native save format (reading .ess later), writing out

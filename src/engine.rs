@@ -109,6 +109,8 @@ pub struct Engine {
     pub conversation: Option<crate::dialogue::Conversation>,
     /// The console is open (it pauses the game: `Engine::in_menu_mode`).
     pub console_open: bool,
+    /// Image space modifiers, screen fades and camera shakes.
+    pub imagespace: crate::imagespace::ImageSpace,
     /// Actors the player has had a conversation with (`GetTalkedToPC`).
     pub(crate) talked_to_pc: std::collections::HashSet<FormId>,
     /// Quest alias packages: who fills which aliases, and their packages.
@@ -283,6 +285,7 @@ impl Engine {
             music: MusicState::default(),
             conversation: None,
             console_open: false,
+            imagespace: Default::default(),
             menu: None,
             lockpick: None,
             messages: Default::default(),
@@ -2127,6 +2130,7 @@ impl Engine {
         self.update_music();
         self.update_conversation();
         self.update_barks();
+        self.update_imagespace(dt);
         // The player gets back up a few seconds after dying (until there are saves).
         if let Some(t) = self.player_died_at
             && self.scripts.real_time - t > 5.0
