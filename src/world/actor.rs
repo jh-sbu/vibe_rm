@@ -367,10 +367,7 @@ pub fn footstep_set(lo: &LoadOrder, worn: &[FormId], skin: FormId, race: FormId)
 fn armor_models(lo: &LoadOrder, armo: FormId, race: FormId, female: bool) -> Vec<(String, u32)> {
     let mut out = Vec::new();
     for a in race_addons(lo, armo, race) {
-        let slots = a
-            .get(b"BOD2")
-            .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
-            .unwrap_or(0);
+        let slots = super::inventory::armor_slots(&a);
         let model = if female {
             a.get(b"MOD3").or_else(|| a.get(b"MOD2"))
         } else {
@@ -468,12 +465,19 @@ pub fn describe_reference(lo: &LoadOrder, r: &records::Reference) -> Option<Acto
     );
 
     let mut models: Vec<(String, FormId)> = Vec::new();
+    // Worn armors conflict by their own slots; their addons' slots (which can
+    // overlap, as boots and a robe both on the calves) hide the skin beneath.
+    let mut worn = 0u32;
     let mut covered = 0u32;
     for &armo in &inventory.equipped {
+        let armo_slots = lo
+            .get(armo)
+            .map_or(0, |r| super::inventory::armor_slots(&r));
+        if armo_slots & worn != 0 {
+            continue;
+        }
+        worn |= armo_slots;
         for (m, slots) in armor_models(lo, armo, traits.race, traits.female) {
-            if slots & covered != 0 {
-                continue;
-            }
             covered |= slots;
             models.push((m, armo));
         }
