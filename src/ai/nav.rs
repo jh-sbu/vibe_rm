@@ -13,6 +13,9 @@ const BUCKET: f32 = 256.0;
 /// How far above / below a triangle a point may be and still be "on" it.
 const Z_TOLERANCE: f32 = 160.0;
 const MAX_EXPANSIONS: usize = 30_000;
+/// Searching for the nearest point to a target it can't reach explores all it
+/// can: this far, then the nearest found (later repaths carry on from there).
+const MAX_NEAREST_EXPANSIONS: usize = 5_000;
 
 struct Mesh {
     verts: Vec<Vec3>,
@@ -81,6 +84,28 @@ impl Mesh {
     fn centroid(&self, t: usize) -> Vec3 {
         let [a, b, c] = self.corners(t);
         (a + b + c) / 3.0
+    }
+
+    /// The point of triangle `t` nearest `p` in XY, at the triangle's height there.
+    fn closest_in(&self, t: usize, p: Vec2) -> Vec3 {
+        if let Some(z) = self.height_in(t, p) {
+            return p.extend(z);
+        }
+        let c = self.corners(t);
+        (0..3)
+            .map(|e| {
+                let (a, b) = (c[e], c[(e + 1) % 3]);
+                let ab = (b - a).truncate();
+                let k =
+                    ((p - a.truncate()).dot(ab) / ab.length_squared().max(1e-6)).clamp(0.0, 1.0);
+                a + (b - a) * k
+            })
+            .min_by(|x, y| {
+                x.truncate()
+                    .distance_squared(p)
+                    .total_cmp(&y.truncate().distance_squared(p))
+            })
+            .unwrap_or(c[0])
     }
 
     /// Height of triangle `t` at `p` if `p` lies inside it (in XY).
@@ -259,12 +284,34 @@ impl NavWorld {
 
     /// Find a path from `from` to `to`, returning waypoints (excluding the start).
     pub fn find_path(&self, from: Vec3, to: Vec3) -> Option<Vec<Vec3>> {
+        self.route(from, to, true).map(|(path, _)| path)
+    }
+
+    /// A path to `to`, or where it can't be reached (off the navmesh, on a part
+    /// the actor can't get to), to the reachable point nearest it; and whether
+    /// it reaches `to`. None when `from` is off the navmesh.
+    pub fn path_towards(&self, from: Vec3, to: Vec3) -> Option<(Vec<Vec3>, bool)> {
+        self.route(from, to, false)
+    }
+
+    fn route(&self, from: Vec3, to: Vec3, exact: bool) -> Option<(Vec<Vec3>, bool)> {
         let (start, _) = self.locate(from)?;
-        let (goal, gz) = self.locate(to)?;
-        let to = Vec3::new(to.x, to.y, gz);
-        if start == goal {
-            return Some(vec![to]);
+        let goal = self.locate(to);
+        if exact && goal.is_none() {
+            return None;
         }
+        let target = to;
+        let to = goal.map_or(to, |(_, gz)| Vec3::new(to.x, to.y, gz));
+        let goal = goal.map(|(n, _)| n);
+        if goal == Some(start) {
+            return Some((vec![to], true));
+        }
+        // The explored triangle nearest the target, and its point nearest it.
+        let nearest = |n: Node| {
+            let p = self.mesh(n).closest_in(n.tri as usize, target.truncate());
+            (p, p.distance_squared(target))
+        };
+        let mut best = (start, nearest(start));
         let centre = |n: Node| self.mesh(n).centroid(n.tri as usize);
         let mut open = BinaryHeap::new();
         let mut came: HashMap<Node, (Node, Vec3, Vec3)> = HashMap::new();
@@ -281,13 +328,25 @@ impl NavWorld {
         let mut expansions = 0;
         let mut found = false;
         while let Some(Open { node, .. }) = open.pop() {
-            if node == goal {
+            if Some(node) == goal {
                 found = true;
                 break;
             }
+            if !exact {
+                let near = nearest(node);
+                if near.1 < best.1.1 {
+                    best = (node, near);
+                }
+            }
             expansions += 1;
-            if expansions > MAX_EXPANSIONS {
-                return None;
+            if expansions
+                > if exact {
+                    MAX_EXPANSIONS
+                } else {
+                    MAX_NEAREST_EXPANSIONS
+                }
+            {
+                break;
             }
             let g = cost[&node];
             let here = entry[&node];
@@ -299,7 +358,7 @@ impl NavWorld {
                     cost.insert(nb, ng);
                     entry.insert(nb, mid);
                     came.insert(nb, (node, a, b));
-                    let h = if nb == goal {
+                    let h = if Some(nb) == goal {
                         mid.distance(to)
                     } else {
                         mid.distance(to).min(centre(nb).distance(to) + 1.0)
@@ -311,9 +370,18 @@ impl NavWorld {
                 }
             }
         }
-        if !found {
-            return None;
-        }
+        let (goal, to, reached) = match goal {
+            Some(g) if found => (g, to, true),
+            _ if exact => return None,
+            _ => {
+                let (node, (end, _)) = best;
+                log::trace!("can't reach {target:?}: as near as {end:?}");
+                if node == start {
+                    return Some((vec![end], false));
+                }
+                (node, end, false)
+            }
+        };
         // Portals from start to goal, oriented (left, right) relative to travel.
         let mut portals = Vec::new();
         let mut n = goal;
@@ -329,7 +397,7 @@ impl NavWorld {
             n = prev;
         }
         portals.reverse();
-        Some(string_pull(from, to, &portals))
+        Some((string_pull(from, to, &portals), reached))
     }
 
     /// A random point anywhere on the given meshes.
