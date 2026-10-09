@@ -206,6 +206,8 @@ struct MusicState {
 
 /// The player character reference ("PlayerRef").
 pub const PLAYER_REF: FormId = FormId(0x14);
+/// Reference flag: drawn however far away (sky statics, dragon perches).
+const FULL_LOD: u32 = 0x10000;
 /// The player's health (no leveling yet).
 pub const PLAYER_HEALTH: f32 = 100.0;
 /// Real seconds per game hour at the default timescale of 20.
@@ -692,6 +694,7 @@ impl Engine {
         self.scene.cells.clear();
         self.scene.lights.clear();
         self.scene.dynamic.clear();
+        self.scene.far.clear();
         self.projectiles.clear();
         self.cells.clear();
         self.physics.clear();
@@ -1615,13 +1618,20 @@ impl Engine {
             .world(world)
             .context("worldspace not indexed")?
             .clone();
-        // Bucket the worldspace's persistent references by grid cell.
+        // Bucket the worldspace's persistent references by grid cell; its
+        // full LOD sky statics load now, wherever they are.
+        let mut far = Vec::new();
+        let sky_statics = self.sky_static_bases().clone();
         if let Some(pc) = wi.persistent_cell
             && let Some(idx) = self.lo.cell(pc)
         {
             for &r in idx.persistent.iter().chain(idx.temporary.iter()) {
                 if let Some(rec) = self.lo.get(r) {
                     let rf = records::reference(&rec);
+                    if rec.flags() & FULL_LOD != 0 && sky_statics.contains(&rf.base.0) {
+                        far.push(r);
+                        continue;
+                    }
                     self.world_persistent
                         .entry(grid_of(rf.position.truncate()))
                         .or_default()
@@ -1629,6 +1639,7 @@ impl Engine {
                 }
             }
         }
+        self.load_far(&far);
         self.setup_weather(world, grid_of(feet.truncate()));
         self.set_interior_image_space(None);
         self.scene.env = self.sky_environment().unwrap_or_default();
@@ -1661,6 +1672,27 @@ impl Engine {
         self.place_player(feet, yaw);
         log::info!("exterior loaded in {:?}", t.elapsed());
         Ok(())
+    }
+
+    /// Draw the worldspace's far references (no collision, scripts or AI).
+    fn load_far(&mut self, refs: &[FormId]) {
+        let (mut objects, mut lights, mut doors) = (Vec::new(), Vec::new(), Vec::new());
+        for &r in refs {
+            cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
+        }
+        let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
+        self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        self.scene.far = objects
+            .iter()
+            .filter_map(|o| {
+                let mut inst = Instance::new(self.models.get(&o.model)?, o.transform);
+                inst.ref_id = o.ref_id.0;
+                inst.base = o.base.0;
+                inst.hidden = self.is_disabled(o.ref_id);
+                Some(inst)
+            })
+            .collect();
+        log::info!("{} far references", self.scene.far.len());
     }
 
     fn load_exterior_cell(&mut self, world: FormId, x: i32, y: i32) {

@@ -320,6 +320,9 @@ pub struct Scene {
     pub dynamic: Vec<Instance>,
     /// The sky's models about the camera (auroras).
     pub sky: Vec<Instance>,
+    /// The worldspace's far references, loaded with it rather than with
+    /// their cells (sky statics).
+    pub far: Vec<Instance>,
     /// World-space XY rectangle (min x, min y, max x, max y) where LOD is hidden.
     pub lod_clip: [f32; 4],
     pub lights: Vec<GpuLight>,
@@ -364,6 +367,7 @@ impl Scene {
             .chain(self.lod.iter())
             .chain(self.dynamic.iter())
             .chain(self.sky.iter())
+            .chain(self.far.iter())
     }
     pub fn instance_count(&self) -> usize {
         self.cells.values().map(|c| c.instances.len()).sum()
