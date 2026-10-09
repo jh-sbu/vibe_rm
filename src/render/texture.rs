@@ -8,6 +8,9 @@ use super::dds;
 pub struct GpuTexture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
+    /// How it's viewed: a cube map (a cube DDS with all six faces), an
+    /// array or a plain 2D texture.
+    pub dimension: wgpu::TextureViewDimension,
 }
 
 pub fn upload_dds(
@@ -83,17 +86,22 @@ pub fn upload_dds(
             offset += size;
         }
     }
+    let dimension = if d.cube && layers == 6 {
+        wgpu::TextureViewDimension::Cube
+    } else if layers > 1 {
+        wgpu::TextureViewDimension::D2Array
+    } else {
+        wgpu::TextureViewDimension::D2
+    };
     let view = texture.create_view(&wgpu::TextureViewDescriptor {
-        dimension: Some(if d.cube && layers == 6 {
-            wgpu::TextureViewDimension::Cube
-        } else if layers > 1 {
-            wgpu::TextureViewDimension::D2Array
-        } else {
-            wgpu::TextureViewDimension::D2
-        }),
+        dimension: Some(dimension),
         ..Default::default()
     });
-    GpuTexture { texture, view }
+    GpuTexture {
+        texture,
+        view,
+        dimension,
+    }
 }
 
 pub fn solid(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4], label: &str) -> GpuTexture {
@@ -105,6 +113,25 @@ pub fn solid(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4], label: &
         cube: false,
         format: dds::Format::Rgba8,
         data: rgba.to_vec(),
+    };
+    upload_dds(device, queue, &d, label)
+}
+
+/// A 1x1 cube map of one colour on every face.
+pub fn solid_cube(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    rgba: [u8; 4],
+    label: &str,
+) -> GpuTexture {
+    let d = dds::Dds {
+        width: 1,
+        height: 1,
+        mips: 1,
+        layers: 6,
+        cube: true,
+        format: dds::Format::Rgba8,
+        data: rgba.repeat(6),
     };
     upload_dds(device, queue, &d, label)
 }

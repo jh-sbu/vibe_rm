@@ -35,6 +35,10 @@ pub struct MaterialDesc {
     pub diffuse: Option<String>,
     pub normal: Option<String>,
     pub glow: Option<String>,
+    /// Environment mapping's cube map (texture set slot 4) and mask (slot 5).
+    pub env: Option<String>,
+    pub env_mask: Option<String>,
+    pub env_scale: f32,
     pub flags1: u32,
     pub flags2: u32,
     pub blend: BlendMode,
@@ -121,6 +125,9 @@ impl Default for MaterialDesc {
             diffuse: None,
             normal: None,
             glow: None,
+            env: None,
+            env_mask: None,
+            env_scale: 0.0,
             flags1: 0,
             flags2: 0,
             blend: BlendMode::Opaque,
@@ -675,6 +682,13 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
                 // FaceGen heads: the tint mask sits in slot 6; reuse the glow binding.
                 if s.shader_type == 4 {
                     m.glow = t.get(6).and_then(|s| tex(s));
+                }
+                if s.flags1 & (sf1::ENVIRONMENT_MAPPING | sf1::EYE_ENVIRONMENT_MAPPING) != 0
+                    && matches!(s.shader_type, 1 | 11 | 16)
+                {
+                    m.env = t.get(4).and_then(|s| tex(s));
+                    m.env_mask = t.get(5).and_then(|s| tex(s));
+                    m.env_scale = s.env_map_scale;
                 }
             }
             m.alpha = s.alpha;

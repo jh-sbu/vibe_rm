@@ -76,6 +76,7 @@ struct Material {
     falloff: vec4<f32>,     // effect: start angle, stop angle, start opacity, stop opacity (cosines)
     tint: vec4<f32>,        // skin / hair tint
     billboard: vec4<f32>,   // a billboard's model-space origin, mode + 1 (0: none)
+    env: vec4<f32>,         // environment map scale, has cube map, has environment mask
 };
 
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
@@ -83,6 +84,8 @@ struct Material {
 @group(1) @binding(2) var t_glow: texture_2d<f32>;
 @group(1) @binding(3) var s_main: sampler;
 @group(1) @binding(4) var<uniform> mat: Material;
+@group(1) @binding(5) var t_env: texture_cube<f32>;
+@group(1) @binding(6) var t_env_mask: texture_2d<f32>;
 
 struct VIn {
     @location(0) pos: vec3<f32>,
@@ -391,11 +394,24 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         }
     }
 
+    // Environment mapping: the cube map (authored with the world's axes, the
+    // sky on +Z) seen along the reflected view, masked by the environment
+    // mask or else the normal map's specular mask, lit like the surface.
+    var env = vec3<f32>(0.0);
+    if (mat.env.y > 0.5) {
+        var mask = spec_mask;
+        if (mat.env.z > 0.5) {
+            mask = textureSample(t_env_mask, s_main, in.uv).r;
+        }
+        let r = reflect(-view_dir, n);
+        env = textureSample(t_env, s_main, r).rgb * mask * mat.env.x * diffuse;
+    }
+
     var emit = mat.emissive.rgb * mat.emissive.w;
     if (mat.params.w > 0.5 && mat.params.w < 1.5) {
         emit *= textureSample(t_glow, s_main, in.uv).rgb;
     }
     diffuse += emit;
-    let color = albedo * diffuse + specular * mat.specular.rgb;
+    let color = albedo * diffuse + specular * mat.specular.rgb + env;
     return vec4<f32>(apply_fog(color * in.tint.rgb, in.world_pos), alpha * in.tint.a);
 }

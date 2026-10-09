@@ -180,6 +180,7 @@ pub struct LightingShader {
     pub specular_strength: f32,
     pub lighting_effect1: f32,
     pub lighting_effect2: f32,
+    /// Environment map (type 1), multi-layer parallax (11) or eye (16) cube map scale.
     pub env_map_scale: f32,
     pub skin_tint_color: Vec3,
     pub hair_tint_color: Vec3,
@@ -779,9 +780,17 @@ fn lighting_shader(r: &mut Reader) -> Result<LightingShader> {
             s.parallax_max_passes = r.f32()?;
             s.parallax_scale = r.f32()?;
         }
-        11 => r.skip(4 + 4 + 8 + 4)?,
+        11 => {
+            // Inner layer thickness, refraction scale, inner texture scale.
+            r.skip(4 + 4 + 8)?;
+            s.env_map_scale = r.f32()?;
+        }
         14 => r.skip(16)?,
-        16 => r.skip(4 + 12 + 12)?,
+        16 => {
+            s.env_map_scale = r.f32()?;
+            // Left and right eye centres.
+            r.skip(12 + 12)?;
+        }
         _ => {}
     }
     Ok(s)
