@@ -93,6 +93,47 @@ pub struct GpuMaterial {
     pub key: PipelineKey,
     /// Cut out by alpha testing (casts shadows through its texture).
     pub alpha_test: bool,
+    /// Controllers animating its uniform, from its values at rest.
+    anim: Option<(Arc<model::MaterialAnim>, MaterialUniform, wgpu::Buffer)>,
+}
+
+impl MaterialUniform {
+    /// The values with a material's controllers applied at `t` seconds.
+    fn animated(&self, anim: &model::MaterialAnim, t: f32) -> MaterialUniform {
+        let mut u = *self;
+        for c in &anim.channels {
+            let Some(v) = c.keys.sample(c.timing.key_time(t)) else {
+                continue;
+            };
+            let f = v.x;
+            match (c.lighting, c.color, c.variable) {
+                // Effect shaders.
+                (false, false, 0) => u.emissive[3] = f,
+                // Falloff angles are keyed in degrees, kept as cosines.
+                (false, false, 1) => u.falloff[0] = f.to_radians().cos(),
+                (false, false, 2) => u.falloff[1] = f.to_radians().cos(),
+                (false, false, 3) => u.falloff[2] = f,
+                (false, false, 4) => u.falloff[3] = f,
+                (false, false, 5) => u.params[0] = f,
+                (false, false, 6) => u.uv[0] = f,
+                (false, false, 7) => u.uv[2] = f,
+                (false, false, 8) => u.uv[1] = f,
+                (false, false, 9) => u.uv[3] = f,
+                (false, true, 0) => u.emissive[..3].copy_from_slice(&v.to_array()),
+                // Lighting shaders.
+                (true, false, 9) => u.specular[3] = f,
+                (true, false, 11) => u.emissive[3] = f,
+                (true, false, 12) => u.params[0] = f,
+                (true, false, 20) => u.uv[0] = f,
+                (true, false, 21) => u.uv[2] = f,
+                (true, false, 22) => u.uv[1] = f,
+                (true, false, 23) => u.uv[3] = f,
+                (true, true, 1) => u.emissive[..3].copy_from_slice(&v.to_array()),
+                _ => {}
+            }
+        }
+        u
+    }
 }
 
 pub struct GpuPart {
@@ -489,6 +530,8 @@ pub struct Renderer {
     post: post::PostPass,
     /// Seconds since start, for animated effects.
     pub time: f32,
+    /// Materials whose controllers animate them, updated each frame.
+    animated: std::sync::Mutex<Vec<std::sync::Weak<GpuMaterial>>>,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -680,6 +723,7 @@ impl Renderer {
             precip,
             post,
             time: 0.0,
+            animated: Default::default(),
             terrain,
             device,
             queue,
@@ -967,7 +1011,7 @@ impl Renderer {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("material"),
                 contents: bytemuck::bytes_of(&u),
-                usage: wgpu::BufferUsages::UNIFORM,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("material"),
@@ -1006,7 +1050,32 @@ impl Renderer {
             bind_group,
             key,
             alpha_test: m.alpha_test.is_some(),
+            anim: m.anim.clone().map(|a| (a, u, ubuf)),
         }
+    }
+
+    /// A material for a model's part, kept for animating if it has controllers.
+    fn shared_material(&self, m: &MaterialDesc, skinned: bool) -> Arc<GpuMaterial> {
+        let mut mat = self.create_material(m);
+        mat.key.skinned = skinned;
+        let mat = Arc::new(mat);
+        if mat.anim.is_some() {
+            self.animated.lock().unwrap().push(Arc::downgrade(&mat));
+        }
+        mat
+    }
+
+    /// Bring the animated materials still in use to the time now.
+    fn animate_materials(&self) {
+        let mut list = self.animated.lock().unwrap();
+        list.retain(|w| {
+            let Some(m) = w.upgrade() else { return false };
+            if let Some((anim, base, buf)) = &m.anim {
+                let u = base.animated(anim, self.time);
+                self.queue.write_buffer(buf, 0, bytemuck::bytes_of(&u));
+            }
+            true
+        });
     }
 
     pub fn upload_model(&self, cpu: &CpuModel) -> GpuModel {
@@ -1030,7 +1099,7 @@ impl Renderer {
                 vbuf,
                 ibuf,
                 index_count: m.indices.len() as u32,
-                material: Arc::new(self.create_material(&m.material)),
+                material: self.shared_material(&m.material, false),
                 bound_center: m.bound_center,
                 bound_radius: m.bound_radius,
             });
@@ -1051,13 +1120,11 @@ impl Renderer {
                     contents: bytemuck::cast_slice(&m.indices),
                     usage: wgpu::BufferUsages::INDEX,
                 });
-            let mut mat = self.create_material(&m.material);
-            mat.key.skinned = true;
             skinned.push(GpuSkinnedPart {
                 vbuf,
                 ibuf,
                 index_count: m.indices.len() as u32,
-                material: Arc::new(mat),
+                material: self.shared_material(&m.material, true),
                 bone_names: m.bone_names.clone(),
                 skin_to_bone: m.skin_to_bone.clone(),
                 name: m.name.clone(),
@@ -1073,6 +1140,7 @@ impl Renderer {
     }
 
     pub fn render(&mut self, scene: &Scene, camera: &Camera, target: &wgpu::TextureView) {
+        self.animate_materials();
         let aspect = self.width as f32 / self.height as f32;
         let view_proj = camera.proj(aspect) * camera.view();
         let frustum = Frustum::from_matrix(view_proj);

@@ -57,6 +57,58 @@ pub struct MaterialDesc {
     pub tint: Vec3,
     /// Distant LOD geometry: clipped where full-detail cells are loaded.
     pub lod: bool,
+    /// The shader property's controllers (scrolling, pulsing).
+    pub anim: Option<std::sync::Arc<MaterialAnim>>,
+}
+
+/// A material's animated values: its shader property's float and colour
+/// controllers, sampled over time.
+#[derive(Debug, Clone)]
+pub struct MaterialAnim {
+    pub channels: Vec<MaterialChannel>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MaterialChannel {
+    pub timing: nif::anim::Timing,
+    pub keys: nif::anim::ValueKeys,
+    /// The controlled variable ([`nif::anim::ShaderController::variable`]).
+    pub variable: u32,
+    pub color: bool,
+    pub lighting: bool,
+}
+
+/// The active controllers chained from a shader property's `controller`.
+fn material_anim(nif: &Nif, mut controller: Ref) -> Option<std::sync::Arc<MaterialAnim>> {
+    let mut channels = Vec::new();
+    let mut seen = 0;
+    while let Some(Block::ShaderController(c)) = nif.get(controller) {
+        seen += 1;
+        if seen > 64 {
+            break;
+        }
+        controller = c.next;
+        if !c.timing.active() {
+            continue;
+        }
+        let Some(Block::ValueInterpolator(i)) = nif.get(c.interpolator) else {
+            continue;
+        };
+        let Some(Block::ValueKeys(k)) = nif.get(i.data) else {
+            continue;
+        };
+        if k.keys.is_empty() {
+            continue;
+        }
+        channels.push(MaterialChannel {
+            timing: c.timing,
+            keys: k.clone(),
+            variable: c.variable,
+            color: c.color,
+            lighting: c.lighting,
+        });
+    }
+    (!channels.is_empty()).then(|| std::sync::Arc::new(MaterialAnim { channels }))
 }
 
 impl Default for MaterialDesc {
@@ -83,6 +135,7 @@ impl Default for MaterialDesc {
             shader_type: 0,
             tint: Vec3::ONE,
             lod: false,
+            anim: None,
         }
     }
 }
@@ -591,6 +644,7 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
             m.double_sided = s.flags2 & sf2::DOUBLE_SIDED != 0;
             m.z_write = s.flags2 & sf2::ZBUFFER_WRITE != 0;
             m.z_test = s.flags1 & sf1::ZBUFFER_TEST != 0;
+            m.anim = material_anim(nif, s.net.controller);
         }
         Some(Block::EffectShader(s)) => {
             m.kind = ShaderKind::Effect;
@@ -606,6 +660,7 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
             m.double_sided = s.flags2 & sf2::DOUBLE_SIDED != 0;
             m.z_write = s.flags2 & sf2::ZBUFFER_WRITE != 0;
             m.z_test = s.flags1 & sf1::ZBUFFER_TEST != 0;
+            m.anim = material_anim(nif, s.net.controller);
         }
         _ => {}
     }

@@ -479,6 +479,11 @@ game each piece unlocks.
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
+- Shader property controllers (`BSEffectShaderProperty*` / `BSLightingShaderProperty*`
+  float and colour controllers with `NiFloatData` / `NiPosData` keys): UV scrolling and
+  scaling, emissive colour and multiple, alpha and falloff animate on every material
+  that has them (clouds, auroras, waterfalls, magic), by the controllers' frequency,
+  phase and loop / reverse / clamp cycles
 - Objects' behaviour graphs (`BSBehaviorGraphExtraData`: traps, pressure plates, levers,
   portcullises, puzzle pillars): the project runs on the model's own nodes, the nodes it
   moves (those with transform controllers) drawn apart and their collision carried;
@@ -574,7 +579,9 @@ game each piece unlocks.
    - Engine variables and events still missing: combat, first person;
      INFO speaker / listener idles; listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes
-   - Later / separate: NiTransformController (non-sequence), texture / material controllers
+   - Later / separate: NiTransformController (non-sequence), texture flip controllers
+     (`NiFlipController`), shader controllers inside sequences (only the
+     property's own controller chain runs, on the global clock)
 2. **Story Manager** (core and fifteen events done; see Done)
    - Events waiting on their systems: crafting, level / skill increases, item
      removal (dropping now exists; the event's data needs a source), spell cast, shouts, bribe /

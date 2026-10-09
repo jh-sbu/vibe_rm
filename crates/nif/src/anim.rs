@@ -1,5 +1,7 @@
 //! Keyframe animation blocks: controller managers, controller sequences and
-//! transform interpolators / data (doors, water wheels, animated statics).
+//! transform interpolators / data (doors, water wheels, animated statics);
+//! shader property controllers with their float and colour keys (scrolling,
+//! pulsing effects: clouds, auroras, magic).
 
 use glam::{Quat, Vec3};
 
@@ -54,15 +56,139 @@ pub struct TransformData {
     pub scales: Vec<(f32, f32)>,
 }
 
-fn time_controller(r: &mut Reader) -> Result<()> {
-    r.block_ref()?; // next controller
-    r.u16()?; // flags
-    r.f32()?; // frequency
-    r.f32()?; // phase
-    r.f32()?; // start
-    r.f32()?; // stop
+/// `NiTimeController`'s timing: how a controller maps the time onto its keys.
+#[derive(Debug, Clone, Copy)]
+pub struct Timing {
+    /// Flags: bits 1-2 the cycle type (0 loop, 1 reverse, 2 clamp), bit 3 active.
+    pub flags: u16,
+    pub frequency: f32,
+    pub phase: f32,
+    pub start: f32,
+    pub stop: f32,
+}
+
+impl Timing {
+    /// The key time at `t` seconds: scaled by the frequency, shifted by the
+    /// phase and cycled over start..stop by the cycle type.
+    pub fn key_time(&self, t: f32) -> f32 {
+        let len = self.stop - self.start;
+        let k = t * self.frequency + self.phase;
+        if len <= 0.0 {
+            return self.start;
+        }
+        match (self.flags >> 1) & 3 {
+            // Reverse: back and forth.
+            1 => {
+                let c = k.rem_euclid(2.0 * len);
+                self.start + if c > len { 2.0 * len - c } else { c }
+            }
+            2 => k.clamp(self.start, self.stop),
+            _ => self.start + (k - self.start).rem_euclid(len),
+        }
+    }
+
+    pub fn active(&self) -> bool {
+        self.flags & 8 != 0
+    }
+}
+
+/// A shader property's float or colour controller (`BSEffectShaderProperty*`,
+/// `BSLightingShaderProperty*`).
+#[derive(Debug, Clone)]
+pub struct ShaderController {
+    pub next: Ref,
+    pub timing: Timing,
+    pub interpolator: Ref,
+    /// The float (or colour) it drives: for effect shaders 0 emissive
+    /// multiple, 1..4 falloff start / stop angle, start / stop opacity, 5
+    /// alpha, 6 U offset, 7 U scale, 8 V offset, 9 V scale; colour 0 the
+    /// emissive colour.
+    pub variable: u32,
+    /// A colour controller (else a float one).
+    pub color: bool,
+    /// On a lighting shader (else an effect shader).
+    pub lighting: bool,
+}
+
+/// `NiFloatInterpolator` / `NiPoint3Interpolator`: a pose value and its keys.
+#[derive(Debug, Clone)]
+pub struct ValueInterpolator {
+    pub value: Vec3,
+    pub data: Ref,
+}
+
+/// `NiFloatData` / `NiPosData` keys (floats in x).
+#[derive(Debug, Clone, Default)]
+pub struct ValueKeys {
+    pub keys: Vec<(f32, Vec3)>,
+}
+
+impl ValueKeys {
+    pub fn sample(&self, t: f32) -> Option<Vec3> {
+        lerp_keys(&self.keys, t, |a, b, f| a.lerp(b, f))
+    }
+}
+
+fn timing(r: &mut Reader) -> Result<(Ref, Timing)> {
+    let next = r.block_ref()?;
+    let flags = r.u16()?;
+    let frequency = r.f32()?;
+    let phase = r.f32()?;
+    let start = r.f32()?;
+    let stop = r.f32()?;
     r.i32()?; // target
+    Ok((
+        next,
+        Timing {
+            flags,
+            frequency,
+            phase,
+            start,
+            stop,
+        },
+    ))
+}
+
+fn time_controller(r: &mut Reader) -> Result<()> {
+    timing(r)?;
     Ok(())
+}
+
+pub(crate) fn shader_controller(
+    r: &mut Reader,
+    color: bool,
+    lighting: bool,
+) -> Result<ShaderController> {
+    let (next, timing) = timing(r)?;
+    let interpolator = r.block_ref()?;
+    let variable = r.u32()?;
+    Ok(ShaderController {
+        next,
+        timing,
+        interpolator,
+        variable,
+        color,
+        lighting,
+    })
+}
+
+pub(crate) fn value_interpolator(r: &mut Reader, point3: bool) -> Result<ValueInterpolator> {
+    let value = if point3 {
+        r.vec3()?
+    } else {
+        Vec3::new(r.f32()?, 0.0, 0.0)
+    };
+    let data = r.block_ref()?;
+    Ok(ValueInterpolator { value, data })
+}
+
+pub(crate) fn value_keys(r: &mut Reader, point3: bool) -> Result<ValueKeys> {
+    let keys = if point3 {
+        key_group(r, |r| r.vec3())?
+    } else {
+        key_group(r, |r| Ok(Vec3::new(r.f32()?, 0.0, 0.0)))?
+    };
+    Ok(ValueKeys { keys })
 }
 
 pub(crate) fn controller_manager(r: &mut Reader) -> Result<Vec<Ref>> {
