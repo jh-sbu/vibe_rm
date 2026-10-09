@@ -381,8 +381,28 @@ pub fn call(
         }
         ("objectreference", "setanimationvariablebool")
         | ("objectreference", "setanimationvariablefloat")
-        | ("objectreference", "setanimationvariableint")
-        | ("objectreference", "setopen")
+        | ("objectreference", "setanimationvariableint") => {
+            if let Some(r) = me {
+                let value = match arg(1) {
+                    Value::Bool(b) => b as i32 as f32,
+                    Value::Int(i) => i as f32,
+                    v => v.as_float(),
+                };
+                e.set_anim_variable(r, &str_arg(args, 0), value);
+            }
+            none()
+        }
+        ("objectreference", "getanimationvariablebool")
+        | ("objectreference", "getanimationvariablefloat")
+        | ("objectreference", "getanimationvariableint") => {
+            let x = me.map_or(0.0, |r| e.anim_variable(r, &str_arg(args, 0)));
+            v(match func {
+                "getanimationvariablebool" => Value::Bool(x != 0.0),
+                "getanimationvariableint" => Value::Int(x as i32),
+                _ => Value::Float(x),
+            })
+        }
+        ("objectreference", "setopen")
         | ("objectreference", "setdestroyed")
         | ("objectreference", "setactorowner")
         | ("objectreference", "setfactionowner")

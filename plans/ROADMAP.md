@@ -492,15 +492,15 @@ game each piece unlocks.
   wait for `reset`, portcullises for `opening` / `closing`); objects' graphs play
   their `SoundPlay.<sound>` events. Parts the graphs move hit as keyframed traps
   (swinging blades and battering rams deal their damage); user-controlled and
-  ping-pong clips; references' scripts keep their base's properties they don't set
+  ping-pong clips; references' scripts keep their base's properties they don't set;
+  `Get/SetAnimationVariableBool/Int/Float` on actors' and objects' graphs
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
    - Pose modifiers: twist, keyframe bones; foot IK gains from `hkbFootIkControlsModifier`,
      locking planted feet; creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
-   - Objects' behaviour graphs (see Done): graph state kept across loads,
-     `SetAnimationVariable*`
+   - Objects' behaviour graphs (see Done): graph state kept across loads
    - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
    - `Direction` (strafing), sprinting; character properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the

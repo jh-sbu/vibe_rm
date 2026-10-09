@@ -340,6 +340,15 @@ impl Engine {
         out
     }
 
+    /// The behaviour graph object `r` runs, if any.
+    pub(crate) fn object_graph_mut(
+        &mut self,
+        r: FormId,
+    ) -> Option<&mut crate::world::behavior::GraphAnim> {
+        let (key, i) = self.find_animated(r)?;
+        Some(&mut self.cells.get_mut(&key)?.animated[i].graph.as_mut()?.anim)
+    }
+
     /// Whether `r` is an object running a behaviour graph.
     pub(crate) fn object_has_graph(&self, r: FormId) -> bool {
         self.find_animated(r)
