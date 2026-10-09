@@ -30,7 +30,17 @@ pub struct QuestState {
     pub done: HashSet<u16>,
     pub objectives_displayed: HashSet<i32>,
     pub objectives_completed: HashSet<i32>,
+    pub objectives_failed: HashSet<i32>,
+    /// Displayed objectives' text, with the aliases as they were then.
+    pub objective_texts: HashMap<i32, String>,
     pub completed: bool,
+    pub failed: bool,
+    /// Log entries added by its stages, oldest first.
+    pub log: Vec<String>,
+    /// Its quest added banner was shown.
+    pub announced: bool,
+    /// When the journal last changed for it (`ScriptState::journal_seq`).
+    pub journal_seq: u64,
     /// Reference alias fills: alias id -> reference.
     pub aliases: HashMap<u32, FormId>,
     /// The Story Manager event that started it.
@@ -41,7 +51,6 @@ pub struct QuestState {
 #[derive(Default)]
 pub struct ScriptState {
     pub notifications: Vec<(String, f64)>,
-    pub message_boxes: Vec<String>,
     pub timers: Vec<Timer>,
     pub quests: HashMap<FormId, QuestState>,
     pub globals: HashMap<FormId, f32>,
@@ -73,6 +82,8 @@ pub struct ScriptState {
     /// Set when a native changed enable state; the engine re-syncs visibility.
     pub visibility_dirty: bool,
     pub warned: HashSet<String>,
+    /// Bumped whenever a quest's journal entry changes.
+    pub journal_seq: u64,
 }
 
 impl ScriptState {

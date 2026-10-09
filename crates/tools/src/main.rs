@@ -3689,6 +3689,197 @@ fn main() -> Result<()> {
                 println!("  {k}: {v}");
             }
         }
+        Some("messages") => {
+            // messages <data dir> [message]: one message's flags, title, text and
+            // buttons, or counts over all messages: flags, buttons, conditions on
+            // buttons and the tags their text uses (`<Alias=...>`, `%.0f`, `[...]`).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let mut lo = esp::LoadOrder::load(data, &names)?;
+            let vfs = vfs::Vfs::new(data, &names);
+            lo.load_strings("english", |p| vfs.read(p));
+            let show = |id: esp::FormId| -> Option<()> {
+                let r = lo.get(id)?;
+                let flags = r.get(b"DNAM").filter(|d| d.len() >= 4).map_or(0, |d| d[0]);
+                let text = |t: &[u8; 4]| r.get(t).map(|d| lo.lstring(&r, d)).unwrap_or_default();
+                println!(
+                    "{} {id} flags {flags:#x} time {:?} title {:?} quest {}",
+                    r.editor_id().unwrap_or_default(),
+                    r.get(b"TNAM")
+                        .map(|d| u32::from_le_bytes(d[..4].try_into().unwrap())),
+                    text(b"FULL"),
+                    r.get(b"QNAM")
+                        .map(|d| r.fid(esp::FormId(u32::from_le_bytes(d[..4].try_into().unwrap()))))
+                        .and_then(|q| lo.get(q))
+                        .and_then(|q| q.editor_id())
+                        .unwrap_or_default()
+                );
+                println!("  {:?}", text(b"DESC"));
+                let mut conds = 0;
+                for sr in r.subrecords() {
+                    match &sr.tag.0 {
+                        b"ITXT" => {
+                            println!("  button {:?}", lo.lstring(&r, sr.data));
+                            conds = 0;
+                        }
+                        b"CTDA" => {
+                            conds += 1;
+                            println!("    condition {conds}");
+                        }
+                        _ => {}
+                    }
+                }
+                Some(())
+            };
+            if let Some(name) = args.get(2) {
+                let id = match u32::from_str_radix(name, 16) {
+                    Ok(v) if name.len() == 8 => esp::FormId(v),
+                    _ => lo.find_editor_id(name).context("editor id not found")?,
+                };
+                show(id).context("no record")?;
+                return Ok(());
+            }
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            let mut n = 0;
+            for &id in lo.ids_of_type(b"MESG") {
+                let Some(r) = lo.get(id) else { continue };
+                n += 1;
+                let mut c = |k: String| *counts.entry(k).or_default() += 1;
+                let flags = r.get(b"DNAM").filter(|d| d.len() >= 4).map_or(0, |d| d[0]);
+                c(format!("flags {flags:#x}"));
+                let buttons = r.subrecords().filter(|s| &s.tag.0 == b"ITXT").count();
+                c(format!("buttons {}", buttons.min(5)));
+                if r.subrecords().any(|s| &s.tag.0 == b"CTDA") {
+                    c("conditions on buttons".into());
+                }
+                c(format!("owner quest {}", r.get(b"QNAM").is_some()));
+                let desc = r
+                    .get(b"DESC")
+                    .map(|d| lo.lstring(&r, d))
+                    .unwrap_or_default();
+                // GREP=<text>: also show the messages whose text has it.
+                if std::env::var("GREP").is_ok_and(|g| desc.contains(&g)) {
+                    show(id);
+                }
+                let mut rest = desc.as_str();
+                while let Some(i) = rest.find(['<', '%', '[']) {
+                    rest = &rest[i..];
+                    let end = match rest.as_bytes()[0] {
+                        b'<' => rest.find('>').map(|e| rest[..e].find('=').unwrap_or(e)),
+                        b'[' => rest.find(']').map(|e| e + 1),
+                        _ => rest[1..]
+                            .find(|ch: char| ch.is_ascii_alphabetic() || ch == '%')
+                            .map(|e| e + 2),
+                    }
+                    .unwrap_or(1)
+                    .min(24);
+                    c(format!("tag {}", &rest[..end]));
+                    rest = &rest[end.max(1)..];
+                }
+            }
+            println!("{n} messages");
+            for (k, v) in counts {
+                println!("  {k}: {v}");
+            }
+        }
+        Some("quest-log") => {
+            // quest-log <data dir> [quest]: one quest's type, stages with their log
+            // entries (flags, conditions, text) and objectives, or counts over all
+            // quests: types, log entry flags, objective flags and the tags of their
+            // text (`<Alias=...>`, `<Alias.ShortName=...>`, `<Global=...>`).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let mut lo = esp::LoadOrder::load(data, &names)?;
+            let vfs = vfs::Vfs::new(data, &names);
+            lo.load_strings("english", |p| vfs.read(p));
+            let one = args.get(2).map(|name| match u32::from_str_radix(name, 16) {
+                Ok(v) if name.len() == 8 => Some(esp::FormId(v)),
+                _ => lo.find_editor_id(name),
+            });
+            let ids: Vec<esp::FormId> = match one {
+                Some(id) => vec![id.context("editor id not found")?],
+                None => lo.ids_of_type(b"QUST").to_vec(),
+            };
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            for id in ids {
+                let Some(r) = lo.get(id) else { continue };
+                let mut c = |k: String| *counts.entry(k).or_default() += 1;
+                let qtype = r.get(b"DNAM").filter(|d| d.len() >= 12).map_or(0, |d| d[8]);
+                c(format!("quest type {qtype}"));
+                let tags = |text: &str, c: &mut dyn FnMut(String)| {
+                    let mut rest = text;
+                    while let Some(i) = rest.find('<') {
+                        rest = &rest[i..];
+                        let end = rest.find(['=', '>']).unwrap_or(rest.len()).min(32);
+                        c(format!("tag {}", &rest[..end]));
+                        rest = &rest[1..];
+                    }
+                };
+                let full = r
+                    .get(b"FULL")
+                    .map(|d| lo.lstring(&r, d))
+                    .unwrap_or_default();
+                tags(&full, &mut c);
+                if one.is_some() {
+                    println!(
+                        "{} {id} type {qtype} {full:?}",
+                        r.editor_id().unwrap_or_default()
+                    );
+                }
+                let mut conds = 0;
+                let mut in_objectives = false;
+                for sr in r.subrecords() {
+                    match &sr.tag.0 {
+                        b"INDX" => {
+                            in_objectives = false;
+                            if one.is_some() {
+                                println!("  stage {} flags {:#x}", sr.u16(0), sr.u8(2));
+                            }
+                        }
+                        b"QSDT" => {
+                            c(format!("log entry flags {:#x}", sr.u8(0)));
+                            conds = 0;
+                            if one.is_some() {
+                                println!("    entry flags {:#x}", sr.u8(0));
+                            }
+                        }
+                        b"CTDA" => conds += 1,
+                        b"CNAM" if !in_objectives => {
+                            let text = lo.lstring(&r, sr.data);
+                            tags(&text, &mut c);
+                            c(format!("log entry with conditions: {}", conds > 0));
+                            if one.is_some() {
+                                println!("      ({conds} conditions) {text:?}");
+                            }
+                        }
+                        b"QOBJ" => {
+                            in_objectives = true;
+                            if one.is_some() {
+                                println!("  objective {}", sr.u16(0));
+                            }
+                        }
+                        b"FNAM" if in_objectives && sr.data.len() >= 4 => {
+                            c(format!("objective flags {:#x}", sr.u32(0)));
+                        }
+                        b"NNAM" if in_objectives => {
+                            let text = lo.lstring(&r, sr.data);
+                            tags(&text, &mut c);
+                            if one.is_some() {
+                                println!("    {text:?}");
+                            }
+                        }
+                        b"QSTA" => c("objective targets".into()),
+                        b"ALST" | b"ALLS" => in_objectives = false,
+                        _ => {}
+                    }
+                }
+            }
+            if one.is_none() {
+                for (k, v) in counts {
+                    println!("  {k}: {v}");
+                }
+            }
+        }
         _ => bail!("usage: vrm-tool <bsa-list|bsa-extract|bsa-verify> ..."),
     }
     Ok(())

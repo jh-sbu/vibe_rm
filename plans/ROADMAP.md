@@ -502,6 +502,21 @@ game each piece unlocks.
   takes it back); after the pick-up the actor leaves by the tree's instant exit
   (`IsExitingInstant`: `OffsetCarryLogStart`) and carries the logs on its shoulder
   until it puts them down
+- Messages and the journal: `Message.Show` puts up a message box (title, text,
+  the buttons whose conditions pass, `sOk` when none) and its script waits for
+  the button, resuming with its index (`Vm::signal_with`); `Debug.MessageBox`;
+  other messages as notifications. Text tags: `%.0f` from `Show`'s arguments,
+  `<Alias=...>` with `.ShortName` and pronoun forms, `<Global=...>`, `[Control]`
+  as the key bound to it. Help messages (`ShowAsHelpMessage`: shown for a while,
+  coming back after an interval up to a number of times, until the player does
+  the input event; `ResetHelpMessage`). Quest stages apply each log entry whose
+  conditions pass (its text into the journal, completing or failing the quest,
+  and only its fragment runs). Objectives displayed, completed and failed
+  (`CompleteAllObjectives`, `FailAllObjectives`...); "Quest added" /
+  "completed" / "failed" banners. A journal (J): quests with a type, the
+  miscellaneous ones together, finished ones apart, log and objectives. Console
+  `sqs`, `sqo`, `journal`, `msgbox`, `inputevent`; vrm-tool `messages`,
+  `quest-log`. Open questions: `known_gaps/messages.md`
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -573,8 +588,11 @@ game each piece unlocks.
      player throwing what they hold, traps (pushback, disarming, trip wires; see
      `known_gaps/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
-6. **UI**: inventory (categories, equipping, item details), map, bars, quest journal
-   and objectives, help messages (`ShowAsHelpMessage`); support for the game's .swf assets still undecided
+6. **UI**: inventory (categories, equipping, item details), map, bars, quest
+   targets on a compass and the map (`QSTA`), tracking quests (`SetActive`);
+   menu mode pausing the world (`IsInMenuMode`, `Wait` vs `WaitMenuMode`);
+   support for the game's .swf assets still undecided (journal, message boxes
+   and help messages: see Done)
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);
      NPCs only use pre-baked heads

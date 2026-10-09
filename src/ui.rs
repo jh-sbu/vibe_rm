@@ -34,6 +34,8 @@ pub struct Ui {
     pub fps: u32,
     /// The item menu was shown last frame (the key that opened it doesn't close it).
     menu_shown: bool,
+    /// The quest the journal shows (`FormId::NULL`: the miscellaneous ones).
+    journal_selected: Option<FormId>,
 }
 
 impl Ui {
@@ -52,6 +54,7 @@ impl Ui {
             show_debug: false,
             fps: 0,
             menu_shown: false,
+            journal_selected: None,
         }
     }
 
@@ -77,6 +80,9 @@ impl Ui {
                 self.item_menu(&ctx, engine);
             }
             self.menu_shown = engine.menu.is_some();
+            if !engine.messages.boxes.is_empty() {
+                self.message_box(&ctx, engine);
+            }
             if self.console.open {
                 self.console_window(&ctx, &mut commands);
             }
@@ -251,6 +257,52 @@ impl Ui {
                 col,
             );
         }
+        // Help messages (bottom centre) and quest banners (top centre).
+        if let Some(help) = engine.current_help().filter(|_| !engine.menu_up()) {
+            let galley = painter.layout(
+                help.to_owned(),
+                FontId::proportional(18.0),
+                Color32::from_gray(240),
+                (rect.width() * 0.6).max(200.0),
+            );
+            let pos = Pos2::new(
+                c.x - galley.size().x / 2.0,
+                rect.bottom() - 110.0 - galley.size().y,
+            );
+            painter.galley(pos + egui::vec2(1.5, 1.5), galley.clone(), Color32::BLACK);
+            painter.galley(pos, galley, Color32::WHITE);
+        }
+        if let Some(b) = engine
+            .messages
+            .banners
+            .first()
+            .filter(|_| !engine.menu_up())
+        {
+            let age = (now - b.at) as f32;
+            let total = crate::messages::BANNER_SECONDS as f32;
+            let alpha = (age / 0.4).min((total - age) / 0.6).clamp(0.0, 1.0);
+            let a = (alpha * 255.0) as u8;
+            for (text, size, y, shade) in [
+                (&b.title, 26.0, 84.0, 245u8),
+                (&b.subtitle, 16.0, 114.0, 200u8),
+            ] {
+                let p = Pos2::new(c.x, rect.top() + y);
+                painter.text(
+                    p + egui::vec2(1.5, 1.5),
+                    Align2::CENTER_CENTER,
+                    text,
+                    FontId::proportional(size),
+                    Color32::from_rgba_unmultiplied(0, 0, 0, a),
+                );
+                painter.text(
+                    p,
+                    Align2::CENTER_CENTER,
+                    text,
+                    FontId::proportional(size),
+                    Color32::from_rgba_unmultiplied(shade, shade, shade, a),
+                );
+            }
+        }
         // Compass-ish heading and location at the top.
         let heading =
             (engine.camera.yaw.to_degrees().rem_euclid(360.0) / 45.0).round() as usize % 8;
@@ -285,6 +337,155 @@ impl Ui {
                 Color32::YELLOW,
             );
         }
+    }
+
+    /// The message box in front: its text and buttons.
+    fn message_box(&mut self, ctx: &egui::Context, engine: &mut Engine) {
+        let Some(b) = engine.messages.boxes.front() else {
+            return;
+        };
+        let mut pressed = None;
+        let width = ctx.content_rect().width().min(560.0);
+        egui::Window::new(if b.title.is_empty() { " " } else { &b.title })
+            .id(egui::Id::new("message_box"))
+            .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .resizable(false)
+            .collapsible(false)
+            .title_bar(!b.title.is_empty())
+            .default_width(width)
+            .show(ctx, |ui| {
+                ui.set_max_width(width);
+                ui.label(egui::RichText::new(b.text.replace("\r\n", "\n")).size(17.0));
+                ui.add_space(8.0);
+                ui.horizontal_wrapped(|ui| {
+                    for (i, label) in &b.buttons {
+                        if ui.button(egui::RichText::new(label).size(16.0)).clicked() {
+                            pressed = Some(*i);
+                        }
+                    }
+                });
+            });
+        // A lone button also answers to Enter.
+        if b.buttons.len() == 1 && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+            pressed = Some(b.buttons[0].0);
+        }
+        if let Some(i) = pressed {
+            engine.choose_message_button(i);
+        }
+    }
+
+    /// The quest journal: the quests on the left (active, then finished; the
+    /// miscellaneous ones as one), the chosen one's log and objectives.
+    fn journal(&mut self, ctx: &egui::Context, engine: &mut Engine) {
+        use crate::journal::{ObjectiveState, QUEST_TYPE_MISC};
+        let quests = engine.journal();
+        let misc_name = engine
+            .gmst_string("sMiscQuestName")
+            .unwrap_or_else(|| "Miscellaneous".into());
+        let misc: Vec<(String, ObjectiveState)> = quests
+            .iter()
+            .filter(|j| j.kind == QUEST_TYPE_MISC && !j.completed && !j.failed)
+            .flat_map(|j| {
+                j.objectives
+                    .iter()
+                    .filter(|o| o.2 == ObjectiveState::Shown)
+                    .map(|o| (o.1.clone(), o.2))
+            })
+            .collect();
+        let active: Vec<_> = quests
+            .iter()
+            .filter(|j| j.kind != QUEST_TYPE_MISC && !j.completed && !j.failed)
+            .collect();
+        let done: Vec<_> = quests.iter().filter(|j| j.completed || j.failed).collect();
+        let rect = ctx.content_rect();
+        let mut selected = self
+            .journal_selected
+            .or_else(|| active.first().map(|j| j.id));
+        let size = egui::vec2(
+            (rect.width() - 80.0).min(900.0),
+            (rect.height() - 120.0).min(560.0),
+        );
+        let list_width = 240.0;
+        egui::Window::new("Journal")
+            .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .resizable(false)
+            .collapsible(false)
+            .fixed_size(size)
+            .show(ctx, |ui| {
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(list_width);
+                        ui.set_min_height(size.y);
+                        egui::ScrollArea::vertical()
+                            .id_salt("journal_quests")
+                            .show(ui, |ui| {
+                                for j in &active {
+                                    ui.selectable_value(&mut selected, Some(j.id), &j.name);
+                                }
+                                if !misc.is_empty() {
+                                    ui.selectable_value(
+                                        &mut selected,
+                                        Some(FormId::NULL),
+                                        &misc_name,
+                                    );
+                                }
+                                if !done.is_empty() {
+                                    ui.separator();
+                                    ui.label(egui::RichText::new("Completed").weak());
+                                    for j in &done {
+                                        ui.selectable_value(&mut selected, Some(j.id), &j.name);
+                                    }
+                                }
+                                if quests.is_empty() {
+                                    ui.label(egui::RichText::new("No quests.").weak());
+                                }
+                            });
+                    });
+                    ui.separator();
+                    ui.vertical(|ui| {
+                        ui.set_width(size.x - list_width - 24.0);
+                        egui::ScrollArea::vertical()
+                            .id_salt("journal_quest")
+                            .show(ui, |ui| {
+                                let objective =
+                                    |ui: &mut egui::Ui, text: &str, st: ObjectiveState| {
+                                        let t = egui::RichText::new(text).size(16.0);
+                                        ui.label(match st {
+                                            ObjectiveState::Shown => t,
+                                            ObjectiveState::Completed => t.weak().strikethrough(),
+                                            ObjectiveState::Failed => t
+                                                .color(Color32::from_rgb(200, 80, 80))
+                                                .strikethrough(),
+                                        });
+                                    };
+                                if selected == Some(FormId::NULL) {
+                                    ui.heading(&misc_name);
+                                    for (text, st) in &misc {
+                                        objective(ui, text, *st);
+                                    }
+                                    return;
+                                }
+                                let Some(j) = quests.iter().find(|j| Some(j.id) == selected) else {
+                                    return;
+                                };
+                                ui.heading(&j.name);
+                                // The latest entry, then the earlier ones.
+                                for (i, entry) in j.log.iter().rev().enumerate() {
+                                    let t = egui::RichText::new(entry).size(16.0);
+                                    ui.label(if i == 0 { t } else { t.weak() });
+                                    ui.add_space(6.0);
+                                }
+                                if !j.objectives.is_empty() {
+                                    ui.separator();
+                                    for (_, text, st) in j.objectives.iter().rev() {
+                                        objective(ui, text, *st);
+                                    }
+                                }
+                            });
+                    });
+                });
+            });
+        self.journal_selected = selected;
     }
 
     fn dialogue(
@@ -485,6 +686,15 @@ impl Ui {
             ui.label(format!("{} items, weight {weight:.1}", items.len()));
         };
         let container = match menu {
+            Menu::Journal => {
+                let close =
+                    close || (self.menu_shown && ctx.input(|i| i.key_pressed(egui::Key::J)));
+                self.journal(ctx, engine);
+                if close {
+                    engine.menu = None;
+                }
+                return;
+            }
             Menu::Lockpick => {
                 self.lockpick_view(ctx, engine);
                 return;

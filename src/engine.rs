@@ -163,6 +163,8 @@ pub struct Engine {
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     pub lockpick: Option<crate::locks::Lockpick>,
+    /// Message boxes, help messages and banners.
+    pub messages: crate::messages::Messages,
     /// References by the enable parent they follow (`XESP`).
     enable_children: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
     /// Each NPC's first placed reference (unique actors' references).
@@ -280,6 +282,7 @@ impl Engine {
             conversation: None,
             menu: None,
             lockpick: None,
+            messages: Default::default(),
             barks: Default::default(),
             scenes: Default::default(),
             story: Default::default(),
@@ -2620,15 +2623,6 @@ impl Engine {
         0.0
     }
 
-    pub fn message_text(&self, m: FormId) -> String {
-        let Some(rec) = self.lo.get(m) else {
-            return String::new();
-        };
-        rec.get(b"DESC")
-            .map(|d| self.lo.lstring(&rec, d))
-            .unwrap_or_default()
-    }
-
     /// The inventory of a reference; a container's starts out with its contents.
     pub fn inventory_mut(&mut self, r: FormId) -> &mut crate::world::inventory::Inventory {
         if !self.inventories.contains_key(&r) {
@@ -3035,13 +3029,15 @@ impl Engine {
         self.stop_quest_scenes(q);
     }
 
-    /// Set a quest stage: record it and run the stage's fragment.
+    /// Set a quest stage: record it, add its log entries and run the fragments
+    /// of those whose conditions pass (all the stage's when it has no entries).
     fn run_stage(&mut self, q: FormId, stage: u16) {
         {
             let st = self.scripts.quests.entry(q).or_default();
             st.stage = stage;
             st.done.insert(stage);
         }
+        let entries = self.add_log_entries(q, stage);
         let Some(rec) = self.lo.get(q) else { return };
         let Some(vmad) = crate::script::vmad::parse(&rec) else {
             return;
@@ -3052,7 +3048,12 @@ impl Engine {
         let mut vm = std::mem::take(&mut self.vm);
         {
             let mut host = crate::script::EngineHost { engine: self };
-            for f in vmad.fragments.iter().filter(|f| f.stage == stage) {
+            for f in vmad.fragments.iter().filter(|f| {
+                f.stage == stage
+                    && entries
+                        .as_ref()
+                        .is_none_or(|e| e.contains(&(f.log_entry as usize)))
+            }) {
                 vm.call_method(
                     &mut host,
                     papyrus::ObjectId::Form(q.0),
@@ -3159,6 +3160,7 @@ impl Engine {
         }
         // Drop notifications older than a few seconds.
         self.scripts.notifications.retain(|(_, t)| now - t < 6.0);
+        self.update_messages();
     }
 
     /// Start every quest flagged "start game enabled".

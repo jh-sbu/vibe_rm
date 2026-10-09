@@ -24,6 +24,8 @@ pub enum Menu {
     Pickpocket(FormId),
     /// Asking whether to serve the jail sentence (`sServeSentenceQuestion`).
     ServeSentence,
+    /// The quest journal.
+    Journal,
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,

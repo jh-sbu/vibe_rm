@@ -39,9 +39,7 @@ pub fn call(
             none()
         }
         ("debug", "messagebox") => {
-            let s = arg(0).to_string();
-            e.scripts.notify(s.clone());
-            e.scripts.message_boxes.push(s);
+            e.debug_message_box(arg(0).to_string());
             none()
         }
         ("debug", "trace") | ("debug", "traceuser") | ("debug", "tracestack") => {
@@ -886,33 +884,56 @@ pub fn call(
         },
         ("quest", "completequest") => {
             if let Some(q) = me {
-                let s = e.scripts.quests.entry(q).or_default();
-                s.completed = true;
+                e.complete_quest(q);
             }
             none()
         }
+        // Missing arguments take Papyrus's defaults (abDisplayed / abCompleted /
+        // abFailed true, abForce false).
         ("quest", "setobjectivedisplayed") => {
             if let Some(q) = me {
-                let obj = arg(0).as_int();
-                let text = e.objective_text(q, obj);
-                let s = e.scripts.quests.entry(q).or_default();
-                if s.objectives_displayed.insert(obj) && !text.is_empty() {
-                    e.scripts.notify(text);
-                }
+                let shown = args.get(1).is_none_or(|a| a.as_bool());
+                let force = args.get(2).is_some_and(|a| a.as_bool());
+                e.set_objective_displayed(q, arg(0).as_int(), shown, force);
             }
             none()
         }
         ("quest", "setobjectivecompleted") => {
             if let Some(q) = me {
-                e.scripts
-                    .quests
-                    .entry(q)
-                    .or_default()
-                    .objectives_completed
-                    .insert(arg(0).as_int());
+                let done = args.get(1).is_none_or(|a| a.as_bool());
+                e.set_objective_completed(q, arg(0).as_int(), done);
             }
             none()
         }
+        ("quest", "setobjectivefailed") => {
+            if let Some(q) = me {
+                let failed = args.get(1).is_none_or(|a| a.as_bool());
+                e.set_objective_failed(q, arg(0).as_int(), failed);
+            }
+            none()
+        }
+        ("quest", "completeallobjectives") | ("quest", "failallobjectives") => {
+            if let Some(q) = me {
+                let shown: Vec<i32> = e
+                    .scripts
+                    .quests
+                    .get(&q)
+                    .map(|s| s.objectives_displayed.iter().copied().collect())
+                    .unwrap_or_default();
+                for o in shown {
+                    if func == "completeallobjectives" {
+                        e.set_objective_completed(q, o, true);
+                    } else {
+                        e.set_objective_failed(q, o, true);
+                    }
+                }
+            }
+            none()
+        }
+        ("quest", "isobjectivefailed") => v(Value::Bool(
+            me.and_then(|q| e.scripts.quests.get(&q))
+                .is_some_and(|s| s.objectives_failed.contains(&arg(0).as_int())),
+        )),
         ("quest", "isobjectivedisplayed") => v(Value::Bool(
             me.and_then(|q| e.scripts.quests.get(&q))
                 .is_some_and(|s| s.objectives_displayed.contains(&arg(0).as_int())),
@@ -1024,14 +1045,30 @@ pub fn call(
         // ------------------------------------------------------------- Misc
         ("sound", "play") => v(Value::Int(0)),
         ("sound", "playandwait") => none(),
-        ("message", "show") => {
-            if let Some(m) = me {
-                let text = e.message_text(m);
-                if !text.is_empty() {
-                    e.scripts.notify(text);
-                }
+        // A message box waits for the player's button.
+        ("message", "show") => match me {
+            Some(m) => {
+                let floats: Vec<f32> = args.iter().map(|a| a.as_float()).collect();
+                e.show_message(m, &floats)
             }
-            v(Value::Int(0))
+            None => v(Value::Int(0)),
+        },
+        // (asEvent, afDuration, afInterval, aiMaxTimes)
+        ("message", "showashelpmessage") => {
+            if let Some(m) = me {
+                e.show_help_message(
+                    m,
+                    &str_arg(args, 0),
+                    arg(1).as_float(),
+                    arg(2).as_float(),
+                    arg(3).as_int(),
+                );
+            }
+            none()
+        }
+        ("message", "resethelpmessage") => {
+            e.reset_help_message(&str_arg(args, 0));
+            none()
         }
         ("formlist", "getsize") => v(Value::Int(
             me.map(|f| e.formlist(f).len() as i32).unwrap_or(0),

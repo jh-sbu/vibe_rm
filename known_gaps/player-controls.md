@@ -19,7 +19,8 @@ Implemented in `src/player.rs` (`DisabledControls`), checked in
   input enable layers do).
 - **Fighting.** Disabling it stops attacks, bashes, blocking and shooting but
   doesn't put a drawn weapon away; whether the game sheathes it is unconfirmed.
-- **`aiDisablePOVType`, camera switching and journal tabs** are stored but do
-  nothing: there's no third-person camera or journal yet.
+- **`aiDisablePOVType` and camera switching** are stored but do nothing:
+  there's no third-person camera yet. Journal disables opening the journal (J);
+  it has no tabs to disable.
 - **Menus** only covers the inventory (Tab); the console stays open to the
   developer.
