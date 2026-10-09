@@ -76,6 +76,9 @@ pub struct Options {
     pub player_at_camera: bool,
     /// Console commands to run once the world is set up.
     pub console: Vec<String>,
+    /// While waiting, leave message boxes up (they pause the world) instead of
+    /// pressing their last button after two seconds.
+    pub hold_boxes: bool,
 }
 
 fn parse_args() -> Result<Options> {
@@ -132,6 +135,7 @@ fn parse_args() -> Result<Options> {
             "--console" => o.console.push(val()?),
             "--watch-angle" => o.watch_angle = val()?.parse::<f32>()?.to_radians(),
             "--player-at-camera" => o.player_at_camera = true,
+            "--hold-boxes" => o.hold_boxes = true,
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v

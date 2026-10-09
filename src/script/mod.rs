@@ -75,7 +75,11 @@ pub struct ScriptState {
     pub pending_quest_inits: Vec<FormId>,
     /// Objects that already received OnInit.
     pub initialized: HashSet<ObjectId>,
+    /// Real seconds the game ran, menu mode left out (timers, `Wait`).
     pub real_time: f64,
+    /// Real seconds since launch, menu mode included (`WaitMenuMode`,
+    /// `GetCurrentRealTime`).
+    pub wall_time: f64,
     /// Bumped whenever a quest starts or stops or an alias fill changes (actors'
     /// alias packages follow).
     pub alias_gen: u64,

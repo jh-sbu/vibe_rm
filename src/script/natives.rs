@@ -53,7 +53,9 @@ pub fn call(
         ("debug", "getplatformname") => v(Value::str("PC")),
         ("debug", "getversionnumber") => v(Value::str("1.6.1170.0")),
         // ---------------------------------------------------------- Utility
-        ("utility", "wait") | ("utility", "waitmenumode") => NativeResult::Wait(arg(0).as_float()),
+        // `Wait` stops in menu mode (the game clock does), `WaitMenuMode` goes on.
+        ("utility", "wait") => NativeResult::Wait(arg(0).as_float()),
+        ("utility", "waitmenumode") => NativeResult::WaitMenuMode(arg(0).as_float()),
         ("utility", "waitgametime") => NativeResult::Wait(arg(0).as_float() * 3600.0 / 20.0),
         ("utility", "randomint") => {
             let (a, b) = (arg(0).as_int(), arg(1).as_int());
@@ -66,8 +68,8 @@ pub fn call(
             v(Value::Float(a + (b - a) * t))
         }
         ("utility", "getcurrentgametime") => v(Value::Float(e.game_days())),
-        ("utility", "getcurrentrealtime") => v(Value::Float(e.scripts.real_time as f32)),
-        ("utility", "ismenumode") => v(Value::Bool(false)),
+        ("utility", "getcurrentrealtime") => v(Value::Float(e.scripts.wall_time as f32)),
+        ("utility", "isinmenumode") => v(Value::Bool(e.in_menu_mode())),
         ("utility", "isingamemode") => v(Value::Bool(true)),
         // ------------------------------------------------------------- Game
         ("game", "getplayergrabbedref") => {
@@ -83,7 +85,7 @@ pub fn call(
                 None => none(),
             }
         }
-        ("game", "getrealhoursspent") => v(Value::Float(e.scripts.real_time as f32 / 3600.0)),
+        ("game", "getrealhoursspent") => v(Value::Float(e.scripts.wall_time as f32 / 3600.0)),
         ("game", "isplayersleeping") | ("game", "isfasttravelenabled") => v(Value::Bool(false)),
         // Player controls: each flag given true disables (enables) that control,
         // in the order of `DisabledControls::flags_mut`. Missing arguments take
