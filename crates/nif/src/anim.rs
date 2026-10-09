@@ -129,7 +129,7 @@ impl ValueKeys {
     }
 }
 
-fn timing(r: &mut Reader) -> Result<(Ref, Timing)> {
+pub(crate) fn timing(r: &mut Reader) -> Result<(Ref, Timing)> {
     let next = r.block_ref()?;
     let flags = r.u16()?;
     let frequency = r.f32()?;
@@ -180,6 +180,12 @@ pub(crate) fn value_interpolator(r: &mut Reader, point3: bool) -> Result<ValueIn
     };
     let data = r.block_ref()?;
     Ok(ValueInterpolator { value, data })
+}
+
+/// `NiBoolData`: byte keys, as 0 / 1 in x.
+pub(crate) fn bool_keys(r: &mut Reader) -> Result<ValueKeys> {
+    let keys = key_group(r, |r| Ok(Vec3::new(r.u8()? as f32, 0.0, 0.0)))?;
+    Ok(ValueKeys { keys })
 }
 
 pub(crate) fn value_keys(r: &mut Reader, point3: bool) -> Result<ValueKeys> {
