@@ -11,6 +11,7 @@ use wgpu::util::DeviceExt;
 use super::{GpuMaterial, InstanceData};
 
 /// A decal placed in a cell.
+#[derive(Clone)]
 pub struct GpuDecal {
     pub ref_id: u32,
     pub hidden: bool,
