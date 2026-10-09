@@ -493,7 +493,10 @@ game each piece unlocks.
   their `SoundPlay.<sound>` events. Parts the graphs move hit as keyframed traps
   (swinging blades and battering rams deal their damage); user-controlled and
   ping-pong clips; references' scripts keep their base's properties they don't set;
-  `Get/SetAnimationVariableBool/Int/Float` on actors' and objects' graphs
+  `Get/SetAnimationVariableBool/Int/Float` on actors' and objects' graphs. NPCs
+  getting into furniture activate it (`OnActivate`): a wood pile's
+  `CarryFurnitureScript` hears the pick-up's `AddToInventory` and gives the actor
+  its firewood
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -505,9 +508,10 @@ game each piece unlocks.
    - `Direction` (strafing), sprinting; character properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
      way events are chosen
-   - Carry furniture (`CarryFurnitureScript`: wood piles): carrying the load away
-     (`OffsetCarryLogStart`) and putting it down by inventory (`GetItemCount`); for now
-     the graph is reset (`IdleForceDefaultState`) after the pick-up
+   - Carry furniture (`CarryFurnitureScript`: wood piles; the pick-up puts the load in
+     the actor's inventory, see Done): carrying it away (`OffsetCarryLogStart`) and
+     putting it down (`RemoveFromInventory`); for now the graph is reset
+     (`IdleForceDefaultState`) after the pick-up
    - Delayed state changes (`FLAG_DELAY_STATE_CHANGE`), blending effects' event /
      self-transition modes (`vrm-tool hkb-flags` counts and lists them)
    - Engine variables and events still missing: combat, first person;

@@ -340,6 +340,8 @@ pub struct ActorRuntime {
     pub(crate) sounds: Vec<String>,
     /// Every event the graph raised this frame, for scripts (`OnAnimationEvent`).
     pub(crate) graph_events: Vec<String>,
+    /// Furniture it began getting into this frame: it activates it.
+    pub(crate) activated: Option<FormId>,
     /// The footstep set of what it wears, and its footstep events (lowercase) the
     /// graph raised this frame.
     pub(crate) footstep_set: Option<Arc<crate::world::footsteps::FootstepSet>>,
@@ -471,6 +473,7 @@ impl ActorRuntime {
             drawn: false,
             sounds: Vec::new(),
             graph_events: Vec::new(),
+            activated: None,
             footstep_set: None,
             footsteps: Vec::new(),
             objects: Vec::new(),
@@ -778,6 +781,9 @@ impl ActorRuntime {
         );
         self.out_of_furniture = false;
         self.state = State::Enter(seat.clips.enter_time());
+        if !seat.furniture.is_null() {
+            self.activated = Some(seat.furniture);
+        }
     }
 
     /// Have the graph leave the seat by the first exit it takes.
@@ -2790,6 +2796,7 @@ impl Engine {
         let mut equip = Vec::new();
         let mut sounds: Vec<(String, Vec3)> = Vec::new();
         let mut anim_events: Vec<(FormId, Vec<String>)> = Vec::new();
+        let mut activations: Vec<(FormId, FormId)> = Vec::new();
         let mut steps: Vec<crate::footsteps::Step> = Vec::new();
         let listener = self.camera.position;
         let mut swings: Vec<combat::Swing> = Vec::new();
@@ -2974,6 +2981,9 @@ impl Engine {
                 if !a.graph_events.is_empty() {
                     anim_events.push((a.ref_id, std::mem::take(&mut a.graph_events)));
                 }
+                if let Some(f) = a.activated.take() {
+                    activations.push((f, a.ref_id));
+                }
                 if let Some(set) = a
                     .footstep_set
                     .as_ref()
@@ -3039,6 +3049,12 @@ impl Engine {
         }
         for (r, events) in anim_events {
             self.raise_anim_events(r, &events);
+        }
+        // Getting into furniture activates it (`CarryFurnitureScript` registers
+        // for the user's animation events then).
+        for (furniture, actor) in activations {
+            log::debug!("{actor} activates {furniture}");
+            self.activate_ref(furniture, Some(actor), false);
         }
         for step in &steps {
             self.play_footstep(step);

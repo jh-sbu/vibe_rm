@@ -3408,7 +3408,9 @@ fn main() -> Result<()> {
             let want = args[2].to_ascii_lowercase().into_bytes();
             let n: usize = args.get(3).and_then(|n| n.parse().ok()).unwrap_or(20);
             let mut shown = 0;
-            for tag in [b"NPC_", b"ACHR", b"REFR", b"QUST", b"ACTI", b"MGEF"] {
+            for tag in [
+                b"NPC_", b"ACHR", b"REFR", b"QUST", b"ACTI", b"MGEF", b"FURN", b"CONT", b"DOOR",
+            ] {
                 for &id in lo.ids_of_type(tag) {
                     let Some(rec) = lo.get(id) else { continue };
                     let Some(vmad) = rec.get(b"VMAD") else {
