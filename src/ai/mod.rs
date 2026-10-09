@@ -518,6 +518,11 @@ impl ActorRuntime {
         self.pos + Vec3::Z * self.lift
     }
 
+    /// Standing height, scaled.
+    pub fn height(&self) -> f32 {
+        self.skeleton.height * self.scale
+    }
+
     pub fn transform(&self) -> Mat4 {
         Mat4::from_scale_rotation_translation(
             Vec3::splat(self.scale),
@@ -2529,6 +2534,17 @@ impl Engine {
             .is_some_and(|p| p.id == package)
     }
 
+    /// Where a loaded actor's (or the player's) feet stand and how tall it is.
+    pub fn actor_body(&self, r: FormId) -> Option<(Vec3, f32)> {
+        if r == PLAYER_REF {
+            let h = self.physics.player_half_height + self.physics.player_radius;
+            return Some((self.player.position - Vec3::Z * h, 2.0 * h));
+        }
+        let key = self.actor_cells.get(&r)?;
+        let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;
+        Some((a.feet(), a.height()))
+    }
+
     pub fn actor_pose(&self, r: FormId) -> Option<(Vec3, f32)> {
         let key = self.actor_cells.get(&r)?;
         let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;
@@ -3097,7 +3113,8 @@ impl Engine {
                         attacker: a.ref_id,
                         target: c.target,
                         attack: c.attack,
-                        pos: a.pos,
+                        pos: a.feet(),
+                        chest: a.feet().z + a.height() * 0.75,
                         heading: a.heading,
                     });
                 }
