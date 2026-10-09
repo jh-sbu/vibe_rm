@@ -367,16 +367,25 @@ impl Engine {
         }
     }
 
+    /// A sound descriptor (SNDR, or a SOUN naming one), cached.
+    pub(crate) fn sound_desc(&mut self, sound: FormId) -> Option<crate::world::sound::SoundDesc> {
+        self.sound_descs
+            .entry(sound)
+            .or_insert_with(|| {
+                let d = crate::world::sound::descriptor(&self.lo, &self.vfs, sound);
+                if d.is_none() {
+                    log::debug!("no sound descriptor {sound}");
+                }
+                d
+            })
+            .clone()
+    }
+
     /// Play a sound descriptor (SNDR, or a SOUN naming one) at a point.
     pub fn play_sound(&mut self, sound: FormId, at: Vec3) {
-        let desc = self.sound_descs.entry(sound).or_insert_with(|| {
-            let d = crate::world::sound::descriptor(&self.lo, &self.vfs, sound);
-            if d.is_none() {
-                log::debug!("no sound descriptor {sound}");
-            }
-            d
-        });
-        let Some(desc) = desc.clone() else { return };
+        let Some(desc) = self.sound_desc(sound) else {
+            return;
+        };
         let i = (self.rand() % desc.files.len() as u64) as usize;
         if let Some(a) = self.audio.as_mut() {
             a.play(
@@ -2026,6 +2035,7 @@ impl Engine {
         self.update_activations();
         self.update_scenes();
         self.update_weather(dt * time_scale / 3600.0);
+        self.update_weather_sounds(dt);
         if let Some(env) = self.sky_environment() {
             self.scene.env = env;
         }

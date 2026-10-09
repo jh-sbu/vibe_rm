@@ -12,8 +12,9 @@
 //! whose weathers don't include the current one brings in one of the new
 //! region's, and every few hours the region's weather is rolled again. An
 //! override (`abOverride`) holds the weather until `ReleaseOverride`. Indoors
-//! the weather goes on but no sky shows. Open questions:
-//! `known_gaps/weather.md`.
+//! the weather goes on but no sky shows. Outdoors the weathers' sounds
+//! (SNAM: rain, wind...) loop at their share of the transition, and thunder
+//! rolls now and then while it's on. Open questions: `known_gaps/weather.md`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -28,6 +29,9 @@ use crate::world::weather::{self, Climate, SkyState, Weather};
 /// Game hours between rolls of a region's weather (made up: the game's
 /// interval isn't in its data).
 const ROLL_HOURS: (f32, f32) = (2.0, 6.0);
+/// Seconds between thunder at a weather's thunder frequency 0 and 255 (made
+/// up: the storms have 246, Storm Call's weather 15).
+const THUNDER_SECONDS: (f32, f32) = (5.0, 30.0);
 /// A weather's trans delta is the thousandths of a transition per game minute
 /// (made up: 125, the usual value, takes 8 game minutes).
 const TRANS_DELTA_PER_MINUTE: f32 = 1.0 / 1000.0;
@@ -56,6 +60,10 @@ pub struct WeatherState {
     textures: Option<(FormId, Option<FormId>)>,
     /// Under the sky (an exterior).
     pub outdoors: bool,
+    /// Weather sounds looping: (weather, sound, voice).
+    loops: Vec<(FormId, FormId, crate::audio::VoiceId)>,
+    /// Seconds until the next thunder, while there is thunder.
+    thunder_in: Option<f32>,
 }
 
 /// The regional weather list of a region record, if it has one: (priority,
@@ -143,10 +151,125 @@ impl Engine {
         self.sync_sky_textures();
     }
 
-    /// Going indoors: the weather goes on unseen.
+    /// Going indoors: the weather goes on unseen and unheard.
     pub(crate) fn weather_indoors(&mut self) {
         self.weather.outdoors = false;
         self.renderer.sky.disable();
+        self.update_weather_sounds(0.0);
+    }
+
+    /// The weathers with their shares of the transition: the outgoing one's,
+    /// then the current one's.
+    fn weather_weights(&self) -> Vec<(Arc<Weather>, f32)> {
+        let ws = &self.weather;
+        let mut out = Vec::new();
+        if let Some(o) = &ws.outgoing {
+            out.push((o.clone(), 1.0 - ws.pct));
+        }
+        if let Some(c) = &ws.current {
+            out.push((c.clone(), if ws.outgoing.is_some() { ws.pct } else { 1.0 }));
+        }
+        out
+    }
+
+    /// Loop the weathers' sounds outdoors at their shares of the transition,
+    /// and roll thunder now and then while a weather's thunder is on.
+    pub(crate) fn update_weather_sounds(&mut self, dt: f32) {
+        let outdoors = self.weather.outdoors && matches!(self.location, Location::Exterior { .. });
+        let weights = if outdoors {
+            self.weather_weights()
+        } else {
+            Vec::new()
+        };
+        let mut wanted: Vec<(FormId, FormId, f32)> = Vec::new();
+        let mut thunder: Option<(Arc<Weather>, f32)> = None;
+        let pct = self.weather.pct;
+        for (i, (w, weight)) in weights.iter().enumerate() {
+            let outgoing = i == 0 && weights.len() == 2;
+            for &(snd, ty) in &w.sounds {
+                if ty == weather::sound_type::THUNDER {
+                    let (begin, end, _) = w.thunder;
+                    let on = if outgoing {
+                        pct < end as f32 / 255.0
+                    } else {
+                        pct >= begin as f32 / 255.0
+                    };
+                    if on {
+                        thunder = Some((w.clone(), *weight));
+                    }
+                } else {
+                    wanted.push((w.id, snd, *weight));
+                }
+            }
+        }
+        let Some(audio) = self.audio.as_ref() else {
+            return;
+        };
+        // Voices stopped from elsewhere (all sounds stop on a cell change) start again.
+        self.weather.loops.retain(|&(w, s, v)| {
+            let keep = wanted.iter().any(|e| e.0 == w && e.1 == s) && audio.is_playing(v);
+            if !keep {
+                audio.stop(v);
+            }
+            keep
+        });
+        for (w, snd, weight) in wanted {
+            let Some(desc) = self.sound_desc(snd) else {
+                continue;
+            };
+            let volume = desc.volume * weight;
+            let playing = self
+                .weather
+                .loops
+                .iter()
+                .find(|e| e.0 == w && e.1 == snd)
+                .map(|e| e.2);
+            let audio = self.audio.as_mut().unwrap();
+            match playing {
+                Some(v) => audio.set_volume(v, volume),
+                None => {
+                    if let Some(v) =
+                        audio.play(&self.vfs, &desc.files[0], volume, true, None, 0.0, 0.0)
+                    {
+                        log::debug!("weather sound {snd} looping: {}", desc.files[0]);
+                        self.weather.loops.push((w, snd, v));
+                    }
+                }
+            }
+        }
+        let Some((w, weight)) = thunder else {
+            self.weather.thunder_in = None;
+            return;
+        };
+        let mean = THUNDER_SECONDS.0
+            + (THUNDER_SECONDS.1 - THUNDER_SECONDS.0) * w.thunder.2 as f32 / 255.0;
+        let roll = (self.rand() % 1000) as f32 / 1000.0;
+        let next = mean * (0.5 + roll);
+        // Coming into thunder, the first roll waits.
+        let Some(t) = self.weather.thunder_in.map(|t| t - dt) else {
+            self.weather.thunder_in = Some(next);
+            return;
+        };
+        if t > 0.0 {
+            self.weather.thunder_in = Some(t);
+            return;
+        }
+        self.weather.thunder_in = Some(next);
+        let sounds: Vec<FormId> = w
+            .sounds
+            .iter()
+            .filter(|s| s.1 == weather::sound_type::THUNDER)
+            .map(|s| s.0)
+            .collect();
+        let pick = sounds[(self.rand() % sounds.len() as u64) as usize];
+        let Some(desc) = self.sound_desc(pick) else {
+            return;
+        };
+        let file = &desc.files[(self.rand() % desc.files.len() as u64) as usize];
+        log::debug!("thunder: {file}");
+        if let Some(a) = self.audio.as_mut() {
+            a.play(&self.vfs, file, desc.volume * weight, false, None, 0.0, 0.0);
+        }
     }
 
     /// The player's cell's regional weathers. When `change` and the current

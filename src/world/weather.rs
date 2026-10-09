@@ -57,6 +57,15 @@ pub struct Weather {
     pub trans_delta: u8,
     /// Precipitation's begin fade in and end fade out (0..255 of a transition).
     pub precip_fade: (u8, u8),
+    /// Thunder and lightning's begin fade in, end fade out and frequency.
+    pub thunder: (u8, u8, u8),
+    /// SNAM: (sound, [`sound_type`]).
+    pub sounds: Vec<(FormId, u32)>,
+}
+
+/// SNAM sound types (CommonLibSSE's `TESWeather::SoundType`).
+pub mod sound_type {
+    pub const THUNDER: u32 = 3;
 }
 
 /// Weather DATA flags (CommonLibSSE's `TESWeather::WeatherDataFlag`).
@@ -146,6 +155,8 @@ impl Weather {
             flags: 0,
             trans_delta: 0,
             precip_fade: (0, 0),
+            thunder: (0, 0, 0),
+            sounds: Vec::new(),
         }
     }
 }
@@ -187,7 +198,11 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
                 w.wind_speed = sr.u8(0) as f32 / 255.0;
                 w.trans_delta = sr.u8(3);
                 w.precip_fade = (sr.u8(6), sr.u8(7));
+                w.thunder = (sr.u8(8), sr.u8(9), sr.u8(10));
                 w.flags = sr.u8(11);
+            }
+            b"SNAM" if sr.data.len() >= 8 => {
+                w.sounds.push((rec.fid(sr.form_id(0)), sr.u32(4)));
             }
             b"IMSP" => {
                 for (t, f) in w

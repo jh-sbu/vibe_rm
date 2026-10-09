@@ -35,6 +35,8 @@ struct Mixer {
     listener_right: Vec3,
     rate: u32,
     master: f32,
+    /// Voices stopped while their clips were still decoding.
+    cancelled: Vec<VoiceId>,
 }
 
 impl Mixer {
@@ -120,6 +122,7 @@ impl Audio {
             listener_right: Vec3::X,
             rate: 44100,
             master: 0.8,
+            cancelled: Vec::new(),
         }));
         let mut rate = 44100;
         let stream = (|| -> Option<cpal::Stream> {
@@ -268,6 +271,10 @@ impl Audio {
             max_dist,
         } = p;
         if let Ok(mut m) = self.mixer.lock() {
+            if let Some(i) = m.cancelled.iter().position(|&c| c == id) {
+                m.cancelled.swap_remove(i);
+                return;
+            }
             m.voices.push(Voice {
                 id,
                 clip,
@@ -281,9 +288,35 @@ impl Audio {
         }
     }
 
+    /// Stop a voice, or keep it from starting if its clip is still decoding.
     pub fn stop(&self, id: VoiceId) {
+        let waiting = self
+            .waiting
+            .values()
+            .flatten()
+            .any(|p| matches!(p, Pending::Play { id: i, .. } if *i == id));
         if let Ok(mut m) = self.mixer.lock() {
             m.voices.retain(|v| v.id != id);
+            if waiting {
+                m.cancelled.push(id);
+            }
+        }
+    }
+
+    /// Change a voice's volume (a waiting one's too).
+    pub fn set_volume(&mut self, id: VoiceId, volume: f32) {
+        for p in self.waiting.values_mut().flatten() {
+            let Pending::Play {
+                id: i, volume: v, ..
+            } = p;
+            if *i == id {
+                *v = volume;
+            }
+        }
+        if let Ok(mut m) = self.mixer.lock() {
+            for v in m.voices.iter_mut().filter(|v| v.id == id) {
+                v.volume = volume;
+            }
         }
     }
 

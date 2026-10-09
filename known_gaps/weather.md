@@ -51,8 +51,19 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   game started indoors has no weather until it goes out
   (`GetCurrentWeather` returns None). Sky mode is 1 indoors, 3 outdoors; no
   worldspace is treated as sky dome only.
-- **Not drawn or heard:** rain and snow (precipitation particles, MNAM),
-  lightning and thunder, weather sounds (SNAM: precipitation, wind,
-  thunder), auroras, sky statics, the weather's volumetric lighting, sun
+- **Weather sounds.** SNAM entries are (sound, type): default (29 in the
+  vanilla weathers), precipitation (9), wind (4), thunder (7). Outdoors,
+  every sound but thunder loops at its weather's share of the transition
+  (the rain loop's own condition is `IsInInterior == 0`; descriptors'
+  conditions aren't evaluated). Thunder plays one of the weather's thunder
+  sounds, not positioned, while it's on: the incoming weather's once the
+  transition passes the DATA lightning begin fade in (byte 8), the outgoing
+  one's until its end fade out (byte 9). Its frequency (byte 10) is taken as
+  the time between rolls, 5 seconds at 0 to 30 at 255, each between half and
+  one and a half times that (made up: the storms have 246, Storm Call's
+  `FXMagicStormRain` 15, so lower is taken as more often). The first roll
+  after thunder comes on waits.
+- **Not drawn:** rain and snow (precipitation particles, MNAM), lightning
+  flashes, auroras, sky statics, the weather's volumetric lighting, sun
   glare and damage, cloud speeds (RNAM / QNAM) and wind direction.
 - **Not in saves**: the weather state lives only in memory.
