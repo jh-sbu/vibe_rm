@@ -670,6 +670,7 @@ impl Engine {
         for k in keys {
             self.remember_actors(k);
             self.unload_loose(k);
+            self.park_object_graphs(k);
         }
         self.scene.cells.clear();
         self.scene.lights.clear();
@@ -1456,15 +1457,15 @@ impl Engine {
         self.remember_actors(key);
         self.scene.cells.remove(&key);
         self.unload_loose(key);
+        self.park_object_graphs(key);
+        // References' scripts stay attached, keeping their state (and `OnInit`
+        // having run) for when the cell loads again.
         if let Some(rt) = self.cells.remove(&key) {
             self.physics.remove_colliders(&rt.colliders);
             if let Some(a) = &self.audio {
                 for (_, v) in &rt.sounds {
                     a.stop(*v);
                 }
-            }
-            for r in rt.refs.iter().chain(rt.triggers.iter().map(|t| &t.ref_id)) {
-                self.vm.detach_all(papyrus::ObjectId::Form(r.0));
             }
             self.nav.unload(&rt.navmeshes);
             self.furniture.remove_cell(key);

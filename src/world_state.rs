@@ -1,7 +1,8 @@
 //! What happens to references stays when their cells unload and load again (in
 //! memory; what saves will write out): dead actors stay dead, lying where they
 //! fell, in the pose they lay in; the hurt come back as hurt as they left, less
-//! what they would have healed meanwhile; doors the player opened stay open.
+//! what they would have healed meanwhile; doors the player opened stay open;
+//! objects' behaviour graphs carry on in the state they were left in.
 //! Taken items, locks, enable state and inventories are kept elsewhere
 //! (`ScriptState`, `Engine::inventories`).
 
@@ -27,6 +28,9 @@ pub struct WorldState {
     pub moved: HashMap<FormId, Moved>,
     /// Loose objects' breakable joints that broke (by index in the model).
     pub broken_joints: HashMap<FormId, Vec<usize>>,
+    /// Objects' behaviour graphs as their cells unloaded (a lever pulled, a
+    /// portcullis raised, a rockfall come down), to run on from there.
+    pub object_graphs: HashMap<FormId, crate::world::behavior::GraphAnim>,
 }
 
 /// Where a moved reference is now.

@@ -508,7 +508,8 @@ game each piece unlocks.
    - Pose modifiers: twist, keyframe bones; foot IK gains from `hkbFootIkControlsModifier`,
      locking planted feet; creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
-   - Objects' behaviour graphs (see Done): graph state kept across loads
+   - Objects' behaviour graphs (see Done): graph state in saves (kept across
+     cell loads in memory)
    - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
    - `Direction` (strafing), sprinting; character properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
