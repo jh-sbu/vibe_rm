@@ -15,6 +15,7 @@ mod dialogue;
 mod engine;
 mod footsteps;
 mod grab;
+mod imagespace;
 mod items;
 mod journal;
 mod locations;

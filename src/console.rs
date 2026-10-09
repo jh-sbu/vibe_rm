@@ -61,6 +61,8 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sqo / journal [open]  displayed objectives / the journal's quests (or open it)".into(),
             "msgbox [button]       the message box up / press one of its buttons".into(),
             "menumode / closemenu  whether the game is paused by a menu / close the menu".into(),
+            "imod <imad> [strength] / rimod <imad> / imods  apply / remove an image space modifier, list them".into(),
+            "fadeout <0|1> [secs] / shake [strength] [secs]  fade the game out (1) or in (0) / shake the camera".into(),
             "inputevent <event>    as if the player did an input event (Activate, Jump...)".into(),
             "[ref.]getav <av> / setav, modav, forceav, damageav, restoreav <av> <n>   actor values".into(),
             "pblock                toggle the player's guard (right mouse button)".into(),
@@ -231,6 +233,31 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 }
             }
             if out.is_empty() { vec!["the journal is empty".into()] } else { out }
+        }
+        "imod" | "rimod" => {
+            let Some(m) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec![format!("usage: {cmd} <image space modifier>")];
+            };
+            if lower == "imod" {
+                let s = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+                engine.apply_imod(m, s);
+            } else {
+                engine.remove_imod(m);
+            }
+            engine.describe_imagespace()
+        }
+        "imods" => engine.describe_imagespace(),
+        "fadeout" => {
+            let out = args.first().is_none_or(|a| *a != "0");
+            let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+            engine.fade_out_game(out, true, 0.0, secs);
+            vec![]
+        }
+        "shake" => {
+            let strength = args.first().and_then(|s| s.parse().ok()).unwrap_or(0.5);
+            let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+            engine.shake_camera(None, strength, secs);
+            vec![]
         }
         "menumode" => vec![format!(
             "menu mode {} (menu {:?}, {} message boxes), hour {:.3}, real time {:.2}s, menus included {:.2}s",

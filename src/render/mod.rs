@@ -2,6 +2,7 @@
 
 pub mod dds;
 pub mod model;
+pub mod post;
 pub mod shadow;
 pub mod sky;
 pub mod terrain;
@@ -264,6 +265,8 @@ pub struct Scene {
     pub lod_clip: [f32; 4],
     pub lights: Vec<GpuLight>,
     pub env: Environment,
+    /// Image space effects over the frame.
+    pub post: post::PostEffect,
 }
 
 impl Scene {
@@ -471,6 +474,7 @@ pub struct Renderer {
     pub(crate) black: Arc<GpuTexture>,
     pub stats: FrameStats,
     pub sky: sky::SkyRenderer,
+    post: post::PostPass,
     /// Seconds since start, for animated effects.
     pub time: f32,
 }
@@ -650,6 +654,7 @@ impl Renderer {
         );
         let terrain = terrain::TerrainPipeline::new(&device, &frame_bgl, color_format);
         let sky = sky::SkyRenderer::new(&device, color_format);
+        let post = post::PostPass::new(&device, color_format);
         let water = water::WaterPipeline::new(&device, &frame_bgl, color_format);
         let shadow_instance_buf = Self::make_vbuf(
             &device,
@@ -659,6 +664,7 @@ impl Renderer {
         Renderer {
             water,
             sky,
+            post,
             time: 0.0,
             terrain,
             device,
@@ -1292,12 +1298,15 @@ impl Renderer {
         if shadowed {
             self.shadow_passes(&mut enc, scene, &cascades, update, &shadow_skin);
         }
+        // With image space effects the frame goes through the post pass.
+        let pre_post = (!scene.post.is_neutral())
+            .then(|| self.post.target(&self.device, self.width, self.height));
         {
             let c = env.clear_color;
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
+                    view: pre_post.as_ref().unwrap_or(target),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1397,6 +1406,9 @@ impl Renderer {
             }
             drop(draw);
             stats.draws += skinned_draws;
+        }
+        if pre_post.is_some() {
+            self.post.draw(&self.queue, &mut enc, target, &scene.post);
         }
         self.queue.submit([enc.finish()]);
         self.stats = stats;
