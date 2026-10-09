@@ -49,8 +49,9 @@ places impacts isn't public.
   actor's meshes (its INI's skin decal counts aren't in the data). Here a
   wound is a decal box like the world's: from 10 units in front of where
   the blow lands along the blow, at least 24 units deep, held in the frame
-  of the bone whose length passes nearest its middle (equipment, camera,
-  look-at and pauldron nodes left out) and moved with the pose (and the
+  of the bone whose length passes nearest its middle (the skeleton's
+  root, equipment, camera, look-at and pauldron nodes, fingers and toes
+  left out) and moved with the pose (and the
   ragdoll) each frame, drawn by the same screen-space pass. So whatever is
   in the box takes it, as the world's decals do: a blade passing through
   it, or a limb swinging into it, shows blood for that moment. Blocked

@@ -2238,7 +2238,9 @@ impl Engine {
             None => (4.0, 120.0),
         };
         let dir = self.camera.forward();
-        let Some((_, Some(r))) = self.physics.raycast(self.camera.position, dir, reach) else {
+        let ray = self.physics.raycast(self.camera.position, dir, reach);
+        log::debug!("player attack: {ray:?} within {reach:.0}");
+        let Some((_, Some(r))) = ray else {
             return;
         };
         let actor = self.created(r).map_or_else(
