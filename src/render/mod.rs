@@ -378,8 +378,22 @@ impl ActorInstance {
         )
     }
 
-    pub fn center(&self) -> Vec3 {
-        self.transform.transform_point3(Vec3::new(0.0, 0.0, 64.0))
+    /// Its bounding sphere in the world: about its bones as posed (a ragdoll
+    /// lies wherever it fell, its transform staying where it died), reaching
+    /// past them for the flesh and gear on them, and at least `radius`.
+    pub fn bounds(&self) -> (Vec3, f32) {
+        if self.pose.is_empty() {
+            let center = self.transform.transform_point3(Vec3::new(0.0, 0.0, 64.0));
+            return (center, self.radius);
+        }
+        let (lo, hi) = self.pose.iter().fold(
+            (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)),
+            |(lo, hi), m| (lo.min(m.w_axis.truncate()), hi.max(m.w_axis.truncate())),
+        );
+        let scale = self.transform.x_axis.truncate().length();
+        let center = self.transform.transform_point3((lo + hi) * 0.5);
+        let reach = ((hi - lo).length() * 0.5 + 40.0) * scale;
+        (center, reach.max(self.radius))
     }
 }
 
@@ -438,10 +452,11 @@ impl Scene {
             }
         }
         for a in self.cells.values().flat_map(|c| c.actors.iter()) {
-            let oc = a.center() - origin;
+            let (center, radius) = a.bounds();
+            let oc = center - origin;
             let t = oc.dot(dir);
             let d2 = oc.length_squared() - t * t;
-            if t > 0.0 && d2 < a.radius * a.radius {
+            if t > 0.0 && d2 < radius * radius {
                 let names: Vec<&str> = a
                     .meshes
                     .iter()
@@ -490,7 +505,8 @@ impl Scene {
             }
         }
         for a in self.cells.values_mut().flat_map(|c| c.actors.iter_mut()) {
-            a.lights = pick_lights(lights, a.center(), a.radius);
+            let (center, radius) = a.bounds();
+            a.lights = pick_lights(lights, center, radius);
         }
         for d in self.cells.values_mut().flat_map(|c| c.decals.iter_mut()) {
             d.lights = pick_lights(lights, d.center, d.radius);
@@ -517,8 +533,9 @@ impl Scene {
             }
         }
         for a in self.cells.values_mut().flat_map(|c| c.actors.iter_mut()) {
-            if touched(a.center(), a.radius, &a.lights) {
-                a.lights = pick_lights(lights, a.center(), a.radius);
+            let (center, radius) = a.bounds();
+            if touched(center, radius, &a.lights) {
+                a.lights = pick_lights(lights, center, radius);
             }
         }
     }
@@ -1607,7 +1624,8 @@ impl Renderer {
         }
         // Rigid attachments of actors (weapons, etc.) go through the static path.
         for actor in scene.cells.values().flat_map(|c| c.actors.iter()) {
-            if !frustum.sphere_visible(actor.center(), actor.radius) {
+            let (center, radius) = actor.bounds();
+            if !frustum.sphere_visible(center, radius) {
                 continue;
             }
             for (model, bone, local) in actor.attachments.iter().chain(&actor.equipment) {
@@ -1643,7 +1661,8 @@ impl Renderer {
         let mut skin_draws: Vec<(&GpuSkinnedPart, u32)> = Vec::new();
         let mut shadow_skin: Vec<(&GpuSkinnedPart, u32, Vec3, f32)> = Vec::new();
         for actor in scene.cells.values().flat_map(|c| c.actors.iter()) {
-            let visible = frustum.sphere_visible(actor.center(), actor.radius);
+            let (center, radius) = actor.bounds();
+            let visible = frustum.sphere_visible(center, radius);
             if !visible {
                 stats.culled += 1;
                 if !shadowed {
@@ -1676,7 +1695,7 @@ impl Renderer {
                     skin_draws.push((part, i));
                 }
                 if part.material.key.blend == BlendMode::Opaque {
-                    shadow_skin.push((part, i, actor.center(), actor.radius));
+                    shadow_skin.push((part, i, center, radius));
                 }
             }
         }
