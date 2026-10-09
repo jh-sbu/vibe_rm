@@ -357,7 +357,9 @@ impl Engine {
     pub fn resolve_form(&self, s: &str) -> Option<FormId> {
         if s.len() == 8
             && let Ok(v) = u32::from_str_radix(s, 16)
-            && (self.lo.locate(FormId(v)).is_some() || self.created(FormId(v)).is_some())
+            && (self.lo.locate(FormId(v)).is_some()
+                || self.created(FormId(v)).is_some()
+                || FormId(v) == PLAYER_REF)
         {
             return Some(FormId(v));
         }
