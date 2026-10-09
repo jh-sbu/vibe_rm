@@ -127,6 +127,20 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   the wind speed (0..1) times 1000 units a second (made up: a storm's 0.2
   slants falling rain by about 17 degrees), the rain's streaks slanted along
   their fall. Nothing else feels the wind yet (trees, grass, clouds).
-- **Not drawn:** auroras, the weather's volumetric lighting, sun glare and
-  damage.
+- **Auroras.** A weather's MODL is its aurora (`Sky\SkyrimAurora*.nif` in
+  the vanilla `_A` weathers; Sovngarde's, Soul Cairn's, Apocrypha's and the
+  eclipse's skies too). DATA flag 0x10 shows it always and 0x20 makes it
+  follow the sun (CommonLibSSE's `kPermAurora`, `kAuroraFollowsSun`).
+  Without 0x10 it shows at night, by the climate's night weight (fading in
+  over sunset, out over sunrise), at its weather's share of the transition.
+  Following the sun is taken as turning about the vertical to the sun's
+  azimuth. The models are domes about 600 units across, skinned to one bone
+  of their own; they're posed at rest and drawn about the camera 300 times
+  larger (made up), unfogged, behind every other blended thing but after
+  the sky's cloud layers (so in front of them; the game draws its sky in a
+  pass of its own, in an order that isn't public). Their shader controllers
+  scroll and pulse them. They're drawn additively as their alpha properties
+  say, and come out much brighter and more solid than in the game: the
+  game's HDR and how the aurora's light is scaled aren't public.
+- **Not drawn:** the weather's volumetric lighting, sun glare and damage.
 - **Not in saves**: the weather state lives only in memory.

@@ -556,7 +556,9 @@ game each piece unlocks.
   weather's wind (DATA direction and range); coming in from the
   precipitation's begin fade in, going out by its end fade out. Sky statics
   (the cloud meshes placed about the world, TNAM) shown only in the weathers
-  listing them, fading with the transition, in the sky statics colour. Console `fw`,
+  listing them, fading with the transition, in the sky statics colour. Auroras
+  (MODL) at night or always (`kPermAurora`), turning with the sun
+  (`kAuroraFollowsSun`). Console `fw`,
   `sw`, `rwo`, `weather`. Open questions: `known_gaps/weather.md`
 
 ## Next
@@ -644,7 +646,8 @@ game each piece unlocks.
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
    radial blur and motion blur (cinematic values and tint: see Done), particles
    (fire, smoke, explosions), distant LOD (BTR/BTO/trees),
-   grass, decals, environment maps; weather: auroras, far sky statics (see `known_gaps/weather.md`)
+   grass, decals, environment maps; weather: far sky statics, auroras' brightness and
+   order against the clouds (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /
    `RequestAutoSave`
