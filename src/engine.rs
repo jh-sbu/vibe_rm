@@ -695,6 +695,7 @@ impl Engine {
         self.scene.lights.clear();
         self.scene.dynamic.clear();
         self.scene.far.clear();
+        self.scene.particles.clear();
         self.projectiles.clear();
         self.cells.clear();
         self.physics.clear();
@@ -1674,6 +1675,63 @@ impl Engine {
         Ok(())
     }
 
+    /// Run the particle systems of the objects near the camera and hand their
+    /// quads to the renderer. A system first seen is run ahead a few
+    /// seconds, so fires are already burning.
+    fn update_particles(&mut self, dt: f32) {
+        use crate::render::particles::{ParticleBatch, ParticleState};
+        const RANGE: f32 = 6000.0;
+        const WARM_UP: f32 = 3.0;
+        let cam = self.camera.position;
+        let forward = self.camera.forward();
+        let right = forward.cross(Vec3::Z).normalize_or(Vec3::X);
+        let up = right.cross(forward);
+        let mut batches = Vec::new();
+        for inst in self
+            .scene
+            .cells
+            .values_mut()
+            .flat_map(|c| c.instances.iter_mut())
+        {
+            if inst.model.particles.is_empty() {
+                continue;
+            }
+            let near = inst.world_center.distance(cam) < RANGE + inst.world_radius;
+            if inst.hidden || !near {
+                inst.particles.clear();
+                continue;
+            }
+            let model_from_world = glam::Mat3::from_mat4(inst.transform).inverse();
+            let fresh = inst.particles.is_empty();
+            if fresh {
+                inst.particles = (0..inst.model.particles.len())
+                    .map(|i| ParticleState::new(inst.ref_id.wrapping_mul(2654435761) ^ i as u32))
+                    .collect();
+            }
+            for (state, sys) in inst.particles.iter_mut().zip(&inst.model.particles) {
+                if fresh {
+                    for _ in 0..(WARM_UP * 20.0) as usize {
+                        state.step(&sys.desc, 0.05, model_from_world);
+                    }
+                }
+                state.step(&sys.desc, dt, model_from_world);
+                if state.count() == 0 {
+                    continue;
+                }
+                let mut vertices = Vec::new();
+                state.quads(&sys.desc, inst.transform, right, up, &mut vertices);
+                if !vertices.is_empty() {
+                    batches.push(ParticleBatch {
+                        material: sys.material.clone(),
+                        vertices,
+                        center: inst.transform.transform_point3(sys.desc.bound_center),
+                    });
+                }
+            }
+        }
+        self.scene.particles = batches;
+    }
+
     /// Draw the worldspace's far references (no collision, scripts or AI).
     fn load_far(&mut self, refs: &[FormId]) {
         let (mut objects, mut lights, mut doors) = (Vec::new(), Vec::new(), Vec::new());
@@ -2074,6 +2132,7 @@ impl Engine {
         }
         let wind = self.wind_now();
         self.renderer.precip.blow(wind, dt);
+        self.update_particles(dt);
         self.update_grab(dt);
         self.physics.step(dt);
         self.update_loose();

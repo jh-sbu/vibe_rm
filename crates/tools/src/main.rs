@@ -188,6 +188,37 @@ fn main() -> Result<()> {
                 println!("{n} = {v}");
             }
         }
+        Some("nif-blocks") => {
+            // nif-blocks <bsa>... -- <block type> [n]: the parsed blocks of a type
+            // across every NIF in the archives (up to n, default 50), with their file.
+            let sep = args.iter().position(|a| a == "--").context("-- <type>")?;
+            let ty = &args[sep + 1];
+            let max: usize = args.get(sep + 2).and_then(|n| n.parse().ok()).unwrap_or(50);
+            let mut shown = 0;
+            'files: for path in &args[1..sep] {
+                let a = bsa::Archive::open(path)?;
+                let mut paths: Vec<String> = a
+                    .paths()
+                    .filter(|p| p.ends_with(".nif"))
+                    .map(str::to_owned)
+                    .collect();
+                paths.sort();
+                for p in paths {
+                    let Ok(n) = nif::Nif::parse(&a.read(&p)?.unwrap()) else {
+                        continue;
+                    };
+                    for (i, b) in n.blocks.iter().enumerate() {
+                        if n.block_type_name(i) == ty {
+                            println!("{p} [{i}] {b:?}");
+                            shown += 1;
+                            if shown >= max {
+                                break 'files;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Some("nif-verify") => {
             // Parse every NIF in the given archives; report blocks whose parse
             // didn't consume exactly the declared size.

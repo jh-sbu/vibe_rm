@@ -182,6 +182,8 @@ pub struct CpuModel {
     pub animated: Vec<AnimatedPart>,
     /// The model's controller sequences ("Open", "Close", "Idle"...).
     pub sequences: Vec<Sequence>,
+    /// Its particle systems.
+    pub particles: Vec<std::sync::Arc<super::particles::ParticleDesc>>,
 }
 
 /// Meshes under an animated node, in that node's space.
@@ -316,6 +318,7 @@ pub fn convert_split(
         .collect();
     let mut w = Walk {
         meshes: Vec::new(),
+        particles: Vec::new(),
         skinned: Vec::new(),
         animated: Vec::new(),
         animated_nodes: &animated_nodes,
@@ -346,15 +349,18 @@ pub fn convert_split(
                     (p.parent * p.rest).transform_point3(p.model.bound_center),
                     p.model.bound_radius,
                 )
-            })),
+            }))
+            .chain(w.particles.iter().map(|p| (p.bound_center, p.bound_radius))),
     );
+    let (meshes, skinned, animated, particles) = (w.meshes, w.skinned, w.animated, w.particles);
     CpuModel {
-        meshes: w.meshes,
-        skinned: w.skinned,
+        meshes,
+        skinned,
         bound_center,
         bound_radius,
-        animated: w.animated,
+        animated,
         sequences,
+        particles,
     }
 }
 
@@ -458,6 +464,7 @@ fn rigidify(
 
 struct Walk<'a> {
     meshes: Vec<CpuMesh>,
+    particles: Vec<std::sync::Arc<super::particles::ParticleDesc>>,
     skinned: Vec<CpuSkinnedMesh>,
     animated: Vec<AnimatedPart>,
     animated_nodes: &'a std::collections::HashSet<&'a str>,
@@ -523,6 +530,7 @@ impl Walk<'_> {
         {
             let mut sub = Walk {
                 meshes: Vec::new(),
+                particles: Vec::new(),
                 skinned: Vec::new(),
                 animated: Vec::new(),
                 animated_nodes: self.animated_nodes,
@@ -542,6 +550,7 @@ impl Walk<'_> {
                 bound_radius,
                 animated: sub.animated,
                 sequences: Vec::new(),
+                particles: sub.particles,
             };
             self.animated.push(AnimatedPart {
                 node: av.net.name.clone(),
@@ -557,6 +566,11 @@ impl Walk<'_> {
         }
         let (out, skinned) = (&mut self.meshes, &mut self.skinned);
         match block {
+            Block::ParticleSystem(p) => {
+                if let Some(d) = super::particles::describe(nif, p, world) {
+                    self.particles.push(std::sync::Arc::new(d));
+                }
+            }
             Block::Node(n) => {
                 if n.kind == NodeKind::RootCollision {
                     return;
