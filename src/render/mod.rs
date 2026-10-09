@@ -3,6 +3,7 @@
 pub mod dds;
 pub mod model;
 pub mod post;
+pub mod precip;
 pub mod shadow;
 pub mod sky;
 pub mod terrain;
@@ -474,6 +475,8 @@ pub struct Renderer {
     pub(crate) black: Arc<GpuTexture>,
     pub stats: FrameStats,
     pub sky: sky::SkyRenderer,
+    /// Rain and snow (drawn under the sky).
+    pub precip: precip::PrecipRenderer,
     post: post::PostPass,
     /// Seconds since start, for animated effects.
     pub time: f32,
@@ -656,6 +659,7 @@ impl Renderer {
         let sky = sky::SkyRenderer::new(&device, color_format);
         let post = post::PostPass::new(&device, color_format);
         let water = water::WaterPipeline::new(&device, &frame_bgl, color_format);
+        let precip = precip::PrecipRenderer::new(&device, &frame_bgl, color_format);
         let shadow_instance_buf = Self::make_vbuf(
             &device,
             16384 * std::mem::size_of::<InstanceData>(),
@@ -664,6 +668,7 @@ impl Renderer {
         Renderer {
             water,
             sky,
+            precip,
             post,
             time: 0.0,
             terrain,
@@ -1406,6 +1411,9 @@ impl Renderer {
             }
             drop(draw);
             stats.draws += skinned_draws;
+            if env.sky {
+                self.precip.draw(&self.queue, &mut pass, self.time);
+            }
         }
         if pre_post.is_some() {
             self.post.draw(&self.queue, &mut enc, target, &scene.post);

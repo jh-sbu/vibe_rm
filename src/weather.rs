@@ -14,7 +14,9 @@
 //! override (`abOverride`) holds the weather until `ReleaseOverride`. Indoors
 //! the weather goes on but no sky shows. Outdoors the weathers' sounds
 //! (SNAM: rain, wind...) loop at their share of the transition, and thunder
-//! rolls now and then while it's on. Open questions: `known_gaps/weather.md`.
+//! rolls now and then while it's on, and its precipitation (MNAM: rain,
+//! snow) falls as particles from its begin fade in, the outgoing weather's
+//! until its end fade out. Open questions: `known_gaps/weather.md`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -555,6 +557,29 @@ impl Engine {
             .sky
             .set_textures(dev, sampler, sun, clouds, outgoing, black);
         self.weather.textures = Some(key);
+        let layers = [Some(cur), out]
+            .map(|w| w.and_then(|w| weather::load_precipitation(&self.lo, w.precipitation)));
+        let missing: Vec<String> = layers
+            .iter()
+            .flatten()
+            .map(|p| p.texture.clone())
+            .filter(|t| !self.renderer.textures.contains(t))
+            .collect();
+        loader::load_textures(&mut self.renderer, &self.vfs, missing);
+        for (slot, p) in layers.into_iter().enumerate() {
+            let layer = p.and_then(|p| {
+                let tex = self.renderer.textures.get(&p.texture).flatten()?;
+                Some((p, tex))
+            });
+            let r = &mut self.renderer;
+            r.precip.set_layer(&r.device, &r.sampler, slot, layer);
+        }
+    }
+
+    /// The precipitation falling now: [`precipitation_amounts`].
+    fn precipitation_now(&self) -> [f32; 2] {
+        let ws = &self.weather;
+        precipitation_amounts(ws.current.as_deref(), ws.outgoing.as_deref(), ws.pct)
     }
 
     /// The sky now: the current weather's at this hour, mixed with the
@@ -589,6 +614,10 @@ impl Engine {
             dalc: Some(st.dalc),
             sky: true,
         };
+        let precip = self.precipitation_now();
+        self.renderer
+            .precip
+            .set_intensity(precip, st.effect_lighting);
         self.renderer.sky.set_state(st);
         Some(env)
     }
@@ -622,6 +651,23 @@ impl Engine {
             self.wind_speed(),
             ws.next_roll
         ));
+        let counts = self.renderer.precip.particle_counts();
+        let precip: Vec<String> = [ws.current.as_ref(), ws.outgoing.as_ref()]
+            .iter()
+            .zip(counts)
+            .filter_map(|(w, n)| {
+                let p = w.map(|w| w.precipitation).filter(|p| !p.is_null())?;
+                let name = self
+                    .lo
+                    .get(p)
+                    .and_then(|r| r.editor_id())
+                    .unwrap_or_default();
+                Some(format!("{name} ({n} particles)"))
+            })
+            .collect();
+        if !precip.is_empty() {
+            out.push(format!("precipitation: {}", precip.join(", ")));
+        }
         out.push(format!(
             "{} weathers: {}",
             ws.region.map_or("climate".to_string(), |r| format!(
@@ -669,6 +715,25 @@ impl Engine {
     }
 }
 
+/// How much of the incoming and the outgoing weather's precipitation is
+/// falling (0..1): the incoming one's from its begin fade in to the end of
+/// the transition, the outgoing one's until its end fade out (where
+/// `IsRaining` turns on and off).
+fn precipitation_amounts(cur: Option<&Weather>, out: Option<&Weather>, pct: f32) -> [f32; 2] {
+    let Some(cur) = cur else {
+        return [0.0; 2];
+    };
+    let Some(out) = out else {
+        return [1.0, 0.0];
+    };
+    let begin = cur.precip_fade.0 as f32 / 255.0;
+    let end = out.precip_fade.1 as f32 / 255.0 + 0.001;
+    [
+        ((pct - begin) / (1.0 - begin).max(0.001)).clamp(0.0, 1.0),
+        (1.0 - pct / end).clamp(0.0, 1.0),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -681,5 +746,24 @@ mod tests {
         assert_eq!(w.classification(), 1);
         w.flags = weather::flags::SNOW;
         assert_eq!(w.classification(), 3);
+    }
+
+    #[test]
+    fn precipitation_follows_the_fades() {
+        let mut storm = Weather::new(FormId::NULL, String::new());
+        // SkyrimStormRain: begin fade in 153, end fade out 103.
+        storm.precip_fade = (153, 103);
+        let clear = Weather::new(FormId::NULL, String::new());
+        assert_eq!(precipitation_amounts(Some(&storm), None, 1.0), [1.0, 0.0]);
+        // Coming in: nothing until 60%, all of it at the end.
+        let a = |pct| precipitation_amounts(Some(&storm), Some(&clear), pct)[0];
+        assert_eq!(a(0.5), 0.0);
+        assert!(a(0.8) > 0.4 && a(0.8) < 0.6);
+        assert_eq!(a(1.0), 1.0);
+        // Going out: all of it at the start, gone by 40%.
+        let b = |pct| precipitation_amounts(Some(&clear), Some(&storm), pct)[1];
+        assert_eq!(b(0.0), 1.0);
+        assert!(b(0.2) > 0.4 && b(0.2) < 0.6);
+        assert_eq!(b(0.41), 0.0);
     }
 }

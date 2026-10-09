@@ -61,6 +61,58 @@ pub struct Weather {
     pub thunder: (u8, u8, u8),
     /// SNAM: (sound, [`sound_type`]).
     pub sounds: Vec<(FormId, u32)>,
+    /// MNAM: the precipitation (SPGD) drawn while it rains or snows.
+    pub precipitation: FormId,
+}
+
+/// Shader particle geometry (SPGD): the rain or snow a weather draws. DATA
+/// follows UESP's layout (CommonLibSSE's `BGSShaderParticleGeometryData`
+/// settings): gravity velocity, rotation velocity, particle size X / Y,
+/// center offset min / max, initial rotation range, subtextures X / Y,
+/// type, box size, particle density.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Precipitation {
+    pub id: FormId,
+    /// Falling speed (units a second).
+    pub gravity: f32,
+    /// Degrees a second each particle turns about its falling centre.
+    pub rotation_velocity: f32,
+    pub size: (f32, f32),
+    /// How far from its centre a particle turns (min, max).
+    pub center_offset: (f32, f32),
+    /// The spread of particles' starting angles (degrees).
+    pub start_rotation: f32,
+    /// The texture's grid of subtextures (columns, rows).
+    pub subtextures: (u32, u32),
+    pub snow: bool,
+    /// The edge of the box of particles around the camera.
+    pub box_size: f32,
+    pub density: f32,
+    pub texture: String,
+}
+
+pub fn load_precipitation(lo: &LoadOrder, id: FormId) -> Option<Precipitation> {
+    let rec = lo.get(id).filter(|r| r.tag().0 == *b"SPGD")?;
+    let data = rec.get(b"DATA")?;
+    // DustParticles and FogParticles stop before the box size and density.
+    if data.len() < 48 {
+        return None;
+    }
+    let f = |i: usize| f32::from_le_bytes(data[i * 4..i * 4 + 4].try_into().unwrap());
+    let u = |i: usize| u32::from_le_bytes(data[i * 4..i * 4 + 4].try_into().unwrap());
+    Some(Precipitation {
+        id,
+        gravity: f(0),
+        rotation_velocity: f(1),
+        size: (f(2), f(3)),
+        center_offset: (f(4), f(5)),
+        start_rotation: f(6),
+        subtextures: (u(7).max(1), u(8).max(1)),
+        snow: u(9) == 1,
+        box_size: u(10) as f32,
+        density: f(11),
+        texture: super::records::texture_path(&esp::decode_zstring(rec.get(b"ICON")?)),
+    })
 }
 
 /// SNAM sound types (CommonLibSSE's `TESWeather::SoundType`).
@@ -157,6 +209,7 @@ impl Weather {
             precip_fade: (0, 0),
             thunder: (0, 0, 0),
             sounds: Vec::new(),
+            precipitation: FormId::NULL,
         }
     }
 }
@@ -204,6 +257,7 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
             b"SNAM" if sr.data.len() >= 8 => {
                 w.sounds.push((rec.fid(sr.form_id(0)), sr.u32(4)));
             }
+            b"MNAM" => w.precipitation = rec.fid(sr.form_id(0)),
             b"IMSP" => {
                 for (t, f) in w
                     .image_spaces
@@ -262,6 +316,8 @@ pub struct SkyState {
     pub sunlight: Vec3,
     pub sun_color: Vec3,
     pub ambient: Vec3,
+    /// Lighting for effects (the precipitation's colour).
+    pub effect_lighting: Vec3,
     pub dalc: [Vec3; 6],
     pub sun_dir: Vec3,
     pub light_dir: Vec3,
@@ -298,6 +354,7 @@ impl SkyState {
             sunlight: v(a.sunlight, b.sunlight),
             sun_color: v(a.sun_color, b.sun_color),
             ambient: v(a.ambient, b.ambient),
+            effect_lighting: v(a.effect_lighting, b.effect_lighting),
             dalc: std::array::from_fn(|i| v(a.dalc[i], b.dalc[i])),
             sun_dir: b.sun_dir,
             light_dir: b.light_dir,
@@ -384,6 +441,7 @@ pub fn evaluate(w: &Weather, c: &Climate, hour: f32) -> SkyState {
         sunlight: col(color::SUNLIGHT),
         sun_color: col(color::SUN),
         ambient: col(color::AMBIENT),
+        effect_lighting: col(color::EFFECT_LIGHTING),
         dalc,
         sun_dir,
         light_dir,
