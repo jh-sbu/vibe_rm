@@ -70,6 +70,12 @@ pub struct Way {
     pub exit: Option<String>,
     /// The creature project the events are for (none: humanoids).
     pub graph: Option<String>,
+    /// A way only for users holding an item, or only for those without it (a
+    /// wood pile's put-down and pick-up).
+    pub holding: Option<(FormId, bool)>,
+    /// What leaving it at once plays (`IsExitingInstant`): the default state, or
+    /// carrying the load away (`OffsetCarryLogStart` from a wood pile).
+    pub instant_exit: Option<String>,
 }
 
 /// One usable position, in world space.
@@ -149,6 +155,8 @@ pub struct UseClips {
     pub exit: Vec<Arc<BoundClip>>,
     /// False when the last clip is a one-shot (a gesture rather than a pose to hold).
     pub idle_loops: bool,
+    /// The event that leaves at once after a one-shot (see [`Way::instant_exit`]).
+    pub instant_exit: Option<String>,
 }
 
 impl UseClips {
@@ -458,6 +466,7 @@ pub fn ways_to_use(
     skeleton: &crate::world::skeleton::Skeleton,
     clips: &mut super::Clips,
     rand: &mut dyn FnMut() -> u64,
+    holds: &dyn Fn(FormId) -> bool,
 ) -> Vec<(Entry, UseClips)> {
     // Creatures only use the furniture their own ways were picked for.
     let graph = (!project.humanoid()).then_some(project.name.as_str());
@@ -490,6 +499,7 @@ pub fn ways_to_use(
         .ways
         .iter()
         .filter(|w| w.marker == mi && w.child == child && w.graph.as_deref() == graph)
+        .filter(|w| w.holding.is_none_or(|(item, held)| holds(item) == held))
         .filter_map(|w| {
             // The tree's exit (IdleChairFrontExit...), else the generic ones.
             let exits: Vec<&str> = w
@@ -498,17 +508,16 @@ pub fn ways_to_use(
                 .into_iter()
                 .chain(["IdleChairExitStart", "IdleStop"])
                 .collect();
-            Some((
-                w.entry,
-                clips.event_with_exits(
-                    &w.enter,
-                    &exits,
-                    project,
-                    skeleton_path,
-                    female,
-                    skeleton,
-                )?,
-            ))
+            let mut use_clips = clips.event_with_exits(
+                &w.enter,
+                &exits,
+                project,
+                skeleton_path,
+                female,
+                skeleton,
+            )?;
+            use_clips.instant_exit = w.instant_exit.clone();
+            Some((w.entry, use_clips))
         })
         .collect();
     if ways.is_empty() {

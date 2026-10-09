@@ -496,7 +496,12 @@ game each piece unlocks.
   `Get/SetAnimationVariableBool/Int/Float` on actors' and objects' graphs. NPCs
   getting into furniture activate it (`OnActivate`): a wood pile's
   `CarryFurnitureScript` hears the pick-up's `AddToInventory` and gives the actor
-  its firewood
+  its firewood. Carry furniture: the idle tree's ways on are picked for users with
+  and without the load (`GetItemCount`), so a wood pile picks up for the
+  empty-handed and puts down for those carrying firewood (`RemoveFromInventory`
+  takes it back); after the pick-up the actor leaves by the tree's instant exit
+  (`IsExitingInstant`: `OffsetCarryLogStart`) and carries the logs on its shoulder
+  until it puts them down
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -508,10 +513,10 @@ game each piece unlocks.
    - `Direction` (strafing), sprinting; character properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
      way events are chosen
-   - Carry furniture (`CarryFurnitureScript`: wood piles; the pick-up puts the load in
-     the actor's inventory, see Done): carrying it away (`OffsetCarryLogStart`) and
-     putting it down (`RemoveFromInventory`); for now the graph is reset
-     (`IdleForceDefaultState`) after the pick-up
+   - Carry furniture (wood piles done, see Done): packages or sandboxing that
+     take a carrier to where the load goes (now any wood pile it happens to pick);
+     buckets (`OffsetCarryBucketStart`: nothing in the idle tree sends it) and
+     DLC2 stone piles (no instant exit to carry them away)
    - Delayed state changes (`FLAG_DELAY_STATE_CHANGE`), blending effects' event /
      self-transition modes (`vrm-tool hkb-flags` counts and lists them)
    - Engine variables and events still missing: combat, first person;

@@ -212,6 +212,7 @@ impl Clips<'_> {
             idle,
             exit,
             idle_loops: last.mode != ClipMode::SinglePlay && !played.loop_once,
+            instant_exit: None,
         })
     }
 }
@@ -237,6 +238,9 @@ pub struct World<'a> {
     pub patrols: &'a std::collections::HashMap<FormId, Arc<Vec<PatrolPoint>>>,
     /// Current positions of follow targets.
     pub targets: &'a std::collections::HashMap<FormId, Vec3>,
+    /// Whether an actor holds any of an item (furniture ways for users with or
+    /// without a load).
+    pub holds: &'a dyn Fn(FormId, FormId) -> bool,
     pub rand: &'a mut dyn FnMut() -> u64,
 }
 
@@ -388,6 +392,9 @@ pub struct ActorRuntime {
     pub(crate) stowed_shield: Option<FormId>,
     /// The graph raised `IdleFurnitureExit`: out of the furniture.
     out_of_furniture: bool,
+    /// Carrying a load away from furniture (firewood from a wood pile): its anim
+    /// objects stay in hand until the graph puts them away.
+    pub(crate) carrying: bool,
     /// Patrol progress: (route start, index of the point heading for).
     patrol: Option<(FormId, usize)>,
     /// Force greet: going up to the player; seconds until it checks again whether
@@ -489,6 +496,7 @@ impl ActorRuntime {
             hurry: false,
             face: None,
             out_of_furniture: false,
+            carrying: false,
             patrol: None,
             greeting: false,
             greet_check: stagger,
@@ -744,6 +752,12 @@ impl ActorRuntime {
         let Some(seat) = &self.seat else { return };
         self.pos = seat.pos;
         self.heading = seat.heading;
+        // A one-shot (picking up firewood) lasts as long as its clip.
+        let secs = if seat.clips.idle_loops {
+            secs
+        } else {
+            seat.clips.idle.duration()
+        };
         self.state = State::Use(secs);
         self.next_idle = 4.0;
     }
@@ -781,6 +795,13 @@ impl ActorRuntime {
         );
         self.out_of_furniture = false;
         self.state = State::Enter(seat.clips.enter_time());
+        // Bringing a load: the arms leave their carrying pose for the put-down,
+        // whose clip puts the anim objects away (other furniture: standing up).
+        if std::mem::take(&mut self.carrying)
+            && let Some(g) = &mut self.graph
+        {
+            g.send_event("OffsetStop");
+        }
         if !seat.furniture.is_null() {
             self.activated = Some(seat.furniture);
         }
@@ -907,6 +928,11 @@ impl ActorRuntime {
                 true
             }
             // The graph moves the actor (root motion, applied in `animate`).
+            // The graph left the furniture by itself (a wood pile's put-down).
+            State::Enter(_) | State::Use(_) if self.out_of_furniture => {
+                self.stand_up(w);
+                false
+            }
             State::Enter(t) => {
                 *t -= dt;
                 if *t <= 0.0 {
@@ -950,11 +976,20 @@ impl ActorRuntime {
                 self.leave = false;
                 // A one-shot gesture (no loop to hold) has already ended by itself;
                 // some (picking up firewood) hold their last pose in the graph's
-                // furniture state until scripts and inventory move them on, so the
-                // graph goes back to its default state.
-                if self.seat.as_ref().is_some_and(|s| !s.clips.idle_loops) {
-                    if let Some(g) = &mut self.graph {
-                        g.send_event("IdleForceDefaultState");
+                // furniture state, so the graph goes back to its default state and
+                // plays the instant exit the idle tree gives: carrying the load
+                // away from a wood pile (`OffsetCarryLogStart`).
+                if let Some(seat) = self.seat.clone().filter(|s| !s.clips.idle_loops) {
+                    self.graph_event("IdleForceDefaultState", &mut w.clips);
+                    if let Some(exit) = seat
+                        .clips
+                        .instant_exit
+                        .as_deref()
+                        .filter(|e| *e != "IdleForceDefaultState")
+                    {
+                        log::debug!("{} leaves {} with {exit}", self.ref_id, seat.furniture);
+                        self.carrying =
+                            self.graph_event(exit, &mut w.clips) && !self.objects.is_empty();
                     }
                     self.stand_up(w);
                 } else {
@@ -969,8 +1004,10 @@ impl ActorRuntime {
     fn stand_up(&mut self, w: &mut World) {
         log::debug!("{} stood up at {:?}", self.ref_id, self.pos);
         self.give_up_seat(w.furniture);
-        self.objects_changed |= !self.objects.is_empty();
-        self.objects.clear();
+        if !self.carrying {
+            self.objects_changed |= !self.objects.is_empty();
+            self.objects.clear();
+        }
         if let Some(z) = w.nav.height_at(self.pos) {
             self.pos.z = z;
         }
@@ -1005,6 +1042,7 @@ impl ActorRuntime {
         self.leave = false;
         self.objects_changed |= !self.objects.is_empty();
         self.objects.clear();
+        self.carrying = false;
         if let Some(z) = nav.height_at(self.pos) {
             self.pos.z = z;
         }
@@ -1031,13 +1069,14 @@ impl ActorRuntime {
         self.hurry = false;
         let face = self.face.take();
         // Actors standing about now and then play one of their idles first
-        // (creatures more often: they have no furniture to use).
+        // (creatures more often: they have no furniture to use); not with a load
+        // in their arms.
         let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
         let wandering = self
             .goal
             .is_none_or(|g| matches!(g.behaviour, Behaviour::Sandbox | Behaviour::Hold));
         let odds = if humanoid { 4 } else { 3 };
-        if self.graph.is_some() && wandering && !fresh && (w.rand)() % odds == 0 {
+        if self.graph.is_some() && wandering && !fresh && !self.carrying && (w.rand)() % odds == 0 {
             self.wants_action_idle = true;
             self.state = State::Idle(uniform(w.rand, 1.0, 3.0));
             return;
@@ -1370,6 +1409,7 @@ impl ActorRuntime {
                 &self.skeleton,
                 &mut w.clips,
                 &mut *w.rand,
+                &|item| (w.holds)(self.ref_id, item),
             );
             // Idle markers say how long they are used for.
             let secs = if f.idle_time > 0.0
@@ -1683,6 +1723,7 @@ impl ActorRuntime {
                 "animobjectunequip" => {
                     self.objects_changed |= !self.objects.is_empty();
                     self.objects.clear();
+                    self.carrying = false;
                 }
                 "idlefurnitureexit" => self.out_of_furniture = true,
                 "weapondraw" | "weaponsheathe" => {
@@ -2128,6 +2169,9 @@ impl Engine {
         };
         let may_use = |_: FormId, _: Use, _: Option<FormId>| true;
         let (claimed, targets) = Default::default();
+        let inventories = &self.inventories;
+        let holds =
+            |r: FormId, item: FormId| inventories.get(&r).is_some_and(|i| i.count(item) > 0);
         let mut w = World {
             nav: &self.nav,
             furniture: &mut self.furniture,
@@ -2140,6 +2184,7 @@ impl Engine {
             claimed: &claimed,
             patrols: &self.patrol_paths,
             targets: &targets,
+            holds: &holds,
             rand: &mut rand,
         };
         let Some(a) = self
@@ -2550,6 +2595,8 @@ impl Engine {
                     enter,
                     exit,
                     graph: Some(project.name.clone()),
+                    holding: None,
+                    instant_exit: None,
                 },
             ));
         }
@@ -2774,6 +2821,9 @@ impl Engine {
         let may_use = |npc: FormId, kind: Use, owner: Option<FormId>| {
             furniture::may_use(lo, npc, kind, owner)
         };
+        let inventories = &self.inventories;
+        let holds =
+            |r: FormId, item: FormId| inventories.get(&r).is_some_and(|i| i.count(item) > 0);
         let claimed = self
             .cells
             .values()
@@ -2788,6 +2838,7 @@ impl Engine {
             claimed: &claimed,
             patrols: &self.patrol_paths,
             targets: &targets,
+            holds: &holds,
             rand: &mut rand,
         };
         let mut moved = Vec::new();

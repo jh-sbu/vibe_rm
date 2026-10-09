@@ -207,6 +207,11 @@ pub struct IdleQuery {
     pub eating: bool,
     /// Overrides the subject's race for `IsChild` (no subject when picking ahead of time).
     pub child: Option<bool>,
+    /// Picking ahead of time: the user holds the items `GetItemCount` asks about
+    /// (firewood for a wood pile's put-down).
+    pub holding: bool,
+    /// `IsExitingInstant`: leaving the furniture without an exit animation.
+    pub instant: bool,
 }
 
 pub fn evaluate(e: &Engine, conds: &[Condition], ctx: Context) -> bool {
@@ -578,7 +583,12 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .and_then(|s| e.lock_of(s))
                 .map_or(0.0, |l| l.level as f32),
         ), // GetLockLevel
-        47 => Some(subject.map_or(0, |s| e.item_count(s, p1)) as f32), // GetItemCount
+        // GetItemCount; picking a furniture idle ahead of time (no subject), the
+        // query says whether its user holds what the idle asks about.
+        47 => match (subject, ctx.idle) {
+            (None, Some(q)) => b(q.holding),
+            _ => Some(subject.map_or(0, |s| e.item_count(s, p1)) as f32),
+        },
         182 => b(subject
             .and_then(|s| e.inventories.get(&s))
             .is_some_and(|i| i.is_equipped(p1))), // GetEquipped
@@ -644,6 +654,7 @@ fn idle_function_value(e: &Engine, c: &Condition, ctx: Context) -> Option<f32> {
         159 => Some(if q.anim_type == 2 { 0.0 } else { q.state }), // GetSitting
         49 => Some(if q.anim_type == 2 { q.state } else { 0.0 }),  // GetSleeping
         631 | 703 => b(q.quick),   // IsEntering / IsExitingInteractionQuick
+        637 => b(q.instant),       // IsExitingInstant
         614 => b(q.entry == c.p1), // IsFurnitureEntryType
         613 => b(q.anim_type == c.p1), // IsFurnitureAnimType
         163 => b(furniture_base == Some(FormId(c.p1))), // IsCurrentFurnitureObj
