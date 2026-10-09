@@ -478,6 +478,15 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             engine.test_camera = Some((Vec3::new(x, y, z), yaw.to_radians(), pitch.to_radians()));
             vec!["ok".into()]
         }
+        "impact" => {
+            // impact <IPCT> [distance]: an impact on whatever lies ahead of the
+            // camera (within the distance, default 512), as an arrow's would be.
+            let Some(ipct) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec!["usage: impact <impact> [distance]".into()];
+            };
+            let reach = args.get(1).and_then(|d| d.parse().ok()).unwrap_or(512.0);
+            vec![engine.test_impact(ipct, reach)]
+        }
         "pshoot" => {
             let held = args.first().and_then(|s| s.parse::<f32>().ok()).unwrap_or(5.0);
             engine.player_loose(held);

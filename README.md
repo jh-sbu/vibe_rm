@@ -23,7 +23,7 @@ Early but already visual:
 | Interior cells: references, lighting templates, point lights | done |
 | Exterior cells: objects, landscape heightmap with multi-layer splatting | done |
 | Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day, transitions, rain and snow, wind, lightning, sky statics, auroras | done |
-| Effects: particle systems (fire, smoke, embers), billboards, addon nodes (candle flames, torches), animated shader properties (scrolling, pulsing), environment maps, grass, projected decals | in progress |
+| Effects: particle systems (fire, smoke, embers), billboards, addon nodes (candle flames, torches), animated shader properties (scrolling, pulsing), environment maps, grass, projected decals, impacts (blood sprays and decals from hits) | in progress |
 | Water, collision/physics, player controller, load doors and animated doors, cell streaming | done |
 | Sun shadows (cascaded shadow maps) | done |
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
@@ -51,7 +51,7 @@ cargo build --release
 ```
 
 Testing aids: `--console "<command>"` runs console commands after loading (e.g.
-`use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`, `cgf Actor.GetCombatState @<actor>` to call a Papyrus native, `loose` for the loose objects near the player, `pwalk <frames>` to walk the player forward (`tcl` first under `--wait`); `"@<frame> <command>"`
+`use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`, `cgf Actor.GetCombatState @<actor>` to call a Papyrus native, `loose` for the loose objects near the player, `pwalk <frames>` to walk the player forward (`tcl` first under `--wait`), `impact <IPCT>` for an impact on what the camera faces; `"@<frame> <command>"`
 runs it at that frame of `--wait`), `--watch-angle`
 orbits the `--watch` camera, `--player-at-camera` puts the player there (NPCs look at it),
 the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, `VRM_SEED=<n>` fixes the engine's random seed, `VRM_AUDIO=1` gives offscreen runs audio

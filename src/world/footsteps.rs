@@ -73,6 +73,15 @@ impl Impacts {
     /// The sound (SNDR) an impact data set makes on a material: its own entry, or
     /// its parent material's (stone stairs sound as stone).
     pub fn sound(&mut self, lo: &LoadOrder, ipds: FormId, material: FormId) -> Option<FormId> {
+        let rec = lo.get(self.impact(lo, ipds, material)?)?;
+        let d = rec.get(b"SNAM")?;
+        let s = rec.fid(FormId(u32::from_le_bytes(d.get(..4)?.try_into().ok()?)));
+        (!s.is_null()).then_some(s)
+    }
+
+    /// The impact (IPCT) an impact data set has for a material: its own
+    /// entry, or its parent material's.
+    pub fn impact(&mut self, lo: &LoadOrder, ipds: FormId, material: FormId) -> Option<FormId> {
         let pairs = self.sets.entry(ipds).or_insert_with(|| {
             let Some(rec) = lo.get(ipds) else {
                 return Vec::new();
@@ -85,10 +94,7 @@ impl Impacts {
         let mut m = material;
         for _ in 0..8 {
             if let Some(&(_, ipct)) = pairs.iter().find(|p| p.0 == m) {
-                let rec = lo.get(ipct)?;
-                let d = rec.get(b"SNAM")?;
-                let s = rec.fid(FormId(u32::from_le_bytes(d.get(..4)?.try_into().ok()?)));
-                return (!s.is_null()).then_some(s);
+                return (!ipct.is_null()).then_some(ipct);
             }
             let rec = lo.get(m)?;
             let d = rec.get(b"PNAM")?;

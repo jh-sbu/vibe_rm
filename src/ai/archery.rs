@@ -483,7 +483,8 @@ impl Engine {
     /// up in their inventory, `iArrowInventoryChance`), the player, or the world
     /// (stuck there a while). The scene's moving instances follow them.
     pub(crate) fn update_projectiles(&mut self, dt: f32) {
-        let mut hits: Vec<(FormId, FormId, f32, Arrow)> = Vec::new();
+        // (target, shooter, damage, arrow, where, flying)
+        let mut hits: Vec<(FormId, FormId, f32, Arrow, Vec3, Vec3)> = Vec::new();
         let mut stuck: Vec<(FormId, Vec3, f32, Option<FormId>, Vec3)> = Vec::new();
         // References struck (shooter, what, its projectile, the arrow's velocity).
         let mut struck: Vec<(FormId, FormId, FormId, Vec3)> = Vec::new();
@@ -519,15 +520,15 @@ impl Engine {
                 .map(|(s, _)| s * len);
             match (world, at_player) {
                 (_, Some(t)) if world.is_none_or(|(w, _)| t < w) => {
-                    hits.push((PLAYER_REF, p.shooter, p.damage, p.arrow.clone()));
                     p.pos = start + dir * t;
+                    hits.push((PLAYER_REF, p.shooter, p.damage, p.arrow.clone(), p.pos, dir));
                     p.stuck = Some(0.0);
                 }
                 (Some((t, owner)), _) => {
                     p.pos = start + dir * t;
                     match owner.filter(|o| self.lo.tag_of(*o).map(|t| t.0) == Some(*b"ACHR")) {
                         Some(actor) => {
-                            hits.push((actor, p.shooter, p.damage, p.arrow.clone()));
+                            hits.push((actor, p.shooter, p.damage, p.arrow.clone(), p.pos, dir));
                             p.stuck = Some(0.0);
                         }
                         None => {
@@ -553,6 +554,9 @@ impl Engine {
         for (shooter, what, projectile, vel) in struck {
             self.strike(what, shooter, Some(projectile), vel * ARROW_MASS, false);
         }
+        for &(shooter, at, _, _, dir) in &stuck {
+            self.arrow_impact(shooter, None, at, dir);
+        }
         for (shooter, at, age, owner, dir) in stuck {
             let what = owner
                 .and_then(|o| self.base_of(o).or(Some(o)))
@@ -577,11 +581,12 @@ impl Engine {
                 !gone
             });
         }
-        for (target, shooter, damage, arrow) in hits {
+        for (target, shooter, damage, arrow, at, dir) in hits {
             if target != PLAYER_REF && self.is_dead(target) {
                 continue;
             }
             log::info!("{shooter}'s arrow strikes {target}");
+            self.arrow_impact(shooter, Some(target), at, dir);
             self.hit(target, shooter, damage, false, 0.0, Some(arrow.projectile));
             let chance = crate::ai::combat::gmst_i32(&self.lo, "iArrowInventoryChance", 33)
                 .clamp(0, 100) as u64;

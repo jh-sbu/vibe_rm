@@ -35,7 +35,7 @@ const WATER: FormId = FormId(0x12F40);
 #[derive(Default)]
 pub struct Footsteps {
     sets: HashMap<FormId, Option<Arc<FootstepSet>>>,
-    impacts: Impacts,
+    pub(crate) impacts: Impacts,
     /// Material types by Havok material id (built on first use).
     materials: std::cell::OnceCell<HashMap<u32, FormId>>,
     /// The player's footstep set, for what they were wearing.

@@ -566,12 +566,17 @@ impl Walk<'_> {
         }
         let Some(block) = nif.get(r) else { return };
         let Some(av) = block.av() else { return };
-        // Weapons' blood shapes only show once the blade has drawn blood; projectiles'
-        // tracers only for the shots the projectile's tracer chance picks.
+        // Weapons' blood shapes only show once the blade has drawn blood (blood
+        // effects' nodes and particles stay); projectiles' tracers only for the
+        // shots the projectile's tracer chance picks.
         let name = av.net.name.to_ascii_lowercase();
+        let geometry = matches!(
+            block,
+            Block::TriShape(_) | Block::NiTriShape(_) | Block::NiTriStrips(_)
+        );
         if av.hidden()
             || name.starts_with("editormarker")
-            || name.starts_with("blood")
+            || (geometry && name.starts_with("blood"))
             || name == "tracerroot"
         {
             return;
