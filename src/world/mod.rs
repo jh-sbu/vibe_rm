@@ -3,6 +3,7 @@ pub mod animated;
 pub mod animation;
 pub mod behavior;
 pub mod cell;
+pub mod decal;
 pub mod footik;
 pub mod footsteps;
 pub mod grass;
