@@ -476,6 +476,9 @@ pub struct Combat {
     path: Vec<Vec3>,
     next: usize,
     pub(crate) repath: f32,
+    /// Where the target was when the path couldn't reach it (the path then ends
+    /// as near as the navmesh goes).
+    unreachable: Option<Vec3>,
     /// Seconds until it may attack again, and left of the swing it is in.
     pub(crate) cooldown: f32,
     swing: f32,
@@ -554,6 +557,7 @@ impl Combat {
             path: Vec::new(),
             next: 0,
             repath: 0.0,
+            unreachable: None,
             cooldown: 0.8,
             swing: 0.0,
             attack: None,
@@ -654,19 +658,35 @@ impl ActorRuntime {
         Some(self.stats.attacks[pick].event.clone())
     }
 
-    /// Close in on `target` at `run` speed along a path, refreshed as it moves.
+    /// Close in on `target` at `run` speed along a path, refreshed as it moves;
+    /// where it can't be reached (up on a rock, off the navmesh), as near as the
+    /// navmesh goes. Only an actor off the navmesh itself heads straight for it.
     pub(crate) fn chase(&mut self, dt: f32, w: &mut World, target: Vec3, run: f32) {
         let pos = self.pos;
         let Some(c) = self.combat.as_mut() else {
             return;
         };
-        if c.repath <= 0.0 || c.next >= c.path.len() {
-            c.path = w.nav.find_path(pos, target).unwrap_or_else(|| vec![target]);
+        // Out of reach where it was: searching again won't help until it moves.
+        let still_unreachable = c.unreachable.is_some_and(|u| u.distance(target) < 64.0);
+        if c.repath <= 0.0 || (c.next >= c.path.len() && !still_unreachable) {
+            let (path, reached) = w
+                .nav
+                .path_towards(pos, target)
+                .unwrap_or_else(|| (vec![target], true));
+            c.path = path;
             c.next = 0;
-            c.repath = 0.5;
+            c.unreachable = (!reached).then_some(target);
+            c.repath = if reached { 0.5 } else { 2.0 };
         }
         while c.next < c.path.len() && (c.path[c.next] - pos).truncate().length() < 16.0 {
             c.next += 1;
+        }
+        if c.next >= c.path.len() && c.unreachable.is_some() {
+            // As near as it can get: wait there facing the target.
+            self.speed = 0.0;
+            self.state = State::Idle(1.0);
+            self.turn_towards((target - pos).with_z(0.0).normalize_or_zero(), dt);
+            return;
         }
         let way = c.path.get(c.next).copied().unwrap_or(target);
         let d = (way - pos).truncate();
