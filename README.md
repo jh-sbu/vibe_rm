@@ -22,7 +22,8 @@ Early but already visual:
 | DDS: BC1–BC7, uncompressed, cubemaps | done |
 | Interior cells: references, lighting templates, point lights | done |
 | Exterior cells: objects, landscape heightmap with multi-layer splatting | done |
-| Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day, transitions, rain and snow | done |
+| Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day, transitions, rain and snow, wind, lightning, sky statics, auroras | done |
+| Effects: particle systems (fire, smoke, embers), billboards, animated shader properties (scrolling, pulsing) | in progress |
 | Water, collision/physics, player controller, load doors and animated doors, cell streaming | done |
 | Sun shadows (cascaded shadow maps) | done |
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
