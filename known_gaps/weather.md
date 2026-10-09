@@ -99,6 +99,13 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   ambient and directional ambient and the precipitation's light. The flash
   and the sound come together (no delay for the strike's distance); no bolt
   is drawn. Thunder now rolls without an audio device as well.
+- **Cloud speeds.** QNAM (x) and RNAM (y) give each of the 32 layers a byte,
+  read as xEdit does: (value - 127) / 1270, so 127 is still and the range
+  -0.1..0.1. Each layer drifts at its own speed times 0.1 texture widths a
+  second, in real time (the scale is made up; the storm's fastest layer,
+  178, drifts across a texture in about four minutes). The layers' texture
+  scales over the sky (1, 0.8, 1.3, 0.6) are this engine's own.
 - **Not drawn:** auroras, sky statics, the weather's volumetric lighting, sun
-  glare and damage, cloud speeds (RNAM / QNAM) and wind direction.
+  glare and damage, wind direction (DATA bytes 16 and 17: rain and snow fall
+  straight).
 - **Not in saves**: the weather state lives only in memory.

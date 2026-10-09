@@ -644,7 +644,7 @@ impl Engine {
             st.sky_lower += f * 0.3;
             st.horizon += f * 0.4;
             for c in st.clouds.iter_mut().chain(st.outgoing_clouds.iter_mut()) {
-                c.1 += f * 0.6;
+                c.color += f * 0.6;
             }
             st.ambient += f * 0.4;
             st.effect_lighting += f * 0.4;
