@@ -241,6 +241,39 @@ fn main() -> Result<()> {
                 println!("{k:6} {c}");
             }
         }
+        Some("sf1-files") => {
+            // sf1-files <bit> <bsa>...: models with shader properties (lighting
+            // or effect) that have shader flags 1 bit <bit>, and how many.
+            let bit: u32 = args[1].parse()?;
+            let mut files = std::collections::BTreeMap::<String, usize>::new();
+            for path in &args[2..] {
+                let a = bsa::Archive::open(path)?;
+                let paths: Vec<String> = a
+                    .paths()
+                    .filter(|p| p.ends_with(".nif"))
+                    .map(str::to_owned)
+                    .collect();
+                for p in paths {
+                    let Ok(n) = nif::Nif::parse(&a.read(&p)?.unwrap()) else {
+                        continue;
+                    };
+                    for b in &n.blocks {
+                        let flags1 = match b {
+                            nif::Block::LightingShader(s) => s.flags1,
+                            nif::Block::EffectShader(s) => s.flags1,
+                            _ => continue,
+                        };
+                        if flags1 & (1 << bit) != 0 {
+                            *files.entry(p.clone()).or_default() += 1;
+                        }
+                    }
+                }
+            }
+            println!("{} files", files.len());
+            for (f, k) in files {
+                println!("{k:4} {f}");
+            }
+        }
         Some("msn-shapes") => {
             // msn-shapes <bsa>...: shapes whose lighting shader has model-space
             // normals, counted by whether they're drawn skinned; the files of

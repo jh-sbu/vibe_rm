@@ -93,6 +93,9 @@ pub struct PipelineKey {
     pub double_sided: bool,
     pub z_write: bool,
     pub z_test: bool,
+    /// Drawn over the surface it lies on (`sf1::DECAL` / `DYNAMIC_DECAL`):
+    /// its depth biased towards the camera.
+    pub decal: bool,
 }
 
 pub struct GpuMaterial {
@@ -1005,7 +1008,16 @@ impl Renderer {
                         wgpu::CompareFunction::Always
                     }),
                     stencil: Default::default(),
-                    bias: Default::default(),
+                    // Reversed depth: nearer is greater.
+                    bias: if key.decal {
+                        wgpu::DepthBiasState {
+                            constant: 8,
+                            slope_scale: 2.0,
+                            clamp: 0.0,
+                        }
+                    } else {
+                        Default::default()
+                    },
                 }),
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
@@ -1142,6 +1154,7 @@ impl Renderer {
             double_sided: m.double_sided,
             z_write: m.z_write || m.blend == BlendMode::Opaque,
             z_test: m.z_test || m.blend == BlendMode::Opaque,
+            decal: m.flags1 & (nif::sf1::DECAL | nif::sf1::DYNAMIC_DECAL) != 0,
         };
         GpuMaterial {
             bind_group,

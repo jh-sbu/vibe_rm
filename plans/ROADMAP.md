@@ -502,6 +502,10 @@ game each piece unlocks.
   a mask) fall back to the slot's default; `VRM_NO_ENVMAP=1` turns them off for
   comparison; vrm-tool `envmap-shapes` counts the vanilla shapes and cube maps.
   Open questions: `known_gaps/environment-maps.md`
+- Decal shapes (`sf1` Decal / Dynamic Decal: head parts over the face, moss and grime
+  overlays on architecture) drawn with their depth biased towards the camera so they
+  don't fight the surface under them; vrm-tool `sf1-files <bit>` lists the models with a
+  shader flag (about 5600 vanilla models have decal shapes)
 - Objects' behaviour graphs (`BSBehaviorGraphExtraData`: traps, pressure plates, levers,
   portcullises, puzzle pillars): the project runs on the model's own nodes, the nodes it
   moves (those with transform controllers) drawn apart and their collision carried;
@@ -666,7 +670,7 @@ game each piece unlocks.
    radial blur and motion blur (cinematic values and tint: see Done), particles'
    remaining modifiers (colliders, mesh emitters' surfaces, strips, LOD; see
    `known_gaps/particles.md`), distant LOD (BTR/BTO/trees),
-   grass, decals; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
+   grass, projected decals (texture sets' `DODT`: blood, scorch marks); eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /
