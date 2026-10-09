@@ -18,6 +18,8 @@ struct Frame {
     shadow_params: vec4<f32>,         // enabled, texel size (uv), ...
     cam_fwd: vec4<f32>,
     wind: vec4<f32>,        // wind velocity xy (units a second), grass fade start, fade range
+    inv_view_proj: mat4x4<f32>,
+    screen: vec4<f32>,      // target width, height in pixels
 };
 
 struct Light {
@@ -488,4 +490,131 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     diffuse += emit;
     let color = albedo * diffuse + specular * mat.specular.rgb + env;
     return vec4<f32>(apply_fog(color * in.tint.rgb, in.world_pos), alpha * in.tint.a);
+}
+
+// Projected decals. Each decal's box (a unit cube turned and scaled to its
+// width along X, depth along Y and height along Z) is drawn over the opaque
+// scene; its fragments find the surface behind them in the depth buffer and,
+// where that lies in the box, show the decal's texture there, lit like a
+// surface facing back along the projection (+Y). Surfaces turned away from
+// the projection (what passes through the box) fade out.
+
+@group(2) @binding(0) var t_depth: texture_depth_2d;
+
+struct DecalIn {
+    @location(0) pos: vec3<f32>,
+    @location(6) m0: vec4<f32>,
+    @location(7) m1: vec4<f32>,
+    @location(8) m2: vec4<f32>,
+    @location(9) m3: vec4<f32>,
+    @location(10) light_idx: vec4<u32>,
+    @location(15) tint: vec4<f32>,
+    @location(16) uv: vec4<f32>,  // subtexture offset, scale
+};
+
+struct DecalOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) @interpolate(flat) m0: vec4<f32>,
+    @location(1) @interpolate(flat) m1: vec4<f32>,
+    @location(2) @interpolate(flat) m2: vec4<f32>,
+    @location(3) @interpolate(flat) m3: vec4<f32>,
+    @location(4) @interpolate(flat) light_idx: vec4<u32>,
+    @location(5) @interpolate(flat) tint: vec4<f32>,
+    @location(6) @interpolate(flat) uv: vec4<f32>,
+};
+
+@vertex
+fn vs_decal(v: DecalIn) -> DecalOut {
+    let model = mat4x4<f32>(v.m0, v.m1, v.m2, v.m3);
+    var o: DecalOut;
+    o.clip = frame.view_proj * model * vec4<f32>(v.pos, 1.0);
+    o.m0 = v.m0;
+    o.m1 = v.m1;
+    o.m2 = v.m2;
+    o.m3 = v.m3;
+    o.light_idx = v.light_idx;
+    o.tint = v.tint;
+    o.uv = v.uv;
+    return o;
+}
+
+@fragment
+fn fs_decal(in: DecalOut) -> @location(0) vec4<f32> {
+    let px = vec2<i32>(in.clip.xy);
+    let depth = textureLoad(t_depth, px, 0);
+    // Reversed depth: 0 is the far plane (the sky).
+    if (depth <= 0.0) {
+        discard;
+    }
+    let ndc = vec2<f32>(
+        (in.clip.x / frame.screen.x) * 2.0 - 1.0,
+        1.0 - (in.clip.y / frame.screen.y) * 2.0,
+    );
+    let h = frame.inv_view_proj * vec4<f32>(ndc, depth, 1.0);
+    let world = h.xyz / h.w;
+    // Into the box: its axes are the model's columns, scaled by its size.
+    let rel = world - in.m3.xyz;
+    let local = vec3<f32>(
+        dot(rel, in.m0.xyz) / dot(in.m0.xyz, in.m0.xyz),
+        dot(rel, in.m1.xyz) / dot(in.m1.xyz, in.m1.xyz),
+        dot(rel, in.m2.xyz) / dot(in.m2.xyz, in.m2.xyz),
+    );
+    if (any(abs(local) > vec3<f32>(0.5))) {
+        discard;
+    }
+    // The surface's normal from its neighbours' positions, towards the camera.
+    var n = normalize(cross(dpdx(world), dpdy(world)));
+    let view_dir = normalize(frame.cam_pos.xyz - world);
+    if (dot(n, view_dir) < 0.0) {
+        n = -n;
+    }
+    let axis = normalize(in.m1.xyz);
+    let facing = dot(n, -axis);
+    let uv = vec2<f32>(local.x + 0.5, 0.5 - local.z) * in.uv.zw + in.uv.xy;
+    // Mips from the box's own rate of change: the depth's edges would jump.
+    let duv = vec2<f32>(1.0) / vec2<f32>(
+        length(in.m0.xyz),
+        length(in.m2.xyz),
+    ) * in.uv.zw * length(world - frame.cam_pos.xyz) * 2.0 / frame.screen.y;
+    let base = textureSampleGrad(t_diffuse, s_main, uv, vec2<f32>(duv.x, 0.0), vec2<f32>(0.0, duv.y));
+    var alpha = base.a * in.tint.a * mat.params.x;
+    alpha *= smoothstep(0.15, 0.45, facing);
+    // Fading towards the box's near and far ends.
+    alpha *= 1.0 - smoothstep(0.35, 0.5, abs(local.y));
+    if (mat.params.y >= 0.0 && alpha < mat.params.y) {
+        discard;
+    }
+    if (alpha <= 0.004) {
+        discard;
+    }
+    let albedo = base.rgb * in.tint.rgb;
+
+    var diffuse = ambient(n);
+    let l = normalize(frame.sun_dir.xyz);
+    let ndl = dot(n, l);
+    if (ndl > 0.0) {
+        diffuse += frame.sun_color.rgb * ndl * sun_shadow(world, n);
+    }
+    for (var i = 0u; i < 8u; i++) {
+        let li = light_index(in.light_idx, i);
+        if (li == 0xFFFFu) {
+            break;
+        }
+        let light = lights[li];
+        let d = light.pos_radius.xyz - world;
+        let dist = length(d);
+        let r = light.pos_radius.w;
+        if (dist >= r) {
+            continue;
+        }
+        let x = dist / r;
+        let att = clamp(1.0 - x * x, 0.0, 1.0);
+        diffuse += light.color.rgb * max(dot(n, d / max(dist, 0.001)), 0.0) * att;
+    }
+    var color = albedo * diffuse;
+    if (mat.params.w > 0.5 && mat.params.w < 1.5) {
+        let glow = textureSampleGrad(t_glow, s_main, uv, vec2<f32>(duv.x, 0.0), vec2<f32>(0.0, duv.y));
+        color += glow.rgb * mat.emissive.rgb * mat.emissive.w;
+    }
+    return vec4<f32>(apply_fog(color, world), alpha);
 }

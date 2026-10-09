@@ -1,6 +1,7 @@
 //! wgpu-based forward renderer.
 
 pub mod dds;
+pub mod decal;
 pub mod model;
 pub mod particles;
 pub mod post;
@@ -46,6 +47,10 @@ struct FrameUniform {
     /// The wind's velocity (units a second), where grass starts fading and
     /// over how far.
     wind: [f32; 4],
+    /// Clip space back to the world (decals find surfaces from depth).
+    inv_view_proj: [[f32; 4]; 4],
+    /// The target's size in pixels.
+    screen: [f32; 4],
 }
 
 #[repr(C)]
@@ -370,6 +375,7 @@ pub struct RenderCell {
     pub terrain: Vec<terrain::TerrainChunk>,
     pub water: Vec<water::WaterPlane>,
     pub grass: Vec<GrassBatch>,
+    pub decals: Vec<decal::GpuDecal>,
 }
 
 #[derive(Default)]
@@ -460,6 +466,9 @@ impl Scene {
         }
         for a in self.cells.values_mut().flat_map(|c| c.actors.iter_mut()) {
             a.lights = pick_lights(lights, a.center(), a.radius);
+        }
+        for d in self.cells.values_mut().flat_map(|c| c.decals.iter_mut()) {
+            d.lights = pick_lights(lights, d.center, d.radius);
         }
     }
 }
@@ -570,6 +579,9 @@ pub struct Renderer {
     pub height: u32,
     depth_view: wgpu::TextureView,
     shadows: shadow::ShadowMaps,
+    decals: decal::DecalPipeline,
+    decal_buf: wgpu::Buffer,
+    decal_cap: usize,
     /// The cascades as last rendered (far ones are refreshed every few frames), and
     /// frames rendered with shadows.
     shadow_cascades: Option<[shadow::Cascade; shadow::CASCADES]>,
@@ -812,6 +824,14 @@ impl Renderer {
         let terrain = terrain::TerrainPipeline::new(&device, &frame_bgl, color_format);
         let sky = sky::SkyRenderer::new(&device, color_format);
         let post = post::PostPass::new(&device, color_format);
+        let decals = decal::DecalPipeline::new(
+            &device,
+            &shader,
+            &frame_bgl,
+            &material_bgl,
+            color_format,
+            &depth_view,
+        );
         let water = water::WaterPipeline::new(&device, &frame_bgl, color_format);
         let precip = precip::PrecipRenderer::new(&device, &frame_bgl, color_format);
         let shadow_instance_buf = Self::make_vbuf(
@@ -820,6 +840,13 @@ impl Renderer {
             "shadow instances",
         );
         Renderer {
+            decals,
+            decal_buf: Self::make_vbuf(
+                &device,
+                64 * std::mem::size_of::<InstanceData>(),
+                "decal instances",
+            ),
+            decal_cap: 64,
             water,
             sky,
             precip,
@@ -938,7 +965,8 @@ impl Renderer {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             })
             .create_view(&Default::default())
@@ -948,6 +976,7 @@ impl Renderer {
         self.width = w.max(1);
         self.height = h.max(1);
         self.depth_view = Self::make_depth(&self.device, self.width, self.height);
+        self.decals.rebind(&self.device, &self.depth_view);
     }
 
     fn pipeline(&mut self, key: PipelineKey) -> &wgpu::RenderPipeline {
@@ -1411,6 +1440,8 @@ impl Renderer {
                 crate::world::grass::FADE_START,
                 crate::world::grass::FADE_RANGE,
             ],
+            inv_view_proj: view_proj.inverse().to_cols_array_2d(),
+            screen: [self.width as f32, self.height as f32, 0.0, 0.0],
         };
         self.queue
             .write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&fu));
@@ -1651,6 +1682,28 @@ impl Renderer {
             self.pipeline(part.material.key);
         }
 
+        // Decals in view, in one instance buffer.
+        let decals: Vec<(&decal::GpuDecal, InstanceData)> = scene
+            .cells
+            .values()
+            .flat_map(|c| c.decals.iter())
+            .filter(|d| !d.hidden && frustum.sphere_visible(d.center, d.radius))
+            .map(|d| (d, d.instance()))
+            .collect();
+        if decals.len() > self.decal_cap {
+            self.decal_cap = decals.len().next_power_of_two();
+            self.decal_buf = Self::make_vbuf(
+                &self.device,
+                self.decal_cap * std::mem::size_of::<InstanceData>(),
+                "decal instances",
+            );
+        }
+        if !decals.is_empty() {
+            let data: Vec<InstanceData> = decals.iter().map(|d| d.1).collect();
+            self.queue
+                .write_buffer(&self.decal_buf, 0, bytemuck::cast_slice(&data));
+        }
+
         let mut enc = self.device.create_command_encoder(&Default::default());
         if shadowed {
             self.shadow_passes(&mut enc, scene, &cascades, update, &shadow_skin);
@@ -1768,6 +1821,67 @@ impl Renderer {
                     skinned_draws += 1;
                 }
                 pass.set_vertex_buffer(1, self.instance_buf.slice(..));
+            }
+            // Decals: the opaque scene's depth read back, so in a pass of
+            // their own with it attached read-only; then the rest.
+            if !decals.is_empty() {
+                drop(pass);
+                let color = pre_post.as_ref().unwrap_or(target);
+                let mut dpass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("decals"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: color,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_view,
+                        depth_ops: None,
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                dpass.set_pipeline(&self.decals.pipeline);
+                dpass.set_bind_group(0, &self.frame_bg, &[]);
+                dpass.set_bind_group(2, &self.decals.depth_bg, &[]);
+                dpass.set_vertex_buffer(0, self.decals.cube.slice(..));
+                dpass.set_vertex_buffer(1, self.decal_buf.slice(..));
+                for (i, (d, _)) in decals.iter().enumerate() {
+                    dpass.set_bind_group(1, &d.material.bind_group, &[]);
+                    dpass.draw(0..36, i as u32..i as u32 + 1);
+                }
+                drop(dpass);
+                pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("main, after decals"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: color,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_bind_group(0, &self.frame_bg, &[]);
+                current.set(None);
             }
             if scene.cells.values().any(|c| !c.water.is_empty()) {
                 pass.set_pipeline(&self.water.pipeline);

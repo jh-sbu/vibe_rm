@@ -56,6 +56,11 @@ pub struct Engine {
     pub models: ModelCache,
     /// The landscape textures' grasses, loaded as cells need them.
     pub grass: crate::world::grass::GrassTypes,
+    /// Texture sets' decal data (none: not a decal), and their materials.
+    pub decal_data: HashMap<FormId, Option<crate::world::decal::DecalData>>,
+    pub decal_materials: HashMap<FormId, std::sync::Arc<crate::render::GpuMaterial>>,
+    /// Cells' decal references waiting for a physics step to be placed.
+    pub pending_decals: Vec<(CellKey, Vec<FormId>)>,
     pub scene: Scene,
     pub camera: Camera,
     /// Game time of day in hours.
@@ -237,6 +242,9 @@ impl Engine {
             renderer,
             models: ModelCache::default(),
             grass: Default::default(),
+            decal_data: Default::default(),
+            decal_materials: Default::default(),
+            pending_decals: Vec::new(),
             scene: Scene::default(),
             camera: Camera {
                 position: Vec3::ZERO,
@@ -1570,6 +1578,7 @@ impl Engine {
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_actors(key, &actors);
         self.load_triggers(key, &refs);
+        self.load_decals(key, &refs);
         self.load_activate_parents(&refs);
         self.attach_cell_scripts(&refs);
         self.attach_cell_scripts(&made_ids);
@@ -1588,6 +1597,7 @@ impl Engine {
         self.rebuild_lights();
         self.location = Location::Interior(cell_id);
         self.physics.step(1.0 / 60.0);
+        self.place_decals();
 
         let (pos, yaw) =
             spawn.unwrap_or_else(|| self.default_interior_spawn(cell_id, &contents.objects));
@@ -1667,6 +1677,7 @@ impl Engine {
         }
         self.rebuild_lights();
         self.physics.step(1.0 / 60.0);
+        self.place_decals();
         let mut feet = feet;
         if let Some(h) = self.ground_height(feet.truncate())
             && feet.z < h
@@ -1865,6 +1876,9 @@ impl Engine {
                 rt.land = Some(l);
             }
         }
+
+        // Decals project onto the landscape too.
+        self.load_decals(key, &refs);
 
         // Water
         if let Some(cid) = cell_id
@@ -2180,6 +2194,7 @@ impl Engine {
         self.update_particles(dt);
         self.update_grab(dt);
         self.physics.step(dt);
+        self.place_decals();
         self.update_loose();
         self.update_traps();
         self.update_whereabouts(dt);
@@ -2961,6 +2976,9 @@ impl Engine {
             for rc in self.scene.cells.values_mut() {
                 for inst in rc.instances.iter_mut().filter(|inst| inst.ref_id == r.0) {
                     inst.hidden = off;
+                }
+                for d in rc.decals.iter_mut().filter(|d| d.ref_id == r.0) {
+                    d.hidden = off;
                 }
             }
             self.physics.set_owner_enabled(r, !off);

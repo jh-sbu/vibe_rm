@@ -2173,6 +2173,108 @@ fn main() -> Result<()> {
                 println!("{c:6} {n}");
             }
         }
+        Some("decals") => {
+            // decals <data dir> [texture set]: texture sets with decal data
+            // (DODT) and the references placing them: how many, the subrecords
+            // those carry, a few samples (or every one of the named texture
+            // set) with their cell, position and scale.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut with_dodt = 0;
+            for &id in lo.ids_of_type(b"TXST") {
+                let Some(rec) = lo.get(id) else { continue };
+                if let Some(d) = rec.get(b"DODT") {
+                    with_dodt += 1;
+                    if with_dodt <= 6
+                        || args.get(2).is_some_and(|w| {
+                            rec.editor_id().is_some_and(|e| e.eq_ignore_ascii_case(w))
+                        })
+                    {
+                        let f = |i: usize| f32::from_le_bytes(d[i..i + 4].try_into().unwrap());
+                        println!(
+                            "{id} {:<28} DODT {} bytes: min w {} max w {} min h {} max h {} depth {} shin {} par scale {} passes {} flags {:02x} color {:?} tx00 {:?} DNAM {:?}",
+                            rec.editor_id().unwrap_or_default(),
+                            d.len(),
+                            f(0),
+                            f(4),
+                            f(8),
+                            f(12),
+                            f(16),
+                            f(20),
+                            f(24),
+                            d[28],
+                            d[29],
+                            &d[32..36],
+                            rec.get(b"TX00").map(esp::decode_zstring),
+                            rec.get(b"DNAM"),
+                        );
+                    }
+                }
+            }
+            println!("{with_dodt} texture sets with DODT");
+            let mut n = 0;
+            let mut ground = (0, 0);
+            let mut tags = std::collections::BTreeMap::<String, usize>::new();
+            let mut bases = std::collections::BTreeMap::<String, usize>::new();
+            for &r in lo.ids_of_type(b"REFR") {
+                let Some(rec) = lo.get(r) else { continue };
+                let Some(name) = rec.get(b"NAME") else {
+                    continue;
+                };
+                let base = rec.fid(esp::FormId(u32::from_le_bytes(
+                    name[..4].try_into().unwrap(),
+                )));
+                let Some(b) = lo.get(base) else { continue };
+                if b.tag().0 != *b"TXST" {
+                    continue;
+                }
+                n += 1;
+                let edid = b.editor_id().unwrap_or_default();
+                *bases.entry(edid.clone()).or_default() += 1;
+                // Which way the reference's +Y points, for ground decals.
+                if edid.contains("Ground") || edid.contains("FlameBurn") {
+                    let d = rec.get(b"DATA").unwrap_or_default();
+                    if d.len() >= 24 {
+                        let f = |i: usize| f32::from_le_bytes(d[i..i + 4].try_into().unwrap());
+                        let q = glam::Quat::from_euler(glam::EulerRot::XYZ, -f(12), -f(16), -f(20));
+                        let y = q * glam::Vec3::Y;
+                        ground.0 += 1;
+                        if y.z < -0.5 {
+                            ground.1 += 1;
+                        }
+                    }
+                }
+                for sr in rec.subrecords() {
+                    *tags.entry(sr.tag.to_string()).or_default() += 1;
+                }
+                let wanted = args.get(2).is_none_or(|w| edid.eq_ignore_ascii_case(w));
+                if wanted && (n <= 6 || args.get(2).is_some()) {
+                    let data = rec.get(b"DATA").unwrap_or_default();
+                    let fl: Vec<f32> = data
+                        .chunks_exact(4)
+                        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+                        .collect();
+                    println!(
+                        "{r} {} in {:?} DATA {fl:?} XSCL {:?}",
+                        b.editor_id().unwrap_or_default(),
+                        lo.cell_of_ref(r),
+                        rec.get(b"XSCL")
+                            .map(|x| f32::from_le_bytes(x[..4].try_into().unwrap())),
+                    );
+                }
+            }
+            println!("{n} references to texture sets; subrecords {tags:?}");
+            println!(
+                "ground / burn decals: {} of {} have +Y pointing down",
+                ground.1, ground.0
+            );
+            let mut v: Vec<_> = bases.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            for (k, c) in v.iter().take(15) {
+                println!("{c:6} {k}");
+            }
+        }
         Some("ref-types") => {
             // ref-types <data dir> [ref type]: references carrying location ref types
             // (XLRT), by type, with how long reading every reference takes.

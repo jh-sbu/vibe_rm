@@ -512,6 +512,12 @@ game each piece unlocks.
   drawn instanced per cell and grass, swaying in waves with the wind by their vertex
   alpha and fading out from 7000 units. `VRM_NO_GRASS=1` turns it off; vrm-tool `grass`
   lists the grasses. Open questions: `known_gaps/grass.md`
+- Projected decals: references to texture sets with decal data (`DODT`: blood sprays,
+  burn marks, giants' paint, puddles) cast from the reference along its +Y onto the cell's
+  collision and drawn as boxes over the opaque scene's depth, lit like the surface they
+  land on (sizes between the data's minimum and maximum, 2x2 subtextures, enable state).
+  `VRM_NO_DECALS=1` turns them off; vrm-tool `decals` lists them. Open questions:
+  `known_gaps/decals.md`
 - Objects' behaviour graphs (`BSBehaviorGraphExtraData`: traps, pressure plates, levers,
   portcullises, puzzle pillars): the project runs on the model's own nodes, the nodes it
   moves (those with transform controllers) drawn apart and their collision carried;
@@ -676,7 +682,7 @@ game each piece unlocks.
    radial blur and motion blur (cinematic values and tint: see Done), particles'
    remaining modifiers (colliders, mesh emitters' surfaces, strips, LOD; see
    `known_gaps/particles.md`), distant LOD (BTR/BTO/trees),
-   grass shadows and the grass cache, projected decals (texture sets' `DODT`: blood, scorch marks); eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
+   grass shadows and the grass cache, decals made at runtime (blood from hits, impact data sets); eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /
