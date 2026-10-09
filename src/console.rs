@@ -50,6 +50,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "use <ref> <furniture> send an actor to use furniture or an idle marker".into(),
             "escort <ref> <target> <dest> [wait] [run]  lead target to dest, waiting while it lags".into(),
             "gstate <ref>          an actor's active behaviour graph states".into(),
+            "bones <ref> [filter]  an actor's posed and bind bone positions (model space)".into(),
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
@@ -565,6 +566,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let [r, var, value] = args[..] else { return vec!["usage: sgv <actor ref> <variable> <value>".into()] };
             let (Some(actor), Ok(x)) = (engine.resolve_form(r), value.parse::<f32>()) else { return vec!["bad reference or value".into()] };
             if engine.set_graph_variable(actor, var, x) { vec![format!("{r}: {var} = {x}")] } else { vec![format!("{r} has no behaviour graph")] }
+        }
+        "bones" => {
+            let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: bones <actor ref> [name filter]".into()] };
+            engine.describe_bones(actor, args.get(1).copied().unwrap_or(""))
         }
         "gstate" => {
             let [r] = args[..] else { return vec!["usage: gstate <actor ref>".into()] };

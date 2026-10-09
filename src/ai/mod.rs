@@ -2429,6 +2429,42 @@ impl Engine {
         true
     }
 
+    /// A loaded actor's bones (names containing `filter`): posed and bind
+    /// positions in model space, and the posed bone's up axis.
+    pub fn describe_bones(&self, r: FormId, filter: &str) -> Vec<String> {
+        let Some(key) = self.actor_cells.get(&r) else {
+            return vec![format!("{r} isn't loaded")];
+        };
+        let Some(i) = self
+            .cells
+            .get(key)
+            .and_then(|c| c.actors.iter().position(|a| a.ref_id == r))
+        else {
+            return vec![format!("{r} isn't loaded")];
+        };
+        let skeleton = &self.cells[key].actors[i].skeleton;
+        let Some(inst) = self.scene.cells.get(key).and_then(|c| c.actors.get(i)) else {
+            return vec![format!("{r} isn't drawn")];
+        };
+        let bind = skeleton.model_space(&skeleton.bind_locals());
+        let filter = filter.to_ascii_lowercase();
+        skeleton
+            .bones
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.name.to_ascii_lowercase().contains(&filter))
+            .filter_map(|(b, bone)| {
+                let m = inst.pose.get(b)?;
+                let (p, q) = (m.w_axis.truncate(), bind[b].w_axis.truncate());
+                let up = m.z_axis.truncate();
+                Some(format!(
+                    "{b:3} {:28} pose ({:7.1} {:7.1} {:7.1}) bind ({:7.1} {:7.1} {:7.1}) z ({:5.2} {:5.2} {:5.2})",
+                    bone.name, p.x, p.y, p.z, q.x, q.y, q.z, up.x, up.y, up.z
+                ))
+            })
+            .collect()
+    }
+
     pub fn graph_states(&self, r: FormId) -> Option<Vec<String>> {
         let key = self.actor_cells.get(&r)?;
         let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;
