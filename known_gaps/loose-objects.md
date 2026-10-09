@@ -33,6 +33,20 @@ otherwise undocumented; rapier stands in for it.
 - **Constraint pivots** are taken in the body's node frame (`bhkRigidBody`) or
   the `bhkRigidBodyT` frame, as the cart's, signs' and breakable boards' data
   fit.
+- **Angle limits' sign.** Havok's limits are taken as the angle of body A's
+  frame turned from B's, the opposite of rapier's (B's from A's), so they
+  are negated as joints are made. So read, every joint of the human
+  skeleton rests within its limits in the bind pose (the ankles' 28 degrees
+  within -34..4), knees and elbows bend the right way and hips let a leg
+  swing 45 degrees outwards and 15 across; read as rapier's, none of that
+  held and dead bodies' legs crossed. The cone of a ragdoll constraint is
+  symmetric either way.
+- **Ragdoll arms** still lie a little oddly with the limits so turned (seen
+  in play; not yet looked into). Suspects: the shoulders' plane limits
+  (-60..5 degrees, made 5..60 by the turn) and twist, which this reading
+  of the ragdoll constraint (x twist, y cone, z plane) may still get wrong
+  for the arms' frames, and rapier's per-axis angles, which are only
+  approximate for a ball joint turned far on two axes at once.
 - **Constraint types.** Ball-and-socket constraints and socket chains (rope
   links: pivots in pairs, link `i` to link `i + 1`) are free ball joints; a
   stiff spring is a rope joint, so its bodies can come closer than its length

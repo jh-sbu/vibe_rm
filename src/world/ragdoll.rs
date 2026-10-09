@@ -28,8 +28,9 @@ pub struct RagdollJoint {
     pub b: usize,
     pub frame_a: (Vec3, Quat),
     pub frame_b: (Vec3, Quat),
-    /// Angle limits (radians) about the frame's x, y and z axes; `None` for an axis
-    /// that is locked (hinges turn about x only).
+    /// Angle limits (radians) about the frame's x, y and z axes, of B's frame
+    /// turned from A's; `None` for an axis that is locked (hinges turn about x
+    /// only).
     pub limits: [Option<(f32, f32)>; 3],
     /// How the bodies turn about the pivots.
     pub kind: JointKind,
@@ -79,6 +80,15 @@ pub(crate) fn ball(a: usize, b: usize, pivot: [Vec3; 2]) -> RagdollJoint {
     }
 }
 
+/// Havok's angle limits (A's frame turned from B's) as B's turned from A's.
+/// With them as they were, knees and elbows bent the wrong way and hips let
+/// the legs swing 45 degrees across each other; so turned, every joint of the
+/// human skeleton rests within its limits in the bind pose (the ankles' 28
+/// degrees within -34..4, not outside them).
+fn b_from_a((min, max): (f32, f32)) -> (f32, f32) {
+    (-max, -min)
+}
+
 /// The joint a NIF constraint between bodies `a` and `b` makes.
 pub(crate) fn joint(kind: &ConstraintKind, a: usize, b: usize) -> RagdollJoint {
     match kind {
@@ -99,9 +109,12 @@ pub(crate) fn joint(kind: &ConstraintKind, a: usize, b: usize) -> RagdollJoint {
             // Twisting about the twist axis; swinging within the cone, towards
             // the plane axis no further than the plane limits.
             limits: [
-                Some((*twist_min, *twist_max)),
+                Some(b_from_a((*twist_min, *twist_max))),
                 Some((-cone_max, *cone_max)),
-                Some((plane_min.max(-cone_max), plane_max.min(*cone_max))),
+                Some(b_from_a((
+                    plane_min.max(-cone_max),
+                    plane_max.min(*cone_max),
+                ))),
             ],
             kind: JointKind::Limited,
             breaks: None,
@@ -117,7 +130,11 @@ pub(crate) fn joint(kind: &ConstraintKind, a: usize, b: usize) -> RagdollJoint {
             b,
             frame_a: frame(pivot[0], axis[0], perp[0]),
             frame_b: frame(pivot[1], axis[1], perp[1]),
-            limits: [Some((*min, *max)).filter(|_| min.is_finite()), None, None],
+            limits: [
+                Some(b_from_a((*min, *max))).filter(|_| min.is_finite()),
+                None,
+                None,
+            ],
             kind: JointKind::Limited,
             breaks: None,
         },
