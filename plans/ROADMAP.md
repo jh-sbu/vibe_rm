@@ -545,7 +545,7 @@ game each piece unlocks.
   `FindWeather`, `GetClassification`; conditions `IsRaining`, `IsSnowing`,
   `GetWindSpeed`, `GetCurrentWeatherPercent`, `IsPleasant`, `IsCloudy`.
   Weather sounds outdoors: rain and wind loops fading with the transition,
-  thunder now and then. Rain and snow (the weather's MNAM precipitation,
+  thunder now and then with a lightning flash (console `thunder`). Rain and snow (the weather's MNAM precipitation,
   SPGD) as particles in a box about the camera, falling at their gravity
   velocity, snow turning about its falling centre; coming in from the
   precipitation's begin fade in, going out by its end fade out. Console `fw`,

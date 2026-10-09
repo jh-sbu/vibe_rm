@@ -35,6 +35,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "tcl                   toggle collision (noclip)".into(),
             "fw / sw <weather>     force / set weather (overriding; rwo releases)".into(),
             "weather               the weathers, transition and region".into(),
+            "thunder               roll thunder and lightning now (while there is thunder)".into(),
             "set gamehour to <h>   set time of day".into(),
             "player.setpos x y z   teleport within the current location".into(),
             "getpos                print position".into(),
@@ -593,6 +594,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             engine.describe_weather()
         }
         "weather" => engine.describe_weather(),
+        "thunder" => vec![if engine.thunder_now() { "thunder".into() } else { "no thunder in this weather now".into() }],
         "set" if args.len() >= 3 && args[0].eq_ignore_ascii_case("gamehour") => match args[2].parse::<f32>() {
             Ok(h) => {
                 engine.hour = h.rem_euclid(24.0);

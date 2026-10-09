@@ -92,6 +92,13 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   - Particles hang in a box the SPGD's size about the camera, faded out
     towards its edges. Wind doesn't blow them, and nothing keeps rain off
     under roofs or overhangs.
-- **Not drawn:** lightning flashes, auroras, sky statics, the weather's volumetric lighting, sun
+- **Lightning.** Each thunder roll flashes at once in the weather's DATA
+  lightning colour (bytes 12..14, UESP; the storms' 219, 220, 238), at its
+  share of the transition: a flicker, a dim gap and a fading second stroke
+  over 0.6 seconds (made up), adding to the sky colours, the clouds, the
+  ambient and directional ambient and the precipitation's light. The flash
+  and the sound come together (no delay for the strike's distance); no bolt
+  is drawn. Thunder now rolls without an audio device as well.
+- **Not drawn:** auroras, sky statics, the weather's volumetric lighting, sun
   glare and damage, cloud speeds (RNAM / QNAM) and wind direction.
 - **Not in saves**: the weather state lives only in memory.

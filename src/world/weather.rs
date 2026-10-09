@@ -61,6 +61,8 @@ pub struct Weather {
     pub thunder: (u8, u8, u8),
     /// SNAM: (sound, [`sound_type`]).
     pub sounds: Vec<(FormId, u32)>,
+    /// DATA lightning colour.
+    pub lightning_color: Vec3,
     /// MNAM: the precipitation (SPGD) drawn while it rains or snows.
     pub precipitation: FormId,
 }
@@ -209,6 +211,7 @@ impl Weather {
             precip_fade: (0, 0),
             thunder: (0, 0, 0),
             sounds: Vec::new(),
+            lightning_color: Vec3::ONE,
             precipitation: FormId::NULL,
         }
     }
@@ -253,6 +256,10 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
                 w.precip_fade = (sr.u8(6), sr.u8(7));
                 w.thunder = (sr.u8(8), sr.u8(9), sr.u8(10));
                 w.flags = sr.u8(11);
+                if sr.data.len() >= 15 {
+                    w.lightning_color =
+                        Vec3::new(sr.u8(12) as f32, sr.u8(13) as f32, sr.u8(14) as f32) / 255.0;
+                }
             }
             b"SNAM" if sr.data.len() >= 8 => {
                 w.sounds.push((rec.fid(sr.form_id(0)), sr.u32(4)));
