@@ -15,6 +15,50 @@ pub struct ModelCache {
     collision: crate::physics::CollisionCache,
     furniture: HashMap<String, Option<Arc<[nif::FurnitureMarker]>>>,
     anims: HashMap<String, Arc<ModelAnim>>,
+    /// Addon nodes' models (`meshes/...`) by their index (ADDN `DATA`).
+    addons: Arc<HashMap<i32, String>>,
+}
+
+/// The addon nodes' models by index (ADDN `DATA`, `MODL`).
+pub fn addon_models(lo: &esp::LoadOrder) -> HashMap<i32, String> {
+    let mut out = HashMap::new();
+    for &id in lo.ids_of_type(b"ADDN") {
+        let Some(rec) = lo.get(id) else { continue };
+        let Some(index) = rec.get(b"DATA").and_then(|d| d.get(..4)) else {
+            continue;
+        };
+        let index = i32::from_le_bytes(index.try_into().unwrap());
+        if let Some(path) = super::records::model_path(&rec) {
+            out.insert(index, path);
+        }
+    }
+    out
+}
+
+/// Place the models of a model's addon nodes in it (and in its animated
+/// parts'), each converted at its node. Addons of addons aren't followed.
+fn attach_addons(
+    m: &mut CpuModel,
+    addons: &HashMap<i32, String>,
+    vfs: &vfs::Vfs,
+    nifs: &mut HashMap<i32, Option<nif::Nif>>,
+) {
+    for part in &mut m.animated {
+        attach_addons(&mut part.model, addons, vfs, nifs);
+    }
+    for (index, at) in std::mem::take(&mut m.addons) {
+        let nif = nifs.entry(index).or_insert_with(|| {
+            let path = addons.get(&index)?;
+            let n = vfs.read(path).and_then(|d| nif::Nif::parse(&d).ok());
+            if n.is_none() {
+                log::debug!("addon node {index}: {path} not found or unreadable");
+            }
+            n
+        });
+        if let Some(n) = nif {
+            m.merge(model::convert_at(n, at));
+        }
+    }
 }
 
 /// Keyframe-animated parts of a model and the sequences that move them.
@@ -41,6 +85,11 @@ fn furniture_markers(n: &nif::Nif) -> Option<Arc<[nif::FurnitureMarker]>> {
 }
 
 impl ModelCache {
+    /// Set the addon nodes' models ([`addon_models`]).
+    pub fn set_addons(&mut self, addons: HashMap<i32, String>) {
+        self.addons = Arc::new(addons);
+    }
+
     pub fn get(&self, path: &str) -> Option<Arc<GpuModel>> {
         self.map.get(path).cloned().flatten()
     }
@@ -82,6 +131,7 @@ impl ModelCache {
             return;
         }
         let t0 = std::time::Instant::now();
+        let addons = self.addons.clone();
         #[allow(clippy::type_complexity)]
         let cpu: Vec<(
             String,
@@ -141,6 +191,10 @@ impl ModelCache {
                                     model::convert_split(&n, &|_| true, &split)
                                 }
                             };
+                            let mut m = m;
+                            if !m.addons.is_empty() {
+                                attach_addons(&mut m, &addons, vfs, &mut HashMap::new());
+                            }
                             for mesh in &m.meshes {
                                 log::trace!("mesh in {p}: {:?}", mesh.material);
                             }

@@ -80,7 +80,12 @@ pub enum NodeKind {
     RootCollision,
     MultiBound,
     Ordered,
-    Value,
+    /// `BSValueNode`: an addon node (ADDN) is attached here when `value` is
+    /// its index.
+    Value {
+        value: i32,
+        flags: u8,
+    },
     Tree,
     /// Only one child is visible: the one at `index`.
     Switch {
@@ -861,8 +866,10 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             Block::Node(n)
         }
         "BSValueNode" => {
-            let n = node(r, NodeKind::Value)?;
-            r.skip(5)?;
+            let mut n = node(r, NodeKind::Plain)?;
+            let value = r.i32()?;
+            let flags = r.u8()?;
+            n.kind = NodeKind::Value { value, flags };
             Block::Node(n)
         }
         "BSTreeNode" => {

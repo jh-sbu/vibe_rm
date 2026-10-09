@@ -485,6 +485,11 @@ game each piece unlocks.
   camera-facing (or motion-aligned) quads with their effect materials: fires burn and
   smoke. Greyscale palettes are looked up clamped. Open questions:
   `known_gaps/particles.md`
+- Addon nodes: a model's `BSValueNode`s take the addon node (ADDN) whose index is
+  their value, its model (the `MPS` master particle systems) placed at the node and
+  merged into the host's: candle and chandelier flames, torches' fire and embers,
+  forges, chimney smoke and street mist (242 vanilla models). `VRM_NO_ADDONS=1` turns
+  them off; vrm-tool `addons` lists them and their users
 - Billboard nodes (`NiBillboardNode`): their subtrees turned to the camera in the vertex
   shader about the node's origin (facing the view direction or the camera, or turning about
   the up axis only, by mode): fires' glows and flame cards

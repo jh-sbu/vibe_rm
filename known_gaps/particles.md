@@ -66,6 +66,16 @@ are used below is this engine's reading.
 - **Running.** Systems run while their object is within 6000 units of the
   camera; one first seen runs 3 seconds ahead so fires are burning. LOD
   modifiers, colliders, bombs, inherited velocity, recycle bounds, strip
-  systems (trails), mesh particle systems and `BSMasterParticleSystem` are
-  not used. Particles are sorted with the other blended draws by their
+  systems (trails) and mesh particle systems are not used. Particles are sorted with the other blended draws by their
   system's centre, not one by one, and aren't lit.
+- **Addon nodes.** A `BSValueNode`'s value is the index (ADDN `DATA`) of
+  the addon node whose model goes there; 35 vanilla value nodes carry 99,
+  which no ADDN has (bolts and spears), and are left empty. The addon
+  models are `BSMasterParticleSystem`s whose emitters are
+  `BSPSysMultiTargetEmitterCtlr`s: the game presumably runs one master
+  system emitting at every node using it (and the ADDN's `DNAM` holds a
+  master particle cap and flags). Here each node gets its own copy of the
+  addon's systems, placed at the node's rest transform, so a chandelier's
+  candles flicker independently; caps, the `DNAM` flags, the nodes'
+  keyframe animation (the blood spray's spinning nodes) and the value
+  node's flags aren't used.

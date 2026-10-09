@@ -236,11 +236,15 @@ impl Engine {
         weather: Option<String>,
         radius: i32,
     ) -> Self {
+        let mut models = ModelCache::default();
+        if std::env::var_os("VRM_NO_ADDONS").is_none() {
+            models.set_addons(loader::addon_models(&lo));
+        }
         Engine {
             lo,
             vfs,
             renderer,
-            models: ModelCache::default(),
+            models,
             grass: Default::default(),
             decal_data: Default::default(),
             decal_materials: Default::default(),
