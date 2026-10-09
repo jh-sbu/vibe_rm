@@ -16,9 +16,12 @@
 //! (SNAM: rain, wind...) loop at their share of the transition, thunder
 //! rolls now and then while it's on, lightning flashing, and its
 //! precipitation (MNAM: rain, snow) falls as particles from its begin fade
-//! in, the outgoing weather's until its end fade out. Open questions: `known_gaps/weather.md`.
+//! in, the outgoing weather's until its end fade out. Sky statics (the cloud
+//! statics placed about the world) show only in the weathers listing them
+//! (TNAM), fading with their share of the transition and drawn in the
+//! weather's sky statics colour. Open questions: `known_gaps/weather.md`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use esp::FormId;
@@ -70,6 +73,8 @@ pub struct WeatherState {
     thunder_in: Option<f32>,
     /// A lightning flash: seconds since it struck, its colour.
     flash: Option<(f32, glam::Vec3)>,
+    /// The bases any weather lists as a sky static (TNAM).
+    sky_static_bases: Option<HashSet<u32>>,
 }
 
 /// The regional weather list of a region record, if it has one: (priority,
@@ -646,6 +651,7 @@ impl Engine {
             for c in st.clouds.iter_mut().chain(st.outgoing_clouds.iter_mut()) {
                 c.color += f * 0.6;
             }
+            st.sky_statics += f * 0.6;
             st.ambient += f * 0.4;
             st.effect_lighting += f * 0.4;
             for d in &mut st.dalc {
@@ -670,8 +676,47 @@ impl Engine {
         self.renderer
             .precip
             .set_intensity(precip, st.effect_lighting);
+        self.update_sky_statics(st.sky_statics);
         self.renderer.sky.set_state(st);
         Some(env)
+    }
+
+    /// Show the loaded sky statics at their weathers' share of the transition,
+    /// in the sky statics colour; those no weather on lists are hidden.
+    fn update_sky_statics(&mut self, color: glam::Vec3) {
+        let lo = &self.lo;
+        let ws = &mut self.weather;
+        ws.sky_static_bases.get_or_insert_with(|| {
+            lo.ids_of_type(b"WTHR")
+                .iter()
+                .filter_map(|&id| lo.get(id))
+                .flat_map(|rec| {
+                    rec.subrecords()
+                        .filter(|sr| sr.tag.0 == *b"TNAM" && sr.data.len() >= 4)
+                        .map(|sr| rec.fid(sr.form_id(0)).0)
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        });
+        let bases = ws.sky_static_bases.as_ref().unwrap();
+        let lists = |w: &Option<Arc<Weather>>, base: u32| {
+            w.as_ref()
+                .is_some_and(|w| w.sky_statics.contains(&FormId(base)))
+        };
+        let pct = if ws.outgoing.is_some() { ws.pct } else { 1.0 };
+        for inst in self
+            .scene
+            .cells
+            .values_mut()
+            .flat_map(|c| c.instances.iter_mut())
+        {
+            if !bases.contains(&inst.base) {
+                continue;
+            }
+            let share = lists(&ws.current, inst.base) as u8 as f32 * pct
+                + lists(&ws.outgoing, inst.base) as u8 as f32 * (1.0 - pct);
+            inst.tint = color.extend(share);
+        }
     }
 
     /// Console `weather`: the weathers, the transition and the region.

@@ -3348,6 +3348,42 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("weathers") => {
+            // weathers <data dir>: every weather's DATA wind (speed, direction byte 17,
+            // range byte 18), flags (classification, aurora bits), aurora model,
+            // sky statics (TNAM) and precipitation (MNAM).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            for &id in lo.ids_of_type(b"WTHR") {
+                let Some(rec) = lo.get(id) else { continue };
+                let d = rec.get(b"DATA").unwrap_or_default();
+                let b = |i: usize| d.get(i).copied().unwrap_or(0);
+                let statics = rec.subrecords().filter(|s| s.tag.0 == *b"TNAM").count();
+                let aurora = rec
+                    .get(b"MODL")
+                    .map(|m| {
+                        String::from_utf8_lossy(m)
+                            .trim_end_matches('\0')
+                            .to_string()
+                    })
+                    .unwrap_or_default();
+                let mnam = rec
+                    .get(b"MNAM")
+                    .filter(|m| m.len() >= 4)
+                    .map(|m| u32::from_le_bytes(m[0..4].try_into().unwrap()))
+                    .unwrap_or(0);
+                println!(
+                    "{id} {:<32} wind {:3} dir {:3} range {:3} flags {:02x} statics {:3} precip {mnam:08X} {aurora}",
+                    rec.editor_id().unwrap_or_default(),
+                    b(0),
+                    b(17),
+                    b(18),
+                    b(11),
+                    statics,
+                );
+            }
+        }
         Some("image-spaces") => {
             // image-spaces <data dir> [imgs]: one image space's values, or over all of
             // them: HNAM / CNAM / TNAM / DNAM ranges, which cells and weathers use
@@ -3462,7 +3498,8 @@ fn main() -> Result<()> {
         }
         Some("model-users") => {
             // model-users <data dir> <model path substring> [n]: base records whose
-            // model's path has the substring, and up to n placed references of them.
+            // model's path has the substring, and up to n placed references of them
+            // with their positions.
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let lo = esp::LoadOrder::load(data, &names)?;
@@ -3504,7 +3541,15 @@ fn main() -> Result<()> {
                     .cell_of_ref(id)
                     .and_then(|c| lo.get(c).and_then(|r| r.editor_id().map(|e| e.to_string())))
                     .unwrap_or_default();
-                println!("ref {id} -> {base} in {cell}");
+                let pos = rec
+                    .get(b"DATA")
+                    .filter(|d| d.len() >= 12)
+                    .map(|d| {
+                        let f = |i: usize| f32::from_le_bytes(d[i..i + 4].try_into().unwrap());
+                        format!(" at {:.0} {:.0} {:.0}", f(0), f(4), f(8))
+                    })
+                    .unwrap_or_default();
+                println!("ref {id} -> {base} in {cell}{pos}");
                 shown += 1;
                 if shown >= n {
                     break;
