@@ -547,7 +547,8 @@ game each piece unlocks.
   Weather sounds outdoors: rain and wind loops fading with the transition,
   thunder now and then with a lightning flash (console `thunder`). Rain and snow (the weather's MNAM precipitation,
   SPGD) as particles in a box about the camera, falling at their gravity
-  velocity, snow turning about its falling centre; coming in from the
+  velocity, snow turning about its falling centre, both blown by the
+  weather's wind (DATA direction and range); coming in from the
   precipitation's begin fade in, going out by its end fade out. Sky statics
   (the cloud meshes placed about the world, TNAM) shown only in the weathers
   listing them, fading with the transition, in the sky statics colour. Console `fw`,
@@ -636,8 +637,7 @@ game each piece unlocks.
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
    radial blur and motion blur (cinematic values and tint: see Done), particles
    (fire, smoke, explosions), distant LOD (BTR/BTO/trees),
-   grass, decals, environment maps; weather: auroras, wind blowing the
-   rain and snow, far sky statics (see `known_gaps/weather.md`)
+   grass, decals, environment maps; weather: auroras, far sky statics (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /
    `RequestAutoSave`

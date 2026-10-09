@@ -14,9 +14,10 @@ struct Frame {
 
 struct Precip {
     shape: vec4<f32>,    // size x, size y, box size, snow
-    motion: vec4<f32>,   // fall so far, turn so far (degrees), start rotation range, unused
+    motion: vec4<f32>,   // fall so far, turn so far (degrees), start rotation range, gravity velocity
     offsets: vec4<f32>,  // centre offset min, max, subtextures x, y
     color: vec4<f32>,
+    wind: vec4<f32>,     // drift so far (wrapped to the box) x, y; wind velocity x, y
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -55,6 +56,8 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     // into the box centred on the camera.
     var pos = vec3<f32>(rand(seed), rand(seed + 1u), rand(seed + 2u)) * b;
     pos.z -= p.motion.x;
+    pos.x += p.wind.x;
+    pos.y += p.wind.y;
     let rel = pos - cam;
     let w = rel - b * floor(rel / b) - 0.5 * b;
     var c = cam + w;
@@ -68,13 +71,16 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     let to_cam = cam - c;
     let d = length(to_cam);
     let view = to_cam / max(d, 0.001);
-    var right = cross(vec3<f32>(0.0, 0.0, 1.0), view);
+    // Rain streaks along its fall, slanted by the wind; snow faces the camera.
+    var up = vec3<f32>(0.0, 0.0, 1.0);
+    if (!snow) {
+        up = normalize(vec3<f32>(-p.wind.z, -p.wind.w, max(p.motion.w, 1.0)));
+    }
+    var right = cross(up, view);
     if (length(right) < 0.001) {
         right = vec3<f32>(1.0, 0.0, 0.0);
     }
     right = normalize(right);
-    // Rain streaks along its fall; snow faces the camera.
-    var up = vec3<f32>(0.0, 0.0, 1.0);
     if (snow) {
         up = cross(view, right);
     }

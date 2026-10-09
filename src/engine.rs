@@ -2040,6 +2040,8 @@ impl Engine {
         if let Some(env) = self.sky_environment() {
             self.scene.env = env;
         }
+        let wind = self.wind_now();
+        self.renderer.precip.blow(wind, dt);
         self.update_grab(dt);
         self.physics.step(dt);
         self.update_loose();

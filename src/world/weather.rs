@@ -66,6 +66,9 @@ pub struct Weather {
     /// Directional ambient per time of day: X+, X-, Y+, Y-, Z+, Z-.
     pub dalc: [[Vec3; 6]; 4],
     pub wind_speed: f32,
+    /// DATA wind direction and its range, in degrees (bytes 17 and 18 of
+    /// 256ths of 360 and 180 degrees).
+    pub wind_direction: (f32, f32),
     /// IMSP: the image space per time of day (sunrise, day, sunset, night).
     pub image_spaces: [FormId; 4],
     /// DATA flags: pleasant, cloudy, rainy, snow ([`flags`]).
@@ -224,6 +227,7 @@ impl Weather {
             clouds: Vec::new(),
             dalc: [[Vec3::splat(0.3); 6]; 4],
             wind_speed: 0.0,
+            wind_direction: (0.0, 0.0),
             image_spaces: [FormId::NULL; 4],
             flags: 0,
             trans_delta: 0,
@@ -282,6 +286,12 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
                 if sr.data.len() >= 15 {
                     w.lightning_color =
                         Vec3::new(sr.u8(12) as f32, sr.u8(13) as f32, sr.u8(14) as f32) / 255.0;
+                }
+                if sr.data.len() >= 19 {
+                    w.wind_direction = (
+                        sr.u8(17) as f32 * 360.0 / 256.0,
+                        sr.u8(18) as f32 * 180.0 / 256.0,
+                    );
                 }
             }
             b"SNAM" if sr.data.len() >= 8 => {
