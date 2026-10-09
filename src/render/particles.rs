@@ -453,6 +453,8 @@ pub struct ParticleState {
     rng: u32,
     /// Seconds run.
     pub time: f32,
+    /// No more particles are emitted (an impact's effect, past its duration).
+    pub stopped: bool,
 }
 
 impl ParticleState {
@@ -535,7 +537,7 @@ impl ParticleState {
         }
         // Emitting.
         for (ei, e) in d.emitters.iter().enumerate() {
-            if e.active.sample(t) < 0.5 || e.visible.sample(t) < 0.5 {
+            if self.stopped || e.active.sample(t) < 0.5 || e.visible.sample(t) < 0.5 {
                 self.owed[ei] = 0.0;
                 continue;
             }

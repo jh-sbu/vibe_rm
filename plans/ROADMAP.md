@@ -523,6 +523,13 @@ game each piece unlocks.
   land on (sizes between the data's minimum and maximum, 2x2 subtextures, enable state).
   `VRM_NO_DECALS=1` turns them off; vrm-tool `decals` lists them. Open questions:
   `known_gaps/decals.md`
+- Impacts: melee blows, bashes and arrows look up the impact (IPCT) their impact data
+  set (weapon `INAM`, bash `BIDS`, the race's `NAM5` bare-handed) has for the material
+  struck (the target race's `NAM4`, the blocking shield's or weapon's `BAMT`, the
+  surface's for arrows in the world): its sound plays, its effect model runs (blood
+  sprays, emitting for the impact's duration) and its decal lands, for a wound on the
+  floor or wall behind the target (at most 64 kept). Console `impact`; `VRM_NO_IMPACTS=1`
+  leaves out effects and decals. Open questions: `known_gaps/impacts.md`
 - Objects' behaviour graphs (`BSBehaviorGraphExtraData`: traps, pressure plates, levers,
   portcullises, puzzle pillars): the project runs on the model's own nodes, the nodes it
   moves (those with transform controllers) drawn apart and their collision carried;
@@ -687,7 +694,7 @@ game each piece unlocks.
    radial blur and motion blur (cinematic values and tint: see Done), particles'
    remaining modifiers (colliders, mesh emitters' surfaces, strips, LOD; see
    `known_gaps/particles.md`), distant LOD (BTR/BTO/trees),
-   grass shadows and the grass cache, decals made at runtime (blood from hits, impact data sets); eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
+   grass shadows and the grass cache, skinned decals (blood on actors), impact effects' meshes and spells' impacts; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /

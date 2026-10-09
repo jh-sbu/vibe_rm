@@ -61,6 +61,8 @@ pub struct Engine {
     pub decal_materials: HashMap<FormId, std::sync::Arc<crate::render::GpuMaterial>>,
     /// Cells' decal references waiting for a physics step to be placed.
     pub pending_decals: Vec<(CellKey, Vec<FormId>)>,
+    /// Impacts loaded, their effects running and the decals they left.
+    pub(crate) impacts: crate::impacts::ImpactState,
     pub scene: Scene,
     pub camera: Camera,
     /// Game time of day in hours.
@@ -249,6 +251,7 @@ impl Engine {
             decal_data: Default::default(),
             decal_materials: Default::default(),
             pending_decals: Vec::new(),
+            impacts: Default::default(),
             scene: Scene::default(),
             camera: Camera {
                 position: Vec3::ZERO,
@@ -1491,6 +1494,7 @@ impl Engine {
     }
 
     fn unload_cell(&mut self, key: CellKey) {
+        self.forget_impact_decals(key);
         self.remember_actors(key);
         self.scene.cells.remove(&key);
         self.unload_loose(key);
@@ -1747,6 +1751,7 @@ impl Engine {
                 }
             }
         }
+        self.update_impact_effects(dt, right, up, &mut batches);
         self.scene.particles = batches;
     }
 

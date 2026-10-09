@@ -1393,6 +1393,10 @@ impl Engine {
         let mut stagger = if staggers { stagger } else { 0.0 };
         let share = self.block_share(target, attacker, power);
         self.send_hit_event(target, attacker, projectile, power, false, share.is_some());
+        // Arrows land where they strike ([`Engine::arrow_impact`]).
+        if projectile.is_none() {
+            self.melee_impact(target, attacker, share.is_some(), false);
+        }
         if let Some(share) = share {
             log::info!(
                 "{target} blocks {attacker}{}: {:.0}% of {damage:.0} stopped",
@@ -1438,6 +1442,7 @@ impl Engine {
             if power { "power bashes" } else { "bashes" }
         );
         self.send_hit_event(target, attacker, None, power, true, false);
+        self.melee_impact(target, attacker, false, true);
         if let Some(a) = self.actor_mut(target) {
             a.set_guard(0.0);
             if let Some(c) = a.combat.as_mut().filter(|c| c.swinging()) {
@@ -1515,30 +1520,39 @@ impl Engine {
     /// Base damage of what an actor (or the player) strikes with; 0 for creatures
     /// and bare hands.
     fn weapon_base(&self, actor: FormId) -> f32 {
-        let weapon = if actor == PLAYER_REF {
+        self.weapon_of(actor)
+            .map_or(0.0, |w| weapon_damage(&self.lo, w))
+    }
+
+    /// The weapon an actor (or the player) strikes with, if any.
+    pub(crate) fn weapon_of(&self, actor: FormId) -> Option<FormId> {
+        if actor == PLAYER_REF {
             self.player_weapon()
         } else {
             self.inventories
                 .get(&actor)
                 .and_then(|i| i.weapon(&self.lo))
-        };
-        weapon.map_or(0.0, |w| weapon_damage(&self.lo, w))
+        }
     }
 
     /// The equipped shield's base armor rating, if any.
     fn shield_rating(&self, actor: FormId) -> Option<f32> {
+        let r = self.lo.get(self.equipped_shield(actor)?)?;
+        Some(
+            r.get(b"DNAM")
+                .filter(|d| d.len() >= 4)
+                .map_or(0, |d| i32::from_le_bytes(d[0..4].try_into().unwrap())) as f32
+                / 100.0,
+        )
+    }
+
+    /// The shield an actor (or the player) has equipped.
+    pub(crate) fn equipped_shield(&self, actor: FormId) -> Option<FormId> {
         let inv = self.inventories.get(&actor)?;
-        inv.equipped.iter().find_map(|&f| {
-            let r = self.lo.get(f).filter(|r| {
-                r.tag().0 == *b"ARMO" && crate::world::inventory::armor_slots(r) & SHIELD_SLOT != 0
-            })?;
-            Some(
-                r.get(b"DNAM")
-                    .filter(|d| d.len() >= 4)
-                    .map_or(0, |d| i32::from_le_bytes(d[0..4].try_into().unwrap()))
-                    as f32
-                    / 100.0,
-            )
+        inv.equipped.iter().copied().find(|&f| {
+            self.lo.get(f).is_some_and(|r| {
+                r.tag().0 == *b"ARMO" && crate::world::inventory::armor_slots(&r) & SHIELD_SLOT != 0
+            })
         })
     }
 

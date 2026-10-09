@@ -16,6 +16,7 @@ mod engine;
 mod footsteps;
 mod grab;
 mod imagespace;
+mod impacts;
 mod items;
 mod journal;
 mod locations;

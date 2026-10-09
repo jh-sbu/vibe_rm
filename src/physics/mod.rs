@@ -735,7 +735,14 @@ impl Physics {
     /// What the ground straight below `origin` (within `max`) is made of, ignoring
     /// actors: the hit distance and the surface.
     pub fn surface_below(&self, origin: Vec3, max: f32) -> Option<(f32, Surface)> {
-        let ray = Ray::new(origin, -Vec3::Z);
+        self.surface_ray(origin, -Vec3::Z, max)
+            .map(|(t, _, s)| (t, s))
+    }
+
+    /// What a ray from `origin` along `dir` (within `max`) meets, ignoring
+    /// actors: the hit distance, the surface normal and what it's made of.
+    pub fn surface_ray(&self, origin: Vec3, dir: Vec3, max: f32) -> Option<(f32, Vec3, Surface)> {
+        let ray = Ray::new(origin, dir);
         let not_actor = |h: ColliderHandle, _: &Collider| !self.capsules.contains(&h);
         let (h, hit) = self.world.cast_ray_and_get_normal(
             &ray,
@@ -744,7 +751,7 @@ impl Physics {
             QueryFilter::default().predicate(&not_actor),
         )?;
         if self.terrain.contains(&h) {
-            return Some((hit.time_of_impact, Surface::Terrain));
+            return Some((hit.time_of_impact, hit.normal, Surface::Terrain));
         }
         let m = self.materials.get(&h)?;
         // Mesh faces are numbered past the triangle count when hit from behind.
@@ -752,7 +759,7 @@ impl Physics {
             FeatureId::Face(i) if m.len() > 1 => i as usize % m.len(),
             _ => 0,
         };
-        Some((hit.time_of_impact, Surface::Havok(*m.get(i)?)))
+        Some((hit.time_of_impact, hit.normal, Surface::Havok(*m.get(i)?)))
     }
 
     /// Cast a ray past what `owner` owns (its capsule, its ragdoll), returning

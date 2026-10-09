@@ -47,8 +47,14 @@ impl DecalData {
         if rec.tag().0 != *b"TXST" {
             return None;
         }
-        let d = rec.get(b"DODT")?;
-        if d.len() < 36 {
+        DecalData::with_dodt(lo, id, rec.get(b"DODT")?)
+    }
+
+    /// A texture set's textures with the decal data `d` (a `DODT`: the texture
+    /// set's own, or an impact's).
+    pub fn with_dodt(lo: &LoadOrder, id: FormId, d: &[u8]) -> Option<DecalData> {
+        let rec = lo.get(id)?;
+        if rec.tag().0 != *b"TXST" || d.len() < 36 {
             return None;
         }
         let f = |i: usize| f32::from_le_bytes(d[i..i + 4].try_into().unwrap());
@@ -186,49 +192,70 @@ impl Engine {
         if found.is_empty() {
             return;
         }
-        let tex: Vec<String> = found
-            .iter()
-            .flat_map(|(_, d)| [Some(&d.diffuse), d.normal.as_ref(), d.glow.as_ref()])
-            .flatten()
-            .filter(|t| !self.renderer.textures.contains(t))
-            .cloned()
-            .collect::<std::collections::HashSet<_>>()
+        let decals: Vec<_> = found
             .into_iter()
+            .map(|(p, d)| {
+                let mut g = self.gpu_decal(d.id, &d, p.transform, p.subtexture);
+                g.ref_id = p.ref_id.0;
+                g.hidden = self.is_disabled(p.ref_id);
+                g
+            })
             .collect();
-        super::loader::load_textures(&mut self.renderer, &self.vfs, tex);
-        let mut decals = Vec::new();
-        for (p, d) in found {
-            let material = match self.decal_materials.get(&d.id) {
-                Some(m) => m.clone(),
-                None => {
-                    let m = std::sync::Arc::new(self.renderer.create_material(&material(&d)));
-                    self.decal_materials.insert(d.id, m.clone());
-                    m
-                }
-            };
-            let uv = if d.subtextures() {
-                let (i, j) = (p.subtexture % 2, p.subtexture / 2);
-                Vec4::new(i as f32 * 0.5, j as f32 * 0.5, 0.5, 0.5)
-            } else {
-                Vec4::new(0.0, 0.0, 1.0, 1.0)
-            };
-            let (scale, _, center) = p.transform.to_scale_rotation_translation();
-            let radius = scale.length() * 0.5;
-            decals.push(crate::render::decal::GpuDecal {
-                ref_id: p.ref_id.0,
-                hidden: self.is_disabled(p.ref_id),
-                material,
-                transform: p.transform,
-                uv,
-                tint: d.color,
-                lights: crate::render::pick_lights(&self.scene.lights, center, radius),
-                center,
-                radius,
-            });
-        }
         log::debug!("{key:?}: {} decals", decals.len());
         if let Some(rc) = self.scene.cells.get_mut(&key) {
             rc.decals = decals;
+        }
+    }
+}
+
+impl Engine {
+    /// A decal for the renderer: `data`'s textures (loaded if need be) in a
+    /// material kept under `key` (its texture set, or the impact placing
+    /// it), in the box `transform`, showing subtexture `subtexture` (0..4).
+    pub(crate) fn gpu_decal(
+        &mut self,
+        key: FormId,
+        data: &DecalData,
+        transform: Mat4,
+        subtexture: u32,
+    ) -> crate::render::decal::GpuDecal {
+        let material = match self.decal_materials.get(&key) {
+            Some(m) => m.clone(),
+            None => {
+                let tex: Vec<String> = [
+                    Some(&data.diffuse),
+                    data.normal.as_ref(),
+                    data.glow.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+                .filter(|t| !self.renderer.textures.contains(t))
+                .cloned()
+                .collect();
+                super::loader::load_textures(&mut self.renderer, &self.vfs, tex);
+                let m = std::sync::Arc::new(self.renderer.create_material(&material(data)));
+                self.decal_materials.insert(key, m.clone());
+                m
+            }
+        };
+        let uv = if data.subtextures() {
+            let (i, j) = (subtexture % 2, subtexture / 2);
+            Vec4::new(i as f32 * 0.5, j as f32 * 0.5, 0.5, 0.5)
+        } else {
+            Vec4::new(0.0, 0.0, 1.0, 1.0)
+        };
+        let (scale, _, center) = transform.to_scale_rotation_translation();
+        let radius = scale.length() * 0.5;
+        crate::render::decal::GpuDecal {
+            ref_id: 0,
+            hidden: false,
+            material,
+            transform,
+            uv,
+            tint: data.color,
+            lights: crate::render::pick_lights(&self.scene.lights, center, radius),
+            center,
+            radius,
         }
     }
 }

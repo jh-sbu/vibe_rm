@@ -34,5 +34,5 @@ isn't public.
 - **Shading**: lit with the surface's normal from depth (ambient, sun with
   shadows, point lights) and glow maps added; normal maps, specular,
   parallax and the colour's alpha are unused.
-- **Not done**: decals made at runtime (blood from hits, `ImpactDataSet`),
-  skinned decals on actors.
+- **Not done**: skinned decals on actors. Decals made at runtime by
+  impacts: `known_gaps/impacts.md`.
