@@ -116,7 +116,8 @@ pub struct ImpactState {
     skin_order: VecDeque<FormId>,
 }
 
-/// Bones a wound is held by: not those of equipment, cameras and the like.
+/// Bones a wound is held by: not those of equipment, cameras and the like,
+/// nor fingers and toes (a hand raised before the chest would carry it off).
 fn holds_wounds(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     ![
@@ -130,6 +131,8 @@ fn holds_wounds(name: &str) -> bool {
         "scb",
         "look",
         "pauldron",
+        "finger",
+        "toe",
     ]
     .iter()
     .any(|k| n.contains(k))
@@ -550,7 +553,10 @@ impl Engine {
                 }
             }
             let Some(bone) = (0..n)
-                .filter(|&i| holds_wounds(&skeleton.bones[i].name))
+                // Not the model's root: it stays at the actor's origin.
+                .filter(|&i| {
+                    skeleton.bones[i].parent.is_some() && holds_wounds(&skeleton.bones[i].name)
+                })
                 .min_by(|&a, &b| reach[a].total_cmp(&reach[b]))
             else {
                 return;
