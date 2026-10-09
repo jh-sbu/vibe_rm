@@ -8,8 +8,9 @@ struct Sky {
     horizon: vec4<f32>,
     sun_dir: vec4<f32>,      // xyz, visibility
     sun_color: vec4<f32>,
-    cloud_color: array<vec4<f32>, 4>,  // rgb, alpha
+    cloud_color: array<vec4<f32>, 8>,  // rgb, alpha: incoming layers, then outgoing
     params: vec4<f32>,       // time, wind speed, cloud layer count, stars
+    params2: vec4<f32>,      // outgoing weather's layer count
 };
 
 @group(0) @binding(0) var<uniform> sky: Sky;
@@ -18,7 +19,11 @@ struct Sky {
 @group(0) @binding(3) var t_c1: texture_2d<f32>;
 @group(0) @binding(4) var t_c2: texture_2d<f32>;
 @group(0) @binding(5) var t_c3: texture_2d<f32>;
-@group(0) @binding(6) var s: sampler;
+@group(0) @binding(6) var t_o0: texture_2d<f32>;
+@group(0) @binding(7) var t_o1: texture_2d<f32>;
+@group(0) @binding(8) var t_o2: texture_2d<f32>;
+@group(0) @binding(9) var t_o3: texture_2d<f32>;
+@group(0) @binding(10) var s: sampler;
 
 struct VOut {
     @builtin(position) clip: vec4<f32>,
@@ -78,6 +83,12 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
         let base_uv = dir.xy / (e + 0.08) * 0.35;
         let fade = smoothstep(0.0, 0.12, e);
         var cc = color;
+        // The outgoing weather's layers under the incoming one's.
+        let o = u32(sky.params2.x);
+        if (o > 0u) { cc = cloud(t_o0, base_uv + vec2<f32>(scroll, 0.0), sky.cloud_color[4], cc); }
+        if (o > 1u) { cc = cloud(t_o1, base_uv * 0.8 + vec2<f32>(scroll * 0.7, scroll * 0.2), sky.cloud_color[5], cc); }
+        if (o > 2u) { cc = cloud(t_o2, base_uv * 1.3 + vec2<f32>(scroll * 1.2, 0.0), sky.cloud_color[6], cc); }
+        if (o > 3u) { cc = cloud(t_o3, base_uv * 0.6 + vec2<f32>(0.0, scroll * 0.5), sky.cloud_color[7], cc); }
         if (n > 0u) { cc = cloud(t_c0, base_uv + vec2<f32>(scroll, 0.0), sky.cloud_color[0], cc); }
         if (n > 1u) { cc = cloud(t_c1, base_uv * 0.8 + vec2<f32>(scroll * 0.7, scroll * 0.2), sky.cloud_color[1], cc); }
         if (n > 2u) { cc = cloud(t_c2, base_uv * 1.3 + vec2<f32>(scroll * 1.2, 0.0), sky.cloud_color[2], cc); }

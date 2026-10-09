@@ -2,7 +2,7 @@
 
 use glam::Vec3;
 
-use crate::engine::{Engine, Location};
+use crate::engine::Engine;
 
 pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     let mut parts = line.split_whitespace();
@@ -33,7 +33,8 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         "help" => vec![
             "coc <cell>            center on cell (editor id)".into(),
             "tcl                   toggle collision (noclip)".into(),
-            "fw / sw <weather>     force / set weather".into(),
+            "fw / sw <weather>     force / set weather (overriding; rwo releases)".into(),
+            "weather               the weathers, transition and region".into(),
             "set gamehour to <h>   set time of day".into(),
             "player.setpos x y z   teleport within the current location".into(),
             "getpos                print position".into(),
@@ -578,13 +579,20 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             vec![format!("collision {}", if engine.player.noclip { "off" } else { "on" })]
         }
         "fw" | "forceweather" | "sw" | "setweather" => {
-            let Some(name) = args.first() else { return vec!["usage: fw <weather editor id>".into()] };
-            engine.forced_weather = Some(name.to_string());
-            if let Location::Exterior { world, .. } = engine.location {
-                engine.setup_weather(world);
+            let Some(name) = args.first() else { return vec!["usage: fw <weather>".into()] };
+            let Some(w) = engine.resolve_form(name) else { return vec![format!("no weather {name}")] };
+            if matches!(lower.as_str(), "fw" | "forceweather") {
+                engine.force_weather(w, true);
+            } else {
+                engine.set_weather(w, true, false);
             }
-            vec![format!("weather {name}")]
+            engine.describe_weather()
         }
+        "rwo" | "releaseweatheroverride" => {
+            engine.release_weather_override();
+            engine.describe_weather()
+        }
+        "weather" => engine.describe_weather(),
         "set" if args.len() >= 3 && args[0].eq_ignore_ascii_case("gamehour") => match args[2].parse::<f32>() {
             Ok(h) => {
                 engine.hour = h.rem_euclid(24.0);

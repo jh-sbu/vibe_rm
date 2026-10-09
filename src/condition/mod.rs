@@ -437,6 +437,18 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         590 => b(subject.is_some_and(|s| e.scene_of_actor(s).is_some())), // IsInScene
         429 => b(subject.is_some_and(|s| e.scenes.packages.contains_key(&s))), // IsScenePackageRunning
         149 => b(e.current_weather() == Some(p1)), // GetIsCurrentWeather
+        62 => b(e.precipitating(crate::world::weather::flags::RAINY)), // IsRaining
+        75 => b(e.precipitating(crate::world::weather::flags::SNOW)), // IsSnowing
+        147 => Some(e.wind_speed()),               // GetWindSpeed
+        148 => Some(e.weather.pct * 100.0),        // GetCurrentWeatherPercent
+        266 | 267 => {
+            // IsPleasant, IsCloudy
+            let class = if c.func == 266 { 0 } else { 1 };
+            b(e.weather
+                .current
+                .as_ref()
+                .is_some_and(|w| w.classification() == class))
+        }
         1 => {
             // GetDistance: far beyond anything between different interiors or
             // worldspaces.
@@ -825,10 +837,6 @@ impl Engine {
             .quests
             .get(&quest)
             .and_then(|q| q.aliases.get(&alias).copied())
-    }
-
-    pub fn current_weather(&self) -> Option<FormId> {
-        self.sky.as_ref().map(|(w, _)| w.id)
     }
 
     /// A random number that doesn't advance the generator (for read-only condition checks).

@@ -17,9 +17,15 @@ struct SkyUniform {
     horizon: [f32; 4],
     sun_dir: [f32; 4],
     sun_color: [f32; 4],
-    cloud_color: [[f32; 4]; 4],
+    /// The incoming weather's four layers, then the outgoing one's.
+    cloud_color: [[f32; 4]; 8],
     params: [f32; 4],
+    /// x: the outgoing weather's layer count.
+    params2: [f32; 4],
 }
+
+/// Cloud layers drawn per weather (two weathers during a transition).
+const LAYERS: usize = 4;
 
 pub struct SkyRenderer {
     pipeline: wgpu::RenderPipeline,
@@ -28,6 +34,7 @@ pub struct SkyRenderer {
     bind_group: Option<wgpu::BindGroup>,
     state: Option<SkyState>,
     cloud_count: usize,
+    outgoing_count: usize,
 }
 
 impl SkyRenderer {
@@ -46,7 +53,7 @@ impl SkyRenderer {
             },
             count: None,
         }];
-        for b in 1..=5 {
+        for b in 1..=(1 + 2 * LAYERS as u32) {
             entries.push(wgpu::BindGroupLayoutEntry {
                 binding: b,
                 visibility: wgpu::ShaderStages::FRAGMENT,
@@ -59,7 +66,7 @@ impl SkyRenderer {
             });
         }
         entries.push(wgpu::BindGroupLayoutEntry {
-            binding: 6,
+            binding: 2 + 2 * LAYERS as u32,
             visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
             count: None,
@@ -117,6 +124,7 @@ impl SkyRenderer {
             bind_group: None,
             state: None,
             cloud_count: 0,
+            outgoing_count: 0,
         }
     }
 
@@ -132,50 +140,53 @@ impl SkyRenderer {
         self.state = Some(state);
     }
 
+    /// The sun's texture and the cloud layers' of the incoming weather and
+    /// the outgoing one (up to [`LAYERS`] each).
     pub fn set_textures(
         &mut self,
         device: &wgpu::Device,
         sampler: &wgpu::Sampler,
         sun: Arc<GpuTexture>,
         clouds: Vec<Arc<GpuTexture>>,
+        outgoing: Vec<Arc<GpuTexture>>,
         fallback: Arc<GpuTexture>,
     ) {
-        self.cloud_count = clouds.len().min(4);
-        let c = |i: usize| clouds.get(i).cloned().unwrap_or_else(|| fallback.clone());
-        let (c0, c1, c2, c3) = (c(0), c(1), c(2), c(3));
+        self.cloud_count = clouds.len().min(LAYERS);
+        self.outgoing_count = outgoing.len().min(LAYERS);
+        let layers: Vec<Arc<GpuTexture>> = (0..2 * LAYERS)
+            .map(|i| {
+                let (list, j) = if i < LAYERS {
+                    (&clouds, i)
+                } else {
+                    (&outgoing, i - LAYERS)
+                };
+                list.get(j).cloned().unwrap_or_else(|| fallback.clone())
+            })
+            .collect();
+        let mut entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.ubuf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&sun.view),
+            },
+        ];
+        for (i, t) in layers.iter().enumerate() {
+            entries.push(wgpu::BindGroupEntry {
+                binding: 2 + i as u32,
+                resource: wgpu::BindingResource::TextureView(&t.view),
+            });
+        }
+        entries.push(wgpu::BindGroupEntry {
+            binding: 2 + 2 * LAYERS as u32,
+            resource: wgpu::BindingResource::Sampler(sampler),
+        });
         self.bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sky"),
             layout: &self.bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.ubuf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&sun.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&c0.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&c1.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(&c2.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&c3.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::Sampler(sampler),
-                },
-            ],
+            entries: &entries,
         }));
     }
 
@@ -190,9 +201,12 @@ impl SkyRenderer {
         let (Some(bg), Some(st)) = (&self.bind_group, &self.state) else {
             return;
         };
-        let mut cloud_color = [[0f32; 4]; 4];
-        for (i, c) in st.clouds.iter().take(4).enumerate() {
+        let mut cloud_color = [[0f32; 4]; 8];
+        for (i, c) in st.clouds.iter().take(LAYERS).enumerate() {
             cloud_color[i] = [c.1.x, c.1.y, c.1.z, c.2];
+        }
+        for (i, c) in st.outgoing_clouds.iter().take(LAYERS).enumerate() {
+            cloud_color[LAYERS + i] = [c.1.x, c.1.y, c.1.z, c.2];
         }
         let u = SkyUniform {
             inv_view_proj: view_proj.inverse().to_cols_array_2d(),
@@ -204,6 +218,16 @@ impl SkyRenderer {
             sun_color: st.sun_color.extend(1.0).to_array(),
             cloud_color,
             params: [time, 0.3, self.cloud_count as f32, st.stars],
+            params2: [
+                if st.outgoing_clouds.is_empty() {
+                    0.0
+                } else {
+                    self.outgoing_count as f32
+                },
+                0.0,
+                0.0,
+                0.0,
+            ],
         };
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
         pass.set_pipeline(&self.pipeline);

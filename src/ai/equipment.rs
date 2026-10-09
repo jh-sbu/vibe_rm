@@ -18,9 +18,8 @@ impl Engine {
             return false;
         }
         let (sunrise, sunset) = self
-            .sky
-            .as_ref()
-            .map_or((5.5, 20.5), |(_, c)| (c.sunrise.0, c.sunset.1));
+            .climate()
+            .map_or((5.5, 20.5), |c| (c.sunrise.0, c.sunset.1));
         self.hour < sunrise + 0.5 || self.hour > sunset - 0.5
     }
 
