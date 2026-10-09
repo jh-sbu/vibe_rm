@@ -7,7 +7,13 @@
 //! and `<0x40 + i>IAD` the addend of value `i` (saturation 17, brightness 18,
 //! contrast 19), `BNAM` blur, `VNAM` double vision, and colour curves of
 //! (time, r, g, b, amount) keys: `TNAM` tint, `NAM3` fade. Each value is the
-//! base image space's (neutral here) times the multiplier plus the addend.
+//! base image space's times the multiplier plus the addend.
+//!
+//! The base image space (IMGS: CommonLibSSE's `ImageSpaceBaseData`) is the
+//! interior cell's (XCIM, else `DefaultImageSpaceInterior`) or outdoors the
+//! weather's for the time of day (IMSP: sunrise, day, sunset, night, blended
+//! like its colours). Its cinematic values (CNAM) and tint (TNAM) are drawn;
+//! the HDR ones (HNAM) are kept but there is no HDR to drive.
 //! Open questions: `known_gaps/image-space.md`.
 
 use std::collections::HashMap;
@@ -144,6 +150,74 @@ impl Imad {
     }
 }
 
+/// `DefaultImageSpaceInterior`: interiors without an image space of their own.
+const DEFAULT_INTERIOR: FormId = FormId(0x160);
+
+/// An image space's record (IMGS), or several blended.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Imgs {
+    /// HNAM: eye adapt speed, bloom blur radius, bloom threshold, bloom scale,
+    /// receive bloom threshold, white, sunlight scale, sky scale, eye adapt
+    /// strength.
+    pub hdr: [f32; 9],
+    /// CNAM: saturation, brightness, contrast.
+    pub cinematic: [f32; 3],
+    /// TNAM: amount, then the colour.
+    pub tint: [f32; 4],
+}
+
+impl Default for Imgs {
+    fn default() -> Self {
+        Imgs {
+            hdr: [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0],
+            cinematic: [1.0; 3],
+            tint: [0.0; 4],
+        }
+    }
+}
+
+impl Imgs {
+    fn parse(rec: &esp::LoadedRecord<'_>) -> Self {
+        fn fill<const N: usize>(out: &mut [f32; N], d: Option<&[u8]>) {
+            let Some(d) = d else { return };
+            for (v, b) in out.iter_mut().zip(d.chunks_exact(4)) {
+                *v = f32::from_le_bytes(b.try_into().unwrap());
+            }
+        }
+        let mut m = Imgs::default();
+        fill(&mut m.hdr, rec.get(b"HNAM"));
+        fill(&mut m.cinematic, rec.get(b"CNAM"));
+        fill(&mut m.tint, rec.get(b"TNAM"));
+        m
+    }
+
+    /// Image spaces mixed by weight (weights summing to 1). Tints mix as
+    /// colour times amount, so one without a tint fades another's out.
+    fn blend(parts: &[(Imgs, f32)]) -> Imgs {
+        let mut m = Imgs {
+            hdr: [0.0; 9],
+            cinematic: [0.0; 3],
+            tint: [0.0; 4],
+        };
+        for (p, w) in parts {
+            for i in 0..9 {
+                m.hdr[i] += p.hdr[i] * w;
+            }
+            for i in 0..3 {
+                m.cinematic[i] += p.cinematic[i] * w;
+                m.tint[i + 1] += p.tint[i + 1] * p.tint[0] * w;
+            }
+            m.tint[0] += p.tint[0] * w;
+        }
+        if m.tint[0] > 1e-4 {
+            for i in 1..4 {
+                m.tint[i] /= m.tint[0];
+            }
+        }
+        m
+    }
+}
+
 /// A modifier applied to the view.
 #[derive(Debug, Clone)]
 struct Active {
@@ -212,6 +286,11 @@ const SHAKE_RANGE: f32 = 4096.0;
 #[derive(Default)]
 pub struct ImageSpace {
     records: HashMap<FormId, Option<Arc<Imad>>>,
+    image_spaces: HashMap<FormId, Option<Imgs>>,
+    /// The interior's image space (XCIM); outdoors it follows the weather.
+    pub interior: Option<FormId>,
+    /// The base image space this frame.
+    pub base: Imgs,
     active: Vec<Active>,
     fade: Option<GameFade>,
     shakes: Vec<Shake>,
@@ -232,6 +311,45 @@ impl Engine {
             .map(|r| Arc::new(Imad::parse(&r)));
         self.imagespace.records.insert(f, m.clone());
         m
+    }
+
+    fn imgs(&mut self, f: FormId) -> Option<Imgs> {
+        if let Some(m) = self.imagespace.image_spaces.get(&f) {
+            return *m;
+        }
+        let m = self
+            .lo
+            .get(f)
+            .filter(|r| r.tag().0 == *b"IMGS")
+            .map(|r| Imgs::parse(&r));
+        self.imagespace.image_spaces.insert(f, m);
+        m
+    }
+
+    /// Entering an interior: its image space from now on (null for the
+    /// default one).
+    pub(crate) fn set_interior_image_space(&mut self, f: Option<FormId>) {
+        self.imagespace.interior = f.map(|f| if f.is_null() { DEFAULT_INTERIOR } else { f });
+    }
+
+    /// The interior's image space, or the weather's at this hour.
+    fn base_image_space(&mut self) -> Imgs {
+        if let Some(f) = self.imagespace.interior {
+            return self
+                .imgs(f)
+                .or_else(|| self.imgs(DEFAULT_INTERIOR))
+                .unwrap_or_default();
+        }
+        let Some((w, c)) = &self.sky else {
+            return Imgs::default();
+        };
+        let tw = crate::world::weather::time_weights(c, self.hour);
+        let slots = w.image_spaces;
+        let parts: Vec<(Imgs, f32)> = (0..4)
+            .filter(|&t| tw[t] > 0.0)
+            .map(|t| (self.imgs(slots[t]).unwrap_or_default(), tw[t]))
+            .collect();
+        Imgs::blend(&parts)
     }
 
     /// `ImageSpaceModifier.Apply`: put a modifier on the view at `strength`
@@ -332,7 +450,14 @@ impl Engine {
     /// Advance the modifiers, fades and shakes by `dt` and set the frame's
     /// effects.
     pub(crate) fn update_imagespace(&mut self, dt: f32) {
-        let mut fx = PostEffect::default();
+        let base = self.base_image_space();
+        self.imagespace.base = base;
+        let mut fx = PostEffect {
+            saturation: base.cinematic[0],
+            brightness: base.cinematic[1],
+            contrast: base.cinematic[2],
+            ..Default::default()
+        };
         let mut active = std::mem::take(&mut self.imagespace.active);
         active.retain_mut(|a| {
             a.t += dt;
@@ -342,7 +467,8 @@ impl Engine {
             a.fade_out.is_none_or(|(t, d)| t < d)
         });
         let mut keep = Vec::with_capacity(active.len());
-        let mut tint: Vec<[f32; 4]> = Vec::new();
+        let mut tint: Vec<[f32; 4]> =
+            vec![[base.tint[1], base.tint[2], base.tint[3], base.tint[0]]];
         let mut fades: Vec<[f32; 4]> = Vec::new();
         for a in active {
             let Some(m) = self.imad(a.imad) else { continue };
@@ -453,6 +579,19 @@ impl Engine {
                 s.strength, s.t, s.duration
             ));
         }
+        let b = &is.base;
+        out.push(format!(
+            "base: saturation {:.2} brightness {:.2} contrast {:.2} tint {:?} hdr {:?}{}",
+            b.cinematic[0],
+            b.cinematic[1],
+            b.cinematic[2],
+            b.tint,
+            b.hdr,
+            match is.interior {
+                Some(f) => format!(" (interior {f})"),
+                None => " (weather)".into(),
+            }
+        ));
         let p = &self.scene.post;
         out.push(format!(
             "frame: saturation {:.2} brightness {:.2} contrast {:.2} tint {:?} fade {:?} blur {:.2} double vision {:.2}",
@@ -491,6 +630,19 @@ mod tests {
         assert!((c.at(0.25, 9.0) - 0.5).abs() < 1e-6);
         assert_eq!(c.at(2.0, 9.0), 1.0);
         assert_eq!(Curve::default().at(0.5, 9.0), 9.0);
+    }
+
+    #[test]
+    fn blended_image_spaces_fade_tints_by_amount() {
+        let a = Imgs {
+            tint: [0.5, 1.0, 0.0, 0.0],
+            cinematic: [2.0, 1.0, 1.0],
+            ..Default::default()
+        };
+        let m = Imgs::blend(&[(a, 0.5), (Imgs::default(), 0.5)]);
+        assert!((m.cinematic[0] - 1.5).abs() < 1e-6);
+        assert!((m.tint[0] - 0.25).abs() < 1e-6);
+        assert!((m.tint[1] - 1.0).abs() < 1e-6);
     }
 
     #[test]

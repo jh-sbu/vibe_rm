@@ -125,6 +125,8 @@ pub struct CellInfo {
     /// XCLW, if present. `f32::MAX` means no water.
     pub water_height: Option<f32>,
     pub water_type: FormId,
+    /// XCIM: the interior's image space.
+    pub image_space: FormId,
 }
 
 pub fn cell_info(lo: &LoadOrder, id: FormId) -> Option<CellInfo> {
@@ -139,6 +141,7 @@ pub fn cell_info(lo: &LoadOrder, id: FormId) -> Option<CellInfo> {
         lighting_template: FormId::NULL,
         water_height: None,
         water_type: FormId::NULL,
+        image_space: FormId::NULL,
     };
     for sr in rec.subrecords() {
         match &sr.tag.0 {
@@ -152,6 +155,7 @@ pub fn cell_info(lo: &LoadOrder, id: FormId) -> Option<CellInfo> {
             b"LTMP" => c.lighting_template = rec.fid(sr.form_id(0)),
             b"XCLW" => c.water_height = Some(sr.f32(0)),
             b"XCWT" => c.water_type = rec.fid(sr.form_id(0)),
+            b"XCIM" => c.image_space = rec.fid(sr.form_id(0)),
             _ => {}
         }
     }

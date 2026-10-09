@@ -23,20 +23,39 @@ esp-dump` of IMADs, `vrm-tool pex-calls` / `pex-dump` of the scripts using them)
   and stay until removed. `FadeToBlackHoldImod` (static, black throughout)
   has to outlast its 3 second duration: the carriage script holds it across a
   fast travel before `PopTo`ing `FadeToBlackBackImod`.
+- **Where the base image space comes from.** Interiors name theirs with
+  XCIM (728 of 761 do); the rest get `DefaultImageSpaceInterior` (0x160).
+  Every weather has IMSP: four image spaces for sunrise, day, sunset and night
+  (CommonLibSSE's `TESWeather::imageSpaces[ColorTime::kTotal]`), blended over
+  the day with the same weights as its colours. Worldspaces have none
+  (`vrm-tool image-spaces` surveys the records and their users).
+- **Modifiers work on the base.** Each modifier value is the base's times the
+  multiplier plus the addend (`defaultDesaturateImod` outdoors at noon:
+  saturation 1.6 x 0.7).
 - **Animatable modifiers end.** They play their curves over the duration and
   come off at its end (`FadeToBlackImod` is black from 2/3 of its 3 seconds;
   the carriage script `PopTo`s the hold modifier at 2).
 
 ## Open
 
-- **The base image space.** Values are multiplied into a neutral base, not the
-  cell's or weather's image space (IMGS), and there is no HDR, bloom or tone
-  mapping, so modifiers driving those (eye adaptation, bloom, sunlight / sky
-  scale, target luminance) do nothing.
+- **No HDR.** The base image space's cinematic values (CNAM) and tint (TNAM)
+  are drawn, but the frame is rendered straight to display range: there is no
+  eye adaptation, bloom or tone mapping, so the HDR values (HNAM: eye adapt
+  speed and strength, bloom radius / threshold / scale, receive bloom
+  threshold, white, sunlight scale, sky scale) and modifiers driving them do
+  nothing. Some HNAM values can't be plain multipliers (sky scale runs
+  -0.15 .. 1, 0.05 at clear noon), so their meaning needs a source too. The
+  depth of field values (DNAM) aren't drawn either.
 - **How the effects are drawn.** Saturation by luminance (Rec. 709 weights),
   tint as a blend toward luminance times the colour, brightness as a
-  multiplier, contrast about mid grey, then the fade colour, all on display
-  values. The game's own shader math isn't public.
+  multiplier, contrast about the frame's average luminance (a mip chain of
+  the frame, no adaptation over time), then the fade colour, all on display
+  values. The game's own shader math isn't public. The game works on its
+  tone mapped HDR frame: contrast about mid grey on ours crushed the shadows
+  (clear noon has contrast 1.4, cloudy 1.5), as the lighting here was tuned
+  without an image space; about the average it keeps the frame's exposure.
+- **Blended tints** mix as colour times amount, so an image space without a
+  tint fades another's out across a time-of-day blend.
 - **Blur and double vision units.** Blur is taken as a radius in pixels at 720
   lines (a 13-tap disc), double vision as 8 such pixels per unit of strength.
   Both are guesses: `ISMDinCloudBlurStatic`'s blur 0.5 hardly shows.
