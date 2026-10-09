@@ -53,7 +53,8 @@ Testing aids: `--console "<command>"` runs console commands after loading (e.g.
 `use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`, `cgf Actor.GetCombatState @<actor>` to call a Papyrus native, `loose` for the loose objects near the player, `pwalk <frames>` to walk the player forward (`tcl` first under `--wait`); `"@<frame> <command>"`
 runs it at that frame of `--wait`), `--watch-angle`
 orbits the `--watch` camera, `--player-at-camera` puts the player there (NPCs look at it),
-the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, `VRM_SEED=<n>` fixes the engine's random seed, and
+the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, `VRM_SEED=<n>` fixes the engine's random seed, `VRM_AUDIO=1` gives offscreen runs audio
+(sounds are tracked and logged even without an output device), and
 `VRM_AI_NO_SNAP=1` makes actors walk into furniture on cell load instead of starting
 out in it.
 

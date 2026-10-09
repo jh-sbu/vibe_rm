@@ -150,7 +150,9 @@ pub fn run(opts: Options) -> Result<()> {
             opts.width,
             opts.height,
         );
-        let mut engine = setup_engine(&opts, renderer, lo, vfs, None)?;
+        // VRM_AUDIO=1 plays (or at least tracks) sounds offscreen too.
+        let audio = std::env::var_os("VRM_AUDIO").map(|_| crate::audio::Audio::new());
+        let mut engine = setup_engine(&opts, renderer, lo, vfs, audio)?;
         if let Some(n) = opts.use_door {
             let doors = engine.load_doors();
             for d in &doors {

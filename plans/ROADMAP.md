@@ -544,7 +544,8 @@ game each piece unlocks.
   `GetOutgoingWeather`, `GetCurrentWeatherTransition`, `GetSkyMode`,
   `FindWeather`, `GetClassification`; conditions `IsRaining`, `IsSnowing`,
   `GetWindSpeed`, `GetCurrentWeatherPercent`, `IsPleasant`, `IsCloudy`.
-  Console `fw`, `sw`, `rwo`, `weather`. Open questions: `known_gaps/weather.md`
+  Weather sounds outdoors: rain and wind loops fading with the transition,
+  thunder now and then. Console `fw`, `sw`, `rwo`, `weather`. Open questions: `known_gaps/weather.md`
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -630,7 +631,7 @@ game each piece unlocks.
    radial blur and motion blur (cinematic values and tint: see Done), particles
    (fire, smoke, explosions), distant LOD (BTR/BTO/trees),
    grass, decals, environment maps; weather: rain and snow, lightning,
-   auroras, sky statics, weather sounds (see `known_gaps/weather.md`)
+   auroras, sky statics (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /
    `RequestAutoSave`
