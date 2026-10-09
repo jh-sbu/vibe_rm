@@ -188,6 +188,59 @@ fn main() -> Result<()> {
                 println!("{n} = {v}");
             }
         }
+        Some("msn-shapes") => {
+            // msn-shapes <bsa>...: shapes whose lighting shader has model-space
+            // normals, counted by whether they're drawn skinned; the files of
+            // those drawn rigid (unskinned, or in models hung from a bone or trees).
+            let (mut skinned, mut rigid) = (0usize, 0usize);
+            let mut files = std::collections::BTreeMap::<String, usize>::new();
+            for path in &args[1..] {
+                let a = bsa::Archive::open(path)?;
+                let paths: Vec<String> = a
+                    .paths()
+                    .filter(|p| p.ends_with(".nif"))
+                    .map(str::to_owned)
+                    .collect();
+                for p in paths {
+                    let Ok(n) = nif::Nif::parse(&a.read(&p)?.unwrap()) else {
+                        continue;
+                    };
+                    for b in &n.blocks {
+                        let (shader, skin) = match b {
+                            nif::Block::TriShape(t) => (t.shader, t.skin),
+                            nif::Block::NiTriShape(g) | nif::Block::NiTriStrips(g) => {
+                                (g.shader, g.skin)
+                            }
+                            _ => continue,
+                        };
+                        let Some(nif::Block::LightingShader(s)) = n.get(shader) else {
+                            continue;
+                        };
+                        if s.flags1 & nif::sf1::MODEL_SPACE_NORMALS == 0 {
+                            continue;
+                        }
+                        // Skinned shapes of models hung from a bone (`Prn`) or
+                        // trees are drawn rigid too.
+                        let root = n.roots.first().and_then(|&r| n.get(nif::Ref(r as i32)));
+                        let prn = root.and_then(|b| b.av()).is_some_and(|av| {
+                            av.net.extra_data.iter().any(|&e| matches!(n.get(e),
+                                Some(nif::Block::ExtraData(nif::ExtraData::String { name, .. })) if name == "Prn"))
+                        });
+                        let tree = matches!(root, Some(nif::Block::Node(r)) if r.kind == nif::NodeKind::Tree);
+                        if skin.is_none() || prn || tree {
+                            rigid += 1;
+                            *files.entry(p.clone()).or_default() += 1;
+                        } else {
+                            skinned += 1;
+                        }
+                    }
+                }
+            }
+            println!("skinned {skinned} rigid {rigid} in {} files", files.len());
+            for (f, k) in files {
+                println!("{k:4} {f}");
+            }
+        }
         Some("nif-blocks") => {
             // nif-blocks <bsa>... -- <block type> [n]: the parsed blocks of a type
             // across every NIF in the archives (up to n, default 50), with their file.
