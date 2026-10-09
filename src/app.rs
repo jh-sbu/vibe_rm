@@ -470,6 +470,9 @@ impl ApplicationHandler for App {
             && !s.engine.disabled_controls.looking
         {
             let sens = 0.0025;
+            if !s.engine.menu_up() {
+                s.engine.input_event("Look");
+            }
             s.engine.camera.yaw += delta.0 as f32 * sens;
             s.engine.camera.pitch =
                 (s.engine.camera.pitch - delta.1 as f32 * sens).clamp(-1.55, 1.55);
@@ -518,12 +521,14 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
-                    if s.ui.console.open
-                        || s.engine.conversation.is_some()
-                        || s.engine.menu.is_some()
-                    {
+                    if s.ui.console.open || s.engine.conversation.is_some() || s.engine.menu_up() {
                         s.keys.clear();
                         return;
+                    }
+                    if event.state == ElementState::Pressed && !event.repeat {
+                        for ev in crate::messages::key_events(code) {
+                            s.engine.input_event(ev);
+                        }
                     }
                     match event.state {
                         ElementState::Pressed => {
@@ -551,8 +556,14 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.menu = Some(crate::items::Menu::Inventory);
                             }
+                            if code == KeyCode::KeyJ
+                                && !event.repeat
+                                && !s.engine.disabled_controls.journal
+                            {
+                                s.engine.menu = Some(crate::items::Menu::Journal);
+                            }
                             // Menus take the mouse.
-                            if s.engine.menu.is_some() {
+                            if s.engine.menu_up() {
                                 if s.grabbed {
                                     s.grabbed = false;
                                     let _ = s.window.set_cursor_grab(CursorGrabMode::None);
@@ -593,7 +604,10 @@ impl ApplicationHandler for App {
             } => {
                 // Captured: hold to block.
                 s.engine.player_blocking =
-                    state == ElementState::Pressed && s.grabbed && s.engine.menu.is_none();
+                    state == ElementState::Pressed && s.grabbed && !s.engine.menu_up();
+                if s.engine.player_blocking {
+                    s.engine.input_event("Left Attack/Block");
+                }
             }
             WindowEvent::MouseInput {
                 state: ElementState::Released,
@@ -608,13 +622,14 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 // Captured: swing at what's ahead (held: a power attack).
-                if s.grabbed && s.engine.menu.is_none() {
+                if s.grabbed && !s.engine.menu_up() {
+                    s.engine.input_event("Right Attack/Block");
                     s.engine.player_attack_press();
                 }
                 if !s.grabbed
                     && !s.ui.console.open
                     && s.engine.conversation.is_none()
-                    && s.engine.menu.is_none()
+                    && !s.engine.menu_up()
                 {
                     let ok = s
                         .window
@@ -641,6 +656,13 @@ impl ApplicationHandler for App {
                     r.poll(&mut s.engine);
                 }
                 s.engine.update(input, dt, scale);
+                // A menu or message box opened by a script takes the mouse.
+                if s.engine.menu_up() && s.grabbed {
+                    s.grabbed = false;
+                    let _ = s.window.set_cursor_grab(CursorGrabMode::None);
+                    s.window.set_cursor_visible(true);
+                    s.keys.clear();
+                }
                 let frame = match s.surface.get_current_texture() {
                     wgpu::CurrentSurfaceTexture::Success(t)
                     | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,

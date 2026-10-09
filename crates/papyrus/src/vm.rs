@@ -267,6 +267,8 @@ struct Thread {
     wake_at: f64,
     /// The signal it waits for (`NativeResult::WaitFor`).
     waiting_for: Option<u64>,
+    /// Where the waiting call's result goes (`Vm::signal_with`).
+    wait_dest: Option<Arg>,
 }
 
 #[derive(Default)]
@@ -562,6 +564,7 @@ impl Vm {
                     frames: vec![frame],
                     wake_at: self.time,
                     waiting_for: None,
+                    wait_dest: None,
                 });
                 n += 1;
             }
@@ -591,6 +594,7 @@ impl Vm {
                 frames: vec![frame],
                 wake_at: self.time,
                 waiting_for: None,
+                wait_dest: None,
             });
             return true;
         }
@@ -637,6 +641,23 @@ impl Vm {
             if t.waiting_for == Some(key) {
                 t.waiting_for = None;
                 t.wake_at = self.time;
+                n += 1;
+            }
+        }
+        n
+    }
+
+    /// Wake the threads waiting for `key` as [`Vm::signal`] does, with `value`
+    /// as the result of the call they wait in (a message box's button).
+    pub fn signal_with(&mut self, key: u64, value: Value) -> usize {
+        let mut n = 0;
+        for t in &mut self.threads {
+            if t.waiting_for == Some(key) {
+                t.waiting_for = None;
+                t.wake_at = self.time;
+                if let (Some(dest), Some(frame)) = (t.wait_dest.take(), t.frames.last_mut()) {
+                    Self::set_in(&mut self.instances, frame, &dest, value.clone());
+                }
                 n += 1;
             }
         }
@@ -977,6 +998,7 @@ impl Vm {
                                     Self::set_in(&mut self.instances, &mut frame!(), &dest, value);
                                     t.wake_at = self.time + timeout.max(0.0) as f64;
                                     t.waiting_for = Some(key);
+                                    t.wait_dest = Some(dest.clone());
                                     return false;
                                 }
                             }

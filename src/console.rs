@@ -57,6 +57,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "[ref.]placeatme <form> [n]  make new references there (actors join the world)".into(),
             "player.equipitem / unequipitem <item>   wear armor, wield a weapon, ready ammo".into(),
             "activate <ref>        activate a reference as the player".into(),
+            "sqs <quest>           a quest's stages, log entries and fragments".into(),
+            "sqo / journal [open]  displayed objectives / the journal's quests (or open it)".into(),
+            "msgbox [button]       the message box up / press one of its buttons".into(),
+            "inputevent <event>    as if the player did an input event (Activate, Jump...)".into(),
             "[ref.]getav <av> / setav, modav, forceav, damageav, restoreav <av> <n>   actor values".into(),
             "pblock                toggle the player's guard (right mouse button)".into(),
             "pattack [power]       the player swings (power: as holding the button)".into(),
@@ -187,6 +191,66 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             } else {
                 vec![format!("{q} didn't start (running, or an alias can't be filled)")]
             }
+        }
+        "sqs" => {
+            let Some(q) = args.first().and_then(|q| engine.resolve_form(q)) else {
+                return vec!["usage: sqs <quest>".into()];
+            };
+            sqs(engine, q)
+        }
+        "sqo" => {
+            let mut out = Vec::new();
+            let mut quests: Vec<_> = engine.scripts.quests.iter().filter(|(_, st)| st.running).collect();
+            quests.sort_by_key(|(q, _)| q.0);
+            for (q, st) in quests {
+                let mut objs: Vec<_> = st.objectives_displayed.iter().copied().collect();
+                objs.sort();
+                for o in objs {
+                    let state = if st.objectives_completed.contains(&o) { " (completed)" } else { "" };
+                    let text = st.objective_texts.get(&o).cloned().unwrap_or_default();
+                    out.push(format!("{q} {o}: {text}{state}"));
+                }
+            }
+            if out.is_empty() { vec!["no objectives displayed".into()] } else { out }
+        }
+        "journal" => {
+            if args.first() == Some(&"open") {
+                engine.menu = Some(crate::items::Menu::Journal);
+                return vec![];
+            }
+            let mut out = Vec::new();
+            for j in engine.journal() {
+                let state = if j.failed { " (failed)" } else if j.completed { " (completed)" } else { "" };
+                out.push(format!("{} {:?} type {}{state}", j.id, j.name, j.kind));
+                if let Some(l) = j.log.last() {
+                    out.push(format!("  {l}"));
+                }
+                for (i, text, st) in &j.objectives {
+                    out.push(format!("  [{i}] {text} {st:?}"));
+                }
+            }
+            if out.is_empty() { vec!["the journal is empty".into()] } else { out }
+        }
+        "msgbox" => {
+            let Some(b) = engine.messages.boxes.front().cloned() else {
+                return vec!["no message box up".into()];
+            };
+            match args.first().and_then(|a| a.parse::<i32>().ok()) {
+                Some(i) if b.buttons.iter().any(|(n, _)| *n == i) => {
+                    engine.choose_message_button(i);
+                    vec![format!("pressed {i}")]
+                }
+                Some(i) => vec![format!("no button {i}")],
+                None => {
+                    let mut out = vec![format!("{:?}", b.text)];
+                    out.extend(b.buttons.iter().map(|(i, t)| format!("  {i}: {t}")));
+                    out
+                }
+            }
+        }
+        "inputevent" => {
+            engine.input_event(&args.join(" "));
+            vec![]
         }
         "setstage" => {
             let (Some(q), Some(st)) = (args.first().and_then(|q| engine.resolve_form(q)), args.get(1).and_then(|s| s.parse::<u16>().ok())) else {
@@ -752,4 +816,59 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             out
         }
     }
+}
+
+/// `sqs`: a quest's stages (done ones marked), each one's log entries and the
+/// fragments on them.
+fn sqs(engine: &mut Engine, q: esp::FormId) -> Vec<String> {
+    let Some(rec) = engine.lo.get(q) else {
+        return vec![format!("{q}: no record")];
+    };
+    let vmad = crate::script::vmad::parse(&rec).unwrap_or_default();
+    let st = engine.scripts.quests.get(&q);
+    let mut out = vec![format!(
+        "{} {q} running {} stage {}",
+        rec.editor_id().unwrap_or_default(),
+        st.is_some_and(|s| s.running),
+        st.map_or(0, |s| s.stage)
+    )];
+    let mut stage = None;
+    let mut entry = 0;
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            b"INDX" => {
+                let s = sr.u16(0);
+                stage = Some(s);
+                entry = 0;
+                let done = st.is_some_and(|st| st.done.contains(&s));
+                out.push(format!("  stage {s}{}", if done { " (done)" } else { "" }));
+            }
+            b"QSDT" => {
+                let s = stage.unwrap_or(0);
+                let frags: Vec<&str> = vmad
+                    .fragments
+                    .iter()
+                    .filter(|f| f.stage == s && f.log_entry == entry)
+                    .map(|f| f.function.as_str())
+                    .collect();
+                out.push(format!("    entry {entry} flags {:#x} {frags:?}", sr.u8(0)));
+                entry += 1;
+            }
+            b"QOBJ" => break,
+            _ => {}
+        }
+    }
+    // Fragments on no entry the record has.
+    for f in &vmad.fragments {
+        if !rec
+            .subrecords()
+            .any(|sr| sr.tag.0 == *b"INDX" && sr.u16(0) == f.stage)
+        {
+            out.push(format!(
+                "  fragment {} on missing stage {}",
+                f.function, f.stage
+            ));
+        }
+    }
+    out
 }
