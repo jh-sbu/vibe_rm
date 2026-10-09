@@ -2,6 +2,7 @@
 
 pub mod dds;
 pub mod model;
+pub mod particles;
 pub mod post;
 pub mod precip;
 pub mod shadow;
@@ -147,6 +148,23 @@ pub struct GpuPart {
     pub bound_radius: f32,
 }
 
+/// Something drawn with an object material: a model's part, or particle
+/// quads (a range of the frame's particle vertices).
+#[derive(Clone)]
+enum Draw<'a> {
+    Part(&'a GpuPart),
+    Quads(&'a GpuMaterial, std::ops::Range<u32>),
+}
+
+impl Draw<'_> {
+    fn material(&self) -> &GpuMaterial {
+        match self {
+            Draw::Part(p) => &p.material,
+            Draw::Quads(m, _) => m,
+        }
+    }
+}
+
 pub struct GpuSkinnedPart {
     pub vbuf: wgpu::Buffer,
     pub ibuf: wgpu::Buffer,
@@ -161,6 +179,7 @@ pub struct GpuModel {
     pub path: String,
     pub parts: Vec<GpuPart>,
     pub skinned: Vec<GpuSkinnedPart>,
+    pub particles: Vec<particles::GpuParticles>,
     pub bound_center: Vec3,
     pub bound_radius: f32,
 }
@@ -176,6 +195,8 @@ pub struct Instance {
     /// Part of the sky (an aurora): placed relative to the camera, always
     /// drawn and not fogged.
     pub sky: bool,
+    /// Its model's particle systems running (started when first near).
+    pub particles: Vec<particles::ParticleState>,
     pub model: Arc<GpuModel>,
     pub transform: Mat4,
     pub lights: [u16; 8],
@@ -199,6 +220,7 @@ impl Instance {
             hidden: false,
             tint: Vec4::ONE,
             sky: false,
+            particles: Vec::new(),
             model,
             transform,
             lights: [0xFFFF; 8],
@@ -323,6 +345,8 @@ pub struct Scene {
     /// The worldspace's far references, loaded with it rather than with
     /// their cells (sky statics).
     pub far: Vec<Instance>,
+    /// Particles to draw this frame.
+    pub particles: Vec<particles::ParticleBatch>,
     /// World-space XY rectangle (min x, min y, max x, max y) where LOD is hidden.
     pub lod_clip: [f32; 4],
     pub lights: Vec<GpuLight>,
@@ -545,6 +569,9 @@ pub struct Renderer {
     pub time: f32,
     /// Materials whose controllers animate them, updated each frame.
     animated: std::sync::Mutex<Vec<std::sync::Weak<GpuMaterial>>>,
+    /// The frame's particle quads, and how many vertices it holds.
+    particle_vbuf: wgpu::Buffer,
+    particle_cap: usize,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -737,6 +764,12 @@ impl Renderer {
             post,
             time: 0.0,
             animated: Default::default(),
+            particle_vbuf: Self::make_vbuf(
+                &device,
+                4096 * std::mem::size_of::<model::Vertex>(),
+                "particles",
+            ),
+            particle_cap: 4096,
             terrain,
             device,
             queue,
@@ -1143,10 +1176,19 @@ impl Renderer {
                 name: m.name.clone(),
             });
         }
+        let particles = cpu
+            .particles
+            .iter()
+            .map(|d| particles::GpuParticles {
+                desc: d.clone(),
+                material: self.shared_material(&d.material, false),
+            })
+            .collect();
         GpuModel {
             path: String::new(),
             parts,
             skinned,
+            particles,
             bound_center: cpu.bound_center,
             bound_radius: cpu.bound_radius,
         }
@@ -1222,7 +1264,33 @@ impl Renderer {
         let mut stats = FrameStats::default();
         let mut opaque: HashMap<(*const GpuModel, usize), (&GpuPart, Vec<InstanceData>)> =
             HashMap::new();
-        let mut blended: Vec<(f32, &GpuPart, InstanceData)> = Vec::new();
+        let mut blended: Vec<(f32, Draw, InstanceData)> = Vec::new();
+        // Particles: their quads in one vertex buffer, drawn among the blended.
+        let mut quads: Vec<model::Vertex> = Vec::new();
+        for b in &scene.particles {
+            let start = quads.len() as u32;
+            quads.extend_from_slice(&b.vertices);
+            let data = InstanceData {
+                model: Mat4::IDENTITY.to_cols_array_2d(),
+                lights: [0xFFFF_FFFF; 4],
+                tint: [1.0; 4],
+                params: [1.0, 0.0, 0.0, 0.0],
+            };
+            let d = b.center.distance_squared(camera.position);
+            blended.push((d, Draw::Quads(&b.material, start..quads.len() as u32), data));
+        }
+        if quads.len() > self.particle_cap {
+            self.particle_cap = quads.len().next_power_of_two();
+            self.particle_vbuf = Self::make_vbuf(
+                &self.device,
+                self.particle_cap * std::mem::size_of::<model::Vertex>(),
+                "particles",
+            );
+        }
+        if !quads.is_empty() {
+            self.queue
+                .write_buffer(&self.particle_vbuf, 0, bytemuck::cast_slice(&quads));
+        }
         for inst in scene.instances() {
             if inst.hidden || inst.tint.w <= 0.0 {
                 continue;
@@ -1255,7 +1323,11 @@ impl Renderer {
                     // The sky's behind everything else.
                     let c = xf.transform_point3(part.bound_center);
                     let far = if inst.sky { 1.0e20 } else { 0.0 };
-                    blended.push((c.distance_squared(camera.position) + far, part, data));
+                    blended.push((
+                        c.distance_squared(camera.position) + far,
+                        Draw::Part(part),
+                        data,
+                    ));
                 }
             }
         }
@@ -1283,7 +1355,7 @@ impl Renderer {
                             .push(data);
                     } else {
                         let c = xf.transform_point3(part.bound_center);
-                        blended.push((c.distance_squared(camera.position), part, data));
+                        blended.push((c.distance_squared(camera.position), Draw::Part(part), data));
                     }
                 }
             }
@@ -1368,20 +1440,20 @@ impl Renderer {
 
         // Flatten into one instance buffer.
         let mut all: Vec<InstanceData> = Vec::new();
-        let mut draws: Vec<(&GpuPart, std::ops::Range<u32>)> = Vec::new();
+        let mut draws: Vec<(Draw, std::ops::Range<u32>)> = Vec::new();
         let mut opaque_sorted: Vec<_> = opaque.into_values().collect();
         opaque_sorted
             .sort_by_key(|(part, _)| (part.material.key.double_sided, part.material.key.z_write));
         for (part, v) in opaque_sorted {
             let start = all.len() as u32;
             all.extend(v);
-            draws.push((part, start..all.len() as u32));
+            draws.push((Draw::Part(part), start..all.len() as u32));
         }
         let opaque_count = draws.len();
-        for (_, part, data) in &blended {
+        for (_, d, data) in &blended {
             let start = all.len() as u32;
             all.push(*data);
-            draws.push((part, start..start + 1));
+            draws.push((d.clone(), start..start + 1));
         }
         if all.len() > self.instance_cap {
             self.instance_cap = all.len().next_power_of_two();
@@ -1397,8 +1469,8 @@ impl Renderer {
                 .write_buffer(&self.instance_buf, 0, bytemuck::cast_slice(&all));
         }
         // Make sure all pipelines exist before borrowing them in the pass.
-        for (part, _) in &draws {
-            self.pipeline(part.material.key);
+        for (d, _) in &draws {
+            self.pipeline(d.material().key);
         }
 
         let mut enc = self.device.create_command_encoder(&Default::default());
@@ -1463,21 +1535,30 @@ impl Renderer {
             }
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             let current: std::cell::Cell<Option<PipelineKey>> = std::cell::Cell::new(None);
-            let mut draw =
-                |pass: &mut wgpu::RenderPass, part: &GpuPart, range: std::ops::Range<u32>| {
-                    if current.get() != Some(part.material.key) {
-                        pass.set_pipeline(&self.pipelines[&part.material.key]);
-                        current.set(Some(part.material.key));
+            let particle_vbuf = &self.particle_vbuf;
+            let mut draw = |pass: &mut wgpu::RenderPass, d: &Draw, range: std::ops::Range<u32>| {
+                let material = d.material();
+                if current.get() != Some(material.key) {
+                    pass.set_pipeline(&self.pipelines[&material.key]);
+                    current.set(Some(material.key));
+                }
+                pass.set_bind_group(1, &material.bind_group, &[]);
+                match d {
+                    Draw::Part(part) => {
+                        pass.set_vertex_buffer(0, part.vbuf.slice(..));
+                        pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..part.index_count, 0, range.clone());
                     }
-                    pass.set_bind_group(1, &part.material.bind_group, &[]);
-                    pass.set_vertex_buffer(0, part.vbuf.slice(..));
-                    pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..part.index_count, 0, range.clone());
-                    stats.draws += 1;
-                    stats.instances += range.end - range.start;
-                };
-            for (part, range) in &draws[..opaque_count] {
-                draw(&mut pass, part, range.clone());
+                    Draw::Quads(_, vertices) => {
+                        pass.set_vertex_buffer(0, particle_vbuf.slice(..));
+                        pass.draw(vertices.clone(), range.clone());
+                    }
+                }
+                stats.draws += 1;
+                stats.instances += range.end - range.start;
+            };
+            for (d, range) in &draws[..opaque_count] {
+                draw(&mut pass, d, range.clone());
             }
             let mut skinned_draws = 0;
             if !skin_draws.is_empty() {
@@ -1508,8 +1589,8 @@ impl Renderer {
                 current.set(None);
             }
             pass.set_vertex_buffer(1, self.instance_buf.slice(..));
-            for (part, range) in &draws[opaque_count..] {
-                draw(&mut pass, part, range.clone());
+            for (d, range) in &draws[opaque_count..] {
+                draw(&mut pass, d, range.clone());
             }
             drop(draw);
             stats.draws += skinned_draws;

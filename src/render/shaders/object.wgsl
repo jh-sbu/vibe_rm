@@ -244,11 +244,14 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         // Effect shader: unlit, emissive tinted. The glow slot holds the greyscale palette.
         var c = base.rgb;
         var a = base.a;
+        // The palette is looked up clamped: the sampler repeats, and a
+        // greyscale of 0 would blend in the palette's far end.
+        let pal = 0.5 / vec2<f32>(textureDimensions(t_glow));
         if ((flags1 & SF1_GREYSCALE_TO_PALETTE_COLOR) != 0u && mat.params.w > 0.5) {
-            c = textureSample(t_glow, s_main, vec2<f32>(base.g, in.color.r)).rgb;
+            c = textureSample(t_glow, s_main, clamp(vec2<f32>(base.g, in.color.r), pal, 1.0 - pal)).rgb;
         }
         if ((flags1 & SF1_GREYSCALE_TO_PALETTE_ALPHA) != 0u && mat.params.w > 0.5) {
-            a = textureSample(t_glow, s_main, vec2<f32>(base.a, in.color.a)).a;
+            a = textureSample(t_glow, s_main, clamp(vec2<f32>(base.a, in.color.a), pal, 1.0 - pal)).a;
         }
         c *= mat.emissive.rgb * mat.emissive.w;
         a *= mat.params.x;

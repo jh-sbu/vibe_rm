@@ -162,6 +162,7 @@ impl ModelCache {
                     .iter()
                     .map(|x| &x.material)
                     .chain(m.skinned.iter().map(|x| &x.material))
+                    .chain(m.particles.iter().map(|x| &x.material))
                     .chain(parts);
                 for mat in mats {
                     for t in [&mat.diffuse, &mat.normal, &mat.glow].into_iter().flatten() {
@@ -204,7 +205,9 @@ impl ModelCache {
                 );
             }
             let g = m
-                .filter(|m| !m.meshes.is_empty() || !m.skinned.is_empty())
+                .filter(|m| {
+                    !m.meshes.is_empty() || !m.skinned.is_empty() || !m.particles.is_empty()
+                })
                 .map(|m| {
                     let mut g = renderer.upload_model(&m);
                     g.path = p.clone();
