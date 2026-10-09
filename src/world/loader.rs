@@ -165,7 +165,16 @@ impl ModelCache {
                     .chain(m.particles.iter().map(|x| &x.material))
                     .chain(parts);
                 for mat in mats {
-                    for t in [&mat.diffuse, &mat.normal, &mat.glow].into_iter().flatten() {
+                    for t in [
+                        &mat.diffuse,
+                        &mat.normal,
+                        &mat.glow,
+                        &mat.env,
+                        &mat.env_mask,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    {
                         if !renderer.textures.contains(t) {
                             tex.insert(t.clone());
                         }

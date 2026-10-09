@@ -64,6 +64,8 @@ struct MaterialUniform {
     tint: [f32; 4],
     /// A billboard's model-space origin and mode + 1 (0: not one).
     billboard: [f32; 4],
+    /// Environment map scale, has a cube map, has an environment mask.
+    env: [f32; 4],
 }
 
 #[repr(C)]
@@ -128,6 +130,7 @@ impl MaterialUniform {
                 (false, false, 9) => u.uv[3] = f,
                 (false, true, 0) => u.emissive[..3].copy_from_slice(&v.to_array()),
                 // Lighting shaders.
+                (true, false, 8) => u.env[0] = f,
                 (true, false, 9) => u.specular[3] = f,
                 (true, false, 11) => u.emissive[3] = f,
                 (true, false, 12) => u.params[0] = f,
@@ -564,6 +567,8 @@ pub struct Renderer {
     pub(crate) white: Arc<GpuTexture>,
     pub(crate) flat_normal: Arc<GpuTexture>,
     pub(crate) black: Arc<GpuTexture>,
+    /// Bound as the cube map of materials without environment mapping.
+    black_cube: Arc<GpuTexture>,
     pub stats: FrameStats,
     pub sky: sky::SkyRenderer,
     /// Rain and snow (drawn under the sky).
@@ -665,6 +670,17 @@ impl Renderer {
                 tex_entry(1),
                 tex_entry(2),
                 wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                tex_entry(6),
+                wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
@@ -745,6 +761,12 @@ impl Renderer {
             "flat_normal",
         ));
         let black = Arc::new(texture::solid(&device, &queue, [0, 0, 0, 255], "black"));
+        let black_cube = Arc::new(texture::solid_cube(
+            &device,
+            &queue,
+            [0, 0, 0, 255],
+            "black cube",
+        ));
         let depth_view = Self::make_depth(&device, width, height);
         let skin_instance_buf = Self::make_vbuf(
             &device,
@@ -806,6 +828,7 @@ impl Renderer {
             white,
             flat_normal,
             black,
+            black_cube,
             stats: FrameStats::default(),
         }
     }
@@ -1006,14 +1029,16 @@ impl Renderer {
         self.textures.insert(path.to_owned(), t);
     }
 
+    /// The texture at `path`, or `fallback` if it's missing or isn't viewed
+    /// like it (a cube map named in a 2D slot, or the reverse).
     fn texture_or(
         &self,
         path: &Option<String>,
         fallback: &Arc<GpuTexture>,
     ) -> (Arc<GpuTexture>, bool) {
         match path.as_ref().and_then(|p| self.textures.get(p)).flatten() {
-            Some(t) => (t, true),
-            None => (fallback.clone(), false),
+            Some(t) if t.dimension == fallback.dimension => (t, true),
+            _ => (fallback.clone(), false),
         }
     }
 
@@ -1021,6 +1046,11 @@ impl Renderer {
         let (diffuse, _) = self.texture_or(&m.diffuse, &self.white);
         let (normal, has_normal) = self.texture_or(&m.normal, &self.flat_normal);
         let (glow, has_glow) = self.texture_or(&m.glow, &self.black);
+        let (mut env, mut has_env) = self.texture_or(&m.env, &self.black_cube);
+        if std::env::var_os("VRM_NO_ENVMAP").is_some() {
+            (env, has_env) = (self.black_cube.clone(), false);
+        }
+        let (env_mask, has_env_mask) = self.texture_or(&m.env_mask, &self.white);
         let u = MaterialUniform {
             uv: [m.uv_offset.x, m.uv_offset.y, m.uv_scale.x, m.uv_scale.y],
             emissive: m.emissive.to_array(),
@@ -1058,6 +1088,12 @@ impl Renderer {
             billboard: m
                 .billboard
                 .map_or([0.0; 4], |(p, mode)| p.extend(mode as f32 + 1.0).to_array()),
+            env: [
+                m.env_scale,
+                has_env as u32 as f32,
+                has_env_mask as u32 as f32,
+                0.0,
+            ],
         };
         let ubuf = self
             .device
@@ -1089,6 +1125,14 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: ubuf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&env.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&env_mask.view),
                 },
             ],
         });

@@ -188,6 +188,59 @@ fn main() -> Result<()> {
                 println!("{n} = {v}");
             }
         }
+        Some("envmap-shapes") => {
+            // envmap-shapes <bsa>...: lighting shaders with environment
+            // mapping, counted by shader type, whether they name a cube map
+            // (slot 4) and an environment mask (slot 5); the cube maps used.
+            let mut kinds = std::collections::BTreeMap::<(u32, bool, bool), usize>::new();
+            let mut cubes = std::collections::BTreeMap::<String, usize>::new();
+            for path in &args[1..] {
+                let a = bsa::Archive::open(path)?;
+                let paths: Vec<String> = a
+                    .paths()
+                    .filter(|p| p.ends_with(".nif"))
+                    .map(str::to_owned)
+                    .collect();
+                for p in paths {
+                    let Ok(n) = nif::Nif::parse(&a.read(&p)?.unwrap()) else {
+                        continue;
+                    };
+                    for b in &n.blocks {
+                        let nif::Block::LightingShader(s) = b else {
+                            continue;
+                        };
+                        if s.flags1
+                            & (nif::sf1::ENVIRONMENT_MAPPING | nif::sf1::EYE_ENVIRONMENT_MAPPING)
+                            == 0
+                        {
+                            continue;
+                        }
+                        let t = match n.get(s.texture_set) {
+                            Some(nif::Block::TextureSet(t)) => t.clone(),
+                            _ => Vec::new(),
+                        };
+                        let slot = |i: usize| {
+                            t.get(i)
+                                .map(|s| s.trim().to_lowercase())
+                                .filter(|s| !s.is_empty())
+                        };
+                        let (cube, mask) = (slot(4), slot(5));
+                        *kinds
+                            .entry((s.shader_type, cube.is_some(), mask.is_some()))
+                            .or_default() += 1;
+                        if let Some(c) = cube {
+                            *cubes.entry(c).or_default() += 1;
+                        }
+                    }
+                }
+            }
+            for ((ty, c, m), k) in kinds {
+                println!("type {ty:2} cube {c:5} mask {m:5}: {k}");
+            }
+            for (c, k) in cubes {
+                println!("{k:6} {c}");
+            }
+        }
         Some("msn-shapes") => {
             // msn-shapes <bsa>...: shapes whose lighting shader has model-space
             // normals, counted by whether they're drawn skinned; the files of

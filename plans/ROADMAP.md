@@ -493,6 +493,15 @@ game each piece unlocks.
   scaling, emissive colour and multiple, alpha and falloff animate on every material
   that has them (clouds, auroras, waterfalls, magic), by the controllers' frequency,
   phase and loop / reverse / clamp cycles
+- Environment maps: lighting shaders with environment (or eye environment) mapping
+  reflect their cube map (texture set slot 4, sampled with the world's axes: the vanilla
+  maps keep the sky on +Z) along the reflected view, masked by the environment mask
+  (slot 5) or else the normal map's specular alpha, scaled by the shader's
+  environment map scale (and its controllers) and lit like the surface: Dwemer bronze,
+  ore veins, glass, ice, eyes. Textures named in a slot of the wrong kind (a cube map as
+  a mask) fall back to the slot's default; `VRM_NO_ENVMAP=1` turns them off for
+  comparison; vrm-tool `envmap-shapes` counts the vanilla shapes and cube maps.
+  Open questions: `known_gaps/environment-maps.md`
 - Objects' behaviour graphs (`BSBehaviorGraphExtraData`: traps, pressure plates, levers,
   portcullises, puzzle pillars): the project runs on the model's own nodes, the nodes it
   moves (those with transform controllers) drawn apart and their collision carried;
@@ -657,7 +666,7 @@ game each piece unlocks.
    radial blur and motion blur (cinematic values and tint: see Done), particles'
    remaining modifiers (colliders, mesh emitters' surfaces, strips, LOD; see
    `known_gaps/particles.md`), distant LOD (BTR/BTO/trees),
-   grass, decals, environment maps; weather: auroras' brightness and order against the
+   grass, decals; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /
