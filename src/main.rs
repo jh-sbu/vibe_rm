@@ -35,6 +35,7 @@ mod story;
 mod traps;
 mod triggers;
 mod ui;
+mod weather;
 mod world;
 mod world_state;
 

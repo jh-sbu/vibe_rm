@@ -134,6 +134,43 @@ pub fn call(
             e.remove_imod_cross_fade(args.first().map_or(1.0, |a| a.as_float()));
             none()
         }
+        // ---------------------------------------------------------- Weather
+        // (abOverride = false)
+        ("weather", "forceactive") => {
+            if let Some(w) = me {
+                e.force_weather(w, arg(0).as_bool());
+            }
+            none()
+        }
+        // (abOverride = false, abAccelerate = false)
+        ("weather", "setactive") => {
+            if let Some(w) = me {
+                e.set_weather(w, arg(0).as_bool(), arg(1).as_bool());
+            }
+            none()
+        }
+        ("weather", "releaseoverride") => {
+            e.release_weather_override();
+            none()
+        }
+        ("weather", "getcurrentweather") => v(e
+            .current_weather()
+            .map_or(Value::None, |w| e.object_value(w))),
+        ("weather", "getoutgoingweather") => v(e
+            .outgoing_weather()
+            .map_or(Value::None, |w| e.object_value(w))),
+        ("weather", "getcurrentweathertransition") => v(Value::Float(e.weather.pct)),
+        ("weather", "getskymode") => v(Value::Int(e.sky_mode())),
+        ("weather", "findweather") => {
+            let w = e.find_weather(arg(0).as_int());
+            v(w.map_or(Value::None, |w| e.object_value(w)))
+        }
+        ("weather", "getclassification") => {
+            let class = me
+                .and_then(|w| e.weather_record(w))
+                .map_or(-1, |w| w.classification());
+            v(Value::Int(class))
+        }
         ("game", "isplayersleeping") | ("game", "isfasttravelenabled") => v(Value::Bool(false)),
         // Player controls: each flag given true disables (enables) that control,
         // in the order of `DisabledControls::flags_mut`. Missing arguments take

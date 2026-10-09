@@ -17,7 +17,6 @@ use crate::world::cell::{self, Door, PlacedObject, PointLight};
 use crate::world::loader::{self, ModelCache};
 use crate::world::records::{self, Lighting};
 use crate::world::terrain::{self, CELL_SIZE, Land};
-use crate::world::weather::{self, Climate, Weather};
 
 #[derive(Default)]
 pub(crate) struct CellRuntime {
@@ -59,7 +58,7 @@ pub struct Engine {
     pub camera: Camera,
     /// Game time of day in hours.
     pub hour: f32,
-    pub sky: Option<(Weather, Climate)>,
+    pub weather: crate::weather::WeatherState,
     pub forced_weather: Option<String>,
     pub physics: Physics,
     pub player: Player,
@@ -241,7 +240,7 @@ impl Engine {
                 fov_y: 65f32.to_radians(),
             },
             hour,
-            sky: None,
+            weather: Default::default(),
             forced_weather: weather,
             physics: Physics::new(),
             player: Player::new(Vec3::ZERO),
@@ -1517,7 +1516,7 @@ impl Engine {
             contents.objects.len(),
             contents.lights.len()
         );
-        self.sky = None;
+        self.weather_indoors();
         self.lod = None;
         self.scene.lod.clear();
         self.scene.env = interior_environment(&contents.lighting);
@@ -1620,7 +1619,7 @@ impl Engine {
                 }
             }
         }
-        self.setup_weather(world);
+        self.setup_weather(world, grid_of(feet.truncate()));
         self.set_interior_image_space(None);
         self.scene.env = self.sky_environment().unwrap_or_default();
         // Distant LOD (child worldspaces may use their parent's).
@@ -1980,78 +1979,18 @@ impl Engine {
         None
     }
 
-    fn world_form(&self, world: FormId, tag: &[u8; 4], parent_flag: u16) -> Option<FormId> {
+    pub(crate) fn world_form(
+        &self,
+        world: FormId,
+        tag: &[u8; 4],
+        parent_flag: u16,
+    ) -> Option<FormId> {
         let (d, w) = self.world_field(world, tag, parent_flag)?;
         let rec = self.lo.get(w)?;
         Some(rec.fid(FormId(u32::from_le_bytes(d.get(0..4)?.try_into().ok()?))))
     }
 
     // ---------------------------------------------------------------- weather
-
-    /// Pick the climate's weather for a worldspace and load its sky textures.
-    pub fn setup_weather(&mut self, world: FormId) {
-        let clmt = self.world_form(world, b"CNAM", 0x10);
-        let climate = clmt
-            .and_then(|c| weather::load_climate(&self.lo, c))
-            .unwrap_or_default();
-        let forced = self
-            .forced_weather
-            .as_ref()
-            .and_then(|w| self.resolve_form(w));
-        let wid = forced.or_else(|| climate.weathers.iter().max_by_key(|w| w.1).map(|w| w.0));
-        let Some(w) = wid.and_then(|w| weather::load_weather(&self.lo, w)) else {
-            self.sky = None;
-            return;
-        };
-        log::info!("weather {} ({} cloud layers)", w.editor_id, w.clouds.len());
-        let mut tex: Vec<String> = vec![climate.sun_texture.clone()];
-        tex.extend(w.clouds.iter().take(4).map(|c| c.texture.clone()));
-        let missing: Vec<String> = tex
-            .iter()
-            .filter(|t| !self.renderer.textures.contains(t))
-            .cloned()
-            .collect();
-        loader::load_textures(&mut self.renderer, &self.vfs, missing);
-        let get = |p: &String| self.renderer.textures.get(p).flatten();
-        let sun = get(&climate.sun_texture).unwrap_or_else(|| self.renderer.white.clone());
-        let clouds = w
-            .clouds
-            .iter()
-            .take(4)
-            .filter_map(|c| get(&c.texture))
-            .collect();
-        let (dev, sampler, black) = (
-            &self.renderer.device,
-            &self.renderer.sampler,
-            self.renderer.black.clone(),
-        );
-        self.renderer
-            .sky
-            .set_textures(dev, sampler, sun, clouds, black);
-        self.sky = Some((w, climate));
-    }
-
-    /// Evaluate the current weather at the current hour into a render environment.
-    pub fn sky_environment(&mut self) -> Option<Environment> {
-        let (w, c) = self.sky.as_ref()?;
-        let st = weather::evaluate(w, c, self.hour);
-        let env = Environment {
-            sun_dir: st.light_dir,
-            sun_color: st.sunlight,
-            ambient: st.ambient,
-            fog_near_color: st.fog_near_color,
-            fog_far_color: st.fog_far_color,
-            fog_near: st.fog_near,
-            fog_far: st.fog_far.max(st.fog_near + 1.0),
-            fog_power: st.fog_power,
-            fog_max: st.fog_max,
-            clear_color: st.horizon,
-            dalc: Some(st.dalc),
-            sky: true,
-        };
-        self.renderer.sky.set_state(st);
-        Some(env)
-    }
 
     // --------------------------------------------------------------- gameplay
 
@@ -2086,6 +2025,7 @@ impl Engine {
         self.update_scripts(dt);
         self.update_activations();
         self.update_scenes();
+        self.update_weather(dt * time_scale / 3600.0);
         if let Some(env) = self.sky_environment() {
             self.scene.env = env;
         }

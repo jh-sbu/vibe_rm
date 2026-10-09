@@ -12,7 +12,7 @@
 //! The base image space (IMGS: CommonLibSSE's `ImageSpaceBaseData`) is the
 //! interior cell's (XCIM, else `DefaultImageSpaceInterior`) or outdoors the
 //! weather's for the time of day (IMSP: sunrise, day, sunset, night, blended
-//! like its colours). Its cinematic values (CNAM) and tint (TNAM) are drawn;
+//! like its colours, and with the outgoing weather's in a transition). Its cinematic values (CNAM) and tint (TNAM) are drawn;
 //! the HDR ones (HNAM) are kept but there is no HDR to drive.
 //! Open questions: `known_gaps/image-space.md`.
 
@@ -340,15 +340,17 @@ impl Engine {
                 .or_else(|| self.imgs(DEFAULT_INTERIOR))
                 .unwrap_or_default();
         }
-        let Some((w, c)) = &self.sky else {
+        let Some(c) = self.climate() else {
             return Imgs::default();
         };
         let tw = crate::world::weather::time_weights(c, self.hour);
-        let slots = w.image_spaces;
-        let parts: Vec<(Imgs, f32)> = (0..4)
-            .filter(|&t| tw[t] > 0.0)
-            .map(|t| (self.imgs(slots[t]).unwrap_or_default(), tw[t]))
-            .collect();
+        let mut parts: Vec<(Imgs, f32)> = Vec::new();
+        for (slots, weight) in self.weather_image_spaces() {
+            for t in (0..4).filter(|&t| tw[t] > 0.0) {
+                let m = self.imgs(slots[t]).unwrap_or_default();
+                parts.push((m, tw[t] * weight));
+            }
+        }
         Imgs::blend(&parts)
     }
 

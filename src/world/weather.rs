@@ -51,6 +51,30 @@ pub struct Weather {
     pub wind_speed: f32,
     /// IMSP: the image space per time of day (sunrise, day, sunset, night).
     pub image_spaces: [FormId; 4],
+    /// DATA flags: pleasant, cloudy, rainy, snow ([`flags`]).
+    pub flags: u8,
+    /// DATA "trans delta": how fast it comes in (0: at once).
+    pub trans_delta: u8,
+    /// Precipitation's begin fade in and end fade out (0..255 of a transition).
+    pub precip_fade: (u8, u8),
+}
+
+/// Weather DATA flags (CommonLibSSE's `TESWeather::WeatherDataFlag`).
+pub mod flags {
+    pub const PLEASANT: u8 = 1 << 0;
+    pub const CLOUDY: u8 = 1 << 1;
+    pub const RAINY: u8 = 1 << 2;
+    pub const SNOW: u8 = 1 << 3;
+}
+
+impl Weather {
+    /// `Weather.GetClassification`: 0 pleasant, 1 cloudy, 2 rainy, 3 snow, -1 none.
+    pub fn classification(&self) -> i32 {
+        [flags::PLEASANT, flags::CLOUDY, flags::RAINY, flags::SNOW]
+            .iter()
+            .position(|&f| self.flags & f != 0)
+            .map_or(-1, |i| i as i32)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -107,18 +131,28 @@ const CLOUD_TAGS: [&[u8; 4]; 32] = [
     b"N0TX", b"O0TX",
 ];
 
+impl Weather {
+    /// A weather with nothing set.
+    pub fn new(id: FormId, editor_id: String) -> Self {
+        Weather {
+            id,
+            editor_id,
+            colors: [[Vec3::splat(0.5); 4]; color::COUNT],
+            fog: [0.0, 80000.0, 0.0, 40000.0, 1.0, 1.0, 1.0, 1.0],
+            clouds: Vec::new(),
+            dalc: [[Vec3::splat(0.3); 6]; 4],
+            wind_speed: 0.0,
+            image_spaces: [FormId::NULL; 4],
+            flags: 0,
+            trans_delta: 0,
+            precip_fade: (0, 0),
+        }
+    }
+}
+
 pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
     let rec = lo.get(id)?;
-    let mut w = Weather {
-        id,
-        editor_id: rec.editor_id().unwrap_or_default(),
-        colors: [[Vec3::splat(0.5); 4]; color::COUNT],
-        fog: [0.0, 80000.0, 0.0, 40000.0, 1.0, 1.0, 1.0, 1.0],
-        clouds: Vec::new(),
-        dalc: [[Vec3::splat(0.3); 6]; 4],
-        wind_speed: 0.0,
-        image_spaces: [FormId::NULL; 4],
-    };
+    let mut w = Weather::new(id, rec.editor_id().unwrap_or_default());
     let mut layer_tex: Vec<Option<String>> = vec![None; 32];
     let mut pnam: Option<Vec<u8>> = None;
     let mut jnam: Option<Vec<u8>> = None;
@@ -149,7 +183,12 @@ pub fn load_weather(lo: &LoadOrder, id: FormId) -> Option<Weather> {
             b"PNAM" => pnam = Some(sr.data.to_vec()),
             b"JNAM" => jnam = Some(sr.data.to_vec()),
             b"NAM1" => disabled = sr.u32(0),
-            b"DATA" => w.wind_speed = sr.u8(0) as f32 / 255.0,
+            b"DATA" if sr.data.len() >= 12 => {
+                w.wind_speed = sr.u8(0) as f32 / 255.0;
+                w.trans_delta = sr.u8(3);
+                w.precip_fade = (sr.u8(6), sr.u8(7));
+                w.flags = sr.u8(11);
+            }
             b"IMSP" => {
                 for (t, f) in w
                     .image_spaces
@@ -213,7 +252,46 @@ pub struct SkyState {
     pub light_dir: Vec3,
     pub sun_visible: f32,
     pub stars: f32,
+    /// Cloud layers: (texture, colour, alpha).
     pub clouds: Vec<(String, Vec3, f32)>,
+    /// The outgoing weather's layers fading out under them in a transition.
+    pub outgoing_clouds: Vec<(String, Vec3, f32)>,
+}
+
+impl SkyState {
+    /// Part way (`t`) from the outgoing weather's sky `a` to the incoming `b`:
+    /// colours and fog mix, `a`'s clouds fade out as `b`'s fade in.
+    pub fn blend(a: &SkyState, b: &SkyState, t: f32) -> SkyState {
+        let t = t.clamp(0.0, 1.0);
+        let v = |x: Vec3, y: Vec3| x.lerp(y, t);
+        let f = |x: f32, y: f32| x + (y - x) * t;
+        let fade = |c: &[(String, Vec3, f32)], k: f32| -> Vec<(String, Vec3, f32)> {
+            c.iter()
+                .map(|(n, col, al)| (n.clone(), *col, al * k))
+                .collect()
+        };
+        SkyState {
+            sky_upper: v(a.sky_upper, b.sky_upper),
+            sky_lower: v(a.sky_lower, b.sky_lower),
+            horizon: v(a.horizon, b.horizon),
+            fog_near_color: v(a.fog_near_color, b.fog_near_color),
+            fog_far_color: v(a.fog_far_color, b.fog_far_color),
+            fog_near: f(a.fog_near, b.fog_near),
+            fog_far: f(a.fog_far, b.fog_far),
+            fog_power: f(a.fog_power, b.fog_power),
+            fog_max: f(a.fog_max, b.fog_max),
+            sunlight: v(a.sunlight, b.sunlight),
+            sun_color: v(a.sun_color, b.sun_color),
+            ambient: v(a.ambient, b.ambient),
+            dalc: std::array::from_fn(|i| v(a.dalc[i], b.dalc[i])),
+            sun_dir: b.sun_dir,
+            light_dir: b.light_dir,
+            sun_visible: b.sun_visible,
+            stars: b.stars,
+            clouds: fade(&b.clouds, t),
+            outgoing_clouds: fade(&a.clouds, 1.0 - t),
+        }
+    }
 }
 
 /// Blend weights over the 4 time-of-day slots for an hour of the day.
@@ -297,5 +375,6 @@ pub fn evaluate(w: &Weather, c: &Climate, hour: f32) -> SkyState {
         sun_visible: (sun_dir.z * 8.0 + 0.5).clamp(0.0, 1.0),
         stars: night,
         clouds,
+        outgoing_clouds: Vec::new(),
     }
 }

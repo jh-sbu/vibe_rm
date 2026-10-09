@@ -536,6 +536,15 @@ game each piece unlocks.
   its saturation, brightness, contrast (about the frame's average) and tint
   drawn every frame; vrm-tool `image-spaces`.
   Open questions: `known_gaps/image-space.md`
+- Weather over time: the current and outgoing weather with a transition
+  (sky, light, fog, clouds and image space mixed), regions' weathers from the
+  player's cell (RDWT, by chance), rolled again every few hours, leaving a
+  region bringing in one of the new region's; overrides. Papyrus `Weather`
+  `ForceActive`, `SetActive`, `ReleaseOverride`, `GetCurrentWeather`,
+  `GetOutgoingWeather`, `GetCurrentWeatherTransition`, `GetSkyMode`,
+  `FindWeather`, `GetClassification`; conditions `IsRaining`, `IsSnowing`,
+  `GetWindSpeed`, `GetCurrentWeatherPercent`, `IsPleasant`, `IsCloudy`.
+  Console `fw`, `sw`, `rwo`, `weather`. Open questions: `known_gaps/weather.md`
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -620,9 +629,10 @@ game each piece unlocks.
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
    radial blur and motion blur (cinematic values and tint: see Done), particles
    (fire, smoke, explosions), distant LOD (BTR/BTO/trees),
-   grass, decals, environment maps
+   grass, decals, environment maps; weather: rain and snow, lightning,
+   auroras, sky statics, weather sounds (see `known_gaps/weather.md`)
 9. **Saves**: an engine-native save format (reading .ess later), writing out
-   the scripts' state, inventories and `WorldState`; `RequestSave` /
+   the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /
    `RequestAutoSave`
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
