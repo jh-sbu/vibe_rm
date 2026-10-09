@@ -30,7 +30,13 @@ themselves.
 
 ## Choices made without a source
 
-- "Touching" is within 2 units (`TOUCH_MARGIN`); sleeping bodies don't hit.
+- "Touching" is within 2 units (`TOUCH_MARGIN`); sleeping bodies don't hit,
+  nor do graph-moved parts standing still.
+- A reference's copy of a script its base also has keeps the base's
+  properties it doesn't set (`src/engine.rs`, `attach_cell_scripts`): the
+  reference's VMAD holds only what it overrides (Ragnvald's swinging blades
+  set `TrapLevel`; their base sets the damage per level and the sounds).
+  No source states the rule; the data only makes sense with it.
 - What the player holds doesn't hit the player.
 - Which objects are traps: those whose scripts (or the scripts they extend)
   define any of the three events. The engine's own rule isn't public.
@@ -41,7 +47,8 @@ themselves.
   and it sends no `OnHit`.
 - Parts moved by objects' behaviour graphs (swinging maces and blades, a
   rig's supports) move their collision as fixed colliders set in place each
-  frame: they push nothing aside and don't hit (no trap events for them).
+  frame: they push nothing aside. They hit like keyframed traps (motion type
+  4), with the velocity from their last two poses.
 - Disarming (`trapDisarmed`), trip wires' own scripts (`Tripwire` makes its
   wire dynamic) and the Light Foot perk (`HasPerk` is unimplemented).
 - Who gets a trap kill: no one.

@@ -298,6 +298,10 @@ struct ClipState {
     reverse: bool,
     additive: bool,
     looping: bool,
+    /// Held where `userControlledTimeFraction` puts it.
+    user: bool,
+    /// Turns round at either end.
+    ping_pong: bool,
     wrapped: bool,
     started: bool,
 }
@@ -544,7 +548,9 @@ impl Ctx<'_> {
                         offset: *crop_start,
                         reverse: speed < 0.0,
                         additive,
-                        looping: *mode != ClipMode::SinglePlay,
+                        looping: !matches!(mode, ClipMode::SinglePlay | ClipMode::UserControlled),
+                        user: *mode == ClipMode::UserControlled,
+                        ping_pong: *mode == ClipMode::PingPong,
                         wrapped: false,
                         started: false,
                     })
@@ -1200,7 +1206,12 @@ impl Ctx<'_> {
 
     fn advance_clip(&mut self, gi: usize, g: GenId, c: &mut ClipState, dt: f32) {
         let graph = self.shared.graph(gi);
-        let Generator::Clip { speed, .. } = &graph.generators[g] else {
+        let Generator::Clip {
+            speed,
+            user_fraction,
+            ..
+        } = &graph.generators[g]
+        else {
             return;
         };
         let speed = self.bound(gi, g, "playbackSpeed").unwrap_or(*speed).abs();
@@ -1211,6 +1222,16 @@ impl Ctx<'_> {
         let mut t = c.t + dt * speed;
         if c.length <= 0.0 {
             t = 0.0;
+        } else if c.user {
+            let f = self
+                .bound(gi, g, "userControlledTimeFraction")
+                .unwrap_or(*user_fraction);
+            t = f.clamp(0.0, 1.0) * c.length;
+        } else if c.ping_pong && t >= c.length {
+            // Back the other way from the end.
+            t = (t - c.length) % c.length;
+            c.reverse = !c.reverse;
+            c.wrapped = true;
         } else if c.looping && t >= c.length {
             t %= c.length;
             c.wrapped = true;
@@ -1982,6 +2003,7 @@ mod tests {
             animation: name.into(),
             mode,
             speed: 1.0,
+            user_fraction: 0.0,
             triggers,
             crop_start: 0.0,
             crop_end: 0.0,
@@ -2079,6 +2101,46 @@ mod tests {
             .iter()
             .map(|s| (s.animation.to_string(), (s.weight * 100.0).round() / 100.0))
             .collect()
+    }
+
+    /// A graph of one clip in `mode`, 2 s long.
+    fn one_clip(mode: ClipMode, user_fraction: f32) -> Instance {
+        let mut c = clip("Loop", mode, vec![]);
+        if let Generator::Clip {
+            user_fraction: f, ..
+        } = &mut c
+        {
+            *f = user_fraction;
+        }
+        instance(BehaviorGraph::new("G", Some(0), vec![c], vec![]))
+    }
+
+    fn time(i: &Instance) -> f32 {
+        (i.samples()[0].time * 100.0).round() / 100.0
+    }
+
+    #[test]
+    fn user_controlled_clips_hold_their_fraction() {
+        // A sarcophagus lid rests on its trigger clip's first frame.
+        let mut i = one_clip(ClipMode::UserControlled, 0.0);
+        i.update(0.7, &mut durations);
+        i.update(3.0, &mut durations);
+        assert_eq!(time(&i), 0.0);
+        let mut i = one_clip(ClipMode::UserControlled, 0.25);
+        i.update(0.7, &mut durations);
+        assert_eq!(time(&i), 0.5);
+    }
+
+    #[test]
+    fn ping_pong_clips_turn_round() {
+        let mut i = one_clip(ClipMode::PingPong, 0.0);
+        i.update(1.5, &mut durations);
+        assert_eq!(time(&i), 1.5);
+        // Past the end by 1 s: back 1 s from it.
+        i.update(1.5, &mut durations);
+        assert_eq!(time(&i), 1.0);
+        i.update(0.5, &mut durations);
+        assert_eq!(time(&i), 0.5);
     }
 
     #[test]

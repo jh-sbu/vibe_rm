@@ -93,6 +93,33 @@ impl Engine {
                 }
             }
         }
+        // Parts moved by objects' behaviour graphs (swinging blades, battering
+        // rams): keyframed.
+        for part in self.moving_graph_parts() {
+            if !self.is_trap(part.ref_id) || self.is_disabled(part.ref_id) {
+                continue;
+            }
+            let mut touches = Vec::new();
+            self.physics.collider_touches(
+                part.collider,
+                player,
+                TOUCH_MARGIN,
+                &|p| part.velocity_at(p),
+                &mut touches,
+            );
+            for (who, at, vel, material) in touches {
+                let target = who.unwrap_or(PLAYER_REF);
+                if target != PLAYER_REF && self.is_dead(target) {
+                    continue;
+                }
+                now.entry((part.ref_id, target)).or_insert(Touch {
+                    at,
+                    vel,
+                    material,
+                    motion: 4,
+                });
+            }
+        }
         let time = self.scripts.real_time;
         let ended: Vec<(FormId, FormId)> = self
             .traps
