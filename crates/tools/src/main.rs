@@ -2173,6 +2173,72 @@ fn main() -> Result<()> {
                 println!("{c:6} {n}");
             }
         }
+        Some("addons") => {
+            // addons <data dir> [nif]: addon nodes (ADDN: index, model, flags)
+            // and the meshes' BSValueNodes naming them (how many models,
+            // values without an addon); with a model, its value nodes.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let v = vfs::Vfs::new(data, &names);
+            let mut by_index = std::collections::BTreeMap::new();
+            for &id in lo.ids_of_type(b"ADDN") {
+                let Some(rec) = lo.get(id) else { continue };
+                let index = rec
+                    .get(b"DATA")
+                    .and_then(|d| d.get(..4))
+                    .map(|d| i32::from_le_bytes(d.try_into().unwrap()));
+                let model = rec.get(b"MODL").map(esp::decode_zstring);
+                let dnam = rec.get(b"DNAM").map(|d| d.to_vec());
+                println!(
+                    "{id} {:<32} index {index:?} model {model:?} DNAM {dnam:02x?}",
+                    rec.editor_id().unwrap_or_default()
+                );
+                if let Some(i) = index {
+                    by_index.insert(i, rec.editor_id().unwrap_or_default().to_owned());
+                }
+            }
+            let mut paths: Vec<String> = match args.get(2) {
+                Some(p) => vec![p.clone()],
+                None => v
+                    .list("meshes/")
+                    .into_iter()
+                    .filter(|p| p.ends_with(".nif"))
+                    .collect(),
+            };
+            paths.sort();
+            let (mut users, mut missing) = (0, std::collections::BTreeMap::new());
+            for p in &paths {
+                let Some(n) = v.read(p).and_then(|b| nif::Nif::parse(&b).ok()) else {
+                    continue;
+                };
+                let mut found = Vec::new();
+                for b in &n.blocks {
+                    if let nif::Block::Node(node) = b
+                        && let nif::NodeKind::Value { value, flags } = node.kind
+                    {
+                        found.push(value);
+                        if args.get(2).is_some() {
+                            println!(
+                                "{:<24} value {value} flags {flags:02x} -> {:?}",
+                                node.av.net.name,
+                                by_index.get(&value)
+                            );
+                        }
+                        if !by_index.contains_key(&value) {
+                            *missing.entry(value).or_insert(0) += 1;
+                        }
+                    }
+                }
+                if !found.is_empty() {
+                    users += 1;
+                    if args.get(2).is_none() {
+                        println!("{p}: {found:?}");
+                    }
+                }
+            }
+            println!("{users} models with value nodes; values without an addon: {missing:?}");
+        }
         Some("decals") => {
             // decals <data dir> [texture set]: texture sets with decal data
             // (DODT) and the references placing them: how many, the subrecords

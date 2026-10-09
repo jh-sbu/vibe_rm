@@ -198,6 +198,8 @@ pub struct CpuModel {
     pub sequences: Vec<Sequence>,
     /// Its particle systems.
     pub particles: Vec<std::sync::Arc<super::particles::ParticleDesc>>,
+    /// Addon nodes (`BSValueNode`): the ADDN index and where its model goes.
+    pub addons: Vec<(i32, Mat4)>,
 }
 
 /// Meshes under an animated node, in that node's space.
@@ -316,12 +318,42 @@ pub fn convert_filtered(nif: &Nif, keep: &dyn Fn(&str) -> bool) -> CpuModel {
     convert_split(nif, keep, &Default::default())
 }
 
+/// [`convert`] with the model's root placed at `root`: an addon node's
+/// model, to be merged into its host's ([`CpuModel::merge`]).
+pub fn convert_at(nif: &Nif, root: Mat4) -> CpuModel {
+    convert_inner(nif, &|_| true, &Default::default(), root)
+}
+
+impl CpuModel {
+    /// Take in another model's meshes and particle systems (an addon node's,
+    /// already placed), growing the bounds.
+    pub fn merge(&mut self, other: CpuModel) {
+        self.meshes.extend(other.meshes);
+        self.particles.extend(other.particles);
+        (self.bound_center, self.bound_radius) = bounds_of(
+            [(self.bound_center, self.bound_radius)]
+                .into_iter()
+                .filter(|(_, r)| *r > 0.0)
+                .chain([(other.bound_center, other.bound_radius)]),
+        );
+    }
+}
+
 /// [`convert_filtered`], also drawing the subtrees of the `split` nodes apart
 /// (as animated nodes' are): the bodies of a loose object of several.
 pub fn convert_split(
     nif: &Nif,
     keep: &dyn Fn(&str) -> bool,
     split: &std::collections::HashSet<String>,
+) -> CpuModel {
+    convert_inner(nif, keep, split, Mat4::IDENTITY)
+}
+
+fn convert_inner(
+    nif: &Nif,
+    keep: &dyn Fn(&str) -> bool,
+    split: &std::collections::HashSet<String>,
+    root: Mat4,
 ) -> CpuModel {
     let sequences = sequences(nif);
     let animated_nodes: std::collections::HashSet<&str> = sequences
@@ -335,11 +367,13 @@ pub fn convert_split(
         particles: Vec::new(),
         skinned: Vec::new(),
         animated: Vec::new(),
+        addons: Vec::new(),
         animated_nodes: &animated_nodes,
         keep,
+        root,
     };
-    for &root in &nif.roots {
-        w.walk(nif, Ref(root as i32), Mat4::IDENTITY, 0);
+    for &r in &nif.roots {
+        w.walk(nif, Ref(r as i32), root, 0);
     }
     // Parts within parts (a sign hung from a chain of rings, each a body of
     // its own) are drawn as parts of the model too.
@@ -366,7 +400,8 @@ pub fn convert_split(
             }))
             .chain(w.particles.iter().map(|p| (p.bound_center, p.bound_radius))),
     );
-    let (meshes, skinned, animated, particles) = (w.meshes, w.skinned, w.animated, w.particles);
+    let (meshes, skinned, animated, particles, addons) =
+        (w.meshes, w.skinned, w.animated, w.particles, w.addons);
     CpuModel {
         meshes,
         skinned,
@@ -375,6 +410,7 @@ pub fn convert_split(
         animated,
         sequences,
         particles,
+        addons,
     }
 }
 
@@ -481,8 +517,11 @@ struct Walk<'a> {
     particles: Vec<std::sync::Arc<super::particles::ParticleDesc>>,
     skinned: Vec<CpuSkinnedMesh>,
     animated: Vec<AnimatedPart>,
+    addons: Vec<(i32, Mat4)>,
     animated_nodes: &'a std::collections::HashSet<&'a str>,
     keep: &'a dyn Fn(&str) -> bool,
+    /// Where the model's root is placed (particle emitters' objects).
+    root: Mat4,
 }
 
 /// Parts and the parts within them, side by side: the inner ones' parent
@@ -547,8 +586,10 @@ impl Walk<'_> {
                 particles: Vec::new(),
                 skinned: Vec::new(),
                 animated: Vec::new(),
+                addons: Vec::new(),
                 animated_nodes: self.animated_nodes,
                 keep: self.keep,
+                root: self.root,
             };
             if let Block::Node(n) = block {
                 for &c in &n.children {
@@ -565,6 +606,7 @@ impl Walk<'_> {
                 animated: sub.animated,
                 sequences: Vec::new(),
                 particles: sub.particles,
+                addons: sub.addons,
             };
             self.animated.push(AnimatedPart {
                 node: av.net.name.clone(),
@@ -581,13 +623,16 @@ impl Walk<'_> {
         let (out, skinned) = (&mut self.meshes, &mut self.skinned);
         match block {
             Block::ParticleSystem(p) => {
-                if let Some(d) = super::particles::describe(nif, p, world) {
+                if let Some(d) = super::particles::describe(nif, p, world, self.root) {
                     self.particles.push(std::sync::Arc::new(d));
                 }
             }
             Block::Node(n) => {
                 if n.kind == NodeKind::RootCollision {
                     return;
+                }
+                if let NodeKind::Value { value, .. } = n.kind {
+                    self.addons.push((value, world));
                 }
                 match n.kind {
                     // A billboard's subtree is kept in its own space (scaled

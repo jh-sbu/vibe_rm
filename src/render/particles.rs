@@ -199,8 +199,9 @@ impl SimpleColor {
     }
 }
 
-/// Model-space transforms of the NIF's objects, by block index.
-fn object_transforms(nif: &Nif) -> HashMap<i32, Mat4> {
+/// Model-space transforms of the NIF's objects, by block index, its root
+/// placed at `root` (an addon node's model in its host's).
+fn object_transforms(nif: &Nif, root: Mat4) -> HashMap<i32, Mat4> {
     fn visit(nif: &Nif, r: Ref, parent: Mat4, out: &mut HashMap<i32, Mat4>, depth: u32) {
         let Some(block) = nif.get(r) else { return };
         let Some(av) = block.av() else { return };
@@ -213,22 +214,27 @@ fn object_transforms(nif: &Nif) -> HashMap<i32, Mat4> {
         }
     }
     let mut out = HashMap::new();
-    for &root in &nif.roots {
-        visit(nif, Ref(root as i32), Mat4::IDENTITY, &mut out, 0);
+    for &r in &nif.roots {
+        visit(nif, Ref(r as i32), root, &mut out, 0);
     }
     out
 }
 
 /// The description of the particle system at `r`, whose node sits at
-/// `world` in the model.
-pub fn describe(nif: &Nif, sys: &nif::psys::ParticleSystem, world: Mat4) -> Option<ParticleDesc> {
+/// `world` in the model (whose root is at `root`).
+pub fn describe(
+    nif: &Nif,
+    sys: &nif::psys::ParticleSystem,
+    world: Mat4,
+    root: Mat4,
+) -> Option<ParticleDesc> {
     if sys.strip {
         return None;
     }
     let Some(Block::ParticleData(data)) = nif.get(sys.data) else {
         return None;
     };
-    let objects = object_transforms(nif);
+    let objects = object_transforms(nif, root);
     let object_at = |r: Ref| objects.get(&r.0).copied().unwrap_or(world);
     // The controllers, by the modifier they drive.
     let mut ctlrs: Vec<&nif::psys::ParticleController> = Vec::new();
