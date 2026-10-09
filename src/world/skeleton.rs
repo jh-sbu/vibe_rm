@@ -16,15 +16,37 @@ pub struct Bone {
 pub struct Skeleton {
     pub bones: Vec<Bone>,
     pub by_name: HashMap<String, usize>,
+    /// Standing height (model space): the top of the root's `BSBound`, 128
+    /// without one (humans' is 128; giants' 269, wolves' 79).
+    pub height: f32,
     /// The bodies and joints it falls as when its actor dies.
     pub ragdoll: Option<std::sync::Arc<super::ragdoll::RagdollDesc>>,
 }
 
 impl Skeleton {
     pub fn from_nif(nif: &Nif) -> Skeleton {
-        let mut s = Skeleton::default();
+        let mut s = Skeleton {
+            height: 128.0,
+            ..Default::default()
+        };
         for &root in &nif.roots {
             s.add(nif, Ref(root as i32), None, 0);
+        }
+        let bound = nif
+            .roots
+            .first()
+            .and_then(|&r| nif.get(Ref(r as i32)))
+            .and_then(|b| b.av())
+            .and_then(|a| {
+                a.net.extra_data.iter().find_map(|&e| match nif.get(e) {
+                    Some(Block::ExtraData(nif::ExtraData::Bound { center, dimensions })) => {
+                        Some(center.z + dimensions.z)
+                    }
+                    _ => None,
+                })
+            });
+        if let Some(h) = bound.filter(|h| *h > 1.0) {
+            s.height = h;
         }
         s.ragdoll = super::ragdoll::RagdollDesc::from_nif(nif, &s).map(std::sync::Arc::new);
         s

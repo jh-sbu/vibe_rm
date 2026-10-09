@@ -991,7 +991,9 @@ pub(crate) struct Swing {
     pub attacker: FormId,
     pub target: FormId,
     pub attack: Option<usize>,
+    /// The attacker's feet, and the height its blow comes from (its chest).
     pub pos: Vec3,
+    pub chest: f32,
     pub heading: f32,
 }
 
@@ -1367,21 +1369,22 @@ impl Engine {
             };
             let strike_angle = attack.as_ref().map_or(35.0, |x| x.strike_angle);
             let stagger = attack.as_ref().map_or(0.0, |x| x.stagger);
-            let target_pos = if s.target == PLAYER_REF {
-                Some(self.player.position - Vec3::Z * 60.0)
-            } else {
-                self.actor_pose(s.target).map(|p| p.0)
+            let Some((tp, th)) = self.actor_body(s.target) else {
+                continue;
             };
-            let Some(tp) = target_pos else { continue };
             let to = (tp - s.pos).truncate();
-            let dist = to.length();
+            // From the attacker's chest to the nearest of the target's body: one
+            // up on a ledge is out of reach of a wolf, not of a giant.
+            let rise = s.chest.clamp(tp.z, tp.z + th) - s.chest;
+            let dist = to.length().hypot(rise);
             let fwd = glam::Vec2::new(s.heading.sin(), s.heading.cos());
             let angle = fwd.angle_to(to.normalize_or_zero()).abs().to_degrees();
             if dist > reach * 1.3 || angle > strike_angle.max(25.0) {
                 log::debug!(
-                    "{} misses {} ({dist:.0} / {reach:.0} units, {angle:.0} deg)",
+                    "{} misses {} ({dist:.0} / {reach:.0} units, {:.0} across, {rise:.0} up, {angle:.0} deg)",
                     s.attacker,
-                    s.target
+                    s.target,
+                    to.length()
                 );
                 continue;
             }
