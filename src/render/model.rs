@@ -59,6 +59,9 @@ pub struct MaterialDesc {
     pub lod: bool,
     /// The shader property's controllers (scrolling, pulsing).
     pub anim: Option<std::sync::Arc<MaterialAnim>>,
+    /// Under a billboard node: its model-space origin and mode. The mesh's
+    /// vertices are then in the node's space, turned to the camera when drawn.
+    pub billboard: Option<(Vec3, u16)>,
 }
 
 /// A material's animated values: its shader property's float and colour
@@ -136,6 +139,7 @@ impl Default for MaterialDesc {
             tint: Vec3::ONE,
             lod: false,
             anim: None,
+            billboard: None,
         }
     }
 }
@@ -576,6 +580,23 @@ impl Walk<'_> {
                     return;
                 }
                 match n.kind {
+                    // A billboard's subtree is kept in its own space (scaled
+                    // as placed), to be turned to the camera about its origin.
+                    NodeKind::Billboard { mode } => {
+                        let pivot = world.w_axis.truncate();
+                        let scale = world.x_axis.truncate().length();
+                        let start = self.meshes.len();
+                        for &c in &n.children {
+                            self.walk(nif, c, Mat4::from_scale(Vec3::splat(scale)), depth + 1);
+                        }
+                        for m in &mut self.meshes[start..] {
+                            if m.material.billboard.is_none() {
+                                m.material.billboard = Some((pivot, mode));
+                                m.bound_radius += m.bound_center.length();
+                                m.bound_center = pivot;
+                            }
+                        }
+                    }
                     NodeKind::Switch { index } => {
                         if let Some(&c) = n.children.get(index as usize) {
                             self.walk(nif, c, world, depth + 1);
