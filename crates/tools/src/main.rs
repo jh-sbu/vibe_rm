@@ -1397,6 +1397,12 @@ fn main() -> Result<()> {
                         l.eye_bones.len()
                     );
                 }
+                if let Some(g) = inst.foot_ik_controls() {
+                    println!(
+                        "  foot IK on/off {:.2} feedback {:.2} bias {:.2}",
+                        g.on_off, g.world_from_model_feedback, g.error_up_down_bias
+                    );
+                }
             };
             for step in &args[3..] {
                 if let Some(ev) = step.strip_prefix('!') {

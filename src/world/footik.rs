@@ -1,9 +1,10 @@
-//! Foot placement: a character's `hkbFootIkDriverInfo` applied to a pose. The
-//! body drops to the lower foot's ground, the other legs bend (two-bone IK) to
-//! put their ankles on theirs, and planted feet tilt with the ground.
+//! Foot placement: a character's `hkbFootIkDriverInfo` applied to a pose while
+//! the graph runs an `hkbFootIkControlsModifier`, eased by its gains. The body
+//! drops to the lower foot's ground, the other legs bend (two-bone IK) to put
+//! their ankles on theirs, and planted feet tilt with the ground.
 
 use glam::{Quat, Vec3};
-use havok::behavior::FootIk;
+use havok::behavior::{FootIk, FootIkGains};
 use nif::Transform;
 
 use super::skeleton::Skeleton;
@@ -11,8 +12,14 @@ use super::skeleton::Skeleton;
 /// Per-actor smoothing of the ground offsets.
 #[derive(Default)]
 pub struct FootIkState {
+    /// How far placement is faded in (0 off, 1 on).
+    weight: f32,
     /// Each leg's ground offset (model space) being eased towards.
     offsets: Vec<f32>,
+    /// The body's drop (model space), following the feet by the feedback gain.
+    drop: f32,
+    /// Each leg's ankle tilt with the ground.
+    tilts: Vec<Quat>,
 }
 
 /// Fraction to close per update for a per-frame (30 Hz) gain.
@@ -26,11 +33,13 @@ fn rotation(m: &glam::Mat4) -> Quat {
 
 /// Place the feet of `locals` (one per NIF bone) on `ground`: per leg, the ground
 /// height under the ankle and its normal (model space), `None` where nothing was
-/// hit or the IK is off. Returns the ankles (model space, before placement) to
-/// cast the next rays from.
+/// hit. `gains` are the running controls modifier's, `None` fading placement out.
+/// Returns the ankles (model space, before placement) to cast the next rays from.
+#[allow(clippy::too_many_arguments)]
 pub fn apply(
     state: &mut FootIkState,
     ik: &FootIk,
+    gains: Option<&FootIkGains>,
     hk_to_nif: &[Option<usize>],
     skeleton: &Skeleton,
     locals: &mut [Transform],
@@ -49,7 +58,27 @@ pub fn apply(
         .map(|(_, _, _, a)| model[*a].w_axis.truncate())
         .collect();
     state.offsets.resize(legs.len(), 0.0);
-    let ease = step(0.25, dt);
+    state.tilts.resize(legs.len(), Quat::IDENTITY);
+    // Off: fade out at the last gain the graph gave (the vanilla graphs all use 0.2).
+    let on_off = gains.map_or(0.2, |g| g.on_off);
+    let on = if gains.is_some() { 1.0 } else { 0.0 };
+    state.weight += (on - state.weight) * step(on_off, dt);
+    if gains.is_none() && state.weight < 0.01 {
+        state.weight = 0.0;
+        state.offsets.iter_mut().for_each(|o| *o = 0.0);
+        state.tilts.iter_mut().for_each(|t| *t = Quat::IDENTITY);
+        state.drop = 0.0;
+        return ankles;
+    }
+    let g = gains.cloned().unwrap_or(FootIkGains {
+        ground_ascending: 1.0,
+        ground_descending: 1.0,
+        foot_planted: 1.0,
+        foot_raised: 1.0,
+        world_from_model_feedback: 1.0,
+        error_up_down_bias: 1.0,
+        ..Default::default()
+    });
     for (i, (leg, ..)) in legs.iter().enumerate() {
         let want = match ground.get(i).copied().flatten() {
             Some((z, _)) => {
@@ -58,12 +87,29 @@ pub fn apply(
             }
             None => 0.0,
         };
-        state.offsets[i] += (want - state.offsets[i]) * ease;
+        let gain = if want > state.offsets[i] {
+            g.ground_ascending
+        } else {
+            g.ground_descending
+        };
+        state.offsets[i] += (want - state.offsets[i]) * step(gain, dt);
     }
-    // Drop the body so that the lowest foot reaches; the others then bend up.
-    let drop = state.offsets.iter().copied().fold(0.0f32, f32::min) + ik.vertical_offset;
-    log::trace!("foot IK offsets {:?} drop {drop:.1}", state.offsets);
-    if state.offsets.iter().all(|o| o.abs() < 0.01) {
+    // Drop the body so that the lowest foot reaches (the others then bend up),
+    // or raise it by the bias's share where every foot is higher.
+    let lowest = state.offsets.iter().copied().fold(f32::INFINITY, f32::min);
+    let want = if lowest < 0.0 {
+        lowest
+    } else {
+        lowest * (1.0 - g.error_up_down_bias).clamp(0.0, 1.0)
+    };
+    state.drop += (want - state.drop) * step(g.world_from_model_feedback, dt);
+    let w = state.weight;
+    let drop = (state.drop + ik.vertical_offset) * w;
+    log::trace!(
+        "foot IK offsets {:?} drop {drop:.1} weight {w:.2}",
+        state.offsets
+    );
+    if state.offsets.iter().all(|o| o.abs() < 0.01) && drop.abs() < 0.01 {
         return ankles;
     }
     if let Some(root) = skeleton.bones.iter().position(|b| b.parent.is_none()) {
@@ -85,7 +131,12 @@ pub fn apply(
             rotation(&model[knee]),
             rotation(&model[ankle]),
         );
-        let lift = state.offsets[i] - drop;
+        // Planted (1) to raised (0), by the animated ankle's height.
+        let planted = ((leg.raised_ankle_height - (ankles[i].z - ik.original_ground_height))
+            / (leg.raised_ankle_height - leg.planted_ankle_height).max(1e-3))
+        .clamp(0.0, 1.0);
+        let leg_gain = g.foot_raised + (g.foot_planted - g.foot_raised) * planted;
+        let lift = (state.offsets[i] * w - drop) * leg_gain.clamp(0.0, 1.0);
         let target = a + Vec3::Z * lift;
         // Knee: open or close it so that hip-to-ankle spans the distance to the target.
         let (la, lb) = ((k - h).length(), (a - k).length());
@@ -117,11 +168,9 @@ pub fn apply(
         let swing = Quat::from_rotation_arc((a2 - h).normalize(), (target - h).normalize());
         let rh2 = swing * rh;
         let rk2 = swing * bend * rk;
-        // The foot keeps its animated orientation, tilted with the ground when planted.
-        let planted = ((leg.raised_ankle_height - (ankles[i].z - ik.original_ground_height))
-            / (leg.raised_ankle_height - leg.planted_ankle_height).max(1e-3))
-        .clamp(0.0, 1.0);
-        let tilt = ground
+        // The foot keeps its animated orientation, tilted with the ground when
+        // planted, turning at the ankle orientation gain.
+        let want = ground
             .get(i)
             .copied()
             .flatten()
@@ -136,6 +185,10 @@ pub fn apply(
                     Quat::from_axis_angle(axis, angle)
                 }
             });
+        state.tilts[i] = state.tilts[i]
+            .slerp(want, step(g.ankle_orientation, dt))
+            .normalize();
+        let tilt = Quat::IDENTITY.slerp(state.tilts[i], w);
         let ra2 = tilt * ra;
         let parent = skeleton.bones[hip]
             .parent

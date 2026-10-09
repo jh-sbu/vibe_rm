@@ -209,9 +209,8 @@ pub struct GraphAnim {
     look: LookAtState,
     /// NIF bone of each Havok skeleton bone (look-at bone indices are Havok's).
     hk_bones: Option<Vec<Option<usize>>>,
-    /// Foot placement: on or off, the ground under each leg's ankle (model space
-    /// height and normal, from the AI's rays), and the ankles to cast from next.
-    pub foot_ik: bool,
+    /// Foot placement: the ground under each leg's ankle (model space height and
+    /// normal, from the AI's rays), and the ankles to cast from next.
     pub ground: Vec<Option<(f32, Vec3)>>,
     pub ankles: Vec<Vec3>,
     feet: FootIkState,
@@ -285,7 +284,6 @@ impl GraphAnim {
             look_target: None,
             look: LookAtState::default(),
             hk_bones: None,
-            foot_ik: false,
             ground: Vec::new(),
             ankles: Vec::new(),
             feet: FootIkState::default(),
@@ -574,7 +572,8 @@ impl GraphAnim {
                 scale: s,
             })
             .collect();
-        // Feet on the ground, then head tracking on top (the first look-at modifier running).
+        // Feet on the ground (while the graph runs its foot IK controls), then head
+        // tracking on top (the first look-at modifier running).
         if let Some(ik) = self
             .project
             .shared
@@ -586,8 +585,17 @@ impl GraphAnim {
             let map = self
                 .hk_bones
                 .get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
-            let ground: &[Option<(f32, Vec3)>] = if self.foot_ik { &self.ground } else { &[] };
-            self.ankles = footik::apply(&mut self.feet, ik, map, skeleton, &mut locals, ground, dt);
+            let gains = self.inst.foot_ik_controls();
+            self.ankles = footik::apply(
+                &mut self.feet,
+                ik,
+                gains.as_ref(),
+                map,
+                skeleton,
+                &mut locals,
+                &self.ground,
+                dt,
+            );
         }
         if let Some(l) = self.inst.look_ats().first() {
             let map = self

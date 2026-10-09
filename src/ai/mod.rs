@@ -1521,13 +1521,19 @@ impl ActorRuntime {
     }
 
     /// Foot placement: the ground under each leg's ankle (as the graph left them
-    /// last update), from rays through the static world. Off in furniture, where
-    /// the animation puts the feet.
+    /// last update), from rays through the static world. Humanoids' foot IK is
+    /// switched on by the engine: off in furniture, where the animation puts the
+    /// feet, and while the graph asks (`bHumanoidFootIKDisable`: killmoves, paired
+    /// animations, swimming).
     fn find_ground(&mut self, physics: &crate::physics::Physics) {
         let model = self.transform();
         let (feet, heading, scale) = (self.pos, self.heading, self.scale);
-        let on = !self.in_furniture();
+        let in_furniture = self.in_furniture();
         let Some(g) = self.graph.as_mut() else { return };
+        let on = !in_furniture
+            && g.variable("bHumanoidFootIKDisable")
+                .is_none_or(|v| v == 0.0);
+        g.set_variable("bHumanoidFootIKEnable", if on { 1.0 } else { 0.0 });
         let Some(ik) = g
             .project()
             .shared
@@ -1538,10 +1544,6 @@ impl ActorRuntime {
         else {
             return;
         };
-        g.foot_ik = on;
-        if !on {
-            return;
-        }
         let ground = g
             .ankles
             .iter()
