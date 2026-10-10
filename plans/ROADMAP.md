@@ -279,8 +279,10 @@ game each piece unlocks.
 - The player's body: their NPC record's race, sex and skin, what they have
   equipped (rebuilt when it changes) and a head of the race's default head parts
   and their own (`HEAD`, `PNAM`, extra parts); it runs the race's behaviour
-  graph from the player's movement (walking, running, sneaking, turning). In
-  first person the body only casts its shadow. Open questions: `known_gaps/player-body.md`
+  graph from the player's movement (walking, running, sneaking, turning). A
+  third-person camera (F; the wheel zooms) stopping short of walls,
+  `Game.ForceFirstPerson` / `ForceThirdPerson`; in first person the body only
+  casts its shadow. Open questions: `known_gaps/player-body.md`
 - Loose objects: references whose model has one simulated rigid body
   (`MO_SYS_DYNAMIC`: clutter, food, weapons, baskets) are rapier bodies with the
   NIF's mass, friction and restitution (meshes as their convex hull), lying still
