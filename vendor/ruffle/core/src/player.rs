@@ -2633,6 +2633,20 @@ impl Player {
         });
     }
 
+    /// Scaleform's translation table (`$KEY` → text) for text fields.
+    pub fn set_translations(&mut self, translations: impl IntoIterator<Item = (String, String)>) {
+        let table = translations
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    ruffle_wstr::WString::from_utf8(&k),
+                    ruffle_wstr::WString::from_utf8(&v),
+                )
+            })
+            .collect();
+        self.mutate_with_update_context(|context| context.library.set_translations(table));
+    }
+
     pub fn set_default_font(&mut self, font: DefaultFont, names: Vec<String>) {
         self.mutate_with_update_context(|context| {
             context.library.set_default_font(font, names);

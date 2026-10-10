@@ -462,6 +462,10 @@ pub struct Library<'gc> {
     /// A list of the symbols associated with specific AVM2 constructor
     /// prototypes.
     avm2_class_registry: Avm2ClassRegistry<'gc>,
+
+    /// Scaleform's translation table: text set to a `$KEY` shows as its value.
+    #[collect(require_static)]
+    translations: FnvHashMap<WString, WString>,
 }
 
 impl<'gc> Library<'gc> {
@@ -475,7 +479,20 @@ impl<'gc> Library<'gc> {
             default_font_names: Default::default(),
             default_font_cache: Default::default(),
             avm2_class_registry: Default::default(),
+            translations: Default::default(),
         }
+    }
+
+    pub fn set_translations(&mut self, translations: FnvHashMap<WString, WString>) {
+        self.translations = translations;
+    }
+
+    /// `text`'s translation when it's a `$KEY` in the table.
+    pub fn translate(&self, text: &WStr) -> Option<&WStr> {
+        if text.get(0) != Some(u16::from(b'$')) {
+            return None;
+        }
+        self.translations.get(text).map(|t| t.as_wstr())
     }
 
     pub fn library_for_movie(&self, movie: Arc<SwfMovie>) -> Option<&MovieLibrary<'gc>> {
