@@ -6,6 +6,8 @@ use crate::string::AvmString;
 use crate::system_properties::SystemCapabilities;
 
 const OBJECT_DECLS: StaticDeclarations = declare_static_properties! {
+    // Scaleform: controllers attached (one here, matching one focus group).
+    "numControllers" => value(1; DONT_ENUM | DONT_DELETE | READ_ONLY);
     "hasAccessibility" => property(get_has_accessibility);
     "pixelAspectRatio" => property(get_pixel_aspect_ratio);
     "screenColor" => property(get_screen_color);
