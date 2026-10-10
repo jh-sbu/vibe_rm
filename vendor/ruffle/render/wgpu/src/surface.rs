@@ -27,6 +27,9 @@ use self::commands::ChunkBlendMode;
 #[derive(Debug)]
 pub struct Surface {
     size: wgpu::Extent3d,
+    /// Where the surface's pixels start, in the coordinates draws are given in
+    /// (a blend's surface covers only the blended object).
+    origin: (i32, i32),
     quality: StageQuality,
     sample_count: u32,
     pipelines: Arc<Pipelines>,
@@ -55,11 +58,18 @@ impl Surface {
         let pipelines = descriptors.pipelines(sample_count, frame_buffer_format);
         Self {
             size,
+            origin: (0, 0),
             quality,
             sample_count,
             pipelines,
             format: frame_buffer_format,
         }
+    }
+
+    /// The surface holding the pixels from `origin` on.
+    pub fn with_origin(mut self, origin: (i32, i32)) -> Self {
+        self.origin = origin;
+        self
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -114,10 +124,11 @@ impl Surface {
         nearest_layer: LayerRef<'encoder>,
         texture_pool: &'encoder mut TexturePool,
     ) -> CommandTarget {
-        let target = CommandTarget::new(
+        let target = CommandTarget::new_with_origin(
             descriptors,
             texture_pool,
             self.size,
+            self.origin,
             self.format,
             self.sample_count,
             render_target_mode,
@@ -136,6 +147,7 @@ impl Surface {
             self.quality,
             target.width(),
             target.height(),
+            self.origin,
             match nearest_layer {
                 LayerRef::Current => LayerRef::Parent(&target),
                 layer => layer,

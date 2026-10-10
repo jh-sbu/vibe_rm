@@ -66,17 +66,30 @@ impl TexturePool {
         viewport_width: u32,
         viewport_height: u32,
     ) -> Arc<Globals> {
+        self.get_globals_at(descriptors, viewport_width, viewport_height, (0, 0))
+    }
+
+    /// Globals for a target showing its pixels from `origin` on.
+    pub fn get_globals_at(
+        &mut self,
+        descriptors: &Descriptors,
+        viewport_width: u32,
+        viewport_height: u32,
+        origin: (i32, i32),
+    ) -> Arc<Globals> {
         self.globals_cache
             .entry(GlobalsKey {
                 viewport_width,
                 viewport_height,
+                origin,
             })
             .or_insert_with(|| {
-                Arc::new(Globals::new(
+                Arc::new(Globals::new_at(
                     &descriptors.device,
                     &descriptors.bind_layouts.globals,
                     viewport_width,
                     viewport_height,
+                    origin,
                 ))
             })
             .clone()
@@ -95,6 +108,7 @@ struct TextureKey {
 struct GlobalsKey {
     viewport_width: u32,
     viewport_height: u32,
+    origin: (i32, i32),
 }
 
 pub trait BufferDescription: Clone + Debug {

@@ -212,7 +212,32 @@ impl CommandTarget {
         render_target_mode: RenderTargetMode,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
-        let globals = pool.get_globals(descriptors, size.width, size.height);
+        Self::new_with_origin(
+            descriptors,
+            pool,
+            size,
+            (0, 0),
+            format,
+            sample_count,
+            render_target_mode,
+            encoder,
+        )
+    }
+
+    /// A target holding the `size` pixels from `origin` on (in the coordinates
+    /// draws are given in).
+    #[expect(clippy::too_many_arguments)]
+    pub fn new_with_origin(
+        descriptors: &Descriptors,
+        pool: &mut TexturePool,
+        size: wgpu::Extent3d,
+        origin: (i32, i32),
+        format: wgpu::TextureFormat,
+        sample_count: u32,
+        render_target_mode: RenderTargetMode,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Self {
+        let globals = pool.get_globals_at(descriptors, size.width, size.height, origin);
 
         let mut make_pooled_frame_buffer = || {
             FrameBuffer::new(

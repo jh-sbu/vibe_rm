@@ -22,6 +22,18 @@ impl Globals {
         viewport_width: u32,
         viewport_height: u32,
     ) -> Self {
+        Self::new_at(device, layout, viewport_width, viewport_height, (0, 0))
+    }
+
+    /// Globals for a target showing the `viewport_width` x `viewport_height`
+    /// pixels from `origin` (in the coordinates draws are given in) on.
+    pub fn new_at(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        viewport_width: u32,
+        viewport_height: u32,
+        origin: (i32, i32),
+    ) -> Self {
         // TODO: Currently, only the fixed default (Default::default) PerspectiveProjection is globally used for all objects.
         // Should support .transform.perspectiveProjection of each display object.
         // The global_matrix should be renamed/devided when supporting them.
@@ -42,7 +54,7 @@ impl Globals {
                 (1.0 / vw), 0.0, 0.0, 0.0,
                 0.0, (-1.0 / vh), 0.0, 0.0,
                 0.0, 0.0, (1.0 / vw), 0.0,
-                -1.0, 1.0, 0.0, 1.0,
+                -1.0 - origin.0 as f32 / vw, 1.0 + origin.1 as f32 / vh, 0.0, 1.0,
             ],
         };
 

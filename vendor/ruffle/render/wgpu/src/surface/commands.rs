@@ -502,6 +502,7 @@ pub fn chunk_blends<'encoder, 'global: 'encoder>(
     quality: StageQuality,
     width: u32,
     height: u32,
+    origin: (i32, i32),
     nearest_layer: LayerRef,
     texture_pool: &'encoder mut TexturePool,
 ) -> Vec<Chunk> {
@@ -514,6 +515,7 @@ pub fn chunk_blends<'encoder, 'global: 'encoder>(
         quality,
         width,
         height,
+        origin,
         nearest_layer,
         texture_pool,
     )
@@ -525,6 +527,8 @@ struct WgpuCommandHandler<'encoder, 'global: 'encoder> {
     quality: StageQuality,
     width: u32,
     height: u32,
+    /// Where the target's pixels start (see `Surface::with_origin`).
+    origin: (i32, i32),
     nearest_layer: LayerRef<'encoder>,
     meshes: &'encoder Vec<Mesh>,
     staging_belt: &'encoder mut wgpu::util::StagingBelt,
@@ -552,6 +556,7 @@ impl<'encoder, 'global: 'encoder> WgpuCommandHandler<'encoder, 'global> {
         quality: StageQuality,
         width: u32,
         height: u32,
+        origin: (i32, i32),
         nearest_layer: LayerRef<'encoder>,
         texture_pool: &'encoder mut TexturePool,
     ) -> Self {
@@ -568,6 +573,7 @@ impl<'encoder, 'global: 'encoder> WgpuCommandHandler<'encoder, 'global> {
             quality,
             width,
             height,
+            origin,
             nearest_layer,
             meshes,
             staging_belt,
@@ -605,6 +611,33 @@ impl<'encoder, 'global: 'encoder> WgpuCommandHandler<'encoder, 'global> {
 
     /// Replaces every blend with a RenderBitmap, with the subcommands rendered out to a temporary texture
     /// Every complex blend will be its own item, but every other draw will be chunked together
+    /// The unit quad scaled to a `width` x `height` surface whose pixels start
+    /// at `origin`.
+    fn quad(width: u32, height: u32, origin: (i32, i32)) -> Matrix {
+        Matrix {
+            a: width as f32,
+            d: height as f32,
+            tx: Twips::from_pixels_i32(origin.0),
+            ty: Twips::from_pixels_i32(origin.1),
+            ..Matrix::IDENTITY
+        }
+    }
+
+    /// The whole pixels `bounds` covers within this target (as size and origin).
+    fn covered(&self, bounds: swf::Rectangle<Twips>) -> (u32, u32, (i32, i32)) {
+        let (x0, y0) = self.origin;
+        let (x1, y1) = (x0 + self.width as i32, y0 + self.height as i32);
+        let left = (bounds.x_min.to_pixels().floor() as i32 - 1).clamp(x0, x1);
+        let top = (bounds.y_min.to_pixels().floor() as i32 - 1).clamp(y0, y1);
+        let right = (bounds.x_max.to_pixels().ceil() as i32 + 1).clamp(x0, x1);
+        let bottom = (bounds.y_max.to_pixels().ceil() as i32 + 1).clamp(y0, y1);
+        (
+            (right - left).max(0) as u32,
+            (bottom - top).max(0) as u32,
+            (left, top),
+        )
+    }
+
     fn chunk_blends(&mut self, commands: CommandList) -> Vec<Chunk> {
         commands.execute(self);
 
@@ -706,7 +739,12 @@ impl<'encoder, 'global: 'encoder> WgpuCommandHandler<'encoder, 'global> {
 }
 
 impl CommandHandler for WgpuCommandHandler<'_, '_> {
-    fn blend(&mut self, commands: CommandList, blend_mode: RenderBlendMode) {
+    fn blend(
+        &mut self,
+        commands: CommandList,
+        blend_mode: RenderBlendMode,
+        bounds: Option<swf::Rectangle<Twips>>,
+    ) {
         // SPIKE: count offscreen blend surfaces, by mode.
         #[cfg(feature = "spike")]
         crate::SPIKE_BLENDS
@@ -719,13 +757,26 @@ impl CommandHandler for WgpuCommandHandler<'_, '_> {
             commands.execute(self);
             return;
         }
+        // A blend drawn back as a quad (Normal, Layer, Add, Screen...) only needs
+        // room for what it covers; the others composite with their parent
+        // pixel for pixel, at the parent's size.
+        let (width, height, origin) = match bounds {
+            Some(b) if matches!(BlendType::from(blend_mode.clone()), BlendType::Trivial(_)) => {
+                self.covered(b)
+            }
+            _ => (self.width, self.height, self.origin),
+        };
+        if width == 0 || height == 0 {
+            return;
+        }
         let surface = Surface::new(
             self.descriptors,
             self.quality,
-            self.width,
-            self.height,
+            width,
+            height,
             wgpu::TextureFormat::Rgba8Unorm,
-        );
+        )
+        .with_origin(origin);
         let target_layer = if let RenderBlendMode::Builtin(BlendMode::Layer) = &blend_mode {
             LayerRef::Current
         } else {
@@ -761,7 +812,7 @@ impl CommandHandler for WgpuCommandHandler<'_, '_> {
         match blend_type {
             BlendType::Trivial(blend_mode) => {
                 let transform = Transform {
-                    matrix: Matrix::scale(target.width() as f32, target.height() as f32),
+                    matrix: Self::quad(target.width(), target.height(), origin),
                     tz: 0.0,
                     color_transform: Default::default(),
                     perspective_projection: None,
@@ -981,7 +1032,8 @@ impl CommandHandler for WgpuCommandHandler<'_, '_> {
             self.width,
             self.height,
             wgpu::TextureFormat::Rgba8Unorm,
-        );
+        )
+        .with_origin(self.origin);
 
         let maskee = surface.draw_commands(
             RenderTargetMode::FreshWithColor(wgpu::Color::TRANSPARENT),
@@ -995,7 +1047,7 @@ impl CommandHandler for WgpuCommandHandler<'_, '_> {
             self.texture_pool,
         );
         maskee.ensure_cleared(self.draw_encoder);
-        let matrix = Matrix::scale(maskee.width() as f32, maskee.height() as f32);
+        let matrix = Self::quad(maskee.width(), maskee.height(), self.origin);
         let maskee = maskee.take_color_texture();
 
         let mask = surface.draw_commands(

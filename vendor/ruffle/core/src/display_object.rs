@@ -983,6 +983,15 @@ pub fn render_base<'gc>(
     } else {
         None
     };
+    // What the blended object covers (its filters included), for a renderer
+    // to draw it offscreen in no more room than that.
+    let blend_bounds = original_commands.is_some().then(|| {
+        this.render_bounds_with_transform(
+            &context.transform_stack.transform().matrix,
+            true,
+            &context.stage.view_matrix(),
+        )
+    });
 
     let cache_info = if context.use_bitmap_cache && this.is_bitmap_cached() {
         let mut cache_info: Option<DrawCacheInfo> = None;
@@ -1180,7 +1189,9 @@ pub fn render_base<'gc>(
             } else {
                 RenderBlendMode::Builtin(blend_mode.try_into().unwrap())
             };
-            context.commands.blend(sub_commands, render_blend_mode);
+            context
+                .commands
+                .blend(sub_commands, render_blend_mode, blend_bounds);
         }
     }
 
