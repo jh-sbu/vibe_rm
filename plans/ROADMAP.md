@@ -208,11 +208,16 @@ game each piece unlocks.
   `StartCombat`, `StopCombat` (searchers give up too), `IsInCombat`,
   `GetCombatState`, `GetCombatTarget`, and the events `OnCombatStateChanged`
   (on each change of state), `OnHit` (aggressor, weapon, the arrow's projectile,
-  power attack, bash, blocked) and `OnEnterBleedout`. Conditions `IsInCombat`,
+  power attack, sneak attack, bash, blocked) and `OnEnterBleedout`. Conditions `IsInCombat`,
   `IsWeaponOut`, `IsBleedingOut`; Papyrus `IsInFaction`, `GetFactionRank`,
   `IsGuard`. Console `cgf <Class.Func> [@self] [args]` calls a native; vrm-tool
   `script-users` finds what attaches a script. Open questions:
   `known_gaps/combat-state.md`
+- Sneak attacks: a blow or arrow from a sneaking attacker that the struck actor
+  doesn't detect does the weapon type's multiple of its damage before armor
+  (`fCombatSneak1HSwordMult`... 3x one-handed, 2x two-handed and unarmed; 2x
+  bows), with "Sneak attack for 3.0X damage!" for the player and `OnHit`'s
+  sneak flag set. Open questions: `known_gaps/sneak-attacks.md`
 - Player controls from scripts: `DisablePlayerControls` / `EnablePlayerControls`
   (Papyrus's defaults for missing arguments) stop the player moving, fighting
   (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
@@ -690,7 +695,8 @@ game each piece unlocks.
      camera, not only the first-person controller
    - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`;
      disabled fighting putting the weapon away, the POV type argument
-   - Sneak attacks (`OnHit`'s sneak flag is always false)
+   - Sneak attacks (see Done): perks' multipliers (Backstab, Assassin's Blade,
+     Deadly Aim), sneak skill gain, NPCs sneaking up on the player
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
