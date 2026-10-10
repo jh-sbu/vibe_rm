@@ -5,10 +5,11 @@ use crate::avm1::object::NativeObject;
 use crate::avm1::property_decl::{DeclContext, PropertyOrder, StaticDeclarations, SystemClass};
 use crate::avm1::{ArrayBuilder, Object, Value, globals};
 use crate::display_object::{
-    AutoSizeMode, EditText, TDisplayObject, TInteractiveObject, TextSelection,
+    AutoSizeMode, DisplayObject, EditText, TDisplayObject, TInteractiveObject, TextSelection,
 };
 use crate::html::TextFormat;
 use crate::string::{AvmString, WStr};
+use crate::vminterface::Instantiator;
 use gc_arena::Gc;
 use ruffle_macros::istr;
 use swf::Color;
@@ -107,9 +108,33 @@ pub fn create_class<'gc>(
     context: &mut DeclContext<'_, 'gc>,
     super_proto: Object<'gc>,
 ) -> SystemClass<'gc> {
-    let class = context.empty_class(super_proto, PropertyOrder::PrototypeFirst);
+    let class = context.native_class(
+        constructor,
+        None,
+        super_proto,
+        PropertyOrder::PrototypeFirst,
+    );
     context.define_properties_on(class.proto, PROTO_DECLS(context));
     class
+}
+
+/// `new TextField()`: in Flash Player a plain object, in Scaleform a text field
+/// of its own, off the display list (Skyrim's HUD puts a quest's status through
+/// one, as text to translate, and reads it back).
+fn constructor<'gc>(
+    activation: &mut Activation<'_, 'gc>,
+    this: Object<'gc>,
+    _args: &[Value<'gc>],
+) -> Result<Value<'gc>, Error<'gc>> {
+    // A text field constructing its own object: nothing more to do.
+    if this.as_display_object().is_some() {
+        return Ok(Value::Undefined);
+    }
+    let movie = activation.base_clip().movie();
+    let text_field: DisplayObject<'gc> =
+        EditText::new(activation.context, movie, 0.0, 0.0, 100.0, 100.0).into();
+    text_field.post_instantiation(activation.context, None, Instantiator::Avm1, false);
+    Ok(text_field.object1_or_undef())
 }
 
 pub fn password<'gc>(
