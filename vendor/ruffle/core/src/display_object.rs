@@ -968,6 +968,10 @@ pub fn render_base<'gc>(
         return;
     }
 
+    if options.apply_transform && render_scale9(this, context, &options) {
+        return;
+    }
+
     if options.apply_transform {
         let transform = this.base().transform(options.apply_matrix);
         context.transform_stack.push(&transform);
@@ -1176,6 +1180,119 @@ pub fn render_base<'gc>(
     if options.apply_transform {
         context.transform_stack.pop();
     }
+}
+
+/// `scale9Grid`: a scaled clip with a scaling grid draws its content once per
+/// grid cell, each masked to its cell. The corners keep their size, the edges
+/// stretch along one axis and the center along both, as Flash and Scaleform
+/// draw it. False (nothing drawn) when the clip has no grid, is rotated or
+/// skewed, or is scaled too small for its corners; it then draws as usual.
+fn render_scale9<'gc>(
+    this: DisplayObject<'gc>,
+    context: &mut RenderContext<'_, 'gc>,
+    options: &RenderOptions,
+) -> bool {
+    let grid = this.scaling_grid();
+    if grid.width() <= Twips::ZERO || grid.height() <= Twips::ZERO {
+        return false;
+    }
+    let transform = this.base().transform(options.apply_matrix);
+    let m = transform.matrix;
+    if m.b != 0.0 || m.c != 0.0 || (m.a == 1.0 && m.d == 1.0) {
+        return false;
+    }
+    let bounds = this.bounds_with_transform(&Matrix::IDENTITY, BoundsMode::Engine);
+    if !bounds.is_valid() {
+        return false;
+    }
+    // Per axis: three (source from, source to, scale, offset) slices, mapping
+    // local x to scale * x + offset in the parent.
+    let slices = |lo: Twips, hi: Twips, g_lo: Twips, g_hi: Twips, scale: f32, offset: Twips| {
+        let (lo, hi, g_lo, g_hi) = (
+            lo.get() as f64,
+            hi.get() as f64,
+            g_lo.get() as f64,
+            g_hi.get() as f64,
+        );
+        let (scale, offset) = (scale as f64, offset.get() as f64);
+        let (g_lo, g_hi) = (g_lo.clamp(lo, hi), g_hi.clamp(lo, hi));
+        let (to_lo, to_hi) = (scale * lo + offset, scale * hi + offset);
+        let center = (to_hi - to_lo) - (g_lo - lo) - (hi - g_hi);
+        if scale <= 0.0 || center < 0.0 || g_hi <= g_lo {
+            return None;
+        }
+        let center_scale = center / (g_hi - g_lo);
+        Some([
+            (lo, g_lo, 1.0, to_lo - lo),
+            (
+                g_lo,
+                g_hi,
+                center_scale,
+                to_lo + (g_lo - lo) - center_scale * g_lo,
+            ),
+            (g_hi, hi, 1.0, to_hi - hi),
+        ])
+    };
+    let (Some(xs), Some(ys)) = (
+        slices(
+            bounds.x_min,
+            bounds.x_max,
+            grid.x_min,
+            grid.x_max,
+            m.a,
+            m.tx,
+        ),
+        slices(
+            bounds.y_min,
+            bounds.y_max,
+            grid.y_min,
+            grid.y_max,
+            m.d,
+            m.ty,
+        ),
+    ) else {
+        return false;
+    };
+    for &(x0, x1, sx, ox) in &xs {
+        for &(y0, y1, sy, oy) in &ys {
+            if x1 <= x0 || y1 <= y0 {
+                continue;
+            }
+            context.transform_stack.push(&Transform {
+                matrix: Matrix {
+                    a: sx as f32,
+                    b: 0.0,
+                    c: 0.0,
+                    d: sy as f32,
+                    tx: Twips::new(ox.round() as i32),
+                    ty: Twips::new(oy.round() as i32),
+                },
+                ..transform.clone()
+            });
+            let cell = Rectangle {
+                x_min: Twips::new(x0.round() as i32),
+                x_max: Twips::new(x1.round() as i32),
+                y_min: Twips::new(y0.round() as i32),
+                y_max: Twips::new(y1.round() as i32),
+            };
+            let cell_matrix = context.transform_stack.transform().matrix
+                * Matrix::create_box_from_rectangle(&cell);
+            context.commands.push_mask();
+            context.commands.draw_rect(Color::WHITE, cell_matrix);
+            context.commands.activate_mask();
+            let inner = RenderOptions {
+                skip_masks: options.skip_masks,
+                apply_transform: false,
+                apply_matrix: options.apply_matrix,
+            };
+            render_base(this, context, inner);
+            context.commands.deactivate_mask();
+            context.commands.draw_rect(Color::WHITE, cell_matrix);
+            context.commands.pop_mask();
+            context.transform_stack.pop();
+        }
+    }
+    true
 }
 
 /// This applies the **standard** method of `mask` and `scrollRect`.
