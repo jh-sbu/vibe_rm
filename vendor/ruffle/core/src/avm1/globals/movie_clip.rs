@@ -1120,8 +1120,10 @@ pub fn goto_frame<'gc>(
     let mut call_frame = None;
 
     match args.get(0).cloned().unwrap_or(Value::Undefined) {
-        // A direct goto only runs if n is an integer
-        Value::Number(n) if n.fract() == 0.0 => {
+        // A direct goto only runs if n is an integer in Flash Player; Scaleform
+        // (Skyrim's meters) goes to fractional frames too, truncated.
+        Value::Number(n) if n.is_finite() => {
+            let n = n.trunc();
             // Frame #
             // Gotoing <= 0 has no effect.
             // Gotoing greater than _totalframes jumps to the last frame.
