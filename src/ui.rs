@@ -667,9 +667,15 @@ impl Ui {
                                     None if r.secondary_clicked() => {
                                         drops.push((*f, if all { *n } else { 1 }))
                                     }
-                                    // Books in one's own inventory are read.
+                                    // Books in one's own inventory are read; potions,
+                                    // food and ingredients used.
                                     None if r.clicked()
-                                        && info.kind == crate::world::inventory::ItemKind::Book =>
+                                        && matches!(
+                                            info.kind,
+                                            crate::world::inventory::ItemKind::Book
+                                                | crate::world::inventory::ItemKind::Potion
+                                                | crate::world::inventory::ItemKind::Ingredient
+                                        ) =>
                                     {
                                         *read = Some(*f);
                                     }
@@ -852,7 +858,11 @@ impl Ui {
         if close {
             engine.menu = None;
         }
-        if let Some(book) = reading {
+        if let Some(item) = reading.filter(|&i| engine.magic_item(i).is_some()) {
+            if let Err(e) = engine.consume(PLAYER_REF, item) {
+                engine.scripts.notify(e);
+            }
+        } else if let Some(book) = reading {
             engine.menu = Some(Menu::Book {
                 book,
                 reference: None,

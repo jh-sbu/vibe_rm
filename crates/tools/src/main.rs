@@ -4544,6 +4544,129 @@ fn main() -> Result<()> {
                 println!("  {k}: {v}");
             }
         }
+        Some("magic") => {
+            // magic <data dir> [item]: one spell / enchantment / potion /
+            // ingredient / scroll with its effects (archetype, actor values,
+            // flags, magnitude, area, duration, conditions, scripts), or
+            // counts over all magic effects: archetypes, cast types and
+            // deliveries, and how many have scripts.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let mut lo = esp::LoadOrder::load(data, &names)?;
+            let vfs = vfs::Vfs::new(data, &names);
+            lo.load_strings("english", |p| vfs.read(p));
+            let f32_at = |d: &[u8], o: usize| f32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+            let u32_at = |d: &[u8], o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+            let describe_effect = |id: esp::FormId| -> String {
+                let Some(m) = lo.get(id) else {
+                    return format!("{id} missing");
+                };
+                let d = m.get(b"DATA").unwrap_or_default();
+                if d.len() < 0x5C {
+                    return format!("{id} short DATA");
+                }
+                format!(
+                    "{} {id} archetype {} av {} / {} (x{}) flags {:#x} cast {} delivery {} skill {} resist {} related {:08x}{}",
+                    m.editor_id().unwrap_or_default(),
+                    u32_at(d, 0x40),
+                    u32_at(d, 0x44) as i32,
+                    u32_at(d, 0x58) as i32,
+                    f32_at(d, 0x3C),
+                    u32_at(d, 0),
+                    u32_at(d, 0x50),
+                    u32_at(d, 0x54),
+                    u32_at(d, 0x0C) as i32,
+                    u32_at(d, 0x10) as i32,
+                    u32_at(d, 0x08),
+                    if m.get(b"VMAD").is_some() {
+                        " scripted"
+                    } else {
+                        ""
+                    }
+                )
+            };
+            if let Some(name) = args.get(2) {
+                let id = match u32::from_str_radix(name, 16) {
+                    Ok(v) if name.len() == 8 => esp::FormId(v),
+                    _ => lo.find_editor_id(name).context("editor id not found")?,
+                };
+                let r = lo.get(id).context("record not found")?;
+                let full = r
+                    .get(b"FULL")
+                    .map(|d| lo.lstring(&r, d))
+                    .unwrap_or_default();
+                println!(
+                    "{} {} {id} {full:?}",
+                    r.tag(),
+                    r.editor_id().unwrap_or_default()
+                );
+                for sr in r.subrecords() {
+                    match &sr.tag.0 {
+                        b"SPIT" | b"ENIT" => println!("  {} {:02x?}", sr.tag, sr.data),
+                        b"EFID" => println!(
+                            "  effect {}",
+                            describe_effect(r.fid(esp::FormId(sr.u32(0))))
+                        ),
+                        b"EFIT" => println!(
+                            "    magnitude {} area {} duration {}",
+                            sr.f32(0),
+                            sr.u32(4),
+                            sr.u32(8)
+                        ),
+                        b"CTDA" => println!(
+                            "    if {} {:08x} op {} {}",
+                            functions::name(sr.u16(8)),
+                            sr.u32(12),
+                            sr.u8(0) >> 5,
+                            sr.f32(4)
+                        ),
+                        b"SPLO" => println!("  spell {}", r.fid(esp::FormId(sr.u32(0)))),
+                        _ => {}
+                    }
+                }
+                if r.tag().0 == *b"MGEF" {
+                    println!("  {}", describe_effect(id));
+                }
+                return Ok(());
+            }
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            for &id in lo.ids_of_type(b"MGEF") {
+                let Some(m) = lo.get(id) else { continue };
+                let d = m.get(b"DATA").unwrap_or_default();
+                if d.len() < 0x5C {
+                    continue;
+                }
+                let mut c = |k: String| *counts.entry(k).or_default() += 1;
+                let arch = u32_at(d, 0x40);
+                c(format!("archetype {arch:2}"));
+                c(format!(
+                    "cast {} delivery {}",
+                    u32_at(d, 0x50),
+                    u32_at(d, 0x54)
+                ));
+                if m.get(b"VMAD").is_some() {
+                    c(format!("archetype {arch:2} scripted"));
+                }
+            }
+            for tag in [b"SPEL", b"ENCH", b"ALCH", b"INGR", b"SCRL"] {
+                for &id in lo.ids_of_type(tag) {
+                    let Some(r) = lo.get(id) else { continue };
+                    let ty = match tag {
+                        b"SPEL" => r
+                            .get(b"SPIT")
+                            .filter(|d| d.len() >= 12)
+                            .map(|d| u32_at(d, 8)),
+                        _ => None,
+                    };
+                    *counts
+                        .entry(format!("{} type {ty:?}", String::from_utf8_lossy(tag)))
+                        .or_default() += 1;
+                }
+            }
+            for (k, n) in counts {
+                println!("{n:5} {k}");
+            }
+        }
         Some("perks") => {
             // perks <data dir> [perk]: one perk's sections, or for every entry point
             // used: its functions, tab counts and the condition functions on each tab

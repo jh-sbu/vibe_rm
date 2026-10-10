@@ -206,6 +206,10 @@ struct Target {
     /// Percent off the observer's skill factor while sneaking (the Stealth
     /// perks: Mod Detection Sneak Skill).
     stealth: f32,
+    /// Magic: invisible (no visual factor), and the share of movement noise
+    /// muffled (`MovementNoiseMult`: Muffle, Muffled Movement, Silence).
+    invisible: bool,
+    muffle: f32,
 }
 
 impl Engine {
@@ -242,6 +246,8 @@ impl Engine {
                 armor_weight: self.armor_weight(r),
                 sneak: self.actor_value(r, av::SNEAK),
                 stealth: self.stealth_perks(r),
+                invisible: self.actor_value(r, av::INVISIBILITY) > 0.0,
+                muffle: self.actor_value(r, av::MOVEMENT_NOISE_MULT).clamp(0.0, 1.0),
             });
         }
         let a = self.actor_ref(r)?;
@@ -258,6 +264,8 @@ impl Engine {
             armor_weight: self.armor_weight(r),
             sneak: self.actor_value(r, av::SNEAK),
             stealth: self.stealth_perks(r),
+            invisible: self.actor_value(r, av::INVISIBILITY) > 0.0,
+            muffle: self.actor_value(r, av::MOVEMENT_NOISE_MULT).clamp(0.0, 1.0),
         })
     }
 
@@ -395,7 +403,7 @@ impl Engine {
         let facing = Vec3::new(o.heading.sin(), o.heading.cos(), 0.0);
         let flat = Vec3::new(to.x, to.y, 0.0).normalize_or_zero();
         let in_view = flat == Vec3::ZERO || facing.dot(flat) >= VIEW_HALF_ANGLE.to_radians().cos();
-        let sees = los && in_view && !o.sleeping;
+        let sees = los && in_view && !o.sleeping && !t.invisible;
         // The observer's perks for noticing movement and what light shows.
         use crate::perks::ep;
         let about = [Some(t.id)];
@@ -403,6 +411,7 @@ impl Engine {
             (s.weight_base + s.weight_mult * t.armor_weight)
                 * if t.running { s.running_mult } else { 1.0 }
                 * self.perk_entry_point(ep::MOD_DETECTION_MOVEMENT, o.id, &about, 1.0)
+                * (1.0 - t.muffle)
         } else {
             0.0
         };

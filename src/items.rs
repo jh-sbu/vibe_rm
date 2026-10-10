@@ -398,6 +398,8 @@ impl Engine {
     /// A reference's script objects: itself and the running quests' aliases it fills.
     pub(crate) fn objects_of_ref(&self, r: FormId) -> Vec<papyrus::ObjectId> {
         let mut out = vec![papyrus::ObjectId::Form(r.0)];
+        // Magic effects on it hear its events (`OnHit`...).
+        out.extend(self.effect_objects(r));
         for (q, st) in &self.scripts.quests {
             if !st.running {
                 continue;
