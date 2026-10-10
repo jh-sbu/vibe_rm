@@ -1370,17 +1370,19 @@ impl Player {
 
             // KeyPress events also take precedence over keyboard navigation.
             // Note that keyboard navigation works only when the highlight is visible.
-            if !key_press_handled
-                && context.focus_tracker.highlight().is_visible()
-                && let Some(focus) = context.focus_tracker.get()
-            {
-                if matches!(
-                    &event,
-                    InputEvent::KeyDown {
-                        key_code: KeyCode::ENTER,
-                        ..
-                    } | InputEvent::TextInput { codepoint: ' ' }
-                ) {
+            // Scaleform presses the focus on Enter / Space whether or not a
+            // highlight shows (CLIK hides it; Skyrim's message box relies on it).
+            if !key_press_handled && let Some(focus) = context.focus_tracker.get() {
+                // Not a text field: Enter and Space are its text.
+                if focus.as_displayobject().as_edit_text().is_none()
+                    && matches!(
+                        &event,
+                        InputEvent::KeyDown {
+                            key_code: KeyCode::ENTER,
+                            ..
+                        } | InputEvent::TextInput { codepoint: ' ' }
+                    )
+                {
                     // The button/clip is pressed and then immediately released.
                     // We do not have to wait for KeyUp.
                     focus.handle_clip_event(context, ClipEvent::Press { index: 0 });
@@ -1388,6 +1390,7 @@ impl Player {
                 }
 
                 if let InputEvent::KeyDown { key_code, .. } = &event
+                    && context.focus_tracker.highlight().is_visible()
                     && let Some(direction) = NavigationDirection::from_key_code(*key_code)
                 {
                     let tracker = context.focus_tracker;
