@@ -12,8 +12,9 @@ Licensed MIT OR Apache-2.0 (`LICENSE.md`).
   `video`, `flv`, `tools/asc`), the workspace manifest and lock file, the
   license, the upstream README and `rustfmt.toml`.
 - Left out: everything else (desktop and web players, the other renderers,
-  tests, docs), and the crates' `tests/` directories, so Ruffle's own tests
-  don't run from here.
+  tests, docs), the crates' `tests/` directories and the
+  `render/pixel_bender/assembly_tests` crate, so Ruffle's own tests don't run
+  from here. The workspace's member list names the vendored crates only.
 
 The first commit adding this directory is upstream as is; the commits after it
 carry the changes, one each. Building needs Java: `ruffle_core`'s build script
