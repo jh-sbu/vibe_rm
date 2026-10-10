@@ -2525,6 +2525,77 @@ impl Player {
         })
     }
 
+    /// Calls the AVM1 function at a target path (`_root.a.b.Method`) with `this` the
+    /// object holding it, as a host calls into a movie (Scaleform's `Invoke`).
+    pub fn invoke_avm1(
+        &mut self,
+        path: &str,
+        args: impl IntoIterator<Item = ExternalValue>,
+    ) -> ExternalValue {
+        self.mutate_with_update_context(|context| {
+            let Some(root) = context.stage.root_clip() else {
+                return ExternalValue::Undefined;
+            };
+            let mut activation =
+                Activation::from_nothing(context, ActivationIdentifier::root("[Invoke]"), root);
+            let args: Vec<Value> = args
+                .into_iter()
+                .map(|v| v.into_avm1(&mut activation))
+                .collect();
+            let path = AvmString::new_utf8(activation.gc(), path);
+            activation
+                .get_variable(path)
+                .and_then(|f| {
+                    f.call_with_default_this(Value::Undefined, path, &mut activation, &args)
+                })
+                .and_then(|v| match v {
+                    // A movie clip's every property would be copied out.
+                    Value::Object(_) | Value::MovieClip(_) => Ok(ExternalValue::Null),
+                    v => ExternalValue::from_avm1(&mut activation, v),
+                })
+                .unwrap_or(ExternalValue::Null)
+        })
+    }
+
+    /// Sets the AVM1 variable at a target path (Scaleform's `SetVariable`).
+    pub fn set_avm1_variable(&mut self, path: &str, value: ExternalValue) {
+        self.mutate_with_update_context(|context| {
+            let Some(root) = context.stage.root_clip() else {
+                return;
+            };
+            let mut activation = Activation::from_nothing(
+                context,
+                ActivationIdentifier::root("[SetVariable]"),
+                root,
+            );
+            let value = value.into_avm1(&mut activation);
+            let path = AvmString::new_utf8(activation.gc(), path);
+            let _ = activation.set_variable(path, value);
+        })
+    }
+
+    /// The AVM1 value at a target path, primitives only (Scaleform's `GetVariable`).
+    pub fn get_avm1_variable(&mut self, path: &str) -> ExternalValue {
+        self.mutate_with_update_context(|context| {
+            let Some(root) = context.stage.root_clip() else {
+                return ExternalValue::Undefined;
+            };
+            let mut activation = Activation::from_nothing(
+                context,
+                ActivationIdentifier::root("[GetVariable]"),
+                root,
+            );
+            let path = AvmString::new_utf8(activation.gc(), path);
+            match activation.get_variable(path).map(Value::from) {
+                Ok(Value::Object(_) | Value::MovieClip(_)) => ExternalValue::Null,
+                Ok(v) => {
+                    ExternalValue::from_avm1(&mut activation, v).unwrap_or(ExternalValue::Null)
+                }
+                Err(_) => ExternalValue::Undefined,
+            }
+        })
+    }
+
     pub fn spoofed_url(&self) -> Option<&str> {
         self.spoofed_url.as_deref()
     }
