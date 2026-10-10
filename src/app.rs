@@ -142,7 +142,7 @@ pub fn run(opts: Options) -> Result<()> {
     if let Some(path) = opts.screenshot.clone() {
         let instance =
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
-        let (_adapter, device, queue) = pollster::block_on(create_device(&instance, None))?;
+        let (adapter, device, queue) = pollster::block_on(create_device(&instance, None))?;
         let renderer = Renderer::new(
             device,
             queue,
@@ -307,6 +307,21 @@ pub fn run(opts: Options) -> Result<()> {
         }
         let mut ui = crate::ui::Ui::new(&engine.renderer.device, engine.renderer.color_format);
         ui.show_debug = true;
+        let mut swf = open_swf_ui(
+            &opts,
+            instance,
+            adapter,
+            &engine,
+            engine.renderer.color_format,
+            (opts.width, opts.height),
+        );
+        ui.swf_hud = swf.is_some();
+        if let Some(swf) = &mut swf {
+            // A second of the HUD: its meters and messages fade in.
+            for _ in 0..60 {
+                swf.update(&engine, 1.0 / 60.0);
+            }
+        }
         let raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -323,10 +338,14 @@ pub fn run(opts: Options) -> Result<()> {
         deltas.append(std::mem::take(&mut out.textures_delta));
         out.textures_delta = deltas;
         let size = [opts.width, opts.height];
+        let hud_visible = crate::swf_ui::SwfUi::visible(&engine);
         let pixels =
             engine
                 .renderer
                 .render_to_image(&engine.scene, &engine.view_camera(), |r, view| {
+                    if let Some(swf) = &mut swf {
+                        swf.draw(view, hud_visible);
+                    }
                     ui.paint(&r.device, &r.queue, view, out, size);
                 });
         log::info!("render stats: {:?}", engine.renderer.stats);
@@ -347,6 +366,32 @@ pub fn run(opts: Options) -> Result<()> {
     };
     event_loop.run_app(&mut app)?;
     Ok(())
+}
+
+/// The game's own menus over the frame, unless `--egui-hud` or they can't be
+/// set up (no Interface files): egui draws the HUD then.
+fn open_swf_ui(
+    opts: &Options,
+    instance: wgpu::Instance,
+    adapter: wgpu::Adapter,
+    engine: &Engine,
+    format: wgpu::TextureFormat,
+    size: (u32, u32),
+) -> Option<crate::swf_ui::SwfUi> {
+    if opts.egui_hud {
+        return None;
+    }
+    let t = Instant::now();
+    match crate::swf_ui::SwfUi::new(instance, adapter, engine, format, size) {
+        Ok(swf) => {
+            log::info!("hudmenu.swf up in {:?}", t.elapsed());
+            Some(swf)
+        }
+        Err(e) => {
+            log::error!("the game's HUD couldn't be set up ({e:#}); drawing egui's");
+            None
+        }
+    }
 }
 
 /// Offscreen, nobody answers message boxes, and they pause the world (the
@@ -383,6 +428,8 @@ pub(crate) fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) -> R
 
 struct WindowState {
     ui: crate::ui::Ui,
+    /// The game's own menus (the HUD), when they could be set up.
+    swf: Option<crate::swf_ui::SwfUi>,
     egui_state: egui_winit::State,
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -451,7 +498,16 @@ impl App {
             vfs,
             Some(crate::audio::Audio::new()),
         )?;
-        let ui = crate::ui::Ui::new(&engine.renderer.device, format);
+        let mut ui = crate::ui::Ui::new(&engine.renderer.device, format);
+        let swf = open_swf_ui(
+            &self.opts,
+            instance,
+            adapter,
+            &engine,
+            format,
+            (config.width, config.height),
+        );
+        ui.swf_hud = swf.is_some();
         let egui_state = egui_winit::State::new(
             ui.ctx.clone(),
             egui::ViewportId::ROOT,
@@ -462,6 +518,7 @@ impl App {
         );
         self.state = Some(WindowState {
             ui,
+            swf,
             egui_state,
             window,
             surface,
@@ -538,6 +595,9 @@ impl ApplicationHandler for App {
                 s.config.height = size.height.max(1);
                 s.surface.configure(&s.engine.renderer.device, &s.config);
                 s.engine.renderer.resize(s.config.width, s.config.height);
+                if let Some(swf) = &mut s.swf {
+                    swf.resize(s.config.width, s.config.height);
+                }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
@@ -719,6 +779,9 @@ impl ApplicationHandler for App {
                 }
                 s.engine.console_open = s.ui.console.open;
                 s.engine.update(input, dt, scale);
+                if let Some(swf) = &mut s.swf {
+                    swf.update(&s.engine, dt);
+                }
                 // A menu or message box opened by a script takes the mouse.
                 if s.engine.menu_up() && s.grabbed {
                     s.grabbed = false;
@@ -739,6 +802,9 @@ impl ApplicationHandler for App {
                 s.engine
                     .renderer
                     .render(&s.engine.scene, &s.engine.view_camera(), &view);
+                if let Some(swf) = &mut s.swf {
+                    swf.draw(&view, crate::swf_ui::SwfUi::visible(&s.engine));
+                }
                 let raw = s.egui_state.take_egui_input(&s.window);
                 let out = s.ui.build(raw, &mut s.engine);
                 s.egui_state

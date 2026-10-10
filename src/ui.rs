@@ -31,6 +31,9 @@ pub struct Ui {
     renderer: egui_wgpu::Renderer,
     pub console: Console,
     pub show_debug: bool,
+    /// The HUD is the game's (hudmenu.swf, `crate::swf_ui`): egui draws only
+    /// the debug text over the world.
+    pub swf_hud: bool,
     pub fps: u32,
     /// The item menu was shown last frame (the key that opened it doesn't close it).
     menu_shown: bool,
@@ -52,6 +55,7 @@ impl Ui {
             renderer,
             console: Console::default(),
             show_debug: false,
+            swf_hud: false,
             fps: 0,
             menu_shown: false,
             journal_selected: None,
@@ -73,8 +77,11 @@ impl Ui {
             let ctx = ui.ctx().clone();
             if engine.conversation.is_some() {
                 self.dialogue(&ctx, engine, &mut choice, &mut skip);
-            } else {
+            } else if !self.swf_hud {
                 self.hud(&ctx, engine);
+            }
+            if self.show_debug {
+                self.debug_text(&ctx, engine);
             }
             if engine.menu.is_some() {
                 self.item_menu(&ctx, engine);
@@ -314,7 +321,16 @@ impl Ui {
             FontId::proportional(20.0),
             Color32::from_gray(230),
         );
-        if self.show_debug {
+    }
+
+    /// Frame rate, draws, position, time and location (F3), top left.
+    fn debug_text(&self, ctx: &egui::Context, engine: &Engine) {
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("debug"),
+        ));
+        let rect = ctx.content_rect();
+        {
             let p = engine.camera.position;
             let st = engine.renderer.stats;
             let text = format!(

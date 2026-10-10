@@ -4414,6 +4414,7 @@ dependencies = [
  "vrm-havok",
  "vrm-nif",
  "vrm-papyrus",
+ "vrm-ui-swf",
  "vrm-vfs",
  "wgpu",
  "winit",

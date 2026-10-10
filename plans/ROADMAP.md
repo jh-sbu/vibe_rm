@@ -11,7 +11,12 @@ game each piece unlocks.
 - Exterior cell streaming, load doors
 - Actors: skinning, GPU skinning, NPC assembly (race, outfit, FaceGen); Havok clip playback
 - Papyrus VM (PEX, natives, events, VMAD), conditions (CTDA), quest stages, dialogue
-- egui HUD and console; audio (WAV/xWMA/FUZ), music, ambient sounds, voice
+- The game's HUD (`hudmenu.swf` through the vendored Ruffle, `crates/ui-swf`):
+  health, magicka and stamina meters, compass heading, location, the
+  crosshair's activate text, subtitles, notifications, help messages, quest
+  banners, the sneak eye, enemy health (choices: `known_gaps/swf-hud.md`);
+  egui console and debug text (`--egui-hud` for egui's HUD); audio
+  (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
   (schedule + conditions), sandbox / travel behaviour, idle/walk cross-fade,
   persistent NPC whereabouts with leaving / arriving through load doors
@@ -778,10 +783,18 @@ game each piece unlocks.
      player throwing what they hold, traps (pushback, disarming, trip wires; see
      `known_gaps/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
-6. **UI**: inventory (categories, equipping, item details), map, bars, quest
-   targets on a compass and the map (`QSTA`), tracking quests (`SetActive`);
-   support for the game's .swf assets still undecided (journal, message boxes
-   and help messages: see Done)
+6. **UI**: inventory (categories, equipping, item details), map, quest
+   targets on a compass and the map (`QSTA`), tracking quests (`SetActive`)
+   - The game's menus through `crates/ui-swf` (the HUD done: see Done): the
+     message box next (input routing and the menu stack with it), then the
+     item lists (inventory, container, barter share them), the journal; the
+     name popup with character creation
+   - Ruffle: HTML `<img>` in text (inline button art: the activate key, help
+     messages), offscreen blend surfaces sized to the object rather than the
+     stage (most of the HUD's GPU time), answering `GetButtonFromUserEvent`,
+     `PlaySound` through the engine's audio
+   - The HUD's compass markers (`SetCompassMarkers`), the shout, charge and
+     survival meters, load door info, favor mode
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);
      NPCs only use pre-baked heads
