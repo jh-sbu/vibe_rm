@@ -37,6 +37,18 @@ pub struct PlayerBody {
     /// Off the ground this long; whether the graph was told they fall (or jumped).
     airborne: Option<f32>,
     fell: bool,
+    /// The graph took the draw (`WeapEquip`), and the weapon is in hand (its
+    /// `weaponDraw` / `weaponSheathe`).
+    drawn: bool,
+    weapon_out: bool,
+    /// The draw is over (`WeapEquip_Out`): the graph swings from here on.
+    ready: bool,
+    /// The guard is up in the graph (`blockStart`).
+    guard: bool,
+    /// The graph raised `HitFrame` (a swing lands) this update.
+    hit_frame: bool,
+    /// `Direction` while moving (none standing), and sprinting.
+    direction: Option<f32>,
 }
 
 fn wrap(a: f32) -> f32 {
@@ -87,6 +99,12 @@ impl Engine {
             sprinting: false,
             airborne: None,
             fell: false,
+            drawn: false,
+            weapon_out: false,
+            ready: false,
+            guard: false,
+            hit_frame: false,
+            direction: None,
         };
         let mut pose = skel.model_space(&skel.bind_locals());
         if let Some(project) = d
@@ -126,7 +144,9 @@ impl Engine {
             pose = g.update(0.0, &self.vfs, &mut self.anims, &skel).pose;
             body.graph = Some(g);
         }
-        let (meshes, equipment, _) = self.actor_meshes(&d, &skel);
+        let (meshes, _, rigid) = self.actor_meshes(&d, &skel);
+        self.rigid_models.insert(PLAYER_REF, rigid);
+        let (equipment, _) = self.rigid_equipment(PLAYER_REF, &skel, false);
         log::info!(
             "player body: {} meshes, {} rigid, {}",
             meshes.len(),
@@ -171,20 +191,37 @@ impl Engine {
             sprinting: walking && self.player.sprinting,
             jumped: self.player.jumped && !self.player.noclip,
             grounded: self.player.grounded || self.player.noclip,
+            blocking: self.player_blocking,
         };
         let Some(body) = self.player_body.as_mut() else {
             return;
         };
-        // In first person they face the view; in third person where they go.
-        if !third {
+        // In first person, and with their weapon out, they face the view;
+        // otherwise in third person where they go.
+        if !third || body.drawn {
             body.heading = yaw;
         } else if let Some(want) = motion.heading.filter(|_| walking) {
             let d = wrap(want - body.heading);
             let step = TURN_RATE * dt;
             body.heading = wrap(body.heading + d.clamp(-step, step));
         }
+        let out = body.weapon_out;
         let pose = body.animate(dt, &motion, &self.vfs, &mut self.anims);
         let transform = body.transform(feet);
+        let hit = std::mem::take(&mut body.hit_frame);
+        let (skel, weapon_out) = (body.skeleton.clone(), body.weapon_out);
+        if weapon_out != out {
+            log::debug!(
+                "player's weapon {}",
+                if weapon_out { "in hand" } else { "put away" }
+            );
+            // The weapon goes from its sheath to the hand, or back.
+            let (equipment, _) = self.rigid_equipment(PLAYER_REF, &skel, weapon_out);
+            if let Some(inst) = self.scene.player.as_mut() {
+                inst.equipment = equipment;
+            }
+        }
+        self.update_player_swing(hit, dt);
         if let Some(inst) = self.scene.player.as_mut() {
             inst.transform = transform;
             inst.shadow_only = !third;
@@ -207,6 +244,8 @@ struct Motion {
     /// Left the ground jumping this update.
     jumped: bool,
     grounded: bool,
+    /// Holding the guard up.
+    blocking: bool,
 }
 
 /// How long off the ground, not having jumped, before they fall.
@@ -271,9 +310,12 @@ impl PlayerBody {
         g.set_variable("Speed", if m.walking { m.speed } else { 0.0 });
         // A fraction of a turn clockwise from ahead, as the locomotion blends
         // have it (0 forward, 0.25 right, 0.5 back, 0.75 left).
-        if let Some(h) = m.heading.filter(|_| m.walking) {
-            let d = wrap(h - self.heading) / std::f32::consts::TAU;
-            g.set_variable("Direction", d.rem_euclid(1.0));
+        self.direction = m
+            .heading
+            .filter(|_| m.walking)
+            .map(|h| (wrap(h - self.heading) / std::f32::consts::TAU).rem_euclid(1.0));
+        if let Some(d) = self.direction {
+            g.set_variable("Direction", d);
         }
         // Degrees per second, counter-clockwise positive as Havok has it.
         g.set_variable(
@@ -284,6 +326,15 @@ impl PlayerBody {
                 0.0
             },
         );
+        // The guard goes up with the weapon out (and down when it is put away).
+        let guard = m.blocking && self.drawn;
+        if guard != self.guard {
+            let took = Self::event(g, if guard { "blockStart" } else { "blockStop" });
+            if took || !guard {
+                self.guard = guard;
+                g.set_variable("IsBlocking", if guard { 1.0 } else { 0.0 });
+            }
+        }
         // Off the ground: a jump (standing or on the move) or, after a moment
         // without one, a fall; back on it, the landing, after which the graph
         // stands again until told they move.
@@ -335,7 +386,123 @@ impl PlayerBody {
                 self.sprinting = sprint;
             }
         }
-        Some(g.update(dt, vfs, anims, &self.skeleton).pose)
+        let frame = g.update(dt, vfs, anims, &self.skeleton);
+        for r in &frame.raised {
+            match r.event.to_ascii_lowercase().as_str() {
+                "weapondraw" => self.weapon_out = true,
+                "weaponsheathe" => self.weapon_out = false,
+                "hitframe" => self.hit_frame = true,
+                "weapequip_out" => self.ready = self.drawn,
+                _ => {}
+            }
+        }
+        Some(frame.pose)
+    }
+}
+
+/// How long a swing the graph took may wait for its `HitFrame`.
+const SWING_TIMEOUT: f32 = 1.5;
+
+/// A swing of the player's waiting for the graph's `HitFrame` to land.
+pub(crate) struct PlayerSwing {
+    pub power: bool,
+    pub damage: f32,
+    pub reach: f32,
+    pub stagger: f32,
+    /// Seconds it has waited.
+    pub waited: f32,
+}
+
+impl Engine {
+    /// Send an event to the player's body's graph; whether it took it.
+    pub(crate) fn player_graph_event(&mut self, ev: &str) -> bool {
+        self.player_body
+            .as_mut()
+            .and_then(|b| b.graph.as_mut())
+            .is_some_and(|g| PlayerBody::event(g, ev))
+    }
+
+    /// Whether the player's body has a graph and their weapon (or fists) is
+    /// put away in it.
+    pub(crate) fn player_sheathed(&self) -> bool {
+        self.player_body
+            .as_ref()
+            .is_some_and(|b| b.graph.is_some() && !b.drawn)
+    }
+
+    /// The race's power attack event for how the player moves: standing
+    /// (`attackPowerStartInPlace`), sprinting (`attackPowerStart_Sprint`) or by
+    /// the way they go (`...Forward`, `...Right`, `...Backward`, `...Left`).
+    pub(crate) fn player_power_attack_event(&self) -> &'static str {
+        let Some(body) = self.player_body.as_ref() else {
+            return "attackPowerStartInPlace";
+        };
+        match body.direction {
+            None => "attackPowerStartInPlace",
+            Some(_) if body.sprinting => "attackPowerStart_Sprint",
+            Some(d) => match ((d * 4.0).round() as i32).rem_euclid(4) {
+                0 => "attackPowerStartForward",
+                1 => "attackPowerStartRight",
+                2 => "attackPowerStartBackward",
+                _ => "attackPowerStartLeft",
+            },
+        }
+    }
+
+    /// Whether the player has their weapon (or fists) out.
+    pub fn player_weapon_drawn(&self) -> bool {
+        self.player_body.as_ref().is_some_and(|b| b.drawn)
+    }
+
+    /// Whether the draw is over (the graph's `WeapEquip_Out`): the graph
+    /// won't swing before (it takes `attackStart` mid-draw and does nothing).
+    pub(crate) fn player_weapon_ready(&self) -> bool {
+        self.player_body
+            .as_ref()
+            .is_some_and(|b| b.drawn && b.ready)
+    }
+
+    /// Draw (or sheathe) the player's weapon: the graph plays it and the
+    /// weapon goes to the hand as it raises `weaponDraw`. False if it won't.
+    pub fn player_draw_weapon(&mut self, draw: bool) -> bool {
+        if draw && self.disabled_controls.fighting {
+            return false;
+        }
+        let Some(body) = self.player_body.as_mut() else {
+            return false;
+        };
+        if body.drawn == draw {
+            return true;
+        }
+        let Some(g) = body.graph.as_mut() else {
+            return false;
+        };
+        let took = PlayerBody::event(g, if draw { "WeapEquip" } else { "Unequip" });
+        if took {
+            body.drawn = draw;
+            body.ready = false;
+            log::info!(
+                "player {} their weapon",
+                if draw { "draws" } else { "sheathes" }
+            );
+        }
+        took
+    }
+
+    /// A swing waiting on the graph lands at its `HitFrame`, or is lost when
+    /// the graph never gets there (cut short).
+    fn update_player_swing(&mut self, hit: bool, dt: f32) {
+        let Some(s) = self.player_swing.as_mut() else {
+            return;
+        };
+        s.waited += dt;
+        if hit {
+            let s = self.player_swing.take().unwrap();
+            self.player_strike(s.power, s.damage, s.reach, s.stagger);
+        } else if s.waited > SWING_TIMEOUT {
+            log::debug!("player swing lost: no HitFrame");
+            self.player_swing = None;
+        }
     }
 }
 

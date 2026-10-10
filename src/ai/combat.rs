@@ -2291,6 +2291,14 @@ impl Engine {
             self.player_bash();
             return;
         }
+        // A weapon put away comes out first (fists too).
+        if self.player_sheathed() {
+            self.player_draw_weapon(true);
+            return;
+        }
+        if self.player_has_bow() {
+            self.player_graph_event("bowAttackStart");
+        }
         self.player_attack_held = Some(0.0);
     }
 
@@ -2310,6 +2318,7 @@ impl Engine {
             .attacks
             .iter()
             .find(|a| a.flags & ATK_BASH != 0 && a.flags & ATK_POWER == 0)
+            .cloned()
         else {
             return;
         };
@@ -2322,6 +2331,7 @@ impl Engine {
             return;
         }
         self.spend_stamina(PLAYER_REF, cost);
+        self.player_graph_event(&attack.event);
         let skill = self.actor_value(PLAYER_REF, esp::actor_value::BLOCK);
         let damage = self.bash_damage(PLAYER_REF, skill) * attack.damage_mult;
         let hit = self.physics.raycast(
@@ -2341,6 +2351,7 @@ impl Engine {
     pub fn player_attack_release(&mut self) {
         if let Some(held) = self.player_attack_held.take() {
             if self.player_has_bow() {
+                self.player_graph_event("attackRelease");
                 self.player_loose(held);
             } else {
                 self.player_attack(false);
@@ -2373,14 +2384,35 @@ impl Engine {
         if self.disabled_controls.fighting {
             return;
         }
-        if self.player_dead() || self.conversation.is_some() || self.player_blocking {
+        // One swing at a time.
+        if self.player_dead()
+            || self.conversation.is_some()
+            || self.player_blocking
+            || self.player_swing.is_some()
+        {
             return;
         }
         let weapon = self.player_weapon();
         let stats = self.player_stats();
-        let power_attack = stats.attacks.iter().find(|a| {
-            a.flags & ATK_POWER != 0 && a.event.to_ascii_lowercase().starts_with("attackpowerstart")
-        });
+        // The power attack for how they move, else the standing one, else any.
+        let wanted = self.player_power_attack_event();
+        let power_attacks: Vec<&Attack> = stats
+            .attacks
+            .iter()
+            .filter(|a| {
+                a.flags & ATK_POWER != 0
+                    && a.event.to_ascii_lowercase().starts_with("attackpowerstart")
+            })
+            .collect();
+        let find = |name: &str| {
+            power_attacks
+                .iter()
+                .find(|a| a.event.eq_ignore_ascii_case(name))
+                .copied()
+        };
+        let power_attack = find(wanted)
+            .or_else(|| find("attackPowerStartInPlace"))
+            .or(power_attacks.first().copied());
         let cost = self.power_attack_cost(PLAYER_REF, weapon)
             * power_attack.map_or(1.0, |a| a.stamina_mult);
         let power = power && self.player_stamina >= cost;
@@ -2388,6 +2420,18 @@ impl Engine {
             Some(a) => (a.damage_mult.max(1.0) * 1.5, a.stagger),
             None => (1.0, 0.0),
         };
+        // With the weapon out, the body's graph plays the swing and lands it at
+        // its HitFrame, and won't swing again mid-swing; otherwise (no graph,
+        // or the console's swing with it put away) it lands at once.
+        let event = match power_attack.filter(|_| power) {
+            Some(a) => a.event.clone(),
+            None => "attackStart".to_owned(),
+        };
+        // Still drawing: not yet.
+        let played = self.player_weapon_drawn();
+        if played && (!self.player_weapon_ready() || !self.player_graph_event(&event)) {
+            return;
+        }
         if power {
             self.spend_stamina(PLAYER_REF, cost);
         }
@@ -2400,6 +2444,22 @@ impl Engine {
             ),
             None => (4.0, 120.0),
         };
+        let damage = damage * mult;
+        if played {
+            self.player_swing = Some(crate::player_body::PlayerSwing {
+                power,
+                damage,
+                reach,
+                stagger,
+                waited: 0.0,
+            });
+            return;
+        }
+        self.player_strike(power, damage, reach, stagger);
+    }
+
+    /// The player's swing lands on whatever is in front of them within reach.
+    pub(crate) fn player_strike(&mut self, power: bool, damage: f32, reach: f32, stagger: f32) {
         let dir = self.camera.forward();
         let ray = self.physics.raycast(self.camera.position, dir, reach);
         log::debug!("player attack: {ray:?} within {reach:.0}");
@@ -2411,7 +2471,6 @@ impl Engine {
             |c| c.actor,
         );
         if actor && !self.is_dead(r) {
-            let damage = damage * mult;
             log::info!(
                 "player {} {r} for {damage:.0}",
                 if power { "power attacks" } else { "strikes" }

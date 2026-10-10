@@ -192,6 +192,9 @@ impl Engine {
     }
 
     pub fn weapon_drawn(&self, actor: FormId) -> bool {
+        if actor == crate::engine::PLAYER_REF {
+            return self.player_weapon_drawn();
+        }
         let Some(key) = self.actor_cells.get(&actor) else {
             return false;
         };
@@ -204,16 +207,44 @@ impl Engine {
     /// Rebuild an actor's rigid equipment (and carried light) from what it has
     /// equipped.
     pub(crate) fn refresh_equipment(&mut self, key: CellKey, index: usize, actor: FormId) {
+        let Some((skel, drawn)) = self
+            .cells
+            .get(&key)
+            .and_then(|rt| rt.actors.get(index))
+            .map(|a| (a.skeleton.clone(), a.weapon_out))
+        else {
+            return;
+        };
+        let (equipment, light) = self.rigid_equipment(actor, &skel, drawn);
+        if let Some(inst) = self
+            .scene
+            .cells
+            .get_mut(&key)
+            .and_then(|rc| rc.actors.get_mut(index))
+        {
+            inst.equipment = equipment;
+            inst.held_light = light;
+        }
+    }
+
+    /// An actor's rigid equipment hung from its skeleton's bones, and the light
+    /// it carries: its equipped weapons, shields and lights among its rigid
+    /// models, a weapon `drawn` in hand (its scabbard left where it hangs).
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn rigid_equipment(
+        &mut self,
+        actor: FormId,
+        skel: &crate::world::skeleton::Skeleton,
+        drawn: bool,
+    ) -> (
+        Vec<(std::sync::Arc<crate::render::GpuModel>, usize, Mat4)>,
+        Option<HeldLight>,
+    ) {
         let equipped = self
             .inventories
             .get(&actor)
             .map(|i| i.equipped.clone())
             .unwrap_or_default();
-        let drawn = self
-            .cells
-            .get(&key)
-            .and_then(|rt| rt.actors.get(index))
-            .is_some_and(|a| a.weapon_out);
         // (model, the bone to hang it from if not its own, light it gives)
         let mut models: Vec<(String, Option<&'static str>, Option<FormId>)> = Vec::new();
         for (item, m) in self
@@ -251,14 +282,6 @@ impl Engine {
         }
         let paths: Vec<String> = models.iter().map(|(m, _, _)| m.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
-        let Some(skel) = self
-            .cells
-            .get(&key)
-            .and_then(|rt| rt.actors.get(index))
-            .map(|a| a.skeleton.clone())
-        else {
-            return;
-        };
         let mut equipment = Vec::new();
         let mut light = None;
         for (m, hand, light_form) in models {
@@ -284,15 +307,7 @@ impl Engine {
                 });
             }
         }
-        if let Some(inst) = self
-            .scene
-            .cells
-            .get_mut(&key)
-            .and_then(|rc| rc.actors.get_mut(index))
-        {
-            inst.equipment = equipment;
-            inst.held_light = light;
-        }
+        (equipment, light)
     }
 
     /// Where a carried light's model gives off its light: its `AttachLight` node.
