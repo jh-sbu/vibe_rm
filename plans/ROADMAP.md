@@ -757,9 +757,17 @@ game each piece unlocks.
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
-   - The player's body (see Done): casting, left-hand and directional basic
-     attacks through the graph; first-person arms and weapons;
-     the head's morphs, tints and hair colour (with character creation)
+   - The player's body (see Done): first-person arms and weapons (the
+     `_1stperson` skeleton, `1stperson*` models, its own graph); casting,
+     left-hand, dual-wield and hand-to-hand attacks, basic attacks by
+     direction and sprinting (`attackStartSprint`), `attackStop`; arrows
+     loosed at the graph's `arrowRelease` and bashes landing at its
+     `HitFrame` (both land at once now); re-equipping keeping the weapon
+     drawn (it rebuilds the body); footsteps from the graph's events (now the
+     first-person stride), foot IK and head tracking; a ragdoll when they die;
+     the camera stopping short of actors, a vanity camera; the head's morphs
+     (`.tri`), tint layers (`TINI` / `TINC`), hair colour (`HCLF`) and
+     texture sets (`HDPT` `TNAM`), with character creation
    - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`;
      disabled fighting putting the weapon away, the POV type argument
    - Sneak attacks (see Done): NPCs sneaking up on the player
