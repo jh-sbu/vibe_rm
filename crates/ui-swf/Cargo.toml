@@ -1,0 +1,19 @@
+[package]
+name = "vrm-ui-swf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Skyrim's Interface menus (Scaleform .swf, ActionScript 2) through the vendored Ruffle"
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+vfs.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+async-channel = "2.5"
+url = "2.5"
+ruffle_core = { path = "../../vendor/ruffle/core" }
+ruffle_render = { path = "../../vendor/ruffle/render" }
+ruffle_render_wgpu = { path = "../../vendor/ruffle/render/wgpu" }
+swf = { path = "../../vendor/ruffle/swf" }
