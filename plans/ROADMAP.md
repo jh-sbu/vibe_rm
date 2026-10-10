@@ -789,9 +789,6 @@ game each piece unlocks.
      message box next (input routing and the menu stack with it), then the
      item lists (inventory, container, barter share them), the journal; the
      name popup with character creation
-   - Ruffle: HTML `<img>` in text (inline button art: the activate key, help
-     messages); the engine answering `GetButtonFromUserEvent` and playing the
-     menus' `PlaySound`
    - The HUD's compass markers (`SetCompassMarkers`), the shout, charge and
      survival meters, load door info, favor mode
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the

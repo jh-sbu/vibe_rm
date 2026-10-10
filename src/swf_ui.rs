@@ -22,6 +22,7 @@ const H: &str = "_root.HUDMovieBaseInstance";
 pub struct SwfUi {
     pub ui: UiSwf,
     hud: Hud,
+    buttons: Buttons,
 }
 
 impl SwfUi {
@@ -43,20 +44,21 @@ impl SwfUi {
             &engine.vfs,
             "english",
         )?;
-        let hud = Hud::open(&ui, size)?;
-        Ok(SwfUi { ui, hud })
+        let buttons = Buttons::load(&engine.vfs);
+        let hud = Hud::open(&ui, size, &buttons)?;
+        Ok(SwfUi { ui, hud, buttons })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.hud.menu.resize(width, height);
     }
 
-    /// Tells the HUD what changed and lets `dt` pass in it.
-    pub fn update(&mut self, engine: &Engine, dt: f32) {
+    /// Tells the HUD what changed, lets `dt` pass in it and answers its calls.
+    pub fn update(&mut self, engine: &mut Engine, dt: f32) {
         self.hud.update(engine);
         self.hud.menu.advance(Duration::from_secs_f32(dt.max(0.0)));
         for call in self.hud.menu.take_calls() {
-            log::trace!("hud calls {}({:?})", call.name, call.args);
+            answer(&self.hud.menu, &self.buttons, engine, &call);
         }
     }
 
@@ -72,6 +74,202 @@ impl SwfUi {
         }
         self.hud.menu.render();
         self.ui.composite(target, &[&self.hud.menu]);
+    }
+}
+
+/// A menu's calls to the game (`GameDelegate.call`) that the engine answers.
+fn answer(menu: &Menu, buttons: &Buttons, engine: &mut Engine, call: &ui_swf::GameCall) {
+    let first = |i: usize| match call.args.get(i) {
+        Some(Value::String(s)) => Some(s.as_str()),
+        _ => None,
+    };
+    match call.name.as_str() {
+        // A key's art for a user event ("Activate"), to show in its text.
+        "GetButtonFromUserEvent" => {
+            if let (Some(id), Some(event)) = (call.id, first(0)) {
+                menu.respond(id, &[text(buttons.art(event))]);
+            }
+        }
+        "PlaySound" => {
+            if let Some(sound) = first(0) {
+                let at = engine.camera.position;
+                engine.play_sound_at(sound, at);
+            }
+        }
+        _ => log::trace!("{} calls {}({:?})", menu.name(), call.name, call.args),
+    }
+}
+
+/// Which key each user event is on (`interface/controls/pc/controlmap.txt`),
+/// as the button art the menus export (`E.png`, `L-Shift.png`, `Mouse1.png`).
+struct Buttons {
+    /// Event name to art name, keyboard first, else the mouse.
+    art: std::collections::HashMap<String, String>,
+}
+
+impl Buttons {
+    fn load(vfs: &vfs::Vfs) -> Self {
+        let text = vfs
+            .read("interface/controls/pc/controlmap.txt")
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default();
+        // Event: (keyboard, mouse) columns as written; `!0,Other Event` refers
+        // to another event's key. The first context naming an event wins.
+        let mut raw: std::collections::HashMap<String, (String, String)> = Default::default();
+        for line in text.lines() {
+            if line.starts_with("//") || line.trim().is_empty() {
+                continue;
+            }
+            let cols: Vec<&str> = line.split('\t').filter(|c| !c.is_empty()).collect();
+            if cols.len() >= 3 {
+                raw.entry(cols[0].trim().to_string())
+                    .or_insert((cols[1].trim().to_string(), cols[2].trim().to_string()));
+            }
+        }
+        let resolve = |column: usize, event: &str| -> Option<String> {
+            let mut event = event.to_string();
+            for _ in 0..4 {
+                let (keyboard, mouse) = raw.get(&event)?;
+                let value = if column == 0 { keyboard } else { mouse };
+                match value.strip_prefix("!0,") {
+                    // The first event it refers to.
+                    Some(other) => event = other.split(",!0,").next()?.to_string(),
+                    None => {
+                        // A combination ("0x2a+0x0f") shows its last key.
+                        let code = value.rsplit('+').next()?.trim();
+                        let code = u32::from_str_radix(code.trim_start_matches("0x"), 16).ok()?;
+                        return if column == 0 {
+                            keyboard_art(code)
+                        } else {
+                            mouse_art(code)
+                        };
+                    }
+                }
+            }
+            None
+        };
+        let art = raw
+            .keys()
+            .filter_map(|e| Some((e.clone(), resolve(0, e).or_else(|| resolve(1, e))?)))
+            .collect();
+        let buttons = Buttons { art };
+        log::debug!(
+            "{} user events with key art (Activate {}, Tween Menu {}, Jump {}, Sprint {})",
+            buttons.art.len(),
+            buttons.art("Activate"),
+            buttons.art("Tween Menu"),
+            buttons.art("Jump"),
+            buttons.art("Sprint"),
+        );
+        buttons
+    }
+
+    /// The art for a user event, `UnknownKey` when it has none.
+    fn art(&self, event: &str) -> &str {
+        self.art.get(event).map_or("UnknownKey", String::as_str)
+    }
+}
+
+/// A keyboard key's art by its DirectInput scan code.
+fn keyboard_art(code: u32) -> Option<String> {
+    const LETTERS: &[(u32, &str)] = &[
+        (0x10, "Q"),
+        (0x11, "W"),
+        (0x12, "E"),
+        (0x13, "R"),
+        (0x14, "T"),
+        (0x15, "Y"),
+        (0x16, "U"),
+        (0x17, "I"),
+        (0x18, "O"),
+        (0x19, "P"),
+        (0x1E, "A"),
+        (0x1F, "S"),
+        (0x20, "D"),
+        (0x21, "F"),
+        (0x22, "G"),
+        (0x23, "H"),
+        (0x24, "J"),
+        (0x25, "K"),
+        (0x26, "L"),
+        (0x2C, "Z"),
+        (0x2D, "X"),
+        (0x2E, "C"),
+        (0x2F, "V"),
+        (0x30, "B"),
+        (0x31, "N"),
+        (0x32, "M"),
+    ];
+    const OTHERS: &[(u32, &str)] = &[
+        (0x01, "Esc"),
+        (0x0C, "Hyphen"),
+        (0x0D, "Equal"),
+        (0x0E, "Backspace"),
+        (0x0F, "Tab"),
+        (0x1A, "Bracketleft"),
+        (0x1B, "Bracketright"),
+        (0x1C, "Enter"),
+        (0x1D, "L-Ctrl"),
+        (0x27, "Semicolon"),
+        (0x28, "Quotesingle"),
+        (0x29, "Tilde"),
+        (0x2A, "L-Shift"),
+        (0x2B, "Backslash"),
+        (0x33, "Comma"),
+        (0x34, "Period"),
+        (0x35, "Slash"),
+        (0x36, "R-Shift"),
+        (0x37, "NumPadMult"),
+        (0x38, "L-Alt"),
+        (0x39, "Space"),
+        (0x3A, "CapsLock"),
+        (0x46, "ScrollLock"),
+        (0x49, "NumPad9"),
+        (0x4A, "NumPadMinus"),
+        (0x4E, "NumPadPlus"),
+        (0x52, "NumPad0"),
+        (0x53, "NumPadDec"),
+        (0x57, "F11"),
+        (0x58, "F12"),
+        (0x9C, "Enter"),
+        (0x9D, "R-Ctrl"),
+        (0xB5, "NumPadDivide"),
+        (0xB8, "R-Alt"),
+        (0xC5, "Pause"),
+        (0xC7, "Home"),
+        (0xC8, "Up"),
+        (0xC9, "PgUp"),
+        (0xCB, "Left"),
+        (0xCD, "Right"),
+        (0xCF, "End"),
+        (0xD0, "Down"),
+        (0xD1, "PgDn"),
+        (0xD2, "Insert"),
+        (0xD3, "Delete"),
+    ];
+    let digit = (0x02..=0x0B)
+        .contains(&code)
+        .then(|| ((code - 1) % 10).to_string());
+    let function = (0x3B..=0x44)
+        .contains(&code)
+        .then(|| format!("F{}", code - 0x3A));
+    digit.or(function).or_else(|| {
+        LETTERS
+            .iter()
+            .chain(OTHERS)
+            .find(|(c, _)| *c == code)
+            .map(|(_, n)| n.to_string())
+    })
+}
+
+/// A mouse button's art: buttons 0..7 as Mouse1..8, then the wheel and
+/// movement (the controlmap's mouse column; 0xff, none).
+fn mouse_art(code: u32) -> Option<String> {
+    match code {
+        0..=7 => Some(format!("Mouse{}", code + 1)),
+        8 | 9 => Some("Wheel".into()),
+        0xA => Some("MouseMove".into()),
+        _ => None,
     }
 }
 
@@ -120,7 +318,7 @@ fn html(s: &str) -> String {
 }
 
 impl Hud {
-    fn open(ui: &UiSwf, size: (u32, u32)) -> anyhow::Result<Self> {
+    fn open(ui: &UiSwf, size: (u32, u32), buttons: &Buttons) -> anyhow::Result<Self> {
         let menu = ui.open("hudmenu.swf", size)?;
         // PC (keyboard and mouse art), every element, and no placeholder
         // subtitle ("Dialogue Line 1") until something is said.
@@ -133,6 +331,11 @@ impl Hud {
             &[text("All"), Value::Bool(true)],
         );
         menu.invoke(&format!("{H}.HideSubtitle"), &[]);
+        // The activate key's art beside the crosshair's verb.
+        menu.invoke(
+            &format!("{H}.RefreshActivateButtonArt"),
+            &[text(buttons.art("Activate"))],
+        );
         Ok(Hud {
             menu,
             sent: Sent::default(),

@@ -45,5 +45,13 @@ isn't public; the choices below are what the movie's code allows.
 - **Modes.** `ShowElements("All", true)` at start, `"DialogueMode"` on and off
   with conversations; the HUD isn't drawn while the inventory, journal or
   skills menu is up. `SetPlatform(0, false)` (PC).
-- **The game's answers.** `GetButtonFromUserEvent` (a help message asking for
-  a key's art) isn't answered, and `PlaySound` isn't played.
+- **Key art.** `RefreshActivateButtonArt` gets the Activate event's key and
+  `GetButtonFromUserEvent` (a help message's `[Event]`) is answered with the
+  event's key, both as the art the menus export (`E`, `L-Shift`), from
+  `Interface/Controls/PC/controlmap.txt`: the keyboard column (a
+  DirectInput scan code; `!0,Other` refers to another event's; a
+  combination shows its last key), else the mouse column, read as buttons
+  0 to 7 (`Mouse1` to `Mouse8`), 8 and 9 the wheel and 0xA movement (a
+  guess), else `UnknownKey`. The first context naming an event wins.
+- **Sounds.** A menu's `PlaySound` plays the sound record of that editor ID
+  at the camera.
