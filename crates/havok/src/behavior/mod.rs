@@ -969,6 +969,35 @@ impl BehaviorGraph {
             character_properties: string_array(0x40),
         };
         let root = p.ptr(graph + 0x80).map(|g| r.generator(g));
+        // A BSCyclicBlendTransitionGenerator's fBlendParameter is its blender's
+        // parameter (the blender's own is left unbound: locomotion's Direction).
+        for g in 0..r.generators.len() {
+            let Generator::Wrap {
+                class,
+                child: Some(c),
+                ..
+            } = &r.generators[g]
+            else {
+                continue;
+            };
+            let c = *c;
+            if class != "BSCyclicBlendTransitionGenerator"
+                || !matches!(r.generators[c], Generator::Blender { .. })
+                || r.bindings[c].iter().any(|b| b.member == "blendParameter")
+            {
+                continue;
+            }
+            if let Some(v) = r.bindings[g]
+                .iter()
+                .find(|b| b.member == "fBlendParameter")
+                .map(|b| b.variable)
+            {
+                r.bindings[c].push(Binding {
+                    member: "blendParameter".into(),
+                    variable: v,
+                });
+            }
+        }
         Ok(BehaviorGraph {
             name,
             root,
