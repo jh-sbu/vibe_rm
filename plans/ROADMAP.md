@@ -233,6 +233,22 @@ game each piece unlocks.
   condition `GetLevel`. Console `skills`, `player.advskill`, `player.incpcs`,
   `player.advlevel`, `levelup`, `getlevel`. Open questions:
   `known_gaps/skills.md`
+- Perks: `PERK` records (requirements, rank chains, quest and entry point
+  sections with their tabs' conditions and functions); actors' perks from
+  their records (`PRKR`, through templates) plus those added and removed;
+  entry points run where the engine reaches them: attack, power attack and
+  bash damage, sneak attack multipliers (Backstab 6x, Assassin's Blade 15x,
+  Deadly Aim 3x), armor penetration, incoming damage, blocking, each armor
+  piece's rating, power attack stamina, detection (Stealth, and observers'
+  light and movement), the lockpick sweet spot and unbreakable picks,
+  pickpocket chance. Perk trees from the skills' `AVIF` nodes in the skills
+  menu, bought with perk points when the rank's conditions pass. Conditions
+  `HasPerk`, `IsWeaponSkillType`, `WornHasKeyword`,
+  `WornApparelHasKeywordCount`, `IsBlocking`; Papyrus `Actor.AddPerk`,
+  `RemovePerk`, `HasPerk`, `Game.AddPerkPoints` (and SKSE's perk point
+  functions). Console `perks`, `addperk`, `removeperk`, `hasperk`, `perkep`,
+  `perkpoints`, `skills open <skill>`; vrm-tool `perks`. Open questions:
+  `known_gaps/perks.md`
 - Player controls from scripts: `DisablePlayerControls` / `EnablePlayerControls`
   (Papyrus's defaults for missing arguments) stop the player moving, fighting
   (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
@@ -674,10 +690,10 @@ game each piece unlocks.
    - Story Manager state and relationship ranks in saves
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
-   - Perks (Stealth, Muffled Movement, Silence, Quiet Casting, Shadow
-     Warrior) with the perk system; muffle, invisibility and blindness, and
-     spells and shouts as action sounds, with magic (the formula's slots for
-     them are in `crate::detection`)
+   - Muffled Movement, Silence, Quiet Casting, Shadow Warrior (abilities and
+     perks needing magic: Stealth is done); muffle, invisibility and
+     blindness, and spells and shouts as action sounds, with magic (the
+     formula's slots for them are in `crate::detection`)
    - Weapon and impact sounds (action sounds, detection events): need the
      `iSoundLevel*` values, which no public source gives; weapons are silent
      until then
@@ -688,8 +704,7 @@ game each piece unlocks.
      activate / carry, flee, orbit packages; ambush triggers (sleepers'
      reduced detection: see Detection);
      escorts' follower min / max distances and several followers, riding
-   - Off-screen travel between worldspaces; paths round locked animated doors,
-     lockpicking perks and skill gain
+   - Off-screen travel between worldspaces; paths round locked animated doors
    - Templates: spells (with magic)
    - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
      guard / wait / find / acquire procedures
@@ -698,11 +713,12 @@ game each piece unlocks.
    - Dragons: flying, circling, landing and perching; breath and shout attacks
      (with magic)
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
-   stuck in actors, sneak shots, power bashes for the player (perk), armor perks, tempering
+   stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (with detection's muffle, invisibility, blindness and
-   spell / shout sounds), shouts, perks (the sneak tree's detection perks among them;
-   see Detection), inventory (player's, equipping by hand, armor from
+   spell / shout sounds), shouts, perks (see Done: ability sections and the
+   entry points waiting on magic, crafting, barter, critical hits, attack types;
+   `known_gaps/perks.md`), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
@@ -710,8 +726,7 @@ game each piece unlocks.
      camera, not only the first-person controller
    - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`;
      disabled fighting putting the weapon away, the POV type argument
-   - Sneak attacks (see Done): perks' multipliers (Backstab, Assassin's Blade,
-     Deadly Aim), NPCs sneaking up on the player
+   - Sneak attacks (see Done): NPCs sneaking up on the player
    - Skills (see Done): the other skills' uses as their systems come (magic,
      crafting, speech), trainers, rested bonuses, Legendary skills
    - Physics: making fixed objects dynamic (`SetMotionType` on a static

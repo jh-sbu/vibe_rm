@@ -23,6 +23,7 @@ mod locations;
 mod locks;
 mod loose;
 mod messages;
+mod perks;
 mod physics;
 mod pickpocket;
 mod player;

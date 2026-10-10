@@ -4544,6 +4544,115 @@ fn main() -> Result<()> {
                 println!("  {k}: {v}");
             }
         }
+        Some("perks") => {
+            // perks <data dir> [perk]: one perk's sections, or for every entry point
+            // used: its functions, tab counts and the condition functions on each tab
+            // (with how many perks use them), and the other section types.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            // `ep <n>`: every perk with entry point n, in full.
+            let ep_filter: Option<u8> = (args.get(2).map(String::as_str) == Some("ep"))
+                .then(|| args.get(3).and_then(|n| n.parse().ok()))
+                .flatten();
+            let one = args.get(2).filter(|_| ep_filter.is_none()).map(|name| {
+                match u32::from_str_radix(name, 16) {
+                    Ok(v) if name.len() == 8 => Some(esp::FormId(v)),
+                    _ => lo.find_editor_id(name),
+                }
+            });
+            let ids: Vec<esp::FormId> = match one {
+                Some(id) => vec![id.context("editor id not found")?],
+                None => lo.ids_of_type(b"PERK").to_vec(),
+            };
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            for id in ids {
+                let Some(r) = lo.get(id) else { continue };
+                let edid = r.editor_id().unwrap_or_default();
+                let one = one.is_some()
+                    || ep_filter.is_some_and(|n| {
+                        let mut kind = None;
+                        r.subrecords().any(|sr| match &sr.tag.0 {
+                            b"PRKE" => {
+                                kind = Some(sr.u8(0));
+                                false
+                            }
+                            b"DATA" => kind == Some(2) && sr.data.first() == Some(&n),
+                            _ => false,
+                        })
+                    });
+                let one = one.then_some(());
+                if one.is_some() && ep_filter.is_some() {
+                    for sr in r.subrecords().take_while(|sr| sr.tag.0 != *b"PRKE") {
+                        if sr.tag.0 == *b"CTDA" && sr.data.len() >= 24 {
+                            println!(
+                                "{edid} {id}: needs {} {:08x} {:08x} op {} {}",
+                                functions::name(sr.u16(8)),
+                                sr.u32(12),
+                                sr.u32(16),
+                                sr.u8(0) >> 5,
+                                sr.f32(4)
+                            );
+                        }
+                    }
+                }
+                let mut c = |k: String| *counts.entry(k).or_default() += 1;
+                let mut kind = None;
+                let mut ep = 0u8;
+                let mut tab = -1i32;
+                for sr in r.subrecords() {
+                    match &sr.tag.0 {
+                        b"PRKE" => {
+                            kind = Some(sr.u8(0));
+                            tab = -1;
+                            if kind != Some(2) {
+                                c(format!("section type {}", sr.u8(0)));
+                            }
+                        }
+                        b"DATA" if kind == Some(2) && sr.data.len() >= 3 => {
+                            ep = sr.u8(0);
+                            c(format!("ep {ep:3} fn {} tabs {}", sr.u8(1), sr.u8(2)));
+                            if one.is_some() {
+                                println!(
+                                    "{edid}: entry point {ep} function {} tabs {}",
+                                    sr.u8(1),
+                                    sr.u8(2)
+                                );
+                            }
+                        }
+                        b"DATA" if kind.is_some() && one.is_some() => {
+                            println!("{edid}: section {kind:?} data {:02x?}", sr.data)
+                        }
+                        b"PRKC" => tab = sr.u8(0) as i32,
+                        b"CTDA" if kind == Some(2) && sr.data.len() >= 24 => {
+                            let f = sr.u16(8);
+                            c(format!(
+                                "ep {ep:3} tab {tab} {} run_on {}",
+                                functions::name(f),
+                                sr.u32(20)
+                            ));
+                            if one.is_some() {
+                                println!(
+                                    "  tab {tab} {} {:08x} {:08x} op {} {}",
+                                    functions::name(f),
+                                    sr.u32(12),
+                                    sr.u32(16),
+                                    sr.u8(0) >> 5,
+                                    sr.f32(4)
+                                );
+                            }
+                        }
+                        b"EPFT" => c(format!("ep {ep:3} param type {}", sr.u8(0))),
+                        b"EPFD" if one.is_some() => println!("  EPFD {:02x?}", sr.data),
+                        b"PRKF" => kind = None,
+                        _ => {}
+                    }
+                }
+            }
+            for (k, n) in counts {
+                println!("{n:5} {k}");
+            }
+        }
         Some("quest-log") => {
             // quest-log <data dir> [quest]: one quest's type, stages with their log
             // entries (flags, conditions, text) and objectives, or counts over all

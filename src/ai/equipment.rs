@@ -140,7 +140,7 @@ impl Engine {
                     .map(|x| f32::from_le_bytes(x[8..12].try_into().unwrap()))
             })
             .unwrap_or(0.0);
-        let cost = self.power_attack_cost(Some(weapon));
+        let cost = self.power_attack_cost(actor, Some(weapon));
         let Some(index) = self
             .cells
             .get(&key)

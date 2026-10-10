@@ -9,6 +9,7 @@ use glam::{Mat4, Vec3};
 
 use super::{ActorRuntime, State, World, uniform};
 use crate::engine::{Engine, PLAYER_REF};
+use crate::perks::ep;
 use crate::world::ragdoll::RagdollPose;
 use crate::world::template::{self, Sources};
 
@@ -338,13 +339,15 @@ pub struct Protection {
 /// The protection of `worn` items for a wearer with these light / heavy armor
 /// skills: each light or heavy piece (shields too) rates
 /// `ceil(base x (1 + k x skill / 100))`, with k 1.5 for NPCs and 0.4 for the
-/// player; clothing rates as it is and doesn't count as a piece.
+/// player, then `perk` (the wearer's armor perks, by piece); clothing rates as
+/// it is and doesn't count as a piece.
 pub fn protection(
     lo: &LoadOrder,
     set: &CombatSettings,
     worn: &[FormId],
     skills: [f32; 2],
     player: bool,
+    perk: &dyn Fn(FormId, f32) -> f32,
 ) -> Protection {
     let k = if player { set.player_max } else { set.npc_max } - set.rating_base;
     let mut p = Protection::default();
@@ -367,10 +370,10 @@ pub fn protection(
         match kind {
             0 | 1 => {
                 let skill = skills[kind as usize];
-                p.rating += (base * (set.rating_base + k * skill / 100.0)).ceil();
+                p.rating += perk(f, base * (set.rating_base + k * skill / 100.0)).ceil();
                 p.pieces += 1;
             }
-            _ => p.rating += base * set.clothing,
+            _ => p.rating += perk(f, base * set.clothing),
         }
     }
     p.reduction = ((p.rating * set.scaling + p.pieces as f32 * set.per_piece).min(set.max) / 100.0)
@@ -1427,7 +1430,17 @@ impl Engine {
         stagger: f32,
         projectile: Option<FormId>,
     ) {
-        let sneak = self.sneak_attack_mult(target, attacker, projectile.is_some());
+        // The attacker's perks (Armsman, Overdraw, Barbarian...), power attacks'
+        // (Savage Strike...).
+        let weapon = self.weapon_of(attacker);
+        let about = [weapon, Some(target)];
+        let mut damage = self.perk_entry_point(ep::MOD_ATTACK_DAMAGE, attacker, &about, damage);
+        if power {
+            damage = self.perk_entry_point(ep::MOD_POWER_ATTACK_DAMAGE, attacker, &about, damage);
+        }
+        let sneak = self
+            .sneak_attack_mult(target, attacker, projectile.is_some())
+            .map(|m| self.perk_entry_point(ep::MOD_SNEAK_ATTACK_MULT, attacker, &about, m));
         let damage = match sneak {
             Some(mult) => {
                 log::info!("{attacker} sneak attacks {target}: {mult}x {damage:.0}");
@@ -1449,7 +1462,18 @@ impl Engine {
             self.player_blow_landed(projectile.is_some(), sneak.is_some());
         }
         let raw = damage;
-        let mut damage = self.after_armor(target, damage);
+        // Armor penetration (Bone Breaker...): the attacker's perks scale what
+        // the target's armor takes away.
+        let penetration =
+            self.perk_entry_point(ep::MOD_TARGET_DAMAGE_RESISTANCE, attacker, &about, 1.0);
+        let mut damage = self.after_armor(target, damage, penetration);
+        // The target's perks against blows.
+        damage = self.perk_entry_point(
+            ep::MOD_INCOMING_DAMAGE,
+            target,
+            &[Some(attacker), weapon],
+            damage,
+        );
         // Attacks that can stagger do so only some of the time (iStaggerAttackChance).
         let staggers = (self.rand() % 100) < self.combat_settings().stagger_chance;
         let mut stagger = if staggers { stagger } else { 0.0 };
@@ -1540,8 +1564,14 @@ impl Engine {
         power: bool,
         stagger: f32,
     ) {
+        // Bashing perks (Power Bash, Deadly Bash...): with the shield, else the
+        // weapon.
+        let with = self
+            .equipped_shield(attacker)
+            .or_else(|| self.weapon_of(attacker));
+        let damage = self.perk_entry_point(ep::MOD_BASHING_DAMAGE, attacker, &[with], damage);
         let raw = damage;
-        let damage = self.after_armor(target, damage);
+        let damage = self.after_armor(target, damage, 1.0);
         log::info!(
             "{attacker} {} {target} for {damage:.1}",
             if power { "power bashes" } else { "bashes" }
@@ -1712,6 +1742,8 @@ impl Engine {
                 set.weapon_base + set.weapon_scaling * self.weapon_base(attacker) * skill / 100.0
             }
         };
+        // Blocking perks (Shield Wall...).
+        let share = self.perk_entry_point(ep::MOD_PERCENT_BLOCKED, target, &[], share);
         Some((share * if power { set.power_mult } else { 1.0 }).min(0.85))
     }
 
@@ -2112,12 +2144,18 @@ impl Engine {
                 None => return Protection::default(),
             }
         };
-        protection(&self.lo, &set, worn, skills, actor == PLAYER_REF)
+        // Armor perks (Juggernaut, Agile Defender, Well Fitted...) on each piece.
+        let perk = |piece: FormId, rating: f32| {
+            self.perk_entry_point(ep::MOD_ARMOR_RATING, actor, &[Some(piece)], rating)
+        };
+        protection(&self.lo, &set, worn, skills, actor == PLAYER_REF, &perk)
     }
 
-    /// Physical damage after the target's armor.
-    fn after_armor(&self, target: FormId, damage: f32) -> f32 {
-        let p = self.protection(target);
+    /// Physical damage after the target's armor, `penetration` of what it
+    /// takes away still taken.
+    fn after_armor(&self, target: FormId, damage: f32, penetration: f32) -> f32 {
+        let mut p = self.protection(target);
+        p.reduction *= penetration.max(0.0);
         if p.reduction > 0.0 {
             log::debug!(
                 "{target}'s armor ({:.0}, {} pieces) takes {:.0}% of {damage:.0}",
@@ -2329,7 +2367,8 @@ impl Engine {
         let power_attack = stats.attacks.iter().find(|a| {
             a.flags & ATK_POWER != 0 && a.event.to_ascii_lowercase().starts_with("attackpowerstart")
         });
-        let cost = self.power_attack_cost(weapon) * power_attack.map_or(1.0, |a| a.stamina_mult);
+        let cost = self.power_attack_cost(PLAYER_REF, weapon)
+            * power_attack.map_or(1.0, |a| a.stamina_mult);
         let power = power && self.player_stamina >= cost;
         let (mult, stagger) = match power_attack.filter(|_| power) {
             Some(a) => (a.damage_mult.max(1.0) * 1.5, a.stagger),
@@ -2634,10 +2673,11 @@ impl Engine {
 
     /// What a power attack with `weapon` (or bare hands) costs, before the
     /// attack's own multiplier.
-    pub(crate) fn power_attack_cost(&self, weapon: Option<FormId>) -> f32 {
+    pub(crate) fn power_attack_cost(&self, actor: FormId, weapon: Option<FormId>) -> f32 {
         let set = self.combat_settings();
-        set.stamina_attack_base
-            + set.stamina_attack_mult * weapon.map_or(0.0, |w| weapon_weight(&self.lo, w))
+        let cost = set.stamina_attack_base
+            + set.stamina_attack_mult * weapon.map_or(0.0, |w| weapon_weight(&self.lo, w));
+        self.perk_entry_point(ep::MOD_POWER_ATTACK_STAMINA, actor, &[weapon], cost)
     }
 
     /// The player's stats from their NPC record and race (stamina, attacks).

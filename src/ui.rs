@@ -1049,7 +1049,8 @@ fn ui_hint(ctx: &egui::Context) {
 }
 
 /// The skills menu: the player's level and character XP, each skill with its
-/// progress, and the level ups to take (health, magicka or stamina).
+/// progress, and the level ups to take (health, magicka or stamina). Clicking
+/// a skill shows its perk tree.
 fn skills_view(ctx: &egui::Context, engine: &mut Engine) {
     use esp::actor_value as av;
     let s = engine.skills.clone();
@@ -1070,6 +1071,7 @@ fn skills_view(ctx: &egui::Context, engine: &mut Engine) {
         })
         .collect();
     let mut take = None;
+    let mut tree_skill = engine.perks.tree;
     egui::Window::new("Skills")
         .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
         .resizable(false)
@@ -1103,8 +1105,10 @@ fn skills_view(ctx: &egui::Context, engine: &mut Engine) {
                 .striped(true)
                 .num_columns(3)
                 .show(ui, |ui| {
-                    for (name, level, progress) in &rows {
-                        ui.label(name);
+                    for (k, (name, level, progress)) in (av::FIRST_SKILL..).zip(&rows) {
+                        if ui.selectable_label(tree_skill == Some(k), name).clicked() {
+                            tree_skill = if tree_skill == Some(k) { None } else { Some(k) };
+                        }
                         ui.label(format!("{level:.0}"));
                         ui.add(
                             egui::ProgressBar::new(progress.clamp(0.0, 1.0)).desired_width(160.0),
@@ -1116,4 +1120,160 @@ fn skills_view(ctx: &egui::Context, engine: &mut Engine) {
     if let Some(a) = take {
         engine.take_level_up(a);
     }
+    engine.perks.tree = tree_skill;
+    if let Some(k) = tree_skill {
+        perk_tree_view(ctx, engine, k);
+    }
+}
+
+/// A skill's perk tree: the nodes where the skill's `AVIF` places them, lit
+/// when owned, and the selected node's perk with a button to take its next
+/// rank for a perk point.
+fn perk_tree_view(ctx: &egui::Context, engine: &mut Engine, skill: u32) {
+    use egui::{Sense, vec2};
+    let nodes = engine.perk_tree(skill);
+    let sel_id = egui::Id::new("perk_tree_node");
+    let mut selected: Option<FormId> = ctx.data(|d| d.get_temp(sel_id));
+    if !nodes.iter().any(|n| Some(n.perk) == selected) {
+        selected = None;
+    }
+    // Each node: its ranks, how many the player has, and the next one.
+    struct Shown {
+        ranks: Vec<FormId>,
+        owned: usize,
+        next: Option<(FormId, bool)>,
+        name: String,
+    }
+    let shown: Vec<Shown> = nodes
+        .iter()
+        .map(|n| {
+            let ranks = engine.perk_ranks(n.perk);
+            let owned = ranks
+                .iter()
+                .filter(|&&p| engine.has_perk(crate::engine::PLAYER_REF, p))
+                .count();
+            Shown {
+                owned,
+                next: engine.next_perk_rank(n.perk),
+                name: engine
+                    .perk(n.perk)
+                    .map(|p| p.name.clone())
+                    .unwrap_or_default(),
+                ranks,
+            }
+        })
+        .collect();
+    let mut buy = None;
+    egui::Window::new(format!("{} perks", engine.skill_name(skill)))
+        .anchor(Align2::RIGHT_CENTER, vec2(-20.0, 0.0))
+        .resizable(false)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            let size = vec2(460.0, 380.0);
+            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+            let painter = ui.painter_at(rect);
+            painter.rect_filled(rect, 4.0, Color32::from_rgb(12, 14, 22));
+            let (mut x0, mut x1, mut y0, mut y1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+            for n in &nodes {
+                (x0, x1, y0, y1) = (x0.min(n.x), x1.max(n.x), y0.min(n.y), y1.max(n.y));
+            }
+            let pad = 36.0;
+            let scale = ((size.x - 2.0 * pad) / (x1 - x0).max(1.0))
+                .min((size.y - 2.0 * pad) / (y1 - y0).max(1.0));
+            // Grid y grows upwards.
+            let at = |x: f32, y: f32| {
+                Pos2::new(
+                    rect.center().x + (x - (x0 + x1) / 2.0) * scale,
+                    rect.center().y - (y - (y0 + y1) / 2.0) * scale,
+                )
+            };
+            for n in &nodes {
+                for c in &n.children {
+                    if let Some(m) = nodes.iter().find(|m| m.index == *c) {
+                        painter.line_segment(
+                            [at(n.x, n.y), at(m.x, m.y)],
+                            Stroke::new(1.5, Color32::from_gray(90)),
+                        );
+                    }
+                }
+            }
+            for (n, s) in nodes.iter().zip(&shown) {
+                let p = at(n.x, n.y);
+                let colour = if s.owned == s.ranks.len() {
+                    Color32::from_rgb(240, 200, 90)
+                } else if s.owned > 0 {
+                    Color32::from_rgb(200, 170, 110)
+                } else if s.next.is_some_and(|x| x.1) {
+                    Color32::WHITE
+                } else {
+                    Color32::from_gray(110)
+                };
+                let r = 7.0;
+                let resp = ui.interact(
+                    egui::Rect::from_center_size(p, vec2(2.0 * r + 8.0, 2.0 * r + 8.0)),
+                    ui.id().with(n.perk.0),
+                    Sense::click(),
+                );
+                if resp.clicked() {
+                    selected = Some(n.perk);
+                }
+                if Some(n.perk) == selected {
+                    painter.circle_stroke(p, r + 4.0, Stroke::new(1.5, Color32::LIGHT_BLUE));
+                }
+                painter.circle_filled(p, r, colour);
+                let label = if s.ranks.len() > 1 {
+                    format!("{} {}/{}", s.name, s.owned, s.ranks.len())
+                } else {
+                    s.name.clone()
+                };
+                painter.text(
+                    p + vec2(0.0, r + 3.0),
+                    Align2::CENTER_TOP,
+                    label,
+                    egui::FontId::proportional(11.0),
+                    colour,
+                );
+            }
+            ui.separator();
+            ui.label(format!("Perk points: {}", engine.skills.perk_points));
+            let Some((_, s)) = nodes
+                .iter()
+                .zip(&shown)
+                .find(|(n, _)| Some(n.perk) == selected)
+            else {
+                ui.label("Click a perk.");
+                return;
+            };
+            // The next rank's text, or the last one's when all are taken.
+            let showing = s.next.map_or(*s.ranks.last().unwrap(), |x| x.0);
+            let perk = engine.perk(showing);
+            ui.label(egui::RichText::new(&s.name).strong());
+            if s.ranks.len() > 1 {
+                ui.label(format!("Rank {}/{}", s.owned, s.ranks.len()));
+            }
+            if let Some(p) = &perk {
+                ui.label(&p.description);
+            }
+            match s.next {
+                None => {
+                    ui.label("Taken.");
+                }
+                Some((p, ok)) => {
+                    if !ok {
+                        ui.label(egui::RichText::new("Requirements not met.").color(Color32::GRAY));
+                    }
+                    let can = ok && engine.skills.perk_points > 0;
+                    if ui
+                        .add_enabled(can, egui::Button::new("Take perk"))
+                        .clicked()
+                    {
+                        buy = Some(p);
+                    }
+                }
+            }
+        });
+    if let Some(p) = buy {
+        engine.buy_perk(p);
+    }
+    ctx.data_mut(|d| d.insert_temp(sel_id, selected));
 }

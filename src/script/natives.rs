@@ -225,6 +225,17 @@ pub fn call(
             }
             none()
         }
+        // Perk points: `AddPerkPoints` (vanilla), the others SKSE's.
+        ("game", "addperkpoints") | ("game", "modperkpoints") => {
+            let n = e.skills.perk_points as i64 + arg(0).as_int() as i64;
+            e.skills.perk_points = n.clamp(0, 255) as u32;
+            none()
+        }
+        ("game", "setperkpoints") => {
+            e.skills.perk_points = arg(0).as_int().clamp(0, 255) as u32;
+            none()
+        }
+        ("game", "getperkpoints") => v(Value::Int(e.skills.perk_points as i32)),
         // ------------------------------------------------------------- Form
         ("form", "getformid") => v(Value::Int(me.map(|f| f.0 as i32).unwrap_or(0))),
         ("form", "getname") => v(Value::str(&me.map(|f| e.form_name(f)).unwrap_or_default())),
@@ -794,6 +805,23 @@ pub fn call(
             none()
         }
         ("actor", "getlevel") => v(Value::Int(me.map_or(1, |a| e.actor_level(a)))),
+        // Perks (`crate::perks`).
+        ("actor", "addperk") => {
+            if let (Some(a), Some(p)) = (me, form_arg(args, 0)) {
+                e.add_perk(a, p);
+            }
+            none()
+        }
+        ("actor", "removeperk") => {
+            if let (Some(a), Some(p)) = (me, form_arg(args, 0)) {
+                e.remove_perk(a, p);
+            }
+            none()
+        }
+        ("actor", "hasperk") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(p)) => e.has_perk(a, p),
+            _ => false,
+        })),
         ("actor", "getrelationshiprank") => v(Value::Int(match (me, form_arg(args, 0)) {
             (Some(a), Some(b)) => e.relationship_rank(a, b),
             _ => 0,

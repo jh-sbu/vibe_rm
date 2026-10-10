@@ -49,6 +49,7 @@ themselves.
   rig's supports) move their collision as fixed colliders set in place each
   frame: they push nothing aside. They hit like keyframed traps (motion type
   4), with the velocity from their last two poses.
-- Disarming (`trapDisarmed`), trip wires' own scripts (`Tripwire` makes its
-  wire dynamic) and the Light Foot perk (`HasPerk` is unimplemented).
+- Disarming (`trapDisarmed`) and trip wires' own scripts (`Tripwire` makes its
+  wire dynamic). The Light Foot perk is the trigger scripts' own `HasPerk`
+  check (`TrapTriggerBase`, `TrapBear`); not tried on a plate here.
 - Who gets a trap kill: no one.

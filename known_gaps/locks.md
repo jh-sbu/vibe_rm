@@ -62,9 +62,11 @@ and location pages, CK wiki descriptions) and the game's data files.
 
 ## Gaps
 
-1. **Lockpicking.** No perks, skill gain (`fSkillUsageLockPick*`,
-   `iXPRewardPickLock*`), enchantments or potions; no race skill bonuses in the
-   skill used. How the turn falls off across the partial zone, the turning speed,
+1. **Lockpicking.** Perks: the sweet spot (Novice .. Master Locks) and
+   unbreakable picks only (`known_gaps/perks.md`). Skill gain by
+   `fSkillUsageLockPick*` (`known_gaps/skills.md`), but not
+   `iXPRewardPickLock*`; no enchantments or potions; no race skill bonuses in
+   the skill used. How the turn falls off across the partial zone, the turning speed,
    whether strain carries over between attempts with one pick, and the "Auto
    Attempt" option are guesses or missing. Leveled locks use their authored level.
 2. **Which doors a package locks.** "Home" is a guess: the sleep location's cell.

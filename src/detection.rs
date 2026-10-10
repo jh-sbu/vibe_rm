@@ -203,6 +203,9 @@ struct Target {
     running: bool,
     armor_weight: f32,
     sneak: f32,
+    /// Percent off the observer's skill factor while sneaking (the Stealth
+    /// perks: Mod Detection Sneak Skill).
+    stealth: f32,
 }
 
 impl Engine {
@@ -238,6 +241,7 @@ impl Engine {
                 running: self.player.running,
                 armor_weight: self.armor_weight(r),
                 sneak: self.actor_value(r, av::SNEAK),
+                stealth: self.stealth_perks(r),
             });
         }
         let a = self.actor_ref(r)?;
@@ -253,7 +257,12 @@ impl Engine {
             running: moving && a.gait() == crate::world::footsteps::Gait::Run,
             armor_weight: self.armor_weight(r),
             sneak: self.actor_value(r, av::SNEAK),
+            stealth: self.stealth_perks(r),
         })
+    }
+
+    fn stealth_perks(&self, r: FormId) -> f32 {
+        self.perk_entry_point(crate::perks::ep::MOD_DETECTION_SNEAK_SKILL, r, &[], 0.0)
     }
 
     /// The weight of the armor an actor wears.
@@ -387,9 +396,13 @@ impl Engine {
         let flat = Vec3::new(to.x, to.y, 0.0).normalize_or_zero();
         let in_view = flat == Vec3::ZERO || facing.dot(flat) >= VIEW_HALF_ANGLE.to_radians().cos();
         let sees = los && in_view && !o.sleeping;
+        // The observer's perks for noticing movement and what light shows.
+        use crate::perks::ep;
+        let about = [Some(t.id)];
         let movement = if t.moving {
             (s.weight_base + s.weight_mult * t.armor_weight)
                 * if t.running { s.running_mult } else { 1.0 }
+                * self.perk_entry_point(ep::MOD_DETECTION_MOVEMENT, o.id, &about, 1.0)
         } else {
             0.0
         };
@@ -403,12 +416,19 @@ impl Engine {
                 } else {
                     1.0
                 }
+                * self.perk_entry_point(ep::MOD_DETECTION_LIGHT, o.id, &about, 1.0)
         } else {
             0.0
         };
+        // The target's Stealth perks cut the observer's skill factor (UESP).
         let observer_skill = (s.perception_min
             + (s.perception_max - s.perception_min) * o.sneak / 100.0)
-            * (1.0 + if o.sleeping { s.sleep_bonus } else { 0.0 });
+            * (1.0 + if o.sleeping { s.sleep_bonus } else { 0.0 })
+            * if t.sneaking {
+                (1.0 - t.stealth / 100.0).max(0.0)
+            } else {
+                1.0
+            };
         let target_skill = if t.sneaking {
             t.sneak * s.skill_mult
         } else {

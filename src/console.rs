@@ -93,13 +93,29 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "grab [ref | off]      grab what the crosshair (or a ref) is on, say what is held, let go".into(),
             "epc                   enable all player controls (EnablePlayerControls)".into(),
             "detect                who detects the player, by how much; the player's light level and stealth points".into(),
-            "skills                the player's level, XP and each skill's progress".into(),
+            "skills [open [skill]]  the player's level, XP and each skill's progress (open: the menu, with a perk tree)".into(),
             "player.advskill <skill> <xp> / player.incpcs <skill>   skill XP / a skill level (OneHanded, Marksman, Sneak...)".into(),
             "player.advlevel / levelup <health|magicka|stamina>   earn a level up / take one".into(),
             "[ref.]getlevel        an actor's level".into(),
+            "[ref.]perks [all]     an actor's perks (all: with their entry points)".into(),
+            "[ref.]addperk / removeperk / hasperk <perk>   give, take or check a perk".into(),
+            "[ref.]perkep <entry point> <value> [subject...]   a value through the ref's perks (tabs 1, 2...)".into(),
+            "perkpoints [n]        the player's perk points (or set them)".into(),
         ],
         "detect" => engine.describe_detection(),
+        "skills" if args.first() == Some(&"open") => {
+            // skills open [skill]: the skills menu, with that skill's perk tree.
+            engine.perks.tree = args.get(1).and_then(|s| crate::skills::skill_index(s));
+            engine.menu = Some(crate::items::Menu::Skills);
+            vec![]
+        }
         "skills" => engine.describe_skills(),
+        "perkpoints" => {
+            if let Some(n) = args.first().and_then(|a| a.parse::<u32>().ok()) {
+                engine.skills.perk_points = n;
+            }
+            vec![format!("perk points: {}", engine.skills.perk_points)]
+        }
         "levelup" => {
             let attr = match args.first().map(|a| a.to_ascii_lowercase()) {
                 Some(a) if a == "health" => esp::actor_value::HEALTH,
@@ -686,8 +702,13 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 28] = [
+const ITEM_COMMANDS: [&str; 33] = [
     "drop",
+    "perkep",
+    "addperk",
+    "removeperk",
+    "hasperk",
+    "perks",
     "advskill",
     "incpcs",
     "advlevel",
@@ -762,6 +783,30 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             )]
         }
         "getlevel" => vec![format!("{r}: level {}", engine.actor_level(r))],
+        "addperk" | "removeperk" | "hasperk" => {
+            let Some(p) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec![format!("usage: [ref.]{cmd} <perk>")];
+            };
+            match cmd {
+                "addperk" if !engine.add_perk(r, p) => return vec![format!("{p} is not a perk")],
+                "removeperk" => engine.remove_perk(r, p),
+                _ => {}
+            }
+            vec![format!("{r} has {p}: {}", engine.has_perk(r, p))]
+        }
+        "perks" => engine.describe_perks(r, args.first() == Some(&"all")),
+        "perkep" => {
+            let (Some(point), Some(value)) = (
+                args.first().and_then(|a| a.parse::<u8>().ok()),
+                args.get(1).and_then(|a| a.parse::<f32>().ok()),
+            ) else {
+                return vec!["usage: [ref.]perkep <entry point> <value> [subject...]".into()];
+            };
+            let subjects: Vec<Option<esp::FormId>> =
+                args[2..].iter().map(|a| engine.resolve_form(a)).collect();
+            let out = engine.perk_entry_point(point, r, &subjects, value);
+            vec![format!("{r}: entry point {point}: {value} -> {out}")]
+        }
         "advskill" | "incpcs" | "advlevel" if r != crate::engine::PLAYER_REF => {
             vec!["only the player advances".into()]
         }

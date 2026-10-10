@@ -191,6 +191,15 @@ impl Engine {
         let sweet = 60.0
             * 0.5f32.powi(difficulty as i32)
             * (0.82 + gmst("fLockpickSkillSweetSpotMult", 0.006) * skill);
+        // Lockpicking perks (Novice Locks...) widen it, by the lock's level.
+        let sweet = self
+            .perk_entry_point(
+                crate::perks::ep::MOD_LOCKPICK_SWEET_SPOT,
+                PLAYER_REF,
+                &[Some(lock)],
+                sweet,
+            )
+            .min(170.0);
         let partial = gmst(partial_setting, 26.0 - 4.0 * difficulty as f32)
             * (gmst("fLockpickSkillPartialPickBase", 0.775)
                 + gmst("fLockpickSkillPartialPickMult", 0.015) * skill);
@@ -255,7 +264,13 @@ impl Engine {
                 }
                 return;
             }
-            if lp.turn >= most {
+            // Unbreakable picks (the Unbreakable perk) never wear out.
+            let unbreakable = self.perk_flag(
+                crate::perks::ep::MAKE_LOCKPICKS_UNBREAKABLE,
+                PLAYER_REF,
+                &[],
+            );
+            if lp.turn >= most && !unbreakable {
                 lp.strain += dt;
                 if lp.strain >= lp.durability {
                     self.remove_item(PLAYER_REF, LOCKPICK, 1, None);
