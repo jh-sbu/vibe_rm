@@ -59,6 +59,25 @@ impl RenderTargetFrame for SwapChainTargetFrame {
     }
 }
 
+/// The surface's present mode: vsync (Fifo).
+#[cfg(not(feature = "spike"))]
+fn present_mode(_capabilities: &wgpu::SurfaceCapabilities) -> wgpu::PresentMode {
+    wgpu::PresentMode::Fifo
+}
+
+/// SPIKE: SPIKE_NOVSYNC=1 presents uncapped, to see the render cost.
+#[cfg(feature = "spike")]
+fn present_mode(capabilities: &wgpu::SurfaceCapabilities) -> wgpu::PresentMode {
+    if std::env::var_os("SPIKE_NOVSYNC").is_some() {
+        [wgpu::PresentMode::Immediate, wgpu::PresentMode::Mailbox]
+            .into_iter()
+            .find(|m| capabilities.present_modes.contains(m))
+            .unwrap_or(wgpu::PresentMode::Fifo)
+    } else {
+        wgpu::PresentMode::Fifo
+    }
+}
+
 impl SwapChainTarget {
     pub fn new(
         surface: wgpu::Surface<'static>,
@@ -92,7 +111,7 @@ impl SwapChainTarget {
             color_space: wgpu::SurfaceColorSpace::Auto,
             width,
             height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: present_mode(&capabilities),
             desired_maximum_frame_latency: 2,
             alpha_mode: capabilities.alpha_modes[0],
             view_formats: if linear_format == format {

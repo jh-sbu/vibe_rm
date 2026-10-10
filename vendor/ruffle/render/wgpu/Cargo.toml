@@ -39,6 +39,9 @@ workspace = true
 features = ["HtmlCanvasElement"]
 
 [features]
+# Measurement code for the Skyrim UI spike (spike/swf in the engine's repo):
+# timing counters, and switches that only measure (SPIKE_* environment).
+spike = []
 render_debug_labels = []
 webgl = ["wgpu/webgl"]
 profile-with-tracy = ["profiling", "profiling/profile-with-tracy", "wgpu-profiler/tracy"]

@@ -604,13 +604,27 @@ impl Player {
         });
         self.frame_accumulator += FloatDuration::from_secs(audio_skew);
 
+        #[cfg(feature = "spike")]
+        let t = Instant::now();
         self.update_sockets();
         self.update_net_connections();
+        #[cfg(feature = "spike")]
+        let t1 = Instant::now();
         self.update_timers(dt);
+        #[cfg(feature = "spike")]
+        let t2 = Instant::now();
         self.update(|context| {
             StreamManager::tick(context, dt);
         });
+        #[cfg(feature = "spike")]
+        let t3 = Instant::now();
         self.audio.tick();
+        #[cfg(feature = "spike")]
+        spike_tick_add(0, t1 - t);
+        #[cfg(feature = "spike")]
+        spike_tick_add(1, t2 - t1);
+        #[cfg(feature = "spike")]
+        spike_tick_add(2, t3 - t2);
     }
 
     pub fn time_til_next_timer(&self) -> Option<f64> {
@@ -2437,13 +2451,21 @@ impl Player {
         });
 
         // Update mouse state (check for new hovered button, etc.)
+        #[cfg(feature = "spike")]
+        let t0 = Instant::now();
         self.mutate_with_update_context(|context| {
             Self::update_drag(context);
         });
         self.update_mouse_state(EnumSet::empty(), false, &mut false);
+        #[cfg(feature = "spike")]
+        let t1 = Instant::now();
+        #[cfg(feature = "spike")]
+        spike_tick_add(3, t1 - t0);
 
         // GC
         self.gc_arena.borrow_mut().collect_debt();
+        #[cfg(feature = "spike")]
+        spike_tick_add(4, t1.elapsed());
 
         rval
     }
@@ -2648,6 +2670,12 @@ impl Player {
             })
             .collect();
         self.mutate_with_update_context(|context| context.library.set_translations(table));
+    }
+
+    /// SPIKE: prints the display tree (`avm_debug` builds only).
+    #[cfg(feature = "spike")]
+    pub fn spike_display_tree(&mut self) {
+        self.mutate_with_update_context(|context| context.stage.display_render_tree(0));
     }
 
     pub fn set_default_font(&mut self, font: DefaultFont, names: Vec<String>) {
@@ -3407,4 +3435,14 @@ pub enum PlayerMode {
 
     /// Represents the debug version of Flash Player, i.e. flashplayerdebugger.
     Debug,
+}
+
+/// SPIKE: time in tick's parts: sockets+net, timers, update(), of which mouse
+/// state, of which GC.
+#[cfg(feature = "spike")]
+pub static SPIKE_TICK: std::sync::Mutex<[f64; 5]> = std::sync::Mutex::new([0.0; 5]);
+
+#[cfg(feature = "spike")]
+fn spike_tick_add(i: usize, d: std::time::Duration) {
+    SPIKE_TICK.lock().unwrap()[i] += d.as_secs_f64();
 }

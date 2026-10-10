@@ -79,6 +79,9 @@ workspace = true
 version = "0.4.70"
 
 [features]
+# Measurement code for the Skyrim UI spike (spike/swf in the engine's repo):
+# timing counters, and switches that only measure (SPIKE_* environment).
+spike = []
 default = []
 lzma = ["lzma-rs", "swf/lzma"]
 avm_debug = []
