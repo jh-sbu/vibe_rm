@@ -1343,6 +1343,22 @@ impl<'gc> EditText<'gc> {
             drawing.render(context);
         }
 
+        if let Some((bitmap, (width, height))) = lbox.as_renderable_image() {
+            let size = lbox.bounds();
+            let mut transform = context.transform_stack.transform();
+            transform.matrix *= Matrix::scale(
+                size.width().to_pixels() as f32 / width.max(1) as f32,
+                size.height().to_pixels() as f32 / height.max(1) as f32,
+            );
+            context.commands.render_bitmap(
+                bitmap.clone(),
+                transform,
+                true,
+                ruffle_render::bitmap::PixelSnapping::Auto,
+                ruffle_render::bitmap::PixelRegion::for_whole_size(width, height),
+            );
+        }
+
         context.transform_stack.pop();
     }
 
@@ -2274,7 +2290,7 @@ impl<'gc> EditText<'gc> {
                     first_format = Some(text_format);
                     break;
                 }
-                LayoutContent::Drawing { .. } => {}
+                LayoutContent::Drawing { .. } | LayoutContent::Image { .. } => {}
             }
         }
 
