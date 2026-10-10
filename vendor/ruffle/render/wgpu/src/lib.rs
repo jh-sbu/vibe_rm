@@ -304,3 +304,7 @@ impl Texture {
         })
     }
 }
+
+/// SPIKE: blend modes that got an offscreen surface since last taken.
+#[cfg(feature = "spike")]
+pub static SPIKE_BLENDS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());

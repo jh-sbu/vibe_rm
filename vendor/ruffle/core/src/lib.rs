@@ -7,6 +7,8 @@
 
 #[macro_use]
 mod display_object;
+#[cfg(feature = "spike")]
+pub use display_object::spike_dirty;
 pub use display_object::{StageAlign, StageDisplayState, StageScaleMode};
 
 #[macro_use]
@@ -62,6 +64,8 @@ pub use context_menu::ContextMenuItem;
 pub use events::PlayerEvent;
 pub use indexmap;
 pub use loader::LoadBehavior;
+#[cfg(feature = "spike")]
+pub use player::SPIKE_TICK;
 pub use player::{Player, PlayerBuilder, PlayerMode, PlayerRuntime, StaticCallstack};
 pub use ruffle_common::duration::FloatDuration;
 pub use ruffle_render::backend::ViewportDimensions;

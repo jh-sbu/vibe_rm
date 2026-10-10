@@ -707,6 +707,18 @@ impl<'encoder, 'global: 'encoder> WgpuCommandHandler<'encoder, 'global> {
 
 impl CommandHandler for WgpuCommandHandler<'_, '_> {
     fn blend(&mut self, commands: CommandList, blend_mode: RenderBlendMode) {
+        // SPIKE: count offscreen blend surfaces, by mode.
+        #[cfg(feature = "spike")]
+        crate::SPIKE_BLENDS
+            .lock()
+            .unwrap()
+            .push(format!("{blend_mode:?}"));
+        #[cfg(feature = "spike")]
+        if std::env::var_os("SPIKE_INLINE_BLENDS").is_some() {
+            // Upper bound on the offscreen cost: draw the subtree inline, as Normal.
+            commands.execute(self);
+            return;
+        }
         let surface = Surface::new(
             self.descriptors,
             self.quality,

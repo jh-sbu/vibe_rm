@@ -996,6 +996,11 @@ pub fn render_base<'gc>(
         let mut filters: Vec<Filter> = this.filters().to_owned();
         let swf_version = this.swf_version();
         filters.retain(|f| !f.impotent());
+        // SPIKE: optionally drop filters (measurement only).
+        #[cfg(feature = "spike")]
+        if std::env::var_os("SPIKE_NOFILTERS").is_some() {
+            filters.clear();
+        }
 
         if let Some(cache) = &mut *this.base().bitmap_cache_mut() {
             let width = bounds.width().to_pixels().ceil().max(0.0);
@@ -1023,6 +1028,8 @@ pub fn render_base<'gc>(
                 };
                 let draw_offset = Point::new(filter_rect.x_min, filter_rect.y_min);
                 if cache.is_dirty(&base_transform.matrix, width, height) {
+                    #[cfg(feature = "spike")]
+                    SPIKE_DIRTY.with(|c| c.set(c.get() + 1));
                     cache.update(
                         context.renderer,
                         base_transform.matrix,
@@ -3406,4 +3413,16 @@ impl<'gc> DisplayObjectWeak<'gc> {
             DisplayObjectWeak::Bitmap(b) => b.upgrade(mc).map(|ld| ld.into()),
         }
     }
+}
+
+#[cfg(feature = "spike")]
+thread_local! {
+    /// SPIKE: bitmap caches redrawn.
+    pub static SPIKE_DIRTY: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// SPIKE: bitmap caches redrawn so far.
+#[cfg(feature = "spike")]
+pub fn spike_dirty() -> u64 {
+    SPIKE_DIRTY.with(|c| c.get())
 }
