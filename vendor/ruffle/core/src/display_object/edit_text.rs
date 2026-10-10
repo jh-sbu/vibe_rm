@@ -244,6 +244,20 @@ impl EditTextData<'_> {
     }
 }
 
+/// Scaleform's translation of a field whose text (HTML or not, a trailing
+/// paragraph break aside) is a `$KEY`, keeping its format.
+fn translate_spans(spans: &mut FormatSpans, context: &UpdateContext<'_>) {
+    let text = spans.text();
+    let mut end = text.len();
+    while end > 0 && matches!(text.get(end - 1), Some(0x0A | 0x0D)) {
+        end -= 1;
+    }
+    if let Some(t) = context.library.translate(&text[..end]) {
+        let t = t.to_owned();
+        spans.replace_text(0, end, &t);
+    }
+}
+
 impl<'gc> EditText<'gc> {
     const ANY_NEWLINE: [char; 2] = ['\n', '\r'];
 
@@ -279,6 +293,8 @@ impl<'gc> EditText<'gc> {
         } else {
             FormatSpans::from_text(text.into_owned(), default_format)
         };
+
+        translate_spans(&mut text_spans, context);
 
         if swf_tag.is_password() {
             text_spans.hide_text();
@@ -441,6 +457,8 @@ impl<'gc> EditText<'gc> {
     }
 
     pub fn set_text(self, text: &WStr, context: &mut UpdateContext<'gc>) {
+        let translated = context.library.translate(text).map(|t| t.to_owned());
+        let text = translated.as_deref().unwrap_or(text);
         if self.text() == text {
             // Note: this check not only prevents text relayout,
             // but it also has observable effects, because text
@@ -487,6 +505,7 @@ impl<'gc> EditText<'gc> {
 
         if self.is_effectively_html() {
             self.0.parse_html(text);
+            translate_spans(&mut self.0.text_spans.borrow_mut(), context);
             self.relayout(context);
         } else {
             self.set_text(text, context);
