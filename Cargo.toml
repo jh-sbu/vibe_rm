@@ -1,5 +1,7 @@
 [workspace]
 members = ["crates/*"]
+# Workspaces of their own (vendored Ruffle, the SWF spike's harness).
+exclude = ["vendor", "spike"]
 resolver = "3"
 
 [workspace.package]
@@ -25,6 +27,9 @@ nif = { path = "crates/nif", package = "vrm-nif" }
 vfs = { path = "crates/vfs", package = "vrm-vfs" }
 havok = { path = "crates/havok", package = "vrm-havok" }
 papyrus = { path = "crates/papyrus", package = "vrm-papyrus" }
+ui_swf = { path = "crates/ui-swf", package = "vrm-ui-swf" }
+wgpu = "30"
+winit = "0.30"
 
 [package]
 name = "vibe_rm"
