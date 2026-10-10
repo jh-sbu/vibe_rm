@@ -281,6 +281,15 @@ impl TextureTarget {
         })
     }
 
+    /// A target to draw into and sample from, without the buffer `new` adds to
+    /// read every frame back to the CPU (`capture_frame`): a host compositing
+    /// the texture itself has no use for that copy.
+    pub fn new_without_readback(device: &wgpu::Device, size: (u32, u32)) -> Result<Self, Error> {
+        let mut target = Self::new(device, size)?;
+        target.buffer = None;
+        Ok(target)
+    }
+
     pub fn get_texture(&self) -> wgpu::Texture {
         self.texture.clone()
     }
@@ -294,8 +303,13 @@ impl RenderTarget for TextureTarget {
     type Frame = TextureTargetFrame;
 
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
-        *self =
-            TextureTarget::new(device, (width, height)).expect("Unable to resize texture target");
+        let size = (width, height);
+        *self = if self.buffer.is_some() {
+            TextureTarget::new(device, size)
+        } else {
+            TextureTarget::new_without_readback(device, size)
+        }
+        .expect("Unable to resize texture target");
     }
 
     fn format(&self) -> wgpu::TextureFormat {
