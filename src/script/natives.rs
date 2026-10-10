@@ -23,6 +23,14 @@ fn form_arg(args: &[Value], i: usize) -> Option<FormId> {
     args.get(i).and_then(|a| a.as_form()).map(FormId)
 }
 
+/// The active magic effect a method runs on.
+fn effect_of(this: Option<&Value>) -> Option<u64> {
+    match this {
+        Some(Value::Object(ObjectId::Effect(id), _)) => Some(*id),
+        _ => None,
+    }
+}
+
 pub fn call(
     e: &mut Engine,
     class: &str,
@@ -247,7 +255,9 @@ pub fn call(
         ("form", "registerforsingleupdate")
         | ("form", "registerforupdate")
         | ("alias", "registerforsingleupdate")
-        | ("alias", "registerforupdate") => {
+        | ("alias", "registerforupdate")
+        | ("activemagiceffect", "registerforsingleupdate")
+        | ("activemagiceffect", "registerforupdate") => {
             if let Some(t) = this.and_then(|t| t.as_object()) {
                 let secs = arg(0).as_float() as f64;
                 let script = this
@@ -273,7 +283,10 @@ pub fn call(
             }
             none()
         }
-        ("form", "registerforsingleupdategametime") | ("form", "registerforupdategametime") => {
+        ("form", "registerforsingleupdategametime")
+        | ("form", "registerforupdategametime")
+        | ("activemagiceffect", "registerforsingleupdategametime")
+        | ("activemagiceffect", "registerforupdategametime") => {
             if let Some(t) = this.and_then(|t| t.as_object()) {
                 let hours = arg(0).as_float() as f64;
                 let script = this
@@ -301,7 +314,9 @@ pub fn call(
         }
         ("form", "unregisterforupdate")
         | ("form", "unregisterforupdategametime")
-        | ("alias", "unregisterforupdate") => {
+        | ("alias", "unregisterforupdate")
+        | ("activemagiceffect", "unregisterforupdate")
+        | ("activemagiceffect", "unregisterforupdategametime") => {
             if let Some(t) = this.and_then(|t| t.as_object()) {
                 let ev = if func.ends_with("gametime") {
                     "OnUpdateGameTime"
@@ -805,6 +820,163 @@ pub fn call(
             none()
         }
         ("actor", "getlevel") => v(Value::Int(me.map_or(1, |a| e.actor_level(a)))),
+        // Magic (`crate::magic`).
+        ("actor", "addspell") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(s)) => {
+                let added = e.add_spell(a, s);
+                // abVerbose (default true): "<spell> added" for the player.
+                if added
+                    && a == crate::engine::PLAYER_REF
+                    && args.get(1).is_none_or(|x| x.as_bool())
+                {
+                    let name = e.magic_item(s).map(|m| m.name.clone()).unwrap_or_default();
+                    let fmt = e
+                        .gmst_string("sSpellAdded")
+                        .unwrap_or_else(|| "Spell added".into());
+                    e.scripts.notify(format!("{fmt}: {name}"));
+                }
+                added
+            }
+            _ => false,
+        })),
+        ("actor", "removespell") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(s)) => e.remove_spell(a, s),
+            _ => false,
+        })),
+        ("actor", "hasspell") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(s)) => e.has_spell(a, s),
+            _ => false,
+        })),
+        ("actor", "dispelspell") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(s)) => {
+                let had = e.is_spell_target(a, s);
+                e.dispel(a, |x| x.item == s);
+                had
+            }
+            _ => false,
+        })),
+        ("actor", "dispelallspells") => {
+            // Not abilities or diseases: what was cast on the actor.
+            if let Some(a) = me {
+                let lasting: Vec<FormId> = e
+                    .magic
+                    .effects
+                    .iter()
+                    .filter(|x| x.target == a && x.duration.is_finite())
+                    .map(|x| x.item)
+                    .collect();
+                e.dispel(a, |x| lasting.contains(&x.item));
+            }
+            none()
+        }
+        ("actor", "hasmagiceffect") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(m)) => e.has_magic_effect(a, m),
+            _ => false,
+        })),
+        ("actor", "hasmagiceffectwithkeyword") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(k)) => e.has_magic_effect_keyword(a, k),
+            _ => false,
+        })),
+        ("actor", "docombatspellapply") => {
+            if let (Some(a), Some(s), Some(t)) = (me, form_arg(args, 0), form_arg(args, 1)) {
+                e.apply_item(s, Some(a), t);
+            }
+            none()
+        }
+        ("actor", "equipitem") | ("actor", "unequipitem") => {
+            if let (Some(a), Some(item)) = (me, form_arg(args, 0)) {
+                let on = func == "equipitem";
+                let r = if on && e.magic_item(item).is_some() {
+                    e.consume(a, item)
+                } else {
+                    e.equip_item(a, item, on)
+                };
+                if let Err(err) = r {
+                    log::debug!("{func} {item} on {a}: {err}");
+                }
+            }
+            none()
+        }
+        // Spell.Cast(akSource, akTarget): lands on the target, else the caster.
+        // RemoteCast(akSource, akBlameActor, akTarget).
+        ("spell", "cast")
+        | ("spell", "remotecast")
+        | ("scroll", "cast")
+        | ("enchantment", "cast") => {
+            let source = form_arg(args, 0);
+            let (blame, target) = if func == "remotecast" {
+                (form_arg(args, 1).or(source), form_arg(args, 2))
+            } else {
+                (source, form_arg(args, 1))
+            };
+            if let (Some(s), Some(t)) = (me, target.or(source)) {
+                e.apply_item(s, blame, t);
+            }
+            none()
+        }
+        ("spell", "ishostile") | ("potion", "ishostile") | ("enchantment", "ishostile") => v(
+            Value::Bool(me.and_then(|s| e.magic_item(s)).is_some_and(|m| {
+                m.effects.iter().any(|x| {
+                    e.magic_effect(x.effect)
+                        .is_some_and(|f| f.has(crate::magic::flags::HOSTILE))
+                })
+            })),
+        ),
+        ("potion", "isfood") => v(Value::Bool(
+            me.and_then(|s| e.magic_item(s))
+                .is_some_and(|m| m.flags & 0x2 != 0),
+        )),
+        ("potion", "ispoison") => v(Value::Bool(
+            me.and_then(|s| e.magic_item(s))
+                .is_some_and(|m| m.spell_type == crate::magic::spell_type::POISON),
+        )),
+        ("magiceffect", "getassociatedskill") => v(Value::str(
+            me.and_then(|m| e.magic_effect(m))
+                .and_then(|m| m.skill)
+                .and_then(esp::actor_value::name)
+                .unwrap_or(""),
+        )),
+        ("activemagiceffect", "gettargetactor") | ("activemagiceffect", "getcasteractor") => {
+            let x = effect_of(this).and_then(|id| e.active_effect(id));
+            let who = x.and_then(|x| {
+                if func == "gettargetactor" {
+                    Some(x.target)
+                } else {
+                    x.caster
+                }
+            });
+            v(who.map_or(Value::None, |w| e.object_value(w)))
+        }
+        ("activemagiceffect", "getbaseobject") => v(effect_of(this)
+            .and_then(|id| e.active_effect(id))
+            .map_or(Value::None, |x| e.object_value(x.effect))),
+        ("activemagiceffect", "getmagnitude") => v(Value::Float(
+            effect_of(this)
+                .and_then(|id| e.active_effect(id))
+                .map_or(0.0, |x| x.magnitude),
+        )),
+        ("activemagiceffect", "getduration") => v(Value::Float(
+            effect_of(this)
+                .and_then(|id| e.active_effect(id))
+                .map_or(0.0, |x| {
+                    if x.duration.is_finite() {
+                        x.duration
+                    } else {
+                        0.0
+                    }
+                }),
+        )),
+        ("activemagiceffect", "gettimeelapsed") => v(Value::Float(
+            effect_of(this)
+                .and_then(|id| e.active_effect(id))
+                .map_or(0.0, |x| x.elapsed),
+        )),
+        ("activemagiceffect", "dispel") => {
+            if let Some(id) = effect_of(this) {
+                e.dispel_effect(id);
+            }
+            none()
+        }
         // Perks (`crate::perks`).
         ("actor", "addperk") => {
             if let (Some(a), Some(p)) = (me, form_arg(args, 0)) {

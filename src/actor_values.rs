@@ -2,7 +2,8 @@
 //! share.
 //!
 //! An actor value is its base (from the records, unless a script set it) plus a
-//! permanent modifier (`ModActorValue`, `ForceActorValue`) and the damage it has
+//! permanent modifier (`ModActorValue`, `ForceActorValue`), a temporary one
+//! (magic effects while they last: `crate::magic`) and the damage it has
 //! taken (`DamageActorValue`, healed by `RestoreActorValue`). Loaded actors'
 //! health and stamina live with their AI (combat spends and regenerates them), so
 //! for those the current value is the live one and the store keeps their maximum;
@@ -24,6 +25,8 @@ pub struct Modifiers {
     /// Set by `SetActorValue`, in place of the records' base.
     pub base: Option<f32>,
     pub permanent: f32,
+    /// Magic effects' while they last (fortify, weakness, abilities).
+    pub temporary: f32,
     /// Damage taken (never above 0).
     pub damage: f32,
 }
@@ -93,9 +96,14 @@ impl Engine {
             .unwrap_or_else(|| self.av_record_base(actor, index))
     }
 
-    /// The most it can be (`GetPermanentActorValue`): the base and the permanent
-    /// modifier.
+    /// The most it can be: the base and the permanent and temporary modifiers.
     pub fn av_max(&self, actor: FormId, index: u32) -> f32 {
+        let m = self.av_mods(actor, index);
+        self.av_base(actor, index) + m.permanent + m.temporary
+    }
+
+    /// `GetPermanentActorValue`: the base and the permanent modifier.
+    pub fn av_permanent(&self, actor: FormId, index: u32) -> f32 {
         self.av_base(actor, index) + self.av_mods(actor, index).permanent
     }
 
@@ -156,6 +164,18 @@ impl Engine {
             .entry((actor, index))
             .or_default()
             .permanent += delta;
+        self.actor_value_changed(actor, index, before);
+    }
+
+    /// A magic effect's change to the most it can be, and what it is now, until
+    /// taken back with the opposite `delta`.
+    pub fn mod_temporary_av(&mut self, actor: FormId, index: u32, delta: f32) {
+        let before = self.av_max(actor, index);
+        self.scripts
+            .actor_values
+            .entry((actor, index))
+            .or_default()
+            .temporary += delta;
         self.actor_value_changed(actor, index, before);
     }
 
@@ -286,12 +306,13 @@ impl Engine {
     pub fn describe_actor_value(&self, actor: FormId, index: u32) -> String {
         let m = self.av_mods(actor, index);
         format!(
-            "{} {:.2} (base {:.2}{}, max {:.2}, damage {:.2})",
+            "{} {:.2} (base {:.2}{}, max {:.2}, magic {:+.2}, damage {:.2})",
             av::name(index).unwrap_or("?"),
             self.actor_value(actor, index),
             self.av_base(actor, index),
             if m.base.is_some() { " set" } else { "" },
             self.av_max(actor, index),
+            m.temporary,
             m.damage
         )
     }

@@ -68,10 +68,12 @@ perks`).
   description); nothing undoes it on removal.
 - **Buying**: one perk point per rank, if the rank's conditions pass on the
   player. No refunds, no "Legendary" reset.
-- **Not done**: ability sections (no magic), entry points without their
+- **Ability sections** are spells the owner knows: constant ones take effect
+  (`known_gaps/magic.md`).
+- **Not done**: entry points without their
   systems: critical hits (1, 2), Calculate Weapon Damage (0), barter (8, 60),
   activate choices (14: Vampire Feed, cannibalism), spells applied on hits,
-  bashes and swings (51, 52, 67), magic (29, 30, 38, 41...), crafting (66, 76,
+  bashes and swings (51, 52, 67), magic but Mod Spell Magnitude and Mod Incoming Spell Magnitude (30, 38...), crafting (66, 76,
   77...), Mod Skill Use (22), carry weight (10), falling damage (58), armor
   weight (32), staggers (33, 34), recovering arrows (21), bow zoom (20),
   Ignore Running During Detection (15), the lockpick starting arc and key

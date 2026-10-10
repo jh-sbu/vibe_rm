@@ -365,7 +365,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Actor values (`actor_values`).
         14 => Some(e.actor_value(subject?, c.p1)), // GetActorValue
         277 => Some(e.av_base(subject?, c.p1)),    // GetBaseActorValue
-        494 => Some(e.av_max(subject?, c.p1)),     // GetPermanentActorValue
+        494 => Some(e.av_permanent(subject?, c.p1)), // GetPermanentActorValue
         640 => Some(e.actor_value_fraction(subject?, c.p1)), // GetActorValuePercent
         365 => b(ctx.idle.and_then(|q| q.child).unwrap_or_else(|| {
             subj_base
@@ -566,7 +566,25 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         682 => b(subject.is_some_and(|s| e.worn_with_keyword(s, p1) > 0)), // WornHasKeyword
         722 => Some(subject.map_or(0, |s| e.worn_with_keyword(s, p1)) as f32), // WornApparelHasKeywordCount
         569 => b(subject.is_some_and(|s| e.is_blocking(s))),                   // IsBlocking
-        214 | 699 => b(false), // HasMagicEffect, HasMagicEffectKeyword: no magic yet
+        // Magic (`crate::magic`).
+        214 => b(subject.is_some_and(|s| e.has_magic_effect(s, p1))), // HasMagicEffect
+        699 => b(subject.is_some_and(|s| e.has_magic_effect_keyword(s, p1))), // HasMagicEffectKeyword
+        264 => b(subject.is_some_and(|s| e.has_spell(s, p1))),                // HasSpell
+        223 => b(subject.is_some_and(|s| e.is_spell_target(s, p1))),          // IsSpellTarget
+        // EPMagic_SpellHasKeyword / SpellHasSkill: of the spell a perk entry
+        // point asks about (its effects').
+        693 | 696 => b(subject.and_then(|s| e.magic_item(s)).is_some_and(|m| {
+            m.effects.iter().any(|x| {
+                e.magic_effect(x.effect).is_some_and(|f| {
+                    if c.func == 693 {
+                        f.keywords.contains(&p1)
+                    } else {
+                        f.skill == Some(c.p1)
+                    }
+                })
+            })
+        })),
+        627 | 632 => b(false), // IsDualCasting, IsCasting: nobody casts by hand yet
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))), // GetIsCurrentPackage
         579 => Some(0.0),      // GetEquippedShout
         463 => b(e.grabbed_ref().is_some_and(|g| g == p1)), // IsPlayerGrabbedRef

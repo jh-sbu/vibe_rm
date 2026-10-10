@@ -249,6 +249,28 @@ game each piece unlocks.
   functions). Console `perks`, `addperk`, `removeperk`, `hasperk`, `perkep`,
   `perkpoints`, `skills open <skill>`; vrm-tool `perks`. Open questions:
   `known_gaps/perks.md`
+- Magic, first part (effects on actors): magic effects and the items carrying
+  them (spells, enchantments, potions, ingredients, scrolls) read; active
+  effects on actors for their duration: value modifiers held (abilities,
+  Recover: fortify, resist, weakness), per second (damage and restoration
+  over time) or at once (Firebolt, healing potions), detrimental ones taking
+  away; peak value modifiers not stacking; dual value modifiers, absorb, cure
+  disease / poison / paralysis, invisibility (unseen in detection), stagger;
+  resistances and magic resistance; temporary modifiers in the actor value
+  store. Abilities and diseases from records, races, perks and `AddSpell`,
+  their conditions looked at again every second; worn things' constant
+  enchantments, weapon enchantments on each blow. Effect scripts on
+  `ActiveMagicEffect` (`OnEffectStart` / `OnEffectFinish`, the target's
+  events); hostile spells landing send `OnHit` and start a fight. Muffle
+  scales movement noise; magic armor adds to the armor rating. Potions,
+  food and ingredients used from the inventory. Conditions `HasMagicEffect`,
+  `HasMagicEffectKeyword`, `HasSpell`, `IsSpellTarget`,
+  `EPMagic_SpellHasKeyword` / `SpellHasSkill`; Papyrus `AddSpell`,
+  `RemoveSpell`, `HasSpell`, `DispelSpell`, `DispelAllSpells`,
+  `HasMagicEffect(WithKeyword)`, `DoCombatSpellApply`, `EquipItem` /
+  `UnequipItem`, `Spell.Cast` / `RemoteCast`, `ActiveMagicEffect`'s getters,
+  `Dispel` and updates. Console `effects`, `addspell`, `removespell`, `cast`,
+  `dispelallspells`; vrm-tool `magic`. Open questions: `known_gaps/magic.md`
 - Player controls from scripts: `DisablePlayerControls` / `EnablePlayerControls`
   (Papyrus's defaults for missing arguments) stop the player moving, fighting
   (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
@@ -690,10 +712,9 @@ game each piece unlocks.
    - Story Manager state and relationship ranks in saves
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
-   - Muffled Movement, Silence, Quiet Casting, Shadow Warrior (abilities and
-     perks needing magic: Stealth is done); muffle, invisibility and
-     blindness, and spells and shouts as action sounds, with magic (the
-     formula's slots for them are in `crate::detection`)
+   - Quiet Casting, Shadow Warrior (with casting); blindness, and spells
+     and shouts as action sounds (the formula's slots for them are in
+     `crate::detection`)
    - Weapon and impact sounds (action sounds, detection events): need the
      `iSoundLevel*` values, which no public source gives; weapons are silent
      until then
@@ -715,9 +736,12 @@ game each piece unlocks.
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
-   animations), magic (with detection's muffle, invisibility, blindness and
-   spell / shout sounds), shouts, perks (see Done: ability sections and the
-   entry points waiting on magic, crafting, barter, critical hits, attack types;
+   animations), magic (see Done; next: casting by hand for the player and NPCs
+   with magicka, projectiles, concentration, areas and skill gain, NPCs'
+   combat magic, effect visuals and sounds, the other archetypes: calm,
+   frenzy, fear, summons, bound weapons, light, paralysis; enchantment charges,
+   poisons; `known_gaps/magic.md`), shouts, perks (see Done: the entry points
+   waiting on casting, crafting, barter, critical hits, attack types;
    `known_gaps/perks.md`), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the

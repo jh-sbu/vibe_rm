@@ -31,7 +31,8 @@ Early but already visual:
 | Papyrus VM, conditions, quests, dialogue, HUD, console, audio, music | in progress |
 | Inventories (NPC items, outfits, containers), sheathed weapons and shields | in progress |
 | Combat (melee between NPCs, creatures and the player), ragdoll deaths; skills, leveling and perk trees | in progress |
-| Magic, saves | planned |
+| Magic: effects on actors, abilities, potions, enchantments, effect scripts (casting by hand to come) | in progress |
+| Saves | planned |
 
 ## Building and running
 

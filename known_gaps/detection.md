@@ -119,8 +119,10 @@ stealth points.
   `fSneakActionMult` (unused without action sounds), `fSneakFlyingDistanceMult`,
   `fSneakAmbushNonTargetMod`: their roles are unknown.
 - Perks: Stealth's "harder to detect" cuts the observer's skill factor
-  (`known_gaps/perks.md`); Muffled Movement and Silence are abilities (magic
-  effects: muffle), not done, nor invisibility or blindness.
+  (`known_gaps/perks.md`); muffle (Muffled Movement, Silence, the Muffle
+  spell) scales movement noise and invisibility hides the target from sight
+  (`known_gaps/magic.md`). Not blindness, nor spells and shouts as action
+  sounds.
 - The light level follows the weather's colours as the renderer uses them:
   outdoors at midnight (moonlight and night ambient) comes out at about 60% of
   noon in Riverwood (78 against 127). Whether the game's is that bright at

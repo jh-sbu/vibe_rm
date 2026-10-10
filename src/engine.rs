@@ -179,6 +179,8 @@ pub struct Engine {
     pub skills: crate::skills::Skills,
     /// Perks added and removed, and the perk records read (`crate::perks`).
     pub perks: crate::perks::Perks,
+    /// Active magic effects and spells added and removed (`crate::magic`).
+    pub magic: crate::magic::Magic,
     /// Message boxes, help messages and banners.
     pub messages: crate::messages::Messages,
     /// References by the enable parent they follow (`XESP`).
@@ -313,6 +315,7 @@ impl Engine {
             lockpick: None,
             skills: Default::default(),
             perks: Default::default(),
+            magic: Default::default(),
             messages: Default::default(),
             barks: Default::default(),
             scenes: Default::default(),
@@ -2220,6 +2223,7 @@ impl Engine {
         self.update_story();
         self.update_projectiles(dt);
         self.update_skills(dt);
+        self.update_magic(dt);
         self.draw_impact_effects();
         self.update_held_lights();
         self.update_animated(dt);

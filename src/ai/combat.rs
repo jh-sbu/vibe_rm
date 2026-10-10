@@ -1070,7 +1070,7 @@ impl Engine {
     }
 
     /// In a faction that tracks crime (`DATA` flag 0x40).
-    fn law_abiding(&self, factions: &[FormId]) -> bool {
+    pub(crate) fn law_abiding(&self, factions: &[FormId]) -> bool {
         factions.iter().any(|&f| {
             self.lo
                 .get(f)
@@ -1523,6 +1523,11 @@ impl Engine {
             }
         }
         self.damage(target, damage, Some(attacker), stagger);
+        // An enchanted weapon's (a bow's, for a shot) enchantment lands with
+        // the blow.
+        if let Some(ench) = weapon.and_then(|w| self.item_enchantment(w)) {
+            self.apply_item(ench, Some(attacker), target);
+        }
     }
 
     /// A blow or shot is a sneak attack when the attacker is sneaking and the
@@ -2148,7 +2153,16 @@ impl Engine {
         let perk = |piece: FormId, rating: f32| {
             self.perk_entry_point(ep::MOD_ARMOR_RATING, actor, &[Some(piece)], rating)
         };
-        protection(&self.lo, &set, worn, skills, actor == PLAYER_REF, &perk)
+        let mut p = protection(&self.lo, &set, worn, skills, actor == PLAYER_REF, &perk);
+        // Magic armor (Oakflesh..., the full set bonuses) adds to the rating.
+        let magic = self.actor_value(actor, esp::actor_value::DAMAGE_RESIST);
+        if magic != 0.0 {
+            p.rating += magic;
+            p.reduction = ((p.rating * set.scaling + p.pieces as f32 * set.per_piece).min(set.max)
+                / 100.0)
+                .clamp(0.0, 1.0);
+        }
+        p
     }
 
     /// Physical damage after the target's armor, `penetration` of what it

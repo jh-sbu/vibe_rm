@@ -2,7 +2,7 @@
 //! names scripts and the console use for them.
 
 /// Names by index, as the Creation Kit and Papyrus spell them.
-pub const NAMES: [&str; 96] = [
+pub const NAMES: [&str; 164] = [
     "Aggression",
     "Confidence",
     "Energy",
@@ -99,6 +99,74 @@ pub const NAMES: [&str; 96] = [
     "BypassVendorStolenCheck",
     "BypassVendorKeywordCheck",
     "WaitingForPlayer",
+    "OneHandedMod",
+    "TwoHandedMod",
+    "MarksmanMod",
+    "BlockMod",
+    "SmithingMod",
+    "HeavyArmorMod",
+    "LightArmorMod",
+    "PickpocketMod",
+    "LockpickingMod",
+    "SneakMod",
+    "AlchemyMod",
+    "SpeechcraftMod",
+    "AlterationMod",
+    "ConjurationMod",
+    "DestructionMod",
+    "IllusionMod",
+    "RestorationMod",
+    "EnchantingMod",
+    "OneHandedSkillAdvance",
+    "TwoHandedSkillAdvance",
+    "MarksmanSkillAdvance",
+    "BlockSkillAdvance",
+    "SmithingSkillAdvance",
+    "HeavyArmorSkillAdvance",
+    "LightArmorSkillAdvance",
+    "PickpocketSkillAdvance",
+    "LockpickingSkillAdvance",
+    "SneakSkillAdvance",
+    "AlchemySkillAdvance",
+    "SpeechcraftSkillAdvance",
+    "AlterationSkillAdvance",
+    "ConjurationSkillAdvance",
+    "DestructionSkillAdvance",
+    "IllusionSkillAdvance",
+    "RestorationSkillAdvance",
+    "EnchantingSkillAdvance",
+    "LeftWeaponSpeedMult",
+    "DragonSouls",
+    "CombatHealthRegenMult",
+    "OneHandedPowerMod",
+    "TwoHandedPowerMod",
+    "MarksmanPowerMod",
+    "BlockPowerMod",
+    "SmithingPowerMod",
+    "HeavyArmorPowerMod",
+    "LightArmorPowerMod",
+    "PickpocketPowerMod",
+    "LockpickingPowerMod",
+    "SneakPowerMod",
+    "AlchemyPowerMod",
+    "SpeechcraftPowerMod",
+    "AlterationPowerMod",
+    "ConjurationPowerMod",
+    "DestructionPowerMod",
+    "IllusionPowerMod",
+    "RestorationPowerMod",
+    "EnchantingPowerMod",
+    "DragonRend",
+    "AttackDamageMult",
+    "HealRateMult",
+    "MagickaRateMult",
+    "StaminaRateMult",
+    "WerewolfPerks",
+    "VampirePerks",
+    "GrabActorOffset",
+    "Grabbed",
+    "DEPRECATED05",
+    "ReflectDamage",
 ];
 
 pub const AGGRESSION: u32 = 0;
@@ -126,6 +194,16 @@ pub const STAMINA_RATE: u32 = 29;
 pub const SPEED_MULT: u32 = 30;
 pub const CARRY_WEIGHT: u32 = 32;
 pub const MASS: u32 = 36;
+pub const DAMAGE_RESIST: u32 = 39;
+pub const FIRE_RESIST: u32 = 41;
+pub const ELECTRIC_RESIST: u32 = 42;
+pub const FROST_RESIST: u32 = 43;
+pub const MAGIC_RESIST: u32 = 44;
+pub const PARALYSIS: u32 = 53;
+pub const INVISIBILITY: u32 = 54;
+pub const MOVEMENT_NOISE_MULT: u32 = 92;
+/// `OneHandedMod`: each skill's modifier (`Fortify <skill>`) from here, in skill order.
+pub const FIRST_SKILL_MOD: u32 = 96;
 
 /// The name of an actor value, if it is one of the known ones.
 pub fn name(index: u32) -> Option<&'static str> {
@@ -163,5 +241,8 @@ mod tests {
         assert_eq!(super::index("variable05"), Some(72));
         assert_eq!(super::name(super::CARRY_WEIGHT), Some("CarryWeight"));
         assert_eq!(super::name(95), Some("WaitingForPlayer"));
+        assert_eq!(super::name(105), Some("SneakMod"));
+        assert_eq!(super::name(152), Some("EnchantingPowerMod"));
+        assert_eq!(super::name(163), Some("ReflectDamage"));
     }
 }

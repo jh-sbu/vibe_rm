@@ -98,6 +98,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "player.advlevel / levelup <health|magicka|stamina>   earn a level up / take one".into(),
             "[ref.]getlevel        an actor's level".into(),
             "[ref.]perks [all]     an actor's perks (all: with their entry points)".into(),
+            "[ref.]effects / dispelallspells   magic effects on an actor / end those cast on it".into(),
+            "[ref.]addspell / removespell <spell>   give or take a spell (abilities take effect)".into(),
+            "[ref.]cast <spell> [target | player]   the ref's spell lands on the target (else itself)".into(),
+            "player.equipitem <potion>   drink a potion, eat food or an ingredient".into(),
             "[ref.]addperk / removeperk / hasperk <perk>   give, take or check a perk".into(),
             "[ref.]perkep <entry point> <value> [subject...]   a value through the ref's perks (tabs 1, 2...)".into(),
             "perkpoints [n]        the player's perk points (or set them)".into(),
@@ -702,8 +706,13 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 33] = [
+const ITEM_COMMANDS: [&str; 38] = [
     "drop",
+    "addspell",
+    "removespell",
+    "cast",
+    "effects",
+    "dispelallspells",
     "perkep",
     "addperk",
     "removeperk",
@@ -795,6 +804,49 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             vec![format!("{r} has {p}: {}", engine.has_perk(r, p))]
         }
         "perks" => engine.describe_perks(r, args.first() == Some(&"all")),
+        "addspell" | "removespell" => {
+            let Some(s) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec![format!("usage: [ref.]{cmd} <spell>")];
+            };
+            let done = if cmd == "addspell" {
+                engine.add_spell(r, s)
+            } else {
+                engine.remove_spell(r, s)
+            };
+            let mut out = vec![format!("{r} {cmd} {s}: {done}")];
+            out.extend(engine.describe_effects(r));
+            out
+        }
+        "cast" => {
+            // [ref.]cast <spell> [target]: the ref casts it on the target (itself).
+            let Some(s) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec!["usage: [ref.]cast <spell> [target | player]".into()];
+            };
+            let target = match args.get(1) {
+                Some(t) if t.eq_ignore_ascii_case("player") => crate::engine::PLAYER_REF,
+                Some(t) => match engine.resolve_form(t) {
+                    Some(t) => t,
+                    None => return vec![format!("no {t}")],
+                },
+                None => r,
+            };
+            if !engine.apply_item(s, Some(r), target) {
+                return vec![format!("{s} didn't land on {target}")];
+            }
+            engine.describe_effects(target)
+        }
+        "effects" => engine.describe_effects(r),
+        "dispelallspells" => {
+            let lasting: Vec<esp::FormId> = engine
+                .magic
+                .effects
+                .iter()
+                .filter(|x| x.target == r && x.duration.is_finite())
+                .map(|x| x.item)
+                .collect();
+            engine.dispel(r, |x| lasting.contains(&x.item));
+            engine.describe_effects(r)
+        }
         "perkep" => {
             let (Some(point), Some(value)) = (
                 args.first().and_then(|a| a.parse::<u8>().ok()),
@@ -922,6 +974,12 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                 return vec!["only the player's equipment can be changed for now".into()];
             }
             let on = cmd == "equipitem";
+            if on && engine.magic_item(item).is_some() {
+                return match engine.consume(r, item) {
+                    Ok(()) => engine.describe_effects(r),
+                    Err(e) => vec![e],
+                };
+            }
             match engine.equip_item(r, item, on) {
                 Ok(()) => {
                     let p = engine.protection(r);

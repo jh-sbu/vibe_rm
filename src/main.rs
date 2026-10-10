@@ -22,6 +22,7 @@ mod journal;
 mod locations;
 mod locks;
 mod loose;
+mod magic;
 mod messages;
 mod perks;
 mod physics;
