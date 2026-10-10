@@ -279,7 +279,9 @@ game each piece unlocks.
 - The player's body: their NPC record's race, sex and skin, what they have
   equipped (rebuilt when it changes) and a head of the race's default head parts
   and their own (`HEAD`, `PNAM`, extra parts); it runs the race's behaviour
-  graph from the player's movement (walking, running, sneaking, turning). A
+  graph from the player's movement (walking, running, sneaking, turning,
+  strafing and walking backwards by `Direction`, sprinting, jumping, falling
+  and landing). A
   third-person camera (F; the wheel zooms) stopping short of walls,
   `Game.ForceFirstPerson` / `ForceThirdPerson`; in first person the body only
   casts its shadow. Open questions: `known_gaps/player-body.md`
@@ -696,7 +698,8 @@ game each piece unlocks.
    - Objects' behaviour graphs (see Done): graph state in saves (kept across
      cell loads in memory)
    - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
-   - `Direction` (strafing), sprinting; character properties other than bone weights;
+   - NPCs strafing (`Direction`: see the player's body), sprinting; character
+     properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
      way events are chosen
    - Carry furniture (wood piles done, see Done): packages or sandboxing that
@@ -753,8 +756,8 @@ game each piece unlocks.
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
-   - The player's body (see Done): strafing, sprinting, jumping, drawing,
-     attacks and casting through the graph; first-person arms and weapons;
+   - The player's body (see Done): drawing, attacks and casting through the
+     graph; first-person arms and weapons;
      the head's morphs, tints and hair colour (with character creation)
    - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`;
      disabled fighting putting the weapon away, the POV type argument

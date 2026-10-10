@@ -33,6 +33,10 @@ pub struct PlayerBody {
     sneak_state: Option<f32>,
     moving: bool,
     sneaking: bool,
+    sprinting: bool,
+    /// Off the ground this long; whether the graph was told they fall (or jumped).
+    airborne: Option<f32>,
+    fell: bool,
 }
 
 fn wrap(a: f32) -> f32 {
@@ -80,6 +84,9 @@ impl Engine {
             sneak_state: None,
             moving: false,
             sneaking: false,
+            sprinting: false,
+            airborne: None,
+            fell: false,
         };
         let mut pose = skel.model_space(&skel.bind_locals());
         if let Some(project) = d
@@ -154,26 +161,29 @@ impl Engine {
         let feet = self.player_feet();
         let third = self.third_person;
         let yaw = self.camera.yaw;
-        let sneaking = self.player.sneaking;
-        let speed = if dt > 0.0 {
-            moved.truncate().length() / dt
-        } else {
-            0.0
-        };
+        let flat = moved.truncate();
         let walking = self.player.moving && !self.player.noclip;
+        let motion = Motion {
+            walking,
+            speed: if dt > 0.0 { flat.length() / dt } else { 0.0 },
+            heading: (flat.length_squared() > 1e-4).then(|| flat.x.atan2(flat.y)),
+            sneaking: self.player.sneaking,
+            sprinting: walking && self.player.sprinting,
+            jumped: self.player.jumped && !self.player.noclip,
+            grounded: self.player.grounded || self.player.noclip,
+        };
         let Some(body) = self.player_body.as_mut() else {
             return;
         };
         // In first person they face the view; in third person where they go.
         if !third {
             body.heading = yaw;
-        } else if walking && moved.truncate().length_squared() > 1e-4 {
-            let want = moved.x.atan2(moved.y);
+        } else if let Some(want) = motion.heading.filter(|_| walking) {
             let d = wrap(want - body.heading);
             let step = TURN_RATE * dt;
             body.heading = wrap(body.heading + d.clamp(-step, step));
         }
-        let pose = body.animate(dt, walking, speed, sneaking, &self.vfs, &mut self.anims);
+        let pose = body.animate(dt, &motion, &self.vfs, &mut self.anims);
         let transform = body.transform(feet);
         if let Some(inst) = self.scene.player.as_mut() {
             inst.transform = transform;
@@ -185,6 +195,23 @@ impl Engine {
     }
 }
 
+/// How the player moved this update, for the graph.
+struct Motion {
+    walking: bool,
+    /// Over the ground, units per second.
+    speed: f32,
+    /// Which way they went (clockwise from +Y), if they moved.
+    heading: Option<f32>,
+    sneaking: bool,
+    sprinting: bool,
+    /// Left the ground jumping this update.
+    jumped: bool,
+    grounded: bool,
+}
+
+/// How long off the ground, not having jumped, before they fall.
+const FALL_AFTER: f32 = 0.3;
+
 impl PlayerBody {
     fn transform(&self, feet: Vec3) -> Mat4 {
         Mat4::from_scale_rotation_translation(
@@ -194,14 +221,27 @@ impl PlayerBody {
         )
     }
 
+    fn event(g: &mut GraphAnim, ev: &str) -> bool {
+        let took = g.send_event(ev);
+        log::debug!(
+            "player body: {ev}{}",
+            if took {
+                ""
+            } else {
+                " (the graph won't take it)"
+            }
+        );
+        took
+    }
+
     /// Drive the graph as the AI does an NPC's (`Speed`, `TurnDelta`,
-    /// `moveStart` / `moveStop`, sneaking) and run it.
+    /// `moveStart` / `moveStop`, sneaking), with the player's own: `Direction`
+    /// (where they go against where they face: strafing and walking backwards),
+    /// sprinting and jumping, falling and landing; and run it.
     fn animate(
         &mut self,
         dt: f32,
-        walking: bool,
-        speed: f32,
-        sneaking: bool,
+        m: &Motion,
         vfs: &vfs::Vfs,
         anims: &mut crate::world::animation::AnimationLibrary,
     ) -> Option<Vec<Mat4>> {
@@ -212,11 +252,15 @@ impl PlayerBody {
         };
         self.graph_heading = self.heading;
         let g = self.graph.as_mut()?;
-        if sneaking != self.sneaking {
-            g.send_event(if sneaking { "SneakStart" } else { "SneakStop" });
-            self.sneaking = sneaking;
+        if m.sneaking != self.sneaking {
+            g.send_event(if m.sneaking {
+                "SneakStart"
+            } else {
+                "SneakStop"
+            });
+            self.sneaking = m.sneaking;
         }
-        let state = if sneaking {
+        let state = if m.sneaking {
             self.sneak_state.or(self.state)
         } else {
             self.state
@@ -224,7 +268,13 @@ impl PlayerBody {
         if let Some(s) = state {
             g.set_variable("iState", s);
         }
-        g.set_variable("Speed", if walking { speed } else { 0.0 });
+        g.set_variable("Speed", if m.walking { m.speed } else { 0.0 });
+        // A fraction of a turn clockwise from ahead, as the locomotion blends
+        // have it (0 forward, 0.25 right, 0.5 back, 0.75 left).
+        if let Some(h) = m.heading.filter(|_| m.walking) {
+            let d = wrap(h - self.heading) / std::f32::consts::TAU;
+            g.set_variable("Direction", d.rem_euclid(1.0));
+        }
         // Degrees per second, counter-clockwise positive as Havok has it.
         g.set_variable(
             "TurnDelta",
@@ -234,21 +284,56 @@ impl PlayerBody {
                 0.0
             },
         );
-        if walking != self.moving {
-            let ev = if walking { "moveStart" } else { "moveStop" };
-            let took = g.send_event(ev);
-            log::debug!(
-                "player body: {ev}{}",
-                if took {
-                    ""
+        // Off the ground: a jump (standing or on the move) or, after a moment
+        // without one, a fall; back on it, the landing, after which the graph
+        // stands again until told they move.
+        if m.jumped && self.airborne.is_none() {
+            Self::event(
+                g,
+                if m.walking {
+                    "JumpDirectionalStart"
                 } else {
-                    " (the graph won't take it)"
-                }
+                    "JumpStandingStart"
+                },
             );
-            if walking {
-                g.send_event("SprintStop");
+            self.airborne = Some(0.0);
+            self.fell = true;
+        } else if let Some(t) = self.airborne.as_mut() {
+            *t += dt;
+            if m.grounded {
+                // Only a jump or a fall the graph knows of ends in a landing
+                // (not a step down a slope).
+                if self.fell {
+                    Self::event(
+                        g,
+                        if m.walking {
+                            "JumpLandDirectional"
+                        } else {
+                            "JumpLand"
+                        },
+                    );
+                    self.moving = false;
+                    self.sprinting = false;
+                }
+                self.airborne = None;
+            } else if !self.fell && *t >= FALL_AFTER {
+                Self::event(g, "JumpFall");
+                self.fell = true;
             }
-            self.moving = walking;
+        } else if !m.grounded {
+            self.airborne = Some(0.0);
+            self.fell = false;
+        }
+        if self.airborne.is_none() || !self.fell {
+            if m.walking != self.moving {
+                Self::event(g, if m.walking { "moveStart" } else { "moveStop" });
+                self.moving = m.walking;
+            }
+            let sprint = m.sprinting && m.walking;
+            if sprint != self.sprinting {
+                Self::event(g, if sprint { "SprintStart" } else { "SprintStop" });
+                self.sprinting = sprint;
+            }
         }
         Some(g.update(dt, vfs, anims, &self.skeleton).pose)
     }

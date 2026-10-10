@@ -86,6 +86,7 @@ pub struct Player {
     /// Moving over the ground this update, and running (or sprinting) while at it.
     pub moving: bool,
     pub running: bool,
+    pub sprinting: bool,
 }
 
 pub const WALK_SPEED: f32 = 110.0;
@@ -110,6 +111,7 @@ impl Player {
             jumped: false,
             moving: false,
             running: false,
+            sprinting: false,
         }
     }
 

@@ -12,7 +12,17 @@ behaviour project for its sex, what the player has equipped (rebuilt when that
 changes) and a head built from head parts. It runs its graph as NPCs do,
 driven by the player's movement (`Speed`, `TurnDelta`, `moveStart` /
 `moveStop`, `SneakStart` / `SneakStop`, the movement type's `iState`), with
-`IsNPC` 0.
+`IsNPC` 0, and the player's own: `Direction` (where they go against where
+they face, a fraction of a turn clockwise: strafing and walking backwards),
+`SprintStart` / `SprintStop`, `JumpStandingStart` / `JumpDirectionalStart`
+(standing or on the move), `JumpFall` when off the ground 0.3 s without
+jumping, and `JumpLand` / `JumpLandDirectional`, after which `moveStart` is
+sent again (the graph stands after landing).
+
+The locomotion blends take `Direction` through their
+`BSCyclicBlendTransitionGenerator`'s `fBlendParameter`, the blender's own
+parameter being unbound; the runtime passes it on (as the member names
+suggest), not from a description of the class.
 
 ## Open
 
@@ -26,9 +36,11 @@ driven by the player's movement (`Speed`, `TurnDelta`, `moveStart` /
   first-person skeleton (`_1stperson/skeleton.nif`), arms and `1stperson*`
   armour and weapon models and its own behaviour graph. The third-person body
   casts its shadow in first person here; whether the game does is unconfirmed.
-- **Graph inputs still missing**: `Direction` (strafing and walking backwards:
-  in third person the body turns to face where it goes instead), sprinting
-  (`SprintStart`), jumping and falling, weapon drawing, attacks, blocking, bow
+- **Facing.** In first person the body faces the view and strafes; in third
+  person it turns to face where it goes (`Direction` then near 0). Whether
+  the game's third-person body walks backwards or turns round with the
+  weapon sheathed is unconfirmed.
+- **Graph inputs still missing**: weapon drawing, attacks, blocking, bow
   draws and casting, so the body plays none of these. Its footstep sounds still
   come from the first-person stride, not the graph's footstep events. Foot IK
   and head tracking are off.

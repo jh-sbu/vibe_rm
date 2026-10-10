@@ -163,8 +163,10 @@ pub struct Engine {
     pub test_camera: Option<(Vec3, f32, f32)>,
     /// A jump asked for from the console, taken once the player is on the ground.
     pub test_jump: bool,
-    /// Frames left of the player walking forward (console `pwalk`).
+    /// Frames left of the player walking (console `pwalk`).
     pub test_walk: u32,
+    /// How `pwalk` moves them (forward / right, run, sprint).
+    pub test_walk_input: crate::player::MoveInput,
     pub player_died_at: Option<f64>,
     /// Lines NPCs say by themselves (greetings, idle chatter).
     pub barks: crate::dialogue::barks::Barks,
@@ -352,6 +354,7 @@ impl Engine {
             test_camera: None,
             test_jump: false,
             test_walk: 0,
+            test_walk_input: Default::default(),
             player_health: PLAYER_HEALTH,
             player_died_at: None,
             npc_refs: Default::default(),
@@ -2210,7 +2213,7 @@ impl Engine {
         }
         if self.test_walk > 0 {
             self.test_walk -= 1;
-            input.forward = 1.0;
+            input = self.test_walk_input;
         }
         let off = self.disabled_controls;
         if off.movement {
@@ -2278,6 +2281,7 @@ impl Engine {
         let stride = (self.player.position - before).truncate().length();
         self.player.moving = dt > 0.0 && stride / dt > 1.0;
         self.player.running = self.player.moving && (run || sprint);
+        self.player.sprinting = self.player.moving && sprint;
         self.update_player_footsteps(dt, stride, run, sprint);
         self.update_player_body(self.player.position - before, dt);
         self.camera.position = self.player.eye();

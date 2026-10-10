@@ -73,7 +73,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "pbash                 the player bashes (attacking with the guard up)".into(),
             "pshoot [secs]         the player looses an arrow drawn so long (default full)".into(),
             "psneak / pjump        the player sneaks (toggle) / jumps when next on the ground".into(),
-            "pwalk [frames]        the player walks forward (default 60 frames; tcl first under --wait)".into(),
+            "pwalk [frames] [forward|back|left|right...] [run|sprint]  the player walks (default forward, 60 frames; tcl first under --wait)".into(),
             "tcam x y z yaw pitch  hold the --wait camera there (degrees; yaw 0 = north)".into(),
             "stamina <ref|player> [n]  show or set stamina".into(),
             "probe [x y]           collision under the player (or x y) and per-cell colliders".into(),
@@ -536,7 +536,23 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         }
         "pwalk" => {
             engine.test_walk = args.first().and_then(|a| a.parse().ok()).unwrap_or(60);
-            vec![format!("player walks forward {} frames", engine.test_walk)]
+            let mut input = crate::player::MoveInput::default();
+            for a in args.iter().skip(1) {
+                match a.to_ascii_lowercase().as_str() {
+                    "forward" => input.forward += 1.0,
+                    "back" => input.forward -= 1.0,
+                    "right" => input.right += 1.0,
+                    "left" => input.right -= 1.0,
+                    "run" => input.run = true,
+                    "sprint" => input.sprint = true,
+                    _ => {}
+                }
+            }
+            if input.forward == 0.0 && input.right == 0.0 {
+                input.forward = 1.0;
+            }
+            engine.test_walk_input = input;
+            vec![format!("player walks {} frames", engine.test_walk)]
         }
         "pjump" => {
             engine.test_jump = true;
