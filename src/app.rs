@@ -591,6 +591,12 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.menu = Some(crate::items::Menu::Journal);
                             }
+                            if code == KeyCode::KeyK
+                                && !event.repeat
+                                && !s.engine.disabled_controls.menu
+                            {
+                                s.engine.menu = Some(crate::items::Menu::Skills);
+                            }
                             // Menus take the mouse.
                             if s.engine.menu_up() {
                                 if s.grabbed {

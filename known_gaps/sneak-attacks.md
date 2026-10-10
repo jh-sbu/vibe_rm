@@ -30,5 +30,4 @@ and the perk descriptions.
   scale isn't public.
 - **Not done**: perks' "Mod Sneak Attack Mult" entry point (Backstab 6x,
   Assassin's Blade 15x with daggers, Deadly Aim 3x), waiting on the perk
-  system; sneak skill gain (`fSneakAttackSkillUsageMelee`), waiting on skill
-  advancement.
+  system. Sneak skill gain: `known_gaps/skills.md`.

@@ -218,6 +218,21 @@ game each piece unlocks.
   (`fCombatSneak1HSwordMult`... 3x one-handed, 2x two-handed and unarmed; 2x
   bows), with "Sneak attack for 3.0X damage!" for the player and `OnHit`'s
   sneak flag set. Open questions: `known_gaps/sneak-attacks.md`
+- Skills and leveling: the player's skill uses earn XP by each skill's `AVSK`
+  (use mult and offset), skills go up at `improve mult x level ^ fSkillUseCurve
+  + offset` ("One-handed Increased to 21"), each level reached giving character
+  XP toward level ups ("Level up available."), taken in a skills menu (K) or
+  the console: +10 health, magicka or stamina (stamina +5 carry weight), a perk
+  point, all three restored. Uses: landed blows and shots (one-handed,
+  two-handed, archery by base damage), sneak attacks, blocking, the armor worn
+  when struck, picking locks and breaking picks, pickpocketing by value,
+  sneaking hidden; skill books teach once. The player's level drives leveled
+  lists; NPCs' levels from `ACBS` (PC level mult). Story Manager `SKIL` and
+  `LEVL` events. Papyrus `Game.AdvanceSkill`, `IncrementSkill`,
+  `IncrementSkillBy`, `GetGameSettingFloat` / `Int`, `Actor.GetLevel`;
+  condition `GetLevel`. Console `skills`, `player.advskill`, `player.incpcs`,
+  `player.advlevel`, `levelup`, `getlevel`. Open questions:
+  `known_gaps/skills.md`
 - Player controls from scripts: `DisablePlayerControls` / `EnablePlayerControls`
   (Papyrus's defaults for missing arguments) stop the player moving, fighting
   (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
@@ -653,7 +668,7 @@ game each piece unlocks.
      (`NiFlipController`), shader controllers inside sequences (only the
      property's own controller chain runs, on the global clock)
 2. **Story Manager** (core and fifteen events done; see Done)
-   - Events waiting on their systems: crafting, level / skill increases, item
+   - Events waiting on their systems: crafting, item
      removal (dropping now exists; the event's data needs a source), spell cast, shouts, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
@@ -688,7 +703,7 @@ game each piece unlocks.
    animations), magic (with detection's muffle, invisibility, blindness and
    spell / shout sounds), shouts, perks (the sneak tree's detection perks among them;
    see Detection), inventory (player's, equipping by hand, armor from
-   inventory, ammo / quivers; torches in dark interiors, burning out), leveling, crime
+   inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
    - The player as an actor: a body (race, sex, outfit) and a third-person
@@ -696,7 +711,9 @@ game each piece unlocks.
    - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`;
      disabled fighting putting the weapon away, the POV type argument
    - Sneak attacks (see Done): perks' multipliers (Backstab, Assassin's Blade,
-     Deadly Aim), sneak skill gain, NPCs sneaking up on the player
+     Deadly Aim), NPCs sneaking up on the player
+   - Skills (see Done): the other skills' uses as their systems come (magic,
+     crafting, speech), trainers, rested bonuses, Legendary skills
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see

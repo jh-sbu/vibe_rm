@@ -179,7 +179,7 @@ impl Engine {
     /// 0.25 seconds of strain (novice .. master) x (1 + skill / 200).
     pub fn start_lockpick(&mut self, lock: FormId, then: FormId, level: u8) {
         let difficulty = difficulty(level);
-        let skill = self.player_skill(LOCKPICKING_SKILL);
+        let skill = self.actor_value(PLAYER_REF, esp::actor_value::LOCKPICKING);
         let gmst = |n: &str, d: f32| crate::ai::combat::gmst_f32(&self.lo, n, d);
         let partial_setting = [
             "fPartialPickVeryEasy",
@@ -217,14 +217,6 @@ impl Engine {
         self.menu = Some(crate::items::Menu::Lockpick);
     }
 
-    /// One of the player's skills (the player's `NPC_` `DNAM`).
-    fn player_skill(&self, index: usize) -> f32 {
-        self.lo
-            .get(FormId(0x7))
-            .and_then(|r| r.get(b"DNAM").and_then(|d| d.get(index).copied()))
-            .unwrap_or(15) as f32
-    }
-
     /// Turn the lock as far as the pick lets it: all the way opens it; held against
     /// the pick, the pick wears out and snaps, and the lock springs back.
     pub(crate) fn update_lockpick(&mut self, dt: f32) {
@@ -243,6 +235,16 @@ impl Engine {
             lp.turn = (lp.turn + dt * TURN_SPEED).min(most);
             if lp.turn >= 1.0 {
                 log::info!("picked {} open", lp.lock);
+                // Lockpicking trains by the lock's difficulty.
+                let setting = [
+                    ("fSkillUsageLockPickVeryEasy", 2.0),
+                    ("fSkillUsageLockPickEasy", 3.0),
+                    ("fSkillUsageLockPickAverage", 5.0),
+                    ("fSkillUsageLockPickHard", 8.0),
+                    ("fSkillUsageLockPickVeryHard", 13.0),
+                ][difficulty(lp.level) - 1];
+                let xp = crate::ai::combat::gmst_f32(&self.lo, setting.0, setting.1);
+                self.use_skill(esp::actor_value::LOCKPICKING, xp);
                 self.set_locked(lp.lock, false);
                 self.player_unlocked(lp.lock);
                 self.menu = None;
@@ -263,6 +265,9 @@ impl Engine {
                     lp.turning = false;
                     let left = self.item_count(PLAYER_REF, LOCKPICK);
                     log::info!("lockpick broke ({left} left)");
+                    let xp =
+                        crate::ai::combat::gmst_f32(&self.lo, "fSkillUsageLockPickBroken", 0.25);
+                    self.use_skill(esp::actor_value::LOCKPICKING, xp);
                     if left <= 0 {
                         let msg = self
                             .gmst_string("sOutOfLockpicks")
@@ -389,7 +394,6 @@ impl Engine {
 
 /// The lockpick (`MISC`) and the lockpicking skill's place in an NPC's skills.
 pub const LOCKPICK: FormId = FormId(0xA);
-const LOCKPICKING_SKILL: usize = 8;
 /// Share of a full turn the lock makes in a second (tuned by eye).
 const TURN_SPEED: f32 = 1.6;
 

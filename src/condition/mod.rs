@@ -361,7 +361,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         } // GetInWorldspace
         46 => b(subject.is_some_and(|s| e.is_dead(s))),          // GetDead
         84 => Some(0.0),                                         // GetDeadCount
-        80 => Some(1.0),                                         // GetLevel
+        80 => Some(e.actor_level(subject?) as f32),              // GetLevel
         // Actor values (`actor_values`).
         14 => Some(e.actor_value(subject?, c.p1)), // GetActorValue
         277 => Some(e.av_base(subject?, c.p1)),    // GetBaseActorValue

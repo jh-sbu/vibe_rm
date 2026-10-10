@@ -8,8 +8,6 @@ use esp::FormId;
 use crate::crime::CrimeType;
 use crate::engine::{Engine, PLAYER_REF};
 
-/// The Pickpocket skill's actor value.
-const PICKPOCKET_AV: u32 = 13;
 /// Taken off the chance when the victim detects the player (UESP: "Detected
 /// = 25"; no game setting found).
 const DETECTED_PENALTY: f32 = 25.0;
@@ -43,9 +41,11 @@ impl Engine {
             (info.map_or(0.0, |i| i.weight) * count as f32, 0.0)
         };
         let mut chance = g("fPickPocketActorSkillBase", 20.0)
-            + g("fPickPocketActorSkillMult", 1.0) * self.actor_value(PLAYER_REF, PICKPOCKET_AV)
+            + g("fPickPocketActorSkillMult", 1.0)
+                * self.actor_value(PLAYER_REF, esp::actor_value::PICKPOCKET)
             + g("fPickPocketTargetSkillMult", -0.25)
-                * (g("fPickPocketTargetSkillBase", 20.0) + self.actor_value(victim, PICKPOCKET_AV))
+                * (g("fPickPocketTargetSkillBase", 20.0)
+                    + self.actor_value(victim, esp::actor_value::PICKPOCKET))
             + g("fPickPocketWeightMult", -4.0) * weight
             + g("fPickPocketAmountMult", -0.1) * gold;
         if self.detects(victim, PLAYER_REF) {
@@ -83,9 +83,15 @@ impl Engine {
                 .sum();
             if moved > 0 {
                 self.send_player_add_item_as(item, Some(victim), victim, 3);
-                let name = crate::world::inventory::item_info(&self.lo, item)
-                    .map(|i| i.name)
-                    .unwrap_or_default();
+                let info = crate::world::inventory::item_info(&self.lo, item);
+                // Pickpocket trains by the value taken.
+                let value = if item == crate::crime::GOLD {
+                    1.0
+                } else {
+                    info.as_ref().map_or(0.0, |i| i.value as f32)
+                };
+                self.use_skill(esp::actor_value::PICKPOCKET, value * moved as f32);
+                let name = info.map(|i| i.name).unwrap_or_default();
                 self.scripts.notify(if moved > 1 {
                     format!("{name} ({moved}) added")
                 } else {

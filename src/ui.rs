@@ -373,7 +373,7 @@ impl Ui {
             engine.choose_message_button(i);
         }
     }
-
+    /// the level ups to take: health, magicka or stamina.
     /// The quest journal: the quests on the left (active, then finished; the
     /// miscellaneous ones as one), the chosen one's log and objectives.
     fn journal(&mut self, ctx: &egui::Context, engine: &mut Engine) {
@@ -695,6 +695,15 @@ impl Ui {
                 }
                 return;
             }
+            Menu::Skills => {
+                let close =
+                    close || (self.menu_shown && ctx.input(|i| i.key_pressed(egui::Key::K)));
+                skills_view(ctx, engine);
+                if close {
+                    engine.menu = None;
+                }
+                return;
+            }
             Menu::Lockpick => {
                 self.lockpick_view(ctx, engine);
                 return;
@@ -848,6 +857,7 @@ impl Ui {
                 book,
                 reference: None,
             });
+            engine.read_book(book);
         }
     }
 
@@ -1036,4 +1046,74 @@ fn ui_hint(ctx: &egui::Context) {
                 .color(egui::Color32::LIGHT_GRAY),
             );
         });
+}
+
+/// The skills menu: the player's level and character XP, each skill with its
+/// progress, and the level ups to take (health, magicka or stamina).
+fn skills_view(ctx: &egui::Context, engine: &mut Engine) {
+    use esp::actor_value as av;
+    let s = engine.skills.clone();
+    let need = crate::skills::level_up_xp(
+        crate::ai::combat::gmst_f32(&engine.lo, "fXPLevelUpBase", 75.0),
+        crate::ai::combat::gmst_f32(&engine.lo, "fXPLevelUpMult", 25.0),
+        s.level + s.pending as u16,
+    );
+    let rows: Vec<(String, f32, f32)> = (av::FIRST_SKILL..=av::LAST_SKILL)
+        .map(|k| {
+            let needed = engine.skill_xp_needed(k);
+            let xp = s.xp[(k - av::FIRST_SKILL) as usize];
+            (
+                engine.skill_name(k),
+                engine.av_base(crate::engine::PLAYER_REF, k),
+                if needed > 0.0 { xp / needed } else { 0.0 },
+            )
+        })
+        .collect();
+    let mut take = None;
+    egui::Window::new("Skills")
+        .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .resizable(false)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(format!("Level {}", s.level)).strong());
+                ui.add(
+                    egui::ProgressBar::new((s.level_xp / need).clamp(0.0, 1.0))
+                        .desired_width(240.0),
+                );
+            });
+            ui.label(format!("Perk points: {}", s.perk_points));
+            if s.pending > 0 {
+                ui.separator();
+                ui.label(
+                    engine
+                        .gmst_string("sLevelUpAvailable")
+                        .unwrap_or_else(|| "Level up available.".into()),
+                );
+                ui.horizontal(|ui| {
+                    for a in [av::MAGICKA, av::HEALTH, av::STAMINA] {
+                        if ui.button(av::NAMES[a as usize]).clicked() {
+                            take = Some(a);
+                        }
+                    }
+                });
+            }
+            ui.separator();
+            egui::Grid::new("skills")
+                .striped(true)
+                .num_columns(3)
+                .show(ui, |ui| {
+                    for (name, level, progress) in &rows {
+                        ui.label(name);
+                        ui.label(format!("{level:.0}"));
+                        ui.add(
+                            egui::ProgressBar::new(progress.clamp(0.0, 1.0)).desired_width(160.0),
+                        );
+                        ui.end_row();
+                    }
+                });
+        });
+    if let Some(a) = take {
+        engine.take_level_up(a);
+    }
 }

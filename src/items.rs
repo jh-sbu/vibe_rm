@@ -26,6 +26,8 @@ pub enum Menu {
     ServeSentence,
     /// The quest journal.
     Journal,
+    /// The player's skills and level, where level ups are taken.
+    Skills,
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,

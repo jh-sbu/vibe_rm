@@ -106,9 +106,15 @@ pub const CONFIDENCE: u32 = 1;
 pub const ASSISTANCE: u32 = 5;
 /// The first skill (one-handed); the 18 skills follow in `NPC_` `DNAM` order.
 pub const FIRST_SKILL: u32 = 6;
+pub const ONE_HANDED: u32 = 6;
+pub const TWO_HANDED: u32 = 7;
+/// Archery.
+pub const MARKSMAN: u32 = 8;
 pub const BLOCK: u32 = 9;
 pub const HEAVY_ARMOR: u32 = 11;
 pub const LIGHT_ARMOR: u32 = 12;
+pub const PICKPOCKET: u32 = 13;
+pub const LOCKPICKING: u32 = 14;
 pub const SNEAK: u32 = 15;
 pub const LAST_SKILL: u32 = 23;
 pub const HEALTH: u32 = 24;

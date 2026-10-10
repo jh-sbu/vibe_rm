@@ -97,7 +97,8 @@ or prints one event's tree.
   startup stage. Its members follow the parameters' order (references,
   locations, forms and values as R1 / R2, L1 / L2, F1, V1 / V2), the same
   reading as the crime events'. `OnStoryIncreaseSkill`'s skill name has no
-  member yet.
+  member yet: the skill increase event carries the skill's actor value index
+  as V1, and `OnStoryIncreaseLevel` gets the new level as V1.
 - Quests started from Papyrus (`Quest.Start`, story events) get their scripts
   and OnInit once the running scripts yield, in the same frame.
 
@@ -131,8 +132,7 @@ own or their templates'); a member is dead when their placed reference is.
   faction may take everything. Theft seen by a witness adds crime gold
   (`known_gaps/crime.md`); items aren't marked stolen in the inventory.
 
-- The other events wait for their systems: crafting (`CRFT`), increase
-  level / skill (`LEVL`, `SKIL`), item removal (`REMP`: dropping items), spell cast (`CAST`), new
+- The other events wait for their systems: crafting (`CRFT`), item removal (`REMP`: dropping items), spell cast (`CAST`), new
   voice power (`NVPE`), bribe, intimidate, flatter, lock pick.
 - Kill events' crime status (V1) only knows the player's murders; item
   pickups never say bought or pickpocketed (no barter or pickpocketing).

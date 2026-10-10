@@ -195,8 +195,36 @@ pub fn call(
         ("game", "isactivatecontrolsenabled") => v(Value::Bool(!e.disabled_controls.activate)),
         ("game", "isjournalcontrolsenabled") => v(Value::Bool(!e.disabled_controls.journal)),
         ("game", "setinchargen") => none(),
-        ("game", "getgamesettingfloat") => v(Value::Float(0.0)),
-        ("game", "getgamesettingint") => v(Value::Int(0)),
+        ("game", "getgamesettingfloat") => v(Value::Float(crate::ai::combat::gmst_f32(
+            &e.lo,
+            &str_arg(args, 0),
+            0.0,
+        ))),
+        ("game", "getgamesettingint") => v(Value::Int(crate::ai::combat::gmst_i32(
+            &e.lo,
+            &str_arg(args, 0),
+            0,
+        ))),
+        // Skills (`crate::skills`): the player's.
+        ("game", "advanceskill") => {
+            if let Some(skill) = crate::skills::skill_index(&str_arg(args, 0)) {
+                e.use_skill(skill, arg(1).as_float());
+            }
+            none()
+        }
+        ("game", "incrementskill") | ("game", "incrementskillby") => {
+            let times = if func == "incrementskill" {
+                1
+            } else {
+                arg(1).as_int()
+            };
+            if let Some(skill) = crate::skills::skill_index(&str_arg(args, 0)) {
+                for _ in 0..times {
+                    e.increment_skill(skill);
+                }
+            }
+            none()
+        }
         // ------------------------------------------------------------- Form
         ("form", "getformid") => v(Value::Int(me.map(|f| f.0 as i32).unwrap_or(0))),
         ("form", "getname") => v(Value::str(&me.map(|f| e.form_name(f)).unwrap_or_default())),
@@ -765,7 +793,7 @@ pub fn call(
             }
             none()
         }
-        ("actor", "getlevel") => v(Value::Int(1)),
+        ("actor", "getlevel") => v(Value::Int(me.map_or(1, |a| e.actor_level(a)))),
         ("actor", "getrelationshiprank") => v(Value::Int(match (me, form_arg(args, 0)) {
             (Some(a), Some(b)) => e.relationship_rank(a, b),
             _ => 0,
