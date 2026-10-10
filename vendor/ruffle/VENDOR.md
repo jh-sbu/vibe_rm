@@ -17,8 +17,16 @@ Licensed MIT OR Apache-2.0 (`LICENSE.md`).
   from here. The workspace's member list names the vendored crates only.
 
 The first commit adding this directory is upstream as is; the commits after it
-carry the changes, one each. Building needs Java: `ruffle_core`'s build script
-compiles the AVM2 `playerglobal` library with `tools/asc/asc.jar`.
+carry the changes, one each.
+
+Building doesn't need Java. Upstream's `ruffle_core` build compiles the AVM2
+`playerglobal` library from `core/src/avm2/globals` with `tools/asc/asc.jar`
+(Java); here a copy of that output in `core/prebuilt/playerglobal` is used
+while a hash of its inputs (`inputs.fnv`) still matches. After changing those
+sources, `asc.jar` or the code that builds them, the build warns and uses Java,
+and `core/prebuilt/playerglobal/regenerate.sh` (with Java) refreshes the copy.
+`RUFFLE_PLAYERGLOBAL_FROM_SOURCE=1` builds from source regardless. The AVM1
+playerglobal is compiled by `rascal`, in Rust, as upstream.
 
 The vendored crates are a workspace of their own (`Cargo.toml` here), not
 members of the engine's.
