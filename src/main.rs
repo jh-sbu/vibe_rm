@@ -37,6 +37,7 @@ mod scene;
 mod script;
 mod skills;
 mod story;
+mod swf_ui;
 mod traps;
 mod triggers;
 mod ui;
@@ -86,6 +87,8 @@ pub struct Options {
     /// While waiting, leave message boxes up (they pause the world) instead of
     /// pressing their last button after two seconds.
     pub hold_boxes: bool,
+    /// Draw the HUD with egui rather than the game's hudmenu.swf.
+    pub egui_hud: bool,
 }
 
 fn parse_args() -> Result<Options> {
@@ -143,6 +146,7 @@ fn parse_args() -> Result<Options> {
             "--watch-angle" => o.watch_angle = val()?.parse::<f32>()?.to_radians(),
             "--player-at-camera" => o.player_at_camera = true,
             "--hold-boxes" => o.hold_boxes = true,
+            "--egui-hud" => o.egui_hud = true,
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v

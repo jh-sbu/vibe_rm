@@ -48,6 +48,7 @@ bsa.workspace = true
 esp.workspace = true
 nif.workspace = true
 vfs.workspace = true
+ui_swf.workspace = true
 wgpu = "30"
 winit = "0.30"
 pollster = "0.4"

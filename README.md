@@ -28,7 +28,8 @@ Early but already visual:
 | Sun shadows (cascaded shadow maps) | done |
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
 | AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture and crafting stations picked through the IDLE tree, idle markers, seated and standing eating / drinking, sitting variants, anim objects in hand; humanoids and creatures animated by running their behaviour graphs (walking, running, sneaking and turning at their movement types' speeds; `PlayIdle`, `SendAnimationEvent`) | in progress |
-| Papyrus VM, conditions, quests, dialogue, HUD, console, audio, music | in progress |
+| Papyrus VM, conditions, quests, dialogue, console, audio, music | in progress |
+| The game's own menus (Interface `.swf` through the vendored Ruffle): the HUD | in progress |
 | Inventories (NPC items, outfits, containers), sheathed weapons and shields | in progress |
 | Combat (melee between NPCs, creatures and the player), ragdoll deaths; skills, leveling and perk trees | in progress |
 | Magic: effects on actors, abilities, potions, enchantments, effect scripts (casting by hand to come) | in progress |
@@ -60,6 +61,9 @@ the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, 
 `VRM_AI_NO_SNAP=1` makes actors walk into furniture on cell load instead of starting
 out in it.
 
+The HUD is the game's own (`Interface/hudmenu.swf`); `--egui-hud` draws the
+engine's egui HUD instead (also used when the Interface files can't be read).
+
 The data directory is found from `--data`, `$SKYRIM_DATA`, or the default Steam
 locations on Linux.
 
@@ -82,10 +86,15 @@ toggles actor AI).
 - `crates/esp`: plugin reader, load order and record index
 - `crates/nif`: NIF model reader
 - `crates/vfs`: virtual file system (loose files over archives)
+- `crates/ui-swf`: the game's Interface menus (Scaleform `.swf`) through Ruffle
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
   (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`, `nif-materials`, `fsts`,
   `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, `triggers`, `story`, `faction-owners`, `crime-factions`, ...)
 - `src/`: the engine (renderer, world, app)
+- `vendor/ruffle`: a subset of [Ruffle](https://ruffle.rs) with Scaleform
+  changes (`VENDOR.md`)
+- `spike/swf`: the spike that worked out running the menus (a harness and its
+  notes)
 
 ## Verifying format support
 
