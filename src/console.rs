@@ -93,8 +93,25 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "grab [ref | off]      grab what the crosshair (or a ref) is on, say what is held, let go".into(),
             "epc                   enable all player controls (EnablePlayerControls)".into(),
             "detect                who detects the player, by how much; the player's light level and stealth points".into(),
+            "skills                the player's level, XP and each skill's progress".into(),
+            "player.advskill <skill> <xp> / player.incpcs <skill>   skill XP / a skill level (OneHanded, Marksman, Sneak...)".into(),
+            "player.advlevel / levelup <health|magicka|stamina>   earn a level up / take one".into(),
+            "[ref.]getlevel        an actor's level".into(),
         ],
         "detect" => engine.describe_detection(),
+        "skills" => engine.describe_skills(),
+        "levelup" => {
+            let attr = match args.first().map(|a| a.to_ascii_lowercase()) {
+                Some(a) if a == "health" => esp::actor_value::HEALTH,
+                Some(a) if a == "magicka" => esp::actor_value::MAGICKA,
+                Some(a) if a == "stamina" => esp::actor_value::STAMINA,
+                _ => return vec!["usage: levelup <health|magicka|stamina>".into()],
+            };
+            if !engine.take_level_up(attr) {
+                return vec!["no level up to take".into()];
+            }
+            engine.describe_skills()
+        }
         "loose" => engine.describe_loose(args.first().and_then(|a| a.parse().ok()).unwrap_or(8)),
         "epc" | "enableplayercontrols" => {
             engine.disabled_controls = Default::default();
@@ -669,8 +686,12 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 24] = [
+const ITEM_COMMANDS: [&str; 28] = [
     "drop",
+    "advskill",
+    "incpcs",
+    "advlevel",
+    "getlevel",
     "setcrimegold",
     "paycrimegold",
     "getrelationshiprank",
@@ -739,6 +760,37 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                 "{r} / {other}: rank {}",
                 engine.relationship_rank(r, other)
             )]
+        }
+        "getlevel" => vec![format!("{r}: level {}", engine.actor_level(r))],
+        "advskill" | "incpcs" | "advlevel" if r != crate::engine::PLAYER_REF => {
+            vec!["only the player advances".into()]
+        }
+        "advskill" | "incpcs" => {
+            let Some(skill) = args.first().and_then(|n| crate::skills::skill_index(n)) else {
+                return vec![format!(
+                    "usage: player.{cmd} <skill> {}",
+                    if cmd == "advskill" { "<xp>" } else { "" }
+                )];
+            };
+            if cmd == "incpcs" {
+                engine.increment_skill(skill);
+            } else {
+                let Some(xp) = args.get(1).and_then(|x| x.parse::<f32>().ok()) else {
+                    return vec!["usage: player.advskill <skill> <xp>".into()];
+                };
+                engine.add_skill_xp(skill, xp);
+            }
+            engine.describe_skills()
+        }
+        "advlevel" => {
+            let s = &engine.skills;
+            let need = crate::skills::level_up_xp(
+                crate::ai::combat::gmst_f32(&engine.lo, "fXPLevelUpBase", 75.0),
+                crate::ai::combat::gmst_f32(&engine.lo, "fXPLevelUpMult", 25.0),
+                s.level + s.pending as u16,
+            ) - s.level_xp;
+            engine.add_level_xp(need);
+            engine.describe_skills()
         }
         "getav" => {
             let Some(i) = args.first().and_then(|n| esp::actor_value::index(n)) else {

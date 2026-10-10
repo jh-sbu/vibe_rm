@@ -32,6 +32,7 @@ mod remote;
 mod render;
 mod scene;
 mod script;
+mod skills;
 mod story;
 mod traps;
 mod triggers;

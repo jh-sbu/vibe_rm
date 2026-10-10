@@ -150,9 +150,6 @@ fn f32_at(d: &[u8], o: usize) -> f32 {
 }
 
 /// The player's stats (`DNAM`: skills, then health / magicka / stamina).
-fn player_dnam(lo: &LoadOrder) -> Option<Vec<u8>> {
-    Sources::of_npc(lo, FormId(0x7), 0).field(lo, template::STATS, b"DNAM")
-}
 
 /// Attacks listed in a race or NPC record (`ATKD` + `ATKE` pairs).
 fn attacks_of(rec: &esp::LoadedRecord<'_>) -> Vec<Attack> {
@@ -325,6 +322,9 @@ impl CombatSettings {
 /// Sneak attack multiplier for bows and crossbows: no game setting holds it;
 /// UESP gives double damage before the Deadly Aim perk (`known_gaps/sneak-attacks.md`).
 const SNEAK_BOW_MULT: f32 = 2.0;
+
+/// Block XP for the player's bash landing (UESP; no game setting holds it).
+const PLAYER_BASH_XP: f32 = 5.0;
 
 /// What a set of worn items protects: the total armor rating (as the inventory
 /// shows it) and the share of a blow it takes away.
@@ -1445,6 +1445,10 @@ impl Engine {
             }
             None => damage,
         };
+        if attacker == PLAYER_REF {
+            self.player_blow_landed(projectile.is_some(), sneak.is_some());
+        }
+        let raw = damage;
         let mut damage = self.after_armor(target, damage);
         // Attacks that can stagger do so only some of the time (iStaggerAttackChance).
         let staggers = (self.rand() % 100) < self.combat_settings().stagger_chance;
@@ -1462,6 +1466,12 @@ impl Engine {
         // Arrows land where they strike ([`Engine::arrow_impact`]).
         if projectile.is_none() {
             self.melee_impact(target, attacker, share.is_some(), false);
+        }
+        if target == PLAYER_REF {
+            // Blocking trains by the damage stopped, the armor by the rest.
+            let stopped = share.unwrap_or(0.0);
+            self.use_skill(esp::actor_value::BLOCK, raw * stopped);
+            self.armor_struck(raw * (1.0 - stopped));
         }
         if let Some(share) = share {
             log::info!(
@@ -1530,12 +1540,18 @@ impl Engine {
         power: bool,
         stagger: f32,
     ) {
+        let raw = damage;
         let damage = self.after_armor(target, damage);
         log::info!(
             "{attacker} {} {target} for {damage:.1}",
             if power { "power bashes" } else { "bashes" }
         );
         self.send_hit_event(target, attacker, None, power, false, true, false);
+        if attacker == PLAYER_REF {
+            self.use_skill(esp::actor_value::BLOCK, PLAYER_BASH_XP);
+        } else if target == PLAYER_REF {
+            self.armor_struck(raw);
+        }
         self.melee_impact(target, attacker, false, true);
         if let Some(a) = self.actor_mut(target) {
             a.set_guard(0.0);
@@ -1662,9 +1678,7 @@ impl Engine {
                 return None;
             }
             let f = self.camera.forward();
-            let skill = player_dnam(&self.lo)
-                .and_then(|d| d.get(3).copied())
-                .unwrap_or(15) as f32;
+            let skill = self.actor_value(PLAYER_REF, esp::actor_value::BLOCK);
             (
                 self.player.position,
                 glam::Vec2::new(f.x, f.y).normalize_or_zero(),
@@ -2083,7 +2097,10 @@ impl Engine {
             .get(&actor)
             .map_or(&[][..], |i| &i.equipped[..]);
         let skills = if actor == PLAYER_REF {
-            player_dnam(&self.lo).map_or([15.0; 2], |d| armor_skills(&d))
+            [
+                self.actor_value(PLAYER_REF, esp::actor_value::LIGHT_ARMOR),
+                self.actor_value(PLAYER_REF, esp::actor_value::HEAVY_ARMOR),
+            ]
         } else {
             match self
                 .actor_cells
@@ -2253,9 +2270,7 @@ impl Engine {
             return;
         }
         self.spend_stamina(PLAYER_REF, cost);
-        let skill = player_dnam(&self.lo)
-            .and_then(|d| d.get(3).copied())
-            .unwrap_or(15) as f32;
+        let skill = self.actor_value(PLAYER_REF, esp::actor_value::BLOCK);
         let damage = self.bash_damage(PLAYER_REF, skill) * attack.damage_mult;
         let hit = self.physics.raycast(
             self.camera.position,

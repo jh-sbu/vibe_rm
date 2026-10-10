@@ -175,6 +175,8 @@ pub struct Engine {
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     pub lockpick: Option<crate::locks::Lockpick>,
+    /// The player's skill XP and level (`crate::skills`).
+    pub skills: crate::skills::Skills,
     /// Message boxes, help messages and banners.
     pub messages: crate::messages::Messages,
     /// References by the enable parent they follow (`XESP`).
@@ -307,6 +309,7 @@ impl Engine {
             imagespace: Default::default(),
             menu: None,
             lockpick: None,
+            skills: Default::default(),
             messages: Default::default(),
             barks: Default::default(),
             scenes: Default::default(),
@@ -2213,6 +2216,7 @@ impl Engine {
         self.update_triggers();
         self.update_story();
         self.update_projectiles(dt);
+        self.update_skills(dt);
         self.draw_impact_effects();
         self.update_held_lights();
         self.update_animated(dt);
@@ -2474,6 +2478,7 @@ impl Engine {
                 book: rf.base,
                 reference: Some(owner),
             });
+            self.read_book(rf.base);
             return Ok(());
         }
         if self.is_item_ref(owner) {

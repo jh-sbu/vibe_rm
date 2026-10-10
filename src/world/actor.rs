@@ -36,14 +36,6 @@ fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
     rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))
 }
 
-/// The player's level for leveled lists (there is no leveling yet: a new game's).
-fn player_level() -> u16 {
-    std::env::var("VRM_PC_LEVEL")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1)
-}
-
 /// A well-mixed hash of a seed and a list, so each reference picks its own entry
 /// and picks it again next time.
 fn mix(seed: u64, list: FormId) -> u64 {
@@ -77,7 +69,7 @@ fn eligible(rec: &LoadedRecord<'_>) -> Vec<(FormId, i32)> {
             )
         })
         .collect();
-    let pc = player_level();
+    let pc = crate::skills::player_level();
     let flags = rec
         .get(b"LVLF")
         .and_then(|d| d.first().copied())
