@@ -319,7 +319,7 @@ pub fn run(opts: Options) -> Result<()> {
         if let Some(swf) = &mut swf {
             // A second of the HUD: its meters and messages fade in.
             for _ in 0..60 {
-                swf.update(&engine, 1.0 / 60.0);
+                swf.update(&mut engine, 1.0 / 60.0);
             }
         }
         let raw = egui::RawInput {
@@ -780,7 +780,7 @@ impl ApplicationHandler for App {
                 s.engine.console_open = s.ui.console.open;
                 s.engine.update(input, dt, scale);
                 if let Some(swf) = &mut s.swf {
-                    swf.update(&s.engine, dt);
+                    swf.update(&mut s.engine, dt);
                 }
                 // A menu or message box opened by a script takes the mouse.
                 if s.engine.menu_up() && s.grabbed {
