@@ -1,45 +1,23 @@
 [workspace]
+# Vendored subset (see VENDOR.md): the crates ruffle_core and
+# ruffle_render_wgpu build from.
 members = [
     "core",
     "core/macros",
     "core/build_playerglobal",
-    "desktop",
     "swf",
     "flv",
-    "web",
-    "web/packages/extension/safari",
     "wstr",
-    "scanner",
-
-    "exporter",
-    "exporter/integration_tests",
-
-    "frontend-utils",
 
     "render",
-    "render/canvas",
     "render/naga-agal",
     "render/pixel_bender",
-    "render/pixel_bender/assembly_tests",
     "render/wgpu",
-    "render/webgl",
 
     "video",
-    "video/software",
-    "video/external",
-
-    "tests",
-    "tests/fs-tests-runner",
-    "tests/input-format",
-    "tests/socket-format",
-    "tests/mocket",
-    "tests/framework",
 
     "tools/asc",
-    "tools/fuzzer",
-    "tools/stub-report",
 ]
-default-members = ["desktop"]
 resolver = "2"
 
 [workspace.package]
