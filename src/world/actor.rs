@@ -410,6 +410,163 @@ pub fn facetint_path(lo: &LoadOrder, npc: FormId) -> Option<String> {
     )))
 }
 
+/// The models an actor shows: what it wears (armors conflicting by their own
+/// slots, their addons' slots hiding the skin beneath), the skin's parts left
+/// uncovered, the `head` models unless a helmet hides head and hair, and its
+/// weapon (a rigid model hung from the bone it names, sheathed).
+fn dress(
+    lo: &LoadOrder,
+    inventory: &super::inventory::Inventory,
+    skin: FormId,
+    race: FormId,
+    female: bool,
+    head: Vec<String>,
+) -> Vec<(String, FormId)> {
+    let mut models: Vec<(String, FormId)> = Vec::new();
+    // Worn armors conflict by their own slots; their addons' slots (which can
+    // overlap, as boots and a robe both on the calves) hide the skin beneath.
+    let mut worn = 0u32;
+    let mut covered = 0u32;
+    for &armo in &inventory.equipped {
+        let armo_slots = lo
+            .get(armo)
+            .map_or(0, |r| super::inventory::armor_slots(&r));
+        if armo_slots & worn != 0 {
+            continue;
+        }
+        worn |= armo_slots;
+        for (m, slots) in armor_models(lo, armo, race, female) {
+            covered |= slots;
+            models.push((m, armo));
+        }
+    }
+    for (m, slots) in armor_models(lo, skin, race, female) {
+        if slots & covered == 0 {
+            covered |= slots;
+            models.push((m, FormId::NULL));
+        }
+    }
+    if covered & SLOT_HEAD == 0 || covered & SLOT_HAIR == 0 {
+        models.extend(head.into_iter().map(|m| (m, FormId::NULL)));
+    }
+    if let Some((w, m)) = inventory
+        .weapon(lo)
+        .and_then(|w| Some((w, super::inventory::weapon_model(lo, w)?)))
+    {
+        models.push((m, w));
+    }
+    models
+}
+
+/// Head part types (HDPT `PNAM`).
+const HEAD_PART_EYES: u32 = 2;
+const HEAD_PART_HAIR: u32 = 3;
+
+/// The head part models of an NPC built at run time rather than from a
+/// pre-built FaceGen head (the player): the race's default parts for the sex
+/// (`HEAD` after `NAM0`'s `MNAM` / `FNAM`), each replaced by the NPC's own part
+/// (`PNAM`) of the same type, then every part's extra parts (`HNAM`: hairlines).
+/// Morphs (`.tri`), the face's tints and texture sets aren't applied.
+pub fn head_part_models(lo: &LoadOrder, npc: FormId, race: FormId, female: bool) -> Vec<String> {
+    let part_type = |id: FormId| {
+        lo.get(id).filter(|r| r.tag().0 == *b"HDPT").and_then(|r| {
+            r.get(b"PNAM")
+                .filter(|d| d.len() >= 4)
+                .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
+        })
+    };
+    let mut parts: Vec<(u32, FormId)> = Vec::new();
+    if let Some(rec) = lo.get(race) {
+        let mut head_data = false;
+        let mut sex: Option<bool> = None;
+        for sr in rec.subrecords() {
+            match &sr.tag.0 {
+                b"NAM0" => head_data = true,
+                b"MNAM" if head_data => sex = Some(false),
+                b"FNAM" if head_data => sex = Some(true),
+                b"HEAD" if sex == Some(female) && sr.data.len() >= 4 => {
+                    let id = rec.fid(sr.form_id(0));
+                    if let Some(t) = part_type(id) {
+                        parts.push((t, id));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if let Some(rec) = lo.get(npc) {
+        for sr in rec
+            .subrecords()
+            .filter(|s| s.tag.0 == *b"PNAM" && s.data.len() >= 4)
+        {
+            let id = rec.fid(sr.form_id(0));
+            let Some(t) = part_type(id) else { continue };
+            parts.retain(|&(pt, _)| pt != t);
+            parts.push((t, id));
+        }
+    }
+    // Hair, then eyes, last: drawn over the head and its other parts.
+    parts.sort_by_key(|&(t, _)| matches!(t, HEAD_PART_EYES | HEAD_PART_HAIR));
+    let mut ids: Vec<FormId> = parts.into_iter().map(|(_, id)| id).collect();
+    let mut i = 0;
+    while i < ids.len() && ids.len() < 32 {
+        if let Some(rec) = lo.get(ids[i]) {
+            for sr in rec
+                .subrecords()
+                .filter(|s| s.tag.0 == *b"HNAM" && s.data.len() >= 4)
+            {
+                let extra = rec.fid(sr.form_id(0));
+                if !ids.contains(&extra) {
+                    ids.push(extra);
+                }
+            }
+        }
+        i += 1;
+    }
+    ids.iter()
+        .filter_map(|&id| lo.get(id))
+        .filter_map(|r| r.get(b"MODL").map(esp::decode_zstring))
+        .filter(|m| !m.is_empty())
+        .map(|m| mesh_path(&m))
+        .collect()
+}
+
+/// Describe the player's body: their NPC record's race and sex, its skin, what
+/// they have equipped and a head of the race's default parts and their own
+/// (no pre-built FaceGen head exists for them). Placed each frame, so the
+/// transform holds only their scale.
+pub fn describe_player(
+    lo: &LoadOrder,
+    player: FormId,
+    npc: FormId,
+    inventory: &super::inventory::Inventory,
+) -> Option<ActorDesc> {
+    let templates = Sources::of_npc(lo, npc, 0);
+    let traits = npc_traits(lo, &templates)?;
+    let (skeleton, race_skin, race_height) = race_info(lo, traits.race, traits.female)?;
+    let skin = if traits.skin.is_null() {
+        race_skin
+    } else {
+        traits.skin
+    };
+    let head = head_part_models(lo, traits.npc_for_face, traits.race, traits.female);
+    let models = dress(lo, inventory, skin, traits.race, traits.female, head);
+    Some(ActorDesc {
+        ref_id: player,
+        npc,
+        name: traits.name.clone(),
+        transform: Mat4::from_scale(glam::Vec3::splat(traits.height * race_height)),
+        skeleton,
+        models,
+        female: traits.female,
+        behavior: race_behavior(lo, traits.race, traits.female),
+        inventory: inventory.clone(),
+        race: traits.race,
+        footsteps: footstep_set(lo, &inventory.equipped, skin, traits.race),
+        templates,
+    })
+}
+
 /// Biped slot for the head (30) and hair (31) etc.
 const SLOT_HEAD: u32 = 1 << 0;
 const SLOT_HAIR: u32 = 1 << 1;
@@ -456,43 +613,8 @@ pub fn describe_reference(lo: &LoadOrder, r: &records::Reference) -> Option<Acto
         traits.combat_style,
     );
 
-    let mut models: Vec<(String, FormId)> = Vec::new();
-    // Worn armors conflict by their own slots; their addons' slots (which can
-    // overlap, as boots and a robe both on the calves) hide the skin beneath.
-    let mut worn = 0u32;
-    let mut covered = 0u32;
-    for &armo in &inventory.equipped {
-        let armo_slots = lo
-            .get(armo)
-            .map_or(0, |r| super::inventory::armor_slots(&r));
-        if armo_slots & worn != 0 {
-            continue;
-        }
-        worn |= armo_slots;
-        for (m, slots) in armor_models(lo, armo, traits.race, traits.female) {
-            covered |= slots;
-            models.push((m, armo));
-        }
-    }
-    for (m, slots) in armor_models(lo, skin, traits.race, traits.female) {
-        if slots & covered == 0 {
-            covered |= slots;
-            models.push((m, FormId::NULL));
-        }
-    }
-    // The pre-built FaceGen head (head, hair, eyes, brows) unless a helmet hides it.
-    if covered & SLOT_HEAD == 0 || covered & SLOT_HAIR == 0 {
-        if let Some(f) = facegen_path(lo, traits.npc_for_face) {
-            models.push((f, FormId::NULL));
-        }
-    }
-    // Weapons are rigid models hung from the bone their model names (sheathed).
-    if let Some((w, m)) = inventory
-        .weapon(lo)
-        .and_then(|w| Some((w, super::inventory::weapon_model(lo, w)?)))
-    {
-        models.push((m, w));
-    }
+    let face = facegen_path(lo, traits.npc_for_face).into_iter().collect();
+    let models = dress(lo, &inventory, skin, traits.race, traits.female, face);
     let name = traits.name.clone();
     let scale = r.scale * traits.height * race_height;
     let transform = Mat4::from_scale_rotation_translation(

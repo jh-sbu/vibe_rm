@@ -366,6 +366,8 @@ pub struct ActorInstance {
     pub pose: Vec<Mat4>,
     pub lights: [u16; 8],
     pub radius: f32,
+    /// Cast a shadow but aren't drawn (the player's body seen from inside it).
+    pub shadow_only: bool,
 }
 
 impl ActorInstance {
@@ -418,6 +420,8 @@ pub struct RenderCell {
 #[derive(Default)]
 pub struct Scene {
     pub cells: HashMap<CellKey, RenderCell>,
+    /// The player's body, outside any cell.
+    pub player: Option<ActorInstance>,
     /// Distant LOD instances.
     pub lod: Vec<Instance>,
     /// Moving instances outside any cell (arrows), rebuilt each frame.
@@ -451,7 +455,7 @@ impl Scene {
                 hits.push((t, i.model.path.clone()));
             }
         }
-        for a in self.cells.values().flat_map(|c| c.actors.iter()) {
+        for a in self.actors().filter(|a| !a.shadow_only) {
             let (center, radius) = a.bounds();
             let oc = center - origin;
             let t = oc.dot(dir);
@@ -467,6 +471,14 @@ impl Scene {
         }
         hits.sort_by(|a, b| a.0.total_cmp(&b.0));
         hits
+    }
+
+    /// The cells' actors and the player.
+    pub fn actors(&self) -> impl Iterator<Item = &ActorInstance> {
+        self.cells
+            .values()
+            .flat_map(|c| c.actors.iter())
+            .chain(self.player.iter())
     }
 
     pub fn instances(&self) -> impl Iterator<Item = &Instance> {
@@ -504,7 +516,12 @@ impl Scene {
                 inst.lights[slot] = *i;
             }
         }
-        for a in self.cells.values_mut().flat_map(|c| c.actors.iter_mut()) {
+        for a in self
+            .cells
+            .values_mut()
+            .flat_map(|c| c.actors.iter_mut())
+            .chain(self.player.iter_mut())
+        {
             let (center, radius) = a.bounds();
             a.lights = pick_lights(lights, center, radius);
         }
@@ -532,7 +549,12 @@ impl Scene {
                 inst.lights = pick_lights(lights, inst.world_center, inst.world_radius);
             }
         }
-        for a in self.cells.values_mut().flat_map(|c| c.actors.iter_mut()) {
+        for a in self
+            .cells
+            .values_mut()
+            .flat_map(|c| c.actors.iter_mut())
+            .chain(self.player.iter_mut())
+        {
             let (center, radius) = a.bounds();
             if touched(center, radius, &a.lights) {
                 a.lights = pick_lights(lights, center, radius);
@@ -1623,9 +1645,9 @@ impl Renderer {
             }
         }
         // Rigid attachments of actors (weapons, etc.) go through the static path.
-        for actor in scene.cells.values().flat_map(|c| c.actors.iter()) {
+        for actor in scene.actors() {
             let (center, radius) = actor.bounds();
-            if !frustum.sphere_visible(center, radius) {
+            if actor.shadow_only || !frustum.sphere_visible(center, radius) {
                 continue;
             }
             for (model, bone, local) in actor.attachments.iter().chain(&actor.equipment) {
@@ -1660,9 +1682,9 @@ impl Renderer {
         let mut skin_inst: Vec<SkinInstanceData> = Vec::new();
         let mut skin_draws: Vec<(&GpuSkinnedPart, u32)> = Vec::new();
         let mut shadow_skin: Vec<(&GpuSkinnedPart, u32, Vec3, f32)> = Vec::new();
-        for actor in scene.cells.values().flat_map(|c| c.actors.iter()) {
+        for actor in scene.actors() {
             let (center, radius) = actor.bounds();
-            let visible = frustum.sphere_visible(center, radius);
+            let visible = !actor.shadow_only && frustum.sphere_visible(center, radius);
             if !visible {
                 stats.culled += 1;
                 if !shadowed {
@@ -2027,9 +2049,7 @@ impl Renderer {
         let mut all: Vec<InstanceData> = Vec::new();
         let mut per_cascade: Vec<Vec<(&GpuPart, std::ops::Range<u32>)>> = Vec::new();
         let attachments: Vec<(Mat4, &Arc<GpuModel>, [u16; 8])> = scene
-            .cells
-            .values()
-            .flat_map(|c| c.actors.iter())
+            .actors()
             .flat_map(|a| {
                 a.attachments
                     .iter()
