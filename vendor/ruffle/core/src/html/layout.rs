@@ -5,11 +5,12 @@ use crate::drawing::Drawing;
 use crate::font::{DefaultFont, EvalParameters, Font, FontLike, FontSet, FontType};
 use crate::html::dimensions::{BoxBounds, Position, Size};
 use crate::html::layout::context::LayoutContext;
-use crate::html::text_format::{FormatSpans, TextFormat, TextSpan};
+use crate::html::text_format::{FormatSpans, TextFormat, TextSpan, TextSpanImage};
 use crate::html::wrap_line;
 use crate::string::WStr;
 use crate::tag_utils::SwfMovie;
 use gc_arena::Collect;
+use ruffle_render::bitmap::BitmapHandle;
 use std::cmp::{Ordering, max, min};
 use std::fmt::{Debug, Formatter};
 use std::mem;
@@ -154,6 +155,12 @@ impl<'a, 'gc> LayoutBuilder<'a, 'gc> {
         let font_set = self.resolve_font(span);
         self.font_set = Some(font_set);
         self.newspan(span);
+
+        if let Some(image) = &span.image
+            && self.append_image(span_start, image, span)
+        {
+            return;
+        }
 
         let params = EvalParameters::from_span(span);
 
@@ -302,8 +309,12 @@ impl<'a, 'gc> LayoutBuilder<'a, 'gc> {
         let mut line_size_bounds = None;
         let mut box_count: i32 = 0;
         for linebox in self.boxes.iter_mut() {
-            let (text, _tf, font_set, params) =
-                linebox.as_renderable_text(self.text).expect("text");
+            // An inline image counts as it is.
+            let Some((text, _tf, font_set, params)) = linebox.as_renderable_text(self.text) else {
+                Self::extend_bounds(&mut line_size_bounds, linebox.bounds);
+                box_count += 1;
+                continue;
+            };
 
             // Flash ignores trailing spaces when aligning lines, so should we
             if self.movie.version() >= 8 && self.current_line_span.align != swf::TextAlign::Left {
@@ -350,7 +361,7 @@ impl<'a, 'gc> LayoutBuilder<'a, 'gc> {
 
         box_count = 0;
         for layout_box in self.boxes.iter_mut() {
-            if layout_box.is_text_box() {
+            if layout_box.is_text_box() || layout_box.is_image() {
                 let position = Position::from((
                     left_adjustment + align_adjustment + (interim_adjustment * box_count),
                     baseline_adjustment,
@@ -681,6 +692,44 @@ impl<'a, 'gc> LayoutBuilder<'a, 'gc> {
 
         self.cursor += (text_width, Twips::ZERO).into();
         self.append_box(new_box);
+    }
+
+    /// An `<img>` naming a bitmap the movie exports, inline in the text as
+    /// Scaleform draws it (Flash floats images to a side): a box the image's
+    /// size (its `width` / `height`, else the bitmap's) standing on the
+    /// baseline, `hspace` either side. False, laying out nothing, when there's
+    /// no such bitmap: the image's placeholder is laid out as before.
+    fn append_image(&mut self, position: usize, image: &TextSpanImage, span: &TextSpan) -> bool {
+        let Some((bitmap, bitmap_width, bitmap_height)) =
+            self.context.library_bitmap(&image.src, &self.movie)
+        else {
+            return false;
+        };
+        let (natural_w, natural_h) = (bitmap_width.max(1) as f64, bitmap_height.max(1) as f64);
+        let (width, height) = match (image.width, image.height) {
+            (Some(w), Some(h)) => (w, h),
+            (Some(w), None) => (w, w * natural_h / natural_w),
+            (None, Some(h)) => (h * natural_w / natural_h, h),
+            (None, None) => (natural_w, natural_h),
+        };
+        let (width, height) = (Twips::from_pixels(width), Twips::from_pixels(height));
+        let hspace = Twips::from_pixels(image.hspace.unwrap_or(0.0));
+        if self.is_word_wrap
+            && !self.is_start_of_line()
+            && self.cursor.x() + width + hspace * 2 > self.max_bounds
+        {
+            self.newline(position, span, false);
+        }
+        self.cursor += (hspace, Twips::ZERO).into();
+        let mut image_box = LayoutBox::from_image(position, bitmap, (bitmap_width, bitmap_height));
+        image_box.bounds = BoxBounds::from_position_and_size(
+            self.cursor - (Twips::ZERO, height).into(),
+            Size::from((width, height)),
+        );
+        self.cursor += (width + hspace, Twips::ZERO).into();
+        self.max_ascent = self.max_ascent.max(height);
+        self.append_box(image_box);
+        true
     }
 
     /// Append a bullet to the start of the current line.
@@ -1137,6 +1186,20 @@ pub enum LayoutContent<'gc> {
         params: EvalParameters,
     },
 
+    /// An image inline in the text (an HTML `<img>` naming a library bitmap).
+    Image {
+        /// The position of the image's placeholder in the text.
+        position: usize,
+
+        /// The bitmap, drawn to the box's size.
+        #[collect(require_static)]
+        bitmap: BitmapHandle,
+
+        /// The bitmap's own size in pixels.
+        #[collect(require_static)]
+        size: (u32, u32),
+    },
+
     /// A layout box containing a drawing.
     ///
     /// The drawing will be rendered with its origin at the position of the
@@ -1162,6 +1225,11 @@ impl Debug for LayoutContent<'_> {
             LayoutContent::Bullet { position, .. } => f
                 .debug_struct("Bullet")
                 .field("position", position)
+                .finish(),
+            LayoutContent::Image { position, size, .. } => f
+                .debug_struct("Image")
+                .field("position", position)
+                .field("size", size)
                 .finish(),
             LayoutContent::Drawing { position, .. } => f
                 .debug_struct("Drawing")
@@ -1213,6 +1281,19 @@ impl<'gc> LayoutBox<'gc> {
                 text_format: span.get_text_format(),
                 font_set,
                 params,
+            },
+            last_in_line: false,
+        }
+    }
+
+    /// An inline image: the bitmap, its own size in pixels.
+    pub fn from_image(position: usize, bitmap: BitmapHandle, size: (u32, u32)) -> Self {
+        Self {
+            bounds: Default::default(),
+            content: LayoutContent::Image {
+                position,
+                bitmap,
+                size,
             },
             last_in_line: false,
         }
@@ -1279,13 +1360,22 @@ impl<'gc> LayoutBox<'gc> {
                 *font_set,
                 *params,
             )),
-            LayoutContent::Drawing { .. } => None,
+            LayoutContent::Drawing { .. } | LayoutContent::Image { .. } => None,
         }
     }
 
     /// Returns a reference to the drawing this box contains, if it has one.
+    /// An image's bitmap and its own size in pixels (drawn to the box's size).
+    pub fn as_renderable_image(&self) -> Option<(&BitmapHandle, (u32, u32))> {
+        match &self.content {
+            LayoutContent::Image { bitmap, size, .. } => Some((bitmap, *size)),
+            _ => None,
+        }
+    }
+
     pub fn as_renderable_drawing(&self) -> Option<&Drawing> {
         match &self.content {
+            LayoutContent::Image { .. } => None,
             LayoutContent::Text { .. } => None,
             LayoutContent::Bullet { .. } => None,
             LayoutContent::Drawing { drawing, .. } => Some(drawing),
@@ -1294,6 +1384,10 @@ impl<'gc> LayoutBox<'gc> {
 
     pub fn is_text_box(&self) -> bool {
         matches!(&self.content, LayoutContent::Text { .. })
+    }
+
+    pub fn is_image(&self) -> bool {
+        matches!(&self.content, LayoutContent::Image { .. })
     }
 
     pub fn is_bullet(&self) -> bool {
@@ -1309,6 +1403,7 @@ impl<'gc> LayoutBox<'gc> {
             LayoutContent::Text { start, .. } => *start,
             LayoutContent::Bullet { position, .. } => *position,
             LayoutContent::Drawing { position, .. } => *position,
+            LayoutContent::Image { position, .. } => *position,
         }
     }
 
@@ -1317,6 +1412,7 @@ impl<'gc> LayoutBox<'gc> {
             LayoutContent::Text { end, .. } => *end,
             LayoutContent::Bullet { position, .. } => *position,
             LayoutContent::Drawing { position, .. } => *position,
+            LayoutContent::Image { position, .. } => *position + 1,
         }
     }
 
