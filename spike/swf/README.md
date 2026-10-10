@@ -3,8 +3,7 @@
 A spike: Skyrim's Interface `.swf` menus (Scaleform, ActionScript 2) run through
 [Ruffle](https://github.com/ruffle-rs/ruffle) v0.7.1 with Scaleform changes
 (`vendor/ruffle`), outside the engine. The harness isn't part of the engine's
-workspace. Building needs Java (Ruffle's AVM2 library is compiled with
-`asc.jar`).
+workspace.
 
 ## Run
 
