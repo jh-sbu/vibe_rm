@@ -268,6 +268,10 @@ pub struct CombatSettings {
     shield_bash_pc_max: f32,
     weapon_bash_min: f32,
     weapon_bash_max: f32,
+    /// Sneak attack damage multipliers by weapon animation type (`WEAP` `DNAM`:
+    /// 0 hand to hand, 1 sword, 2 dagger, 3 war axe, 4 mace, 5 greatsword,
+    /// 6 battleaxe); see [`SNEAK_BOW_MULT`] for shots.
+    sneak_mult: [f32; 7],
 }
 
 impl CombatSettings {
@@ -305,9 +309,22 @@ impl CombatSettings {
             shield_bash_pc_max: gmst_f32(lo, "fShieldBashPCMax", 0.25),
             weapon_bash_min: gmst_f32(lo, "fWeaponBashMin", 0.05),
             weapon_bash_max: gmst_f32(lo, "fWeaponBashMax", 0.25),
+            sneak_mult: [
+                gmst_f32(lo, "fCombatSneakHandMult", 2.0),
+                gmst_f32(lo, "fCombatSneak1HSwordMult", 3.0),
+                gmst_f32(lo, "fCombatSneak1HDaggerMult", 3.0),
+                gmst_f32(lo, "fCombatSneak1HAxeMult", 3.0),
+                gmst_f32(lo, "fCombatSneak1HMaceMult", 3.0),
+                gmst_f32(lo, "fCombatSneak2HSwordMult", 2.0),
+                gmst_f32(lo, "fCombatSneak2HAxeMult", 2.0),
+            ],
         }
     }
 }
+
+/// Sneak attack multiplier for bows and crossbows: no game setting holds it;
+/// UESP gives double damage before the Deadly Aim perk (`known_gaps/sneak-attacks.md`).
+const SNEAK_BOW_MULT: f32 = 2.0;
 
 /// What a set of worn items protects: the total armor rating (as the inventory
 /// shows it) and the share of a blow it takes away.
@@ -1410,12 +1427,38 @@ impl Engine {
         stagger: f32,
         projectile: Option<FormId>,
     ) {
+        let sneak = self.sneak_attack_mult(target, attacker, projectile.is_some());
+        let damage = match sneak {
+            Some(mult) => {
+                log::info!("{attacker} sneak attacks {target}: {mult}x {damage:.0}");
+                if attacker == PLAYER_REF {
+                    let text = format!(
+                        "{}{mult:.1}{}",
+                        self.gmst_string("sSuccessfulSneakAttackMain")
+                            .unwrap_or_else(|| "Sneak attack for ".into()),
+                        self.gmst_string("sSuccessfulSneakAttackEnd")
+                            .unwrap_or_else(|| "X damage!".into()),
+                    );
+                    self.scripts.notify(text);
+                }
+                damage * mult
+            }
+            None => damage,
+        };
         let mut damage = self.after_armor(target, damage);
         // Attacks that can stagger do so only some of the time (iStaggerAttackChance).
         let staggers = (self.rand() % 100) < self.combat_settings().stagger_chance;
         let mut stagger = if staggers { stagger } else { 0.0 };
         let share = self.block_share(target, attacker, power);
-        self.send_hit_event(target, attacker, projectile, power, false, share.is_some());
+        self.send_hit_event(
+            target,
+            attacker,
+            projectile,
+            power,
+            sneak.is_some(),
+            false,
+            share.is_some(),
+        );
         // Arrows land where they strike ([`Engine::arrow_impact`]).
         if projectile.is_none() {
             self.melee_impact(target, attacker, share.is_some(), false);
@@ -1448,6 +1491,34 @@ impl Engine {
         self.damage(target, damage, Some(attacker), stagger);
     }
 
+    /// A blow or shot is a sneak attack when the attacker is sneaking and the
+    /// struck actor doesn't detect it: the damage multiplier for the attacker's
+    /// weapon (a shot's for bows). Not against the player, who detects no one
+    /// (`crate::detection`), nor with a staff.
+    fn sneak_attack_mult(&self, target: FormId, attacker: FormId, shot: bool) -> Option<f32> {
+        if target == PLAYER_REF || !self.is_sneaking(attacker) || self.detects(target, attacker) {
+            return None;
+        }
+        if shot {
+            return Some(SNEAK_BOW_MULT);
+        }
+        let weapon = if attacker == PLAYER_REF {
+            self.player_weapon()
+        } else {
+            self.inventories
+                .get(&attacker)
+                .and_then(|i| i.weapon(&self.lo))
+        };
+        let anim = weapon
+            .and_then(|w| self.lo.get(w))
+            .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
+            .unwrap_or(0);
+        self.combat_settings()
+            .sneak_mult
+            .get(anim as usize)
+            .copied()
+    }
+
     /// A bash landing: armor takes its share, but no guard stops it; it breaks
     /// an actor's guard, staggers the target (harder for a power bash) and cuts short
     /// the swing it was making.
@@ -1464,7 +1535,7 @@ impl Engine {
             "{attacker} {} {target} for {damage:.1}",
             if power { "power bashes" } else { "bashes" }
         );
-        self.send_hit_event(target, attacker, None, power, true, false);
+        self.send_hit_event(target, attacker, None, power, false, true, false);
         self.melee_impact(target, attacker, false, true);
         if let Some(a) = self.actor_mut(target) {
             a.set_guard(0.0);
@@ -2049,6 +2120,7 @@ impl Engine {
         attacker: FormId,
         projectile: Option<FormId>,
         power: bool,
+        sneak: bool,
         bash: bool,
         blocked: bool,
     ) {
@@ -2066,7 +2138,7 @@ impl Engine {
             form(self, weapon),
             form(self, projectile),
             papyrus::Value::Bool(power),
-            papyrus::Value::Bool(false),
+            papyrus::Value::Bool(sneak),
             papyrus::Value::Bool(bash),
             papyrus::Value::Bool(blocked),
         ];

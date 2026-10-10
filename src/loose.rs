@@ -379,7 +379,7 @@ impl Engine {
     ) {
         self.disturb(what);
         self.physics.apply_impulse(what, impulse);
-        self.send_hit_event(what, attacker, projectile, power, false, false);
+        self.send_hit_event(what, attacker, projectile, power, false, false, false);
     }
 
     /// Papyrus `ApplyHavokImpulse(x, y, z, magnitude)`: a push along the
