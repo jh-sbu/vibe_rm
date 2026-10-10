@@ -133,6 +133,10 @@ pub struct Engine {
     pub player_health: f32,
     /// The player holds their guard up (right mouse button).
     pub player_blocking: bool,
+    /// The player's body (built on the first update).
+    pub(crate) player_body: Option<crate::player_body::PlayerBody>,
+    /// Seen from behind the player rather than through their eyes.
+    pub third_person: bool,
     /// Traps touching their targets.
     pub(crate) traps: crate::traps::Traps,
     /// Scripts registered for animation events, and the events to deliver.
@@ -329,6 +333,8 @@ impl Engine {
             combat_settings: Default::default(),
             detection: Default::default(),
             player_blocking: false,
+            player_body: None,
+            third_person: false,
             grab: Default::default(),
             activation: Default::default(),
             traps: Default::default(),
@@ -945,7 +951,10 @@ impl Engine {
         self.vm = vm;
     }
 
-    fn skeleton(&mut self, path: &str) -> Option<std::sync::Arc<crate::world::skeleton::Skeleton>> {
+    pub(crate) fn skeleton(
+        &mut self,
+        path: &str,
+    ) -> Option<std::sync::Arc<crate::world::skeleton::Skeleton>> {
         if let Some(s) = self.skeletons.get(path) {
             return s.clone();
         }
@@ -959,6 +968,70 @@ impl Engine {
         }
         self.skeletons.insert(path.to_owned(), s.clone());
         s
+    }
+
+    /// Bind an actor's models to its skeleton: skinned parts with their bones
+    /// mapped, rigid models (weapons, shields) hung from the bone they name and
+    /// which item each of those comes from.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn actor_meshes(
+        &mut self,
+        d: &crate::world::actor::ActorDesc,
+        skel: &crate::world::skeleton::Skeleton,
+    ) -> (
+        Vec<crate::render::ActorMesh>,
+        Vec<(std::sync::Arc<crate::render::GpuModel>, usize, glam::Mat4)>,
+        Vec<(FormId, String)>,
+    ) {
+        let mut meshes = Vec::new();
+        let mut equipment = Vec::new();
+        let mut rigid = Vec::new();
+        for (m, item) in &d.models {
+            let Some(model) = self.models.get(m) else {
+                log::debug!("{}: missing model {m}", d.name);
+                continue;
+            };
+            // Rigid models (weapons, shields) hang from the bone they name.
+            if model.skinned.is_empty() && !model.parts.is_empty() {
+                match self
+                    .parent_bone(m)
+                    .and_then(|b| skel.find(&b).map(|i| (b, i)))
+                {
+                    Some((_, bone)) => {
+                        equipment.push((model.clone(), bone, glam::Mat4::IDENTITY));
+                        rigid.push((*item, m.clone()));
+                    }
+                    None => log::debug!(
+                        "{}: rigid model {m} has no parent bone in {}",
+                        d.name,
+                        d.skeleton
+                    ),
+                }
+                continue;
+            }
+            for (pi, part) in model.skinned.iter().enumerate() {
+                let bone_map = part
+                    .bone_names
+                    .iter()
+                    .map(|n| {
+                        skel.find(n).unwrap_or_else(|| {
+                            log::debug!(
+                                "{}: bone {n:?} of {m} not in skeleton {}",
+                                d.name,
+                                d.skeleton
+                            );
+                            usize::MAX
+                        })
+                    })
+                    .collect();
+                meshes.push(crate::render::ActorMesh {
+                    model: model.clone(),
+                    part: pi,
+                    bone_map,
+                });
+            }
+        }
+        (meshes, equipment, rigid)
     }
 
     /// Spawn actors (ACHR references) into a loaded cell, optionally away from their
@@ -1158,54 +1231,7 @@ impl Engine {
             let (scale, _, feet) = d.transform.to_scale_rotation_translation();
             rt.capsule = Some(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
             let pose = first_pose.unwrap_or_else(|| skel.model_space(&skel.bind_locals()));
-            let mut meshes = Vec::new();
-            let mut equipment = Vec::new();
-            let mut rigid = Vec::new();
-            for (m, item) in &d.models {
-                let Some(model) = self.models.get(m) else {
-                    log::debug!("{}: missing model {m}", d.name);
-                    continue;
-                };
-                // Rigid models (weapons, shields) hang from the bone they name.
-                if model.skinned.is_empty() && !model.parts.is_empty() {
-                    match self
-                        .parent_bone(m)
-                        .and_then(|b| skel.find(&b).map(|i| (b, i)))
-                    {
-                        Some((_, bone)) => {
-                            equipment.push((model.clone(), bone, glam::Mat4::IDENTITY));
-                            rigid.push((*item, m.clone()));
-                        }
-                        None => log::debug!(
-                            "{}: rigid model {m} has no parent bone in {}",
-                            d.name,
-                            d.skeleton
-                        ),
-                    }
-                    continue;
-                }
-                for (pi, part) in model.skinned.iter().enumerate() {
-                    let bone_map = part
-                        .bone_names
-                        .iter()
-                        .map(|n| {
-                            skel.find(n).unwrap_or_else(|| {
-                                log::debug!(
-                                    "{}: bone {n:?} of {m} not in skeleton {}",
-                                    d.name,
-                                    d.skeleton
-                                );
-                                usize::MAX
-                            })
-                        })
-                        .collect();
-                    meshes.push(crate::render::ActorMesh {
-                        model: model.clone(),
-                        part: pi,
-                        bone_map,
-                    });
-                }
-            }
+            let (meshes, equipment, rigid) = self.actor_meshes(d, &skel);
             log::debug!(
                 "actor {} {:?} ({} {}) {} meshes, {} rigid ({:?}) at {:?}, {} packages",
                 d.ref_id,
@@ -1234,6 +1260,7 @@ impl Engine {
                 pose,
                 lights: [0xFFFF; 8],
                 radius: 120.0,
+                shadow_only: false,
             });
             self.rigid_models.insert(d.ref_id, rigid);
             runtimes.push(rt);
@@ -2249,6 +2276,7 @@ impl Engine {
         self.player.moving = dt > 0.0 && stride / dt > 1.0;
         self.player.running = self.player.moving && (run || sprint);
         self.update_player_footsteps(dt, stride, run, sprint);
+        self.update_player_body(self.player.position - before, dt);
         self.camera.position = self.player.eye();
         self.update_streaming();
         self.update_lod();
