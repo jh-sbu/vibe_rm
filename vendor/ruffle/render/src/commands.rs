@@ -3,7 +3,7 @@ use crate::bitmap::{BitmapHandle, PixelRegion, PixelSnapping};
 use crate::matrix::Matrix;
 use crate::pixel_bender::PixelBenderShaderHandle;
 use crate::transform::Transform;
-use swf::{BlendMode, Color};
+use swf::{BlendMode, Color, Rectangle, Twips};
 
 pub trait CommandHandler {
     fn render_bitmap(
@@ -25,7 +25,15 @@ pub trait CommandHandler {
     fn deactivate_mask(&mut self);
     fn pop_mask(&mut self);
 
-    fn blend(&mut self, commands: CommandList, blend_mode: RenderBlendMode);
+    /// Draws `commands` blended with `blend_mode`. `bounds` (in the
+    /// coordinates the commands draw in), when given, holds everything they
+    /// draw: a renderer drawing them offscreen first needs no more room.
+    fn blend(
+        &mut self,
+        commands: CommandList,
+        blend_mode: RenderBlendMode,
+        bounds: Option<Rectangle<Twips>>,
+    );
 }
 
 /// Holds either a normal BlendMode, or the shader for BlendMode.SHADER.
@@ -80,7 +88,9 @@ impl CommandList {
                 Command::ActivateMask => handler.activate_mask(),
                 Command::DeactivateMask => handler.deactivate_mask(),
                 Command::PopMask => handler.pop_mask(),
-                Command::Blend(commands, blend_mode) => handler.blend(commands, blend_mode),
+                Command::Blend(commands, blend_mode, bounds) => {
+                    handler.blend(commands, blend_mode, bounds)
+                }
                 Command::RenderAlphaMask {
                     maskee_commands,
                     mask_commands,
@@ -194,9 +204,15 @@ impl CommandHandler for CommandList {
     }
 
     #[inline]
-    fn blend(&mut self, commands: CommandList, blend_mode: RenderBlendMode) {
+    fn blend(
+        &mut self,
+        commands: CommandList,
+        blend_mode: RenderBlendMode,
+        bounds: Option<Rectangle<Twips>>,
+    ) {
         if self.maskers_in_progress <= 1 {
-            self.commands.push(Command::Blend(commands, blend_mode));
+            self.commands
+                .push(Command::Blend(commands, blend_mode, bounds));
         }
     }
 }
@@ -238,5 +254,5 @@ pub enum Command {
     ActivateMask,
     DeactivateMask,
     PopMask,
-    Blend(CommandList, RenderBlendMode),
+    Blend(CommandList, RenderBlendMode, Option<Rectangle<Twips>>),
 }
