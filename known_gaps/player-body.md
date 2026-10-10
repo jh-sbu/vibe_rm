@@ -1,10 +1,11 @@
 # The player's body
 
-Implemented in `src/player_body.rs` (assembly and animation) and
-`crate::world::actor::{describe_player, head_part_models}`.
+Implemented in `src/player_body.rs` (assembly, animation and the third-person
+camera) and `crate::world::actor::{describe_player, head_part_models}`.
 Sources: UESP's Skyrim Mod pages for `NPC_` (`PNAM` head parts), `RACE`
 (`HEAD` default head parts after `NAM0` / `MNAM` / `FNAM`) and `HDPT` (`PNAM`
-part type, `HNAM` extra parts).
+part type, `HNAM` extra parts); the Creation Kit wiki for
+`Game.ForceFirstPerson` / `Game.ForceThirdPerson`.
 
 The body is the player's NPC record (`0x7`): its race's skeleton, skin and
 behaviour project for its sex, what the player has equipped (rebuilt when that
@@ -32,5 +33,11 @@ driven by the player's movement (`Speed`, `TurnDelta`, `moveStart` /
   come from the first-person stride, not the graph's footstep events. Foot IK
   and head tracking are off.
 - **Dying** leaves the body standing; it has no ragdoll.
-- **Nothing shows it yet**: there's no third-person camera, so the body only
-  casts its shadow.
+- **The third-person camera** sits straight behind the eye, its distance
+  (60 to 600, 200 at first) chosen by eye: the game's come from INI settings
+  (over-the-shoulder offsets, zoom limits) not checked against a source. It
+  doesn't swing round the body on its own, there is no vanity camera, and the
+  activation and attack rays still go from the eye (straight ahead of the
+  camera, as it sits behind it). It stops short of the world but not of actors.
+- **`aiDisablePOVType`** (`DisablePlayerControls`) is still ignored; disabled
+  camera switching stops F and the wheel.

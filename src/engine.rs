@@ -137,6 +137,8 @@ pub struct Engine {
     pub(crate) player_body: Option<crate::player_body::PlayerBody>,
     /// Seen from behind the player rather than through their eyes.
     pub third_person: bool,
+    /// How far behind the eye the third-person camera sits.
+    pub third_person_distance: f32,
     /// Traps touching their targets.
     pub(crate) traps: crate::traps::Traps,
     /// Scripts registered for animation events, and the events to deliver.
@@ -335,6 +337,7 @@ impl Engine {
             player_blocking: false,
             player_body: None,
             third_person: false,
+            third_person_distance: crate::player_body::THIRD_PERSON_DEFAULT,
             grab: Default::default(),
             activation: Default::default(),
             traps: Default::default(),

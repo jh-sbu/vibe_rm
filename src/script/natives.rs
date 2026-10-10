@@ -202,6 +202,14 @@ pub fn call(
         ("game", "ismenucontrolsenabled") => v(Value::Bool(!e.disabled_controls.menu)),
         ("game", "isactivatecontrolsenabled") => v(Value::Bool(!e.disabled_controls.activate)),
         ("game", "isjournalcontrolsenabled") => v(Value::Bool(!e.disabled_controls.journal)),
+        ("game", "forcefirstperson") => {
+            e.set_third_person(false);
+            none()
+        }
+        ("game", "forcethirdperson") => {
+            e.set_third_person(true);
+            none()
+        }
         ("game", "setinchargen") => none(),
         ("game", "getgamesettingfloat") => v(Value::Float(crate::ai::combat::gmst_f32(
             &e.lo,

@@ -253,3 +253,44 @@ impl PlayerBody {
         Some(g.update(dt, vfs, anims, &self.skeleton).pose)
     }
 }
+
+/// The third-person camera's distance behind the eye: nearest, farthest and
+/// at first (chosen by eye; the game's come from its INI settings).
+pub const THIRD_PERSON_MIN: f32 = 60.0;
+pub const THIRD_PERSON_MAX: f32 = 600.0;
+pub const THIRD_PERSON_DEFAULT: f32 = 200.0;
+/// How far short of a wall the camera stops.
+const CAMERA_CLEARANCE: f32 = 12.0;
+
+impl Engine {
+    /// The camera the frame is drawn from: the eye in first person, else pulled
+    /// back behind it along the view, short of whatever is in the way (the
+    /// world, not actors).
+    pub fn view_camera(&self) -> crate::render::Camera {
+        let mut cam = self.camera_copy();
+        if self.third_person {
+            let back = -cam.forward();
+            let want = self.third_person_distance;
+            let dist = self
+                .physics
+                .ground_ray(cam.position, back, want + CAMERA_CLEARANCE)
+                .map_or(want, |(t, _)| (t - CAMERA_CLEARANCE).clamp(0.0, want));
+            cam.position += back * dist;
+        }
+        cam
+    }
+
+    /// Switch between first and third person.
+    pub fn set_third_person(&mut self, on: bool) {
+        if self.third_person != on {
+            log::info!("{} person", if on { "third" } else { "first" });
+        }
+        self.third_person = on;
+    }
+
+    /// Move the third-person camera nearer (negative) or farther.
+    pub fn zoom_third_person(&mut self, by: f32) {
+        self.third_person_distance =
+            (self.third_person_distance + by).clamp(THIRD_PERSON_MIN, THIRD_PERSON_MAX);
+    }
+}

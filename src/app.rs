@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use esp::LoadOrder;
 use glam::Vec3;
 use winit::application::ApplicationHandler;
-use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
@@ -237,10 +237,11 @@ pub fn run(opts: Options) -> Result<()> {
                         engine.camera.position - (engine.player.eye() - engine.player.position);
                 }
                 if opts.burst.is_some_and(|n| n > 0 && i % n == 0) {
-                    let pixels =
-                        engine
-                            .renderer
-                            .render_to_image(&engine.scene, &engine.camera, |_, _| {});
+                    let pixels = engine.renderer.render_to_image(
+                        &engine.scene,
+                        &engine.view_camera(),
+                        |_, _| {},
+                    );
                     let stem = path.with_extension("");
                     write_png(
                         &format!("{}_{i:05}.png", stem.display()),
@@ -294,7 +295,9 @@ pub fn run(opts: Options) -> Result<()> {
             }
         }
         if let Some(n) = opts.bench {
-            let t = engine.renderer.bench(&engine.scene, &engine.camera, n);
+            let t = engine
+                .renderer
+                .bench(&engine.scene, &engine.view_camera(), n);
             log::info!(
                 "bench: {:?}/frame ({:.1} fps), {:?}",
                 t,
@@ -320,11 +323,12 @@ pub fn run(opts: Options) -> Result<()> {
         deltas.append(std::mem::take(&mut out.textures_delta));
         out.textures_delta = deltas;
         let size = [opts.width, opts.height];
-        let pixels = engine
-            .renderer
-            .render_to_image(&engine.scene, &engine.camera, |r, view| {
-                ui.paint(&r.device, &r.queue, view, out, size);
-            });
+        let pixels =
+            engine
+                .renderer
+                .render_to_image(&engine.scene, &engine.view_camera(), |r, view| {
+                    ui.paint(&r.device, &r.queue, view, out, size);
+                });
         log::info!("render stats: {:?}", engine.renderer.stats);
         write_png(
             &path.display().to_string(),
@@ -615,6 +619,14 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.player.sneaking = !s.engine.player.sneaking;
                             }
+                            // F switches between first and third person.
+                            if code == KeyCode::KeyF
+                                && !event.repeat
+                                && !s.engine.disabled_controls.cam_switch
+                            {
+                                let third = !s.engine.third_person;
+                                s.engine.set_third_person(third);
+                            }
                             if code == KeyCode::KeyN && !event.repeat {
                                 s.engine.player.noclip = !s.engine.player.noclip;
                                 log::info!("noclip {}", s.engine.player.noclip);
@@ -630,6 +642,16 @@ impl ApplicationHandler for App {
                             s.keys.remove(&code);
                         }
                     }
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                // The wheel moves the third-person camera nearer or farther.
+                let lines = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32 / 40.0,
+                };
+                if s.grabbed && s.engine.third_person && !s.engine.disabled_controls.cam_switch {
+                    s.engine.zoom_third_person(-lines * 30.0);
                 }
             }
             WindowEvent::MouseInput {
@@ -711,7 +733,7 @@ impl ApplicationHandler for App {
                 let view = frame.texture.create_view(&Default::default());
                 s.engine
                     .renderer
-                    .render(&s.engine.scene, &s.engine.camera, &view);
+                    .render(&s.engine.scene, &s.engine.view_camera(), &view);
                 let raw = s.egui_state.take_egui_input(&s.window);
                 let out = s.ui.build(raw, &mut s.engine);
                 s.egui_state
