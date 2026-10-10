@@ -147,19 +147,7 @@ inherits = "release"
 lto = true
 codegen-units = 1
 
-[profile.dev.package.h263-rs]
-opt-level = 3
-
 [profile.dev.package.h263-rs-yuv]
-opt-level = 3
-
-[profile.dev.package.nihav_core]
-opt-level = 3
-
-[profile.dev.package.nihav_codec_support]
-opt-level = 3
-
-[profile.dev.package.nihav_duck]
 opt-level = 3
 
 # TODO: Set rustflags here instead of in tools/build_wasm.ts, when that
