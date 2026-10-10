@@ -31,8 +31,8 @@ pub struct Ui {
     renderer: egui_wgpu::Renderer,
     pub console: Console,
     pub show_debug: bool,
-    /// The HUD is the game's (hudmenu.swf, `crate::swf_ui`): egui draws only
-    /// the debug text over the world.
+    /// The HUD and message boxes are the game's (hudmenu.swf, messagebox.swf:
+    /// `crate::swf_ui`): egui draws only the debug text over the world.
     pub swf_hud: bool,
     pub fps: u32,
     /// The item menu was shown last frame (the key that opened it doesn't close it).
@@ -87,7 +87,7 @@ impl Ui {
                 self.item_menu(&ctx, engine);
             }
             self.menu_shown = engine.menu.is_some();
-            if !engine.messages.boxes.is_empty() {
+            if !engine.messages.boxes.is_empty() && !self.swf_hud {
                 self.message_box(&ctx, engine);
             }
             if self.console.open {

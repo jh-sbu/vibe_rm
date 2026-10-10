@@ -22,7 +22,11 @@ const H: &str = "_root.HUDMovieBaseInstance";
 pub struct SwfUi {
     pub ui: UiSwf,
     hud: Hud,
+    message_box: MessageBoxMenu,
     buttons: Buttons,
+    /// The keyboard's modifiers and the cursor, for the menus' input.
+    modifiers: winit::keyboard::ModifiersState,
+    cursor: (f64, f64),
 }
 
 impl SwfUi {
@@ -46,20 +50,120 @@ impl SwfUi {
         )?;
         let buttons = Buttons::load(&engine.vfs);
         let hud = Hud::open(&ui, size, &buttons)?;
-        Ok(SwfUi { ui, hud, buttons })
+        let message_box = MessageBoxMenu::open(&ui, size)?;
+        Ok(SwfUi {
+            ui,
+            hud,
+            message_box,
+            buttons,
+            modifiers: Default::default(),
+            cursor: (0.0, 0.0),
+        })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.hud.menu.resize(width, height);
+        self.message_box.menu.resize(width, height);
     }
 
     /// Tells the HUD what changed, lets `dt` pass in it and answers its calls.
     pub fn update(&mut self, engine: &mut Engine, dt: f32) {
+        let dt = Duration::from_secs_f32(dt.max(0.0));
         self.hud.update(engine);
-        self.hud.menu.advance(Duration::from_secs_f32(dt.max(0.0)));
+        self.hud.menu.advance(dt);
         for call in self.hud.menu.take_calls() {
             answer(&self.hud.menu, &self.buttons, engine, &call);
         }
+        self.message_box.update(engine);
+        self.message_box.menu.advance(dt);
+        for call in self.message_box.menu.take_calls() {
+            if !self.message_box.answer(engine, &call) {
+                answer(&self.message_box.menu, &self.buttons, engine, &call);
+            }
+        }
+    }
+
+    /// Whether a menu over the world takes the keyboard and mouse.
+    pub fn wants_input(&self) -> bool {
+        self.message_box.shown.is_some()
+    }
+
+    /// The window's input, to the menu on top while one takes it (the console
+    /// key aside). True when a menu took it.
+    pub fn window_event(&mut self, event: &winit::event::WindowEvent) -> bool {
+        use ui_swf::{MouseButton, MouseWheelDelta, PlayerEvent};
+        use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
+        use winit::keyboard::{KeyCode, PhysicalKey};
+        match event {
+            WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
+            WindowEvent::CursorMoved { position, .. } => self.cursor = (position.x, position.y),
+            _ => {}
+        }
+        if !self.wants_input() {
+            return false;
+        }
+        let menu = &self.message_box.menu;
+        let (x, y) = self.cursor;
+        match event {
+            WindowEvent::CursorMoved { .. } => menu.handle_event(PlayerEvent::MouseMove { x, y }),
+            WindowEvent::MouseInput { state, button, .. } => {
+                let button = match button {
+                    winit::event::MouseButton::Left => MouseButton::Left,
+                    winit::event::MouseButton::Right => MouseButton::Right,
+                    winit::event::MouseButton::Middle => MouseButton::Middle,
+                    _ => MouseButton::Unknown,
+                };
+                menu.handle_event(match state {
+                    ElementState::Pressed => PlayerEvent::MouseDown {
+                        x,
+                        y,
+                        button,
+                        index: None,
+                    },
+                    ElementState::Released => PlayerEvent::MouseUp { x, y, button },
+                });
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let delta = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => MouseWheelDelta::Lines((*y).into()),
+                    MouseScrollDelta::PixelDelta(p) => MouseWheelDelta::Pixels(p.y),
+                };
+                menu.handle_event(PlayerEvent::MouseWheel { delta });
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let PhysicalKey::Code(code) = event.physical_key else {
+                    return true;
+                };
+                if code == KeyCode::Backquote {
+                    return false;
+                }
+                // An input field focused: the game's text input mode.
+                let typing = menu.typing();
+                let keys = if typing {
+                    ui_swf::input::text_mode_key(code).into_iter().collect()
+                } else {
+                    ui_swf::input::keys(code)
+                };
+                for key in keys {
+                    menu.handle_event(match event.state {
+                        ElementState::Pressed => PlayerEvent::KeyDown { key },
+                        ElementState::Released => PlayerEvent::KeyUp { key },
+                    });
+                }
+                if typing && event.state == ElementState::Pressed {
+                    let (shift, ctrl) = (self.modifiers.shift_key(), self.modifiers.control_key());
+                    if let Some(code) = ui_swf::input::text_control(code, shift, ctrl) {
+                        menu.handle_event(PlayerEvent::TextControl { code });
+                    } else if !ctrl && let Some(text) = &event.text {
+                        for codepoint in text.chars().filter(|c| !c.is_control()) {
+                            menu.handle_event(PlayerEvent::TextInput { codepoint });
+                        }
+                    }
+                }
+            }
+            _ => return false,
+        }
+        true
     }
 
     /// Whether the HUD shows: not while a menu is up, as in the game.
@@ -69,11 +173,16 @@ impl SwfUi {
 
     /// Draws the HUD over `target` when `visible`.
     pub fn draw(&mut self, target: &wgpu::TextureView, visible: bool) {
-        if !visible {
-            return;
+        let mut menus = Vec::new();
+        if visible {
+            self.hud.menu.render();
+            menus.push(&self.hud.menu);
         }
-        self.hud.menu.render();
-        self.ui.composite(target, &[&self.hud.menu]);
+        if self.message_box.shown.is_some() {
+            self.message_box.menu.render();
+            menus.push(&self.message_box.menu);
+        }
+        self.ui.composite(target, &menus);
     }
 }
 
@@ -270,6 +379,68 @@ fn mouse_art(code: u32) -> Option<String> {
         8 | 9 => Some("Wheel".into()),
         0xA => Some("MouseMove".into()),
         _ => None,
+    }
+}
+
+/// The message box in front (`Debug.MessageBox`, `Message.Show`), as the game
+/// shows it: `messagebox.swf`, its text and its buttons side by side, answered
+/// with the mouse or the keys.
+struct MessageBoxMenu {
+    menu: Menu,
+    /// The box shown: its text and buttons (index for `Show`, label).
+    shown: Option<(String, Vec<(i32, String)>)>,
+}
+
+impl MessageBoxMenu {
+    const M: &str = "_root.MessageMenu";
+
+    fn open(ui: &UiSwf, size: (u32, u32)) -> anyhow::Result<Self> {
+        Ok(MessageBoxMenu {
+            menu: ui.open("messagebox.swf", size)?,
+            shown: None,
+        })
+    }
+
+    /// Shows the box in front when it's a new one.
+    fn update(&mut self, engine: &Engine) {
+        let front = engine
+            .messages
+            .boxes
+            .front()
+            .map(|b| (b.text.replace("\r\n", "\n"), b.buttons.clone()));
+        if front == self.shown {
+            return;
+        }
+        if let Some((message, buttons)) = &front {
+            let m = Self::M;
+            self.menu.invoke(
+                &format!("{m}.SetMessage"),
+                &[text(message), Value::Bool(false)],
+            );
+            // The first button focused, for the keyboard; then the labels.
+            let mut args = vec![Value::Bool(true)];
+            args.extend(buttons.iter().map(|(_, label)| text(label)));
+            self.menu.callback("setButtons", &args);
+        }
+        self.shown = front;
+    }
+
+    /// `buttonPress(position)`: the button there answers the box. False for
+    /// other calls.
+    fn answer(&mut self, engine: &mut Engine, call: &ui_swf::GameCall) -> bool {
+        if call.name != "buttonPress" {
+            return false;
+        }
+        let pressed = match call.args.last() {
+            Some(Value::Number(n)) => *n as usize,
+            _ => return true,
+        };
+        if let Some((_, buttons)) = &self.shown
+            && let Some((index, _)) = buttons.get(pressed)
+        {
+            engine.choose_message_button(*index);
+        }
+        true
     }
 }
 

@@ -29,7 +29,7 @@ Early but already visual:
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
 | AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture and crafting stations picked through the IDLE tree, idle markers, seated and standing eating / drinking, sitting variants, anim objects in hand; humanoids and creatures animated by running their behaviour graphs (walking, running, sneaking and turning at their movement types' speeds; `PlayIdle`, `SendAnimationEvent`) | in progress |
 | Papyrus VM, conditions, quests, dialogue, console, audio, music | in progress |
-| The game's own menus (Interface `.swf` through the vendored Ruffle): the HUD | in progress |
+| The game's own menus (Interface `.swf` through the vendored Ruffle): the HUD, message boxes | in progress |
 | Inventories (NPC items, outfits, containers), sheathed weapons and shields | in progress |
 | Combat (melee between NPCs, creatures and the player), ragdoll deaths; skills, leveling and perk trees | in progress |
 | Magic: effects on actors, abilities, potions, enchantments, effect scripts (casting by hand to come) | in progress |
@@ -61,8 +61,10 @@ the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, 
 `VRM_AI_NO_SNAP=1` makes actors walk into furniture on cell load instead of starting
 out in it.
 
-The HUD is the game's own (`Interface/hudmenu.swf`); `--egui-hud` draws the
-engine's egui HUD instead (also used when the Interface files can't be read).
+The HUD and message boxes are the game's own (`Interface/hudmenu.swf`,
+`messagebox.swf`; a box takes the mouse and the keys: W/A/S/D or the arrows,
+E or Enter); `--egui-hud` draws egui's instead (also used when the Interface
+files can't be read).
 
 The data directory is found from `--data`, `$SKYRIM_DATA`, or the default Steam
 locations on Linux.

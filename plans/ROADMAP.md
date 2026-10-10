@@ -14,7 +14,9 @@ game each piece unlocks.
 - The game's HUD (`hudmenu.swf` through the vendored Ruffle, `crates/ui-swf`):
   health, magicka and stamina meters, compass heading, location, the
   crosshair's activate text, subtitles, notifications, help messages, quest
-  banners, the sneak eye, enemy health (choices: `known_gaps/swf-hud.md`);
+  banners, the sneak eye, enemy health, the activate key's art; message boxes
+  (`messagebox.swf`, answered with the mouse or keys) (choices:
+  `known_gaps/swf-hud.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
@@ -785,10 +787,10 @@ game each piece unlocks.
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, quest
    targets on a compass and the map (`QSTA`), tracking quests (`SetActive`)
-   - The game's menus through `crates/ui-swf` (the HUD done: see Done): the
-     message box next (input routing and the menu stack with it), then the
-     item lists (inventory, container, barter share them), the journal; the
-     name popup with character creation
+   - The game's menus through `crates/ui-swf` (the HUD and message boxes done:
+     see Done): the item lists next (inventory, container, barter share them),
+     then the journal; the name popup with character creation; the gamepad
+     (gilrs, as the spike); the menus' own cursor (`cursormenu.swf`)
    - The HUD's compass markers (`SetCompassMarkers`), the shout, charge and
      survival meters, load door info, favor mode
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
