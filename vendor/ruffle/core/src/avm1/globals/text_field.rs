@@ -92,6 +92,9 @@ const PROTO_DECLS: StaticDeclarations = declare_static_properties! {
     "selectable" => property(tf_getter!(selectable), tf_setter!(set_selectable));
     "length" => property(tf_getter!(length));
     "bottomScroll" => property(tf_getter!(bottom_scroll));
+    // Scaleform's AS2 extensions, as AS3 has them.
+    "numLines" => property(tf_getter!(num_lines));
+    "getLineMetrics" => method(tf_method!(get_line_metrics); DONT_ENUM | DONT_DELETE);
     "textWidth" => property(tf_getter!(text_width));
     "textHeight" => property(tf_getter!(text_height));
     "restrict" => property(tf_getter!(restrict), tf_setter!(set_restrict));
@@ -719,6 +722,51 @@ pub fn max_chars<'gc>(
         Value::Null
     };
     Ok(max)
+}
+
+pub fn num_lines<'gc>(
+    this: EditText<'gc>,
+    _activation: &mut Activation<'_, 'gc>,
+) -> Result<Value<'gc>, Error<'gc>> {
+    Ok(Value::from_usize_lossy(this.layout_lines()))
+}
+
+/// `{x, width, height, ascent, descent, leading}` of line `args[0]`, or undefined.
+fn get_line_metrics<'gc>(
+    this: EditText<'gc>,
+    activation: &mut Activation<'_, 'gc>,
+    args: &[Value<'gc>],
+) -> Result<Value<'gc>, Error<'gc>> {
+    let line = args
+        .get(0)
+        .copied()
+        .unwrap_or(Value::Undefined)
+        .coerce_to_i32(activation)?;
+    let Some(metrics) = usize::try_from(line)
+        .ok()
+        .and_then(|l| this.line_metrics(l))
+    else {
+        return Ok(Value::Undefined);
+    };
+    let out = Object::new(
+        &activation.context.strings,
+        Some(activation.prototypes().object),
+    );
+    for (name, value) in [
+        ("x", metrics.x),
+        ("width", metrics.width),
+        ("height", metrics.height),
+        ("ascent", metrics.ascent),
+        ("descent", metrics.descent),
+        ("leading", metrics.leading),
+    ] {
+        out.set(
+            AvmString::new_utf8(activation.gc(), name),
+            value.to_pixels(),
+            activation,
+        )?;
+    }
+    Ok(out.into())
 }
 
 pub fn bottom_scroll<'gc>(
