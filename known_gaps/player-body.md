@@ -40,8 +40,22 @@ suggest), not from a description of the class.
   person it turns to face where it goes (`Direction` then near 0). Whether
   the game's third-person body walks backwards or turns round with the
   weapon sheathed is unconfirmed.
-- **Graph inputs still missing**: weapon drawing, attacks, blocking, bow
-  draws and casting, so the body plays none of these. Its footstep sounds still
+- **Fighting through the graph.** R (or attacking with it put away) draws the
+  weapon (`WeapEquip` / `Unequip`); it goes to the hand at `weaponDraw` and
+  the graph swings once the draw is over (`WeapEquip_Out`: before that it
+  takes `attackStart` and does nothing). Swings send `attackStart` or the
+  race's power attack for how the player moves (`attackPowerStartInPlace`,
+  `...Forward` / `Right` / `Backward` / `Left`, `..._Sprint`; else the
+  standing one); the blow lands at the graph's `HitFrame` (lost if none comes
+  within 1.5 s), in first person too, from the third-person graph's timing.
+  Bows send `bowAttackStart` / `attackRelease` but the arrow still flies on
+  release, not at the graph's `arrowRelease`; the guard sends `blockStart` /
+  `blockStop` (`IsBlocking`) and bashes the race's bash event, both landing
+  at once. Not sent: basic attacks by direction or sprinting
+  (`attackStartSprint`), left-hand and dual-wield attacks, `attackStop`,
+  hand-to-hand's own events, casting. With no body graph (or a swing from the
+  console with the weapon put away) a blow lands at once, as before.
+- **Re-equipping** rebuilds the body, putting the weapon away in its graph. Its footstep sounds still
   come from the first-person stride, not the graph's footstep events. Foot IK
   and head tracking are off.
 - **Dying** leaves the body standing; it has no ragdoll.

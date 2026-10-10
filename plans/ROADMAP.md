@@ -281,7 +281,8 @@ game each piece unlocks.
   and their own (`HEAD`, `PNAM`, extra parts); it runs the race's behaviour
   graph from the player's movement (walking, running, sneaking, turning,
   strafing and walking backwards by `Direction`, sprinting, jumping, falling
-  and landing). A
+  and landing), drawing and sheathing (R), swings and power attacks by
+  movement landing at the graph's `HitFrame`, bow draws, blocking and bashes. A
   third-person camera (F; the wheel zooms) stopping short of walls,
   `Game.ForceFirstPerson` / `ForceThirdPerson`; in first person the body only
   casts its shadow. Open questions: `known_gaps/player-body.md`
@@ -756,8 +757,8 @@ game each piece unlocks.
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
-   - The player's body (see Done): drawing, attacks and casting through the
-     graph; first-person arms and weapons;
+   - The player's body (see Done): casting, left-hand and directional basic
+     attacks through the graph; first-person arms and weapons;
      the head's morphs, tints and hair colour (with character creation)
    - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`;
      disabled fighting putting the weapon away, the POV type argument

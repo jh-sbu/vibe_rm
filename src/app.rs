@@ -619,6 +619,11 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.player.sneaking = !s.engine.player.sneaking;
                             }
+                            // R draws or sheathes the weapon.
+                            if code == KeyCode::KeyR && !event.repeat {
+                                let draw = !s.engine.player_weapon_drawn();
+                                s.engine.player_draw_weapon(draw);
+                            }
                             // F switches between first and third person.
                             if code == KeyCode::KeyF
                                 && !event.repeat

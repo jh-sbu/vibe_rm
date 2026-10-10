@@ -135,6 +135,8 @@ pub struct Engine {
     pub player_blocking: bool,
     /// The player's body (built on the first update).
     pub(crate) player_body: Option<crate::player_body::PlayerBody>,
+    /// The player's swing waiting for their body's graph to land it.
+    pub(crate) player_swing: Option<crate::player_body::PlayerSwing>,
     /// Seen from behind the player rather than through their eyes.
     pub third_person: bool,
     /// How far behind the eye the third-person camera sits.
@@ -338,6 +340,7 @@ impl Engine {
             detection: Default::default(),
             player_blocking: false,
             player_body: None,
+            player_swing: None,
             third_person: false,
             third_person_distance: crate::player_body::THIRD_PERSON_DEFAULT,
             grab: Default::default(),

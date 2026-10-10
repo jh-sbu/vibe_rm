@@ -52,7 +52,7 @@ cargo build --release
 ```
 
 Testing aids: `--console "<command>"` runs console commands after loading (e.g.
-`use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`, `cgf Actor.GetCombatState @<actor>` to call a Papyrus native, `loose` for the loose objects near the player, `pwalk <frames> [forward|back|left|right] [run|sprint]` to walk the player (`tcl` first under `--wait`), `pjump` to jump, `impact <IPCT>` for an impact on what the camera faces; `"@<frame> <command>"`
+`use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`, `cgf Actor.GetCombatState @<actor>` to call a Papyrus native, `loose` for the loose objects near the player, `pwalk <frames> [forward|back|left|right] [run|sprint]` to walk the player (`tcl` first under `--wait`), `pjump` to jump, `pdraw [off]` and `ppress` / `prelease` (the attack button) for the player's weapon, `impact <IPCT>` for an impact on what the camera faces; `"@<frame> <command>"`
 runs it at that frame of `--wait`), `--watch-angle`
 orbits the `--watch` camera, `--player-at-camera` puts the player there (NPCs look at it),
 the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, `VRM_SEED=<n>` fixes the engine's random seed, `VRM_AUDIO=1` gives offscreen runs audio
@@ -71,7 +71,7 @@ picked up too.
 
 Controls: click to capture the mouse, WASD to move, Space/Ctrl for up/down,
 Shift to go faster, T to fast-forward time, E to activate (talk, open, take, search),
-Tab for the inventory, F to switch between first and third person (the wheel
+Tab for the inventory, R to draw or sheathe your weapon, F to switch between first and third person (the wheel
 zooms the third-person camera), Esc to release the mouse or quit.
 The developer console has a subset of Skyrim's commands (`help` lists them; `tai`
 toggles actor AI).
