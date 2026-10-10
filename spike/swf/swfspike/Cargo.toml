@@ -1,0 +1,23 @@
+[package]
+name = "swfspike"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+futures = "0.3"
+image = { version = "0.25", default-features = false, features = ["png"] }
+ruffle_core = { path = "../../../vendor/ruffle/core", features = ["spike"] }
+ruffle_render = { path = "../../../vendor/ruffle/render" }
+ruffle_render_wgpu = { path = "../../../vendor/ruffle/render/wgpu", features = ["spike"] }
+swf = { path = "../../../vendor/ruffle/swf" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+winit = "0.30"
+gilrs = "0.11"
+
+[features]
+# Ruffle's AVM1 action trace and display tree (`avmdebug:`, `tree:`).
+avm_debug = ["ruffle_core/avm_debug"]
+
+# Not part of the engine's workspace.
+[workspace]

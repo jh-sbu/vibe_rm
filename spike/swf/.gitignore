@@ -1,0 +1,5 @@
+# Extracted game files (extract.sh), output and builds.
+/data/
+/out/
+/swfspike/target/
+/swfspike/target-avmdebug/
