@@ -579,6 +579,13 @@ impl ApplicationHandler for App {
             s.window.set_cursor_visible(true);
             s.keys.clear();
         }
+        // A message box (the game's menus) takes the keyboard and mouse while up.
+        if !s.ui.console.open
+            && let Some(swf) = &mut s.swf
+            && swf.window_event(&event)
+        {
+            return;
+        }
         let resp = s.egui_state.on_window_event(&s.window, &event);
         if console_open
             && resp.consumed

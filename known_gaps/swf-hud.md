@@ -1,4 +1,4 @@
-# The game's HUD (hudmenu.swf)
+# The game's HUD and message box (hudmenu.swf, messagebox.swf)
 
 Implemented in `src/swf_ui.rs` (the engine's side) and `crates/ui-swf` (the
 menus through the vendored Ruffle). Sources: the HUD movie itself
@@ -55,3 +55,14 @@ isn't public; the choices below are what the movie's code allows.
   guess), else `UnknownKey`. The first context naming an event wins.
 - **Sounds.** A menu's `PlaySound` plays the sound record of that editor ID
   at the camera.
+- **Message boxes.** The box in front goes to `messagebox.swf` as
+  `_root.MessageMenu.SetMessage(text, false)` (line breaks `\r\n` as `\n`)
+  and `setButtons(true, labels...)`: buttons side by side, the first one
+  focused for the keyboard. The message's title isn't shown apart from its
+  text (the game's box has no title of its own); boxes can't be cancelled
+  (`setIsCancellable` is never called). `buttonPress(position)` answers with
+  that button's index for `Message.Show`.
+- **Input to the menus.** While a message box is up it takes the keyboard
+  and mouse (the console key aside). Keys go as the control map's menu events
+  (`crates/ui-swf/src/input.rs`; its guesses are in `spike/swf/README.md`,
+  "Input"), or as typed while an input field has the focus.
