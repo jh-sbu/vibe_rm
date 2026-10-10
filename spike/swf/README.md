@@ -304,8 +304,10 @@ as device fonts under their `$Alias` names.
   something opens them and feeds them data. That per-menu contract is unwritten.
 - The input translation is partly guessed (see "Input"), and it hasn't been
   tried with a real gamepad.
-- Every non-Normal blend mode gets a full-stage offscreen surface; this is most
-  of the HUD's GPU time.
+- Blend modes that composite with their parent pixel for pixel (Multiply,
+  Darken, ...) still get a surface the size of their parent; those drawn back
+  as a quad (Add, Screen, Layer...) get one their own size (vendor/ruffle),
+  which took the HUD from 3.2 to 1.4 ms of GPU time at high quality.
 - Each `Player::tick` call hit-tests the mouse against the display list and
   steps the GC, even when no movie frame runs. The engine should tick only when
   a frame is due, and skip the mouse update for menus that take no mouse.
