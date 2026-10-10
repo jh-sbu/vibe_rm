@@ -354,6 +354,40 @@ impl<'gc> FocusTracker<'gc> {
         }
     }
 
+    /// Scaleform's `Selection.findFocus`: the focusable object in `direction`
+    /// from `from` (else the focus), among those inside `within` if given.
+    pub fn find(
+        &self,
+        context: &mut UpdateContext<'gc>,
+        direction: NavigationDirection,
+        from: Option<InteractiveObject<'gc>>,
+        within: Option<DisplayObject<'gc>>,
+    ) -> Option<InteractiveObject<'gc>> {
+        let origin = from.or_else(|| self.get())?;
+        let inside = |o: InteractiveObject<'gc>| {
+            let Some(within) = within else {
+                return true;
+            };
+            let mut d = Some(o.as_displayobject());
+            while let Some(x) = d {
+                if DisplayObject::ptr_eq(x, within) {
+                    return true;
+                }
+                d = x.parent();
+            }
+            false
+        };
+        let tab_order = TabOrder::fill(context);
+        let ordering = NavigationOrdering::new(origin, direction);
+        tab_order
+            .objects
+            .iter()
+            .copied()
+            .filter(|&o| !InteractiveObject::ptr_eq(o, origin) && inside(o))
+            .filter(|&o| ordering.key(o).is_some())
+            .min_by_key(|&o| ordering.key(o))
+    }
+
     pub fn update_highlight(&self, context: &mut UpdateContext<'gc>) {
         self.0.highlight.replace(self.calculate_highlight(context));
     }
