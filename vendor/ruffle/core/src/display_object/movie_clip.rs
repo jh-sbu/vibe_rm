@@ -600,9 +600,12 @@ impl<'gc> MovieClip<'gc> {
                 || !result.unwrap_or_default()
                 || reader.get_ref().is_empty());
 
-        shared.import_exports_of_importer(context);
-
         if is_finished {
+            // The importer's exports fill only the IDs this movie leaves free,
+            // so only once all of its own are defined (else an importer's
+            // export takes an ID before this movie's own character for it).
+            shared.import_exports_of_importer(context);
+
             if progress.cur_preload_frame.get() == 1 {
                 // If this clip did not have any show frame tags,
                 // treat the end-of-clip as a ShowFrame
@@ -626,6 +629,34 @@ impl<'gc> MovieClip<'gc> {
             .preload_progress
             .awaiting_import
             .set(false);
+    }
+
+    /// An import into this movie finished. When this movie was itself imported
+    /// (an import nested in an import), it preloads on, and once it's through
+    /// (its exports registered) the movie importing it stops waiting too.
+    pub fn finish_import_chain(self, context: &mut UpdateContext<'gc>) {
+        self.finish_importing();
+        if let Some(importer) = self.0.shared.get().importer_movie
+            && self.preload_import(context)
+        {
+            importer.finish_import_chain(context);
+        }
+    }
+
+    /// Preloads a movie loaded by ImportAssets to its end (its exports all
+    /// registered), unless it waits on an import of its own. One `preload`
+    /// can stop short of the end, e.g. after finishing a sprite it was in.
+    pub fn preload_import(self, context: &mut UpdateContext<'gc>) -> bool {
+        let progress = &self.0.shared.get().preload_progress;
+        loop {
+            let before = progress.next_preload_chunk.get();
+            if self.preload(context, &mut ExecutionLimit::none()) {
+                return true;
+            }
+            if progress.awaiting_import.get() || progress.next_preload_chunk.get() == before {
+                return false;
+            }
+        }
     }
 
     #[inline]

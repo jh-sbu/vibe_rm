@@ -367,20 +367,25 @@ impl<'gc> LoadManager<'gc> {
 
                             // Create library for exports before preloading
                             uc.library.library_for_movie_mut(clip.movie());
-                            let res = clip.preload(uc, &mut execution_limit);
+                            let _ = &mut execution_limit;
+                            let res = clip.preload_import(uc);
                             tracing::debug!(
                                 "Preloaded swf to run exports result {:?} {}",
                                 url,
                                 res
                             );
+                            // Not through when waiting on an import of its own: that
+                            // import's end finishes this one (`finish_import_chain`).
+                            if res {
+                                importer_movie.finish_import_chain(uc);
+                            }
                         } else {
                             tracing::warn!(
                                 "Unsupported content type for ImportAssets: {:?}",
                                 content_type
                             );
+                            importer_movie.finish_importing();
                         }
-
-                        importer_movie.finish_importing();
                     });
                     Ok(())
                 }
