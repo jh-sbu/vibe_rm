@@ -46,7 +46,7 @@ below (Skyrim.esm / Update.esm).
   mult). The CK wiki calls it "skill usage", which suggests that.
 - **Level ups** wait until the player takes them in the skills menu (K here; the
   game opens the skills from the Tab menu) or with the console `levelup`.
-  There is no perk tree yet: perk points only add up.
+  Perk points buy perks from the skills' perk trees (`known_gaps/perks.md`).
 - **Skill books** teach once per book form (`DATA` flag 1, skill at offset 4).
   The game clears the flag on the book's base, so another copy doesn't teach;
   that is the same thing.

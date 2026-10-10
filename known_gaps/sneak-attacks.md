@@ -28,6 +28,6 @@ and the perk descriptions.
 - **Settings left unused**: `fCombatSneakAttackBonusMult` (100),
   `fCombatDamageBonusSneakingMult` (2), `fDamageSneakAttackMult` (1). What they
   scale isn't public.
-- **Not done**: perks' "Mod Sneak Attack Mult" entry point (Backstab 6x,
-  Assassin's Blade 15x with daggers, Deadly Aim 3x), waiting on the perk
-  system. Sneak skill gain: `known_gaps/skills.md`.
+- **Perks**: the multiplier goes through the attacker's "Mod Sneak Attack
+  Mult" entries (Backstab 6x, Assassin's Blade 15x with daggers, Deadly Aim
+  3x): `known_gaps/perks.md`. Sneak skill gain: `known_gaps/skills.md`.

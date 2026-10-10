@@ -550,8 +550,25 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .any(|&f| f == s || subj_base == Some(f))
         })), // IsInList
         453 => b(false), // GetPlayerTeammate: no followers yet
+        448 => b(subject.is_some_and(|s| e.has_perk(s, p1))), // HasPerk
+        // IsWeaponSkillType: of a weapon (a perk's weapon tab), else the
+        // subject's weapon.
+        109 => b(subject
+            .and_then(|s| {
+                if e.lo.tag_of(s).is_some_and(|t| t.0 == *b"WEAP") {
+                    Some(s)
+                } else {
+                    e.weapon_of(s)
+                }
+            })
+            .and_then(|w| crate::perks::weapon_skill(&e.lo, w))
+            == Some(c.p1)),
+        682 => b(subject.is_some_and(|s| e.worn_with_keyword(s, p1) > 0)), // WornHasKeyword
+        722 => Some(subject.map_or(0, |s| e.worn_with_keyword(s, p1)) as f32), // WornApparelHasKeywordCount
+        569 => b(subject.is_some_and(|s| e.is_blocking(s))),                   // IsBlocking
+        214 | 699 => b(false), // HasMagicEffect, HasMagicEffectKeyword: no magic yet
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))), // GetIsCurrentPackage
-        579 => Some(0.0), // GetEquippedShout
+        579 => Some(0.0),      // GetEquippedShout
         463 => b(e.grabbed_ref().is_some_and(|g| g == p1)), // IsPlayerGrabbedRef
         286 => b(subject.is_some_and(|s| e.is_sneaking(s))), // IsSneaking
         45 => b(subject.is_some_and(|s| e.detects(s, p1))), // GetDetected

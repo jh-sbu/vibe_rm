@@ -51,6 +51,14 @@ impl Engine {
         if self.detects(victim, PLAYER_REF) {
             chance -= DETECTED_PENALTY;
         }
+        // Pickpocket perks add to it (Light Fingers, Night Thief, Cutpurse; UESP)
+        // or set it (Keymaster), before the limits.
+        let chance = self.perk_entry_point(
+            crate::perks::ep::MOD_PICKPOCKET_CHANCE,
+            PLAYER_REF,
+            &[Some(victim), Some(item)],
+            chance,
+        );
         chance.clamp(
             g("fPickPocketMinChance", 0.0),
             g("fPickPocketMaxChance", 90.0),

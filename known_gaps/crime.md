@@ -225,9 +225,10 @@ locations name it.
 - Crime responses: witnesses don't run to the guards (the guards near by
   hear at once), children don't tell the nearest adult (UESP), morality
   plays no part (UESP: it is for followers ordered to commit crimes), the
-  `PICC` lines aren't used; pickpocketing perks (Light Fingers, Night Thief,
-  Cutpurse, Misdirection, Perfect Touch, Poisoned), skill gain and the
-  thugs hired after a theft aren't there.
+  `PICC` lines aren't used; of the pickpocketing perks only the chance ones
+  work (Light Fingers, Night Thief, Cutpurse, Keymaster: `known_gaps/perks.md`;
+  not Misdirection, Perfect Touch or Poisoned), and the thugs hired after a
+  theft aren't there.
 - Trespassers aren't attacked or chased out after "Guards! Trespasser!", the
   "Warn To Leave" flag (`DATA` 0x200, unused in the base game) does nothing,
   the warning lines near restricted places ("That's close enough", guard
