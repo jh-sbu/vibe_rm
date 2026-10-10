@@ -18,7 +18,36 @@ const OBJECT_DECLS: StaticDeclarations = declare_static_properties! {
     "width" => property(width);
     "showMenu" => property(show_menu, set_show_menu);
     "displayState" => property(display_state, set_display_state);
+    // Scaleform: the stage area the viewport shows, and the title-safe part of it
+    // (the whole of it here), as `{x, y, width, height}` in stage pixels.
+    "visibleRect" => property(visible_rect);
+    "safeRect" => property(visible_rect);
 };
+
+fn visible_rect<'gc>(
+    activation: &mut Activation<'_, 'gc>,
+    _this: Object<'gc>,
+    _args: &[Value<'gc>],
+) -> Result<Value<'gc>, Error<'gc>> {
+    let bounds = activation.context.stage.view_bounds();
+    let out = Object::new(
+        &activation.context.strings,
+        Some(activation.prototypes().object),
+    );
+    for (name, value) in [
+        ("x", bounds.x_min.to_pixels()),
+        ("y", bounds.y_min.to_pixels()),
+        ("width", bounds.width().to_pixels()),
+        ("height", bounds.height().to_pixels()),
+    ] {
+        out.set(
+            AvmString::new_utf8(activation.gc(), name),
+            value,
+            activation,
+        )?;
+    }
+    Ok(out.into())
+}
 
 pub fn create<'gc>(
     context: &mut DeclContext<'_, 'gc>,
