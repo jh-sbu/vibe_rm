@@ -193,6 +193,8 @@ pub struct Engine {
     pub favorites: Vec<FormId>,
     /// The favorites on the hotkeys 1 to 8 (set in the favorites menu).
     pub hotkeys: [Option<FormId>; 8],
+    /// Hours passing in the sleep / wait menu.
+    pub waiting: Option<crate::sleep::Waiting>,
     /// The gift menu's state while it is open (`Actor.ShowGiftMenu`).
     pub gift: Option<crate::gift::Gift>,
     /// Spells in hand and the power or shout readied, per actor
@@ -338,6 +340,7 @@ impl Engine {
             menu: None,
             favorites: Vec::new(),
             hotkeys: [None; 8],
+            waiting: None,
             gift: None,
             equipped_spells: HashMap::new(),
             lockpick: None,
@@ -2341,6 +2344,7 @@ impl Engine {
     fn update_menu_mode(&mut self, dt: f32) {
         self.update_scripts(0.0);
         self.update_lockpick(dt);
+        self.update_waiting(dt);
         if let Some(a) = self.audio.as_mut() {
             a.update();
         }
@@ -2424,8 +2428,7 @@ impl Engine {
         let Some(base) = self.base_of(*id) else {
             return "Activate";
         };
-        let owned =
-            crate::ai::furniture::owner_of(&self.lo, *id).is_some_and(|o| self.owned_by_other(o));
+        let owned = self.ref_owner(*id).is_some_and(|o| self.owned_by_other(o));
         match self.lo.tag_of(base).map(|t| t.0) {
             Some(t) if t == *b"DOOR" => "Open",
             Some(t) if t == *b"CONT" && owned => "Steal from",
@@ -2542,6 +2545,17 @@ impl Engine {
         }
         if self.serves_sentence_in(owner) {
             self.menu = Some(crate::items::Menu::ServeSentence);
+            return Ok(());
+        }
+        // A bed: the sleep menu.
+        let bed = base_tag.map(|t| t.0) == Some(*b"FURN")
+            && self.furniture.get(owner).is_some_and(|f| {
+                f.markers
+                    .iter()
+                    .any(|m| m.kind == crate::ai::furniture::Use::Sleep)
+            });
+        if bed {
+            self.request_sleep_wait(Some(owner));
             return Ok(());
         }
         if base_tag.map(|t| t.0) == Some(*b"BOOK") {

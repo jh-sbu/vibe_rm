@@ -74,7 +74,7 @@ impl Engine {
         let Some(npc) = self.base_of(achr) else {
             return false;
         };
-        if let Some(owner) = crate::ai::furniture::owner_of(&self.lo, r)
+        if let Some(owner) = self.ref_owner(r)
             && (owner == npc
                 || self
                     .npc_factions(achr)
@@ -139,7 +139,7 @@ impl Engine {
         [Some(lock), Some(then), partner]
             .into_iter()
             .flatten()
-            .find_map(|r| crate::ai::furniture::owner_of(&self.lo, r))
+            .find_map(|r| self.ref_owner(r))
     }
 
     /// Starting to pick a lock someone else owns is a crime, whether or not

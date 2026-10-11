@@ -39,6 +39,9 @@ pub enum Menu {
     Favorites,
     /// Tab's menu of menus (Skills, Magic, Items, Map).
     Tween,
+    /// How long to sleep (in a bed) or wait (`Engine::waiting` while the
+    /// hours pass).
+    SleepWait { sleeping: bool },
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,
@@ -187,6 +190,16 @@ impl Engine {
         let cap = self.faction_favor_cap(owner);
         log::debug!("{item} (worth {value}) owned by faction {owner}: favor cap {cap:?}");
         cap.is_none_or(|cap| value > cap)
+    }
+
+    /// Who owns a reference (or cell): as a script set it
+    /// (`SetActorOwner` / `SetFactionOwner`), else its `XOWN`, else its
+    /// cell's.
+    pub(crate) fn ref_owner(&self, r: FormId) -> Option<FormId> {
+        match self.scripts.owners.get(&r) {
+            Some(owner) => *owner,
+            None => crate::ai::furniture::owner_of(&self.lo, r),
+        }
     }
 
     /// Whether what `owner` owns isn't the player's to take freely: another

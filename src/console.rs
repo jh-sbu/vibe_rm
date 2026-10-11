@@ -81,6 +81,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sqo / journal [open]  displayed objectives / the journal's quests (or open it)".into(),
             "favorites / favorite <form>   the favorites menu / mark or unmark a favorite".into(),
             "tween                 the tween menu (Tab's)".into(),
+            "wait                  the wait menu (T; a bed's is the sleep menu)".into(),
             "msgbox [button]       the message box up / press one of its buttons".into(),
             "menumode / closemenu  whether the game is paused by a menu / close the menu".into(),
             "imod <imad> [strength] / rimod <imad> / imods  apply / remove an image space modifier, list them".into(),
@@ -304,6 +305,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         }
         "tween" => {
             engine.menu = Some(crate::items::Menu::Tween);
+            vec![]
+        }
+        "wait" => {
+            engine.request_sleep_wait(None);
             vec![]
         }
         "favorite" => {
