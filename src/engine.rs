@@ -213,6 +213,8 @@ pub struct Engine {
     pub map_markers: crate::map_markers::MapMarkers,
     /// Where the tracked quests' objectives point (`crate::quest_targets`).
     pub quest_targets: crate::quest_targets::QuestTargets,
+    /// Plants harvested (`crate::harvest`).
+    pub harvests: crate::harvest::Harvests,
     /// References by the enable parent they follow (`XESP`).
     enable_children: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
     /// Each NPC's first placed reference (unique actors' references).
@@ -357,6 +359,7 @@ impl Engine {
             messages: Default::default(),
             map_markers: Default::default(),
             quest_targets: Default::default(),
+            harvests: Default::default(),
             barks: Default::default(),
             scenes: Default::default(),
             story: Default::default(),
@@ -868,6 +871,23 @@ impl Engine {
     /// Draw objects in a loaded cell, with their collision: loose objects as
     /// bodies of their own (falling at once when `fresh`ly made).
     pub(crate) fn add_objects(&mut self, key: CellKey, objects: &[PlacedObject], fresh: bool) {
+        // Harvested plants as they look harvested.
+        let harvested: Vec<PlacedObject>;
+        let objects = if objects.iter().any(|o| self.is_harvested(o.ref_id)) {
+            harvested = objects
+                .iter()
+                .map(|o| {
+                    let mut o = o.clone();
+                    if self.is_harvested(o.ref_id) {
+                        o.model = format!("{}#harvested", o.model);
+                    }
+                    o
+                })
+                .collect();
+            &harvested[..]
+        } else {
+            objects
+        };
         let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let (Some(mut rc), Some(mut rt)) = (self.scene.cells.remove(&key), self.cells.remove(&key))
@@ -907,7 +927,12 @@ impl Engine {
                 continue;
             }
             let tagged = match self.models.collision(&o.model) {
-                Some(c) => self.physics.add_static_tagged(&c, o.transform, o.ref_id),
+                Some(c) => {
+                    if self.flora(o.base).is_some() {
+                        self.physics.add_picks(&c, o.transform, o.ref_id);
+                    }
+                    self.physics.add_static_tagged(&c, o.transform, o.ref_id)
+                }
                 None => Vec::new(),
             };
             rt.colliders.extend(tagged.iter().map(|(h, _)| *h));
@@ -1601,6 +1626,8 @@ impl Engine {
         // having run) for when the cell loads again.
         if let Some(rt) = self.cells.remove(&key) {
             self.physics.remove_colliders(&rt.colliders);
+            self.physics
+                .remove_picks(&rt.refs.iter().copied().collect());
             if let Some(a) = &self.audio {
                 for (_, v) in &rt.sounds {
                     a.stop(*v);
@@ -2316,6 +2343,7 @@ impl Engine {
         self.update_story();
         self.update_map_markers(dt);
         self.update_quest_targets(dt);
+        self.update_harvests();
         self.update_projectiles(dt);
         self.update_skills(dt);
         self.update_magic(dt);
@@ -2393,10 +2421,21 @@ impl Engine {
     }
 
     fn find_look_target(&mut self) {
-        let Some((_, Some(owner))) =
-            self.physics
-                .raycast(self.camera.position, self.camera.forward(), 220.0)
-        else {
+        let (from, dir) = (self.camera.position, self.camera.forward());
+        // What the ray hits, or a plant nearer.
+        let hit = self.physics.raycast(from, dir, 220.0);
+        let pick = self
+            .physics
+            .pick_ray(from, dir, 220.0)
+            .filter(|p| !self.is_disabled(p.1) && !self.is_harvested(p.1));
+        let owner = match (hit, pick) {
+            (Some((d, _)), Some((pd, plant))) if pd < d => Some(plant),
+            (None, Some((_, plant))) => Some(plant),
+            (Some((_, owner)), _) => owner,
+            (None, None) => None,
+        };
+        // A harvested plant offers nothing.
+        let Some(owner) = owner.filter(|&o| !self.is_harvested(o)) else {
             return;
         };
         let Some(rf) = self.reference_of(owner) else {
@@ -2438,10 +2477,13 @@ impl Engine {
     }
 
     /// The verb shown in the activation prompt.
-    pub fn look_verb(&self) -> &'static str {
+    pub fn look_verb(&self) -> std::borrow::Cow<'static, str> {
         let Some((id, _)) = &self.look_target else {
-            return "";
+            return "".into();
         };
+        if let Some(verb) = self.base_of(*id).and_then(|base| self.flora_verb(base)) {
+            return verb;
+        }
         let actor = self.created(*id).map_or_else(
             || self.lo.tag_of(*id).is_some_and(|t| t.0 == *b"ACHR"),
             |c| c.actor,
@@ -2453,10 +2495,11 @@ impl Engine {
                 "Pickpocket"
             } else {
                 "Talk"
-            };
+            }
+            .into();
         }
         let Some(base) = self.base_of(*id) else {
-            return "Activate";
+            return "Activate".into();
         };
         let owned = self.ref_owner(*id).is_some_and(|o| self.owned_by_other(o));
         match self.lo.tag_of(base).map(|t| t.0) {
@@ -2477,12 +2520,20 @@ impl Engine {
             _ if self.is_item_ref(*id) && self.stolen_from(base, *id, false).is_some() => "Steal",
             _ => "Take",
         }
+        .into()
     }
 
     /// Whether the activation prompt's verb is a crime (shown red: the game's
     /// `sSteal` / `sStealFrom` / `sPickpocket`).
     pub fn look_verb_is_crime(&self) -> bool {
-        matches!(self.look_verb(), "Steal" | "Steal from" | "Pickpocket")
+        // Someone else's plant: harvesting it is stealing.
+        if let Some((id, _)) = &self.look_target
+            && self.base_of(*id).is_some_and(|b| self.flora(b).is_some())
+        {
+            return !self.is_harvested(*id)
+                && self.ref_owner(*id).is_some_and(|o| self.owned_by_other(o));
+        }
+        matches!(&*self.look_verb(), "Steal" | "Steal from" | "Pickpocket")
     }
 
     pub fn location_name(&self) -> String {
@@ -2594,6 +2645,9 @@ impl Engine {
                 reference: Some(owner),
             });
             self.read_book(rf.base);
+            return Ok(());
+        }
+        if self.harvest(owner, rf.base) {
             return Ok(());
         }
         if self.is_item_ref(owner) {

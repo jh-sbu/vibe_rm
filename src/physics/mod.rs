@@ -139,6 +139,15 @@ pub struct Physics {
     /// The body the player holds (`crate::grab`): the character controller
     /// passes through it rather than standing on it or pushing it.
     pub held: Option<RigidBodyHandle>,
+    /// Shapes only the activation ray finds (plants' non-collidable ones).
+    picks: Vec<Pick>,
+}
+
+/// A shape the activation ray picks and nothing collides with.
+struct Pick {
+    owner: esp::FormId,
+    shape: SharedShape,
+    pose: Pose,
 }
 
 impl Physics {
@@ -176,6 +185,7 @@ impl Physics {
             broken: Vec::new(),
             anchored: Default::default(),
             held: None,
+            picks: Vec::new(),
         }
     }
 
@@ -208,6 +218,32 @@ impl Physics {
             handles.push((h, part.node.clone()));
         }
         handles
+    }
+
+    /// Add a model's non-collidable shapes (Havok layer 15) as shapes only
+    /// the activation ray finds (`pick_ray`): how plants are picked.
+    pub fn add_picks(&mut self, model: &CollisionModel, transform: Mat4, owner: esp::FormId) {
+        for part in model.parts.iter().filter(|p| p.layer == 15) {
+            let (pose, scale) = shapes::decompose(transform * part.transform);
+            if let Some(shape) = part.shape.build(scale) {
+                self.picks.push(Pick { owner, shape, pose });
+            }
+        }
+    }
+
+    /// Forget the pick shapes of these owners.
+    pub fn remove_picks(&mut self, owners: &std::collections::HashSet<esp::FormId>) {
+        self.picks.retain(|p| !owners.contains(&p.owner));
+    }
+
+    /// The nearest pick shape along a ray, within `max`.
+    pub fn pick_ray(&self, origin: Vec3, dir: Vec3, max: f32) -> Option<(f32, esp::FormId)> {
+        let ray = Ray::new(origin, dir);
+        self.picks
+            .iter()
+            .filter(|p| p.pose.translation.distance(origin) < max + 500.0)
+            .filter_map(|p| Some((p.shape.cast_ray(&p.pose, &ray, max, true)?, p.owner)))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
     }
 
     /// Add a loose object (`CollisionModel::is_loose`) at `transform` (scale

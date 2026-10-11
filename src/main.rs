@@ -17,6 +17,7 @@ mod engine;
 mod footsteps;
 mod gift;
 mod grab;
+mod harvest;
 mod imagespace;
 mod impacts;
 mod items;
