@@ -74,6 +74,9 @@ pub struct Options {
     pub no_scripts: bool,
     pub talk: Option<String>,
     pub choose: Vec<usize>,
+    /// Keys pressed in the game's menus in screenshot mode, a third of a
+    /// second apart (winit key names: `ArrowRight`, `KeyE`).
+    pub menu_keys: Vec<String>,
     /// While waiting, also save a screenshot every this many frames.
     pub burst: Option<u32>,
     /// Keep the camera in front of this actor while waiting.
@@ -140,6 +143,7 @@ fn parse_args() -> Result<Options> {
             "--no-scripts" => o.no_scripts = true,
             "--talk" => o.talk = Some(val()?),
             "--choose" => o.choose.push(val()?.parse()?),
+            "--menu-key" => o.menu_keys.push(val()?),
             "--burst" => o.burst = Some(val()?.parse()?),
             "--watch" => o.watch = Some(val()?),
             "--console" => o.console.push(val()?),

@@ -23,26 +23,58 @@ use crate::navigator::{BASE_URL, Navigator};
 #[derive(Clone, Debug)]
 pub struct GameCall {
     pub name: String,
-    /// The response id, to answer through `Menu::respond`.
+    /// The call's id: it wants an answer (`Menu::set_responder`).
     pub id: Option<f64>,
     pub args: Vec<Value>,
 }
 
-/// The game's side of `ExternalInterface.call`: queues the menu's calls.
-struct Game(Arc<Mutex<Vec<GameCall>>>);
+/// The movie as a responder sees it, in the middle of a call.
+pub struct Movie<'a, 'gc> {
+    context: &'a mut UpdateContext<'gc>,
+}
+
+impl Movie<'_, '_> {
+    /// A variable's value (`_root.Menu_mc.List.selectedIndex`); objects come
+    /// back as null.
+    pub fn get(&mut self, path: &str) -> Value {
+        ruffle_core::external::get_avm1_variable(self.context, path)
+    }
+}
+
+/// Answers calls that want one, while the menu waits: the arguments of the
+/// answer, or None to leave the call unanswered (queued with the others).
+pub type Responder = Box<dyn FnMut(&GameCall, &mut Movie<'_, '_>) -> Option<Vec<Value>> + Send>;
+
+/// The game's side of `ExternalInterface.call`: answers the calls that want
+/// an answer right away, as the game does (`GameDelegate.call` forgets a call
+/// once it returns), and queues the rest.
+struct Game {
+    calls: Arc<Mutex<Vec<GameCall>>>,
+    responder: Arc<Mutex<Option<Responder>>>,
+}
 
 impl ExternalInterfaceProvider for Game {
-    fn call_method(&self, _: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value {
+    fn call_method(&self, context: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value {
         let (id, args) = match args.split_first() {
             Some((Value::Number(id), rest)) => (Some(*id), rest.to_vec()),
             _ => (None, args.to_vec()),
         };
         log::trace!("menu calls {name}({args:?})");
-        self.0.lock().unwrap().push(GameCall {
+        let call = GameCall {
             name: name.to_string(),
             id,
             args,
-        });
+        };
+        if let Some(id) = id
+            && let Some(responder) = self.responder.lock().unwrap().as_mut()
+            && let Some(answer) = responder(&call, &mut Movie { context })
+            && let Some(respond) = context.external_interface.get_callback("respond")
+        {
+            let args = std::iter::once(Value::Number(id)).chain(answer);
+            respond.call(context, "respond", args);
+            return Value::Undefined;
+        }
+        self.calls.lock().unwrap().push(call);
         Value::Undefined
     }
 
@@ -76,6 +108,7 @@ pub struct Menu {
     /// as each tick costs a mouse hit-test and a GC step frame or not.
     pending: Duration,
     calls: Arc<Mutex<Vec<GameCall>>>,
+    responder: Arc<Mutex<Option<Responder>>>,
 }
 
 impl Menu {
@@ -97,11 +130,15 @@ impl Menu {
         let renderer = WgpuRenderBackend::new(ui.descriptors.clone(), target)
             .map_err(|e| anyhow!("{name}: {e}"))?;
         let calls = Arc::new(Mutex::new(Vec::new()));
+        let responder = Arc::new(Mutex::new(None));
         let player = PlayerBuilder::new()
             .with_renderer(renderer)
             .with_navigator(Navigator::new(ui.files.clone(), executor.spawner()))
             .with_log(Log(name.to_string()))
-            .with_external_interface(Box::new(Game(calls.clone())))
+            .with_external_interface(Box::new(Game {
+                calls: calls.clone(),
+                responder: responder.clone(),
+            }))
             .with_gamepad_button_mapping(crate::input::gamepad_key_codes())
             .with_movie(movie)
             .with_viewport_dimensions(width, height, 1.0)
@@ -120,6 +157,7 @@ impl Menu {
             executor,
             pending: Duration::ZERO,
             calls,
+            responder,
         };
         // The first frames, each once the imports it needs have loaded
         // (Scaleform loads them with the movie): classes are set up, menus
@@ -206,13 +244,13 @@ impl Menu {
             .call_internal_interface("call", args)
     }
 
-    /// Answers a call that asked for a response (`GameCall::id`).
-    pub fn respond(&self, id: f64, args: &[Value]) {
-        let args = std::iter::once(Value::Number(id)).chain(args.iter().cloned());
-        self.player
-            .lock()
-            .unwrap()
-            .call_internal_interface("respond", args);
+    /// Sets what answers the menu's calls that want an answer. The menu's
+    /// first frames run on opening: calls it makes then aren't answered.
+    pub fn set_responder(
+        &self,
+        responder: impl FnMut(&GameCall, &mut Movie<'_, '_>) -> Option<Vec<Value>> + Send + 'static,
+    ) {
+        *self.responder.lock().unwrap() = Some(Box::new(responder));
     }
 
     pub fn set(&self, path: &str, value: Value) {

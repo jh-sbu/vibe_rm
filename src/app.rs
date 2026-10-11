@@ -321,6 +321,15 @@ pub fn run(opts: Options) -> Result<()> {
             for _ in 0..60 {
                 swf.update(&mut engine, 1.0 / 60.0);
             }
+            for name in &opts.menu_keys {
+                match crate::swf_ui::key_code(name) {
+                    Some(code) => swf.press(code),
+                    None => log::error!("--menu-key {name}: no such key"),
+                }
+                for _ in 0..20 {
+                    swf.update(&mut engine, 1.0 / 60.0);
+                }
+            }
         }
         let raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(

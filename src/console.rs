@@ -53,7 +53,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "bones <ref> [filter]  an actor's posed and bind bone positions (model space)".into(),
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
-            "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory".into(),
+            "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory [open]".into(),
             "[ref.]moveto <target>  move a reference (or the player) to another".into(),
             "<ref>.enable / disable  enable or disable a reference (and those enabled with it)".into(),
             "[ref.]drop <item> [n]  drop items in front of the player (or an actor)".into(),
@@ -1035,6 +1035,11 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
         "openactorcontainer" => {
             engine.menu = Some(crate::items::Menu::Container(r));
             vec![format!("opened {r}")]
+        }
+        // showinventory open: the player's inventory menu.
+        "showinventory" | "inv" if args.first() == Some(&"open") => {
+            engine.menu = Some(crate::items::Menu::Inventory);
+            vec![]
         }
         _ => {
             let items = engine.listed_inventory(r);
