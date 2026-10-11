@@ -265,6 +265,58 @@ impl Engine {
             .find_map(|&c| self.form_field(c, b"MNAM"))
     }
 
+    /// Whether a location is cleared (`Location.IsCleared`,
+    /// `GetLocationCleared`).
+    pub fn is_cleared(&self, l: FormId) -> bool {
+        self.cleared_locations.contains(&l)
+    }
+
+    /// `Location.SetCleared`: clearing it (the first time) is announced
+    /// ("CLEARED: BLEAK FALLS BARROW") with the cleared music when the
+    /// player is there, and counted in Dungeons Cleared.
+    pub fn set_cleared(&mut self, l: FormId, cleared: bool) {
+        if !cleared {
+            self.cleared_locations.remove(&l);
+            return;
+        }
+        if !self.cleared_locations.insert(l) {
+            return;
+        }
+        log::info!("{l} ({}) is cleared", self.form_name(l));
+        self.increment_stat("Dungeons Cleared", 1);
+        let here = self
+            .current_location()
+            .is_some_and(|p| self.location_within(p, l));
+        let name = self.form_name(l);
+        if here && !name.is_empty() {
+            let status = self
+                .gmst_string("sCleared")
+                .unwrap_or_else(|| "Cleared".into());
+            self.banner(name, status);
+            if let Some(m) = self.lo.find_editor_id("MUSDungeonCleared") {
+                self.play_music_once(m);
+            }
+        }
+    }
+
+    /// A boss died: its location is cleared once every boss of it (`Boss`
+    /// ref type, in it and the locations within it) is dead.
+    pub(crate) fn boss_died(&mut self, actor: FormId) {
+        let Some(boss) = self.lo.find_editor_id("Boss") else {
+            return;
+        };
+        if !self.ref_types(actor).contains(&boss) {
+            return;
+        }
+        let Some(l) = self.editor_location(actor) else {
+            return;
+        };
+        let bosses = self.location_refs_of_type(l, boss);
+        if bosses.iter().all(|&b| self.is_dead(b)) {
+            self.set_cleared(l, true);
+        }
+    }
+
     pub fn is_location(&self, f: FormId) -> bool {
         self.lo.tag_of(f).is_some_and(|t| t.0 == *b"LCTN")
     }

@@ -65,7 +65,8 @@ Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
 - Forced references and unique actors fill whether dead or disabled; a unique
   actor without a placed reference fails the quest.
 - Location aliases don't reserve locations; location keyword data is only
-  what scripts set (`SetKeywordData`), `GetLocationCleared` unanswered.
+  what scripts set (`SetKeywordData`); cleared locations:
+  `known_gaps/cleared.md`.
 - A reference alias's current location for "from alias" location fills is
   where the actor's schedule has it (or its editor location), not tracked
   through travel between refreshes.

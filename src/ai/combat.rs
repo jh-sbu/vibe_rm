@@ -2513,6 +2513,7 @@ impl Engine {
                 0
             };
             self.send_kill_event(actor, killer, crime, rank);
+            self.boss_died(actor);
         }
         killed
     }

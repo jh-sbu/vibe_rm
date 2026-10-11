@@ -485,6 +485,9 @@ game each piece unlocks.
   conditions. Relationships (`RELA`):
   `GetRelationshipRank` and highest / lowest, Papyrus get / set. Conditions
   `GetIsCurrentPackage`, `IsInList`, `DoesNotExist`, location keyword data.
+  Cleared locations: by their bosses dying or `SetCleared`, with the banner,
+  the cleared music and Dungeons Cleared; `IsCleared`, `GetLocationCleared`,
+  `GetLocationAliasCleared` (`known_gaps/cleared.md`).
   Console `storyevent` (with `v1=`, `f1=`...), `setrelationshiprank`;
   vrm-tool `story` (`CONDS=1`, `OWN=1`). Open questions:
   `known_gaps/story-manager.md`

@@ -1145,6 +1145,13 @@ pub fn call(
             none()
         }
         // ---------------------------------------------------------- Location
+        ("location", "iscleared") => v(Value::Bool(me.is_some_and(|l| e.is_cleared(l)))),
+        ("location", "setcleared") => {
+            if let Some(l) = me {
+                e.set_cleared(l, args.first().is_none_or(|a| a.as_bool()));
+            }
+            none()
+        }
         ("location", "getkeyworddata") => v(Value::Float(
             me.zip(form_arg(args, 0))
                 .and_then(|k| e.location_keyword_data.get(&k).copied())
