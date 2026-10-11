@@ -715,8 +715,9 @@ impl Ui {
             ui.label(format!("{} items, weight {weight:.1}", items.len()));
         };
         let container = match menu {
-            // Only the game's menus have the gift menu: it closes at once.
-            Menu::Gift(_) => {
+            // Only the game's menus have the gift and magic menus: they close
+            // at once.
+            Menu::Gift(_) | Menu::Magic => {
                 engine.menu = None;
                 return;
             }

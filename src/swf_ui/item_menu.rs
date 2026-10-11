@@ -199,7 +199,7 @@ pub(super) struct ItemMenu {
     pub closing: bool,
 }
 
-fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
+pub(super) fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     Value::Object(
         fields
             .into_iter()
@@ -738,7 +738,7 @@ fn held_weapon(engine: &Engine) -> Option<FormId> {
 
 /// The bottom bar's player stats: armor rating, the weapon's damage, carry
 /// weight, gold, and health, magicka and stamina.
-fn player_info(engine: &Engine) -> Value {
+pub(super) fn player_info(engine: &Engine) -> Value {
     let weight: f32 = engine
         .inventories
         .get(&PLAYER_REF)

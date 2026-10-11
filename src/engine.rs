@@ -188,6 +188,9 @@ pub struct Engine {
     pub favorites: Vec<FormId>,
     /// The gift menu's state while it is open (`Actor.ShowGiftMenu`).
     pub gift: Option<crate::gift::Gift>,
+    /// Spells in hand and the power or shout readied, per actor
+    /// (`crate::spells`: right, left, voice).
+    pub equipped_spells: HashMap<FormId, [Option<FormId>; 3]>,
     pub lockpick: Option<crate::locks::Lockpick>,
     /// The player's skill XP and level (`crate::skills`).
     pub skills: crate::skills::Skills,
@@ -328,6 +331,7 @@ impl Engine {
             menu: None,
             favorites: Vec::new(),
             gift: None,
+            equipped_spells: HashMap::new(),
             lockpick: None,
             skills: Default::default(),
             perks: Default::default(),

@@ -1,7 +1,8 @@
 //! The game's own menus (Interface `.swf` movies through `ui_swf`), driven from
 //! the engine: the HUD (`hudmenu.swf`), message boxes (`messagebox.swf`) and
 //! the item menus (the inventory, containers and pockets, bartering: in
-//! `item_menu`) and the journal (`journal_menu`), in place of egui's.
+//! `item_menu`), the magic menu (`magic_menu`) and the journal
+//! (`journal_menu`), in place of egui's.
 //!
 //! Each frame the HUD is told what changed: the health, magicka and stamina
 //! meters, the compass heading, the location, what the crosshair is on, what's
@@ -12,6 +13,7 @@
 
 mod item_menu;
 mod journal_menu;
+mod magic_menu;
 
 use std::time::Duration;
 
@@ -38,6 +40,9 @@ pub struct SwfUi {
     /// the item menu's next update.
     favorite: bool,
     equip: Option<f32>,
+    /// The magic menu, while open, and its lists' positions.
+    magic: Option<magic_menu::MagicMenu>,
+    magic_indices: Vec<Value>,
     /// The journal, while open, and where it was left.
     journal: Option<journal_menu::JournalMenu>,
     journal_saved: journal_menu::Saved,
@@ -82,6 +87,8 @@ impl SwfUi {
             item_indices: Vec::new(),
             favorite: false,
             equip: None,
+            magic: None,
+            magic_indices: Vec::new(),
             journal: None,
             journal_saved: Default::default(),
             buttons,
@@ -100,6 +107,9 @@ impl SwfUi {
         if let Some(journal) = &mut self.journal {
             journal.menu.resize(width, height);
         }
+        if let Some(magic) = &mut self.magic {
+            magic.menu.resize(width, height);
+        }
         self.size = (width, height);
     }
 
@@ -113,6 +123,7 @@ impl SwfUi {
         }
         self.item_menu(engine, dt);
         self.journal_menu(engine, dt);
+        self.magic_menu(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
         for call in self.message_box.menu.take_calls() {
@@ -170,6 +181,48 @@ impl SwfUi {
         }
     }
 
+    /// Opens the magic menu when the engine's menu is it, closes it when it
+    /// goes, and keeps it up to date.
+    fn magic_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        if engine.menu != Some(crate::items::Menu::Magic) {
+            self.magic = None;
+            return;
+        }
+        if self.magic.is_none() {
+            let buttons = self.buttons.clone();
+            match magic_menu::MagicMenu::open(
+                &self.ui,
+                self.size,
+                engine,
+                &self.magic_indices,
+                buttons,
+            ) {
+                Ok(m) => self.magic = Some(m),
+                Err(e) => {
+                    log::error!("magic menu: {e:#}");
+                    engine.menu = None;
+                    return;
+                }
+            }
+        }
+        let Some(magic) = &mut self.magic else {
+            return;
+        };
+        if std::mem::take(&mut self.favorite) {
+            magic.favorite_key(engine);
+        }
+        if let Some(slot) = self.equip.take() {
+            magic.equip_button(slot);
+        }
+        magic.update(engine);
+        magic.menu.advance(dt);
+        for call in magic.menu.take_calls() {
+            if !magic.answer(engine, &call, &mut self.magic_indices) {
+                answer(&magic.menu, engine, &call);
+            }
+        }
+    }
+
     /// Opens the journal when the engine's menu is it, closes it when it
     /// goes, and answers its calls.
     fn journal_menu(&mut self, engine: &mut Engine, dt: Duration) {
@@ -212,12 +265,19 @@ impl SwfUi {
     /// Whether the game's menus handle the engine's menu (egui doesn't draw
     /// it then).
     pub fn shows(menu: crate::items::Menu) -> bool {
-        item_menu::ItemMenu::shows(menu) || menu == crate::items::Menu::Journal
+        item_menu::ItemMenu::shows(menu)
+            || matches!(
+                menu,
+                crate::items::Menu::Journal | crate::items::Menu::Magic
+            )
     }
 
     /// Whether a menu over the world takes the keyboard and mouse.
     pub fn wants_input(&self) -> bool {
-        self.message_box.shown.is_some() || self.items.is_some() || self.journal.is_some()
+        self.message_box.shown.is_some()
+            || self.items.is_some()
+            || self.journal.is_some()
+            || self.magic.is_some()
     }
 
     /// The window's input, to the menu on top while one takes it (the console
@@ -243,9 +303,12 @@ impl SwfUi {
         {
             return true;
         }
-        // The item menu's own keys and buttons, unless a message box is over it.
-        let item_menu = self.message_box.shown.is_none() && self.items.is_some();
-        let closing = self.items.as_ref().is_some_and(|i| i.closing);
+        // The item and magic menus' own keys and buttons, unless a message
+        // box is over them.
+        let item_menu =
+            self.message_box.shown.is_none() && (self.items.is_some() || self.magic.is_some());
+        let closing = self.items.as_ref().is_some_and(|i| i.closing)
+            || self.magic.as_ref().is_some_and(|m| m.closing);
         match event {
             WindowEvent::KeyboardInput { event, .. }
                 if item_menu
@@ -345,9 +408,15 @@ impl SwfUi {
     /// The menu taking input: a message box, else the item menu or the
     /// journal.
     fn top(&self) -> &Menu {
-        match (&self.message_box.shown, &self.items, &self.journal) {
-            (None, Some(items), _) => &items.menu,
-            (None, None, Some(journal)) => &journal.menu,
+        match (
+            &self.message_box.shown,
+            &self.items,
+            &self.journal,
+            &self.magic,
+        ) {
+            (None, Some(items), _, _) => &items.menu,
+            (None, None, Some(journal), _) => &journal.menu,
+            (None, None, None, Some(magic)) => &magic.menu,
             _ => &self.message_box.menu,
         }
     }
@@ -372,6 +441,21 @@ impl SwfUi {
     /// them.
     fn item_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
         use winit::platform::scancode::PhysicalKeyExtScancode;
+        if self.message_box.shown.is_none()
+            && let Some(magic) = &mut self.magic
+        {
+            let scan = code.to_scancode();
+            if magic.closing {
+                return code != winit::keyboard::KeyCode::Backquote;
+            } else if code == winit::keyboard::KeyCode::Escape {
+                magic.close();
+            } else if scan.is_some() && scan == self.buttons.key("Toggle POV") {
+                self.favorite = true;
+            } else {
+                return false;
+            }
+            return true;
+        }
         let (None, Some(items)) = (&self.message_box.shown, &mut self.items) else {
             return false;
         };
@@ -444,6 +528,10 @@ impl SwfUi {
         if let Some(journal) = &mut self.journal {
             journal.menu.render();
             menus.push(&journal.menu);
+        }
+        if let Some(magic) = &mut self.magic {
+            magic.menu.render();
+            menus.push(&magic.menu);
         }
         if self.message_box.shown.is_some() {
             self.message_box.menu.render();

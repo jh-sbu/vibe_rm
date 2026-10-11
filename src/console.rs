@@ -292,6 +292,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             }
             if out.is_empty() { vec!["no objectives displayed".into()] } else { out }
         }
+        "showmagicmenu" | "magic" => {
+            engine.menu = Some(crate::items::Menu::Magic);
+            vec![]
+        }
         "journal" => {
             if args.first() == Some(&"open") {
                 engine.menu = Some(crate::items::Menu::Journal);

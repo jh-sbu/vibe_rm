@@ -920,6 +920,32 @@ pub fn call(
             }
             none()
         }
+        // aiSource: 0 the left hand, 1 the right, 2 a power or shout.
+        ("actor", "equipspell") | ("actor", "unequipspell") | ("actor", "getequippedspell") => {
+            let source = |i: usize| match arg(i).as_int() {
+                0 => crate::spells::LEFT,
+                1 => crate::spells::RIGHT,
+                _ => crate::spells::VOICE,
+            };
+            let Some(actor) = me else { return none() };
+            match func {
+                "getequippedspell" => {
+                    let spell = e.equipped_spell(actor, source(0));
+                    return v(spell.map_or(Value::None, |s| e.object_value(s)));
+                }
+                "equipspell" => {
+                    if let Some(spell) = form_arg(args, 0) {
+                        e.equip_spell(actor, spell, source(1));
+                    }
+                }
+                _ => {
+                    if let Some(spell) = form_arg(args, 0) {
+                        e.unequip_spell(actor, spell, Some(source(1)));
+                    }
+                }
+            }
+            none()
+        }
         ("actor", "equipitem") | ("actor", "unequipitem") => {
             if let (Some(a), Some(item)) = (me, form_arg(args, 0)) {
                 let on = func == "equipitem";

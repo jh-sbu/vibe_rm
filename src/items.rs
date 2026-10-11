@@ -33,6 +33,8 @@ pub enum Menu {
     /// Giving an actor gifts, or taking theirs (`Engine::gift` holds the
     /// state).
     Gift(FormId),
+    /// The player's spells, powers and active effects.
+    Magic,
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,
@@ -319,6 +321,9 @@ impl Engine {
             !same_kind && !shield
         });
         inv.equipped.push(item);
+        if tag == *b"WEAP" {
+            self.hand_taken(r, item);
+        }
         Ok(())
     }
 
@@ -347,6 +352,7 @@ impl Engine {
             if !inv.equipped.contains(&armor) {
                 inv.equipped.push(armor);
             }
+            self.hand_taken(r, armor);
         } else {
             inv.equipped.retain(|&f| f != armor);
         }
