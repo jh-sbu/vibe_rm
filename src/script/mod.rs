@@ -40,7 +40,8 @@ pub struct QuestState {
     /// Its quest added banner was shown.
     pub announced: bool,
     /// Tracked: the journal's active quests (`Quest.SetActive`), whose
-    /// objectives the HUD and map mark. A quest is active when it is added.
+    /// objectives the HUD and map mark. Quests start untracked: the main
+    /// quest's stage fragments track each next one themselves.
     pub active: bool,
     /// When the journal last changed for it (`ScriptState::journal_seq`).
     pub journal_seq: u64,
