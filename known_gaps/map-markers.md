@@ -27,11 +27,12 @@ mine's, 40 Whiterun's); the CK wiki (`AddToMap`, `EnableFastTravel`,
   mines, towers, strongholds and giant camps, `MUSDiscoveryGeneric` for the
   rest. Which type the game picks for which marker isn't published.
   `iXPRewardDiscoverMapMarker` isn't given (no character XP for it).
-- **The compass frame** for a location is `LocationMarkers + TNAM`
-  (discovered) or `UndiscoveredMarkers + TNAM`: the clip has a frame for
-  each `IconTypes` entry, in that order (the icons drawn match the types).
-  Types 0 (the empty marker) and from 60 (door, quest and player markers)
-  aren't shown as locations.
+- **The compass frame** for a location is `LocationMarkers + TNAM - 1`
+  (discovered) or `UndiscoveredMarkers + TNAM - 1`: the clip has an icon on
+  frames 5 to 64 and 72 to 131, sixty each, taken as `IconTypes` 1 (the
+  city) to 60 (Castle Karstaag) in that order (the empty marker has no
+  frame; the icons drawn match the types). Types 0 and from 61 (door, quest
+  and player markers) aren't shown as locations.
 - **On the compass:** discovered markers within
   `fHUDCompassLocationMaxDist`, at full alpha; undiscovered ones within
   `iMapMarkerVisibleDistance`, fading in from there to

@@ -23,17 +23,18 @@ const CHECK_INTERVAL: f32 = 0.5;
 
 /// The compass marker clip's frames (`hudmenu.swf`, "Compass Marker"): the
 /// quest targets', the enemies' (the player's own marker's, 3, isn't used:
-/// there's no map to set it on), then the location markers' (a frame per map marker type,
-/// in `TNAM` order from `LocationMarkers`) and the undiscovered ones'.
+/// there's no map to set it on), then the location markers' (a frame per map
+/// marker type, in `TNAM` order from type 1 at `LocationMarkers`: the empty
+/// marker has none) and the undiscovered ones' (likewise).
 pub mod frame {
     pub const QUEST: f32 = 1.0;
     pub const QUEST_DOOR: f32 = 2.0;
     pub const ENEMY: f32 = 4.0;
     pub const LOCATIONS: f32 = 5.0;
     pub const UNDISCOVERED: f32 = 72.0;
-    /// Map marker types the clip has a frame for (the map's `IconTypes`, from
-    /// `EmptyMarker` to `DLC02CastleKarstaagMarker`).
-    pub const LOCATION_TYPES: u8 = 60;
+    /// The last map marker type the clip has a frame for (the map's
+    /// `IconTypes`, from `CityMarker`, 1, to `DLC02CastleKarstaagMarker`).
+    pub const LAST_LOCATION_TYPE: u8 = 60;
 }
 
 /// A marker the data places.
@@ -271,7 +272,7 @@ impl Engine {
         let near: Vec<MapMarker> = self
             .map_marker_list()
             .iter()
-            .filter(|m| m.world == world && m.kind > 0 && m.kind < frame::LOCATION_TYPES)
+            .filter(|m| m.world == world && (1..=frame::LAST_LOCATION_TYPE).contains(&m.kind))
             .filter(|m| m.pos.distance(player) < max)
             .cloned()
             .collect();
@@ -292,7 +293,7 @@ impl Engine {
             out.push(CompassMarker {
                 heading: heading(player, m.pos),
                 alpha,
-                frame: base + m.kind as f32,
+                frame: base + (m.kind - 1) as f32,
                 scale: 100.0,
             });
         }
