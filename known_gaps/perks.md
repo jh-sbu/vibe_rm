@@ -71,7 +71,7 @@ perks`).
 - **Ability sections** are spells the owner knows: constant ones take effect
   (`known_gaps/magic.md`).
 - **Not done**: entry points without their
-  systems: critical hits (1, 2), Calculate Weapon Damage (0), barter (8, 60),
+  systems: critical hits (1, 2), Calculate Weapon Damage (0),
   activate choices (14: Vampire Feed, cannibalism), spells applied on hits,
   bashes and swings (51, 52, 67), magic but Mod Spell Magnitude and Mod Incoming Spell Magnitude (30, 38...), crafting (66, 76,
   77...), Mod Skill Use (22), carry weight (10), falling damage (58), armor

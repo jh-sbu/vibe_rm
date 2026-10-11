@@ -716,6 +716,19 @@ pub fn call(
             }
             none()
         }
+        // The merchant's barter menu; a teammate's inventory to trade with.
+        ("actor", "showbartermenu") => {
+            if let Some(r) = me {
+                e.menu = Some(crate::items::Menu::Barter(r));
+            }
+            none()
+        }
+        ("actor", "openinventory") => {
+            if let Some(r) = me {
+                e.menu = Some(crate::items::Menu::Container(r));
+            }
+            none()
+        }
         ("actor", "isbleedingout") => v(Value::Bool(me.is_some_and(|r| e.is_bleeding_out(r)))),
         ("actor", "isguard") => v(Value::Bool(me.is_some_and(|r| e.is_guard(r)))),
         // Rank -1 (potential followers' `CurrentFollowerFaction`) isn't membership.

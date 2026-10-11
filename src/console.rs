@@ -30,7 +30,23 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         return item_command(engine, crate::engine::PLAYER_REF, &lower, &args);
     }
     match lower.as_str() {
+        "getgs" => {
+            let Some(name) = args.first() else {
+                return vec!["usage: getgs <game setting>".into()];
+            };
+            let value = match name.chars().next() {
+                Some('s' | 'S') => engine.gmst_string(name).map(|s| format!("{s:?}")),
+                Some('f' | 'F') => Some(crate::ai::combat::gmst_f32(&engine.lo, name, f32::NAN))
+                    .filter(|v| !v.is_nan())
+                    .map(|v| v.to_string()),
+                _ => Some(crate::ai::combat::gmst_i32(&engine.lo, name, i32::MIN))
+                    .filter(|&v| v != i32::MIN)
+                    .map(|v| v.to_string()),
+            };
+            vec![format!("{name} = {}", value.unwrap_or_else(|| "(none)".into()))]
+        }
         "help" => vec![
+            "getgs <name>          a game setting's value".into(),
             "coc <cell>            center on cell (editor id)".into(),
             "tcl                   toggle collision (noclip)".into(),
             "fw / sw <weather>     force / set weather (overriding; rwo releases)".into(),
@@ -54,6 +70,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sgv <ref> <var> <x>   set a behaviour graph variable".into(),
             "door <ref>            open / close a door".into(),
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory [open]".into(),
+            "[ref.]openactorcontainer / showbartermenu   search a container (trade with an NPC) / barter".into(),
             "[ref.]moveto <target>  move a reference (or the player) to another".into(),
             "<ref>.enable / disable  enable or disable a reference (and those enabled with it)".into(),
             "[ref.]drop <item> [n]  drop items in front of the player (or an actor)".into(),
@@ -88,7 +105,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "player.paycrimegold <remove stolen 0/1> <jail 0/1> [faction]   pay off a bounty (the hold here by default)".into(),
             "crimefaction <ref> [faction]   show or set an actor's crime faction".into(),
             "alarm [faction] / jail [faction] / servetime   send the faction's guards to arrest the player, jail them, serve the sentence".into(),
-            "pickpocket <ref> <item> [n]   try to take an item from a sneaking player's victim (psneak first)".into(),
+            "pickpocket <ref> [item] [n]   open their pockets, or try to take an item from a sneaking player's victim (psneak first)".into(),
             "cgf <Class.Func> [@self] [args]  call a Papyrus native (cgf Actor.GetCombatState @<ref>)".into(),
             "loose [n]             the loose objects nearest the player (position, mass, motion)".into(),
             "sv <ref> [var]        a reference's script variables".into(),
@@ -179,6 +196,23 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         "servetime" => {
             engine.serve_sentence();
             engine.describe_bounties()
+        }
+        // pickpocket <ref>: their pockets' menu.
+        "pickpocket" if args.len() == 1 => {
+            let Some(r) = engine.resolve_form(args[0]) else {
+                return vec!["usage: pickpocket <ref> [item] [n]".into()];
+            };
+            if !engine.can_pickpocket(r) {
+                return vec![format!(
+                    "can't pick {r}'s pocket (sneaking {}, dead {}, loaded {}, caught before {})",
+                    engine.player.sneaking,
+                    engine.is_dead(r),
+                    engine.actor_ref(r).is_some(),
+                    engine.crime.pickpocket_caught.contains(&r),
+                )];
+            }
+            engine.menu = Some(crate::items::Menu::Pickpocket(r));
+            vec![]
         }
         "pickpocket" => {
             let (Some(r), Some(item)) = (args.first().and_then(|a| engine.resolve_form(a)), args.get(1).and_then(|a| engine.resolve_form(a))) else {
@@ -737,7 +771,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 38] = [
+const ITEM_COMMANDS: [&str; 39] = [
     "drop",
     "addspell",
     "removespell",
@@ -766,6 +800,7 @@ const ITEM_COMMANDS: [&str; 38] = [
     "showinventory",
     "inv",
     "openactorcontainer",
+    "showbartermenu",
     "drawweapon",
     "sheatheweapon",
     "equipitem",
@@ -1035,6 +1070,10 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
         "openactorcontainer" => {
             engine.menu = Some(crate::items::Menu::Container(r));
             vec![format!("opened {r}")]
+        }
+        "showbartermenu" => {
+            engine.menu = Some(crate::items::Menu::Barter(r));
+            vec![format!("bartering with {r}")]
         }
         // showinventory open: the player's inventory menu.
         "showinventory" | "inv" if args.first() == Some(&"open") => {

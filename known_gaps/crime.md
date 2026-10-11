@@ -234,8 +234,8 @@ locations name it.
   the warning lines near restricted places ("That's close enough", guard
   posts) need guard packages, and `sNoWaitTrespass` / `sNoSleepTrespass`
   wait for waiting and sleeping. Sleepers don't wake up to warn.
-- Merchants refusing stolen goods and fences buying them: no bartering yet
-  (`GetAmountSoldStolen`).
+- Selling stolen goods to fences isn't counted (`GetAmountSoldStolen`);
+  which merchants buy them: `known_gaps/barter.md`.
 - Crimes by NPCs; `GetCrime`, `IsGuard`, `GetActorCrimePlayerEnemy`; the
   locations' unreported crime faction otherwise.
 - Bounties aren't saved.

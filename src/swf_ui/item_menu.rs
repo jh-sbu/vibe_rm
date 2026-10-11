@@ -1,14 +1,18 @@
-//! The inventory as the game shows it: `inventorymenu.swf`, its categories on
-//! the left, the items of one beside them, the item card and the bottom bar
-//! with the player's stats.
+//! The item menus as the game shows them: the inventory (`inventorymenu.swf`),
+//! a container, a body, a teammate's inventory or someone's pockets
+//! (`containermenu.swf`) and a merchant's wares (`bartermenu.swf`). They share
+//! the categories on the left, the items of one beside them, the item card and
+//! the bottom bar with the player's stats.
 //!
-//! The game fills the menu: `SetCategoriesList` (name, filter flag, always
-//! shown, for each category), then the items list's `entryList` and
-//! `InvalidateListData`. The menu asks for the selected item's card
-//! (`RequestItemCardInfo`) and says what the player does (`ItemSelect`,
-//! `ItemDrop`, `CloseMenu`...). Equipping with the mouse, dropping and marking
-//! favorites are the game's keys, which it passes on as `AttemptEquip` and
-//! `DropItem` or handles itself. What is guessed is in `known_gaps/swf-hud.md`.
+//! The game fills a menu: `SetCategoriesList` (name, filter flag, always
+//! shown, for each category; the container and barter menus list the other
+//! side's categories, a divider (flag 0), then the player's), then the items
+//! list's `entryList` and `InvalidateListData`. The menu asks for the
+//! selected item's card (`RequestItemCardInfo`) and says what the player does
+//! (`ItemSelect`, `ItemDrop`, `ItemTransfer`, `CloseMenu`...). Equipping with
+//! the mouse, dropping, taking all and marking favorites are the game's keys,
+//! which it passes on as `AttemptEquip`, `DropItem` and `XButtonPress` or
+//! handles itself. What is guessed is in `known_gaps/swf-hud.md`.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -17,13 +21,16 @@ use esp::FormId;
 use esp::actor_value as av;
 use ui_swf::{GameCall, Menu, UiSwf, Value};
 
+use crate::barter::Vendor;
+use crate::crime::GOLD;
 use crate::engine::{Engine, PLAYER_REF};
-use crate::items::ListedItem;
+use crate::items::{ListedItem, Menu as Shown};
 use crate::world::inventory::ItemKind;
 
 use super::{Buttons, num, text};
 
-/// The menu's root clip (`InventoryMenu`) and its lists.
+/// The menu's root clip (`InventoryMenu`, `ContainerMenu`, `BarterMenu`) and
+/// its lists.
 const M: &str = "_root.Menu_mc";
 const LISTS: &str = "_root.Menu_mc.InventoryLists_mc";
 
@@ -48,9 +55,10 @@ const ES_RIGHT: f64 = 3.0;
 /// only tests them against each other, and takes the first category's for the
 /// favorites'. "All" shows every item and stays listed when empty.
 const FAVORITES: u32 = 0x1;
+const ALL: u32 = 0x3FE;
 const CATEGORIES: &[(&str, &str, u32)] = &[
     ("sFavorites", "Favorites", FAVORITES),
-    ("sAll", "All", 0x3FE),
+    ("sAll", "All", ALL),
     ("sWeapons", "Weapons", 0x2),
     ("sApparel", "Apparel", 0x4),
     ("sPotions", "Potions", 0x8),
@@ -61,6 +69,10 @@ const CATEGORIES: &[(&str, &str, u32)] = &[
     ("sKeys", "Keys", 0x100),
     ("sMisc", "Misc", 0x200),
 ];
+
+/// The other side's categories (a container's, a merchant's) are the
+/// player's moved up past them.
+const THEIRS: u32 = 10;
 
 /// The category an item is listed under.
 fn category(engine: &Engine, row: &ListedItem) -> u32 {
@@ -77,21 +89,102 @@ fn category(engine: &Engine, row: &ListedItem) -> u32 {
     }
 }
 
-/// What the list shows, to know when it must be filled again: each row's item,
-/// owner and count, what is worn, the favorites.
-type Listed = (Vec<(FormId, Option<FormId>, i32)>, Vec<FormId>, Vec<FormId>);
+/// Which menu, and whose items are on the other side.
+#[derive(Debug, Clone)]
+enum Kind {
+    Inventory,
+    /// A container or a body; a living actor's inventory is a teammate's to
+    /// trade with (the menu's NPC mode: Give in place of Store).
+    Container {
+        owner: FormId,
+        npc: bool,
+    },
+    /// Someone's pockets.
+    Pickpocket {
+        victim: FormId,
+    },
+    /// A merchant: their wares are in `stock` (the merchant chest).
+    Barter {
+        vendor: FormId,
+        stock: FormId,
+        info: Option<Vendor>,
+    },
+}
+
+impl Kind {
+    fn of(engine: &Engine, shown: Shown) -> Option<Kind> {
+        Some(match shown {
+            Shown::Inventory => Kind::Inventory,
+            Shown::Container(owner) => {
+                let container = engine
+                    .base_of(owner)
+                    .and_then(|b| engine.lo.tag_of(b))
+                    .is_some_and(|t| t.0 == *b"CONT");
+                Kind::Container {
+                    owner,
+                    npc: !container && !engine.is_dead(owner),
+                }
+            }
+            Shown::Pickpocket(victim) => Kind::Pickpocket { victim },
+            Shown::Barter(vendor) => Kind::Barter {
+                vendor,
+                stock: engine.vendor_stock(vendor),
+                info: engine.vendor_of(vendor),
+            },
+            _ => return None,
+        })
+    }
+
+    fn movie(&self) -> &'static str {
+        match self {
+            Kind::Inventory => "inventorymenu.swf",
+            Kind::Container { .. } | Kind::Pickpocket { .. } => "containermenu.swf",
+            Kind::Barter { .. } => "bartermenu.swf",
+        }
+    }
+
+    /// Whose items are on the other side.
+    fn other(&self) -> Option<FormId> {
+        match self {
+            Kind::Inventory => None,
+            Kind::Container { owner, .. } => Some(*owner),
+            Kind::Pickpocket { victim } => Some(*victim),
+            Kind::Barter { stock, .. } => Some(*stock),
+        }
+    }
+}
+
+/// A row of the list: the other side's (a container's...) or the player's.
+#[derive(Debug, Clone)]
+struct Row {
+    item: ListedItem,
+    theirs: bool,
+}
+
+/// What the list shows, to know when it must be filled again: each row's side,
+/// item, owner and count, what is worn, the favorites.
+type Listed = (
+    Vec<(bool, FormId, Option<FormId>, i32)>,
+    Vec<FormId>,
+    Vec<FormId>,
+);
 
 pub(super) struct ItemMenu {
     pub menu: Menu,
+    /// The engine's menu this shows.
+    pub shows: Shown,
+    kind: Kind,
     /// The rows, in the order of the menu's `entryList`.
-    rows: Vec<ListedItem>,
+    rows: Vec<Row>,
     listed: Option<Listed>,
     /// Each row's item card, for the menu's `RequestItemCardInfo`, which is
     /// answered while it waits.
     cards: Arc<Mutex<Vec<Value>>>,
+    /// The merchant's gold, for the warning when they can't pay.
+    vendor_gold: Arc<Mutex<i32>>,
     /// The player info last sent.
-    player: Option<Value>,
-    /// Closing: the menu fades out, then calls `CloseMenu`.
+    player: Option<Vec<Value>>,
+    /// Closing: the inventory fades out, then calls `CloseMenu`.
     pub closing: bool,
 }
 
@@ -104,20 +197,54 @@ fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     )
 }
 
+/// The categories for `SetCategoriesList`: (name, flag, always listed) each.
+fn categories(engine: &Engine, theirs: bool) -> Vec<Value> {
+    let mut out = Vec::new();
+    for &(setting, english, flag) in CATEGORIES {
+        // The other side has no favorites.
+        if theirs && flag == FAVORITES {
+            continue;
+        }
+        let name = engine
+            .gmst_string(setting)
+            .unwrap_or_else(|| english.to_string());
+        out.push(text(&name));
+        out.push(num((if theirs { flag << THEIRS } else { flag }) as f32));
+        out.push(Value::Bool(flag == ALL));
+    }
+    out
+}
+
 impl ItemMenu {
-    /// Opens the inventory: the menu's extensions, the PC platform, the
-    /// categories, then the items and the player's stats. `indices` are the
-    /// list positions the menu saved when last closed (`SaveIndices`).
+    /// Whether `shown` is one of these menus.
+    pub fn shows(shown: Shown) -> bool {
+        matches!(
+            shown,
+            Shown::Inventory | Shown::Container(_) | Shown::Pickpocket(_) | Shown::Barter(_)
+        )
+    }
+
+    /// Opens the menu for `shown`: its extensions, the PC platform, the
+    /// categories, a merchant's prices, then the items and the player's
+    /// stats. `indices` are the inventory's list positions saved when it last
+    /// closed (`SaveIndices`).
     pub fn open(
         ui: &UiSwf,
         size: (u32, u32),
         engine: &mut Engine,
+        shown: Shown,
         indices: &[Value],
         buttons: Arc<Buttons>,
     ) -> anyhow::Result<Self> {
-        let menu = ui.open("inventorymenu.swf", size)?;
+        let kind = Kind::of(engine, shown).ok_or_else(|| anyhow::anyhow!("not an item menu"))?;
+        let menu = ui.open(kind.movie(), size)?;
         let cards: Arc<Mutex<Vec<Value>>> = Default::default();
-        let row_cards = cards.clone();
+        let vendor_gold: Arc<Mutex<i32>> = Default::default();
+        let (row_cards, gold) = (cards.clone(), vendor_gold.clone());
+        let raw_deal = engine
+            .gmst_string("sNotEnoughVendorGold")
+            .unwrap_or_else(|| "Transaction value: %d gold.\nVendor only has %d gold.".into())
+            .replace("\r\n", "\n");
         menu.set_responder(move |call, movie| match call.name.as_str() {
             // The selected item's card.
             "RequestItemCardInfo" => {
@@ -134,48 +261,135 @@ impl ItemMenu {
                 let button = call.args.first().cloned().unwrap_or(num(0.0));
                 Some(vec![button, Value::Bool(false)])
             }
+            // Selling for more than the merchant has: the warning to confirm.
+            "GetRawDealWarningString" => {
+                let total = match call.args.first() {
+                    Some(Value::Number(n)) => *n as i64,
+                    _ => 0,
+                };
+                let warning = raw_deal.replacen("%d", &total.to_string(), 1).replacen(
+                    "%d",
+                    &gold.lock().unwrap().to_string(),
+                    1,
+                );
+                Some(vec![text(&warning)])
+            }
             _ => super::respond(&buttons, call),
         });
+        // The NPC mode: a teammate's inventory gives in place of storing, and
+        // pockets have no Take All.
+        let npc = match kind {
+            Kind::Container { npc, .. } => npc,
+            Kind::Pickpocket { .. } => true,
+            _ => false,
+        };
+        if npc {
+            menu.set(&format!("{M}.bNPCMode"), Value::Bool(true));
+        }
         menu.invoke("_root.InitExtensions", &[]);
         menu.invoke("_root.SetPlatform", &[num(0.0), Value::Bool(false)]);
-        let mut categories = Vec::new();
-        for &(setting, english, flag) in CATEGORIES {
-            let name = engine
-                .gmst_string(setting)
-                .unwrap_or_else(|| english.to_string());
-            categories.push(text(&name));
-            categories.push(num(flag as f32));
-            categories.push(Value::Bool(flag == 0x3FE));
+        let mut list = Vec::new();
+        if kind.other().is_some() {
+            list.extend(categories(engine, true));
+            // The divider between the other side's and the player's.
+            list.extend([text(""), num(0.0), Value::Bool(true)]);
         }
-        menu.callback("SetCategoriesList", &categories);
+        list.extend(categories(engine, false));
+        menu.callback("SetCategoriesList", &list);
+        if let Kind::Barter { vendor, .. } = kind {
+            let (buy, sell) = engine.barter_multipliers(vendor);
+            menu.callback("SetBarterMultipliers", &[num(buy), num(sell)]);
+        }
         let mut m = ItemMenu {
             menu,
+            shows: shown,
+            kind,
             rows: Vec::new(),
             listed: None,
             cards,
+            vendor_gold,
             player: None,
             closing: false,
         };
         m.update(engine);
-        if !indices.is_empty() {
+        if m.shows == Shown::Inventory && !indices.is_empty() {
             m.menu.callback("RestoreIndices", indices);
         }
         Ok(m)
     }
 
-    /// Fills the list again when the inventory changed, and the player's
-    /// stats when they did.
+    /// The rows: the other side's, then the player's.
+    fn rows(&self, engine: &mut Engine) -> Vec<Row> {
+        let mut rows = Vec::new();
+        if let Some(other) = self.kind.other() {
+            let mut theirs = engine.listed_inventory(other);
+            match &self.kind {
+                // What isn't worn or wielded can be picked.
+                Kind::Pickpocket { victim } => {
+                    let worn = engine
+                        .inventories
+                        .get(victim)
+                        .map(|i| i.equipped.clone())
+                        .unwrap_or_default();
+                    theirs.retain(|x| !worn.contains(&x.item));
+                }
+                // Gold is the bottom bar's.
+                Kind::Barter { .. } => theirs.retain(|x| x.item != GOLD),
+                _ => {}
+            }
+            rows.extend(theirs.into_iter().map(|item| Row { item, theirs: true }));
+        }
+        let mut mine = engine.listed_inventory(PLAYER_REF);
+        match &self.kind {
+            Kind::Inventory => mine.retain(|r| r.item != GOLD),
+            // What the merchant trades in.
+            Kind::Barter { info, .. } => mine.retain(|r| {
+                info.as_ref()
+                    .is_some_and(|v| engine.vendor_trades(v, r.item, r.owner.is_some()))
+            }),
+            _ => {}
+        }
+        rows.extend(mine.into_iter().map(|item| Row {
+            item,
+            theirs: false,
+        }));
+        rows
+    }
+
+    /// Fills the list again when the items changed, and the player's stats
+    /// when they did.
     pub fn update(&mut self, engine: &mut Engine) {
-        let mut rows = engine.listed_inventory(PLAYER_REF);
-        // Gold is in the bottom bar, not the list.
-        rows.retain(|r| r.item != crate::crime::GOLD);
+        // The stats first: the bottom bar compares the card's item with them.
+        let stats = player_info(engine);
+        let player = match &self.kind {
+            // The player's and the merchant's gold, the merchant's name, then
+            // the stats.
+            Kind::Barter { vendor, stock, .. } => {
+                let gold = engine.gold(*stock);
+                *self.vendor_gold.lock().unwrap() = gold;
+                vec![
+                    num(engine.gold(PLAYER_REF) as f32),
+                    num(gold as f32),
+                    text(&engine.actor_name(*vendor).unwrap_or_default()),
+                    stats,
+                ]
+            }
+            _ => vec![stats],
+        };
+        if self.player.as_ref() != Some(&player) {
+            self.menu.callback("UpdatePlayerInfo", &player);
+            self.player = Some(player);
+        }
+        let rows = self.rows(engine);
         let worn = engine
             .inventories
             .get(&PLAYER_REF)
             .map(|i| i.equipped.clone())
             .unwrap_or_default();
         let listed: Listed = (
-            rows.iter().map(|r| (r.item, r.owner, r.count)).collect(),
+            rows.iter()
+                .map(|r| (r.theirs, r.item.item, r.item.owner, r.item.count))
+                .collect(),
             worn.clone(),
             engine.favorites.clone(),
         );
@@ -186,7 +400,7 @@ impl ItemMenu {
                 .map(|(i, r)| self.entry(engine, i, r, &worn))
                 .collect();
             // The cards first: filling the list asks for the selected one's.
-            *self.cards.lock().unwrap() = rows.iter().map(|r| item_card(engine, r)).collect();
+            *self.cards.lock().unwrap() = rows.iter().map(|r| self.card(engine, r)).collect();
             let list = format!("{LISTS}.ItemsList.entryList");
             self.menu.invoke(&format!("{list}.splice"), &[num(0.0)]);
             if !entries.is_empty() {
@@ -196,41 +410,65 @@ impl ItemMenu {
             self.rows = rows;
             self.listed = Some(listed);
         }
-        let player = player_info(engine);
-        if self.player.as_ref() != Some(&player) {
-            self.menu.callback("UpdatePlayerInfo", &[player.clone()]);
-            self.player = Some(player);
-        }
     }
 
-    /// A row as the list's entry: its name, count, equip icon, categories and
-    /// favorite star; `vrmRow` is its place in `rows`.
-    fn entry(&self, engine: &Engine, i: usize, r: &ListedItem, worn: &[FormId]) -> Value {
-        let favorite = engine.favorites.contains(&r.item);
-        let equip = match worn.contains(&r.item) {
+    /// A row as the list's entry: its name, count, equip icon, categories,
+    /// favorite star and whether taking it is stealing (red); `vrmRow` is its
+    /// place in `rows`.
+    fn entry(&self, engine: &Engine, i: usize, r: &Row, worn: &[FormId]) -> Value {
+        let item = &r.item;
+        let favorite = !r.theirs && engine.favorites.contains(&item.item);
+        let equip = match !r.theirs && worn.contains(&item.item) {
             false => 0.0,
-            true if r.info.kind == ItemKind::Weapon => ES_RIGHT,
+            true if item.info.kind == ItemKind::Weapon => ES_RIGHT,
             true => ES_EQUIPPED,
         };
-        let flags = category(engine, r) | if favorite { FAVORITES } else { 0 };
+        let mut flags = category(engine, item) | if favorite { FAVORITES } else { 0 };
+        if r.theirs {
+            flags <<= THEIRS;
+        }
+        let stealing = r.theirs
+            && match &self.kind {
+                Kind::Pickpocket { .. } => true,
+                Kind::Container { owner, .. } => {
+                    engine.stolen_from(item.item, *owner, true).is_some()
+                }
+                _ => false,
+            };
         object([
-            ("text", text(&r.info.name)),
-            ("count", num(r.count as f32)),
+            ("text", text(&item.info.name)),
+            ("count", num(item.count as f32)),
             ("equipState", Value::Number(equip)),
             ("filterFlag", num(flags as f32)),
             ("favorite", Value::Bool(favorite)),
             ("enabled", Value::Bool(true)),
+            ("isStealing", Value::Bool(stealing)),
             ("vrmRow", num(i as f32)),
         ])
     }
 
+    /// A row's item card: the item's, with whether it's a favorite and, in
+    /// someone's pockets, the chance to take one.
+    fn card(&self, engine: &Engine, r: &Row) -> Value {
+        let mut card = item_card(engine, &r.item);
+        if let Value::Object(fields) = &mut card {
+            let favorite = !r.theirs && engine.favorites.contains(&r.item.item);
+            fields.insert("favorite".into(), Value::Bool(favorite));
+            if let (Kind::Pickpocket { victim }, true) = (&self.kind, r.theirs) {
+                let chance = engine.pickpocket_chance(*victim, r.item.item, 1);
+                fields.insert("pickpocketChance".into(), num(chance.round()));
+            }
+        }
+        card
+    }
+
     /// The row selected in the items list.
-    fn selected(&self) -> Option<&ListedItem> {
+    fn selected(&self) -> Option<Row> {
         match self
             .menu
             .get(&format!("{LISTS}.ItemsList.selectedEntry.vrmRow"))
         {
-            Value::Number(n) if n >= 0.0 => self.rows.get(n as usize),
+            Value::Number(n) if n >= 0.0 => self.rows.get(n as usize).cloned(),
             _ => None,
         }
     }
@@ -243,20 +481,56 @@ impl ItemMenu {
         call: &GameCall,
         indices: &mut Vec<Value>,
     ) -> bool {
-        let amount = || match call.args.first() {
-            Some(Value::Number(n)) => *n as i32,
-            _ => 1,
+        let number = |i: usize| match call.args.get(i) {
+            Some(Value::Number(n)) => Some(*n),
+            _ => None,
         };
+        let amount = || number(0).map_or(1, |n| n as i32);
         match call.name.as_str() {
-            // Accept on an item, or a hand's equip button (its argument).
+            // The inventory: Accept on an item, or a hand's equip button (its
+            // argument). Bartering: buying or selling (amount, price each,
+            // buying).
             "ItemSelect" => {
-                if let Some(row) = self.selected().cloned() {
-                    self.select(engine, &row);
+                let Some(row) = self.selected() else {
+                    return true;
+                };
+                if let Kind::Barter { vendor, .. } = self.kind {
+                    let price = number(1).unwrap_or(0.0).round() as i32;
+                    let buying = matches!(call.args.get(2), Some(Value::Bool(true)));
+                    let (item, owner) = (row.item.item, row.item.owner);
+                    if let Err(e) = engine.barter(vendor, item, owner, amount(), price, buying) {
+                        engine.scripts.notify(e);
+                    }
+                    engine.unequip_if_gone(PLAYER_REF, item);
+                } else {
+                    self.select(engine, &row.item);
                 }
             }
             "ItemDrop" => {
-                if let Some(row) = self.selected().cloned() {
-                    engine.drop_item(PLAYER_REF, row.item, amount());
+                if let Some(row) = self.selected() {
+                    engine.drop_item(PLAYER_REF, row.item.item, amount());
+                    engine.unequip_if_gone(PLAYER_REF, row.item.item);
+                }
+            }
+            // Taking (from the other side) or storing so many.
+            "ItemTransfer" => {
+                if let Some(row) = self.selected() {
+                    self.transfer(engine, &row, amount());
+                }
+            }
+            "TakeAllItems" => {
+                for row in self.rows.clone().into_iter().filter(|r| r.theirs) {
+                    self.transfer(engine, &row, row.item.count);
+                }
+            }
+            // Equipping from the container menu (hand, then the amount when
+            // taken first).
+            "EquipItem" => {
+                if let Some(row) = self.selected() {
+                    if row.theirs {
+                        self.transfer(engine, &row, number(1).map_or(1, |n| n as i32));
+                    }
+                    self.select(engine, &row.item);
                 }
             }
             "SaveIndices" => {
@@ -265,12 +539,12 @@ impl ItemMenu {
                 }
             }
             "CloseMenu" => {
-                if engine.menu == Some(crate::items::Menu::Inventory) {
+                if engine.menu == Some(self.shows) {
                     engine.menu = None;
                 }
             }
-            // Leaving for the tween menu (not built) or the world: the menu
-            // fades out and then calls `CloseMenu`.
+            // Leaving the inventory for the tween menu (not built) or the
+            // world: it fades out and then calls `CloseMenu`.
             "ShowTweenMenu" | "CloseTweenMenu" => self.closing = true,
             // The item's model (not shown yet), a disabled item, the
             // quantity slider: nothing to do.
@@ -281,8 +555,33 @@ impl ItemMenu {
         true
     }
 
-    /// Accept on an item: weapons and apparel are equipped or taken off,
-    /// potions, food and ingredients used, books read.
+    /// Moves `count` of a row across: taken from the other side (picked from
+    /// pockets), or stored there.
+    fn transfer(&self, engine: &mut Engine, row: &Row, count: i32) {
+        let Some(other) = self.kind.other() else {
+            return;
+        };
+        let (item, owner) = (row.item.item, Some(row.item.owner));
+        match (&self.kind, row.theirs) {
+            (Kind::Pickpocket { victim }, true) => {
+                engine.try_pickpocket(*victim, item, count, owner);
+            }
+            (Kind::Pickpocket { .. }, false) => {
+                let msg = engine.gmst_string("sInvalidPickpocket").unwrap_or_default();
+                engine.scripts.notify(msg);
+            }
+            (_, true) => {
+                engine.transfer_item(other, PLAYER_REF, item, count, owner);
+            }
+            (_, false) => {
+                engine.transfer_item(PLAYER_REF, other, item, count, owner);
+                engine.unequip_if_gone(PLAYER_REF, item);
+            }
+        }
+    }
+
+    /// Accept on one of the player's items: weapons and apparel are equipped
+    /// or taken off, potions, food and ingredients used, books read.
     fn select(&mut self, engine: &mut Engine, row: &ListedItem) {
         let worn = engine
             .inventories
@@ -308,17 +607,29 @@ impl ItemMenu {
         }
     }
 
-    /// The game's item menu keys: drop (`DropItem`), mark a favorite, equip with
-    /// a mouse button (`AttemptEquip`, the hand's slot). Closing on Esc fades
-    /// the menu out first, as Tab does.
-    pub fn drop_key(&self) {
-        self.menu.callback("DropItem", &[]);
+    /// The control map's Ready Weapon key: the inventory drops
+    /// (`DropItem`), the container menu takes all or stores
+    /// (`XButtonPress`).
+    pub fn x_button(&self) {
+        match self.kind {
+            Kind::Inventory => self.menu.callback("DropItem", &[]),
+            Kind::Container { .. } | Kind::Pickpocket { .. } => {
+                self.menu.callback("XButtonPress", &[])
+            }
+            Kind::Barter { .. } => Value::Undefined,
+        };
     }
 
+    /// The control map's Toggle POV key: marks one of the player's items a
+    /// favorite or not (not while bartering).
     pub fn favorite_key(&mut self, engine: &mut Engine) {
-        let Some(item) = self.selected().map(|r| r.item) else {
+        let Some(row) = self.selected().filter(|r| !r.theirs) else {
             return;
         };
+        if matches!(self.kind, Kind::Barter { .. }) {
+            return;
+        }
+        let item = row.item.item;
         if let Some(i) = engine.favorites.iter().position(|&f| f == item) {
             engine.favorites.remove(i);
         } else {
@@ -326,21 +637,43 @@ impl ItemMenu {
         }
         self.update(engine);
         // The bottom bar's Favorite / Unfavorite.
-        self.menu
-            .invoke(&format!("{M}.UpdateBottomBarButtons"), &[]);
+        match self.kind {
+            Kind::Inventory => self
+                .menu
+                .invoke(&format!("{M}.UpdateBottomBarButtons"), &[]),
+            _ => self.menu.invoke(&format!("{M}.updateButtons"), &[]),
+        };
     }
 
+    /// A mouse button's equip (`AttemptEquip`, the hand's slot).
     pub fn equip_button(&self, slot: f32) {
         self.menu
             .callback("AttemptEquip", &[num(slot), Value::Bool(true)]);
     }
 
+    /// Esc: the inventory fades out as on Tab; the others close on Tab.
     pub fn close(&mut self) {
-        if !self.closing {
+        if self.closing {
+            return;
+        }
+        if self.shows == Shown::Inventory {
             self.closing = true;
             self.menu.invoke(&format!("{M}.StartMenuFade"), &[]);
+        } else {
+            use ui_swf::PlayerEvent;
+            for key in ui_swf::input::keys(winit::keyboard::KeyCode::Tab) {
+                self.menu.handle_event(PlayerEvent::KeyDown { key });
+                self.menu.handle_event(PlayerEvent::KeyUp { key });
+            }
         }
     }
+}
+
+/// The weapon the player has equipped (not the one they'd fight with when
+/// none is).
+fn held_weapon(engine: &Engine) -> Option<FormId> {
+    let inv = engine.inventories.get(&PLAYER_REF)?;
+    inv.weapon(&engine.lo).filter(|&w| inv.count(w) > 0)
 }
 
 /// The bottom bar's player stats: armor rating, the weapon's damage, carry
@@ -358,9 +691,8 @@ fn player_info(engine: &Engine) -> Value {
                 .sum()
         })
         .unwrap_or(0.0);
-    let damage = engine
-        .player_weapon()
-        .map_or(0.0, |w| crate::ai::combat::weapon_damage(&engine.lo, w));
+    let damage =
+        held_weapon(engine).map_or(0.0, |w| crate::ai::combat::weapon_damage(&engine.lo, w));
     let stat = |index| {
         (
             num(engine.actor_value(PLAYER_REF, index)),
@@ -427,8 +759,7 @@ fn item_card(engine: &Engine, row: &ListedItem) -> Value {
             let damage = crate::ai::combat::weapon_damage(&engine.lo, item);
             f.push(("damage", num(damage.round())));
             if row.info.kind == ItemKind::Weapon && !worn {
-                let now = engine
-                    .player_weapon()
+                let now = held_weapon(engine)
                     .map_or(0.0, |w| crate::ai::combat::weapon_damage(&engine.lo, w));
                 f.push(("damageChange", num(damage - now)));
             }

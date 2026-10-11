@@ -18,8 +18,13 @@ game each piece unlocks.
   (`messagebox.swf`, answered with the mouse or keys); the inventory
   (`inventorymenu.swf`: categories, the item card with armor rating and damage
   and their change if worn, effects, the bottom bar's stats; equipping, using,
-  reading, dropping, favorites; `showinventory open`) (choices:
-  `known_gaps/swf-hud.md`);
+  reading, dropping, favorites; `showinventory open`); containers, bodies,
+  teammates' inventories and pockets (`containermenu.swf`: taking, storing,
+  giving, Take All, the pickpocket chance) and bartering (`bartermenu.swf`
+  from `Actor.ShowBarterMenu`: merchant chests, buy / sell lists, stolen
+  goods, prices from Speech and the Haggling / Allure perks, the raw deal
+  warning, Speech XP) (choices: `known_gaps/swf-hud.md`,
+  `known_gaps/barter.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
@@ -789,9 +794,10 @@ game each piece unlocks.
 6. **UI**: inventory (categories, equipping, item details), map, quest
    targets on a compass and the map (`QSTA`), tracking quests (`SetActive`)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
-     inventory done: see Done): the container and barter menus next (they
-     share the inventory's lists, item card and bottom bar), then the
-     journal; the name popup with character creation; the gamepad (gilrs, as
+     item menus done: see Done): the journal next, then the gift menu
+     (`giftmenu.swf`), the magic menu; the item menus' Investor / Master
+     Trader gold, merchants' chests restocking, Fortify Barter, placing
+     items in pockets, NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the tween menu (Left / clicking outside opens

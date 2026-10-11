@@ -6,6 +6,7 @@ mod anim_events;
 mod app;
 mod arrest;
 mod audio;
+mod barter;
 mod condition;
 mod console;
 mod created;

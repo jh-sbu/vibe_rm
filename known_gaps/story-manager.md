@@ -135,7 +135,7 @@ own or their templates'); a member is dead when their placed reference is.
 - The other events wait for their systems: crafting (`CRFT`), item removal (`REMP`: dropping items), spell cast (`CAST`), new
   voice power (`NVPE`), bribe, intimidate, flatter, lock pick.
 - Kill events' crime status (V1) only knows the player's murders; item
-  pickups never say bought or pickpocketed (no barter or pickpocketing).
+  pickups say bought (2) and pickpocketed (3) but never sold.
 - Hellos between NPCs, and creatures' (dogs') hellos; the real detection
   and distance rules for noticing bodies; assaults on the player.
 - Relationship association types (`HasFamilyRelationship`,

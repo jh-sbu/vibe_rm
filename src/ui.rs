@@ -76,7 +76,10 @@ impl Ui {
         let mut skip = false;
         let out = ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx().clone();
-            if engine.conversation.is_some() {
+            // The game's item menus (bartering from a merchant's topic) cover
+            // the conversation until they close.
+            let swf_menu = self.swf_hud && engine.menu.is_some_and(crate::swf_ui::SwfUi::shows);
+            if engine.conversation.is_some() && !swf_menu {
                 self.dialogue(&ctx, engine, &mut choice, &mut skip);
             } else if !self.swf_hud {
                 self.hud(&ctx, engine);
@@ -757,6 +760,12 @@ impl Ui {
                 if serve || close {
                     engine.menu = None;
                 }
+                return;
+            }
+            // Bartering is only the game's menu (bartermenu.swf).
+            Menu::Barter(_) => {
+                engine.scripts.notify("Bartering needs the game's menus");
+                engine.menu = None;
                 return;
             }
             Menu::Container(c) | Menu::Pickpocket(c) => Some(c),
