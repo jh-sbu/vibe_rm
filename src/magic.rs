@@ -398,6 +398,9 @@ impl Engine {
             self.magic.added.entry(actor).or_default().push(spell);
         }
         log::info!("{actor} learns {} ({spell})", item.name);
+        if actor == crate::engine::PLAYER_REF && item.spell_type == spell_type::SPELL {
+            self.increment_stat("Spells Learned", 1);
+        }
         if item.is_constant() {
             self.apply_item(spell, Some(actor), actor);
         }

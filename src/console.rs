@@ -668,6 +668,19 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: cstats <actor ref>".into()] };
             engine.combat_summary(actor)
         }
+        "useitem" => {
+            let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec!["usage: useitem <item>".into()];
+            };
+            let row = engine.listed_inventory(crate::engine::PLAYER_REF).into_iter().find(|i| i.item == item);
+            match row {
+                Some(row) => {
+                    engine.use_listed_item(&row);
+                    vec![format!("used {item}")]
+                }
+                None => vec![format!("the player doesn't carry {item}")],
+            }
+        }
         "getpcmiscstat" => {
             let name = args.join(" ");
             vec![format!("{name}: {:?}", engine.stat(&name))]

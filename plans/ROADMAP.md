@@ -309,7 +309,8 @@ game each piece unlocks.
   `ActiveMagicEffect` (`OnEffectStart` / `OnEffectFinish`, the target's
   events); hostile spells landing send `OnHit` and start a fight. Muffle
   scales movement noise; magic armor adds to the armor rating. Potions,
-  food and ingredients used from the inventory. Conditions `HasMagicEffect`,
+  food and ingredients used from the inventory; spell tomes teaching their
+  spells. Conditions `HasMagicEffect`,
   `HasMagicEffectKeyword`, `HasSpell`, `IsSpellTarget`,
   `EPMagic_SpellHasKeyword` / `SpellHasSkill`; Papyrus `AddSpell`,
   `RemoveSpell`, `HasSpell`, `DispelSpell`, `DispelAllSpells`,

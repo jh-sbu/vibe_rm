@@ -66,6 +66,14 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   Fortify Health +20). **Weapon enchantments** land with each blow (and a
   bow's with each shot) with no charge used; this hasn't been seen in a fight
   (NPCs pick their best weapon and the console can't equip theirs).
+- **Spell tomes** (`BOOK` `DATA` flag 4, the spell after the flags) used
+  from the inventory teach their spell and are used up, with the
+  notification "New Spell Learned: Flames" (`sSpellAdded`, then the
+  spell's name; the game's exact wording isn't published); a spell already
+  known says "You already know Flames" (`sAlreadyKnown` and the name) and
+  the tome stays. A tome in the world opens as a book when activated, as
+  other books do. Spells Learned counts every spell (type 0) the player
+  gains, from tomes, scripts or the console.
 - **Not done**: casting by hand (the player's and NPCs' spells, magicka cost
   and regeneration, charge times, concentration, projectiles, areas, runes,
   dual casting, skill gain from casting), shouts, effect visuals (hit shaders,

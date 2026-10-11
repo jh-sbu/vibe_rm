@@ -382,6 +382,37 @@ impl Engine {
         }
     }
 
+    /// The spell a spell tome teaches (`DATA` flag 4, then the spell).
+    pub(crate) fn tome_spell(&self, book: FormId) -> Option<FormId> {
+        let rec = self.lo.get(book)?;
+        let data = rec.get(b"DATA").filter(|d| d.len() >= 8)?;
+        (data[0] & 4 != 0)
+            .then(|| rec.fid(FormId(u32::from_le_bytes(data[4..8].try_into().unwrap()))))
+    }
+
+    /// The player reads a spell tome they carry: they learn its spell and
+    /// the tome is used up ("New Spell Learned: Flames"), or they already
+    /// know it ("You already know Flames") and keep the tome.
+    pub(crate) fn read_spell_tome(&mut self, book: FormId, spell: FormId) {
+        let name = self.form_name(spell);
+        if self.has_spell(PLAYER_REF, spell) {
+            let known = self
+                .gmst_string("sAlreadyKnown")
+                .unwrap_or_else(|| "You already know".into());
+            self.scripts.notify(format!("{known} {name}"));
+            return;
+        }
+        self.remove_item(PLAYER_REF, book, 1, None);
+        self.add_spell(PLAYER_REF, spell);
+        if self.skills.books_seen.insert(book) {
+            self.increment_stat("Books Read", 1);
+        }
+        let added = self
+            .gmst_string("sSpellAdded")
+            .unwrap_or_else(|| "New Spell Learned".into());
+        self.scripts.notify(format!("{added}: {name}"));
+    }
+
     /// A book read for the first time: a skill book (`DATA` flag 1) raises
     /// its skill one level.
     pub(crate) fn read_book(&mut self, book: FormId) {
