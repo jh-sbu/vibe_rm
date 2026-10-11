@@ -209,6 +209,8 @@ pub struct Engine {
     pub magic: crate::magic::Magic,
     /// Message boxes, help messages and banners.
     pub messages: crate::messages::Messages,
+    /// Map markers on the map and discovered (`crate::map_markers`).
+    pub map_markers: crate::map_markers::MapMarkers,
     /// References by the enable parent they follow (`XESP`).
     enable_children: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
     /// Each NPC's first placed reference (unique actors' references).
@@ -240,6 +242,9 @@ pub struct Engine {
 #[derive(Default)]
 struct MusicState {
     music_type: Option<FormId>,
+    /// A music type played once over the location's (discovering a place),
+    /// and whether its track has started.
+    once: Option<(FormId, bool)>,
     voice: Option<crate::audio::VoiceId>,
     /// Real time at which to start the next track.
     next_at: f64,
@@ -348,6 +353,7 @@ impl Engine {
             perks: Default::default(),
             magic: Default::default(),
             messages: Default::default(),
+            map_markers: Default::default(),
             barks: Default::default(),
             scenes: Default::default(),
             story: Default::default(),
@@ -618,11 +624,22 @@ impl Engine {
             return;
         }
         let now = self.scripts.real_time;
-        let want = self.location_music();
         let playing = self
             .music
             .voice
             .is_some_and(|v| self.audio.as_ref().unwrap().is_playing(v));
+        // A track played once ends: back to the location's, without a pause.
+        if let Some((_, true)) = self.music.once
+            && !playing
+        {
+            self.music.once = None;
+            self.music.next_at = now;
+        }
+        let want = self
+            .music
+            .once
+            .map(|o| o.0)
+            .or_else(|| self.location_music());
         if want != self.music.music_type {
             if let Some(v) = self.music.voice.take() {
                 self.audio.as_ref().unwrap().stop(v);
@@ -638,6 +655,9 @@ impl Engine {
         }
         if !playing && now >= self.music.next_at {
             self.music.voice = None;
+            if let Some(o) = &mut self.music.once {
+                o.1 = true;
+            }
             if let Some(m) = want
                 && let Some(track) = self.pick_track(m)
             {
@@ -652,6 +672,11 @@ impl Engine {
             // Silence between tracks, like the original.
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
         }
+    }
+
+    /// Plays a music type's track once over the location's music, at once.
+    pub(crate) fn play_music_once(&mut self, music: FormId) {
+        self.music.once = Some((music, false));
     }
 
     /// Keep the distant LOD quadtree in sync with the camera.
@@ -2286,6 +2311,7 @@ impl Engine {
         self.update_actors(dt);
         self.update_triggers();
         self.update_story();
+        self.update_map_markers(dt);
         self.update_projectiles(dt);
         self.update_skills(dt);
         self.update_magic(dt);
