@@ -647,6 +647,14 @@ impl Engine {
         };
         let a = rt.actors.remove(i);
         rc.actors.remove(i);
+        // It comes back as hurt as it left (less what it heals meanwhile).
+        if !a.dead {
+            let w = crate::world_state::Wounds::of(&a, self.scripts.real_time);
+            match w {
+                Some(w) => self.world_state.wounds.insert(r, w),
+                None => self.world_state.wounds.remove(&r),
+            };
+        }
         if let Some(c) = a.capsule {
             rt.colliders.retain(|h| *h != c);
             self.physics.remove_colliders(&[c]);

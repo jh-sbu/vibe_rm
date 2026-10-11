@@ -54,6 +54,16 @@ pub struct Wounds {
 }
 
 impl Wounds {
+    /// How hurt a living actor leaves (none when well).
+    pub(crate) fn of(a: &crate::ai::ActorRuntime, now: f64) -> Option<Wounds> {
+        (a.health < a.stats.max_health - 0.5).then(|| Wounds {
+            health: a.health,
+            max: a.stats.max_health,
+            rate: a.stats.health_regen / 100.0,
+            at: now,
+        })
+    }
+
     /// Health now, having healed since.
     pub fn health_at(&self, now: f64) -> f32 {
         (self.health + self.max * self.rate * (now - self.at).max(0.0) as f32).min(self.max)
@@ -82,13 +92,7 @@ impl Engine {
         let mut hurt = Vec::new();
         for a in &rt.actors {
             if !a.dead {
-                let w = (a.health < a.stats.max_health - 0.5).then(|| Wounds {
-                    health: a.health,
-                    max: a.stats.max_health,
-                    rate: a.stats.health_regen / 100.0,
-                    at: now,
-                });
-                hurt.push((a.ref_id, w));
+                hurt.push((a.ref_id, Wounds::of(a, now)));
                 continue;
             }
             let bodies = a
@@ -115,6 +119,14 @@ impl Engine {
                 Some(w) => self.world_state.wounds.insert(r, w),
                 None => self.world_state.wounds.remove(&r),
             };
+        }
+    }
+
+    /// Time passed without running (hours waited): the hurt actors away heal
+    /// for `secs` more.
+    pub(crate) fn heal_away(&mut self, secs: f32) {
+        for w in self.world_state.wounds.values_mut() {
+            w.at -= secs as f64;
         }
     }
 

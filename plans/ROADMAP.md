@@ -41,7 +41,8 @@ game each piece unlocks.
   it; `known_gaps/tween-menu.md`); sleeping and waiting (`sleepwaitmenu.swf`
   from T or a bed: the game's reasons not to, the hours passing with the
   clock, weather, magic effects and the player's health, magicka and
-  stamina, the other actors put where their schedules have them;
+  stamina, the other actors healed and put where their schedules have
+  them;
   `RegisterForSleep` / `OnSleepStart` / `OnSleepStop`, so the
   game's Rested; `SetActorOwner` / `SetFactionOwner`, so rented rooms;
   `known_gaps/sleep-wait.md`);

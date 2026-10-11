@@ -38,8 +38,11 @@ game's scripts (`PlayerSleepQuestScript` gives Rested from `OnSleepStop`,
   at least 144), start over at that location, already in their furniture as
   when a cell loads. The dead, those fighting or bleeding out, those the
   console sent somewhere and those following or escorting the player are
-  left be, as are actors not yet given a package. The hours' other effects
-  on them (healing, crops, shops) aren't run.
+  left be, as are actors not yet given a package.
+- **Their health and stamina** come back for each hour's seconds (180) at
+  their rates, as they would standing about: those loaded out of combat
+  (or slower in it), those away that left hurt too. Those bleeding out stay
+  down. Shops restocking isn't done (see ROADMAP).
 - **Not done while the hours pass:** nothing interrupts the wait
   (`OnSleepStop` always says not interrupted); the screen doesn't fade while
   sleeping.
