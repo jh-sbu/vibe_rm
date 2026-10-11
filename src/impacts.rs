@@ -254,7 +254,7 @@ impl Engine {
     }
 
     /// An actor's (or the player's) race.
-    fn race_of(&self, actor: FormId) -> Option<FormId> {
+    pub(crate) fn race_of(&self, actor: FormId) -> Option<FormId> {
         self.templates_of(actor)?
             .form(&self.lo, crate::world::template::TRAITS, b"RNAM")
     }

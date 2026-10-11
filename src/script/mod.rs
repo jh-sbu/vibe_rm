@@ -57,6 +57,8 @@ pub struct ScriptState {
     pub notifications: Vec<(String, f64)>,
     pub timers: Vec<Timer>,
     pub quests: HashMap<FormId, QuestState>,
+    /// Containers the player has taken something from (Chests Looted).
+    pub looted: HashSet<FormId>,
     pub globals: HashMap<FormId, f32>,
     pub disabled: HashMap<FormId, bool>,
     pub blocked_activation: HashSet<FormId>,

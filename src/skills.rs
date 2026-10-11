@@ -56,6 +56,8 @@ pub struct Skills {
     pub perk_points: u32,
     /// Skill books already read: each teaches once.
     pub read_books: HashSet<FormId>,
+    /// Every book read (the Books Read statistic counts each once).
+    pub books_seen: HashSet<FormId>,
 }
 
 impl Default for Skills {
@@ -67,6 +69,7 @@ impl Default for Skills {
             pending: 0,
             perk_points: 0,
             read_books: HashSet::new(),
+            books_seen: HashSet::new(),
         }
     }
 }
@@ -198,6 +201,7 @@ impl Engine {
             .unwrap_or_else(|| "%s Increased to %i".into());
         let name = self.skill_name(skill);
         self.scripts.notify(printf(&fmt, &name, new as i64));
+        self.increment_stat("Skill Increases", 1);
         let mut e = StoryEvent::new(b"SKIL");
         e.values[0] = skill as f32;
         self.send_story_event(e);
@@ -388,9 +392,13 @@ impl Engine {
         else {
             return;
         };
+        if self.skills.books_seen.insert(book) {
+            self.increment_stat("Books Read", 1);
+        }
         if data[0] & 1 == 0 || !self.skills.read_books.insert(book) {
             return;
         }
+        self.increment_stat("Skill Books Read", 1);
         let skill = u32::from_le_bytes(data[4..8].try_into().unwrap());
         if (av::FIRST_SKILL..=av::LAST_SKILL).contains(&skill) {
             log::info!("{book} teaches {}", av::NAMES[skill as usize]);

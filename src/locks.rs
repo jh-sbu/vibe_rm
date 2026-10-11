@@ -254,6 +254,7 @@ impl Engine {
                 ][difficulty(lp.level) - 1];
                 let xp = crate::ai::combat::gmst_f32(&self.lo, setting.0, setting.1);
                 self.use_skill(esp::actor_value::LOCKPICKING, xp);
+                self.increment_stat("Locks Picked", 1);
                 self.set_locked(lp.lock, false);
                 self.player_unlocked(lp.lock);
                 self.menu = None;

@@ -1453,6 +1453,7 @@ impl Engine {
                             .unwrap_or_else(|| "X damage!".into()),
                     );
                     self.scripts.notify(text);
+                    self.increment_stat("Sneak Attacks", 1);
                 }
                 damage * mult
             }
@@ -2080,10 +2081,10 @@ impl Engine {
         }
     }
 
-    /// Papyrus `Kill()` and the console's `kill`: essential actors only bleed out
-    /// (unless `essential_too`, as `KillEssential()`). False if it isn't a living
-    /// loaded actor.
-    pub fn kill(&mut self, actor: FormId, essential_too: bool) -> bool {
+    /// Papyrus `Kill(akKiller)` and the console's `kill`: essential actors only
+    /// bleed out (unless `essential_too`, as `KillEssential()`). False if it
+    /// isn't a living loaded actor.
+    pub fn kill(&mut self, actor: FormId, essential_too: bool, killer: Option<FormId>) -> bool {
         let essential = self
             .actor_cells
             .get(&actor)
@@ -2098,7 +2099,7 @@ impl Engine {
                 }
                 true
             }
-            Some(_) => self.kill_actor(actor),
+            Some(_) => self.kill_actor_by(actor, killer),
             None => false,
         }
     }
@@ -2512,6 +2513,7 @@ impl Engine {
             self.send_script_event(actor, "OnDying", vec![k.clone()]);
             self.send_script_event(actor, "OnDeath", vec![k]);
             let crime = if killer == Some(PLAYER_REF) {
+                self.count_kill(actor);
                 self.player_kill(actor)
             } else {
                 0

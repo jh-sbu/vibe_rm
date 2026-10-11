@@ -468,6 +468,7 @@ impl Engine {
             owed: bounty,
         });
         log::info!("the player is jailed by {faction} for {days} days ({owed} gold)");
+        self.increment_stat("Times Jailed", 1);
         let place = self.jail_location(inside);
         self.send_jail_event(guard, faction, place, owed);
         self.queue_player_through(jail);
@@ -524,6 +525,7 @@ impl Engine {
             return;
         };
         log::info!("the player escapes {}'s jail", s.faction);
+        self.increment_stat("Jail Escapes", 1);
         let b = self.crime.bounties.entry(s.faction).or_default();
         b.violent += s.owed.violent;
         b.nonviolent += s.owed.nonviolent;
@@ -567,6 +569,7 @@ impl Engine {
         };
         self.day += s.days as u32;
         self.crime.arrests.days_in_jail += s.days;
+        self.increment_stat("Days Jailed", s.days);
         if let Some(chest) = self.faction_form(s.faction, b"PLCN") {
             let items = self.inventory_mut(chest).items.clone();
             for (f, n) in items {

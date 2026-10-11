@@ -223,7 +223,7 @@ impl Engine {
                     {
                         a.health = value.max(0.0);
                         if value <= 0.0 {
-                            self.kill(actor, false);
+                            self.kill(actor, false, None);
                         }
                     }
                 }

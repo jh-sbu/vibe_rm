@@ -759,7 +759,8 @@ pub fn call(
         ("actor", "isdead") => v(Value::Bool(me.is_some_and(|r| e.is_dead(r)))),
         ("actor", "kill") | ("actor", "killessential") | ("actor", "killsilent") => {
             if let Some(r) = me {
-                e.kill(r, func == "killessential");
+                let killer = form_arg(args, 0);
+                e.kill(r, func == "killessential", killer);
             }
             none()
         }

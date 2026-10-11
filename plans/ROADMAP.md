@@ -35,7 +35,9 @@ game each piece unlocks.
   `known_gaps/barter.md`); the journal (`quest_journal.swf`: quests with
   their latest log entry and objectives, the miscellaneous objectives,
   completed quests, Toggle Active (`Quest.SetActive` / `IsActive`), the
-  Stats page (`Game.IncrementStat` / `QueryStat`, quest completions), the
+  Stats page (`Game.IncrementStat` / `QueryStat`; kills, crimes, bounties,
+  jail, locks and pockets picked, theft, gold, chests, books, skills, food
+  and potions, barters, quest completions), the
   bottom bar's date and level; `known_gaps/journal.md`); gifts
   (`giftmenu.swf` from `Actor.ShowGiftMenu`: the gift filter, giving and
   taking, favor points for the script; `known_gaps/gifts.md`); the magic
@@ -836,10 +838,9 @@ game each piece unlocks.
      (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, poisons, the
      left hand, the best-in-class star, the survival warmth rating
    - The journal's rest: the System page (saves, settings, controls, help,
-     quitting), Show on Map; statistics counted by their systems (locks
-     picked, pockets picked, bounties, kills, skill increases, books read,
-     days jailed...: only quest completions and scripts' `IncrementStat`
-     count now)
+     quitting), Show on Map; the statistics whose systems aren't there yet
+     (crafting, harvesting, magic and shouts, training, horses stolen,
+     critical strikes, backstabs, disarms; the Favorite ones)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets; the shout, charge and
      survival meters, load door info, favor mode

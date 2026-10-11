@@ -62,6 +62,31 @@ its data isn't public; the choices below are what the movie's code allows.
   (main, side, the guilds, Daedric, Civil War, Dawnguard, Dragonborn);
   miscellaneous quests count each completed objective in Misc Objectives
   Completed instead. Questlines Completed is left to scripts.
+- **What the engine counts** (the game's scripts count Horses Owned,
+  Persuasions, Bribes and the rest they call `IncrementStat` for; when the
+  game counts these isn't published):
+  - kills by the player, by the first of the victim's actor type keywords
+    in the order Dragon, NPC, Daedra, Dwarven, Undead, Animal, Creature
+    (so a vampire is one of the People Killed); hares (`HareRace`) count in
+    Bunnies Slaughtered too. Sneak Attacks count each of the player's.
+  - Assaults, Murders and Trespasses count once when reported (a witness
+    told a crime faction), Items Stolen every stolen item taken however
+    unseen. Pockets Picked counts each successful theft from pockets,
+    Items Pickpocketed the items in it (pickpocketed items aren't in Items
+    Stolen). Fines Paid is the gold paid, Days Jailed the days served;
+    Times Jailed and Jail Escapes count each.
+  - Total Lifetime Bounty is all the bounty ever added (the infamy, with
+    every faction); Largest Bounty the highest bounty with one faction at
+    any time; the holds' Bounty statistics the bounty with each hold's crime
+    faction now.
+  - Gold Found is gold picked up or taken from containers and bodies (not
+    the living, bought, given or a script's); Chests Looted counts each
+    container (`CONT`) the first time anything is taken from it; Most Gold
+    Carried is the most gold the player has held.
+  - Books Read counts each book the first time it is read, Skill Books Read
+    each skill book that taught; Skill Increases each skill point however
+    gained; Food Eaten, Ingredients Eaten and Potions Used each one used;
+    Barters each purchase or sale.
 - **The System page** shows, but saving, loading, settings, controls and
   help do nothing; Quit to Desktop exits, Quit to Main Menu does nothing
   (there is no main menu); the Creations entry is left out (`ShouldShowMod`

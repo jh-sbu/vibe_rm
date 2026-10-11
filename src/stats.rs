@@ -5,6 +5,8 @@
 //! Which page category each statistic is listed under, and the calendar's
 //! weekday on the first day, aren't published: see `known_gaps/journal.md`.
 
+use esp::FormId;
+
 use crate::engine::Engine;
 
 /// The Stats page's categories (`StatsPage`'s list order).
@@ -133,6 +135,20 @@ const NAMED: &[&str] = &[
     "Favorite Shout",
 ];
 
+/// The holds' bounty statistics and their crime factions.
+const HOLD_BOUNTIES: &[(&str, &str)] = &[
+    ("Eastmarch Bounty", "CrimeFactionEastmarch"),
+    ("Falkreath Bounty", "CrimeFactionFalkreath"),
+    ("Haafingar Bounty", "CrimeFactionHaafingar"),
+    ("Hjaalmarch Bounty", "CrimeFactionHjaalmarch"),
+    ("The Pale Bounty", "CrimeFactionPale"),
+    ("The Reach Bounty", "CrimeFactionReach"),
+    ("The Rift Bounty", "CrimeFactionRift"),
+    ("Tribal Orcs Bounty", "CrimeFactionOrcs"),
+    ("Whiterun Bounty", "CrimeFactionWhiterun"),
+    ("Winterhold Bounty", "CrimeFactionWinterhold"),
+];
+
 /// The months (`GameMonth` 0 to 11) and their days.
 const MONTHS: [(&str, u32); 12] = [
     ("Morning Star", 31),
@@ -178,6 +194,40 @@ impl Engine {
         *self.scripts.stats.entry(name.to_string()).or_default() += by;
     }
 
+    /// An actor the player killed, counted by what it is: the first of its
+    /// actor type keywords in this order (a vampire is a person, a hare an
+    /// animal and a bunny).
+    pub(crate) fn count_kill(&mut self, actor: FormId) {
+        const KINDS: [(&str, &str); 7] = [
+            ("ActorTypeDragon", "Dragons Killed"),
+            ("ActorTypeNPC", "People Killed"),
+            ("ActorTypeDaedra", "Daedra Killed"),
+            ("ActorTypeDwarven", "Automatons Killed"),
+            ("ActorTypeUndead", "Undead Killed"),
+            ("ActorTypeAnimal", "Animals Killed"),
+            ("ActorTypeCreature", "Creatures Killed"),
+        ];
+        let kind = KINDS.iter().find(|(kw, _)| {
+            self.lo
+                .find_editor_id(kw)
+                .is_some_and(|k| self.has_keyword(actor, k))
+        });
+        if let Some((_, stat)) = kind {
+            self.increment_stat(stat, 1);
+        }
+        let hare = self.lo.find_editor_id("HareRace");
+        if hare.is_some() && self.race_of(actor) == hare {
+            self.increment_stat("Bunnies Slaughtered", 1);
+        }
+    }
+
+    /// A statistic only goes up to `n` (the most gold carried, the largest
+    /// bounty).
+    pub(crate) fn raise_stat_to(&mut self, name: &str, n: i32) {
+        let v = self.scripts.stats.entry(name.to_string()).or_default();
+        *v = (*v).max(n);
+    }
+
     /// `Game.QueryStat`: a counted statistic (names give 0).
     pub fn query_stat(&self, name: &str) -> i32 {
         match self.stat(name) {
@@ -191,6 +241,22 @@ impl Engine {
     pub fn stat(&self, name: &str) -> StatValue {
         if name.eq_ignore_ascii_case("Days Passed") {
             return StatValue::Count(self.day as i32);
+        }
+        // Every bounty ever added is the infamy, with every faction.
+        if name.eq_ignore_ascii_case("Total Lifetime Bounty") {
+            let infamy = self.crime.bounties.values();
+            return StatValue::Count(infamy.map(|b| b.infamy_violent + b.infamy_nonviolent).sum());
+        }
+        // The holds' bounties now.
+        if let Some(&(_, faction)) = HOLD_BOUNTIES
+            .iter()
+            .find(|(stat, _)| stat.eq_ignore_ascii_case(name))
+        {
+            let gold = self
+                .lo
+                .find_editor_id(faction)
+                .map_or(0, |f| self.bounty(f).total());
+            return StatValue::Count(gold);
         }
         if NAMED.iter().any(|n| n.eq_ignore_ascii_case(name)) {
             return StatValue::Name(String::new());
