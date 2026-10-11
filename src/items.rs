@@ -363,6 +363,10 @@ impl Engine {
                 self.equip_item(PLAYER_REF, row.item, !worn)
             }
             ItemKind::Potion | ItemKind::Ingredient => self.consume(PLAYER_REF, row.item),
+            ItemKind::Book if let Some(spell) = self.tome_spell(row.item) => {
+                self.read_spell_tome(row.item, spell);
+                Ok(())
+            }
             ItemKind::Book => {
                 self.menu = Some(Menu::Book {
                     book: row.item,
