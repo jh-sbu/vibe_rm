@@ -2128,11 +2128,17 @@ impl Engine {
 
     /// What an actor (or the player) is wearing protects against blows.
     pub fn protection(&self, actor: FormId) -> Protection {
-        let set = self.combat_settings();
         let worn = self
             .inventories
             .get(&actor)
             .map_or(&[][..], |i| &i.equipped[..]);
+        self.protection_of(actor, worn)
+    }
+
+    /// What `worn` would protect an actor with, with its skills, perks and magic
+    /// armor.
+    pub fn protection_of(&self, actor: FormId, worn: &[FormId]) -> Protection {
+        let set = self.combat_settings();
         let skills = if actor == PLAYER_REF {
             [
                 self.actor_value(PLAYER_REF, esp::actor_value::LIGHT_ARMOR),

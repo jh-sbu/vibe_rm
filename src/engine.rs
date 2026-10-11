@@ -184,6 +184,8 @@ pub struct Engine {
     pub(crate) location_keyword_data: HashMap<(FormId, FormId), f32>,
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
+    /// The player's favorite items (the inventory's Favorites).
+    pub favorites: Vec<FormId>,
     pub lockpick: Option<crate::locks::Lockpick>,
     /// The player's skill XP and level (`crate::skills`).
     pub skills: crate::skills::Skills,
@@ -322,6 +324,7 @@ impl Engine {
             console_open: false,
             imagespace: Default::default(),
             menu: None,
+            favorites: Vec::new(),
             lockpick: None,
             skills: Default::default(),
             perks: Default::default(),

@@ -15,7 +15,10 @@ game each piece unlocks.
   health, magicka and stamina meters, compass heading, location, the
   crosshair's activate text, subtitles, notifications, help messages, quest
   banners, the sneak eye, enemy health, the activate key's art; message boxes
-  (`messagebox.swf`, answered with the mouse or keys) (choices:
+  (`messagebox.swf`, answered with the mouse or keys); the inventory
+  (`inventorymenu.swf`: categories, the item card with armor rating and damage
+  and their change if worn, effects, the bottom bar's stats; equipping, using,
+  reading, dropping, favorites; `showinventory open`) (choices:
   `known_gaps/swf-hud.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
@@ -785,10 +788,17 @@ game each piece unlocks.
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, quest
    targets on a compass and the map (`QSTA`), tracking quests (`SetActive`)
-   - The game's menus through `crates/ui-swf` (the HUD and message boxes done:
-     see Done): the item lists next (inventory, container, barter share them),
-     then the journal; the name popup with character creation; the gamepad
-     (gilrs, as the spike); the menus' own cursor (`cursormenu.swf`)
+   - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
+     inventory done: see Done): the container and barter menus next (they
+     share the inventory's lists, item card and bottom bar), then the
+     journal; the name popup with character creation; the gamepad (gilrs, as
+     the spike); the menus' own cursor (`cursormenu.swf`)
+   - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
+     rotating and zooming it), the tween menu (Left / clicking outside opens
+     it), the quantity slider's use for more than dropping, recharging
+     (`AttemptChargeItem`, soul gems), scrolls and soul gems on their own cards
+     (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, poisons, the
+     left hand, the best-in-class star, the survival warmth rating
    - The HUD's compass markers (`SetCompassMarkers`), the shout, charge and
      survival meters, load door info, favor mode
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the

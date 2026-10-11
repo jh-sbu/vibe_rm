@@ -348,6 +348,76 @@ impl Engine {
         Ok(())
     }
 
+    /// What an item's magic does, as the item card says it: each effect's
+    /// description (`MGEF` `DNAM`) with the magnitude and duration in place of
+    /// `<mag>` and `<dur>`; a weapon or armor's enchantment's (`EITM`). Effects
+    /// hidden from the UI (flag 0x8000) are left out, and what only Survival
+    /// Mode says (`[SURV=...]`).
+    pub fn effects_text(&self, item: FormId) -> String {
+        let magic = self.item_enchantment(item).unwrap_or(item);
+        let Some(m) = self.magic_item(magic) else {
+            return String::new();
+        };
+        let mut out: Vec<String> = Vec::new();
+        for e in &m.effects {
+            let Some(rec) = self.lo.get(e.effect) else {
+                continue;
+            };
+            let hidden = rec
+                .get(b"DATA")
+                .filter(|d| d.len() >= 4)
+                .is_some_and(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()) & 0x8000 != 0);
+            let text = rec
+                .get(b"DNAM")
+                .map(|d| self.lo.lstring(&rec, d))
+                .unwrap_or_default();
+            if hidden || text.trim().is_empty() {
+                continue;
+            }
+            out.push(
+                without_survival(&text)
+                    .replace("<mag>", &format!("{:.0}", e.magnitude))
+                    .replace("<dur>", &e.duration.to_string())
+                    .trim()
+                    .to_owned(),
+            );
+        }
+        out.join(" ")
+    }
+
+    /// Whether a potion (`ALCH`) is food (`ENIT` flag 0x2).
+    pub fn is_food(&self, item: FormId) -> bool {
+        self.lo
+            .get(item)
+            .filter(|r| r.tag().0 == *b"ALCH")
+            .and_then(|r| {
+                r.get(b"ENIT")
+                    .filter(|d| d.len() >= 8)
+                    .map(|d| u32::from_le_bytes(d[4..8].try_into().unwrap()) & 0x2 != 0)
+            })
+            .unwrap_or(false)
+    }
+
+    /// What the actor would wear with a piece of armor put on: it in place of
+    /// whatever covers the same body slots (as `equip_armor`).
+    pub fn worn_with(&self, actor: FormId, armor: FormId) -> Vec<FormId> {
+        let slots = self.lo.get(armor).map_or(0, |r| armor_slots(&r));
+        let mut worn: Vec<FormId> = self
+            .inventories
+            .get(&actor)
+            .map(|i| i.equipped.clone())
+            .unwrap_or_default();
+        worn.retain(|&f| {
+            f != armor
+                && !self
+                    .lo
+                    .get(f)
+                    .is_some_and(|r| r.tag().0 == *b"ARMO" && armor_slots(&r) & slots != 0)
+        });
+        worn.push(armor);
+        worn
+    }
+
     /// An inventory's items with what they are, by kind then name; those
     /// belonging to someone (stolen) in rows of their own after the rest.
     pub fn listed_inventory(&mut self, r: FormId) -> Vec<ListedItem> {
@@ -451,4 +521,17 @@ impl Engine {
             }
         }
     }
+}
+
+/// A description without its Survival Mode parts (`[SURV=...]`), as the game
+/// shows it with Survival Mode off.
+fn without_survival(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("[SURV=") {
+        out.push_str(&rest[..i]);
+        rest = rest[i..].find(']').map_or("", |j| &rest[i + j + 1..]);
+    }
+    out.push_str(rest);
+    out
 }

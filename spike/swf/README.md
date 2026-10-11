@@ -278,7 +278,15 @@ commit of its own on top (`git log -- vendor/ruffle`):
    as `{x, y, width, height}`. The safe rect is the whole of it, since
    Skyrim's safe-zone inset isn't known. `GlobalFunc.Lock` anchors elements to
    them; without them the race menu's bottom bar left the screen.
-10. The spike's instrumentation, marked `SPIKE`, behind the `spike` cargo
+10. `ruffle_core::external::get_avm1_variable(context, path)`: reads a
+    variable with the update context in hand. A menu's `GameDelegate.call`
+    with a callback forgets the call once `ExternalInterface.call` returns,
+    so the game answers during the call (`ui_swf::Menu::set_responder`), and
+    an answer may depend on the movie (the inventory's selected item).
+11. Glyph shapes are built when first drawn. Ruffle built every ASCII glyph
+    of a font when the font was defined; with the menus' twenty-odd faces
+    that took opening the inventory to 1.6 s (now 0.1 s).
+12. The spike's instrumentation, marked `SPIKE`, behind the `spike` cargo
     feature of `ruffle_core` and `ruffle_render_wgpu` (off by default; the
     harness turns it on):
    - the `SPIKE_INLINE_BLENDS`, `SPIKE_NOFILTERS` and `SPIKE_NOVSYNC` switches;

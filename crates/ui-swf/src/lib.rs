@@ -23,7 +23,7 @@ use ruffle_render_wgpu::descriptors::Descriptors;
 
 pub use compositor::Compositor;
 pub use files::InterfaceFiles;
-pub use menu::{GameCall, Menu};
+pub use menu::{GameCall, Menu, Movie, Responder};
 pub use ruffle_core::events::{MouseButton, MouseWheelDelta, PlayerEvent, TextControlCode};
 pub use ruffle_core::external::Value;
 

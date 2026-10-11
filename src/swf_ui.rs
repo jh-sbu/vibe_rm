@@ -1,5 +1,6 @@
 //! The game's own menus (Interface `.swf` movies through `ui_swf`), driven from
-//! the engine: for now the HUD (`hudmenu.swf`), in place of egui's.
+//! the engine: the HUD (`hudmenu.swf`), message boxes (`messagebox.swf`) and
+//! the inventory (`inventorymenu.swf`, in `item_menu`), in place of egui's.
 //!
 //! Each frame the HUD is told what changed: the health, magicka and stamina
 //! meters, the compass heading, the location, what the crosshair is on, what's
@@ -8,11 +9,15 @@
 //! (`_root.HUDMovieBaseInstance...`); how the game words some of them isn't
 //! known (`known_gaps/swf-hud.md`).
 
+mod item_menu;
+
 use std::time::Duration;
 
 use esp::FormId;
 use esp::actor_value as av;
-use ui_swf::{Menu, UiSwf, Value};
+use std::sync::Arc;
+
+use ui_swf::{GameCall, Menu, UiSwf, Value};
 
 use crate::engine::{Engine, PLAYER_REF};
 
@@ -23,7 +28,16 @@ pub struct SwfUi {
     pub ui: UiSwf,
     hud: Hud,
     message_box: MessageBoxMenu,
-    buttons: Buttons,
+    /// The inventory, while open.
+    items: Option<item_menu::ItemMenu>,
+    /// The item lists' positions, as the menu saved them on closing.
+    item_indices: Vec<Value>,
+    /// The favorite key pressed, and an equip button clicked (its slot), for
+    /// the item menu's next update.
+    favorite: bool,
+    equip: Option<f32>,
+    buttons: Arc<Buttons>,
+    size: (u32, u32),
     /// The keyboard's modifiers and the cursor, for the menus' input.
     modifiers: winit::keyboard::ModifiersState,
     cursor: (f64, f64),
@@ -48,14 +62,23 @@ impl SwfUi {
             &engine.vfs,
             "english",
         )?;
-        let buttons = Buttons::load(&engine.vfs);
+        let buttons = Arc::new(Buttons::load(&engine.vfs));
         let hud = Hud::open(&ui, size, &buttons)?;
         let message_box = MessageBoxMenu::open(&ui, size)?;
+        for menu in [&hud.menu, &message_box.menu] {
+            let buttons = buttons.clone();
+            menu.set_responder(move |call, _| respond(&buttons, call));
+        }
         Ok(SwfUi {
             ui,
             hud,
             message_box,
+            items: None,
+            item_indices: Vec::new(),
+            favorite: false,
+            equip: None,
             buttons,
+            size,
             modifiers: Default::default(),
             cursor: (0.0, 0.0),
         })
@@ -64,6 +87,10 @@ impl SwfUi {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.hud.menu.resize(width, height);
         self.message_box.menu.resize(width, height);
+        if let Some(items) = &mut self.items {
+            items.menu.resize(width, height);
+        }
+        self.size = (width, height);
     }
 
     /// Tells the HUD what changed, lets `dt` pass in it and answers its calls.
@@ -72,20 +99,72 @@ impl SwfUi {
         self.hud.update(engine);
         self.hud.menu.advance(dt);
         for call in self.hud.menu.take_calls() {
-            answer(&self.hud.menu, &self.buttons, engine, &call);
+            answer(&self.hud.menu, engine, &call);
         }
+        self.item_menu(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
         for call in self.message_box.menu.take_calls() {
             if !self.message_box.answer(engine, &call) {
-                answer(&self.message_box.menu, &self.buttons, engine, &call);
+                answer(&self.message_box.menu, engine, &call);
             }
         }
     }
 
+    /// Opens the inventory when the engine's menu is, closes it when it isn't,
+    /// and keeps it up to date.
+    fn item_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        let open = engine.menu == Some(crate::items::Menu::Inventory);
+        if !open {
+            self.items = None;
+            return;
+        }
+        if self.items.is_none() {
+            let t = std::time::Instant::now();
+            let buttons = self.buttons.clone();
+            match item_menu::ItemMenu::open(
+                &self.ui,
+                self.size,
+                engine,
+                &self.item_indices,
+                buttons,
+            ) {
+                Ok(m) => {
+                    log::debug!("inventorymenu.swf up in {:?}", t.elapsed());
+                    self.items = Some(m);
+                }
+                Err(e) => {
+                    log::error!("inventory menu: {e:#}");
+                    engine.menu = None;
+                    return;
+                }
+            }
+        }
+        let Some(items) = &mut self.items else { return };
+        if std::mem::take(&mut self.favorite) {
+            items.favorite_key(engine);
+        }
+        if let Some(slot) = self.equip.take() {
+            items.equip_button(slot);
+        }
+        items.update(engine);
+        items.menu.advance(dt);
+        for call in items.menu.take_calls() {
+            if !items.answer(engine, &call, &mut self.item_indices) {
+                answer(&items.menu, engine, &call);
+            }
+        }
+    }
+
+    /// Whether the game's menus handle the engine's menu (egui doesn't draw
+    /// it then).
+    pub fn shows(menu: crate::items::Menu) -> bool {
+        menu == crate::items::Menu::Inventory
+    }
+
     /// Whether a menu over the world takes the keyboard and mouse.
     pub fn wants_input(&self) -> bool {
-        self.message_box.shown.is_some()
+        self.message_box.shown.is_some() || self.items.is_some()
     }
 
     /// The window's input, to the menu on top while one takes it (the console
@@ -102,7 +181,40 @@ impl SwfUi {
         if !self.wants_input() {
             return false;
         }
-        let menu = &self.message_box.menu;
+        // The item menu's own keys and buttons, unless a message box is over it.
+        let item_menu = self.message_box.shown.is_none() && self.items.is_some();
+        let closing = self.items.as_ref().is_some_and(|i| i.closing);
+        match event {
+            WindowEvent::KeyboardInput { event, .. }
+                if item_menu
+                    && event.state == ElementState::Pressed
+                    && !event.repeat
+                    && let PhysicalKey::Code(code) = event.physical_key
+                    && self.item_key(code) =>
+            {
+                return true;
+            }
+            // An attack button equips to its hand (the control map's
+            // `LeftEquip` / `RightEquip`): `AttemptEquip`'s slot.
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button,
+                ..
+            } if item_menu && !closing => {
+                let code = match button {
+                    winit::event::MouseButton::Left => Some(0),
+                    winit::event::MouseButton::Right => Some(1),
+                    _ => None,
+                };
+                if code.is_some() && code == self.buttons.mouse("Left Attack/Block") {
+                    self.equip = Some(0.0);
+                } else if code.is_some() && code == self.buttons.mouse("Right Attack/Block") {
+                    self.equip = Some(1.0);
+                }
+            }
+            _ => {}
+        }
+        let menu = self.top();
         let (x, y) = self.cursor;
         match event {
             WindowEvent::CursorMoved { .. } => menu.handle_event(PlayerEvent::MouseMove { x, y }),
@@ -166,6 +278,53 @@ impl SwfUi {
         true
     }
 
+    /// The menu taking input: a message box, else the item menu.
+    fn top(&self) -> &Menu {
+        match (&self.message_box.shown, &self.items) {
+            (None, Some(items)) => &items.menu,
+            _ => &self.message_box.menu,
+        }
+    }
+
+    /// The item menu's own keys (none while a message box is over it): Esc
+    /// closes it, the Ready Weapon key drops, Toggle POV marks a favorite (as
+    /// the bottom bar shows them). True when the key was one of them.
+    fn item_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
+        use winit::platform::scancode::PhysicalKeyExtScancode;
+        let (None, Some(items)) = (&self.message_box.shown, &mut self.items) else {
+            return false;
+        };
+        let scan = code.to_scancode();
+        if items.closing {
+            // Fading out: the keys do nothing more.
+            return code != winit::keyboard::KeyCode::Backquote;
+        } else if code == winit::keyboard::KeyCode::Escape {
+            items.close();
+        } else if scan.is_some() && scan == self.buttons.key("Ready Weapon") {
+            items.drop_key();
+        } else if scan.is_some() && scan == self.buttons.key("Toggle POV") {
+            // Needs the engine: done with the next update.
+            self.favorite = true;
+        } else {
+            return false;
+        }
+        true
+    }
+
+    /// A key pressed and let go in the menu on top, as `window_event` would
+    /// (`--menu-key`, for testing).
+    pub fn press(&mut self, code: winit::keyboard::KeyCode) {
+        use ui_swf::PlayerEvent;
+        if !self.wants_input() || self.item_key(code) {
+            return;
+        }
+        let menu = self.top();
+        for key in ui_swf::input::keys(code) {
+            menu.handle_event(PlayerEvent::KeyDown { key });
+            menu.handle_event(PlayerEvent::KeyUp { key });
+        }
+    }
+
     /// Whether the HUD shows: not while a menu is up, as in the game.
     pub fn visible(engine: &Engine) -> bool {
         engine.menu.is_none()
@@ -178,6 +337,10 @@ impl SwfUi {
             self.hud.menu.render();
             menus.push(&self.hud.menu);
         }
+        if let Some(items) = &mut self.items {
+            items.menu.render();
+            menus.push(&items.menu);
+        }
         if self.message_box.shown.is_some() {
             self.message_box.menu.render();
             menus.push(&self.message_box.menu);
@@ -186,19 +349,25 @@ impl SwfUi {
     }
 }
 
+/// Answers to the calls every menu makes that want one, while the menu waits
+/// (`Menu::set_responder`): a key's art for a user event ("Activate"), to show
+/// in a text.
+fn respond(buttons: &Buttons, call: &GameCall) -> Option<Vec<Value>> {
+    match (call.name.as_str(), call.args.first()) {
+        ("GetButtonFromUserEvent", Some(Value::String(event))) => {
+            Some(vec![text(buttons.art(event))])
+        }
+        _ => None,
+    }
+}
+
 /// A menu's calls to the game (`GameDelegate.call`) that the engine answers.
-fn answer(menu: &Menu, buttons: &Buttons, engine: &mut Engine, call: &ui_swf::GameCall) {
+fn answer(menu: &Menu, engine: &mut Engine, call: &GameCall) {
     let first = |i: usize| match call.args.get(i) {
         Some(Value::String(s)) => Some(s.as_str()),
         _ => None,
     };
     match call.name.as_str() {
-        // A key's art for a user event ("Activate"), to show in its text.
-        "GetButtonFromUserEvent" => {
-            if let (Some(id), Some(event)) = (call.id, first(0)) {
-                menu.respond(id, &[text(buttons.art(event))]);
-            }
-        }
         "PlaySound" => {
             if let Some(sound) = first(0) {
                 let at = engine.camera.position;
@@ -210,10 +379,14 @@ fn answer(menu: &Menu, buttons: &Buttons, engine: &mut Engine, call: &ui_swf::Ga
 }
 
 /// Which key each user event is on (`interface/controls/pc/controlmap.txt`),
-/// as the button art the menus export (`E.png`, `L-Shift.png`, `Mouse1.png`).
+/// as the button art the menus export (`E.png`, `L-Shift.png`, `Mouse1.png`)
+/// and as codes.
 struct Buttons {
     /// Event name to art name, keyboard first, else the mouse.
     art: std::collections::HashMap<String, String>,
+    /// Event name to its keyboard key (DirectInput scan code) and mouse
+    /// button.
+    codes: std::collections::HashMap<String, (Option<u32>, Option<u32>)>,
 }
 
 impl Buttons {
@@ -235,7 +408,7 @@ impl Buttons {
                     .or_insert((cols[1].trim().to_string(), cols[2].trim().to_string()));
             }
         }
-        let resolve = |column: usize, event: &str| -> Option<String> {
+        let resolve = |column: usize, event: &str| -> Option<u32> {
             let mut event = event.to_string();
             for _ in 0..4 {
                 let (keyboard, mouse) = raw.get(&event)?;
@@ -246,22 +419,28 @@ impl Buttons {
                     None => {
                         // A combination ("0x2a+0x0f") shows its last key.
                         let code = value.rsplit('+').next()?.trim();
-                        let code = u32::from_str_radix(code.trim_start_matches("0x"), 16).ok()?;
-                        return if column == 0 {
-                            keyboard_art(code)
-                        } else {
-                            mouse_art(code)
-                        };
+                        return u32::from_str_radix(code.trim_start_matches("0x"), 16)
+                            .ok()
+                            .filter(|&c| c != 0xff);
                     }
                 }
             }
             None
         };
-        let art = raw
+        let codes: std::collections::HashMap<_, _> = raw
             .keys()
-            .filter_map(|e| Some((e.clone(), resolve(0, e).or_else(|| resolve(1, e))?)))
+            .map(|e| (e.clone(), (resolve(0, e), resolve(1, e))))
             .collect();
-        let buttons = Buttons { art };
+        let art = codes
+            .iter()
+            .filter_map(|(e, (key, mouse))| {
+                let art = key
+                    .and_then(keyboard_art)
+                    .or_else(|| mouse.and_then(mouse_art))?;
+                Some((e.clone(), art))
+            })
+            .collect();
+        let buttons = Buttons { art, codes };
         log::debug!(
             "{} user events with key art (Activate {}, Tween Menu {}, Jump {}, Sprint {})",
             buttons.art.len(),
@@ -271,6 +450,16 @@ impl Buttons {
             buttons.art("Sprint"),
         );
         buttons
+    }
+
+    /// A user event's keyboard key, as a DirectInput scan code.
+    fn key(&self, event: &str) -> Option<u32> {
+        self.codes.get(event).and_then(|c| c.0)
+    }
+
+    /// A user event's mouse button (0 the left).
+    fn mouse(&self, event: &str) -> Option<u32> {
+        self.codes.get(event).and_then(|c| c.1)
     }
 
     /// The art for a user event, `UnknownKey` when it has none.
@@ -794,4 +983,50 @@ impl Hud {
             }
         }
     }
+}
+
+/// A key by its winit name (`ArrowRight`, `KeyE`, `Escape`), for `--menu-key`.
+pub fn key_code(name: &str) -> Option<winit::keyboard::KeyCode> {
+    use winit::keyboard::KeyCode as K;
+    const KEYS: &[K] = &[
+        K::ArrowUp,
+        K::ArrowDown,
+        K::ArrowLeft,
+        K::ArrowRight,
+        K::Enter,
+        K::Tab,
+        K::Escape,
+        K::Space,
+        K::Home,
+        K::End,
+        K::PageUp,
+        K::PageDown,
+        K::KeyA,
+        K::KeyB,
+        K::KeyC,
+        K::KeyD,
+        K::KeyE,
+        K::KeyF,
+        K::KeyG,
+        K::KeyH,
+        K::KeyI,
+        K::KeyJ,
+        K::KeyK,
+        K::KeyL,
+        K::KeyM,
+        K::KeyN,
+        K::KeyO,
+        K::KeyP,
+        K::KeyQ,
+        K::KeyR,
+        K::KeyS,
+        K::KeyT,
+        K::KeyU,
+        K::KeyV,
+        K::KeyW,
+        K::KeyX,
+        K::KeyY,
+        K::KeyZ,
+    ];
+    KEYS.iter().copied().find(|k| format!("{k:?}") == name)
 }
