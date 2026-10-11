@@ -683,6 +683,14 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.menu = Some(crate::items::Menu::Skills);
                             }
+                            // Quick Magic (the control map's).
+                            if code == KeyCode::KeyP
+                                && !event.repeat
+                                && !s.engine.disabled_controls.menu
+                                && s.swf.is_some()
+                            {
+                                s.engine.menu = Some(crate::items::Menu::Magic);
+                            }
                             // Menus take the mouse.
                             if s.engine.menu_up() {
                                 if s.grabbed {

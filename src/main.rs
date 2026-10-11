@@ -38,6 +38,7 @@ mod render;
 mod scene;
 mod script;
 mod skills;
+mod spells;
 mod stats;
 mod story;
 mod swf_ui;
