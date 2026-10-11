@@ -200,6 +200,10 @@ $B fonts data/interface/gfxfontlib.swf       # fonts, imports, exports
 $B run   data/interface/<menu>.swf out.png [ops...]
 ```
 
+`python3 fold.py out/menu.dis` folds the disassembly into readable
+pseudo-ActionScript (expressions instead of stack operations; branches as
+`goto`s): how the item menus' game↔menu contract was read.
+
 `run` ops, applied in order after 5 frames:
 
 - `call:path|arg|...`: calls an ActionScript function, as the game's Invoke does.
