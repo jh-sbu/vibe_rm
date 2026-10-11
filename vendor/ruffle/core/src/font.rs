@@ -344,7 +344,7 @@ impl<'gc> Font<'gc> {
 
     pub fn from_swf_tag(
         gc_context: &Mutation<'gc>,
-        renderer: &mut dyn RenderBackend,
+        _renderer: &mut dyn RenderBackend,
         tag: swf::Font,
         encoding: &'static swf::Encoding,
         font_type: FontType,
@@ -369,14 +369,10 @@ impl<'gc> Font<'gc> {
                 let character = char::from_u32(code as u32).unwrap_or(char::REPLACEMENT_CHARACTER);
                 code_point_to_glyph.insert(code, index);
 
-                let glyph = Glyph::from_swf(character, swf_glyph);
-
-                // Eager-load ASCII characters.
-                if code < 128 {
-                    glyph.glyph_render_data(renderer);
-                }
-
-                glyph
+                // Each glyph's shape is built when first drawn (Scaleform menus
+                // define dozens of fonts each, most of whose glyphs they never
+                // draw).
+                Glyph::from_swf(character, swf_glyph)
             })
             .collect();
 
