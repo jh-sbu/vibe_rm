@@ -43,8 +43,13 @@ game's scripts (`PlayerSleepQuestScript` gives Rested from `OnSleepStop`,
   their rates, as they would standing about: those loaded out of combat
   (or slower in it), those away that left hurt too. Those bleeding out stay
   down. Shops restocking isn't done (see ROADMAP).
-- **Not done while the hours pass:** nothing interrupts the wait
-  (`OnSleepStop` always says not interrupted); the screen doesn't fade while
+- **Interruptions.** After each hour, the loaded actors within 4000 units
+  that would attack the player and detect them at all (a detection value
+  above nothing: an hour is taken as long enough to find them, whatever
+  their stealth points) start the fight, and the wait ends there, the menu
+  closing (`OnSleepStop(true)` when sleeping). The game's own rule for what
+  interrupts isn't known; nothing else (scripts, the Story Manager) does.
+- **Not done while the hours pass:** the screen doesn't fade while
   sleeping.
 - **Sleep events.** Scripts registered with `RegisterForSleep` hear
   `OnSleepStart(now, now + hours / 24)` when sleeping starts and
