@@ -4,7 +4,7 @@
 use esp::FormId;
 
 use crate::engine::{Engine, PLAYER_REF};
-use crate::world::inventory::{ItemInfo, armor_slots, item_info};
+use crate::world::inventory::{ItemInfo, ItemKind, armor_slots, item_info};
 
 /// A menu taking the mouse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +35,8 @@ pub enum Menu {
     Gift(FormId),
     /// The player's spells, powers and active effects.
     Magic,
+    /// The player's favorite items, spells and powers.
+    Favorites,
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,
@@ -287,6 +289,64 @@ impl Engine {
             });
         }
         moved
+    }
+
+    /// Marks an item, spell or power one of the player's favorites, or not
+    /// (losing its hotkey).
+    pub fn toggle_favorite(&mut self, form: FormId) {
+        if let Some(i) = self.favorites.iter().position(|&f| f == form) {
+            self.favorites.remove(i);
+            for key in self.hotkeys.iter_mut().filter(|k| **k == Some(form)) {
+                *key = None;
+            }
+        } else {
+            self.favorites.push(form);
+        }
+    }
+
+    /// Accept on one of the player's items (in the inventory, the favorites
+    /// menu, on a hotkey): weapons and apparel are equipped or taken off,
+    /// potions, food and ingredients used, books read.
+    pub fn use_listed_item(&mut self, row: &ListedItem) {
+        let worn = self
+            .inventories
+            .get(&PLAYER_REF)
+            .is_some_and(|i| i.equipped.contains(&row.item));
+        let result = match row.info.kind {
+            ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor => {
+                self.equip_item(PLAYER_REF, row.item, !worn)
+            }
+            ItemKind::Potion | ItemKind::Ingredient => self.consume(PLAYER_REF, row.item),
+            ItemKind::Book => {
+                self.menu = Some(Menu::Book {
+                    book: row.item,
+                    reference: None,
+                });
+                self.read_book(row.item);
+                Ok(())
+            }
+            _ => Ok(()),
+        };
+        if let Err(e) = result {
+            self.scripts.notify(e);
+        }
+    }
+
+    /// Hotkey `key` (0 to 7) in the world: its favorite used as Accept in the
+    /// favorites menu would (a spell readied in the right hand).
+    pub fn use_hotkey(&mut self, key: usize) {
+        let Some(form) = self.hotkeys.get(key).copied().flatten() else {
+            return;
+        };
+        if self.actor_spells(PLAYER_REF).contains(&form) {
+            self.toggle_spell(PLAYER_REF, form, crate::spells::RIGHT);
+        } else if let Some(row) = self
+            .listed_inventory(PLAYER_REF)
+            .into_iter()
+            .find(|i| i.item == form)
+        {
+            self.use_listed_item(&row);
+        }
     }
 
     /// Equip or take off an item the actor carries: armor (see `equip_armor`), a

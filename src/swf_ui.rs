@@ -1,8 +1,8 @@
 //! The game's own menus (Interface `.swf` movies through `ui_swf`), driven from
 //! the engine: the HUD (`hudmenu.swf`), message boxes (`messagebox.swf`) and
 //! the item menus (the inventory, containers and pockets, bartering: in
-//! `item_menu`), the magic menu (`magic_menu`) and the journal
-//! (`journal_menu`), in place of egui's.
+//! `item_menu`), the magic menu (`magic_menu`), the favorites menu
+//! (`favorites_menu`) and the journal (`journal_menu`), in place of egui's.
 //!
 //! Each frame the HUD is told what changed: the health, magicka and stamina
 //! meters, the compass heading, the location, what the crosshair is on, what's
@@ -11,6 +11,7 @@
 //! (`_root.HUDMovieBaseInstance...`); how the game words some of them isn't
 //! known (`known_gaps/swf-hud.md`).
 
+mod favorites_menu;
 mod item_menu;
 mod journal_menu;
 mod magic_menu;
@@ -43,6 +44,11 @@ pub struct SwfUi {
     /// The magic menu, while open, and its lists' positions.
     magic: Option<magic_menu::MagicMenu>,
     magic_indices: Vec<Value>,
+    /// The favorites menu, while open, the favorite selected when it
+    /// closed, and a hotkey pressed (0 to 7) for its next update.
+    favorites: Option<favorites_menu::FavoritesMenu>,
+    favorites_last: Option<FormId>,
+    hotkey: Option<usize>,
     /// The journal, while open, and where it was left.
     journal: Option<journal_menu::JournalMenu>,
     journal_saved: journal_menu::Saved,
@@ -89,6 +95,9 @@ impl SwfUi {
             equip: None,
             magic: None,
             magic_indices: Vec::new(),
+            favorites: None,
+            favorites_last: None,
+            hotkey: None,
             journal: None,
             journal_saved: Default::default(),
             buttons,
@@ -110,6 +119,9 @@ impl SwfUi {
         if let Some(magic) = &mut self.magic {
             magic.menu.resize(width, height);
         }
+        if let Some(favorites) = &mut self.favorites {
+            favorites.menu.resize(width, height);
+        }
         self.size = (width, height);
     }
 
@@ -124,6 +136,7 @@ impl SwfUi {
         self.item_menu(engine, dt);
         self.journal_menu(engine, dt);
         self.magic_menu(engine, dt);
+        self.favorites_menu(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
         for call in self.message_box.menu.take_calls() {
@@ -223,6 +236,48 @@ impl SwfUi {
         }
     }
 
+    /// Opens the favorites menu when the engine's menu is it, closes it when
+    /// it goes, and keeps it up to date.
+    fn favorites_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        if engine.menu != Some(crate::items::Menu::Favorites) {
+            self.favorites = None;
+            return;
+        }
+        if self.favorites.is_none() {
+            let buttons = self.buttons.clone();
+            match favorites_menu::FavoritesMenu::open(
+                &self.ui,
+                self.size,
+                engine,
+                self.favorites_last,
+                buttons,
+            ) {
+                Ok(m) => self.favorites = Some(m),
+                Err(e) => {
+                    log::error!("favorites menu: {e:#}");
+                    engine.menu = None;
+                    return;
+                }
+            }
+        }
+        let Some(favorites) = &mut self.favorites else {
+            return;
+        };
+        if let Some(key) = self.hotkey.take() {
+            favorites.hotkey(engine, key);
+        }
+        if let Some(slot) = self.equip.take() {
+            favorites.equip_button(engine, slot);
+        }
+        favorites.update(engine);
+        favorites.menu.advance(dt);
+        for call in favorites.menu.take_calls() {
+            if !favorites.answer(engine, &call, &mut self.favorites_last) {
+                answer(&favorites.menu, engine, &call);
+            }
+        }
+    }
+
     /// Opens the journal when the engine's menu is it, closes it when it
     /// goes, and answers its calls.
     fn journal_menu(&mut self, engine: &mut Engine, dt: Duration) {
@@ -268,7 +323,9 @@ impl SwfUi {
         item_menu::ItemMenu::shows(menu)
             || matches!(
                 menu,
-                crate::items::Menu::Journal | crate::items::Menu::Magic
+                crate::items::Menu::Journal
+                    | crate::items::Menu::Magic
+                    | crate::items::Menu::Favorites
             )
     }
 
@@ -278,6 +335,7 @@ impl SwfUi {
             || self.items.is_some()
             || self.journal.is_some()
             || self.magic.is_some()
+            || self.favorites.is_some()
     }
 
     /// The window's input, to the menu on top while one takes it (the console
@@ -305,10 +363,11 @@ impl SwfUi {
         }
         // The item and magic menus' own keys and buttons, unless a message
         // box is over them.
-        let item_menu =
-            self.message_box.shown.is_none() && (self.items.is_some() || self.magic.is_some());
+        let item_menu = self.message_box.shown.is_none()
+            && (self.items.is_some() || self.magic.is_some() || self.favorites.is_some());
         let closing = self.items.as_ref().is_some_and(|i| i.closing)
-            || self.magic.as_ref().is_some_and(|m| m.closing);
+            || self.magic.as_ref().is_some_and(|m| m.closing)
+            || self.favorites.as_ref().is_some_and(|f| f.closing);
         match event {
             WindowEvent::KeyboardInput { event, .. }
                 if item_menu
@@ -405,19 +464,22 @@ impl SwfUi {
         true
     }
 
-    /// The menu taking input: a message box, else the item menu or the
-    /// journal.
+    /// The menu taking input: a message box, else the item, journal, magic
+    /// or favorites menu.
     fn top(&self) -> &Menu {
-        match (
-            &self.message_box.shown,
-            &self.items,
-            &self.journal,
-            &self.magic,
-        ) {
-            (None, Some(items), _, _) => &items.menu,
-            (None, None, Some(journal), _) => &journal.menu,
-            (None, None, None, Some(magic)) => &magic.menu,
-            _ => &self.message_box.menu,
+        if self.message_box.shown.is_some() {
+            return &self.message_box.menu;
+        }
+        if let Some(items) = &self.items {
+            &items.menu
+        } else if let Some(journal) = &self.journal {
+            &journal.menu
+        } else if let Some(magic) = &self.magic {
+            &magic.menu
+        } else if let Some(favorites) = &self.favorites {
+            &favorites.menu
+        } else {
+            &self.message_box.menu
         }
     }
 
@@ -441,6 +503,26 @@ impl SwfUi {
     /// them.
     fn item_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
         use winit::platform::scancode::PhysicalKeyExtScancode;
+        if self.message_box.shown.is_none()
+            && let Some(favorites) = &mut self.favorites
+        {
+            let scan = code.to_scancode();
+            let hotkey = (0..8)
+                .find(|k| scan.is_some() && scan == self.buttons.key(&format!("Hotkey{}", k + 1)));
+            if favorites.closing {
+                return code != winit::keyboard::KeyCode::Backquote;
+            } else if code == winit::keyboard::KeyCode::Escape
+                || (scan.is_some() && scan == self.buttons.key("Favorites"))
+            {
+                favorites.close();
+            } else if let Some(k) = hotkey {
+                // Needs the engine: done with the next update.
+                self.hotkey = Some(k);
+            } else {
+                return false;
+            }
+            return true;
+        }
         if self.message_box.shown.is_none()
             && let Some(magic) = &mut self.magic
         {
@@ -533,6 +615,10 @@ impl SwfUi {
             magic.menu.render();
             menus.push(&magic.menu);
         }
+        if let Some(favorites) = &mut self.favorites {
+            favorites.menu.render();
+            menus.push(&favorites.menu);
+        }
         if self.message_box.shown.is_some() {
             self.message_box.menu.render();
             menus.push(&self.message_box.menu);
@@ -609,8 +695,10 @@ impl Buttons {
                     // The first event it refers to.
                     Some(other) => event = other.split(",!0,").next()?.to_string(),
                     None => {
-                        // A combination ("0x2a+0x0f") shows its last key.
-                        let code = value.rsplit('+').next()?.trim();
+                        // Of alternatives ("0x02,0x4f") the first; a
+                        // combination ("0x2a+0x0f") shows its last key.
+                        let first = value.split(',').next()?;
+                        let code = first.rsplit('+').next()?.trim();
                         return u32::from_str_radix(code.trim_start_matches("0x"), 16)
                             .ok()
                             .filter(|&c| c != 0xff);
@@ -1219,6 +1307,14 @@ pub fn key_code(name: &str) -> Option<winit::keyboard::KeyCode> {
         K::KeyX,
         K::KeyY,
         K::KeyZ,
+        K::Digit1,
+        K::Digit2,
+        K::Digit3,
+        K::Digit4,
+        K::Digit5,
+        K::Digit6,
+        K::Digit7,
+        K::Digit8,
     ];
     KEYS.iter().copied().find(|k| format!("{k:?}") == name)
 }

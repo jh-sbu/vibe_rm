@@ -191,6 +191,8 @@ pub struct Engine {
     pub menu: Option<crate::items::Menu>,
     /// The player's favorite items (the inventory's Favorites).
     pub favorites: Vec<FormId>,
+    /// The favorites on the hotkeys 1 to 8 (set in the favorites menu).
+    pub hotkeys: [Option<FormId>; 8],
     /// The gift menu's state while it is open (`Actor.ShowGiftMenu`).
     pub gift: Option<crate::gift::Gift>,
     /// Spells in hand and the power or shout readied, per actor
@@ -335,6 +337,7 @@ impl Engine {
             imagespace: Default::default(),
             menu: None,
             favorites: Vec::new(),
+            hotkeys: [None; 8],
             gift: None,
             equipped_spells: HashMap::new(),
             lockpick: None,

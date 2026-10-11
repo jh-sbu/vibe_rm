@@ -79,6 +79,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "activate <ref>        activate a reference as the player".into(),
             "sqs <quest>           a quest's stages, log entries and fragments".into(),
             "sqo / journal [open]  displayed objectives / the journal's quests (or open it)".into(),
+            "favorites / favorite <form>   the favorites menu / mark or unmark a favorite".into(),
             "msgbox [button]       the message box up / press one of its buttons".into(),
             "menumode / closemenu  whether the game is paused by a menu / close the menu".into(),
             "imod <imad> [strength] / rimod <imad> / imods  apply / remove an image space modifier, list them".into(),
@@ -295,6 +296,18 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         "showmagicmenu" | "magic" => {
             engine.menu = Some(crate::items::Menu::Magic);
             vec![]
+        }
+        "favorites" => {
+            engine.menu = Some(crate::items::Menu::Favorites);
+            vec![]
+        }
+        "favorite" => {
+            let Some(form) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec!["usage: favorite <item | spell>".into()];
+            };
+            engine.toggle_favorite(form);
+            let on = engine.favorites.contains(&form);
+            vec![format!("{form} {}", if on { "is a favorite" } else { "is no favorite" })]
         }
         "journal" => {
             if args.first() == Some(&"open") {
