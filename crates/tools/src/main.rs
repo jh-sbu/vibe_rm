@@ -2810,6 +2810,30 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("esp-has") => {
+            // esp-has <data dir> <TAG> <SUB>: records of a type with a subrecord,
+            // and its first four bytes (often a form id).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let tag: [u8; 4] = args[2]
+                .as_bytes()
+                .try_into()
+                .context("TAG must be 4 bytes")?;
+            let sub: [u8; 4] = args[3]
+                .as_bytes()
+                .try_into()
+                .context("SUB must be 4 bytes")?;
+            for &id in lo.ids_of_type(&tag) {
+                let Some(rec) = lo.get(id) else { continue };
+                let Some(d) = rec.get(&sub) else { continue };
+                let first = d
+                    .get(0..4)
+                    .map(|b| format!("{:08X}", u32::from_le_bytes(b.try_into().unwrap())))
+                    .unwrap_or_default();
+                println!("{id} {} {first}", rec.editor_id().unwrap_or_default());
+            }
+        }
         Some("esp-list") => {
             // esp-list <data dir> <TAG> [edid substring]: records of a type with their text subrecords.
             let data = std::path::Path::new(&args[1]);
