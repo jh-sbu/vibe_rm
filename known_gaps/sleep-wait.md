@@ -29,10 +29,20 @@ game's scripts (`PlayerSleepQuestScript` gives Rested from `OnSleepStop`,
   the hour's seconds (180 at the timescale of 20), so those that would end
   do; the player's health, magicka and stamina fill; Hours Waiting or Hours
   Slept counts one.
-- **Not done while the hours pass:** the other actors (loaded or not) don't
-  move on to where their schedules would have taken them, and nothing
-  interrupts the wait (`OnSleepStop` always says not interrupted); the
-  screen doesn't fade while sleeping.
+- **The other actors** are put where their schedules have them at the end
+  of each hour, not walked there. Those not loaded are where their packages
+  name a place, as when their cells load. Those loaded whose place is
+  elsewhere go; those whose place is a loaded cell turn up there (a random
+  spot when the package names only the cell); those whose package changed,
+  or who are well away from its location (half as far again as its radius,
+  at least 144), start over at that location, already in their furniture as
+  when a cell loads. The dead, those fighting or bleeding out, those the
+  console sent somewhere and those following or escorting the player are
+  left be, as are actors not yet given a package. The hours' other effects
+  on them (healing, crops, shops) aren't run.
+- **Not done while the hours pass:** nothing interrupts the wait
+  (`OnSleepStop` always says not interrupted); the screen doesn't fade while
+  sleeping.
 - **Sleep events.** Scripts registered with `RegisterForSleep` hear
   `OnSleepStart(now, now + hours / 24)` when sleeping starts and
   `OnSleepStop(false)` when it ends; waiting sends neither.
@@ -40,7 +50,5 @@ game's scripts (`PlayerSleepQuestScript` gives Rested from `OnSleepStop`,
   references and cells; none clears) override the data's for the player's
   checks (beds, trespass, locks, stealing prompts, the Story Manager's
   owner); NPCs choosing furniture still go by the data's.
-- **The date** on the menu is shrunk to fit its field (`textAutoSize`), as
-  Ruffle's glyphs come out a little wider than the game's.
 - egui (`--egui-hud`) has no sleep / wait menu; holding T there still runs
   time a hundred times faster.

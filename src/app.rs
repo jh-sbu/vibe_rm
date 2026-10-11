@@ -322,7 +322,8 @@ pub fn run(opts: Options) -> Result<()> {
                 swf.update(&mut engine, 1.0 / 60.0);
             }
             for name in &opts.menu_keys {
-                // `click:x,y` clicks there (frame pixels).
+                // `click:x,y` clicks there (frame pixels); `pause` only lets
+                // the time run.
                 let click = name
                     .strip_prefix("click:")
                     .and_then(|p| p.split_once(','))
@@ -330,6 +331,7 @@ pub fn run(opts: Options) -> Result<()> {
                 match (click, crate::swf_ui::key_code(name)) {
                     (Some((x, y)), _) => swf.click(x, y),
                     (None, Some(code)) => swf.press(code),
+                    (None, None) if name == "pause" => {}
                     (None, None) => log::error!("--menu-key {name}: no such key"),
                 }
                 // A third of a second for the menus, and the engine (in

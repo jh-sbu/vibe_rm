@@ -2,8 +2,9 @@
 //! (unless the game's reasons forbid it: `sNoWait*` / `sNoSleep*`), and the
 //! hours chosen pass one by one while it stays up. Each hour moves the clock
 //! and the weather on, runs the magic effects on the player for the hour's
-//! seconds, fills the player's health, magicka and stamina and counts the
-//! Hours Waiting / Hours Slept statistic. Sleeping tells the scripts
+//! seconds, puts the other actors where their schedules have them now, fills
+//! the player's health, magicka and stamina and counts the Hours Waiting /
+//! Hours Slept statistic. Sleeping tells the scripts
 //! registered for it (`RegisterForSleep`: `OnSleepStart`, `OnSleepStop`).
 //! Choices: `known_gaps/sleep-wait.md`.
 
@@ -153,6 +154,9 @@ impl Engine {
         }
         self.update_weather(1.0);
         self.update_magic(HOUR_SECONDS);
+        if self.ai_enabled {
+            self.jump_to_schedules();
+        }
         for index in [av::HEALTH, av::MAGICKA, av::STAMINA] {
             self.damage_actor_value(PLAYER_REF, index, -1.0e9);
         }
