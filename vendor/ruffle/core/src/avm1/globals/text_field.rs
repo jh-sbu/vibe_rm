@@ -96,6 +96,10 @@ const PROTO_DECLS: StaticDeclarations = declare_static_properties! {
     // Scaleform's AS2 extensions, as AS3 has them.
     "numLines" => property(tf_getter!(num_lines));
     "getLineMetrics" => method(tf_method!(get_line_metrics); DONT_ENUM | DONT_DELETE);
+    "getLineOffset" => method(tf_method!(get_line_offset); DONT_ENUM | DONT_DELETE);
+    "getCharBoundaries" => method(tf_method!(get_char_boundaries); DONT_ENUM | DONT_DELETE);
+    "verticalAutoSize" => property(tf_getter!(vertical_auto_size), tf_setter!(set_vertical_auto_size));
+    "textAutoSize" => property(tf_getter!(text_auto_size), tf_setter!(set_text_auto_size));
     "textWidth" => property(tf_getter!(text_width));
     "textHeight" => property(tf_getter!(text_height));
     "restrict" => property(tf_getter!(restrict), tf_setter!(set_restrict));
@@ -792,6 +796,125 @@ fn get_line_metrics<'gc>(
         )?;
     }
     Ok(out.into())
+}
+
+/// The index of line `args[0]`'s first character, or -1.
+fn get_line_offset<'gc>(
+    this: EditText<'gc>,
+    activation: &mut Activation<'_, 'gc>,
+    args: &[Value<'gc>],
+) -> Result<Value<'gc>, Error<'gc>> {
+    let line = args
+        .get(0)
+        .copied()
+        .unwrap_or(Value::Undefined)
+        .coerce_to_i32(activation)?;
+    let offset = usize::try_from(line)
+        .ok()
+        .and_then(|l| this.line_offset(l))
+        .map_or(-1.0, |o| o as f64);
+    Ok(offset.into())
+}
+
+/// `{x, y, width, height, left, top, right, bottom}` of character `args[0]`,
+/// or undefined (as AS3's Rectangle, whose edges Skyrim's journal reads).
+fn get_char_boundaries<'gc>(
+    this: EditText<'gc>,
+    activation: &mut Activation<'_, 'gc>,
+    args: &[Value<'gc>],
+) -> Result<Value<'gc>, Error<'gc>> {
+    let index = args
+        .get(0)
+        .copied()
+        .unwrap_or(Value::Undefined)
+        .coerce_to_i32(activation)?;
+    let Some(bounds) = usize::try_from(index)
+        .ok()
+        .and_then(|i| this.char_bounds(i))
+    else {
+        return Ok(Value::Undefined);
+    };
+    let out = Object::new(
+        &activation.context.strings,
+        Some(activation.prototypes().object),
+    );
+    for (name, value) in [
+        ("x", bounds.x_min),
+        ("y", bounds.y_min),
+        ("width", bounds.width()),
+        ("height", bounds.height()),
+        ("left", bounds.x_min),
+        ("top", bounds.y_min),
+        ("right", bounds.x_max),
+        ("bottom", bounds.y_max),
+    ] {
+        out.set(
+            AvmString::new_utf8(activation.gc(), name),
+            value.to_pixels(),
+            activation,
+        )?;
+    }
+    Ok(out.into())
+}
+
+/// Scaleform's `textAutoSize`: "shrink" (or "fit", treated as it) lays the
+/// text out smaller when it doesn't fit; "none" doesn't.
+pub fn text_auto_size<'gc>(
+    this: EditText<'gc>,
+    activation: &mut Activation<'_, 'gc>,
+) -> Result<Value<'gc>, Error<'gc>> {
+    let mode = if this.shrink_to_fit() {
+        "shrink"
+    } else {
+        "none"
+    };
+    Ok(AvmString::new_utf8(activation.gc(), mode).into())
+}
+
+pub fn set_text_auto_size<'gc>(
+    this: EditText<'gc>,
+    activation: &mut Activation<'_, 'gc>,
+    value: Value<'gc>,
+) -> Result<(), Error<'gc>> {
+    let mode = value.coerce_to_string(activation)?;
+    let shrink = mode.eq_ignore_case(WStr::from_units(b"shrink"))
+        || mode.eq_ignore_case(WStr::from_units(b"fit"));
+    this.set_shrink_to_fit(shrink, activation.context);
+    Ok(())
+}
+
+pub fn vertical_auto_size<'gc>(
+    this: EditText<'gc>,
+    activation: &mut Activation<'_, 'gc>,
+) -> Result<Value<'gc>, Error<'gc>> {
+    use crate::display_object::VerticalAutoSize;
+    let mode = match this.vertical_autosize() {
+        VerticalAutoSize::None => "none",
+        VerticalAutoSize::Top => "top",
+        VerticalAutoSize::Center => "center",
+        VerticalAutoSize::Bottom => "bottom",
+    };
+    Ok(AvmString::new_utf8(activation.gc(), mode).into())
+}
+
+pub fn set_vertical_auto_size<'gc>(
+    this: EditText<'gc>,
+    activation: &mut Activation<'_, 'gc>,
+    value: Value<'gc>,
+) -> Result<(), Error<'gc>> {
+    use crate::display_object::VerticalAutoSize;
+    let mode = value.coerce_to_string(activation)?;
+    let mode = if mode.eq_ignore_case(WStr::from_units(b"top")) {
+        VerticalAutoSize::Top
+    } else if mode.eq_ignore_case(WStr::from_units(b"center")) {
+        VerticalAutoSize::Center
+    } else if mode.eq_ignore_case(WStr::from_units(b"bottom")) {
+        VerticalAutoSize::Bottom
+    } else {
+        VerticalAutoSize::None
+    };
+    this.set_vertical_autosize(mode, activation.context);
+    Ok(())
 }
 
 pub fn bottom_scroll<'gc>(
