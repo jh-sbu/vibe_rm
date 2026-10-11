@@ -226,6 +226,9 @@ pub enum ClipEvent<'gc> {
         /// For instance the value of 0 indicates it's a single click,
         /// the number of 1 indicates it's a double click, etc.
         index: usize,
+        /// Pressed with Enter / Space on the focus rather than the mouse
+        /// (Scaleform's `keyboardOrMouse` argument).
+        keyboard: bool,
     },
 
     /// Right mouse button was pressed inside this current display object.
@@ -271,6 +274,8 @@ pub enum ClipEvent<'gc> {
     Release {
         /// The index of this click, same as the index of the last [`ClipEvent::Press`] event.
         index: usize,
+        /// As [`ClipEvent::Press`]'s.
+        keyboard: bool,
     },
 
     /// Right mouse button was released inside a previously-pressed display object.

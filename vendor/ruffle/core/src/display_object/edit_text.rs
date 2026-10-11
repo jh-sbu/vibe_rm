@@ -3137,7 +3137,7 @@ impl<'gc> TInteractiveObject<'gc> for EditText<'gc> {
             }
         }
 
-        if let ClipEvent::Press { index } = event {
+        if let ClipEvent::Press { index, .. } = event {
             // We can't hold self as any link may end up modifying this object, so pull the info out
             let mut link_to_open = None;
 

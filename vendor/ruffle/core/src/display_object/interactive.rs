@@ -348,7 +348,7 @@ pub trait TInteractiveObject<'gc>:
 
                 Avm2::dispatch_event(activation.context, avm2_event, target).into()
             }
-            ClipEvent::Release { index } => {
+            ClipEvent::Release { index, .. } => {
                 let is_double_click = index % 2 != 0;
                 let double_click_enabled = self
                     .raw_interactive()
