@@ -6,7 +6,7 @@
 //! schedules have them now, fills the player's health, magicka and stamina
 //! and counts the Hours Waiting / Hours Slept statistic. Sleeping tells the
 //! scripts registered for it (`RegisterForSleep`: `OnSleepStart`,
-//! `OnSleepStop`).
+//! `OnSleepStop`). Enemies finding the player after an hour end the wait.
 //! Choices: `known_gaps/sleep-wait.md`.
 
 use esp::FormId;
@@ -135,15 +135,40 @@ impl Engine {
         w.next += SECONDS_PER_HOUR;
         w.left -= 1;
         self.pass_hour(w.sleeping);
-        if w.left > 0 {
+        let interrupted = self.enemies_come_upon_player();
+        if w.left > 0 && !interrupted {
             self.waiting = Some(w);
             return;
         }
         self.waiting = None;
         self.menu = None;
         if w.sleeping {
-            self.send_sleep_event("OnSleepStop", vec![Value::Bool(false)]);
+            self.send_sleep_event("OnSleepStop", vec![Value::Bool(interrupted)]);
         }
+    }
+
+    /// After an hour: the loaded actors that would attack the player and
+    /// detect them at all now (an hour is long enough to find them) start
+    /// the fight, which ends the wait. Whether any did.
+    fn enemies_come_upon_player(&mut self) -> bool {
+        use crate::ai::combat::ENGAGE_DISTANCE;
+        let player = self.player.position;
+        let near: Vec<FormId> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.bleeding.is_none() && a.combat.is_none())
+            .filter(|a| a.pos.distance(player) < ENGAGE_DISTANCE)
+            .map(|a| a.ref_id)
+            .collect();
+        let mut found = false;
+        for r in near {
+            if self.detects(r, PLAYER_REF) && self.would_attack_player(r) {
+                log::info!("{r} comes upon the player while they wait");
+                found |= self.start_combat(r, PLAYER_REF);
+            }
+        }
+        found
     }
 
     /// An hour passes for the player.
