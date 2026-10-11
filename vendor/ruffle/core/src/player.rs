@@ -1399,8 +1399,20 @@ impl Player {
                 {
                     // The button/clip is pressed and then immediately released.
                     // We do not have to wait for KeyUp.
-                    focus.handle_clip_event(context, ClipEvent::Press { index: 0 });
-                    focus.handle_clip_event(context, ClipEvent::Release { index: 0 });
+                    focus.handle_clip_event(
+                        context,
+                        ClipEvent::Press {
+                            index: 0,
+                            keyboard: true,
+                        },
+                    );
+                    focus.handle_clip_event(
+                        context,
+                        ClipEvent::Release {
+                            index: 0,
+                            keyboard: true,
+                        },
+                    );
                 }
 
                 if let InputEvent::KeyDown { key_code, .. } = &event
@@ -1818,6 +1830,7 @@ impl Player {
                     let event = match button {
                         MouseButton::Left => ClipEvent::Press {
                             index: context.input.last_click_index(),
+                            keyboard: false,
                         },
                         MouseButton::Right => ClipEvent::RightPress,
                         MouseButton::Middle => ClipEvent::MiddlePress,
@@ -1862,6 +1875,7 @@ impl Player {
                         let event = match button {
                             MouseButton::Left => ClipEvent::Release {
                                 index: context.input.last_click_index(),
+                                keyboard: false,
                             },
                             MouseButton::Right => ClipEvent::RightRelease,
                             MouseButton::Middle => ClipEvent::MiddleRelease,

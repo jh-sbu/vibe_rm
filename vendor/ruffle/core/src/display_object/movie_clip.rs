@@ -2998,13 +2998,18 @@ impl<'gc> TInteractiveObject<'gc> for MovieClip<'gc> {
             if self.should_fire_event_handlers(context, event)
                 && let Some(name) = event.method_name(&context.strings)
             {
+                // Scaleform's `onPress` / `onRelease (controllerIdx,
+                // keyboardOrMouse, button)`: one controller, 1 for a key
+                // press, 0 for the mouse, the left button.
+                let args = match event {
+                    ClipEvent::Press { keyboard, .. } | ClipEvent::Release { keyboard, .. } => {
+                        vec![0.into(), i32::from(keyboard).into(), 0.into()]
+                    }
+                    _ => vec![],
+                };
                 context.action_queue.queue_action(
                     self.into(),
-                    ActionType::Method {
-                        object,
-                        name,
-                        args: vec![],
-                    },
+                    ActionType::Method { object, name, args },
                     event == ClipEvent::Unload,
                 );
             }

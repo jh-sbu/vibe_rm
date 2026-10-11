@@ -302,7 +302,12 @@ commit of its own on top (`git log -- vendor/ruffle`):
     - `getLineOffset(line)` and `getCharBoundaries(i)` (`{x, y, width,
       height, left, top, right, bottom}`), which place the objectives under
       the description.
-13. The spike's instrumentation, marked `SPIKE`, behind the `spike` cargo
+13. Scaleform's `onPress` / `onRelease` arguments `(controllerIdx,
+    keyboardOrMouse, button)`: 0, then 1 for the Enter / Space press of 8 or
+    0 for the mouse, then 0 (the left button). The item, magic and favorites
+    menus leave a mouse press on a list row to the game (the attack buttons'
+    equip; a container's take); without the argument a click did both.
+14. The spike's instrumentation, marked `SPIKE`, behind the `spike` cargo
     feature of `ruffle_core` and `ruffle_render_wgpu` (off by default; the
     harness turns it on):
    - the `SPIKE_INLINE_BLENDS`, `SPIKE_NOFILTERS` and `SPIKE_NOVSYNC` switches;
