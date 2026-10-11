@@ -2,7 +2,8 @@
 //! the engine: the HUD (`hudmenu.swf`), message boxes (`messagebox.swf`) and
 //! the item menus (the inventory, containers and pockets, bartering: in
 //! `item_menu`), the magic menu (`magic_menu`), the favorites menu
-//! (`favorites_menu`) and the journal (`journal_menu`), in place of egui's.
+//! (`favorites_menu`), the tween menu (`tween_menu`) and the journal
+//! (`journal_menu`), in place of egui's.
 //!
 //! Each frame the HUD is told what changed: the health, magicka and stamina
 //! meters, the compass heading, the location, what the crosshair is on, what's
@@ -15,6 +16,7 @@ mod favorites_menu;
 mod item_menu;
 mod journal_menu;
 mod magic_menu;
+mod tween_menu;
 
 use std::time::Duration;
 
@@ -49,6 +51,8 @@ pub struct SwfUi {
     favorites: Option<favorites_menu::FavoritesMenu>,
     favorites_last: Option<FormId>,
     hotkey: Option<usize>,
+    /// The tween menu, while open.
+    tween: Option<tween_menu::TweenMenu>,
     /// The journal, while open, and where it was left.
     journal: Option<journal_menu::JournalMenu>,
     journal_saved: journal_menu::Saved,
@@ -98,6 +102,7 @@ impl SwfUi {
             favorites: None,
             favorites_last: None,
             hotkey: None,
+            tween: None,
             journal: None,
             journal_saved: Default::default(),
             buttons,
@@ -122,6 +127,9 @@ impl SwfUi {
         if let Some(favorites) = &mut self.favorites {
             favorites.menu.resize(width, height);
         }
+        if let Some(tween) = &mut self.tween {
+            tween.menu.resize(width, height);
+        }
         self.size = (width, height);
     }
 
@@ -137,6 +145,7 @@ impl SwfUi {
         self.journal_menu(engine, dt);
         self.magic_menu(engine, dt);
         self.favorites_menu(engine, dt);
+        self.tween_menu(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
         for call in self.message_box.menu.take_calls() {
@@ -278,6 +287,35 @@ impl SwfUi {
         }
     }
 
+    /// Opens the tween menu when the engine's menu is it, closes it when it
+    /// goes, and answers its calls.
+    fn tween_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        if engine.menu != Some(crate::items::Menu::Tween) {
+            self.tween = None;
+            return;
+        }
+        if self.tween.is_none() {
+            let buttons = self.buttons.clone();
+            match tween_menu::TweenMenu::open(&self.ui, self.size, engine, buttons) {
+                Ok(m) => self.tween = Some(m),
+                Err(e) => {
+                    log::error!("tween menu: {e:#}");
+                    engine.menu = None;
+                    return;
+                }
+            }
+        }
+        let Some(tween) = &mut self.tween else {
+            return;
+        };
+        tween.menu.advance(dt);
+        for call in tween.menu.take_calls() {
+            if !tween.answer(engine, &call) {
+                answer(&tween.menu, engine, &call);
+            }
+        }
+    }
+
     /// Opens the journal when the engine's menu is it, closes it when it
     /// goes, and answers its calls.
     fn journal_menu(&mut self, engine: &mut Engine, dt: Duration) {
@@ -326,6 +364,7 @@ impl SwfUi {
                 crate::items::Menu::Journal
                     | crate::items::Menu::Magic
                     | crate::items::Menu::Favorites
+                    | crate::items::Menu::Tween
             )
     }
 
@@ -336,6 +375,7 @@ impl SwfUi {
             || self.journal.is_some()
             || self.magic.is_some()
             || self.favorites.is_some()
+            || self.tween.is_some()
     }
 
     /// The window's input, to the menu on top while one takes it (the console
@@ -478,6 +518,8 @@ impl SwfUi {
             &magic.menu
         } else if let Some(favorites) = &self.favorites {
             &favorites.menu
+        } else if let Some(tween) = &self.tween {
+            &tween.menu
         } else {
             &self.message_box.menu
         }
@@ -503,6 +545,18 @@ impl SwfUi {
     /// them.
     fn item_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
         use winit::platform::scancode::PhysicalKeyExtScancode;
+        // The tween menu: Esc folds it away as Tab does.
+        if self.message_box.shown.is_none()
+            && let Some(tween) = &mut self.tween
+        {
+            if tween.closing {
+                return code != winit::keyboard::KeyCode::Backquote;
+            } else if code == winit::keyboard::KeyCode::Escape {
+                tween.close();
+                return true;
+            }
+            return false;
+        }
         if self.message_box.shown.is_none()
             && let Some(favorites) = &mut self.favorites
         {
@@ -618,6 +672,10 @@ impl SwfUi {
         if let Some(favorites) = &mut self.favorites {
             favorites.menu.render();
             menus.push(&favorites.menu);
+        }
+        if let Some(tween) = &mut self.tween {
+            tween.menu.render();
+            menus.push(&tween.menu);
         }
         if self.message_box.shown.is_some() {
             self.message_box.menu.render();

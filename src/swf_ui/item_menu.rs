@@ -197,6 +197,8 @@ pub(super) struct ItemMenu {
     player: Option<Vec<Value>>,
     /// Closing: the inventory fades out, then calls `CloseMenu`.
     pub closing: bool,
+    /// Closing for the tween menu (`ShowTweenMenu`), not the world.
+    to_tween: bool,
 }
 
 pub(super) fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
@@ -345,6 +347,7 @@ impl ItemMenu {
             vendor_gold,
             player: None,
             closing: false,
+            to_tween: false,
         };
         m.update(engine);
         if m.shows == Shown::Inventory && !indices.is_empty() {
@@ -596,12 +599,16 @@ impl ItemMenu {
             }
             "CloseMenu" => {
                 if engine.menu == Some(self.shows) {
-                    engine.menu = None;
+                    engine.menu = self.to_tween.then_some(crate::items::Menu::Tween);
                 }
             }
-            // Leaving the inventory for the tween menu (not built) or the
-            // world: it fades out and then calls `CloseMenu`.
-            "ShowTweenMenu" | "CloseTweenMenu" => self.closing = true,
+            // Leaving the inventory for the tween menu or the world: it fades
+            // out and then calls `CloseMenu`.
+            "ShowTweenMenu" => {
+                self.closing = true;
+                self.to_tween = true;
+            }
+            "CloseTweenMenu" => self.closing = true,
             // The item's model (not shown yet), a disabled item, the
             // quantity slider: nothing to do.
             "UpdateItem3D" | "StartMouseRotation" | "StopMouseRotation" | "ZoomItemModel"

@@ -80,6 +80,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "sqs <quest>           a quest's stages, log entries and fragments".into(),
             "sqo / journal [open]  displayed objectives / the journal's quests (or open it)".into(),
             "favorites / favorite <form>   the favorites menu / mark or unmark a favorite".into(),
+            "tween                 the tween menu (Tab's)".into(),
             "msgbox [button]       the message box up / press one of its buttons".into(),
             "menumode / closemenu  whether the game is paused by a menu / close the menu".into(),
             "imod <imad> [strength] / rimod <imad> / imods  apply / remove an image space modifier, list them".into(),
@@ -299,6 +300,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         }
         "favorites" => {
             engine.menu = Some(crate::items::Menu::Favorites);
+            vec![]
+        }
+        "tween" => {
+            engine.menu = Some(crate::items::Menu::Tween);
             vec![]
         }
         "favorite" => {

@@ -22,5 +22,6 @@ Implemented in `src/player.rs` (`DisabledControls`), checked in
 - **`aiDisablePOVType`** is stored but ignored. Disabled camera switching
   stops F and the wheel (`known_gaps/player-body.md`).
 - **Journal** disables opening the journal (J); it has no tabs to disable.
-- **Menus** only covers the inventory (Tab); the console stays open to the
-  developer.
+- **Menus** covers the tween menu (Tab), the inventory (I), the magic menu
+  (P), the favorites menu (Q) and the skills (K); the console stays open to
+  the developer.

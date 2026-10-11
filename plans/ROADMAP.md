@@ -36,7 +36,9 @@ game each piece unlocks.
   `GetEquippedSpell`), favorites; `known_gaps/magic-menu.md`); the favorites
   menu (`favoritesmenu.swf` on Q: favorite items, spells and powers, equipping
   them, hotkeys 1 to 8 set there and used in the world;
-  `known_gaps/favorites.md`);
+  `known_gaps/favorites.md`); the tween menu (`tweenmenu.swf` on Tab: Skills,
+  Magic, Items, the date and level; the item and magic menus come back to
+  it; `known_gaps/tween-menu.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
@@ -807,16 +809,15 @@ game each piece unlocks.
    targets on a compass and the map (`QSTA`) for the tracked quests (tracking
    itself done: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
-     item menus, the journal, the gift, magic and favorites menus done: see
-     Done): the magic menu's shouts (with shouts), the tween menu, the
-     sleep / wait menu; the favorites menu's shouts and the gamepad's d-pad
+     item menus, the journal, the gift, magic, favorites and tween menus
+     done: see Done): the magic menu's shouts (with shouts), the sleep /
+     wait menu; the tween menu's Map (with the map); the favorites menu's shouts and the gamepad's d-pad
      favorites; the item menus' Investor / Master
      Trader gold, merchants' chests restocking, Fortify Barter, placing
      items in pockets, NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
-     rotating and zooming it), the tween menu (Left / clicking outside opens
-     it), the quantity slider's use for more than dropping, recharging
+     rotating and zooming it), the quantity slider's use for more than dropping, recharging
      (`AttemptChargeItem`, soul gems), scrolls and soul gems on their own cards
      (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, poisons, the
      left hand, the best-in-class star, the survival warmth rating

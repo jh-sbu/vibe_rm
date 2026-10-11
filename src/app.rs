@@ -674,9 +674,23 @@ impl ApplicationHandler for App {
                             {
                                 log::error!("activation failed: {e:#}");
                             }
+                            // Tab: the tween menu (the game's menus; egui's
+                            // goes straight to the inventory), I the
+                            // inventory (the control map's Quick Inventory).
                             if code == KeyCode::Tab
                                 && !event.repeat
                                 && !s.engine.disabled_controls.menu
+                            {
+                                s.engine.menu = Some(if s.swf.is_some() {
+                                    crate::items::Menu::Tween
+                                } else {
+                                    crate::items::Menu::Inventory
+                                });
+                            }
+                            if code == KeyCode::KeyI
+                                && !event.repeat
+                                && !s.engine.disabled_controls.menu
+                                && s.engine.menu.is_none()
                             {
                                 s.engine.menu = Some(crate::items::Menu::Inventory);
                             }
