@@ -28,6 +28,8 @@ pub enum Menu {
     Journal,
     /// The player's skills and level, where level ups are taken.
     Skills,
+    /// Bartering with a merchant.
+    Barter(FormId),
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,
@@ -396,6 +398,15 @@ impl Engine {
                     .map(|d| u32::from_le_bytes(d[4..8].try_into().unwrap()) & 0x2 != 0)
             })
             .unwrap_or(false)
+    }
+
+    /// Takes an item off once the actor has none of it left.
+    pub fn unequip_if_gone(&mut self, actor: FormId, item: FormId) {
+        if self.item_count(actor, item) <= 0
+            && let Some(inv) = self.inventories.get_mut(&actor)
+        {
+            inv.equipped.retain(|&f| f != item);
+        }
     }
 
     /// What the actor would wear with a piece of armor put on: it in place of

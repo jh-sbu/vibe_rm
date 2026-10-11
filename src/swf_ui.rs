@@ -1,6 +1,7 @@
 //! The game's own menus (Interface `.swf` movies through `ui_swf`), driven from
 //! the engine: the HUD (`hudmenu.swf`), message boxes (`messagebox.swf`) and
-//! the inventory (`inventorymenu.swf`, in `item_menu`), in place of egui's.
+//! the item menus (the inventory, containers and pockets, bartering: in
+//! `item_menu`), in place of egui's.
 //!
 //! Each frame the HUD is told what changed: the health, magicka and stamina
 //! meters, the compass heading, the location, what the crosshair is on, what's
@@ -111,13 +112,15 @@ impl SwfUi {
         }
     }
 
-    /// Opens the inventory when the engine's menu is, closes it when it isn't,
-    /// and keeps it up to date.
+    /// Opens the item menu the engine's menu is (the inventory, a container,
+    /// bartering), closes it when it goes, and keeps it up to date.
     fn item_menu(&mut self, engine: &mut Engine, dt: Duration) {
-        let open = engine.menu == Some(crate::items::Menu::Inventory);
-        if !open {
+        let Some(shown) = engine.menu.filter(|&m| item_menu::ItemMenu::shows(m)) else {
             self.items = None;
             return;
+        };
+        if self.items.as_ref().is_some_and(|m| m.shows != shown) {
+            self.items = None;
         }
         if self.items.is_none() {
             let t = std::time::Instant::now();
@@ -126,15 +129,16 @@ impl SwfUi {
                 &self.ui,
                 self.size,
                 engine,
+                shown,
                 &self.item_indices,
                 buttons,
             ) {
                 Ok(m) => {
-                    log::debug!("inventorymenu.swf up in {:?}", t.elapsed());
+                    log::debug!("{:?} up in {:?}", shown, t.elapsed());
                     self.items = Some(m);
                 }
                 Err(e) => {
-                    log::error!("inventory menu: {e:#}");
+                    log::error!("item menu: {e:#}");
                     engine.menu = None;
                     return;
                 }
@@ -159,7 +163,7 @@ impl SwfUi {
     /// Whether the game's menus handle the engine's menu (egui doesn't draw
     /// it then).
     pub fn shows(menu: crate::items::Menu) -> bool {
-        menu == crate::items::Menu::Inventory
+        item_menu::ItemMenu::shows(menu)
     }
 
     /// Whether a menu over the world takes the keyboard and mouse.
@@ -287,8 +291,9 @@ impl SwfUi {
     }
 
     /// The item menu's own keys (none while a message box is over it): Esc
-    /// closes it, the Ready Weapon key drops, Toggle POV marks a favorite (as
-    /// the bottom bar shows them). True when the key was one of them.
+    /// closes it, the Ready Weapon key drops or takes all, Toggle POV marks a
+    /// favorite (as the bottom bar shows them). True when the key was one of
+    /// them.
     fn item_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
         use winit::platform::scancode::PhysicalKeyExtScancode;
         let (None, Some(items)) = (&self.message_box.shown, &mut self.items) else {
@@ -301,7 +306,7 @@ impl SwfUi {
         } else if code == winit::keyboard::KeyCode::Escape {
             items.close();
         } else if scan.is_some() && scan == self.buttons.key("Ready Weapon") {
-            items.drop_key();
+            items.x_button();
         } else if scan.is_some() && scan == self.buttons.key("Toggle POV") {
             // Needs the engine: done with the next update.
             self.favorite = true;

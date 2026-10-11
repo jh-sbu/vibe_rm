@@ -50,8 +50,8 @@ below (Skyrim.esm / Update.esm).
 - **Skill books** teach once per book form (`DATA` flag 1, skill at offset 4).
   The game clears the flag on the book's base, so another copy doesn't teach;
   that is the same thing.
-- **Not done**: magic schools, smithing, alchemy, enchanting, speech (no
-  barter or persuasion yet), trainers, the Rested / Well Rested / Lover's
+- **Not done**: magic schools, smithing, alchemy, enchanting, speech (bartering
+  trains it; no persuasion yet), trainers, the Rested / Well Rested / Lover's
   Comfort / Guardian Stone bonuses, Legendary skills. Only the player's skills
   advance; NPCs' come from their records. The progress isn't saved (no saves).
 - **NPC levels** (`GetLevel`): `ACBS` level, or with the PC level mult flag

@@ -43,6 +43,8 @@ pub mod ep {
     pub const MOD_LOCKPICK_SWEET_SPOT: u8 = 59;
     pub const MAKE_LOCKPICKS_UNBREAKABLE: u8 = 65;
     pub const MOD_ARMOR_RATING: u8 = 85;
+    pub const MOD_BUY_PRICES: u8 = 8;
+    pub const MOD_SELL_PRICES: u8 = 60;
 }
 
 /// An entry point's value (`EPFT` / `EPFD`).

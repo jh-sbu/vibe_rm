@@ -65,9 +65,13 @@ impl ExternalInterfaceProvider for Game {
             id,
             args,
         };
-        if let Some(id) = id
-            && let Some(responder) = self.responder.lock().unwrap().as_mut()
-            && let Some(answer) = responder(&call, &mut Movie { context })
+        // The responder's lock is let go before answering: the answer runs
+        // the movie, which may call again.
+        let answer = id.and_then(|_| {
+            let mut responder = self.responder.lock().unwrap();
+            responder.as_mut()?(&call, &mut Movie { context })
+        });
+        if let (Some(id), Some(answer)) = (id, answer)
             && let Some(respond) = context.external_interface.get_callback("respond")
         {
             let args = std::iter::once(Value::Number(id)).chain(answer);

@@ -593,7 +593,7 @@ impl Engine {
     }
 
     /// A player add item event (`AIPL`, see `send_player_add_item`) with the
-    /// way it was acquired given (3: pickpocketed).
+    /// way it was acquired given (2: bought, 3: pickpocketed).
     pub(crate) fn send_player_add_item_as(
         &mut self,
         item: FormId,

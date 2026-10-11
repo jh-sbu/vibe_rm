@@ -1,4 +1,4 @@
-# The game's HUD, message box and inventory (hudmenu.swf, messagebox.swf, inventorymenu.swf)
+# The game's HUD, message box and item menus (hudmenu.swf, messagebox.swf, inventorymenu.swf, containermenu.swf, bartermenu.swf)
 
 Implemented in `src/swf_ui.rs` and `src/swf_ui/item_menu.rs` (the engine's
 side) and `crates/ui-swf` (the menus through the vendored Ruffle). Sources:
@@ -70,7 +70,7 @@ isn't public; the choices below are what the movies' code allows.
   forgets the call once `ExternalInterface.call` returns, and the HUD reads
   the key art on the next line. This much is the movies' code; that the game
   answers inside the call follows from it.
-- **Input to the menus.** While a message box or the inventory is up it takes
+- **Input to the menus.** While a message box or an item menu is up it takes
   the keyboard and mouse (the console key aside). Keys go as the control
   map's menu events (`crates/ui-swf/src/input.rs`; its guesses are in
   `spike/swf/README.md`, "Input"), or as typed while an input field has the
@@ -114,10 +114,41 @@ isn't public; the choices below are what the movies' code allows.
   books read (the egui book view, back to the inventory after). The control
   map's item menu events: the Ready Weapon key (R) calls the menu's
   `DropItem` (then `ItemDrop(amount)`), Toggle POV (F) marks or unmarks a
-  favorite, the attack buttons call `AttemptEquip(slot, true)`, slot 0 for
-  Left Attack/Block (the right mouse button) and 1 for Right Attack/Block;
-  the slot isn't used yet (one hand). Tab is the menu's own (it fades out,
-  then calls `CloseMenu`); Esc does the same through `StartMenuFade`. Left
-  on the categories and clicking outside (`ShowTweenMenu`) close the menu,
-  as there is no tween menu yet. `CheckForMouseEquip(button)` (a click on
-  the item's model) is answered with `(button, false)`.
+  favorite, the attack buttons call `AttemptEquip(slot, true)`: slot 0 for
+  Left Attack/Block, 1 for Right Attack/Block (which hand a slot number
+  means is a guess; the slot isn't used yet, one hand). Tab is the menu's own
+  (it fades out, then calls `CloseMenu`); Esc goes through `StartMenuFade`
+  the same way. Left on the categories and clicking outside
+  (`ShowTweenMenu`) close the menu, as there is no tween menu yet.
+  `CheckForMouseEquip(button)` (a click on the item's model) is answered
+  with `(button, false)`.
+
+## Unconfirmed: containers, pockets and bartering
+
+- **Both sides in one list.** `SetCategoriesList` lists the other side's
+  categories (the inventory's but Favorites, their flags moved up 10 bits),
+  a divider (an empty name, flag 0, always listed), then the player's; the
+  items list holds the other side's rows, then the player's. The menus tell
+  the sides apart by the divider (`isViewingContainer`,
+  `IsViewingVendorItems`).
+- **Containers** (`containermenu.swf`): `ItemTransfer(amount, fromContainer)`
+  takes or stores the selected row (what taking would steal shows red,
+  `isStealing`); `TakeAllItems` takes every row (gold too);
+  `EquipItem(hand[, amount])` takes the amount first when the item is the
+  container's, then equips it; the Ready Weapon key goes to the menu's
+  `XButtonPress` (Take All on the container's side, Store / Give on the
+  player's). A living actor's inventory (`Actor.OpenInventory`) and someone's
+  pockets set the menu's `bNPCMode` (Give in place of Store, no Take All);
+  a reference is a container when its base is a `CONT`. The card of an item in
+  someone's pockets has `pickpocketChance` (for one); placing items in
+  pockets says `sInvalidPickpocket`, as before.
+- **Bartering** (`bartermenu.swf`): `SetBarterMultipliers(buy, sell)` once
+  on opening (the menu prices each item: buying rounds up to at least 1,
+  selling to the nearest); `UpdatePlayerInfo(player gold, merchant gold,
+  merchant name, stats)`; `ItemSelect(amount, price each, buying)` trades;
+  `GetRawDealWarningString(total)` is answered with `sNotEnoughVendorGold`,
+  its two `%d` the total and the merchant's gold. The merchant's wares are
+  their merchant chest's, gold left out of both sides. The bottom bar's
+  merchant label ("Lucan Valerius Gold") is wider than its field and shows
+  clipped from the left as Ruffle draws it; how Scaleform lays it out isn't
+  known. Pricing and what merchants buy: `known_gaps/barter.md`.
