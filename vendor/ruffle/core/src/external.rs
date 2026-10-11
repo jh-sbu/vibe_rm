@@ -353,6 +353,28 @@ impl FsCommandProvider for NullFsCommandProvider {
     }
 }
 
+/// The AVM1 variable at a target path (`_root.a.b`), as Scaleform's
+/// `GetVariable`, from code holding the update context: a host answering an
+/// `ExternalInterface.call` while the movie waits on it reads the movie this
+/// way. Objects come back as null (a movie clip's every property would be
+/// copied out).
+pub fn get_avm1_variable(context: &mut UpdateContext<'_>, path: &str) -> Value {
+    let Some(root) = context.stage.root_clip() else {
+        return Value::Undefined;
+    };
+    let mut activation = Avm1Activation::from_nothing(
+        context,
+        Avm1ActivationIdentifier::root("[GetVariable]"),
+        root,
+    );
+    let path = AvmString::new_utf8(activation.gc(), path);
+    match activation.get_variable(path).map(Avm1Value::from) {
+        Ok(Avm1Value::Object(_) | Avm1Value::MovieClip(_)) => Value::Null,
+        Ok(v) => Value::from_avm1(&mut activation, v).unwrap_or(Value::Null),
+        Err(_) => Value::Undefined,
+    }
+}
+
 pub trait ExternalInterfaceProvider {
     fn call_method(&self, context: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value;
 

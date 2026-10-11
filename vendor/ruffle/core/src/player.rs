@@ -2601,24 +2601,7 @@ impl Player {
 
     /// The AVM1 value at a target path, primitives only (Scaleform's `GetVariable`).
     pub fn get_avm1_variable(&mut self, path: &str) -> ExternalValue {
-        self.mutate_with_update_context(|context| {
-            let Some(root) = context.stage.root_clip() else {
-                return ExternalValue::Undefined;
-            };
-            let mut activation = Activation::from_nothing(
-                context,
-                ActivationIdentifier::root("[GetVariable]"),
-                root,
-            );
-            let path = AvmString::new_utf8(activation.gc(), path);
-            match activation.get_variable(path).map(Value::from) {
-                Ok(Value::Object(_) | Value::MovieClip(_)) => ExternalValue::Null,
-                Ok(v) => {
-                    ExternalValue::from_avm1(&mut activation, v).unwrap_or(ExternalValue::Null)
-                }
-                Err(_) => ExternalValue::Undefined,
-            }
-        })
+        self.mutate_with_update_context(|context| crate::external::get_avm1_variable(context, path))
     }
 
     pub fn spoofed_url(&self) -> Option<&str> {
