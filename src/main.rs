@@ -38,6 +38,7 @@ mod render;
 mod scene;
 mod script;
 mod skills;
+mod sleep;
 mod spells;
 mod stats;
 mod story;

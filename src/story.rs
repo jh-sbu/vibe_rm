@@ -618,7 +618,7 @@ impl Engine {
     /// Who owns what the player takes from `source` (a reference picked up, or
     /// a container or body).
     pub(crate) fn source_owner(&self, source: FormId, container: bool) -> Option<FormId> {
-        crate::ai::furniture::owner_of(&self.lo, source)
+        self.ref_owner(source)
             .filter(|_| !(container && self.is_body(source)))
     }
 

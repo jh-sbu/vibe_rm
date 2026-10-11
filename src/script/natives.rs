@@ -318,6 +318,17 @@ pub fn call(
             }
             none()
         }
+        ("form", "registerforsleep")
+        | ("alias", "registerforsleep")
+        | ("activemagiceffect", "registerforsleep")
+        | ("form", "unregisterforsleep")
+        | ("alias", "unregisterforsleep")
+        | ("activemagiceffect", "unregisterforsleep") => {
+            if let Some(t) = this.and_then(|t| t.as_object()) {
+                e.register_for_sleep(t, func == "registerforsleep");
+            }
+            none()
+        }
         ("form", "unregisterforupdate")
         | ("form", "unregisterforupdategametime")
         | ("alias", "unregisterforupdate")
@@ -549,8 +560,6 @@ pub fn call(
         }
         ("objectreference", "setopen")
         | ("objectreference", "setdestroyed")
-        | ("objectreference", "setactorowner")
-        | ("objectreference", "setfactionowner")
         | ("objectreference", "setnoFavorallowed")
         | ("objectreference", "addtomap") => v(Value::Bool(true)),
         ("objectreference", "getopenstate") => v(Value::Int(3)),
@@ -709,9 +718,27 @@ pub fn call(
         ("objectreference", "getcurrentlocation") | ("objectreference", "getediblelocation") => {
             none()
         }
-        ("objectreference", "getreftype")
-        | ("objectreference", "getowningfaction")
-        | ("objectreference", "getactorowner") => none(),
+        ("objectreference", "getreftype") | ("objectreference", "getowningfaction") => none(),
+        // Owners: an actor base (the player's is 7) or a faction.
+        ("objectreference", "setactorowner")
+        | ("objectreference", "setfactionowner")
+        | ("cell", "setactorowner")
+        | ("cell", "setfactionowner") => {
+            if let Some(r) = me {
+                e.scripts.owners.insert(r, form_arg(args, 0));
+            }
+            none()
+        }
+        ("objectreference", "getactorowner") | ("cell", "getactorowner") => {
+            let owner = me.and_then(|r| e.ref_owner(r));
+            let npc = owner.filter(|&o| e.lo.tag_of(o).map(|t| t.0) == Some(*b"NPC_"));
+            v(npc.map_or(Value::None, |o| e.object_value(o)))
+        }
+        ("objectreference", "getfactionowner") | ("cell", "getfactionowner") => {
+            let owner = me.and_then(|r| e.ref_owner(r));
+            let faction = owner.filter(|&o| e.lo.tag_of(o).map(|t| t.0) == Some(*b"FACT"));
+            v(faction.map_or(Value::None, |o| e.object_value(o)))
+        }
         ("objectreference", "isnearplayer") => v(Value::Bool(true)),
         ("objectreference", "getheadingangle") => v(Value::Float(0.0)),
         // ------------------------------------------------------------- Actor

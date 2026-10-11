@@ -639,8 +639,7 @@ impl Engine {
             return true;
         }
         drop(rec);
-        let owned =
-            crate::ai::furniture::owner_of(&self.lo, cell).is_some_and(|o| self.owned_by_other(o));
+        let owned = self.ref_owner(cell).is_some_and(|o| self.owned_by_other(o));
         owned && self.crime.private_homes.values().any(|&c| c == cell)
     }
 
@@ -708,7 +707,7 @@ impl Engine {
         log::info!("{warner} finds the player trespassing in {cell}: warning level {level}");
         self.bark(warner, b"TRES");
         if level >= 2 {
-            let owner = crate::ai::furniture::owner_of(&self.lo, cell);
+            let owner = self.ref_owner(cell);
             let faction = owner.filter(|&o| self.lo.tag_of(o).is_some_and(|t| t.0 == *b"FACT"));
             let victim = owner
                 .filter(|_| faction.is_none())

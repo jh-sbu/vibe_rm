@@ -29,7 +29,7 @@ Early but already visual:
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
 | AI: navmeshes, pathfinding, packages (sandbox/travel/sit/sleep), daily schedules across cells, furniture and crafting stations picked through the IDLE tree, idle markers, seated and standing eating / drinking, sitting variants, anim objects in hand; humanoids and creatures animated by running their behaviour graphs (walking, running, sneaking and turning at their movement types' speeds; `PlayIdle`, `SendAnimationEvent`) | in progress |
 | Papyrus VM, conditions, quests, dialogue, console, audio, music | in progress |
-| The game's own menus (Interface `.swf` through the vendored Ruffle): the HUD, message boxes, the inventory, containers, bartering, gifts, magic, favorites, the tween menu, the journal | in progress |
+| The game's own menus (Interface `.swf` through the vendored Ruffle): the HUD, message boxes, the inventory, containers, bartering, gifts, magic, favorites, the tween menu, sleeping and waiting, the journal | in progress |
 | Inventories (NPC items, outfits, containers), sheathed weapons and shields | in progress |
 | Combat (melee between NPCs, creatures and the player), ragdoll deaths; skills, leveling and perk trees | in progress |
 | Magic: effects on actors, abilities, potions, enchantments, effect scripts (casting by hand to come) | in progress |

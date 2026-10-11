@@ -98,6 +98,12 @@ pub struct ScriptState {
     /// The player's statistics (`Game.IncrementStat`, the journal's Stats
     /// page) by name.
     pub stats: HashMap<String, i32>,
+    /// The forms, aliases and effects registered for sleep
+    /// (`RegisterForSleep`: `OnSleepStart`, `OnSleepStop`).
+    pub sleep_listeners: Vec<ObjectId>,
+    /// References' and cells' owners set by scripts (`SetActorOwner`,
+    /// `SetFactionOwner`; `None` clears it), over the data's.
+    pub owners: HashMap<FormId, Option<FormId>>,
 }
 
 impl ScriptState {

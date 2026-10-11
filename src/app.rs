@@ -332,7 +332,10 @@ pub fn run(opts: Options) -> Result<()> {
                     (None, Some(code)) => swf.press(code),
                     (None, None) => log::error!("--menu-key {name}: no such key"),
                 }
+                // A third of a second for the menus, and the engine (in
+                // menu mode: scripts, hours passing).
                 for _ in 0..20 {
+                    engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
                     swf.update(&mut engine, 1.0 / 60.0);
                 }
             }
@@ -715,6 +718,15 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.menu = Some(crate::items::Menu::Magic);
                             }
+                            // Wait (the control map's).
+                            if code == KeyCode::KeyT
+                                && !event.repeat
+                                && !s.engine.disabled_controls.menu
+                                && s.swf.is_some()
+                                && s.engine.menu.is_none()
+                            {
+                                s.engine.request_sleep_wait(None);
+                            }
                             // Favorites (the control map's).
                             if code == KeyCode::KeyQ
                                 && !event.repeat
@@ -849,7 +861,9 @@ impl ApplicationHandler for App {
                 let dt = (now - s.last).as_secs_f32().min(0.1);
                 s.last = now;
                 let input = move_input(&s.keys);
-                let scale = if s.keys.contains(&KeyCode::KeyT) {
+                // Holding T runs time fast without the game's menus (with
+                // them T is the Wait key).
+                let scale = if s.keys.contains(&KeyCode::KeyT) && s.swf.is_none() {
                     2000.0
                 } else {
                     20.0

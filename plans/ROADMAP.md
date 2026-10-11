@@ -38,7 +38,12 @@ game each piece unlocks.
   them, hotkeys 1 to 8 set there and used in the world;
   `known_gaps/favorites.md`); the tween menu (`tweenmenu.swf` on Tab: Skills,
   Magic, Items, the date and level; the item and magic menus come back to
-  it; `known_gaps/tween-menu.md`);
+  it; `known_gaps/tween-menu.md`); sleeping and waiting (`sleepwaitmenu.swf`
+  from T or a bed: the game's reasons not to, the hours passing with the
+  clock, weather, magic effects and the player's health, magicka and
+  stamina; `RegisterForSleep` / `OnSleepStart` / `OnSleepStop`, so the
+  game's Rested; `SetActorOwner` / `SetFactionOwner`, so rented rooms;
+  `known_gaps/sleep-wait.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
@@ -810,8 +815,9 @@ game each piece unlocks.
    itself done: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
      item menus, the journal, the gift, magic, favorites and tween menus
-     done: see Done): the magic menu's shouts (with shouts), the sleep /
-     wait menu; the tween menu's Map (with the map); the favorites menu's shouts and the gamepad's d-pad
+     done: see Done): the magic menu's shouts (with shouts); the tween
+     menu's Map (with the map); waiting's rest: actors moving on to where
+     their schedules put them, interruptions, getting into the bed first; the favorites menu's shouts and the gamepad's d-pad
      favorites; the item menus' Investor / Master
      Trader gold, merchants' chests restocking, Fortify Barter, placing
      items in pockets, NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
