@@ -238,11 +238,13 @@ impl Engine {
         if amount > 0 {
             *infamy += amount;
         }
+        let total = b.total();
         log::info!(
             "crime gold with {faction}: {} violent, {} nonviolent",
             b.violent,
             b.nonviolent
         );
+        self.raise_stat_to("Largest Bounty", total);
     }
 
     /// Set the crime gold of one kind (Papyrus `SetCrimeGold` is the
@@ -271,6 +273,9 @@ impl Engine {
         let owed = self.bounty(faction).total();
         let guard = self.arrested_by(faction);
         let paid = self.remove_item(PLAYER_REF, GOLD, owed, None);
+        if paid > 0 {
+            self.increment_stat("Fines Paid", paid);
+        }
         if let Some(b) = self.crime.bounties.get_mut(&faction) {
             b.violent = 0;
             b.nonviolent = 0;
@@ -449,6 +454,16 @@ impl Engine {
                 }
             }
             self.raise_alarm(f);
+        }
+        // Counted once however many factions hear of it.
+        let stat = match kind {
+            CrimeType::Attack => Some("Assaults"),
+            CrimeType::Murder => Some("Murders"),
+            CrimeType::Trespass => Some("Trespasses"),
+            _ => None,
+        };
+        if let Some(stat) = stat.filter(|_| !told.is_empty()) {
+            self.increment_stat(stat, 1);
         }
         if !told.is_empty() {
             log::info!(

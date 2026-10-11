@@ -1095,6 +1095,16 @@ impl Engine {
         }
         self.remove_item(actor, item, 1, None);
         log::info!("{actor} uses {}", m.name);
+        if actor == crate::engine::PLAYER_REF {
+            let stat = if self.lo.tag_of(item).map(|t| t.0) == Some(*b"INGR") {
+                "Ingredients Eaten"
+            } else if self.is_food(item) {
+                "Food Eaten"
+            } else {
+                "Potions Used"
+            };
+            self.increment_stat(stat, 1);
+        }
         self.apply_item(item, Some(actor), actor);
         Ok(())
     }

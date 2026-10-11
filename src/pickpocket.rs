@@ -90,6 +90,8 @@ impl Engine {
                 .map(|(_, n)| n)
                 .sum();
             if moved > 0 {
+                self.increment_stat("Pockets Picked", 1);
+                self.increment_stat("Items Pickpocketed", moved);
                 self.send_player_add_item_as(item, Some(victim), victim, 3);
                 let info = crate::world::inventory::item_info(&self.lo, item);
                 // Pickpocket trains by the value taken.

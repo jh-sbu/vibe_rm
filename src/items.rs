@@ -147,6 +147,12 @@ impl Engine {
         let stolen = self.stolen_from(base, r, false);
         self.inventory_mut(PLAYER_REF)
             .add_owned(base, stolen, count);
+        if stolen.is_some() {
+            self.increment_stat("Items Stolen", count);
+        }
+        if base == crate::crime::GOLD {
+            self.increment_stat("Gold Found", count);
+        }
         self.inventory_event(PLAYER_REF, true, base, count, None);
         self.set_disabled(r, true);
         self.send_player_add_item(base, count, r, false);
@@ -293,6 +299,7 @@ impl Engine {
             .map(|(_, n)| n)
             .sum();
         if moved > 0 && to == PLAYER_REF {
+            self.count_taken(from, item, moved, mark.is_some());
             self.send_player_add_item(item, moved, from, true);
             let name = item_info(&self.lo, item)
                 .map(|i| i.name)
@@ -304,6 +311,30 @@ impl Engine {
             });
         }
         moved
+    }
+
+    /// The statistics for what the player takes from a container or someone
+    /// else's inventory: Items Stolen; from containers and bodies (not the
+    /// living), Gold Found, and Chests Looted the first time anything is
+    /// taken from a container.
+    fn count_taken(&mut self, from: FormId, item: FormId, n: i32, stolen: bool) {
+        if stolen {
+            self.increment_stat("Items Stolen", n);
+        }
+        let living = self.actor_ref(from).is_some_and(|a| !a.dead);
+        if living {
+            return;
+        }
+        if item == crate::crime::GOLD {
+            self.increment_stat("Gold Found", n);
+        }
+        let chest = self
+            .base_of(from)
+            .and_then(|b| self.lo.tag_of(b))
+            .is_some_and(|t| t.0 == *b"CONT");
+        if chest && self.scripts.looted.insert(from) {
+            self.increment_stat("Chests Looted", 1);
+        }
     }
 
     /// Marks an item, spell or power one of the player's favorites, or not
@@ -590,6 +621,10 @@ impl Engine {
     ) {
         if count <= 0 {
             return;
+        }
+        if owner == PLAYER_REF && added && item == crate::crime::GOLD {
+            let gold = self.item_count(PLAYER_REF, item);
+            self.raise_stat_to("Most Gold Carried", gold);
         }
         let event = if added {
             "OnItemAdded"

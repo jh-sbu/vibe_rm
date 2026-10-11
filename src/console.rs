@@ -668,9 +668,13 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: cstats <actor ref>".into()] };
             engine.combat_summary(actor)
         }
+        "getpcmiscstat" => {
+            let name = args.join(" ");
+            vec![format!("{name}: {:?}", engine.stat(&name))]
+        }
         "kill" => {
             let Some(actor) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: kill <actor ref>".into()] };
-            if engine.kill(actor, false) { vec![format!("{actor} killed")] } else { vec![format!("{actor} isn't a living loaded actor")] }
+            if engine.kill(actor, false, None) { vec![format!("{actor} killed")] } else { vec![format!("{actor} isn't a living loaded actor")] }
         }
         "damage" => {
             let (r, amount, by) = match args[..] {

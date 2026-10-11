@@ -147,6 +147,7 @@ impl Engine {
             if buying { "bought" } else { "sold" }
         );
         self.use_skill(av::SPEECHCRAFT, paid as f32);
+        self.increment_stat("Barters", 1);
         Ok(())
     }
 }
