@@ -2,10 +2,11 @@
 //! (unless the game's reasons forbid it: `sNoWait*` / `sNoSleep*`), and the
 //! hours chosen pass one by one while it stays up. Each hour moves the clock
 //! and the weather on, runs the magic effects on the player for the hour's
-//! seconds, puts the other actors where their schedules have them now, fills
-//! the player's health, magicka and stamina and counts the Hours Waiting /
-//! Hours Slept statistic. Sleeping tells the scripts
-//! registered for it (`RegisterForSleep`: `OnSleepStart`, `OnSleepStop`).
+//! seconds, heals the other actors for them and puts them where their
+//! schedules have them now, fills the player's health, magicka and stamina
+//! and counts the Hours Waiting / Hours Slept statistic. Sleeping tells the
+//! scripts registered for it (`RegisterForSleep`: `OnSleepStart`,
+//! `OnSleepStop`).
 //! Choices: `known_gaps/sleep-wait.md`.
 
 use esp::FormId;
@@ -154,6 +155,10 @@ impl Engine {
         }
         self.update_weather(1.0);
         self.update_magic(HOUR_SECONDS);
+        // The other actors' health and stamina come back for the hour, near
+        // and away.
+        self.update_stamina(HOUR_SECONDS);
+        self.heal_away(HOUR_SECONDS);
         if self.ai_enabled {
             self.jump_to_schedules();
         }
