@@ -49,6 +49,23 @@ impl Engine {
     /// and health / magicka / stamina offsets (`DNAM`) from the templates that give
     /// them, starting values and rates from the race (`DATA`).
     pub fn av_record_base(&self, actor: FormId, index: u32) -> f32 {
+        // The rest (the package variables among them) the records don't give.
+        let from_records = matches!(
+            index,
+            av::AGGRESSION..=av::ASSISTANCE
+                | av::FIRST_SKILL..=av::LAST_SKILL
+                | av::HEALTH
+                | av::MAGICKA
+                | av::STAMINA
+                | av::HEAL_RATE
+                | av::MAGICKA_RATE
+                | av::STAMINA_RATE
+                | av::CARRY_WEIGHT
+                | av::MASS
+        );
+        if !from_records {
+            return if index == av::SPEED_MULT { 100.0 } else { 0.0 };
+        }
         let Some(src) = self.templates_of(actor) else {
             return if index == av::SPEED_MULT { 100.0 } else { 0.0 };
         };

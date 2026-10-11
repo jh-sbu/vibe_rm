@@ -41,7 +41,8 @@ game each piece unlocks.
   it; `known_gaps/tween-menu.md`); sleeping and waiting (`sleepwaitmenu.swf`
   from T or a bed: the game's reasons not to, the hours passing with the
   clock, weather, magic effects and the player's health, magicka and
-  stamina; `RegisterForSleep` / `OnSleepStart` / `OnSleepStop`, so the
+  stamina, the other actors put where their schedules have them;
+  `RegisterForSleep` / `OnSleepStart` / `OnSleepStop`, so the
   game's Rested; `SetActorOwner` / `SetFactionOwner`, so rented rooms;
   `known_gaps/sleep-wait.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
@@ -818,8 +819,7 @@ game each piece unlocks.
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
      item menus, the journal, the gift, magic, favorites and tween menus
      done: see Done): the magic menu's shouts (with shouts); the tween
-     menu's Map (with the map); waiting's rest: actors moving on to where
-     their schedules put them, interruptions, getting into the bed first; the favorites menu's shouts and the gamepad's d-pad
+     menu's Map (with the map); waiting's rest: interruptions, getting into the bed first; the favorites menu's shouts and the gamepad's d-pad
      favorites; the item menus' Investor / Master
      Trader gold, merchants' chests restocking, Fortify Barter, placing
      items in pockets, NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as

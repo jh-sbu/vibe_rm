@@ -15,9 +15,8 @@ Tween Menu and Pause).
   have, so the game must fill the list itself: the entries go into
   `List_mc.entryList` and `List_mc.InvalidateData()` shows them. An entry's
   `index` is its place in the engine's rows.
-- **What is listed.** The favorite items the player carries (a count over
-  one after the name, "Potion of Healing (3)") and the favorite spells and
-  powers they know. An item that leaves the inventory stays a favorite and
+- **What is listed.** The favorite items the player carries and the
+  favorite spells and powers they know. An item that leaves the inventory stays a favorite and
   shows again when it comes back.
 - **Accept** does what the right attack button does. The attack buttons
   (the control map's) equip in their hand: spells in that hand, powers as

@@ -39,6 +39,9 @@ pub struct Whereabouts {
     actors: Vec<FormId>,
     /// By the NPC records giving the AI packages and the default package list.
     packages: HashMap<(FormId, FormId), std::sync::Arc<Vec<Package>>>,
+    /// By actor and NPC record: the NPC records its AI packages and default
+    /// package list come from.
+    sources: HashMap<(FormId, FormId), (FormId, FormId)>,
     /// Scheduled place and position for each persistent actor.
     pub of: HashMap<FormId, (Place, Vec3)>,
     /// `of` before the last refresh.
@@ -121,14 +124,22 @@ impl Engine {
         achr: FormId,
         npc: FormId,
     ) -> std::sync::Arc<Vec<Package>> {
-        let src = crate::world::template::Sources::of_npc(&self.lo, npc, achr.0 as u64);
-        let key = (
-            src.of(crate::world::template::AI_PACKAGES),
-            src.of(crate::world::template::DEF_PACK_LIST),
-        );
+        let key = match self.whereabouts.sources.get(&(achr, npc)) {
+            Some(&k) => k,
+            None => {
+                let src = crate::world::template::Sources::of_npc(&self.lo, npc, achr.0 as u64);
+                let k = (
+                    src.of(crate::world::template::AI_PACKAGES),
+                    src.of(crate::world::template::DEF_PACK_LIST),
+                );
+                self.whereabouts.sources.insert((achr, npc), k);
+                k
+            }
+        };
         if let Some(p) = self.whereabouts.packages.get(&key) {
             return p.clone();
         }
+        let src = crate::world::template::Sources::of_npc(&self.lo, npc, achr.0 as u64);
         let p = std::sync::Arc::new(super::package::npc_packages(&self.lo, &src));
         self.whereabouts.packages.insert(key, p.clone());
         p
@@ -233,8 +244,15 @@ impl Engine {
             let Some(npc) = self.base_npc(rf.base) else {
                 continue;
             };
-            let packages = self.actor_packages(a, npc);
-            let current = self.current_package(a, &packages);
+            // Those a scene or alias gives first, then the NPC's own (not
+            // copied: there are many actors).
+            let mut first = self.scene_packages(a);
+            first.extend(self.alias_packages(a));
+            let own = self.npc_packages_cached(a, npc);
+            let current = self
+                .current_package(a, &first)
+                .map(|i| &first[i])
+                .or_else(|| self.current_package(a, &own).map(|i| &own[i]));
             // Without a package place: where scripts moved it, else its editor place.
             let home = self
                 .world_state
@@ -242,9 +260,9 @@ impl Engine {
                 .get(&a)
                 .map_or((editor_place, rf.position), |m| (m.place, m.pos));
             let (place, pos) = current
-                .and_then(|i| self.package_place(a, &packages[i]))
+                .and_then(|p| self.package_place(a, p))
                 .unwrap_or(home);
-            pending_packages.insert(a, current.map(|i| packages[i].id));
+            pending_packages.insert(a, current.map(|p| p.id));
             if log::log_enabled!(log::Level::Trace) {
                 log::trace!(
                     "{a} {:?}: editor {editor_place:?}, scheduled {place:?} {pos:?}",
@@ -488,6 +506,129 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// Time passed without the world running (the hours waited or slept):
+    /// every actor is put where its schedule has it now. Those whose place is
+    /// elsewhere go (and those whose place is a loaded cell turn up there);
+    /// those whose package changed, or who are away from where it has them,
+    /// start over at its location (in its furniture, as a cell loading puts
+    /// them). The fallen, the fighting and the player's followers are left be.
+    pub(crate) fn jump_to_schedules(&mut self) {
+        let start = std::time::Instant::now();
+        self.refresh_whereabouts();
+        let mut despawn = Vec::new();
+        let mut respawn: Vec<(FormId, CellKey, Vec3)> = Vec::new();
+        for (&key, rt) in &self.cells {
+            let Some(here) = self.place_of_key(key) else {
+                continue;
+            };
+            for a in &rt.actors {
+                if a.dead || a.pinned || a.combat.is_some() || a.bleeding.is_some() {
+                    continue;
+                }
+                let follower = a.goal.is_some_and(|g| {
+                    matches!(
+                        g.behaviour,
+                        super::Behaviour::Follow | super::Behaviour::Escort
+                    ) && g.target == Some(crate::engine::PLAYER_REF)
+                });
+                if follower {
+                    continue;
+                }
+                let pick = self.current_package(a.ref_id, &a.packages);
+                let scheduled = self.whereabouts.of.get(&a.ref_id).copied();
+                // Its place: the schedule's for the persistent, else the
+                // package's when it names one.
+                let place = match scheduled {
+                    Some((p, _)) => p,
+                    None => match pick.and_then(|i| self.package_place(a.ref_id, &a.packages[i])) {
+                        Some((p, _)) if !same_space(p, here) => continue,
+                        _ => here,
+                    },
+                };
+                let to = if same_space(place, here) {
+                    self.key_of_place(place)
+                } else {
+                    None
+                };
+                let Some(to) = to else {
+                    despawn.push(a.ref_id);
+                    continue;
+                };
+                let Some(i) = pick else {
+                    if to != key {
+                        respawn.push((a.ref_id, to, scheduled.map_or(a.pos, |s| s.1)));
+                    }
+                    continue;
+                };
+                let p = &a.packages[i];
+                let (centre, radius) = self.package_target(a, p);
+                let away = !matches!(
+                    p.behaviour,
+                    super::Behaviour::Follow
+                        | super::Behaviour::Escort
+                        | super::Behaviour::Hold
+                        | super::Behaviour::ForceGreet
+                ) && a.pos.truncate().distance(centre.truncate())
+                    > radius.max(96.0) * 1.5;
+                // (One not yet given a package keeps to what it does.)
+                let changed = a.current.is_some_and(|c| c != i);
+                if changed || to != key || away {
+                    respawn.push((a.ref_id, to, centre));
+                }
+            }
+        }
+        for r in despawn {
+            log::debug!("{r} gone where its schedule has it");
+            self.despawn_actor(r);
+        }
+        for &(r, _, _) in &respawn {
+            self.despawn_actor(r);
+        }
+        let mut by_key: HashMap<CellKey, Vec<(FormId, Option<Vec3>)>> = HashMap::new();
+        for (r, key, at) in respawn {
+            // Outdoors, in the cell it lands in (when loaded).
+            let key = match key {
+                CellKey::Exterior(..) if at.is_finite() => {
+                    let (x, y) = crate::engine::grid_of(at.truncate());
+                    let k = CellKey::Exterior(x, y);
+                    if self.cells.contains_key(&k) { k } else { key }
+                }
+                _ => key,
+            };
+            log::debug!("{r} starts over at {at:?} in {key:?}");
+            by_key.entry(key).or_default().push((r, Some(at)));
+        }
+        for (key, refs) in by_key {
+            self.spawn_actors(key, &refs);
+        }
+        // Those whose place is a loaded cell turn up there.
+        let loaded: Vec<CellKey> = self.cells.keys().copied().collect();
+        for key in loaded {
+            let Some(here) = self.place_of_key(key) else {
+                continue;
+            };
+            let arrivals: Vec<(FormId, Option<Vec3>)> = self
+                .whereabouts
+                .by_place
+                .get(&here)
+                .into_iter()
+                .flatten()
+                .filter(|r| !self.actor_cells.contains_key(r))
+                .map(|r| (*r, self.whereabouts.of.get(r).map(|v| v.1)))
+                .collect();
+            if !arrivals.is_empty() {
+                log::debug!("{} actors turn up in {key:?}", arrivals.len());
+                self.spawn_actors(key, &arrivals);
+            }
+        }
+        // Their packages taken at once (the world doesn't run in the menu).
+        for a in self.cells.values_mut().flat_map(|rt| &mut rt.actors) {
+            a.next_eval = 0.0;
+        }
+        self.evaluate_packages(0.0);
+        log::debug!("schedules jumped to in {:?}", start.elapsed());
     }
 
     /// Remove a spawned actor from the scene.
