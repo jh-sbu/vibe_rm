@@ -30,6 +30,9 @@ pub enum Menu {
     Skills,
     /// Bartering with a merchant.
     Barter(FormId),
+    /// Giving an actor gifts, or taking theirs (`Engine::gift` holds the
+    /// state).
+    Gift(FormId),
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,

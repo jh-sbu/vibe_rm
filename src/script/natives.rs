@@ -729,6 +729,16 @@ pub fn call(
             }
             none()
         }
+        // (abGivingGift, apFilterList, abShowStolenItems, abUseFavorPoints)
+        ("actor", "showgiftmenu") => match me {
+            Some(r) => {
+                let filter = args.get(1).and_then(|a| a.as_form()).map(FormId);
+                let stolen = args.get(2).is_some_and(|a| a.as_bool());
+                let favor = args.get(3).is_none_or(|a| a.as_bool());
+                e.show_gift_menu(r, arg(0).as_bool(), filter, stolen, favor)
+            }
+            None => v(Value::Int(0)),
+        },
         ("actor", "openinventory") => {
             if let Some(r) = me {
                 e.menu = Some(crate::items::Menu::Container(r));
@@ -1101,6 +1111,16 @@ pub fn call(
             me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0),
         )),
         ("actorbase", "isunique") => v(Value::Bool(true)),
+        // The NPC's gift filter (`GNAM`, a form list of items).
+        ("actorbase", "getgiftfilter") => {
+            let list = me.and_then(|f| e.lo.get(f)).and_then(|r| {
+                r.get(b"GNAM")
+                    .filter(|d| d.len() >= 4)
+                    .map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+                    .filter(|f| !f.is_null())
+            });
+            v(list.map_or(Value::None, |f| e.object_value(f)))
+        }
         // ------------------------------------------------------------- Quest
         ("quest", "getstage") | ("quest", "getcurrentstageid") => v(Value::Int(
             me.map(|q| {

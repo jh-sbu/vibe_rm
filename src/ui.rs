@@ -715,6 +715,11 @@ impl Ui {
             ui.label(format!("{} items, weight {weight:.1}", items.len()));
         };
         let container = match menu {
+            // Only the game's menus have the gift menu: it closes at once.
+            Menu::Gift(_) => {
+                engine.menu = None;
+                return;
+            }
             Menu::Journal => {
                 let close =
                     close || (self.menu_shown && ctx.input(|i| i.key_pressed(egui::Key::J)));

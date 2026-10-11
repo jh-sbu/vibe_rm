@@ -1,6 +1,7 @@
 //! The item menus as the game shows them: the inventory (`inventorymenu.swf`),
 //! a container, a body, a teammate's inventory or someone's pockets
-//! (`containermenu.swf`) and a merchant's wares (`bartermenu.swf`). They share
+//! (`containermenu.swf`), a merchant's wares (`bartermenu.swf`) and gifts
+//! (`giftmenu.swf`: the giver's items only). They share
 //! the categories on the left, the items of one beside them, the item card and
 //! the bottom bar with the player's stats.
 //!
@@ -109,6 +110,11 @@ enum Kind {
         stock: FormId,
         info: Option<Vendor>,
     },
+    /// Gifts to or from an actor (`Engine::gift`): only the giver's items.
+    Gift {
+        actor: FormId,
+        giving: bool,
+    },
 }
 
 impl Kind {
@@ -126,6 +132,10 @@ impl Kind {
                 }
             }
             Shown::Pickpocket(victim) => Kind::Pickpocket { victim },
+            Shown::Gift(actor) => Kind::Gift {
+                actor,
+                giving: engine.gift.as_ref()?.giving,
+            },
             Shown::Barter(vendor) => Kind::Barter {
                 vendor,
                 stock: engine.vendor_stock(vendor),
@@ -140,13 +150,14 @@ impl Kind {
             Kind::Inventory => "inventorymenu.swf",
             Kind::Container { .. } | Kind::Pickpocket { .. } => "containermenu.swf",
             Kind::Barter { .. } => "bartermenu.swf",
+            Kind::Gift { .. } => "giftmenu.swf",
         }
     }
 
-    /// Whose items are on the other side.
+    /// Whose items are on the other side (the gift menu has one side).
     fn other(&self) -> Option<FormId> {
         match self {
-            Kind::Inventory => None,
+            Kind::Inventory | Kind::Gift { .. } => None,
             Kind::Container { owner, .. } => Some(*owner),
             Kind::Pickpocket { victim } => Some(*victim),
             Kind::Barter { stock, .. } => Some(*stock),
@@ -220,7 +231,11 @@ impl ItemMenu {
     pub fn shows(shown: Shown) -> bool {
         matches!(
             shown,
-            Shown::Inventory | Shown::Container(_) | Shown::Pickpocket(_) | Shown::Barter(_)
+            Shown::Inventory
+                | Shown::Container(_)
+                | Shown::Pickpocket(_)
+                | Shown::Barter(_)
+                | Shown::Gift(_)
         )
     }
 
@@ -286,8 +301,16 @@ impl ItemMenu {
         if npc {
             menu.set(&format!("{M}.bNPCMode"), Value::Bool(true));
         }
-        menu.invoke("_root.InitExtensions", &[]);
-        menu.invoke("_root.SetPlatform", &[num(0.0), Value::Bool(false)]);
+        // The gift menu's root has no functions of its own: its menu clip's.
+        let root = match kind {
+            Kind::Gift { .. } => M,
+            _ => "_root",
+        };
+        menu.invoke(&format!("{root}.InitExtensions"), &[]);
+        menu.invoke(
+            &format!("{root}.SetPlatform"),
+            &[num(0.0), Value::Bool(false)],
+        );
         let mut list = Vec::new();
         if kind.other().is_some() {
             list.extend(categories(engine, true));
@@ -299,6 +322,18 @@ impl ItemMenu {
         if let Kind::Barter { vendor, .. } = kind {
             let (buy, sell) = engine.barter_multipliers(vendor);
             menu.callback("SetBarterMultipliers", &[num(buy), num(sell)]);
+        }
+        // Give or take, and whether favor points count (the bottom bar's
+        // stats are hidden when they don't).
+        if let Some(gift) = engine
+            .gift
+            .as_ref()
+            .filter(|_| matches!(kind, Kind::Gift { .. }))
+        {
+            menu.callback(
+                "SetMenuInfo",
+                &[Value::Bool(gift.giving), Value::Bool(gift.favor)],
+            );
         }
         let mut m = ItemMenu {
             menu,
@@ -318,9 +353,24 @@ impl ItemMenu {
         Ok(m)
     }
 
-    /// The rows: the other side's, then the player's.
+    /// The rows: the other side's, then the player's; the giver's in the
+    /// gift menu.
     fn rows(&self, engine: &mut Engine) -> Vec<Row> {
         let mut rows = Vec::new();
+        if let Kind::Gift { actor, giving } = self.kind {
+            let Some(gift) = engine.gift.clone() else {
+                return rows;
+            };
+            let giver = if giving { PLAYER_REF } else { actor };
+            let mut items = engine.listed_inventory(giver);
+            items.retain(|r| engine.giftable(&gift, r));
+            // The one list is the player's side, whoever gives.
+            rows.extend(items.into_iter().map(|item| Row {
+                item,
+                theirs: false,
+            }));
+            return rows;
+        }
         if let Some(other) = self.kind.other() {
             let mut theirs = engine.listed_inventory(other);
             match &self.kind {
@@ -373,6 +423,10 @@ impl ItemMenu {
                     text(&engine.actor_name(*vendor).unwrap_or_default()),
                     stats,
                 ]
+            }
+            // The favor points (the bottom bar only shows that it's a gift).
+            Kind::Gift { .. } => {
+                vec![num(engine.gift.as_ref().map_or(0, |g| g.points) as f32)]
             }
             _ => vec![stats],
         };
@@ -494,7 +548,9 @@ impl ItemMenu {
                 let Some(row) = self.selected() else {
                     return true;
                 };
-                if let Kind::Barter { vendor, .. } = self.kind {
+                if let Kind::Gift { .. } = self.kind {
+                    engine.give_gift(&row.item, amount());
+                } else if let Kind::Barter { vendor, .. } = self.kind {
                     let price = number(1).unwrap_or(0.0).round() as i32;
                     let buying = matches!(call.args.get(2), Some(Value::Bool(true)));
                     let (item, owner) = (row.item.item, row.item.owner);
@@ -616,7 +672,7 @@ impl ItemMenu {
             Kind::Container { .. } | Kind::Pickpocket { .. } => {
                 self.menu.callback("XButtonPress", &[])
             }
-            Kind::Barter { .. } => Value::Undefined,
+            Kind::Barter { .. } | Kind::Gift { .. } => Value::Undefined,
         };
     }
 
@@ -626,7 +682,7 @@ impl ItemMenu {
         let Some(row) = self.selected().filter(|r| !r.theirs) else {
             return;
         };
-        if matches!(self.kind, Kind::Barter { .. }) {
+        if matches!(self.kind, Kind::Barter { .. } | Kind::Gift { .. }) {
             return;
         }
         let item = row.item.item;
@@ -645,8 +701,12 @@ impl ItemMenu {
         };
     }
 
-    /// A mouse button's equip (`AttemptEquip`, the hand's slot).
+    /// A mouse button's equip (`AttemptEquip`, the hand's slot); the gift
+    /// menu equips nothing.
     pub fn equip_button(&self, slot: f32) {
+        if matches!(self.kind, Kind::Gift { .. }) {
+            return;
+        }
         self.menu
             .callback("AttemptEquip", &[num(slot), Value::Bool(true)]);
     }

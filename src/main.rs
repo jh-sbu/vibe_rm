@@ -15,6 +15,7 @@ mod detection;
 mod dialogue;
 mod engine;
 mod footsteps;
+mod gift;
 mod grab;
 mod imagespace;
 mod impacts;
