@@ -187,6 +187,8 @@ pub struct Engine {
     pub(crate) crime: crate::crime::Crimes,
     /// Values scripts keep on locations by keyword (`Location.SetKeywordData`).
     pub(crate) location_keyword_data: HashMap<(FormId, FormId), f32>,
+    /// Locations cleared (`crate::locations`).
+    pub(crate) cleared_locations: std::collections::HashSet<FormId>,
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     /// The player's favorite items (the inventory's Favorites).
@@ -366,6 +368,7 @@ impl Engine {
             relationships: Default::default(),
             crime: Default::default(),
             location_keyword_data: Default::default(),
+            cleared_locations: Default::default(),
             talked_to_pc: Default::default(),
             alias_packs: Default::default(),
             faction_relations: Default::default(),
