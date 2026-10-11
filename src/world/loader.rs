@@ -162,7 +162,8 @@ impl ModelCache {
                 // `path#rigid`: skinned shapes posed at rest (sky models);
                 // `path#grass`: drawn as grass ([`crate::world::grass`]);
                 // `path#effect`: an effect's, its nodes' controllers kept
-                // ([`model::convert_effect`]).
+                // ([`model::convert_effect`]); `path#harvested`: a plant
+                // harvested ([`crate::harvest`]).
                 let (file, variant) = p
                     .split_once('#')
                     .map_or((p.as_str(), None), |(f, v)| (f, Some(v)));
@@ -194,6 +195,20 @@ impl ModelCache {
                                         mesh.material.flags1 &= !nif::sf1::VERTEX_ALPHA;
                                     }
                                     m
+                                }
+                                // A harvested plant: its switch nodes on their
+                                // second child.
+                                Some("harvested") => {
+                                    let mut n = n;
+                                    for b in &mut n.blocks {
+                                        if let nif::Block::Node(node) = b
+                                            && let nif::NodeKind::Switch { index } = &mut node.kind
+                                            && node.children.len() > 1
+                                        {
+                                            *index = 1;
+                                        }
+                                    }
+                                    model::convert(&n)
                                 }
                                 Some("scb") => model::convert_filtered(&n, &|name| {
                                     name.to_ascii_lowercase().starts_with("scb")

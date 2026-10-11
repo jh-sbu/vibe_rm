@@ -1185,7 +1185,7 @@ impl Hud {
     /// crime), as `SetCrosshairTarget`'s rollover text.
     fn crosshair(&mut self, engine: &Engine) {
         let rollover = engine.look_target.as_ref().map(|(_, name)| {
-            let verb = html(engine.look_verb());
+            let verb = html(&engine.look_verb());
             let verb = if engine.look_verb_is_crime() {
                 format!("<font color='#E64640'>{verb}</font>")
             } else {

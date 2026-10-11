@@ -316,6 +316,10 @@ game each piece unlocks.
   `UnequipItem`, `Spell.Cast` / `RemoteCast`, `ActiveMagicEffect`'s getters,
   `Dispel` and updates. Console `effects`, `addspell`, `removespell`, `cast`,
   `dispelallspells`; vrm-tool `magic`. Open questions: `known_gaps/magic.md`
+- Harvesting: plants (`FLOR`, `TREE` with produce) found by their
+  non-collidable shapes, giving their produce with their own verb and sound,
+  someone else's stolen; harvested models, growing back
+  (`known_gaps/harvest.md`)
 - Player controls from scripts: `DisablePlayerControls` / `EnablePlayerControls`
   (Papyrus's defaults for missing arguments) stop the player moving, fighting
   (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
@@ -840,7 +844,7 @@ game each piece unlocks.
      left hand, the best-in-class star, the survival warmth rating
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
-     (crafting, harvesting, magic and shouts, training, horses stolen,
+     (crafting, magic and shouts, training, horses stolen,
      critical strikes, backstabs, disarms; the Favorite ones)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets; the shout, charge and

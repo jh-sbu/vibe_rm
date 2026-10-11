@@ -2497,12 +2497,6 @@ impl Engine {
         }
     }
 
-    /// Kill an actor: it stops whatever it was doing and falls as a ragdoll (or
-    /// just stops, without one). False if it isn't loaded or is already dead.
-    pub fn kill_actor(&mut self, actor: FormId) -> bool {
-        self.kill_actor_by(actor, None)
-    }
-
     /// Kill an actor, `killer` (if known) having dealt the blow: its scripts
     /// hear of it (`OnDying`, `OnDeath`) and the Story Manager gets a kill event.
     pub fn kill_actor_by(&mut self, actor: FormId, killer: Option<FormId>) -> bool {
