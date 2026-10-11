@@ -54,7 +54,7 @@ pub use avm2_button::Avm2Button;
 pub use bitmap::{Bitmap, BitmapClass};
 #[allow(unused)]
 pub use edit_text::LayoutDebugBoxesFlag;
-pub use edit_text::{AutoSizeMode, EditText, TextSelection};
+pub use edit_text::{AutoSizeMode, EditText, TextSelection, VerticalAutoSize};
 pub use graphic::Graphic;
 pub use interactive::{Avm2MousePick, InteractiveObject, TInteractiveObject};
 pub use loader_display::LoaderDisplay;

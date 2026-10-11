@@ -61,6 +61,17 @@ pub enum AutoSizeMode {
     Right,
 }
 
+/// Scaleform's `verticalAutoSize`: the height follows the text, the width
+/// kept, the top, middle or bottom edge where it was.
+#[derive(Copy, Clone, Collect, Debug, PartialEq, Eq)]
+#[collect(no_drop)]
+pub enum VerticalAutoSize {
+    None,
+    Top,
+    Center,
+    Bottom,
+}
+
 /// A dynamic text field.
 /// The text in this text field can be changed dynamically.
 /// It may be selectable or editable by the user, depending on the text field properties.
@@ -179,6 +190,13 @@ pub struct EditTextData<'gc> {
     /// changes, and in what direction the added or removed width should
     /// apply.
     autosize: Cell<AutoSizeMode>,
+
+    /// Scaleform's `verticalAutoSize`, used while `autosize` is none.
+    vertical_autosize: Cell<VerticalAutoSize>,
+
+    /// Scaleform's `textAutoSize = "shrink"`: text that doesn't fit the
+    /// field is laid out smaller until it does (`autosize` none).
+    shrink_to_fit: Cell<bool>,
 
     /// Indicates if the text is scrollable using the mouse wheel.
     mouse_wheel_enabled: Cell<bool>,
@@ -352,6 +370,8 @@ impl<'gc> EditText<'gc> {
                 bounds: Cell::new(*swf_tag.bounds()),
                 autosize_lazy_bounds: Cell::new(None),
                 autosize: Cell::new(autosize),
+                vertical_autosize: Cell::new(VerticalAutoSize::None),
+                shrink_to_fit: Cell::new(false),
                 variable: Lock::new(variable),
                 bound_display_object: Lock::new(None),
                 class: Lock::new(None),
@@ -617,6 +637,24 @@ impl<'gc> EditText<'gc> {
 
     pub fn set_autosize(self, asm: AutoSizeMode, context: &mut UpdateContext<'gc>) {
         self.0.autosize.set(asm);
+        self.relayout(context);
+    }
+
+    pub fn shrink_to_fit(self) -> bool {
+        self.0.shrink_to_fit.get()
+    }
+
+    pub fn set_shrink_to_fit(self, shrink: bool, context: &mut UpdateContext<'gc>) {
+        self.0.shrink_to_fit.set(shrink);
+        self.relayout(context);
+    }
+
+    pub fn vertical_autosize(self) -> VerticalAutoSize {
+        self.0.vertical_autosize.get()
+    }
+
+    pub fn set_vertical_autosize(self, mode: VerticalAutoSize, context: &mut UpdateContext<'gc>) {
+        self.0.vertical_autosize.set(mode);
         self.relayout(context);
     }
 
@@ -914,8 +952,42 @@ impl<'gc> EditText<'gc> {
             is_word_wrap,
             font_type: self.0.font_type(),
         };
-        let new_layout =
-            html::lower_from_text_spans(&text_spans, context, layout_params, content_width);
+        let mut new_layout =
+            html::lower_from_text_spans(&text_spans, context, layout_params.clone(), content_width);
+        // Shrinking to fit: smaller by the overflow's ratio, a few times over
+        // as wrapping changes with the size.
+        if self.0.shrink_to_fit.get()
+            && autosize == AutoSizeMode::None
+            && self.0.vertical_autosize.get() == VerticalAutoSize::None
+        {
+            let bounds = self.0.bounds.get();
+            let width = (self.local_width_to_layout_width(bounds.width()) - padding).to_pixels();
+            let height = (bounds.height() - padding).to_pixels();
+            let mut scale = 1.0;
+            for _ in 0..4 {
+                let size = new_layout.text_size();
+                let (w, h) = (size.width().to_pixels(), size.height().to_pixels());
+                let fit_w = if is_word_wrap || w <= width {
+                    1.0
+                } else {
+                    width / w
+                };
+                let fit_h = if h <= height { 1.0 } else { height / h };
+                let fit = fit_w.min(fit_h);
+                if fit >= 1.0 || width <= 0.0 || height <= 0.0 {
+                    break;
+                }
+                scale *= fit * 0.98;
+                let mut spans = text_spans.clone();
+                spans.scale_sizes(scale);
+                new_layout = html::lower_from_text_spans(
+                    &spans,
+                    context,
+                    layout_params.clone(),
+                    content_width,
+                );
+            }
+        }
         drop(text_spans);
 
         unlock!(Gc::write(context.gc(), self.0), EditTextData, layout).replace(new_layout);
@@ -947,6 +1019,16 @@ impl<'gc> EditText<'gc> {
                 autosize_bounds.set_width(width);
             }
             let height = text_size.height() + padding;
+            autosize_bounds.set_height(height);
+        } else if self.0.vertical_autosize.get() != VerticalAutoSize::None {
+            let height = text_size.height() + padding;
+            autosize_bounds.y_min = match self.0.vertical_autosize.get() {
+                VerticalAutoSize::Center => {
+                    (autosize_bounds.y_min + autosize_bounds.y_max - height) / 2
+                }
+                VerticalAutoSize::Bottom => autosize_bounds.y_max - height,
+                _ => autosize_bounds.y_min,
+            };
             autosize_bounds.set_height(height);
         }
         self.0.autosize_lazy_bounds.set(Some(autosize_bounds));

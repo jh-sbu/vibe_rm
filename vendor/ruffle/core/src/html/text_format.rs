@@ -686,6 +686,13 @@ impl FormatSpans {
         }
     }
 
+    /// Every span's font size times `k` (Scaleform's `textAutoSize`).
+    pub fn scale_sizes(&mut self, k: f64) {
+        for span in &mut self.spans {
+            span.font.size *= k;
+        }
+    }
+
     /// Construct a format span from its raw parts.
     pub fn from_str_and_spans(text: &WStr, spans: &[TextSpan]) -> Self {
         Self {
