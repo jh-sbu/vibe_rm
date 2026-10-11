@@ -28,7 +28,9 @@ game each piece unlocks.
   their latest log entry and objectives, the miscellaneous objectives,
   completed quests, Toggle Active (`Quest.SetActive` / `IsActive`), the
   Stats page (`Game.IncrementStat` / `QueryStat`, quest completions), the
-  bottom bar's date and level; `known_gaps/journal.md`);
+  bottom bar's date and level; `known_gaps/journal.md`); gifts
+  (`giftmenu.swf` from `Actor.ShowGiftMenu`: the gift filter, giving and
+  taking, favor points for the script; `known_gaps/gifts.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
@@ -801,8 +803,8 @@ game each piece unlocks.
    targets on a compass and the map (`QSTA`) for the tracked quests (tracking
    itself done: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
-     item menus and the journal done: see Done): the gift menu
-     (`giftmenu.swf`) next, then the magic menu; the item menus' Investor / Master
+     item menus, the journal and the gift menu done: see Done): the magic
+     menu next; the item menus' Investor / Master
      Trader gold, merchants' chests restocking, Fortify Barter, placing
      items in pockets, NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)

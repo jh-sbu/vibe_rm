@@ -51,7 +51,7 @@ pub struct Messages {
     /// messages don't show again until `ResetHelpMessage`.
     done_events: HashSet<String>,
     pub banners: Vec<Banner>,
-    next_key: u64,
+    pub(crate) next_key: u64,
 }
 
 /// How long a banner stays up.

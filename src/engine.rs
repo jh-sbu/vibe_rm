@@ -186,6 +186,8 @@ pub struct Engine {
     pub menu: Option<crate::items::Menu>,
     /// The player's favorite items (the inventory's Favorites).
     pub favorites: Vec<FormId>,
+    /// The gift menu's state while it is open (`Actor.ShowGiftMenu`).
+    pub gift: Option<crate::gift::Gift>,
     pub lockpick: Option<crate::locks::Lockpick>,
     /// The player's skill XP and level (`crate::skills`).
     pub skills: crate::skills::Skills,
@@ -325,6 +327,7 @@ impl Engine {
             imagespace: Default::default(),
             menu: None,
             favorites: Vec::new(),
+            gift: None,
             lockpick: None,
             skills: Default::default(),
             perks: Default::default(),
@@ -2213,6 +2216,12 @@ impl Engine {
     /// Advance the simulation by `dt` seconds.
     pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
         self.scripts.wall_time += dt as f64;
+        // The gift menu went: its script carries on.
+        if let Some(g) = &self.gift
+            && self.menu != Some(crate::items::Menu::Gift(g.actor))
+        {
+            self.close_gift_menu();
+        }
         if self.in_menu_mode() {
             self.update_menu_mode(dt);
             return;
