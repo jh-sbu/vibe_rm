@@ -2557,45 +2557,13 @@ impl Player {
         path: &str,
         args: impl IntoIterator<Item = ExternalValue>,
     ) -> ExternalValue {
-        self.mutate_with_update_context(|context| {
-            let Some(root) = context.stage.root_clip() else {
-                return ExternalValue::Undefined;
-            };
-            let mut activation =
-                Activation::from_nothing(context, ActivationIdentifier::root("[Invoke]"), root);
-            let args: Vec<Value> = args
-                .into_iter()
-                .map(|v| v.into_avm1(&mut activation))
-                .collect();
-            let path = AvmString::new_utf8(activation.gc(), path);
-            activation
-                .get_variable(path)
-                .and_then(|f| {
-                    f.call_with_default_this(Value::Undefined, path, &mut activation, &args)
-                })
-                .and_then(|v| match v {
-                    // A movie clip's every property would be copied out.
-                    Value::Object(_) | Value::MovieClip(_) => Ok(ExternalValue::Null),
-                    v => ExternalValue::from_avm1(&mut activation, v),
-                })
-                .unwrap_or(ExternalValue::Null)
-        })
+        self.mutate_with_update_context(|context| crate::external::invoke_avm1(context, path, args))
     }
 
     /// Sets the AVM1 variable at a target path (Scaleform's `SetVariable`).
     pub fn set_avm1_variable(&mut self, path: &str, value: ExternalValue) {
         self.mutate_with_update_context(|context| {
-            let Some(root) = context.stage.root_clip() else {
-                return;
-            };
-            let mut activation = Activation::from_nothing(
-                context,
-                ActivationIdentifier::root("[SetVariable]"),
-                root,
-            );
-            let value = value.into_avm1(&mut activation);
-            let path = AvmString::new_utf8(activation.gc(), path);
-            let _ = activation.set_variable(path, value);
+            crate::external::set_avm1_variable(context, path, value)
         })
     }
 

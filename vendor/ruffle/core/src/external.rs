@@ -375,6 +375,52 @@ pub fn get_avm1_variable(context: &mut UpdateContext<'_>, path: &str) -> Value {
     }
 }
 
+/// Sets the AVM1 variable at a target path, as Scaleform's `SetVariable`, from
+/// code holding the update context (a host answering a call fills the movie's
+/// lists this way).
+pub fn set_avm1_variable(context: &mut UpdateContext<'_>, path: &str, value: Value) {
+    let Some(root) = context.stage.root_clip() else {
+        return;
+    };
+    let mut activation = Avm1Activation::from_nothing(
+        context,
+        Avm1ActivationIdentifier::root("[SetVariable]"),
+        root,
+    );
+    let value = value.into_avm1(&mut activation);
+    let path = AvmString::new_utf8(activation.gc(), path);
+    let _ = activation.set_variable(path, value);
+}
+
+/// Calls the AVM1 function at a target path (`_root.a.b.Method`) with `this`
+/// the object holding it, as Scaleform's `Invoke`, from code holding the
+/// update context. Objects returned come back as null.
+pub fn invoke_avm1(
+    context: &mut UpdateContext<'_>,
+    path: &str,
+    args: impl IntoIterator<Item = Value>,
+) -> Value {
+    let Some(root) = context.stage.root_clip() else {
+        return Value::Undefined;
+    };
+    let mut activation =
+        Avm1Activation::from_nothing(context, Avm1ActivationIdentifier::root("[Invoke]"), root);
+    let args: Vec<Avm1Value> = args
+        .into_iter()
+        .map(|v| v.into_avm1(&mut activation))
+        .collect();
+    let path = AvmString::new_utf8(activation.gc(), path);
+    activation
+        .get_variable(path)
+        .and_then(|f| f.call_with_default_this(Avm1Value::Undefined, path, &mut activation, &args))
+        .and_then(|v| match v {
+            // A movie clip's every property would be copied out.
+            Avm1Value::Object(_) | Avm1Value::MovieClip(_) => Ok(Value::Null),
+            v => Value::from_avm1(&mut activation, v),
+        })
+        .unwrap_or(Value::Null)
+}
+
 pub trait ExternalInterfaceProvider {
     fn call_method(&self, context: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value;
 
