@@ -25,6 +25,7 @@ mod locations;
 mod locks;
 mod loose;
 mod magic;
+mod map_markers;
 mod messages;
 mod perks;
 mod physics;

@@ -489,6 +489,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .as_ref()
             .is_some_and(|cv| Some(cv.npc_ref) == subject)), // IsInDialogueWithPlayer
         35 => b(subject.is_some_and(|s| e.is_disabled(s))), // GetDisabled
+        491 => b(subject.is_some_and(|s| e.map_marker_visible(s))), // GetMapMarkerVisible
         // Locations: of the subject (a location itself, when filling location aliases).
         359 => b(subject_location(e, subject).is_some_and(|l| e.location_within(l, p1))), // GetInCurrentLoc
         360 => b(subject_location(e, subject)

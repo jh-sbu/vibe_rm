@@ -12,7 +12,12 @@ game each piece unlocks.
 - Actors: skinning, GPU skinning, NPC assembly (race, outfit, FaceGen); Havok clip playback
 - Papyrus VM (PEX, natives, events, VMAD), conditions (CTDA), quest stages, dialogue
 - The game's HUD (`hudmenu.swf` through the vendored Ruffle, `crates/ui-swf`):
-  health, magicka and stamina meters, compass heading, location, the
+  health, magicka and stamina meters, compass heading and the map markers
+  near the player on it (discovered, and undiscovered ones hollow; map
+  markers come onto the map and are discovered as the player nears them,
+  with the banner, the discovery music and Locations Discovered; `AddToMap`,
+  `EnableFastTravel`, `IsMapMarkerVisible`; `known_gaps/map-markers.md`),
+  location, the
   crosshair's activate text, subtitles, notifications, help messages, quest
   banners, the sneak eye, enemy health, the activate key's art; message boxes
   (`messagebox.swf`, answered with the mouse or keys); the inventory
@@ -833,7 +838,8 @@ game each piece unlocks.
      picked, pockets picked, bounties, kills, skill increases, books read,
      days jailed...: only quest completions and scripts' `IncrementStat`
      count now)
-   - The HUD's compass markers (`SetCompassMarkers`), the shout, charge and
+   - The HUD's compass: quest targets, enemies, the player's own marker; the
+     shout, charge and
      survival meters, load door info, favor mode
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);

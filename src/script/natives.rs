@@ -560,9 +560,23 @@ pub fn call(
         }
         ("objectreference", "setopen")
         | ("objectreference", "setdestroyed")
-        | ("objectreference", "setnoFavorallowed")
-        | ("objectreference", "addtomap") => v(Value::Bool(true)),
+        | ("objectreference", "setnoFavorallowed") => v(Value::Bool(true)),
         ("objectreference", "getopenstate") => v(Value::Int(3)),
+        ("objectreference", "addtomap") => {
+            if let Some(r) = me {
+                e.add_to_map(r, args.first().is_some_and(|a| a.as_bool()));
+            }
+            none()
+        }
+        ("objectreference", "enablefasttravel") => {
+            if let Some(r) = me {
+                e.enable_fast_travel(r, args.first().is_none_or(|a| a.as_bool()));
+            }
+            none()
+        }
+        ("objectreference", "ismapmarkervisible") => {
+            v(Value::Bool(me.is_some_and(|r| e.map_marker_visible(r))))
+        }
         // ------------------------------------------------------------ Havok
         ("objectreference", "applyhavokimpulse") => {
             if let Some(r) = me {

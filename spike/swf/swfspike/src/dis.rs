@@ -1,4 +1,5 @@
-//! AS2 disassembly: every DoAction / DoInitAction, functions nested.
+//! AS2 disassembly: every DoAction / DoInitAction, functions nested, and the
+//! frame labels.
 use swf::avm1::read::Reader;
 use swf::avm1::types::{Action, Value};
 use swf::{SwfStr, Tag};
@@ -24,8 +25,14 @@ fn collect_exports(tags: &[Tag], names: &mut std::collections::HashMap<u16, Stri
 }
 
 fn walk(tags: &[Tag], v: u8, owner: &str, names: &std::collections::HashMap<u16, String>) {
+    // Frames are numbered from 1, as `_currentframe` counts them.
+    let mut shown = 1;
     for (frame, t) in tags.iter().enumerate() {
         match t {
+            Tag::ShowFrame => shown += 1,
+            Tag::FrameLabel(l) => {
+                println!("== FrameLabel in {owner} frame {shown}: {}", s(l.label));
+            }
             Tag::DoAction(d) => {
                 println!("== DoAction in {owner} (tag {frame})");
                 dis(d, v, 1, &mut Vec::new());

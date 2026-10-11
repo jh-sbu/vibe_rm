@@ -2827,10 +2827,11 @@ fn main() -> Result<()> {
             for &id in lo.ids_of_type(&tag) {
                 let Some(rec) = lo.get(id) else { continue };
                 let Some(d) = rec.get(&sub) else { continue };
-                let first = d
-                    .get(0..4)
-                    .map(|b| format!("{:08X}", u32::from_le_bytes(b.try_into().unwrap())))
-                    .unwrap_or_default();
+                // Shorter subrecords (flags) as their bytes.
+                let first = match d.get(0..4) {
+                    Some(b) => format!("{:08X}", u32::from_le_bytes(b.try_into().unwrap())),
+                    None => d.iter().map(|b| format!("{b:02X}")).collect(),
+                };
                 println!("{id} {} {first}", rec.editor_id().unwrap_or_default());
             }
         }

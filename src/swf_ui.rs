@@ -1037,6 +1037,7 @@ struct Sent {
     stamina: Option<f32>,
     heading: Option<f32>,
     location: Option<String>,
+    compass_markers: Vec<crate::map_markers::CompassMarker>,
     /// The crosshair's rollover text (None inside: on nothing); None, not yet
     /// told (the HUD shows no crosshair until told).
     crosshair: Option<Option<String>>,
@@ -1148,11 +1149,25 @@ impl Hud {
         }
     }
 
-    /// The heading (degrees clockwise from north, as the camera's yaw) and the
-    /// location's name.
+    /// The heading (degrees clockwise from north, as the camera's yaw), the
+    /// markers (`CompassTargetDataA`: heading, alpha, frame and scale of
+    /// each) and the location's name.
     fn compass(&mut self, engine: &Engine) {
+        let markers = engine.compass_location_markers();
+        let moved = markers != self.sent.compass_markers;
+        if moved {
+            let data = markers
+                .iter()
+                .flat_map(|m| [num(m.heading), num(m.alpha), num(m.frame), num(m.scale)])
+                .collect();
+            self.menu
+                .set(&format!("{H}.CompassTargetDataA"), Value::List(data));
+            self.call("SetCompassMarkers", &[]);
+            self.sent.compass_markers = markers;
+        }
         let heading = engine.camera.yaw.to_degrees().rem_euclid(360.0);
-        if self.sent.heading.is_none_or(|h| (h - heading).abs() > 0.01) {
+        // New markers are placed by the next angle.
+        if moved || self.sent.heading.is_none_or(|h| (h - heading).abs() > 0.01) {
             self.sent.heading = Some(heading);
             self.call(
                 "SetCompassAngle",
