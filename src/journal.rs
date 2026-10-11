@@ -171,9 +171,7 @@ impl Engine {
         if st.announced || self.quest_type(q) == QUEST_TYPE_NONE {
             return;
         }
-        let st = self.scripts.quests.entry(q).or_default();
-        st.announced = true;
-        st.active = true;
+        self.scripts.quests.entry(q).or_default().announced = true;
         let name = self.quest_name(q);
         if !name.is_empty() {
             let sub = self

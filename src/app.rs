@@ -650,7 +650,16 @@ impl ApplicationHandler for App {
                             if code == KeyCode::F3 && !event.repeat {
                                 s.ui.show_debug = !s.ui.show_debug;
                             }
-                            if code == KeyCode::Escape {
+                            // Esc: the journal on the tab it was left at (the
+                            // game's menus), else the mouse let go or quit.
+                            if code == KeyCode::Escape
+                                && !event.repeat
+                                && s.swf.is_some()
+                                && !s.engine.disabled_controls.journal
+                            {
+                                s.engine.journal_last_tab = true;
+                                s.engine.menu = Some(crate::items::Menu::Journal);
+                            } else if code == KeyCode::Escape {
                                 if s.grabbed {
                                     s.grabbed = false;
                                     let _ = s.window.set_cursor_grab(CursorGrabMode::None);
@@ -675,6 +684,7 @@ impl ApplicationHandler for App {
                                 && !event.repeat
                                 && !s.engine.disabled_controls.journal
                             {
+                                s.engine.journal_last_tab = false;
                                 s.engine.menu = Some(crate::items::Menu::Journal);
                             }
                             if code == KeyCode::KeyK
@@ -811,6 +821,10 @@ impl ApplicationHandler for App {
                 s.engine.update(input, dt, scale);
                 if let Some(swf) = &mut s.swf {
                     swf.update(&mut s.engine, dt);
+                }
+                if s.engine.quit_requested {
+                    el.exit();
+                    return;
                 }
                 // A menu or message box opened by a script takes the mouse.
                 if s.engine.menu_up() && s.grabbed {

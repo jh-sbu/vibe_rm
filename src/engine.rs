@@ -151,6 +151,11 @@ pub struct Engine {
     pub(crate) grab: crate::grab::Grab,
     /// Player controls scripts have disabled.
     pub disabled_controls: crate::player::DisabledControls,
+    /// The journal opens on the tab it was closed on (Esc), not on the
+    /// quests (the journal key).
+    pub journal_last_tab: bool,
+    /// The journal's Quit to Desktop: the app exits.
+    pub quit_requested: bool,
     /// The player's stamina, seconds before it comes back after being spent, how
     /// long they have held the attack button (a power attack when long enough),
     /// and their stats (race, NPC record), read on first use.
@@ -358,6 +363,8 @@ impl Engine {
             traps: Default::default(),
             anim_events: Default::default(),
             disabled_controls: Default::default(),
+            journal_last_tab: false,
+            quit_requested: false,
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
             player_stamina_wait: 0.0,

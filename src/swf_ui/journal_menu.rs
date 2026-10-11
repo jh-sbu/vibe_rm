@@ -252,14 +252,19 @@ impl JournalMenu {
             "RequestPlayerInfo" => Some(data.player.clone()),
             // No Creations entry on the System page.
             "ShouldShowMod" => Some(vec![Value::Bool(false)]),
+            // Quit lists Quit to Main Menu and Quit to Desktop.
+            "RequestIsOnPC" => Some(vec![Value::Bool(true)]),
             _ => super::respond(&buttons, call),
         });
         menu.invoke(&format!("{M}.InitExtensions"), &[]);
         menu.invoke(&format!("{M}.SetPlatform"), &[num(0.0), Value::Bool(false)]);
-        menu.callback(
-            "RestoreSavedSettings",
-            &[saved.tab.clone(), Value::Bool(false)],
-        );
+        // The journal key opens the quests; Esc the tab it was left at.
+        let tab = if std::mem::take(&mut engine.journal_last_tab) {
+            saved.tab.clone()
+        } else {
+            num(0.0)
+        };
+        menu.callback("RestoreSavedSettings", &[tab, Value::Bool(false)]);
         Ok(JournalMenu { menu, toggles })
     }
 
@@ -291,9 +296,10 @@ impl JournalMenu {
                 }
             }
             // The tab shown, kept with `CloseMenu`; showing a target on the
-            // map (not offered) and the System page's saving, loading,
-            // settings and quitting, which aren't built.
+            // map (not offered) and the System page's saving, loading and
+            // settings, which aren't built. There is no main menu to quit to.
             "RememberCurrentTabIndex" | "ShowTargetOnMap" | "SetVersionText" => {}
+            "QuitToDesktop" => engine.quit_requested = true,
             _ => return false,
         }
         true
