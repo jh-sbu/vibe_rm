@@ -39,6 +39,9 @@ pub struct QuestState {
     pub log: Vec<String>,
     /// Its quest added banner was shown.
     pub announced: bool,
+    /// Tracked: the journal's active quests (`Quest.SetActive`), whose
+    /// objectives the HUD and map mark. A quest is active when it is added.
+    pub active: bool,
     /// When the journal last changed for it (`ScriptState::journal_seq`).
     pub journal_seq: u64,
     /// Reference alias fills: alias id -> reference.
@@ -88,6 +91,12 @@ pub struct ScriptState {
     pub warned: HashSet<String>,
     /// Bumped whenever a quest's journal entry changes.
     pub journal_seq: u64,
+    /// The journal's miscellaneous objectives are untracked (its Toggle
+    /// Active on them all).
+    pub misc_objectives_hidden: bool,
+    /// The player's statistics (`Game.IncrementStat`, the journal's Stats
+    /// page) by name.
+    pub stats: HashMap<String, i32>,
 }
 
 impl ScriptState {

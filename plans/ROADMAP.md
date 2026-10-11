@@ -24,7 +24,11 @@ game each piece unlocks.
   from `Actor.ShowBarterMenu`: merchant chests, buy / sell lists, stolen
   goods, prices from Speech and the Haggling / Allure perks, the raw deal
   warning, Speech XP) (choices: `known_gaps/swf-hud.md`,
-  `known_gaps/barter.md`);
+  `known_gaps/barter.md`); the journal (`quest_journal.swf`: quests with
+  their latest log entry and objectives, the miscellaneous objectives,
+  completed quests, Toggle Active (`Quest.SetActive` / `IsActive`), the
+  Stats page (`Game.IncrementStat` / `QueryStat`, quest completions), the
+  bottom bar's date and level; `known_gaps/journal.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
@@ -792,10 +796,11 @@ game each piece unlocks.
      `known_gaps/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, quest
-   targets on a compass and the map (`QSTA`), tracking quests (`SetActive`)
+   targets on a compass and the map (`QSTA`) for the tracked quests (tracking
+   itself done: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
-     item menus done: see Done): the journal next, then the gift menu
-     (`giftmenu.swf`), the magic menu; the item menus' Investor / Master
+     item menus and the journal done: see Done): the gift menu
+     (`giftmenu.swf`) next, then the magic menu; the item menus' Investor / Master
      Trader gold, merchants' chests restocking, Fortify Barter, placing
      items in pockets, NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
@@ -805,6 +810,11 @@ game each piece unlocks.
      (`AttemptChargeItem`, soul gems), scrolls and soul gems on their own cards
      (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, poisons, the
      left hand, the best-in-class star, the survival warmth rating
+   - The journal's rest: the System page (saves, settings, controls, help,
+     quitting), Show on Map; statistics counted by their systems (locks
+     picked, pockets picked, bounties, kills, skill increases, books read,
+     days jailed...: only quest completions and scripts' `IncrementStat`
+     count now)
    - The HUD's compass markers (`SetCompassMarkers`), the shout, charge and
      survival meters, load door info, favor mode
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the

@@ -11,6 +11,25 @@ use crate::engine::{Engine, PLAYER_REF};
 pub const QUEST_TYPE_NONE: u8 = 0;
 pub const QUEST_TYPE_MISC: u8 = 6;
 
+/// The statistic each quest type's completions count in (`DNAM` type order:
+/// main, the College, the Thieves Guild, the Dark Brotherhood, the
+/// Companions, miscellaneous, Daedric, side, the Civil War, Dawnguard,
+/// Dragonborn). Miscellaneous quests count their objectives instead.
+const COMPLETED_STATS: [&str; 12] = [
+    "",
+    "Main Quests Completed",
+    "College of Winterhold Quests Completed",
+    "Thieves' Guild Quests Completed",
+    "The Dark Brotherhood Quests Completed",
+    "The Companions Quests Completed",
+    "",
+    "Daedric Quests Completed",
+    "Side Quests Completed",
+    "Civil War Quests Completed",
+    "Dawnguard Quests Completed",
+    "Dragonborn Quests Completed",
+];
+
 /// Log entry flags (`QSDT`).
 const ENTRY_COMPLETES: u8 = 0x1;
 const ENTRY_FAILS: u8 = 0x2;
@@ -30,6 +49,8 @@ pub struct JournalQuest {
     pub kind: u8,
     pub completed: bool,
     pub failed: bool,
+    /// Tracked (`Quest.SetActive`).
+    pub active: bool,
     /// Log entries, oldest first.
     pub log: Vec<String>,
     /// Displayed objectives by index.
@@ -150,7 +171,9 @@ impl Engine {
         if st.announced || self.quest_type(q) == QUEST_TYPE_NONE {
             return;
         }
-        self.scripts.quests.entry(q).or_default().announced = true;
+        let st = self.scripts.quests.entry(q).or_default();
+        st.announced = true;
+        st.active = true;
         let name = self.quest_name(q);
         if !name.is_empty() {
             let sub = self
@@ -165,6 +188,13 @@ impl Engine {
         let st = self.touch_quest(q);
         if std::mem::replace(&mut st.completed, true) {
             return;
+        }
+        let kind = self.quest_type(q) as usize;
+        if kind != QUEST_TYPE_NONE as usize && kind != QUEST_TYPE_MISC as usize {
+            self.increment_stat("Quests Completed", 1);
+            if let Some(stat) = COMPLETED_STATS.get(kind).filter(|s| !s.is_empty()) {
+                self.increment_stat(stat, 1);
+            }
         }
         self.quest_ended(q, "sQuestCompletedText", "Quest completed");
     }
@@ -226,7 +256,11 @@ impl Engine {
             st.objectives_completed.remove(&obj)
         };
         let text = st.objective_texts.get(&obj).cloned().unwrap_or_default();
-        if changed && completed && st.objectives_displayed.contains(&obj) && !text.is_empty() {
+        let shown = st.objectives_displayed.contains(&obj);
+        if changed && completed && shown && self.quest_type(q) == QUEST_TYPE_MISC {
+            self.increment_stat("Misc Objectives Completed", 1);
+        }
+        if changed && completed && shown && !text.is_empty() {
             let done = self
                 .gmst_string("sHUDCompleted")
                 .unwrap_or_else(|| "Completed".into());
@@ -242,6 +276,11 @@ impl Engine {
         } else {
             st.objectives_failed.remove(&obj);
         }
+    }
+
+    /// `Quest.SetActive`, or the journal's Toggle Active.
+    pub fn set_quest_active(&mut self, q: FormId, active: bool) {
+        self.scripts.quests.entry(q).or_default().active = active;
     }
 
     /// The quests the journal lists, the latest updated first: the running
@@ -286,6 +325,7 @@ impl Engine {
                     kind,
                     completed: st.completed,
                     failed: st.failed,
+                    active: st.active,
                     log: st.log.clone(),
                     objectives,
                 },
