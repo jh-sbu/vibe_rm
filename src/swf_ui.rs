@@ -210,9 +210,11 @@ impl SwfUi {
                     winit::event::MouseButton::Right => Some(1),
                     _ => None,
                 };
-                if code.is_some() && code == self.buttons.mouse("Left Attack/Block") {
+                // Slot 0 is the right hand, 1 the left (`ContainerMenu.RIGHT_HAND`,
+                // `LEFT_HAND`).
+                if code.is_some() && code == self.buttons.mouse("Right Attack/Block") {
                     self.equip = Some(0.0);
-                } else if code.is_some() && code == self.buttons.mouse("Right Attack/Block") {
+                } else if code.is_some() && code == self.buttons.mouse("Left Attack/Block") {
                     self.equip = Some(1.0);
                 }
             }

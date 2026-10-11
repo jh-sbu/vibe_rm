@@ -114,9 +114,10 @@ isn't public; the choices below are what the movies' code allows.
   books read (the egui book view, back to the inventory after). The control
   map's item menu events: the Ready Weapon key (R) calls the menu's
   `DropItem` (then `ItemDrop(amount)`), Toggle POV (F) marks or unmarks a
-  favorite, the attack buttons call `AttemptEquip(slot, true)`: slot 0 for
-  Left Attack/Block, 1 for Right Attack/Block (which hand a slot number
-  means is a guess; the slot isn't used yet, one hand). Tab is the menu's own
+  favorite, the attack buttons call `AttemptEquip(slot, true)`: slot 0 (the
+  container menu's `RIGHT_HAND`) for Right Attack/Block, the left mouse
+  button by default, 1 for Left Attack/Block; the slot isn't used yet (one
+  hand). Tab is the menu's own
   (it fades out, then calls `CloseMenu`); Esc goes through `StartMenuFade`
   the same way. Left on the categories and clicking outside
   (`ShowTweenMenu`) close the menu, as there is no tween menu yet.
