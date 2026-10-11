@@ -559,7 +559,7 @@ impl ItemMenu {
                     }
                     engine.unequip_if_gone(PLAYER_REF, item);
                 } else {
-                    self.select(engine, &row.item);
+                    engine.use_listed_item(&row.item);
                 }
             }
             "ItemDrop" => {
@@ -586,7 +586,7 @@ impl ItemMenu {
                     if row.theirs {
                         self.transfer(engine, &row, number(1).map_or(1, |n| n as i32));
                     }
-                    self.select(engine, &row.item);
+                    engine.use_listed_item(&row.item);
                 }
             }
             "SaveIndices" => {
@@ -636,33 +636,6 @@ impl ItemMenu {
         }
     }
 
-    /// Accept on one of the player's items: weapons and apparel are equipped
-    /// or taken off, potions, food and ingredients used, books read.
-    fn select(&mut self, engine: &mut Engine, row: &ListedItem) {
-        let worn = engine
-            .inventories
-            .get(&PLAYER_REF)
-            .is_some_and(|i| i.equipped.contains(&row.item));
-        let result = match row.info.kind {
-            ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor => {
-                engine.equip_item(PLAYER_REF, row.item, !worn)
-            }
-            ItemKind::Potion | ItemKind::Ingredient => engine.consume(PLAYER_REF, row.item),
-            ItemKind::Book => {
-                engine.menu = Some(crate::items::Menu::Book {
-                    book: row.item,
-                    reference: None,
-                });
-                engine.read_book(row.item);
-                Ok(())
-            }
-            _ => Ok(()),
-        };
-        if let Err(e) = result {
-            engine.scripts.notify(e);
-        }
-    }
-
     /// The control map's Ready Weapon key: the inventory drops
     /// (`DropItem`), the container menu takes all or stores
     /// (`XButtonPress`).
@@ -686,11 +659,7 @@ impl ItemMenu {
             return;
         }
         let item = row.item.item;
-        if let Some(i) = engine.favorites.iter().position(|&f| f == item) {
-            engine.favorites.remove(i);
-        } else {
-            engine.favorites.push(item);
-        }
+        engine.toggle_favorite(item);
         self.update(engine);
         // The bottom bar's Favorite / Unfavorite.
         match self.kind {

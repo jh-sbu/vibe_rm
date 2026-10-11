@@ -235,15 +235,7 @@ impl MagicMenu {
                     Some(Value::Number(n)) if *n as usize == LEFT => LEFT,
                     _ => RIGHT,
                 };
-                let power = engine
-                    .magic_item(spell)
-                    .is_some_and(|i| i.spell_type != spell_type::SPELL);
-                let slot = if power { VOICE } else { slot };
-                if engine.equipped_spell(PLAYER_REF, slot) == Some(spell) {
-                    engine.unequip_spell(PLAYER_REF, spell, Some(slot));
-                } else {
-                    engine.equip_spell(PLAYER_REF, spell, slot);
-                }
+                engine.toggle_spell(PLAYER_REF, spell, slot);
             }
             "SaveIndices" => {
                 if let Some(Value::List(list)) = call.args.first() {
@@ -270,11 +262,7 @@ impl MagicMenu {
         let Some(Row::Spell(spell)) = self.selected() else {
             return;
         };
-        if let Some(i) = engine.favorites.iter().position(|&f| f == spell) {
-            engine.favorites.remove(i);
-        } else {
-            engine.favorites.push(spell);
-        }
+        engine.toggle_favorite(spell);
         self.update(engine);
         self.menu.invoke(&format!("{M}.UpdateButtonText"), &[]);
     }
@@ -299,14 +287,7 @@ impl MagicMenu {
 fn entry(engine: &Engine, i: usize, row: &Row, slots: &[Option<FormId>; 3]) -> Value {
     let (name, flag, equip, favorite) = match *row {
         Row::Spell(spell) => {
-            let held = |s: usize| slots[s] == Some(spell);
-            let equip = match (held(RIGHT), held(LEFT), held(VOICE)) {
-                (true, true, _) => ES_BOTH,
-                (true, false, _) => ES_RIGHT,
-                (false, true, _) => ES_LEFT,
-                (_, _, true) => ES_EQUIPPED,
-                _ => 0.0,
-            };
+            let equip = equip_state(slots, spell);
             let favorite = engine.favorites.contains(&spell);
             let flag =
                 spell_flag(engine, spell).unwrap_or(0) | if favorite { FAVORITES } else { 0 };
@@ -323,6 +304,18 @@ fn entry(engine: &Engine, i: usize, row: &Row, slots: &[Option<FormId>; 3]) -> V
         ("enabled", Value::Bool(true)),
         ("vrmRow", num(i as f32)),
     ])
+}
+
+/// A spell's equip icon: the hands it is in, or readied as a power.
+pub(super) fn equip_state(slots: &[Option<FormId>; 3], spell: FormId) -> f64 {
+    let held = |s: usize| slots[s] == Some(spell);
+    match (held(RIGHT), held(LEFT), held(VOICE)) {
+        (true, true, _) => ES_BOTH,
+        (true, false, _) => ES_RIGHT,
+        (false, true, _) => ES_LEFT,
+        (_, _, true) => ES_EQUIPPED,
+        _ => 0.0,
+    }
 }
 
 /// An item's effects on the player are listed under the item's name, else

@@ -701,6 +701,15 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.menu = Some(crate::items::Menu::Magic);
                             }
+                            // Favorites (the control map's).
+                            if code == KeyCode::KeyQ
+                                && !event.repeat
+                                && !s.engine.disabled_controls.menu
+                                && s.swf.is_some()
+                                && s.engine.menu.is_none()
+                            {
+                                s.engine.menu = Some(crate::items::Menu::Favorites);
+                            }
                             // Menus take the mouse.
                             if s.engine.menu_up() {
                                 if s.grabbed {
@@ -710,6 +719,24 @@ impl ApplicationHandler for App {
                                 }
                                 s.keys.clear();
                                 return;
+                            }
+                            // Hotkeys 1 to 8 use their favorites (in
+                            // dialogue they pick topics).
+                            const HOTKEYS: [KeyCode; 8] = [
+                                KeyCode::Digit1,
+                                KeyCode::Digit2,
+                                KeyCode::Digit3,
+                                KeyCode::Digit4,
+                                KeyCode::Digit5,
+                                KeyCode::Digit6,
+                                KeyCode::Digit7,
+                                KeyCode::Digit8,
+                            ];
+                            if !event.repeat
+                                && s.engine.conversation.is_none()
+                                && let Some(key) = HOTKEYS.iter().position(|&k| k == code)
+                            {
+                                s.engine.use_hotkey(key);
                             }
                             // Ctrl sneaks (noclip flies down with it instead).
                             if code == KeyCode::ControlLeft
