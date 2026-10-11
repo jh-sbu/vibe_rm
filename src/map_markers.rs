@@ -22,12 +22,12 @@ const VISIBLE: u8 = 0x01;
 const CHECK_INTERVAL: f32 = 0.5;
 
 /// The compass marker clip's frames (`hudmenu.swf`, "Compass Marker"): the
-/// quest targets', then the location markers' (a frame per map marker type,
+/// quest targets', the enemies' (the player's own marker's, 3, isn't used:
+/// there's no map to set it on), then the location markers' (a frame per map marker type,
 /// in `TNAM` order from `LocationMarkers`) and the undiscovered ones'.
 pub mod frame {
     pub const QUEST: f32 = 1.0;
     pub const QUEST_DOOR: f32 = 2.0;
-    pub const PLAYER_SET: f32 = 3.0;
     pub const ENEMY: f32 = 4.0;
     pub const LOCATIONS: f32 = 5.0;
     pub const UNDISCOVERED: f32 = 72.0;
@@ -232,11 +232,34 @@ impl Engine {
         }
     }
 
+    /// Everything on the compass: the location markers, the quest targets
+    /// and the enemies fighting the player.
+    pub fn compass_markers(&self) -> Vec<CompassMarker> {
+        let mut out = self.compass_location_markers();
+        out.extend(self.compass_quest_markers());
+        let player = self.player.position;
+        for a in self.cells.values().flat_map(|rt| &rt.actors) {
+            let fighting = a
+                .combat
+                .as_ref()
+                .is_some_and(|c| c.target == crate::engine::PLAYER_REF && !c.fleeing);
+            if fighting && !a.dead && a.bleeding.is_none() {
+                out.push(CompassMarker {
+                    heading: heading(player, a.pos),
+                    alpha: 100.0,
+                    frame: frame::ENEMY,
+                    scale: 100.0,
+                });
+            }
+        }
+        out
+    }
+
     /// The location markers on the compass: those discovered within
     /// `fHUDCompassLocationMaxDist`, and the undiscovered (hollow) within
     /// `iMapMarkerVisibleDistance`, fading in from there to
     /// `iMapMarkerFadeStartDistance`. None indoors.
-    pub fn compass_location_markers(&self) -> Vec<CompassMarker> {
+    fn compass_location_markers(&self) -> Vec<CompassMarker> {
         let Location::Exterior { world, .. } = self.location else {
             return Vec::new();
         };

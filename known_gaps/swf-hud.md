@@ -26,7 +26,8 @@ isn't public; the choices below are what the movies' code allows.
   forced (no fade) only when full.
 - **The compass.** `SetCompassAngle` gets the camera's heading (degrees
   clockwise from north) as both the player's and the compass's angle. Its
-  location markers: `known_gaps/map-markers.md`.
+  location markers: `known_gaps/map-markers.md`; its quest targets and
+  enemies: `known_gaps/quest-targets.md`.
 - **Notifications** (`Debug.Notification`) go to `ShowMessage`, each once.
   **Help messages** (`Message.ShowAsHelpMessage`) go to
   `ShowTutorialHintText(text, true)`, and `("", false)` when they go.

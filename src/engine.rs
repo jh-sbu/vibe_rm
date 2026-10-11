@@ -211,6 +211,8 @@ pub struct Engine {
     pub messages: crate::messages::Messages,
     /// Map markers on the map and discovered (`crate::map_markers`).
     pub map_markers: crate::map_markers::MapMarkers,
+    /// Where the tracked quests' objectives point (`crate::quest_targets`).
+    pub quest_targets: crate::quest_targets::QuestTargets,
     /// References by the enable parent they follow (`XESP`).
     enable_children: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
     /// Each NPC's first placed reference (unique actors' references).
@@ -354,6 +356,7 @@ impl Engine {
             magic: Default::default(),
             messages: Default::default(),
             map_markers: Default::default(),
+            quest_targets: Default::default(),
             barks: Default::default(),
             scenes: Default::default(),
             story: Default::default(),
@@ -2312,6 +2315,7 @@ impl Engine {
         self.update_triggers();
         self.update_story();
         self.update_map_markers(dt);
+        self.update_quest_targets(dt);
         self.update_projectiles(dt);
         self.update_skills(dt);
         self.update_magic(dt);
