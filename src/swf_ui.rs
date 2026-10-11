@@ -1153,7 +1153,7 @@ impl Hud {
     /// markers (`CompassTargetDataA`: heading, alpha, frame and scale of
     /// each) and the location's name.
     fn compass(&mut self, engine: &Engine) {
-        let markers = engine.compass_location_markers();
+        let markers = engine.compass_markers();
         let moved = markers != self.sent.compass_markers;
         if moved {
             let data = markers

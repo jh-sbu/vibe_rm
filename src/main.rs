@@ -32,6 +32,7 @@ mod physics;
 mod pickpocket;
 mod player;
 mod player_body;
+mod quest_targets;
 mod relationships;
 #[cfg(feature = "remote-console")]
 mod remote;

@@ -17,6 +17,9 @@ game each piece unlocks.
   markers come onto the map and are discovered as the player nears them,
   with the banner, the discovery music and Locations Discovered; `AddToMap`,
   `EnableFastTravel`, `IsMapMarkerVisible`; `known_gaps/map-markers.md`),
+  the tracked quests' targets (`QSTA`; the load door the way to one starts
+  at when it is elsewhere) and the enemies fighting the player
+  (`known_gaps/quest-targets.md`),
   location, the
   crosshair's activate text, subtitles, notifications, help messages, quest
   banners, the sneak eye, enemy health, the activate key's art; message boxes
@@ -818,8 +821,7 @@ game each piece unlocks.
      `known_gaps/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
    - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
 6. **UI**: inventory (categories, equipping, item details), map, quest
-   targets on a compass and the map (`QSTA`) for the tracked quests (tracking
-   itself done: see Done)
+   targets on the map (on the compass: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
      item menus, the journal, the gift, magic, favorites and tween menus
      done: see Done): the magic menu's shouts (with shouts); the tween
@@ -838,8 +840,8 @@ game each piece unlocks.
      picked, pockets picked, bounties, kills, skill increases, books read,
      days jailed...: only quest completions and scripts' `IncrementStat`
      count now)
-   - The HUD's compass: quest targets, enemies, the player's own marker; the
-     shout, charge and
+   - The HUD's compass: the player's own marker (with the map), location
+     aliases as quest targets; the shout, charge and
      survival meters, load door info, favor mode
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);
