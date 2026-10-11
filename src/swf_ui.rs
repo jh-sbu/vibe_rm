@@ -1,7 +1,7 @@
 //! The game's own menus (Interface `.swf` movies through `ui_swf`), driven from
 //! the engine: the HUD (`hudmenu.swf`), message boxes (`messagebox.swf`) and
 //! the item menus (the inventory, containers and pockets, bartering: in
-//! `item_menu`), in place of egui's.
+//! `item_menu`) and the journal (`journal_menu`), in place of egui's.
 //!
 //! Each frame the HUD is told what changed: the health, magicka and stamina
 //! meters, the compass heading, the location, what the crosshair is on, what's
@@ -11,6 +11,7 @@
 //! known (`known_gaps/swf-hud.md`).
 
 mod item_menu;
+mod journal_menu;
 
 use std::time::Duration;
 
@@ -37,6 +38,9 @@ pub struct SwfUi {
     /// the item menu's next update.
     favorite: bool,
     equip: Option<f32>,
+    /// The journal, while open, and where it was left.
+    journal: Option<journal_menu::JournalMenu>,
+    journal_saved: journal_menu::Saved,
     buttons: Arc<Buttons>,
     size: (u32, u32),
     /// The keyboard's modifiers and the cursor, for the menus' input.
@@ -78,6 +82,8 @@ impl SwfUi {
             item_indices: Vec::new(),
             favorite: false,
             equip: None,
+            journal: None,
+            journal_saved: Default::default(),
             buttons,
             size,
             modifiers: Default::default(),
@@ -91,6 +97,9 @@ impl SwfUi {
         if let Some(items) = &mut self.items {
             items.menu.resize(width, height);
         }
+        if let Some(journal) = &mut self.journal {
+            journal.menu.resize(width, height);
+        }
         self.size = (width, height);
     }
 
@@ -103,6 +112,7 @@ impl SwfUi {
             answer(&self.hud.menu, engine, &call);
         }
         self.item_menu(engine, dt);
+        self.journal_menu(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
         for call in self.message_box.menu.take_calls() {
@@ -160,15 +170,54 @@ impl SwfUi {
         }
     }
 
+    /// Opens the journal when the engine's menu is it, closes it when it
+    /// goes, and answers its calls.
+    fn journal_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        if engine.menu != Some(crate::items::Menu::Journal) {
+            self.journal = None;
+            return;
+        }
+        if self.journal.is_none() {
+            let buttons = self.buttons.clone();
+            match journal_menu::JournalMenu::open(
+                &self.ui,
+                self.size,
+                engine,
+                &self.journal_saved,
+                buttons,
+            ) {
+                Ok(m) => {
+                    engine.play_sound_at("UIJournalOpen", engine.camera.position);
+                    self.journal = Some(m);
+                }
+                Err(e) => {
+                    log::error!("journal: {e:#}");
+                    engine.menu = None;
+                    return;
+                }
+            }
+        }
+        let Some(journal) = &mut self.journal else {
+            return;
+        };
+        journal.update(engine);
+        journal.menu.advance(dt);
+        for call in journal.menu.take_calls() {
+            if !journal.answer(engine, &call, &mut self.journal_saved) {
+                answer(&journal.menu, engine, &call);
+            }
+        }
+    }
+
     /// Whether the game's menus handle the engine's menu (egui doesn't draw
     /// it then).
     pub fn shows(menu: crate::items::Menu) -> bool {
-        item_menu::ItemMenu::shows(menu)
+        item_menu::ItemMenu::shows(menu) || menu == crate::items::Menu::Journal
     }
 
     /// Whether a menu over the world takes the keyboard and mouse.
     pub fn wants_input(&self) -> bool {
-        self.message_box.shown.is_some() || self.items.is_some()
+        self.message_box.shown.is_some() || self.items.is_some() || self.journal.is_some()
     }
 
     /// The window's input, to the menu on top while one takes it (the console
@@ -184,6 +233,15 @@ impl SwfUi {
         }
         if !self.wants_input() {
             return false;
+        }
+        // The journal's own keys, unless a message box is over it.
+        if let WindowEvent::KeyboardInput { event, .. } = event
+            && event.state == ElementState::Pressed
+            && !event.repeat
+            && let PhysicalKey::Code(code) = event.physical_key
+            && self.journal_key(code)
+        {
+            return true;
         }
         // The item menu's own keys and buttons, unless a message box is over it.
         let item_menu = self.message_box.shown.is_none() && self.items.is_some();
@@ -284,12 +342,28 @@ impl SwfUi {
         true
     }
 
-    /// The menu taking input: a message box, else the item menu.
+    /// The menu taking input: a message box, else the item menu or the
+    /// journal.
     fn top(&self) -> &Menu {
-        match (&self.message_box.shown, &self.items) {
-            (None, Some(items)) => &items.menu,
+        match (&self.message_box.shown, &self.items, &self.journal) {
+            (None, Some(items), _) => &items.menu,
+            (None, None, Some(journal)) => &journal.menu,
             _ => &self.message_box.menu,
         }
+    }
+
+    /// The journal's own keys (none while a message box is over it): Esc and
+    /// the journal key close it. True when the key was one of them.
+    fn journal_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
+        use winit::keyboard::KeyCode;
+        let (None, Some(journal)) = (&self.message_box.shown, &self.journal) else {
+            return false;
+        };
+        if matches!(code, KeyCode::Escape | KeyCode::KeyJ) {
+            journal.close();
+            return true;
+        }
+        false
     }
 
     /// The item menu's own keys (none while a message box is over it): Esc
@@ -322,7 +396,7 @@ impl SwfUi {
     /// (`--menu-key`, for testing).
     pub fn press(&mut self, code: winit::keyboard::KeyCode) {
         use ui_swf::PlayerEvent;
-        if !self.wants_input() || self.item_key(code) {
+        if !self.wants_input() || self.item_key(code) || self.journal_key(code) {
             return;
         }
         let menu = self.top();
@@ -330,6 +404,25 @@ impl SwfUi {
             menu.handle_event(PlayerEvent::KeyDown { key });
             menu.handle_event(PlayerEvent::KeyUp { key });
         }
+    }
+
+    /// A left click at (x, y) in the menu on top (`--menu-key click:x,y`, for
+    /// testing).
+    pub fn click(&mut self, x: f64, y: f64) {
+        use ui_swf::{MouseButton, PlayerEvent};
+        if !self.wants_input() {
+            return;
+        }
+        let menu = self.top();
+        let button = MouseButton::Left;
+        menu.handle_event(PlayerEvent::MouseMove { x, y });
+        menu.handle_event(PlayerEvent::MouseDown {
+            x,
+            y,
+            button,
+            index: None,
+        });
+        menu.handle_event(PlayerEvent::MouseUp { x, y, button });
     }
 
     /// Whether the HUD shows: not while a menu is up, as in the game.
@@ -347,6 +440,10 @@ impl SwfUi {
         if let Some(items) = &mut self.items {
             items.menu.render();
             menus.push(&items.menu);
+        }
+        if let Some(journal) = &mut self.journal {
+            journal.menu.render();
+            menus.push(&journal.menu);
         }
         if self.message_box.shown.is_some() {
             self.message_box.menu.render();

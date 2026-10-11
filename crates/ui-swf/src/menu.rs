@@ -39,6 +39,16 @@ impl Movie<'_, '_> {
     pub fn get(&mut self, path: &str) -> Value {
         ruffle_core::external::get_avm1_variable(self.context, path)
     }
+
+    /// Sets a variable (`_root.List.entryList`).
+    pub fn set(&mut self, path: &str, value: Value) {
+        ruffle_core::external::set_avm1_variable(self.context, path, value)
+    }
+
+    /// Calls a function (`_root.List.entryList.push`), as `Menu::invoke`.
+    pub fn invoke(&mut self, path: &str, args: &[Value]) -> Value {
+        ruffle_core::external::invoke_avm1(self.context, path, args.iter().cloned())
+    }
 }
 
 /// Answers calls that want one, while the menu waits: the arguments of the

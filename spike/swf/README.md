@@ -287,10 +287,22 @@ commit of its own on top (`git log -- vendor/ruffle`):
     with a callback forgets the call once `ExternalInterface.call` returns,
     so the game answers during the call (`ui_swf::Menu::set_responder`), and
     an answer may depend on the movie (the inventory's selected item).
+    `set_avm1_variable` and `invoke_avm1` take the context too: the journal's
+    `RequestQuestsData` hands the game its list to fill during the call.
 11. Glyph shapes are built when first drawn. Ruffle built every ASCII glyph
     of a font when the font was defined; with the menus' twenty-odd faces
     that took opening the inventory to 1.6 s (now 0.1 s).
-12. The spike's instrumentation, marked `SPIKE`, behind the `spike` cargo
+12. More of Scaleform's AS2 text field extensions, which the journal needs:
+    - `verticalAutoSize` ("top", "center", "bottom"): the height follows the
+      text, the width kept (the quest description, the multiline lists);
+    - `textAutoSize = "shrink"` ("fit" taken as it): text that doesn't fit
+      the field is laid out smaller, by the overflow's ratio, a few passes
+      (quest titles, list entries, the stats' values; the item menus use it
+      too);
+    - `getLineOffset(line)` and `getCharBoundaries(i)` (`{x, y, width,
+      height, left, top, right, bottom}`), which place the objectives under
+      the description.
+13. The spike's instrumentation, marked `SPIKE`, behind the `spike` cargo
     feature of `ruffle_core` and `ruffle_render_wgpu` (off by default; the
     harness turns it on):
    - the `SPIKE_INLINE_BLENDS`, `SPIKE_NOFILTERS` and `SPIKE_NOVSYNC` switches;

@@ -83,6 +83,12 @@ pub fn call(
         ("game", "getplayergrabbedref") => {
             v(e.grabbed_ref().map_or(Value::None, |r| e.object_value(r)))
         }
+        ("game", "incrementstat") => {
+            let by = args.get(1).map_or(1, |a| a.as_int());
+            e.increment_stat(&arg(0).to_string(), by);
+            none()
+        }
+        ("game", "querystat") => v(Value::Int(e.query_stat(&arg(0).to_string()))),
         ("game", "getplayer") => v(e.object_value(crate::engine::PLAYER_REF)),
         ("game", "getform") => v(e.object_value(FormId(arg(0).as_int() as u32))),
         ("game", "getformfromfile") => {
@@ -1158,10 +1164,21 @@ pub fn call(
             }
             v(Value::Bool(true))
         }
-        ("quest", "isrunning") | ("quest", "isactive") => v(Value::Bool(
+        ("quest", "isrunning") => v(Value::Bool(
             me.and_then(|q| e.scripts.quests.get(&q))
                 .is_some_and(|s| s.running),
         )),
+        // Tracked in the journal.
+        ("quest", "isactive") => v(Value::Bool(
+            me.and_then(|q| e.scripts.quests.get(&q))
+                .is_some_and(|s| s.active),
+        )),
+        ("quest", "setactive") => {
+            if let Some(q) = me {
+                e.set_quest_active(q, args.first().is_none_or(|a| a.as_bool()));
+            }
+            none()
+        }
         ("quest", "iscompleted") => v(Value::Bool(
             me.and_then(|q| e.scripts.quests.get(&q))
                 .is_some_and(|s| s.completed),

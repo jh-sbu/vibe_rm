@@ -37,6 +37,7 @@ mod render;
 mod scene;
 mod script;
 mod skills;
+mod stats;
 mod story;
 mod swf_ui;
 mod traps;
@@ -76,7 +77,8 @@ pub struct Options {
     pub talk: Option<String>,
     pub choose: Vec<usize>,
     /// Keys pressed in the game's menus in screenshot mode, a third of a
-    /// second apart (winit key names: `ArrowRight`, `KeyE`).
+    /// second apart (winit key names: `ArrowRight`, `KeyE`), or `click:x,y`
+    /// for a left click there.
     pub menu_keys: Vec<String>,
     /// While waiting, also save a screenshot every this many frames.
     pub burst: Option<u32>,
