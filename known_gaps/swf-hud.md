@@ -120,7 +120,8 @@ isn't public; the choices below are what the movies' code allows.
   hand). Tab is the menu's own
   (it fades out, then calls `CloseMenu`); Esc goes through `StartMenuFade`
   the same way. Left on the categories and clicking outside
-  (`ShowTweenMenu`) close the menu, as there is no tween menu yet.
+  (`ShowTweenMenu`) fade it out back to the tween menu
+  (`known_gaps/tween-menu.md`).
   `CheckForMouseEquip(button)` (a click on the item's model) is answered
   with `(button, false)`.
 

@@ -67,6 +67,8 @@ pub(super) struct MagicMenu {
     player: Option<Value>,
     /// Closing: it fades out, then calls `CloseMenu`.
     pub closing: bool,
+    /// Closing for the tween menu (`ShowTweenMenu`), not the world.
+    to_tween: bool,
 }
 
 /// The categories for `SetCategoriesList`: (name, flag, always listed) each.
@@ -141,6 +143,7 @@ impl MagicMenu {
             cards,
             player: None,
             closing: false,
+            to_tween: false,
         };
         m.update(engine);
         if !indices.is_empty() {
@@ -244,10 +247,15 @@ impl MagicMenu {
             }
             "CloseMenu" => {
                 if engine.menu == Some(crate::items::Menu::Magic) {
-                    engine.menu = None;
+                    engine.menu = self.to_tween.then_some(crate::items::Menu::Tween);
                 }
             }
-            "ShowTweenMenu" | "CloseTweenMenu" => self.closing = true,
+            // Back to the tween menu, or the world.
+            "ShowTweenMenu" => {
+                self.closing = true;
+                self.to_tween = true;
+            }
+            "CloseTweenMenu" => self.closing = true,
             // Shouts (not built), the item's model (none for spells).
             "ShowShoutFail" | "UpdateItem3D" | "StartMouseRotation" | "StopMouseRotation"
             | "ZoomItemModel" | "DisabledItemSelect" => {}

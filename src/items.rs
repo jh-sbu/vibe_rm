@@ -37,6 +37,8 @@ pub enum Menu {
     Magic,
     /// The player's favorite items, spells and powers.
     Favorites,
+    /// Tab's menu of menus (Skills, Magic, Items, Map).
+    Tween,
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,

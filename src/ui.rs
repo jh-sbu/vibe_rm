@@ -715,9 +715,9 @@ impl Ui {
             ui.label(format!("{} items, weight {weight:.1}", items.len()));
         };
         let container = match menu {
-            // Only the game's menus have the gift, magic and favorites menus: they close
+            // Only the game's menus have the gift, magic, favorites and tween menus: they close
             // at once.
-            Menu::Gift(_) | Menu::Magic | Menu::Favorites => {
+            Menu::Gift(_) | Menu::Magic | Menu::Favorites | Menu::Tween => {
                 engine.menu = None;
                 return;
             }
