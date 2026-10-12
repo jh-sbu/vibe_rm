@@ -563,6 +563,11 @@ impl Engine {
         let mut landed: Vec<(FormId, FormId, Option<FormId>, Vec3, Vec3)> = Vec::new();
         let player = self.player.position;
         let (pr, ph) = (self.physics.player_radius, self.physics.player_half_height);
+        // Placed actors, and those made while playing.
+        let is_actor = |o: FormId| {
+            self.lo.tag_of(o).is_some_and(|t| t.0 == *b"ACHR")
+                || self.created_refs.refs.get(&o).is_some_and(|c| c.actor)
+        };
         for p in self.projectiles.iter_mut() {
             p.age += dt;
             if let Some(t) = p.stuck.as_mut() {
@@ -609,7 +614,7 @@ impl Engine {
                 }
                 (Some((t, owner)), _) if p.spell.is_some() => {
                     p.pos = start + dir * t;
-                    let actor = owner.filter(|o| self.lo.tag_of(*o).map(|t| t.0) == Some(*b"ACHR"));
+                    let actor = owner.filter(|&o| is_actor(o));
                     landed.push((p.shooter, p.spell.unwrap(), actor, p.pos, dir));
                     if let Some(o) = owner.filter(|_| actor.is_none()) {
                         struck.push((p.shooter, o, p.arrow.projectile, p.vel));
@@ -618,7 +623,7 @@ impl Engine {
                 }
                 (Some((t, owner)), _) => {
                     p.pos = start + dir * t;
-                    match owner.filter(|o| self.lo.tag_of(*o).map(|t| t.0) == Some(*b"ACHR")) {
+                    match owner.filter(|&o| is_actor(o)) {
                         Some(actor) => {
                             hits.push((actor, p.shooter, p.damage, p.arrow.clone(), p.pos, dir));
                             p.stuck = Some(0.0);

@@ -68,6 +68,16 @@ impl Whereabouts {
         self.of.insert(r, (place, pos));
         self.by_place.entry(place).or_default().push(r);
     }
+
+    /// A created actor gone for good.
+    pub fn remove_actor(&mut self, r: FormId) {
+        self.actors.retain(|&a| a != r);
+        self.of.remove(&r);
+        self.prev.remove(&r);
+        for v in self.by_place.values_mut() {
+            v.retain(|&a| a != r);
+        }
+    }
 }
 
 impl Engine {

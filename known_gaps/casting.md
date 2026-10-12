@@ -62,7 +62,8 @@ Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
 - **Greater powers** come back a game day after they were used (a day of
   game time, not the next day); lesser powers whenever.
 - **Who casts in combat**: an actor whose combat style's magic multiplier
-  is above its melee one, with a hostile aimed or target actor spell it has
+  is above its melee one (or equal to it, holding no weapon: a flame
+  atronach's are both 1), with a hostile aimed or target actor spell it has
   the magicka for (a second's worth of a concentration spell), fights with
   the costliest of them; otherwise as everyone else. The game weighs every
   weapon and spell by its scores; that isn't public.

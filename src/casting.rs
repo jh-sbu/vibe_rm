@@ -344,7 +344,18 @@ impl Engine {
             .values()
             .flat_map(|rt| &rt.actors)
             .filter(|a| !a.dead && a.combat.as_ref().is_some_and(|c| !c.fleeing))
-            .map(|a| (a.ref_id, a.stats.magic_mult > a.stats.melee_mult))
+            .map(|a| {
+                // Equal scores: those with no weapon to hand (atronachs) cast.
+                let unarmed = || {
+                    self.inventories
+                        .get(&a.ref_id)
+                        .and_then(|i| i.weapon(&self.lo))
+                        .is_none()
+                };
+                let caster = a.stats.magic_mult > a.stats.melee_mult
+                    || (a.stats.magic_mult == a.stats.melee_mult && unarmed());
+                (a.ref_id, caster)
+            })
             .collect();
         for (actor, caster) in fighters {
             let pick = if caster {
@@ -633,7 +644,7 @@ impl Engine {
     }
 
     /// Whether a reference is an actor (placed or made while playing).
-    fn is_actor_ref(&self, r: FormId) -> bool {
+    pub(crate) fn is_actor_ref(&self, r: FormId) -> bool {
         r == PLAYER_REF
             || self.created(r).map_or_else(
                 || self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR"),
@@ -679,6 +690,15 @@ impl Engine {
                 .filter(|i| !i.is_null())
         {
             self.impact_at(ipds, target, at, dir);
+        }
+        // Summons are the caster's effects, bringing their actor where the
+        // spell lands.
+        if item.effects.iter().any(|e| {
+            self.magic_effect(e.effect)
+                .is_some_and(|m| m.archetype == crate::magic::archetype::SUMMON_CREATURE)
+        }) {
+            self.apply_item_at(spell, caster, caster, at);
+            return;
         }
         let mut struck: Vec<FormId> = target.into_iter().collect();
         let area = item.effects.iter().map(|e| e.area).max().unwrap_or(0) as f32;

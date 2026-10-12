@@ -357,18 +357,18 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Undead: of an `ActorTypeUndead` race (the game caches its own
         // reading; see `known_gaps/magic.md`).
         715 => b(subject.is_some_and(|s| e.has_keyword(s, FormId(0x13796)))), // IsUndead
-        // Commanded: summoned or raised by someone; there are none yet.
-        700 => b(false),                                      // IsCommandedActor
-        354 => b(subject.is_some_and(|s| e.is_essential(s))), // IsEssential
-        721 => b(subject.is_some_and(|s| e.is_poison(s))),    // IsPoison
+        // Commanded: summoned (or raised) by someone.
+        700 => b(subject.is_some_and(|s| e.commander_of(s).is_some())), // IsCommandedActor
+        354 => b(subject.is_some_and(|s| e.is_essential(s))),           // IsEssential
+        721 => b(subject.is_some_and(|s| e.is_poison(s))),              // IsPoison
         300 => b(matches!(e.location, crate::engine::Location::Interior(_))), // IsInInterior
         67 => b(subject.and_then(|s| e.lo.cell_of_ref(s)) == Some(p1)), // GetInCell
         310 => {
             b(matches!(e.location, crate::engine::Location::Exterior { world, .. } if world == p1))
         } // GetInWorldspace
-        46 => b(subject.is_some_and(|s| e.is_dead(s))),       // GetDead
-        84 => Some(0.0),                                      // GetDeadCount
-        80 => Some(e.actor_level(subject?) as f32),           // GetLevel
+        46 => b(subject.is_some_and(|s| e.is_dead(s))),                 // GetDead
+        84 => Some(0.0),                                                // GetDeadCount
+        80 => Some(e.actor_level(subject?) as f32),                     // GetLevel
         // Actor values (`actor_values`).
         14 => Some(e.actor_value(subject?, c.p1)), // GetActorValue
         277 => Some(e.av_base(subject?, c.p1)),    // GetBaseActorValue
@@ -608,8 +608,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             b(subject.is_some_and(|s| e.combat_state(s) != crate::ai::combat::CombatState::None))
         } // IsInCombat
         580 => b(subject.is_some_and(|s| e.is_bleeding_out(s))), // IsBleedingOut
-        // Nobody casts, swims, feeds or takes commands yet.
-        101 | 185 | 700 | 226 => b(false),
+        // Nobody casts, swims or feeds yet.
+        101 | 185 | 226 => b(false),
         // Behaviour graph variables of the subject's graph (the idle-picking
         // fallback below answers for actors without one).
         675 | 447 if subject.is_some_and(|s| e.graph_variable(s, "").is_some()) => {

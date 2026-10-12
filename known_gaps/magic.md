@@ -90,8 +90,7 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   is still struck by a hostile spell (it fights its caster).
 - **`IsUndead`** is the subject having the `ActorTypeUndead` keyword; the
   game caches its own reading (CommonLibSSE `CalculateCachedOwnerIsUndead`),
-  whose rule isn't public. **`IsCommandedActor`** is false: nothing is
-  summoned or raised yet.
+  whose rule isn't public. **`IsCommandedActor`**: a summoned actor.
 - **Calm** ends the target's fight; while calm it looks for no fights (nor
   joins its allies'). Any blow or hostile spell landing on it ends the calm
   and it fights back (UESP: no will to fight "unless the target is
@@ -106,13 +105,28 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   caster for it. When it ends, the target leaves a fight with someone it
   wouldn't fight now, and those fighting it who wouldn't fight it leave
   theirs; the game's own clean-up isn't described.
+- **Summons** (archetype 18; the NPC is the effect's related form): the
+  effect is the caster's, and its actor appears where a target location
+  spell lands (cast some other way, beside the caster), facing the caster.
+  A commander has one summon, more by its Mod Commanded Actor Limit perk
+  entries (Twin Souls: +1; tabs: owner, spell); a new one sends the oldest
+  away. The summoned follow their commander (keeping 160 to 320 units off,
+  running), are moved beside it when more than 4096 units behind out of a
+  fight, fight the nearest actor fighting their commander (or the one it
+  fights), within 3000 units, never their commander, and pick no fights
+  of their own (their own aggression is ignored). Others treat them as
+  their AI data says. When the effect ends, or the summoned is killed or
+  left in an unloaded cell (its commander through a load door), it goes at
+  once: no banishing effect, no body left. The distances are chosen by
+  eye; the game's follow and catch-up rules for commanded actors aren't
+  public.
 - **Not done**: NPCs casting by hand (the player's casting:
   `known_gaps/casting.md`), runes, dual casting, effect visuals (hit shaders,
   art objects, light) and sounds, magic in NPC combat. Archetypes other than
   value / peak / dual value modifiers, absorb, script, cure disease / poison /
   paralysis, invisibility, stagger and the target value modifiers (calm,
-  fear, frenzy, rally, turn undead): paralysis only sets the actor value (no
-  ragdoll); summons, bound weapons, light, detect life, telekinesis, soul
+  fear, frenzy, rally, turn undead) and summons: paralysis only sets the
+  actor value (no ragdoll); NPCs summoning, reanimating, bound weapons, light, detect life, telekinesis, soul
   trap, reanimate, cloaks, slow time, wards and the rest do nothing yet. Taper, area, enchantment
   charges, poisons on weapons, addictions, potion and food flags beyond
   "use it". The active effects aren't shown in a menu. Nothing is saved.
