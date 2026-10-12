@@ -767,7 +767,7 @@ pub fn call(
         // The merchant's barter menu; a teammate's inventory to trade with.
         ("actor", "showbartermenu") => {
             if let Some(r) = me {
-                e.menu = Some(crate::items::Menu::Barter(r));
+                e.show_barter_menu(r);
             }
             none()
         }

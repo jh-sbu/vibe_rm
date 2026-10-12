@@ -762,6 +762,14 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             }
             Err(_) => vec!["bad number".into()],
         },
+        "set" if args.len() >= 3 && args[0].eq_ignore_ascii_case("gamedayspassed") => match args[2].parse::<f32>() {
+            Ok(d) if d >= 0.0 => {
+                engine.day = d as u32;
+                engine.hour = d.fract() * 24.0;
+                vec![format!("gamedayspassed {d}")]
+            }
+            _ => vec!["bad number".into()],
+        },
         "tsh" | "toggleshadows" => {
             engine.renderer.shadows_enabled = !engine.renderer.shadows_enabled;
             vec![format!("shadows {}", if engine.renderer.shadows_enabled { "on" } else { "off" })]
@@ -1116,8 +1124,11 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             vec![format!("opened {r}")]
         }
         "showbartermenu" => {
-            engine.menu = Some(crate::items::Menu::Barter(r));
-            vec![format!("bartering with {r}")]
+            engine.show_barter_menu(r);
+            vec![format!(
+                "bartering with {r} (stock in {})",
+                engine.vendor_stock(r)
+            )]
         }
         // showinventory open: the player's inventory menu.
         "showinventory" | "inv" if args.first() == Some(&"open") => {

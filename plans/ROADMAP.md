@@ -31,7 +31,8 @@ game each piece unlocks.
   giving, Take All, the pickpocket chance) and bartering (`bartermenu.swf`
   from `Actor.ShowBarterMenu`: merchant chests, buy / sell lists, stolen
   goods, prices from Speech and the Haggling / Allure perks, the raw deal
-  warning, Speech XP) (choices: `known_gaps/swf-hud.md`,
+  warning, Speech XP, merchant chests restocked every `iDaysToRespawnVendor`
+  days) (choices: `known_gaps/swf-hud.md`,
   `known_gaps/barter.md`); the journal (`quest_journal.swf`: quests with
   their latest log entry and objectives, the miscellaneous objectives,
   completed quests, Toggle Active (`Quest.SetActive` / `IsActive`), the
@@ -837,7 +838,7 @@ game each piece unlocks.
      done: see Done): the magic menu's shouts (with shouts); the tween
      menu's Map (with the map); waiting's rest: getting into the bed first; the favorites menu's shouts and the gamepad's d-pad
      favorites; the item menus' Investor / Master
-     Trader gold, merchants' chests restocking, Fortify Barter, placing
+     Trader gold, Fortify Barter, placing
      items in pockets, NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
