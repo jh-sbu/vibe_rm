@@ -8,7 +8,11 @@
 //! factor of `fBarterMax - (fBarterMax - fBarterMin) x min(Speech, 100) / 100`
 //! the player buys at and sells at the inverse of, the perks' Mod Buy / Sell
 //! Prices entry points applied, buying never under 1.05 x the value and
-//! selling never over it. Open questions: `known_gaps/barter.md`.
+//! selling never over it. A merchant chest is stocked anew from its
+//! container's items once `iDaysToRespawnVendor` days have passed since it
+//! last was. Open questions: `known_gaps/barter.md`.
+
+use std::collections::HashMap;
 
 use esp::FormId;
 use esp::actor_value as av;
@@ -30,7 +34,47 @@ pub struct Vendor {
     pub list: Vec<FormId>,
 }
 
+/// Merchant chests and the game hour they were last stocked.
+#[derive(Default)]
+pub struct Restocks {
+    pub stocked: HashMap<FormId, f64>,
+}
+
 impl Engine {
+    /// Opens the barter menu with a merchant, their chest restocked if it is
+    /// due.
+    pub fn show_barter_menu(&mut self, vendor: FormId) {
+        let stock = self.vendor_stock(vendor);
+        if stock != vendor {
+            self.restock(stock);
+        }
+        self.menu = Some(crate::items::Menu::Barter(vendor));
+    }
+
+    /// Stocks a merchant chest anew from its container's items (leveled lists
+    /// rolled again) when `iDaysToRespawnVendor` days have passed since it
+    /// last was; what the player sold to it and its gold go. A chest is
+    /// stocked when first traded with.
+    pub fn restock(&mut self, chest: FormId) {
+        let now = self.game_hours_total();
+        let Some(&at) = self.restocks.stocked.get(&chest) else {
+            self.restocks.stocked.insert(chest, now);
+            return;
+        };
+        let days = crate::ai::combat::gmst_i32(&self.lo, "iDaysToRespawnVendor", 2) as f64;
+        if now - at < days * 24.0 {
+            return;
+        }
+        let Some(base) = self.base_of(chest) else {
+            return;
+        };
+        let seed = self.rand();
+        let inv = crate::world::inventory::container_inventory(&self.lo, base, seed);
+        self.inventories.insert(chest, inv);
+        self.restocks.stocked.insert(chest, now);
+        log::info!("restocked merchant chest {chest}");
+    }
+
     /// The merchant's vendor faction, if they are one.
     pub fn vendor_of(&self, actor: FormId) -> Option<Vendor> {
         self.npc_factions(actor).into_iter().find_map(|(f, _)| {

@@ -6,7 +6,8 @@ formula and the Haggling / Allure numbers, the game settings `fBarterMin` and
 `fBarterMax`, the vendor factions in Skyrim.esm (`FACT` `VENC`, `VENV`,
 `VEND`), the Haggling perk's own entry points (8 Mod Buy Prices, multiply
 0.91; 60 Mod Sell Prices, multiply 1.1), the `OfferServicesTopic` fragments
-calling `Actor.ShowBarterMenu`.
+calling `Actor.ShowBarterMenu`, UESP's Skyrim:Merchants page (merchants
+restock every 48 hours) and the game setting `iDaysToRespawnVendor` (2).
 
 ## Unconfirmed: choices made
 
@@ -31,3 +32,11 @@ calling `Actor.ShowBarterMenu`.
 - **The merchant's hours** (`VENV`) aren't checked on opening: the scripts
   that call `ShowBarterMenu` come from topics whose conditions check them
   (`GetOffersServicesNow`).
+- **Restocking.** A merchant chest is restocked when the barter menu opens
+  and `iDaysToRespawnVendor` days have passed since it was last stocked; a
+  chest is first stocked when first traded with, not at the start of the
+  game. Restocking replaces the chest's whole inventory with its container's
+  items, leveled lists rolled again: what the player sold to it, and items
+  scripts added to it, are gone, and its gold is back to the container's.
+  Merchants without a chest (selling what they carry) aren't restocked.
+  Restock times aren't saved.

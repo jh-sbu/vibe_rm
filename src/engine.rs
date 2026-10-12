@@ -217,6 +217,8 @@ pub struct Engine {
     pub quest_targets: crate::quest_targets::QuestTargets,
     /// Plants harvested (`crate::harvest`).
     pub harvests: crate::harvest::Harvests,
+    /// Merchant chests stocked (`crate::barter`).
+    pub restocks: crate::barter::Restocks,
     /// References by the enable parent they follow (`XESP`).
     enable_children: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
     /// Each NPC's first placed reference (unique actors' references).
@@ -362,6 +364,7 @@ impl Engine {
             map_markers: Default::default(),
             quest_targets: Default::default(),
             harvests: Default::default(),
+            restocks: Default::default(),
             barks: Default::default(),
             scenes: Default::default(),
             story: Default::default(),
