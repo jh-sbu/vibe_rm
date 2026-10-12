@@ -63,6 +63,8 @@ pub struct Arrow {
     pub damage: f32,
     pub speed: f32,
     pub gravity: f32,
+    /// How far it may fly (`PROJ` range).
+    pub range: f32,
     pub model: Option<String>,
 }
 
@@ -82,18 +84,43 @@ pub fn arrow(lo: &LoadOrder, ammo: FormId) -> Option<Arrow> {
         damage: f32_at(d, 8),
         speed: 3600.0,
         gravity: 0.35,
+        range: BOW_RANGE * 4.0,
         model: None,
     };
-    if let Some(p) = lo.get(proj) {
-        if let Some(pd) = p.get(b"DATA").filter(|d| d.len() >= 12) {
-            a.gravity = f32_at(pd, 4);
-            a.speed = f32_at(pd, 8).max(100.0);
-        }
-        a.model = crate::world::records::model_path(&p);
-    }
+    read_projectile(lo, proj, &mut a);
     if a.model.is_none() {
         a.model = crate::world::records::model_path(&rec);
     }
+    Some(a)
+}
+
+/// A `PROJ` record's gravity, speed, range and model (`DATA`), into `a`.
+fn read_projectile(lo: &LoadOrder, proj: FormId, a: &mut Arrow) {
+    let Some(p) = lo.get(proj).filter(|r| r.tag().0 == *b"PROJ") else {
+        return;
+    };
+    if let Some(pd) = p.get(b"DATA").filter(|d| d.len() >= 16) {
+        a.gravity = f32_at(pd, 4);
+        a.speed = f32_at(pd, 8).max(100.0);
+        a.range = f32_at(pd, 12).max(100.0);
+    }
+    a.model = crate::world::records::model_path(&p);
+}
+
+/// What a spell's projectile (`PROJ`) flies as: no ammunition, no damage of
+/// its own.
+pub fn spell_projectile(lo: &LoadOrder, proj: FormId) -> Option<Arrow> {
+    let mut a = Arrow {
+        ammo: FormId::NULL,
+        projectile: proj,
+        damage: 0.0,
+        speed: 1000.0,
+        gravity: 0.0,
+        range: 4096.0,
+        model: None,
+    };
+    lo.get(proj).filter(|r| r.tag().0 == *b"PROJ")?;
+    read_projectile(lo, proj, &mut a);
     Some(a)
 }
 
@@ -128,6 +155,11 @@ pub struct Projectile {
     /// Stuck in the world (pointing the way it flew), for this many seconds more.
     pub stuck: Option<f32>,
     pub dir: Vec3,
+    /// The spell it carries: where it lands, its effects do (no damage of
+    /// its own, never stuck anywhere).
+    pub spell: Option<FormId>,
+    /// Seconds it may fly.
+    pub lifetime: f32,
 }
 
 /// Elevation (radians above the straight line) to strike a point `d` away
@@ -376,6 +408,45 @@ impl Engine {
             age: 0.0,
             stuck: None,
             dir: vel.normalize_or_zero(),
+            spell: None,
+            lifetime: FLIGHT_TIME,
+        });
+    }
+
+    /// Cast a spell's projectile from `from` along `dir`: it flies as far as
+    /// its range.
+    pub(crate) fn spawn_spell_projectile(
+        &mut self,
+        caster: FormId,
+        spell: FormId,
+        shot: Arrow,
+        from: Vec3,
+        dir: Vec3,
+    ) {
+        let model = shot.model.clone().and_then(|m| {
+            self.models
+                .load_all(&mut self.renderer, &self.vfs, std::slice::from_ref(&m));
+            self.models.get(&m)
+        });
+        let vel = dir.normalize_or_zero() * shot.speed;
+        let lifetime = shot.range / shot.speed;
+        log::info!(
+            "{caster} casts {spell} as {} ({:.0} units/s, {lifetime:.1}s)",
+            shot.projectile,
+            shot.speed
+        );
+        self.projectiles.push(Projectile {
+            shooter: caster,
+            arrow: shot,
+            pos: from,
+            vel,
+            damage: 0.0,
+            model,
+            age: 0.0,
+            stuck: None,
+            dir: vel.normalize_or_zero(),
+            spell: Some(spell),
+            lifetime,
         });
     }
 
@@ -488,6 +559,8 @@ impl Engine {
         let mut stuck: Vec<(FormId, Vec3, f32, Option<FormId>, Vec3)> = Vec::new();
         // References struck (shooter, what, its projectile, the arrow's velocity).
         let mut struck: Vec<(FormId, FormId, FormId, Vec3)> = Vec::new();
+        // Spells landing (caster, spell, the actor struck, where, flying).
+        let mut landed: Vec<(FormId, FormId, Option<FormId>, Vec3, Vec3)> = Vec::new();
         let player = self.player.position;
         let (pr, ph) = (self.physics.player_radius, self.physics.player_half_height);
         for p in self.projectiles.iter_mut() {
@@ -521,7 +594,26 @@ impl Engine {
             match (world, at_player) {
                 (_, Some(t)) if world.is_none_or(|(w, _)| t < w) => {
                     p.pos = start + dir * t;
-                    hits.push((PLAYER_REF, p.shooter, p.damage, p.arrow.clone(), p.pos, dir));
+                    match p.spell {
+                        Some(s) => landed.push((p.shooter, s, Some(PLAYER_REF), p.pos, dir)),
+                        None => hits.push((
+                            PLAYER_REF,
+                            p.shooter,
+                            p.damage,
+                            p.arrow.clone(),
+                            p.pos,
+                            dir,
+                        )),
+                    }
+                    p.stuck = Some(0.0);
+                }
+                (Some((t, owner)), _) if p.spell.is_some() => {
+                    p.pos = start + dir * t;
+                    let actor = owner.filter(|o| self.lo.tag_of(*o).map(|t| t.0) == Some(*b"ACHR"));
+                    landed.push((p.shooter, p.spell.unwrap(), actor, p.pos, dir));
+                    if let Some(o) = owner.filter(|_| actor.is_none()) {
+                        struck.push((p.shooter, o, p.arrow.projectile, p.vel));
+                    }
                     p.stuck = Some(0.0);
                 }
                 (Some((t, owner)), _) => {
@@ -547,12 +639,15 @@ impl Engine {
                 }
                 _ => p.pos += step,
             }
-            if p.age > FLIGHT_TIME && p.stuck.is_none() {
+            if p.age > p.lifetime && p.stuck.is_none() {
                 p.stuck = Some(0.0);
             }
         }
         for (shooter, what, projectile, vel) in struck {
             self.strike(what, shooter, Some(projectile), vel * ARROW_MASS, false);
+        }
+        for (caster, spell, target, at, dir) in landed {
+            self.spell_lands(caster, spell, target, at, dir);
         }
         for &(shooter, at, _, _, dir) in &stuck {
             self.arrow_impact(shooter, None, at, dir);

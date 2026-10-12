@@ -203,6 +203,9 @@ pub const MAGIC_RESIST: u32 = 44;
 pub const PARALYSIS: u32 = 53;
 pub const INVISIBILITY: u32 = 54;
 pub const MOVEMENT_NOISE_MULT: u32 = 92;
+pub const HEAL_RATE_MULT: u32 = 155;
+pub const MAGICKA_RATE_MULT: u32 = 156;
+pub const STAMINA_RATE_MULT: u32 = 157;
 /// `OneHandedMod`: each skill's modifier (`Fortify <skill>`) from here, in skill order.
 pub const FIRST_SKILL_MOD: u32 = 96;
 /// `OneHandedPowerMod`: each skill's power modifier from here, in skill order
@@ -253,5 +256,9 @@ mod tests {
         assert_eq!(super::name(105), Some("SneakMod"));
         assert_eq!(super::name(152), Some("EnchantingPowerMod"));
         assert_eq!(super::name(163), Some("ReflectDamage"));
+        assert_eq!(
+            super::name(super::MAGICKA_RATE_MULT),
+            Some("MagickaRateMult")
+        );
     }
 }

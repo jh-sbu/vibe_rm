@@ -7,6 +7,7 @@ mod app;
 mod arrest;
 mod audio;
 mod barter;
+mod casting;
 mod condition;
 mod console;
 mod created;

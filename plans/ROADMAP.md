@@ -335,6 +335,19 @@ game each piece unlocks.
   `UnequipItem`, `Spell.Cast` / `RemoteCast`, `ActiveMagicEffect`'s getters,
   `Dispel` and updates. Console `effects`, `addspell`, `removespell`, `cast`,
   `dispelallspells`; vrm-tool `magic`. Open questions: `known_gaps/magic.md`
+- Magic, second part (casting by hand): the player casts the spell in either
+  hand with that hand's attack button (fire-and-forget spells charging for
+  their charge time and cast when it comes up, concentration spells going on
+  while it is held), paying magicka (by the second for concentration), the
+  meter blinking and "You don't have enough Magicka" without it; powers on
+  Z, greater powers once a day. Deliveries: self, contact, target actor,
+  aimed (missiles flying as their `PROJ` does, flames and beams reaching at
+  once) and target location; areas striking the actors around where a
+  spell lands; impacts (scorch decals) from the effect's impact data set.
+  Destruction and the other schools gain XP from casting (hostile spells as
+  they land). Magicka comes back at the race's rate times `MagickaRateMult`,
+  slower in combat, after a moment. The Story Manager's spell cast event.
+  Console `pcast`. Open questions: `known_gaps/casting.md`
 - Harvesting: plants (`FLOR`, `TREE` with produce) found by their
   non-collidable shapes, giving their produce with their own verb and sound,
   someone else's stolen; harvested models, growing back
@@ -792,7 +805,7 @@ game each piece unlocks.
      property's own controller chain runs, on the global clock)
 2. **Story Manager** (core and fifteen events done; see Done)
    - Events waiting on their systems: crafting, item
-     removal (dropping now exists; the event's data needs a source), spell cast, shouts, bribe /
+     removal (dropping now exists; the event's data needs a source), NPCs' spell casts, shouts, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
@@ -821,9 +834,11 @@ game each piece unlocks.
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
-   animations), magic (see Done; next: casting by hand for the player and NPCs
-   with magicka, projectiles, concentration, areas and skill gain, NPCs'
-   combat magic, effect visuals and sounds, the other archetypes: calm,
+   animations), magic (see Done; next: NPCs casting with magicka (their
+   combat magic), the player's casting animations and hands in the graph,
+   dual casting, runes, wards, effect visuals (spell projectiles' models run
+   behaviour graphs, particles and shader controllers; casting and hit art,
+   lights) and sounds, the other archetypes: calm,
    frenzy, fear, summons, bound weapons, light, paralysis; enchantment charges,
    poisons; `known_gaps/magic.md`), shouts, perks (see Done: the entry points
    waiting on casting, crafting, barter, critical hits, attack types;

@@ -347,6 +347,12 @@ impl Engine {
         else {
             return;
         };
+        self.impact_at(ipds, target, at, dir);
+    }
+
+    /// An impact data set's impact where something flying along `dir` landed
+    /// at `at`: on an actor, or on the surface there.
+    pub(crate) fn impact_at(&mut self, ipds: FormId, target: Option<FormId>, at: Vec3, dir: Vec3) {
         let (material, normal) = match target {
             Some(t) => (self.struck_material(t, false), -dir),
             None => match self.physics.surface_ray(at - dir * 16.0, dir, 48.0) {

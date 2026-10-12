@@ -132,7 +132,7 @@ own or their templates'); a member is dead when their placed reference is.
   faction may take everything. Theft seen by a witness adds crime gold
   (`known_gaps/crime.md`); items aren't marked stolen in the inventory.
 
-- The other events wait for their systems: crafting (`CRFT`), item removal (`REMP`: dropping items), spell cast (`CAST`), new
+- The other events wait for their systems: crafting (`CRFT`), item removal (`REMP`: dropping items), NPCs' spell casts (`CAST`; the player's are sent: `known_gaps/casting.md`), new
   voice power (`NVPE`), bribe, intimidate, flatter, lock pick.
 - Kill events' crime status (V1) only knows the player's murders; item
   pickups say bought (2) and pickpocketed (3) but never sold.

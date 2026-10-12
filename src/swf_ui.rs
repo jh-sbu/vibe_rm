@@ -1199,6 +1199,8 @@ struct Sent {
     sneak_text: Option<String>,
     enemy: Option<(FormId, i32)>,
     dialogue: bool,
+    /// Magicka meter blinks shown.
+    magicka_blinks: u32,
 }
 
 struct Hud {
@@ -1293,6 +1295,11 @@ impl Hud {
                     &[num(percent), Value::Bool(force)],
                 );
             }
+        }
+        // Not enough magicka for a spell.
+        if engine.casting.magicka_blinks != self.sent.magicka_blinks {
+            self.sent.magicka_blinks = engine.casting.magicka_blinks;
+            self.call("StartMagickaMeterBlinking", &[]);
         }
     }
 
