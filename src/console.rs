@@ -108,7 +108,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "player.paycrimegold <remove stolen 0/1> <jail 0/1> [faction]   pay off a bounty (the hold here by default)".into(),
             "crimefaction <ref> [faction]   show or set an actor's crime faction".into(),
             "alarm [faction] / jail [faction] / servetime   send the faction's guards to arrest the player, jail them, serve the sentence".into(),
-            "pickpocket <ref> [item] [n]   open their pockets, or try to take an item from a sneaking player's victim (psneak first)".into(),
+            "pickpocket <ref> [[place] item [n]]  open their pockets, or try to take (or place) an item, sneaking (psneak first)".into(),
             "cgf <Class.Func> [@self] [args]  call a Papyrus native (cgf Actor.GetCombatState @<ref>)".into(),
             "loose [n]             the loose objects nearest the player (position, mass, motion)".into(),
             "sv <ref> [var]        a reference's script variables".into(),
@@ -217,17 +217,21 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             engine.menu = Some(crate::items::Menu::Pickpocket(r));
             vec![]
         }
+        // pickpocket <ref> [place] <item> [n]: take (or place) items.
         "pickpocket" => {
+            let place = args.get(1) == Some(&"place");
+            let args = if place { [&args[..1], &args[2..]].concat() } else { args.to_vec() };
             let (Some(r), Some(item)) = (args.first().and_then(|a| engine.resolve_form(a)), args.get(1).and_then(|a| engine.resolve_form(a))) else {
-                return vec!["usage: pickpocket <ref> <item> [n]".into()];
+                return vec!["usage: pickpocket <ref> [place] <item> [n]".into()];
             };
             let n = args.get(2).and_then(|a| a.parse().ok()).unwrap_or(1);
             if !engine.can_pickpocket(r) {
                 return vec![format!("can't pick {r}'s pocket (sneaking {})", engine.player.sneaking)];
             }
             let chance = engine.pickpocket_chance(r, item, n);
-            let took = engine.try_pickpocket(r, item, n, None);
-            vec![format!("{r}: {n} x {item} at {chance:.0}%: {}", if took { "taken" } else { "caught" })]
+            let done = if place { engine.try_place_in_pocket(r, item, n, None) } else { engine.try_pickpocket(r, item, n, None) };
+            let verb = if place { "placed" } else { "taken" };
+            vec![format!("{r}: {n} x {item} at {chance:.0}%: {}", if done { verb } else { "caught" })]
         }
         "crimefaction" => {
             let Some(r) = args.first().and_then(|a| engine.resolve_form(a)) else { return vec!["usage: crimefaction <ref> [faction]".into()] };

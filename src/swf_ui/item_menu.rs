@@ -504,14 +504,15 @@ impl ItemMenu {
         ])
     }
 
-    /// A row's item card: the item's, with whether it's a favorite and, in
-    /// someone's pockets, the chance to take one.
+    /// A row's item card: the item's, with whether it's a favorite and, when
+    /// pickpocketing, the chance to take one (or place one: the menu says
+    /// "TO PLACE" on the player's side).
     fn card(&self, engine: &Engine, r: &Row) -> Value {
         let mut card = item_card(engine, &r.item);
         if let Value::Object(fields) = &mut card {
             let favorite = !r.theirs && engine.favorites.contains(&r.item.item);
             fields.insert("favorite".into(), Value::Bool(favorite));
-            if let (Kind::Pickpocket { victim }, true) = (&self.kind, r.theirs) {
+            if let Kind::Pickpocket { victim } = &self.kind {
                 let chance = engine.pickpocket_chance(*victim, r.item.item, 1);
                 fields.insert("pickpocketChance".into(), num(chance.round()));
             }
@@ -629,9 +630,8 @@ impl ItemMenu {
             (Kind::Pickpocket { victim }, true) => {
                 engine.try_pickpocket(*victim, item, count, owner);
             }
-            (Kind::Pickpocket { .. }, false) => {
-                let msg = engine.gmst_string("sInvalidPickpocket").unwrap_or_default();
-                engine.scripts.notify(msg);
+            (Kind::Pickpocket { victim }, false) => {
+                engine.try_place_in_pocket(*victim, item, count, owner);
             }
             (_, true) => {
                 engine.transfer_item(other, PLAYER_REF, item, count, owner);

@@ -1,6 +1,7 @@
 //! Pickpocketing: a sneaking player activating someone looks through what
 //! they carry and tries to take it, item by item, with a chance from the
-//! game settings (UESP *Skyrim:Pickpocket*). Caught, it is a crime the
+//! game settings (UESP *Skyrim:Pickpocket*), or to place their own items in
+//! the victim's pockets with the same chance. Caught, it is a crime the
 //! victim knows of, and the victim won't let them try again.
 
 use esp::FormId;
@@ -110,6 +111,35 @@ impl Engine {
             }
             return moved > 0;
         }
+        self.caught_pickpocketing(victim);
+        false
+    }
+
+    /// Try to place `count` of the player's `item` (of the stack belonging to
+    /// `stack`'s owner, if given) in `victim`'s pockets, with the chance of
+    /// taking it. True if placed.
+    pub fn try_place_in_pocket(
+        &mut self,
+        victim: FormId,
+        item: FormId,
+        count: i32,
+        stack: Option<Option<FormId>>,
+    ) -> bool {
+        let chance = self.pickpocket_chance(victim, item, count);
+        let roll = (self.rand() % 100) as f32;
+        log::info!("placing {count} x {item} on {victim}: chance {chance:.0}, rolled {roll:.0}");
+        if roll < chance {
+            let moved = self.transfer_item(PLAYER_REF, victim, item, count, stack);
+            self.unequip_if_gone(PLAYER_REF, item);
+            return moved > 0;
+        }
+        self.caught_pickpocketing(victim);
+        false
+    }
+
+    /// The victim caught the player: the menu closes and the pickpocketing is
+    /// reported.
+    fn caught_pickpocketing(&mut self, victim: FormId) {
         self.menu = None;
         self.crime.pickpocket_caught.insert(victim);
         let msg = self
@@ -120,7 +150,6 @@ impl Engine {
         self.crime.reacting_victim = Some(victim);
         self.bark(victim, b"PICN");
         self.crime.reacting_victim = None;
-        false
     }
 
     /// The player activating someone while sneaking: their pockets, unless

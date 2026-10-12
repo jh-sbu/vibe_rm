@@ -513,8 +513,8 @@ game each piece unlocks.
   (`GetTrespassWarningLevel`, `IsTrespassing`), warns again, then calls the
   guards and reports it (`fAITrespassWarningTimer`); off limits at once.
   Pickpocketing while sneaking: the victim's pockets (not what it wears)
-  with each item's chance from the `fPickPocket*` settings, taken stolen;
-  caught, a crime the victim reports and won't let the player try again.
+  with each item's chance from the `fPickPocket*` settings, taken stolen,
+  or the player's own items placed in them with the same chance; caught, a crime the victim reports and won't let the player try again.
   Console `pickpocket`; vrm-tool `trespass-cells`, `ctda-uses`,
   `topic-lines`. Arrests: guards (`IsGuard`: `IsGuardFaction`, the class
   flag) near a reported crime run after the player calling on them to halt
@@ -838,8 +838,8 @@ game each piece unlocks.
      item menus, the journal, the gift, magic, favorites and tween menus
      done: see Done): the magic menu's shouts (with shouts); the tween
      menu's Map (with the map); waiting's rest: getting into the bed first; the favorites menu's shouts and the gamepad's d-pad
-     favorites; the item menus' Fortify Barter, placing
-     items in pockets, NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
+     favorites; the item menus' Fortify Barter, NPCs equipping what is
+     placed in their pockets (and the perks for it), NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the quantity slider's use for more than dropping, recharging
