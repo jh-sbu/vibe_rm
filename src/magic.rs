@@ -39,6 +39,7 @@ pub mod archetype {
     pub const DEMORALIZE: u32 = 7;
     pub const FRENZY: u32 = 8;
     pub const INVISIBILITY: u32 = 11;
+    pub const BOUND_WEAPON: u32 = 17;
     pub const SUMMON_CREATURE: u32 = 18;
     pub const PARALYSIS: u32 = 21;
     pub const TURN_UNDEAD: u32 = 24;
@@ -728,6 +729,13 @@ impl Engine {
             }
             archetype::INVISIBILITY => self.hold(i, &mgef, [1.0, 0.0]),
             archetype::SUMMON_CREATURE => self.summon(id, &mgef),
+            // A bound weapon: in hand while it lasts.
+            archetype::BOUND_WEAPON if !mgef.related.is_null() => {
+                self.add_item(x.target, mgef.related, 1);
+                if let Err(e) = self.equip_item(x.target, mgef.related, true) {
+                    log::debug!("{}: {} not equipped: {e}", x.target, mgef.related);
+                }
+            }
             archetype::PARALYSIS => self.hold(i, &mgef, [1.0, 0.0]),
             archetype::CURE_DISEASE => self.cure(x.target, |m| m.spell_type == spell_type::DISEASE),
             archetype::CURE_POISON => self.cure(x.target, |m| m.spell_type == spell_type::POISON),
@@ -929,6 +937,11 @@ impl Engine {
         if archetype::target_value(mgef.archetype).is_some() {
             self.target_value_stopped(x.target, mgef.archetype);
         }
+        if mgef.archetype == archetype::BOUND_WEAPON && !mgef.related.is_null() {
+            let _ = self.equip_item(x.target, mgef.related, false);
+            let n = self.item_count(x.target, mgef.related);
+            self.remove_item(x.target, mgef.related, n, None);
+        }
         if let Some(r) = x.summoned {
             self.magic.effects[i].summoned = None;
             self.unsummon(r);
@@ -1027,6 +1040,20 @@ impl Engine {
                 log::debug!("{id}: its summon is dead or gone");
             }
             if gone || dead || summon_gone {
+                self.finish_magic_effect(id);
+                continue;
+            }
+            // A bound weapon put away (another taken up) is gone.
+            if sync
+                && x.active
+                && mgef.archetype == archetype::BOUND_WEAPON
+                && !mgef.related.is_null()
+                && !self
+                    .inventories
+                    .get(&x.target)
+                    .is_some_and(|i| i.is_equipped(mgef.related))
+            {
+                log::debug!("{}: {} put away", x.target, mgef.related);
                 self.finish_magic_effect(id);
                 continue;
             }

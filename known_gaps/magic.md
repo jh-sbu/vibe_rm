@@ -120,13 +120,21 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   once: no banishing effect, no body left. The distances are chosen by
   eye; the game's follow and catch-up rules for commanded actors aren't
   public.
-- **Not done**: NPCs casting by hand (the player's casting:
-  `known_gaps/casting.md`), runes, dual casting, effect visuals (hit shaders,
-  art objects, light) and sounds, magic in NPC combat. Archetypes other than
-  value / peak / dual value modifiers, absorb, script, cure disease / poison /
-  paralysis, invisibility, stagger and the target value modifiers (calm,
-  fear, frenzy, rally, turn undead) and summons: paralysis only sets the
-  actor value (no ragdoll); NPCs summoning, reanimating, bound weapons, light, detect life, telekinesis, soul
-  trap, reanimate, cloaks, slow time, wards and the rest do nothing yet. Taper, area, enchantment
-  charges, poisons on weapons, addictions, potion and food flags beyond
-  "use it". The active effects aren't shown in a menu. Nothing is saved.
+- **Bound weapons** (archetype 17; the weapon is the related form): the
+  weapon is put in the target's inventory and equipped (the right hand:
+  which hand cast the spell isn't followed yet); at the end it is
+  unequipped and every one taken away. Put away (another weapon taken up,
+  another bound weapon cast) it ends at the next second's check, as the
+  game dispels a bound weapon unequipped. Bound Bow's arrows come from its
+  effect's own script. Dropping or storing one isn't stopped.
+- **Not done**: runes, dual casting, effect visuals (hit shaders, art
+  objects, light) and sounds (casting: `known_gaps/casting.md`). Archetypes
+  other than value / peak / dual value modifiers, absorb, script, cure
+  disease / poison / paralysis, invisibility, stagger, the target value
+  modifiers (calm, fear, frenzy, rally, turn undead), summons and bound
+  weapons: paralysis only sets the actor value (no ragdoll); NPCs
+  summoning, reanimating, light, detect life, telekinesis, soul trap,
+  cloaks, slow time, wards and the rest do nothing yet. Taper, area,
+  enchantment charges, poisons on weapons, addictions, potion and food
+  flags beyond "use it". The active effects aren't shown in a menu.
+  Nothing is saved.
