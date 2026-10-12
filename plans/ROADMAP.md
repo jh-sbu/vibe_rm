@@ -371,6 +371,8 @@ game each piece unlocks.
   casters whose style scores magic and melee the same (atronachs) fight
   with their spells; spells and arrows strike actors made while playing
   (they flew through them). Open questions: `known_gaps/magic.md`
+- Bound weapons: the effect's weapon in hand while it lasts (Bound Bow's
+  script giving its arrows), gone at the end or when put away
 - Shouts: words of power learned and unlocked (`Game.TeachWord`,
   `UnlockWord`, `IsWordUnlocked`; a dragon soul in the magic menu), the
   shouts they give, `AddShout` / `RemoveShout` / `EquipShout` /
@@ -876,8 +878,9 @@ game each piece unlocks.
    dual casting, runes, wards, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
-   and rally, summons done: see Done): NPCs summoning, reanimation,
-   summons following through load doors, bound weapons, light, paralysis,
+   and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
+   summons following through load doors, bound weapons in the casting
+   hand, light, paralysis,
    invisibility breaking; illusion spells chosen by NPCs; enchantment charges,
    poisons; `known_gaps/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
