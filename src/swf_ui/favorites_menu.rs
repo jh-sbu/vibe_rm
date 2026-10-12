@@ -8,7 +8,7 @@
 //! no function behind it): the entries go in `List_mc.entryList`, then
 //! `InvalidateData` sorts and shows them. An entry's `index` is the game's
 //! own number for it, given back by `FadeDone` and taken by
-//! `SetSelectedItem`. Choices: `known_gaps/favorites.md`.
+//! `SetSelectedItem`. Choices: `known_ambiguities/favorites.md`.
 
 use esp::FormId;
 use ui_swf::{GameCall, Menu, UiSwf, Value};

@@ -4,7 +4,7 @@
 //! objectives of the active quests: the target itself when it is in the
 //! player's interior or worldspace, else the load door the way there starts
 //! at (the shortest way through the data's load doors).
-//! Choices: `known_gaps/quest-targets.md`.
+//! Choices: `known_ambiguities/quest-targets.md`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;

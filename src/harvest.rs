@@ -4,7 +4,7 @@
 //! prompt is their own verb (`RNAM`: "Harvest", "Catch"...). A harvested
 //! plant shows its harvested model (its switch nodes on their second child)
 //! and grows back after `iHoursToRespawnCell`. Taking from someone else's
-//! is stealing. Choices: `known_gaps/harvest.md`.
+//! is stealing. Choices: `known_ambiguities/harvest.md`.
 
 use std::borrow::Cow;
 use std::collections::HashMap;

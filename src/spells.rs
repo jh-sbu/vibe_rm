@@ -3,7 +3,7 @@
 //! what the magic menu says of a spell: its school, level and magicka cost.
 //!
 //! Casting them isn't built yet (see the roadmap). The cost formula is
-//! UESP's reading of the game settings; see `known_gaps/magic-menu.md`.
+//! UESP's reading of the game settings; see `known_ambiguities/magic-menu.md`.
 
 use esp::FormId;
 use esp::actor_value as av;

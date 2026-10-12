@@ -19,7 +19,7 @@
 //!
 //! Sources: UESP's Magic Overview, Magicka and Spells pages, the records
 //! (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`, `EXPL` radius) and the game
-//! settings. Choices: `known_gaps/casting.md`.
+//! settings. Choices: `known_ambiguities/casting.md`.
 
 use std::collections::HashMap;
 
@@ -472,7 +472,7 @@ impl Engine {
     /// concentration spell's landing stands for (1 for others).
     pub(crate) fn cast(&mut self, caster: FormId, spell: FormId, share: f32) {
         let (eye, dir) = if caster == PLAYER_REF {
-            (self.camera.position, self.camera.forward())
+            self.player_aim()
         } else {
             match self.actor_ref(caster) {
                 Some(a) => (

@@ -12,7 +12,7 @@
 //! objectives in the selected entry; `updateStats` and `RequestPlayerInfo`
 //! are answered with flat lists. Closing (Tab in the menu, or the game's
 //! `StartCloseMenu`) comes back as `CloseMenu(tab, quest, instance)`, kept
-//! for next time. What is guessed is in `known_gaps/journal.md`.
+//! for next time. What is guessed is in `known_ambiguities/journal.md`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};

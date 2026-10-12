@@ -14,7 +14,7 @@
 //! weather's for the time of day (IMSP: sunrise, day, sunset, night, blended
 //! like its colours, and with the outgoing weather's in a transition). Its cinematic values (CNAM) and tint (TNAM) are drawn;
 //! the HDR ones (HNAM) are kept but there is no HDR to drive.
-//! Open questions: `known_gaps/image-space.md`.
+//! Open questions: `known_ambiguities/image-space.md`.
 
 use std::collections::HashMap;
 use std::sync::Arc;

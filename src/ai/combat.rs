@@ -325,7 +325,7 @@ impl CombatSettings {
 }
 
 /// Sneak attack multiplier for bows and crossbows: no game setting holds it;
-/// UESP gives double damage before the Deadly Aim perk (`known_gaps/sneak-attacks.md`).
+/// UESP gives double damage before the Deadly Aim perk (`known_ambiguities/sneak-attacks.md`).
 const SNEAK_BOW_MULT: f32 = 2.0;
 
 /// Block XP for the player's bash landing (UESP; no game setting holds it).
@@ -1540,7 +1540,7 @@ impl Engine {
                 }
             }
         }
-        self.damage(target, damage, Some(attacker), stagger);
+        self.damage_by(target, damage, Some(attacker), stagger, sneak.is_some());
         // An enchanted weapon's (a bow's, for a shot) enchantment lands with
         // the blow.
         if let Some(ench) = weapon.and_then(|w| self.item_enchantment(w)) {
@@ -1983,6 +1983,21 @@ impl Engine {
 
     /// Take health from an actor (or the player), with a flinch, and fight back.
     pub fn damage(&mut self, target: FormId, amount: f32, attacker: Option<FormId>, stagger: f32) {
+        self.damage_by(target, amount, attacker, stagger, false);
+    }
+
+    /// `damage`, by a sneak attack or not: a sneak attack's survivor that
+    /// wasn't fighting its attacker doesn't know where it is, and looks for
+    /// it (UESP's Sneak page: "your victim will usually start looking for
+    /// you").
+    fn damage_by(
+        &mut self,
+        target: FormId,
+        amount: f32,
+        attacker: Option<FormId>,
+        stagger: f32,
+        sneak: bool,
+    ) {
         if target == PLAYER_REF {
             if self.player_dead() {
                 return;
@@ -2057,12 +2072,33 @@ impl Engine {
                 g.send_event("recoilStart");
             }
         }
+        // A sneak attack's survivor searches from where the blow came (the
+        // attacker, as it struck), once the assault has made it an enemy.
+        let search = attacker.filter(|&by| {
+            sneak
+                && !self
+                    .actor_ref(target)
+                    .and_then(|a| a.combat.as_ref())
+                    .is_some_and(|c| c.target == by)
+        });
         if let Some(by) = attacker {
             self.break_calm(target);
-            self.start_combat(target, by);
+            if search.is_none() {
+                self.start_combat(target, by);
+            }
         }
         if let Some((by, calm, factions)) = assault {
             self.send_assault(target, by, calm && self.law_abiding(&factions));
+        }
+        if let Some(by) = search {
+            match self.ref_position(by) {
+                Some(at) if self.would_attack(target, by) => {
+                    self.start_search(target, by, at, false)
+                }
+                _ => {
+                    self.start_combat(target, by);
+                }
+            }
         }
     }
 
@@ -2363,11 +2399,8 @@ impl Engine {
         self.player_graph_event(&attack.event);
         let skill = self.actor_value(PLAYER_REF, esp::actor_value::BLOCK);
         let damage = self.bash_damage(PLAYER_REF, skill) * attack.damage_mult;
-        let hit = self.physics.raycast(
-            self.camera.position,
-            self.camera.forward(),
-            set.bash_reach + 40.0,
-        );
+        let (eye, dir) = self.player_aim();
+        let hit = self.physics.raycast(eye, dir, set.bash_reach + 40.0);
         if let Some((_, Some(r))) = hit
             && self.is_actor_ref(r)
             && !self.is_dead(r)
@@ -2492,8 +2525,8 @@ impl Engine {
 
     /// The player's swing lands on whatever is in front of them within reach.
     pub(crate) fn player_strike(&mut self, power: bool, damage: f32, reach: f32, stagger: f32) {
-        let dir = self.camera.forward();
-        let ray = self.physics.raycast(self.camera.position, dir, reach);
+        let (eye, dir) = self.player_aim();
+        let ray = self.physics.raycast(eye, dir, reach);
         log::debug!("player attack: {ray:?} within {reach:.0}");
         let Some((_, Some(r))) = ray else {
             return;

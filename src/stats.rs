@@ -3,7 +3,7 @@
 //! with.
 //!
 //! Which page category each statistic is listed under, and the calendar's
-//! weekday on the first day, aren't published: see `known_gaps/journal.md`.
+//! weekday on the first day, aren't published: see `known_ambiguities/journal.md`.
 
 use esp::FormId;
 

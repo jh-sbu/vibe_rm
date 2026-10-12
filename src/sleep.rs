@@ -7,7 +7,7 @@
 //! and counts the Hours Waiting / Hours Slept statistic. Sleeping tells the
 //! scripts registered for it (`RegisterForSleep`: `OnSleepStart`,
 //! `OnSleepStop`). Enemies finding the player after an hour end the wait.
-//! Choices: `known_gaps/sleep-wait.md`.
+//! Choices: `known_ambiguities/sleep-wait.md`.
 
 use esp::FormId;
 use esp::actor_value as av;

@@ -5,7 +5,7 @@
 //! for no fights until attacked; the frightened, cowards while it lasts,
 //! flee at once; the frenzied fall on whoever is nearest, friend or not, and
 //! give up the fights they no longer want when it ends; the rallied stop
-//! fleeing. Open questions: `known_gaps/magic.md`.
+//! fleeing. Open questions: `known_ambiguities/magic.md`.
 
 use std::collections::HashSet;
 

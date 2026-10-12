@@ -8,7 +8,7 @@
 //! impact's duration; spells' meshes), its nodes' own controllers and its
 //! shaders' on a clock of its own, and leaves its decal on the surface it
 //! lands on: for a wound, the blood thrown onto the floor or wall behind.
-//! See `known_gaps/impacts.md`.
+//! See `known_ambiguities/impacts.md`.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -382,7 +382,7 @@ impl Engine {
     /// Console `impact`: an impact on what lies ahead of the camera, as an
     /// arrow flying along the view would leave it.
     pub(crate) fn test_impact(&mut self, ipct: FormId, reach: f32) -> String {
-        let (from, dir) = (self.camera.position, self.camera.forward());
+        let (from, dir) = self.player_aim();
         let Some((t, normal)) = self.physics.ground_ray(from, dir, reach) else {
             return format!("nothing within {reach} units ahead");
         };

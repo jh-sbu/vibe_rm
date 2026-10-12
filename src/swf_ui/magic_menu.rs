@@ -8,7 +8,7 @@
 //! It is the inventory's `ItemMenu` with `AttemptEquip` (a mouse button's
 //! hand) answered by `ItemSelect(slot)`. The game fills it as the item menus
 //! (`SetCategoriesList`, the list's `entryList`, `InvalidateListData`, the
-//! card on `RequestItemCardInfo`). Choices: `known_gaps/magic-menu.md`.
+//! card on `RequestItemCardInfo`). Choices: `known_ambiguities/magic-menu.md`.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

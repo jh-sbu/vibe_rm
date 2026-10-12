@@ -73,7 +73,7 @@ impl Engine {
     /// The body under the crosshair that can be grabbed: its owner, the body,
     /// where the crosshair meets it and how far that is.
     fn grab_target(&self) -> Option<(FormId, RigidBodyHandle, Vec3, f32)> {
-        let (eye, dir) = (self.camera.position, self.camera.forward());
+        let (eye, dir) = self.player_aim();
         let (toi, owner, body) = self.physics.raycast_body(eye, dir, GRAB_REACH)?;
         let (owner, body) = (owner?, body?);
         let b = self.physics.world.bodies.get(body)?;
@@ -198,7 +198,7 @@ impl Engine {
 
     /// What the crosshair is on, for the console.
     pub fn crosshair_on(&self) -> String {
-        let (eye, dir) = (self.camera.position, self.camera.forward());
+        let (eye, dir) = self.player_aim();
         match self.physics.raycast_body(eye, dir, GRAB_REACH) {
             None => "nothing in reach".into(),
             Some((toi, owner, body)) => {

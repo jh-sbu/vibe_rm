@@ -6,7 +6,7 @@
 //! density's chance, when the ground's slope and the water allow, offset by up
 //! to its position range, scaled by up to its height range and tinted by the
 //! landscape's vertex colour (darkened by up to its colour range). The game's
-//! own scattering isn't public; see `known_gaps/grass.md`.
+//! own scattering isn't public; see `known_ambiguities/grass.md`.
 
 use std::collections::HashMap;
 

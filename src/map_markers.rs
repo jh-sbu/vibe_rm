@@ -6,7 +6,7 @@
 //! discovery music plays for and the Locations Discovered statistic counts.
 //! The compass shows the discovered markers near the player and, hollow, the
 //! undiscovered nearer still (`compass_markers`).
-//! Choices: `known_gaps/map-markers.md`.
+//! Choices: `known_ambiguities/map-markers.md`.
 
 use std::collections::HashSet;
 

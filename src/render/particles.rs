@@ -5,7 +5,7 @@
 //! system on the CPU, in model space, and every frame its live particles
 //! become camera-facing quads ([`ParticleBatch`]) drawn with the system's
 //! effect material. Where the Gamebryo semantics aren't public the choices
-//! are written down in `known_gaps/particles.md`.
+//! are written down in `known_ambiguities/particles.md`.
 
 use std::collections::HashMap;
 use std::sync::Arc;

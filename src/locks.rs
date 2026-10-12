@@ -66,7 +66,7 @@ impl Engine {
     /// Whether an actor gets past a locked door or container: with its key, or when
     /// it (or one of its factions) owns it (`XOWN`, else the cell's owner). Only
     /// animated doors ask: packages take actors through locked load doors that
-    /// aren't theirs (`known_gaps/locks.md`).
+    /// aren't theirs (`known_ambiguities/locks.md`).
     pub fn npc_may_open(&self, achr: FormId, r: FormId) -> bool {
         if !self.is_locked(r) {
             return true;

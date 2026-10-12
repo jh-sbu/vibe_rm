@@ -2,7 +2,7 @@
 //! raises one of the player's skills a level for gold, up to the level its
 //! class teaches to, five times a player level (UESP *Skyrim:Trainers*).
 //! The gold goes into the trainer's inventory. Choices:
-//! `known_gaps/skills.md`.
+//! `known_ambiguities/skills.md`.
 
 use esp::FormId;
 use esp::actor_value as av;
