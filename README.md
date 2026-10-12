@@ -32,7 +32,7 @@ Early but already visual:
 | The game's own menus (Interface `.swf` through the vendored Ruffle): the HUD, message boxes, the inventory, containers, bartering, gifts, magic, favorites, the tween menu, sleeping and waiting, training, the journal | in progress |
 | Inventories (NPC items, outfits, containers), sheathed weapons and shields | in progress |
 | Combat (melee between NPCs, creatures and the player), ragdoll deaths; skills, leveling and perk trees | in progress |
-| Magic: effects on actors, abilities, potions, enchantments, effect scripts (casting by hand to come) | in progress |
+| Magic: effects on actors, abilities, potions, enchantments, effect scripts; the player casting spells and powers by hand (magicka, projectiles, areas) | in progress |
 | Saves | planned |
 
 ## Building and running
@@ -53,7 +53,7 @@ cargo build --release
 ```
 
 Testing aids: `--console "<command>"` runs console commands after loading (e.g.
-`use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`, `cgf Actor.GetCombatState @<actor>` to call a Papyrus native, `loose` for the loose objects near the player, `pwalk <frames> [forward|back|left|right] [run|sprint]` to walk the player (`tcl` first under `--wait`), `pjump` to jump, `useitem <item>` to use one of the player's items as the inventory would, `set gamedayspassed to <days>` to move the clock on, `pdraw [off]` and `ppress` / `prelease` (the attack button) for the player's weapon, `impact <IPCT>` for an impact on what the camera faces; `"@<frame> <command>"`
+`use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>`, `cgf Actor.GetCombatState @<actor>` to call a Papyrus native, `loose` for the loose objects near the player, `pwalk <frames> [forward|back|left|right] [run|sprint]` to walk the player (`tcl` first under `--wait`), `pjump` to jump, `useitem <item>` to use one of the player's items as the inventory would, `set gamedayspassed to <days>` to move the clock on, `pdraw [off]` and `ppress` / `prelease` (the attack button) for the player's weapon, `pcast <right|left|power> [off]` for the spell in a hand (`cgf Actor.EquipSpell @player <spell> 1` readies it in the right), `impact <IPCT>` for an impact on what the camera faces; `"@<frame> <command>"`
 runs it at that frame of `--wait`), `--watch-angle`
 orbits the `--watch` camera, `--player-at-camera` puts the player there (NPCs look at it),
 the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, `VRM_SEED=<n>` fixes the engine's random seed, `VRM_AUDIO=1` gives offscreen runs audio

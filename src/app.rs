@@ -774,6 +774,11 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.player.sneaking = !s.engine.player.sneaking;
                             }
+                            // Z uses the power readied (the control map's Shout).
+                            if code == KeyCode::KeyZ && !event.repeat {
+                                s.engine.input_event("Shout");
+                                s.engine.player_use_power();
+                            }
                             // R draws or sheathes the weapon.
                             if code == KeyCode::KeyR && !event.repeat {
                                 let draw = !s.engine.player_weapon_drawn();
@@ -819,12 +824,18 @@ impl ApplicationHandler for App {
                 button: MouseButton::Right,
                 ..
             } => {
-                // Captured: hold to block.
-                s.engine.player_blocking =
-                    state == ElementState::Pressed && s.grabbed && !s.engine.menu_up();
-                if s.engine.player_blocking {
+                // Captured: hold to block, or cast the left hand's spell.
+                let down = state == ElementState::Pressed && s.grabbed && !s.engine.menu_up();
+                if down {
                     s.engine.input_event("Left Attack/Block");
                 }
+                let left = crate::spells::LEFT;
+                let casting = if down {
+                    s.engine.player_cast_press(left)
+                } else {
+                    s.engine.player_cast_release(left)
+                };
+                s.engine.player_blocking = down && !casting;
             }
             WindowEvent::MouseInput {
                 state: ElementState::Released,

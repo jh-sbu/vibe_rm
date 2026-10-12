@@ -205,6 +205,8 @@ pub struct Engine {
     /// Spells in hand and the power or shout readied, per actor
     /// (`crate::spells`: right, left, voice).
     pub equipped_spells: HashMap<FormId, [Option<FormId>; 3]>,
+    /// The player's spells held ready and their magicka (`crate::casting`).
+    pub(crate) casting: crate::casting::Casting,
     pub lockpick: Option<crate::locks::Lockpick>,
     /// The player's skill XP and level (`crate::skills`).
     pub skills: crate::skills::Skills,
@@ -359,6 +361,7 @@ impl Engine {
             waiting: None,
             gift: None,
             equipped_spells: HashMap::new(),
+            casting: Default::default(),
             lockpick: None,
             skills: Default::default(),
             perks: Default::default(),
@@ -2327,6 +2330,8 @@ impl Engine {
         if off.fighting {
             self.player_blocking = false;
             self.player_attack_held = None;
+            self.player_cast_release(crate::spells::RIGHT);
+            self.player_cast_release(crate::spells::LEFT);
         }
         if off.sneaking {
             self.player.sneaking = false;
@@ -2377,6 +2382,7 @@ impl Engine {
             self.player.sneaking &= !input.sprint;
         }
         self.update_player_attack(dt);
+        self.update_casting(dt);
         self.update_lockpick(dt);
         let (run, sprint, before) = (input.run, input.sprint, self.player.position);
         if self.test_jump && self.player.grounded {

@@ -94,6 +94,11 @@ pub struct MagicEffect {
     pub primary: Option<u32>,
     pub secondary: Option<u32>,
     pub second_weight: f32,
+    /// What it flies as when aimed (`PROJ`), and its impact data set.
+    pub projectile: FormId,
+    pub impacts: FormId,
+    /// Skill XP for a use is scaled by this.
+    pub skill_usage_mult: f32,
     pub keywords: Vec<FormId>,
     pub conditions: Vec<Condition>,
     pub scripts: Vec<crate::script::vmad::ScriptRef>,
@@ -126,6 +131,9 @@ impl MagicEffect {
             primary: av(0x44),
             secondary: av(0x58),
             second_weight: f(0x3C),
+            projectile: fid(u(0x48)),
+            impacts: fid(u(0x64)),
+            skill_usage_mult: f(0x68),
             keywords: rec
                 .get(b"KWDA")
                 .map(|k| {
@@ -168,6 +176,8 @@ pub struct MagicItem {
     pub flags: u32,
     pub cost: Option<f32>,
     pub charge_time: f32,
+    /// How far a target actor spell reaches (`SPIT` range).
+    pub range: f32,
     pub effects: Vec<EffectItem>,
 }
 
@@ -200,6 +210,7 @@ impl MagicItem {
                 m.charge_time = f32::from_bits(u(d, 0x0C));
                 m.cast_type = u(d, 0x10);
                 m.delivery = u(d, 0x14);
+                m.range = f32::from_bits(u(d, 0x1C));
             }
             b"ENCH" => {
                 let d = rec.get(b"ENIT").unwrap_or_default();

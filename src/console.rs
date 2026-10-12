@@ -92,6 +92,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "pblock                toggle the player's guard (right mouse button)".into(),
             "pattack [power]       the player swings (power: as holding the button)".into(),
             "pbash                 the player bashes (attacking with the guard up)".into(),
+            "pcast <right|left|power> [off]   a hand's attack button with a spell in it down (up), or the power used".into(),
             "pshoot [secs]         the player looses an arrow drawn so long (default full)".into(),
             "psneak / pjump        the player sneaks (toggle) / jumps when next on the ground".into(),
             "pdraw [off]           the player draws (or sheathes) their weapon".into(),
@@ -608,6 +609,26 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             };
             let reach = args.get(1).and_then(|d| d.parse().ok()).unwrap_or(512.0);
             vec![engine.test_impact(ipct, reach)]
+        }
+        "pcast" => {
+            // pcast <right|left|power> [off]: a hand's attack button down (up
+            // with off), or the power readied used.
+            let off = args.get(1).is_some_and(|a| a.eq_ignore_ascii_case("off"));
+            let hand = match args.first().map(|a| a.to_ascii_lowercase()) {
+                Some(h) if h == "left" => crate::spells::LEFT,
+                Some(h) if h == "power" => {
+                    engine.player_use_power();
+                    return vec!["power used".into()];
+                }
+                _ => crate::spells::RIGHT,
+            };
+            let took = if off { engine.player_cast_release(hand) } else { engine.player_cast_press(hand) };
+            vec![format!(
+                "hand {hand} {}{}; magicka {:.0}",
+                if off { "let go" } else { "held" },
+                if took { "" } else { " (no spell)" },
+                engine.actor_value(crate::engine::PLAYER_REF, esp::actor_value::MAGICKA)
+            )]
         }
         "pshoot" => {
             let held = args.first().and_then(|s| s.parse::<f32>().ok()).unwrap_or(5.0);

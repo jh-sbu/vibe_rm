@@ -36,6 +36,17 @@ fn f32_at(d: &[u8], o: usize) -> f32 {
         .map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
 }
 
+/// The base of values that are percents of normal (`SpeedMult`, the regen
+/// rate multipliers): 100; of the rest, none.
+fn percent_base(index: u32) -> f32 {
+    match index {
+        av::SPEED_MULT | av::HEAL_RATE_MULT | av::MAGICKA_RATE_MULT | av::STAMINA_RATE_MULT => {
+            100.0
+        }
+        _ => 0.0,
+    }
+}
+
 impl Engine {
     fn av_mods(&self, actor: FormId, index: u32) -> Modifiers {
         self.scripts
@@ -64,10 +75,10 @@ impl Engine {
                 | av::MASS
         );
         if !from_records {
-            return if index == av::SPEED_MULT { 100.0 } else { 0.0 };
+            return percent_base(index);
         }
         let Some(src) = self.templates_of(actor) else {
-            return if index == av::SPEED_MULT { 100.0 } else { 0.0 };
+            return percent_base(index);
         };
         let lo = &self.lo;
         let stats = || src.field(lo, template::STATS, b"DNAM").unwrap_or_default();
@@ -101,8 +112,7 @@ impl Engine {
             av::STAMINA_RATE => f32_at(&race(), 92),
             av::CARRY_WEIGHT => f32_at(&race(), 48),
             av::MASS => f32_at(&race(), 52),
-            av::SPEED_MULT => 100.0,
-            _ => 0.0,
+            _ => percent_base(index),
         }
     }
 

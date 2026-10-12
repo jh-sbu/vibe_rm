@@ -2294,6 +2294,10 @@ impl Engine {
         if self.disabled_controls.fighting {
             return;
         }
+        // A spell in the right hand is cast instead.
+        if self.player_cast_press(crate::spells::RIGHT) {
+            return;
+        }
         if self.player_blocking {
             self.player_bash();
             return;
@@ -2356,6 +2360,9 @@ impl Engine {
 
     /// The attack button came up: a basic swing, or with a bow, the arrow loosed.
     pub fn player_attack_release(&mut self) {
+        if self.player_cast_release(crate::spells::RIGHT) {
+            return;
+        }
         if let Some(held) = self.player_attack_held.take() {
             if self.player_has_bow() {
                 self.player_graph_event("attackRelease");
