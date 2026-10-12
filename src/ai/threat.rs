@@ -137,7 +137,10 @@ impl Engine {
                 return 0.0;
             };
             let interval = if a.bow { BOW_INTERVAL } else { ATTACK_INTERVAL };
-            (a.health, self.attack_damage(a, None) / interval)
+            (
+                a.health,
+                self.attack_damage(a, None, crate::world::inventory::RIGHT) / interval,
+            )
         };
         dps * health.max(0.0) / (1.0 - reduction)
     }

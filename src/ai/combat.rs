@@ -10,6 +10,7 @@ use glam::{Mat4, Vec3};
 use super::{ActorRuntime, State, World, uniform};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::perks::ep;
+use crate::world::inventory::{Inventory, LEFT, RIGHT};
 use crate::world::ragdoll::RagdollPose;
 use crate::world::template::{self, Sources};
 
@@ -71,6 +72,190 @@ pub struct Attack {
     pub stagger: f32,
     /// Times the power attack stamina cost.
     pub stamina_mult: f32,
+    /// Its attack type keyword (`PowerAttackTypeForward`...: `IsAttackType`).
+    pub attack_type: FormId,
+}
+
+/// The hands an attack strikes with, by its event: the right (`attackStart`,
+/// `AttackStartH2HRight`...), the left (`...LeftHand`, `AttackStartH2HLeft`)
+/// or both (`...DualWield`, the bare-handed combo `attackPowerStartH2HCombo`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Side {
+    Right,
+    Left,
+    Dual,
+}
+
+impl Side {
+    /// Its hands (`RIGHT`, `LEFT`).
+    pub(crate) fn hands(self) -> &'static [usize] {
+        match self {
+            Side::Right => &[RIGHT],
+            Side::Left => &[LEFT],
+            Side::Dual => &[RIGHT, LEFT],
+        }
+    }
+
+    /// The hands a batch of hit frames (`HIT_RIGHT` / `HIT_LEFT`) strikes
+    /// with: in a two-handed blow the `Left` payload's the left hand and the
+    /// others the right; otherwise the attack's own hand.
+    pub(crate) fn struck(self, frames: u8) -> Vec<usize> {
+        match self {
+            Side::Right => vec![RIGHT],
+            Side::Left => vec![LEFT],
+            Side::Dual => [(HIT_RIGHT, RIGHT), (HIT_LEFT, LEFT)]
+                .into_iter()
+                .filter(|(bit, _)| frames & bit != 0)
+                .map(|(_, h)| h)
+                .collect(),
+        }
+    }
+}
+
+/// An attack button held (`Engine::player_attack_held`): which hands, and
+/// for how long.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AttackHold {
+    pub side: Side,
+    pub held: f32,
+}
+
+/// A hand's blow in a swing: its damage and reach.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Blow {
+    pub damage: f32,
+    pub reach: f32,
+}
+
+/// Whether the left attack button swings rather than raising the guard: a
+/// weapon in the left hand, or both hands empty (or the right holding a
+/// spell): a fist (UESP's Combat page lists what blocks: a shield, a torch,
+/// a weapon).
+pub(crate) fn left_strikes(hands: [Fights; 2]) -> bool {
+    hands[LEFT] == Fights::Weapon || (hands[LEFT] == Fights::Fist && hands[RIGHT] != Fights::Weapon)
+}
+
+/// What a blow is struck with: a hand (the weapon in it, or the fist), or a
+/// shot (its projectile; the bow's the weapon).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Struck {
+    Hand(usize),
+    Shot(FormId),
+}
+
+/// Hit frames raised (`HitFrame`): without a payload, and with `Left`.
+pub(crate) const HIT_RIGHT: u8 = 0x1;
+pub(crate) const HIT_LEFT: u8 = 0x2;
+
+/// A hand's hit frames closer together than this are one blow (the arms'
+/// layers raise their clips' triggers again); a multi-hit power attack's
+/// blows are further apart (0.45 s and more).
+pub(crate) const STRIKE_GAP: f32 = 0.25;
+
+/// What `HitFrame`'s payload says of the hand.
+pub(crate) fn hit_frame_bit(payload: Option<&str>) -> u8 {
+    match payload {
+        Some(p) if p.eq_ignore_ascii_case("left") => HIT_LEFT,
+        _ => HIT_RIGHT,
+    }
+}
+
+impl Attack {
+    pub(crate) fn side(&self) -> Side {
+        let e = self.event.to_ascii_lowercase();
+        if e.contains("dualwield") || e.contains("h2hcombo") {
+            Side::Dual
+        } else if e.contains("lefthand") || e.contains("h2hleft") {
+            Side::Left
+        } else {
+            Side::Right
+        }
+    }
+
+    /// Made bare-handed (`H2H`).
+    pub(crate) fn bare_handed(&self) -> bool {
+        self.event.to_ascii_lowercase().contains("h2h")
+    }
+
+    pub(crate) fn power(&self) -> bool {
+        self.flags & ATK_POWER != 0
+    }
+
+    /// Whether it can be made with these hands: a weapon's attacks with a
+    /// weapon in the hand (the left, one-handed), a bare-handed attack with
+    /// the hand empty, a two-handed one with both hands alike. Races without
+    /// bare-handed attacks (creatures) make their own attacks with what they
+    /// have, but only the right hand's.
+    pub(crate) fn fits(&self, hands: [Fights; 2], race_bare_handed: bool) -> bool {
+        let fits = |h: usize| match hands[h] {
+            Fights::Weapon => !self.bare_handed(),
+            Fights::Fist => self.bare_handed() || !race_bare_handed,
+            Fights::Not => false,
+        };
+        match self.side() {
+            Side::Right => fits(RIGHT),
+            Side::Left => race_bare_handed && fits(LEFT),
+            Side::Dual => race_bare_handed && hands[RIGHT] == hands[LEFT] && fits(RIGHT),
+        }
+    }
+}
+
+/// What a hand fights with: a weapon (in the left, a one-handed one), its
+/// fist, or neither (a two-handed weapon's other hand, a shield, a torch, a
+/// spell).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum Fights {
+    #[default]
+    Fist,
+    Weapon,
+    Not,
+}
+
+/// The behaviour graph's hand variables for what an inventory holds: the
+/// hand types (`iRightHandType` / `iLeftHandType`), and the attack clips'
+/// speeds (`weaponSpeedMult` / `leftWeaponSpeedMult`: the left hand's
+/// attacks play at the second, which the graph leaves at 0): each hand's
+/// weapon's speed (`DNAM`; a fist's 1) times the actor's speed multiplier
+/// for it (`speed_mults`, `Engine::weapon_speed_mults`).
+pub(crate) fn hand_graph_vars(
+    lo: &LoadOrder,
+    inv: &Inventory,
+    speed_mults: [f32; 2],
+) -> [(&'static str, f32); 4] {
+    let speed = |h: usize| {
+        inv.weapon_in(lo, h)
+            .and_then(|w| lo.get(w))
+            .and_then(|r| {
+                r.get(b"DNAM")
+                    .filter(|d| d.len() >= 8)
+                    .map(|d| f32_at(d, 4))
+            })
+            .filter(|s| *s > 0.0)
+            .unwrap_or(1.0)
+            * speed_mults[h]
+    };
+    [
+        ("iRightHandType", inv.hand(lo, false).for_graph()),
+        ("iLeftHandType", inv.hand(lo, true).for_graph()),
+        ("weaponSpeedMult", speed(RIGHT)),
+        ("leftWeaponSpeedMult", speed(LEFT)),
+    ]
+}
+
+/// What an inventory's hands fight with (`RIGHT`, `LEFT`).
+pub(crate) fn fighting_hands(lo: &LoadOrder, inv: &Inventory) -> [Fights; 2] {
+    let right = match inv.held(RIGHT) {
+        None => Fights::Fist,
+        Some(_) if inv.weapon_in(lo, RIGHT).is_some() => Fights::Weapon,
+        Some(_) => Fights::Not,
+    };
+    let left = match inv.held(LEFT) {
+        None => Fights::Fist,
+        Some(_) if inv.both_hands() => Fights::Not,
+        Some(_) if inv.hand(lo, true).one_handed() => Fights::Weapon,
+        Some(_) => Fights::Not,
+    };
+    [right, left]
 }
 
 /// What an actor fights with.
@@ -83,6 +268,9 @@ pub struct CombatStats {
     pub attacks: Vec<Attack>,
     pub unarmed_damage: f32,
     pub unarmed_reach: f32,
+    /// Whether its race fights bare-handed (has `H2H` attacks) rather than
+    /// with claws and teeth.
+    pub bare_handed: bool,
     /// AI data: 0 unaggressive, 1 aggressive (attacks enemies), 2 very aggressive
     /// (and neutrals), 3 frenzied (anyone).
     pub aggression: u8,
@@ -169,6 +357,9 @@ fn attacks_of(rec: &esp::LoadedRecord<'_>) -> Vec<Attack> {
                     strike_angle: f32_at(d, 20),
                     stagger: f32_at(d, 24),
                     stamina_mult: if d.len() >= 44 { f32_at(d, 40) } else { 1.0 },
+                    attack_type: d.get(28..32).map_or(FormId::NULL, |b| {
+                        rec.fid(FormId(u32::from_le_bytes(b.try_into().unwrap())))
+                    }),
                 });
             }
             b"ATKE" => {
@@ -416,14 +607,12 @@ impl CombatStats {
                 attacks.push(a);
             }
         }
-        // Attacks for situations not handled yet: sprinting, on horseback, with the
-        // left hand, dual wielding, unarmed.
+        // Attacks for situations not handled yet: sprinting, on horseback.
         attacks.retain(|a| {
             let lower = a.event.to_ascii_lowercase();
-            !["sprint", "_mc", "lefthand", "dualwield", "h2h"]
-                .iter()
-                .any(|k| lower.contains(k))
+            !["sprint", "_mc"].iter().any(|k| lower.contains(k))
         });
+        s.bare_handed = attacks.iter().any(|a| a.bare_handed());
         s.attacks = attacks;
         // Health and stamina from the NPC's stats (DNAM: skills, then health /
         // magicka / stamina).
@@ -506,10 +695,13 @@ pub struct Combat {
     /// Seconds until it may attack again, and left of the swing it is in.
     pub(crate) cooldown: f32,
     swing: f32,
-    /// The attack being made (index into the stats' attacks), and whether it
-    /// has struck (one hit a swing).
+    /// The attack being made (index into the stats' attacks); whether it is
+    /// over (cut short); its blows landed, and seconds since each hand's last
+    /// (a basic attack lands once a hand, a power attack's blows each).
     pub attack: Option<usize>,
     pub struck: bool,
+    pub strikes: u8,
+    pub strike_age: [f32; 2],
     /// Stamina the attack started this frame costs (paid once the graph takes it).
     pub cost: f32,
     /// Seconds left holding its guard up (blocking), and whether the graph has
@@ -588,6 +780,8 @@ impl Combat {
             swing: 0.0,
             attack: None,
             struck: false,
+            strikes: 0,
+            strike_age: [f32::INFINITY; 2],
             cost: 0.0,
             guard: 0.0,
             guard_shown: false,
@@ -625,6 +819,59 @@ impl Combat {
 }
 
 impl ActorRuntime {
+    /// Hit frames raised (`HIT_RIGHT` / `HIT_LEFT`) during its attack: the
+    /// blows they land, a hand at a time (`Side::struck`). A basic attack
+    /// lands once a hand; a power attack each time (a two-handed one's blows
+    /// after the first cost its stamina again: UESP's Combat page, "count as
+    /// three separate power attacks"); never twice within `STRIKE_GAP`.
+    pub(crate) fn strike(&mut self, frames: u8) -> Vec<Swing> {
+        let attack = self
+            .combat
+            .as_ref()
+            .and_then(|c| c.attack)
+            .and_then(|i| self.stats.attacks.get(i))
+            .cloned();
+        let side = attack.as_ref().map_or(Side::Right, |a| a.side());
+        let power = attack
+            .as_ref()
+            .is_some_and(|a| a.power() && a.flags & ATK_BASH == 0);
+        let (pos, heading) = (self.feet(), self.heading);
+        let chest = pos.z + self.height() * 0.75;
+        let Some(c) = self.combat.as_mut().filter(|c| !c.struck) else {
+            return Vec::new();
+        };
+        let hands: Vec<usize> = side
+            .struck(frames)
+            .into_iter()
+            .filter(|&h| c.strike_age[h] >= STRIKE_GAP && (power || c.strike_age[h].is_infinite()))
+            .collect();
+        if hands.is_empty() {
+            return Vec::new();
+        }
+        let again = c.strikes > 0;
+        c.strikes += 1;
+        for &h in &hands {
+            c.strike_age[h] = 0.0;
+        }
+        let (target, index) = (c.target, c.attack);
+        if again && power {
+            let cost = self.power_cost * attack.map_or(1.0, |a| a.stamina_mult);
+            self.spend_stamina(cost);
+        }
+        hands
+            .into_iter()
+            .map(|hand| Swing {
+                attacker: self.ref_id,
+                target,
+                attack: index,
+                hand,
+                pos,
+                chest,
+                heading,
+            })
+            .collect()
+    }
+
     /// How far its attacks reach.
     pub fn reach(&self) -> f32 {
         let r = if self.weapon_reach > 0.0 {
@@ -679,6 +926,8 @@ impl ActorRuntime {
         let c = self.combat.as_mut()?;
         c.attack = Some(pick);
         c.struck = false;
+        c.strikes = 0;
+        c.strike_age = [f32::INFINITY; 2];
         c.cost = cost;
         c.swing = SWING_TIME * 0.8;
         c.cooldown = SWING_TIME + uniform(w.rand, 0.4, 1.2);
@@ -822,14 +1071,21 @@ impl ActorRuntime {
         let reach = self.reach();
         let run = self.run_speed();
         let pos = self.pos;
-        let attacks: Vec<(usize, f32)> = self
-            .stats
-            .attacks
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| a.flags & ATK_BASH == 0)
-            .map(|(i, a)| (i, a.chance.max(0.05)))
-            .collect();
+        // Those its hands can make (with none, as it did before it had
+        // hands: the right hand's weapon attacks).
+        let swings = |fit: &dyn Fn(&Attack) -> bool| -> Vec<(usize, f32)> {
+            self.stats
+                .attacks
+                .iter()
+                .enumerate()
+                .filter(|(_, a)| a.flags & ATK_BASH == 0 && fit(a))
+                .map(|(i, a)| (i, a.chance.max(0.05)))
+                .collect()
+        };
+        let mut attacks = swings(&|a| a.fits(self.hands, self.stats.bare_handed));
+        if attacks.is_empty() {
+            attacks = swings(&|a| a.side() == Side::Right && !a.bare_handed());
+        }
         // Humanoids fight with their weapon out (the draw may not have been taken,
         // say mid-flinch: ask again).
         let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
@@ -843,6 +1099,9 @@ impl ActorRuntime {
         let c = self.combat.as_mut()?;
         c.cooldown -= dt;
         c.repath -= dt;
+        for t in &mut c.strike_age {
+            *t += dt;
+        }
         if unready {
             c.cooldown = c.cooldown.max(0.2);
         }
@@ -972,6 +1231,8 @@ impl ActorRuntime {
         c.attack = Some(pick);
         c.cost = cost;
         c.struck = false;
+        c.strikes = 0;
+        c.strike_age = [f32::INFINITY; 2];
         c.swing = SWING_TIME;
         // A power attack takes longer to recover from.
         c.cooldown = SWING_TIME
@@ -1016,11 +1277,13 @@ fn pick_weighted(pool: &[(usize, f32)], w: &mut World) -> Option<usize> {
     pool.last().map(|a| a.0)
 }
 
-/// A swing at its hit frame: who swung (with which attack) at whom, from where.
+/// A swing at its hit frame: who swung (with which attack and hand) at whom,
+/// from where.
 pub(crate) struct Swing {
     pub attacker: FormId,
     pub target: FormId,
     pub attack: Option<usize>,
+    pub hand: usize,
     /// The attacker's feet, and the height its blow comes from (its chest).
     pub pos: Vec3,
     pub chest: f32,
@@ -1028,14 +1291,20 @@ pub(crate) struct Swing {
 }
 
 impl Engine {
-    /// Damage of an attack by an actor: its weapon's (unless the attack ignores
-    /// it), else its race's unarmed damage; scaled by the attack's multiplier.
-    pub(crate) fn attack_damage(&self, a: &ActorRuntime, attack: Option<&Attack>) -> f32 {
+    /// Damage of an attack by an actor with a hand: that hand's weapon's
+    /// (unless the attack ignores it), else its race's unarmed damage; scaled
+    /// by the attack's multiplier.
+    pub(crate) fn attack_damage(
+        &self,
+        a: &ActorRuntime,
+        attack: Option<&Attack>,
+        hand: usize,
+    ) -> f32 {
         let ignore = attack.is_some_and(|x| x.flags & ATK_IGNORE_WEAPON != 0);
         let weapon = self
             .inventories
             .get(&a.ref_id)
-            .and_then(|i| i.weapon(&self.lo));
+            .and_then(|i| i.weapon_in(&self.lo, hand));
         let base = match weapon.filter(|_| !ignore).and_then(|w| self.lo.get(w)) {
             Some(rec) => rec
                 .get(b"DATA")
@@ -1055,6 +1324,28 @@ impl Engine {
             attack.map_or("-", |x| x.event.as_str())
         );
         base * mult
+    }
+
+    /// How far an actor's blows with a hand reach: the right's as `reach`,
+    /// the left's by the weapon there, else its race's unarmed reach.
+    pub(crate) fn hand_reach(&self, a: &ActorRuntime, hand: usize) -> f32 {
+        if hand == RIGHT {
+            return a.reach();
+        }
+        let weapon_reach = self
+            .inventories
+            .get(&a.ref_id)
+            .and_then(|i| i.weapon_in(&self.lo, hand))
+            .and_then(|w| self.lo.get(w))
+            .and_then(|r| {
+                r.get(b"DNAM")
+                    .filter(|d| d.len() >= 12)
+                    .map(|d| f32_at(d, 8))
+            });
+        match weapon_reach {
+            Some(r) => COMBAT_DISTANCE * r * a.scale,
+            None => a.stats.unarmed_reach * a.scale,
+        }
     }
 
     /// Whether `a` (an NPC with these stats) would attack `b` on sight. Aggressive
@@ -1399,7 +1690,10 @@ impl Engine {
                     self.combat_settings().bash_reach * a.scale,
                 )
             } else {
-                (self.attack_damage(a, attack.as_ref()), a.reach())
+                (
+                    self.attack_damage(a, attack.as_ref(), s.hand),
+                    self.hand_reach(a, s.hand),
+                )
             };
             let strike_angle = attack.as_ref().map_or(35.0, |x| x.strike_angle);
             let stagger = attack.as_ref().map_or(0.0, |x| x.stagger);
@@ -1426,16 +1720,43 @@ impl Engine {
             if bash {
                 self.bash_hit(s.target, s.attacker, damage, power, stagger);
             } else {
-                self.hit(s.target, s.attacker, damage, power, stagger, None);
+                self.hit(
+                    s.target,
+                    s.attacker,
+                    damage,
+                    power,
+                    stagger,
+                    Struck::Hand(s.hand),
+                );
             }
         }
     }
 
     /// A blow landing: armor takes its share, then the target's guard if it is
     /// blocking towards the attacker. Blocked blows don't make it flinch, but a
-    /// blocked power attack breaks its guard with a stagger. `projectile`: the
-    /// arrow's, for a shot.
+    /// blocked power attack breaks its guard with a stagger. `by`: the hand
+    /// (its weapon, or its fist), or the shot's projectile.
     pub(crate) fn hit(
+        &mut self,
+        target: FormId,
+        attacker: FormId,
+        damage: f32,
+        power: bool,
+        stagger: f32,
+        by: Struck,
+    ) {
+        // What the blow is struck with is the attacker's weapon while it lands
+        // (`weapon_of`: perks' conditions, skills, impacts, `OnHit`).
+        let (weapon, projectile) = match by {
+            Struck::Hand(h) => (self.weapon_in_hand(attacker, h), None),
+            Struck::Shot(p) => (self.weapon_of(attacker), Some(p)),
+        };
+        let before = self.striking.replace((attacker, weapon));
+        self.land_blow(target, attacker, damage, power, stagger, projectile);
+        self.striking = before;
+    }
+
+    fn land_blow(
         &mut self,
         target: FormId,
         attacker: FormId,
@@ -1444,9 +1765,9 @@ impl Engine {
         stagger: f32,
         projectile: Option<FormId>,
     ) {
+        let weapon = self.weapon_of(attacker);
         // The attacker's perks (Armsman, Overdraw, Barbarian...), power attacks'
         // (Savage Strike...).
-        let weapon = self.weapon_of(attacker);
         let about = [weapon, Some(target)];
         let mut damage = self.perk_entry_point(ep::MOD_ATTACK_DAMAGE, attacker, &about, damage);
         if power {
@@ -1556,14 +1877,8 @@ impl Engine {
         if shot {
             return Some(SNEAK_BOW_MULT);
         }
-        let weapon = if attacker == PLAYER_REF {
-            self.player_weapon()
-        } else {
-            self.inventories
-                .get(&attacker)
-                .and_then(|i| i.weapon(&self.lo))
-        };
-        let anim = weapon
+        let anim = self
+            .weapon_of(attacker)
             .and_then(|w| self.lo.get(w))
             .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
             .unwrap_or(0);
@@ -1658,23 +1973,10 @@ impl Engine {
             .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor))
     }
 
-    /// The player's weapon: the one they have equipped, else the best melee one
-    /// they carry.
+    /// The player's weapon: the one in their right hand (a two-handed one
+    /// too); none, their fist.
     pub(crate) fn player_weapon(&self) -> Option<FormId> {
-        let inv = self.inventories.get(&PLAYER_REF)?;
-        inv.weapon(&self.lo)
-            .filter(|w| inv.count(*w) > 0)
-            .or_else(|| {
-                inv.items
-                    .iter()
-                    .filter(|(_, n)| *n > 0)
-                    .map(|(f, _)| *f)
-                    .filter(|f| {
-                        self.lo.tag_of(*f).map(|t| t.0) == Some(*b"WEAP")
-                            && !super::archery::is_bow(&self.lo, *f)
-                    })
-                    .max_by_key(|f| weapon_damage(&self.lo, *f) as u32)
-            })
+        self.weapon_in_hand(PLAYER_REF, RIGHT)
     }
 
     /// Base damage of what an actor (or the player) strikes with; 0 for creatures
@@ -1686,6 +1988,11 @@ impl Engine {
 
     /// The weapon an actor (or the player) strikes with, if any.
     pub(crate) fn weapon_of(&self, actor: FormId) -> Option<FormId> {
+        if let Some((a, w)) = self.striking
+            && a == actor
+        {
+            return w;
+        }
         if actor == PLAYER_REF {
             self.player_weapon()
         } else {
@@ -1693,6 +2000,12 @@ impl Engine {
                 .get(&actor)
                 .and_then(|i| i.weapon(&self.lo))
         }
+    }
+
+    /// The weapon in an actor's (or the player's) hand, if any.
+    pub(crate) fn weapon_in_hand(&self, actor: FormId, hand: usize) -> Option<FormId> {
+        let inv = self.inventories.get(&actor)?;
+        inv.weapon_in(&self.lo, hand).filter(|&w| inv.count(w) > 0)
     }
 
     /// The equipped shield's base armor rating, if any.
@@ -1947,12 +2260,17 @@ impl Engine {
         {
             return false;
         }
+        // A weapon in each hand: no guard to bash from (UESP's Combat page:
+        // dual wielding prevents blocking).
+        if a.hands == [Fights::Weapon; 2] {
+            return false;
+        }
         (self.shield_rating(a.ref_id).is_some() && a.torch.is_none())
             || (a.weapon_out && a.weapon_reach > 0.0)
     }
 
     /// How likely an actor is to block a blow: humanoids with a shield, or a
-    /// weapon drawn, as defensive as their combat style.
+    /// weapon drawn (not one in each hand), as defensive as their combat style.
     fn block_chance(&self, a: &ActorRuntime, set: &CombatSettings) -> Option<f32> {
         if a.dead
             || a.bleeding.is_some()
@@ -1960,7 +2278,7 @@ impl Engine {
         {
             return None;
         }
-        if a.bow {
+        if a.bow || a.hands == [Fights::Weapon; 2] {
             return None;
         }
         let chance = (a.stats.defensive * BLOCK_CHANCE).min(0.9);
@@ -2246,13 +2564,7 @@ impl Engine {
         bash: bool,
         blocked: bool,
     ) {
-        let weapon = if attacker == PLAYER_REF {
-            self.player_weapon()
-        } else {
-            self.inventories
-                .get(&attacker)
-                .and_then(|i| i.weapon(&self.lo))
-        };
+        let weapon = self.weapon_of(attacker);
         let form =
             |e: &Self, f: Option<FormId>| f.map_or(papyrus::Value::None, |f| e.object_value(f));
         let args = vec![
@@ -2334,17 +2646,27 @@ impl Engine {
         self.player_died_at.is_some()
     }
 
-    /// The attack button went down: a power attack if it is held long enough
-    /// (`update_player_attack`), else a basic one when it comes up.
-    pub fn player_attack_press(&mut self) {
+    /// An attack button went down (`RIGHT`: Right Attack/Block, `LEFT`: Left
+    /// Attack/Block): the spell in that hand is cast; else the right hand
+    /// swings (a bash with the guard up), and the left swings its weapon or
+    /// fist, or raises the guard when the right hand holds a weapon or it
+    /// holds a shield or torch. Held long enough, a power attack
+    /// (`update_player_attack`), else a basic one when it comes up; pressed
+    /// with the other hand's held, both hands strike (a dual-wield attack,
+    /// or the fists' combo).
+    pub fn player_attack_press(&mut self, hand: usize) {
         if self.disabled_controls.fighting {
             return;
         }
-        // A spell in the right hand is cast instead.
-        if self.player_cast_press(crate::spells::RIGHT) {
+        if self.player_cast_press(hand) {
             return;
         }
-        if self.player_blocking {
+        let hands = self.player_hands();
+        if hand == LEFT && !left_strikes(hands) {
+            self.player_blocking = true;
+            return;
+        }
+        if hand == RIGHT && self.player_blocking {
             self.player_bash();
             return;
         }
@@ -2353,10 +2675,60 @@ impl Engine {
             self.player_draw_weapon(true);
             return;
         }
-        if self.player_has_bow() {
-            self.player_graph_event("bowAttackStart");
+        let side = if hand == LEFT {
+            Side::Left
+        } else {
+            Side::Right
+        };
+        match self.player_attack_held.as_mut() {
+            // The other hand's held: both strike, if they are alike.
+            Some(h) if h.side != side && h.side != Side::Dual => {
+                if hands[RIGHT] == hands[LEFT] && hands[RIGHT] != Fights::Not {
+                    h.side = Side::Dual;
+                }
+            }
+            Some(_) => {}
+            None => {
+                if hand == RIGHT && self.player_has_bow() {
+                    self.player_graph_event("bowAttackStart");
+                }
+                self.player_attack_held = Some(AttackHold { side, held: 0.0 });
+            }
         }
-        self.player_attack_held = Some(0.0);
+    }
+
+    /// The attack type keyword of the attack an actor (or the player) is
+    /// making (`IsAttackType`).
+    pub(crate) fn attack_type_of(&self, actor: FormId) -> Option<FormId> {
+        let kind = if actor == PLAYER_REF {
+            self.player_swing.as_ref()?.attack_type
+        } else {
+            let a = self.actor_ref(actor)?;
+            a.stats.attacks.get(a.combat.as_ref()?.attack?)?.attack_type
+        };
+        Some(kind).filter(|k| !k.is_null())
+    }
+
+    /// An actor's (or the player's) attack speed multipliers for each hand
+    /// (`WeaponSpeedMult`, `LeftWeaponSpeedMult`; 0 counting as 1: UESP's
+    /// actor value list).
+    pub(crate) fn weapon_speed_mults(&self, actor: FormId) -> [f32; 2] {
+        [
+            esp::actor_value::WEAPON_SPEED_MULT,
+            esp::actor_value::LEFT_WEAPON_SPEED_MULT,
+        ]
+        .map(|av| {
+            Some(self.actor_value(actor, av))
+                .filter(|v| *v > 0.0)
+                .unwrap_or(1.0)
+        })
+    }
+
+    /// What the player's hands fight with.
+    pub(crate) fn player_hands(&self) -> [Fights; 2] {
+        self.inventories
+            .get(&PLAYER_REF)
+            .map_or_else(Default::default, |i| fighting_hands(&self.lo, i))
     }
 
     /// Attacking with the guard up: a bash at whatever actor is in front within
@@ -2401,18 +2773,32 @@ impl Engine {
         }
     }
 
-    /// The attack button came up: a basic swing, or with a bow, the arrow loosed.
-    pub fn player_attack_release(&mut self) {
-        if self.player_cast_release(crate::spells::RIGHT) {
+    /// An attack button came up: its hand's spell is cast, the guard
+    /// lowered, or the swing held made (a basic one), or with a bow, the
+    /// arrow loosed.
+    pub fn player_attack_release(&mut self, hand: usize) {
+        if hand == LEFT {
+            self.player_blocking = false;
+        }
+        if self.player_cast_release(hand) {
             return;
         }
-        if let Some(held) = self.player_attack_held.take() {
-            if self.player_has_bow() {
-                self.player_graph_event("attackRelease");
-                self.player_loose(held);
-            } else {
-                self.player_attack(false);
-            }
+        let side = if hand == LEFT {
+            Side::Left
+        } else {
+            Side::Right
+        };
+        let Some(held) = self
+            .player_attack_held
+            .take_if(|h| h.side == side || h.side == Side::Dual)
+        else {
+            return;
+        };
+        if held.side == Side::Right && self.player_has_bow() {
+            self.player_graph_event("attackRelease");
+            self.player_loose(held.held);
+        } else {
+            self.player_attack(held.side, false);
         }
     }
 
@@ -2421,102 +2807,174 @@ impl Engine {
             .is_some_and(|w| super::archery::is_bow(&self.lo, w))
     }
 
-    /// Holding the attack button: a power attack once held long enough (a bow
+    /// Holding an attack button: a power attack once held long enough (a bow
     /// just draws on).
     pub(crate) fn update_player_attack(&mut self, dt: f32) {
-        let Some(t) = self.player_attack_held.as_mut() else {
+        let bow = self.player_has_bow();
+        let Some(h) = self.player_attack_held.as_mut() else {
             return;
         };
-        *t += dt;
-        if *t >= POWER_ATTACK_HOLD && !self.player_has_bow() {
+        h.held += dt;
+        if h.held >= POWER_ATTACK_HOLD && !(h.side == Side::Right && bow) {
+            let side = h.side;
             self.player_attack_held = None;
-            self.player_attack(true);
+            self.player_attack(side, true);
         }
     }
 
-    /// The player swings at whatever actor is in front within reach. A power
-    /// attack takes the race's standing power attack's damage multiplier and
-    /// stagger, and stamina; without enough left it is a basic swing.
-    pub fn player_attack(&mut self, power: bool) {
-        if self.disabled_controls.fighting {
-            return;
-        }
-        // One swing at a time.
-        if self.player_dead()
-            || self.conversation.is_some()
-            || self.player_blocking
-            || self.player_swing.is_some()
-        {
-            return;
-        }
-        let weapon = self.player_weapon();
+    /// The race's attack the player makes with `side`'s hands: a power attack
+    /// for how they move (the left hand's `...LeftHand`, standing if there is
+    /// none for it), else a basic one; bare-handed with empty hands. Both
+    /// hands with nothing for them (fists' basic attack): the right's.
+    fn player_attack_for(&self, side: Side, power: bool) -> Option<Attack> {
         let stats = self.player_stats();
-        // The power attack for how they move, else the standing one, else any.
-        let wanted = self.player_power_attack_event();
-        let power_attacks: Vec<&Attack> = stats
-            .attacks
-            .iter()
-            .filter(|a| {
-                a.flags & ATK_POWER != 0
-                    && a.event.to_ascii_lowercase().starts_with("attackpowerstart")
-            })
-            .collect();
-        let find = |name: &str| {
-            power_attacks
+        let hands = self.player_hands();
+        let fits = |a: &&Attack| {
+            a.flags & ATK_BASH == 0
+                && a.power() == power
+                && a.side() == side
+                && a.fits(hands, stats.bare_handed)
+        };
+        let found: Vec<&Attack> = stats.attacks.iter().filter(fits).collect();
+        let named = |name: &str| {
+            found
                 .iter()
                 .find(|a| a.event.eq_ignore_ascii_case(name))
                 .copied()
         };
-        let power_attack = find(wanted)
-            .or_else(|| find("attackPowerStartInPlace"))
-            .or(power_attacks.first().copied());
-        let cost = self.power_attack_cost(PLAYER_REF, weapon)
-            * power_attack.map_or(1.0, |a| a.stamina_mult);
-        let power = power && self.player_stamina >= cost;
-        let (mult, stagger) = match power_attack.filter(|_| power) {
+        let pick = if power && side != Side::Dual {
+            let wanted = self.player_power_attack_event();
+            let wanted = match side {
+                Side::Left => match wanted {
+                    "attackPowerStartBackward" => "attackPowerStartBackLeftHand".to_owned(),
+                    w => format!("{w}LeftHand"),
+                },
+                _ => wanted.to_owned(),
+            };
+            named(&wanted)
+                .or_else(|| named("attackPowerStartInPlace"))
+                .or_else(|| named("attackPowerStartInPlaceLeftHand"))
+                .or(found.first().copied())
+        } else {
+            found.first().copied()
+        };
+        match pick {
+            Some(a) => Some(a.clone()),
+            None if side == Side::Dual => self.player_attack_for(Side::Right, power),
+            None => None,
+        }
+    }
+
+    /// The player strikes with `side`'s hands at whatever actor is in front
+    /// within reach: the race's attack for them (`player_attack_for`). A
+    /// power attack takes its damage multiplier and stagger, and stamina
+    /// (the hands' heavier weapon's cost); without enough it is a basic one.
+    pub fn player_attack(&mut self, side: Side, power: bool) {
+        if self.disabled_controls.fighting {
+            return;
+        }
+        // One swing at a time, until it has landed.
+        if self.player_dead()
+            || self.conversation.is_some()
+            || self.player_blocking
+            || self.player_swing.as_ref().is_some_and(|s| s.strikes == 0)
+            || self.player_attack_recovery > 0.0
+        {
+            return;
+        }
+        let power_attack = self.player_attack_for(side, true).filter(|_| power);
+        let weapon = |e: &Self, h: usize| e.weapon_in_hand(PLAYER_REF, h);
+        let heaviest = power_attack
+            .as_ref()
+            .map_or(side, |a| a.side())
+            .hands()
+            .iter()
+            .filter_map(|&h| weapon(self, h))
+            .max_by(|a, b| weapon_weight(&self.lo, *a).total_cmp(&weapon_weight(&self.lo, *b)));
+        let cost = self.power_attack_cost(PLAYER_REF, heaviest)
+            * power_attack.as_ref().map_or(1.0, |a| a.stamina_mult);
+        let attack = match power_attack.filter(|_| self.player_stamina >= cost) {
+            Some(a) => Some(a),
+            None => self.player_attack_for(side, false),
+        };
+        let power = attack.as_ref().is_some_and(|a| a.power());
+        let side = attack.as_ref().map_or(Side::Right, |a| a.side());
+        let (mult, stagger) = match attack.as_ref().filter(|_| power) {
             Some(a) => (a.damage_mult.max(1.0) * 1.5, a.stagger),
             None => (1.0, 0.0),
         };
         // With the weapon out, the body's graph plays the swing and lands it at
-        // its HitFrame, and won't swing again mid-swing; otherwise (no graph,
+        // its HitFrames, and won't swing again mid-swing; otherwise (no graph,
         // or the console's swing with it put away) it lands at once.
-        let event = match power_attack.filter(|_| power) {
-            Some(a) => a.event.clone(),
-            None => "attackStart".to_owned(),
-        };
+        let event = attack
+            .as_ref()
+            .map_or_else(|| "attackStart".to_owned(), |a| a.event.clone());
         // Still drawing: not yet.
         let played = self.player_weapon_drawn();
         if played && (!self.player_weapon_ready() || !self.player_graph_event(&event)) {
+            log::debug!("player's {event} not taken");
             return;
         }
+        log::debug!("player attacks: {event} ({side:?})");
         if power {
             self.spend_stamina(PLAYER_REF, cost);
         }
-        let (damage, reach) = match weapon.and_then(|w| self.lo.get(w)) {
-            Some(rec) => (
-                rec.get(b"DATA")
-                    .filter(|d| d.len() >= 10)
-                    .map_or(4.0, |d| u16::from_le_bytes([d[8], d[9]]) as f32),
-                COMBAT_DISTANCE * rec.get(b"DNAM").map_or(1.0, |d| f32_at(d, 8)).max(0.5) + 40.0,
-            ),
-            None => (4.0, 120.0),
-        };
-        let damage = damage * mult;
-        if played {
-            self.player_swing = Some(crate::player_body::PlayerSwing {
-                power,
-                damage,
+        let stats = self.player_stats();
+        let ignore = attack
+            .as_ref()
+            .is_some_and(|a| a.flags & ATK_IGNORE_WEAPON != 0);
+        let mut blows = [None; 2];
+        for &h in side.hands() {
+            let (damage, reach) = match weapon(self, h)
+                .filter(|_| !ignore)
+                .and_then(|w| self.lo.get(w))
+            {
+                Some(rec) => (
+                    rec.get(b"DATA")
+                        .filter(|d| d.len() >= 10)
+                        .map_or(4.0, |d| u16::from_le_bytes([d[8], d[9]]) as f32),
+                    COMBAT_DISTANCE * rec.get(b"DNAM").map_or(1.0, |d| f32_at(d, 8)).max(0.5)
+                        + 40.0,
+                ),
+                None => (stats.unarmed_damage.max(1.0), 120.0),
+            };
+            blows[h] = Some(Blow {
+                damage: damage * mult,
                 reach,
-                stagger,
-                waited: 0.0,
             });
+        }
+        let swing = crate::player_body::PlayerSwing {
+            side,
+            power,
+            attack_type: attack.as_ref().map_or(FormId::NULL, |a| a.attack_type),
+            blows,
+            stagger,
+            again: if power { cost } else { 0.0 },
+            waited: 0.0,
+            strikes: 0,
+            strike_age: [f32::INFINITY; 2],
+        };
+        if played {
+            self.player_swing = Some(swing);
             return;
         }
-        self.player_strike(power, damage, reach, stagger);
+        for &h in side.hands() {
+            if let Some(b) = blows[h] {
+                self.player_strike(h, power, b.damage, b.reach, stagger);
+            }
+        }
     }
 
-    /// The player's swing lands on whatever is in front of them within reach.
-    pub(crate) fn player_strike(&mut self, power: bool, damage: f32, reach: f32, stagger: f32) {
+    /// A blow of the player's hand lands on whatever is in front of them
+    /// within reach.
+    pub(crate) fn player_strike(
+        &mut self,
+        hand: usize,
+        power: bool,
+        damage: f32,
+        reach: f32,
+        stagger: f32,
+    ) {
         let (eye, dir) = self.player_aim();
         let ray = self.physics.raycast(eye, dir, reach);
         log::debug!("player attack: {ray:?} within {reach:.0}");
@@ -2532,7 +2990,7 @@ impl Engine {
                 "player {} {r} for {damage:.0}",
                 if power { "power attacks" } else { "strikes" }
             );
-            self.hit(r, PLAYER_REF, damage, power, stagger, None);
+            self.hit(r, PLAYER_REF, damage, power, stagger, Struck::Hand(hand));
         } else {
             // Anything else (a body, clutter, a wall): pushed if it moves.
             let push = if power { BLOW_PUSH * 2.0 } else { BLOW_PUSH };
@@ -2965,3 +3423,69 @@ impl Engine {
 
 /// Faction relations cache type.
 pub type FactionRelations = HashMap<FormId, Arc<Vec<(FormId, u32)>>>;
+
+#[cfg(test)]
+mod hand_tests {
+    use super::*;
+
+    fn attack(event: &str) -> Attack {
+        Attack {
+            event: event.into(),
+            damage_mult: 1.0,
+            chance: 1.0,
+            flags: 0,
+            strike_angle: 35.0,
+            stagger: 0.0,
+            stamina_mult: 1.0,
+            attack_type: FormId::NULL,
+        }
+    }
+
+    use Fights::{Fist, Not, Weapon};
+
+    #[test]
+    fn sides() {
+        assert_eq!(attack("attackStart").side(), Side::Right);
+        assert_eq!(attack("attackPowerStartForwardLeftHand").side(), Side::Left);
+        assert_eq!(attack("AttackStartH2HLeft").side(), Side::Left);
+        assert_eq!(attack("AttackStartH2HRight").side(), Side::Right);
+        assert_eq!(attack("attackPowerStartDualWield").side(), Side::Dual);
+        assert_eq!(attack("attackPowerStartH2HCombo").side(), Side::Dual);
+        assert!(attack("attackPowerStartForwardH2HLeftHand").bare_handed());
+    }
+
+    #[test]
+    fn what_hands_make() {
+        let ok = |e: &str, hands| attack(e).fits(hands, true);
+        assert!(ok("attackStart", [Weapon, Not]));
+        assert!(!ok("attackStart", [Fist, Fist]));
+        assert!(ok("AttackStartH2HRight", [Fist, Fist]));
+        assert!(ok("attackStartLeftHand", [Fist, Weapon]));
+        assert!(!ok("attackStartLeftHand", [Weapon, Not]));
+        assert!(ok("attackStartDualWield", [Weapon, Weapon]));
+        assert!(!ok("attackStartDualWield", [Weapon, Fist]));
+        assert!(ok("attackPowerStartH2HCombo", [Fist, Fist]));
+        // Creatures: their own attacks, the right hand's.
+        assert!(attack("attackStart").fits([Fist, Fist], false));
+        assert!(!attack("attackStartLeftHand").fits([Fist, Fist], false));
+    }
+
+    #[test]
+    fn left_button() {
+        assert!(left_strikes([Weapon, Weapon]));
+        assert!(left_strikes([Fist, Fist]));
+        assert!(left_strikes([Not, Fist]));
+        assert!(!left_strikes([Weapon, Fist]));
+        assert!(!left_strikes([Fist, Not]));
+    }
+
+    #[test]
+    fn hit_frames() {
+        assert_eq!(Side::Dual.struck(HIT_RIGHT | HIT_LEFT), vec![RIGHT, LEFT]);
+        assert_eq!(Side::Dual.struck(HIT_LEFT), vec![LEFT]);
+        // A one-handed swing lands its own hand whatever the payload.
+        assert_eq!(Side::Left.struck(HIT_RIGHT), vec![LEFT]);
+        assert_eq!(hit_frame_bit(Some("Left")), HIT_LEFT);
+        assert_eq!(hit_frame_bit(None), HIT_RIGHT);
+    }
+}

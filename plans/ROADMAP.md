@@ -169,6 +169,19 @@ game each piece unlocks.
   Papyrus `GetEquippedWeapon(abLeftHand)` / `GetEquippedShield`,
   `GetEquippedItemType` 9 for spells. Open questions:
   `known_ambiguities/hands.md`
+- Fighting with each hand: the left attack button swings a weapon or fist
+  there (else raises the guard), both buttons strike together (dual-wield
+  attacks; the fists' combo), held a power attack (directional left-hand
+  ones too); the race's attack for the hands, each `HitFrame` landing its
+  hand (`Left` payloads the left) with that hand's weapon, damage, reach,
+  perks, skill and enchantment; power attacks' further blows costing
+  stamina again; no blocking with a weapon in each hand. Hand-to-hand: empty
+  hands punch with the race's bare-handed attacks (player and NPCs). The
+  graphs' attack speeds (`weaponSpeedMult`, `leftWeaponSpeedMult`) from the
+  weapons and actor values. NPCs whose combat style allows it dual wield a
+  second one-handed weapon. Condition `IsAttackType` (the attack's type
+  keyword: Dual Savagery, Critical Charge...). Console `ppress` /
+  `prelease [left|both]`, `pattack [power] [left|both]`
 - Player items: activating an item picks it up (`XCNT` counts; gone from the world for
   good), containers open a take / store window beside the inventory (Tab); console
   `[ref.]additem`, `removeitem`, `showinventory`, `openactorcontainer`, `activate`.
@@ -958,10 +971,9 @@ game each piece unlocks.
    guards; fences; see Done)
    - The player's body (see Done): first-person arms and weapons (the
      `_1stperson` skeleton, `1stperson*` models, its own graph); casting,
-     left-hand attacks (the left attack button blocks even with a weapon
-     there), dual-wield and hand-to-hand attacks (NPCs' too: their attack
-     data's `lefthand` / `dualwield` events are left out), basic attacks by
-     direction and sprinting (`attackStartSprint`), `attackStop`; arrows
+     Critical Charge, basic attacks by direction and sprinting
+     (`attackStartSprint`, the left hand's `...SprintLeftHand`: left out of
+     the attack data with the mounted ones), `attackStop`; arrows
      loosed at the graph's `arrowRelease` and bashes landing at its
      `HitFrame` (both land at once now); re-equipping keeping the weapon
      drawn (it rebuilds the body); footsteps from the graph's events (now the

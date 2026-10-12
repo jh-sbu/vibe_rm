@@ -747,6 +747,7 @@ fn main() -> Result<()> {
         }
         Some("hkb-events") => {
             // hkb-events <data dir> <project dir, e.g. meshes/actors/character> <event>...
+            // (ALL=1: every clip event the plays raise, not only those with a payload)
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let v = vfs::Vfs::new(data, &names);
@@ -827,8 +828,10 @@ fn main() -> Result<()> {
                             .map(|c| format!("{} ({:?})", c.animation, c.mode))
                             .collect::<Vec<_>>()
                     );
+                    let all = std::env::var("ALL").is_ok();
                     for e in pb.events.iter().filter(|e| {
-                        e.payload.is_some() || e.event.to_ascii_lowercase().contains("animobj")
+                        all || e.payload.is_some()
+                            || e.event.to_ascii_lowercase().contains("animobj")
                     }) {
                         println!(
                             "    clip {} @{:.3}{} {} {:?}",

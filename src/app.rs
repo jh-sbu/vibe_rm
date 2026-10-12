@@ -835,25 +835,23 @@ impl ApplicationHandler for App {
                 button: MouseButton::Right,
                 ..
             } => {
-                // Captured: hold to block, or cast the left hand's spell.
+                // Captured: the left hand's spell, weapon or fist, else hold to
+                // block.
                 let down = state == ElementState::Pressed && s.grabbed && !s.engine.menu_up();
+                let left = crate::spells::LEFT;
                 if down {
                     s.engine.input_event("Left Attack/Block");
+                    s.engine.player_attack_press(left);
+                } else if state == ElementState::Released {
+                    s.engine.player_attack_release(left);
                 }
-                let left = crate::spells::LEFT;
-                let casting = if down {
-                    s.engine.player_cast_press(left)
-                } else {
-                    s.engine.player_cast_release(left)
-                };
-                s.engine.player_blocking = down && !casting;
             }
             WindowEvent::MouseInput {
                 state: ElementState::Released,
                 button: MouseButton::Left,
                 ..
             } => {
-                s.engine.player_attack_release();
+                s.engine.player_attack_release(crate::spells::RIGHT);
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
@@ -863,7 +861,7 @@ impl ApplicationHandler for App {
                 // Captured: swing at what's ahead (held: a power attack).
                 if s.grabbed && !s.engine.menu_up() {
                     s.engine.input_event("Right Attack/Block");
-                    s.engine.player_attack_press();
+                    s.engine.player_attack_press(crate::spells::RIGHT);
                 }
                 if !s.grabbed
                     && !s.ui.console.open

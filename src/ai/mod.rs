@@ -369,6 +369,8 @@ pub struct ActorRuntime {
     /// The combat state scripts last heard of (`OnCombatStateChanged`).
     pub(crate) combat_reported: combat::CombatState,
     pub(crate) weapon_reach: f32,
+    /// What its hands fight with (`combat::fighting_hands`).
+    pub(crate) hands: [combat::Fights; 2],
     /// Stamina left, and seconds before it starts coming back after being spent;
     /// what a power attack costs before the attack's own multiplier (by weapon
     /// weight).
@@ -393,15 +395,17 @@ pub struct ActorRuntime {
     /// Took another weapon to practise: the one it had (to take back after).
     pub(crate) practice_weapon: Option<Option<FormId>>,
     pub(crate) detect_in: f32,
-    hit_frame: bool,
+    /// Hit frames raised this update (`combat::HIT_RIGHT` / `HIT_LEFT`).
+    hit_frames: u8,
     /// Seconds left bleeding out (essential actors brought down).
     pub(crate) bleeding: Option<f32>,
     /// Dead, and the ragdoll it lies as (with the mapping back to its bones).
     pub(crate) dead: bool,
     pub(crate) ragdoll: Option<(crate::physics::Ragdoll, crate::world::ragdoll::RagdollPose)>,
-    /// The lit torch it holds, and the shield it put away for it.
+    /// The lit torch it holds, and what it put away for it (a shield, a
+    /// second weapon).
     pub(crate) torch: Option<FormId>,
-    pub(crate) stowed_shield: Option<FormId>,
+    pub(crate) stowed_left: Option<FormId>,
     /// The armor and weapons its models show (see `Engine::update_worn`).
     pub(crate) worn: Vec<FormId>,
     /// The graph raised `IdleFurnitureExit`: out of the furniture.
@@ -473,6 +477,7 @@ impl ActorRuntime {
             combat: None,
             combat_reported: Default::default(),
             weapon_reach: 0.0,
+            hands: Default::default(),
             stamina: 50.0,
             stamina_wait: 0.0,
             stamina_spent: false,
@@ -487,10 +492,10 @@ impl ActorRuntime {
             loose: false,
             power_cost: 20.0,
             detect_in: stagger,
-            hit_frame: false,
+            hit_frames: 0,
             bleeding: None,
             torch: None,
-            stowed_shield: None,
+            stowed_left: None,
             worn: Vec::new(),
             weapon_out: false,
             equipment_changed: false,
@@ -1799,7 +1804,7 @@ impl ActorRuntime {
                     self.equipment_changed |= out != self.weapon_out;
                     self.weapon_out = out;
                 }
-                "hitframe" => self.hit_frame = true,
+                "hitframe" => self.hit_frames |= combat::hit_frame_bit(r.payload.as_deref()),
                 "arrowrelease" => self.arrow_release = true,
                 // Body-part layers running the same clips (humanoids' arms) raise
                 // their triggers again: one sound each.
@@ -3130,18 +3135,9 @@ impl Engine {
                 if std::mem::take(&mut a.equipment_changed) {
                     equip.push((*key, index, a.ref_id));
                 }
-                if std::mem::take(&mut a.hit_frame)
-                    && let Some(c) = a.combat.as_mut()
-                    && !std::mem::replace(&mut c.struck, true)
-                {
-                    swings.push(combat::Swing {
-                        attacker: a.ref_id,
-                        target: c.target,
-                        attack: c.attack,
-                        pos: a.feet(),
-                        chest: a.feet().z + a.height() * 0.75,
-                        heading: a.heading,
-                    });
+                let frames = std::mem::take(&mut a.hit_frames);
+                if frames != 0 {
+                    swings.extend(a.strike(frames));
                 }
                 for s in a.sounds.drain(..) {
                     sounds.push((s, a.pos + Vec3::Z * 64.0 * a.scale));

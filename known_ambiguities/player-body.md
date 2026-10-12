@@ -37,10 +37,16 @@ variable names; the race's attack data (`ATKE`) for attack events.
 - **Power attack by movement.** The event is chosen from the race's attack
   names: `attackPowerStartInPlace` standing, `..._Sprint` sprinting, else
   `...Forward` / `Right` / `Backward` / `Left` by `Direction` (falling back to
-  the standing one, then any). The names suggest this; no source states it.
+  the standing one, then any); the left hand's add `LeftHand`
+  (`attackPowerStartBackLeftHand` going back). The names suggest this; no
+  source states it. The hands' attacks: `known_ambiguities/hands.md`.
 - **Blows at `HitFrame`**, timed by the third-person graph in first person
   too (the game runs a first-person graph there). A swing whose `HitFrame`
-  hasn't come within 1.5 s is dropped; the limit is chosen.
+  hasn't come within 1.5 s (of its start, or its last blow) is dropped; the
+  limit is chosen. It is over at `attackStop` once it has landed, and the
+  next attack waits 0.4 s (the graphs' blend out of an attack): the clip
+  blending out raises `attackStop` again, which would end an attack
+  started meanwhile. How the game gates it is unknown.
 - **The third-person camera's starting distance** is 200 units, chosen by
   eye: the `[Camera]` defaults (STEP's default INI listing) give the zoom
   limits (`fVanityModeMinDist` 155, `fVanityModeMaxDist` 600) and the

@@ -69,9 +69,11 @@ impl Engine {
         }
     }
 
-    /// Light (`Some`) or put away (`None`) a torch: it takes the shield's place in
-    /// the left hand (`Inventory::hold`) and the graph raises it.
+    /// Light (`Some`) or put away (`None`) a torch: it takes the place of the
+    /// shield or second weapon in the left hand (`Inventory::hold`) and the
+    /// graph raises it.
     fn hold_torch(&mut self, key: CellKey, index: usize, actor: FormId, torch: Option<FormId>) {
+        let speeds = self.weapon_speed_mults(actor);
         let lo = &self.lo;
         let Some(a) = self
             .cells
@@ -84,20 +86,25 @@ impl Engine {
         let inv = self.inventories.entry(actor).or_default();
         if let Some(t) = old {
             inv.take_off(t);
-            // The shield it set aside, unless the hand was taken since.
-            if let Some(s) = a.stowed_shield.take()
+            // What it set aside, unless the hand was taken since.
+            if let Some(s) = a.stowed_left.take()
                 && inv.held(LEFT).is_none()
             {
                 inv.hold(lo, s, &[LEFT]);
             }
         }
         if let Some(t) = torch {
-            a.stowed_shield = inv.shield(lo);
+            // The shield, or a second weapon.
+            a.stowed_left = inv.held(LEFT).filter(
+                |&f| matches!(lo.tag_of(f).map(|t| t.0), Some(t) if t == *b"ARMO" || t == *b"WEAP"),
+            );
             inv.hold(lo, t, &[LEFT]);
         }
-        let left = inv.hand(lo, true).for_graph();
+        a.hands = crate::ai::combat::fighting_hands(lo, inv);
         if let Some(g) = &mut a.graph {
-            g.set_variable("iLeftHandType", left);
+            for (var, value) in crate::ai::combat::hand_graph_vars(lo, inv, speeds) {
+                g.set_variable(var, value);
+            }
         }
         log::debug!(
             "{actor} {}",
@@ -138,6 +145,7 @@ impl Engine {
             })
             .unwrap_or(0.0);
         let cost = self.power_attack_cost(actor, Some(weapon));
+        let speeds = self.weapon_speed_mults(actor);
         let Some(index) = self
             .cells
             .get(&key)
@@ -154,9 +162,11 @@ impl Engine {
         };
         a.weapon_reach = reach;
         a.power_cost = cost;
+        a.hands = crate::ai::combat::fighting_hands(lo, &inv);
         if let Some(g) = &mut a.graph {
-            g.set_variable("iLeftHandType", inv.hand(lo, true).for_graph());
-            g.set_variable("iRightHandType", inv.hand(lo, false).for_graph());
+            for (var, value) in crate::ai::combat::hand_graph_vars(lo, &inv, speeds) {
+                g.set_variable(var, value);
+            }
         }
         self.refresh_equipment(key, index, actor);
         true
@@ -459,25 +469,28 @@ impl Engine {
         let bow = weapon.filter(|&w| crate::ai::archery::is_bow(&self.lo, w));
         let cost = self.power_attack_cost(actor, weapon);
         let footsteps = d.footsteps.and_then(|f| self.footstep_set(f));
+        let speeds = self.weapon_speed_mults(actor);
         let lo = &self.lo;
         let a = &mut self.cells.get_mut(&key).unwrap().actors[index];
         a.worn = worn;
         a.footstep_set = footsteps;
         a.weapon_reach = reach;
         a.power_cost = cost;
+        a.hands = crate::ai::combat::fighting_hands(lo, &inv);
         a.bow = bow.is_some();
         if let Some(b) = bow {
             a.bow_speed = crate::ai::archery::bow_speed(lo, b);
         }
         if let Some(g) = &mut a.graph {
-            g.set_variable("iLeftHandType", inv.hand(lo, true).for_graph());
-            g.set_variable("iRightHandType", inv.hand(lo, false).for_graph());
+            for (var, value) in crate::ai::combat::hand_graph_vars(lo, &inv, speeds) {
+                g.set_variable(var, value);
+            }
         }
         self.refresh_equipment(key, index, actor);
     }
 
-    /// An actor leaving the loaded world puts its torch away, and takes up the
-    /// shield it set aside for it, so it comes back as it was.
+    /// An actor leaving the loaded world puts its torch away, and takes up
+    /// what it set aside for it, so it comes back as it was.
     pub(crate) fn put_torch_away_for_now(&mut self, a: &crate::ai::ActorRuntime) {
         let Some(torch) = a.torch else {
             return;
@@ -485,7 +498,7 @@ impl Engine {
         let lo = &self.lo;
         if let Some(inv) = self.inventories.get_mut(&a.ref_id) {
             inv.take_off(torch);
-            if let Some(s) = a.stowed_shield
+            if let Some(s) = a.stowed_left
                 && inv.held(LEFT).is_none()
             {
                 inv.hold(lo, s, &[LEFT]);

@@ -140,6 +140,13 @@ pub struct Engine {
     pub(crate) player_body: Option<crate::player_body::PlayerBody>,
     /// The player's swing waiting for their body's graph to land it.
     pub(crate) player_swing: Option<crate::player_body::PlayerSwing>,
+    /// Seconds before the player can attack again after a swing ended: the
+    /// graph blends out of it and its clip raises `attackStop` again,
+    /// ending an attack started meanwhile.
+    pub(crate) player_attack_recovery: f32,
+    /// The attacker and what it strikes with while a blow lands
+    /// (`Engine::weapon_of`).
+    pub(crate) striking: Option<(FormId, Option<FormId>)>,
     /// Seen from behind the player rather than through their eyes.
     pub third_person: bool,
     /// How far behind the eye the third-person camera sits.
@@ -162,12 +169,12 @@ pub struct Engine {
     pub journal_last_tab: bool,
     /// The journal's Quit to Desktop: the app exits.
     pub quit_requested: bool,
-    /// The player's stamina, seconds before it comes back after being spent, how
-    /// long they have held the attack button (a power attack when long enough),
-    /// and their stats (race, NPC record), read on first use.
+    /// The player's stamina, seconds before it comes back after being spent,
+    /// the attack buttons they hold and how long (a power attack when long
+    /// enough), and their stats (race, NPC record), read on first use.
     pub player_stamina: f32,
     pub(crate) player_stamina_wait: f32,
-    pub(crate) player_attack_held: Option<f32>,
+    pub(crate) player_attack_held: Option<crate::ai::combat::AttackHold>,
     pub(crate) player_stats: std::cell::OnceCell<std::sync::Arc<crate::ai::combat::CombatStats>>,
     /// Arrows in flight or stuck where they struck.
     pub(crate) projectiles: Vec<crate::ai::archery::Projectile>,
@@ -389,6 +396,8 @@ impl Engine {
             player_blocking: false,
             player_body: None,
             player_swing: None,
+            player_attack_recovery: 0.0,
+            striking: None,
             third_person: false,
             third_person_distance: crate::player_body::THIRD_PERSON_DEFAULT,
             third_person_combat: 0.0,
@@ -1257,6 +1266,7 @@ impl Engine {
             rt.worn = self.worn_items(&d.inventory);
             rt.footstep_set = d.footsteps.and_then(|f| self.footstep_set(f));
             log::debug!(target: "footsteps", "{} ({}) walks with footstep set {:?}", d.ref_id, d.name, d.footsteps);
+            rt.hands = crate::ai::combat::fighting_hands(&self.lo, &d.inventory);
             rt.weapon_reach = d
                 .inventory
                 .weapon(&self.lo)
@@ -1312,15 +1322,13 @@ impl Engine {
                     });
                     g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
                     // What the hands hold (sheathed): the graph picks equip / unequip
-                    // and weapon-drawn behaviours by it.
-                    g.set_variable(
-                        "iLeftHandType",
-                        d.inventory.hand(&self.lo, true).for_graph(),
-                    );
-                    g.set_variable(
-                        "iRightHandType",
-                        d.inventory.hand(&self.lo, false).for_graph(),
-                    );
+                    // and weapon-drawn behaviours by it, and its attacks' speeds.
+                    let speeds = self.weapon_speed_mults(d.ref_id);
+                    for (var, value) in
+                        crate::ai::combat::hand_graph_vars(&self.lo, &d.inventory, speeds)
+                    {
+                        g.set_variable(var, value);
+                    }
                 }
                 // Desynchronise actors standing about.
                 rt.graph_walk_speed = g.walk_speed(&self.vfs, &mut self.anims, &skel);

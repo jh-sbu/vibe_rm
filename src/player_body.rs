@@ -45,8 +45,10 @@ pub struct PlayerBody {
     ready: bool,
     /// The guard is up in the graph (`blockStart`).
     guard: bool,
-    /// The graph raised `HitFrame` (a swing lands) this update.
-    hit_frame: bool,
+    /// The graph's `HitFrame`s this update (a swing lands: `HIT_RIGHT`,
+    /// `HIT_LEFT`), and whether it raised `attackStop` (a swing is over).
+    hit_frames: u8,
+    attack_stop: bool,
     /// `Direction` while moving (none standing), and sprinting.
     direction: Option<f32>,
 }
@@ -110,7 +112,8 @@ impl Engine {
             weapon_out: false,
             ready: false,
             guard: false,
-            hit_frame: false,
+            hit_frames: 0,
+            attack_stop: false,
             direction: None,
         };
         let mut pose = skel.model_space(&skel.bind_locals());
@@ -140,11 +143,10 @@ impl Engine {
                     .map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap()))
             });
             g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
-            g.set_variable("iLeftHandType", inventory.hand(&self.lo, true).for_graph());
-            g.set_variable(
-                "iRightHandType",
-                inventory.hand(&self.lo, false).for_graph(),
-            );
+            let speeds = self.weapon_speed_mults(PLAYER_REF);
+            for (var, value) in crate::ai::combat::hand_graph_vars(&self.lo, &inventory, speeds) {
+                g.set_variable(var, value);
+            }
             pose = g.update(0.0, &self.vfs, &mut self.anims, &skel).pose;
             body.graph = Some(g);
         }
@@ -212,7 +214,8 @@ impl Engine {
         let out = body.weapon_out;
         let pose = body.animate(dt, &motion, &self.vfs, &mut self.anims);
         let transform = body.transform(feet);
-        let hit = std::mem::take(&mut body.hit_frame);
+        let hit = std::mem::take(&mut body.hit_frames);
+        let stop = std::mem::take(&mut body.attack_stop);
         let (skel, weapon_out) = (body.skeleton.clone(), body.weapon_out);
         if weapon_out != out {
             log::debug!(
@@ -225,7 +228,7 @@ impl Engine {
                 inst.equipment = equipment;
             }
         }
-        self.update_player_swing(hit, dt);
+        self.update_player_swing(hit, stop, dt);
         if let Some(inst) = self.scene.player.as_mut() {
             inst.transform = transform;
             inst.shadow_only = !third;
@@ -392,10 +395,14 @@ impl PlayerBody {
         }
         let frame = g.update(dt, vfs, anims, &self.skeleton);
         for r in &frame.raised {
+            log::trace!(target: "player_events", "player raised {}{}", r.event, r.payload.as_deref().map(|p| format!(" ({p})")).unwrap_or_default());
             match r.event.to_ascii_lowercase().as_str() {
                 "weapondraw" => self.weapon_out = true,
                 "weaponsheathe" => self.weapon_out = false,
-                "hitframe" => self.hit_frame = true,
+                "hitframe" => {
+                    self.hit_frames |= crate::ai::combat::hit_frame_bit(r.payload.as_deref())
+                }
+                "attackstop" => self.attack_stop = true,
                 "weapequip_out" => self.ready = self.drawn,
                 _ => {}
             }
@@ -404,17 +411,32 @@ impl PlayerBody {
     }
 }
 
-/// How long a swing the graph took may wait for its `HitFrame`.
+/// How long a swing the graph took may wait for its `HitFrame`, or for its
+/// next one after it lands.
 const SWING_TIMEOUT: f32 = 1.5;
 
-/// A swing of the player's waiting for the graph's `HitFrame` to land.
+/// How long the character graphs blend out of an attack (`AttackState` to
+/// the ready state on `attackStop`).
+const ATTACK_BLEND_OUT: f32 = 0.4;
+
+/// A swing of the player's waiting for the graph's `HitFrame`s to land.
 pub(crate) struct PlayerSwing {
+    /// The hands it strikes with, and each one's blow.
+    pub side: crate::ai::combat::Side,
+    pub blows: [Option<crate::ai::combat::Blow>; 2],
     pub power: bool,
-    pub damage: f32,
-    pub reach: f32,
+    /// Its attack type keyword (`IsAttackType`).
+    pub attack_type: FormId,
     pub stagger: f32,
-    /// Seconds it has waited.
+    /// The stamina each further blow of a power attack costs (UESP's Combat
+    /// page: a two-handed power attack's blows "count as three separate power
+    /// attacks").
+    pub again: f32,
+    /// Seconds it has waited (since its last blow).
     pub waited: f32,
+    /// Blows landed, and seconds since each hand's last.
+    pub strikes: u8,
+    pub strike_age: [f32; 2],
 }
 
 impl Engine {
@@ -493,18 +515,58 @@ impl Engine {
         took
     }
 
-    /// A swing waiting on the graph lands at its `HitFrame`, or is lost when
-    /// the graph never gets there (cut short).
-    fn update_player_swing(&mut self, hit: bool, dt: f32) {
+    /// A swing waiting on the graph lands at its `HitFrame`s, a hand at a
+    /// time (`Side::struck`): a basic swing once a hand, a power attack each
+    /// time (its further blows costing stamina again), never twice within
+    /// `STRIKE_GAP`. It is over at the graph's `attackStop` once it has
+    /// landed, or when it waits too long (cut short).
+    fn update_player_swing(&mut self, frames: u8, stop: bool, dt: f32) {
+        use crate::ai::combat::STRIKE_GAP;
+        self.player_attack_recovery = (self.player_attack_recovery - dt).max(0.0);
         let Some(s) = self.player_swing.as_mut() else {
             return;
         };
         s.waited += dt;
-        if hit {
-            let s = self.player_swing.take().unwrap();
-            self.player_strike(s.power, s.damage, s.reach, s.stagger);
-        } else if s.waited > SWING_TIMEOUT {
-            log::debug!("player swing lost: no HitFrame");
+        for t in &mut s.strike_age {
+            *t += dt;
+        }
+        let power = s.power;
+        let hands: Vec<usize> = s
+            .side
+            .struck(frames)
+            .into_iter()
+            .filter(|&h| s.strike_age[h] >= STRIKE_GAP && (power || s.strike_age[h].is_infinite()))
+            .collect();
+        if frames != 0 && !hands.is_empty() {
+            let again = (s.strikes > 0 && power).then_some(s.again);
+            s.strikes += 1;
+            s.waited = 0.0;
+            for &h in &hands {
+                s.strike_age[h] = 0.0;
+            }
+            let (blows, stagger) = (s.blows, s.stagger);
+            if let Some(cost) = again {
+                self.spend_stamina(PLAYER_REF, cost);
+            }
+            // The swing stays while it lands (`IsAttackType` asks of it).
+            for h in hands {
+                if let Some(b) = blows[h] {
+                    self.player_strike(h, power, b.damage, b.reach, stagger);
+                }
+            }
+        }
+        let Some(s) = self.player_swing.as_ref() else {
+            return;
+        };
+        // The swing before may end (`attackStop`) after this one began: that
+        // doesn't end one yet to land.
+        if (stop && s.strikes > 0) || s.waited > SWING_TIMEOUT {
+            if s.strikes == 0 {
+                log::debug!("player swing lost: no HitFrame");
+            }
+            if stop {
+                self.player_attack_recovery = ATTACK_BLEND_OUT;
+            }
             self.player_swing = None;
         }
     }
