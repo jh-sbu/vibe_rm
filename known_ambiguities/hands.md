@@ -22,7 +22,19 @@ vanilla skeleton's nodes (`WEAPON` and `SHIELD` in the hands; `WeaponSword`,
 `WeaponDagger`, `WeaponAxe`, `WeaponMace`, `WeaponBack`, `WeaponBow`,
 `QUIVER` on the body, none for a second weapon); `inventorymenu.swf`
 (`InventoryDefines.ES_NONE` .. `ES_BOTH_EQUIPPED`, `AttemptEquip(aiSlot)`
-calling `ItemSelect([aiSlot])`, Accept calling `ItemSelect([])`).
+calling `ItemSelect([aiSlot])`, Accept calling `ItemSelect([])`). For
+fighting with them: the races' attack data (`ATKD` / `ATKE`: `...LeftHand`,
+`...DualWield`, `...H2H...` events, damage and stamina multipliers, the
+attack type keyword); the character graphs (`hkb-events`, `hkb-run`,
+`hkb-vars`: `HitFrame` with the payload `Left` for the left hand's blows,
+none for the right's; the left hand's clips playing at
+`leftWeaponSpeedMult`, which the graph leaves at 0); UESP's Combat page
+(dual wielding prevents blocking; the dual-wield power attack's and the
+fists' combo's three blows each costing stamina; the off-hand weapon setting
+a dual attack's speed; blocking with a shield, torch or weapon), One-handed
+page (Dual Flurry, Dual Savagery) and actor value list (`WeaponSpeedMult`,
+0 counting as 1; `LeftWeaponSpeedMult`); combat styles' `DATA` flag 0x4
+(`csDraugrMagicAllowDual`, `csMercerFreyMelee`...).
 
 ## Unconfirmed: choices made
 
@@ -64,3 +76,41 @@ calling `ItemSelect([aiSlot])`, Accept calling `ItemSelect([])`).
   returns the topmost clip, button or text field under the cursor (any, or
   with its argument false only those with mouse handlers); Scaleform's other
   forms (a mouse index, a point) aren't done.
+
+## Unconfirmed: fighting with each hand
+
+- **The buttons.** The right attack button swings the right hand (casts its
+  spell, bashes with the guard up). The left one casts the left hand's
+  spell, else swings the weapon in it, or its fist when the right hand
+  holds no weapon either; otherwise (a weapon in the right, a shield or
+  torch in the left) it raises the guard. Pressing the other button while
+  one is held, before it becomes a power attack, strikes with both hands
+  (alike: two weapons, or two fists); held, a power attack. Both fists have
+  no basic attack together: the right punches. From UESP's pages and
+  memory of the game; no source spells the rules out.
+- **Which attack.** The race's attack whose event names the hands
+  (`...LeftHand`, `...DualWield`, `AttackStartH2HLeft`,
+  `attackPowerStartH2HCombo`...) and suits what they hold: a weapon's with a
+  weapon, a bare-handed one (`H2H`) with an empty hand. Races without
+  bare-handed attacks (creatures) make their own with the right hand, as
+  before. Empty-handed players and NPCs fight with their fists, where the
+  player used to fight with the best weapon they carried.
+- **Blows.** A two-handed blow's `HitFrame`s land the left hand for the
+  `Left` payload and the right for the others; a one-handed swing lands its
+  own hand whatever the payload (some clips' left-hand frames carry none).
+  A basic attack lands once a hand; a power attack at each of its frames,
+  each further one costing its stamina again; a hand's frames under 0.25 s
+  apart are one blow (the arms' layers raise them again). A dual-wield power
+  attack's stamina is the heavier weapon's cost times the attack's
+  multiplier.
+- **Attack speeds.** The graph's `weaponSpeedMult` and
+  `leftWeaponSpeedMult` are each hand's weapon speed (`DNAM`; a fist 1)
+  times `WeaponSpeedMult` and `LeftWeaponSpeedMult` (0 counting as 1). That
+  the game feeds the graph the weapon speed this way is inferred: the
+  variables drive the clips' playback speed, and UESP has the off-hand
+  weapon set a dual attack's speed.
+- **NPCs dual wielding.** An NPC whose combat style allows dual wielding
+  and carries a second one-handed weapon (or two of its best) holds it in
+  the left hand in place of a shield; whether the game weighs a shield
+  against it isn't known. NPCs with a weapon in each hand don't block or
+  bash.

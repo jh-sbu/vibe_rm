@@ -688,19 +688,37 @@ fn style_weights(lo: &LoadOrder, style: FormId) -> (f32, f32) {
     csgd.map_or((1.0, 1.0), |d| (f(&d, 12), f(&d, 20)))
 }
 
+/// Combat style `DATA` flag: allow dual wielding (`csMercerFreyMelee`,
+/// `csDraugrMagicAllowDual`...).
+const STYLE_DUAL_WIELD: u32 = 0x4;
+
+/// Whether a combat style allows dual wielding.
+fn style_dual_wields(lo: &LoadOrder, style: FormId) -> bool {
+    lo.get(style)
+        .and_then(|r| {
+            r.get(b"DATA")
+                .filter(|d| d.len() >= 4)
+                .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
+        })
+        .is_some_and(|f| f & STYLE_DUAL_WIELD != 0)
+}
+
 /// Choose what an NPC wields from what it carries, as the game does when nothing
 /// was equipped by hand: a melee weapon unless its combat style favours ranged
 /// ones (guards carry their bow but wear their sword), the one that scores best in
 /// its hands (base damage scaled by the NPC's skill with it), and with a one-handed
-/// weapon (or none) its best shield. Staffs, crossbows and weapons without a
-/// model (creature attacks) are left alone; unplayable ones with a model are the
-/// NPCs' own (giants' clubs, Dremora greatswords, the Keepers' dragonbone).
+/// weapon (or none) its best shield; or, when its style allows dual wielding,
+/// its next best one-handed weapon in the left hand (a second of the same one
+/// too). Staffs, crossbows and weapons without a model (creature attacks) are
+/// left alone; unplayable ones with a model are the NPCs' own (giants' clubs,
+/// Dremora greatswords, the Keepers' dragonbone).
 pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, style: FormId) {
     let skill = lo.get(skill_npc).map_or([15.0; 4], |r| skills(&r));
     let (melee, ranged) = style_weights(lo, style);
     let archer = ranged > melee;
     let mut best: Option<(bool, f32, FormId, HandType)> = None;
-    for &(f, _) in &inv.items {
+    let mut one_handed: Vec<(f32, FormId, i32)> = Vec::new();
+    for &(f, n) in &inv.items {
         let Some(rec) = lo.get(f).filter(|r| r.tag().0 == *b"WEAP") else {
             continue;
         };
@@ -727,13 +745,34 @@ pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, sty
         if best.is_none_or(|b| (preferred, score) > (b.0, b.1)) {
             best = Some((preferred, score, f, hand));
         }
+        if hand.one_handed() {
+            one_handed.push((score, f, n));
+        }
     }
-    let one_handed = best.is_none_or(|b| b.3.one_handed());
+    let free_hand = best.is_none_or(|b| b.3.one_handed());
     // Two hands on the weapon: a shield from the outfit goes unworn.
     if let Some((_, _, f, _)) = best {
         inv.equip(lo, f);
     }
-    if one_handed && inv.shield(lo).is_none() && skill[3] > 0.0 {
+    // A second weapon for the left hand, in place of a shield.
+    let second = best
+        .filter(|b| b.3.one_handed() && style_dual_wields(lo, style))
+        .and_then(|b| {
+            one_handed
+                .iter()
+                .filter(|&&(_, f, n)| f != b.2 || n >= 2)
+                .max_by(|x, y| x.0.total_cmp(&y.0))
+                .map(|&(_, f, _)| f)
+        });
+    if let Some(f) = second {
+        log::debug!(
+            "{skill_npc} dual wields {} and {f}",
+            best.map_or(FormId::NULL, |b| b.2)
+        );
+        inv.hold(lo, f, &[LEFT]);
+        return;
+    }
+    if free_hand && inv.shield(lo).is_none() && skill[3] > 0.0 {
         let rating = |r: &LoadedRecord<'_>| {
             r.get(b"DNAM")
                 .filter(|d| d.len() >= 4)

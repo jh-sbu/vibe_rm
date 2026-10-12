@@ -576,6 +576,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         682 => b(subject.is_some_and(|s| e.worn_with_keyword(s, p1) > 0)), // WornHasKeyword
         722 => Some(subject.map_or(0, |s| e.worn_with_keyword(s, p1)) as f32), // WornApparelHasKeywordCount
         569 => b(subject.is_some_and(|s| e.is_blocking(s))),                   // IsBlocking
+        // IsAttackType: the attack it is making has that type keyword.
+        697 => b(subject.and_then(|s| e.attack_type_of(s)) == Some(p1)),
         // Magic (`crate::magic`).
         214 => b(subject.is_some_and(|s| e.has_magic_effect(s, p1))), // HasMagicEffect
         699 => b(subject.is_some_and(|s| e.has_magic_effect_keyword(s, p1))), // HasMagicEffectKeyword

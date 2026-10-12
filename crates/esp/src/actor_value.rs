@@ -175,6 +175,10 @@ pub const ASSISTANCE: u32 = 5;
 /// The first skill (one-handed); the 18 skills follow in `NPC_` `DNAM` order.
 pub const FIRST_SKILL: u32 = 6;
 pub const ONE_HANDED: u32 = 6;
+/// Weapon attack speed multipliers (0 counts as 1): the right hand's (and
+/// bows' draw), the left's.
+pub const WEAPON_SPEED_MULT: u32 = 85;
+pub const LEFT_WEAPON_SPEED_MULT: u32 = 132;
 pub const TWO_HANDED: u32 = 7;
 /// Archery.
 pub const MARKSMAN: u32 = 8;

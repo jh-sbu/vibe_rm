@@ -731,8 +731,7 @@ fn hand(slot: f64) -> usize {
     if slot as usize == 1 { LEFT } else { RIGHT }
 }
 
-/// The weapon the player has equipped (not the one they'd fight with when
-/// none is).
+/// The weapon in the player's right hand.
 fn held_weapon(engine: &Engine) -> Option<FormId> {
     let inv = engine.inventories.get(&PLAYER_REF)?;
     inv.weapon(&engine.lo).filter(|&w| inv.count(w) > 0)

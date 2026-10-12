@@ -345,7 +345,7 @@ impl Engine {
     /// for fists), and Sneak for a sneak attack (`fSneakAttackSkillUsageMelee`,
     /// 2.5 for a shot).
     pub(crate) fn player_blow_landed(&mut self, shot: bool, sneak: bool) {
-        let weapon = self.player_weapon();
+        let weapon = self.weapon_of(crate::engine::PLAYER_REF);
         let rec = weapon.and_then(|w| self.lo.get(w));
         let anim = rec
             .as_ref()

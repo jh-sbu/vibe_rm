@@ -26,8 +26,8 @@ Implemented in `src/ai/combat.rs` (`CombatState`, `combat_state`,
 - **The player's state.** `Game.GetPlayer().GetCombatState()` is answered from
   the actors fighting (1) or searching for (2) the player; the player gets no
   `OnCombatStateChanged`. No source says how the game decides it.
-- **`OnHit` sources.** Melee and arrow hits send it, with the attacker's
-  equipped weapon as the source (none unarmed) and, for arrows, the ammo's
+- **`OnHit` sources.** Melee and arrow hits send it, with the weapon that
+  struck as the source (the blow's hand's; none for a fist) and, for arrows, the ammo's
   projectile; `abSneakAttack` is set for
   sneak attacks. Damage from scripts and the console (`DamageActorValue`,
   `damage`) sends no

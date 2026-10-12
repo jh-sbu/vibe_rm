@@ -687,7 +687,14 @@ impl Engine {
             }
             log::info!("{shooter}'s arrow strikes {target}");
             self.arrow_impact(shooter, Some(target), at, dir);
-            self.hit(target, shooter, damage, false, 0.0, Some(arrow.projectile));
+            self.hit(
+                target,
+                shooter,
+                damage,
+                false,
+                0.0,
+                super::combat::Struck::Shot(arrow.projectile),
+            );
             let chance = crate::ai::combat::gmst_i32(&self.lo, "iArrowInventoryChance", 33)
                 .clamp(0, 100) as u64;
             if target != PLAYER_REF && self.rand() % 100 < chance {

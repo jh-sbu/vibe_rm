@@ -90,13 +90,13 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "inputevent <event>    as if the player did an input event (Activate, Jump...)".into(),
             "[ref.]getav <av> / setav, modav, forceav, damageav, restoreav <av> <n>   actor values".into(),
             "pblock                toggle the player's guard (right mouse button)".into(),
-            "pattack [power]       the player swings (power: as holding the button)".into(),
+            "pattack [power] [left|both]   the player swings (power: as holding the button; left hand, both)".into(),
             "pbash                 the player bashes (attacking with the guard up)".into(),
             "pcast <right|left|power> [off]   a hand's attack button with a spell in it down (up), or the power used".into(),
             "pshoot [secs]         the player looses an arrow drawn so long (default full)".into(),
             "psneak / pjump        the player sneaks (toggle) / jumps when next on the ground".into(),
             "pdraw [off]           the player draws (or sheathes) their weapon".into(),
-            "ppress / prelease     the player's attack button goes down / up".into(),
+            "ppress / prelease [left|both]   the player's attack button goes down / up (the left hand's, both)".into(),
             "pwalk [frames] [forward|back|left|right...] [run|sprint]  the player walks (default forward, 60 frames; tcl first under --wait)".into(),
             "tcam x y z yaw pitch  hold the --wait camera there (degrees; yaw 0 = north)".into(),
             "stamina <ref|player> [n]  show or set stamina".into(),
@@ -580,13 +580,21 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             engine.player_blocking = !engine.player_blocking;
             vec![format!("player {}", if engine.player_blocking { "blocks" } else { "lowers their guard" })]
         }
-        "ppress" => {
-            engine.player_attack_press();
-            vec!["attack button down".into()]
-        }
-        "prelease" => {
-            engine.player_attack_release();
-            vec!["attack button up".into()]
+        "ppress" | "prelease" => {
+            // The right hand's button, the left's, or both (dual).
+            let hands: &[usize] = match args.first().map(|a| a.to_ascii_lowercase()).as_deref() {
+                Some("left") => &[crate::spells::LEFT],
+                Some("both") => &[crate::spells::RIGHT, crate::spells::LEFT],
+                _ => &[crate::spells::RIGHT],
+            };
+            for &h in hands {
+                if cmd == "ppress" {
+                    engine.player_attack_press(h);
+                } else {
+                    engine.player_attack_release(h);
+                }
+            }
+            vec![format!("attack button{} {}", if hands.len() > 1 { "s" } else { "" }, if cmd == "ppress" { "down" } else { "up" })]
         }
         "pdraw" => {
             let draw = !args.first().is_some_and(|a| a.eq_ignore_ascii_case("off"));
@@ -594,8 +602,15 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             vec![format!("player {}{}", if draw { "draws" } else { "sheathes" }, if took { "" } else { " (the graph won't)" })]
         }
         "pattack" => {
-            let power = args.first().is_some_and(|a| a.eq_ignore_ascii_case("power"));
-            engine.player_attack(power);
+            let has = |w: &str| args.iter().any(|a| a.eq_ignore_ascii_case(w));
+            let side = if has("both") {
+                crate::ai::combat::Side::Dual
+            } else if has("left") {
+                crate::ai::combat::Side::Left
+            } else {
+                crate::ai::combat::Side::Right
+            };
+            engine.player_attack(side, has("power"));
             vec![format!("player stamina {:.0}", engine.player_stamina)]
         }
         "tcam" => {
