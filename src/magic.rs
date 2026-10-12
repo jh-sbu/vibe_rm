@@ -298,6 +298,9 @@ pub struct ActiveEffect {
     /// Its magic effect has scripts (running on `ObjectId::Effect(id)`).
     pub scripted: bool,
     pub done: bool,
+    /// Landed unnoticed (`apply_item_quietly`): what it does is no blow of
+    /// the caster's.
+    pub quiet: bool,
 }
 
 /// Magic on actors: the active effects, spells added and removed, and what was
@@ -423,6 +426,23 @@ impl Engine {
     /// Apply an item's effects to `target` (no aiming or projectile: it lands).
     /// The same item's effects already on the target are replaced.
     pub fn apply_item(&mut self, item: FormId, caster: Option<FormId>, target: FormId) -> bool {
+        self.apply_item_as(item, caster, target, false)
+    }
+
+    /// Apply an item's effects as `apply_item`, but unnoticed: hostile effects
+    /// landing aren't a blow that starts a fight (a poison slipped into
+    /// someone's pockets).
+    pub fn apply_item_quietly(&mut self, item: FormId, caster: FormId, target: FormId) -> bool {
+        self.apply_item_as(item, Some(caster), target, true)
+    }
+
+    fn apply_item_as(
+        &mut self,
+        item: FormId,
+        caster: Option<FormId>,
+        target: FormId,
+        quiet: bool,
+    ) -> bool {
         let Some(m) = self.magic_item(item) else {
             return false;
         };
@@ -474,6 +494,7 @@ impl Engine {
                 carry: 0.0,
                 scripted: !mgef.scripts.is_empty(),
                 done: false,
+                quiet,
             });
             log::debug!(
                 "{target}: {} from {} ({item}): magnitude {magnitude:.1}, {duration}s",
@@ -492,7 +513,10 @@ impl Engine {
             ];
             self.send_script_event(target, "OnMagicEffectApply", args);
         }
-        if hostile && let Some(c) = caster.filter(|&c| c != target) {
+        if hostile
+            && !quiet
+            && let Some(c) = caster.filter(|&c| c != target)
+        {
             self.hostile_magic_landed(target, c, item);
         }
         any
@@ -698,23 +722,24 @@ impl Engine {
     }
 
     /// Change an actor value by `amount` now (damage when negative): health
-    /// through the combat damage path (a kill is the caster's), absorbing
-    /// gives the caster what the target lost.
+    /// through the combat damage path (a kill is the caster's, unless it
+    /// landed quietly), absorbing gives the caster what the target lost.
     fn change_value(&mut self, x: &ActiveEffect, mgef: &MagicEffect, amount: f32, instant: bool) {
         let Some(a) = mgef.primary else { return };
+        let by = x.caster.filter(|_| !x.quiet);
         if mgef.archetype == archetype::ABSORB {
             let taken = amount.abs().min(self.actor_value(x.target, a).max(0.0));
-            self.value_change(x.target, a, -taken, x.caster, instant);
+            self.value_change(x.target, a, -taken, by, instant);
             if let Some(c) = x.caster {
                 self.value_change(c, a, taken, None, false);
             }
             return;
         }
-        self.value_change(x.target, a, amount, x.caster, instant);
+        self.value_change(x.target, a, amount, by, instant);
         if let Some(b) = mgef.secondary
             && mgef.archetype == archetype::DUAL_VALUE_MODIFIER
         {
-            self.value_change(x.target, b, amount * mgef.second_weight, x.caster, instant);
+            self.value_change(x.target, b, amount * mgef.second_weight, by, instant);
         }
     }
 
@@ -1110,6 +1135,14 @@ impl Engine {
         }
         self.apply_item(item, Some(actor), actor);
         Ok(())
+    }
+
+    /// Whether an item is a poison (`IsPoison`).
+    pub fn is_poison(&self, item: FormId) -> bool {
+        self.lo.tag_of(item).is_some_and(|t| t.0 == *b"ALCH")
+            && self
+                .magic_item(item)
+                .is_some_and(|m| m.spell_type == spell_type::POISON)
     }
 
     /// Console `effects`: what is on an actor.

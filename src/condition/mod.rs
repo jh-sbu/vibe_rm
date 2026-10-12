@@ -354,6 +354,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .and_then(|s| e.actor_voice_type(s))
             .is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))), // HasKeyword
+        354 => b(subject.is_some_and(|s| e.is_essential(s))),    // IsEssential
+        721 => b(subject.is_some_and(|s| e.is_poison(s))),       // IsPoison
         300 => b(matches!(e.location, crate::engine::Location::Interior(_))), // IsInInterior
         67 => b(subject.and_then(|s| e.lo.cell_of_ref(s)) == Some(p1)), // GetInCell
         310 => {

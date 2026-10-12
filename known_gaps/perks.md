@@ -59,7 +59,8 @@ perks`).
   owner, weapon. Mod Percent Blocked, Mod Detection Sneak Skill, Make Lockpicks
   Unbreakable: owner. Mod Detection Light / Movement: owner (the observer),
   target. Mod Lockpick Sweet Spot: owner, the locked reference. Mod Pickpocket
-  Chance: owner, victim, item. Conditions on any tab also see the last subject
+  Chance, Can Pickpocket Equipped Item, Should Apply Placed Item: owner,
+  victim, item. Conditions on any tab also see the last subject
   as their target.
 - **Where each number is changed** (the order in the game isn't published):
   attack damage, then power attack damage, then the sneak multiplier (itself

@@ -73,8 +73,15 @@ locations name it.
   well as taken): the chance is the one for taking that item, and being
   caught is the same. Choices: placing trains no Pickpocket and counts no
   statistic; what is placed keeps the owner it had (a stolen item stays
-  stolen); the perks that act on placing (Misdirection, Perfect Touch,
-  Poisoned) aren't wired.
+  stolen).
+- What the victim wears or wields can be taken with a perk's Can
+  Pickpocket Equipped Item (entry point 61; tabs player, victim, item):
+  Misdirection's item has `VendorItemWeapon`, Perfect Touch's victim isn't
+  `IsEssential` (UESP: "can pickpocket equipped weapons" / "equipped
+  items"). Taken, it comes off and the victim is dressed again; the chance
+  is the same as for anything in its pockets.
+- Poisoned (UESP: "silently harm enemies by placing poisons in their
+  pockets") is Should Apply Placed Item (84), its item `IsPoison`.
 - The victim wears or wields what is placed when it is better (UESP
   Skyrim:Pickpocket, reverse pickpocketing: NPCs equip better weapons and
   armor put in their pockets); so does a teammate given it in its
@@ -131,9 +138,13 @@ locations name it.
 ## Choices made without a source
 
 - Placing items in pockets trains no Pickpocket and counts no statistic;
-  what is placed keeps the owner it had (a stolen item stays stolen). The
-  perks that act on placing (Misdirection, Perfect Touch, Poisoned) aren't
-  wired.
+  what is placed keeps the owner it had (a stolen item stays stolen).
+- A poison placed with Poisoned: one dose is used up on the victim at once
+  and the rest stay in its pockets. Its effects land as if the player had
+  hit with it (their alchemy perks count), but unnoticed: no fight, no
+  assault, and the harm is no one's, so a death by it is no one's kill
+  (no murder). `IsEssential` is the base's flag only (quest aliases'
+  essential flag isn't read anywhere yet).
 - An NPC given an item (placed in its pockets, or into a teammate's
   inventory) takes it up at once if it is better: armor when its armor
   rating with it (the inventory's rating, with its skills and perks) is
@@ -250,10 +261,8 @@ locations name it.
 - Crime responses: witnesses don't run to the guards (the guards near by
   hear at once), children don't tell the nearest adult (UESP), morality
   plays no part (UESP: it is for followers ordered to commit crimes), the
-  `PICC` lines aren't used; of the pickpocketing perks only the chance ones
-  work (Light Fingers, Night Thief, Cutpurse, Keymaster: `known_gaps/perks.md`;
-  not Misdirection, Perfect Touch or Poisoned), and the thugs hired after a
-  theft aren't there.
+  `PICC` lines aren't used, and the thugs hired after a theft aren't
+  there.
 - Trespassers aren't attacked or chased out after "Guards! Trespasser!", the
   "Warn To Leave" flag (`DATA` 0x200, unused in the base game) does nothing,
   the warning lines near restricted places ("That's close enough", guard
