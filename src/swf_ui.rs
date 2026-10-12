@@ -3,8 +3,9 @@
 //! the item menus (the inventory, containers and pockets, bartering: in
 //! `item_menu`), the magic menu (`magic_menu`), the favorites menu
 //! (`favorites_menu`), the tween menu (`tween_menu`), the sleep / wait menu
-//! (`sleep_wait_menu`), the training menu (`training_menu`) and the journal
-//! (`journal_menu`), in place of egui's.
+//! (`sleep_wait_menu`), the training menu (`training_menu`), the journal
+//! (`journal_menu`) and the dialogue menu (`dialogue_menu`), in place of
+//! egui's.
 //!
 //! Each frame the HUD is told what changed: the health, magicka and stamina
 //! meters, the compass heading, the location, what the crosshair is on, what's
@@ -13,6 +14,7 @@
 //! (`_root.HUDMovieBaseInstance...`); how the game words some of them isn't
 //! known (`known_gaps/swf-hud.md`).
 
+mod dialogue_menu;
 mod favorites_menu;
 mod item_menu;
 mod journal_menu;
@@ -60,6 +62,10 @@ pub struct SwfUi {
     sleep_wait: Option<sleep_wait_menu::SleepWaitMenu>,
     /// The training menu, while open.
     training: Option<training_menu::TrainingMenu>,
+    /// The dialogue menu, while a conversation is on (and fading out after).
+    dialogue: Option<dialogue_menu::DialogueMenu>,
+    /// Whether the engine has a menu up (over a conversation, hiding it).
+    menu_up: bool,
     /// The journal, while open, and where it was left.
     journal: Option<journal_menu::JournalMenu>,
     journal_saved: journal_menu::Saved,
@@ -112,6 +118,8 @@ impl SwfUi {
             tween: None,
             sleep_wait: None,
             training: None,
+            dialogue: None,
+            menu_up: false,
             journal: None,
             journal_saved: Default::default(),
             buttons,
@@ -145,6 +153,9 @@ impl SwfUi {
         if let Some(training) = &mut self.training {
             training.menu.resize(width, height);
         }
+        if let Some(dialogue) = &mut self.dialogue {
+            dialogue.menu.resize(width, height);
+        }
         self.size = (width, height);
     }
 
@@ -163,6 +174,7 @@ impl SwfUi {
         self.tween_menu(engine, dt);
         self.sleep_wait_menu(engine, dt);
         self.training_menu(engine, dt);
+        self.dialogue_menu(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
         for call in self.message_box.menu.take_calls() {
@@ -398,6 +410,47 @@ impl SwfUi {
         training.update(engine);
     }
 
+    /// Opens the dialogue menu when a conversation starts, fades it out when
+    /// it ends, and answers its calls.
+    fn dialogue_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        let speaker = engine.conversation.as_ref().map(|c| c.npc_ref);
+        // Another conversation: a fresh menu.
+        if speaker.is_some()
+            && self
+                .dialogue
+                .as_ref()
+                .is_some_and(|d| d.closing || Some(d.speaker) != speaker)
+        {
+            self.dialogue = None;
+        }
+        if self.dialogue.is_none() && speaker.is_some() {
+            let buttons = self.buttons.clone();
+            match dialogue_menu::DialogueMenu::open(&self.ui, self.size, engine, buttons) {
+                Ok(m) => self.dialogue = Some(m),
+                Err(e) => {
+                    log::error!("dialogue menu: {e:#}");
+                    engine.end_conversation();
+                    return;
+                }
+            }
+        }
+        self.menu_up = engine.menu.is_some();
+        let Some(dialogue) = &mut self.dialogue else {
+            return;
+        };
+        dialogue.update(engine);
+        dialogue.menu.advance(dt);
+        let mut done = false;
+        for call in dialogue.menu.take_calls() {
+            if !dialogue.answer(engine, &call, &mut done) {
+                answer(&dialogue.menu, engine, &call);
+            }
+        }
+        if done {
+            self.dialogue = None;
+        }
+    }
+
     /// Opens the journal when the engine's menu is it, closes it when it
     /// goes, and answers its calls.
     fn journal_menu(&mut self, engine: &mut Engine, dt: Duration) {
@@ -462,6 +515,7 @@ impl SwfUi {
             || self.tween.is_some()
             || self.sleep_wait.is_some()
             || self.training.is_some()
+            || self.dialogue.as_ref().is_some_and(|d| !d.closing)
     }
 
     /// The window's input, to the menu on top while one takes it (the console
@@ -491,12 +545,19 @@ impl SwfUi {
         // box is over them.
         let item_menu = self.message_box.shown.is_none()
             && (self.items.is_some() || self.magic.is_some() || self.favorites.is_some());
+        // The other menus with keys of their own.
+        let own_keys = item_menu
+            || (self.message_box.shown.is_none()
+                && (self.tween.is_some()
+                    || self.sleep_wait.is_some()
+                    || self.training.is_some()
+                    || self.dialogue.is_some()));
         let closing = self.items.as_ref().is_some_and(|i| i.closing)
             || self.magic.as_ref().is_some_and(|m| m.closing)
             || self.favorites.as_ref().is_some_and(|f| f.closing);
         match event {
             WindowEvent::KeyboardInput { event, .. }
-                if item_menu
+                if own_keys
                     && event.state == ElementState::Pressed
                     && !event.repeat
                     && let PhysicalKey::Code(code) = event.physical_key
@@ -531,6 +592,12 @@ impl SwfUi {
         match event {
             WindowEvent::CursorMoved { .. } => menu.handle_event(PlayerEvent::MouseMove { x, y }),
             WindowEvent::MouseInput { state, button, .. } => {
+                if let Some(dialogue) = &self.dialogue
+                    && std::ptr::eq(menu, &dialogue.menu)
+                    && *state == ElementState::Pressed
+                {
+                    dialogue.mouse_down();
+                }
                 let button = match button {
                     winit::event::MouseButton::Left => MouseButton::Left,
                     winit::event::MouseButton::Right => MouseButton::Right,
@@ -610,6 +677,8 @@ impl SwfUi {
             &sleep_wait.menu
         } else if let Some(training) = &self.training {
             &training.menu
+        } else if let Some(dialogue) = &self.dialogue {
+            &dialogue.menu
         } else {
             &self.message_box.menu
         }
@@ -635,6 +704,15 @@ impl SwfUi {
     /// them.
     fn item_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
         use winit::platform::scancode::PhysicalKeyExtScancode;
+        // The dialogue menu, unless a menu is over it: Esc.
+        if self.message_box.shown.is_none()
+            && !self.menu_up
+            && let Some(dialogue) = &self.dialogue
+            && self.items.is_none()
+            && self.training.is_none()
+        {
+            return dialogue.key(code);
+        }
         // The training menu: its buttons' keys.
         if self.message_box.shown.is_none()
             && let Some(training) = &self.training
@@ -740,6 +818,11 @@ impl SwfUi {
             return;
         }
         let menu = self.top();
+        if let Some(dialogue) = &self.dialogue
+            && std::ptr::eq(menu, &dialogue.menu)
+        {
+            dialogue.mouse_down();
+        }
         let button = MouseButton::Left;
         menu.handle_event(PlayerEvent::MouseMove { x, y });
         menu.handle_event(PlayerEvent::MouseDown {
@@ -786,6 +869,14 @@ impl SwfUi {
         if let Some(sleep_wait) = &mut self.sleep_wait {
             sleep_wait.menu.render();
             menus.push(&sleep_wait.menu);
+        }
+        // Under the menus a conversation opens (bartering, training), which
+        // hide it.
+        if let Some(dialogue) = &mut self.dialogue
+            && !self.menu_up
+        {
+            dialogue.menu.render();
+            menus.push(&dialogue.menu);
         }
         if let Some(training) = &mut self.training {
             training.menu.render();
