@@ -9,7 +9,11 @@ game each piece unlocks.
 - Interior/exterior cells, landscape, water, weather/climate/sky, time of day
 - Havok collision shapes -> rapier3d; first-person character controller
 - Exterior cell streaming, load doors
-- Actors: skinning, GPU skinning, NPC assembly (race, outfit, FaceGen); Havok clip playback
+- Actors: skinning, GPU skinning, NPC assembly (race, outfit, FaceGen); Havok clip playback.
+  NPCs wear what their inventory has equipped: dressed again when it
+  changes (scripts' `EquipItem`, the console's `equipitem`, a body stripped)
+  and as they were when their cell loads again; an NPC's inventory is its
+  items and outfit before it ever loads
 - Papyrus VM (PEX, natives, events, VMAD), conditions (CTDA), quest stages, dialogue
 - The game's HUD (`hudmenu.swf` through the vendored Ruffle, `crates/ui-swf`):
   health, magicka and stamina meters, compass heading and the map markers
@@ -516,7 +520,9 @@ game each piece unlocks.
   guards and reports it (`fAITrespassWarningTimer`); off limits at once.
   Pickpocketing while sneaking: the victim's pockets (not what it wears)
   with each item's chance from the `fPickPocket*` settings, taken stolen,
-  or the player's own items placed in them with the same chance; caught, a crime the victim reports and won't let the player try again.
+  or the player's own items placed in them with the same chance (the
+  victim wearing or wielding them when better, as teammates given them do);
+  caught, a crime the victim reports and won't let the player try again.
   Console `pickpocket`; vrm-tool `trespass-cells`, `ctda-uses`,
   `topic-lines`. Arrests: guards (`IsGuard`: `IsGuardFaction`, the class
   flag) near a reported crime run after the player calling on them to halt
@@ -840,8 +846,8 @@ game each piece unlocks.
      item menus, the journal, the gift, magic, favorites and tween menus
      done: see Done): the magic menu's shouts (with shouts); the tween
      menu's Map (with the map); waiting's rest: getting into the bed first; the favorites menu's shouts and the gamepad's d-pad
-     favorites; the item menus' Fortify Barter, NPCs equipping what is
-     placed in their pockets (and the perks for it), NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
+     favorites; the item menus' Fortify Barter, the perks for placing in
+     pockets (Misdirection, Perfect Touch, Poisoned), NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the quantity slider's use for more than dropping, recharging

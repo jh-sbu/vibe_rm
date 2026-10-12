@@ -659,6 +659,7 @@ impl Engine {
             rt.colliders.retain(|h| *h != c);
             self.physics.remove_colliders(&[c]);
         }
+        self.put_torch_away_for_now(&a);
         log::debug!("{r} despawned from {key:?}");
     }
 }

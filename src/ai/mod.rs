@@ -394,6 +394,8 @@ pub struct ActorRuntime {
     /// The lit torch it holds, and the shield it put away for it.
     pub(crate) torch: Option<FormId>,
     pub(crate) stowed_shield: Option<FormId>,
+    /// The armor and weapons its models show (see `Engine::update_worn`).
+    pub(crate) worn: Vec<FormId>,
     /// The graph raised `IdleFurnitureExit`: out of the furniture.
     out_of_furniture: bool,
     /// Carrying a load away from furniture (firewood from a wood pile): its anim
@@ -479,6 +481,7 @@ impl ActorRuntime {
             bleeding: None,
             torch: None,
             stowed_shield: None,
+            worn: Vec::new(),
             weapon_out: false,
             equipment_changed: false,
             drawn: false,
@@ -3206,6 +3209,7 @@ impl Engine {
         self.play_standing_meals();
         self.play_action_idles();
         self.update_torches();
+        self.update_worn();
         for r in gone {
             self.despawn_actor(r);
         }

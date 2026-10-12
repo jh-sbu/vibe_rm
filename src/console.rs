@@ -1092,9 +1092,6 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else {
                 return vec![format!("usage: {cmd} <item>")];
             };
-            if r != crate::engine::PLAYER_REF {
-                return vec!["only the player's equipment can be changed for now".into()];
-            }
             let on = cmd == "equipitem";
             if on && engine.magic_item(item).is_some() {
                 return match engine.consume(r, item) {

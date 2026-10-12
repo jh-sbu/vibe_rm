@@ -1145,9 +1145,13 @@ impl Engine {
             let Some(rf) = self.reference_of(r) else {
                 continue;
             };
-            if let Some(mut d) =
-                crate::world::actor::describe_reference(&self.lo, &rf, &self.scripts.globals)
-            {
+            // Wearing what it was when last seen, if anything.
+            if let Some(mut d) = crate::world::actor::describe_reference(
+                &self.lo,
+                &rf,
+                &self.scripts.globals,
+                self.inventories.get(&r),
+            ) {
                 let editor_pos = d.transform.w_axis.truncate();
                 if let Some(p) = at {
                     let mut rng = self.rand() | 1;
@@ -1240,6 +1244,7 @@ impl Engine {
                 log::debug!("{} wields bow {bow} (speed {})", d.ref_id, rt.bow_speed);
             }
             rt.stats = std::sync::Arc::new(stats);
+            rt.worn = self.worn_items(&d.inventory);
             rt.footstep_set = d.footsteps.and_then(|f| self.footstep_set(f));
             log::debug!(target: "footsteps", "{} ({}) walks with footstep set {:?}", d.ref_id, d.name, d.footsteps);
             rt.weapon_reach = d
@@ -1644,6 +1649,7 @@ impl Engine {
             self.nav.unload(&rt.navmeshes);
             self.furniture.remove_cell(key);
             for a in &rt.actors {
+                self.put_torch_away_for_now(a);
                 self.furniture.release(a.ref_id);
                 self.moved_refs.remove(&a.ref_id);
                 self.actor_cells.remove(&a.ref_id);
@@ -2947,37 +2953,41 @@ impl Engine {
         0.0
     }
 
-    /// The inventory of a reference; a container's starts out with its contents.
+    /// The inventory of a reference; a container's starts out with its
+    /// contents, an actor's with its items and outfit.
     pub fn inventory_mut(&mut self, r: FormId) -> &mut crate::world::inventory::Inventory {
         if !self.inventories.contains_key(&r) {
-            let inv = self
-                .base_of(r)
-                .map(|b| {
-                    crate::world::inventory::container_inventory(
-                        &self.lo,
-                        b,
-                        r.0 as u64,
-                        &self.scripts.globals,
-                    )
-                })
-                .unwrap_or_default();
+            let inv = self.starting_inventory(r).unwrap_or_default();
             self.inventories.insert(r, inv);
         }
         self.inventories.get_mut(&r).unwrap()
     }
 
+    /// What a reference holds before anything changed it: a container's
+    /// contents, an actor's items and outfit.
+    fn starting_inventory(&self, r: FormId) -> Option<crate::world::inventory::Inventory> {
+        let actor = r != PLAYER_REF
+            && self.lo.tag_of(r).map_or_else(
+                || self.created(r).is_some_and(|c| c.actor),
+                |t| t.0 == *b"ACHR",
+            );
+        if actor {
+            let rf = self.reference_of(r)?;
+            return crate::world::actor::starting_inventory(&self.lo, &rf, &self.scripts.globals);
+        }
+        self.base_of(r).map(|b| {
+            crate::world::inventory::container_inventory(
+                &self.lo,
+                b,
+                r.0 as u64,
+                &self.scripts.globals,
+            )
+        })
+    }
+
     /// How many of `item` (or of the forms in a form list) a reference holds.
     pub fn item_count(&self, r: FormId, item: FormId) -> i32 {
-        let base = || {
-            self.base_of(r).map(|b| {
-                crate::world::inventory::container_inventory(
-                    &self.lo,
-                    b,
-                    r.0 as u64,
-                    &self.scripts.globals,
-                )
-            })
-        };
+        let base = || self.starting_inventory(r);
         let held = self
             .inventories
             .get(&r)
