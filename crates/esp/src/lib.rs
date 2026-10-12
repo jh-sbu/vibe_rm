@@ -14,6 +14,7 @@ mod record;
 pub mod scene;
 pub mod story;
 pub mod strings;
+pub mod writer;
 
 pub use form_id::FormId;
 pub use load_order::{
