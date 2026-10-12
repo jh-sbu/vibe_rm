@@ -83,6 +83,40 @@ impl Engine {
         self.delete_created(r);
     }
 
+    /// The player's summons with them now, about to leave through a load
+    /// door (or be moved) with them.
+    pub(crate) fn player_party(&self) -> Vec<FormId> {
+        let mut out: Vec<FormId> = self
+            .magic
+            .commanded
+            .iter()
+            .filter(|&(&r, &c)| c == PLAYER_REF && self.actor_ref(r).is_some_and(|a| !a.dead))
+            .map(|(&r, _)| r)
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// The player arrived (through a load door, or moved): their summons
+    /// come too, behind them.
+    pub(crate) fn party_arrives(&mut self, party: Vec<FormId>, yaw: f32) {
+        let feet = self.player.position
+            - Vec3::Z * (self.physics.player_half_height + self.physics.player_radius);
+        // Behind the player, side by side.
+        let back = -Vec3::new(yaw.sin(), yaw.cos(), 0.0);
+        let side = Vec3::new(back.y, -back.x, 0.0);
+        let n = party.len() as f32;
+        for (i, r) in party.into_iter().enumerate() {
+            let offset = (i as f32 - (n - 1.0) / 2.0) * ATTEND_RADIUS.0;
+            let mut to = feet + back * ATTEND_RADIUS.0 + side * offset;
+            if let Some(z) = self.nav.height_at(to) {
+                to.z = z;
+            }
+            log::info!("{r} follows {PLAYER_REF} to {to:.0?}");
+            self.move_ref(r, PLAYER_REF, to, Vec3::new(0.0, 0.0, yaw));
+        }
+    }
+
     /// Whom `r` is commanded by (`IsCommandedActor`).
     pub fn commander_of(&self, r: FormId) -> Option<FormId> {
         self.magic.commanded.get(&r).copied()

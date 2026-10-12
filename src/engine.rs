@@ -1688,6 +1688,7 @@ impl Engine {
 
     pub fn enter_interior(&mut self, cell_id: FormId, spawn: Option<(Vec3, f32)>) -> Result<()> {
         let t = Instant::now();
+        let party = self.player_party();
         self.unload_all();
         let contents = cell::load_cell(&self.lo, cell_id).context("cell not found")?;
         log::info!(
@@ -1759,6 +1760,7 @@ impl Engine {
         let (pos, yaw) =
             spawn.unwrap_or_else(|| self.default_interior_spawn(cell_id, &contents.objects));
         self.place_player(pos, yaw);
+        self.party_arrives(party, yaw);
         log::info!("interior loaded in {:?}", t.elapsed());
         Ok(())
     }
@@ -1783,6 +1785,7 @@ impl Engine {
 
     pub fn enter_exterior(&mut self, world: FormId, feet: Vec3, yaw: f32) -> Result<()> {
         let t = Instant::now();
+        let party = self.player_party();
         self.unload_all();
         let wi = self
             .lo
@@ -1842,6 +1845,7 @@ impl Engine {
             feet.z = h;
         }
         self.place_player(feet, yaw);
+        self.party_arrives(party, yaw);
         log::info!("exterior loaded in {:?}", t.elapsed());
         Ok(())
     }

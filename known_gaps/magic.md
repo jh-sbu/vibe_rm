@@ -115,8 +115,10 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   fight, fight the nearest actor fighting their commander (or the one it
   fights), within 3000 units, never their commander, and pick no fights
   of their own (their own aggression is ignored). Others treat them as
-  their AI data says. When the effect ends, or the summoned is killed or
-  left in an unloaded cell (its commander through a load door), it goes at
+  their AI data says. The player's summons go with them through load
+  doors (and `coc`), arriving side by side 160 units behind them at once
+  (the game's followers come through a moment later). When the effect
+  ends, or the summoned is killed or left in an unloaded cell, it goes at
   once: no banishing effect, no body left. The distances are chosen by
   eye; the game's follow and catch-up rules for commanded actors aren't
   public.
