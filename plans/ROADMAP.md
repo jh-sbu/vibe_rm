@@ -61,7 +61,9 @@ game each piece unlocks.
   them, enemies coming upon the player ending it;
   `RegisterForSleep` / `OnSleepStart` / `OnSleepStop`, so the
   game's Rested; `SetActorOwner` / `SetFactionOwner`, so rented rooms;
-  `known_gaps/sleep-wait.md`);
+  `known_gaps/sleep-wait.md`); training (`trainingmenu.swf`: the card
+  filled and the meter filling with each session, E to train, Tab to
+  leave);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
@@ -277,12 +279,18 @@ game each piece unlocks.
   point, all three restored. Uses: landed blows and shots (one-handed,
   two-handed, archery by base damage), sneak attacks, blocking, the armor worn
   when struck, picking locks and breaking picks, pickpocketing by value,
-  sneaking hidden; skill books teach once. The player's level drives leveled
+  sneaking hidden; skill books teach once. Trainers (`Game.ShowTrainingMenu`
+  from their dialogue, `trainingmenu.swf`): the skill their class teaches, a
+  level a session up to its most (Common 50, Expert 75, Master 90), five
+  sessions a player level, priced as UESP gives from `fTrainingMultCost`
+  and `iTrainingExpertCost` / `iTrainingMasterCost`, the gold to the
+  trainer, Training Sessions counted. The player's level drives leveled
   lists; NPCs' levels from `ACBS` (PC level mult). Story Manager `SKIL` and
   `LEVL` events. Papyrus `Game.AdvanceSkill`, `IncrementSkill`,
   `IncrementSkillBy`, `GetGameSettingFloat` / `Int`, `Actor.GetLevel`;
   condition `GetLevel`. Console `skills`, `player.advskill`, `player.incpcs`,
-  `player.advlevel`, `levelup`, `getlevel`. Open questions:
+  `player.advlevel`, `levelup`, `getlevel`, `<ref>.showtrainingmenu`,
+  `<ref>.train`. Open questions:
   `known_gaps/skills.md`
 - Perks: `PERK` records (requirements, rank chains, quest and entry point
   sections with their tabs' conditions and functions); actors' perks from
@@ -833,7 +841,7 @@ game each piece unlocks.
      disabled fighting putting the weapon away, the POV type argument
    - Sneak attacks (see Done): NPCs sneaking up on the player
    - Skills (see Done): the other skills' uses as their systems come (magic,
-     crafting, speech), trainers, rested bonuses, Legendary skills
+     crafting, speech), rested bonuses, Legendary skills
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
@@ -845,7 +853,7 @@ game each piece unlocks.
      item menus, the journal, the gift, magic, favorites and tween menus
      done: see Done): the magic menu's shouts (with shouts); the tween
      menu's Map (with the map); waiting's rest: getting into the bed first; the favorites menu's shouts and the gamepad's d-pad
-     favorites; NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
+     favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the quantity slider's use for more than dropping, recharging
@@ -854,7 +862,7 @@ game each piece unlocks.
      left hand, the best-in-class star, the survival warmth rating
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
-     (crafting, magic and shouts, training, horses stolen,
+     (crafting, magic and shouts, horses stolen,
      critical strikes, backstabs, disarms; the Favorite ones)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets; the shout, charge and

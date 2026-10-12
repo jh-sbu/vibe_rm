@@ -71,6 +71,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "door <ref>            open / close a door".into(),
             "[ref.]additem <item> [n] / removeitem <item> [n] / showinventory [open]".into(),
             "[ref.]openactorcontainer / showbartermenu   search a container (trade with an NPC) / barter".into(),
+            "<ref>.showtrainingmenu / <ref>.train   a trainer's training menu / a session with them".into(),
             "[ref.]moveto <target>  move a reference (or the player) to another".into(),
             "<ref>.enable / disable  enable or disable a reference (and those enabled with it)".into(),
             "[ref.]drop <item> [n]  drop items in front of the player (or an actor)".into(),
@@ -830,7 +831,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 39] = [
+const ITEM_COMMANDS: [&str; 41] = [
     "drop",
     "addspell",
     "removespell",
@@ -860,6 +861,8 @@ const ITEM_COMMANDS: [&str; 39] = [
     "inv",
     "openactorcontainer",
     "showbartermenu",
+    "showtrainingmenu",
+    "train",
     "drawweapon",
     "sheatheweapon",
     "equipitem",
@@ -1134,6 +1137,28 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                 "bartering with {r} (stock in {}): buying at {buy:.3}, selling at {sell:.3}",
                 engine.vendor_stock(r)
             )]
+        }
+        "showtrainingmenu" | "train" => {
+            let Some(t) = engine.trainer(r) else {
+                return vec![format!("{r} doesn't train")];
+            };
+            let level = engine.av_base(crate::engine::PLAYER_REF, t.skill);
+            let (had, allowed) = engine.training_sessions();
+            let about = format!(
+                "{r} trains {} to {} ({}): from {level} for {} gold, {had}/{allowed} this level",
+                esp::actor_value::NAMES[t.skill as usize],
+                t.max,
+                engine.trainer_rank(t),
+                engine.training_cost(level)
+            );
+            if cmd == "showtrainingmenu" {
+                engine.show_training_menu(r);
+                return vec![about];
+            }
+            match engine.train(r) {
+                Ok(()) => vec![about, "trained".into()],
+                Err(e) => vec![about, e],
+            }
         }
         // showinventory open: the player's inventory menu.
         "showinventory" | "inv" if args.first() == Some(&"open") => {

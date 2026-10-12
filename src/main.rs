@@ -46,6 +46,7 @@ mod spells;
 mod stats;
 mod story;
 mod swf_ui;
+mod training;
 mod traps;
 mod triggers;
 mod ui;

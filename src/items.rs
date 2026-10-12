@@ -42,6 +42,8 @@ pub enum Menu {
     /// How long to sleep (in a bed) or wait (`Engine::waiting` while the
     /// hours pass).
     SleepWait { sleeping: bool },
+    /// A trainer's training menu.
+    Training(FormId),
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,
