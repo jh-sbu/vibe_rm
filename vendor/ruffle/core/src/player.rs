@@ -3329,7 +3329,7 @@ pub struct DragObject<'gc> {
     pub constraint: Rectangle<Twips>,
 }
 
-fn run_mouse_pick<'gc>(
+pub(crate) fn run_mouse_pick<'gc>(
     context: &mut UpdateContext<'gc>,
     require_button_mode: bool,
 ) -> Option<InteractiveObject<'gc>> {
