@@ -76,10 +76,8 @@ impl Ui {
         let mut skip = false;
         let out = ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx().clone();
-            // The game's item menus (bartering from a merchant's topic) cover
-            // the conversation until they close.
-            let swf_menu = self.swf_hud && engine.menu.is_some_and(crate::swf_ui::SwfUi::shows);
-            if engine.conversation.is_some() && !swf_menu {
+            // The game's dialogue menu shows the conversation itself.
+            if engine.conversation.is_some() && !self.swf_hud {
                 self.dialogue(&ctx, engine, &mut choice, &mut skip);
             } else if !self.swf_hud {
                 self.hud(&ctx, engine);

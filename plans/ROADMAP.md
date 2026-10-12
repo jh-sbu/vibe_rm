@@ -63,7 +63,10 @@ game each piece unlocks.
   game's Rested; `SetActorOwner` / `SetFactionOwner`, so rented rooms;
   `known_gaps/sleep-wait.md`); training (`trainingmenu.swf`: the card
   filled and the meter filling with each session, E to train, Tab to
-  leave);
+  leave); the dialogue menu (`dialoguemenu.swf`: the speaker's name, their
+  lines, the topics sliding in, topics already heard greyed, the clicked
+  topic kept above while the answer is said, a click or E skipping a line,
+  Tab or Esc leaving; `known_gaps/dialogue-menu.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection

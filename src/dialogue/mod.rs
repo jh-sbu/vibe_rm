@@ -269,7 +269,9 @@ pub struct Conversation {
     pub npc: FormId,
     pub name: String,
     pub voice_type: FormId,
-    pub options: Vec<(Topic, String)>,
+    /// The topics the player can choose: the topic, its prompt and whether
+    /// the line it would get now is new (not heard before).
+    pub options: Vec<(Topic, String, bool)>,
     /// Remaining lines of the current INFO, and the INFO itself.
     pub queue: Vec<Response>,
     pub current: Option<Line>,
@@ -345,9 +347,9 @@ impl Engine {
     }
 
     /// Topics the player can choose at the top level.
-    fn top_level_topics(&mut self, npc_ref: FormId) -> Vec<(Topic, String)> {
+    fn top_level_topics(&mut self, npc_ref: FormId) -> Vec<(Topic, String, bool)> {
         let branches: Vec<FormId> = self.lo.ids_of_type(b"DLBR").to_vec();
-        let mut out: Vec<(Topic, String)> = Vec::new();
+        let mut out: Vec<(Topic, String, bool)> = Vec::new();
         for b in branches {
             let Some(r) = self.lo.get(b) else { continue };
             let flags = r.get(b"DNAM").map(|d| d[0]).unwrap_or(0);
@@ -366,8 +368,9 @@ impl Engine {
             };
             if let Some(i) = self.select_info(&t, npc_ref) {
                 let prompt = i.prompt.clone().unwrap_or_else(|| t.prompt.clone());
-                if !prompt.is_empty() && !out.iter().any(|(x, _)| x.id == t.id) {
-                    out.push((t, prompt));
+                if !prompt.is_empty() && !out.iter().any(|(x, _, _)| x.id == t.id) {
+                    let new = !self.infos_said.contains(&i.id);
+                    out.push((t, prompt, new));
                 }
             }
         }
@@ -477,7 +480,8 @@ impl Engine {
             {
                 let prompt = i.prompt.clone().unwrap_or_else(|| t.prompt.clone());
                 if !prompt.is_empty() {
-                    opts.push((t, prompt));
+                    let new = !self.infos_said.contains(&i.id);
+                    opts.push((t, prompt, new));
                 }
             }
         }
@@ -496,7 +500,7 @@ impl Engine {
     /// Player picked option `i` (or Goodbye if out of range).
     pub fn choose_topic(&mut self, i: usize) {
         let Some(c) = &self.conversation else { return };
-        let Some((t, _)) = c.options.get(i).cloned() else {
+        let Some((t, _, _)) = c.options.get(i).cloned() else {
             self.end_conversation();
             return;
         };
@@ -535,6 +539,7 @@ impl Engine {
 
     fn begin_info(&mut self) {
         if let Some((_, info)) = self.conversation.as_ref().and_then(|c| c.info.clone()) {
+            self.infos_said.insert(info.id);
             let speaker = self
                 .conversation
                 .as_ref()

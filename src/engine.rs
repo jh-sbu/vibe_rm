@@ -121,6 +121,9 @@ pub struct Engine {
     pub imagespace: crate::imagespace::ImageSpace,
     /// Actors the player has had a conversation with (`GetTalkedToPC`).
     pub(crate) talked_to_pc: std::collections::HashSet<FormId>,
+    /// The dialogue lines (`INFO`) said to the player: the topics leading
+    /// to them show as heard.
+    pub(crate) infos_said: std::collections::HashSet<FormId>,
     /// Quest alias packages: who fills which aliases, and their packages.
     pub(crate) alias_packs: crate::ai::alias::AliasPackages,
     /// Factions' relations to others (`XNAM`), as read.
@@ -373,6 +376,7 @@ impl Engine {
             location_keyword_data: Default::default(),
             cleared_locations: Default::default(),
             talked_to_pc: Default::default(),
+            infos_said: Default::default(),
             alias_packs: Default::default(),
             faction_relations: Default::default(),
             combat_settings: Default::default(),
