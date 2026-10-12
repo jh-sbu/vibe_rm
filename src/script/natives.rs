@@ -88,6 +88,13 @@ pub fn call(
             e.increment_stat(&arg(0).to_string(), by);
             none()
         }
+        // The trainers' dialogue: the training menu, for the speaker.
+        ("game", "showtrainingmenu") => {
+            if let Some(t) = arg(0).as_form() {
+                e.show_training_menu(FormId(t));
+            }
+            none()
+        }
         ("game", "querystat") => v(Value::Int(e.query_stat(&arg(0).to_string()))),
         ("game", "getplayer") => v(e.object_value(crate::engine::PLAYER_REF)),
         ("game", "getform") => v(e.object_value(FormId(arg(0).as_int() as u32))),

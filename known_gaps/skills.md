@@ -51,9 +51,26 @@ below (Skyrim.esm / Update.esm).
   The game clears the flag on the book's base, so another copy doesn't teach;
   that is the same thing.
 - **Not done**: magic schools, smithing, alchemy, enchanting, speech (bartering
-  trains it; no persuasion yet), trainers, the Rested / Well Rested / Lover's
+  trains it; no persuasion yet), the Rested / Well Rested / Lover's
   Comfort / Guardian Stone bonuses, Legendary skills. Only the player's skills
   advance; NPCs' come from their records. The progress isn't saved (no saves).
+- **Training** (UESP Skyrim:Trainers; `src/training.rs`). Settled: the
+  trainer's class `DATA` has the skill it teaches at byte 4 (from
+  One-handed) and the level it teaches up to at byte 5 (50, 75, 90 in the
+  vanilla `Trainer*` classes); `sCanNotTrainHigher`, `sCanNotTrainAnymore`,
+  `sInsufficientGoldToTrain`; the gold goes into the trainer's inventory.
+  UESP's prices for a session from skill `b` (`10b + 50` up to 50, `30b +
+  50` past it, `50b + 50` past 75) are `50 + fTrainingMultCost` (10) `x b`,
+  times `iTrainingExpertCost` (3) or `iTrainingMasterCost` (5) past 50 and
+  75; the 50 and the five sessions a level aren't settings in Skyrim.esm,
+  so they are constants here. Choices: the class is read from the NPC's
+  Stats template part; the rank shown is `sJourneyman` ("Common") up to 50,
+  `sExpert` up to 75, `sMaster` past it; the session count starts again when
+  a level up is taken (not when it becomes available); a session keeps the
+  skill XP already earned toward the next level (as `IncrementSkill`), and
+  passes no time; refusals are notifications. Not done: the Guardian Stone
+  / Rested bonuses UESP gives training (with those bonuses), the menu's
+  sounds (no sound descriptor is named for it).
 - **NPC levels** (`GetLevel`): `ACBS` level, or with the PC level mult flag
   (0x80) the player's level x mult / 1000, rounded, between calc min and max
   (max 0: none). How the game rounds isn't public.

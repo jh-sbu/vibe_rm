@@ -54,6 +54,8 @@ pub struct Skills {
     /// Level ups earned and not yet taken.
     pub pending: u32,
     pub perk_points: u32,
+    /// Training sessions this level (`crate::training`).
+    pub trained: u32,
     /// Skill books already read: each teaches once.
     pub read_books: HashSet<FormId>,
     /// Every book read (the Books Read statistic counts each once).
@@ -68,6 +70,7 @@ impl Default for Skills {
             level_xp: 0.0,
             pending: 0,
             perk_points: 0,
+            trained: 0,
             read_books: HashSet::new(),
             books_seen: HashSet::new(),
         }
@@ -256,6 +259,8 @@ impl Engine {
         self.skills.pending -= 1;
         self.skills.level += 1;
         self.skills.perk_points += 1;
+        // A new level's training sessions; those not had are gone.
+        self.skills.trained = 0;
         PLAYER_LEVEL.store(self.skills.level, Ordering::Relaxed);
         let gain = gmst_i32(&self.lo, "iAVDhmsLevelUp", 10) as f32;
         let base = self.av_base(PLAYER_REF, attribute);

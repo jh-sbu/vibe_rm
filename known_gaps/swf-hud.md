@@ -157,3 +157,15 @@ isn't public; the choices below are what the movies' code allows.
   merchant label ("Lucan Valerius Gold") is wider than its field and shows
   clipped from the left as Ruffle draws it; how Scaleform lays it out isn't
   known. Pricing and what merchants buy: `known_gaps/barter.md`.
+
+## Unconfirmed: training
+
+- **The card** (`trainingmenu.swf`, `_root.TrainingMenuObj`): the movie has
+  no functions for its contents, so the engine sets `TrainingCard`'s text
+  fields itself: `SkillName` (the skill's name in capitals, as the movie's
+  placeholder), `TrainerSkill` (the rank), `TimesTrained` ("2/5"),
+  `TrainCost`, `CurrentGold`. The meter starts at the skill's progress; a
+  session sets it filling to full (the engine calls its `Update` each frame:
+  the movie only empties it once full), then to the progress again. The
+  movie handles no keys: E and Enter click Train, Tab and Esc Exit, as its
+  buttons' art says. Rules: `known_gaps/skills.md`.

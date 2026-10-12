@@ -3,7 +3,8 @@
 //! the item menus (the inventory, containers and pockets, bartering: in
 //! `item_menu`), the magic menu (`magic_menu`), the favorites menu
 //! (`favorites_menu`), the tween menu (`tween_menu`), the sleep / wait menu
-//! (`sleep_wait_menu`) and the journal (`journal_menu`), in place of egui's.
+//! (`sleep_wait_menu`), the training menu (`training_menu`) and the journal
+//! (`journal_menu`), in place of egui's.
 //!
 //! Each frame the HUD is told what changed: the health, magicka and stamina
 //! meters, the compass heading, the location, what the crosshair is on, what's
@@ -17,6 +18,7 @@ mod item_menu;
 mod journal_menu;
 mod magic_menu;
 mod sleep_wait_menu;
+mod training_menu;
 mod tween_menu;
 
 use std::time::Duration;
@@ -56,6 +58,8 @@ pub struct SwfUi {
     tween: Option<tween_menu::TweenMenu>,
     /// The sleep / wait menu, while open.
     sleep_wait: Option<sleep_wait_menu::SleepWaitMenu>,
+    /// The training menu, while open.
+    training: Option<training_menu::TrainingMenu>,
     /// The journal, while open, and where it was left.
     journal: Option<journal_menu::JournalMenu>,
     journal_saved: journal_menu::Saved,
@@ -107,6 +111,7 @@ impl SwfUi {
             hotkey: None,
             tween: None,
             sleep_wait: None,
+            training: None,
             journal: None,
             journal_saved: Default::default(),
             buttons,
@@ -137,6 +142,9 @@ impl SwfUi {
         if let Some(sleep_wait) = &mut self.sleep_wait {
             sleep_wait.menu.resize(width, height);
         }
+        if let Some(training) = &mut self.training {
+            training.menu.resize(width, height);
+        }
         self.size = (width, height);
     }
 
@@ -154,6 +162,7 @@ impl SwfUi {
         self.favorites_menu(engine, dt);
         self.tween_menu(engine, dt);
         self.sleep_wait_menu(engine, dt);
+        self.training_menu(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
         for call in self.message_box.menu.take_calls() {
@@ -356,6 +365,39 @@ impl SwfUi {
         }
     }
 
+    /// Opens the training menu when the engine's menu is it, closes it when
+    /// it goes, and keeps its card and meter.
+    fn training_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        let Some(crate::items::Menu::Training(trainer)) = engine.menu else {
+            self.training = None;
+            return;
+        };
+        if self.training.as_ref().is_some_and(|t| t.trainer != trainer) {
+            self.training = None;
+        }
+        if self.training.is_none() {
+            let buttons = self.buttons.clone();
+            match training_menu::TrainingMenu::open(&self.ui, self.size, engine, trainer, buttons) {
+                Ok(m) => self.training = Some(m),
+                Err(e) => {
+                    log::error!("training menu: {e:#}");
+                    engine.menu = None;
+                    return;
+                }
+            }
+        }
+        let Some(training) = &mut self.training else {
+            return;
+        };
+        training.menu.advance(dt);
+        for call in training.menu.take_calls() {
+            if !training.answer(engine, &call) {
+                answer(&training.menu, engine, &call);
+            }
+        }
+        training.update(engine);
+    }
+
     /// Opens the journal when the engine's menu is it, closes it when it
     /// goes, and answers its calls.
     fn journal_menu(&mut self, engine: &mut Engine, dt: Duration) {
@@ -406,6 +448,7 @@ impl SwfUi {
                     | crate::items::Menu::Favorites
                     | crate::items::Menu::Tween
                     | crate::items::Menu::SleepWait { .. }
+                    | crate::items::Menu::Training(_)
             )
     }
 
@@ -418,6 +461,7 @@ impl SwfUi {
             || self.favorites.is_some()
             || self.tween.is_some()
             || self.sleep_wait.is_some()
+            || self.training.is_some()
     }
 
     /// The window's input, to the menu on top while one takes it (the console
@@ -564,6 +608,8 @@ impl SwfUi {
             &tween.menu
         } else if let Some(sleep_wait) = &self.sleep_wait {
             &sleep_wait.menu
+        } else if let Some(training) = &self.training {
+            &training.menu
         } else {
             &self.message_box.menu
         }
@@ -589,6 +635,12 @@ impl SwfUi {
     /// them.
     fn item_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
         use winit::platform::scancode::PhysicalKeyExtScancode;
+        // The training menu: its buttons' keys.
+        if self.message_box.shown.is_none()
+            && let Some(training) = &self.training
+        {
+            return training.key(code);
+        }
         // The sleep / wait menu: Esc cancels.
         if self.message_box.shown.is_none()
             && let Some(sleep_wait) = &self.sleep_wait
@@ -734,6 +786,10 @@ impl SwfUi {
         if let Some(sleep_wait) = &mut self.sleep_wait {
             sleep_wait.menu.render();
             menus.push(&sleep_wait.menu);
+        }
+        if let Some(training) = &mut self.training {
+            training.menu.render();
+            menus.push(&training.menu);
         }
         if self.message_box.shown.is_some() {
             self.message_box.menu.render();

@@ -722,6 +722,13 @@ impl Ui {
                 engine.menu = None;
                 return;
             }
+            Menu::Training(trainer) => {
+                let close = training_window(ctx, engine, trainer) || close;
+                if close {
+                    engine.menu = None;
+                }
+                return;
+            }
             Menu::Journal => {
                 let close =
                     close || (self.menu_shown && ctx.input(|i| i.key_pressed(egui::Key::J)));
@@ -1321,4 +1328,40 @@ fn perk_tree_view(ctx: &egui::Context, engine: &mut Engine, skill: u32) {
         engine.buy_perk(p);
     }
     ctx.data_mut(|d| d.insert_temp(sel_id, selected));
+}
+
+/// The training menu (the game's is `trainingmenu.swf`): the skill, the
+/// trainer's rank, the sessions this level, the price and the player's
+/// gold; Train and Exit. True to close it.
+fn training_window(ctx: &egui::Context, engine: &mut Engine, trainer: FormId) -> bool {
+    use crate::engine::PLAYER_REF;
+    let Some(t) = engine.trainer(trainer) else {
+        return true;
+    };
+    let level = engine.av_base(PLAYER_REF, t.skill);
+    let (had, allowed) = engine.training_sessions();
+    let mut close = false;
+    egui::Window::new("Training")
+        .anchor(Align2::CENTER_BOTTOM, egui::vec2(0.0, -40.0))
+        .resizable(false)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            ui.heading(format!("{} {level:.0}", engine.skill_name(t.skill)));
+            ui.label(format!("Trainer: {}", engine.trainer_rank(t)));
+            ui.label(format!("Times trained this level: {had}/{allowed}"));
+            ui.label(format!(
+                "Cost {}   Gold {}",
+                engine.training_cost(level),
+                engine.gold(PLAYER_REF)
+            ));
+            ui.horizontal(|ui| {
+                if ui.button("Train").clicked()
+                    && let Err(e) = engine.train(trainer)
+                {
+                    engine.scripts.notify(e);
+                }
+                close = ui.button("Exit").clicked();
+            });
+        });
+    close
 }
