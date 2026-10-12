@@ -1126,8 +1126,9 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
         }
         "showbartermenu" => {
             engine.show_barter_menu(r);
+            let (buy, sell) = engine.barter_multipliers(r);
             vec![format!(
-                "bartering with {r} (stock in {})",
+                "bartering with {r} (stock in {}): buying at {buy:.3}, selling at {sell:.3}",
                 engine.vendor_stock(r)
             )]
         }

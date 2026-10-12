@@ -205,6 +205,10 @@ pub const INVISIBILITY: u32 = 54;
 pub const MOVEMENT_NOISE_MULT: u32 = 92;
 /// `OneHandedMod`: each skill's modifier (`Fortify <skill>`) from here, in skill order.
 pub const FIRST_SKILL_MOD: u32 = 96;
+/// `OneHandedPowerMod`: each skill's power modifier from here, in skill order
+/// (`Fortify Barter`'s effects are on Speechcraft's).
+pub const FIRST_SKILL_POWER_MOD: u32 = 135;
+pub const SPEECHCRAFT_POWER_MOD: u32 = FIRST_SKILL_POWER_MOD + SPEECHCRAFT - FIRST_SKILL;
 
 /// The name of an actor value, if it is one of the known ones.
 pub fn name(index: u32) -> Option<&'static str> {
@@ -238,6 +242,10 @@ mod tests {
     #[test]
     fn indices() {
         assert_eq!(super::index("health"), Some(super::HEALTH));
+        assert_eq!(
+            super::index("SpeechcraftPowerMod"),
+            Some(super::SPEECHCRAFT_POWER_MOD)
+        );
         assert_eq!(super::index("Archery"), Some(8));
         assert_eq!(super::index("variable05"), Some(72));
         assert_eq!(super::name(super::CARRY_WEIGHT), Some("CarryWeight"));
