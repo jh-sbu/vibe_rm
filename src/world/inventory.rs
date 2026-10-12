@@ -3,7 +3,7 @@
 
 use esp::{FormId, LoadOrder, LoadedRecord};
 
-use super::actor::resolve_items;
+use super::actor::{Globals, resolve_items};
 
 /// What an item is, for listing it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -267,7 +267,12 @@ impl Inventory {
 
 /// The items listed in a record's `CNTO` subrecords (NPC_, CONT), leveled lists
 /// resolved by `seed`.
-pub fn listed_items(lo: &LoadOrder, rec: &LoadedRecord<'_>, seed: u64) -> Vec<(FormId, i32)> {
+pub fn listed_items(
+    lo: &LoadOrder,
+    rec: &LoadedRecord<'_>,
+    seed: u64,
+    globals: &Globals,
+) -> Vec<(FormId, i32)> {
     rec.subrecords()
         .filter(|s| s.tag.0 == *b"CNTO" && s.data.len() >= 8)
         .flat_map(|s| {
@@ -276,6 +281,7 @@ pub fn listed_items(lo: &LoadOrder, rec: &LoadedRecord<'_>, seed: u64) -> Vec<(F
                 rec.fid(s.form_id(0)),
                 i32::from_le_bytes(s.data[4..8].try_into().unwrap()),
                 seed,
+                globals,
                 0,
             )
         })
@@ -283,10 +289,15 @@ pub fn listed_items(lo: &LoadOrder, rec: &LoadedRecord<'_>, seed: u64) -> Vec<(F
 }
 
 /// A container's starting contents.
-pub fn container_inventory(lo: &LoadOrder, cont: FormId, seed: u64) -> Inventory {
+pub fn container_inventory(
+    lo: &LoadOrder,
+    cont: FormId,
+    seed: u64,
+    globals: &Globals,
+) -> Inventory {
     let mut inv = Inventory::default();
     if let Some(rec) = lo.get(cont).filter(|r| r.tag().0 == *b"CONT") {
-        for (f, n) in listed_items(lo, &rec, seed) {
+        for (f, n) in listed_items(lo, &rec, seed, globals) {
             inv.add(f, n);
         }
     }

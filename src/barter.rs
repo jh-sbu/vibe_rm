@@ -69,7 +69,12 @@ impl Engine {
             return;
         };
         let seed = self.rand();
-        let inv = crate::world::inventory::container_inventory(&self.lo, base, seed);
+        let inv = crate::world::inventory::container_inventory(
+            &self.lo,
+            base,
+            seed,
+            &self.scripts.globals,
+        );
         self.inventories.insert(chest, inv);
         self.restocks.stocked.insert(chest, now);
         log::info!("restocked merchant chest {chest}");
