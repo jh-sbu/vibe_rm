@@ -355,3 +355,201 @@ impl Engine {
         self.scene.assign_moving_lights(first);
     }
 }
+
+impl Engine {
+    /// The armor and weapons of an inventory's equipped items: what an
+    /// actor's models show (lights are its torch's).
+    pub(crate) fn worn_items(&self, inv: &crate::world::inventory::Inventory) -> Vec<FormId> {
+        inv.equipped
+            .iter()
+            .copied()
+            .filter(|&f| {
+                matches!(self.lo.tag_of(f).map(|t| t.0), Some(t) if t == *b"ARMO" || t == *b"WEAP")
+            })
+            .collect()
+    }
+
+    /// Actors whose armor or weapons changed (put on by scripts or for
+    /// themselves, taken off their bodies) are dressed again.
+    pub(crate) fn update_worn(&mut self) {
+        let mut changed = Vec::new();
+        for rt in self.cells.values() {
+            for a in &rt.actors {
+                let worn = self
+                    .inventories
+                    .get(&a.ref_id)
+                    .map(|i| self.worn_items(i))
+                    .unwrap_or_default();
+                if worn != a.worn {
+                    changed.push(a.ref_id);
+                }
+            }
+        }
+        for actor in changed {
+            self.redress(actor);
+        }
+    }
+
+    /// Rebuild what an actor shows from what it has equipped: the skinned
+    /// armor and the body beneath, the head unless a helmet hides it, its
+    /// weapon and shield; its footsteps, the graph's hand types and how it
+    /// fights follow.
+    pub(crate) fn redress(&mut self, actor: FormId) {
+        let Some(key) = self.actor_cells.get(&actor).copied() else {
+            return;
+        };
+        let Some(index) = self
+            .cells
+            .get(&key)
+            .and_then(|rt| rt.actors.iter().position(|a| a.ref_id == actor))
+        else {
+            return;
+        };
+        let inv = self.inventories.get(&actor).cloned().unwrap_or_default();
+        let worn = self.worn_items(&inv);
+        let d = self.reference_of(actor).and_then(|rf| {
+            crate::world::actor::describe_reference(
+                &self.lo,
+                &rf,
+                &self.scripts.globals,
+                Some(&inv),
+            )
+        });
+        let Some(d) = d else {
+            // Nothing to build it from: don't try again until it changes.
+            if let Some(a) = self.cells.get_mut(&key).map(|rt| &mut rt.actors[index]) {
+                a.worn = worn;
+            }
+            return;
+        };
+        let paths: Vec<String> = d.models.iter().map(|(m, _)| m.clone()).collect();
+        self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        let skel = self.cells[&key].actors[index].skeleton.clone();
+        let (meshes, _, rigid) = self.actor_meshes(&d, &skel);
+        log::debug!(
+            "{actor} dressed again: {} meshes, wearing {worn:?}",
+            meshes.len()
+        );
+        self.rigid_models.insert(actor, rigid);
+        if let Some(inst) = self
+            .scene
+            .cells
+            .get_mut(&key)
+            .and_then(|rc| rc.actors.get_mut(index))
+        {
+            inst.meshes = meshes;
+        }
+        let weapon = inv.weapon(&self.lo);
+        let reach = weapon
+            .and_then(|w| self.lo.get(w))
+            .and_then(|r| {
+                r.get(b"DNAM")
+                    .filter(|x| x.len() >= 12)
+                    .map(|x| f32::from_le_bytes(x[8..12].try_into().unwrap()))
+            })
+            .unwrap_or(0.0);
+        let bow = weapon.filter(|&w| crate::ai::archery::is_bow(&self.lo, w));
+        let cost = self.power_attack_cost(actor, weapon);
+        let footsteps = d.footsteps.and_then(|f| self.footstep_set(f));
+        let lo = &self.lo;
+        let a = &mut self.cells.get_mut(&key).unwrap().actors[index];
+        a.worn = worn;
+        a.footstep_set = footsteps;
+        a.weapon_reach = reach;
+        a.power_cost = cost;
+        a.bow = bow.is_some();
+        if let Some(b) = bow {
+            a.bow_speed = crate::ai::archery::bow_speed(lo, b);
+        }
+        let left = if a.torch.is_some() {
+            HandType::Torch
+        } else {
+            inv.hand(lo, true)
+        };
+        if let Some(g) = &mut a.graph {
+            g.set_variable("iLeftHandType", left as i32 as f32);
+            g.set_variable("iRightHandType", inv.hand(lo, false) as i32 as f32);
+        }
+        self.refresh_equipment(key, index, actor);
+    }
+
+    /// An actor leaving the loaded world puts its torch away, and takes up the
+    /// shield it set aside for it, so it comes back as it was.
+    pub(crate) fn put_torch_away_for_now(&mut self, a: &crate::ai::ActorRuntime) {
+        let Some(torch) = a.torch else {
+            return;
+        };
+        if let Some(inv) = self.inventories.get_mut(&a.ref_id) {
+            inv.equipped.retain(|&f| f != torch);
+            if let Some(s) = a.stowed_shield {
+                inv.equipped.push(s);
+            }
+        }
+    }
+
+    /// An NPC given an item (placed in its pockets, or a teammate's
+    /// inventory) wears or wields it if it is better than what it has: armor
+    /// that protects it more than what it covers (clothing: worth more), a
+    /// weapon it would pick over its own.
+    pub(crate) fn take_up_if_better(&mut self, actor: FormId, item: FormId) {
+        if actor == crate::engine::PLAYER_REF
+            || self.actor_ref(actor).is_none()
+            || self.is_dead(actor)
+            || self
+                .inventories
+                .get(&actor)
+                .is_none_or(|i| i.count(item) <= 0 || i.is_equipped(item))
+        {
+            return;
+        }
+        let Some(rf) = self.reference_of(actor) else {
+            return;
+        };
+        match self.lo.tag_of(item).map(|t| t.0) {
+            Some(t) if t == *b"WEAP" => {
+                let inv = self.inventories.get(&actor).cloned().unwrap_or_default();
+                let best =
+                    crate::world::actor::best_weapon(&self.lo, &rf, &self.scripts.globals, &inv);
+                if best == Some(item) && inv.weapon(&self.lo) != Some(item) {
+                    log::info!("{actor} wields the {item} it was given");
+                    self.wield(actor, item);
+                }
+            }
+            Some(t) if t == *b"ARMO" => {
+                if !crate::world::actor::can_wear(&self.lo, &rf, &self.scripts.globals, item) {
+                    return;
+                }
+                let lo = &self.lo;
+                let inv = self.inventories.get(&actor).cloned().unwrap_or_default();
+                let shield = lo
+                    .get(item)
+                    .is_some_and(|r| crate::world::inventory::armor_slots(&r) & (1 << 9) != 0);
+                let hand = inv.hand(lo, false);
+                if shield && !(hand == HandType::Empty || hand.one_handed()) {
+                    return;
+                }
+                let now = self.protection(actor).rating;
+                let with = self.worn_with(actor, item);
+                let then = self.protection_of(actor, &with).rating;
+                let value =
+                    |f: FormId| crate::world::inventory::item_info(lo, f).map_or(0, |i| i.value);
+                let covered: i32 = inv
+                    .equipped
+                    .iter()
+                    .filter(|f| !with.contains(f))
+                    .map(|&f| value(f))
+                    .sum();
+                let better = then > now || (then == now && value(item) > covered);
+                log::info!(
+                    "{actor} given {item}: armor {now:.0} -> {then:.0}, worth {} for {covered}{}",
+                    value(item),
+                    if better { ": wears it" } else { "" }
+                );
+                if better {
+                    let _ = self.equip_armor(actor, item, true);
+                }
+            }
+            _ => {}
+        }
+    }
+}

@@ -131,6 +131,9 @@ impl Engine {
         if roll < chance {
             let moved = self.transfer_item(PLAYER_REF, victim, item, count, stack);
             self.unequip_if_gone(PLAYER_REF, item);
+            if moved > 0 {
+                self.take_up_if_better(victim, item);
+            }
             return moved > 0;
         }
         self.caught_pickpocketing(victim);

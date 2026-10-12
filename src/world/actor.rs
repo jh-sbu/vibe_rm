@@ -590,15 +590,93 @@ pub fn describe_player(
     })
 }
 
+/// What an NPC starts with: the items it carries, then its outfit (worn),
+/// then a weapon and shield to wield.
+fn npc_inventory(
+    lo: &LoadOrder,
+    traits: &NpcTraits,
+    seed: u64,
+    globals: &Globals,
+) -> super::inventory::Inventory {
+    let mut inventory = super::inventory::Inventory::default();
+    if let Some(rec) = lo.get(traits.npc_for_inventory) {
+        for (f, n) in super::inventory::listed_items(lo, &rec, seed, globals) {
+            inventory.add(f, n);
+        }
+    }
+    for armo in outfit_armors(lo, traits.outfit, seed, globals) {
+        inventory.add(armo, 1);
+        inventory.equipped.push(armo);
+    }
+    super::inventory::equip_weapons(
+        lo,
+        &mut inventory,
+        traits.npc_for_stats,
+        traits.combat_style,
+    );
+    inventory
+}
+
+/// The traits of the NPC an actor reference is (its leveled list's pick).
+fn reference_traits(
+    lo: &LoadOrder,
+    r: &records::Reference,
+    globals: &Globals,
+) -> Option<NpcTraits> {
+    let seed = r.id.0 as u64;
+    let npc = resolve_leveled(lo, r.base, b"LVLN", seed, globals)?;
+    if lo.tag_of(npc)?.0 != *b"NPC_" {
+        return None;
+    }
+    npc_traits(lo, &Sources::of_npc(lo, npc, seed))
+}
+
+/// What an actor reference starts with (see `describe_reference`), before it
+/// was ever loaded.
+pub fn starting_inventory(
+    lo: &LoadOrder,
+    r: &records::Reference,
+    globals: &Globals,
+) -> Option<super::inventory::Inventory> {
+    let traits = reference_traits(lo, r, globals)?;
+    Some(npc_inventory(lo, &traits, r.id.0 as u64, globals))
+}
+
+/// The weapon an actor reference would wield of those in `inv`, as it picks
+/// one when it loads (`equip_weapons`).
+pub fn best_weapon(
+    lo: &LoadOrder,
+    r: &records::Reference,
+    globals: &Globals,
+    inv: &super::inventory::Inventory,
+) -> Option<FormId> {
+    let traits = reference_traits(lo, r, globals)?;
+    let mut inv = inv.clone();
+    inv.equipped
+        .retain(|&f| lo.tag_of(f).map(|t| t.0) != Some(*b"WEAP"));
+    super::inventory::equip_weapons(lo, &mut inv, traits.npc_for_stats, traits.combat_style);
+    inv.weapon(lo)
+}
+
+/// Whether an actor reference's race and sex have a model of an armor to
+/// wear (children have none of the adults' armor).
+pub fn can_wear(lo: &LoadOrder, r: &records::Reference, globals: &Globals, armo: FormId) -> bool {
+    reference_traits(lo, r, globals)
+        .is_some_and(|t| !armor_models(lo, armo, t.race, t.female).is_empty())
+}
+
 /// Biped slot for the head (30) and hair (31) etc.
 const SLOT_HEAD: u32 = 1 << 0;
 const SLOT_HAIR: u32 = 1 << 1;
 
-/// Describe an actor reference (placed or created).
+/// Describe an actor reference (placed or created), wearing what `stored`
+/// says it has equipped when it has an inventory already (else its record's
+/// items, outfit and the weapon it would pick).
 pub fn describe_reference(
     lo: &LoadOrder,
     r: &records::Reference,
     globals: &Globals,
+    stored: Option<&super::inventory::Inventory>,
 ) -> Option<ActorDesc> {
     // Disabled references (initially, or through their enable parent) are left
     // out by the caller.
@@ -620,25 +698,10 @@ pub fn describe_reference(
     } else {
         traits.skin
     };
-
-    // Carried items, then the outfit (worn), then a weapon and shield to wield.
-    let mut inventory = super::inventory::Inventory::default();
-    if let Some(rec) = lo.get(traits.npc_for_inventory) {
-        for (f, n) in super::inventory::listed_items(lo, &rec, seed, globals) {
-            inventory.add(f, n);
-        }
-    }
-    let outfit = outfit_armors(lo, traits.outfit, seed, globals);
-    for &armo in &outfit {
-        inventory.add(armo, 1);
-        inventory.equipped.push(armo);
-    }
-    super::inventory::equip_weapons(
-        lo,
-        &mut inventory,
-        traits.npc_for_stats,
-        traits.combat_style,
-    );
+    let inventory = match stored {
+        Some(inv) => inv.clone(),
+        None => npc_inventory(lo, &traits, seed, globals),
+    };
 
     let face = facegen_path(lo, traits.npc_for_face).into_iter().collect();
     let models = dress(lo, &inventory, skin, traits.race, traits.female, face);

@@ -134,7 +134,7 @@ impl HandType {
         }
     }
 
-    fn one_handed(self) -> bool {
+    pub fn one_handed(self) -> bool {
         matches!(
             self,
             HandType::Sword | HandType::Dagger | HandType::Axe | HandType::Mace

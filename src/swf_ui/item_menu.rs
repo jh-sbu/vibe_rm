@@ -639,6 +639,7 @@ impl ItemMenu {
             (_, false) => {
                 engine.transfer_item(PLAYER_REF, other, item, count, owner);
                 engine.unequip_if_gone(PLAYER_REF, item);
+                engine.take_up_if_better(other, item);
             }
         }
     }

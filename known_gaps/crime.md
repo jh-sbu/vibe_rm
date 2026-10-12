@@ -73,8 +73,12 @@ locations name it.
   well as taken): the chance is the one for taking that item, and being
   caught is the same. Choices: placing trains no Pickpocket and counts no
   statistic; what is placed keeps the owner it had (a stolen item stays
-  stolen); the victim doesn't equip placed weapons or armor, and the perks
-  that act on placing (Misdirection, Perfect Touch, Poisoned) aren't wired.
+  stolen); the perks that act on placing (Misdirection, Perfect Touch,
+  Poisoned) aren't wired.
+- The victim wears or wields what is placed when it is better (UESP
+  Skyrim:Pickpocket, reverse pickpocketing: NPCs equip better weapons and
+  armor put in their pockets); so does a teammate given it in its
+  inventory. See the choices below for "better".
 
 - Arrest (UESP Crime / Jail, CK wiki Faction): guards "will attempt to
   arrest you" in the hold where the player has a bounty and chase them; the
@@ -128,8 +132,18 @@ locations name it.
 
 - Placing items in pockets trains no Pickpocket and counts no statistic;
   what is placed keeps the owner it had (a stolen item stays stolen). The
-  victim doesn't equip placed weapons or armor, and the perks that act on
-  placing (Misdirection, Perfect Touch, Poisoned) aren't wired.
+  perks that act on placing (Misdirection, Perfect Touch, Poisoned) aren't
+  wired.
+- An NPC given an item (placed in its pockets, or into a teammate's
+  inventory) takes it up at once if it is better: armor when its armor
+  rating with it (the inventory's rating, with its skills and perks) is
+  higher than without, or, the same (clothing), when it is worth more than
+  what it would take off; a shield only with a one-handed weapon or none,
+  and only armor its race has a model of (children can't wear adults'); a
+  weapon when it is the one it would pick of all it carries, as when it
+  loads (damage by its skill, its combat style's melee or ranged
+  preference). The game's own rule for NPCs' choice of armor and when they
+  make it isn't documented.
 
 - Witnesses: living loaded actors who detect the player at the time
   (detection above 0, without stealth points; `known_gaps/detection.md`).
