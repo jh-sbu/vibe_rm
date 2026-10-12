@@ -91,7 +91,7 @@ toggles actor AI).
 - `crates/ui-swf`: the game's Interface menus (Scaleform `.swf`) through Ruffle
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
   (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`, `nif-materials`, `fsts`,
-  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, `triggers`, `story`, `faction-owners`, `crime-factions`, ...)
+  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, `triggers`, `story`, `faction-owners`, `crime-factions`, ...), and `test-mod` (below)
 - `src/`: the engine (renderer, world, app)
 - `vendor/ruffle`: a subset of [Ruffle](https://ruffle.rs) with Scaleform
   changes (`VENDOR.md`)
@@ -105,6 +105,20 @@ cargo run --release -p vrm-tools -- nif-verify "<Data>/Skyrim - Meshes0.bsa" "<D
 ```
 
 This parses every mesh and reports any block whose parse didn't consume exactly its declared size.
+
+## Test mods
+
+What public sources and the game's data leave open (`known_ambiguities/`)
+can sometimes be settled by a small plugin run in Skyrim SE itself:
+
+```sh
+cargo run --release -p vrm-tools -- test-mod venv "<Data>" VenvTest.esp
+```
+
+Each test mod (`crates/tools/src/test_mods/`, written with `esp::writer`)
+documents its setup, the outcome each reading predicts and, once tested, the
+result. Its vanilla forms are looked up by editor id in your Skyrim.esm; the
+plugins aren't committed.
 
 ## License
 

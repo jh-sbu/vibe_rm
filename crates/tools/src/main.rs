@@ -3,6 +3,7 @@ use anyhow::{Context, Result, bail};
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
 mod functions;
+mod test_mods;
 
 /// A behaviour project named by its directory (humanoids: `behaviors/0_master.hkx`)
 /// or by its project file (`meshes/actors/canine/dogproject.hkx`), with its directory.
@@ -95,6 +96,18 @@ fn main() -> Result<()> {
                     c.temporary.len()
                 );
             }
+        }
+        Some("test-mod") => {
+            // test-mod <name> <data dir> <out.esp>: a plugin for testing an
+            // ambiguity in the game (test_mods/).
+            anyhow::ensure!(
+                args.len() > 3 && test_mods::NAMES.contains(&args[1].as_str()),
+                "usage: test-mod <{}> <data dir> <out.esp>",
+                test_mods::NAMES.join("|")
+            );
+            let data = std::path::Path::new(&args[2]);
+            let lo = esp::LoadOrder::load(data, &["Skyrim.esm".to_owned()])?;
+            std::fs::write(&args[3], test_mods::build(&args[1], &lo)?)?;
         }
         Some("esp-dump") => {
             // esp-dump <data dir> <form id | editor id>: subrecords, the first 48

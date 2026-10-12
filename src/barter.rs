@@ -2,7 +2,7 @@
 //! faction), what they buy, and at what price.
 //!
 //! A vendor faction (`FACT` flag 0x4000) names the merchant chest (`VENC`),
-//! the hours and whether stolen and non-stolen goods are bought (`VENV`), and a
+//! the hours and whether stolen goods are bought (`VENV`), and a
 //! buy / sell list of keywords (`VEND`, a form list; `VENV` can turn it into
 //! the list of what is *not* traded). Prices follow UESP's Speech page: a
 //! factor of `fBarterMax - (fBarterMax - fBarterMin) x min(Speech, 100) / 100`
@@ -27,7 +27,6 @@ pub struct Vendor {
     /// The merchant chest (`VENC`): what is sold, and the merchant's gold.
     pub chest: Option<FormId>,
     pub buys_stolen: bool,
-    pub buys_nonstolen: bool,
     /// The keyword list is what isn't bought and sold.
     pub inverted: bool,
     /// The buy / sell list (`VEND`): keywords.
@@ -98,14 +97,15 @@ impl Engine {
                     .filter(|f| !f.is_null())
             };
             // VENV: start and end hour, radius, then buys stolen, inverted
-            // list, only buys stolen (a general merchant has 0 there).
+            // list, and two unused bytes (UESP's FACT page). Non-stolen goods
+            // are always bought: a fence with 1 in the third byte bought
+            // them in Skyrim SE as one with 0 did (test_mods/venv.rs).
             let venv = r.get(b"VENV").unwrap_or(&[]);
             let byte = |i: usize, default: bool| venv.get(i).map_or(default, |&b| b != 0);
             Some(Vendor {
                 chest: form(b"VENC"),
                 buys_stolen: byte(8, false),
                 inverted: byte(9, false),
-                buys_nonstolen: !byte(10, false),
                 list: form(b"VEND").map(|l| self.formlist(l)).unwrap_or_default(),
             })
         })
@@ -121,7 +121,7 @@ impl Engine {
 
     /// Whether a merchant trades in an item (stolen: belonging to someone).
     pub fn vendor_trades(&self, vendor: &Vendor, item: FormId, stolen: bool) -> bool {
-        if item == GOLD || (stolen && !vendor.buys_stolen) || (!stolen && !vendor.buys_nonstolen) {
+        if item == GOLD || (stolen && !vendor.buys_stolen) {
             return false;
         }
         if vendor.list.is_empty() {

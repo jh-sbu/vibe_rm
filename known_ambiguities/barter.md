@@ -10,18 +10,12 @@ calling `Actor.ShowBarterMenu`, Fortify Barter's effects (`AlchFortifyBarter`:
 a peak value modifier on `SpeechcraftPowerMod`, which the player's
 `AlchemySkillBoosts` perk turns into Mod Buy Prices x (1 - 0.01 x it) and
 Mod Sell Prices x (1 + 0.01 x it), so it needs nothing of its own), UESP's Skyrim:Merchants page (merchants
-restock every 48 hours) and the game setting `iDaysToRespawnVendor` (2).
+restock every 48 hours) and the game setting `iDaysToRespawnVendor` (2). `VENV`'s
+last two bytes are unused, as UESP's FACT page has them: fences with 0 and
+1 in the third bought alike in the game (`test-mod venv`).
 
 ## Unconfirmed: choices made
 
-- **`VENV`'s third flag byte.** After the hours and the radius, UESP's FACT
-  page gives buys stolen goods, the buy / sell list inverted, and two unused
-  bytes. All 288 vendor factions in the base game and DLC have 0 in the third
-  byte (217 `00 00`, 62 `00 01` like Riverwood's general store, 9 fences
-  `01 01`). It is read as "only buys stolen goods", which changes nothing for
-  that data; read as "buys non-stolen goods", as one description has it,
-  every merchant would buy nothing. Only a mod that sets it would tell the
-  readings apart.
 - **What a merchant won't buy isn't listed** on the player's side (stolen
   goods unless the faction buys them, items without a keyword of the list, or
   with one when the list is inverted), rather than listed and refused.
