@@ -207,7 +207,9 @@ impl Engine {
                 continue;
             }
             c.threat_check -= dt;
-            if c.threat_check <= 0.0 || std::mem::take(&mut c.recheck) {
+            // Cowards (the frightened among them) think of fleeing at once.
+            let coward = a.stats.confidence == 0 && !c.fleeing;
+            if c.threat_check <= 0.0 || std::mem::take(&mut c.recheck) || coward {
                 c.threat_check = check_every;
                 checks.push(a.ref_id);
             }

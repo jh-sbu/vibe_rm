@@ -351,6 +351,17 @@ game each piece unlocks.
   strongest offensive spell while their magicka lasts (keeping their
   distance, throwing or channelling it at their target), then by hand;
   their magicka comes back. Open questions: `known_gaps/casting.md`
+- Illusion's hold on fighting: calm, fear (and turn undead), frenzy and rally
+  effects hold the target's aggression or confidence at their own value
+  (calm -1, fear 0, frenzy 3, rally foolhardy) for as long as they last,
+  reaching only targets up to their magnitude's level (not rally's); the
+  data's own conditions keep them off undead, daedra and automatons without
+  Master of the Mind (`IsUndead`, `IsCommandedActor`). The calmed stop
+  fighting and look for no fights until attacked; the frightened flee at
+  once and come back when it ends; the frenzied fall on whoever is nearest,
+  packmates too (casting it is still an assault), and when it ends they and
+  those they fought give up the fights neither would have picked; the
+  rallied stop fleeing. Open questions: `known_gaps/magic.md`
 - Shouts: words of power learned and unlocked (`Game.TeachWord`,
   `UnlockWord`, `IsWordUnlocked`; a dragon soul in the magic menu), the
   shouts they give, `AddShout` / `RemoveShout` / `EquipShout` /
@@ -855,8 +866,9 @@ game each piece unlocks.
    animations and hands in the graph,
    dual casting, runes, wards, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
-   lights) and sounds, the other archetypes: calm,
-   frenzy, fear, summons, bound weapons, light, paralysis; enchantment charges,
+   lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
+   and rally done: see Done): summons, bound weapons, light, paralysis,
+   invisibility breaking; illusion spells chosen by NPCs; enchantment charges,
    poisons; `known_gaps/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
    waiting on casting, crafting, barter, critical hits, attack types;

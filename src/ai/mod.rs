@@ -8,6 +8,7 @@ mod equipment;
 pub mod furniture;
 mod greet;
 pub mod idles;
+mod influence;
 pub mod nav;
 pub mod package;
 pub mod practice;

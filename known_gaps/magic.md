@@ -74,13 +74,45 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   the tome stays. A tome in the world opens as a book when activated, as
   other books do. Spells Learned counts every spell (type 0) the player
   gains, from tomes, scripts or the console.
+- **Calm, fear, frenzy, rally** (archetypes 6, 7, 8, 38; turn undead 24
+  as fear) hold the effect's actor value (aggression, confidence) at a
+  value of their own: CommonLibSSE's `TargetValueModifierEffect` subclasses
+  give calm -1, demoralize 0 and frenzy 3; rally's isn't given, so it is
+  foolhardy (4), which fits "won't flee". Two such effects on one value
+  stack as holds (each holds the difference from what it found).
+- **Their level cap**: calm, fear and frenzy land only on targets whose
+  level is at most the magnitude (UESP: "creatures and people up to level
+  N"; "Target Level does not apply to Rally effects"). The magnitude is the
+  one after perks (Animage, Kindred Mage, Hypnotic Gaze... are Mod Spell
+  Magnitude entries) and, for the hostile ones, after magic resistance, so
+  a giant's resistance brings Fear's 9 down to 6. Whether resistance
+  touches the cap in the game isn't published. A target too strong for it
+  is still struck by a hostile spell (it fights its caster).
+- **`IsUndead`** is the subject having the `ActorTypeUndead` keyword; the
+  game caches its own reading (CommonLibSSE `CalculateCachedOwnerIsUndead`),
+  whose rule isn't public. **`IsCommandedActor`** is false: nothing is
+  summoned or raised yet.
+- **Calm** ends the target's fight; while calm it looks for no fights (nor
+  joins its allies'). Any blow or hostile spell landing on it ends the calm
+  and it fights back (UESP: no will to fight "unless the target is
+  attacked first"; what follows the attack isn't described).
+- **Fear**: a coward (confidence 0) thinks about fleeing every frame it
+  isn't fleeing, not on the threat ratio timer, so the frightened run at
+  once; when it ends the next check brings them back.
+- **Frenzy**: the target attacks the nearest actor (or the player) it
+  finds, allies too (aggression 3 is hostile to everyone). Casting it is an
+  assault as other hostile spells are (UESP: Frenzy "not considered a
+  crime" if the caster is hidden), but the target doesn't turn on its
+  caster for it. When it ends, the target leaves a fight with someone it
+  wouldn't fight now, and those fighting it who wouldn't fight it leave
+  theirs; the game's own clean-up isn't described.
 - **Not done**: NPCs casting by hand (the player's casting:
   `known_gaps/casting.md`), runes, dual casting, effect visuals (hit shaders,
   art objects, light) and sounds, magic in NPC combat. Archetypes other than
   value / peak / dual value modifiers, absorb, script, cure disease / poison /
-  paralysis, invisibility and stagger: paralysis only sets the actor value
-  (no ragdoll); calm, frenzy, fear, rally, turn undead, summons, bound
-  weapons, light, detect life, telekinesis, soul trap, reanimate, cloaks,
-  slow time, wards and the rest do nothing yet. Taper, area, enchantment
+  paralysis, invisibility, stagger and the target value modifiers (calm,
+  fear, frenzy, rally, turn undead): paralysis only sets the actor value (no
+  ragdoll); summons, bound weapons, light, detect life, telekinesis, soul
+  trap, reanimate, cloaks, slow time, wards and the rest do nothing yet. Taper, area, enchantment
   charges, poisons on weapons, addictions, potion and food flags beyond
   "use it". The active effects aren't shown in a menu. Nothing is saved.

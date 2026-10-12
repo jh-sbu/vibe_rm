@@ -1245,12 +1245,15 @@ impl Engine {
                 }
             }
         }
+        // The calmed look for no fights.
+        let calmed = self.under_archetype(crate::magic::archetype::CALM);
         let mut lookers: Vec<(FormId, Vec3, Arc<CombatStats>)> = Vec::new();
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut().filter(|a| {
                 !a.dead
                     && a.bleeding.is_none()
                     && a.combat.is_none()
+                    && !calmed.contains(&a.ref_id)
                     && (a.stats.aggression > 0
                         || a.stats.aggro_attack.is_some()
                         || a.stats.assistance > 0)
@@ -2054,6 +2057,7 @@ impl Engine {
             }
         }
         if let Some(by) = attacker {
+            self.break_calm(target);
             self.start_combat(target, by);
         }
         if let Some((by, calm, factions)) = assault {

@@ -35,12 +35,38 @@ pub mod archetype {
     pub const CURE_DISEASE: u32 = 3;
     pub const ABSORB: u32 = 4;
     pub const DUAL_VALUE_MODIFIER: u32 = 5;
+    pub const CALM: u32 = 6;
+    pub const DEMORALIZE: u32 = 7;
+    pub const FRENZY: u32 = 8;
     pub const INVISIBILITY: u32 = 11;
     pub const PARALYSIS: u32 = 21;
+    pub const TURN_UNDEAD: u32 = 24;
     pub const CURE_PARALYSIS: u32 = 27;
     pub const CURE_POISON: u32 = 29;
     pub const STAGGER: u32 = 33;
     pub const PEAK_VALUE_MODIFIER: u32 = 34;
+    pub const RALLY: u32 = 38;
+
+    /// Target value modifiers (CommonLibSSE `TargetValueModifierEffect`)
+    /// hold their actor value at a value of their own while they last, and
+    /// the value they hold it at (`GetTargetValue`: calm -1, demoralize 0,
+    /// frenzy 3; rally's isn't given: foolhardy, as it keeps the target from
+    /// fleeing).
+    pub fn target_value(archetype: u32) -> Option<f32> {
+        match archetype {
+            CALM => Some(-1.0),
+            DEMORALIZE | TURN_UNDEAD => Some(0.0),
+            FRENZY => Some(3.0),
+            RALLY => Some(4.0),
+            _ => None,
+        }
+    }
+
+    /// Those whose magnitude is the highest level they affect (UESP's
+    /// Illusion: "Target Level does not apply to Rally effects").
+    pub fn level_capped(archetype: u32) -> bool {
+        matches!(archetype, CALM | DEMORALIZE | FRENZY | TURN_UNDEAD)
+    }
 }
 
 /// Magic effect flags (`DATA` 0x00).
@@ -481,6 +507,20 @@ impl Engine {
                 continue;
             }
             let magnitude = self.effect_magnitude(&m, &mgef, ei.magnitude, caster, target);
+            // Calm, fear and frenzy reach only those up to their magnitude's
+            // level; one too strong for it is still struck by a hostile spell.
+            if archetype::level_capped(mgef.archetype)
+                && self.actor_level(target) as f32 > magnitude
+            {
+                log::debug!(
+                    "{target}: {} from {} reaches level {magnitude:.0}, not {}",
+                    mgef.name,
+                    m.name,
+                    self.actor_level(target)
+                );
+                hostile |= mgef.has(flags::HOSTILE) && passes;
+                continue;
+            }
             let duration = if constant {
                 f32::INFINITY
             } else if mgef.has(flags::NO_DURATION) {
@@ -536,6 +576,7 @@ impl Engine {
     /// A hostile spell landed: `OnHit` (the spell as its source) to the
     /// target, and like a first blow it starts a fight (and an assault).
     fn hostile_magic_landed(&mut self, target: FormId, caster: FormId, item: FormId) {
+        self.break_calm(target);
         let args = vec![
             self.object_value(caster),
             self.object_value(item),
@@ -557,7 +598,10 @@ impl Engine {
             )
         });
         if let Some((true, calm, factions)) = first {
-            self.start_combat(target, caster);
+            // The frenzied pick their own fights; it is an assault all the same.
+            if !self.is_frenzied(target) {
+                self.start_combat(target, caster);
+            }
             let crime = calm && self.law_abiding(&factions);
             self.send_assault(target, caster, crime);
         }
@@ -654,6 +698,12 @@ impl Engine {
                 self.change_value(&x, &mgef, sign * x.magnitude, true);
             }
             archetype::PEAK_VALUE_MODIFIER => self.recompute_peaks(x.target, &mgef),
+            a if archetype::target_value(a).is_some() && mgef.primary.is_some() => {
+                let to = archetype::target_value(a).unwrap_or_default();
+                let now = self.actor_value(x.target, mgef.primary.unwrap_or_default());
+                self.hold(i, &mgef, [to - now, 0.0]);
+                self.target_value_started(x.target, a);
+            }
             archetype::INVISIBILITY => self.hold(i, &mgef, [1.0, 0.0]),
             archetype::PARALYSIS => self.hold(i, &mgef, [1.0, 0.0]),
             archetype::CURE_DISEASE => self.cure(x.target, |m| m.spell_type == spell_type::DISEASE),
@@ -852,6 +902,9 @@ impl Engine {
             self.recompute_peaks(x.target, &mgef);
         } else {
             self.release(i, &mgef);
+        }
+        if archetype::target_value(mgef.archetype).is_some() {
+            self.target_value_stopped(x.target, mgef.archetype);
         }
         if x.scripted {
             let obj = ObjectId::Effect(x.id);
