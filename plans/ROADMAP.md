@@ -870,6 +870,33 @@ game each piece unlocks.
      `SetAlert` tied to the Alert state; witnesses who hear a sneak attack
      alerted (with action sounds)
 4. **AI depth**
+   - Actor execution across loading and processing transitions: durable state
+     independent of loaded animation and physics, keeping living actors' positions,
+     current packages and procedure progress when they unload. Define completion,
+     failure, interruption and resumption, package lifecycle events / fragments,
+     and scene progress while actors are away; attach / remove animation and
+     physics without restarting the actor's execution. This is the foundation
+     for the package-tree, off-screen travel, unloaded actor-value and save work.
+   - Processing policies: detailed updates nearby and coarse advancement away,
+     with travel progress through cells and load doors, separate game / real-time
+     timestamps and elapsed-time handling for waiting, sleeping and fast travel.
+     Define continuity for wounds, regeneration, bleedout and timed effects;
+     include execution state, travel progress and timestamps in saves.
+     CommonLibSSE exposes High, MiddleHigh, MiddleLow and Low processing levels,
+     but their exact eligibility, update cadence and subsystem behavior need
+     investigation. Keep room for intermediate processing policies; matching
+     observable behavior is the goal, not copying four internal allocations.
+   - Comparative tests (planned, against Skyrim SE): walk away and return, then
+     compare with interior transitions and buffered cells; follow a long journey
+     across cells and load doors; change schedules and run multi-step packages
+     while distant; interrupt travel, wait / sleep, fast travel and save / reload
+     mid-journey; unload and reload wounded actors and actors with timed effects.
+     Record exact processing tier (not threshold helper results), 3D / cell
+     attachment, position, package / procedure progress, game / real time and
+     events. Check re-entry placement and furniture state, event ordering and
+     continuity; control for instrumentation such as quest aliases changing
+     persistence. Use the observations to establish transition and catch-up rules
+     before treating the current approximations as compatibility requirements.
    - Alias fills: created objects cleaned up; created items placed in the
      world (not a container) drawn and takeable; "from alias" locations
      followed through travel, not only at refresh; packages for "from event"

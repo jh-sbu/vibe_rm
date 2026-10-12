@@ -14,7 +14,9 @@ only: nothing is written to disk until saves exist.
   `OnDying` / `OnDeath`).
 - NPCs regenerate `health_regen` percent (race `DATA`) of their health a second
   out of combat; one that unloads hurt is given what that rate would have
-  restored meanwhile (real seconds).
+  restored meanwhile (real seconds). Waiting and sleeping also advance that
+  healing through `heal_away`: each game hour adds 180 seconds of recovery
+  (`HOUR_SECONDS`, currently fixed at `3600 / 20` in `src/sleep.rs`).
 - Game-start quest scripts call `MoveTo` on 17 references once it works (MG01
   puts Faralda at the College bridge and the apprentices in the Hall of the
   Elements, the Companions are gathered in Jorrvaskr...).
@@ -23,5 +25,6 @@ only: nothing is written to disk until saves exist.
 
 - Living actors' positions aren't kept when they unload: their schedules (or a
   script move) decide where they are next.
-- Regeneration while away is by real time, not game time (waiting, sleeping
-  and fast travel don't heal them).
+- Whether the game's unloaded regeneration follows these timing rules,
+  including waiting / sleeping, is unconfirmed; fast-travel recovery remains
+  to be established.
