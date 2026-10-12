@@ -34,7 +34,7 @@ game each piece unlocks.
   teammates' inventories and pockets (`containermenu.swf`: taking, storing,
   giving, Take All, the pickpocket chance) and bartering (`bartermenu.swf`
   from `Actor.ShowBarterMenu`: merchant chests, buy / sell lists, stolen
-  goods, prices from Speech and the Haggling / Allure perks, the raw deal
+  goods, prices from Speech, the Haggling / Allure perks and Fortify Barter, the raw deal
   warning, Speech XP, merchant chests restocked every `iDaysToRespawnVendor`
   days, with the Investor / Master Trader gold their leveled lists' globals
   (`LVLG`) give) (choices: `known_gaps/swf-hud.md`,
@@ -844,7 +844,7 @@ game each piece unlocks.
      item menus, the journal, the gift, magic, favorites and tween menus
      done: see Done): the magic menu's shouts (with shouts); the tween
      menu's Map (with the map); waiting's rest: getting into the bed first; the favorites menu's shouts and the gamepad's d-pad
-     favorites; the item menus' Fortify Barter, the perks for placing in
+     favorites; the perks for placing in
      pockets (Misdirection, Perfect Touch, Poisoned), NPCs' outfits in their inventories; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,

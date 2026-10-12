@@ -6,7 +6,10 @@ formula and the Haggling / Allure numbers, the game settings `fBarterMin` and
 `fBarterMax`, the vendor factions in Skyrim.esm (`FACT` `VENC`, `VENV`,
 `VEND`), the Haggling perk's own entry points (8 Mod Buy Prices, multiply
 0.91; 60 Mod Sell Prices, multiply 1.1), the `OfferServicesTopic` fragments
-calling `Actor.ShowBarterMenu`, UESP's Skyrim:Merchants page (merchants
+calling `Actor.ShowBarterMenu`, Fortify Barter's effects (`AlchFortifyBarter`:
+a peak value modifier on `SpeechcraftPowerMod`, which the player's
+`AlchemySkillBoosts` perk turns into Mod Buy Prices x (1 - 0.01 x it) and
+Mod Sell Prices x (1 + 0.01 x it), so it needs nothing of its own), UESP's Skyrim:Merchants page (merchants
 restock every 48 hours) and the game setting `iDaysToRespawnVendor` (2).
 
 ## Unconfirmed: choices made
@@ -21,8 +24,6 @@ restock every 48 hours) and the game setting `iDaysToRespawnVendor` (2).
   with one when the list is inverted), rather than listed and refused.
 - **The perks' tabs.** Mod Buy / Sell Prices are asked once per menu, with no
   item and the merchant as the third tab's subject (Allure's opposite sex).
-- **Fortify Barter** (potions, enchantments, the Blessing of Zenithar) isn't
-  applied: which actor value its effects change isn't settled here.
 - **Speech XP** is the gold that changed hands, through `use_skill` (the
   skill's use multiplier applied).
 - **Stolen goods sold to a fence** keep their owner in the merchant chest,
