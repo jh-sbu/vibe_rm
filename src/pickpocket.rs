@@ -1,8 +1,11 @@
 //! Pickpocketing: a sneaking player activating someone looks through what
 //! they carry and tries to take it, item by item, with a chance from the
 //! game settings (UESP *Skyrim:Pickpocket*), or to place their own items in
-//! the victim's pockets with the same chance. Caught, it is a crime the
-//! victim knows of, and the victim won't let them try again.
+//! the victim's pockets with the same chance. What the victim wears or
+//! wields stays put, but for perks (Misdirection, Perfect Touch), and a
+//! poison placed in its pockets takes effect with one (Poisoned). Caught,
+//! it is a crime the victim knows of, and the victim won't let them try
+//! again.
 
 use esp::FormId;
 
@@ -23,6 +26,23 @@ impl Engine {
             && self
                 .actor_ref(r)
                 .is_some_and(|a| a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF))
+    }
+
+    /// Whether `item` in `victim`'s pockets may be taken: what it doesn't
+    /// wear or wield, and what it does when a perk allows it (Can Pickpocket
+    /// Equipped Item: Misdirection for weapons, Perfect Touch for anything
+    /// on someone not essential).
+    pub fn can_pickpocket_item(&self, victim: FormId, item: FormId) -> bool {
+        let worn = self
+            .inventories
+            .get(&victim)
+            .is_some_and(|i| i.is_equipped(item));
+        !worn
+            || self.perk_flag(
+                crate::perks::ep::CAN_PICKPOCKET_EQUIPPED_ITEM,
+                PLAYER_REF,
+                &[Some(victim), Some(item)],
+            )
     }
 
     /// The chance (percent) of taking `count` of `item` from `victim`:
@@ -90,6 +110,8 @@ impl Engine {
                 .iter()
                 .map(|(_, n)| n)
                 .sum();
+            // Worn or wielded (with a perk for it), it comes off.
+            self.unequip_if_gone(victim, item);
             if moved > 0 {
                 self.increment_stat("Pockets Picked", 1);
                 self.increment_stat("Items Pickpocketed", moved);
@@ -133,11 +155,30 @@ impl Engine {
             self.unequip_if_gone(PLAYER_REF, item);
             if moved > 0 {
                 self.take_up_if_better(victim, item);
+                self.apply_placed_item(victim, item);
             }
             return moved > 0;
         }
         self.caught_pickpocketing(victim);
         false
+    }
+
+    /// An item placed in `victim`'s pockets takes effect when a perk says it
+    /// should (Should Apply Placed Item: Poisoned, for poisons): one dose
+    /// is used up on them, unnoticed.
+    fn apply_placed_item(&mut self, victim: FormId, item: FormId) {
+        if self.magic_item(item).is_none()
+            || !self.perk_flag(
+                crate::perks::ep::SHOULD_APPLY_PLACED_ITEM,
+                PLAYER_REF,
+                &[Some(victim), Some(item)],
+            )
+        {
+            return;
+        }
+        log::info!("{item} placed on {victim} takes effect");
+        self.remove_item(victim, item, 1, None);
+        self.apply_item_quietly(item, PLAYER_REF, victim);
     }
 
     /// The victim caught the player: the menu closes and the pickpocketing is

@@ -228,6 +228,9 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             if !engine.can_pickpocket(r) {
                 return vec![format!("can't pick {r}'s pocket (sneaking {})", engine.player.sneaking)];
             }
+            if !place && !engine.can_pickpocket_item(r, item) {
+                return vec![format!("{r} wears or wields {item} (Misdirection, Perfect Touch)")];
+            }
             let chance = engine.pickpocket_chance(r, item, n);
             let done = if place { engine.try_place_in_pocket(r, item, n, None) } else { engine.try_pickpocket(r, item, n, None) };
             let verb = if place { "placed" } else { "taken" };

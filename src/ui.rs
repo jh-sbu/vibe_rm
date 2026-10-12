@@ -615,7 +615,8 @@ impl Ui {
         let rect = ctx.content_rect();
         let mut reading: Option<FormId> = None;
         let mut drops: Vec<(FormId, i32)> = Vec::new();
-        // Picking a pocket: what isn't worn or wielded, each with its chance.
+        // Picking a pocket: what isn't worn or wielded (but for perks), each
+        // with its chance.
         let victim = match menu {
             Menu::Pickpocket(v) => Some(v),
             _ => None,
@@ -629,12 +630,7 @@ impl Ui {
                     drops: &mut Vec<(FormId, i32)>| {
             let mut items = engine.listed_inventory(owner);
             if Some(owner) == victim {
-                let worn = engine
-                    .inventories
-                    .get(&owner)
-                    .map(|i| i.equipped.clone())
-                    .unwrap_or_default();
-                items.retain(|x| !worn.contains(&x.item));
+                items.retain(|x| engine.can_pickpocket_item(owner, x.item));
             }
             let weight: f32 = items.iter().map(|x| x.info.weight * x.count as f32).sum();
             ui.set_min_width(420.0);
@@ -885,8 +881,7 @@ impl Ui {
                 if from == v {
                     engine.try_pickpocket(v, item, n, Some(stack));
                 } else {
-                    let msg = engine.gmst_string("sInvalidPickpocket").unwrap_or_default();
-                    engine.scripts.notify(msg);
+                    engine.try_place_in_pocket(v, item, n, Some(stack));
                 }
                 continue;
             }

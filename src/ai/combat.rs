@@ -2642,6 +2642,11 @@ impl Engine {
         }
     }
 
+    /// Essential (`IsEssential`): the base's flag, for a loaded actor.
+    pub fn is_essential(&self, actor: FormId) -> bool {
+        self.actor_ref(actor).is_some_and(|a| a.stats.essential)
+    }
+
     /// A summary of a loaded actor's combat stats (console).
     pub fn combat_summary(&mut self, actor: FormId) -> Vec<String> {
         let Some(a) = self

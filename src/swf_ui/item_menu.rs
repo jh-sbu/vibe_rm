@@ -377,14 +377,10 @@ impl ItemMenu {
         if let Some(other) = self.kind.other() {
             let mut theirs = engine.listed_inventory(other);
             match &self.kind {
-                // What isn't worn or wielded can be picked.
+                // What isn't worn or wielded can be picked (and what is,
+                // with the perks for it).
                 Kind::Pickpocket { victim } => {
-                    let worn = engine
-                        .inventories
-                        .get(victim)
-                        .map(|i| i.equipped.clone())
-                        .unwrap_or_default();
-                    theirs.retain(|x| !worn.contains(&x.item));
+                    theirs.retain(|x| engine.can_pickpocket_item(*victim, x.item));
                 }
                 // Gold is the bottom bar's.
                 Kind::Barter { .. } => theirs.retain(|x| x.item != GOLD),
