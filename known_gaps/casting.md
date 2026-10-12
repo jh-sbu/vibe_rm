@@ -1,6 +1,8 @@
 # Casting
 
-Implemented in `src/casting.rs` (the player's hands, powers, magicka), with
+Implemented in `src/casting.rs` (the player's hands, powers, magicka,
+NPCs' combat spells) and `src/ai/casters.rs` (casters keeping their
+distance and casting), with
 spell projectiles flying as arrows do in `src/ai/archery.rs` and their
 impacts in `src/impacts.rs`. Sources: UESP's Magic Overview, Magicka and
 Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
@@ -21,6 +23,11 @@ Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
 - **Area**: an effect's area is in feet; Fireball's 15 feet match its
   explosion's radius of 320 units (21.3 units a foot).
 - **Messages**: `sMagicCastInsufficientMagicka`, `sMagicCastPowerUsed`.
+- **Casters' combat styles**: `CSGD` holds the melee and magic score
+  multipliers after the offensive, defensive and group offensive ones
+  (csWarlock: melee 0.25, magic 2.15; csHumanMeleeLvl1: 1 and 1).
+- **NPCs' magicka** doesn't come back while they cast
+  (`bRegenNPCMagickaDuringCast` false).
 
 ## Open (choices made here)
 
@@ -55,6 +62,19 @@ Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
   auto-calculation isn't clear.
 - **Greater powers** come back a game day after they were used (a day of
   game time, not the next day); lesser powers whenever.
+- **Who casts in combat**: an actor whose combat style's magic multiplier
+  is above its melee one, with a hostile aimed or target actor spell it has
+  the magicka for (a second's worth of a concentration spell), fights with
+  the costliest of them; otherwise as everyone else. The game weighs every
+  weapon and spell by its scores; that isn't public.
+- **How casters fight**: they close to 85% of the spell's range (at most
+  2000 units, as archers) with a clear line, stand facing the target and
+  throw a spell every 1.5 to 3 seconds, or channel a concentration spell
+  for 1.5 to 3 seconds, aimed at the middle of the target's body; no charge
+  time. They play no casting animation yet (`BeginCastRight` / `CastStop`
+  go to the graph, which doesn't take them without its magic state).
+- **The player is struck** by flames, beams and target actor spells that
+  pass within their capsule (they aren't in the physics world).
 - **The Story Manager's spell cast event** (`CAST`) is sent for the player's
   spells with the caster as `R1` and the spell as `F1`; which members the
   game fills isn't published.

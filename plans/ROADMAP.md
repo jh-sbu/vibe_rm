@@ -347,7 +347,10 @@ game each piece unlocks.
   Destruction and the other schools gain XP from casting (hostile spells as
   they land). Magicka comes back at the race's rate times `MagickaRateMult`,
   slower in combat, after a moment. The Story Manager's spell cast event.
-  Console `pcast`. Open questions: `known_gaps/casting.md`
+  Console `pcast`. NPCs whose combat style favours magic fight with their
+  strongest offensive spell while their magicka lasts (keeping their
+  distance, throwing or channelling it at their target), then by hand;
+  their magicka comes back. Open questions: `known_gaps/casting.md`
 - Shouts: words of power learned and unlocked (`Game.TeachWord`,
   `UnlockWord`, `IsWordUnlocked`; a dragon soul in the magic menu), the
   shouts they give, `AddShout` / `RemoveShout` / `EquipShout` /
@@ -846,8 +849,10 @@ game each piece unlocks.
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
-   animations), magic (see Done; next: NPCs casting with magicka (their
-   combat magic), the player's casting animations and hands in the graph,
+   animations), magic (see Done; next: NPCs' casting animations (the magic
+   behaviour's states) and healing themselves, spells chosen by their
+   scores, wards, summons and buffs in combat, the player's casting
+   animations and hands in the graph,
    dual casting, runes, wards, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes: calm,

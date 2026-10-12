@@ -121,6 +121,10 @@ pub struct CombatStats {
     pub bash_vs_power: f32,
     /// How readily it backs off from a target close in (`CSCR` fallback multiplier).
     pub fallback: f32,
+    /// How much its combat style weighs fighting hand to hand against magic
+    /// (`CSGD` melee and magic score multipliers): casters prefer spells.
+    pub melee_mult: f32,
+    pub magic_mult: f32,
 }
 
 /// A weapon's weight (`DATA`).
@@ -455,6 +459,9 @@ impl CombatStats {
             .filter(|d| d.len() >= 8);
         s.offensive = csgd.map_or(0.25, |d| f32_at(d, 0));
         s.defensive = csgd.map_or(0.25, |d| f32_at(d, 4));
+        (s.melee_mult, s.magic_mult) = csgd
+            .filter(|d| d.len() >= 0x14)
+            .map_or((1.0, 1.0), |d| (f32_at(d, 0x0C), f32_at(d, 0x10)));
         // CSME: attack staggered, power attack staggered, power attack blocking,
         // bash, bash recoil, bash attack, bash power attack multipliers.
         let csme = style.as_ref().and_then(|r| r.get(b"CSME"));
@@ -522,6 +529,8 @@ pub struct Combat {
     /// Archers: where they are in their shot, and whether they have a clear line
     /// to the target (set by the engine each frame).
     pub(crate) draw: super::archery::Draw,
+    /// Casters: seconds left of the concentration spell they are channelling.
+    pub(crate) channel: f32,
     pub(crate) clear_shot: bool,
     /// Running from the target rather than fighting it; where it is heading away
     /// from the target to (fleeing, or an archer backing off).
@@ -589,6 +598,7 @@ impl Combat {
             bash: None,
             counter: false,
             draw: Default::default(),
+            channel: 0.0,
             clear_shot: false,
             fleeing: false,
             away_to: None,
@@ -894,6 +904,9 @@ impl ActorRuntime {
         }
         if self.bow {
             return self.archer_step(dt, w, target, dist);
+        }
+        if let Some(spell) = self.combat_spell {
+            return self.caster_step(dt, w, target, dist, spell);
         }
         if dist > reach * 0.85 {
             self.chase(dt, w, target, run);
@@ -2721,6 +2734,13 @@ impl Engine {
             stats.block_skill,
             stats.defensive,
             self.actor_ref(actor).is_some_and(|a| a.guarding())
+        ));
+        out.push(format!(
+            "melee x{:.2}, magic x{:.2}, magicka {:.0}, fights with {:?}",
+            stats.melee_mult,
+            stats.magic_mult,
+            self.actor_value(actor, esp::actor_value::MAGICKA),
+            self.actor_ref(actor).and_then(|a| a.combat_spell)
         ));
         if let Some(a) = self.actor_ref(actor).filter(|a| a.bow) {
             let arrow = self.arrows_of(actor);
