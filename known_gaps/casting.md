@@ -2,9 +2,8 @@
 
 Implemented in `src/casting.rs` (the player's hands, powers, magicka,
 NPCs' combat spells) and `src/ai/casters.rs` (casters keeping their
-distance and casting), with
-spell projectiles flying as arrows do in `src/ai/archery.rs` and their
-impacts in `src/impacts.rs`. Sources: UESP's Magic Overview, Magicka and
+distance and casting), with spell projectiles flying as arrows do in
+`src/ai/archery.rs` and their impacts in `src/impacts.rs`. Sources: UESP's Magic Overview, Magicka and
 Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
 `EXPL`); the game settings in Skyrim.esm.
 
