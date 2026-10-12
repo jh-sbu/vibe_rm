@@ -1254,6 +1254,7 @@ impl Engine {
                     && a.bleeding.is_none()
                     && a.combat.is_none()
                     && !calmed.contains(&a.ref_id)
+                    && !self.magic.commanded.contains_key(&a.ref_id)
                     && (a.stats.aggression > 0
                         || a.stats.aggro_attack.is_some()
                         || a.stats.assistance > 0)
@@ -2368,7 +2369,7 @@ impl Engine {
             set.bash_reach + 40.0,
         );
         if let Some((_, Some(r))) = hit
-            && self.lo.tag_of(r).map(|t| t.0) == Some(*b"ACHR")
+            && self.is_actor_ref(r)
             && !self.is_dead(r)
         {
             self.bash_hit(r, PLAYER_REF, damage, false, attack.stagger);

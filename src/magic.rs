@@ -39,6 +39,7 @@ pub mod archetype {
     pub const DEMORALIZE: u32 = 7;
     pub const FRENZY: u32 = 8;
     pub const INVISIBILITY: u32 = 11;
+    pub const SUMMON_CREATURE: u32 = 18;
     pub const PARALYSIS: u32 = 21;
     pub const TURN_UNDEAD: u32 = 24;
     pub const CURE_PARALYSIS: u32 = 27;
@@ -338,6 +339,10 @@ pub struct ActiveEffect {
     /// Landed unnoticed (`apply_item_quietly`): what it does is no blow of
     /// the caster's.
     pub quiet: bool,
+    /// Where the spell landed (target location spells).
+    pub at: Option<glam::Vec3>,
+    /// Summons: the actor it brought.
+    pub summoned: Option<FormId>,
 }
 
 /// Magic on actors: the active effects, spells added and removed, and what was
@@ -346,6 +351,8 @@ pub struct ActiveEffect {
 pub struct Magic {
     pub effects: Vec<ActiveEffect>,
     next_id: u64,
+    /// Summoned actors and who commands them.
+    pub commanded: HashMap<FormId, FormId>,
     /// Spells added (`AddSpell`) and record spells removed (`RemoveSpell`).
     pub added: HashMap<FormId, Vec<FormId>>,
     pub removed: HashMap<FormId, HashSet<FormId>>,
@@ -463,14 +470,26 @@ impl Engine {
     /// Apply an item's effects to `target` (no aiming or projectile: it lands).
     /// The same item's effects already on the target are replaced.
     pub fn apply_item(&mut self, item: FormId, caster: Option<FormId>, target: FormId) -> bool {
-        self.apply_item_as(item, caster, target, false)
+        self.apply_item_as(item, caster, target, false, None)
+    }
+
+    /// Apply an item's effects as `apply_item`, landing at `at` (a target
+    /// location spell: where a summon appears).
+    pub fn apply_item_at(
+        &mut self,
+        item: FormId,
+        caster: FormId,
+        target: FormId,
+        at: glam::Vec3,
+    ) -> bool {
+        self.apply_item_as(item, Some(caster), target, false, Some(at))
     }
 
     /// Apply an item's effects as `apply_item`, but unnoticed: hostile effects
     /// landing aren't a blow that starts a fight (a poison slipped into
     /// someone's pockets).
     pub fn apply_item_quietly(&mut self, item: FormId, caster: FormId, target: FormId) -> bool {
-        self.apply_item_as(item, Some(caster), target, true)
+        self.apply_item_as(item, Some(caster), target, true, None)
     }
 
     fn apply_item_as(
@@ -479,6 +498,7 @@ impl Engine {
         caster: Option<FormId>,
         target: FormId,
         quiet: bool,
+        at: Option<glam::Vec3>,
     ) -> bool {
         let Some(m) = self.magic_item(item) else {
             return false;
@@ -546,6 +566,8 @@ impl Engine {
                 scripted: !mgef.scripts.is_empty(),
                 done: false,
                 quiet,
+                at,
+                summoned: None,
             });
             log::debug!(
                 "{target}: {} from {} ({item}): magnitude {magnitude:.1}, {duration}s",
@@ -705,6 +727,7 @@ impl Engine {
                 self.target_value_started(x.target, a);
             }
             archetype::INVISIBILITY => self.hold(i, &mgef, [1.0, 0.0]),
+            archetype::SUMMON_CREATURE => self.summon(id, &mgef),
             archetype::PARALYSIS => self.hold(i, &mgef, [1.0, 0.0]),
             archetype::CURE_DISEASE => self.cure(x.target, |m| m.spell_type == spell_type::DISEASE),
             archetype::CURE_POISON => self.cure(x.target, |m| m.spell_type == spell_type::POISON),
@@ -906,6 +929,10 @@ impl Engine {
         if archetype::target_value(mgef.archetype).is_some() {
             self.target_value_stopped(x.target, mgef.archetype);
         }
+        if let Some(r) = x.summoned {
+            self.magic.effects[i].summoned = None;
+            self.unsummon(r);
+        }
         if x.scripted {
             let obj = ObjectId::Effect(x.id);
             let args = vec![
@@ -992,7 +1019,14 @@ impl Engine {
             };
             let gone = x.target != PLAYER_REF && !self.actor_cells.contains_key(&x.target);
             let dead = self.is_dead(x.target) && !mgef.has(flags::NO_DEATH_DISPEL);
-            if gone || dead {
+            // A summon ends with its actor (killed, or left behind unloaded).
+            let summon_gone = x
+                .summoned
+                .is_some_and(|r| self.is_dead(r) || !self.actor_cells.contains_key(&r));
+            if summon_gone {
+                log::debug!("{id}: its summon is dead or gone");
+            }
+            if gone || dead || summon_gone {
                 self.finish_magic_effect(id);
                 continue;
             }

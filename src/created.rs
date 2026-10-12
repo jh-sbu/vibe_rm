@@ -236,6 +236,18 @@ impl Engine {
     }
 
     /// A created actor joins the persistent actors, spawned now if its place is loaded.
+    /// A created reference gone for good (a summon sent away): out of the
+    /// world and the persistent actors' whereabouts.
+    pub(crate) fn delete_created(&mut self, r: FormId) {
+        if self.created_refs.refs.remove(&r).is_none() {
+            return;
+        }
+        self.despawn_actor(r);
+        self.world_state.moved.remove(&r);
+        self.world_state.wounds.remove(&r);
+        self.whereabouts.remove_actor(r);
+    }
+
     fn add_created_actor(&mut self, id: FormId, place: Place, position: Vec3) {
         self.whereabouts.add_actor(id, place, position);
         if let Some(key) = self.key_of_place(place) {

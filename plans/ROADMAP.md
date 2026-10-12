@@ -362,6 +362,15 @@ game each piece unlocks.
   packmates too (casting it is still an assault), and when it ends they and
   those they fought give up the fights neither would have picked; the
   rallied stop fleeing. Open questions: `known_gaps/magic.md`
+- Summons: Conjuration's summon effects bring their creature where the
+  spell lands, commanded by the caster for the effect's duration (one at a
+  time, two with Twin Souls: Mod Commanded Actor Limit); it follows its
+  commander from cell to cell (moved beside it when left far behind),
+  fights whoever fights its commander, picks no fights of its own, and
+  goes when the effect ends or it dies (`IsCommandedActor`). Weaponless
+  casters whose style scores magic and melee the same (atronachs) fight
+  with their spells; spells and arrows strike actors made while playing
+  (they flew through them). Open questions: `known_gaps/magic.md`
 - Shouts: words of power learned and unlocked (`Game.TeachWord`,
   `UnlockWord`, `IsWordUnlocked`; a dragon soul in the magic menu), the
   shouts they give, `AddShout` / `RemoveShout` / `EquipShout` /
@@ -867,7 +876,8 @@ game each piece unlocks.
    dual casting, runes, wards, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
-   and rally done: see Done): summons, bound weapons, light, paralysis,
+   and rally, summons done: see Done): NPCs summoning, reanimation,
+   summons following through load doors, bound weapons, light, paralysis,
    invisibility breaking; illusion spells chosen by NPCs; enchantment charges,
    poisons; `known_gaps/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points

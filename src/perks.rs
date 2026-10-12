@@ -47,6 +47,7 @@ pub mod ep {
     pub const MOD_ARMOR_RATING: u8 = 85;
     pub const MOD_BUY_PRICES: u8 = 8;
     pub const MOD_SELL_PRICES: u8 = 60;
+    pub const MOD_COMMANDED_ACTOR_LIMIT: u8 = 68;
 }
 
 /// An entry point's value (`EPFT` / `EPFD`).

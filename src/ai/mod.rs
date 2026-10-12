@@ -13,6 +13,7 @@ pub mod nav;
 pub mod package;
 pub mod practice;
 pub mod schedule;
+mod summons;
 pub mod threat;
 
 use std::sync::Arc;
@@ -620,6 +621,18 @@ impl ActorRuntime {
     /// Run after `target` and stay close to it (a guard coming to arrest
     /// the player); its packages wait meanwhile.
     pub(crate) fn pursue(&mut self, target: FormId, furniture: &mut FurnitureWorld) {
+        self.attend(target, (64.0, 128.0), package::Gait::Run, furniture);
+    }
+
+    /// Keep within `radius` (closest, farthest) of `target`; its packages
+    /// wait meanwhile.
+    pub(crate) fn attend(
+        &mut self,
+        target: FormId,
+        radius: (f32, f32),
+        gait: package::Gait,
+        furniture: &mut FurnitureWorld,
+    ) {
         let already = self.pinned
             && self
                 .goal
@@ -632,8 +645,8 @@ impl ActorRuntime {
         self.goal = Some(Goal {
             behaviour: Behaviour::Follow,
             target: Some(target),
-            follow_radius: (64.0, 128.0),
-            gait: package::Gait::Run,
+            follow_radius: radius,
+            gait,
             ..Goal::travel(self.pos)
         });
         self.pinned = true;
@@ -3197,6 +3210,7 @@ impl Engine {
         if self.ai_enabled {
             self.update_detection(dt);
             self.detect_enemies(dt);
+            self.update_commanded();
             self.update_arrests(dt);
             self.update_witnesses();
         }
