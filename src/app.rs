@@ -774,10 +774,11 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.player.sneaking = !s.engine.player.sneaking;
                             }
-                            // Z uses the power readied (the control map's Shout).
+                            // Z shouts, or uses the power readied (the control
+                            // map's Shout).
                             if code == KeyCode::KeyZ && !event.repeat {
                                 s.engine.input_event("Shout");
-                                s.engine.player_use_power();
+                                s.engine.player_voice_press();
                             }
                             // R draws or sheathes the weapon.
                             if code == KeyCode::KeyR && !event.repeat {
@@ -799,6 +800,9 @@ impl ApplicationHandler for App {
                             s.keys.insert(code);
                         }
                         ElementState::Released => {
+                            if code == KeyCode::KeyZ {
+                                s.engine.player_voice_release();
+                            }
                             if code == KeyCode::KeyE
                                 && let Err(e) = s.engine.activate_release()
                             {

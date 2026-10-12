@@ -753,7 +753,25 @@ pub(super) fn player_info(engine: &Engine) -> Value {
         ("maxMagicka", max_magicka),
         ("stamina", stamina),
         ("maxStamina", max_stamina),
+        ("dragonSoulText", text(&dragon_souls_text(engine))),
     ])
+}
+
+/// "3 Dragon Souls" (`sMultipleDragonSoulCount`, `sSingleDragonSoulCount`).
+fn dragon_souls_text(engine: &Engine) -> String {
+    let n = engine
+        .actor_value(PLAYER_REF, av::DRAGON_SOULS)
+        .max(0.0)
+        .floor() as i64;
+    let (name, english) = if n == 1 {
+        ("sSingleDragonSoulCount", "%i Dragon Soul")
+    } else {
+        ("sMultipleDragonSoulCount", "%i Dragon Souls")
+    };
+    engine
+        .gmst_string(name)
+        .unwrap_or_else(|| english.into())
+        .replacen("%i", &n.to_string(), 1)
 }
 
 /// The item card: name, count, value and weight, and by kind the armor rating,

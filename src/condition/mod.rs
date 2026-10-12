@@ -589,9 +589,11 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 })
             })
         })),
-        627 | 632 => b(false), // IsDualCasting, IsCasting: nobody casts by hand yet
+        632 => b(subject.is_some_and(|s| e.is_casting(s))), // IsCasting
+        627 => b(false),                                    // IsDualCasting: nobody dual casts yet
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))), // GetIsCurrentPackage
-        579 => Some(0.0),      // GetEquippedShout
+        579 => b(subject.is_some_and(|s| e.equipped_shout(s) == Some(p1))), // GetEquippedShout
+        378 => b(subject.is_some_and(|s| e.has_shout(s, p1))), // HasShout
         463 => b(e.grabbed_ref().is_some_and(|g| g == p1)), // IsPlayerGrabbedRef
         286 => b(subject.is_some_and(|s| e.is_sneaking(s))), // IsSneaking
         45 => b(subject.is_some_and(|s| e.detects(s, p1))), // GetDetected

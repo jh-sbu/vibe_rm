@@ -16,7 +16,8 @@ the `ModSpellCost` entry point (38).
 
 - **Categories.** Favorites, All, the five schools (Alteration, Illusion,
   Destruction, Conjuration, Restoration), Shouts, Powers, Active Effects.
-  All holds spells, powers and shouts, not the active effects. A spell's
+  All holds spells, powers and shouts, not the active effects (shouts'
+  cards: `known_gaps/shouts.md`). A spell's
   school is its costliest effect's skill (base cost × magnitude^1.1 ×
   (duration / 10)^1.1).
 - **The level** (Novice to Master) is that effect's minimum skill

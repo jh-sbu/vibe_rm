@@ -47,6 +47,8 @@ pub struct SwfUi {
     /// The favorite key pressed, and an equip button clicked (its slot), for
     /// the item menu's next update.
     favorite: bool,
+    /// Ready Weapon in the magic menu: a dragon soul spent on the shout.
+    unlock: bool,
     equip: Option<f32>,
     /// The magic menu, while open, and its lists' positions.
     magic: Option<magic_menu::MagicMenu>,
@@ -109,6 +111,7 @@ impl SwfUi {
             items: None,
             item_indices: Vec::new(),
             favorite: false,
+            unlock: false,
             equip: None,
             magic: None,
             magic_indices: Vec::new(),
@@ -261,6 +264,9 @@ impl SwfUi {
         };
         if std::mem::take(&mut self.favorite) {
             magic.favorite_key(engine);
+        }
+        if std::mem::take(&mut self.unlock) {
+            magic.unlock_key(engine);
         }
         if let Some(slot) = self.equip.take() {
             magic.equip_button(slot);
@@ -769,6 +775,8 @@ impl SwfUi {
                 return code != winit::keyboard::KeyCode::Backquote;
             } else if code == winit::keyboard::KeyCode::Escape {
                 magic.close();
+            } else if scan.is_some() && scan == self.buttons.key("Ready Weapon") {
+                self.unlock = true;
             } else if scan.is_some() && scan == self.buttons.key("Toggle POV") {
                 self.favorite = true;
             } else {
@@ -1201,6 +1209,8 @@ struct Sent {
     dialogue: bool,
     /// Magicka meter blinks shown.
     magicka_blinks: u32,
+    shout: Option<f32>,
+    shout_flashes: u32,
 }
 
 struct Hud {
@@ -1299,7 +1309,18 @@ impl Hud {
         // Not enough magicka for a spell.
         if engine.casting.magicka_blinks != self.sent.magicka_blinks {
             self.sent.magicka_blinks = engine.casting.magicka_blinks;
-            self.call("StartMagickaMeterBlinking", &[]);
+            self.call("StartMagickaBlinking", &[]);
+        }
+        // The voice resting: the shout meter fills; it flashes when the
+        // voice key is pressed too soon.
+        let shout = engine.shout_meter_percent();
+        if self.sent.shout.is_none_or(|s| (s - shout).abs() > 0.2) {
+            self.sent.shout = Some(shout);
+            self.call("SetShoutMeterPercent", &[num(shout), Value::Bool(false)]);
+        }
+        if engine.shouts.meter_flashes != self.sent.shout_flashes {
+            self.sent.shout_flashes = engine.shouts.meter_flashes;
+            self.call("FlashShoutMeter", &[]);
         }
     }
 

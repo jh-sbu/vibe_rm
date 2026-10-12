@@ -390,7 +390,9 @@ impl Engine {
         let Some(form) = self.hotkeys.get(key).copied().flatten() else {
             return;
         };
-        if self.actor_spells(PLAYER_REF).contains(&form) {
+        if self.actor_spells(PLAYER_REF).contains(&form)
+            || self.actor_shouts(PLAYER_REF).contains(&form)
+        {
             self.toggle_spell(PLAYER_REF, form, crate::spells::RIGHT);
         } else if let Some(row) = self
             .listed_inventory(PLAYER_REF)

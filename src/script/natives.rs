@@ -960,6 +960,46 @@ pub fn call(
             }
             none()
         }
+        // Shouts (`crate::shouts`).
+        ("actor", "addshout") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(s)) => e.add_shout(a, s),
+            _ => false,
+        })),
+        ("actor", "removeshout") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(s)) => e.remove_shout(a, s),
+            _ => false,
+        })),
+        ("actor", "equipshout") => {
+            if let (Some(a), Some(s)) = (me, form_arg(args, 0)) {
+                e.equip_shout(a, s);
+            }
+            none()
+        }
+        ("actor", "unequipshout") => {
+            if let (Some(a), Some(s)) = (me, form_arg(args, 0)) {
+                e.unequip_spell(a, s, Some(crate::spells::VOICE));
+            }
+            none()
+        }
+        ("actor", "getequippedshout") => {
+            let shout = me.and_then(|a| e.equipped_shout(a));
+            v(shout.map_or(Value::None, |s| e.object_value(s)))
+        }
+        ("game", "teachword") => {
+            if let Some(w) = form_arg(args, 0) {
+                e.teach_word(w);
+            }
+            none()
+        }
+        ("game", "unlockword") => {
+            if let Some(w) = form_arg(args, 0) {
+                e.unlock_word(w);
+            }
+            none()
+        }
+        ("game", "iswordunlocked") => v(Value::Bool(
+            form_arg(args, 0).is_some_and(|w| e.is_word_unlocked(w)),
+        )),
         // aiSource: 0 the left hand, 1 the right, 2 a power or shout.
         ("actor", "equipspell") | ("actor", "unequipspell") | ("actor", "getequippedspell") => {
             let source = |i: usize| match arg(i).as_int() {

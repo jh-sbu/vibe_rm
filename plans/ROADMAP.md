@@ -346,6 +346,18 @@ game each piece unlocks.
   they land). Magicka comes back at the race's rate times `MagickaRateMult`,
   slower in combat, after a moment. The Story Manager's spell cast event.
   Console `pcast`. Open questions: `known_gaps/casting.md`
+- Shouts: words of power learned and unlocked (`Game.TeachWord`,
+  `UnlockWord`, `IsWordUnlocked`; a dragon soul in the magic menu), the
+  shouts they give, `AddShout` / `RemoveShout` / `EquipShout` /
+  `UnequipShout` / `GetEquippedShout`, conditions `HasShout`,
+  `GetEquippedShout`, `IsCasting`. Holding Z speaks one to three words
+  (`fShoutTime1` / `fShoutTime2`) and casts that word's spell (cones:
+  Unrelenting Force staggers everyone before the player); the voice rests
+  for the word's recovery times `ShoutRecoveryMult`, the HUD's shout meter
+  filling and flashing when Z comes too soon. The magic menu's Shouts (the
+  words, those unlocked, the recharge, the dragon souls) and the favorites
+  menu's; the shout stats. Console `teachword`, `unlockword`, `addshout`,
+  `equipshout`, `pcast voice`. Open questions: `known_gaps/shouts.md`
 - Harvesting: plants (`FLOR`, `TREE` with produce) found by their
   non-collidable shapes, giving their produce with their own verb and sound,
   someone else's stolen; harvested models, growing back
@@ -803,7 +815,7 @@ game each piece unlocks.
      property's own controller chain runs, on the global clock)
 2. **Story Manager** (core and fifteen events done; see Done)
    - Events waiting on their systems: crafting, item
-     removal (dropping now exists; the event's data needs a source), NPCs' spell casts, shouts, bribe /
+     removal (dropping now exists; the event's data needs a source), NPCs' spell casts, new voice powers, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
@@ -838,7 +850,8 @@ game each piece unlocks.
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes: calm,
    frenzy, fear, summons, bound weapons, light, paralysis; enchantment charges,
-   poisons; `known_gaps/magic.md`), shouts, perks (see Done: the entry points
+   poisons; `known_gaps/magic.md`), shouts (see Done: NPCs and dragons
+   shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
    waiting on casting, crafting, barter, critical hits, attack types;
    `known_gaps/perks.md`), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
@@ -869,8 +882,8 @@ game each piece unlocks.
    targets on the map (on the compass: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
      item menus, the journal, the gift, magic, favorites and tween menus
-     done: see Done): the magic menu's shouts (with shouts); the tween
-     menu's Map (with the map); waiting's rest: getting into the bed first; the favorites menu's shouts and the gamepad's d-pad
+     done: see Done): the tween
+     menu's Map (with the map); waiting's rest: getting into the bed first; the gamepad's d-pad
      favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
@@ -883,7 +896,7 @@ game each piece unlocks.
      (crafting, magic and shouts, horses stolen,
      critical strikes, backstabs, disarms; the Favorite ones)
    - The HUD's compass: the player's own marker (with the map), location
-     aliases as quest targets; the shout, charge and
+     aliases as quest targets; the charge and
      survival meters, load door info, favor mode
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);

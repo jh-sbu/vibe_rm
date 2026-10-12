@@ -123,6 +123,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "[ref.]getlevel        an actor's level".into(),
             "[ref.]perks [all]     an actor's perks (all: with their entry points)".into(),
             "[ref.]effects / dispelallspells   magic effects on an actor / end those cast on it".into(),
+            "player.teachword / unlockword <word>, [ref.]addshout / removeshout / equipshout <shout>".into(),
             "[ref.]addspell / removespell <spell>   give or take a spell (abilities take effect)".into(),
             "[ref.]cast <spell> [target | player]   the ref's spell lands on the target (else itself)".into(),
             "player.equipitem <potion>   drink a potion, eat food or an ingredient".into(),
@@ -611,14 +612,22 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             vec![engine.test_impact(ipct, reach)]
         }
         "pcast" => {
-            // pcast <right|left|power> [off]: a hand's attack button down (up
-            // with off), or the power readied used.
+            // pcast <right|left|power|voice> [off]: a hand's attack button
+            // down (up with off), the power readied used, or the voice key.
             let off = args.get(1).is_some_and(|a| a.eq_ignore_ascii_case("off"));
             let hand = match args.first().map(|a| a.to_ascii_lowercase()) {
                 Some(h) if h == "left" => crate::spells::LEFT,
                 Some(h) if h == "power" => {
                     engine.player_use_power();
                     return vec!["power used".into()];
+                }
+                Some(h) if h == "voice" => {
+                    if off {
+                        engine.player_voice_release();
+                    } else {
+                        engine.player_voice_press();
+                    }
+                    return vec![format!("voice key {}", if off { "up" } else { "down" })];
                 }
                 _ => crate::spells::RIGHT,
             };
@@ -852,8 +861,13 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 41] = [
+const ITEM_COMMANDS: [&str; 46] = [
     "drop",
+    "teachword",
+    "unlockword",
+    "addshout",
+    "removeshout",
+    "equipshout",
     "addspell",
     "removespell",
     "cast",
@@ -953,6 +967,29 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             vec![format!("{r} has {p}: {}", engine.has_perk(r, p))]
         }
         "perks" => engine.describe_perks(r, args.first() == Some(&"all")),
+        "teachword" | "unlockword" | "addshout" | "removeshout" | "equipshout" => {
+            let Some(f) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec![format!("usage: [ref.]{cmd} <word | shout>")];
+            };
+            match cmd {
+                "teachword" => engine.teach_word(f),
+                "unlockword" => engine.unlock_word(f),
+                "addshout" => {
+                    engine.add_shout(r, f);
+                }
+                "removeshout" => {
+                    engine.remove_shout(r, f);
+                }
+                _ => engine.equip_shout(r, f),
+            }
+            let shouts: Vec<String> = engine
+                .actor_shouts(r)
+                .iter()
+                .filter_map(|&s| engine.shout(s))
+                .map(|s| format!("{} ({}/{})", s.name, engine.shout_level(&s), s.words.len()))
+                .collect();
+            vec![format!("{r} shouts: {}", shouts.join(", "))]
+        }
         "addspell" | "removespell" => {
             let Some(s) = args.first().and_then(|a| engine.resolve_form(a)) else {
                 return vec![format!("usage: [ref.]{cmd} <spell>")];
