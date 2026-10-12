@@ -226,7 +226,7 @@ impl Engine {
         let worn = self
             .inventories
             .get(&PLAYER_REF)
-            .map(|i| i.equipped.clone())
+            .map(|i| i.equipped().to_vec())
             .unwrap_or_default();
         if let Some((w, set)) = &self.footsteps.player_set
             && *w == worn

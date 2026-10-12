@@ -6,7 +6,7 @@ use glam::{Mat4, Vec3};
 
 use crate::engine::{Engine, Location};
 use crate::render::{CellKey, HeldLight};
-use crate::world::inventory::HandType;
+use crate::world::inventory::{HandType, LEFT, RIGHT};
 
 /// `LIGH` flag: can be carried.
 const LIGHT_CARRIED: u32 = 0x2;
@@ -43,8 +43,14 @@ impl Engine {
         for (key, rt) in &self.cells {
             for (i, a) in rt.actors.iter().enumerate() {
                 let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());
+                // Not with both hands on a weapon (a two-handed one, a bow).
+                let both = self
+                    .inventories
+                    .get(&a.ref_id)
+                    .is_some_and(|i| i.both_hands() && i.held(LEFT) != a.torch);
                 let want = dark
                     && humanoid
+                    && !both
                     && !a.in_furniture()
                     && a.seat.is_none()
                     && a.objects.is_empty();
@@ -64,7 +70,7 @@ impl Engine {
     }
 
     /// Light (`Some`) or put away (`None`) a torch: it takes the shield's place in
-    /// the left hand and the graph raises it.
+    /// the left hand (`Inventory::hold`) and the graph raises it.
     fn hold_torch(&mut self, key: CellKey, index: usize, actor: FormId, torch: Option<FormId>) {
         let lo = &self.lo;
         let Some(a) = self
@@ -77,30 +83,21 @@ impl Engine {
         let old = std::mem::replace(&mut a.torch, torch);
         let inv = self.inventories.entry(actor).or_default();
         if let Some(t) = old {
-            inv.equipped.retain(|&f| f != t);
-            // The shield it set aside.
-            if let Some(s) = a.stowed_shield.take() {
-                inv.equipped.push(s);
+            inv.take_off(t);
+            // The shield it set aside, unless the hand was taken since.
+            if let Some(s) = a.stowed_shield.take()
+                && inv.held(LEFT).is_none()
+            {
+                inv.hold(lo, s, &[LEFT]);
             }
         }
         if let Some(t) = torch {
-            if let Some(s) = inv.equipped.iter().position(|&f| {
-                lo.get(f).is_some_and(|r| {
-                    r.tag().0 == *b"ARMO"
-                        && crate::world::inventory::armor_slots(&r) & (1 << 9) != 0
-                })
-            }) {
-                a.stowed_shield = Some(inv.equipped.remove(s));
-            }
-            inv.equipped.push(t);
+            a.stowed_shield = inv.shield(lo);
+            inv.hold(lo, t, &[LEFT]);
         }
-        let left = if torch.is_some() {
-            HandType::Torch
-        } else {
-            inv.hand(lo, true)
-        };
+        let left = inv.hand(lo, true).for_graph();
         if let Some(g) = &mut a.graph {
-            g.set_variable("iLeftHandType", left as i32 as f32);
+            g.set_variable("iLeftHandType", left);
         }
         log::debug!(
             "{actor} {}",
@@ -158,8 +155,8 @@ impl Engine {
         a.weapon_reach = reach;
         a.power_cost = cost;
         if let Some(g) = &mut a.graph {
-            g.set_variable("iLeftHandType", inv.hand(lo, true) as i32 as f32);
-            g.set_variable("iRightHandType", inv.hand(lo, false) as i32 as f32);
+            g.set_variable("iLeftHandType", inv.hand(lo, true).for_graph());
+            g.set_variable("iRightHandType", inv.hand(lo, false).for_graph());
         }
         self.refresh_equipment(key, index, actor);
         true
@@ -240,11 +237,8 @@ impl Engine {
         Vec<(std::sync::Arc<crate::render::GpuModel>, usize, Mat4)>,
         Option<HeldLight>,
     ) {
-        let equipped = self
-            .inventories
-            .get(&actor)
-            .map(|i| i.equipped.clone())
-            .unwrap_or_default();
+        let inv = self.inventories.get(&actor).cloned().unwrap_or_default();
+        let equipped = inv.equipped().to_vec();
         // (model, the bone to hang it from if not its own, light it gives)
         let mut models: Vec<(String, Option<&'static str>, Option<FormId>)> = Vec::new();
         for (item, m) in self
@@ -255,6 +249,9 @@ impl Engine {
             .filter(|(item, _)| equipped.contains(item))
         {
             let weapon = self.lo.tag_of(*item).map(|t| t.0) == Some(*b"WEAP");
+            // A weapon in the left hand only (not a two-handed one's).
+            let left = weapon && inv.held(LEFT) == Some(*item) && !inv.both_hands();
+            let right = !left || inv.held(RIGHT) == Some(*item);
             if weapon && drawn {
                 // In hand (bows in the left), the scabbard left where it hangs.
                 let bow = self
@@ -262,13 +259,20 @@ impl Engine {
                     .get(*item)
                     .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
                     .is_some_and(|t| t == 7 || t == 9);
-                models.push((
-                    format!("{m}#blade"),
-                    Some(if bow { "SHIELD" } else { "WEAPON" }),
-                    None,
-                ));
-                models.push((format!("{m}#scb"), None, None));
-            } else {
+                if right {
+                    models.push((
+                        format!("{m}#blade"),
+                        Some(if bow { "SHIELD" } else { "WEAPON" }),
+                        None,
+                    ));
+                    models.push((format!("{m}#scb"), None, None));
+                }
+                if left {
+                    models.push((format!("{m}#blade"), Some("SHIELD"), None));
+                }
+            } else if right {
+                // Sheathed, a left-hand weapon isn't shown: the skeleton
+                // has no place on the body for a second one.
                 models.push((m.clone(), None, None));
             }
         }
@@ -358,15 +362,19 @@ impl Engine {
 
 impl Engine {
     /// The armor and weapons of an inventory's equipped items: what an
-    /// actor's models show (lights are its torch's).
+    /// actor's models show (lights are its torch's); then the weapon in its
+    /// left hand again, so that one moving between hands is a change.
     pub(crate) fn worn_items(&self, inv: &crate::world::inventory::Inventory) -> Vec<FormId> {
-        inv.equipped
+        let mut worn: Vec<FormId> = inv
+            .equipped()
             .iter()
             .copied()
             .filter(|&f| {
                 matches!(self.lo.tag_of(f).map(|t| t.0), Some(t) if t == *b"ARMO" || t == *b"WEAP")
             })
-            .collect()
+            .collect();
+        worn.extend(inv.weapon_in(&self.lo, LEFT));
+        worn
     }
 
     /// Actors whose armor or weapons changed (put on by scripts or for
@@ -461,14 +469,9 @@ impl Engine {
         if let Some(b) = bow {
             a.bow_speed = crate::ai::archery::bow_speed(lo, b);
         }
-        let left = if a.torch.is_some() {
-            HandType::Torch
-        } else {
-            inv.hand(lo, true)
-        };
         if let Some(g) = &mut a.graph {
-            g.set_variable("iLeftHandType", left as i32 as f32);
-            g.set_variable("iRightHandType", inv.hand(lo, false) as i32 as f32);
+            g.set_variable("iLeftHandType", inv.hand(lo, true).for_graph());
+            g.set_variable("iRightHandType", inv.hand(lo, false).for_graph());
         }
         self.refresh_equipment(key, index, actor);
     }
@@ -479,10 +482,13 @@ impl Engine {
         let Some(torch) = a.torch else {
             return;
         };
+        let lo = &self.lo;
         if let Some(inv) = self.inventories.get_mut(&a.ref_id) {
-            inv.equipped.retain(|&f| f != torch);
-            if let Some(s) = a.stowed_shield {
-                inv.equipped.push(s);
+            inv.take_off(torch);
+            if let Some(s) = a.stowed_shield
+                && inv.held(LEFT).is_none()
+            {
+                inv.hold(lo, s, &[LEFT]);
             }
         }
     }
@@ -525,7 +531,9 @@ impl Engine {
                     .get(item)
                     .is_some_and(|r| crate::world::inventory::armor_slots(&r) & (1 << 9) != 0);
                 let hand = inv.hand(lo, false);
-                if shield && !(hand == HandType::Empty || hand.one_handed()) {
+                if shield
+                    && !(matches!(hand, HandType::Empty | HandType::Spell) || hand.one_handed())
+                {
                     return;
                 }
                 let now = self.protection(actor).rating;
@@ -534,7 +542,7 @@ impl Engine {
                 let value =
                     |f: FormId| crate::world::inventory::item_info(lo, f).map_or(0, |i| i.value);
                 let covered: i32 = inv
-                    .equipped
+                    .equipped()
                     .iter()
                     .filter(|f| !with.contains(f))
                     .map(|&f| value(f))

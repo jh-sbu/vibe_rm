@@ -16,18 +16,14 @@ use ui_swf::{GameCall, Menu, UiSwf, Value};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::items::ListedItem;
 use crate::spells::{LEFT, RIGHT};
-use crate::world::inventory::ItemKind;
+use crate::world::inventory::Inventory;
 
-use super::item_menu::object;
+use super::item_menu::{equip_state as item_equip_state, object};
 use super::magic_menu::equip_state;
 use super::{Buttons, num, text};
 
 const M: &str = "_root.MenuHolder.Menu_mc";
 const LIST: &str = "_root.MenuHolder.Menu_mc.List_mc";
-
-/// Equip icons (`InventoryDefines.ES_*`): worn, and wielded in the right hand.
-const ES_EQUIPPED: f64 = 1.0;
-const ES_RIGHT: f64 = 3.0;
 
 /// A row of the list.
 #[derive(Debug, Clone)]
@@ -113,16 +109,13 @@ impl FavoritesMenu {
     /// Fills the list again when it changed, keeping the selection.
     pub fn update(&mut self, engine: &mut Engine) {
         let rows = Self::rows(engine);
-        let worn = engine
+        let inv = engine
             .inventories
             .get(&PLAYER_REF)
-            .map(|i| i.equipped.clone())
+            .cloned()
             .unwrap_or_default();
-        let slots = engine
-            .equipped_spells
-            .get(&PLAYER_REF)
-            .copied()
-            .unwrap_or_default();
+        let worn = inv.equipped().to_vec();
+        let slots = inv.held_all();
         let listed: Listed = (
             rows.iter()
                 .map(|r| match r {
@@ -141,7 +134,7 @@ impl FavoritesMenu {
         let entries: Vec<Value> = rows
             .iter()
             .enumerate()
-            .map(|(i, r)| entry(engine, i, r, &worn, &slots))
+            .map(|(i, r)| entry(engine, i, r, &inv))
             .collect();
         let list = format!("{LIST}.entryList");
         self.menu.invoke(&format!("{list}.splice"), &[num(0.0)]);
@@ -173,7 +166,7 @@ impl FavoritesMenu {
     ) -> bool {
         match call.name.as_str() {
             // Accept: as the right hand's attack button.
-            "ItemSelect" => self.equip(engine, RIGHT),
+            "ItemSelect" => self.equip(engine, None),
             "FadeDone" => {
                 if let Some(Value::Number(n)) = call.args.first() {
                     *last = self.rows.get(*n as usize).map(|r| r.form());
@@ -188,15 +181,17 @@ impl FavoritesMenu {
     }
 
     /// Equips or uses the selected favorite: a spell readied in `slot`'s hand
-    /// (`RIGHT` / `LEFT`), a power as the voice, an item as the inventory
-    /// does (one hand).
-    pub fn equip(&mut self, engine: &mut Engine, slot: usize) {
+    /// (`RIGHT` / `LEFT`; Accept, `None`, the right), a power as the voice,
+    /// an item as the inventory does (a weapon in that hand).
+    pub fn equip(&mut self, engine: &mut Engine, slot: Option<usize>) {
         if self.closing {
             return;
         }
         match self.selected() {
-            Some(Row::Item(item)) => engine.use_listed_item(&item),
-            Some(Row::Spell(spell)) => engine.toggle_spell(PLAYER_REF, spell, slot),
+            Some(Row::Item(item)) => engine.use_listed_item(&item, slot),
+            Some(Row::Spell(spell)) => {
+                engine.toggle_spell(PLAYER_REF, spell, slot.unwrap_or(RIGHT))
+            }
             None => return,
         }
         self.update(engine);
@@ -205,7 +200,7 @@ impl FavoritesMenu {
     /// An attack button's equip: slot 0 the right hand, 1 the left (as the
     /// item menus' `AttemptEquip`).
     pub fn equip_button(&mut self, engine: &mut Engine, slot: f32) {
-        self.equip(engine, if slot as usize == 1 { LEFT } else { RIGHT });
+        self.equip(engine, Some(if slot as usize == 1 { LEFT } else { RIGHT }));
     }
 
     /// 1 to 8: the selected favorite goes on hotkey `key` (0 to 7), off any
@@ -234,20 +229,10 @@ impl FavoritesMenu {
 
 /// A row as the list's entry: its name (with the count when more than one),
 /// hotkey, equip icon; `index` is its place in the rows.
-fn entry(
-    engine: &Engine,
-    i: usize,
-    row: &Row,
-    worn: &[FormId],
-    slots: &[Option<FormId>; 3],
-) -> Value {
+fn entry(engine: &Engine, i: usize, row: &Row, inv: &Inventory) -> Value {
     let (name, equip) = match row {
         Row::Item(item) => {
-            let equip = match worn.contains(&item.item) {
-                false => 0.0,
-                true if item.info.kind == ItemKind::Weapon => ES_RIGHT,
-                true => ES_EQUIPPED,
-            };
+            let equip = item_equip_state(engine, inv, item.item);
             let name = if item.count > 1 {
                 format!("{} ({})", item.info.name, item.count)
             } else {
@@ -261,7 +246,7 @@ fn entry(
                 .map(|m| m.name.clone())
                 .or_else(|| engine.shout(*spell).map(|s| s.name.clone()))
                 .unwrap_or_default();
-            (name, equip_state(slots, *spell))
+            (name, equip_state(&inv.held_all(), *spell))
         }
     };
     let hotkey = engine

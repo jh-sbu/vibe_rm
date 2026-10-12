@@ -18,11 +18,12 @@ Tween Menu and Pause).
 - **What is listed.** The favorite items the player carries and the
   favorite spells and powers they know. An item that leaves the inventory stays a favorite and
   shows again when it comes back.
-- **Accept** does what the right attack button does. The attack buttons
-  (the control map's) equip in their hand: spells in that hand, powers as
-  the voice, items as the inventory's Accept does (one hand: weapons in the
-  right). Equipping again takes it off or puts the spell away. The mouse
-  buttons equip the selected entry wherever the cursor is.
+- **Accept** readies a spell in the right hand and uses an item as the
+  inventory's Accept does. The attack buttons (the control map's) equip in
+  their hand: spells and weapons in that hand, powers as the voice, other
+  items as Accept does (`known_ambiguities/hands.md`). Equipping again takes
+  it off or puts the spell away. The mouse buttons equip the selected entry
+  wherever the cursor is.
 - **The menu stays up** after equipping; Tab, Esc and Q fade it out. It
   opens on the entry selected when it last closed.
 - **Hotkeys.** 1 to 8 in the menu put the selected favorite on that key,

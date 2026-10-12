@@ -322,13 +322,20 @@ pub fn run(opts: Options) -> Result<()> {
                 swf.update(&mut engine, 1.0 / 60.0);
             }
             for name in &opts.menu_keys {
-                // `click:x,y` clicks there (frame pixels); `pause` only lets
-                // the time run.
+                // `click:x,y` clicks there (frame pixels); `equip:right` /
+                // `equip:left` are the attack buttons; `pause` only lets the
+                // time run.
                 let click = name
                     .strip_prefix("click:")
                     .and_then(|p| p.split_once(','))
                     .and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)));
+                let equip = match name.as_str() {
+                    "equip:right" => Some(0.0),
+                    "equip:left" => Some(1.0),
+                    _ => None,
+                };
                 match (click, crate::swf_ui::key_code(name)) {
+                    _ if let Some(slot) = equip => swf.attack_button(slot),
                     (Some((x, y)), _) => swf.click(x, y),
                     (None, Some(code)) => swf.press(code),
                     (None, None) if name == "pause" => {}

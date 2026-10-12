@@ -4,7 +4,7 @@
 use esp::FormId;
 
 use crate::engine::{Engine, PLAYER_REF};
-use crate::world::inventory::{ItemInfo, ItemKind, armor_slots, item_info};
+use crate::world::inventory::{ItemInfo, ItemKind, armor_slots, equip_slot, item_info};
 
 /// A menu taking the mouse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -353,16 +353,33 @@ impl Engine {
     }
 
     /// Accept on one of the player's items (in the inventory, the favorites
-    /// menu, on a hotkey): weapons and apparel are equipped or taken off,
-    /// potions, food and ingredients used, books read.
-    pub fn use_listed_item(&mut self, row: &ListedItem) {
+    /// menu, on a hotkey), or an attack button's equip in its hand (`hand`):
+    /// weapons and apparel are equipped or taken off (a weapon in that hand,
+    /// or out of it when it is there already), potions, food and ingredients
+    /// used, books read.
+    pub fn use_listed_item(&mut self, row: &ListedItem, hand: Option<usize>) {
+        // A weapon by the hand asked for, the rest wherever they are.
+        let hand_of_weapon = hand.filter(|_| row.info.kind == ItemKind::Weapon);
         let worn = self
             .inventories
             .get(&PLAYER_REF)
-            .is_some_and(|i| i.equipped.contains(&row.item));
+            .is_some_and(|i| match hand_of_weapon {
+                Some(h) => i.held(h) == Some(row.item),
+                None => i.is_equipped(row.item),
+            });
         let result = match row.info.kind {
+            ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor if worn => match hand_of_weapon {
+                Some(h) => {
+                    let lo = &self.lo;
+                    if let Some(inv) = self.inventories.get_mut(&PLAYER_REF) {
+                        inv.release(lo, h);
+                    }
+                    Ok(())
+                }
+                None => self.equip_item(PLAYER_REF, row.item, false),
+            },
             ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor => {
-                self.equip_item(PLAYER_REF, row.item, !worn)
+                self.equip_in(PLAYER_REF, row.item, hand)
             }
             ItemKind::Potion | ItemKind::Ingredient => self.consume(PLAYER_REF, row.item),
             ItemKind::Book if let Some(spell) = self.tome_spell(row.item) => {
@@ -382,6 +399,11 @@ impl Engine {
         if let Err(e) = result {
             self.scripts.notify(e);
         }
+        log::debug!(
+            "player uses {} ({hand:?}): holds {:?}",
+            row.item,
+            self.inventories.get(&PLAYER_REF).map(|i| i.held_all())
+        );
     }
 
     /// Hotkey `key` (0 to 7) in the world: its favorite used as Accept in the
@@ -399,55 +421,73 @@ impl Engine {
             .into_iter()
             .find(|i| i.item == form)
         {
-            self.use_listed_item(&row);
+            self.use_listed_item(&row, None);
         }
     }
 
-    /// Equip or take off an item the actor carries: armor (see `equip_armor`), a
-    /// weapon (in place of the one held; a bow takes both hands, so the shield
-    /// comes off) or ammunition (in place of the other).
+    /// Equip or take off an item the actor carries: armor (see `equip_armor`),
+    /// a weapon, shield or torch where it goes first (see `equip_in`), or
+    /// ammunition (in place of the other).
     pub fn equip_item(&mut self, r: FormId, item: FormId, on: bool) -> Result<(), String> {
-        let tag = self.lo.tag_of(item).map(|t| t.0);
-        if !matches!(tag, Some(t) if t == *b"WEAP" || t == *b"AMMO") {
-            return self.equip_armor(r, item, on);
+        if on {
+            return self.equip_in(r, item, None);
         }
-        let tag = tag.unwrap();
-        let bow = crate::ai::archery::is_bow(&self.lo, item);
+        let tag = self.lo.tag_of(item).map(|t| t.0);
+        if !matches!(tag, Some(t) if t == *b"ARMO" || t == *b"AMMO")
+            && equip_slot(&self.lo, item).is_none_or(|s| s.voice)
+        {
+            return Err(format!("{item} isn't worn or held"));
+        }
+        self.inventory_mut(r).take_off(item);
+        Ok(())
+    }
+
+    /// Equip an item the actor carries: armor (see `equip_armor`), ammunition
+    /// in place of the other, or a weapon, shield or torch in the hands its
+    /// equip slot (`ETYP`) gives it, in place of what they hold: `hand`
+    /// (`RIGHT` / `LEFT`) for a one-handed weapon (any of them, though most
+    /// name only the right hand), else the right hand if it may go there;
+    /// all its hands for a two-handed one (a bow puts the shield away).
+    pub fn equip_in(&mut self, r: FormId, item: FormId, hand: Option<usize>) -> Result<(), String> {
+        let tag = self.lo.tag_of(item).map(|t| t.0);
+        let slot = equip_slot(&self.lo, item);
+        let weapon = tag == Some(*b"WEAP");
+        match tag {
+            Some(t) if t == *b"ARMO" && slot.is_none() => return self.equip_armor(r, item, true),
+            Some(t) if t == *b"AMMO" => {}
+            Some(t) if t != *b"SPEL" && t != *b"SHOU" && slot.is_some_and(|s| !s.voice) => {}
+            _ => return Err(format!("{item} isn't worn or held")),
+        }
         self.inventory_mut(r);
         let lo = &self.lo;
         let Some(inv) = self.inventories.get_mut(&r) else {
             return Err(format!("{r} has no inventory"));
         };
-        if !on {
-            inv.equipped.retain(|&f| f != item);
-            return Ok(());
-        }
         if inv.count(item) <= 0 {
             return Err(format!("{r} doesn't carry {item}"));
         }
-        inv.equipped.retain(|&f| {
-            let rec = lo.get(f);
-            let same_kind = rec.as_ref().is_some_and(|x| x.tag().0 == tag);
-            let shield = bow
-                && rec
-                    .as_ref()
-                    .is_some_and(|x| x.tag().0 == *b"ARMO" && armor_slots(x) & (1 << 9) != 0);
-            !same_kind && !shield
-        });
-        inv.equipped.push(item);
-        if tag == *b"WEAP" {
-            self.hand_taken(r, item);
+        match slot {
+            Some(s) => {
+                inv.hold(lo, item, &s.hands(hand, weapon));
+            }
+            None => {
+                inv.take_off_where(|f| f != item && lo.tag_of(f).map(|t| t.0) == Some(*b"AMMO"));
+                inv.wear(item);
+            }
         }
         Ok(())
     }
 
     /// Wear (taking off whatever covers the same body slots) or take off a piece of
-    /// armor the actor carries.
+    /// armor the actor carries; a shield is held (see `equip_in`).
     pub fn equip_armor(&mut self, r: FormId, armor: FormId, on: bool) -> Result<(), String> {
         let slots = match self.lo.get(armor).filter(|rec| rec.tag().0 == *b"ARMO") {
             Some(rec) => armor_slots(&rec),
             None => return Err(format!("{armor} isn't armor")),
         };
+        if on && equip_slot(&self.lo, armor).is_some() {
+            return self.equip_in(r, armor, None);
+        }
         self.inventory_mut(r);
         let lo = &self.lo;
         let Some(inv) = self.inventories.get_mut(&r) else {
@@ -457,18 +497,15 @@ impl Engine {
             if inv.count(armor) <= 0 {
                 return Err(format!("{r} doesn't carry {armor}"));
             }
-            inv.equipped.retain(|&f| {
-                f == armor
-                    || !lo.get(f).is_some_and(|rec| {
+            inv.take_off_where(|f| {
+                f != armor
+                    && lo.get(f).is_some_and(|rec| {
                         rec.tag().0 == *b"ARMO" && armor_slots(&rec) & slots != 0
                     })
             });
-            if !inv.equipped.contains(&armor) {
-                inv.equipped.push(armor);
-            }
-            self.hand_taken(r, armor);
+            inv.wear(armor);
         } else {
-            inv.equipped.retain(|&f| f != armor);
+            inv.take_off(armor);
         }
         Ok(())
     }
@@ -523,12 +560,11 @@ impl Engine {
             .unwrap_or(false)
     }
 
-    /// Takes an item off once the actor has none of it left.
+    /// Takes an item off once the actor has none of it left (out of the
+    /// left hand when one of a pair is left).
     pub fn unequip_if_gone(&mut self, actor: FormId, item: FormId) {
-        if self.item_count(actor, item) <= 0
-            && let Some(inv) = self.inventories.get_mut(&actor)
-        {
-            inv.equipped.retain(|&f| f != item);
+        if let Some(inv) = self.inventories.get_mut(&actor) {
+            inv.unequip_if_short(item);
         }
     }
 
@@ -539,7 +575,7 @@ impl Engine {
         let mut worn: Vec<FormId> = self
             .inventories
             .get(&actor)
-            .map(|i| i.equipped.clone())
+            .map(|i| i.equipped().to_vec())
             .unwrap_or_default();
         worn.retain(|&f| {
             f != armor

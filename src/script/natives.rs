@@ -676,6 +676,20 @@ pub fn call(
                     .map_or(0, |i| i.hand(&e.lo, left) as i32),
             ))
         }
+        // The weapon in a hand (a two-handed one is the right hand's).
+        ("actor", "getequippedweapon") => {
+            let inv = me.and_then(|r| e.inventories.get(&r));
+            let weapon = inv.and_then(|i| match arg(0).as_bool() {
+                true if i.both_hands() => None,
+                true => i.weapon_in(&e.lo, crate::spells::LEFT),
+                false => i.weapon(&e.lo),
+            });
+            v(weapon.map_or(Value::None, |w| e.object_value(w)))
+        }
+        ("actor", "getequippedshield") => {
+            let shield = me.and_then(|r| e.inventories.get(&r)?.shield(&e.lo));
+            v(shield.map_or(Value::None, |s| e.object_value(s)))
+        }
         ("objectreference", "placeatme") | ("objectreference", "placeactoratme") => {
             let count = if func == "placeatme" {
                 args.get(1).map_or(1, |c| c.as_int().max(1))

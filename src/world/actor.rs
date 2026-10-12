@@ -450,7 +450,7 @@ fn dress(
     // overlap, as boots and a robe both on the calves) hide the skin beneath.
     let mut worn = 0u32;
     let mut covered = 0u32;
-    for &armo in &inventory.equipped {
+    for &armo in inventory.equipped() {
         let armo_slots = lo
             .get(armo)
             .map_or(0, |r| super::inventory::armor_slots(&r));
@@ -472,11 +472,15 @@ fn dress(
     if covered & SLOT_HEAD == 0 || covered & SLOT_HAIR == 0 {
         models.extend(head.into_iter().map(|m| (m, FormId::NULL)));
     }
-    if let Some((w, m)) = inventory
-        .weapon(lo)
-        .and_then(|w| Some((w, super::inventory::weapon_model(lo, w)?)))
-    {
-        models.push((m, w));
+    let mut weapons: Vec<FormId> = [super::inventory::RIGHT, super::inventory::LEFT]
+        .into_iter()
+        .filter_map(|h| inventory.weapon_in(lo, h))
+        .collect();
+    weapons.dedup();
+    for w in weapons {
+        if let Some(m) = super::inventory::weapon_model(lo, w) {
+            models.push((m, w));
+        }
     }
     models
 }
@@ -585,7 +589,7 @@ pub fn describe_player(
         behavior: race_behavior(lo, traits.race, traits.female),
         inventory: inventory.clone(),
         race: traits.race,
-        footsteps: footstep_set(lo, &inventory.equipped, skin, traits.race),
+        footsteps: footstep_set(lo, inventory.equipped(), skin, traits.race),
         templates,
     })
 }
@@ -606,7 +610,7 @@ fn npc_inventory(
     }
     for armo in outfit_armors(lo, traits.outfit, seed, globals) {
         inventory.add(armo, 1);
-        inventory.equipped.push(armo);
+        inventory.equip(lo, armo);
     }
     super::inventory::equip_weapons(
         lo,
@@ -652,8 +656,7 @@ pub fn best_weapon(
 ) -> Option<FormId> {
     let traits = reference_traits(lo, r, globals)?;
     let mut inv = inv.clone();
-    inv.equipped
-        .retain(|&f| lo.tag_of(f).map(|t| t.0) != Some(*b"WEAP"));
+    inv.take_off_where(|f| lo.tag_of(f).map(|t| t.0) == Some(*b"WEAP"));
     super::inventory::equip_weapons(lo, &mut inv, traits.npc_for_stats, traits.combat_style);
     inv.weapon(lo)
 }
@@ -713,7 +716,7 @@ pub fn describe_reference(
         r.position,
     );
     let behavior = race_behavior(lo, traits.race, traits.female);
-    let footsteps = footstep_set(lo, &inventory.equipped, skin, traits.race);
+    let footsteps = footstep_set(lo, inventory.equipped(), skin, traits.race);
     Some(ActorDesc {
         ref_id: r.id,
         npc,

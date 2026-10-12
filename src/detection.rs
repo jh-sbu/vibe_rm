@@ -278,7 +278,7 @@ impl Engine {
         let Some(inv) = self.inventories.get(&r) else {
             return 0.0;
         };
-        inv.equipped
+        inv.equipped()
             .iter()
             .filter(|&&f| self.lo.tag_of(f).is_some_and(|t| t.0 == *b"ARMO"))
             .filter_map(|&f| crate::world::inventory::item_info(&self.lo, f))

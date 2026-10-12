@@ -91,10 +91,12 @@ isn't public; the choices below are what the movies' code allows.
   (`bDontHide`). Ammunition is listed with weapons, soul gems and torches with
   misc, food is a potion with `ENIT` flag 0x2; gold isn't listed (the bottom
   bar shows it).
-- **Entries.** `text`, `count`, `equipState` (a weapon held: 3, right hand;
-  anything else worn: 1), `filterFlag` (its category, and the favorites' flag),
-  `favorite`, `enabled` (always), and our own `vrmRow` to find the row again.
-  The list is refilled when the items, what is worn or the favorites change.
+- **Entries.** `text`, `count`, `equipState` (a weapon held: 3 the right
+  hand, 2 the left, 4 both; anything else worn: 1; see
+  `known_ambiguities/hands.md`), `filterFlag` (its category, and the
+  favorites' flag), `favorite`, `enabled` (always), and our own `vrmRow` to
+  find the row again. The list is refilled when the items, what is worn or
+  held, or the favorites change.
 - **The item card** (`RequestItemCardInfo`): `type` (`ICT_*`), `name`,
   `count`, `value`, `weight`, `stolen`; armor's rating (its piece of the
   player's rating, skills and perks applied) and `armorChange` (the player's
@@ -115,7 +117,9 @@ isn't public; the choices below are what the movies' code allows.
   `DropItem` (then `ItemDrop(amount)`), Toggle POV (F) marks or unmarks a
   favorite, the attack buttons call `AttemptEquip(slot, true)`: slot 0 (the
   container menu's `RIGHT_HAND`) for Right Attack/Block, the left mouse
-  button by default, 1 for Left Attack/Block. Tab is the menu's own
+  button by default, 1 for Left Attack/Block; the movie answers with
+  `ItemSelect(slot)` (with the cursor over the list), which equips in that
+  hand (`known_ambiguities/hands.md`). Tab is the menu's own
   (it fades out, then calls `CloseMenu`); Esc goes through `StartMenuFade`
   the same way. Left on the categories and clicking outside
   (`ShowTweenMenu`) fade it out back to the tween menu

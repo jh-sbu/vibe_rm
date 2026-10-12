@@ -1174,7 +1174,7 @@ impl Engine {
         let Some(inv) = self.inventories.get(&actor) else {
             return Vec::new();
         };
-        inv.equipped
+        inv.equipped()
             .iter()
             .filter_map(|&f| self.item_enchantment(f))
             .collect()

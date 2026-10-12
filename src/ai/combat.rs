@@ -42,9 +42,6 @@ const BASH_CHANCE: f32 = 0.08;
 /// (at most 60%). Tuned by eye, like the guard rates.
 const POWER_ATTACK_CHANCE: f32 = 0.6;
 
-/// Biped slot 39: shields.
-const SHIELD_SLOT: u32 = 1 << 9;
-
 /// Seconds the player holds the attack button for a power attack.
 const POWER_ATTACK_HOLD: f32 = 0.35;
 
@@ -1711,12 +1708,7 @@ impl Engine {
 
     /// The shield an actor (or the player) has equipped.
     pub(crate) fn equipped_shield(&self, actor: FormId) -> Option<FormId> {
-        let inv = self.inventories.get(&actor)?;
-        inv.equipped.iter().copied().find(|&f| {
-            self.lo.get(f).is_some_and(|r| {
-                r.tag().0 == *b"ARMO" && crate::world::inventory::armor_slots(&r) & SHIELD_SLOT != 0
-            })
-        })
+        self.inventories.get(&actor)?.shield(&self.lo)
     }
 
     /// The share of a blow `target`'s guard stops, if it is blocking and faces
@@ -2186,7 +2178,7 @@ impl Engine {
         let worn = self
             .inventories
             .get(&actor)
-            .map_or(&[][..], |i| &i.equipped[..]);
+            .map_or(&[][..], |i| i.equipped());
         self.protection_of(actor, worn)
     }
 
@@ -2864,7 +2856,7 @@ impl Engine {
         }
         let set = self.combat_settings();
         let weight: f32 = self.inventories.get(&PLAYER_REF).map_or(0.0, |i| {
-            i.equipped
+            i.equipped()
                 .iter()
                 .filter_map(|&f| {
                     self.lo
