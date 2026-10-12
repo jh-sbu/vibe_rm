@@ -55,7 +55,8 @@ not a health threshold. It is compared with a *threat ratio*:
   other way round. The player is a member while anyone fights them.
 - Check timer: first check at a random point within `fCombatThreatRatioUpdateTime`,
   then every interval. Also immediately when a fleeing actor is hurt, or when its
-  threat comes within 512 units.
+  threat comes within 512 units, when a spell changes its confidence, and every
+  frame for a coward not yet fleeing (so the frightened run at once).
 - Flee when hurt (cowards: always), and group ratio < `fConfidence<Level>` + modifier.
   The modifier is added, rolled uniformly per fight, and not rolled for Foolhardy
   actors.
