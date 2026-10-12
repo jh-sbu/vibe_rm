@@ -365,7 +365,8 @@ game each piece unlocks.
 - Summons: Conjuration's summon effects bring their creature where the
   spell lands, commanded by the caster for the effect's duration (one at a
   time, two with Twin Souls: Mod Commanded Actor Limit); it follows its
-  commander from cell to cell (moved beside it when left far behind),
+  commander from cell to cell and the player through load doors (moved
+  beside it when left far behind),
   fights whoever fights its commander, picks no fights of its own, and
   goes when the effect ends or it dies (`IsCommandedActor`). Weaponless
   casters whose style scores magic and melee the same (atronachs) fight
@@ -879,7 +880,7 @@ game each piece unlocks.
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
-   summons following through load doors, bound weapons in the casting
+   bound weapons in the casting
    hand, light, paralysis,
    invisibility breaking; illusion spells chosen by NPCs; enchantment charges,
    poisons; `known_gaps/magic.md`), shouts (see Done: NPCs and dragons
