@@ -820,6 +820,16 @@ impl SwfUi {
 
     /// A left click at (x, y) in the menu on top (`--menu-key click:x,y`, for
     /// testing).
+    /// An attack button pressed in an item, magic or favorites menu (testing
+    /// aid): `AttemptEquip`'s slot, 0 the right hand, 1 the left.
+    pub fn attack_button(&mut self, slot: f32) {
+        if self.message_box.shown.is_none()
+            && (self.items.is_some() || self.magic.is_some() || self.favorites.is_some())
+        {
+            self.equip = Some(slot);
+        }
+    }
+
     pub fn click(&mut self, x: f64, y: f64) {
         use ui_swf::{MouseButton, PlayerEvent};
         if !self.wants_input() {

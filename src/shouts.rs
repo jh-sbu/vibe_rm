@@ -210,7 +210,7 @@ impl Engine {
         if !self.is_shout(shout) {
             return;
         }
-        self.equipped_spells.entry(actor).or_default()[VOICE] = Some(shout);
+        self.hold_magic(actor, shout, &[VOICE]);
         log::info!("{actor} readies the shout {shout}");
     }
 

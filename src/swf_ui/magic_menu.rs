@@ -189,9 +189,9 @@ impl MagicMenu {
         }
         let rows = Self::rows(engine);
         let slots = engine
-            .equipped_spells
+            .inventories
             .get(&PLAYER_REF)
-            .copied()
+            .map(|i| i.held_all())
             .unwrap_or_default();
         let listed = (rows.clone(), slots, engine.favorites.clone());
         if self.listed.as_ref() == Some(&listed) {

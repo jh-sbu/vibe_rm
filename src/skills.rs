@@ -315,7 +315,7 @@ impl Engine {
     fn worn_armor_skill(&self) -> Option<u32> {
         let worn = self.inventories.get(&PLAYER_REF)?;
         let (mut light, mut heavy) = (0, 0);
-        for &f in &worn.equipped {
+        for &f in worn.equipped() {
             let Some(rec) = self.lo.get(f).filter(|r| r.tag().0 == *b"ARMO") else {
                 continue;
             };

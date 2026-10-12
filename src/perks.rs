@@ -621,7 +621,7 @@ impl Engine {
     /// How many things `actor` wears (or wields) have keyword `kw`.
     pub fn worn_with_keyword(&self, actor: FormId, kw: FormId) -> usize {
         self.inventories.get(&actor).map_or(0, |i| {
-            i.equipped
+            i.equipped()
                 .iter()
                 .filter(|&&f| self.has_keyword(f, kw))
                 .count()

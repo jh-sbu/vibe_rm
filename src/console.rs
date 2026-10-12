@@ -76,7 +76,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "<ref>.enable / disable  enable or disable a reference (and those enabled with it)".into(),
             "[ref.]drop <item> [n]  drop items in front of the player (or an actor)".into(),
             "[ref.]placeatme <form> [n]  make new references there (actors join the world)".into(),
-            "player.equipitem / unequipitem <item>   wear armor, wield a weapon, ready ammo".into(),
+            "player.equipitem / unequipitem <item> [left|right]   wear armor, wield a weapon (in that hand), ready ammo".into(),
             "activate <ref>        activate a reference as the player".into(),
             "sqs <quest>           a quest's stages, log entries and fragments".into(),
             "sqo / journal [open]  displayed objectives / the journal's quests (or open it)".into(),
@@ -175,6 +175,8 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                     values.push(engine.object_value(f));
                 } else if let Ok(i) = a.parse::<i32>() {
                     values.push(papyrus::Value::Int(i));
+                } else if let Ok(b) = a.to_ascii_lowercase().parse::<bool>() {
+                    values.push(papyrus::Value::Bool(b));
                 } else if let Ok(x) = a.parse::<f32>() {
                     values.push(papyrus::Value::Float(x));
                 } else if let Some(f) = form(a) {
@@ -713,7 +715,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let row = engine.listed_inventory(crate::engine::PLAYER_REF).into_iter().find(|i| i.item == item);
             match row {
                 Some(row) => {
-                    engine.use_listed_item(&row);
+                    engine.use_listed_item(&row, None);
                     vec![format!("used {item}")]
                 }
                 None => vec![format!("the player doesn't carry {item}")],
@@ -1154,7 +1156,7 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
         }
         "equipitem" | "unequipitem" => {
             let Some(item) = args.first().and_then(|a| engine.resolve_form(a)) else {
-                return vec![format!("usage: {cmd} <item>")];
+                return vec![format!("usage: {cmd} <item> [left|right]")];
             };
             let on = cmd == "equipitem";
             if on && engine.magic_item(item).is_some() {
@@ -1163,7 +1165,20 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                     Err(e) => vec![e],
                 };
             }
-            match engine.equip_item(r, item, on) {
+            // The game's optional "prevent removal" flag is skipped over.
+            let hand = args[1..]
+                .iter()
+                .find_map(|a| match a.to_ascii_lowercase().as_str() {
+                    "left" => Some(crate::world::inventory::LEFT),
+                    "right" => Some(crate::world::inventory::RIGHT),
+                    _ => None,
+                });
+            let done = if on {
+                engine.equip_in(r, item, hand)
+            } else {
+                engine.equip_item(r, item, false)
+            };
+            match done {
                 Ok(()) => {
                     let p = engine.protection(r);
                     vec![format!(
@@ -1233,7 +1248,7 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             let equipped = engine
                 .inventories
                 .get(&r)
-                .map(|i| i.equipped.clone())
+                .map(|i| i.equipped().to_vec())
                 .unwrap_or_default();
             let mut out: Vec<String> = items
                 .iter()

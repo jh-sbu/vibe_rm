@@ -28,10 +28,13 @@ the `ModSpellCost` entry point (38).
   Concentration spells show it per second (`castTime` 0 picks the card's
   per-second label).
 - **Readying.** Accept readies a spell in the right hand; the attack
-  buttons (the control map's) in their hand. Readying it again in the same
-  hand puts it away. A spell in the right hand puts the weapon away; in the
-  left, the shield; a two-handed weapon goes either way; and a weapon or
-  shield equipped later takes the spell's hand. Powers go to the voice slot.
+  buttons (the control map's) in their hand, unless its equip slot names
+  only the other (`IncinerateLeftHand`); spells cast with both hands
+  (`BothHands`) take both. Readying it again in the same hand puts it away.
+  A spell takes the place of what its hand holds (a weapon, the shield; a
+  two-handed weapon either way), and a weapon or shield equipped later
+  takes the spell's hand (`known_ambiguities/hands.md`). Powers go to the
+  voice slot.
 - **Active effects** are listed per item (a spell, potion, ability...), under
   its name (its first effect's when it has none), without effects hidden from
   the UI; the time left is its soonest-ending effect's. Negative when any

@@ -295,7 +295,7 @@ impl Engine {
         let inv = self.inventories.get(&actor);
         let carried = inv.map(|i| &i.items[..]).unwrap_or_default();
         let equipped = inv.and_then(|i| {
-            i.equipped
+            i.equipped()
                 .iter()
                 .copied()
                 .find(|&f| self.lo.tag_of(f).map(|t| t.0) == Some(*b"AMMO"))

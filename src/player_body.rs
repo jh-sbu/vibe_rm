@@ -27,7 +27,7 @@ pub struct PlayerBody {
     pub heading: f32,
     graph_heading: f32,
     /// What they had equipped when it was built: rebuilt when that changes.
-    worn: Vec<FormId>,
+    worn: (Vec<FormId>, Option<FormId>),
     /// The graph's movement type states (`iState`): default and sneaking.
     state: Option<f32>,
     sneak_state: Option<f32>,
@@ -56,12 +56,16 @@ fn wrap(a: f32) -> f32 {
 }
 
 impl Engine {
-    /// The player's equipped items.
-    fn player_worn(&self) -> Vec<FormId> {
+    /// The player's equipped items, and the weapon in their left hand.
+    fn player_worn(&self) -> (Vec<FormId>, Option<FormId>) {
         self.inventories
             .get(&PLAYER_REF)
-            .map(|i| i.equipped.clone())
-            .unwrap_or_default()
+            .map_or_else(Default::default, |i| {
+                (
+                    i.equipped().to_vec(),
+                    i.weapon_in(&self.lo, crate::world::inventory::LEFT),
+                )
+            })
     }
 
     /// Assemble the player's body from their record and what they wear,
@@ -91,7 +95,10 @@ impl Engine {
             scale: d.transform.x_axis.length(),
             heading,
             graph_heading: f32::NAN,
-            worn: inventory.equipped.clone(),
+            worn: (
+                inventory.equipped().to_vec(),
+                inventory.weapon_in(&self.lo, crate::world::inventory::LEFT),
+            ),
             state: None,
             sneak_state: None,
             moving: false,
@@ -133,13 +140,10 @@ impl Engine {
                     .map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap()))
             });
             g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
-            g.set_variable(
-                "iLeftHandType",
-                inventory.hand(&self.lo, true) as i32 as f32,
-            );
+            g.set_variable("iLeftHandType", inventory.hand(&self.lo, true).for_graph());
             g.set_variable(
                 "iRightHandType",
-                inventory.hand(&self.lo, false) as i32 as f32,
+                inventory.hand(&self.lo, false).for_graph(),
             );
             pose = g.update(0.0, &self.vfs, &mut self.anims, &skel).pose;
             body.graph = Some(g);

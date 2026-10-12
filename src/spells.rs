@@ -10,12 +10,11 @@ use esp::actor_value as av;
 
 use crate::engine::Engine;
 use crate::magic::{MagicItem, spell_type};
+use crate::world::inventory::equip_slot;
 
-/// `Actor.GetEquippedSpell`'s slots.
-pub const RIGHT: usize = 0;
-pub const LEFT: usize = 1;
-/// A power, lesser power or shout.
-pub const VOICE: usize = 2;
+/// `Actor.GetEquippedSpell`'s slots: the hands, and the voice (a power,
+/// lesser power or shout).
+pub use crate::world::inventory::{LEFT, RIGHT, VOICE};
 
 /// The magic schools' skills, in the magic menu's order.
 pub const SCHOOLS: [u32; 5] = [18, 21, 20, 19, 22];
@@ -33,56 +32,48 @@ pub const CONCENTRATION: u32 = 2;
 /// `ModSpellCost` (`BGSEntryPoint`).
 const MOD_SPELL_COST: u8 = 38;
 
-/// Whether a weapon needs both hands (two-handed blades and axes, bows,
-/// staves aside, crossbows: `DNAM` animation types 5, 6, 7 and 9).
-pub fn two_handed(engine: &Engine, weapon: FormId) -> bool {
-    engine
-        .lo
-        .get(weapon)
-        .filter(|r| r.tag().0 == *b"WEAP")
-        .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
-        .is_some_and(|t| matches!(t, 5 | 6 | 7 | 9))
-}
-
 impl Engine {
-    /// What `actor` holds in a slot (`RIGHT`, `LEFT`, `VOICE`).
+    /// The spell, power or shout `actor` holds in a slot (`RIGHT`, `LEFT`,
+    /// `VOICE`).
     pub fn equipped_spell(&self, actor: FormId, slot: usize) -> Option<FormId> {
-        self.equipped_spells
-            .get(&actor)
-            .and_then(|s| s.get(slot).copied().flatten())
+        self.inventories
+            .get(&actor)?
+            .held(slot)
+            .filter(|&f| matches!(self.lo.tag_of(f).map(|t| t.0), Some(t) if t == *b"SPEL" || t == *b"SHOU"))
     }
 
     /// Readies a spell the actor knows in a hand (powers and shouts in the
-    /// voice slot whatever is asked). A spell in the right hand puts the
-    /// weapon away; in the left, the shield, and a two-handed weapon either
-    /// way.
+    /// voice slot whatever is asked), in place of what the hand holds: the
+    /// hand asked for if its equip slot (`ETYP`) allows it, else its own
+    /// (`IncinerateLeftHand`); both for spells cast with both hands.
     pub fn equip_spell(&mut self, actor: FormId, spell: FormId, slot: usize) {
         let Some(item) = self.magic_item(spell) else {
             return;
         };
-        let slot = match item.spell_type {
-            spell_type::POWER | spell_type::LESSER_POWER | spell_type::VOICE => VOICE,
-            _ if slot == LEFT => LEFT,
-            _ => RIGHT,
+        let power = matches!(
+            item.spell_type,
+            spell_type::POWER | spell_type::LESSER_POWER | spell_type::VOICE
+        );
+        let hands = match equip_slot(&self.lo, spell) {
+            _ if power => vec![VOICE],
+            Some(s) if s.voice => vec![VOICE],
+            Some(s) => s.hands(Some(slot), false),
+            None => vec![if slot == LEFT { LEFT } else { RIGHT }],
         };
-        if slot != VOICE {
-            let weapon = self
-                .inventories
-                .get(&actor)
-                .and_then(|i| i.weapon(&self.lo));
-            if let Some(w) = weapon
-                && (slot == RIGHT || two_handed(self, w))
-            {
-                let _ = self.equip_item(actor, w, false);
-            }
-            if slot == LEFT
-                && let Some(s) = self.equipped_shield(actor)
-            {
-                let _ = self.equip_armor(actor, s, false);
-            }
+        self.hold_magic(actor, spell, &hands);
+        log::info!("{actor} readies {} ({spell}) in {hands:?}", item.name);
+    }
+
+    /// Holds a spell or shout in `slots`, in place of what they hold.
+    pub(crate) fn hold_magic(&mut self, actor: FormId, form: FormId, slots: &[usize]) {
+        if slots.is_empty() {
+            return;
         }
-        self.equipped_spells.entry(actor).or_default()[slot] = Some(spell);
-        log::info!("{actor} readies {} ({spell}) in slot {slot}", item.name);
+        self.inventory_mut(actor);
+        let lo = &self.lo;
+        if let Some(inv) = self.inventories.get_mut(&actor) {
+            inv.hold(lo, form, slots);
+        }
     }
 
     /// Readies a spell in a hand (`RIGHT` or `LEFT`), a power or shout as the
@@ -108,30 +99,15 @@ impl Engine {
         }
     }
 
-    /// Takes a spell out of a slot (any slot when `None`).
+    /// Takes a spell out of a slot (any slot when `None`; both hands when it
+    /// fills both).
     pub fn unequip_spell(&mut self, actor: FormId, spell: FormId, slot: Option<usize>) {
-        if let Some(slots) = self.equipped_spells.get_mut(&actor) {
-            for (i, s) in slots.iter_mut().enumerate() {
-                if *s == Some(spell) && slot.is_none_or(|x| x == i) {
-                    *s = None;
+        let lo = &self.lo;
+        if let Some(inv) = self.inventories.get_mut(&actor) {
+            for s in [RIGHT, LEFT, VOICE] {
+                if inv.held(s) == Some(spell) && slot.is_none_or(|x| x == s) {
+                    inv.release(lo, s);
                 }
-            }
-        }
-    }
-
-    /// A hand taken by a weapon or shield: the spell in it goes (a two-handed
-    /// weapon takes both).
-    pub fn hand_taken(&mut self, actor: FormId, item: FormId) {
-        let tag = self.lo.tag_of(item).map(|t| t.0);
-        let hands: &[usize] = match tag {
-            Some(t) if t == *b"WEAP" && two_handed(self, item) => &[RIGHT, LEFT],
-            Some(t) if t == *b"WEAP" => &[RIGHT],
-            Some(t) if t == *b"ARMO" && self.equipped_shield(actor) == Some(item) => &[LEFT],
-            _ => &[],
-        };
-        if let Some(slots) = self.equipped_spells.get_mut(&actor) {
-            for &h in hands {
-                slots[h] = None;
             }
         }
     }

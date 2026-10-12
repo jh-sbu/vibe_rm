@@ -26,7 +26,7 @@ use crate::barter::Vendor;
 use crate::crime::GOLD;
 use crate::engine::{Engine, PLAYER_REF};
 use crate::items::{ListedItem, Menu as Shown};
-use crate::world::inventory::ItemKind;
+use crate::world::inventory::{Inventory, ItemKind, LEFT, RIGHT};
 
 use super::{Buttons, num, text};
 
@@ -47,9 +47,31 @@ mod card {
     pub const KEY: f64 = 9.0;
 }
 
-/// Equip icons (`InventoryDefines.ES_*`): worn, and wielded in the right hand.
+/// Equip icons (`InventoryDefines.ES_*`): worn, wielded in the left hand,
+/// the right, both.
 const ES_EQUIPPED: f64 = 1.0;
+const ES_LEFT: f64 = 2.0;
 const ES_RIGHT: f64 = 3.0;
+const ES_BOTH: f64 = 4.0;
+
+/// An item's equip icon: a weapon by the hands it is in (one that fills both
+/// in the right, where the game wears it, the left hand being for a second
+/// one-handed weapon), anything else worn or not.
+pub(super) fn equip_state(engine: &Engine, inv: &Inventory, item: FormId) -> f64 {
+    if !inv.is_equipped(item) {
+        return 0.0;
+    }
+    if engine.lo.tag_of(item).map(|t| t.0) != Some(*b"WEAP") {
+        return ES_EQUIPPED;
+    }
+    let right = inv.held(RIGHT) == Some(item);
+    let left = inv.held(LEFT) == Some(item) && !inv.both_hands();
+    match (right, left) {
+        (true, true) => ES_BOTH,
+        (false, true) => ES_LEFT,
+        _ => ES_RIGHT,
+    }
+}
 
 /// The categories, in the game's order: their names' game settings, English
 /// fallbacks and filter flags. The flags are the game's to choose; the menu
@@ -173,10 +195,11 @@ struct Row {
 }
 
 /// What the list shows, to know when it must be filled again: each row's side,
-/// item, owner and count, what is worn, the favorites.
+/// item, owner and count, what is worn and what is in hand, the favorites.
 type Listed = (
     Vec<(bool, FormId, Option<FormId>, i32)>,
     Vec<FormId>,
+    [Option<FormId>; 3],
     Vec<FormId>,
 );
 
@@ -434,23 +457,24 @@ impl ItemMenu {
             self.player = Some(player);
         }
         let rows = self.rows(engine);
-        let worn = engine
+        let inv = engine
             .inventories
             .get(&PLAYER_REF)
-            .map(|i| i.equipped.clone())
+            .cloned()
             .unwrap_or_default();
         let listed: Listed = (
             rows.iter()
                 .map(|r| (r.theirs, r.item.item, r.item.owner, r.item.count))
                 .collect(),
-            worn.clone(),
+            inv.equipped().to_vec(),
+            inv.held_all(),
             engine.favorites.clone(),
         );
         if self.listed.as_ref() != Some(&listed) {
             let entries: Vec<Value> = rows
                 .iter()
                 .enumerate()
-                .map(|(i, r)| self.entry(engine, i, r, &worn))
+                .map(|(i, r)| self.entry(engine, i, r, &inv))
                 .collect();
             // The cards first: filling the list asks for the selected one's.
             *self.cards.lock().unwrap() = rows.iter().map(|r| self.card(engine, r)).collect();
@@ -468,13 +492,12 @@ impl ItemMenu {
     /// A row as the list's entry: its name, count, equip icon, categories,
     /// favorite star and whether taking it is stealing (red); `vrmRow` is its
     /// place in `rows`.
-    fn entry(&self, engine: &Engine, i: usize, r: &Row, worn: &[FormId]) -> Value {
+    fn entry(&self, engine: &Engine, i: usize, r: &Row, inv: &Inventory) -> Value {
         let item = &r.item;
         let favorite = !r.theirs && engine.favorites.contains(&item.item);
-        let equip = match !r.theirs && worn.contains(&item.item) {
-            false => 0.0,
-            true if item.info.kind == ItemKind::Weapon => ES_RIGHT,
-            true => ES_EQUIPPED,
+        let equip = match r.theirs {
+            true => 0.0,
+            false => equip_state(engine, inv, item.item),
         };
         let mut flags = category(engine, item) | if favorite { FAVORITES } else { 0 };
         if r.theirs {
@@ -559,7 +582,7 @@ impl ItemMenu {
                     }
                     engine.unequip_if_gone(PLAYER_REF, item);
                 } else {
-                    engine.use_listed_item(&row.item);
+                    engine.use_listed_item(&row.item, number(0).map(hand));
                 }
             }
             "ItemDrop" => {
@@ -586,7 +609,7 @@ impl ItemMenu {
                     if row.theirs {
                         self.transfer(engine, &row, number(1).map_or(1, |n| n as i32));
                     }
-                    engine.use_listed_item(&row.item);
+                    engine.use_listed_item(&row.item, number(0).map(hand));
                 }
             }
             "SaveIndices" => {
@@ -702,6 +725,12 @@ impl ItemMenu {
     }
 }
 
+/// `AttemptEquip`'s slot as a hand: 0 the right (`ContainerMenu.RIGHT_HAND`),
+/// 1 the left.
+fn hand(slot: f64) -> usize {
+    if slot as usize == 1 { LEFT } else { RIGHT }
+}
+
 /// The weapon the player has equipped (not the one they'd fight with when
 /// none is).
 fn held_weapon(engine: &Engine) -> Option<FormId> {
@@ -789,7 +818,7 @@ fn item_card(engine: &Engine, row: &ListedItem) -> Value {
     let worn = engine
         .inventories
         .get(&PLAYER_REF)
-        .is_some_and(|i| i.equipped.contains(&item));
+        .is_some_and(|i| i.equipped().contains(&item));
     let kind = match row.info.kind {
         ItemKind::Armor => {
             let none = engine.protection_of(PLAYER_REF, &[]).rating;

@@ -205,9 +205,6 @@ pub struct Engine {
     pub waiting: Option<crate::sleep::Waiting>,
     /// The gift menu's state while it is open (`Actor.ShowGiftMenu`).
     pub gift: Option<crate::gift::Gift>,
-    /// Spells in hand and the power or shout readied, per actor
-    /// (`crate::spells`: right, left, voice).
-    pub equipped_spells: HashMap<FormId, [Option<FormId>; 3]>,
     /// The player's spells held ready and their magicka (`crate::casting`).
     pub(crate) casting: crate::casting::Casting,
     /// Words of power, shouts and the player's voice (`crate::shouts`).
@@ -365,7 +362,6 @@ impl Engine {
             hotkeys: [None; 8],
             waiting: None,
             gift: None,
-            equipped_spells: HashMap::new(),
             casting: Default::default(),
             shouts: Default::default(),
             lockpick: None,
@@ -1319,11 +1315,11 @@ impl Engine {
                     // and weapon-drawn behaviours by it.
                     g.set_variable(
                         "iLeftHandType",
-                        d.inventory.hand(&self.lo, true) as i32 as f32,
+                        d.inventory.hand(&self.lo, true).for_graph(),
                     );
                     g.set_variable(
                         "iRightHandType",
-                        d.inventory.hand(&self.lo, false) as i32 as f32,
+                        d.inventory.hand(&self.lo, false).for_graph(),
                     );
                 }
                 // Desynchronise actors standing about.

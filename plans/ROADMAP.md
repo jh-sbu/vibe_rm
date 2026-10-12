@@ -157,6 +157,18 @@ game each piece unlocks.
   `iRightHandType` follow. Torches after dark: actors outdoors between dusk and dawn
   light one they carry (in place of the shield, put away to use furniture), the graph
   raises it and its flame lights what is around (moving lights)
+- Hands: one record per actor of what each hand and the voice hold (weapons,
+  spells, a shield, a torch; a power or shout), placed by equip slots (`ETYP`
+  -> `EQUP` and its parents: either hand, both, the left, the voice). One-handed
+  weapons go in either hand, two of the same one in each; a two-handed weapon
+  or both-hands spell fills both; spells share the hands with weapons. The
+  item, magic and favorites menus' attack buttons equip in their hand (the
+  vendored Ruffle's Scaleform `Mouse.getTopMostEntity`), with left / right /
+  both equip icons; a left-hand weapon drawn in the left hand, the graph's
+  hand types from both hands; console `equipitem <item> [left|right]`,
+  Papyrus `GetEquippedWeapon(abLeftHand)` / `GetEquippedShield`,
+  `GetEquippedItemType` 9 for spells. Open questions:
+  `known_ambiguities/hands.md`
 - Player items: activating an item picks it up (`XCNT` counts; gone from the world for
   good), containers open a take / store window beside the inventory (Tab); console
   `[ref.]additem`, `removeitem`, `showinventory`, `openactorcontainer`, `activate`.
@@ -940,13 +952,15 @@ game each piece unlocks.
    poisons; `known_ambiguities/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
    waiting on casting, crafting, barter, critical hits, attack types;
-   `known_ambiguities/perks.md`), inventory (player's, equipping by hand, armor from
+   `known_ambiguities/perks.md`), inventory (player's, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
    - The player's body (see Done): first-person arms and weapons (the
      `_1stperson` skeleton, `1stperson*` models, its own graph); casting,
-     left-hand, dual-wield and hand-to-hand attacks, basic attacks by
+     left-hand attacks (the left attack button blocks even with a weapon
+     there), dual-wield and hand-to-hand attacks (NPCs' too: their attack
+     data's `lefthand` / `dualwield` events are left out), basic attacks by
      direction and sprinting (`attackStartSprint`), `attackStop`; arrows
      loosed at the graph's `arrowRelease` and bashes landing at its
      `HitFrame` (both land at once now); re-equipping keeping the weapon
@@ -1019,8 +1033,9 @@ game each piece unlocks.
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the quantity slider's use for more than dropping, recharging
      (`AttemptChargeItem`, soul gems), scrolls and soul gems on their own cards
-     (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, poisons, the
-     left hand, the best-in-class star, the survival warmth rating
+     (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, poisons,
+     equipping scrolls and torches in a hand, the best-in-class star, the
+     survival warmth rating
    - The HUD: enemy health brackets sized to the name; `Message.Show` icons
      (`INAM`) and notifications' display time (`TNAM`); the favorites
      hotkeys' second (numpad) binding; controller rumble for camera shakes
