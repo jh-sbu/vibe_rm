@@ -107,7 +107,13 @@ impl Engine {
         let location = self.ref_current_location(at);
         if inside && !actor {
             let item = if &tag == b"LVLI" {
-                crate::world::actor::resolve_leveled(&self.lo, base, b"LVLI", id.0 as u64)?
+                crate::world::actor::resolve_leveled(
+                    &self.lo,
+                    base,
+                    b"LVLI",
+                    id.0 as u64,
+                    &self.scripts.globals,
+                )?
             } else {
                 base
             };

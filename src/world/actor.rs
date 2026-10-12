@@ -6,6 +6,32 @@ use glam::Mat4;
 use super::records::{self, mesh_path, texture_path};
 use super::template::Sources;
 
+/// Global variables' values as the scripts have set them (`GLOB`s missing
+/// here have their record's value).
+pub type Globals = std::collections::HashMap<FormId, f32>;
+
+/// A leveled list's chance of none: its global's value (`LVLG`) if it names
+/// one, else `LVLD`.
+fn chance_none(lo: &LoadOrder, rec: &LoadedRecord<'_>, globals: &Globals) -> u64 {
+    let global = rec
+        .get(b"LVLG")
+        .filter(|d| d.len() >= 4)
+        .map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+        .filter(|g| !g.is_null());
+    if let Some(g) = global {
+        let value = globals.get(&g).copied().or_else(|| {
+            let d = lo.get(g)?.get(b"FLTV").filter(|d| d.len() >= 4)?.to_vec();
+            Some(f32::from_le_bytes(d[0..4].try_into().unwrap()))
+        });
+        if let Some(v) = value {
+            return v.clamp(0.0, 100.0) as u64;
+        }
+    }
+    rec.get(b"LVLD")
+        .and_then(|d| d.first().copied())
+        .unwrap_or(0) as u64
+}
+
 #[derive(Debug, Clone)]
 pub struct ActorDesc {
     pub ref_id: FormId,
@@ -94,12 +120,13 @@ fn eligible(rec: &LoadedRecord<'_>) -> Vec<(FormId, i32)> {
 
 /// Follow leveled lists (`list_tag`: LVLN, LVLI) down to a record, picking among
 /// each list's eligible entries by `seed` (the reference); `None` when a list's
-/// chance of none (`LVLD`) comes up.
+/// chance of none comes up.
 pub(crate) fn resolve_leveled(
     lo: &LoadOrder,
     mut id: FormId,
     list_tag: &[u8; 4],
     seed: u64,
+    globals: &Globals,
 ) -> Option<FormId> {
     for _ in 0..8 {
         let rec = lo.get(id)?;
@@ -107,11 +134,7 @@ pub(crate) fn resolve_leveled(
             return Some(id);
         }
         let roll = mix(seed, id);
-        let none = rec
-            .get(b"LVLD")
-            .and_then(|d| d.first().copied())
-            .unwrap_or(0);
-        if (roll % 100) < none as u64 {
+        if (roll % 100) < chance_none(lo, &rec, globals) {
             return None;
         }
         let entries = eligible(&rec);
@@ -132,6 +155,7 @@ pub(crate) fn resolve_items(
     id: FormId,
     count: i32,
     seed: u64,
+    globals: &Globals,
     depth: u32,
 ) -> Vec<(FormId, i32)> {
     let Some(rec) = lo.get(id) else {
@@ -149,10 +173,12 @@ pub(crate) fn resolve_items(
         .unwrap_or(0);
     if flags & LVL_EACH_ITEM != 0 && count > 1 {
         return (0..count.min(64))
-            .flat_map(|i| resolve_items_once(lo, &rec, id, 1, mix(seed, FormId(i as u32)), depth))
+            .flat_map(|i| {
+                resolve_items_once(lo, &rec, id, 1, mix(seed, FormId(i as u32)), globals, depth)
+            })
             .collect();
     }
-    resolve_items_once(lo, &rec, id, count, seed, depth)
+    resolve_items_once(lo, &rec, id, count, seed, globals, depth)
 }
 
 fn resolve_items_once(
@@ -161,6 +187,7 @@ fn resolve_items_once(
     id: FormId,
     count: i32,
     seed: u64,
+    globals: &Globals,
     depth: u32,
 ) -> Vec<(FormId, i32)> {
     let flags = rec
@@ -168,25 +195,21 @@ fn resolve_items_once(
         .and_then(|d| d.first().copied())
         .unwrap_or(0);
     let roll = mix(seed, id);
-    let none = rec
-        .get(b"LVLD")
-        .and_then(|d| d.first().copied())
-        .unwrap_or(0);
-    if (roll % 100) < none as u64 {
+    if (roll % 100) < chance_none(lo, rec, globals) {
         return Vec::new();
     }
     let entries = eligible(rec);
     if flags & LVL_USE_ALL != 0 {
         return entries
             .into_iter()
-            .flat_map(|(e, n)| resolve_items(lo, e, n * count, seed, depth + 1))
+            .flat_map(|(e, n)| resolve_items(lo, e, n * count, seed, globals, depth + 1))
             .collect();
     }
     if entries.is_empty() {
         return Vec::new();
     }
     let (e, n) = entries[((roll >> 8) % entries.len() as u64) as usize];
-    resolve_items(lo, e, n * count, seed, depth + 1)
+    resolve_items(lo, e, n * count, seed, globals, depth + 1)
 }
 
 struct NpcTraits {
@@ -376,7 +399,7 @@ fn armor_models(lo: &LoadOrder, armo: FormId, race: FormId, female: bool) -> Vec
 }
 
 /// Equipment worn by default: armors from the outfit, resolving leveled item lists.
-fn outfit_armors(lo: &LoadOrder, outfit: FormId, seed: u64) -> Vec<FormId> {
+fn outfit_armors(lo: &LoadOrder, outfit: FormId, seed: u64, globals: &Globals) -> Vec<FormId> {
     let Some(rec) = lo.get(outfit) else {
         return Vec::new();
     };
@@ -386,7 +409,7 @@ fn outfit_armors(lo: &LoadOrder, outfit: FormId, seed: u64) -> Vec<FormId> {
     items
         .chunks_exact(4)
         .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
-        .flat_map(|id| resolve_items(lo, id, 1, seed, 0))
+        .flat_map(|id| resolve_items(lo, id, 1, seed, globals, 0))
         .map(|(id, _)| id)
         .filter(|id| lo.tag_of(*id).map(|t| t.0) == Some(*b"ARMO"))
         .collect()
@@ -572,7 +595,11 @@ const SLOT_HEAD: u32 = 1 << 0;
 const SLOT_HAIR: u32 = 1 << 1;
 
 /// Describe an actor reference (placed or created).
-pub fn describe_reference(lo: &LoadOrder, r: &records::Reference) -> Option<ActorDesc> {
+pub fn describe_reference(
+    lo: &LoadOrder,
+    r: &records::Reference,
+    globals: &Globals,
+) -> Option<ActorDesc> {
     // Disabled references (initially, or through their enable parent) are left
     // out by the caller.
     if r.deleted() {
@@ -580,7 +607,7 @@ pub fn describe_reference(lo: &LoadOrder, r: &records::Reference) -> Option<Acto
     }
     // Each reference picks its own entry from leveled lists, the same every time.
     let seed = r.id.0 as u64;
-    let npc = resolve_leveled(lo, r.base, b"LVLN", seed)?;
+    let npc = resolve_leveled(lo, r.base, b"LVLN", seed, globals)?;
     let base = lo.get(npc)?;
     if base.tag().0 != *b"NPC_" {
         return None;
@@ -597,11 +624,11 @@ pub fn describe_reference(lo: &LoadOrder, r: &records::Reference) -> Option<Acto
     // Carried items, then the outfit (worn), then a weapon and shield to wield.
     let mut inventory = super::inventory::Inventory::default();
     if let Some(rec) = lo.get(traits.npc_for_inventory) {
-        for (f, n) in super::inventory::listed_items(lo, &rec, seed) {
+        for (f, n) in super::inventory::listed_items(lo, &rec, seed, globals) {
             inventory.add(f, n);
         }
     }
-    let outfit = outfit_armors(lo, traits.outfit, seed);
+    let outfit = outfit_armors(lo, traits.outfit, seed, globals);
     for &armo in &outfit {
         inventory.add(armo, 1);
         inventory.equipped.push(armo);

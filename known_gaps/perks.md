@@ -37,6 +37,14 @@ perks`).
 
 ## Open (choices made here)
 
+- **Quest sections on quests not running.** Most perks' stages are on
+  `PerksQuest`, which isn't start-game-enabled; its fragments need the quest's
+  properties. A stage set on a quest that has never run starts it first (the
+  CK wiki's `Quest.SetStage`: setting a stage starts a quest that isn't
+  running). A quest that ran and was stopped isn't restarted: stage changes
+  wait for the end of the script run here, so `SetStage` followed by `Stop`
+  in one fragment would otherwise restart it.
+
 - **Priority order**: entries apply lowest priority first. The CK's meaning
   of the number isn't documented in a public source.
 - **Ranks**: an entry applies while the owner's rank of the perk is above the

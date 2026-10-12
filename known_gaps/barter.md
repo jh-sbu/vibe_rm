@@ -40,3 +40,8 @@ restock every 48 hours) and the game setting `iDaysToRespawnVendor` (2).
   scripts added to it, are gone, and its gold is back to the container's.
   Merchants without a chest (selling what they carry) aren't restocked.
   Restock times aren't saved.
+- **Investor and Master Trader** work through the data: the perks' quest
+  stage (Master Trader) and the Investor topics' fragments set globals that
+  are the chance of none (`LVLG`) of gold lists in the merchant chests, so
+  the gold comes with the chest's next stocking, not at once. Leveled lists
+  read a global's value as the scripts have set it, else its record's.

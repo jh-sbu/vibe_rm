@@ -1145,7 +1145,9 @@ impl Engine {
             let Some(rf) = self.reference_of(r) else {
                 continue;
             };
-            if let Some(mut d) = crate::world::actor::describe_reference(&self.lo, &rf) {
+            if let Some(mut d) =
+                crate::world::actor::describe_reference(&self.lo, &rf, &self.scripts.globals)
+            {
                 let editor_pos = d.transform.w_axis.truncate();
                 if let Some(p) = at {
                     let mut rng = self.rand() | 1;
@@ -2950,7 +2952,14 @@ impl Engine {
         if !self.inventories.contains_key(&r) {
             let inv = self
                 .base_of(r)
-                .map(|b| crate::world::inventory::container_inventory(&self.lo, b, r.0 as u64))
+                .map(|b| {
+                    crate::world::inventory::container_inventory(
+                        &self.lo,
+                        b,
+                        r.0 as u64,
+                        &self.scripts.globals,
+                    )
+                })
                 .unwrap_or_default();
             self.inventories.insert(r, inv);
         }
@@ -2960,8 +2969,14 @@ impl Engine {
     /// How many of `item` (or of the forms in a form list) a reference holds.
     pub fn item_count(&self, r: FormId, item: FormId) -> i32 {
         let base = || {
-            self.base_of(r)
-                .map(|b| crate::world::inventory::container_inventory(&self.lo, b, r.0 as u64))
+            self.base_of(r).map(|b| {
+                crate::world::inventory::container_inventory(
+                    &self.lo,
+                    b,
+                    r.0 as u64,
+                    &self.scripts.globals,
+                )
+            })
         };
         let held = self
             .inventories
@@ -2987,7 +3002,14 @@ impl Engine {
                 .collect(),
             Some(t) if &t == b"LVLI" => {
                 let seed = self.rand();
-                crate::world::actor::resolve_items(&self.lo, item, count, seed, 0)
+                crate::world::actor::resolve_items(
+                    &self.lo,
+                    item,
+                    count,
+                    seed,
+                    &self.scripts.globals,
+                    0,
+                )
             }
             _ => vec![(item, count)],
         };
@@ -3356,7 +3378,18 @@ impl Engine {
 
     /// Set a quest stage: record it, add its log entries and run the fragments
     /// of those whose conditions pass (all the stage's when it has no entries).
+    /// A quest never started is started first (its properties bound), as the
+    /// CK wiki has `Quest.SetStage` do; one stopped stays stopped (stages set
+    /// before a `Stop` in the same fragment run after it here).
     fn run_stage(&mut self, q: FormId, stage: u16) {
+        let fresh = self
+            .scripts
+            .quests
+            .get(&q)
+            .is_none_or(|st| !st.running && st.done.is_empty());
+        if fresh && self.start_quest(q) {
+            self.init_started_quests();
+        }
         {
             let st = self.scripts.quests.entry(q).or_default();
             st.stage = stage;
