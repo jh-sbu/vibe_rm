@@ -41,6 +41,7 @@ mod remote;
 mod render;
 mod scene;
 mod script;
+mod shouts;
 mod skills;
 mod sleep;
 mod spells;

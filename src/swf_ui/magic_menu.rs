@@ -1,13 +1,14 @@
 //! The magic menu as the game shows it (`magicmenu.swf`): the player's
-//! spells by school, powers and active effects, each with its card (cost,
-//! level, effects, the school's skill on the bottom bar), readied in a hand
-//! with the attack buttons or Accept, and marked favorites.
+//! spells by school, shouts, powers and active effects, each with its card
+//! (cost, level, effects, the school's skill on the bottom bar; a shout's
+//! words, those unlocked, and the dragon souls), readied in a hand with the
+//! attack buttons or Accept (a shout or power as the voice), and marked
+//! favorites. Ready Weapon (R) spends a dragon soul on a shout's next word.
 //!
 //! It is the inventory's `ItemMenu` with `AttemptEquip` (a mouse button's
 //! hand) answered by `ItemSelect(slot)`. The game fills it as the item menus
 //! (`SetCategoriesList`, the list's `entryList`, `InvalidateListData`, the
-//! card on `RequestItemCardInfo`). Shouts aren't built, so their category
-//! stays empty. Choices: `known_gaps/magic-menu.md`.
+//! card on `RequestItemCardInfo`). Choices: `known_gaps/magic-menu.md`.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -38,6 +39,7 @@ const ALL: u32 = 0xFE;
 
 /// The item card's kinds (`InventoryDefines.ICT_*`).
 const ICT_SPELL: f64 = 7.0;
+const ICT_SHOUT: f64 = 10.0;
 const ICT_ACTIVE_EFFECT: f64 = 11.0;
 const ICT_SPELL_DEFAULT: f64 = 13.0;
 
@@ -52,6 +54,8 @@ const ES_BOTH: f64 = 4.0;
 enum Row {
     /// A spell or power the player knows.
     Spell(FormId),
+    /// A shout the player has.
+    Shout(FormId),
     /// The effects of one item (a spell, potion, ability...) on the player.
     Effects(FormId),
 }
@@ -161,6 +165,7 @@ impl MagicMenu {
             .filter(|&s| spell_flag(engine, s).is_some())
             .map(Row::Spell)
             .collect();
+        rows.extend(engine.actor_shouts(PLAYER_REF).into_iter().map(Row::Shout));
         for x in engine.magic.effects.iter() {
             if x.target != PLAYER_REF || !x.active || x.done {
                 continue;
@@ -231,7 +236,7 @@ impl MagicMenu {
             // (the right hand): readies the spell there, or puts it away when
             // it already is.
             "ItemSelect" => {
-                let Some(Row::Spell(spell)) = self.selected() else {
+                let (Some(Row::Spell(spell)) | Some(Row::Shout(spell))) = self.selected() else {
                     return true;
                 };
                 let slot = match call.args.first() {
@@ -256,7 +261,7 @@ impl MagicMenu {
                 self.to_tween = true;
             }
             "CloseTweenMenu" => self.closing = true,
-            // Shouts (not built), the item's model (none for spells).
+            // A disabled entry (none are), the item's model (none for spells).
             "ShowShoutFail" | "UpdateItem3D" | "StartMouseRotation" | "StopMouseRotation"
             | "ZoomItemModel" | "DisabledItemSelect" => {}
             _ => return false,
@@ -264,10 +269,35 @@ impl MagicMenu {
         true
     }
 
-    /// The control map's Toggle POV key: a spell or power marked a favorite
-    /// or not.
+    /// Ready Weapon on a shout: a dragon soul unlocks its next word known.
+    /// The card plays the word being learned.
+    pub fn unlock_key(&mut self, engine: &mut Engine) {
+        let Some(Row::Shout(shout)) = self.selected() else {
+            return;
+        };
+        if !engine.spend_dragon_soul(shout) {
+            return;
+        }
+        self.menu.callback("DragonSoulSpent", &[]);
+        let row = Row::Shout(shout);
+        let mut card = card(engine, &row);
+        if let Value::Object(f) = &mut card {
+            f.insert("soulSpent".into(), Value::Bool(true));
+        }
+        self.menu
+            .invoke(&format!("{M}.UpdateItemCardInfo"), &[card]);
+        let info = player_info(engine);
+        self.menu.callback("UpdatePlayerInfo", &[info.clone()]);
+        self.player = Some(info);
+        // The cards are made again.
+        self.listed = None;
+        self.update(engine);
+    }
+
+    /// The control map's Toggle POV key: a spell, shout or power marked a
+    /// favorite or not.
     pub fn favorite_key(&mut self, engine: &mut Engine) {
-        let Some(Row::Spell(spell)) = self.selected() else {
+        let (Some(Row::Spell(spell)) | Some(Row::Shout(spell))) = self.selected() else {
             return;
         };
         engine.toggle_favorite(spell);
@@ -301,6 +331,21 @@ fn entry(engine: &Engine, i: usize, row: &Row, slots: &[Option<FormId>; 3]) -> V
                 spell_flag(engine, spell).unwrap_or(0) | if favorite { FAVORITES } else { 0 };
             let name = engine.magic_item(spell).map(|m| m.name.clone());
             (name, flag, equip, favorite)
+        }
+        Row::Shout(shout) => {
+            let favorite = engine.favorites.contains(&shout);
+            let equip = if slots[VOICE] == Some(shout) {
+                ES_EQUIPPED
+            } else {
+                0.0
+            };
+            let flag = SHOUTS | if favorite { FAVORITES } else { 0 };
+            (
+                engine.shout(shout).map(|s| s.name.clone()),
+                flag,
+                equip,
+                favorite,
+            )
         }
         Row::Effects(item) => (effects_name(engine, item), ACTIVE, 0.0, false),
     };
@@ -371,6 +416,45 @@ fn card(engine: &Engine, row: &Row) -> Value {
                 put("type", Value::Number(ICT_SPELL_DEFAULT));
                 put("spellCost", num(0.0));
             }
+        }
+        Row::Shout(shout) => {
+            let Some(s) = engine.shout(shout) else {
+                return Value::Null;
+            };
+            put("type", Value::Number(ICT_SHOUT));
+            put("name", text(&s.name));
+            // The words known, in the dragon tongue and their meaning, and
+            // whether each is unlocked.
+            for (i, w) in s.words.iter().enumerate().take(3) {
+                let word = engine.word(w.word);
+                let known = engine.shouts.known.contains(&w.word);
+                let (dragon, meaning) = if known {
+                    (word.dragon.as_str(), word.translation.as_str())
+                } else {
+                    ("", "")
+                };
+                put(&format!("dragonWord{i}"), text(dragon));
+                put(&format!("word{i}"), text(meaning));
+                put(
+                    &format!("unlocked{i}"),
+                    Value::Bool(engine.is_word_unlocked(w.word)),
+                );
+            }
+            // What the shout does, and the rest it needs after its words
+            // unlocked.
+            let level = engine.shout_level(&s).max(1);
+            let word = &s.words[level.min(s.words.len()) - 1];
+            let effects = if s.description.is_empty() {
+                engine.effects_text(word.spell)
+            } else {
+                s.description.clone()
+            };
+            put("effects", text(&effects));
+            put("spellCost", num(word.recovery.round()));
+            put(
+                "showUnlocked",
+                Value::Bool(engine.next_word_to_unlock(shout).is_some()),
+            );
         }
         Row::Effects(item) => {
             put("type", Value::Number(ICT_ACTIVE_EFFECT));

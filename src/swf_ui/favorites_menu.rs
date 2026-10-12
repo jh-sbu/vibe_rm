@@ -1,5 +1,5 @@
 //! The favorites menu as the game shows it (`favoritesmenu.swf`): the
-//! player's favorite items, spells and powers in one list, sorted by name,
+//! player's favorite items, spells, shouts and powers in one list, sorted by name,
 //! each with its hotkey and equip icon. Accept or an attack button equips or
 //! uses the selected one, 1 to 8 put it on that hotkey; the menu stays up
 //! until Tab, Esc or the Favorites key fades it out.
@@ -90,7 +90,7 @@ impl FavoritesMenu {
     }
 
     /// The rows: the favorite items the player carries, then the favorite
-    /// spells and powers they know (the list sorts them by name).
+    /// spells, shouts and powers they know (the list sorts them by name).
     fn rows(engine: &mut Engine) -> Vec<Row> {
         let favorites = engine.favorites.clone();
         let mut rows: Vec<Row> = engine
@@ -99,7 +99,8 @@ impl FavoritesMenu {
             .filter(|i| favorites.contains(&i.item))
             .map(Row::Item)
             .collect();
-        let known = engine.actor_spells(PLAYER_REF);
+        let mut known = engine.actor_spells(PLAYER_REF);
+        known.extend(engine.actor_shouts(PLAYER_REF));
         rows.extend(
             favorites
                 .iter()
@@ -258,6 +259,7 @@ fn entry(
             let name = engine
                 .magic_item(*spell)
                 .map(|m| m.name.clone())
+                .or_else(|| engine.shout(*spell).map(|s| s.name.clone()))
                 .unwrap_or_default();
             (name, equip_state(slots, *spell))
         }

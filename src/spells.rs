@@ -85,9 +85,18 @@ impl Engine {
         log::info!("{actor} readies {} ({spell}) in slot {slot}", item.name);
     }
 
-    /// Readies a spell in a hand (`RIGHT` or `LEFT`), a power as the voice,
-    /// or puts it away when it already is (the magic and favorites menus).
+    /// Readies a spell in a hand (`RIGHT` or `LEFT`), a power or shout as the
+    /// voice, or puts it away when it already is (the magic and favorites
+    /// menus).
     pub fn toggle_spell(&mut self, actor: FormId, spell: FormId, slot: usize) {
+        if self.is_shout(spell) {
+            if self.equipped_spell(actor, VOICE) == Some(spell) {
+                self.unequip_spell(actor, spell, Some(VOICE));
+            } else {
+                self.equip_shout(actor, spell);
+            }
+            return;
+        }
         let power = self
             .magic_item(spell)
             .is_some_and(|i| i.spell_type != spell_type::SPELL);

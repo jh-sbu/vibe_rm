@@ -153,6 +153,11 @@ impl Engine {
         true
     }
 
+    /// Whether an actor is casting by hand (only the player does yet).
+    pub fn is_casting(&self, actor: FormId) -> bool {
+        actor == PLAYER_REF && self.casting.hands.iter().any(Option::is_some)
+    }
+
     /// Whether the player has the magicka for a spell (a second of a
     /// concentration spell); if not, the meter blinks and they are told.
     fn can_pay(&mut self, spell: FormId, item: &MagicItem) -> bool {
@@ -356,6 +361,13 @@ impl Engine {
                     crate::ai::archery::spell_projectile(&self.lo, p).map(|s| (p, s))
                 });
                 match shot {
+                    Some((proj, shot)) if projectile_type(&self.lo, proj) & PROJ_CONE != 0 => {
+                        let spread = cone_spread(&self.lo, proj);
+                        for (actor, at) in self.actors_in_cone(caster, eye, dir, shot.range, spread)
+                        {
+                            self.spell_lands(caster, spell, Some(actor), at, dir);
+                        }
+                    }
                     Some((proj, shot)) if reaches_at_once(&self.lo, proj) => {
                         match self.physics.raycast_excluding(eye, dir, shot.range, caster) {
                             Some((t, owner)) => {
@@ -381,6 +393,44 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// The live actors (the player too, for others) whose body's middle is
+    /// within `range` of `eye` and `spread` of `dir`, with nothing solid in
+    /// between: (actor, where it is struck).
+    fn actors_in_cone(
+        &self,
+        caster: FormId,
+        eye: Vec3,
+        dir: Vec3,
+        range: f32,
+        spread: f32,
+    ) -> Vec<(FormId, Vec3)> {
+        let mut bodies: Vec<(FormId, Vec3)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.ref_id != caster)
+            .map(|a| (a.ref_id, a.pos + Vec3::Z * BODY_CENTRE * a.scale))
+            .collect();
+        if caster != PLAYER_REF {
+            bodies.push((PLAYER_REF, self.player.position));
+        }
+        bodies
+            .into_iter()
+            .filter(|&(actor, at)| {
+                let to = at - eye;
+                let d = to.length();
+                if d > range || d < 1.0 || to.normalize().angle_between(dir) > spread {
+                    return false;
+                }
+                // Walls shelter: the first thing along the way is the actor.
+                match self.physics.raycast_excluding(eye, to / d, d, caster) {
+                    Some((_, owner)) => owner.is_none_or(|o| o == actor),
+                    None => true,
+                }
+            })
+            .collect()
     }
 
     /// Where an actor (or the player) stands.
@@ -504,14 +554,33 @@ impl Engine {
     }
 }
 
-/// Whether a projectile reaches its range at once (flames, beams, cones)
-/// rather than flying.
-fn reaches_at_once(lo: &esp::LoadOrder, proj: FormId) -> bool {
+/// A projectile's type flags (`PROJ` `DATA`).
+fn projectile_type(lo: &esp::LoadOrder, proj: FormId) -> u16 {
     lo.get(proj)
         .and_then(|r| {
             r.get(b"DATA")
                 .filter(|d| d.len() >= 4)
                 .map(|d| u16::from_le_bytes([d[2], d[3]]))
         })
-        .is_some_and(|t| t & (PROJ_BEAM | PROJ_FLAME | PROJ_CONE) != 0)
+        .unwrap_or(0)
+}
+
+/// Whether a projectile reaches its range at once (flames, beams, cones)
+/// rather than flying.
+fn reaches_at_once(lo: &esp::LoadOrder, proj: FormId) -> bool {
+    projectile_type(lo, proj) & (PROJ_BEAM | PROJ_FLAME | PROJ_CONE) != 0
+}
+
+/// A cone projectile's spread (`PROJ` `DATA` 0x44, degrees), as radians
+/// either side of its middle.
+fn cone_spread(lo: &esp::LoadOrder, proj: FormId) -> f32 {
+    lo.get(proj)
+        .and_then(|r| {
+            r.get(b"DATA")
+                .filter(|d| d.len() >= 0x48)
+                .map(|d| f32::from_le_bytes(d[0x44..0x48].try_into().unwrap()))
+        })
+        .filter(|s| *s > 0.0)
+        .unwrap_or(15.0)
+        .to_radians()
 }

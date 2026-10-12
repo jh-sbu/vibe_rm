@@ -32,7 +32,7 @@ Early but already visual:
 | The game's own menus (Interface `.swf` through the vendored Ruffle): the HUD, message boxes, the inventory, containers, bartering, gifts, magic, favorites, the tween menu, sleeping and waiting, training, the journal | in progress |
 | Inventories (NPC items, outfits, containers), sheathed weapons and shields | in progress |
 | Combat (melee between NPCs, creatures and the player), ragdoll deaths; skills, leveling and perk trees | in progress |
-| Magic: effects on actors, abilities, potions, enchantments, effect scripts; the player casting spells and powers by hand (magicka, projectiles, areas) | in progress |
+| Magic: effects on actors, abilities, potions, enchantments, effect scripts; the player casting spells and powers by hand (magicka, projectiles, areas); shouts (words of power, dragon souls, the voice's rest) | in progress |
 | Saves | planned |
 
 ## Building and running

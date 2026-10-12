@@ -75,7 +75,7 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   other books do. Spells Learned counts every spell (type 0) the player
   gains, from tomes, scripts or the console.
 - **Not done**: NPCs casting by hand (the player's casting:
-  `known_gaps/casting.md`), runes, dual casting, shouts, effect visuals (hit shaders,
+  `known_gaps/casting.md`), runes, dual casting, effect visuals (hit shaders,
   art objects, light) and sounds, magic in NPC combat. Archetypes other than
   value / peak / dual value modifiers, absorb, script, cure disease / poison /
   paralysis, invisibility and stagger: paralysis only sets the actor value

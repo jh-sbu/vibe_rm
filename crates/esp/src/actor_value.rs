@@ -203,6 +203,8 @@ pub const MAGIC_RESIST: u32 = 44;
 pub const PARALYSIS: u32 = 53;
 pub const INVISIBILITY: u32 = 54;
 pub const MOVEMENT_NOISE_MULT: u32 = 92;
+pub const SHOUT_RECOVERY_MULT: u32 = 86;
+pub const DRAGON_SOULS: u32 = 133;
 pub const HEAL_RATE_MULT: u32 = 155;
 pub const MAGICKA_RATE_MULT: u32 = 156;
 pub const STAMINA_RATE_MULT: u32 = 157;
@@ -260,5 +262,10 @@ mod tests {
             super::name(super::MAGICKA_RATE_MULT),
             Some("MagickaRateMult")
         );
+        assert_eq!(
+            super::name(super::SHOUT_RECOVERY_MULT),
+            Some("ShoutRecoveryMult")
+        );
+        assert_eq!(super::name(super::DRAGON_SOULS), Some("DragonSouls"));
     }
 }
