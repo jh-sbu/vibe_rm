@@ -4,7 +4,7 @@
 //! turns them into Speech XP).
 //!
 //! What a gift is worth in favor points isn't published: see
-//! `known_gaps/gifts.md`.
+//! `known_ambiguities/gifts.md`.
 
 use esp::FormId;
 use papyrus::{NativeResult, Value};

@@ -16,7 +16,7 @@
 //! it (`AddShout`); NPCs have the shouts their record lists (`SPLO`) and
 //! those given. Sources: UESP's Shouts and Dragon Shouts pages, the SHOU /
 //! WOOP records, the game settings, `hudmenu.swf` and `magicmenu.swf`.
-//! Choices: `known_gaps/shouts.md`.
+//! Choices: `known_ambiguities/shouts.md`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

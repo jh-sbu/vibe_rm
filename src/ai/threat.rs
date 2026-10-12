@@ -6,7 +6,7 @@
 //! turns back once the ratio has recovered. This follows the model the GECK
 //! documents for Fallout 3 / New Vegas (Confidence, GetThreatRatio, Combat Flee)
 //! with Skyrim's own settings; what can't be confirmed for Skyrim is listed in
-//! `known_gaps/combat-fleeing.md`.
+//! `known_ambiguities/combat-fleeing.md`.
 
 use esp::{FormId, LoadOrder};
 

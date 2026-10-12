@@ -14,7 +14,7 @@
 //! spell list) with those scripts and the console added or removed. The player
 //! buys perks from the skills' perk trees (`AVIF` nodes) with perk points; a
 //! perk's own conditions are its requirements. Open questions:
-//! `known_gaps/perks.md`.
+//! `known_ambiguities/perks.md`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use esp::FormId;
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 
 use crate::engine::{Engine, PLAYER_REF};
 use crate::world::behavior::GraphAnim;
@@ -506,13 +506,26 @@ impl Engine {
     }
 }
 
-/// The third-person camera's distance behind the eye: nearest, farthest and
-/// at first (chosen by eye; the game's come from its INI settings).
-pub const THIRD_PERSON_MIN: f32 = 60.0;
+/// The third-person camera's distance behind the eye: nearest and farthest
+/// (the game's `[Camera]` defaults `fVanityModeMinDist` / `MaxDist`), and at
+/// first (chosen by eye: no setting gives it).
+pub const THIRD_PERSON_MIN: f32 = 155.0;
 pub const THIRD_PERSON_MAX: f32 = 600.0;
 pub const THIRD_PERSON_DEFAULT: f32 = 200.0;
+/// Where the camera sits over the shoulder, to the right and up: sheathed
+/// (`fOverShoulderPosX` / `PosZ`) and drawn (`fOverShoulderCombatPosX` /
+/// `PosZ`), and how much farther forward it sits drawn
+/// (`fOverShoulderCombatAddY`: negative, so farther back).
+const OVER_SHOULDER: Vec2 = Vec2::new(30.0, -10.0);
+const OVER_SHOULDER_COMBAT: Vec2 = Vec2::new(0.0, 20.0);
+const OVER_SHOULDER_COMBAT_ADD_Y: f32 = -100.0;
+/// How long the camera takes to move between its sheathed and drawn places
+/// (chosen).
+const OVER_SHOULDER_BLEND: f32 = 0.4;
 /// How far short of a wall the camera stops.
 const CAMERA_CLEARANCE: f32 = 12.0;
+/// How far the crosshair's point is looked for, for the player's aim.
+const AIM_FAR: f32 = 10_000.0;
 
 impl Engine {
     /// The camera the frame is drawn from: the eye in first person, else pulled
@@ -521,8 +534,22 @@ impl Engine {
     pub fn view_camera(&self) -> crate::render::Camera {
         let mut cam = self.camera_copy();
         if self.third_person {
+            // Over the shoulder first, then back, each short of a wall.
+            let k = self.third_person_combat;
+            let side = OVER_SHOULDER.lerp(OVER_SHOULDER_COMBAT, k);
+            let right = cam.forward().cross(Vec3::Z).normalize_or(Vec3::X);
+            let offset = right * side.x + Vec3::Z * side.y;
+            let len = offset.length();
+            if len > 0.0 {
+                let dir = offset / len;
+                let reach = self
+                    .physics
+                    .ground_ray(cam.position, dir, len + CAMERA_CLEARANCE)
+                    .map_or(len, |(t, _)| (t - CAMERA_CLEARANCE).clamp(0.0, len));
+                cam.position += dir * reach;
+            }
             let back = -cam.forward();
-            let want = self.third_person_distance;
+            let want = self.third_person_distance - OVER_SHOULDER_COMBAT_ADD_Y * k;
             let dist = self
                 .physics
                 .ground_ray(cam.position, back, want + CAMERA_CLEARANCE)
@@ -530,6 +557,36 @@ impl Engine {
             cam.position += back * dist;
         }
         cam
+    }
+
+    /// Move the third-person camera towards its drawn or sheathed place.
+    pub(crate) fn update_third_person_camera(&mut self, dt: f32) {
+        let goal = if self.player_weapon_drawn() { 1.0 } else { 0.0 };
+        let step = dt / OVER_SHOULDER_BLEND;
+        let k = self.third_person_combat;
+        self.third_person_combat = if goal > k {
+            (k + step).min(goal)
+        } else {
+            (k - step).max(goal)
+        };
+    }
+
+    /// The player's aim: from the eye along the view in first person. In third
+    /// person the view is beside and behind the eye, so the aim goes from the
+    /// eye to where the crosshair is, the first thing the view's centre meets
+    /// (from level with the eye, past the player's own body).
+    pub fn player_aim(&self) -> (Vec3, Vec3) {
+        let (eye, forward) = (self.camera.position, self.camera.forward());
+        if !self.third_person {
+            return (eye, forward);
+        }
+        let view = self.view_camera().position;
+        let start = view + forward * (eye - view).dot(forward).max(0.0);
+        let t = self
+            .physics
+            .raycast(start, forward, AIM_FAR)
+            .map_or(AIM_FAR, |(t, _)| t);
+        (eye, (start + forward * t - eye).normalize_or(forward))
     }
 
     /// Switch between first and third person.

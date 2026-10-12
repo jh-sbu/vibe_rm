@@ -24,7 +24,7 @@
 //! Crime witnesses and force greets need only detection above 0.
 //!
 //! Open questions (the target's skill, light level, the view cone...):
-//! `known_gaps/detection.md`.
+//! `known_ambiguities/detection.md`.
 
 use std::collections::HashMap;
 
@@ -495,7 +495,7 @@ impl Engine {
     }
 
     /// Whether `r` would attack `target` on finding it.
-    fn would_attack(&mut self, r: FormId, target: FormId) -> bool {
+    pub(crate) fn would_attack(&mut self, r: FormId, target: FormId) -> bool {
         if target == PLAYER_REF {
             return self.would_attack_player(r);
         }
@@ -746,7 +746,7 @@ impl Engine {
 
     /// `r` starts searching for `target` at `at`: alert, or having lost it in
     /// a fight. Weapons out.
-    fn start_search(&mut self, r: FormId, target: FormId, at: Vec3, lost: bool) {
+    pub(crate) fn start_search(&mut self, r: FormId, target: FormId, at: Vec3, lost: bool) {
         let idle_line = self.detection_idle_wait();
         let Some(a) = self.actor_mut(r) else { return };
         a.search = Some(Search {

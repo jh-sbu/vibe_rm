@@ -21,7 +21,7 @@
 //! (TNAM), fading with their share of the transition and drawn in the
 //! weather's sky statics colour. A weather's aurora (MODL) hangs in the sky
 //! about the camera at night (always with `PERM_AURORA`), turning with the
-//! sun with `AURORA_FOLLOWS_SUN`. Open questions: `known_gaps/weather.md`.
+//! sun with `AURORA_FOLLOWS_SUN`. Open questions: `known_ambiguities/weather.md`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

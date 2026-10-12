@@ -545,8 +545,8 @@ impl Engine {
         let power = (held / full).min(1.0);
         self.remove_item(PLAYER_REF, arrow.ammo, 1, None);
         let damage = (crate::ai::combat::weapon_damage(&self.lo, bow) + arrow.damage) * power;
-        let dir = self.camera.forward();
-        let from = self.camera.position + dir * 20.0 - Vec3::Z * 6.0;
+        let (eye, dir) = self.player_aim();
+        let from = eye + dir * 20.0 - Vec3::Z * 6.0;
         self.spawn_arrow(PLAYER_REF, arrow, from, dir, power.max(0.5), damage);
     }
 

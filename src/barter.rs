@@ -10,7 +10,7 @@
 //! Prices entry points applied, buying never under 1.05 x the value and
 //! selling never over it. A merchant chest is stocked anew from its
 //! container's items once `iDaysToRespawnVendor` days have passed since it
-//! last was. Open questions: `known_gaps/barter.md`.
+//! last was. Open questions: `known_ambiguities/barter.md`.
 
 use std::collections::HashMap;
 

@@ -1178,7 +1178,12 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
         }
         "drawweapon" | "sheatheweapon" => {
             let draw = cmd == "drawweapon";
-            if engine.draw_weapon(r, draw) {
+            let done = if r == crate::engine::PLAYER_REF {
+                engine.player_draw_weapon(draw)
+            } else {
+                engine.draw_weapon(r, draw)
+            };
+            if done {
                 vec![format!("{r}: {cmd}")]
             } else {
                 vec![format!("{r} can't {cmd}")]

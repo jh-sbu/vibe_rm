@@ -7,7 +7,7 @@
 //! `OpenHighlightedMenu(n)` (1 Skills, 2 Magic, 3 Items, 4 Map), and on Tab
 //! `StartCloseMenu`, then `CloseMenu` when it has folded away. The item and
 //! magic menus come back to it with `ShowTweenMenu`. Choices:
-//! `known_gaps/tween-menu.md`.
+//! `known_ambiguities/tween-menu.md`.
 
 use ui_swf::{GameCall, Menu, UiSwf, Value};
 

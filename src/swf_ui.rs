@@ -12,7 +12,7 @@
 //! said nearby, notifications, help messages, quest banners, the sneak eye and
 //! the health of who the player looks at. Calls and paths are the HUD's own
 //! (`_root.HUDMovieBaseInstance...`); how the game words some of them isn't
-//! known (`known_gaps/swf-hud.md`).
+//! known (`known_ambiguities/swf-hud.md`).
 
 mod dialogue_menu;
 mod favorites_menu;

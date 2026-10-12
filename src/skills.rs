@@ -10,7 +10,7 @@
 //! stamina to raise (`iAVDhmsLevelUp`; stamina also carry weight,
 //! `fLevelUpCarryWeightMod`), with a perk point. Only the player advances.
 //! Sources: UESP's Skyrim:Leveling and skill pages, the game settings named
-//! here; open questions in `known_gaps/skills.md`.
+//! here; open questions in `known_ambiguities/skills.md`.
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU16, Ordering};

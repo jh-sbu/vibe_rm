@@ -144,6 +144,9 @@ pub struct Engine {
     pub third_person: bool,
     /// How far behind the eye the third-person camera sits.
     pub third_person_distance: f32,
+    /// How far the third-person camera has moved to its weapon-drawn place
+    /// (0 sheathed, 1 drawn).
+    pub(crate) third_person_combat: f32,
     /// Traps touching their targets.
     pub(crate) traps: crate::traps::Traps,
     /// Scripts registered for animation events, and the events to deliver.
@@ -392,6 +395,7 @@ impl Engine {
             player_swing: None,
             third_person: false,
             third_person_distance: crate::player_body::THIRD_PERSON_DEFAULT,
+            third_person_combat: 0.0,
             grab: Default::default(),
             activation: Default::default(),
             traps: Default::default(),
@@ -2407,6 +2411,7 @@ impl Engine {
         self.update_player_footsteps(dt, stride, run, sprint);
         self.update_player_body(self.player.position - before, dt);
         self.camera.position = self.player.eye();
+        self.update_third_person_camera(dt);
         self.update_streaming();
         self.update_lod();
         self.update_look_target();
@@ -2453,7 +2458,7 @@ impl Engine {
     }
 
     fn find_look_target(&mut self) {
-        let (from, dir) = (self.camera.position, self.camera.forward());
+        let (from, dir) = self.player_aim();
         // What the ray hits, or a plant nearer.
         let hit = self.physics.raycast(from, dir, 220.0);
         let pick = self

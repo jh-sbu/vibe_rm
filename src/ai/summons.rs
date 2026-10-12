@@ -5,7 +5,7 @@
 //! whoever it fights) and pick no fights of their own; at the end of the
 //! effect, or when killed, they go. A commander has one at a time, more with
 //! the Mod Commanded Actor Limit perk entry (Twin Souls); a new one sends the
-//! oldest away. Open questions: `known_gaps/magic.md`.
+//! oldest away. Open questions: `known_ambiguities/magic.md`.
 
 use esp::FormId;
 use glam::Vec3;

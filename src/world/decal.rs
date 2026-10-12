@@ -6,7 +6,7 @@
 //! reference along it finds the surface, and the decal's box is centred there,
 //! a width (along X) and height (along Z) picked per reference between the
 //! decal data's minimum and maximum, and its depth along Y. See
-//! `known_gaps/decals.md`.
+//! `known_ambiguities/decals.md`.
 
 use esp::{FormId, LoadOrder};
 use glam::{Mat4, Vec3, Vec4};

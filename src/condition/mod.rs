@@ -355,7 +355,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))), // HasKeyword
         // Undead: of an `ActorTypeUndead` race (the game caches its own
-        // reading; see `known_gaps/magic.md`).
+        // reading; see `known_ambiguities/magic.md`).
         715 => b(subject.is_some_and(|s| e.has_keyword(s, FormId(0x13796)))), // IsUndead
         // Commanded: summoned (or raised) by someone.
         700 => b(subject.is_some_and(|s| e.commander_of(s).is_some())), // IsCommandedActor

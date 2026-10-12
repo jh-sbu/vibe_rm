@@ -20,10 +20,10 @@ game each piece unlocks.
   near the player on it (discovered, and undiscovered ones hollow; map
   markers come onto the map and are discovered as the player nears them,
   with the banner, the discovery music and Locations Discovered; `AddToMap`,
-  `EnableFastTravel`, `IsMapMarkerVisible`; `known_gaps/map-markers.md`),
+  `EnableFastTravel`, `IsMapMarkerVisible`; `known_ambiguities/map-markers.md`),
   the tracked quests' targets (`QSTA`; the load door the way to one starts
   at when it is elsewhere) and the enemies fighting the player
-  (`known_gaps/quest-targets.md`),
+  (`known_ambiguities/quest-targets.md`),
   location, the
   crosshair's activate text, subtitles, notifications, help messages, quest
   banners, the sneak eye, enemy health, the activate key's art; message boxes
@@ -37,36 +37,36 @@ game each piece unlocks.
   goods, prices from Speech, the Haggling / Allure perks and Fortify Barter, the raw deal
   warning, Speech XP, merchant chests restocked every `iDaysToRespawnVendor`
   days, with the Investor / Master Trader gold their leveled lists' globals
-  (`LVLG`) give) (choices: `known_gaps/swf-hud.md`,
-  `known_gaps/barter.md`); the journal (`quest_journal.swf`: quests with
+  (`LVLG`) give) (choices: `known_ambiguities/swf-hud.md`,
+  `known_ambiguities/barter.md`); the journal (`quest_journal.swf`: quests with
   their latest log entry and objectives, the miscellaneous objectives,
   completed quests, Toggle Active (`Quest.SetActive` / `IsActive`), the
   Stats page (`Game.IncrementStat` / `QueryStat`; kills, crimes, bounties,
   jail, locks and pockets picked, theft, gold, chests, books, skills, food
   and potions, barters, quest completions), the
-  bottom bar's date and level; `known_gaps/journal.md`); gifts
+  bottom bar's date and level; `known_ambiguities/journal.md`); gifts
   (`giftmenu.swf` from `Actor.ShowGiftMenu`: the gift filter, giving and
-  taking, favor points for the script; `known_gaps/gifts.md`); the magic
+  taking, favor points for the script; `known_ambiguities/gifts.md`); the magic
   menu (`magicmenu.swf`: spells by school, powers, active effects, the cost,
   level and school meter, readying spells in a hand (`Actor.EquipSpell` /
-  `GetEquippedSpell`), favorites; `known_gaps/magic-menu.md`); the favorites
+  `GetEquippedSpell`), favorites; `known_ambiguities/magic-menu.md`); the favorites
   menu (`favoritesmenu.swf` on Q: favorite items, spells and powers, equipping
   them, hotkeys 1 to 8 set there and used in the world;
-  `known_gaps/favorites.md`); the tween menu (`tweenmenu.swf` on Tab: Skills,
+  `known_ambiguities/favorites.md`); the tween menu (`tweenmenu.swf` on Tab: Skills,
   Magic, Items, the date and level; the item and magic menus come back to
-  it; `known_gaps/tween-menu.md`); sleeping and waiting (`sleepwaitmenu.swf`
+  it; `known_ambiguities/tween-menu.md`); sleeping and waiting (`sleepwaitmenu.swf`
   from T or a bed: the game's reasons not to, the hours passing with the
   clock, weather, magic effects and the player's health, magicka and
   stamina, the other actors healed and put where their schedules have
   them, enemies coming upon the player ending it;
   `RegisterForSleep` / `OnSleepStart` / `OnSleepStop`, so the
   game's Rested; `SetActorOwner` / `SetFactionOwner`, so rented rooms;
-  `known_gaps/sleep-wait.md`); training (`trainingmenu.swf`: the card
+  `known_ambiguities/sleep-wait.md`); training (`trainingmenu.swf`: the card
   filled and the meter filling with each session, E to train, Tab to
   leave); the dialogue menu (`dialoguemenu.swf`: the speaker's name, their
   lines, the topics sliding in, topics already heard greyed, the clicked
   topic kept above while the answer is said, a click or E skipping a line,
-  Tab or Esc leaving; `known_gaps/dialogue-menu.md`);
+  Tab or Esc leaving; `known_ambiguities/dialogue-menu.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
@@ -126,7 +126,7 @@ game each piece unlocks.
   the engine through `bHumanoidFootIKEnable`, off in furniture and while the graph sets
   `bHumanoidFootIKDisable`), eased by its gains: on / off, ground ascending /
   descending, body feedback and up / down bias, planted / raised, ankle orientation
-  (open questions: `known_gaps/foot-ik.md`)
+  (open questions: `known_ambiguities/foot-ik.md`)
 - Talking gestures: each line of dialogue picks from the `ActionTalking` tree (hands on hips,
   hand gestures, angry / happy / expressive idles) by the line's emotion (`TRDT`) and the
   speaker's graph variables (`GetGraphVariableInt` / `Float` now read the actor's graph);
@@ -193,13 +193,13 @@ game each piece unlocks.
   fight after `fFleeIsSafeTimer`; hurt or approached they check again, and turn back
   when the ratio recovers; cornered, they fight. Cowards don't draw. NPCs' health
   comes back out of combat. `GetThreatRatio`, `IsFleeing`; `cstats` shows strength
-  and confidence. Open questions: `known_gaps/combat-fleeing.md`
+  and confidence. Open questions: `known_ambiguities/combat-fleeing.md`
 - Assistance: actors not fighting join a fight they see where an ally (same or
   allied faction) or, for those who help friends too, a friend is fighting someone
   they aren't friendly with, as their AI data's assistance has it; the player
   fights whoever fights them, so attacking one of the townsfolk sets their
   neighbours on the player. Negative faction ranks aren't membership. `cstats`
-  shows assistance. Open questions: `known_gaps/combat-assistance.md`
+  shows assistance. Open questions: `known_ambiguities/combat-assistance.md`
 - Bleedout: essential actors (and protected ones, except to the player) brought to zero
   health bleed out through the graph (`bleedOutStart` / `bleedOutStop`), dropped as
   targets, and get up after a while with a quarter of their health; the player can
@@ -268,12 +268,14 @@ game each piece unlocks.
   `IsWeaponOut`, `IsBleedingOut`; Papyrus `IsInFaction`, `GetFactionRank`,
   `IsGuard`. Console `cgf <Class.Func> [@self] [args]` calls a native; vrm-tool
   `script-users` finds what attaches a script. Open questions:
-  `known_gaps/combat-state.md`
+  `known_ambiguities/combat-state.md`
 - Sneak attacks: a blow or arrow from a sneaking attacker that the struck actor
   doesn't detect does the weapon type's multiple of its damage before armor
   (`fCombatSneak1HSwordMult`... 3x one-handed, 2x two-handed and unarmed; 2x
   bows), with "Sneak attack for 3.0X damage!" for the player and `OnHit`'s
-  sneak flag set. Open questions: `known_gaps/sneak-attacks.md`
+  sneak flag set. A survivor that wasn't fighting its attacker searches for
+  it rather than fighting at once. Open questions:
+  `known_ambiguities/sneak-attacks.md`
 - Skills and leveling: the player's skill uses earn XP by each skill's `AVSK`
   (use mult and offset), skills go up at `improve mult x level ^ fSkillUseCurve
   + offset` ("One-handed Increased to 21"), each level reached giving character
@@ -294,7 +296,7 @@ game each piece unlocks.
   condition `GetLevel`. Console `skills`, `player.advskill`, `player.incpcs`,
   `player.advlevel`, `levelup`, `getlevel`, `<ref>.showtrainingmenu`,
   `<ref>.train`. Open questions:
-  `known_gaps/skills.md`
+  `known_ambiguities/skills.md`
 - Perks: `PERK` records (requirements, rank chains, quest and entry point
   sections with their tabs' conditions and functions); actors' perks from
   their records (`PRKR`, through templates) plus those added and removed;
@@ -309,7 +311,7 @@ game each piece unlocks.
   `WornApparelHasKeywordCount`, `IsBlocking`; Papyrus `Actor.AddPerk`,
   `RemovePerk`, `HasPerk`, `Game.AddPerkPoints`. Console `perks`, `addperk`, `removeperk`, `hasperk`, `perkep`,
   `perkpoints`, `skills open <skill>`; vrm-tool `perks`. Open questions:
-  `known_gaps/perks.md`
+  `known_ambiguities/perks.md`
 - Magic, first part (effects on actors): magic effects and the items carrying
   them (spells, enchantments, potions, ingredients, scrolls) read; active
   effects on actors for their duration: value modifiers held (abilities,
@@ -332,7 +334,7 @@ game each piece unlocks.
   `HasMagicEffect(WithKeyword)`, `DoCombatSpellApply`, `EquipItem` /
   `UnequipItem`, `Spell.Cast` / `RemoteCast`, `ActiveMagicEffect`'s getters,
   `Dispel` and updates. Console `effects`, `addspell`, `removespell`, `cast`,
-  `dispelallspells`; vrm-tool `magic`. Open questions: `known_gaps/magic.md`
+  `dispelallspells`; vrm-tool `magic`. Open questions: `known_ambiguities/magic.md`
 - Magic, second part (casting by hand): the player casts the spell in either
   hand with that hand's attack button (fire-and-forget spells charging for
   their charge time and cast when it comes up, concentration spells going on
@@ -348,7 +350,7 @@ game each piece unlocks.
   Console `pcast`. NPCs whose combat style favours magic fight with their
   strongest offensive spell while their magicka lasts (keeping their
   distance, throwing or channelling it at their target), then by hand;
-  their magicka comes back. Open questions: `known_gaps/casting.md`
+  their magicka comes back. Open questions: `known_ambiguities/casting.md`
 - Illusion's hold on fighting: calm, fear (and turn undead), frenzy and rally
   effects hold the target's aggression or confidence at their own value
   (calm -1, fear 0, frenzy 3, rally foolhardy) for as long as they last,
@@ -359,7 +361,7 @@ game each piece unlocks.
   once and come back when it ends; the frenzied fall on whoever is nearest,
   packmates too (casting it is still an assault), and when it ends they and
   those they fought give up the fights neither would have picked; the
-  rallied stop fleeing. Open questions: `known_gaps/magic.md`
+  rallied stop fleeing. Open questions: `known_ambiguities/magic.md`
 - Summons: Conjuration's summon effects bring their creature where the
   spell lands, commanded by the caster for the effect's duration (one at a
   time, two with Twin Souls: Mod Commanded Actor Limit); it follows its
@@ -369,7 +371,7 @@ game each piece unlocks.
   goes when the effect ends or it dies (`IsCommandedActor`). Weaponless
   casters whose style scores magic and melee the same (atronachs) fight
   with their spells; spells and arrows strike actors made while playing
-  (they flew through them). Open questions: `known_gaps/magic.md`
+  (they flew through them). Open questions: `known_ambiguities/magic.md`
 - Bound weapons: the effect's weapon in hand while it lasts (Bound Bow's
   script giving its arrows), gone at the end or when put away
 - Shouts: words of power learned and unlocked (`Game.TeachWord`,
@@ -383,16 +385,16 @@ game each piece unlocks.
   filling and flashing when Z comes too soon. The magic menu's Shouts (the
   words, those unlocked, the recharge, the dragon souls) and the favorites
   menu's; the shout stats. Console `teachword`, `unlockword`, `addshout`,
-  `equipshout`, `pcast voice`. Open questions: `known_gaps/shouts.md`
+  `equipshout`, `pcast voice`. Open questions: `known_ambiguities/shouts.md`
 - Harvesting: plants (`FLOR`, `TREE` with produce) found by their
   non-collidable shapes, giving their produce with their own verb and sound,
   someone else's stolen; harvested models, growing back
-  (`known_gaps/harvest.md`)
+  (`known_ambiguities/harvest.md`)
 - Player controls from scripts: `DisablePlayerControls` / `EnablePlayerControls`
   (Papyrus's defaults for missing arguments) stop the player moving, fighting
   (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
   and activating; the `Is...ControlsEnabled` queries. Console `epc`. Open
-  questions: `known_gaps/player-controls.md`
+  questions: `known_ambiguities/player-controls.md`
 - The player's body: their NPC record's race, sex and skin, what they have
   equipped (rebuilt when it changes) and a head of the race's default head parts
   and their own (`HEAD`, `PNAM`, extra parts); it runs the race's behaviour
@@ -400,9 +402,12 @@ game each piece unlocks.
   strafing and walking backwards by `Direction`, sprinting, jumping, falling
   and landing), drawing and sheathing (R), swings and power attacks by
   movement landing at the graph's `HitFrame`, bow draws, blocking and bashes. A
-  third-person camera (F; the wheel zooms) stopping short of walls,
+  third-person camera (F; the wheel zooms 155 to 600 units) over the right
+  shoulder, centred and farther back with the weapon drawn (the `[Camera]`
+  defaults), stopping short of walls; aim rays from the eye through the
+  crosshair,
   `Game.ForceFirstPerson` / `ForceThirdPerson`; in first person the body only
-  casts its shadow. Open questions: `known_gaps/player-body.md`
+  casts its shadow. Open questions: `known_ambiguities/player-body.md`
 - Loose objects: references whose model has one simulated rigid body
   (`MO_SYS_DYNAMIC`: clutter, food, weapons, baskets) are rapier bodies with the
   NIF's mass, friction and restitution (meshes as their convex hull), lying still
@@ -424,7 +429,7 @@ game each piece unlocks.
   was, and it slips away when stuck; a tap still takes or searches.
   `OnGrab` / `OnRelease`, `Game.GetPlayerGrabbedRef`, condition
   `IsPlayerGrabbedRef`. Console `loose`, `[ref.]drop`, `grab`, `pwalk`.
-  Open questions: `known_gaps/loose-objects.md`
+  Open questions: `known_ambiguities/loose-objects.md`
 - Synchronised blends of single-play clips (directional attacks) end instead of
   cycling, and their heaviest child raises the clip triggers
 - Character property bindings: bone switches bound to the character's bone weight
@@ -434,13 +439,13 @@ game each piece unlocks.
   lags more than "Distance to Wait for Follower(s)" behind, turning in place to face
   it, running to catch up with one more than "Run If Behind Distance" ahead);
   followers in range face their target; SitTarget. Open questions:
-  `known_gaps/escort.md`
+  `known_ambiguities/escort.md`
 - Quest alias packages (`ALPC`): actors filling a running quest's reference
   aliases run those aliases' packages ahead of their own, higher priority quests
   first; package conditions run in the owner quest (`QNAM`) and alias locations /
   targets resolve through its fills; whereabouts follow them (Lucan and Camilla's
   MS13 opening, Balgruuf holding court until MQ103 moves on). vrm-tool
-  `alias-packages`. Open questions: `known_gaps/alias-packages.md`
+  `alias-packages`. Open questions: `known_ambiguities/alias-packages.md`
 - Quest alias fills: find matching reference (persistent or loaded references by
   the alias's conditions; closest, reuse, reserved, dead / disabled flags),
   location alias references by location ref type (`XLRT`, the locations' static
@@ -453,7 +458,7 @@ game each piece unlocks.
   locations for conditions (`GetIsEditorLocAlias`, `GetInCurrentLocAlias`,
   `HasRefType`, `HasSameEditorLocAsRefAlias`, `LocAliasIsLocation`...), packages
   at location aliases, Papyrus `LocationAlias`. vrm-tool `alias-fills`,
-  `ref-types`. Open questions: `known_gaps/alias-fills.md`
+  `ref-types`. Open questions: `known_ambiguities/alias-fills.md`
 - Created references: aliases that create theirs (`ALCO`, at or in another
   alias's reference) and Papyrus `PlaceAtMe` / `PlaceActorAtMe` make references
   (`FF000800` up): items in containers go to the inventory, actors appear where
@@ -465,7 +470,7 @@ game each piece unlocks.
   greet distance at the package's speed and opens a conversation with the package's
   topic (or the first `HELO` line); seated ones speak from the seat. Again 10 s
   after the conversation if the package still applies. `GetTalkedToPC`. vrm-tool
-  `force-greets`. Open questions: `known_gaps/force-greet.md`
+  `force-greets`. Open questions: `known_ambiguities/force-greet.md`
 - NPC templates (`TPLT`): each "Use ..." flag takes that part (traits, stats,
   factions, AI data and combat style, AI packages, base data, inventory, script,
   attack data and attack race, keywords) from the template, through nested templates
@@ -473,7 +478,7 @@ game each piece unlocks.
   health, factions and packages are the ones of the draugr it looks like. Actors'
   `HasKeyword` includes their race's; `GetInFaction` / `GetFactionRank` and door
   ownership follow templates. Console `templates <ref>`; vrm-tool `npc-templates`.
-  Open questions: `known_gaps/npc-templates.md`
+  Open questions: `known_ambiguities/npc-templates.md`
 - Actor values: one store per actor that conditions (`GetActorValue`,
   `GetBaseActorValue`, `GetPermanentActorValue`, `GetActorValuePercent`), Papyrus
   (`Get` / `Set` / `Force` / `Mod` / `Damage` / `RestoreActorValue`,
@@ -485,7 +490,7 @@ game each piece unlocks.
   reach combat. `Variable01`-`10` and `WaitingForPlayer` now gate packages and
   lines as scripts set them. Console `[ref.]getav`, `setav`, `modav`, `forceav`,
   `damageav`, `restoreav`; vrm-tool `av-conditions`. Open questions:
-  `known_gaps/actor-values.md`
+  `known_ambiguities/actor-values.md`
 - Package procedure trees and default package lists: templates that pick one of
   several branches (`Stacked` roots: `DefaultMasterPackageTemplate`) run as one
   package per branch, the branch's conditions after the package's own, its main
@@ -496,14 +501,14 @@ game each piece unlocks.
   their own packages, so draugr, guards, predators and the 2600 NPCs on
   `DefaultMasterPackageList` patrol from their linked markers, follow linked
   actors or sandbox where they stood instead of standing still. vrm-tool
-  `pack-tree`, `pack-lists`. Open questions: `known_gaps/package-trees.md`
+  `pack-tree`, `pack-lists`. Open questions: `known_ambiguities/package-trees.md`
 - Package procedures: packages with their own procedure tree (draugr ambushes
   in sarcophagi, thrones and alcoves: creatures use furniture through their own
   graphs' `ActionActivate` branch, starting in it and getting out when the
   ambush ends), procedures by tree for unknown templates (HoldPosition,
   GuardPost), and UseWeapon practice: archers take a bow of the package's
   weapon type, draw and loose at the targets in barrages, melee fighters swing.
-  Open questions: `known_gaps/package-trees.md`
+  Open questions: `known_ambiguities/package-trees.md`
 - Enable state: references follow their enable parent (`XESP`, or its opposite)
   unless scripts set them; enabling or disabling a parent shows or hides its
   children (cells, sounds, furniture, actors). Actors flagged "Starts Dead" are
@@ -518,7 +523,7 @@ game each piece unlocks.
   `SetPosition`, `SetAngle`, `MoveToMyEditorLocation`, `GetAngleX/Y/Z`) move
   with their collision and lights, between cells too, and stay moved. Console
   `[ref.]enable` / `disable`, `[ref.]moveto`. Open questions:
-  `known_gaps/world-state.md`
+  `known_ambiguities/world-state.md`
 - Scenes (`SCEN`): started by Papyrus (`Start`, `ForceStart`, `Stop`,
   `IsPlaying`, `IsActionComplete`) or with their quest, phases played in order
   (skipped when their start conditions fail, ended by completion conditions or
@@ -531,7 +536,7 @@ game each piece unlocks.
   `IsSceneActionComplete`, `IsScenePlaying`, `IsInScene`,
   `IsScenePackageRunning`; `GetDistance` between interiors / worldspaces is
   far. Console `startscene`, `stopscene`, `scenes`, `startquest`, `stopquest`,
-  `setstage`; vrm-tool `scenes`. Open questions: `known_gaps/scenes.md`
+  `setstage`; vrm-tool `scenes`. Open questions: `known_ambiguities/scenes.md`
 - Story Manager: events run down the tree of event, branch and quest nodes
   (`SMEN` / `SMBN` / `SMQN`) under their type, stacked or random, node
   conditions on the event's data, quests started with reset hours, max running,
@@ -555,10 +560,10 @@ game each piece unlocks.
   `GetIsCurrentPackage`, `IsInList`, `DoesNotExist`, location keyword data.
   Cleared locations: by their bosses dying or `SetCleared`, with the banner,
   the cleared music and Dungeons Cleared; `IsCleared`, `GetLocationCleared`,
-  `GetLocationAliasCleared` (`known_gaps/cleared.md`).
+  `GetLocationAliasCleared` (`known_ambiguities/cleared.md`).
   Console `storyevent` (with `v1=`, `f1=`...), `setrelationshiprank`;
   vrm-tool `story` (`CONDS=1`, `OWN=1`). Open questions:
-  `known_gaps/story-manager.md`
+  `known_ambiguities/story-manager.md`
 - Ownership and crime: taking what a person owns is stealing; what a faction
   owns only past its favor cap (the lowest of its living members' who are
   friends or better with the player, `iFavor*Value`). The player's thefts,
@@ -602,7 +607,7 @@ game each piece unlocks.
   the bounty stands again with the escape gold, the guards come.
   Console `crime`, `player.setcrimegold`,
   `player.paycrimegold`, `crimefaction`; vrm-tool `faction-owners`,
-  `crime-factions`. Open questions: `known_gaps/crime.md`
+  `crime-factions`. Open questions: `known_ambiguities/crime.md`
 - Trigger volumes: scripted box and sphere primitives (`XPRM`), and scripted
   references whose model has phantoms (`bhkSimpleShapePhantom`: pressure
   plates, oil pools, trip wires), send
@@ -617,9 +622,9 @@ game each piece unlocks.
 - Trap hits: loose objects whose scripts handle trap events send
   `OnTrapHitStart` / `OnTrapHit` / `OnTrapHitStop` while touching living
   actors or the player; `ProcessTrapHit` deals their damage and stagger.
-  Open questions: `known_gaps/traps.md` Papyrus variables and locals start at their type's
+  Open questions: `known_ambiguities/traps.md` Papyrus variables and locals start at their type's
   default (an `Int` at 0, not None). vrm-tool `triggers`. Open questions:
-  `known_gaps/triggers.md`
+  `known_ambiguities/triggers.md`
 - Detection: one detection value per observer and target from the CK wiki's
   formula and the game settings (`fSneakBaseValue`, `fSneakMaxDistance` and
   its exterior multiplier, distance attenuation; sound from movement, worn
@@ -639,7 +644,7 @@ game each piece unlocks.
   are full, with the detection topics (`NormalToAlert`, `AlertIdle`,
   `CombatToLost`...). Actors have stealth points too. Voice types through
   templates (leveled actors' barks and `GetIsVoiceType`). Open questions:
-  `known_gaps/detection.md`
+  `known_ambiguities/detection.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -671,7 +676,7 @@ game each piece unlocks.
   `GetLockLevel`; console `lock` / `unlock`, `picklock`; vrm-tool `locks`. NPCs
   open locked animated doors only with the key or owning them (cages and cells
   stay shut). Open questions:
-  `known_gaps/locks.md`
+  `known_ambiguities/locks.md`
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
@@ -680,7 +685,7 @@ game each piece unlocks.
   subtexture flipping and spawning on death, run on the CPU near the camera and drawn as
   camera-facing (or motion-aligned) quads with their effect materials: fires burn and
   smoke. Greyscale palettes are looked up clamped. Open questions:
-  `known_gaps/particles.md`
+  `known_ambiguities/particles.md`
 - Addon nodes: a model's `BSValueNode`s take the addon node (ADDN) whose index is
   their value, its model (the `MPS` master particle systems) placed at the node and
   merged into the host's: candle and chandelier flames, torches' fire and embers,
@@ -702,7 +707,7 @@ game each piece unlocks.
   ore veins, glass, ice, eyes. Textures named in a slot of the wrong kind (a cube map as
   a mask) fall back to the slot's default; `VRM_NO_ENVMAP=1` turns them off for
   comparison; vrm-tool `envmap-shapes` counts the vanilla shapes and cube maps.
-  Open questions: `known_gaps/environment-maps.md`
+  Open questions: `known_ambiguities/environment-maps.md`
 - Decal shapes (`sf1` Decal / Dynamic Decal: head parts over the face, moss and grime
   overlays on architecture) drawn with their depth biased towards the camera so they
   don't fight the surface under them; vrm-tool `sf1-files <bit>` lists the models with a
@@ -712,13 +717,13 @@ game each piece unlocks.
   height / colour range, fitted to the slope and tinted by the landscape's vertex colour;
   drawn instanced per cell and grass, swaying in waves with the wind by their vertex
   alpha and fading out from 7000 units. `VRM_NO_GRASS=1` turns it off; vrm-tool `grass`
-  lists the grasses. Open questions: `known_gaps/grass.md`
+  lists the grasses. Open questions: `known_ambiguities/grass.md`
 - Projected decals: references to texture sets with decal data (`DODT`: blood sprays,
   burn marks, giants' paint, puddles) cast from the reference along its +Y onto the cell's
   collision and drawn as boxes over the opaque scene's depth, lit like the surface they
   land on (sizes between the data's minimum and maximum, 2x2 subtextures, enable state).
   `VRM_NO_DECALS=1` turns them off; vrm-tool `decals` lists them. Open questions:
-  `known_gaps/decals.md`
+  `known_ambiguities/decals.md`
 - Impacts: melee blows, bashes and arrows look up the impact (IPCT) their impact data
   set (weapon `INAM`, bash `BIDS`, the race's `NAM5` bare-handed) has for the material
   struck (the target race's `NAM4`, the blocking shield's or weapon's `BAMT`, the
@@ -734,13 +739,13 @@ game each piece unlocks.
   were emitted as their emitters move.
   Console `impact`; `VRM_NO_IMPACTS=1`
   leaves out effects and decals; vrm-tool `impacts`. Open questions:
-  `known_gaps/impacts.md`
+  `known_ambiguities/impacts.md`
 - Objects' behaviour graphs (`BSBehaviorGraphExtraData`: traps, pressure plates, levers,
   portcullises, puzzle pillars): the project runs on the model's own nodes, the nodes it
   moves (those with transform controllers) drawn apart and their collision carried;
   `PlayAnimation` / `PlayAnimationAndWait` / `Debug.SendAnimationEvent` send it events,
   `PlayGamebryoAnimation` plays keyframe sequences. A pressure plate goes `Down`, its
-  rigged rockfall `break`s and the rocks fall. Open questions: `known_gaps/object-graphs.md`
+  rigged rockfall `break`s and the rocks fall. Open questions: `known_ambiguities/object-graphs.md`
 - Animation events for scripts: `RegisterForAnimationEvent` /
   `UnregisterForAnimationEvent` (forms, aliases, magic effects) send the events an
   actor's or object's graph raises as `OnAnimationEvent`; `PlayAnimationAndWait`
@@ -772,7 +777,7 @@ game each piece unlocks.
   "completed" / "failed" banners. A journal (J): quests with a type, the
   miscellaneous ones together, finished ones apart, log and objectives. Console
   `sqs`, `sqo`, `journal`, `msgbox`, `inputevent`; vrm-tool `messages`,
-  `quest-log`. Open questions: `known_gaps/messages.md`
+  `quest-log`. Open questions: `known_ambiguities/messages.md`
 - Menu mode: every menu but dialogue pauses the game (message boxes, journal,
   inventory, containers, books, lockpicking, the console: CommonLibSSE's
   `kPausesGame`). The world, the game clock and real-time timers stand still;
@@ -791,7 +796,7 @@ game each piece unlocks.
   `DefaultImageSpaceInterior`) or the weather's for the time of day (IMSP),
   its saturation, brightness, contrast (about the frame's average) and tint
   drawn every frame; vrm-tool `image-spaces`.
-  Open questions: `known_gaps/image-space.md`
+  Open questions: `known_ambiguities/image-space.md`
 - Weather over time: the current and outgoing weather with a transition
   (sky, light, fog, clouds and image space mixed), regions' weathers from the
   player's cell (RDWT, by chance), rolled again every few hours, leaving a
@@ -811,7 +816,7 @@ game each piece unlocks.
   full LOD ones loaded with the worldspace however far. Auroras
   (MODL) at night or always (`kPermAurora`), turning with the sun
   (`kAuroraFollowsSun`). Console `fw`,
-  `sw`, `rwo`, `weather`. Open questions: `known_gaps/weather.md`
+  `sw`, `rwo`, `weather`. Open questions: `known_ambiguities/weather.md`
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -834,7 +839,9 @@ game each piece unlocks.
      self-transition modes (`vrm-tool hkb-flags` counts and lists them)
    - Engine variables and events still missing: combat, first person;
      INFO speaker / listener idles; listeners' reactions
-   - Footsteps: swimming (and swimming itself), splashes
+   - Footsteps: swimming (and swimming itself), splashes, decals
+   - `BSBehaviorGraphExtraData`'s "controls base skeleton"; script-set graph
+     variables (`SetAnimationVariable*`) surviving the AI's own writes
    - Later / separate: NiTransformController and NiVisController (non-sequence)
      outside effects (impact effects run them: see Done), texture flip controllers
      (`NiFlipController`), shader controllers inside sequences (only the
@@ -844,6 +851,10 @@ game each piece unlocks.
      removal (dropping now exists; the event's data needs a source), NPCs' spell casts, new voice powers, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
+   - Kill events' crime status for NPC killers; the "sold" acquire type;
+     assault events for blows to the player; relationship association types
+     (`HasFamilyRelationship`, `HasParentRelationship`) and secret
+     relationships; `WarnIfNoChildQuestStarted`
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
    - Quiet Casting, Shadow Warrior (with casting); blindness, and spells
@@ -853,12 +864,30 @@ game each piece unlocks.
      `iSoundLevel*` values, which no public source gives; weapons are silent
      until then
    - Finding bodies by detection
+   - Combat searches following a target through load doors; `GetIsAlerted` /
+     `SetAlert` tied to the Alert state; witnesses who hear a sneak attack
+     alerted (with action sounds)
 4. **AI depth**
-   - Alias fills: created objects cleaned up
+   - Alias fills: created objects cleaned up; created items placed in the
+     world (not a container) drawn and takeable; "from alias" locations
+     followed through travel, not only at refresh; packages for "from event"
+     aliases, and package targets by object id / type and interrupt data
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
      activate / carry, flee, orbit packages; ambush triggers (sleepers'
      reduced detection: see Detection);
-     escorts' follower min / max distances and several followers, riding
+     escorts' follower min / max distances and several followers, riding,
+     the follower object list and `PreferPreferredPath?`; UseWeapon's trigger
+     refs and radii, "Aim Only", "Never End", barrages, time limits and power
+     attacks; fleeing to doors, cover and allies (`fCombatFlee*`), threat
+     avoidance outside combat (`fCombatAvoidThreatsChance`, `AVTH`); actors
+     that can't reach their target backing away; force-greets' "moving into a
+     new space", player keyword and riding checks, "Greet Using Preferred
+     Path?", `ForceGreetWaitSitting` and alias trigger locations
+   - Followers helping the player (`CurrentFollowerFaction` relations);
+     `AllyKilled` lines
+   - Locks: sleepers warning the player before locking and putting them out;
+     locks changing as packages start rather than on the whereabouts refresh;
+     actors stepping round loose clutter instead of shoving it
    - Off-screen travel between worldspaces; paths round locked animated doors
    - Templates: spells (with magic)
    - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
@@ -881,10 +910,10 @@ game each piece unlocks.
    bound weapons in the casting
    hand, light, paralysis,
    invisibility breaking; illusion spells chosen by NPCs; enchantment charges,
-   poisons; `known_gaps/magic.md`), shouts (see Done: NPCs and dragons
+   poisons; `known_ambiguities/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
    waiting on casting, crafting, barter, critical hits, attack types;
-   `known_gaps/perks.md`), inventory (player's, equipping by hand, armor from
+   `known_ambiguities/perks.md`), inventory (player's, equipping by hand, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
@@ -907,8 +936,51 @@ game each piece unlocks.
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
-     `known_gaps/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
-   - Scenes: the player's own lines (skipped for now; see `known_gaps/scenes.md`)
+     `known_ambiguities/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
+   - Scenes: the player's own lines (skipped for now; see `known_ambiguities/scenes.md`);
+     priority between scenes
+   - Physics, more: arrows sticking in loose objects; opened display-case lids
+     dropping their collision; prismatic and malleable constraints (none in the
+     vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
+     parts moved by graphs (trap blades) pushing bodies aside
+   - Triggers: `OnTrigger` each frame while something is inside; water and
+     lava damage volumes
+   - Actor values: temporary (magic) modifiers; level-scaled NPC health and
+     skills (class, PC level mult) and the player's base health; damage to
+     unloaded actors carried into their live values; names past
+     `WaitingForPlayer`; `HasKeyword` counting worn items' and effects' keywords
+   - Magic, more: detect life, telekinesis, soul trap, cloaks, slow time;
+     taper, area, addictions, potion and food flags; image-space modifiers
+     applied by effects (`TriggerIfNotActive`'s target); bound weapons kept
+     from being dropped or stored; the cost counting Fortify school effects
+   - Crime, more: arrests (yielding by sheathing, guards following through
+     doors, opening the cell after five hits, The Chill, the follower wait
+     marker, `GetArrestingActor`, the jail outfit); Cidhna Mine and the Orc
+     strongholds (`DialogueCrimeOrcs`); bribes, persuasion and Thanes; the
+     bounty collector; horse theft and werewolf crimes; children telling
+     adults, `PICC` lines, hired thugs; trespassers chased out, "Warn To
+     Leave", `sNoWaitTrespass` / `sNoSleepTrespass`, sleepers waking to warn;
+     `GetAmountSoldStolen`; NPCs' crimes (`GetCrime`,
+     `GetActorCrimePlayerEnemy`), the unreported crime faction; faction
+     changes at runtime updating the favor cap; dropped items' ownership;
+     locks' `XRNK`, alias-given keys and factions, `Lock`'s "as owner"
+     argument, trespass for opening a lock
+   - Combat, more: attackers forgetting a lost fleeing target
+     (`fCombatDetectionFleeingLostRemoveTime`,
+     `fCombatLowFleeingTargetHitPercent`); flee dialogue on a timer
+     (`fCombatDialogueFlee*`); the group strength timer
+     (`fCombatGroupCombatStrengthUpdateTime`); impacts' hazards (`NAM2`),
+     second sound (`NAM1`) and results (bounce, impale, stick)
+   - Lockpicking: `iXPRewardPickLock*`, enchantments and potions, race skill
+     bonuses, "Auto Attempt"
+   - Perks, more: carry weight, falling damage, armor weight, staggers,
+     recovering arrows, bow zoom, Ignore Running During Detection, lockpicks'
+     starting arc and key rewards, Green Thumb on harvests, Light Foot on
+     pressure plates; refunds and the Legendary reset; NPCs' skills advancing
+   - World state: moved references appearing at once when moved out of an
+     unloaded cell and following their new cell between loaded ones; doors
+     opened by actors remembered; looping sounds of enabled references checked
+     with an audio device; sleeping fading the screen out and in
 6. **UI**: inventory (categories, equipping, item details), map, quest
    targets on the map (on the compass: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
@@ -922,6 +994,9 @@ game each piece unlocks.
      (`AttemptChargeItem`, soul gems), scrolls and soul gems on their own cards
      (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, poisons, the
      left hand, the best-in-class star, the survival warmth rating
+   - The HUD: enemy health brackets sized to the name; `Message.Show` icons
+     (`INAM`) and notifications' display time (`TNAM`); the favorites
+     hotkeys' second (numpad) binding; controller rumble for camera shakes
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
      (crafting, magic and shouts, horses stolen,
@@ -938,12 +1013,22 @@ game each piece unlocks.
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
    radial blur and motion blur (cinematic values and tint: see Done), particles'
    remaining modifiers (colliders, mesh emitters' surfaces, strips, LOD; see
-   `known_gaps/particles.md`), distant LOD (BTR/BTO/trees),
+   `known_ambiguities/particles.md`), distant LOD (BTR/BTO/trees),
    grass shadows and the grass cache, spells' impacts, soft effects (effect
    shaders fading where they meet geometry: SLSF1 bit 30, soft falloff depth); eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
-   clouds (see `known_gaps/weather.md`)
+   clouds (see `known_ambiguities/weather.md`); weather's volumetric lighting, sun
+   glare and damage, rain and snow kept off under roofs, lightning bolts, wind
+   moving trees, grass and clouds; grass's vertex lighting flag and bending
+   round actors; decals' normal maps, specular, parallax and colour alpha;
+   `ENVMAP_LIGHT_FADE` (`sf2` bit 15); unscripted trigger volumes (acoustic
+   spaces, room bounds and portals); effect models' skinned meshes,
+   `BSProceduralLightningController` and alpha test controllers; particles'
+   decay, turbulence and drag, rotation axis, speed to aspect, subtexture
+   loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves**: an engine-native save format (reading .ess later), writing out
-   the scripts' state, inventories, `WorldState` and the weather; `RequestSave` /
+   the scripts' state, inventories, `WorldState` and the weather, bounties,
+   perks, skill progress, restock times, scene state, heard dialogue lines,
+   graph state; `RequestSave` /
    `RequestAutoSave`
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
@@ -951,7 +1036,7 @@ game each piece unlocks.
      Tamriel (4, -12) outside Riverwood with only start-game-enabled quests running
    - How the game starts `MQ101` (not start-game-enabled) and where it places
      the player (`PlayerRef` has no placement in the data): needs a public
-     source; record it in `known_gaps/`
+     source; record it in `known_ambiguities/`
    - Alternate start mods as the nearer target: their own start-game-enabled
      quest, a `MoveTo` and message boxes, all of which run already
    - The real opening in steps: new game and placement; the cart ride with a

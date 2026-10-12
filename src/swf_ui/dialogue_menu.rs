@@ -9,7 +9,7 @@
 //! `StartHideMenu` when the conversation ends. The menu answers
 //! `TopicClicked(index)`, `SkipText`, `CloseMenu` (on Tab or its exit
 //! button, as it fades out) and `FadeDone` once faded. Choices:
-//! `known_gaps/dialogue-menu.md`.
+//! `known_ambiguities/dialogue-menu.md`.
 
 use ui_swf::{GameCall, Menu, UiSwf, Value};
 

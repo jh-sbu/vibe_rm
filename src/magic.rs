@@ -15,7 +15,7 @@
 //!
 //! Sources: UESP's MGEF / SPEL / ALCH / ENCH record pages, CommonLibSSE's
 //! `EffectSetting`, `SpellItem`, `MagicSystem` and `ActiveEffect` headers, the
-//! records themselves (`vrm-tool magic`). Open questions: `known_gaps/magic.md`.
+//! records themselves (`vrm-tool magic`). Open questions: `known_ambiguities/magic.md`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

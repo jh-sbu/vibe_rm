@@ -13,7 +13,7 @@
 //! (`ItemSelect`, `ItemDrop`, `ItemTransfer`, `CloseMenu`...). Equipping with
 //! the mouse, dropping, taking all and marking favorites are the game's keys,
 //! which it passes on as `AttemptEquip`, `DropItem` and `XButtonPress` or
-//! handles itself. What is guessed is in `known_gaps/swf-hud.md`.
+//! handles itself. What is guessed is in `known_ambiguities/swf-hud.md`.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
