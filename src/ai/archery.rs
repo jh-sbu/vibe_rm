@@ -179,7 +179,7 @@ fn elevation(d: f32, h: f32, v: f32, g: f32) -> f32 {
 
 /// The point on segment `a`-`b` closest to segment `c`-`d`, and the distance
 /// between the two.
-fn segment_distance(a: Vec3, b: Vec3, c: Vec3, d: Vec3) -> (f32, f32) {
+pub(crate) fn segment_distance(a: Vec3, b: Vec3, c: Vec3, d: Vec3) -> (f32, f32) {
     let (u, v, w) = (b - a, d - c, a - c);
     let (aa, bb, cc, dd, ee) = (u.dot(u), u.dot(v), v.dot(v), u.dot(w), v.dot(w));
     let den = aa * cc - bb * bb;
@@ -332,7 +332,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| a.bow && !a.dead)
+            .filter(|a| (a.bow || a.combat_spell.is_some()) && !a.dead)
             .filter_map(|a| {
                 Some((
                     a.ref_id,

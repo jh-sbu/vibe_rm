@@ -2,6 +2,7 @@
 
 pub mod alias;
 pub mod archery;
+pub mod casters;
 pub mod combat;
 mod equipment;
 pub mod furniture;
@@ -377,6 +378,11 @@ pub struct ActorRuntime {
     /// frame, and it looses it.
     pub(crate) bow: bool,
     pub(crate) bow_speed: f32,
+    /// The spell it fights with (set by the engine each frame while it has
+    /// one and the magicka), and its casts to make: one for a
+    /// fire-and-forget spell, one each landing of a concentration spell.
+    pub(crate) combat_spell: Option<casters::CombatSpell>,
+    pub(crate) casts: u32,
     pub(crate) arrow_release: bool,
     pub(crate) loose: bool,
     /// Practising with weapons (UseWeapon), and where its loosed arrow aims.
@@ -470,6 +476,8 @@ impl ActorRuntime {
             stamina_spent: false,
             bow: false,
             bow_speed: 1.0,
+            combat_spell: None,
+            casts: 0,
             arrow_release: false,
             practice: None,
             practice_aim: None,
@@ -3179,8 +3187,10 @@ impl Engine {
         self.update_guards(dt, &started);
         self.resolve_swings(swings);
         self.update_bleedouts(dt);
+        self.update_combat_spells();
         self.update_clear_shots();
         self.loose_arrows();
+        self.npc_casts();
         self.update_stamina(dt);
         self.update_threat(dt);
         if self.ai_enabled {

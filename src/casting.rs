@@ -27,6 +27,7 @@ use esp::FormId;
 use esp::actor_value as av;
 use glam::Vec3;
 
+use crate::ai::casters::CombatSpell;
 use crate::ai::combat::gmst_f32;
 use crate::engine::{Engine, PLAYER_REF};
 use crate::magic::{MagicItem, flags, spell_type};
@@ -84,6 +85,8 @@ pub struct Casting {
     powers_used: HashMap<FormId, f32>,
     /// The magicka meter should blink (counted; the HUD blinks for each).
     pub magicka_blinks: u32,
+    /// Actors' offensive spells, read once.
+    offensive: HashMap<FormId, std::sync::Arc<Vec<CombatSpell>>>,
 }
 
 impl Engine {
@@ -268,19 +271,32 @@ impl Engine {
         if !casting {
             self.regen_magicka(dt);
         }
+        self.regen_npc_magicka(dt);
     }
 
     /// Magicka comes back by the actor's rate (percent of the most a second,
-    /// times `MagickaRateMult`), a third as fast in combat, once a moment has
-    /// passed since it was spent. Only the player's is spent so far.
+    /// times `MagickaRateMult`), a third as fast in combat; the player's once
+    /// a moment has passed since it was spent.
+    fn magicka_regen(&self, actor: FormId, fighting: bool, dt: f32) -> f32 {
+        let max = self.av_max(actor, av::MAGICKA);
+        let now = self.actor_value(actor, av::MAGICKA);
+        if now >= max {
+            return 0.0;
+        }
+        let mult = if fighting {
+            gmst_f32(&self.lo, "fCombatMagickaRegenRateMult", 0.33)
+        } else {
+            1.0
+        };
+        let rate = self.actor_value(actor, av::MAGICKA_RATE) / 100.0
+            * (self.actor_value(actor, av::MAGICKA_RATE_MULT) / 100.0)
+            * mult;
+        (max * rate * dt).clamp(0.0, max - now)
+    }
+
     pub(crate) fn regen_magicka(&mut self, dt: f32) {
         if self.casting.magicka_wait > 0.0 {
             self.casting.magicka_wait -= dt;
-            return;
-        }
-        let max = self.av_max(PLAYER_REF, av::MAGICKA);
-        let now = self.actor_value(PLAYER_REF, av::MAGICKA);
-        if now >= max {
             return;
         }
         let fighting = self
@@ -288,27 +304,162 @@ impl Engine {
             .values()
             .flat_map(|rt| &rt.actors)
             .any(|a| !a.dead && a.combat.as_ref().is_some_and(|c| c.target == PLAYER_REF));
-        let mult = if fighting {
-            gmst_f32(&self.lo, "fCombatMagickaRegenRateMult", 0.33)
-        } else {
-            1.0
-        };
-        let rate = self.actor_value(PLAYER_REF, av::MAGICKA_RATE) / 100.0
-            * (self.actor_value(PLAYER_REF, av::MAGICKA_RATE_MULT) / 100.0)
-            * mult;
-        let gain = (max * rate * dt).min(max - now);
+        let gain = self.magicka_regen(PLAYER_REF, fighting, dt);
         if gain > 0.0 {
             self.damage_actor_value(PLAYER_REF, av::MAGICKA, -gain);
         }
     }
 
-    /// A spell is cast by `caster` (the player, from the view), already paid
-    /// for; `share` is the part of a second a concentration spell's landing
-    /// stands for (1 for others).
+    /// Loaded actors' spent magicka comes back, but not while they channel a
+    /// spell (`bRegenNPCMagickaDuringCast`).
+    pub(crate) fn regen_npc_magicka(&mut self, dt: f32) {
+        let spent: Vec<FormId> = self
+            .scripts
+            .actor_values
+            .iter()
+            .filter(|((a, i), m)| *i == av::MAGICKA && m.damage < 0.0 && *a != PLAYER_REF)
+            .map(|((a, _), _)| *a)
+            .collect();
+        for actor in spent {
+            let Some(a) = self.actor_ref(actor).filter(|a| !a.dead) else {
+                continue;
+            };
+            let channeling = a.combat.as_ref().is_some_and(|c| c.channel > 0.0);
+            if channeling {
+                continue;
+            }
+            let fighting = a.combat.is_some();
+            let gain = self.magicka_regen(actor, fighting, dt);
+            if gain > 0.0 {
+                self.damage_actor_value(actor, av::MAGICKA, -gain);
+            }
+        }
+    }
+
+    /// Each actor in combat whose style favours magic fights with the
+    /// strongest offensive spell it has the magicka for (none: by hand).
+    pub(crate) fn update_combat_spells(&mut self) {
+        let fighters: Vec<(FormId, bool)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.combat.as_ref().is_some_and(|c| !c.fleeing))
+            .map(|a| (a.ref_id, a.stats.magic_mult > a.stats.melee_mult))
+            .collect();
+        for (actor, caster) in fighters {
+            let pick = if caster {
+                let magicka = self.actor_value(actor, av::MAGICKA);
+                let spells = self.offensive_spells(actor);
+                spells
+                    .iter()
+                    .map(|s| (*s, self.spell_cost(actor, s.spell)))
+                    // A concentration spell for a second or more.
+                    .filter(|(_, cost)| *cost <= magicka)
+                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(s, _)| s)
+            } else {
+                None
+            };
+            if let Some(a) = self.actor_mut(actor)
+                && a.combat_spell != pick
+            {
+                if pick.is_none() && a.combat_spell.is_some() {
+                    log::debug!("{actor} has no spell to fight with: by hand");
+                }
+                // A spell being channelled stops with it.
+                if let Some(c) = a.combat.as_mut()
+                    && a.combat_spell.is_some_and(|s| Some(s) != pick)
+                {
+                    c.channel = 0.0;
+                }
+                a.combat_spell = pick;
+            }
+        }
+    }
+
+    /// The hostile spells an actor knows that it can throw at a foe (aimed or
+    /// at a target actor), read once.
+    fn offensive_spells(&mut self, actor: FormId) -> std::sync::Arc<Vec<CombatSpell>> {
+        if let Some(s) = self.casting.offensive.get(&actor) {
+            return s.clone();
+        }
+        let mut out = Vec::new();
+        for spell in self.actor_spells(actor) {
+            let Some(item) = self.magic_item(spell) else {
+                continue;
+            };
+            if item.spell_type != spell_type::SPELL
+                || !matches!(item.delivery, delivery::AIMED | delivery::TARGET_ACTOR)
+                || !self.item_hostile(&item)
+            {
+                continue;
+            }
+            let range = if item.delivery == delivery::TARGET_ACTOR {
+                if item.range > 0.0 {
+                    item.range
+                } else {
+                    TARGET_RANGE
+                }
+            } else {
+                self.item_projectile(&item)
+                    .and_then(|p| crate::ai::archery::spell_projectile(&self.lo, p))
+                    .map_or(LOCATION_RANGE, |s| s.range)
+            };
+            out.push(CombatSpell {
+                spell,
+                range: range.min(crate::ai::archery::BOW_RANGE),
+                concentration: item.cast_type == CONCENTRATION,
+            });
+        }
+        let out = std::sync::Arc::new(out);
+        self.casting.offensive.insert(actor, out.clone());
+        out
+    }
+
+    /// Casters' casts this frame go at their targets' bodies, paid in
+    /// magicka (a landing's share of a second for concentration spells).
+    pub(crate) fn npc_casts(&mut self) {
+        let mut casts: Vec<(FormId, CombatSpell, u32, FormId, Vec3)> = Vec::new();
+        for rt in self.cells.values_mut() {
+            for a in rt.actors.iter_mut() {
+                let n = std::mem::take(&mut a.casts);
+                if n == 0 {
+                    continue;
+                }
+                if let (Some(s), Some(c)) = (a.combat_spell, a.combat.as_ref()) {
+                    casts.push((a.ref_id, s, n, c.target, a.pos + Vec3::Z * 110.0 * a.scale));
+                }
+            }
+        }
+        for (actor, spell, n, target, eye) in casts {
+            let aim = if target == PLAYER_REF {
+                Some(self.player.position)
+            } else {
+                self.actor_ref(target)
+                    .map(|t| t.pos + Vec3::Z * BODY_CENTRE * t.scale)
+            };
+            let Some(aim) = aim else { continue };
+            let share = if spell.concentration {
+                crate::ai::casters::CHANNEL_TICK
+            } else {
+                1.0
+            };
+            for _ in 0..n {
+                let cost = self.spell_cost(actor, spell.spell) * share;
+                if self.actor_value(actor, av::MAGICKA) < cost {
+                    break;
+                }
+                self.damage_actor_value(actor, av::MAGICKA, cost);
+                let dir = (aim - eye).normalize_or_zero();
+                self.cast_from(actor, spell.spell, share, eye, dir);
+            }
+        }
+    }
+
+    /// A spell is cast by `caster` (the player, from the view; an actor, the
+    /// way it faces), already paid for; `share` is the part of a second a
+    /// concentration spell's landing stands for (1 for others).
     pub(crate) fn cast(&mut self, caster: FormId, spell: FormId, share: f32) {
-        let Some(item) = self.magic_item(spell) else {
-            return;
-        };
         let (eye, dir) = if caster == PLAYER_REF {
             (self.camera.position, self.camera.forward())
         } else {
@@ -319,6 +470,21 @@ impl Engine {
                 ),
                 None => return,
             }
+        };
+        self.cast_from(caster, spell, share, eye, dir);
+    }
+
+    /// A spell cast by `caster` from `eye` along `dir`.
+    pub(crate) fn cast_from(
+        &mut self,
+        caster: FormId,
+        spell: FormId,
+        share: f32,
+        eye: Vec3,
+        dir: Vec3,
+    ) {
+        let Some(item) = self.magic_item(spell) else {
+            return;
         };
         if item.cast_type != CONCENTRATION || share >= 1.0 {
             log::info!("{caster} casts {} ({spell})", item.name);
@@ -349,8 +515,7 @@ impl Engine {
                 } else {
                     TARGET_RANGE
                 };
-                if let Some((t, Some(actor))) =
-                    self.physics.raycast_excluding(eye, dir, reach, caster)
+                if let Some((t, Some(actor))) = self.spell_ray(eye, dir, reach, caster)
                     && self.is_actor_ref(actor)
                 {
                     self.spell_lands(caster, spell, Some(actor), eye + dir * t, dir);
@@ -369,7 +534,7 @@ impl Engine {
                         }
                     }
                     Some((proj, shot)) if reaches_at_once(&self.lo, proj) => {
-                        match self.physics.raycast_excluding(eye, dir, shot.range, caster) {
+                        match self.spell_ray(eye, dir, shot.range, caster) {
                             Some((t, owner)) => {
                                 let actor = owner.filter(|&o| self.is_actor_ref(o));
                                 self.spell_lands(caster, spell, actor, eye + dir * t, dir);
@@ -382,10 +547,7 @@ impl Engine {
                         self.spawn_spell_projectile(caster, spell, shot, from, dir);
                     }
                     None => {
-                        if let Some((t, owner)) =
-                            self.physics
-                                .raycast_excluding(eye, dir, LOCATION_RANGE, caster)
-                        {
+                        if let Some((t, owner)) = self.spell_ray(eye, dir, LOCATION_RANGE, caster) {
                             let actor = owner.filter(|&o| self.is_actor_ref(o));
                             self.spell_lands(caster, spell, actor, eye + dir * t, dir);
                         }
@@ -431,6 +593,35 @@ impl Engine {
                 }
             })
             .collect()
+    }
+
+    /// What a spell reaching along `dir` from `eye` meets first within
+    /// `range`: the world, an actor, or the player (who isn't in the physics
+    /// world: their capsule) for anyone else's.
+    fn spell_ray(
+        &self,
+        eye: Vec3,
+        dir: Vec3,
+        range: f32,
+        caster: FormId,
+    ) -> Option<(f32, Option<FormId>)> {
+        let world = self.physics.raycast_excluding(eye, dir, range, caster);
+        if caster == PLAYER_REF {
+            return world;
+        }
+        let (r, h) = (self.physics.player_radius, self.physics.player_half_height);
+        let p = self.player.position;
+        let (s, d) = crate::ai::archery::segment_distance(
+            eye,
+            eye + dir * range,
+            p - Vec3::Z * h,
+            p + Vec3::Z * h,
+        );
+        match world {
+            _ if d >= r => world,
+            Some((t, _)) if t < s * range => world,
+            _ => Some((s * range, Some(PLAYER_REF))),
+        }
     }
 
     /// Where an actor (or the player) stands.
