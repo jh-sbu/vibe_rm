@@ -143,8 +143,10 @@ isn't public; the choices below are what the movies' code allows.
   player's). A living actor's inventory (`Actor.OpenInventory`) and someone's
   pockets set the menu's `bNPCMode` (Give in place of Store, no Take All);
   a reference is a container when its base is a `CONT`. The card of an item in
-  someone's pockets has `pickpocketChance` (for one); placing items in
-  pockets says `sInvalidPickpocket`, as before.
+  someone's pockets has `pickpocketChance` (for one), and so does the card of
+  one of the player's items there: the menu says "TO PLACE" on the player's
+  side (`sContainerPlaceChance`). `sInvalidPickpocket` ("You cannot place
+  items in a container while pickpocketing") has no use: pockets are actors'.
 - **Bartering** (`bartermenu.swf`): `SetBarterMultipliers(buy, sell)` once
   on opening (the menu prices each item: buying rounds up to at least 1,
   selling to the nearest); `UpdatePlayerInfo(player gold, merchant gold,

@@ -69,6 +69,12 @@ locations name it.
   prompt), `sPickpocketFail`, `sNoPickPocketAgain`, `sInvalidPickpocket`.
   Topics: `PICN` (non-combat: "I guess I can look the other way, this
   time.") and `PICC` (combat; victims and witnesses by `IsActorAVictim`).
+- Placing items in pockets (UESP Skyrim:Pickpocket: items can be placed as
+  well as taken): the chance is the one for taking that item, and being
+  caught is the same. Choices: placing trains no Pickpocket and counts no
+  statistic; what is placed keeps the owner it had (a stolen item stays
+  stolen); the victim doesn't equip placed weapons or armor, and the perks
+  that act on placing (Misdirection, Perfect Touch, Poisoned) aren't wired.
 
 - Arrest (UESP Crime / Jail, CK wiki Faction): guards "will attempt to
   arrest you" in the hold where the player has a bounty and chase them; the
@@ -119,6 +125,11 @@ locations name it.
   `CombatAssault` and `ASNC` `CombatAssaultNC`.
 
 ## Choices made without a source
+
+- Placing items in pockets trains no Pickpocket and counts no statistic;
+  what is placed keeps the owner it had (a stolen item stays stolen). The
+  victim doesn't equip placed weapons or armor, and the perks that act on
+  placing (Misdirection, Perfect Touch, Poisoned) aren't wired.
 
 - Witnesses: living loaded actors who detect the player at the time
   (detection above 0, without stealth points; `known_gaps/detection.md`).
