@@ -1987,12 +1987,17 @@ pub(super) struct Npc {
     pub(super) temper: (u8, u8),
     pub(super) factions: Vec<(FormId, i8)>,
     pub(super) script: Option<AttachedScript>,
+    /// Assistance (`AIDT`: 0 helps nobody, 1 allies, 2 friends and allies).
+    pub(super) assistance: u8,
+    pub(super) combat_style: Option<FormId>,
+    /// The unique flag (`ACBS` 0x20).
+    pub(super) unique: bool,
 }
 
 impl Npc {
     pub(super) fn record(self, race: FormId, class: FormId) -> RecordBuilder {
         let (level, pc_mult, min, max) = self.level;
-        let flags: u32 = if pc_mult { 0x80 } else { 0 };
+        let flags: u32 = if pc_mult { 0x80 } else { 0 } | if self.unique { 0x20 } else { 0 };
         // ACBS: flags, magicka and stamina offsets, level, calc min / max,
         // speed 100, disposition 35, template flags, health offset,
         // bleedout override.
@@ -2012,7 +2017,7 @@ impl Npc {
         // AIDT: aggression, confidence, energy 50, no crime, neutral mood,
         // helps nobody.
         let mut aidt = [0u8; 20];
-        aidt[..4].copy_from_slice(&[self.temper.0, self.temper.1, 50, 3]);
+        aidt[..6].copy_from_slice(&[self.temper.0, self.temper.1, 50, 3, 0, self.assistance]);
         // DNAM: 18 skills at 5 and no offsets, health 30, magicka 25,
         // stamina 70, far away model distance 0, geared up weapons 0.
         let dnam: [u8; 52] = bytes(&[
@@ -2045,9 +2050,12 @@ impl Npc {
         if let Some(name) = self.name {
             rec = rec.zstring(b"FULL", name);
         }
-        rec.field(b"DATA", &[])
-            .field(b"DNAM", &dnam)
-            .field(b"NAM5", &[0xFF, 0])
+        rec = rec.field(b"DATA", &[]).field(b"DNAM", &dnam);
+        // ZNAM where the Creation Kit writes it: after the stats.
+        if let Some(style) = self.combat_style {
+            rec = rec.form(b"ZNAM", style);
+        }
+        rec.field(b"NAM5", &[0xFF, 0])
             .f32(b"NAM6", 1.0)
             .f32(b"NAM7", 50.0)
             .u32(b"NAM8", 1) // sound level: normal
@@ -2224,6 +2232,9 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         temper: (0, 0),
         factions: Vec::new(),
         script: None,
+        assistance: 0,
+        combat_style: None,
+        unique: false,
     };
     let mut npcs = vec![
         plain(DUMMY, "VrmAutoTest2Dummy", Some("vibe_rm Test NPC")),

@@ -74,7 +74,16 @@ an override or without).
 
 Spells and magic effects, perks, packages, quest aliases, story manager
 nodes, scenes, trigger volumes. The writer takes any record; each needs its
-field layout.
+field layout (`test_mods/records.rs`).
+
+Built as `test-mod autotest4` (one plugin, as asked), with `autotest3`'s
+Firebolt follow-up folded in (its two `OnHit`s: the target's health and
+`OnMagicEffectApply` at each, and a spell with only its fire damage). Left
+out: summons (no way to the summoned actor's reference without an effect
+script), perk ranks, near aliases' reach (ALNT), item pickup ownership and
+`XRNK` (they need overrides of vanilla references), scene flag 0x4 and
+looping dialogue (dialogue records), the flee check's timing and ending a
+flee (tier 3's statistics), and the "do all before repeating" node flags.
 
 - **Story manager** (`story-manager.md`): which actor node and quest event
   conditions run on (the file's open question); members' order; reset

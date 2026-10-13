@@ -96,7 +96,7 @@ fn bounds(b: [i16; 6]) -> Vec<u8> {
 }
 
 /// A placed reference's DATA: position, then rotation in radians.
-fn placement(pos: [f32; 3], rot_z: f32) -> Vec<u8> {
+pub(super) fn placement(pos: [f32; 3], rot_z: f32) -> Vec<u8> {
     [pos[0], pos[1], pos[2], 0.0, 0.0, rot_z]
         .iter()
         .flat_map(|v| v.to_le_bytes())
@@ -209,7 +209,7 @@ fn vendor_npc(
 
 /// Interior lighting: bright and even, no fog, nothing inherited from a
 /// lighting template.
-fn xcll() -> Vec<u8> {
+pub(super) fn xcll() -> Vec<u8> {
     let rgb = |c: u8| [c, c, c, 0];
     let mut b = Vec::new();
     b.extend_from_slice(&rgb(110)); // ambient
