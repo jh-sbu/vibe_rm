@@ -18,9 +18,9 @@ script). Settled items move out of this list as their tests report.
 
 ## Tier 1: cheap, record types test mods already write, no travel
 
-Built as `test-mod autotest2`. Its first run (2026-10-13) settled 1, 3, 4,
-6, 8, 10, 11, 12, 13, 16 and most of 17; 2, 5, 7, 9, 14 and 15 need a
-second run (calls the scripts didn't cast were refused; see the module).
+Built as `test-mod autotest2`. Two runs (2026-10-13) settled all but 2
+(weather acceleration without an override: the weather set never came in)
+and parts of 15 (a sword's hits; whether the archer's were arrows).
 
 1. **Weather, game or real time** (`weather.md`, transition speed): delta
    125 again at TimeScale 60. Game time: about 7.6 s; real time: about

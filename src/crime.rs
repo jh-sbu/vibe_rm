@@ -273,8 +273,10 @@ impl Engine {
         let owed = self.bounty(faction).total();
         let guard = self.arrested_by(faction);
         let paid = self.remove_item(PLAYER_REF, GOLD, owed, None);
-        if paid > 0 {
-            self.increment_stat("Fines Paid", paid);
+        // Fines Paid counts the bounty, not the gold: paying 500 with 100
+        // gold counted 500 in the game (`test-mod autotest2`).
+        if owed > 0 {
+            self.increment_stat("Fines Paid", owed);
         }
         if let Some(b) = self.crime.bounties.get_mut(&faction) {
             b.violent = 0;

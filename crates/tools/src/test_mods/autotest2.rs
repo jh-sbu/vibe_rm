@@ -93,6 +93,22 @@
 //! - Weather: transitions run on game time. Without an override the
 //!   weather set didn't come in (rerun with each target the weather not on).
 //! - Light level: the hours' values (`detection.md`).
+//!
+//! Second run (2026-10-13, the casts fixed), the first's results repeated
+//! and:
+//!
+//! - Hands: what each step held (`hands.md`): a hand gets back what a
+//!   two-handed item or spell took from it. Gear: `AddItem` makes an NPC
+//!   wield a better weapon at once, not wear armor or a shield; a teammate
+//!   wears armor.
+//! - Animation events: no registration on a placed coin; registrations match
+//!   events ignoring case.
+//! - Combat: a cast Firebolt sends two `OnHit`s with its projectile; the
+//!   archer's hits had none; the fighter's sword landed nothing.
+//! - Crime: paying takes what gold there is and clears the bounty; Fines Paid
+//!   counts the bounty. Stats: food and potions count.
+//! - Weather without an override: `SetActive(false, ...)` didn't bring the
+//!   weather in at all, so acceleration stays unmeasured.
 
 use anyhow::{Context, Result, ensure};
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, vmad, write_plugin};
