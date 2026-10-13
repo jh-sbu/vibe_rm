@@ -99,7 +99,8 @@ fn main() -> Result<()> {
         }
         Some("test-mod") => {
             // test-mod <name> <data dir> <out.esp>: a plugin for testing an
-            // ambiguity in the game (test_mods/).
+            // ambiguity in the game (test_mods/), its scripts in Scripts/
+            // beside it.
             anyhow::ensure!(
                 args.len() > 3 && test_mods::NAMES.contains(&args[1].as_str()),
                 "usage: test-mod <{}> <data dir> <out.esp>",
@@ -107,7 +108,19 @@ fn main() -> Result<()> {
             );
             let data = std::path::Path::new(&args[2]);
             let lo = esp::LoadOrder::load(data, &["Skyrim.esm".to_owned()])?;
-            std::fs::write(&args[3], test_mods::build(&args[1], &lo)?)?;
+            let m = test_mods::build(&args[1], &lo)?;
+            let out = std::path::Path::new(&args[3]);
+            std::fs::write(out, &m.plugin)?;
+            if !m.scripts.is_empty() {
+                let dir = out.with_file_name("Scripts");
+                std::fs::create_dir_all(&dir)?;
+                for (name, bytes) in &m.scripts {
+                    let path = dir.join(format!("{name}.pex"));
+                    std::fs::write(&path, bytes)?;
+                    println!("{}", path.display());
+                }
+            }
+            println!("{}", out.display());
         }
         Some("esp-dump") => {
             // esp-dump <data dir> <form id | editor id>: subrecords, the first 48
@@ -3025,9 +3038,12 @@ fn main() -> Result<()> {
             print!("{}", papyrus::pex::disassemble(&p));
         }
         Some("pex-verify") => {
+            // pex-verify <archive>: parse each script and write it back,
+            // which must give the same bytes; opcode counts.
             let a = bsa::Archive::open(&args[1])?;
             let mut ok = 0;
             let mut bad = 0;
+            let mut mismatched = 0;
             let mut ops = [0usize; 36];
             for p in a
                 .paths()
@@ -3035,9 +3051,23 @@ fn main() -> Result<()> {
                 .map(str::to_owned)
                 .collect::<Vec<_>>()
             {
-                match papyrus::pex::parse(&a.read(&p)?.unwrap()) {
+                let bytes = a.read(&p)?.unwrap();
+                match papyrus::pex::parse(&bytes) {
                     Ok(x) => {
                         ok += 1;
+                        let back = papyrus::pex::write(&x)?;
+                        if back != bytes {
+                            mismatched += 1;
+                            if mismatched < 10 {
+                                let at =
+                                    back.iter().zip(&bytes).take_while(|(a, b)| a == b).count();
+                                println!(
+                                    "{p}: written back differs at byte {at} ({} vs {} bytes)",
+                                    back.len(),
+                                    bytes.len()
+                                );
+                            }
+                        }
                         for o in &x.objects {
                             for s in &o.states {
                                 for (_, f) in &s.functions {
@@ -3056,7 +3086,7 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            println!("{ok} ok, {bad} failed");
+            println!("{ok} ok ({mismatched} written back differently), {bad} failed");
             for (i, c) in ops.iter().enumerate() {
                 println!("{:>20} {c}", papyrus::pex::OP_NAMES[i]);
             }
