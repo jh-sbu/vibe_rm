@@ -26,6 +26,29 @@ Quest : Form
     None CompleteQuest()
     None SetObjectiveDisplayed(Int aiObjective, Bool abDisplayed, Bool abForce)
     None SetObjectiveCompleted(Int aiObjective, Bool abCompleted)
+    Alias GetAlias(Int aiAliasID)
+    Int GetStage()
+    Bool SetStage(Int aiStage)
+    Bool IsStageDone(Int aiStage)
+Alias
+ReferenceAlias : Alias
+    ObjectReference GetReference()
+    Actor GetActorReference()
+    None ForceRefTo(ObjectReference akNewRef)
+    None Clear()
+Scene : Form
+    None Start()
+    None Stop()
+    None ForceStart()
+    Bool IsPlaying()
+Keyword : Form
+    None SendStoryEvent(Location akLoc, ObjectReference akRef1, ObjectReference akRef2, Int aiValue1, Int aiValue2)
+    Bool SendStoryEventAndWait(Location akLoc, ObjectReference akRef1, ObjectReference akRef2, Int aiValue1, Int aiValue2)
+MagicEffect : Form
+Perk : Form
+Shout : Form
+WordOfPower : Form
+Package : Form
 ActorBase : Form
 EncounterZone : Form
 Location : Form
@@ -53,6 +76,7 @@ ObjectReference : Form
     actor PlaceActorAtMe(ActorBase akActorToPlace, Int aiLevelMod, EncounterZone akZone)
     ObjectReference PlaceAtMe(Form akFormToPlace, Int aiCount, Bool abForcePersist, Bool abInitiallyDisabled)
     None Disable(Bool abFadeOut)
+    None Enable(Bool abFadeIn)
     None Delete()
     Bool IsLocked()
     Int GetLockLevel()
@@ -63,12 +87,18 @@ ObjectReference : Form
     None RemoveItem(Form akItemToRemove, Int aiCount, Bool abSilent, ObjectReference akOtherContainer)
     Int GetItemCount(Form akItem)
     Bool IsMapMarkerVisible()
-    Float GetDistance(ObjectReference akOther)
     Bool CanFastTravelToMarker()
     None AddToMap(Bool abAllowFastTravel)
     Bool GetAnimationVariableBool(String arVariableName)
     Int GetAnimationVariableInt(String arVariableName)
     Float GetAnimationVariableFloat(String arVariableName)
+    Float GetDistance(ObjectReference akOther)
+    Int GetTriggerObjectCount()
+    None ApplyHavokImpulse(Float afX, Float afY, Float afZ, Float afMagnitude)
+    Float GetPositionX()
+    Float GetPositionY()
+    Float GetPositionZ()
+    Bool IsDisabled()
 Actor : ObjectReference
     Int GetLevel()
     Float GetBaseActorValue(String asValueName)
@@ -107,15 +137,25 @@ Actor : ObjectReference
     Int GetCombatState()
     Actor GetCombatTarget()
     None SetRestrained(Bool abRestrained)
+    Bool DispelSpell(Spell akSpell)
+    Bool HasMagicEffect(MagicEffect akEffect)
+    Bool AddShout(Shout akShout)
+    None AddPerk(Perk akPerk)
+    None RemovePerk(Perk akPerk)
+    Bool HasPerk(Perk akPerk)
+    None EvaluatePackage()
+    Package GetCurrentPackage()
+    Bool IsDead()
+    Bool IsInCombat()
 Weather : Form
     global Weather GetCurrentWeather()
     global Float GetCurrentWeatherTransition()
-    global Weather FindWeather(Int auiType)
     global Int GetSkyMode()
     global None ReleaseOverride()
     None SetActive(Bool abOverride, Bool abAccelerate)
     None ForceActive(Bool abOverride)
     global Weather GetOutgoingWeather()
+    global Weather FindWeather(Int auiType)
 Game
     global Actor GetPlayer()
     global None DisablePlayerControls(Bool abMovement, Bool abFighting, Bool abCamSwitch, Bool abLooking, Bool abSneaking, Bool abMenu, Bool abActivate, Bool abJournalTabs, Int aiDisablePOVType)
@@ -130,6 +170,9 @@ Game
     global None IncrementSkillBy(String asSkillName, Int aiCount)
     global None ForceFirstPerson()
     global None ForceThirdPerson()
+    global None TeachWord(WordOfPower akWord)
+    global None UnlockWord(WordOfPower akWord)
+    global None AdvanceSkill(String asSkillName, Float afMagnitude)
 Debug
     global None MessageBox(String asMessageBoxText)
     global None Notification(String asNotificationText)
@@ -611,6 +654,13 @@ pub(super) fn mistyped_calls(pex: &papyrus::pex::Pex) -> Vec<String> {
             fields.insert(s(&v.name), s(&v.type_name));
         }
         fields.insert("self".into(), s(&obj.name));
+        // The script's own functions' parameters, for calls on `self`.
+        let own: HashMap<String, Vec<(String, String)>> = obj
+            .states
+            .iter()
+            .flat_map(|st| &st.functions)
+            .map(|(n, f)| (s(n), f.params.iter().map(|(a, t)| (s(a), s(t))).collect()))
+            .collect();
         for state in &obj.states {
             for (fname, f) in &state.functions {
                 let mut types = fields.clone();
@@ -635,8 +685,16 @@ pub(super) fn mistyped_calls(pex: &papyrus::pex::Pex) -> Vec<String> {
                         },
                         _ => continue,
                     };
-                    let Some((_, _, params, _)) = lookup(&class, &name) else {
-                        continue;
+                    let params: Vec<(String, String)> = match lookup(&class, &name) {
+                        Some((_, _, params, _)) => params
+                            .iter()
+                            .map(|(n, t)| (n.to_string(), t.to_string()))
+                            .collect(),
+                        None if class == s(&obj.name) => match own.get(&name) {
+                            Some(p) => p.clone(),
+                            None => continue,
+                        },
+                        None => continue,
                     };
                     for ((pname, pty), arg) in params.iter().zip(args) {
                         let pty = pty.to_ascii_lowercase();

@@ -594,6 +594,9 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         temper,
         factions: vec![(own(faction), 0)],
         script,
+        assistance: 0,
+        combat_style: None,
+        unique: false,
     };
     let npcs = vec![
         npc(
