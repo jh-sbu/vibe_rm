@@ -16,13 +16,14 @@ use esp::{FormId, LoadOrder};
 
 mod autotest;
 mod autotest2;
+mod autotest3;
 mod pex;
 pub mod results;
 mod script;
 mod venv;
 
 /// The test mods by name: what `test-mod` builds.
-pub const NAMES: &[&str] = &["autotest", "autotest2", "pex", "venv"];
+pub const NAMES: &[&str] = &["autotest", "autotest2", "autotest3", "pex", "venv"];
 
 /// A test mod's files: the plugin, and its compiled scripts by name.
 pub struct TestMod {
@@ -41,6 +42,7 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
     match name {
         "autotest" => autotest::build(lo),
         "autotest2" => autotest2::build(lo),
+        "autotest3" => autotest3::build(lo),
         "pex" => pex::build(),
         "venv" => Ok(TestMod {
             plugin: venv::build(lo)?,

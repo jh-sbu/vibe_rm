@@ -423,7 +423,13 @@ fn test_weather(slow_label: &str) -> FunctionBuilder {
         let line = c.own(
             "Measure",
             "String",
-            [w, true.into(), accelerate.into(), string(label)],
+            [
+                w,
+                true.into(),
+                accelerate.into(),
+                string(label),
+                120.0f32.into(),
+            ],
         );
         c.append(r.clone(), [line]);
     };

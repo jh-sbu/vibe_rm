@@ -63,6 +63,7 @@ ObjectReference : Form
     None RemoveItem(Form akItemToRemove, Int aiCount, Bool abSilent, ObjectReference akOtherContainer)
     Int GetItemCount(Form akItem)
     Bool IsMapMarkerVisible()
+    Float GetDistance(ObjectReference akOther)
     Bool CanFastTravelToMarker()
     None AddToMap(Bool abAllowFastTravel)
     Bool GetAnimationVariableBool(String arVariableName)
@@ -104,9 +105,12 @@ Actor : ObjectReference
     None StartCombat(Actor akTarget)
     None StopCombat()
     Int GetCombatState()
+    Actor GetCombatTarget()
+    None SetRestrained(Bool abRestrained)
 Weather : Form
     global Weather GetCurrentWeather()
     global Float GetCurrentWeatherTransition()
+    global Weather FindWeather(Int auiType)
     global Int GetSkyMode()
     global None ReleaseOverride()
     None SetActive(Bool abOverride, Bool abAccelerate)
@@ -418,14 +422,16 @@ pub(super) fn settle() -> FunctionBuilder {
     c.finish(r)
 }
 
-/// `Measure(Weather w, Bool override, Bool accelerate, String label)`: sets
-/// `w` active and times its transition.
+/// `Measure(Weather w, Bool override, Bool accelerate, String label, Float
+/// timeout)`: sets `w` active and times its transition, giving up after
+/// `timeout` seconds.
 pub(super) fn measure() -> FunctionBuilder {
     let mut c = Code::new("String");
     let w = c.param("w", "Weather");
     let overriding = c.param("override", "Bool");
     let accelerate = c.param("accelerate", "Bool");
     let label = c.param("label", "String");
+    let timeout = c.param("timeout", "Float");
     let r = c.local("r", "String");
     let vars = ["at1", "half", "halfGame", "full", "fullGame"].map(|n| {
         let v = c.local(n, "Float");
@@ -445,7 +451,7 @@ pub(super) fn measure() -> FunctionBuilder {
     c.wait(0.1);
     let now = real_time(&mut c);
     let dt = c.calc(op::FSUB, "Float", now, real0.clone());
-    let over = c.calc(op::CMP_GT, "Bool", dt.clone(), 120.0f32.into());
+    let over = c.calc(op::CMP_GT, "Bool", dt.clone(), timeout);
     c.jmpt(over, done);
     let current = c.global("Weather", "GetCurrentWeather", []);
     let is_current = c.calc(op::CMP_EQ, "Bool", current, w);
@@ -649,4 +655,169 @@ pub(super) fn mistyped_calls(pex: &papyrus::pex::Pex) -> Vec<String> {
         }
     }
     bad
+}
+
+/// Running a test mod's scripts in our VM with a made-up game: every call
+/// to a native answered with a value of its type (some made up to keep the
+/// tests going), and each built script checked for calls the game would
+/// refuse ([`mistyped_calls`]).
+#[cfg(test)]
+pub(super) mod dry_run {
+    use std::collections::HashMap;
+
+    use papyrus::vm::{Host, NativeResult, Vm};
+    use papyrus::{ObjectId, Value};
+
+    use super::{mistyped_calls, native, natives};
+
+    /// The game, as far as the tests ask it: our scripts, the natives'
+    /// declarations, and for each native an answer of its type (some
+    /// made up to keep the tests going).
+    struct Game {
+        scripts: HashMap<String, Vec<u8>>,
+        now: f64,
+        weather: Value,
+        weather_set_at: f64,
+        boxes: Vec<String>,
+        placed: u32,
+        saved_at_box: Option<usize>,
+    }
+
+    impl Host for Game {
+        fn load_script(&mut self, name: &str) -> Option<Vec<u8>> {
+            self.scripts.get(&name.to_ascii_lowercase()).cloned()
+        }
+
+        fn call_native(
+            &mut self,
+            class: &str,
+            func: &str,
+            this: Option<&Value>,
+            args: &[Value],
+        ) -> NativeResult {
+            let v = match func.to_ascii_lowercase().as_str() {
+                "wait" => {
+                    let Some(Value::Float(s)) = args.first() else {
+                        panic!("Wait({args:?})")
+                    };
+                    return NativeResult::Wait(*s);
+                }
+                "placeactoratme" | "placeatme" => {
+                    self.placed += 1;
+                    Value::Object(ObjectId::Form(0xFF00_0800 + self.placed), "Actor".into())
+                }
+                "getcurrentrealtime" => Value::Float(self.now as f32),
+                "getcurrentgametime" => Value::Float((self.now / 72.0 / 60.0) as f32),
+                "getcurrentweather" => self.weather.clone(),
+                "setactive" | "forceactive" => {
+                    self.weather = this.cloned().unwrap();
+                    self.weather_set_at = self.now;
+                    Value::None
+                }
+                "getcurrentweathertransition" => {
+                    Value::Float(((self.now - self.weather_set_at) / 10.0).min(1.0) as f32)
+                }
+                "floor" => {
+                    let Some(Value::Float(f)) = args.first() else {
+                        panic!("Floor({args:?})")
+                    };
+                    Value::Int(f.floor() as i32)
+                }
+                "messagebox" => {
+                    let Some(Value::String(s)) = args.first() else {
+                        panic!("MessageBox({args:?})")
+                    };
+                    self.boxes.push(s.to_string());
+                    Value::None
+                }
+                "requestsave" => {
+                    self.saved_at_box = Some(self.boxes.len());
+                    Value::None
+                }
+                _ => match native(class, func).1.1.to_ascii_lowercase().as_str() {
+                    "int" => Value::Int(1),
+                    "float" => Value::Float(1.0),
+                    "bool" => Value::Bool(false),
+                    "string" => Value::String("".into()),
+                    _ => Value::None,
+                },
+            };
+            NativeResult::Value(v)
+        }
+
+        fn is_native_type(&self, _obj: ObjectId, _class: &str) -> bool {
+            true
+        }
+    }
+
+    /// What a run showed: the message boxes, and how many had come up when
+    /// the game was asked to save.
+    pub struct Shown {
+        pub boxes: Vec<String>,
+        pub saved_at_box: Option<usize>,
+    }
+
+    /// An object for the VM.
+    pub fn form(id: u32, class: &str) -> Value {
+        Value::Object(ObjectId::Form(id), class.into())
+    }
+
+    /// Runs `built` (scripts by name): each of `attach` (form id, script,
+    /// properties) attached, the first sent `OnInit` and `OnUpdate`, until
+    /// `boxes` message boxes come up (or 3000 s). A second `OnUpdate` must
+    /// show none.
+    pub fn run(
+        built: Vec<(String, Vec<u8>)>,
+        attach: &[(u32, &str, Vec<(String, Value)>)],
+        boxes: usize,
+    ) -> Shown {
+        for (name, bytes) in &built {
+            let pex = papyrus::pex::parse(bytes).unwrap();
+            let bad = mistyped_calls(&pex);
+            assert!(bad.is_empty(), "{name}: {bad:#?}");
+        }
+        let mut scripts: HashMap<String, Vec<u8>> = built
+            .into_iter()
+            .map(|(n, b)| (n.to_ascii_lowercase(), b))
+            .collect();
+        for c in natives() {
+            scripts.insert(
+                c.name.to_ascii_lowercase(),
+                papyrus::build::native_class(c.name, c.parent, &c.functions).unwrap(),
+            );
+        }
+        let mut game = Game {
+            scripts,
+            now: 0.0,
+            weather: form(0x81A, "Weather"),
+            weather_set_at: -100.0,
+            boxes: Vec::new(),
+            placed: 0,
+            saved_at_box: None,
+        };
+        let mut vm = Vm::new();
+        for (id, script, properties) in attach {
+            assert!(vm.attach(&mut game, ObjectId::Form(*id), script, properties));
+        }
+        let quest = ObjectId::Form(attach[0].0);
+        assert_eq!(vm.send_event(&mut game, quest, "OnInit", vec![]), 1);
+        assert_eq!(vm.send_event(&mut game, quest, "OnUpdate", vec![]), 1);
+        while game.boxes.len() < boxes && game.now < 3000.0 {
+            let now = game.now;
+            vm.run(&mut game, now, 100_000);
+            game.now += 0.05;
+        }
+        let shown = game.boxes.len();
+        vm.send_event(&mut game, quest, "OnUpdate", vec![]);
+        let now = game.now;
+        vm.run(&mut game, now, 100_000);
+        assert_eq!(game.boxes.len(), shown, "a second update runs nothing");
+        for b in &game.boxes {
+            println!("{b}\n");
+        }
+        Shown {
+            boxes: game.boxes,
+            saved_at_box: game.saved_at_box,
+        }
+    }
 }
