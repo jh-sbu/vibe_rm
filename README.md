@@ -122,8 +122,10 @@ documents its setup, the outcome each reading predicts and, once tested, the
 result. Its vanilla forms are looked up by editor id in your Skyrim.esm; the
 plugins aren't committed.
 
-A test mod whose script runs its tests on its own (`test-mod autotest`)
-keeps each report in a script variable and has the game save once done;
+A test mod whose script runs its tests on its own (`test-mod autotest`,
+`test-mod autotest2`; `plans/autotest-survey.md` sorts the open ambiguities
+by what such a test would take) keeps each report in a script variable and
+has the game save once done;
 `test-results` reads the reports back from the newest save holding any:
 
 ```sh
