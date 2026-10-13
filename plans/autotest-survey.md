@@ -20,7 +20,8 @@ script). Settled items move out of this list as their tests report.
 
 Built as `test-mod autotest2`. Two runs (2026-10-13) settled all but 2
 (weather acceleration without an override: the weather set never came in)
-and parts of 15 (a sword's hits; whether the archer's were arrows).
+and parts of 15 (a sword's hits; whether the archer's were arrows):
+`test-mod autotest3` follows those up.
 
 1. **Weather, game or real time** (`weather.md`, transition speed): delta
    125 again at TimeScale 60. Game time: about 7.6 s; real time: about

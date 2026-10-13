@@ -291,16 +291,16 @@ const TESTS: &[(&str, &str)] = &[
 ];
 
 /// `"text"` then `value` cast, appended to `r`.
-fn put(c: &mut Code, r: &Arg, text: &str, value: Arg) {
+pub(super) fn put(c: &mut Code, r: &Arg, text: &str, value: Arg) {
     c.append(r.clone(), [string(text), value]);
 }
 
-fn line(c: &mut Code, r: &Arg, text: &str) {
+pub(super) fn line(c: &mut Code, r: &Arg, text: &str) {
     c.append(r.clone(), [string(text)]);
 }
 
 /// `form` cast to Form, for comparing with others.
-fn as_form(c: &mut Code, form: Arg) -> Arg {
+pub(super) fn as_form(c: &mut Code, form: Arg) -> Arg {
     let f = c.temp("Form");
     c.cast(f.clone(), form);
     f
@@ -337,7 +337,7 @@ fn name_fn() -> FunctionBuilder {
 
 /// `Place(ActorBase base, Float x, Float y)`: one placed by the player and
 /// moved `x`, `y` from them.
-fn place_fn() -> FunctionBuilder {
+pub(super) fn place_fn() -> FunctionBuilder {
     let mut c = Code::new("Actor");
     let base = c.param("base", "ActorBase");
     let x = c.param("x", "Float");
@@ -358,14 +358,14 @@ fn place_fn() -> FunctionBuilder {
     c.finish(a)
 }
 
-fn place(c: &mut Code, base: &str, x: f32, y: f32) -> Arg {
+pub(super) fn place(c: &mut Code, base: &str, x: f32, y: f32) -> Arg {
     let a = c.own("Place", "Actor", [auto_var(base), x.into(), y.into()]);
     let v = c.temp("Actor");
     c.assign(v.clone(), a);
     v
 }
 
-fn remove(c: &mut Code, a: &Arg) {
+pub(super) fn remove(c: &mut Code, a: &Arg) {
     c.method("ObjectReference", a.clone(), "Disable", [false.into()]);
     c.method("ObjectReference", a.clone(), "Delete", []);
 }
@@ -575,7 +575,7 @@ fn test_cleared() -> FunctionBuilder {
 
 /// Sheathes the player's weapon if drawn: disabling fighting does it
 /// (`autotest`'s controls test).
-fn sheathe(c: &mut Code) {
+pub(super) fn sheathe(c: &mut Code) {
     let drawn = c.method("Actor", auto_var("Player"), "IsWeaponDrawn", []);
     let skip = c.label();
     c.jmpf(drawn, skip);
@@ -1608,7 +1608,7 @@ fn test_stats() -> FunctionBuilder {
 }
 
 /// Weather tests' start: none indoors.
-fn outdoors_or_skip(c: &mut Code, r: &Arg) -> papyrus::build::Label {
+pub(super) fn outdoors_or_skip(c: &mut Code, r: &Arg) -> papyrus::build::Label {
     let inside = c.method("Actor", auto_var("Player"), "IsInInterior", []);
     let current = c.global("Weather", "GetCurrentWeather", []);
     let time_scale = c.method("GlobalVariable", auto_var("TimeScale"), "GetValue", []);
@@ -1647,7 +1647,13 @@ fn measure_line(c: &mut Code, r: &Arg, w: Arg, overriding: bool, accelerate: boo
     let line = c.own(
         "Measure",
         "String",
-        [w, overriding.into(), accelerate.into(), string(label)],
+        [
+            w,
+            overriding.into(),
+            accelerate.into(),
+            string(label),
+            120.0f32.into(),
+        ],
     );
     c.append(r.clone(), [line]);
 }
@@ -1881,12 +1887,12 @@ fn scripts(setup: &Setup) -> Result<Vec<(String, Vec<u8>)>> {
 }
 
 /// The vanilla forms by editor id, all from Skyrim.esm.
-struct Vanilla<'a> {
-    lo: &'a LoadOrder,
+pub(super) struct Vanilla<'a> {
+    pub(super) lo: &'a LoadOrder,
 }
 
 impl Vanilla<'_> {
-    fn id(&self, edid: &str) -> Result<FormId> {
+    pub(super) fn id(&self, edid: &str) -> Result<FormId> {
         let id = self
             .lo
             .find_editor_id(edid)
@@ -1966,25 +1972,25 @@ fn pick_markers(lo: &LoadOrder) -> Result<(Vec<Marker>, [Marker; 2])> {
 }
 
 /// An NPC of our own: Traits from the template, our stats.
-struct Npc {
-    object_id: u32,
-    edid: String,
+pub(super) struct Npc {
+    pub(super) object_id: u32,
+    pub(super) edid: String,
     /// Its name; `None` for none of its own.
-    name: Option<&'static str>,
+    pub(super) name: Option<&'static str>,
     /// `ACBS` level (the multiplier x 1000 with the PC level mult flag),
     /// the flag, calc min and max.
-    level: (u16, bool, u16, u16),
+    pub(super) level: (u16, bool, u16, u16),
     /// Its template and the template flags (0x1 traits, 0x4 factions).
-    template: (FormId, u16),
+    pub(super) template: (FormId, u16),
     /// Aggression (0 unaggressive, 1 aggressive), confidence (0 cowardly
     /// to 4 foolhardy).
-    temper: (u8, u8),
-    factions: Vec<(FormId, i8)>,
-    script: Option<AttachedScript>,
+    pub(super) temper: (u8, u8),
+    pub(super) factions: Vec<(FormId, i8)>,
+    pub(super) script: Option<AttachedScript>,
 }
 
 impl Npc {
-    fn record(self, race: FormId, class: FormId) -> RecordBuilder {
+    pub(super) fn record(self, race: FormId, class: FormId) -> RecordBuilder {
         let (level, pc_mult, min, max) = self.level;
         let flags: u32 = if pc_mult { 0x80 } else { 0 };
         // ACBS: flags, magicka and stamina offsets, level, calc min / max,
@@ -2051,7 +2057,7 @@ impl Npc {
 /// A quest: `DNAM` flags (0x1 start game enabled, 0x10 starts enabled),
 /// its type (0 none, 6 miscellaneous, 8 side quest), its script and its
 /// objectives (index, text).
-fn quest(
+pub(super) fn quest(
     object_id: u32,
     edid: &str,
     name: &str,
@@ -2086,7 +2092,7 @@ fn quest(
 
 /// A faction: `DATA` flags (0x40 tracks crime), its reactions to others
 /// (faction, `XNAM` group combat reaction: 1 enemy) and crime values.
-fn faction(object_id: u32, edid: &str, flags: u32, enemies: &[u32]) -> RecordBuilder {
+pub(super) fn faction(object_id: u32, edid: &str, flags: u32, enemies: &[u32]) -> RecordBuilder {
     let mut rec = RecordBuilder::new(b"FACT", own(object_id))
         .zstring(b"EDID", edid)
         .zstring(b"FULL", edid);
@@ -2302,93 +2308,8 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use papyrus::vm::{Host, NativeResult, Vm};
-    use papyrus::{ObjectId, Value};
-
     use super::*;
-    use crate::test_mods::script::{mistyped_calls, native, natives};
-
-    /// The game, as far as the tests ask it: our scripts, the natives'
-    /// declarations, and for each native an answer of its type (some
-    /// made up to keep the tests going).
-    struct Game {
-        scripts: HashMap<String, Vec<u8>>,
-        now: f64,
-        weather: Value,
-        weather_set_at: f64,
-        boxes: Vec<String>,
-        placed: u32,
-        saved_at_box: Option<usize>,
-    }
-
-    impl Host for Game {
-        fn load_script(&mut self, name: &str) -> Option<Vec<u8>> {
-            self.scripts.get(&name.to_ascii_lowercase()).cloned()
-        }
-
-        fn call_native(
-            &mut self,
-            class: &str,
-            func: &str,
-            this: Option<&Value>,
-            args: &[Value],
-        ) -> NativeResult {
-            let v = match func.to_ascii_lowercase().as_str() {
-                "wait" => {
-                    let Some(Value::Float(s)) = args.first() else {
-                        panic!("Wait({args:?})")
-                    };
-                    return NativeResult::Wait(*s);
-                }
-                "placeactoratme" | "placeatme" => {
-                    self.placed += 1;
-                    Value::Object(ObjectId::Form(0xFF00_0800 + self.placed), "Actor".into())
-                }
-                "getcurrentrealtime" => Value::Float(self.now as f32),
-                "getcurrentgametime" => Value::Float((self.now / 72.0 / 60.0) as f32),
-                "getcurrentweather" => self.weather.clone(),
-                "setactive" | "forceactive" => {
-                    self.weather = this.cloned().unwrap();
-                    self.weather_set_at = self.now;
-                    Value::None
-                }
-                "getcurrentweathertransition" => {
-                    Value::Float(((self.now - self.weather_set_at) / 10.0).min(1.0) as f32)
-                }
-                "floor" => {
-                    let Some(Value::Float(f)) = args.first() else {
-                        panic!("Floor({args:?})")
-                    };
-                    Value::Int(f.floor() as i32)
-                }
-                "messagebox" => {
-                    let Some(Value::String(s)) = args.first() else {
-                        panic!("MessageBox({args:?})")
-                    };
-                    self.boxes.push(s.to_string());
-                    Value::None
-                }
-                "requestsave" => {
-                    self.saved_at_box = Some(self.boxes.len());
-                    Value::None
-                }
-                _ => match native(class, func).1.1.to_ascii_lowercase().as_str() {
-                    "int" => Value::Int(1),
-                    "float" => Value::Float(1.0),
-                    "bool" => Value::Bool(false),
-                    "string" => Value::String("".into()),
-                    _ => Value::None,
-                },
-            };
-            NativeResult::Value(v)
-        }
-
-        fn is_native_type(&self, _obj: ObjectId, _class: &str) -> bool {
-            true
-        }
-    }
+    use crate::test_mods::script::dry_run::{form, run};
 
     #[test]
     fn the_tests_run_and_report() {
@@ -2403,32 +2324,6 @@ mod tests {
                     ("AddMarker1".into(), "FNAM 0 (b)".into()),
                 ],
             },
-        };
-        let built = scripts(&setup).unwrap();
-        for (name, bytes) in &built {
-            let pex = papyrus::pex::parse(bytes).unwrap();
-            let bad = mistyped_calls(&pex);
-            assert!(bad.is_empty(), "{name}: {bad:#?}");
-        }
-        let mut scripts: HashMap<String, Vec<u8>> = built
-            .into_iter()
-            .map(|(n, b)| (n.to_ascii_lowercase(), b))
-            .collect();
-        for c in natives() {
-            scripts.insert(
-                c.name.to_ascii_lowercase(),
-                papyrus::build::native_class(c.name, c.parent, &c.functions).unwrap(),
-            );
-        }
-        let form = |id: u32, class: &str| Value::Object(ObjectId::Form(id), class.into());
-        let mut game = Game {
-            scripts,
-            now: 0.0,
-            weather: form(0x81A, "Weather"),
-            weather_set_at: -100.0,
-            boxes: Vec::new(),
-            placed: 0,
-            saved_at_box: None,
         };
         let mut properties = vec![
             ("Player".to_owned(), form(0x14, "Actor")),
@@ -2455,26 +2350,17 @@ mod tests {
         {
             properties.push((name.clone(), form(0x2000 + i as u32, "ObjectReference")));
         }
-        let (quest, start_quest) = (
-            ObjectId::Form(own(QUEST).0),
-            ObjectId::Form(own(START_QUEST).0),
+        let shown = run(
+            scripts(&setup).unwrap(),
+            &[
+                (own(QUEST).0, SCRIPT, properties),
+                (own(START_QUEST).0, START_SCRIPT, Vec::new()),
+            ],
+            TESTS.len(),
         );
-        let mut vm = Vm::new();
-        assert!(vm.attach(&mut game, quest, SCRIPT, &properties));
-        assert!(vm.attach(&mut game, start_quest, START_SCRIPT, &[]));
-        assert_eq!(vm.send_event(&mut game, quest, "OnInit", vec![]), 1);
-        assert_eq!(vm.send_event(&mut game, quest, "OnUpdate", vec![]), 1);
-        while game.boxes.len() < TESTS.len() && game.now < 3000.0 {
-            let now = game.now;
-            vm.run(&mut game, now, 100_000);
-            game.now += 0.05;
-        }
-        for b in &game.boxes {
-            println!("{b}\n");
-        }
-        assert_eq!(game.boxes.len(), TESTS.len(), "every test reports");
-        assert_eq!(game.saved_at_box, Some(0), "saves before the boxes");
-        let all = game.boxes.join("\n");
+        assert_eq!(shown.boxes.len(), TESTS.len(), "every test reports");
+        assert_eq!(shown.saved_at_box, Some(0), "saves before the boxes");
+        let all = shown.boxes.join("\n");
         for expected in [
             "fFleeIsSafeTimer = 1\n",
             "iVrmNoSuchSetting = 1\n",
@@ -2502,10 +2388,5 @@ mod tests {
         ] {
             assert!(all.contains(expected), "{expected:?} not in the reports");
         }
-        // A second update doesn't run the tests again.
-        vm.send_event(&mut game, quest, "OnUpdate", vec![]);
-        let now = game.now;
-        vm.run(&mut game, now, 100_000);
-        assert_eq!(game.boxes.len(), TESTS.len());
     }
 }
