@@ -27,7 +27,17 @@
 //!   Here an archer 800 units off, with its arrows counted before and after,
 //!   each hit logged with the archer's distance.
 //!
-//! Not yet run in the game.
+//! Run in Skyrim SE (2026-10-13):
+//!
+//! - Weather: without an override Clear and Cloudy came in as with one
+//!   (23.0 s), accelerated or not; `ForceActive(false)` at once;
+//!   `FindWeather` gave Cloudy for pleasant and None for cloudy;
+//!   `ReleaseOverride` brought the weather from before back (going out at
+//!   once, in after 22.3 s); after it, `SetActive(false, false)` worked.
+//! - Sword: ten hits in 20 s from 60 to 160 units, the sword as the source,
+//!   no projectile, one a power attack.
+//! - Arrows: three hits from 580 to 1090 units, the bow as the source, no
+//!   projectile; the archer's arrows weren't used up.
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, write_plugin};
@@ -192,7 +202,7 @@ fn test_weather() -> FunctionBuilder {
     c.own("Settle", "String", []);
     let w = other(&mut c, "w3");
     let w_name = name(&mut c, w.clone());
-    put(&mut c, &r, "3. ForceActive(false) of WeatherB\n", w_name);
+    put(&mut c, &r, "3. ForceActive(false) of ", w_name);
     line(&mut c, &r, "\n");
     c.method("Weather", w, "ForceActive", [false.into()]);
     state(&mut c, "  at once");
@@ -660,7 +670,7 @@ mod tests {
         for expected in [
             "start (no override set yet): current ",
             "1. SetActive(false, false), no override yet: current at once True",
-            "3. ForceActive(false) of ",
+            "3. ForceActive(false) of WeatherA\n",
             "4. FindWeather: pleasant none, cloudy none\n",
             "5. SetActive(true, true): current at once True",
             "another weather coming in after (s; -1 not within the wait) -1\n",

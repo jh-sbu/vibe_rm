@@ -18,10 +18,9 @@ script). Settled items move out of this list as their tests report.
 
 ## Tier 1: cheap, record types test mods already write, no travel
 
-Built as `test-mod autotest2`. Two runs (2026-10-13) settled all but 2
-(weather acceleration without an override: the weather set never came in)
-and parts of 15 (a sword's hits; whether the archer's were arrows):
-`test-mod autotest3` follows those up.
+Built as `test-mod autotest2`; its two runs and `test-mod autotest3`'s
+follow-up (2026-10-13) settled all of it (acceleration does nothing, with
+an override or without).
 
 1. **Weather, game or real time** (`weather.md`, transition speed): delta
    125 again at TimeScale 60. Game time: about 7.6 s; real time: about

@@ -5,14 +5,14 @@
 //! and how far the transition has come (CommonLibSSE's `Sky`: `currentWeather`,
 //! `lastWeather`, `currentWeatherPct`, `overrideWeather`). The sky, light, fog
 //! and image space mix the two by that. A weather comes in over its DATA "trans
-//! delta" sixteenths of a game minute (`fWeatherTransAccel` times faster when
-//! accelerated, unless an override). Outdoors, the
+//! delta" sixteenths of a game minute, accelerated or not. Outdoors, the
 //! weathers come from the player's cell's regions (XCLR; the highest priority
 //! region with weather data, RDAT type 3, its RDWT list of weather, chance and
 //! global), else the climate's (WLST), picked by chance; leaving a region
 //! whose weathers don't include the current one brings in one of the new
 //! region's, and every few hours the region's weather is rolled again. An
-//! override (`abOverride`) holds the weather until `ReleaseOverride`. Indoors
+//! override (`abOverride`) holds the weather until `ReleaseOverride` brings
+//! back the one it replaced. Indoors
 //! the weather goes on but no sky shows. Outdoors the weathers' sounds
 //! (SNAM: rain, wind...) loop at their share of the transition, thunder
 //! rolls now and then while it's on, lightning flashing, and its
@@ -66,9 +66,10 @@ pub struct WeatherState {
     pub outgoing: Option<Arc<Weather>>,
     /// How far `current` has come in (1: all the way).
     pub pct: f32,
-    accelerate: bool,
     /// Set with `abOverride`: no regional changes until `ReleaseOverride`.
     pub overridden: bool,
+    /// The weather on when an override began, back when it is released.
+    before_override: Option<FormId>,
     /// The cell whose regions gave `list`, and the region.
     region_cell: Option<FormId>,
     pub region: Option<FormId>,
@@ -422,17 +423,28 @@ impl Engine {
             w.editor_id,
             if overriding { " (override)" } else { "" }
         );
+        self.begin_override(overriding);
         let ws = &mut self.weather;
         ws.current = Some(w);
         ws.outgoing = None;
         ws.pct = 1.0;
-        ws.overridden |= overriding;
         self.schedule_weather_roll();
         self.sync_sky_textures();
     }
 
+    /// An override begins (if `overriding` and none held): the weather on is
+    /// kept to come back to.
+    fn begin_override(&mut self, overriding: bool) {
+        if overriding && !self.weather.overridden {
+            self.weather.overridden = true;
+            self.weather.before_override = self.current_weather();
+        }
+    }
+
     /// `Weather.SetActive` (console `sw`): the weather comes in from the
-    /// current one (faster when accelerated).
+    /// current one. `abAccelerate` is taken as doing nothing: with or without
+    /// an override, accelerated weathers came in as fast (`test-mod
+    /// autotest`, `autotest3`), so `fWeatherTransAccel` isn't used.
     pub fn set_weather(&mut self, f: FormId, overriding: bool, accelerate: bool) {
         let Some(w) = self.weather_record(f) else {
             return;
@@ -441,7 +453,7 @@ impl Engine {
             log::info!("weather {} not set: overridden", w.editor_id);
             return;
         }
-        self.weather.overridden |= overriding;
+        self.begin_override(overriding);
         if self.current_weather() == Some(f) {
             return;
         }
@@ -456,18 +468,20 @@ impl Engine {
         ws.outgoing = ws.current.take().filter(|_| !instant);
         ws.current = Some(w);
         ws.pct = if instant { 1.0 } else { 0.0 };
-        // An override isn't accelerated: in the game, accelerated or not,
-        // it came in as fast.
-        ws.accelerate = accelerate && !overriding;
         self.schedule_weather_roll();
         self.sync_sky_textures();
     }
 
-    /// `Weather.ReleaseOverride`: the region's weathers come back.
+    /// `Weather.ReleaseOverride`: the weather on when the override began
+    /// comes back, as any weather comes in (in the game it was going out at
+    /// once and in after 22 s: `test-mod autotest3`); then the region's
+    /// changes as before.
     pub fn release_weather_override(&mut self) {
         if std::mem::take(&mut self.weather.overridden) {
             log::info!("weather override released");
-            self.weather.next_roll = 0.0;
+            if let Some(back) = self.weather.before_override.take() {
+                self.set_weather(back, false, false);
+            }
         }
     }
 
@@ -556,17 +570,11 @@ impl Engine {
                 .as_ref()
                 .map_or(255, |w| w.trans_delta)
                 .max(1) as f32;
-            let accel = if self.weather.accelerate {
-                crate::ai::combat::gmst_f32(&self.lo, "fWeatherTransAccel", 16.0)
-            } else {
-                1.0
-            };
             let ws = &mut self.weather;
-            ws.pct += game_hours * 60.0 / (delta * MINUTES_PER_TRANS_DELTA) * accel;
+            ws.pct += game_hours * 60.0 / (delta * MINUTES_PER_TRANS_DELTA);
             if ws.pct >= 1.0 {
                 ws.pct = 1.0;
                 ws.outgoing = None;
-                ws.accelerate = false;
                 self.sync_sky_textures();
             }
         }
@@ -822,11 +830,7 @@ impl Engine {
             if ws.overridden { ", overridden" } else { "" }
         )];
         if ws.outgoing.is_some() {
-            out.push(format!(
-                "outgoing {}{}",
-                name(&ws.outgoing),
-                if ws.accelerate { ", accelerated" } else { "" }
-            ));
+            out.push(format!("outgoing {}", name(&ws.outgoing)));
         }
         out.push(format!(
             "{:.2}h: raining {} snowing {} wind {:.2}; next roll in {:.1}h",

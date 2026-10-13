@@ -20,8 +20,10 @@ Implemented in `src/ai/combat.rs` (`CombatState`, `combat_state`,
   still hostile was in combat again 0.43 s after `StopCombat` in both runs
   (its state 0 at once in one, still 1 in the other). A Firebolt cast by
   script (`Spell.Cast`) sent two `OnHit`s 0.1 s apart, the spell as the
-  source and `FireboltProjectile01` as the projectile. An archer's hits sent
-  the bow as the source and no projectile.
+  source and `FireboltProjectile01` as the projectile. A fighter's iron sword
+  blows (60 to 160 units away) sent the sword and no projectile; an archer's
+  arrows (580 to 1090 units away) sent the bow and no projectile, and the
+  archer's 40 arrows were all still there after (`test-mod autotest3`).
 
 ## Open
 
@@ -35,13 +37,10 @@ Implemented in `src/ai/combat.rs` (`CombatState`, `combat_state`,
   the actors fighting (1) or searching for (2) the player; the player gets no
   `OnCombatStateChanged`. No source says how the game decides it.
 - **`OnHit` sources.** Melee and arrow hits send it, with the weapon that
-  struck as the source (the blow's hand's) and, for arrows, the ammo's
-  projectile, though the game's archer's hits came with none (whether those
-  were arrows wasn't seen); a spell sends its projectile (but once here,
-  not twice as the game's Firebolt did). `abSneakAttack` is set for sneak
-  attacks. The console's `damage` sends none, as scripts' don't. A
-  fighter given an iron sword landed no blow on the target in 8 s in the
-  game: a sword's hits are still to be seen.
+  struck as the source (the blow's hand's) and no projectile, as the game
+  does; a spell sends its projectile, but once, not twice as the game's
+  Firebolt did (why twice isn't known). `abSneakAttack` is set for sneak
+  attacks. The console's `damage` sends none, as scripts' don't.
 - **`StopCombat`** ends the fight and any search; an actor still hostile
   finds its target again by detection, at the next detection update here
   (a quarter second).
