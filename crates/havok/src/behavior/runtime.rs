@@ -451,6 +451,15 @@ impl Ctx<'_> {
             .map(|v| self.var(gi, v))
     }
 
+    /// Publish the state ID (not its index in `states`) through an authored
+    /// output binding. Do this before activating the state's child, whose
+    /// selectors / start states may read the variable.
+    fn set_current_state(&mut self, gi: usize, g: GenId, state: i32) {
+        if let Some(v) = self.shared.graph(gi).bound(g, "currentStateId") {
+            self.set_var(gi, v, state as f32);
+        }
+    }
+
     /// Value of the variable bound to `member` of modifier `m`.
     fn modifier_bound(&self, gi: usize, m: ModId, member: &str) -> Option<f32> {
         let v = self.shared.graph(gi).modifier_bindings[m]
@@ -575,7 +584,9 @@ impl Ctx<'_> {
                     match states.iter().find(|s| s.id == want).or(states.first()) {
                         Some(s) => {
                             let (id, generator) = (s.id, s.generator);
-                            for e in s.enter_events.clone() {
+                            let enters = s.enter_events.clone();
+                            self.set_current_state(gi, g, id);
+                            for e in enters {
                                 self.raise(gi, e.event, e.payload);
                             }
                             let child = generator
@@ -1047,6 +1058,7 @@ impl Ctx<'_> {
             ));
         }
         let mut nested = t.to_nested;
+        self.set_current_state(gi, sm, id);
         let child = generator.map(|c| Box::new(self.activate(gi, c, &mut nested, 1)));
         if let Some((f, _, _)) = old_from {
             self.deactivate(*f);
@@ -2159,6 +2171,107 @@ mod tests {
 
     fn time(i: &Instance) -> f32 {
         (i.samples()[0].time * 100.0).round() / 100.0
+    }
+
+    #[test]
+    fn current_state_output_reaches_child_start_states() {
+        let mut g = BehaviorGraph::new(
+            "G",
+            Some(0),
+            vec![
+                Generator::StateMachine {
+                    name: "Parent".into(),
+                    start: 42,
+                    start_variable: None,
+                    start_mode: StartMode::Default,
+                    states: vec![
+                        state(42, 1, vec![Transition::new(0, 7, None)]),
+                        state(7, 1, vec![]),
+                    ],
+                    wildcards: vec![],
+                },
+                Generator::StateMachine {
+                    name: "Child".into(),
+                    start: 7,
+                    start_variable: Some(0),
+                    start_mode: StartMode::Default,
+                    states: vec![state(7, 2, vec![]), state(42, 3, vec![])],
+                    wildcards: vec![],
+                },
+                clip("Seven", ClipMode::Looping, vec![]),
+                clip("FortyTwo", ClipMode::Looping, vec![]),
+            ],
+            vec!["Change".into()],
+        );
+        let v = g.add_variable("ParentState", VarType::Int, -1.0);
+        g.bindings[0].push(Binding {
+            member: "currentStateId".into(),
+            variable: v,
+        });
+        let mut i = instance(g);
+        assert_eq!(i.variable("ParentState"), Some(42.0));
+        assert_eq!(playing(&i), [("FortyTwo".into(), 1.0)]);
+        assert!(i.handle_event("Change", &mut durations));
+        assert_eq!(i.variable("ParentState"), Some(7.0));
+        assert_eq!(playing(&i), [("Seven".into(), 1.0)]);
+    }
+
+    #[test]
+    fn current_state_output_waits_for_pending_transition_but_not_blend() {
+        let mut g = windowed(false);
+        let v = g.add_variable("State", VarType::Int, -1.0);
+        g.bindings[0].push(Binding {
+            member: "currentStateId".into(),
+            variable: v,
+        });
+        if let Generator::StateMachine { states, .. } = &mut g.generators[0] {
+            states[0].transitions[0].blend = Some(0.5);
+        }
+        let mut i = instance(g);
+        assert_eq!(i.variable("State"), Some(0.0));
+        assert!(i.handle_event("Out", &mut durations));
+        assert_eq!(i.variable("State"), Some(0.0));
+        i.update(1.0, &mut durations); // Open trigger starts the pending transition.
+        assert_eq!(i.variable("State"), Some(1.0));
+        i.update(0.25, &mut durations);
+        assert_eq!(playing(&i), [("Loop".into(), 0.5), ("Exit".into(), 0.5)]);
+        assert_eq!(i.variable("State"), Some(1.0));
+    }
+
+    #[test]
+    fn current_state_output_maps_referenced_graph_variables() {
+        let mut root = BehaviorGraph::new(
+            "Root",
+            Some(0),
+            vec![Generator::Reference {
+                name: "Ref".into(),
+                behavior: "g".into(),
+            }],
+            vec![],
+        );
+        root.add_variable("Unrelated", VarType::Int, 123.0);
+        let mut g = graph();
+        let v = g.add_variable("State", VarType::Int, -1.0);
+        g.bindings[0].push(Binding {
+            member: "currentStateId".into(),
+            variable: v,
+        });
+        // An invalid authored start falls back to the first state's actual ID.
+        if let Generator::StateMachine { start, .. } = &mut g.generators[0] {
+            *start = 999;
+        }
+        let shared = Shared::new(Arc::new(Project {
+            graphs: vec![("root".into(), root), ("g".into(), g)],
+            character: None,
+        }));
+        let mut i = Instance::new(shared, 1);
+        i.update(0.0, &mut durations);
+        assert_eq!(i.variable("State"), Some(0.0));
+        assert!(i.handle_event("Sit", &mut durations));
+        assert_eq!(i.variable("State"), Some(1.0));
+        i.update(1.1, &mut durations); // Clip-end trigger advances to the loop.
+        assert_eq!(i.variable("State"), Some(2.0));
+        assert_eq!(i.variable("Unrelated"), Some(123.0));
     }
 
     #[test]
