@@ -205,6 +205,11 @@ pub fn call(
                 }
             }
             log::info!("{func}: {}", e.disabled_controls.describe());
+            // Disabling fighting puts a drawn weapon away (`test-mod
+            // autotest`).
+            if disable && e.disabled_controls.fighting && e.player_weapon_drawn() {
+                e.player_draw_weapon(false);
+            }
             none()
         }
         ("game", "ismovementcontrolsenabled") => v(Value::Bool(!e.disabled_controls.movement)),

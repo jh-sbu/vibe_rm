@@ -68,9 +68,11 @@ and location pages, CK wiki descriptions) and the game's data files.
 2. **Which doors a package locks.** "Home" is a guess: the sleep location's cell.
    The game may use ownership (`XOWN` on doors and cells), the location
    (`LCTN`), or the package's own location.
-3. **Locked pairs.** Whether the game shares a lock across a load door pair, and
-   whether one can always leave from inside, is inferred from where the data puts
-   locks and from play reports.
+3. **Leaving from inside.** That one can always leave an interior through a
+   locked pair is inferred from where the data puts locks and from play
+   reports. (That the pair shares one lock is settled: Sven and Hilde's
+   outside door, with no lock of its own, reports the inside one's state and
+   follows `Lock` on either side; `test-mod autotest`.)
 4. **NPCs and load doors.** What lets NPCs through locked load doors isn't known:
    whether every package can, only packages naming a place inside, or something
    in the doors' or quests' data.

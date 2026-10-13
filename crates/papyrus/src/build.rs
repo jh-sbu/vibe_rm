@@ -94,6 +94,8 @@ pub struct FunctionBuilder {
     locals: Vec<(String, String)>,
     code: Vec<(u8, Vec<Operand>)>,
     labels: Vec<Option<usize>>,
+    /// Temporaries made by [`FunctionBuilder::temp`].
+    temps: usize,
 }
 
 impl FunctionBuilder {
@@ -106,12 +108,19 @@ impl FunctionBuilder {
             locals: Vec::new(),
             code: Vec::new(),
             labels: Vec::new(),
+            temps: 0,
         }
     }
 
     /// Declared `Global`: called on the class, with no `self`.
     pub fn global(mut self) -> Self {
         self.flags |= 1;
+        self
+    }
+
+    /// Declared `Native`: no code, the game's own.
+    pub fn native(mut self) -> Self {
+        self.flags |= 2;
         self
     }
 
@@ -124,6 +133,32 @@ impl FunctionBuilder {
     pub fn local(&mut self, name: &str, type_name: &str) -> Arg {
         self.locals.push((name.to_owned(), type_name.to_owned()));
         id(name)
+    }
+
+    /// A new temporary local, named as the compiler names them
+    /// (`::temp<n>`, counting this function's own).
+    pub fn temp(&mut self, type_name: &str) -> Arg {
+        let name = format!("::temp{}", self.temps);
+        self.temps += 1;
+        self.local(&name, type_name)
+    }
+
+    /// `dest += part` for each part, in order: string literals as they
+    /// are, anything else cast to a string first (as the compiler does for
+    /// `"text" + value`).
+    pub fn append(&mut self, dest: Arg, parts: impl IntoIterator<Item = Arg>) -> &mut Self {
+        for part in parts {
+            let part = match part {
+                Arg::Str(_) => part,
+                other => {
+                    let s = self.temp("String");
+                    self.cast(s.clone(), other);
+                    s
+                }
+            };
+            self.strcat(dest.clone(), dest.clone(), part);
+        }
+        self
     }
 
     /// Any instruction, its arguments as [`pex::op_args`] lays them out.
@@ -443,6 +478,33 @@ impl ScriptBuilder {
     }
 }
 
+/// A native function's declaration: name, return type, parameters (name,
+/// type), and whether it is `Global`.
+pub type NativeDecl<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str)], bool);
+
+/// A native class as the vanilla scripts declare one (`Scriptname class
+/// extends parent Native Hidden`): only native functions, no `GetState` /
+/// `GotoState`. For running built scripts in [`crate::vm`] without the
+/// game's own scripts.
+pub fn native_class(class: &str, parent: &str, functions: &[NativeDecl]) -> Result<Vec<u8>> {
+    let mut s = ScriptBuilder::new(class, parent);
+    for (name, ret, params, global) in functions {
+        let mut f = FunctionBuilder::new(ret).native();
+        if *global {
+            f = f.global();
+        }
+        for (p, t) in *params {
+            f.param(p, t);
+        }
+        s.function(name, f);
+    }
+    let mut p = s.build()?;
+    p.objects[0].states[0]
+        .functions
+        .retain(|(_, f)| f.is_native());
+    pex::write(&p)
+}
+
 /// The string table as it fills.
 #[derive(Default)]
 struct Build {
@@ -566,24 +628,13 @@ mod tests {
     /// A native function: name, return type, parameters (name, type).
     type Native<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str)]);
 
+    /// A native class; `Actor`'s are methods, the others' global.
     fn natives(class: &str, functions: &[Native]) -> Vec<u8> {
-        // Native classes as the vanilla scripts declare them: global
-        // natives (flags 3) or native methods (2).
-        let mut s = ScriptBuilder::new(class, "");
-        for (name, ret, params) in functions {
-            let mut f = FunctionBuilder::new(ret);
-            for (p, t) in *params {
-                f.param(p, t);
-            }
-            f.flags = if class == "Actor" { 2 } else { 3 };
-            s.function(name, f);
-        }
-        let mut p = s.build().unwrap();
-        // Native classes have neither GetState nor GotoState.
-        p.objects[0].states[0]
-            .functions
-            .retain(|(_, f)| f.is_native());
-        pex::write(&p).unwrap()
+        let decls: Vec<NativeDecl> = functions
+            .iter()
+            .map(|&(n, r, p)| (n, r, p, class != "Actor"))
+            .collect();
+        native_class(class, "", &decls).unwrap()
     }
 
     #[test]

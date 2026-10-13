@@ -175,6 +175,9 @@ impl Engine {
     /// Draw (or sheathe) an actor's weapon: the graph plays the draw and raises
     /// `weaponDraw` as the hand takes it. False when the graph won't.
     pub fn draw_weapon(&mut self, actor: FormId, draw: bool) -> bool {
+        if actor == crate::engine::PLAYER_REF {
+            return self.player_draw_weapon(draw);
+        }
         let Some(key) = self.actor_cells.get(&actor).copied() else {
             return false;
         };

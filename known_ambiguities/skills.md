@@ -29,6 +29,10 @@ below (Skyrim.esm / Update.esm).
   The game clears the flag on the book's base, so another copy doesn't teach;
   that is the same thing.
 
+- **NPC levels** (`GetLevel`): `ACBS` level, or with the PC level mult flag
+  (0x80) the player's level x mult / 1000, rounded down (1.5 and 1.667 at
+  level 1 gave 1), at least calc min (`test-mod autotest`).
+
 ## Open (choices made here)
 
 - **Which level the cost uses.** UESP gives `improve mult x (level - 1)^1.95 +
@@ -66,6 +70,5 @@ below (Skyrim.esm / Update.esm).
   skill XP already earned toward the next level (as `IncrementSkill`), and
   passes no time; refusals are notifications; the menu has no sounds (no
   sound descriptor is named for it).
-- **NPC levels** (`GetLevel`): `ACBS` level, or with the PC level mult flag
-  (0x80) the player's level x mult / 1000, rounded, between calc min and max
-  (max 0: none). How the game rounds isn't public.
+- **NPC levels**: whether calc max 0 means no maximum (taken so here), and
+  that max clamps, aren't checked: `test-mod autotest` ran at player level 1.
