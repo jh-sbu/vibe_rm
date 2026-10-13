@@ -122,12 +122,11 @@ not a health threshold. It is compared with a *threat ratio*:
 
 ## Values taken from the game's own settings table
 
-These settings are not in Skyrim.esm. Their defaults were read from the data of the
-game's settings table (names and default values only; no code was read), consistent
-with published Skyrim settings lists. Replace them with documented values if any turn
-up:
+These settings are not in Skyrim.esm. The game's values, read in Skyrim SE through
+`Game.GetGameSettingFloat` (`test-mod autotest2`, 2026-10-13), match the defaults
+used here:
 
-| Setting | Default |
+| Setting | Value |
 | --- | --- |
 | `fConfidenceCowardly` | 1000 (also the GECK's value) |
 | `fConfidenceFoolhardy` | 0 (also the GECK's value) |
@@ -135,6 +134,15 @@ up:
 | `fCombatGroupCombatStrengthUpdateTime` | 2.0 (not used yet) |
 | `fCombatFleeDistanceExterior` / `Interior` | 4096 / 2048 |
 | `fFleeIsSafeTimer` | 30 |
+
+The same run read those for choosing where to flee (not used yet, see 9):
+`fCombatFleeUseDoorChance` 0.33, `fCombatFleeDoorDistanceMax` 1024,
+`fCombatFleeInitialDoorRestrictChance` 0.75, `fCombatFleeCoverMinDistance` 1024,
+`fCombatFleeCoverSearchRadius` 3072, `fCombatFleeAllyDistanceMin` 1536,
+`fCombatFleeAllyRadius` 64, `fCombatFleeTargetAvoidRadius` 256,
+`fCombatFleeTargetGatherRadius` 3072. `fCombatFleeBoostConfidence` and its
+`TargetRadius`, `fCombatFleeDistance`, `fCombatFleeWaitTime`, `fFleeDistance` and
+`fFleeDoneDistance` read 0, as a setting that doesn't exist does.
 
 ## Sources
 

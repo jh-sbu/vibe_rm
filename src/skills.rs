@@ -286,9 +286,10 @@ impl Engine {
     }
 
     /// An actor's level (`GetLevel`): the player's, or the NPC's (`ACBS`): a
-    /// fixed level, or with "PC level mult" the player's times the
-    /// multiplier rounded down (`test-mod autotest`), between its calc min
-    /// and max (0: none).
+    /// fixed level (calc min and max not applied), or with "PC level mult"
+    /// the player's times the multiplier rounded down, between its calc min
+    /// and max (0: none), 0 if calc min is (`test-mod autotest`,
+    /// `autotest2`).
     pub fn actor_level(&self, actor: FormId) -> i32 {
         if actor == PLAYER_REF {
             return self.skills.level as i32;
@@ -308,7 +309,7 @@ impl Engine {
         let (min, max) = (u16_at(10), u16_at(12));
         let level = self.skills.level as i32 * u16_at(8) / 1000;
         let level = if max > 0 { level.min(max) } else { level };
-        level.max(min).max(1)
+        level.max(min)
     }
 
     /// The skill the player's armor trains when struck: the kind (light or

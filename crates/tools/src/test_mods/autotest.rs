@@ -753,7 +753,7 @@ mod tests {
     use papyrus::{ObjectId, Value};
 
     use super::*;
-    use crate::test_mods::script::natives;
+    use crate::test_mods::script::{mistyped_calls, natives};
 
     /// The game, as far as the tests ask it: our scripts and the natives'
     /// declarations, with made-up answers.
@@ -841,8 +841,13 @@ mod tests {
 
     #[test]
     fn the_tests_run_and_report() {
-        let mut scripts: HashMap<String, Vec<u8>> = scripts("delta 75")
-            .unwrap()
+        let built = scripts("delta 75").unwrap();
+        for (name, bytes) in &built {
+            let pex = papyrus::pex::parse(bytes).unwrap();
+            let bad = mistyped_calls(&pex);
+            assert!(bad.is_empty(), "{name}: {bad:#?}");
+        }
+        let mut scripts: HashMap<String, Vec<u8>> = built
             .into_iter()
             .map(|(n, b)| (n.to_ascii_lowercase(), b))
             .collect();

@@ -19,16 +19,16 @@ stealth points.
   `fSneakSoundLosMult` (0.3) without line of sight.
 - Visual: 0 if the target can't be seen; `(fDetectionSneakLightMod + light
   level) * fSneakLightMult`, times `1 + moving * fSneakLightMoveMult + running
-  * fSneakLightRunMult`, `(100 - blindness) / 100` and `fSneakStealthboyMult`
-  when invisible.
+  * fSneakLightRunMult` (0.01, 0.2 in the game), `(100 - blindness) / 100` and
+  `fSneakStealthboyMult` when invisible.
 - Observer skill: `fSneakPerceptionSkillMin + (Max - Min) * Sneak / 100`,
   times `1 + alert * fSneakAlertMod + sleeping * fSneakSleepBonus +
-  not combat target * fSneakCombatMod`.
+  not combat target * fSneakCombatMod` (-0.4 in the game).
 - Stealth points (CK wiki "Stealth Points"): detection above 0 by an
   aggressive actor drains them (faster the higher), below 0 refills them
   (faster the lower); none refill for `fCombatStealthPointRegenAlertWaitTime`
   (10 s) after someone becomes alert; at 0 the target is detected; detection
-  above `iCombatStealthPointDetectionThreshold` (25; or the sneak variant
+  above `iCombatStealthPointDetectionThreshold` (25; or the sneak variant, 70
   when sneaking) detects at once; always 0 while enemies fight you. They
   count for "aggro" detection only, not for being caught stealing.
 - Detection states Normal / Alert / Combat / Lost and detection events (CK
@@ -107,16 +107,23 @@ stealth points.
   attacks make no sound until a source turns up.
 - The "Combat Search" behaviour itself (where searchers look, for how long)
   is unsourced; see above.
-- `fSneakLightMoveMult`, `fSneakLightRunMult`, `fSneakCombatMod`,
-  `fSneakStealthboyMult`, `iCombatStealthPointSneakDetectionThreshold`,
-  `fSneakNoticedMin`: not in the plugins, defaults unknown; left out.
+- `fSneakStealthboyMult` and `fSneakNoticedMin` aren't in the plugins and
+  read 0 in the game, as a setting that doesn't exist does: left out.
+  (`fSneakLightMoveMult` 0.01, `fSneakLightRunMult` 0.2, `fSneakCombatMod`
+  -0.4 and `iCombatStealthPointSneakDetectionThreshold` 70, also missing from
+  the plugins, were read in the game, `test-mod autotest2`, and are used.)
 - `fPlayerDetectionSneakBase` / `Mult`, `fPlayerDetectActorValue`,
   `fSneakActionMult` (unused without action sounds), `fSneakFlyingDistanceMult`,
   `fSneakAmbushNonTargetMod`: their roles are unknown.
 - The light level follows the weather's colours as the renderer uses them:
   outdoors at midnight (moonlight and night ambient) comes out at about 60% of
-  noon in Riverwood (78 against 127). Whether the game's is that bright at
-  night is unverified.
+  noon in Riverwood (78 against 127). The game's, by the Riverwood road under
+  `SkyrimClear` forced (`test-mod autotest2`, hour: level): 0-4 81.6, 5 81.7,
+  6 92.2, 7 102.5, 8 113.1, 9 124.5, 10-15 136.4, 16 136.3, 17 30.7, 18 24.2,
+  19 21.7, 20 25.6, 21-23 63.3. Night is about 60% of noon there too, but
+  the game's scale is about 7% higher, and its evenings dip far below the
+  night (the sun behind the hills to the west still counted as the light's
+  source?): not modelled.
 - The observer-minus-target skill term isn't attenuated, so an observer with a
   high Sneak (Riverwood's Stump, Sneak 50: 35 at 5100 units) detects a player who
   isn't sneaking anywhere within reach, through walls: a crime witness from

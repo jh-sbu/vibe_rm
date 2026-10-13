@@ -586,6 +586,9 @@ pub fn call(
             }
             none()
         }
+        ("objectreference", "canfasttraveltomarker") => {
+            v(Value::Bool(me.is_some_and(|r| e.can_fast_travel_to(r))))
+        }
         ("objectreference", "ismapmarkervisible") => {
             v(Value::Bool(me.is_some_and(|r| e.map_marker_visible(r))))
         }

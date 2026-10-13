@@ -14,7 +14,10 @@ pub const QUEST_TYPE_MISC: u8 = 6;
 /// The statistic each quest type's completions count in (`DNAM` type order:
 /// main, the College, the Thieves Guild, the Dark Brotherhood, the
 /// Companions, miscellaneous, Daedric, side, the Civil War, Dawnguard,
-/// Dragonborn). Miscellaneous quests count their objectives instead.
+/// Dragonborn). Miscellaneous quests count their objectives instead. Side
+/// quests aren't counted here: the game's `AchievementsScript` counts them
+/// (a side quest completed by `CompleteQuest` counted in Quests Completed
+/// alone: `test-mod autotest2`).
 const COMPLETED_STATS: [&str; 12] = [
     "",
     "Main Quests Completed",
@@ -24,7 +27,7 @@ const COMPLETED_STATS: [&str; 12] = [
     "The Companions Quests Completed",
     "",
     "Daedric Quests Completed",
-    "Side Quests Completed",
+    "",
     "Civil War Quests Completed",
     "Dawnguard Quests Completed",
     "Dragonborn Quests Completed",

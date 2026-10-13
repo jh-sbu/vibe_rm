@@ -137,23 +137,18 @@ impl Sources {
             .filter(|f| !f.is_null())
     }
 
-    /// Factions and ranks: the factions part's, or the next template's when it lists
-    /// none. A negative rank isn't membership (potential followers'
+    /// Factions and ranks: the factions part's own, none when it lists none
+    /// (the game doesn't take them from the template then: `test-mod
+    /// autotest2`). A negative rank isn't membership (potential followers'
     /// `CurrentFollowerFaction`).
     pub fn factions(&self, lo: &LoadOrder) -> Vec<(FormId, i8)> {
-        let from = self.of(FACTIONS);
-        let start = self.chain.iter().position(|&n| n == from).unwrap_or(0);
-        for rec in self.chain[start..].iter().filter_map(|&n| lo.get(n)) {
-            let own: Vec<(FormId, i8)> = rec
-                .subrecords()
-                .filter(|s| s.tag.0 == *b"SNAM" && s.data.len() >= 5)
-                .map(|s| (rec.fid(s.form_id(0)), s.data[4] as i8))
-                .collect();
-            if !own.is_empty() {
-                return own;
-            }
-        }
-        Vec::new()
+        let Some(rec) = lo.get(self.of(FACTIONS)) else {
+            return Vec::new();
+        };
+        rec.subrecords()
+            .filter(|s| s.tag.0 == *b"SNAM" && s.data.len() >= 5)
+            .map(|s| (rec.fid(s.form_id(0)), s.data[4] as i8))
+            .collect()
     }
 
     /// The factions it belongs to (rank 0 or more).

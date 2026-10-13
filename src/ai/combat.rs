@@ -16,6 +16,8 @@ use crate::world::template::{self, Sources};
 
 /// How often actors look for enemies (no source). Whom they notice is
 /// detection's (`crate::detection`).
+/// Skyrim.esm's `Unarmed` weapon: a fist's blows' source.
+const UNARMED: FormId = FormId(0x1F4);
 const DETECT_INTERVAL: f32 = 1.0;
 /// Actors don't start fights, or join them, further off than this (no source).
 /// Fights end by detection (`crate::detection`).
@@ -497,7 +499,7 @@ impl CombatSettings {
             shield_bash_min: gmst_f32(lo, "fShieldBashMin", 0.05),
             shield_bash_max: gmst_f32(lo, "fShieldBashMax", 0.25),
             shield_bash_pc_max: gmst_f32(lo, "fShieldBashPCMax", 0.25),
-            weapon_bash_min: gmst_f32(lo, "fWeaponBashMin", 0.05),
+            weapon_bash_min: gmst_f32(lo, "fWeaponBashMin", 0.1),
             weapon_bash_max: gmst_f32(lo, "fWeaponBashMax", 0.25),
             sneak_mult: [
                 gmst_f32(lo, "fCombatSneakHandMult", 2.0),
@@ -2553,7 +2555,9 @@ impl Engine {
     }
 
     /// `OnHit` (aggressor, source, projectile, power attack, sneak attack,
-    /// bash, blocked) to what was struck: the source is the attacker's weapon.
+    /// bash, blocked) to what was struck: the source is the attacker's
+    /// weapon, the `Unarmed` weapon (000001F4) for a fist (`test-mod
+    /// autotest2`).
     pub(crate) fn send_hit_event(
         &mut self,
         target: FormId,
@@ -2564,7 +2568,7 @@ impl Engine {
         bash: bool,
         blocked: bool,
     ) {
-        let weapon = self.weapon_of(attacker);
+        let weapon = self.weapon_of(attacker).or(Some(UNARMED));
         let form =
             |e: &Self, f: Option<FormId>| f.map_or(papyrus::Value::None, |f| e.object_value(f));
         let args = vec![

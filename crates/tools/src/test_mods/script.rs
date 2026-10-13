@@ -251,6 +251,7 @@ impl Code {
         let (_, (_, ret, params, global)) = native(class, name);
         assert!(!global, "{class}.{name} is global");
         assert_eq!(N, params.len(), "{class}.{name}: argument count");
+        let args = self.typed(params, args);
         let dest = self.result(ret);
         self.call_method(obj, name, dest.clone(), args);
         dest
@@ -266,9 +267,37 @@ impl Code {
         let (decl_class, (_, ret, params, global)) = native(class, name);
         assert!(global, "{class}.{name} isn't global");
         assert_eq!(N, params.len(), "{class}.{name}: argument count");
+        let args = self.typed(params, args);
         let dest = self.result(ret);
         self.call_static(decl_class, name, dest.clone(), args);
         dest
+    }
+
+    /// The arguments cast to their parameters' object types, as the
+    /// compiler casts them: the game refuses a call given an object of
+    /// another class (an `Actor` for an `ObjectReference` parameter, a
+    /// `Weapon` for a `Form`), as autotest2's first run found.
+    pub(super) fn typed<const N: usize>(
+        &mut self,
+        params: &[(&str, &str)],
+        args: [Arg; N],
+    ) -> [Arg; N] {
+        let mut i = 0;
+        args.map(|arg| {
+            let ty = params[i].1;
+            i += 1;
+            let object = !["int", "float", "bool", "string"]
+                .contains(&ty.to_ascii_lowercase().as_str())
+                && !ty.ends_with("[]");
+            match arg {
+                Arg::Id(_) if object => {
+                    let cast = self.temp(ty);
+                    self.cast(cast.clone(), arg);
+                    cast
+                }
+                other => other,
+            }
+        })
     }
 
     /// `self.name(args)`, one of the script's own functions.
@@ -540,4 +569,84 @@ pub(super) fn spawn_level() -> FunctionBuilder {
     c.method("Actor", actor.clone(), "Disable", [false.into()]);
     c.method("Actor", actor, "Delete", []);
     c.finish(level)
+}
+
+/// The calls to natives in `pex` given an object of another class than the
+/// parameter's (which the game refuses; see [`Code::typed`]): function,
+/// call, parameter, the argument's class.
+#[cfg(test)]
+pub(super) fn mistyped_calls(pex: &papyrus::pex::Pex) -> Vec<String> {
+    use papyrus::pex::Data;
+    use std::collections::HashMap;
+
+    let s = |i: &u16| pex.strings[*i as usize].to_ascii_lowercase();
+    // A native's declaration, looked up through the class's parents.
+    let lookup = |class: &str, name: &str| {
+        let mut c = class.to_owned();
+        loop {
+            let decl = natives().iter().find(|n| n.name.eq_ignore_ascii_case(&c))?;
+            if let Some(f) = decl
+                .functions
+                .iter()
+                .find(|f| f.0.eq_ignore_ascii_case(name))
+            {
+                return Some(f);
+            }
+            if decl.parent.is_empty() {
+                return None;
+            }
+            c = decl.parent.to_owned();
+        }
+    };
+    let mut bad = Vec::new();
+    for obj in &pex.objects {
+        let mut fields: HashMap<String, String> = HashMap::new();
+        for v in &obj.variables {
+            fields.insert(s(&v.name), s(&v.type_name));
+        }
+        fields.insert("self".into(), s(&obj.name));
+        for state in &obj.states {
+            for (fname, f) in &state.functions {
+                let mut types = fields.clone();
+                for (n, t) in f.params.iter().chain(&f.locals) {
+                    types.insert(s(n), s(t));
+                }
+                let ty = |d: &Data| match d {
+                    Data::Identifier(i) => types.get(&s(i)).cloned(),
+                    _ => None,
+                };
+                for ins in &f.code {
+                    let (class, name, args) = match ins.op {
+                        op::CALLMETHOD => match (&ins.args[0], ty(&ins.args[1])) {
+                            (Data::Identifier(n), Some(class)) => (class, s(n), &ins.args[4..]),
+                            _ => continue,
+                        },
+                        op::CALLSTATIC => match (&ins.args[0], &ins.args[1]) {
+                            (Data::Identifier(c), Data::Identifier(n)) => {
+                                (s(c), s(n), &ins.args[4..])
+                            }
+                            _ => continue,
+                        },
+                        _ => continue,
+                    };
+                    let Some((_, _, params, _)) = lookup(&class, &name) else {
+                        continue;
+                    };
+                    for ((pname, pty), arg) in params.iter().zip(args) {
+                        let pty = pty.to_ascii_lowercase();
+                        if ["int", "float", "bool", "string"].contains(&pty.as_str()) {
+                            continue;
+                        }
+                        if let Some(aty) = ty(arg).filter(|a| *a != pty) {
+                            bad.push(format!(
+                                "{}: {class}.{name} {pname} ({pty}) given {aty}",
+                                s(fname)
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    bad
 }

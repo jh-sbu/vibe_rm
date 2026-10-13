@@ -1,7 +1,9 @@
 //! Relationships between NPCs (`RELA`): a rank from lover to archnemesis
 //! between two NPC records, read by `GetRelationshipRank` and changed by
 //! Papyrus (`SetRelationshipRank`), which sends a change relationship rank
-//! story event.
+//! story event. A change is kept between the two references, not their
+//! NPCs: another reference of the same NPC keeps the record's rank (`test-mod
+//! autotest2`); both ways read the same.
 
 use std::collections::HashMap;
 
@@ -20,7 +22,8 @@ fn rank_of_record(r: u16) -> i32 {
 pub struct Relationships {
     /// Ranks from the records, by NPC pair (lower form id first).
     authored: std::cell::OnceCell<HashMap<(FormId, FormId), i32>>,
-    /// Ranks changed since.
+    /// Ranks changed since, by reference pair (the player as its
+    /// reference; an NPC record when a change named one).
     changed: HashMap<(FormId, FormId), i32>,
     /// NPC records in each faction (rank 0 or more), for faction ownership.
     members: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
@@ -59,17 +62,25 @@ impl Engine {
         }
     }
 
-    /// The rank between two actors (references or NPC records); acquaintances
-    /// (0) when nothing is set.
+    /// What a change is kept on: the reference, the player's reference for
+    /// the player's NPC record.
+    fn relationship_key(r: FormId) -> FormId {
+        if r == FormId(0x7) { PLAYER_REF } else { r }
+    }
+
+    /// The rank between two actors (references or NPC records): changed
+    /// between them, else their records'; acquaintances (0) when nothing is
+    /// set.
     pub fn relationship_rank(&self, a: FormId, b: FormId) -> i32 {
+        let keys = pair(Self::relationship_key(a), Self::relationship_key(b));
+        if let Some(&r) = self.relationships.changed.get(&keys) {
+            return r;
+        }
         let (Some(a), Some(b)) = (self.relationship_npc(a), self.relationship_npc(b)) else {
             return 0;
         };
-        let p = pair(a, b);
-        self.relationships
-            .changed
-            .get(&p)
-            .or_else(|| self.authored_relationships().get(&p))
+        self.authored_relationships()
+            .get(&pair(a, b))
             .copied()
             .unwrap_or(0)
     }
@@ -79,16 +90,18 @@ impl Engine {
         let Some(npc) = self.relationship_npc(a) else {
             return 0;
         };
-        let changed = &self.relationships.changed;
+        let key = Self::relationship_key(a);
+        let changed = self
+            .relationships
+            .changed
+            .iter()
+            .filter(|((x, y), _)| *x == key || *y == key);
         let authored = self
             .authored_relationships()
             .iter()
-            .filter(|(p, _)| !changed.contains_key(p));
-        let mine = changed
-            .iter()
-            .chain(authored)
             .filter(|((x, y), _)| *x == npc || *y == npc)
-            .map(|(_, &r)| r);
+            .filter(|(p, _)| !self.relationships.changed.contains_key(p));
+        let mine = changed.chain(authored).map(|(_, &r)| r);
         if highest { mine.max() } else { mine.min() }.unwrap_or(0)
     }
 
@@ -120,7 +133,10 @@ impl Engine {
         if old == rank {
             return;
         }
-        self.relationships.changed.insert(pair(na, nb), rank);
+        self.relationships.changed.insert(
+            pair(Self::relationship_key(a), Self::relationship_key(b)),
+            rank,
+        );
         log::info!("relationship {a} / {b}: {old} -> {rank}");
         // Events name references: the player, or the NPC's placed reference.
         let as_ref = |e: &Engine, r: FormId, npc: FormId| match r {

@@ -392,7 +392,10 @@ impl Engine {
 
     /// The player commits a crime against `victim` (an actor) or against what
     /// `owner` (a faction) owns. Each witness with a crime faction reports it
-    /// there, unless its faction ignores the crime against non-members of it
+    /// to the victim's crime faction (the owner's), its own when there is
+    /// none: an assault seen by a member of another crime faction added
+    /// nothing to that one (`test-mod autotest2`). Not reported when that
+    /// faction ignores the crime against non-members of it
     /// (`DATA` ignore flags) or, the victim being a member, doesn't report
     /// crimes against members (0x800) and the witness isn't the victim; each
     /// faction told adds its crime gold for it once. The victim of an assault
@@ -417,9 +420,10 @@ impl Engine {
         }
         let mut told: Vec<(FormId, CrimeValues, Vec<FormId>)> = Vec::new();
         for &w in &witnesses {
-            let Some(f) = self.crime_faction(w) else {
+            let Some(own) = self.crime_faction(w) else {
                 continue;
             };
+            let f = victim_faction.unwrap_or(own);
             let Some(values) = CrimeValues::of(&self.lo, f) else {
                 continue;
             };
@@ -427,7 +431,9 @@ impl Engine {
             if !member && values.flags & kind.ignore_flag() != 0 {
                 continue;
             }
-            if member && values.flags & DO_NOT_REPORT_MEMBERS != 0 && Some(w) != victim {
+            // Members don't report crimes against members.
+            if member && own == f && values.flags & DO_NOT_REPORT_MEMBERS != 0 && Some(w) != victim
+            {
                 continue;
             }
             log::info!("{w} reports {kind:?} to {f}");

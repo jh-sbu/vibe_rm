@@ -53,11 +53,12 @@ page (Dual Flurry, Dual Savagery) and actor value list (`WeaponSpeedMult`,
   when either is taken. The only one of an item moves from the other hand;
   with two, one goes in each, and when one of a pair leaves the inventory
   the left hand empties. Spells aren't counted: the same one can be in both
-  hands.
+  hands (Flames equipped left then right was in both in the game).
 - **Hand types.** A two-handed weapon is reported in both hands (the graphs'
   blocking condition expects a bow in the left). The graphs get a spell's
-  hand as empty (0), as casting doesn't go through the graph yet;
-  `GetEquippedItemType` and the condition get 9. `GetEquippedWeapon(true)`
+  hand as empty (0), as casting doesn't go through the graph yet, though the
+  game's gets 9 (`iLeftHandType` / `iRightHandType` with Flames in each:
+  `test-mod autotest2`); `GetEquippedItemType` and the condition get 9. `GetEquippedWeapon(true)`
   is `None` with a two-handed weapon.
 - **Equip icons.** A weapon in the right hand is `ES_RIGHT_EQUIPPED`, in the
   left `ES_LEFT_EQUIPPED`, one of a pair in both `ES_BOTH_EQUIPPED`; a

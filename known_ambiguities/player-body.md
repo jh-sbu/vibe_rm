@@ -9,13 +9,20 @@ part type, `HNAM` extra parts); the Creation Kit wiki for
 themselves (`vrm-tool hkb-tree`, `hkb-vars`, `hkb-run`) for event and
 variable names; the race's attack data (`ATKE`) for attack events.
 
+## Confirmed in the game (`test-mod autotest2`, 2026-10-13)
+
+- **`IsNPC`** is 0 (false) for the player's graph, `IsPlayer` 1. The run read
+  the rest of the graph's variables too: `bHumanoidFootIKEnable` and
+  `bHeadTrackSpine` 1; `iState` 0 sheathed and 9 drawn with spells in both
+  hands; `iEquippedItemState`, `iLeftHandType` and `iRightHandType` 9 (spells);
+  `iWantBlock`, `Speed`, `Direction` 0 standing; `IsFirstPerson` following the
+  view.
+
 ## Unconfirmed: choices made
 
 - **Head parts.** The NPC's own parts (`PNAM`) replace the race's default
   part of the same type rather than adding to it, for every type; UESP
   doesn't say which types replace.
-- **`IsNPC`** is set to 0 for the player's graph. No source gives the game's
-  value; the graph takes locomotion, jumping and combat events with it.
 - **`Direction` through `BSCyclicBlendTransitionGenerator`.** The locomotion
   blends' `Direction` is bound to the wrapper's `fBlendParameter` while the
   blender inside has no binding of its own; the runtime gives the blender the
