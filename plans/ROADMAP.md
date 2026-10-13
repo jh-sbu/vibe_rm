@@ -91,6 +91,9 @@ game each piece unlocks.
   backwards, clip-local triggers), parametric / cyclic / synchronised blends with per-bone
   weights, additive (offset) clips, selectors following variables, references, control
   modifiers (expressions, every-N-events, timers, event-driven, on-deactivate, is-active).
+  State machines publish their `currentStateId` bindings on entry and transition
+  (blocking, one-handed weapon and equipped-item state variables); timing choices:
+  `known_ambiguities/state-machine-outputs.md`.
   The AI sends events (`moveStart`, furniture enter / exit, `IdleStop`...) and sets
   variables (`Speed`, `isInFurniture`, `IsNPC`, `weapAdj`...), follows the graph's root
   motion in furniture and takes anim objects and `IdleFurnitureExit` from its events;
@@ -853,7 +856,7 @@ game each piece unlocks.
      the game picks and aims them itself); NPCs looking at each other in conversation
    - Objects' behaviour graphs (see Done): graph state in saves (kept across
      cell loads in memory)
-   - Chooser start states, state machine `currentStateId` outputs, selectors' own blends
+   - Chooser start states, selectors' own blends
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
      properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
