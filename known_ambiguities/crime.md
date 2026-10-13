@@ -144,6 +144,11 @@ locations name it.
   hit with it (their alchemy perks count), but unnoticed: no fight, no
   assault, and the harm is no one's, so a death by it is no one's kill
   (no murder). `IsEssential` is the base's flag only.
+- Given items by a script's `AddItem` (`test-mod autotest2`), an NPC wielded
+  each weapon it would pick at once (an iron sword, then a steel sword, then
+  an iron greatsword), and wore no armor and no shield even 3.5 s later; a
+  teammate given a cuirass wore it. Here `AddItem` takes up weapons only
+  (there are no teammates yet).
 - An NPC given an item (placed in its pockets, or into a teammate's
   inventory) takes it up at once if it is better: armor when its armor
   rating with it (the inventory's rating, with its skills and perks) is
@@ -171,7 +176,9 @@ locations name it.
   Story Manager's `ASSU`). Murder: the player killing someone they assaulted.
 - `GetCrimeGold` with no faction on the player sums every faction.
 - `PlayerPayCrimeGold` takes what gold the player has towards the bounty and
-  clears it, enough or not.
+  clears it, enough or not: in the game (`test-mod autotest2`) a bounty of
+  500 paid with 100 gold left no gold and no bounty, with 1100 left 600 and
+  none; Fines Paid counted 500 each time, the bounty rather than the gold.
 - Stolen goods carry their owner in the inventory (`Inventory::owned`,
   standing for the game's ownership on the stack) and keep it wherever the
   player puts them, unless they go back to the owner; taking from a container

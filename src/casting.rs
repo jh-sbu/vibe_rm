@@ -661,7 +661,7 @@ impl Engine {
     }
 
     /// The projectile a spell flies as: its first effect's that has one.
-    fn item_projectile(&self, item: &MagicItem) -> Option<FormId> {
+    pub(crate) fn item_projectile(&self, item: &MagicItem) -> Option<FormId> {
         item.effects.iter().find_map(|e| {
             self.magic_effect(e.effect)
                 .map(|m| m.projectile)

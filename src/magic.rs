@@ -596,14 +596,20 @@ impl Engine {
         any
     }
 
-    /// A hostile spell landed: `OnHit` (the spell as its source) to the
-    /// target, and like a first blow it starts a fight (and an assault).
+    /// A hostile spell landed: `OnHit` (the spell as its source, its
+    /// projectile: Firebolt's `FireboltProjectile01` in the game, `test-mod
+    /// autotest2`) to the target, and like a first blow it starts a fight
+    /// (and an assault).
     fn hostile_magic_landed(&mut self, target: FormId, caster: FormId, item: FormId) {
         self.break_calm(target);
+        let projectile = self
+            .magic_item(item)
+            .and_then(|m| self.item_projectile(&m))
+            .map_or(Value::None, |p| self.object_value(p));
         let args = vec![
             self.object_value(caster),
             self.object_value(item),
-            Value::None,
+            projectile,
             Value::Bool(false),
             Value::Bool(false),
             Value::Bool(false),

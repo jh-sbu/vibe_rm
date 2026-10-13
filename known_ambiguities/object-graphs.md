@@ -42,7 +42,9 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
   doesn't come; the game's wait has no limit, but a graph event missing here
   would otherwise hang the script for good.
 - `RegisterForAnimationEvent` fails (false, nothing registered) when the
-  sender runs no graph (not loaded, or without one); registrations are kept
-  until unregistered, also across the sender unloading.
+  sender runs no graph (not loaded, or without one: a placed coin, enabled or
+  disabled, gave false in the game, `test-mod autotest2`); registrations are
+  kept until unregistered, also across the sender unloading (unchecked).
 - Graph events are matched to registrations and waits ignoring case (the blade
-  raises `Reset`, its script waits for `reset`).
+  raises `Reset`, its script waits for `reset`). In the game a registration
+  for `WEAPONDRAW` got the player's `weaponDraw` (`test-mod autotest2`).

@@ -33,7 +33,10 @@ its data isn't public; the choices below are what the movie's code allows.
   counts that one). A miscellaneous quest counts its completed objective in
   Misc Objectives Completed, and completing it counts nothing.
 - Total Lifetime Bounty counts bounty set by script (`SetCrimeGold` 500
-  twice and an assault's 40: 1040); Largest Bounty was 500.
+  twice and an assault's 40: 1040); Largest Bounty was 500. Fines Paid
+  counts the bounty paid off, not the gold (500 with 100 gold).
+- An apple eaten counts in Food Eaten (not Ingredients Eaten), a health
+  potion in Potions Used.
 
 ## Unconfirmed: choices made
 

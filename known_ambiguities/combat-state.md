@@ -17,8 +17,11 @@ Implemented in `src/ai/combat.rs` (`CombatState`, `combat_state`,
 - In the game (`test-mod autotest2`, 2026-10-13): `DamageActorValue` by script
   sends no `OnHit`; a fist's blows send the `Unarmed` weapon (000001F4) as
   the source, no projectile, `abPowerAttack` set for power attacks. A fighter
-  still hostile was in combat again 0.44 s after `StopCombat` (its state 0 at
-  once).
+  still hostile was in combat again 0.43 s after `StopCombat` in both runs
+  (its state 0 at once in one, still 1 in the other). A Firebolt cast by
+  script (`Spell.Cast`) sent two `OnHit`s 0.1 s apart, the spell as the
+  source and `FireboltProjectile01` as the projectile. An archer's hits sent
+  the bow as the source and no projectile.
 
 ## Open
 
@@ -33,10 +36,12 @@ Implemented in `src/ai/combat.rs` (`CombatState`, `combat_state`,
   `OnCombatStateChanged`. No source says how the game decides it.
 - **`OnHit` sources.** Melee and arrow hits send it, with the weapon that
   struck as the source (the blow's hand's) and, for arrows, the ammo's
-  projectile; `abSneakAttack` is set for sneak attacks. The console's
-  `damage` sends none, as scripts' don't. Weapons' and arrows' hits and
-  spells' (`Spell.Cast`) are still to be checked (`autotest2`'s first run
-  passed the items uncast and the calls failed).
+  projectile, though the game's archer's hits came with none (whether those
+  were arrows wasn't seen); a spell sends its projectile (but once here,
+  not twice as the game's Firebolt did). `abSneakAttack` is set for sneak
+  attacks. The console's `damage` sends none, as scripts' don't. A
+  fighter given an iron sword landed no blow on the target in 8 s in the
+  game: a sword's hits are still to be seen.
 - **`StopCombat`** ends the fight and any search; an actor still hostile
   finds its target again by detection, at the next detection update here
   (a quarter second).

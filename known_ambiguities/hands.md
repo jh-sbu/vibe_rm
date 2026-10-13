@@ -36,6 +36,30 @@ page (Dual Flurry, Dual Savagery) and actor value list (`WeaponSpeedMult`,
 0 counting as 1; `LeftWeaponSpeedMult`); combat styles' `DATA` flag 0x4
 (`csDraugrMagicAllowDual`, `csMercerFreyMelee`...).
 
+## Seen in the game (`test-mod autotest2`, 2026-10-13)
+
+The player equipping by script (`EquipItem`, `EquipSpell`, unasked), each step
+from the last (right hand, left hand; `GetEquippedItemType`, which the graph's
+`iRightHandType` / `iLeftHandType` matched at every step):
+
+- A sword went in the right (1); the same sword again, with two carried,
+  changed nothing. A dagger replaced it (2). A shield went in the left (10),
+  a torch replaced it (11; `IsEquipped(torch)` read false).
+- Flames for the left kept the dagger; Flames for the right too put the
+  dagger away: the same spell in both hands (9, 9).
+- A sword then went in the right, leaving Flames in the left; a greatsword
+  took both (5, 5; `GetEquippedWeapon(true)` None) and both spells went.
+- Flames for the left then brought the sword back into the right.
+- `IncinerateLeftHand` asked for the right went in the left. `FireStorm`
+  (both hands) took both and put the sword away; a sword after it went in
+  the right and the left had `IncinerateLeftHand` again.
+- Removing one of two swords, one held, emptied the right. A bow took both
+  (7, 7); unequipping it left the right empty and `IncinerateLeftHand` back
+  in the left.
+
+So the game remembers what a hand held before a two-handed item or spell
+took it and puts it back after; that isn't done here.
+
 ## Unconfirmed: choices made
 
 - **One-handed weapons go in either hand.** Nearly all of them name only
@@ -57,8 +81,8 @@ page (Dual Flurry, Dual Savagery) and actor value list (`WeaponSpeedMult`,
 - **Hand types.** A two-handed weapon is reported in both hands (the graphs'
   blocking condition expects a bow in the left). The graphs get a spell's
   hand as empty (0), as casting doesn't go through the graph yet, though the
-  game's gets 9 (`iLeftHandType` / `iRightHandType` with Flames in each:
-  `test-mod autotest2`); `GetEquippedItemType` and the condition get 9. `GetEquippedWeapon(true)`
+  game's gets 9 (its hand types are `GetEquippedItemType`'s throughout);
+  `GetEquippedItemType` and the condition get 9. `GetEquippedWeapon(true)`
   is `None` with a two-handed weapon.
 - **Equip icons.** A weapon in the right hand is `ES_RIGHT_EQUIPPED`, in the
   left `ES_LEFT_EQUIPPED`, one of a pair in both `ES_BOTH_EQUIPPED`; a

@@ -43,10 +43,13 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
 - **Transition speed.** Two deltas fit delta / 16 game minutes to 4-7%; the
   exact law isn't known. Acceleration is taken as `fWeatherTransAccel` (16,
   from the data) times faster, but only without an override: with one it
-  made no difference in the game, and without one the test hasn't worked
-  yet (in `autotest2`'s first run `SetActive(false, false)` right after
-  `ReleaseOverride` didn't bring the weather in within 120 s). A trans delta
-  of 0 changes at once.
+  made no difference in the game, and without one it couldn't be measured:
+  after `ReleaseOverride`, `SetActive(false, false)` and then
+  `SetActive(false, true)` of `SkyrimClear` (cloudy on, in Riverwood's
+  region, which lists both) didn't bring it in within 120 s each, the
+  outgoing weather None (`test-mod autotest2`, twice). Why isn't known: here
+  a weather set without an override comes in. A trans delta of 0 changes at
+  once.
 - **How often the weather changes.** Every 2 to 6 game hours (made up) the
   region's list is rolled by chance; the same weather may come up again. The
   climate's TNAM volatility (byte 4: 50 for `SkyrimClimate`) isn't used.
