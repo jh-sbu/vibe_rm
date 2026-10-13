@@ -69,16 +69,13 @@
 //!   higher delta, about delta / 16 game minutes; acceleration does
 //!   nothing to an override.
 
-use std::ops::{Deref, DerefMut};
-
 use anyhow::{Context, Result, ensure};
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, vmad, write_plugin};
 use esp::{FormId, LoadOrder};
-use papyrus::build::{
-    Arg, FunctionBuilder, NativeDecl, ScriptBuilder, auto_var, discard, id, string,
-};
+use papyrus::build::{Arg, FunctionBuilder, ScriptBuilder, auto_var, discard, id, string};
 use papyrus::pex::op;
 
+use super::script::{Code, bytes, measure, num, on_update, settle, spawn_level};
 use super::{TestMod, own};
 
 const QUEST: u32 = 0x800;
@@ -110,361 +107,6 @@ const LEVELS: &[(&str, u16, bool, u16, u16)] = &[
     ("x1, max 2", 1000, true, 1, 2),
     ("x1, min 100", 1000, true, 100, 0),
 ];
-
-/// The vanilla natives the scripts call, as `Game.psc` and the rest declare
-/// them: class, parent, functions. Calls are checked against these when
-/// built, and the dry run in the tests declares them to the VM.
-const NATIVES: &[(&str, &str, &[NativeDecl<'static>])] = &[
-    (
-        "Form",
-        "",
-        &[(
-            "RegisterForSingleUpdate",
-            "None",
-            &[("afInterval", "Float")],
-            false,
-        )],
-    ),
-    ("Quest", "Form", &[]),
-    ("ActorBase", "Form", &[]),
-    ("EncounterZone", "Form", &[]),
-    (
-        "GlobalVariable",
-        "Form",
-        &[("GetValue", "Float", &[], false)],
-    ),
-    (
-        "ObjectReference",
-        "Form",
-        &[
-            (
-                "PlaceActorAtMe",
-                "Actor",
-                &[
-                    ("akActorToPlace", "ActorBase"),
-                    ("aiLevelMod", "Int"),
-                    ("akZone", "EncounterZone"),
-                ],
-                false,
-            ),
-            ("Disable", "None", &[("abFadeOut", "Bool")], false),
-            ("Delete", "None", &[], false),
-            ("IsLocked", "Bool", &[], false),
-            ("GetLockLevel", "Int", &[], false),
-            (
-                "Lock",
-                "None",
-                &[("abLock", "Bool"), ("abAsOwner", "Bool")],
-                false,
-            ),
-            ("IsInInterior", "Bool", &[], false),
-        ],
-    ),
-    (
-        "Actor",
-        "ObjectReference",
-        &[
-            ("GetLevel", "Int", &[], false),
-            (
-                "GetBaseActorValue",
-                "Float",
-                &[("asValueName", "String")],
-                false,
-            ),
-            (
-                "GetActorValue",
-                "Float",
-                &[("asValueName", "String")],
-                false,
-            ),
-            (
-                "GetActorValuePercentage",
-                "Float",
-                &[("asValueName", "String")],
-                false,
-            ),
-            (
-                "SetActorValue",
-                "None",
-                &[("asValueName", "String"), ("afValue", "Float")],
-                false,
-            ),
-            (
-                "ModActorValue",
-                "None",
-                &[("asValueName", "String"), ("afAmount", "Float")],
-                false,
-            ),
-            (
-                "ForceActorValue",
-                "None",
-                &[("asValueName", "String"), ("afNewValue", "Float")],
-                false,
-            ),
-            (
-                "DamageActorValue",
-                "None",
-                &[("asValueName", "String"), ("afDamage", "Float")],
-                false,
-            ),
-            (
-                "RestoreActorValue",
-                "None",
-                &[("asValueName", "String"), ("afAmount", "Float")],
-                false,
-            ),
-            ("IsWeaponDrawn", "Bool", &[], false),
-            ("DrawWeapon", "None", &[], false),
-        ],
-    ),
-    (
-        "Weather",
-        "Form",
-        &[
-            ("GetCurrentWeather", "Weather", &[], true),
-            ("GetCurrentWeatherTransition", "Float", &[], true),
-            ("GetSkyMode", "Int", &[], true),
-            ("ReleaseOverride", "None", &[], true),
-            (
-                "SetActive",
-                "None",
-                &[("abOverride", "Bool"), ("abAccelerate", "Bool")],
-                false,
-            ),
-        ],
-    ),
-    (
-        "Game",
-        "",
-        &[
-            ("GetPlayer", "Actor", &[], true),
-            ("DisablePlayerControls", "None", CONTROLS, true),
-            ("EnablePlayerControls", "None", CONTROLS, true),
-            ("IsMovementControlsEnabled", "Bool", &[], true),
-            ("IsFightingControlsEnabled", "Bool", &[], true),
-            ("RequestSave", "None", &[], true),
-        ],
-    ),
-    (
-        "Debug",
-        "",
-        &[
-            (
-                "MessageBox",
-                "None",
-                &[("asMessageBoxText", "String")],
-                true,
-            ),
-            (
-                "Notification",
-                "None",
-                &[("asNotificationText", "String")],
-                true,
-            ),
-            (
-                "Trace",
-                "None",
-                &[("asTextToPrint", "String"), ("aiSeverity", "Int")],
-                true,
-            ),
-        ],
-    ),
-    (
-        "Utility",
-        "",
-        &[
-            ("Wait", "None", &[("afSeconds", "Float")], true),
-            ("GetCurrentRealTime", "Float", &[], true),
-            ("GetCurrentGameTime", "Float", &[], true),
-        ],
-    ),
-    (
-        "Math",
-        "",
-        &[("Floor", "Int", &[("afValue", "Float")], true)],
-    ),
-];
-
-/// `DisablePlayerControls` / `EnablePlayerControls`' parameters.
-const CONTROLS: &[(&str, &str)] = &[
-    ("abMovement", "Bool"),
-    ("abFighting", "Bool"),
-    ("abCamSwitch", "Bool"),
-    ("abLooking", "Bool"),
-    ("abSneaking", "Bool"),
-    ("abMenu", "Bool"),
-    ("abActivate", "Bool"),
-    ("abJournalTabs", "Bool"),
-    ("aiDisablePOVType", "Int"),
-];
-
-/// `class.name`'s declaration, looked up through `class`'s parents: the
-/// declaring class and the function.
-fn native(class: &str, name: &str) -> (&'static str, &'static NativeDecl<'static>) {
-    let mut c = class;
-    loop {
-        let (decl_class, parent, functions) = NATIVES
-            .iter()
-            .find(|(n, _, _)| n.eq_ignore_ascii_case(c))
-            .unwrap_or_else(|| panic!("native class {c} not declared"));
-        if let Some(f) = functions.iter().find(|f| f.0.eq_ignore_ascii_case(name)) {
-            return (decl_class, f);
-        }
-        assert!(!parent.is_empty(), "{class}.{name} not declared");
-        c = parent;
-    }
-}
-
-/// A function being built, with natives' calls checked against
-/// [`NATIVES`] and their results in new temporaries.
-struct Code(FunctionBuilder);
-
-impl Deref for Code {
-    type Target = FunctionBuilder;
-    fn deref(&self) -> &FunctionBuilder {
-        &self.0
-    }
-}
-
-impl DerefMut for Code {
-    fn deref_mut(&mut self) -> &mut FunctionBuilder {
-        &mut self.0
-    }
-}
-
-impl Code {
-    fn new(return_type: &str) -> Self {
-        Code(FunctionBuilder::new(return_type))
-    }
-
-    fn result(&mut self, type_name: &str) -> Arg {
-        if type_name == "None" {
-            discard()
-        } else {
-            self.temp(type_name)
-        }
-    }
-
-    /// `obj.name(args)`, `obj` of native class `class`.
-    fn method<const N: usize>(&mut self, class: &str, obj: Arg, name: &str, args: [Arg; N]) -> Arg {
-        let (_, (_, ret, params, global)) = native(class, name);
-        assert!(!global, "{class}.{name} is global");
-        assert_eq!(N, params.len(), "{class}.{name}: argument count");
-        let dest = self.result(ret);
-        self.call_method(obj, name, dest.clone(), args);
-        dest
-    }
-
-    /// `class.name(args)`, a global native.
-    fn global<const N: usize>(&mut self, class: &str, name: &str, args: [Arg; N]) -> Arg {
-        let (decl_class, (_, ret, params, global)) = native(class, name);
-        assert!(global, "{class}.{name} isn't global");
-        assert_eq!(N, params.len(), "{class}.{name}: argument count");
-        let dest = self.result(ret);
-        self.call_static(decl_class, name, dest.clone(), args);
-        dest
-    }
-
-    /// `self.name(args)`, one of the script's own functions.
-    fn own<const N: usize>(&mut self, name: &str, ret: &str, args: [Arg; N]) -> Arg {
-        let dest = self.result(ret);
-        self.call_method(id("self"), name, dest.clone(), args);
-        dest
-    }
-
-    /// `a <op> b` into a new temporary of `type_name`.
-    fn calc(&mut self, op: u8, type_name: &str, a: Arg, b: Arg) -> Arg {
-        let dest = self.temp(type_name);
-        self.op(op, [dest.clone(), a, b]);
-        dest
-    }
-
-    /// `"part" + Num(value)` for each pair, appended to `dest`.
-    fn numbers<const N: usize>(&mut self, dest: &Arg, parts: [(&str, Arg); N]) {
-        for (text, value) in parts {
-            let n = self.own("Num", "String", [value]);
-            self.append(dest.clone(), [string(text), n]);
-        }
-    }
-
-    fn controls(&mut self, enable: bool, movement: bool, fighting: bool) {
-        let name = if enable {
-            "EnablePlayerControls"
-        } else {
-            "DisablePlayerControls"
-        };
-        let mut args: [Arg; 9] = std::array::from_fn(|_| false.into());
-        args[0] = movement.into();
-        args[1] = fighting.into();
-        args[8] = 0.into();
-        self.global("Game", name, args);
-    }
-
-    fn enable_all(&mut self) {
-        let mut args: [Arg; 9] = std::array::from_fn(|_| true.into());
-        args[8] = 0.into();
-        self.global("Game", "EnablePlayerControls", args);
-    }
-
-    fn wait(&mut self, seconds: f32) {
-        self.global("Utility", "Wait", [seconds.into()]);
-    }
-
-    fn finish(mut self, value: Arg) -> FunctionBuilder {
-        self.ret(value);
-        self.0
-    }
-}
-
-/// `Num(f)`: a float as text to three decimals, without them when whole
-/// (casting gives six).
-fn num() -> FunctionBuilder {
-    let mut c = Code::new("String");
-    let f = c.param("f", "Float");
-    let r = c.local("r", "String");
-    c.assign(r.clone(), string(""));
-    let negative = c.calc(op::CMP_LT, "Bool", f.clone(), 0.0f32.into());
-    let positive = c.label();
-    c.jmpf(negative, positive)
-        .assign(r.clone(), string("-"))
-        .op(op::FNEG, [f.clone(), f.clone()])
-        .bind(positive);
-    let scaled = c.calc(op::FMUL, "Float", f, 1000.0f32.into());
-    let scaled = c.calc(op::FADD, "Float", scaled, 0.5f32.into());
-    let thousandths = c.global("Math", "Floor", [scaled]);
-    let whole = c.calc(op::IDIV, "Int", thousandths.clone(), 1000.into());
-    let fraction = c.calc(op::IMOD, "Int", thousandths, 1000.into());
-    c.append(r.clone(), [whole]);
-    let end = c.label();
-    let is_whole = c.calc(op::CMP_EQ, "Bool", fraction.clone(), 0.into());
-    c.jmpt(is_whole, end).append(r.clone(), [string(".")]);
-    for below in [100, 10] {
-        let pad = c.label();
-        let short = c.calc(op::CMP_LT, "Bool", fraction.clone(), below.into());
-        c.jmpf(short, pad)
-            .append(r.clone(), [string("0")])
-            .bind(pad);
-    }
-    c.append(r.clone(), [fraction]).bind(end);
-    c.finish(r)
-}
-
-/// `SpawnLevel(ActorBase base)`: the level of one placed at the player,
-/// deleted again.
-fn spawn_level() -> FunctionBuilder {
-    let mut c = Code::new("Int");
-    let base = c.param("base", "ActorBase");
-    let actor = c.method(
-        "Actor",
-        auto_var("Player"),
-        "PlaceActorAtMe",
-        [base, 4.into(), Arg::None],
-    );
-    let level = c.method("Actor", actor.clone(), "GetLevel", []);
-    c.method("Actor", actor.clone(), "Disable", [false.into()]);
-    c.method("Actor", actor, "Delete", []);
-    c.finish(level)
-}
 
 fn test_levels() -> FunctionBuilder {
     let mut c = Code::new("String");
@@ -733,119 +375,6 @@ fn test_controls() -> FunctionBuilder {
     c.finish(r)
 }
 
-fn real_time(c: &mut Code) -> Arg {
-    c.global("Utility", "GetCurrentRealTime", [])
-}
-
-fn transition(c: &mut Code) -> Arg {
-    c.global("Weather", "GetCurrentWeatherTransition", [])
-}
-
-/// `Settle()`: waits up to 30 s for the weather transition to finish.
-fn settle() -> FunctionBuilder {
-    let mut c = Code::new("String");
-    let r = c.local("r", "String");
-    let start = real_time(&mut c);
-    let (top, out) = (c.label(), c.label());
-    c.bind(top);
-    let pct = transition(&mut c);
-    let done = c.calc(op::CMP_GE, "Bool", pct, 1.0f32.into());
-    c.jmpt(done, out);
-    let now = real_time(&mut c);
-    let waited = c.calc(op::FSUB, "Float", now, start.clone());
-    let over = c.calc(op::CMP_GT, "Bool", waited, 30.0f32.into());
-    c.jmpt(over, out);
-    c.wait(0.5);
-    c.jmp(top);
-    c.bind(out);
-    let pct = transition(&mut c);
-    let now = real_time(&mut c);
-    let waited = c.calc(op::FSUB, "Float", now, start);
-    c.assign(r.clone(), string(""));
-    c.numbers(&r, [("(settled at ", pct), (" after ", waited)]);
-    c.append(r.clone(), [string(" s)\n")]);
-    c.finish(r)
-}
-
-/// `Measure(Weather w, Bool accelerate, String label)`: sets `w` active
-/// and times its transition.
-fn measure() -> FunctionBuilder {
-    let mut c = Code::new("String");
-    let w = c.param("w", "Weather");
-    let accelerate = c.param("accelerate", "Bool");
-    let label = c.param("label", "String");
-    let r = c.local("r", "String");
-    let vars = ["at1", "half", "halfGame", "full", "fullGame"].map(|n| {
-        let v = c.local(n, "Float");
-        c.assign(v.clone(), (-1.0f32).into());
-        v
-    });
-    let [at1, half, half_game, full, full_game] = vars;
-    let real0 = real_time(&mut c);
-    let game0 = c.global("Utility", "GetCurrentGameTime", []);
-    c.method("Weather", w.clone(), "SetActive", [true.into(), accelerate]);
-    let pct0 = transition(&mut c);
-    let current0 = c.global("Weather", "GetCurrentWeather", []);
-    let is_current0 = c.calc(op::CMP_EQ, "Bool", current0, w.clone());
-
-    let (top, done) = (c.label(), c.label());
-    c.bind(top);
-    c.wait(0.1);
-    let now = real_time(&mut c);
-    let dt = c.calc(op::FSUB, "Float", now, real0.clone());
-    let over = c.calc(op::CMP_GT, "Bool", dt.clone(), 120.0f32.into());
-    c.jmpt(over, done);
-    let current = c.global("Weather", "GetCurrentWeather", []);
-    let is_current = c.calc(op::CMP_EQ, "Bool", current, w);
-    c.jmpf(is_current, top);
-    let pct = transition(&mut c);
-    // The transition at the first sample a second in.
-    let skip = c.label();
-    let unset = c.calc(op::CMP_LT, "Bool", at1.clone(), 0.0f32.into());
-    c.jmpf(unset, skip);
-    let second = c.calc(op::CMP_GE, "Bool", dt.clone(), 1.0f32.into());
-    c.jmpf(second, skip);
-    c.assign(at1.clone(), pct.clone());
-    c.bind(skip);
-    // Times to half and full, in real seconds and game minutes.
-    let game_minutes = |c: &mut Code| {
-        let game = c.global("Utility", "GetCurrentGameTime", []);
-        let days = c.calc(op::FSUB, "Float", game, game0.clone());
-        c.calc(op::FMUL, "Float", days, 1440.0f32.into())
-    };
-    let skip = c.label();
-    let unset = c.calc(op::CMP_LT, "Bool", half.clone(), 0.0f32.into());
-    c.jmpf(unset, skip);
-    let past = c.calc(op::CMP_GE, "Bool", pct.clone(), 0.5f32.into());
-    c.jmpf(past, skip);
-    c.assign(half.clone(), dt.clone());
-    let m = game_minutes(&mut c);
-    c.assign(half_game.clone(), m);
-    c.bind(skip);
-    let finished = c.calc(op::CMP_GE, "Bool", pct, 1.0f32.into());
-    c.jmpf(finished, top);
-    c.assign(full.clone(), dt);
-    let m = game_minutes(&mut c);
-    c.assign(full_game.clone(), m);
-    c.bind(done);
-
-    c.assign(r.clone(), label)
-        .append(r.clone(), [string(": current at once "), is_current0]);
-    c.numbers(
-        &r,
-        [
-            (", transition at once ", pct0),
-            (", after 1 s ", at1),
-            ("; half at ", half),
-            (" s / ", half_game),
-            (" game min; full at ", full),
-            (" s / ", full_game),
-        ],
-    );
-    c.append(r.clone(), [string(" game min\n")]);
-    c.finish(r)
-}
-
 fn test_weather(slow_label: &str) -> FunctionBuilder {
     let mut c = Code::new("String");
     let r = c.local("r", "String");
@@ -891,7 +420,11 @@ fn test_weather(slow_label: &str) -> FunctionBuilder {
         .assign(second.clone(), a)
         .bind(keep);
     let measure = |c: &mut Code, w: Arg, accelerate: bool, label: &str| {
-        let line = c.own("Measure", "String", [w, accelerate.into(), string(label)]);
+        let line = c.own(
+            "Measure",
+            "String",
+            [w, true.into(), accelerate.into(), string(label)],
+        );
         c.append(r.clone(), [line]);
     };
     measure(&mut c, first, false, "delta 125");
@@ -921,51 +454,6 @@ const TESTS: &[(&str, &str)] = &[
     ("Weather", "Weather transitions"),
 ];
 
-fn on_update() -> FunctionBuilder {
-    let mut c = Code::new("None");
-    let ran = id("Ran");
-    let go = c.label();
-    c.jmpf(ran.clone(), go).ret(Arg::None).bind(go);
-    c.assign(ran, true.into());
-    c.global(
-        "Debug",
-        "Notification",
-        [string(
-            "vibe_rm autotest running: about two minutes. Leave the game be.",
-        )],
-    );
-    for (name, _) in TESTS {
-        let report = c.own(&format!("Test{name}"), "String", []);
-        let var = id(&format!("Result{name}"));
-        c.assign(var.clone(), report);
-        let line = c.temp("String");
-        c.assign(line.clone(), string(&format!("vibe_rm autotest {name}:\n")))
-            .append(line.clone(), [var]);
-        c.global("Debug", "Trace", [line, 0.into()]);
-    }
-    // Whatever a test left disabled.
-    c.enable_all();
-    // The save to read the reports from, made before the boxes (a menu)
-    // come up.
-    c.global("Game", "RequestSave", []);
-    c.wait(3.0);
-    for (name, title) in TESTS {
-        let text = c.temp("String");
-        c.assign(
-            text.clone(),
-            string(&format!("vibe_rm autotest: {title}\n")),
-        )
-        .append(text.clone(), [id(&format!("Result{name}"))]);
-        c.global("Debug", "MessageBox", [text]);
-    }
-    c.global(
-        "Debug",
-        "Notification",
-        [string("vibe_rm autotest done, reports saved")],
-    );
-    c.finish(Arg::None)
-}
-
 /// The scripts: the tests' and the helper's. `slow_label` names the weather
 /// with another trans delta.
 fn scripts(slow_label: &str) -> Result<Vec<(String, Vec<u8>)>> {
@@ -988,7 +476,7 @@ fn scripts(slow_label: &str) -> Result<Vec<(String, Vec<u8>)>> {
         [5.0f32.into()],
     );
     s.function("OnInit", init.finish(Arg::None))
-        .function("OnUpdate", on_update())
+        .function("OnUpdate", on_update("autotest", "two minutes", TESTS))
         .function("Num", num())
         .function("SpawnLevel", spawn_level())
         .function("Snap", snap())
@@ -1026,11 +514,6 @@ const PROPERTIES: &[(&str, &str)] = &[
     ("TimeScale", "GlobalVariable"),
     ("Helper", HELPER),
 ];
-
-fn bytes<const N: usize>(parts: &[&[u8]]) -> [u8; N] {
-    let v: Vec<u8> = parts.concat();
-    v.try_into().expect("field size")
-}
 
 /// The vanilla forms used (all from Skyrim.esm).
 struct Vanilla {
@@ -1270,6 +753,7 @@ mod tests {
     use papyrus::{ObjectId, Value};
 
     use super::*;
+    use crate::test_mods::script::natives;
 
     /// The game, as far as the tests ask it: our scripts and the natives'
     /// declarations, with made-up answers.
@@ -1362,10 +846,10 @@ mod tests {
             .into_iter()
             .map(|(n, b)| (n.to_ascii_lowercase(), b))
             .collect();
-        for (class, parent, functions) in NATIVES {
+        for c in natives() {
             scripts.insert(
-                class.to_ascii_lowercase(),
-                papyrus::build::native_class(class, parent, functions).unwrap(),
+                c.name.to_ascii_lowercase(),
+                papyrus::build::native_class(c.name, c.parent, &c.functions).unwrap(),
             );
         }
         let weather = |id: u32| Value::Object(ObjectId::Form(id), "Weather".into());
