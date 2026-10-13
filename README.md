@@ -88,10 +88,12 @@ toggles actor AI).
 - `crates/esp`: plugin reader, load order and record index
 - `crates/nif`: NIF model reader
 - `crates/vfs`: virtual file system (loose files over archives)
+- `crates/ess`: read-only save game reader, as far as test mods need (no save
+  system yet)
 - `crates/ui-swf`: the game's Interface menus (Scaleform `.swf`) through Ruffle
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
   (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`, `nif-materials`, `fsts`,
-  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, `triggers`, `story`, `faction-owners`, `crime-factions`, ...), and `test-mod` (below)
+  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, `triggers`, `story`, `faction-owners`, `crime-factions`, `save-info`, ...), and `test-mod` / `test-results` (below)
 - `src/`: the engine (renderer, world, app)
 - `vendor/ruffle`: a subset of [Ruffle](https://ruffle.rs) with Scaleform
   changes (`VENDOR.md`)
@@ -119,6 +121,18 @@ Each test mod (`crates/tools/src/test_mods/`, written with `esp::writer`)
 documents its setup, the outcome each reading predicts and, once tested, the
 result. Its vanilla forms are looked up by editor id in your Skyrim.esm; the
 plugins aren't committed.
+
+A test mod whose script runs its tests on its own (`test-mod autotest`)
+keeps each report in a script variable and has the game save once done;
+`test-results` reads the reports back from the newest save holding any:
+
+```sh
+cargo run --release -p vrm-tools -- test-results            # the game's Saves directory
+cargo run --release -p vrm-tools -- test-results <save.ess | dir> [--all]
+```
+
+The Saves directory is `$SKYRIM_SAVES` or Proton's under the default Steam
+locations.
 
 ## License
 

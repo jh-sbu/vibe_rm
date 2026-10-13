@@ -5,12 +5,18 @@
 //! user's Skyrim.esm, so no game data is copied here; the plugins themselves
 //! aren't kept (`.esp` is ignored). Scripts are assembled with
 //! `papyrus::build` and go in `Scripts/` beside the plugin.
+//!
+//! A script that tests on its own keeps each report in a `Result<Name>`
+//! string variable and asks the game to save once done
+//! (`Game.RequestSave`); `vrm-tool test-results` then reads the reports
+//! from that save ([`results`]), so no one has to transcribe them.
 
 use anyhow::{Result, bail};
 use esp::{FormId, LoadOrder};
 
 mod autotest;
 mod pex;
+pub mod results;
 mod venv;
 
 /// The test mods by name: what `test-mod` builds.

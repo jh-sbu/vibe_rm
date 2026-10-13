@@ -3,6 +3,7 @@ use anyhow::{Context, Result, bail};
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
 mod functions;
+mod saves;
 mod test_mods;
 
 /// A behaviour project named by its directory (humanoids: `behaviors/0_master.hkx`)
@@ -121,6 +122,65 @@ fn main() -> Result<()> {
                 }
             }
             println!("{}", out.display());
+        }
+        Some("save-info") => {
+            // save-info [save.ess | saves dir]: a save's header, plugins,
+            // stats and contents (the newest in a directory; the game's
+            // Saves directory when none given).
+            let dir = match args.get(1) {
+                Some(a) => std::path::PathBuf::from(a),
+                None => saves::locate_saves_dir().context("no Saves directory found")?,
+            };
+            let path = saves::saves_in(&dir)?
+                .into_iter()
+                .next()
+                .context("no saves")?;
+            println!("{}", path.display());
+            print!("{}", saves::info(&ess::Save::open(&path)?)?);
+        }
+        Some("test-results") => {
+            // test-results [--all] [save.ess | saves dir]: the reports a
+            // test mod's scripts left in a save: the newest save in a
+            // directory that holds any (the game's Saves directory when
+            // none given), or every save that does with --all.
+            let all = args.iter().any(|a| a == "--all");
+            let dir = match args.iter().skip(1).find(|a| *a != "--all") {
+                Some(a) => std::path::PathBuf::from(a),
+                None => saves::locate_saves_dir().context("no Saves directory found")?,
+            };
+            let mut found = false;
+            for path in saves::saves_in(&dir)? {
+                let save = ess::Save::open(&path).with_context(|| path.display().to_string())?;
+                let reports = test_mods::results::read(&save)?;
+                if !reports.iter().any(|r| r.any()) {
+                    continue;
+                }
+                found = true;
+                let h = &save.header;
+                println!(
+                    "# {}
+# {}, level {}, in {}, plugins: {}
+",
+                    path.display(),
+                    h.player_name,
+                    h.player_level,
+                    h.player_location,
+                    save.plugins
+                        .iter()
+                        .chain(&save.light_plugins)
+                        .skip_while(|p| !p.to_ascii_lowercase().ends_with(".esp"))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                print!("{}", test_mods::results::format(&reports));
+                if !all {
+                    break;
+                }
+            }
+            if !found {
+                bail!("no save in {} holds test reports", dir.display());
+            }
         }
         Some("esp-dump") => {
             // esp-dump <data dir> <form id | editor id>: subrecords, the first 48
