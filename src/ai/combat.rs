@@ -1819,7 +1819,6 @@ impl Engine {
         self.send_hit_event(
             target,
             attacker,
-            projectile,
             power,
             sneak.is_some(),
             false,
@@ -1913,7 +1912,7 @@ impl Engine {
             "{attacker} {} {target} for {damage:.1}",
             if power { "power bashes" } else { "bashes" }
         );
-        self.send_hit_event(target, attacker, None, power, false, true, false);
+        self.send_hit_event(target, attacker, power, false, true, false);
         if attacker == PLAYER_REF {
             self.use_skill(esp::actor_value::BLOCK, PLAYER_BASH_XP);
         } else if target == PLAYER_REF {
@@ -2557,12 +2556,12 @@ impl Engine {
     /// `OnHit` (aggressor, source, projectile, power attack, sneak attack,
     /// bash, blocked) to what was struck: the source is the attacker's
     /// weapon, the `Unarmed` weapon (000001F4) for a fist (`test-mod
-    /// autotest2`).
+    /// autotest2`); no projectile, an arrow's neither (a bow's hits from 580
+    /// to 1090 units away came with none: `test-mod autotest3`).
     pub(crate) fn send_hit_event(
         &mut self,
         target: FormId,
         attacker: FormId,
-        projectile: Option<FormId>,
         power: bool,
         sneak: bool,
         bash: bool,
@@ -2574,7 +2573,7 @@ impl Engine {
         let args = vec![
             self.object_value(attacker),
             form(self, weapon),
-            form(self, projectile),
+            papyrus::Value::None,
             papyrus::Value::Bool(power),
             papyrus::Value::Bool(sneak),
             papyrus::Value::Bool(bash),
@@ -2999,13 +2998,7 @@ impl Engine {
             // Anything else (a body, clutter, a wall): pushed if it moves.
             let push = if power { BLOW_PUSH * 2.0 } else { BLOW_PUSH };
             log::info!("player strikes {r}");
-            self.strike(
-                r,
-                PLAYER_REF,
-                None,
-                dir * push * crate::physics::METRE,
-                power,
-            );
+            self.strike(r, PLAYER_REF, dir * push * crate::physics::METRE, power);
         }
     }
 

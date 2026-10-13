@@ -369,17 +369,10 @@ impl Engine {
     /// Something struck by `attacker`'s blow or projectile (none for a blow):
     /// what moves of it is pushed by `impulse` (kg game units / s), and its
     /// scripts hear of it (`OnHit`).
-    pub(crate) fn strike(
-        &mut self,
-        what: FormId,
-        attacker: FormId,
-        projectile: Option<FormId>,
-        impulse: Vec3,
-        power: bool,
-    ) {
+    pub(crate) fn strike(&mut self, what: FormId, attacker: FormId, impulse: Vec3, power: bool) {
         self.disturb(what);
         self.physics.apply_impulse(what, impulse);
-        self.send_hit_event(what, attacker, projectile, power, false, false, false);
+        self.send_hit_event(what, attacker, power, false, false, false);
     }
 
     /// Papyrus `ApplyHavokImpulse(x, y, z, magnitude)`: a push along the

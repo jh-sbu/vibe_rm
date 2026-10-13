@@ -30,26 +30,32 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   20, overrides): grows with the DATA trans delta, steadily (half way at
   half the time). 125 took 22.8 s (7.7 game minutes), 82 took 15.7 s
   (5.3 game minutes): taken as delta / 16 game minutes, within 4%.
-  `SetActive` with `abAccelerate` came in as fast as without it when
-  overriding (22.9 s). It runs on game time (`test-mod autotest2`): at
+  `SetActive` with `abAccelerate` came in as fast as without it, with an
+  override (22.9 s) and without (23.0 s, `test-mod autotest3`), so
+  `fWeatherTransAccel` isn't used. It runs on game time (`test-mod autotest2`): at
   timescale 60, 125 took 8.0 s (8.2 game minutes; 23.1 s and 7.8 at 20)
   and 82 took 5.3 s (5.5 game minutes).
 - **Override.** `ForceActive` / `SetActive` with `abOverride` hold the
   weather against regional changes until `ReleaseOverride`; `SetActive`
-  without it does nothing while overridden.
+  without it does nothing while overridden. In the game (`test-mod
+  autotest3`) `ReleaseOverride` brought back the weather on before the
+  override: it was going out at once and in 22 s later, at the usual speed.
+- **Without an override** `SetActive` brings a weather in as with one
+  (Clear and Cloudy, both on Riverwood's region's list, about 23 s each),
+  and `ForceActive(false)` puts it on at once (`test-mod autotest3`).
+  `autotest2`'s `SetActive(false, ...)` that never came in followed its
+  light test, which forced a weather with an override and set the hour back
+  and forth: what blocked it there isn't known.
 
 ## Open
 
 - **Transition speed.** Two deltas fit delta / 16 game minutes to 4-7%; the
-  exact law isn't known. Acceleration is taken as `fWeatherTransAccel` (16,
-  from the data) times faster, but only without an override: with one it
-  made no difference in the game, and without one it couldn't be measured:
-  after `ReleaseOverride`, `SetActive(false, false)` and then
-  `SetActive(false, true)` of `SkyrimClear` (cloudy on, in Riverwood's
-  region, which lists both) didn't bring it in within 120 s each, the
-  outgoing weather None (`test-mod autotest2`, twice). Why isn't known: here
-  a weather set without an override comes in. A trans delta of 0 changes at
-  once.
+  exact law isn't known. What `abAccelerate` does, if anything, isn't
+  known. A trans delta of 0 changes at once.
+- **`FindWeather`** picks a region weather of the classification by chance
+  here. In the game, in Riverwood's region (Cloudy and Clear pleasant, Fog
+  cloudy, Overcast Rain rainy...), pleasant gave Cloudy and cloudy gave None
+  (`test-mod autotest3`): why Fog wasn't found isn't known.
 - **How often the weather changes.** Every 2 to 6 game hours (made up) the
   region's list is rolled by chance; the same weather may come up again. The
   climate's TNAM volatility (byte 4: 50 for `SkyrimClimate`) isn't used.
