@@ -4,8 +4,9 @@
 //! The sky holds a current weather and, while one comes in, the outgoing one
 //! and how far the transition has come (CommonLibSSE's `Sky`: `currentWeather`,
 //! `lastWeather`, `currentWeatherPct`, `overrideWeather`). The sky, light, fog
-//! and image space mix the two by that. A weather comes in at its DATA "trans
-//! delta" (`fWeatherTransAccel` times faster when accelerated). Outdoors, the
+//! and image space mix the two by that. A weather comes in over its DATA "trans
+//! delta" sixteenths of a game minute (`fWeatherTransAccel` times faster when
+//! accelerated, unless an override). Outdoors, the
 //! weathers come from the player's cell's regions (XCLR; the highest priority
 //! region with weather data, RDAT type 3, its RDWT list of weather, chance and
 //! global), else the climate's (WLST), picked by chance; leaving a region
@@ -51,9 +52,10 @@ const WIND_SWAY_SECONDS: f32 = 30.0;
 const SKY_MODEL_SCALE: f32 = 300.0;
 /// How long a lightning flash lights the world (made up).
 const FLASH_SECONDS: f32 = 0.6;
-/// A weather's trans delta is the thousandths of a transition per game minute
-/// (made up: 125, the usual value, takes 8 game minutes).
-const TRANS_DELTA_PER_MINUTE: f32 = 1.0 / 1000.0;
+/// Game minutes a weather's transition takes per unit of its trans delta:
+/// in Skyrim SE at timescale 20, 125 took 7.7 game minutes and 82 took 5.3
+/// (`test-mod autotest`), a sixteenth of a minute each within 4%.
+const MINUTES_PER_TRANS_DELTA: f32 = 1.0 / 16.0;
 
 #[derive(Default)]
 pub struct WeatherState {
@@ -454,7 +456,9 @@ impl Engine {
         ws.outgoing = ws.current.take().filter(|_| !instant);
         ws.current = Some(w);
         ws.pct = if instant { 1.0 } else { 0.0 };
-        ws.accelerate = accelerate;
+        // An override isn't accelerated: in the game, accelerated or not,
+        // it came in as fast.
+        ws.accelerate = accelerate && !overriding;
         self.schedule_weather_roll();
         self.sync_sky_textures();
     }
@@ -546,14 +550,19 @@ impl Engine {
     /// weather now and then.
     pub(crate) fn update_weather(&mut self, game_hours: f32) {
         if self.weather.outgoing.is_some() {
-            let delta = self.weather.current.as_ref().map_or(255, |w| w.trans_delta) as f32;
+            let delta = self
+                .weather
+                .current
+                .as_ref()
+                .map_or(255, |w| w.trans_delta)
+                .max(1) as f32;
             let accel = if self.weather.accelerate {
                 crate::ai::combat::gmst_f32(&self.lo, "fWeatherTransAccel", 16.0)
             } else {
                 1.0
             };
             let ws = &mut self.weather;
-            ws.pct += delta * TRANS_DELTA_PER_MINUTE * accel * game_hours * 60.0;
+            ws.pct += game_hours * 60.0 / (delta * MINUTES_PER_TRANS_DELTA) * accel;
             if ws.pct >= 1.0 {
                 ws.pct = 1.0;
                 ws.outgoing = None;
