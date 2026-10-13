@@ -513,11 +513,13 @@ impl Save {
 mod tests {
     use super::*;
 
-    /// Saves put in the workspace's (ignored) `tests/` directory, if any.
+    /// Saves put in the workspace's (ignored) `tests/` directory or its
+    /// `results/` (saves test mods made), if any.
     fn local_saves() -> Vec<std::path::PathBuf> {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests");
-        let mut saves: Vec<_> = std::fs::read_dir(dir)
+        let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests");
+        let mut saves: Vec<_> = [tests.clone(), tests.join("results")]
             .into_iter()
+            .flat_map(std::fs::read_dir)
             .flatten()
             .flatten()
             .map(|e| e.path())
