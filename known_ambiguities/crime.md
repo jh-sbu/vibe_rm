@@ -159,8 +159,12 @@ locations name it.
   (detection above 0, without stealth points; `known_ambiguities/detection.md`).
   The victim of an assault always knows of it.
 - Each crime faction told adds its gold once, however many of its members saw.
-  Whether a witness reports to its own crime faction (done here) or to the
-  victim's is not settled by the sources found.
+  A witness reports to the victim's crime faction, its own only when the
+  victim has none: in the game (`test-mod autotest2`) an assault on a member
+  of one crime faction seen by two more members and one of another added 40
+  to the first and nothing to the other. (Whether the other's witness
+  detected the player isn't known; it stood beside them.) The bounty stayed
+  while witnesses died and went when the victim, the last, died.
 - "Do not report crimes against members": members report crimes against
   members only when they are the victim.
 - Assault: the player's first blow on someone calm who keeps the law (see the

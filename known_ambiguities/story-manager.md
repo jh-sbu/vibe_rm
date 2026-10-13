@@ -62,6 +62,16 @@ or prints one event's tree.
 - Usage in Skyrim.esm and DLCs: `ADIA` roots 919 quests (every town's
   conversations), `SCPT` 363, `CLOC` 258, `KILL` 15.
 
+## Confirmed in the game (`test-mod autotest2`, 2026-10-13)
+
+- Relationships set by `SetRelationshipRank` read the same both ways, and
+  are kept between the two references: another reference of the same NPC
+  keeps its rank (A1-B set to 3 left A2-B at 0).
+- A quest's scripts had their `OnInit` before the quest ever started (once,
+  as the plugin loaded), not again when `Start()` started it, nor after
+  `Stop()` and a second `Start()`; their variables were kept. `Start()`
+  returned true and the quest was running at once.
+
 ## Choices made without a source
 
 - Node conditions run on the player (subject).
@@ -83,8 +93,6 @@ or prints one event's tree.
   tracks crime). Blows to the player send none.
 - Bodies: a living, calm humanoid within 1000 units with nothing between
   its eyes and the body (once a second), once for each finder and body.
-- Relationships are symmetric, kept on NPC records (`SetRelationshipRank`
-  on a reference changes it for its NPC).
 - Crime events' members beyond those: the other references R1, R2 in
   order, forms (the faction, the crime group) as F1, values V1, V2 in
   order. The crime group is the crime faction (not its `CRGR` list). The
@@ -93,14 +101,15 @@ or prints one event's tree.
   `ADCR` for crimes witnesses report and escaping, not for scripts'
   `ModCrimeGold`. Location: the player's for an arrest, the jail cell's
   (`XLCN`) for the others.
-- The `OnStory...` event is sent right after `OnInit`, before the
-  startup stage. Its members follow the parameters' order (references,
+- The `OnStory...` event is sent as the quest starts (its `OnInit` came
+  at game start), before the startup stage. Its members follow the parameters' order (references,
   locations, forms and values as R1 / R2, L1 / L2, F1, V1 / V2), the same
   reading as the crime events'. The skill increase event carries the skill's actor value index as V1
   (for `OnStoryIncreaseSkill`'s skill name), and `OnStoryIncreaseLevel` gets
   the new level as V1.
-- Quests started from Papyrus (`Quest.Start`, story events) get their scripts
-  and OnInit once the running scripts yield, in the same frame.
+- Every quest's scripts get `OnInit` at game start, running or not.
+  Quests started from Papyrus (`Quest.Start`, story events) get their
+  aliases' scripts once the running scripts yield, in the same frame.
 
 ## Ownership (stealing)
 

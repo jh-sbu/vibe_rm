@@ -15,8 +15,10 @@ use glam::Vec3;
 
 use crate::engine::{Engine, Location};
 
-/// `FNAM`: on the map from the start.
+/// `FNAM` flags: on the map from the start; travel to it allowed from the
+/// start (Skyrim.esm's markers have 0, 1 or both: `test-mod autotest2`).
 const VISIBLE: u8 = 0x01;
+const TRAVEL: u8 = 0x02;
 
 /// Seconds between checks of the player's distance to the markers.
 const CHECK_INTERVAL: f32 = 0.5;
@@ -55,8 +57,12 @@ pub struct MapMarkers {
     all: std::cell::OnceCell<Vec<MapMarker>>,
     /// Markers put on the map by scripts or by coming near.
     shown: HashSet<FormId>,
-    /// Markers the player has reached (or a script allowed travel to).
+    /// Markers the player has reached.
     pub discovered: HashSet<FormId>,
+    /// Markers scripts allowed travel to (`AddToMap(true)`,
+    /// `EnableFastTravel`): not discovered (Locations Discovered doesn't
+    /// count them: `test-mod autotest2`).
+    travel: HashSet<FormId>,
     next_check: f32,
 }
 
@@ -134,8 +140,20 @@ impl Engine {
             || self.map_markers.discovered.contains(&r)
     }
 
+    /// Whether the player can travel to the marker (`CanFastTravelToMarker`):
+    /// discovered, its `FNAM` allows it, or a script did.
+    pub fn can_fast_travel_to(&self, r: FormId) -> bool {
+        let Some(m) = self.map_marker(r) else {
+            return false;
+        };
+        m.flags & TRAVEL != 0
+            || self.map_markers.discovered.contains(&r)
+            || self.map_markers.travel.contains(&r)
+    }
+
     /// `AddToMap(abAllowFastTravel)`: the marker goes on the map ("Map
-    /// updated." when it wasn't), travel to it allowed when asked.
+    /// updated." when it wasn't), travel to it allowed when asked, neither
+    /// discovering it.
     pub fn add_to_map(&mut self, r: FormId, travel: bool) {
         if self.map_marker(r).is_none() {
             return;
@@ -148,7 +166,7 @@ impl Engine {
         }
         self.map_markers.shown.insert(r);
         if travel {
-            self.map_markers.discovered.insert(r);
+            self.map_markers.travel.insert(r);
         }
     }
 
@@ -158,8 +176,9 @@ impl Engine {
             return;
         }
         if on {
-            self.map_markers.discovered.insert(r);
+            self.map_markers.travel.insert(r);
         } else {
+            self.map_markers.travel.remove(&r);
             self.map_markers.discovered.remove(&r);
         }
     }
@@ -282,7 +301,9 @@ impl Engine {
                 continue;
             }
             let d = m.pos.distance(player);
-            let (base, alpha) = if self.map_markers.discovered.contains(&m.r) {
+            let (base, alpha) = if self.map_markers.discovered.contains(&m.r)
+                || self.map_markers.travel.contains(&m.r)
+            {
                 (frame::LOCATIONS, 100.0)
             } else if d < visible {
                 let a = ((visible - d) / (visible - fade).max(1.0)).clamp(0.0, 1.0);

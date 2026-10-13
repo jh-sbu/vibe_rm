@@ -17,10 +17,11 @@ Implemented in `src/world/template.rs`. Based on UESP *Mod File Format/NPC_*
 
 ## Open questions
 
-- A part that isn't templated but is missing from the NPC (no factions, no combat
-  style, no name) is taken from the template. That was the engine's earlier
-  behaviour here and avoids blank names and factionless bandits, but whether the
-  game does it is unverified.
+- A part that isn't templated but is missing from the NPC (no combat style, no
+  name) is taken from the template. That avoids blank names, but whether the
+  game does it is unverified (Papyrus can't read either back). Factions aren't:
+  an NPC templated without the factions flag and listing none of its own is in
+  none of its template's (`test-mod autotest2`).
 - NPC attack data: read as the attack race's attacks (else the race's), with the
   NPC's own `ATKD` / `ATKE` replacing those of the same event. Whether the NPC's
   list replaces the race's entirely is unverified.

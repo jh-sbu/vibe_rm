@@ -273,7 +273,7 @@ impl Engine {
 
     /// `Location.SetCleared`: clearing it (the first time) is announced
     /// ("CLEARED: BLEAK FALLS BARROW") with the cleared music when the
-    /// player is there, and counted in Dungeons Cleared.
+    /// player is there, and then counted in Dungeons Cleared.
     pub fn set_cleared(&mut self, l: FormId, cleared: bool) {
         if !cleared {
             self.cleared_locations.remove(&l);
@@ -283,10 +283,15 @@ impl Engine {
             return;
         }
         log::info!("{l} ({}) is cleared", self.form_name(l));
-        self.increment_stat("Dungeons Cleared", 1);
         let here = self
             .current_location()
             .is_some_and(|p| self.location_within(p, l));
+        // Not counted cleared from elsewhere (`SetCleared` with the player
+        // away: `test-mod autotest2`); whether it counts with them there is
+        // taken so.
+        if here {
+            self.increment_stat("Dungeons Cleared", 1);
+        }
         let name = self.form_name(l);
         if here && !name.is_empty() {
             let status = self

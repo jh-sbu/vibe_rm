@@ -3324,8 +3324,8 @@ impl Engine {
         true
     }
 
-    /// Attach a started quest's scripts (its own and its aliases'), send OnInit,
-    /// queue its startup stage and start its scenes.
+    /// Attach a started quest's scripts (its own and its aliases'), send OnInit
+    /// if it never had it, queue its startup stage and start its scenes.
     fn init_quest(&mut self, q: FormId) {
         if !self.scripts.quests.get(&q).is_some_and(|st| st.running) {
             return;
@@ -3376,7 +3376,12 @@ impl Engine {
                     .collect();
                 vm.attach(&mut host, obj, &s.name, &props);
             }
-            vm.send_event(&mut host, obj, "OnInit", vec![]);
+            // OnInit once ever (at game start for every quest): not again
+            // when it starts or starts again, and its variables kept
+            // (`test-mod autotest2`).
+            if host.engine.scripts.initialized.insert(obj) {
+                vm.send_event(&mut host, obj, "OnInit", vec![]);
+            }
             // Started by the Story Manager: the event, with its data.
             let event = host
                 .engine
@@ -3559,6 +3564,44 @@ impl Engine {
         self.update_messages();
     }
 
+    /// Every quest's own scripts attached and sent OnInit, running or not: the
+    /// game sends a quest's scripts OnInit before it starts, and not again
+    /// when it does (`test-mod autotest2`).
+    fn init_quest_scripts(&mut self) {
+        let quests: Vec<(FormId, crate::script::vmad::Vmad)> = self
+            .lo
+            .ids_of_type(b"QUST")
+            .iter()
+            .filter_map(|&q| Some((q, crate::script::vmad::parse(&self.lo.get(q)?)?)))
+            .filter(|(_, v)| !v.scripts.is_empty())
+            .collect();
+        log::info!("{} quests' scripts initialised", quests.len());
+        let mut vm = std::mem::take(&mut self.vm);
+        {
+            let mut host = crate::script::EngineHost { engine: self };
+            for (q, vmad) in &quests {
+                let obj = papyrus::ObjectId::Form(q.0);
+                for s in &vmad.scripts {
+                    let props: Vec<(String, papyrus::Value)> = s
+                        .properties
+                        .iter()
+                        .map(|(n, pv)| {
+                            (
+                                n.clone(),
+                                crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
+                            )
+                        })
+                        .collect();
+                    vm.attach(&mut host, obj, &s.name, &props);
+                }
+                if host.engine.scripts.initialized.insert(obj) {
+                    vm.send_event(&mut host, obj, "OnInit", vec![]);
+                }
+            }
+        }
+        self.vm = vm;
+    }
+
     /// Start every quest flagged "start game enabled".
     pub fn start_game_enabled_quests(&mut self) {
         let quests: Vec<FormId> = self
@@ -3576,6 +3619,7 @@ impl Engine {
                     .unwrap_or(false)
             })
             .collect();
+        self.init_quest_scripts();
         log::info!("starting {} start-game-enabled quests", quests.len());
         for q in quests {
             self.start_quest(q);

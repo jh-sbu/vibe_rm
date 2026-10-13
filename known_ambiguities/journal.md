@@ -22,6 +22,19 @@ its data isn't public; the choices below are what the movie's code allows.
 - The journal key always opens the Quests tab; Esc opens the journal on the
   tab it was last closed on.
 
+## Confirmed in the game (`test-mod autotest2`, 2026-10-13)
+
+- Kills by the player count by type: a hare in Animals Killed and Bunnies
+  Slaughtered, a wolf in Animals Killed, a human in People Killed; a kill by
+  no one (`Kill(None)`) counts nowhere.
+- `IncrementSkill` adds 1 to Skill Increases, `IncrementSkillBy(n)` n.
+- A side quest (type 8) completed by `CompleteQuest` counts in Quests
+  Completed, not Side Quests Completed (the game's `AchievementsScript`
+  counts that one). A miscellaneous quest counts its completed objective in
+  Misc Objectives Completed, and completing it counts nothing.
+- Total Lifetime Bounty counts bounty set by script (`SetCrimeGold` 500
+  twice and an assault's 40: 1040); Largest Bounty was 500.
+
 ## Unconfirmed: choices made
 
 - **Opening.** The game's side is `InitExtensions` and `SetPlatform(0,

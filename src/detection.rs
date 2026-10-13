@@ -12,15 +12,18 @@
 //! sound  = fSneakSoundsMult * movement * (1, or fSneakSoundLosMult unseen)
 //! movement = (fSneakEquippedWeightBase + fSneakEquippedWeightMult * armor
 //!            weight) * (fSneakRunningMult running), 0 standing still
-//! visual = (fDetectionSneakLightMod + light level) * fSneakLightMult, 0 when
-//!          the target can't be seen
-//! observer skill = fSneakPerceptionSkillMin + (Max - Min) * Sneak / 100
+//! visual = (fDetectionSneakLightMod + light level) * fSneakLightMult
+//!          * (1 + fSneakLightMoveMult moving + fSneakLightRunMult running),
+//!          0 when the target can't be seen
+//! observer skill = (fSneakPerceptionSkillMin + (Max - Min) * Sneak / 100)
+//!          * (1 + fSneakCombatMod when the target isn't its combat target)
 //! ```
 //!
 //! Above 0 the target is detected. Against those who would attack them, the
 //! player also has stealth points (the CK wiki's Stealth Points page): detection
 //! above 0 drains them, below 0 refills them; an enemy attacks once they are
-//! gone, or at once when its detection passes `iCombatStealthPointDetectionThreshold`.
+//! gone, or at once when its detection passes `iCombatStealthPointDetectionThreshold`
+//! (`iCombatStealthPointSneakDetectionThreshold` against someone sneaking).
 //! Crime witnesses and force greets need only detection above 0.
 //!
 //! Open questions (the target's skill, light level, the view cone...):
@@ -66,12 +69,21 @@ pub struct DetectionSettings {
     pub light_mod: f32,
     pub light_mult: f32,
     pub light_exterior_mult: f32,
+    /// `fSneakLightMoveMult` / `RunMult` (0.01, 0.2 in the game: the data
+    /// lacks them; `test-mod autotest2`).
+    pub light_move_mult: f32,
+    pub light_run_mult: f32,
     pub perception_min: f32,
     pub perception_max: f32,
     pub skill_mult: f32,
     pub sleep_bonus: f32,
-    /// `iCombatStealthPointDetectionThreshold`.
+    /// `fSneakCombatMod` (-0.4 in the game, `test-mod autotest2`).
+    pub combat_mod: f32,
+    /// `iCombatStealthPointDetectionThreshold`, and the one against someone
+    /// sneaking (`iCombatStealthPointSneakDetectionThreshold`, 70 in the
+    /// game, `test-mod autotest2`).
     pub combat_threshold: f32,
+    pub combat_sneak_threshold: f32,
     pub drain_mult: f32,
     pub regen_mult: f32,
     pub regen_min: f32,
@@ -95,11 +107,16 @@ impl DetectionSettings {
             light_mod: f("fDetectionSneakLightMod", 15.0),
             light_mult: f("fSneakLightMult", 0.33),
             light_exterior_mult: f("fSneakLightExteriorMult", 0.5),
+            light_move_mult: f("fSneakLightMoveMult", 0.01),
+            light_run_mult: f("fSneakLightRunMult", 0.2),
             perception_min: f("fSneakPerceptionSkillMin", 0.0),
             perception_max: f("fSneakPerceptionSkillMax", 100.0),
             skill_mult: f("fSneakSkillMult", 0.5),
             sleep_bonus: f("fSneakSleepBonus", 0.0),
+            combat_mod: f("fSneakCombatMod", -0.4),
             combat_threshold: gmst_i32(lo, "iCombatStealthPointDetectionThreshold", 25) as f32,
+            combat_sneak_threshold: gmst_i32(lo, "iCombatStealthPointSneakDetectionThreshold", 70)
+                as f32,
             drain_mult: f("fCombatStealthPointDrainMult", 3.0),
             regen_mult: f("fCombatStealthPointRegenMult", 0.2),
             regen_min: f("fCombatStealthPointRegenMin", 5.0),
@@ -420,6 +437,9 @@ impl Engine {
             let light = self.light_level_at(t.at - Vec3::Z * 40.0, t.id);
             (s.light_mod + light)
                 * s.light_mult
+                * (1.0
+                    + if t.moving { s.light_move_mult } else { 0.0 }
+                    + if t.running { s.light_run_mult } else { 0.0 })
                 * if self.outdoors() {
                     s.light_exterior_mult
                 } else {
@@ -432,7 +452,13 @@ impl Engine {
         // The target's Stealth perks cut the observer's skill factor (UESP).
         let observer_skill = (s.perception_min
             + (s.perception_max - s.perception_min) * o.sneak / 100.0)
-            * (1.0 + if o.sleeping { s.sleep_bonus } else { 0.0 })
+            * (1.0
+                + if o.sleeping { s.sleep_bonus } else { 0.0 }
+                + if self.combat_target(o.id) == Some(t.id) {
+                    0.0
+                } else {
+                    s.combat_mod
+                })
             * if t.sneaking {
                 (1.0 - t.stealth / 100.0).max(0.0)
             } else {
@@ -475,8 +501,13 @@ impl Engine {
     /// stealth points are gone and it is detected, or it is detected past the
     /// combat threshold.
     fn enough_to_find(&self, v: f32, target: FormId) -> bool {
-        (v > 0.0 && self.stealth_points(target) <= 0.0)
-            || v > self.detection_settings().combat_threshold
+        let s = self.detection_settings();
+        let threshold = if self.is_sneaking(target) {
+            s.combat_sneak_threshold
+        } else {
+            s.combat_threshold
+        };
+        (v > 0.0 && self.stealth_points(target) <= 0.0) || v > threshold
     }
 
     /// Whether `observer` finds `target` (to attack it): from the last worked

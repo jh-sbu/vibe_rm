@@ -31,7 +31,10 @@ below (Skyrim.esm / Update.esm).
 
 - **NPC levels** (`GetLevel`): `ACBS` level, or with the PC level mult flag
   (0x80) the player's level x mult / 1000, rounded down (1.5 and 1.667 at
-  level 1 gave 1), at least calc min (`test-mod autotest`).
+  level 1 gave 1), at least calc min (`test-mod autotest`) and at most calc
+  max, 0 meaning none (x5 with max 2 gave 2, with max 0 gave 5); calc min 0
+  allows 0 (x0.5 gave 0). A fixed level ignores calc min and max (7 with max
+  2 gave 7) (`test-mod autotest2`).
 
 ## Open (choices made here)
 
@@ -70,5 +73,3 @@ below (Skyrim.esm / Update.esm).
   skill XP already earned toward the next level (as `IncrementSkill`), and
   passes no time; refusals are notifications; the menu has no sounds (no
   sound descriptor is named for it).
-- **NPC levels**: whether calc max 0 means no maximum (taken so here), and
-  that max clamps, aren't checked: `test-mod autotest` ran at player level 1.

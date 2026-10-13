@@ -63,7 +63,36 @@
 //! - **Weather acceleration** (`weather.md`): without an override, normal
 //!   and accelerated.
 //!
-//! Not yet run in the game.
+//! First run in Skyrim SE (2026-10-13, player level 1, near Riverwood; the
+//! idle camera came on part way, which no test reads): the scripts passed
+//! objects to natives without casting them to the parameter's class (a
+//! `Weapon` for a `Form`, an `Actor` for an `ObjectReference`), and the game
+//! refuses such calls, so `AddItem`, `EquipItem`, `IsEquipped`, `MoveTo`,
+//! `PlaceAtMe`, `Spell.Cast` and the player's animation event registrations
+//! did nothing: the hands, gear, animation events, spell and archer hits,
+//! food and potions and the crime test's gold went untested. `Code::typed`
+//! casts them now and the tests check every call. The rest (in
+//! `known_ambiguities/`):
+//!
+//! - Settings: the engine's fallbacks were the game's but `fWeaponBashMin`
+//!   (0.1); `fSneakLightMoveMult` 0.01, `fSneakLightRunMult` 0.2,
+//!   `fSneakCombatMod` -0.4, `iCombatStealthPointSneakDetectionThreshold` 70
+//!   and the flee settings; a missing setting reads 0.
+//! - Levels: calc max clamps, 0 is none, calc min 0 allows 0; a fixed level
+//!   ignores both. Templates: missing factions aren't the template's.
+//! - Relationships: both ways, per reference. Quest start: `OnInit` before the
+//!   quest started, not at `Start()` nor a restart.
+//! - Map markers: `FNAM` 1 shown, 2 travel; `AddToMap` doesn't count as
+//!   discovered. Cleared: `SetCleared` from afar doesn't count.
+//! - Player graph: `IsNPC` 0; spells are hand type 9. Combat: no `OnHit` for
+//!   script damage; fists' source `Unarmed`; back in combat 0.44 s after
+//!   `StopCombat`.
+//! - Crime: the victim's faction gets the gold, a witness of another none;
+//!   the bounty went with the last witness. Stats: kills by type, none for
+//!   `Kill(None)`; side quests' statistic is a script's.
+//! - Weather: transitions run on game time. Without an override the
+//!   weather set didn't come in (rerun with each target the weather not on).
+//! - Light level: the hours' values (`detection.md`).
 
 use anyhow::{Context, Result, ensure};
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, vmad, write_plugin};
@@ -259,6 +288,13 @@ fn as_form(c: &mut Code, form: Arg) -> Arg {
     let f = c.temp("Form");
     c.cast(f.clone(), form);
     f
+}
+
+/// `Name(f)`: `f` cast to a Form first (a call given another class is
+/// refused).
+fn name(c: &mut Code, f: Arg) -> Arg {
+    let f = as_form(c, f);
+    c.own("Name", "String", [f])
 }
 
 /// `Name(Form f)`: the property naming `f` (the player or a vanilla form),
@@ -539,8 +575,8 @@ fn on_animation_event() -> FunctionBuilder {
     let mut c = Code::new("None");
     let source = c.param("akSource", "ObjectReference");
     let event = c.param("asEventName", "String");
-    let name = c.own("Name", "String", [source]);
-    c.append(id("AnimLog"), [name, string(" "), event, string("; ")]);
+    let who = name(&mut c, source);
+    c.append(id("AnimLog"), [who, string(" "), event, string("; ")]);
     c.finish(Arg::None)
 }
 
@@ -718,8 +754,8 @@ fn hand_state() -> FunctionBuilder {
         ("; spell L ", spell_left),
         (", R ", spell_right),
     ] {
-        let name = c.own("Name", "String", [form]);
-        put(&mut c, &r, text, name);
+        let held = name(&mut c, form);
+        put(&mut c, &r, text, held);
     }
     let torch = c.method("Actor", player.clone(), "IsEquipped", [auto_var("Torch")]);
     put(&mut c, &r, "; torch ", torch);
@@ -1004,10 +1040,10 @@ fn gear_state() -> FunctionBuilder {
         put(&mut c, &r, text, worn);
     }
     let weapon = c.method("Actor", a.clone(), "GetEquippedWeapon", [false.into()]);
-    let weapon = c.own("Name", "String", [weapon]);
+    let weapon = name(&mut c, weapon);
     put(&mut c, &r, "; weapon ", weapon);
     let shield = c.method("Actor", a.clone(), "GetEquippedShield", []);
-    let shield = c.own("Name", "String", [shield]);
+    let shield = name(&mut c, shield);
     put(&mut c, &r, "; shield ", shield);
     line(&mut c, &r, "\n");
     c.finish(r)
@@ -1089,7 +1125,7 @@ fn log_hit() -> FunctionBuilder {
     let t = c.calc(op::FSUB, "Float", now, id("HitStart"));
     let t = c.own("Num", "String", [t]);
     let who = c.local("who", "String");
-    let named = c.own("Name", "String", [aggressor.clone()]);
+    let named = name(&mut c, aggressor.clone());
     c.assign(who.clone(), named);
     for (var, label) in [("FighterRef", "the fighter"), ("ArcherRef", "the archer")] {
         let a = as_form(&mut c, aggressor.clone());
@@ -1100,7 +1136,7 @@ fn log_hit() -> FunctionBuilder {
             .assign(who.clone(), string(label))
             .bind(skip);
     }
-    let source = c.own("Name", "String", [source]);
+    let source = name(&mut c, source);
     c.append(
         log.clone(),
         [
@@ -1685,12 +1721,26 @@ fn test_weather_accel() -> FunctionBuilder {
     let end = outdoors_or_skip(&mut c, &r);
     c.global("Weather", "ReleaseOverride", []);
     line(&mut c, &r, "override released\n");
-    let (first, second) = pick_weathers(&mut c);
-    for (w, accelerate, label) in [
-        (first, false, "no override, delta 125"),
-        (second, true, "no override, delta 125, accelerated"),
-    ] {
-        measure_line(&mut c, &r, w, false, accelerate, label);
+    for (i, (accelerate, label)) in [
+        (false, "no override, delta 125"),
+        (true, "no override, delta 125, accelerated"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // Whichever of A and B isn't on now.
+        let target = c.local(&format!("target{i}"), "Weather");
+        let (a, b) = (auto_var("WeatherA"), auto_var("WeatherB"));
+        let current = c.global("Weather", "GetCurrentWeather", []);
+        let is_a = c.calc(op::CMP_EQ, "Bool", current, a.clone());
+        let keep = c.label();
+        c.assign(target.clone(), a)
+            .jmpf(is_a, keep)
+            .assign(target.clone(), b)
+            .bind(keep);
+        put(&mut c, &r, "setting ", target.clone());
+        line(&mut c, &r, "\n");
+        measure_line(&mut c, &r, target, false, accelerate, label);
         let current = c.global("Weather", "GetCurrentWeather", []);
         let outgoing = c.global("Weather", "GetOutgoingWeather", []);
         put(&mut c, &r, "  then current ", current);
@@ -2242,7 +2292,7 @@ mod tests {
     use papyrus::{ObjectId, Value};
 
     use super::*;
-    use crate::test_mods::script::{native, natives};
+    use crate::test_mods::script::{mistyped_calls, native, natives};
 
     /// The game, as far as the tests ask it: our scripts, the natives'
     /// declarations, and for each native an answer of its type (some
@@ -2338,8 +2388,13 @@ mod tests {
                 ],
             },
         };
-        let mut scripts: HashMap<String, Vec<u8>> = scripts(&setup)
-            .unwrap()
+        let built = scripts(&setup).unwrap();
+        for (name, bytes) in &built {
+            let pex = papyrus::pex::parse(bytes).unwrap();
+            let bad = mistyped_calls(&pex);
+            assert!(bad.is_empty(), "{name}: {bad:#?}");
+        }
+        let mut scripts: HashMap<String, Vec<u8>> = built
             .into_iter()
             .map(|(n, b)| (n.to_ascii_lowercase(), b))
             .collect();

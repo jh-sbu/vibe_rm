@@ -12,8 +12,10 @@ type `MUSDungeonCleared`.
 - **Clearing by bosses.** When an actor with the `Boss` ref type dies, its
   editor location is cleared once every `Boss` reference of it (and of the
   locations within it) is dead. Parent locations aren't cleared by it.
-- **Clearing** (by a boss or `SetCleared`) counts in Dungeons Cleared, and
-  when the player is in the location shows the banner with `sCleared`
+- **Clearing** (by a boss or `SetCleared`) counts in Dungeons Cleared when
+  the player is in the location (`SetCleared(true)` from elsewhere didn't
+  count, nor again after `false` and `true`: `test-mod autotest2`), and then
+  shows the banner with `sCleared`
   ("CLEARED: EMBERSHARD") and plays `MUSDungeonCleared` once. `SetCleared(false)`
   only forgets it. Cells don't respawn, so `iHoursToRespawnCellCleared` and
   the scripts' `OnReset` aren't used.

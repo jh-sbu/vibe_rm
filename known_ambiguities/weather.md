@@ -31,19 +31,22 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   half the time). 125 took 22.8 s (7.7 game minutes), 82 took 15.7 s
   (5.3 game minutes): taken as delta / 16 game minutes, within 4%.
   `SetActive` with `abAccelerate` came in as fast as without it when
-  overriding (22.9 s).
+  overriding (22.9 s). It runs on game time (`test-mod autotest2`): at
+  timescale 60, 125 took 8.0 s (8.2 game minutes; 23.1 s and 7.8 at 20)
+  and 82 took 5.3 s (5.5 game minutes).
 - **Override.** `ForceActive` / `SetActive` with `abOverride` hold the
   weather against regional changes until `ReleaseOverride`; `SetActive`
   without it does nothing while overridden.
 
 ## Open
 
-- **Transition speed.** Measured at timescale 20 only, so whether it runs
-  on game or real time isn't known (taken as game time); two deltas fit
-  delta / 16 game minutes to 4%, the exact law isn't known. Acceleration is
-  taken as `fWeatherTransAccel` (16, from the data) times faster, but only
-  without an override: with one it made no difference in the game, and
-  without one it hasn't been tried. A trans delta of 0 changes at once.
+- **Transition speed.** Two deltas fit delta / 16 game minutes to 4-7%; the
+  exact law isn't known. Acceleration is taken as `fWeatherTransAccel` (16,
+  from the data) times faster, but only without an override: with one it
+  made no difference in the game, and without one the test hasn't worked
+  yet (in `autotest2`'s first run `SetActive(false, false)` right after
+  `ReleaseOverride` didn't bring the weather in within 120 s). A trans delta
+  of 0 changes at once.
 - **How often the weather changes.** Every 2 to 6 game hours (made up) the
   region's list is rolled by chance; the same weather may come up again. The
   climate's TNAM volatility (byte 4: 50 for `SkyrimClimate`) isn't used.

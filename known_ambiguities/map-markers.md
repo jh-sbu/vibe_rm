@@ -13,6 +13,15 @@ Enemy 4, LocationMarkers 5, UndiscoveredMarkers 72); `map.swf`
 mine's, 40 Whiterun's); the CK wiki (`AddToMap`, `EnableFastTravel`,
 `IsMapMarkerVisible`, `GetMapMarkerVisible`).
 
+## Confirmed in the game (`test-mod autotest2`, 2026-10-13)
+
+- `FNAM` is two flags: 1 on the map from the start (the holds' capitals), 2
+  travel allowed without discovering. A far marker with 1 was visible and
+  not travelled to; with 3 (the military camps), visible and travelled to;
+  with 0, neither. Skyrim.esm's markers have only 0, 1 and 3.
+- `AddToMap(false)` puts a marker on the map without travel to it,
+  `AddToMap(true)` with; neither counts it in Locations Discovered.
+
 ## Unconfirmed: choices made
 
 - **Coming near.** A marker comes onto the map when the player, in its
@@ -38,8 +47,7 @@ mine's, 40 Whiterun's); the CK wiki (`AddToMap`, `EnableFastTravel`,
   `iMapMarkerVisibleDistance`, fading in from there to
   `iMapMarkerFadeStartDistance`. Every marker's scale is 100. Indoors there
   are none.
-- **`FNAM`** 1 is taken as on the map from the start (the holds' capitals
-  have it). 2 (the military camps, the DLC ferries) as travel allowed
-  without discovering, and 4, are kept for the map.
-- **`AddToMap(true)`** counts as discovered (fast travel allowed) without the
-  banner; "Map updated." shows when a marker wasn't on the map yet.
+- **`FNAM` 4** (the DLC's) is kept for the map.
+- **`AddToMap`**: "Map updated." shows when a marker wasn't on the map yet.
+  One added with travel isn't discovered: coming near it later discovers
+  it (the banner, the statistic) as any other.
