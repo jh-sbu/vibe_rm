@@ -7,18 +7,17 @@ Implemented in `src/player.rs` (`DisabledControls`), checked in
 `Game.DisablePlayerControls`, `Game.EnablePlayerControls` and the
 `Is...ControlsEnabled` functions (argument order and defaults).
 
-## Open
+## Settled in the game (`test-mod autotest`, 2026-10-12)
 
-- **Arguments given false.** Here a false argument leaves that control as it
-  was: `DisablePlayerControls(false, true)` doesn't re-enable movement. The wiki
-  doesn't say whether the game does the same or sets every control from the
-  arguments.
-- **Several scripts at once.** One shared state: any script's
-  `EnablePlayerControls` undoes every other script's disabling. Whether the
-  game counts requests per caller isn't documented for Skyrim (Fallout 4's
-  input enable layers do).
-- **Fighting.** Disabling it stops attacks, bashes, blocking and shooting but
-  doesn't put a drawn weapon away; whether the game sheathes it is unconfirmed.
+- **Arguments given false** leave that control as it was:
+  `DisablePlayerControls(false, true)` doesn't re-enable movement, and
+  `EnablePlayerControls(false, true)` leaves it disabled.
+- **Several scripts at once** share one state: any script's
+  `EnablePlayerControls` undoes every other script's disabling.
+- **Fighting** disabled sheathes a drawn weapon.
+
+## Open (choices made here)
+
 - **Journal** disables opening the journal (J); it has no tabs to disable.
 - **Menus** covers the tween menu (Tab), the inventory (I), the magic menu
   (P), the favorites menu (Q) and the skills (K); the console stays open to

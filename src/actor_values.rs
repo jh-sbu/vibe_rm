@@ -157,7 +157,8 @@ impl Engine {
         }
     }
 
-    /// `GetActorValuePercent(age)`: what it is now over the most it can be (0..1).
+    /// `GetActorValuePercent(age)`: what it is now over the most it can be
+    /// (0..1); 1 when the most is 0 (`test-mod autotest`).
     pub fn actor_value_fraction(&self, actor: FormId, index: u32) -> f32 {
         let (current, max) = self
             .av_live(actor, index)
@@ -165,7 +166,7 @@ impl Engine {
         if max > 0.0 {
             (current / max).clamp(0.0, 1.0)
         } else {
-            0.0
+            1.0
         }
     }
 

@@ -9,11 +9,12 @@
 use anyhow::{Result, bail};
 use esp::{FormId, LoadOrder};
 
+mod autotest;
 mod pex;
 mod venv;
 
 /// The test mods by name: what `test-mod` builds.
-pub const NAMES: &[&str] = &["pex", "venv"];
+pub const NAMES: &[&str] = &["autotest", "pex", "venv"];
 
 /// A test mod's files: the plugin, and its compiled scripts by name.
 pub struct TestMod {
@@ -30,6 +31,7 @@ pub fn own(object_id: u32) -> FormId {
 /// The files of a test mod (one of [`NAMES`]), with Skyrim.esm loaded.
 pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
     match name {
+        "autotest" => autotest::build(lo),
         "pex" => pex::build(),
         "venv" => Ok(TestMod {
             plugin: venv::build(lo)?,

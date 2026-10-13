@@ -21,13 +21,16 @@ use them (`vrm-tool av-conditions <data>`).
   skills and the health / magicka / stamina offsets, the race's `DATA` for
   starting health / magicka / stamina, regen rates, carry weight and mass.
   Everything else starts at 0 (`SpeedMult` 100).
+- Checked in Skyrim SE (`test-mod autotest`, 2026-10-12): `SetActorValue`
+  sets the base and keeps the permanent modifier; `ModActorValue` changes
+  the permanent modifier, which `GetBaseActorValue` doesn't see;
+  `ForceActorValue` makes the current value what it's given through the
+  permanent modifier, leaving damage as it is; restoring heals only damage.
+  Papyrus's `GetActorValuePercentage` is current over base plus permanent
+  modifier, 0..1, and 1 when that is 0.
 
 ## Open questions
 
-- Which modifier each call touches is inferred from the wiki's wording:
-  `SetActorValue` sets the base, `ModActorValue` and `ForceActorValue` change a
-  permanent modifier (so `GetBaseActorValue` doesn't see them), damage stays at or
-  below 0 and restoring heals only damage.
-- `GetActorValuePercent` is answered as current over base plus permanent
-  modifier, 0..1. A few conditions compare it against 30, 60, 75, which then
-  always pass; whether the game scales those differently is unknown.
+- A few conditions compare `GetActorValuePercent` against 30, 60, 75, which
+  then always pass; whether the condition function scales differently from
+  Papyrus's is unknown.
