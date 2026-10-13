@@ -1,5 +1,6 @@
-//! Papyrus scripting: PEX loading and a virtual machine.
+//! Papyrus scripting: PEX loading and writing, and a virtual machine.
 
+pub mod build;
 pub mod pex;
 pub mod value;
 pub mod vm;
@@ -13,6 +14,8 @@ pub enum Error {
     Corrupt(String),
     #[error("script error: {0}")]
     Runtime(String),
+    #[error("can't write script: {0}")]
+    Write(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

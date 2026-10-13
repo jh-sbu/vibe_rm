@@ -1,6 +1,53 @@
-//! Compiled Papyrus script (`.pex`) parsing. Skyrim PEX files are big-endian.
+//! Compiled Papyrus script (`.pex`) parsing and writing. Skyrim PEX files
+//! are big-endian.
 
 use crate::{Error, Result};
+
+/// The magic number opening every PEX file.
+pub const MAGIC: u32 = 0xFA57_C0DE;
+/// Skyrim's format version (major, minor) and game id.
+pub const VERSION: (u8, u8) = (3, 2);
+pub const GAME_SKYRIM: u16 = 1;
+
+/// Opcodes, as [`OP_NAMES`] names them.
+pub mod op {
+    pub const NOP: u8 = 0;
+    pub const IADD: u8 = 1;
+    pub const FADD: u8 = 2;
+    pub const ISUB: u8 = 3;
+    pub const FSUB: u8 = 4;
+    pub const IMUL: u8 = 5;
+    pub const FMUL: u8 = 6;
+    pub const IDIV: u8 = 7;
+    pub const FDIV: u8 = 8;
+    pub const IMOD: u8 = 9;
+    pub const NOT: u8 = 10;
+    pub const INEG: u8 = 11;
+    pub const FNEG: u8 = 12;
+    pub const ASSIGN: u8 = 13;
+    pub const CAST: u8 = 14;
+    pub const CMP_EQ: u8 = 15;
+    pub const CMP_LT: u8 = 16;
+    pub const CMP_LE: u8 = 17;
+    pub const CMP_GT: u8 = 18;
+    pub const CMP_GE: u8 = 19;
+    pub const JMP: u8 = 20;
+    pub const JMPT: u8 = 21;
+    pub const JMPF: u8 = 22;
+    pub const CALLMETHOD: u8 = 23;
+    pub const CALLPARENT: u8 = 24;
+    pub const CALLSTATIC: u8 = 25;
+    pub const RETURN: u8 = 26;
+    pub const STRCAT: u8 = 27;
+    pub const PROPGET: u8 = 28;
+    pub const PROPSET: u8 = 29;
+    pub const ARRAY_CREATE: u8 = 30;
+    pub const ARRAY_LENGTH: u8 = 31;
+    pub const ARRAY_GETELEMENT: u8 = 32;
+    pub const ARRAY_SETELEMENT: u8 = 33;
+    pub const ARRAY_FINDELEMENT: u8 = 34;
+    pub const ARRAY_RFINDELEMENT: u8 = 35;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Data {
@@ -76,10 +123,45 @@ pub struct Object {
     pub states: Vec<State>,
 }
 
+/// The file header: format version, when and where it was compiled.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Header {
+    pub major: u8,
+    pub minor: u8,
+    pub game: u16,
+    /// Unix time.
+    pub compile_time: u64,
+    pub user: String,
+    pub machine: String,
+}
+
+/// A function's source line of each instruction.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DebugFunction {
+    pub object: u16,
+    pub state: u16,
+    pub function: u16,
+    /// 0 a function, 1 a property getter, 2 a setter.
+    pub kind: u8,
+    pub lines: Vec<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DebugInfo {
+    /// Unix time the source was modified.
+    pub modification_time: u64,
+    pub functions: Vec<DebugFunction>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Pex {
+    pub header: Header,
     pub source: String,
     pub strings: Vec<String>,
+    pub debug: Option<DebugInfo>,
+    /// User flags the compiler knew: name, bit index (`hidden` 0,
+    /// `conditional` 1).
+    pub user_flags: Vec<(u16, u8)>,
     pub objects: Vec<Object>,
 }
 
@@ -261,38 +343,60 @@ impl R<'_> {
 
 pub fn parse(d: &[u8]) -> Result<Pex> {
     let mut r = R { d, p: 0 };
-    if r.u32()? != 0xFA57_C0DE {
+    if r.u32()? != MAGIC {
         return Err(Error::Corrupt("bad magic".into()));
     }
-    let _major = r.u8()?;
-    let _minor = r.u8()?;
-    let _game = r.u16()?;
-    let _time = r.u64()?;
+    let major = r.u8()?;
+    let minor = r.u8()?;
+    let game = r.u16()?;
+    let compile_time = r.u64()?;
     let source = r.wstring()?;
-    let _user = r.wstring()?;
-    let _machine = r.wstring()?;
+    let header = Header {
+        major,
+        minor,
+        game,
+        compile_time,
+        user: r.wstring()?,
+        machine: r.wstring()?,
+    };
     let n = r.u16()?;
     let mut strings = Vec::with_capacity(n as usize);
     for _ in 0..n {
         strings.push(r.wstring()?);
     }
-    if r.u8()? != 0 {
-        r.u64()?;
+    let debug = if r.u8()? != 0 {
+        let modification_time = r.u64()?;
         let nf = r.u16()?;
+        let mut functions = Vec::with_capacity(nf as usize);
         for _ in 0..nf {
-            r.u16()?;
-            r.u16()?;
-            r.u16()?;
-            r.u8()?;
-            let ic = r.u16()? as usize;
-            r.need(ic * 2)?;
-            r.p += ic * 2;
+            let object = r.u16()?;
+            let state = r.u16()?;
+            let function = r.u16()?;
+            let kind = r.u8()?;
+            let ic = r.u16()?;
+            let mut lines = Vec::with_capacity(ic as usize);
+            for _ in 0..ic {
+                lines.push(r.u16()?);
+            }
+            functions.push(DebugFunction {
+                object,
+                state,
+                function,
+                kind,
+                lines,
+            });
         }
-    }
+        Some(DebugInfo {
+            modification_time,
+            functions,
+        })
+    } else {
+        None
+    };
     let nu = r.u16()?;
+    let mut user_flags = Vec::with_capacity(nu as usize);
     for _ in 0..nu {
-        r.u16()?;
-        r.u8()?;
+        user_flags.push((r.u16()?, r.u8()?));
     }
     let no = r.u16()?;
     let mut objects = Vec::with_capacity(no as usize);
@@ -370,10 +474,207 @@ pub fn parse(d: &[u8]) -> Result<Pex> {
         });
     }
     Ok(Pex {
+        header,
         source,
         strings,
+        debug,
+        user_flags,
         objects,
     })
+}
+
+/// Big-endian output, as [`R`] reads it.
+struct W(Vec<u8>);
+
+impl W {
+    fn u8(&mut self, v: u8) {
+        self.0.push(v);
+    }
+    fn u16(&mut self, v: u16) {
+        self.0.extend_from_slice(&v.to_be_bytes());
+    }
+    fn u32(&mut self, v: u32) {
+        self.0.extend_from_slice(&v.to_be_bytes());
+    }
+    fn u64(&mut self, v: u64) {
+        self.0.extend_from_slice(&v.to_be_bytes());
+    }
+    fn count(&mut self, n: usize, what: &str) -> Result<()> {
+        let n = u16::try_from(n).map_err(|_| Error::Write(format!("{n} {what}")))?;
+        self.u16(n);
+        Ok(())
+    }
+    /// A string of one byte per character, as [`R::wstring`] reads it.
+    fn wstring(&mut self, s: &str) -> Result<()> {
+        let b = s
+            .chars()
+            .map(u8::try_from)
+            .collect::<std::result::Result<Vec<u8>, _>>()
+            .map_err(|_| Error::Write(format!("{s:?}: not one byte per character")))?;
+        self.count(b.len(), "bytes in a string")?;
+        self.0.extend_from_slice(&b);
+        Ok(())
+    }
+    fn data(&mut self, d: &Data) {
+        match *d {
+            Data::Null => self.u8(0),
+            Data::Identifier(i) => {
+                self.u8(1);
+                self.u16(i);
+            }
+            Data::String(i) => {
+                self.u8(2);
+                self.u16(i);
+            }
+            Data::Int(v) => {
+                self.u8(3);
+                self.u32(v as u32);
+            }
+            Data::Float(v) => {
+                self.u8(4);
+                self.u32(v.to_bits());
+            }
+            Data::Bool(b) => {
+                self.u8(5);
+                self.u8(b.into());
+            }
+        }
+    }
+    fn function(&mut self, f: &Function) -> Result<()> {
+        self.u16(f.return_type);
+        self.u16(f.doc);
+        self.u32(f.user_flags);
+        self.u8(f.flags);
+        self.count(f.params.len(), "parameters")?;
+        for &(n, t) in &f.params {
+            self.u16(n);
+            self.u16(t);
+        }
+        self.count(f.locals.len(), "locals")?;
+        for &(n, t) in &f.locals {
+            self.u16(n);
+            self.u16(t);
+        }
+        self.count(f.code.len(), "instructions")?;
+        for ins in &f.code {
+            let (n, var) =
+                op_args(ins.op).ok_or_else(|| Error::Write(format!("bad opcode {}", ins.op)))?;
+            // Fixed arguments, then for varargs a count and that many more.
+            let extra = match ins.args.get(n) {
+                Some(&Data::Int(k)) if var => k.max(0) as usize + 1,
+                _ => 0,
+            };
+            if ins.args.len() != n + extra || (var && extra == 0) {
+                return Err(Error::Write(format!(
+                    "{}: {} arguments",
+                    OP_NAMES[ins.op as usize],
+                    ins.args.len()
+                )));
+            }
+            self.u8(ins.op);
+            for a in &ins.args {
+                self.data(a);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The file [`parse`] reads back as `p`. Vanilla scripts write back
+/// byte for byte.
+pub fn write(p: &Pex) -> Result<Vec<u8>> {
+    let mut w = W(Vec::new());
+    w.u32(MAGIC);
+    w.u8(p.header.major);
+    w.u8(p.header.minor);
+    w.u16(p.header.game);
+    w.u64(p.header.compile_time);
+    w.wstring(&p.source)?;
+    w.wstring(&p.header.user)?;
+    w.wstring(&p.header.machine)?;
+    w.count(p.strings.len(), "strings")?;
+    for s in &p.strings {
+        w.wstring(s)?;
+    }
+    match &p.debug {
+        None => w.u8(0),
+        Some(d) => {
+            w.u8(1);
+            w.u64(d.modification_time);
+            w.count(d.functions.len(), "debug functions")?;
+            for f in &d.functions {
+                w.u16(f.object);
+                w.u16(f.state);
+                w.u16(f.function);
+                w.u8(f.kind);
+                w.count(f.lines.len(), "lines")?;
+                for &l in &f.lines {
+                    w.u16(l);
+                }
+            }
+        }
+    }
+    w.count(p.user_flags.len(), "user flags")?;
+    for &(name, bit) in &p.user_flags {
+        w.u16(name);
+        w.u8(bit);
+    }
+    w.count(p.objects.len(), "objects")?;
+    for o in &p.objects {
+        w.u16(o.name);
+        // The object's size, counting this field: patched below.
+        let start = w.0.len();
+        w.u32(0);
+        w.u16(o.parent);
+        w.u16(o.doc);
+        w.u32(o.user_flags);
+        w.u16(o.auto_state);
+        w.count(o.variables.len(), "variables")?;
+        for v in &o.variables {
+            w.u16(v.name);
+            w.u16(v.type_name);
+            w.u32(v.user_flags);
+            w.data(&v.init);
+        }
+        w.count(o.properties.len(), "properties")?;
+        for pr in &o.properties {
+            w.u16(pr.name);
+            w.u16(pr.type_name);
+            w.u16(pr.doc);
+            w.u32(pr.user_flags);
+            w.u8(pr.flags);
+            if pr.flags & 4 != 0 {
+                let var = pr
+                    .auto_var
+                    .ok_or_else(|| Error::Write("auto property without a variable".into()))?;
+                w.u16(var);
+            } else {
+                for (bit, f) in [(1, &pr.read), (2, &pr.write)] {
+                    match f {
+                        Some(f) if pr.flags & bit != 0 => w.function(f)?,
+                        None if pr.flags & bit == 0 => {}
+                        _ => {
+                            return Err(Error::Write(
+                                "property accessors disagree with its flags".into(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        w.count(o.states.len(), "states")?;
+        for st in &o.states {
+            w.u16(st.name);
+            w.count(st.functions.len(), "functions")?;
+            for (name, f) in &st.functions {
+                w.u16(*name);
+                w.function(f)?;
+            }
+        }
+        let size = (w.0.len() - start) as u32;
+        w.0[start..start + 4].copy_from_slice(&size.to_be_bytes());
+    }
+    Ok(w.0)
 }
 
 /// Human-readable disassembly, for tooling.

@@ -1,6 +1,7 @@
 //! Writing small TES4-format plugins (test mods): records built field by
 //! field, nested in groups, behind a `TES4` header. Records are written
-//! uncompressed with the Special Edition form version.
+//! uncompressed with the Special Edition form version. [`vmad`] attaches
+//! scripts.
 
 use crate::plugin::GROUP_HEADER_SIZE;
 use crate::record::RECORD_HEADER_SIZE;
@@ -73,6 +74,111 @@ impl RecordBuilder {
         out.extend_from_slice(&0u16.to_le_bytes());
         out.extend_from_slice(&self.data);
     }
+}
+
+/// The VMAD version and object format the Special Edition Creation Kit
+/// writes: format 2 objects are (unused u16, alias i16, form id u32).
+pub const VMAD_VERSION: i16 = 5;
+pub const VMAD_OBJECT_FORMAT: i16 = 2;
+
+/// A script property's value in a VMAD.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PropertyValue {
+    /// A form, or none (the null form id).
+    Object(FormId),
+    /// A quest's alias, by its id.
+    Alias {
+        quest: FormId,
+        alias: i16,
+    },
+    String(String),
+    Int(i32),
+    Float(f32),
+    Bool(bool),
+    /// Elements of one of the kinds above.
+    Array(Vec<PropertyValue>),
+}
+
+impl PropertyValue {
+    fn kind(&self) -> u8 {
+        match self {
+            PropertyValue::Object(_) | PropertyValue::Alias { .. } => 1,
+            PropertyValue::String(_) => 2,
+            PropertyValue::Int(_) => 3,
+            PropertyValue::Float(_) => 4,
+            PropertyValue::Bool(_) => 5,
+            // An empty array's element kind is moot: say objects.
+            PropertyValue::Array(v) => 10 + v.first().map_or(1, PropertyValue::kind),
+        }
+    }
+
+    fn write(&self, out: &mut Vec<u8>) {
+        match self {
+            PropertyValue::Object(f) => {
+                out.extend_from_slice(&0u16.to_le_bytes());
+                out.extend_from_slice(&(-1i16).to_le_bytes());
+                out.extend_from_slice(&f.0.to_le_bytes());
+            }
+            PropertyValue::Alias { quest, alias } => {
+                out.extend_from_slice(&0u16.to_le_bytes());
+                out.extend_from_slice(&alias.to_le_bytes());
+                out.extend_from_slice(&quest.0.to_le_bytes());
+            }
+            PropertyValue::String(s) => wstring(out, s),
+            PropertyValue::Int(v) => out.extend_from_slice(&v.to_le_bytes()),
+            PropertyValue::Float(v) => out.extend_from_slice(&v.to_le_bytes()),
+            PropertyValue::Bool(v) => out.push((*v).into()),
+            PropertyValue::Array(v) => {
+                let kind = self.kind();
+                assert!(
+                    v.iter().all(|e| e.kind() == kind - 10),
+                    "array elements of mixed or nested kinds"
+                );
+                out.extend_from_slice(&(v.len() as u32).to_le_bytes());
+                for e in v {
+                    e.write(out);
+                }
+            }
+        }
+    }
+}
+
+/// A script attached to a form, and the properties it sets.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AttachedScript {
+    pub name: String,
+    pub properties: Vec<(String, PropertyValue)>,
+}
+
+/// A string of u16 length then bytes, no terminator (test mods keep to
+/// ASCII).
+fn wstring(out: &mut Vec<u8>, s: &str) {
+    assert!(s.is_ascii(), "{s:?}: not ASCII");
+    let len = u16::try_from(s.len()).expect("string over 64 KiB");
+    out.extend_from_slice(&len.to_le_bytes());
+    out.extend_from_slice(s.as_bytes());
+}
+
+/// A VMAD subrecord attaching `scripts`, with no fragments: as the
+/// Creation Kit writes it for any record, quests included (their fragment
+/// section is left out when there are no fragments, as `DialogueGeneric`'s).
+pub fn vmad(scripts: &[AttachedScript]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&VMAD_VERSION.to_le_bytes());
+    out.extend_from_slice(&VMAD_OBJECT_FORMAT.to_le_bytes());
+    out.extend_from_slice(&(scripts.len() as u16).to_le_bytes());
+    for s in scripts {
+        wstring(&mut out, &s.name);
+        out.push(0); // status: local
+        out.extend_from_slice(&(s.properties.len() as u16).to_le_bytes());
+        for (name, v) in &s.properties {
+            wstring(&mut out, name);
+            out.push(v.kind());
+            out.push(1); // status: edited
+            v.write(&mut out);
+        }
+    }
+    out
 }
 
 /// A record, or a group of them.
@@ -162,4 +268,51 @@ pub fn write_plugin(
         g.write(&mut out);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vmad_is_written_as_the_creation_kit_writes_it() {
+        // DialogueGeneric's VMAD in Update.esm, with its two properties.
+        let v = vmad(&[AttachedScript {
+            name: "DialogueGenericScript".into(),
+            properties: vec![
+                ("Gold".into(), PropertyValue::Object(FormId(0xF))),
+                (
+                    "RoomRentalCost".into(),
+                    PropertyValue::Object(FormId(0x9CC98)),
+                ),
+            ],
+        }]);
+        let mut expected = vec![5, 0, 2, 0, 1, 0, 0x15, 0];
+        expected.extend_from_slice(b"DialogueGenericScript");
+        expected.extend_from_slice(&[0, 2, 0, 4, 0]);
+        expected.extend_from_slice(b"Gold");
+        expected.extend_from_slice(&[1, 1, 0, 0, 0xFF, 0xFF, 0x0F, 0, 0, 0, 0x0E, 0]);
+        expected.extend_from_slice(b"RoomRentalCost");
+        expected.extend_from_slice(&[1, 1, 0, 0, 0xFF, 0xFF, 0x98, 0xCC, 0x09, 0]);
+        assert_eq!(v, expected);
+    }
+
+    #[test]
+    fn vmad_arrays_and_scalars() {
+        let v = vmad(&[AttachedScript {
+            name: "S".into(),
+            properties: vec![
+                (
+                    "A".into(),
+                    PropertyValue::Array(vec![PropertyValue::Int(1), PropertyValue::Int(-2)]),
+                ),
+                ("B".into(), PropertyValue::Bool(true)),
+            ],
+        }]);
+        let mut expected = vec![5, 0, 2, 0, 1, 0, 1, 0, b'S', 0, 2, 0];
+        expected.extend_from_slice(&[1, 0, b'A', 13, 1, 2, 0, 0, 0, 1, 0, 0, 0]);
+        expected.extend_from_slice(&(-2i32).to_le_bytes());
+        expected.extend_from_slice(&[1, 0, b'B', 5, 1, 1]);
+        assert_eq!(v, expected);
+    }
 }
