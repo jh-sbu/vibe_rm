@@ -26,17 +26,24 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
   (byte 5 the priority) followed by RDWT entries of (weather, chance,
   global). Riverwood is in `WeatherPineForest`: cloudy 35, clear 35, fog 10,
   overcast rain 5, storm 5, two `_A` variants 5 each.
+- **Transition time** (`test-mod autotest`, Skyrim SE 2026-10-13, timescale
+  20, overrides): grows with the DATA trans delta, steadily (half way at
+  half the time). 125 took 22.8 s (7.7 game minutes), 82 took 15.7 s
+  (5.3 game minutes): taken as delta / 16 game minutes, within 4%.
+  `SetActive` with `abAccelerate` came in as fast as without it when
+  overriding (22.9 s).
 - **Override.** `ForceActive` / `SetActive` with `abOverride` hold the
   weather against regional changes until `ReleaseOverride`; `SetActive`
   without it does nothing while overridden.
 
 ## Open
 
-- **Transition speed.** The DATA "trans delta" (byte 3, 125 in most
-  weathers) is taken as thousandths of the transition per game minute (8 game
-  minutes at 125, 24 seconds at timescale 20), accelerated by
-  `fWeatherTransAccel` (16, from the data). A trans delta of 0 changes at
-  once. The real units aren't public.
+- **Transition speed.** Measured at timescale 20 only, so whether it runs
+  on game or real time isn't known (taken as game time); two deltas fit
+  delta / 16 game minutes to 4%, the exact law isn't known. Acceleration is
+  taken as `fWeatherTransAccel` (16, from the data) times faster, but only
+  without an override: with one it made no difference in the game, and
+  without one it hasn't been tried. A trans delta of 0 changes at once.
 - **How often the weather changes.** Every 2 to 6 game hours (made up) the
   region's list is rolled by chance; the same weather may come up again. The
   climate's TNAM volatility (byte 4: 50 for `SkyrimClimate`) isn't used.

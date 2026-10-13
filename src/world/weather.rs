@@ -73,7 +73,7 @@ pub struct Weather {
     pub image_spaces: [FormId; 4],
     /// DATA flags: pleasant, cloudy, rainy, snow ([`flags`]).
     pub flags: u8,
-    /// DATA "trans delta": how fast it comes in (0: at once).
+    /// DATA "trans delta": how long it takes to come in (0: at once).
     pub trans_delta: u8,
     /// Precipitation's begin fade in and end fade out (0..255 of a transition).
     pub precip_fade: (u8, u8),

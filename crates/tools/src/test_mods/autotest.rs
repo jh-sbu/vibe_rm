@@ -41,9 +41,10 @@
 //! - **Weather** (`known_ambiguities/weather.md`, transition speed): sets a
 //!   weather active (override), normally, accelerated, and one with
 //!   another trans delta, timing `GetCurrentWeatherTransition` to half and
-//!   full in real seconds and game minutes. Here: trans delta 125 is 8 game
-//!   minutes (24 s at timescale 20), accelerated 16 times faster. Indoors
-//!   it reports only the current weather and sky mode.
+//!   full in real seconds and game minutes. Before: trans delta 125 was 8
+//!   game minutes (24 s at timescale 20), lower slower, accelerated 16
+//!   times faster. Indoors it reports only the current weather and sky
+//!   mode.
 //!
 //! Results in Skyrim SE (2026-10-12, player level 1, outdoors):
 //!
@@ -56,9 +57,17 @@
 //! - Controls: false arguments leave a control alone; one shared state for
 //!   all scripts; disabling fighting sheathes the weapon (`DrawWeapon`
 //!   works on the player).
-//! - Weather: shown, not transcribed; to be read from a save.
 //! - The message boxes didn't come up in the order called (Locks came
 //!   last), so a batch's reports are best read from the save.
+//!
+//! Rerun 2026-10-13, reports read from the save it made (`test-results`):
+//! the same for the four above, and
+//!
+//! - Weather (timescale 20, all overrides): 125 half at 11.4 s, full at
+//!   22.8 s / 7.7 game minutes; accelerated the same (22.9 s); 82 (the
+//!   other weather here) full at 15.7 s / 5.3 game minutes. Longer with a
+//!   higher delta, about delta / 16 game minutes; acceleration does
+//!   nothing to an override.
 
 use std::ops::{Deref, DerefMut};
 
