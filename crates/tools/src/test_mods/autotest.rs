@@ -4,12 +4,15 @@
 //! turn, then shows each one's report in a message box (and traces it to
 //! the Papyrus log). The reports are also kept in the script's variables
 //! (`ResultLevels`, `ResultActorValues`, `ResultLocks`, `ResultControls`,
-//! `ResultWeather`), so a save made afterwards holds them.
+//! `ResultWeather`), and once they're done the script asks the game to
+//! save (`Game.RequestSave`, a new numbered save) before showing the boxes:
+//! `vrm-tool test-results` reads the reports from that save.
 //!
 //! Load a save made outdoors, without the plugin, and leave the game
 //! alone (no menus: they stop `Utility.Wait`) for about two minutes until
 //! the boxes come up. The tests change the save (a door's lock, the
-//! weather, spawned actors deleted again), so don't keep a save made after.
+//! weather, spawned actors deleted again), so don't play on from the save
+//! they make: it's for reading the reports from.
 //!
 //! What each test does and the readings it tells apart:
 //!
@@ -230,6 +233,7 @@ const NATIVES: &[(&str, &str, &[NativeDecl<'static>])] = &[
             ("EnablePlayerControls", "None", CONTROLS, true),
             ("IsMovementControlsEnabled", "Bool", &[], true),
             ("IsFightingControlsEnabled", "Bool", &[], true),
+            ("RequestSave", "None", &[], true),
         ],
     ),
     (
@@ -932,6 +936,10 @@ fn on_update() -> FunctionBuilder {
     }
     // Whatever a test left disabled.
     c.enable_all();
+    // The save to read the reports from, made before the boxes (a menu)
+    // come up.
+    c.global("Game", "RequestSave", []);
+    c.wait(3.0);
     for (name, title) in TESTS {
         let text = c.temp("String");
         c.assign(
@@ -941,7 +949,11 @@ fn on_update() -> FunctionBuilder {
         .append(text.clone(), [id(&format!("Result{name}"))]);
         c.global("Debug", "MessageBox", [text]);
     }
-    c.global("Debug", "Notification", [string("vibe_rm autotest done")]);
+    c.global(
+        "Debug",
+        "Notification",
+        [string("vibe_rm autotest done, reports saved")],
+    );
     c.finish(Arg::None)
 }
 
@@ -1259,6 +1271,8 @@ mod tests {
         weather_set_at: f64,
         boxes: Vec<String>,
         spawned: u32,
+        /// How many boxes had come up when the save was requested.
+        saved_at_box: Option<usize>,
     }
 
     impl Host for Game {
@@ -1283,6 +1297,10 @@ mod tests {
                 "placeactoratme" => {
                     self.spawned += 1;
                     Value::Object(ObjectId::Form(0xFF00_0800 + self.spawned), "Actor".into())
+                }
+                "requestsave" => {
+                    self.saved_at_box = Some(self.boxes.len());
+                    Value::None
                 }
                 "getlevel" => Value::Int(7),
                 "getbaseactorvalue" | "getactorvalue" => Value::Float(50.0),
@@ -1350,6 +1368,7 @@ mod tests {
             weather_set_at: -100.0,
             boxes: Vec::new(),
             spawned: 0,
+            saved_at_box: None,
         };
         let (quest, helper) = (
             ObjectId::Form(own(QUEST).0),
@@ -1386,6 +1405,7 @@ mod tests {
             println!("{b}\n");
         }
         assert_eq!(game.boxes.len(), TESTS.len(), "every test reports");
+        assert_eq!(game.saved_at_box, Some(0), "saves before the boxes");
         let all = game.boxes.join("\n");
         for expected in [
             "player level 7\n",

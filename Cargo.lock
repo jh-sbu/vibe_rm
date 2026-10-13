@@ -4442,6 +4442,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vrm-ess"
+version = "0.1.0"
+dependencies = [
+ "lz4_flex",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "vrm-havok"
 version = "0.1.0"
 dependencies = [
@@ -4476,6 +4484,7 @@ dependencies = [
  "glam 0.33.12",
  "vrm-bsa",
  "vrm-esp",
+ "vrm-ess",
  "vrm-havok",
  "vrm-nif",
  "vrm-papyrus",

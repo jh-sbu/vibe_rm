@@ -18,3 +18,4 @@ vfs.workspace = true
 havok.workspace = true
 glam.workspace = true
 papyrus.workspace = true
+ess.workspace = true
