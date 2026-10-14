@@ -128,6 +128,9 @@ Left out so far:
   UESP's 50?); Sneak of a deer (15 + offset 70); a "PC level mult" copy of
   `EncDremoraMelee06` with calc min 46 (skills past 100 at runtime: as its
   `DNAM`, or held at 100?).
+- **Actors' keywords** (`npc-templates.md`): `HasKeyword` on an NPC wearing
+  armor with `ArmorHeavy`, and under a spell whose effect has a keyword
+  its race lacks.
 
 ## Tier 3: long or statistical (minutes each)
 
