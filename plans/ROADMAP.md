@@ -507,6 +507,9 @@ game each piece unlocks.
   `HasKeyword` includes their race's; `GetInFaction` / `GetFactionRank` and door
   ownership follow templates. Console `templates <ref>`; vrm-tool `npc-templates`.
   Open questions: `known_ambiguities/npc-templates.md`
+- Cloaks: the wearer's cloak gives its spell once a second to those within
+  its magnitude in feet whom it is hostile to (`IsHostileToActor`); one
+  cloak at a time (`known_ambiguities/magic.md`)
 - Soul trap: `Actor.TrapSoul` (the soul trap effect's script) and archetype
   23 effects put a dead actor's soul (by level; people's black) into the
   smallest of the caster's empty gems that holds it ("Soul captured!",
@@ -1018,7 +1021,7 @@ game each piece unlocks.
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
    - Triggers: water and lava damage volumes
-   - Magic, more: detect life, telekinesis, cloaks, slow time; trapped
+   - Magic, more: detect life, telekinesis, slow time; trapped
      souls kept with their gems when they change hands (dropped, stored,
      sold: `Inventory::souls` stays with the trapper);
      taper, area, addictions, potion and food flags; image-space modifiers

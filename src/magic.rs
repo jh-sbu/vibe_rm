@@ -29,6 +29,9 @@ use crate::engine::{Engine, PLAYER_REF};
 
 /// Magic effect archetypes (`DATA` 0x40; CommonLibSSE `EffectArchetype`).
 #[allow(dead_code)]
+/// Seconds between a cloak's touches.
+const CLOAK_TICK: f32 = 1.0;
+
 pub mod archetype {
     pub const VALUE_MODIFIER: u32 = 0;
     pub const SCRIPT: u32 = 1;
@@ -43,6 +46,7 @@ pub mod archetype {
     pub const SUMMON_CREATURE: u32 = 18;
     pub const PARALYSIS: u32 = 21;
     pub const SOUL_TRAP: u32 = 23;
+    pub const CLOAK: u32 = 35;
     pub const TURN_UNDEAD: u32 = 24;
     pub const CURE_PARALYSIS: u32 = 27;
     pub const CURE_POISON: u32 = 29;
@@ -516,6 +520,14 @@ impl Engine {
             return false;
         }
         self.dispel(target, |x| x.item == item);
+        // One cloak at a time: a new one ends the last (UESP).
+        let cloak = m.effects.iter().any(|e| {
+            self.magic_effect(e.effect)
+                .is_some_and(|g| g.archetype == archetype::CLOAK)
+        });
+        if cloak {
+            self.dispel(target, |x| x.effect_archetype == archetype::CLOAK);
+        }
         let constant = m.is_constant();
         let mut any = false;
         let mut hostile = false;
@@ -1130,6 +1142,12 @@ impl Engine {
                 );
             let mut apply = None;
             let mut taper = None;
+            // A cloak touches those near once a second, from the start.
+            let cloak_tick = x.active
+                && mgef.archetype == archetype::CLOAK
+                && (x.elapsed <= dt
+                    || (x.elapsed / CLOAK_TICK).floor() > ((x.elapsed - dt) / CLOAK_TICK).floor());
+            let cloak = cloak_tick.then(|| x.clone());
             if per_second {
                 let sign = if mgef.has(flags::DETRIMENTAL) {
                     -1.0
@@ -1149,6 +1167,9 @@ impl Engine {
             }
             if let Some((snapshot, amount)) = apply {
                 self.change_value(&snapshot, &mgef, amount, false);
+            }
+            if let Some(snapshot) = cloak {
+                self.cloak_touch(&snapshot, &mgef);
             }
             if let Some((snapshot, rate)) = taper {
                 self.magic.tapers.push((snapshot, mgef.clone(), rate, 0.0));
@@ -1287,6 +1308,44 @@ impl Engine {
     }
 
     /// `ActiveMagicEffect.Dispel`.
+    /// A cloak on `x.target` gives its related spell to everyone (the
+    /// player too) within its magnitude in feet whom its conditions pass,
+    /// run on them (Flame Cloak's: in combat, not the player).
+    fn cloak_touch(&mut self, x: &ActiveEffect, mgef: &MagicEffect) {
+        let wearer = x.target;
+        let Some(at) = self.ref_position(wearer) else {
+            return;
+        };
+        let reach = x.magnitude * crate::casting::UNITS_PER_FOOT;
+        let mut near: Vec<FormId> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.ref_id != wearer && a.pos.distance(at) <= reach)
+            .map(|a| a.ref_id)
+            .collect();
+        if wearer != PLAYER_REF && !self.player_dead() && self.player.position.distance(at) <= reach
+        {
+            near.push(PLAYER_REF);
+        }
+        let item_conds = self
+            .magic_item(x.item)
+            .and_then(|m| m.effects.get(x.index).map(|e| e.conditions.clone()))
+            .unwrap_or_default();
+        for who in near {
+            let ctx = Context {
+                subject: Some(who),
+                target: Some(wearer),
+                ..Default::default()
+            };
+            if condition::evaluate(self, &item_conds, ctx)
+                && condition::evaluate(self, &mgef.conditions, ctx)
+            {
+                self.apply_item(mgef.related, Some(wearer), who);
+            }
+        }
+    }
+
     pub fn dispel_effect(&mut self, id: u64) {
         self.finish_magic_effect(id);
     }
