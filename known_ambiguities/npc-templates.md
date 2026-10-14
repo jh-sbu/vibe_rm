@@ -25,3 +25,11 @@ Implemented in `src/world/template.rs`. Based on UESP *Mod File Format/NPC_*
 - NPC attack data: read as the attack race's attacks (else the race's), with the
   NPC's own `ATKD` / `ATKE` replacing those of the same event. Whether the NPC's
   list replaces the race's entirely is unverified.
+- Actors' `HasKeyword` (Papyrus and the condition) counts the NPC's own
+  keywords (through the keywords template) and its race's, not those of
+  what it wears or of the magic effects on it. CommonLibSSE shows only that
+  `Actor` overrides `HasKeywordHelper`, not what it adds; the vanilla
+  conditions give no sign either way (they test item and effect keywords on
+  the item or spell in perk tabs, `WornHasKeyword` and
+  `HasMagicEffectWithKeyword` exist for the rest, and `Vampire` is a race
+  keyword).

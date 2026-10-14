@@ -1006,7 +1006,7 @@ game each piece unlocks.
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
    - Triggers: water and lava damage volumes
-   - Actor values: temporary (magic) modifiers; `HasKeyword` counting worn items' and effects' keywords
+   - Actor values: temporary (magic) modifiers
    - Magic, more: detect life, telekinesis, soul trap, cloaks, slow time;
      taper, area, addictions, potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target); bound weapons kept
