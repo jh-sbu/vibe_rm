@@ -23,6 +23,7 @@ pub mod func {
     pub const GET_ACTOR_VALUE: u16 = 14;
     pub const GET_STAGE: u16 = 58;
     pub const GET_IS_ID: u16 = 72;
+    pub const GET_GLOBAL_VALUE: u16 = 74;
     pub const GET_LEVEL: u16 = 80;
     pub const HAS_SHOUT: u16 = 378;
     pub const GET_EVENT_DATA: u16 = 576;
@@ -105,6 +106,7 @@ pub mod spell {
     pub const FIRE_AND_FORGET: u32 = 1;
     pub const SELF: u32 = 0;
     pub const AIMED: u32 = 2;
+    pub const TARGET_ACTOR: u32 = 3;
     /// `SPIT` flags: the cost not worked out from the effects; resistance
     /// ignored.
     pub const MANUAL_COST: u32 = 0x1;
@@ -412,7 +414,7 @@ pub fn shout(object_id: u32, edid: &str, words: &[(FormId, FormId, f32)]) -> Rec
 
 /// A copy of a Skyrim.esm record under our object id and editor id (its
 /// localized names left out: our plugin isn't localized), `script` attached,
-/// each subrecord passed through `patch`.
+/// each subrecord passed through `patch` (left out if `patch` empties it).
 pub fn copy(
     lo: &LoadOrder,
     from: &str,
@@ -437,9 +439,20 @@ pub fn copy(
         }
         let mut data = s.data.to_vec();
         patch(&tag, &mut data);
+        if data.is_empty() && !s.data.is_empty() {
+            continue;
+        }
         out = out.field(&tag, &data);
     }
     Ok(out)
+}
+
+/// A float global (`GLOB`).
+pub fn global(object_id: u32, edid: &str, value: f32) -> RecordBuilder {
+    RecordBuilder::new(b"GLOB", own(object_id))
+        .zstring(b"EDID", edid)
+        .field(b"FNAM", b"f")
+        .f32(b"FLTV", value)
 }
 
 /// Group combat reactions (`XNAM`).

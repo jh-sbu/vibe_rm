@@ -98,6 +98,7 @@ ObjectReference : Form
     Float GetPositionX()
     Float GetPositionY()
     Float GetPositionZ()
+    None SetMotionType(Int aeMotionType, Bool abAllowActivate)
     Bool IsDisabled()
 Actor : ObjectReference
     Int GetLevel()
@@ -137,6 +138,7 @@ Actor : ObjectReference
     Int GetCombatState()
     Actor GetCombatTarget()
     None SetRestrained(Bool abRestrained)
+    None SetDontMove(Bool abDontMove)
     Bool DispelSpell(Spell akSpell)
     Bool HasMagicEffect(MagicEffect akEffect)
     Bool AddShout(Shout akShout)

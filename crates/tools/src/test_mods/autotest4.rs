@@ -448,7 +448,7 @@ pub(super) fn restrain(c: &mut Code, a: &Arg) {
     c.method("Actor", a.clone(), "SetRestrained", [true.into()]);
 }
 
-fn cast(c: &mut Code, spell: &str, source: &Arg, target: &Arg) {
+pub(super) fn cast(c: &mut Code, spell: &str, source: &Arg, target: &Arg) {
     c.method(
         "Spell",
         auto_var(spell),
@@ -474,7 +474,7 @@ pub(super) fn put_num(c: &mut Code, r: &Arg, text: &str, value: Arg) {
 /// A loop: `body` until it jumps to the returned end label or `seconds`
 /// pass (checked every `step`). Returns the seconds taken (-1 when the time
 /// ran out) in a new local `var`.
-fn poll(
+pub(super) fn poll(
     c: &mut Code,
     var: &str,
     step: f32,
@@ -1372,7 +1372,7 @@ fn test_shouts() -> FunctionBuilder {
 }
 
 /// A quest's reference alias `alias`, cast as one.
-fn ref_alias(c: &mut Code, quest: &str, alias: i32) -> Arg {
+pub(super) fn ref_alias(c: &mut Code, quest: &str, alias: i32) -> Arg {
     let a = c.method("Quest", auto_var(quest), "GetAlias", [alias.into()]);
     let ra = c.temp("ReferenceAlias");
     c.cast(ra.clone(), a);
@@ -2303,7 +2303,7 @@ fn test_traps() -> FunctionBuilder {
 /// A small script calling `Main.<function>` from an event of its own,
 /// passing the event's parameters as they come (`self` cast to
 /// ObjectReference where `pass_self`) and `extra` text first.
-fn relay(
+pub(super) fn relay(
     script: &mut ScriptBuilder,
     event: &str,
     params: &[(&str, &str)],
@@ -2317,13 +2317,13 @@ fn relay(
     script.function(event, c.finish(Arg::None));
 }
 
-fn self_ref(c: &mut Code) -> Arg {
+pub(super) fn self_ref(c: &mut Code) -> Arg {
     let s = c.temp("ObjectReference");
     c.cast(s.clone(), id("self"));
     s
 }
 
-const TRAP_PARAMS: &[(&str, &str)] = &[
+pub(super) const TRAP_PARAMS: &[(&str, &str)] = &[
     ("akTarget", "ObjectReference"),
     ("afXVel", "Float"),
     ("afYVel", "Float"),
