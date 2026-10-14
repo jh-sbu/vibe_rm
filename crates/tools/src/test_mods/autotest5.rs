@@ -33,9 +33,11 @@
 //!   their distances were read after the blast had moved them. Now spread
 //!   around the centre, read before; a pair one behind the other on purpose.
 //! - **Traps**: our scripted bowl sent nothing. Now the bowl's script also
-//!   logs `OnLoad`, the bowl's place after the fall is read, and a copy of
-//!   the game's falling rock (an activator, `PhysicsTrapHit` in the game)
-//!   with our script is dropped too, made dynamic as `PhysicsTrap` does.
+//!   logs `OnLoad`, the bowl's place after the fall is read, and the game's
+//!   falling rock (an activator with `PhysicsTrapHit`) is dropped too, made
+//!   dynamic as `PhysicsTrap` does: the NPC's health tells whether it hit.
+//!   (A copy of the rock with our script crashed the game while it loaded
+//!   plugins: the copy matched the game's record but for the script.)
 //! - **Taper**: four copied effects never landed. Two carry a condition
 //!   (`GetLevel` of the player >= 30, the traps' level variants); dropped
 //!   here. All are cast with target actor delivery, the actors'
@@ -103,7 +105,6 @@ const SCENE_COMPLETE: u32 = 0x83B;
 const SCENE_SKIP: u32 = 0x83C;
 
 const TRAP_BOWL: u32 = 0x840;
-const TRAP_ROCK: u32 = 0x841;
 
 /// The taper copies' effects, then their spells (one each, by index).
 const TAPER_EFFECTS: u32 = 0x850;
@@ -126,6 +127,7 @@ const VANILLA: &[(&str, &str, &str)] = &[
     ("AugmentedFlames", "Perk", "AugmentedFlames"),
     ("Fireball", "Spell", "Fireball"),
     ("UnrelentingForce", "Shout", "UnrelentingForceShout"),
+    ("TrapRock", "Form", "TrapFallingRockSm01_Rock"),
 ];
 
 /// Our own forms the scripts use: property, type, object id.
@@ -155,7 +157,6 @@ const OWN: &[(&str, &str, u32)] = &[
     ("SceneComplete", "Scene", SCENE_COMPLETE),
     ("SceneSkip", "Scene", SCENE_SKIP),
     ("TrapBowl", "MiscObject", TRAP_BOWL),
-    ("TrapRock", "Form", TRAP_ROCK),
 ];
 
 const TESTS: &[(&str, &str)] = &[
@@ -945,8 +946,8 @@ fn test_traps() -> FunctionBuilder {
         "TrapRock",
         "rock",
         300.0,
-        "a copy of the game's falling rock (TrapFallingRockSm01_Rock) with our script, \
-         300 units above it, made dynamic",
+        "the game's falling rock (TrapFallingRockSm01_Rock, its own PhysicsTrapHit \
+         script) 300 units above it, made dynamic",
     );
     remove(&mut c, &n);
     c.finish(r)
@@ -1449,18 +1450,9 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         "BasicWoodenBowl01",
         TRAP_BOWL,
         "VrmAutoTest5TrapBowl",
-        Some(main.clone()),
-        |_, _| {},
-    )?];
-    let activators = vec![records::copy(
-        lo,
-        "TrapFallingRockSm01_Rock",
-        TRAP_ROCK,
-        "VrmAutoTest5TrapRock",
         Some(main),
         |_, _| {},
     )?];
-
     // Top groups in the Creation Kit's order.
     let plugin = write_plugin(
         0,
@@ -1474,7 +1466,6 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
             Node::top(b"FACT", factions),
             Node::top(b"MGEF", effects),
             Node::top(b"SPEL", spells),
-            Node::top(b"ACTI", activators),
             Node::top(b"MISC", misc),
             Node::top(b"NPC_", npcs),
             Node::top(b"QUST", quests),
