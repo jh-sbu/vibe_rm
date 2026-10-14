@@ -1248,7 +1248,8 @@ impl Engine {
             rt.skeleton_path = d.skeleton.clone();
             rt.female = d.female;
             rt.child = self.npc_race(d.npc).is_some_and(|r| self.race_is_child(r));
-            let mut stats = crate::ai::combat::CombatStats::of(self, &d.templates, d.race);
+            let mut stats =
+                crate::ai::combat::CombatStats::of(self, d.ref_id, &d.templates, d.race);
             self.apply_actor_values(d.ref_id, &mut stats);
             rt.health = self.returning_health(d.ref_id, stats.max_health);
             rt.stamina = stats.max_stamina;

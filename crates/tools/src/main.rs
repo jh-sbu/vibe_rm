@@ -2578,6 +2578,106 @@ fn main() -> Result<()> {
                 println!("{c:6} {k}");
             }
         }
+        Some("npc-stats") => {
+            // npc-stats <data dir> [edid substring | --mismatches]: how often
+            // the stats the Creation Kit stored in DNAM (skills; health,
+            // magicka, stamina) are what `esp::auto_calc` gives auto-calc NPCs
+            // at their ACBS level; NPCs with their stats from a template
+            // skipped. With a substring, those NPCs' stats; --mismatches, the
+            // auto-calc NPCs whose DNAM differs.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mismatches = args.get(2).is_some_and(|a| a == "--mismatches");
+            let filter = args
+                .get(2)
+                .filter(|_| !mismatches)
+                .map(|f| f.to_ascii_lowercase());
+            let f32_at = |d: &[u8], o: usize| {
+                d.get(o..o + 4)
+                    .map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
+            };
+            let data_of = |r: &esp::LoadedRecord<'_>, tag: &[u8; 4]| {
+                r.get(tag)
+                    .filter(|d| d.len() >= 4)
+                    .map(|d| r.fid(esp::FormId(u32::from_le_bytes(d[..4].try_into().unwrap()))))
+                    .and_then(|f| lo.get(f))
+                    .and_then(|r| r.get(b"DATA").map(<[u8]>::to_vec))
+            };
+            let (mut auto_n, mut skills_match, mut hms_match) = (0, 0, 0);
+            // NPCs with skill offsets (DNAM 18..36), auto-calc and not.
+            let mut with_offsets = [0, 0];
+            for &id in lo.ids_of_type(b"NPC_") {
+                let Some(rec) = lo.get(id) else { continue };
+                let edid = rec.editor_id().unwrap_or_default().to_string();
+                if filter
+                    .as_ref()
+                    .is_some_and(|f| !edid.to_ascii_lowercase().contains(f.as_str()))
+                {
+                    continue;
+                }
+                let (Some(acbs), Some(dnam)) = (
+                    rec.get(b"ACBS").filter(|d| d.len() >= 24),
+                    rec.get(b"DNAM").filter(|d| d.len() >= 42),
+                ) else {
+                    continue;
+                };
+                let u16_at = |o: usize| u16::from_le_bytes([acbs[o], acbs[o + 1]]);
+                let i16_at = |o: usize| i16::from_le_bytes([acbs[o], acbs[o + 1]]) as f32;
+                let flags = u32::from_le_bytes(acbs[0..4].try_into().unwrap());
+                // Template flags at 18: Use Stats.
+                if u16_at(18) & 0x2 != 0 && rec.get(b"TPLT").is_some() {
+                    continue;
+                }
+                let auto = flags & 0x10 != 0;
+                let pc_mult = flags & 0x80 != 0;
+                let level = u16_at(8).max(1) as u32;
+                if dnam[18..36].iter().any(|&b| b != 0) {
+                    with_offsets[auto as usize] += 1;
+                }
+                let race = data_of(&rec, b"RNAM").unwrap_or_default();
+                let Some(class) = data_of(&rec, b"CNAM").filter(|d| d.len() >= 35) else {
+                    continue;
+                };
+                let bonuses: Vec<(u8, u8)> = race
+                    .get(..14)
+                    .unwrap_or_default()
+                    .chunks(2)
+                    .map(|p| (p[0], p[1]))
+                    .collect();
+                let start = [f32_at(&race, 36), f32_at(&race, 40), f32_at(&race, 44)];
+                // ACBS's offsets: health at 20, magicka at 4, stamina at 6.
+                let offsets = [i16_at(20), i16_at(4), i16_at(6)];
+                let skills =
+                    esp::auto_calc::skills(level, &bonuses, class[6..24].try_into().unwrap());
+                let hms = esp::auto_calc::attributes(
+                    level,
+                    start,
+                    offsets,
+                    [class[32], class[33], class[34]],
+                );
+                let stored_hms =
+                    [0, 2, 4].map(|o| i16::from_le_bytes([dnam[36 + o], dnam[37 + o]]) as f32);
+                let sk_ok = skills[..] == dnam[..18];
+                let hms_ok = hms == stored_hms;
+                if auto && !pc_mult {
+                    auto_n += 1;
+                    skills_match += sk_ok as usize;
+                    hms_match += hms_ok as usize;
+                }
+                if filter.is_some() || (mismatches && auto && !pc_mult && !(sk_ok && hms_ok)) {
+                    println!(
+                        "{id} {edid}: auto {auto} pc mult {pc_mult} level {level} weights {:?} race {bonuses:?}\n  dnam {:?} {stored_hms:?}\n  calc {skills:?} {hms:?}",
+                        &class[6..24],
+                        &dnam[..18]
+                    );
+                }
+            }
+            println!(
+                "{auto_n} auto-calc NPCs at a fixed level: skills as calculated {skills_match}, health / magicka / stamina {hms_match}; with skill offsets: {} auto-calc, {} not",
+                with_offsets[1], with_offsets[0]
+            );
+        }
         Some("npc-templates") => {
             // npc-templates <data dir>: NPCs with a template (TPLT), by what it is (NPC_ or a
             // leveled list), how often each "Use ..." flag (ACBS) is set, and ACHRs placing

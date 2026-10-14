@@ -123,6 +123,11 @@ Left out so far:
   frame (an NPC standing in a scripted box, the script logging
   `Utility.GetCurrentRealTime` at each event).
 - The "do all before repeating" Story Manager node flags.
+- **NPC stats** (`actor-values.md`): `GetBaseActorValue` health of a
+  non-auto-calc NPC with a health offset (a placed copy of Khayla: 155 or
+  UESP's 50?); Sneak of a deer (15 + offset 70); a "PC level mult" copy of
+  `EncDremoraMelee06` with calc min 46 (skills past 100 at runtime: as its
+  `DNAM`, or held at 100?).
 
 ## Tier 3: long or statistical (minutes each)
 

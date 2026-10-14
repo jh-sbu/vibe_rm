@@ -6,6 +6,7 @@
 //! indexing records so higher-priority overrides win.
 
 pub mod actor_value;
+pub mod auto_calc;
 mod form_id;
 mod load_order;
 pub mod navmesh;
