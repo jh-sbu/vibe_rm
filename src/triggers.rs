@@ -2,7 +2,8 @@
 //! whose model has phantoms (`bhkSimpleShapePhantom`: pressure plates, trip
 //! wires), and a script. Actors (and the player) stepping into one send its scripts
 //! `OnTriggerEnter`, stepping out `OnTriggerLeave`, with themselves as
-//! `akActionRef`; `GetTriggerObjectCount` counts who is inside.
+//! `akActionRef`, and `OnTrigger` about twice a second for each one while
+//! they stay; `GetTriggerObjectCount` counts who is inside.
 
 use esp::FormId;
 use glam::{Mat4, Quat, Vec3};
@@ -15,6 +16,9 @@ use crate::render::CellKey;
 const BODY_POINTS: [f32; 3] = [10.0, 60.0, 110.0];
 /// A body's reach beyond those points (about a capsule's radius).
 const BODY_RADIUS: f32 = 20.0;
+/// Seconds between a trigger's `OnTrigger` events while something is inside
+/// ("about twice a second", the CK wiki; `known_ambiguities/triggers.md`).
+const TRIGGER_INTERVAL: f32 = 0.5;
 
 /// The space a trigger takes up.
 enum Volume {
@@ -35,6 +39,8 @@ pub struct Trigger {
     volume: Volume,
     /// Who is inside.
     pub inside: Vec<FormId>,
+    /// Seconds until the next `OnTrigger` for those inside.
+    next_trigger: f32,
 }
 
 impl Trigger {
@@ -92,6 +98,7 @@ pub fn phantom_trigger(
         ref_id: r,
         volume: Volume::Phantoms(shapes),
         inside: Vec::new(),
+        next_trigger: TRIGGER_INTERVAL,
     })
 }
 
@@ -119,6 +126,7 @@ pub fn trigger_of(lo: &esp::LoadOrder, r: FormId) -> Option<Trigger> {
             sphere: shape == 2,
         },
         inside: Vec::new(),
+        next_trigger: TRIGGER_INTERVAL,
     })
 }
 
@@ -150,8 +158,9 @@ impl Engine {
         }
     }
 
-    /// Send enter / leave events for who stepped in or out (called every frame).
-    pub(crate) fn update_triggers(&mut self) {
+    /// Send enter / leave events for who stepped in or out, and `OnTrigger`
+    /// for who stays (called every frame).
+    pub(crate) fn update_triggers(&mut self, dt: f32) {
         // Who can set them off: the player and the loaded, living actors.
         let mut bodies: Vec<(FormId, Vec3)> = self
             .cells
@@ -165,7 +174,7 @@ impl Engine {
         {
             bodies.push((PLAYER_REF, p));
         }
-        let mut events: Vec<(FormId, FormId, bool)> = Vec::new();
+        let mut events: Vec<(FormId, FormId, &str)> = Vec::new();
         let keys: Vec<CellKey> = self.cells.keys().copied().collect();
         for key in keys {
             let n = self.cells[&key].triggers.len();
@@ -177,7 +186,8 @@ impl Engine {
                 // `OnTriggerLeave`, and entered again when it was enabled:
                 // `test-mod autotest4`).
                 if disabled {
-                    events.extend(t.inside.drain(..).map(|b| (r, b, false)));
+                    events.extend(t.inside.drain(..).map(|b| (r, b, "OnTriggerLeave")));
+                    t.next_trigger = TRIGGER_INTERVAL;
                     continue;
                 }
                 let now: Vec<FormId> = bodies
@@ -186,26 +196,34 @@ impl Engine {
                     .map(|(b, _)| *b)
                     .collect();
                 for &b in now.iter().filter(|b| !t.inside.contains(b)) {
-                    events.push((r, b, true));
+                    events.push((r, b, "OnTriggerEnter"));
                 }
                 for &b in t.inside.iter().filter(|b| !now.contains(b)) {
-                    events.push((r, b, false));
+                    events.push((r, b, "OnTriggerLeave"));
+                }
+                // The clock runs while someone is inside and starts over
+                // when it empties, so the first `OnTrigger` comes an
+                // interval after the first one stepped in.
+                if now.is_empty() {
+                    t.next_trigger = TRIGGER_INTERVAL;
+                } else {
+                    t.next_trigger -= dt;
+                    if t.next_trigger <= 0.0 {
+                        t.next_trigger += TRIGGER_INTERVAL;
+                        events.extend(now.iter().map(|&b| (r, b, "OnTrigger")));
+                    }
                 }
                 t.inside = now;
             }
         }
-        for (r, who, enter) in events {
-            log::debug!(
-                "{who} {} trigger {r} {:?}",
-                if enter { "enters" } else { "leaves" },
-                self.vm.attached_scripts(papyrus::ObjectId::Form(r.0))
-            );
+        for (r, who, event) in events {
+            if event != "OnTrigger" {
+                log::debug!(
+                    "{who} {event} {r} {:?}",
+                    self.vm.attached_scripts(papyrus::ObjectId::Form(r.0))
+                );
+            }
             let action = self.object_value(who);
-            let event = if enter {
-                "OnTriggerEnter"
-            } else {
-                "OnTriggerLeave"
-            };
             for obj in self.objects_of_ref(r) {
                 self.scripts
                     .pending_events

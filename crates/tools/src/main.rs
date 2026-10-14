@@ -3068,8 +3068,9 @@ fn main() -> Result<()> {
             }
         }
         Some("pex-events") => {
-            // pex-events <data dir> <prefix>: how many scripts define each function
-            // (any state) whose name starts with the prefix (`OnStory`), and which.
+            // pex-events <data dir> <prefix> [all]: how many scripts define each
+            // function (any state) whose name starts with the prefix (`OnStory`),
+            // and which (the first eight, or all of them).
             let data = std::path::Path::new(&args[1]);
             let prefix = args
                 .get(2)
@@ -3099,12 +3100,14 @@ fn main() -> Result<()> {
                     }
                 }
             }
+            let all = args.get(3).is_some_and(|a| a == "all");
             for (name, scripts) in by {
-                println!(
-                    "{name}: {} {:?}",
-                    scripts.len(),
-                    &scripts[..scripts.len().min(8)]
-                );
+                let shown = if all {
+                    scripts.len()
+                } else {
+                    scripts.len().min(8)
+                };
+                println!("{name}: {} {:?}", scripts.len(), &scripts[..shown]);
             }
         }
         Some("pex-calls") => {

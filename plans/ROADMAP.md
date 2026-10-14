@@ -640,8 +640,9 @@ game each piece unlocks.
   references whose model has phantoms (`bhkSimpleShapePhantom`: pressure
   plates, oil pools, trip wires), send
   `OnTriggerEnter` / `OnTriggerLeave` as the player and actors step in and out
-  (set-stage, start-scene, music and comment triggers...);
-  `GetTriggerObjectCount`. Activate parents (`XAPR`): activating a reference
+  (set-stage, start-scene, music and comment triggers...), and `OnTrigger`
+  about twice a second for each one inside (poison gas and lava place
+  their explosions on who stays); `GetTriggerObjectCount`. Activate parents (`XAPR`): activating a reference
   (the player, `Activate`) activates the references naming it as parent after
   their delays, unless its activation is blocked, so pressure plates set off
   trap linkers and linkers their rockfalls; "Parent Activate Only" references
@@ -999,8 +1000,7 @@ game each piece unlocks.
      dropping their collision; prismatic and malleable constraints (none in the
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
-   - Triggers: `OnTrigger` each frame while something is inside; water and
-     lava damage volumes
+   - Triggers: water and lava damage volumes
    - Actor values: temporary (magic) modifiers; level-scaled NPC health and
      skills (class, PC level mult) and the player's base health; damage to
      unloaded actors carried into their live values; names past
