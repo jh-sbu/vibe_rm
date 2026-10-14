@@ -48,8 +48,18 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   resistance 0, half at 50, a tenth at 90, nothing at 100 or 200; all of it
   with the spell's Ignore Resistance flag; a quarter at fire and magic
   resistance 50 each (the two multiply). The player lost the same at 90 and
-  100 (`fPlayerMaxResistance`, 85, the game's value). Where the extra 10%
-  over the magnitude comes from isn't known (Fireball's 40 took 47.9).
+  100 (`fPlayerMaxResistance`, 85, the game's value). The extra over the
+  magnitude is the effect's taper (below): 4.9 of 50, Fireball's 7.9 of 40.
+
+## Open (choices made here): taper
+
+- **Taper** (`MGEF` `DATA` 0x1C weight, 0x34 curve, 0x38 duration): after an
+  instant value change the value goes on changing at weight x magnitude a
+  second, falling as `(1 - t / duration) ^ curve` to nothing at the
+  duration: `magnitude x weight x duration / (curve + 1)` in all. Fire
+  damage's (0.3, 2, 1 s; the area one's 2 s) gives 5 of 50 and 8 of 40,
+  as the game took 4.9 and 7.9; that reading of the fields is ours. Lasting
+  effects' taper (after they end) isn't done.
 - **Absorb health** of 20 took 20 from the target and gave the caster 20.
 - **Calm, fear, frenzy, rally** held aggression -1 (Calm), confidence 0
   (Fear), aggression 3 (Fury, whose other effect sets confidence 4) and

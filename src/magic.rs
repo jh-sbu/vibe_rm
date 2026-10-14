@@ -127,6 +127,9 @@ pub struct MagicEffect {
     pub impacts: FormId,
     /// Skill XP for a use is scaled by this.
     pub skill_usage_mult: f32,
+    /// Taper (`DATA` 0x1C weight, 0x34 curve, 0x38 duration): what lingers
+    /// after the effect (fire's burn).
+    pub taper: [f32; 3],
     pub keywords: Vec<FormId>,
     pub conditions: Vec<Condition>,
     pub scripts: Vec<crate::script::vmad::ScriptRef>,
@@ -162,6 +165,7 @@ impl MagicEffect {
             projectile: fid(u(0x48)),
             impacts: fid(u(0x64)),
             skill_usage_mult: f(0x68),
+            taper: [f(0x1C), f(0x34), f(0x38)],
             keywords: rec
                 .get(b"KWDA")
                 .map(|k| {
@@ -360,6 +364,9 @@ pub struct Magic {
     sync: f32,
     /// Finished effects' script objects and when to let them go.
     linger: Vec<(u64, f64)>,
+    /// What lingers after instant value changes (the effect as it landed,
+    /// the rate it starts at, the seconds since).
+    tapers: Vec<(ActiveEffect, Arc<MagicEffect>, f32, f32)>,
     effect_cache: std::cell::RefCell<HashMap<FormId, Option<Arc<MagicEffect>>>>,
     item_cache: std::cell::RefCell<HashMap<FormId, Option<Arc<MagicItem>>>>,
 }
@@ -730,6 +737,11 @@ impl Engine {
                 if x.duration == 0.0 =>
             {
                 self.change_value(&x, &mgef, sign * x.magnitude, true);
+                let [weight, _, seconds] = mgef.taper;
+                if weight > 0.0 && seconds > 0.0 {
+                    let rate = sign * x.magnitude * weight;
+                    self.magic.tapers.push((x.clone(), mgef.clone(), rate, 0.0));
+                }
             }
             archetype::PEAK_VALUE_MODIFIER => self.recompute_peaks(x.target, &mgef),
             a if archetype::target_value(a).is_some() && mgef.primary.is_some() => {
@@ -827,6 +839,37 @@ impl Engine {
     /// Change an actor value by `amount` now (damage when negative): health
     /// through the combat damage path (a kill is the caster's, unless it
     /// landed quietly), absorbing gives the caster what the target lost.
+    /// Tapers run down: an instant value change goes on at `taper weight x
+    /// magnitude` a second, falling as `(1 - t / duration) ^ curve` to nothing
+    /// at the taper duration, so `magnitude x weight x duration / (curve + 1)`
+    /// in all. The game's fire spells lost that much more than their
+    /// magnitude: 50 points with Firebolt's taper (0.3, 2, 1 s) 54.9,
+    /// Fireball's 40 (0.3, 2, 2 s) 47.9 (`test-mod autotest4`); the reading
+    /// of the fields is ours.
+    fn update_tapers(&mut self, dt: f32) {
+        if self.magic.tapers.is_empty() || dt <= 0.0 {
+            return;
+        }
+        let tapers = std::mem::take(&mut self.magic.tapers);
+        let mut keep = Vec::with_capacity(tapers.len());
+        for (x, mgef, rate, elapsed) in tapers {
+            let [_, curve, seconds] = mgef.taper;
+            if self.is_dead(x.target)
+                || (x.target != PLAYER_REF && !self.actor_cells.contains_key(&x.target))
+            {
+                continue;
+            }
+            let end = (elapsed + dt).min(seconds);
+            let amount = taper_amount(rate, curve, seconds, elapsed, end);
+            self.change_value(&x, &mgef, amount, false);
+            if end < seconds {
+                keep.push((x, mgef, rate, end));
+            }
+        }
+        keep.append(&mut self.magic.tapers);
+        self.magic.tapers = keep;
+    }
+
     fn change_value(&mut self, x: &ActiveEffect, mgef: &MagicEffect, amount: f32, instant: bool) {
         let Some(a) = mgef.primary else { return };
         let by = x.caster.filter(|_| !x.quiet);
@@ -1102,6 +1145,7 @@ impl Engine {
             }
         }
         self.magic.effects.retain(|x| !x.done);
+        self.update_tapers(dt);
         // Let finished effects' scripts go once they have had their time.
         let now = self.scripts.real_time;
         let (old, keep): (Vec<_>, Vec<_>) =
@@ -1307,6 +1351,13 @@ pub struct EffectView {
     pub effect_archetype: u32,
 }
 
+/// A taper's change between `from` and `to` seconds after it began: the
+/// integral of `rate x (1 - t / seconds) ^ curve`.
+fn taper_amount(rate: f32, curve: f32, seconds: f32, from: f32, to: f32) -> f32 {
+    let left = |t: f32| (1.0 - (t / seconds).min(1.0)).powf(curve + 1.0);
+    rate * seconds / (curve + 1.0) * (left(from) - left(to))
+}
+
 /// Whether a projectile (`PROJ`) has an explosion (`DATA` 0x24).
 fn projectile_explodes(lo: &esp::LoadOrder, proj: FormId) -> bool {
     lo.get(proj)
@@ -1316,4 +1367,29 @@ fn projectile_explodes(lo: &esp::LoadOrder, proj: FormId) -> bool {
                 .map(|b| u32::from_le_bytes(b.try_into().unwrap()) != 0)
         })
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod taper_tests {
+    use super::taper_amount;
+
+    #[test]
+    fn tapers_add_the_measured_burn() {
+        // Firebolt's fire damage taper on 50 points, Fireball's on 40.
+        let total = |m: f32, w: f32, c: f32, d: f32| {
+            (0..100)
+                .map(|i| {
+                    taper_amount(
+                        m * w,
+                        c,
+                        d,
+                        d * i as f32 / 100.0,
+                        d * (i + 1) as f32 / 100.0,
+                    )
+                })
+                .sum::<f32>()
+        };
+        assert!((total(50.0, 0.3, 2.0, 1.0) - 5.0).abs() < 1e-3);
+        assert!((total(40.0, 0.3, 2.0, 2.0) - 8.0).abs() < 1e-3);
+    }
 }
