@@ -93,6 +93,8 @@ pub struct Player {
     pub landed_from: Option<f32>,
     /// Where the last update left it (a jump from there is a teleport).
     last: Vec3,
+    /// Carrying more than they can (`crate::encumbrance`).
+    pub overencumbered: bool,
 }
 
 /// Moved further than this between updates, the player was put somewhere
@@ -125,6 +127,7 @@ impl Player {
             fall_top: None,
             landed_from: None,
             last: eye - Vec3::Z * EYE_OFFSET,
+            overencumbered: false,
         }
     }
 

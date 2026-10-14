@@ -14,6 +14,7 @@ mod created;
 mod crime;
 mod detection;
 mod dialogue;
+mod encumbrance;
 mod engine;
 mod falling;
 mod footsteps;

@@ -509,6 +509,10 @@ game each piece unlocks.
   `HasKeyword` includes their race's; `GetInFaction` / `GetFactionRank` and door
   ownership follow templates. Console `templates <ref>`; vrm-tool `npc-templates`.
   Open questions: `known_ambiguities/npc-templates.md`
+- Carry weight: what an actor carries weighs its items, worn armor through
+  "Mod Armor Weight" (Conditioning, Unhindered); the player over their
+  `CarryWeight` walks, told `sOverEncumbered` (`src/encumbrance.rs`,
+  `known_ambiguities/encumbrance.md`)
 - Falling damage: the player's falls past `fJumpFallHeightMin` hurt by
   UESP's formula (the `fJumpFall*` settings), the "Mod Falling Damage"
   perk entry point (Cushioned) applied; deep water spares them
@@ -1034,7 +1038,11 @@ game each piece unlocks.
      (`fCombatDialogueFlee*`); the group strength timer
      (`fCombatGroupCombatStrengthUpdateTime`); impacts' hazards (`NAM2`),
      second sound (`NAM1`) and results (bounce, impale, stick)
-   - Perks, more: carry weight, armor weight, staggers,
+   - Encumbrance, more: worn armor's weight slowing the wearer
+     (`fMoveEncumEffect`, `fMoveWeightMax`; Conditioning and Unhindered
+     "don't slow you down"), fast travel refused over-encumbered (with the
+     map), followers' "can't carry any more"
+   - Perks, more: staggers,
      recovering arrows, bow zoom, Ignore Running During Detection, lockpicks'
      starting arc and key rewards, Green Thumb on harvests, Light Foot on
      pressure plates; refunds and the Legendary reset; NPCs' skills advancing

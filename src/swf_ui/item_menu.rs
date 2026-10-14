@@ -740,18 +740,7 @@ fn held_weapon(engine: &Engine) -> Option<FormId> {
 /// The bottom bar's player stats: armor rating, the weapon's damage, carry
 /// weight, gold, and health, magicka and stamina.
 pub(super) fn player_info(engine: &Engine) -> Value {
-    let weight: f32 = engine
-        .inventories
-        .get(&PLAYER_REF)
-        .map(|inv| {
-            inv.items
-                .iter()
-                .filter_map(|&(f, n)| {
-                    crate::world::inventory::item_info(&engine.lo, f).map(|i| i.weight * n as f32)
-                })
-                .sum()
-        })
-        .unwrap_or(0.0);
+    let weight = engine.carried_weight(PLAYER_REF);
     let damage =
         held_weapon(engine).map_or(0.0, |w| crate::ai::combat::weapon_damage(&engine.lo, w));
     let stat = |index| {
