@@ -1001,7 +1001,8 @@ game each piece unlocks.
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
      `known_ambiguities/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
-     (and falls hurting NPCs: `fJumpFall*NPC`, `crate::falling`)
+     (and falls hurting NPCs: `fJumpFall*NPC`, `crate::falling`); falls
+     sparing the ethereal and the paralyzed (UESP)
    - Scenes: the player's own lines (skipped for now; see `known_ambiguities/scenes.md`);
      priority between scenes
    - Physics, more: arrows sticking in loose objects; opened display-case lids

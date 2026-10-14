@@ -17,5 +17,3 @@ the Cushioned perk (entry point 58, x0.5).
   above the capsule's middle; UESP says only "moderately deep".
 - **Difficulty**: none is modelled, so falls do Adept's damage (UESP: less
   below Adept, no more above).
-- Becoming ethereal or being paralyzed on landing (UESP: both spare the
-  player) aren't checked yet.
