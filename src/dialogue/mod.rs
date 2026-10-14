@@ -11,7 +11,117 @@ pub mod info_flags {
     pub const GOODBYE: u16 = 0x1;
     pub const RANDOM: u16 = 0x2;
     pub const SAY_ONCE: u16 = 0x4;
-    pub const INVISIBLE_CONTINUE: u16 = 0x20;
+    pub const RANDOM_END: u16 = 0x20;
+    pub const INVISIBLE_CONTINUE: u16 = 0x40;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn candidate(topic_id: u32, info_id: u32, flags: u16) -> (Topic, Info) {
+        (
+            Topic {
+                id: FormId(topic_id),
+                editor_id: String::new(),
+                prompt: String::new(),
+                priority: 50.0,
+                quest: FormId(topic_id + 100),
+                branch: FormId(0),
+                subtype: *b"RUMO",
+            },
+            Info {
+                id: FormId(info_id),
+                flags,
+                responses: Vec::new(),
+                conditions: Vec::new(),
+                choices: Vec::new(),
+                prompt: None,
+                script: None,
+                begin_fragment: None,
+                end_fragment: None,
+            },
+        )
+    }
+
+    #[test]
+    fn rumor_group_keeps_each_response_across_quests() {
+        let group = response_group([
+            candidate(1, 11, info_flags::RANDOM),
+            candidate(1, 12, info_flags::RANDOM),
+            candidate(2, 21, info_flags::RANDOM),
+        ]);
+        assert_eq!(
+            group.iter().map(|(_, i)| i.id.0).collect::<Vec<_>>(),
+            [11, 12, 21]
+        );
+        assert_ne!(group[0].0.quest, group[2].0.quest);
+    }
+
+    #[test]
+    fn random_end_bounds_the_pool_across_topics() {
+        let group = response_group([
+            candidate(1, 11, info_flags::RANDOM),
+            candidate(2, 21, info_flags::RANDOM | info_flags::RANDOM_END),
+            candidate(3, 31, info_flags::RANDOM),
+        ]);
+        assert_eq!(
+            group.iter().map(|(_, i)| i.id.0).collect::<Vec<_>>(),
+            [11, 21]
+        );
+    }
+
+    #[test]
+    fn nonrandom_response_terminates_and_is_included() {
+        let group = response_group([
+            candidate(1, 11, info_flags::RANDOM),
+            candidate(2, 21, 0),
+            candidate(3, 31, info_flags::RANDOM),
+        ]);
+        assert_eq!(
+            group.iter().map(|(_, i)| i.id.0).collect::<Vec<_>>(),
+            [11, 21]
+        );
+        assert_eq!(
+            response_group([candidate(1, 11, 0), candidate(2, 21, 0)]).len(),
+            1
+        );
+        assert!(response_group([]).is_empty());
+    }
+
+    #[test]
+    fn rumor_prompt_follows_selected_info_and_identity_survives_topic_changes() {
+        let (topic, info) = candidate(1, 11, info_flags::RANDOM);
+        let default = DialogueOption::new(topic, info, true, "Localized rumors?");
+        assert_eq!(default.prompt, "Localized rumors?");
+        let (mut topic, mut info) = candidate(2, 21, info_flags::RANDOM);
+        topic.prompt = "Topic prompt".into();
+        info.prompt = Some("Give me the latest gossip.".into());
+        let selected = DialogueOption::new(topic, info, false, "Localized rumors?");
+        assert_eq!(selected.prompt, "Give me the latest gossip.");
+        assert_eq!(selected.info.id, FormId(21));
+        assert_eq!(selected.topic.quest, FormId(102));
+        assert!(!selected.new);
+        assert_eq!(default.id(), selected.id());
+    }
+
+    #[test]
+    fn custom_topics_with_identical_text_keep_separate_identities() {
+        let make = |id| {
+            let (mut topic, info) = candidate(id, id + 10, 0);
+            topic.subtype = *b"CUST";
+            topic.prompt = "Same words".into();
+            DialogueOption::new(topic, info, true, "Rumors?")
+        };
+        assert_ne!(make(1).id(), make(2).id());
+        let (mut topic, info) = candidate(3, 13, 0);
+        topic.subtype = *b"CUST";
+        assert!(
+            DialogueOption::new(topic, info, true, "Rumors?")
+                .prompt
+                .is_empty()
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +157,63 @@ pub struct Info {
     pub script: Option<String>,
     pub begin_fragment: Option<String>,
     pub end_fragment: Option<String>,
+}
+
+/// Rumors share one menu entry even when the chosen topic changes quests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionId {
+    Topic(FormId),
+    Rumors,
+}
+
+#[derive(Debug, Clone)]
+pub struct DialogueOption {
+    pub topic: Topic,
+    /// Selected when the menu is built, so its prompt and spoken line agree.
+    pub info: Info,
+    pub prompt: String,
+    pub new: bool,
+}
+
+impl DialogueOption {
+    pub fn id(&self) -> OptionId {
+        if self.topic.subtype == *b"RUMO" {
+            OptionId::Rumors
+        } else {
+            OptionId::Topic(self.topic.id)
+        }
+    }
+
+    fn new(topic: Topic, info: Info, new: bool, rumor_prompt: &str) -> Self {
+        let prompt = info.prompt.clone().unwrap_or_else(|| {
+            if topic.prompt.is_empty() && topic.subtype == *b"RUMO" {
+                rumor_prompt.to_owned()
+            } else {
+                topic.prompt.clone()
+            }
+        });
+        Self {
+            topic,
+            info,
+            prompt,
+            new,
+        }
+    }
+}
+
+/// The first qualifying random group, including its terminating INFO.
+/// Cross-quest ordering and weighting for rumors remain provisional; see
+/// known_ambiguities/dialogue-selection.md.
+fn response_group(infos: impl IntoIterator<Item = (Topic, Info)>) -> Vec<(Topic, Info)> {
+    let mut group = Vec::new();
+    for (topic, info) in infos {
+        let end = info.flags & info_flags::RANDOM == 0 || info.flags & info_flags::RANDOM_END != 0;
+        group.push((topic, info));
+        if end {
+            break;
+        }
+    }
+    group
 }
 
 pub fn topic(lo: &LoadOrder, id: FormId) -> Option<Topic> {
@@ -269,9 +436,8 @@ pub struct Conversation {
     pub npc: FormId,
     pub name: String,
     pub voice_type: FormId,
-    /// The topics the player can choose: the topic, its prompt and whether
-    /// the line it would get now is new (not heard before).
-    pub options: Vec<(Topic, String, bool)>,
+    /// Menu entries with their already-selected responses.
+    pub options: Vec<DialogueOption>,
     /// Remaining lines of the current INFO, and the INFO itself.
     pub queue: Vec<Response>,
     pub current: Option<Line>,
@@ -289,8 +455,8 @@ impl Engine {
         }
     }
 
-    /// First INFO of a topic whose conditions pass for this speaker.
-    pub fn select_info(&mut self, topic: &Topic, npc_ref: FormId) -> Option<Info> {
+    /// INFOs whose quest and speaker conditions pass, in topic order.
+    fn eligible_infos(&mut self, topic: &Topic, npc_ref: FormId) -> Vec<Info> {
         if !topic.quest.is_null()
             && !self
                 .scripts
@@ -298,7 +464,7 @@ impl Engine {
                 .get(&topic.quest)
                 .is_some_and(|q| q.running)
         {
-            return None;
+            return Vec::new();
         }
         let ctx = self.dialogue_ctx(npc_ref);
         if !topic.quest.is_null() {
@@ -306,7 +472,7 @@ impl Engine {
             let mut c = ctx;
             c.quest = Some(topic.quest);
             if !qc.is_empty() && !condition::evaluate(self, &qc, c) {
-                return None;
+                return Vec::new();
             }
         }
         let ids: Vec<FormId> = self.lo.topic_infos(topic.id).to_vec();
@@ -330,26 +496,66 @@ impl Engine {
                         condition::explain(self, &i.conditions, c)
                     );
                 }
-                if i.flags & info_flags::RANDOM == 0 {
-                    if passing.is_empty() {
-                        return Some(i);
-                    }
-                    break;
-                }
                 passing.push(i);
             }
         }
-        if passing.is_empty() {
+        passing
+    }
+
+    fn select_response(&mut self, infos: Vec<(Topic, Info)>) -> Option<(Topic, Info)> {
+        let mut group = response_group(infos);
+        if group.is_empty() {
             return None;
         }
-        let k = (self.rand() % passing.len() as u64) as usize;
-        Some(passing.swap_remove(k))
+        let k = (self.rand() % group.len() as u64) as usize;
+        Some(group.swap_remove(k))
+    }
+
+    pub fn select_info(&mut self, topic: &Topic, npc_ref: FormId) -> Option<Info> {
+        let infos = self
+            .eligible_infos(topic, npc_ref)
+            .into_iter()
+            .map(|i| (topic.clone(), i))
+            .collect();
+        self.select_response(infos).map(|(_, i)| i)
+    }
+
+    fn dialogue_option(&self, topic: Topic, info: Info) -> DialogueOption {
+        let new = !self.infos_said.contains(&info.id);
+        let fallback = self
+            .gmst_string("sTopicSubtypeTextPlayerDialogueRumors")
+            .unwrap_or_else(|| "Heard any rumors lately?".into());
+        DialogueOption::new(topic, info, new, &fallback)
+    }
+
+    /// One RUMO entry across running quests, rather than one entry per branch.
+    fn rumor_option(&mut self, npc_ref: FormId) -> Option<DialogueOption> {
+        let mut topics = self.topics_of_subtype(b"RUMO");
+        let priority = |t: &Topic| {
+            self.lo
+                .get(t.quest)
+                .and_then(|r| r.get(b"DNAM").and_then(|d| d.get(2)).copied())
+                .unwrap_or(0)
+        };
+        // Quest priority orders the response pool; topic priority orders the
+        // menu. FormID is our deterministic fallback for unresolved ties.
+        topics.sort_by(|a, b| priority(b).cmp(&priority(a)).then(a.id.0.cmp(&b.id.0)));
+        let mut infos = Vec::new();
+        for t in topics {
+            infos.extend(
+                self.eligible_infos(&t, npc_ref)
+                    .into_iter()
+                    .map(|i| (t.clone(), i)),
+            );
+        }
+        self.select_response(infos)
+            .map(|(t, i)| self.dialogue_option(t, i))
     }
 
     /// Topics the player can choose at the top level.
-    fn top_level_topics(&mut self, npc_ref: FormId) -> Vec<(Topic, String, bool)> {
+    fn top_level_topics(&mut self, npc_ref: FormId) -> Vec<DialogueOption> {
         let branches: Vec<FormId> = self.lo.ids_of_type(b"DLBR").to_vec();
-        let mut out: Vec<(Topic, String, bool)> = Vec::new();
+        let mut out: Vec<DialogueOption> = Vec::new();
         for b in branches {
             let Some(r) = self.lo.get(b) else { continue };
             let flags = r.get(b"DNAM").map(|d| d[0]).unwrap_or(0);
@@ -366,15 +572,18 @@ impl Engine {
             let Some(t) = topic(&self.lo, start) else {
                 continue;
             };
+            if t.subtype == *b"RUMO" || out.iter().any(|o| o.topic.id == t.id) {
+                continue;
+            }
             if let Some(i) = self.select_info(&t, npc_ref) {
-                let prompt = i.prompt.clone().unwrap_or_else(|| t.prompt.clone());
-                if !prompt.is_empty() && !out.iter().any(|(x, _, _)| x.id == t.id) {
-                    let new = !self.infos_said.contains(&i.id);
-                    out.push((t, prompt, new));
+                let option = self.dialogue_option(t, i);
+                if !option.prompt.is_empty() {
+                    out.push(option);
                 }
             }
         }
-        out.sort_by(|a, b| b.0.priority.total_cmp(&a.0.priority));
+        out.extend(self.rumor_option(npc_ref));
+        out.sort_by(|a, b| b.topic.priority.total_cmp(&a.topic.priority));
         out
     }
 
@@ -478,10 +687,9 @@ impl Engine {
             if let Some(t) = topic(&self.lo, ch)
                 && let Some(i) = self.select_info(&t, npc_ref)
             {
-                let prompt = i.prompt.clone().unwrap_or_else(|| t.prompt.clone());
-                if !prompt.is_empty() {
-                    let new = !self.infos_said.contains(&i.id);
-                    opts.push((t, prompt, new));
+                let option = self.dialogue_option(t, i);
+                if !option.prompt.is_empty() {
+                    opts.push(option);
                 }
             }
         }
@@ -490,7 +698,9 @@ impl Engine {
         }
         log::debug!(
             "dialogue options: {:?}",
-            opts.iter().map(|o| &o.1).collect::<Vec<_>>()
+            opts.iter()
+                .map(|o| (&o.prompt, o.topic.id, o.info.id))
+                .collect::<Vec<_>>()
         );
         if let Some(c) = self.conversation.as_mut() {
             c.options = opts;
@@ -500,18 +710,15 @@ impl Engine {
     /// Player picked option `i` (or Goodbye if out of range).
     pub fn choose_topic(&mut self, i: usize) {
         let Some(c) = &self.conversation else { return };
-        let Some((t, _, _)) = c.options.get(i).cloned() else {
+        let Some(option) = c.options.get(i).cloned() else {
             self.end_conversation();
             return;
         };
-        let npc_ref = c.npc_ref;
-        if let Some(info) = self.select_info(&t, npc_ref) {
-            if let Some(c) = self.conversation.as_mut() {
-                c.queue = info.responses.clone();
-                c.info = Some((t, info));
-            }
-            self.begin_info();
+        if let Some(c) = self.conversation.as_mut() {
+            c.queue = option.info.responses.clone();
+            c.info = Some((option.topic, option.info));
         }
+        self.begin_info();
     }
 
     /// Run an INFO's begin or end fragment, `speaker` saying it.

@@ -178,6 +178,22 @@ Last in a run, or a run of their own:
 
 ## Manual only (a test mod the user plays)
 
+- **Rumor pooling and response arbitration** (`dialogue-selection.md`):
+  create a dedicated NPC and running quests with RUMO topics, distinct
+  prompts and INFO fragments recording counters and sequence numbers.
+  Compare RUMO with identical-text Custom topics, and test missing FULL,
+  absent branches, branch flags and explicit linked choices. Check that
+  the displayed prompt predicts the INFO whose fragment runs on click.
+  Use one topic with one INFO and another with three to distinguish
+  per-topic from per-INFO sampling over repeated selections; vary quest
+  and topic priorities separately, Random End and nonrandom boundaries
+  across quests, and reverse FormIDs/plugin/start order for priority ties.
+  Include heard/unheard mixtures, Say Once, reset intervals and Do All
+  Before Repeating, then leave/reopen dialogue and advance game time.
+  A script can record counters and save results after the user closes
+  dialogue, but cannot drive the player menu unattended with vanilla
+  Papyrus. Random-group behavior can be probed partially through Say(),
+  but that alone does not establish player-menu pooling or prompt choice.
 - Rendering: image space, particles, impacts, decals, environment maps,
   grass, foot IK.
 - Weather looks: rain, snow, lightning, clouds, sky statics, auroras; sounds.
