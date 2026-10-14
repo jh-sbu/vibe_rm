@@ -259,7 +259,7 @@ impl Engine {
                 at: self.player.eye(),
                 sneaking: self.player.sneaking,
                 moving: self.player.moving,
-                running: self.player.running,
+                running: self.player.running && !self.ignores_running(r),
                 armor_weight: self.armor_weight(r),
                 sneak: self.actor_value(r, av::SNEAK),
                 stealth: self.stealth_perks(r),
@@ -277,13 +277,21 @@ impl Engine {
             at: a.pos + Vec3::Z * EYE_HEIGHT * a.scale,
             sneaking: a.is_sneaking(),
             moving,
-            running: moving && a.gait() == crate::world::footsteps::Gait::Run,
+            running: moving
+                && a.gait() == crate::world::footsteps::Gait::Run
+                && !self.ignores_running(r),
             armor_weight: self.armor_weight(r),
             sneak: self.actor_value(r, av::SNEAK),
             stealth: self.stealth_perks(r),
             invisible: self.actor_value(r, av::INVISIBILITY) > 0.0,
             muffle: self.actor_value(r, av::MOVEMENT_NOISE_MULT).clamp(0.0, 1.0),
         })
+    }
+
+    /// "Ignore Running During Detection": running counts as moving (no
+    /// vanilla perk has it).
+    fn ignores_running(&self, r: FormId) -> bool {
+        self.perk_flag(crate::perks::ep::IGNORE_RUNNING_DURING_DETECTION, r, &[])
     }
 
     fn stealth_perks(&self, r: FormId) -> f32 {
