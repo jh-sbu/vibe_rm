@@ -16,7 +16,7 @@ use esp::FormId;
 use esp::actor_value as av;
 
 use crate::ai::combat::CombatStats;
-use crate::engine::{Engine, PLAYER_HEALTH, PLAYER_REF};
+use crate::engine::{Engine, PLAYER_REF};
 use crate::world::template;
 
 /// What scripts did to one actor value over its base.
@@ -29,6 +29,22 @@ pub struct Modifiers {
     pub temporary: f32,
     /// Damage taken (never above 0).
     pub damage: f32,
+}
+
+/// What an actor's records make of its skills and health, magicka and stamina.
+pub(crate) struct RecordStats {
+    /// `OneHanded` .. `Enchanting`.
+    pub skills: [f32; 18],
+    /// Health, magicka, stamina.
+    pub attributes: [f32; 3],
+}
+
+/// The race's `DATA` (from the traits template).
+fn race_data(lo: &esp::LoadOrder, src: &template::Sources) -> Vec<u8> {
+    src.form(lo, template::TRAITS, b"RNAM")
+        .and_then(|r| lo.get(r))
+        .and_then(|r| r.get(b"DATA").map(<[u8]>::to_vec))
+        .unwrap_or_default()
 }
 
 fn f32_at(d: &[u8], o: usize) -> f32 {
@@ -59,8 +75,8 @@ impl Engine {
     }
 
     /// An actor value's base as the records give it: AI data (`AIDT`), skills
-    /// and health / magicka / stamina offsets (`DNAM`) from the templates that give
-    /// them, starting values and rates from the race (`DATA`).
+    /// and health / magicka / stamina (`record_stats`) from the templates
+    /// that give them, rates from the race (`DATA`).
     pub fn av_record_base(&self, actor: FormId, index: u32) -> f32 {
         // The rest (the package variables among them) the records don't give.
         let from_records = matches!(
@@ -83,32 +99,18 @@ impl Engine {
             return default_base(index);
         };
         let lo = &self.lo;
-        let stats = || src.field(lo, template::STATS, b"DNAM").unwrap_or_default();
-        let race = || {
-            src.form(lo, template::TRAITS, b"RNAM")
-                .and_then(|r| lo.get(r))
-                .and_then(|r| r.get(b"DATA").map(<[u8]>::to_vec))
-                .unwrap_or_default()
-        };
-        let offset = |o: usize| {
-            stats()
-                .get(o..o + 2)
-                .map_or(0.0, |d| u16::from_le_bytes([d[0], d[1]]) as f32)
-        };
+        let race = || race_data(lo, &src);
         match index {
             av::AGGRESSION..=av::ASSISTANCE => src
                 .field(lo, template::AI_DATA, b"AIDT")
                 .and_then(|d| d.get(index as usize).copied())
                 .unwrap_or(0) as f32,
-            av::FIRST_SKILL..=av::LAST_SKILL => stats()
-                .get((index - av::FIRST_SKILL) as usize)
-                .copied()
-                .unwrap_or(15) as f32,
-            av::HEALTH if actor == PLAYER_REF => PLAYER_HEALTH,
-            // As combat works them out (`CombatStats::of`).
-            av::HEALTH => (f32_at(&race(), 36) + offset(36)).max(5.0),
-            av::MAGICKA => f32_at(&race(), 40) + offset(38),
-            av::STAMINA => (f32_at(&race(), 44) + offset(40)).max(10.0),
+            av::FIRST_SKILL..=av::LAST_SKILL => {
+                self.record_stats(actor, &src).skills[(index - av::FIRST_SKILL) as usize]
+            }
+            av::HEALTH => self.record_stats(actor, &src).attributes[0].max(5.0),
+            av::MAGICKA => self.record_stats(actor, &src).attributes[1],
+            av::STAMINA => self.record_stats(actor, &src).attributes[2].max(10.0),
             // The race's rate is the player's: NPCs read 0 and don't heal
             // (`test-mod autotest5`).
             av::HEAL_RATE if actor == PLAYER_REF => f32_at(&race(), 84),
@@ -119,6 +121,75 @@ impl Engine {
             av::MASS => f32_at(&race(), 52),
             _ => default_base(index),
         }
+    }
+
+    /// An actor's skills and health, magicka and stamina as its records make
+    /// them (the stats template's `ACBS`, `DNAM` and class, the traits
+    /// template's race). Health, magicka and stamina are the race's starting
+    /// values and the `ACBS` offsets, with auto-calculated stats ("PC level
+    /// mult" forces them) the class's share for each level past the first
+    /// (`esp::auto_calc`); `DNAM`'s are what the Creation Kit worked out,
+    /// and only for auto-calculated stats (UESP: "otherwise seems to be
+    /// random"). Skills are `DNAM`'s, worked out again for a level that
+    /// "PC level mult" makes, with `DNAM`'s offsets. The player's start as
+    /// their race makes them at level 1; level ups raise them after
+    /// (`crate::skills`). `known_ambiguities/actor-values.md`.
+    pub(crate) fn record_stats(&self, actor: FormId, src: &template::Sources) -> RecordStats {
+        let lo = &self.lo;
+        let race = race_data(lo, src);
+        let dnam = src
+            .field(lo, template::STATS, b"DNAM")
+            .filter(|d| d.len() >= 36)
+            .unwrap_or_default();
+        let acbs = src
+            .field(lo, template::STATS, b"ACBS")
+            .filter(|d| d.len() >= 22)
+            .unwrap_or_default();
+        let flags = acbs
+            .get(0..4)
+            .map_or(0, |d| u32::from_le_bytes(d.try_into().unwrap()));
+        let i16_at = |o: usize| {
+            acbs.get(o..o + 2)
+                .map_or(0.0, |d| i16::from_le_bytes([d[0], d[1]]) as f32)
+        };
+        let player = actor == PLAYER_REF;
+        let pc_mult = flags & 0x80 != 0;
+        let auto = flags & 0x10 != 0 || pc_mult;
+        let class = src
+            .form(lo, template::STATS, b"CNAM")
+            .and_then(|c| lo.get(c))
+            .and_then(|c| c.get(b"DATA").map(<[u8]>::to_vec))
+            .filter(|d| d.len() >= 35);
+        let level = if player {
+            1
+        } else {
+            self.actor_level(actor).max(1) as u32
+        };
+        // ACBS: health offset at 20, magicka at 4, stamina at 6.
+        let base = [i16_at(20), i16_at(4), i16_at(6)];
+        let start = [f32_at(&race, 36), f32_at(&race, 40), f32_at(&race, 44)];
+        let attributes = match &class {
+            Some(c) if auto => {
+                esp::auto_calc::attributes(level, start, base, [c[32], c[33], c[34]])
+            }
+            _ => std::array::from_fn(|i| start[i] + base[i]),
+        };
+        let values: [u8; 18] = match &class {
+            Some(c) if auto && (pc_mult || player) => {
+                let bonuses: Vec<(u8, u8)> = race
+                    .get(..14)
+                    .unwrap_or_default()
+                    .chunks(2)
+                    .map(|p| (p[0], p[1]))
+                    .collect();
+                esp::auto_calc::skills(level, &bonuses, c[6..24].try_into().unwrap())
+            }
+            _ => std::array::from_fn(|i| dnam.get(i).copied().unwrap_or(15)),
+        };
+        let skills = std::array::from_fn(|i| {
+            values[i] as f32 + dnam.get(18 + i).copied().unwrap_or(0) as f32
+        });
+        RecordStats { skills, attributes }
     }
 
     /// `GetBaseActorValue`.

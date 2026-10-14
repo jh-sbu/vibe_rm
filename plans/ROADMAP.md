@@ -511,8 +511,10 @@ game each piece unlocks.
   `GetBaseActorValue`, `GetPermanentActorValue`, `GetActorValuePercent`), Papyrus
   (`Get` / `Set` / `Force` / `Mod` / `Damage` / `RestoreActorValue`,
   `GetActorValuePercentage`) and the console share: bases from the records (AI
-  data, skills, health / magicka / stamina offsets, the race's starting values,
-  rates, carry weight), a permanent modifier and damage over them. Live health and
+  data, skills, rates, carry weight; health / magicka / stamina from the
+  race and the offsets, auto-calculated stats from the class at the NPC's
+  level, "PC level mult" ones too: `esp::auto_calc`), a permanent modifier
+  and damage over them. Live health and
   stamina are folded in (damaging health to nothing kills); changes to health,
   stamina, aggression, confidence, assistance and the armor and block skills
   reach combat. `Variable01`-`10` and `WaitingForPlayer` now gate packages and
@@ -1001,8 +1003,7 @@ game each piece unlocks.
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
    - Triggers: water and lava damage volumes
-   - Actor values: temporary (magic) modifiers; level-scaled NPC health and
-     skills (class, PC level mult) and the player's base health; damage to
+   - Actor values: temporary (magic) modifiers; damage to
      unloaded actors carried into their live values; names past
      `WaitingForPlayer`; `HasKeyword` counting worn items' and effects' keywords
    - Magic, more: detect life, telekinesis, soul trap, cloaks, slow time;
@@ -1027,8 +1028,7 @@ game each piece unlocks.
      (`fCombatDialogueFlee*`); the group strength timer
      (`fCombatGroupCombatStrengthUpdateTime`); impacts' hazards (`NAM2`),
      second sound (`NAM1`) and results (bounce, impale, stick)
-   - Lockpicking: `iXPRewardPickLock*`, enchantments and potions, race skill
-     bonuses, "Auto Attempt"
+   - Lockpicking: enchantments and potions, "Auto Attempt"
    - Perks, more: carry weight, falling damage, armor weight, staggers,
      recovering arrows, bow zoom, Ignore Running During Detection, lockpicks'
      starting arc and key rewards, Green Thumb on harvests, Light Foot on

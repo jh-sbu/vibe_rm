@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use esp::actor_value as av;
 use esp::{FormId, LoadOrder};
 use glam::{Mat4, Vec3};
 
@@ -378,14 +379,6 @@ fn attacks_of(rec: &esp::LoadedRecord<'_>) -> Vec<Attack> {
     out
 }
 
-/// Light and heavy armor skills from an NPC's `DNAM` (skills 6 and 5).
-fn armor_skills(dnam: &[u8]) -> [f32; 2] {
-    [
-        dnam.get(6).copied().unwrap_or(15) as f32,
-        dnam.get(5).copied().unwrap_or(15) as f32,
-    ]
-}
-
 /// A float game setting (`GMST`), or `default` when the plugins lack it.
 pub(crate) fn gmst_f32(lo: &LoadOrder, name: &str, default: f32) -> f32 {
     lo.find_editor_id(name)
@@ -576,7 +569,7 @@ pub fn protection(
 }
 
 impl CombatStats {
-    pub fn of(e: &Engine, src: &Sources, race: FormId) -> CombatStats {
+    pub fn of(e: &Engine, actor: FormId, src: &Sources, race: FormId) -> CombatStats {
         let lo = &e.lo;
         let mut s = CombatStats {
             max_health: 50.0,
@@ -588,8 +581,6 @@ impl CombatStats {
         };
         if let Some(race) = lo.get(race) {
             if let Some(d) = race.get(b"DATA") {
-                s.max_health = f32_at(d, 36);
-                s.max_stamina = f32_at(d, 44);
                 s.health_regen = f32_at(d, 84);
                 s.stamina_regen = f32_at(d, 92);
                 s.unarmed_damage = f32_at(d, 96).max(1.0);
@@ -616,8 +607,6 @@ impl CombatStats {
         });
         s.bare_handed = attacks.iter().any(|a| a.bare_handed());
         s.attacks = attacks;
-        // Health and stamina from the NPC's stats (DNAM: skills, then health /
-        // magicka / stamina).
         // ACBS flags: 0x2 essential, 0x800 protected.
         let acbs = src
             .field(lo, template::BASE_DATA, b"ACBS")
@@ -625,17 +614,13 @@ impl CombatStats {
             .map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()));
         s.essential = acbs & 0x2 != 0;
         s.protected = acbs & 0x800 != 0;
-        if let Some(d) = src
-            .field(lo, template::STATS, b"DNAM")
-            .filter(|d| d.len() >= 38)
-        {
-            s.max_health += u16::from_le_bytes([d[36], d[37]]) as f32;
-            if let Some(st) = d.get(40..42) {
-                s.max_stamina += u16::from_le_bytes([st[0], st[1]]) as f32;
-            }
-            s.armor_skills = armor_skills(&d);
-            s.block_skill = d[3] as f32;
-        }
+        // Health, stamina and the skills combat uses, as the records make them.
+        let stats = e.record_stats(actor, src);
+        s.max_health = stats.attributes[0].max(5.0);
+        s.max_stamina = stats.attributes[2].max(10.0);
+        let skill = |i: u32| stats.skills[(i - av::FIRST_SKILL) as usize];
+        s.armor_skills = [skill(av::LIGHT_ARMOR), skill(av::HEAVY_ARMOR)];
+        s.block_skill = skill(av::BLOCK);
         // Combat style (with the AI data, template flag 0x10), else the default one.
         let style = src
             .form(lo, template::AI_DATA, b"ZNAM")
@@ -3278,7 +3263,8 @@ impl Engine {
         self.player_stats
             .get_or_init(|| {
                 let race = self.npc_race(FormId(0x7)).unwrap_or(FormId(0x13746));
-                let mut s = CombatStats::of(self, &Sources::of_npc(&self.lo, FormId(0x7), 0), race);
+                let src = Sources::of_npc(&self.lo, FormId(0x7), 0);
+                let mut s = CombatStats::of(self, PLAYER_REF, &src, race);
                 self.apply_actor_values(PLAYER_REF, &mut s);
                 Arc::new(s)
             })

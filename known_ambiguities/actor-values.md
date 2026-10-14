@@ -18,9 +18,21 @@ use them (`vrm-tool av-conditions <data>`).
   and lines, and above all `Variable01`, `06`, `07`, `09` and `WaitingForPlayer`
   that scripts set (followers, quests).
 - Base values come from the records: `AIDT` bytes for the AI data, `DNAM` for
-  skills and the health / magicka / stamina offsets, the race's `DATA` for
-  starting health / magicka / stamina, regen rates, carry weight and mass.
+  skills, the race's `DATA` for regen rates, carry weight and mass.
   Everything else starts at 0 (`SpeedMult` 100).
+- Health, magicka and stamina are the race's starting values plus the `ACBS`
+  offsets (health at byte 20, magicka 4, stamina 6), and with "Auto Calc
+  Stats" (which "PC Level Mult" forces on, CK wiki's Stats Tab) the class's
+  share for each level past the first: UESP's CLAS page (10 attribute
+  points a level by the class's weights, 5 more health) and NPC_ page
+  (`DNAM`'s health / magicka / stamina are "calculated health (if auto-calc
+  stats is on, otherwise seems to be random)"). The player: Nord's 50 and
+  the offsets of 50 give the known 100 each. Auto-calculated skills: 15,
+  the race's bonuses and 8 points a level by the class's skill weights.
+  `esp::auto_calc` gives exactly what the Creation Kit stored in `DNAM` for
+  all 1583 vanilla auto-calc NPCs at a fixed level (health / magicka /
+  stamina, read signed) and for the skills of 1502 (`vrm-tool npc-stats`):
+  the rest have a skill past 100.
 - Checked in Skyrim SE (`test-mod autotest`, 2026-10-12): `SetActorValue`
   sets the base and keeps the permanent modifier; `ModActorValue` changes
   the permanent modifier, which `GetBaseActorValue` doesn't see;
@@ -36,3 +48,27 @@ use them (`vrm-tool av-conditions <data>`).
 - NPCs' `HealRate` reads 0 (as does `CombatHealthRegenMult`), though their
   race's `DATA` has 0.7: that is the player's. Our NPCs at 90 of 300 health
   didn't heal in 30 s, free, held or fighting (`test-mod autotest5`).
+
+## Choices made without a source
+
+- **Ties in the leftover skill points**: UESP's CLAS page has equal weights
+  served by lower actor value index first; the stored `DNAM`s fit only the
+  other way (higher index first, as UESP has it for attributes): Dervenin's
+  three leftover points went to Enchanting, Alteration and Alchemy, not to
+  One-Handed, Archery and Block. Taken from the data.
+- **Skills past 100**: UESP says the shares are worked out otherwise once a
+  skill reaches 100 (not how). The stored `DNAM`s give more to the other
+  skills than an even share of the excess (Dremora at level 46: the two
+  capped skills lost 26 points, the others gained 10). NPCs at their own
+  level take `DNAM`'s skills, which have it right; "PC level mult" NPCs
+  are worked out at their level, the skills held at 100 and the excess
+  lost.
+- **Non-auto-calc NPCs**: race plus `ACBS` offset, as the CK wiki's
+  description and modders have it ("just race+offset"), not `DNAM`
+  (garbage in many: Khayla's 16686). UESP's NPC pages disagree for some:
+  Khayla (non-auto, health offset 105) is listed at 50, the race's alone.
+- **Skill offsets** (`DNAM` 18..36; 12 vanilla NPCs, none auto-calc: prey
+  animals' Sneak +70, Jorgen, a wisp mother) are added to the skill
+  values, past 100 too (`MGArnielSummon`'s Alteration).
+- The class (`CNAM`) comes with the stats template, as on the Creation
+  Kit's Stats tab.
