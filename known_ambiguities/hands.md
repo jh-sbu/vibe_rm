@@ -91,10 +91,11 @@ took it and puts it back after; that isn't done here.
 - **A left-hand weapon is shown drawn only**, in the `SHIELD` node, the
   bows' hand. Sheathed it isn't shown: the skeleton has no node on the body
   for it.
-- **NPCs' torches** take the left hand and set the shield aside as before,
-  but an NPC with both hands on a weapon (a two-handed one, a bow) doesn't
-  light one: the torch would take the weapon out of its hands, and whether
-  the game puts it away for a torch and back for a fight isn't known.
+- **NPCs' torches** take the left hand and set the shield aside as before; an
+  NPC with both hands on a weapon puts it away for the torch (in the game,
+  given a greatsword and a torch at night, an NPC held the torch and no
+  weapon: `test-mod autotest4`). Whether it takes the weapon back to fight
+  isn't known; here it does when it puts the torch away.
 - **The mouse in item menus.** The movies equip on an attack button only
   with the cursor over the list (`ShouldProcessItemsListInput(true)` calls
   Scaleform's `Mouse.getTopMostEntity()`). The vendored Ruffle's version
@@ -135,7 +136,8 @@ took it and puts it back after; that isn't done here.
   variables drive the clips' playback speed, and UESP has the off-hand
   weapon set a dual attack's speed.
 - **NPCs dual wielding.** An NPC whose combat style allows dual wielding
-  and carries a second one-handed weapon (or two of its best) holds it in
-  the left hand in place of a shield; whether the game weighs a shield
-  against it isn't known. NPCs with a weapon in each hand don't block or
-  bash.
+  and carries a second one-handed weapon (or two of its best) and no shield
+  holds it in the left hand. In the game (`test-mod autotest4`) such an NPC
+  given two iron swords fought with both, given a shield too fought with a
+  sword and the shield, and one of the default style given two swords used
+  one. NPCs with a weapon in each hand don't block or bash.

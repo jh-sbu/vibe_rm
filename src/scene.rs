@@ -246,8 +246,9 @@ impl Engine {
 
     /// Start a scene (Papyrus `Start` / `ForceStart`): its quest must be running,
     /// its required actors' aliases filled and, unless forced, its conditions
-    /// pass and its actors free of other scenes (forced, it takes them from
-    /// those). Returns whether it is playing.
+    /// pass. It takes its actors from other scenes, which stop (in the game a
+    /// scene started with its actor in another played: `test-mod autotest4`).
+    /// Returns whether it is playing.
     pub fn start_scene(&mut self, s: FormId, force: bool) -> bool {
         if self.is_scene_playing(s) {
             return true;
@@ -295,17 +296,8 @@ impl Engine {
                 }
             }
         }
-        if !busy.is_empty() {
-            if !force {
-                log::debug!(
-                    "scene {} not started: its actors are in {busy:?}",
-                    def.scene.editor_id
-                );
-                return false;
-            }
-            for b in busy {
-                self.stop_scene(b);
-            }
+        for b in busy {
+            self.stop_scene(b);
         }
         log::info!("scene {} starts", def.scene.editor_id);
         let actions = def.scene.actions.iter().map(|_| ActionRun::new()).collect();

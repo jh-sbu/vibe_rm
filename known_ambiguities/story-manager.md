@@ -72,17 +72,31 @@ or prints one event's tree.
   `Stop()` and a second `Start()`; their variables were kept. `Start()`
   returned true and the quest was running at once.
 
+## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
+
+Script event nodes of ours under the game's script event root:
+
+- Node conditions run on the player: of two quest nodes needing
+  `GetIsID(our NPC)` and `GetIsID(the player)`, run on the subject, with our
+  NPC as R1, the second started its quest.
+- `OnStoryScript` got the members in their order: the keyword, no location,
+  R1, R2, 7, 42 as sent.
+- A node's quest with reset hours 1, stopped, didn't start again at once,
+  and did 1.3 game hours later. A node with two quests and at most 1
+  running started the first, and nothing while it ran.
+- `SendStoryEventAndWait` returned true 0.05 s after, its quest's
+  `OnStoryScript` (waiting 2 s) not done yet.
+
 ## Choices made without a source
 
-- Node conditions run on the player (subject).
 - An actor considers a conversation every 10 to 30 s (first one staggered),
   with a 10% chance, with the nearest other free humanoid within 500 units:
   alive, calm, not in a scene or talking to the player; interiors use the
   `...Interior` settings.
 - Reset hours count game time since the quest was last started by the Story
   Manager; quests started otherwise don't count.
-- "Max concurrent" counts the running quests of the node and those below it.
-- `SendStoryEventAndWait` returns whether a quest started, at once.
+- "Max concurrent" counts the running quests of the node and those below it
+  (a quest node's own seen in the game).
 - Quests' own event conditions run on the player, like node conditions.
 - Item pickup: R1 is a person owner's placed reference (none for a faction
   owner). Whether it is stolen: see "Ownership" below.

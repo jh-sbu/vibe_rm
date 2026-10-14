@@ -39,17 +39,32 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   list), the race's, perks' ability sections (Muffled Movement, Silence...),
   `AddSpell`, less `RemoveSpell`.
 
+## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
+
+- **Conditions' subject** is the effect's target and their target the
+  caster: a fire spell needing `GetLevel >= 5` cast by a level 1 NPC at a
+  level 20 one struck it run on the subject and didn't run on the target.
+- **Resistance**: a 50 point fire spell took 54.9 from an NPC at fire
+  resistance 0, half at 50, a tenth at 90, nothing at 100 or 200; all of it
+  with the spell's Ignore Resistance flag; a quarter at fire and magic
+  resistance 50 each (the two multiply). The player lost the same at 90 and
+  100 (`fPlayerMaxResistance`, 85, the game's value). Where the extra 10%
+  over the magnitude comes from isn't known (Fireball's 40 took 47.9).
+- **Absorb health** of 20 took 20 from the target and gave the caster 20.
+- **Calm, fear, frenzy, rally** held aggression -1 (Calm), confidence 0
+  (Fear), aggression 3 (Fury, whose other effect sets confidence 4) and
+  confidence 4 (Courage: rally's value, here taken as foolhardy, is 4).
+  Calm, Fear and Fury (magnitude 9, 9, 6) left a level 20 NPC alone and
+  took a level 5 one; Courage took both (no level cap).
+
 ## Open (choices made here)
 
-- **Conditions** are evaluated on the effect's target as the subject, with the
-  caster as the target. Fire-and-forget effects with no duration whose
-  conditions fail don't land; lasting and constant ones wait, looked at again
-  every second, and stop (`OnEffectFinish`) or start again (`OnEffectStart`)
-  as they change.
-- **Resistance**: hostile effects are scaled by 1 - magic resistance, and any
-  effect with a resist value by 1 - that resistance; the player's resistances
-  are capped at `fPlayerMaxResistance` (85), NPCs' at 100. Spells with the
-  Ignore Resistance flag skip both. Whether NPCs have a cap isn't public.
+- **Conditions** of fire-and-forget effects with no duration that fail
+  don't land; lasting and constant ones wait, looked at again every second,
+  and stop (`OnEffectFinish`) or start again (`OnEffectStart`) as they
+  change (the game's interval isn't known: the test's lasting effect, a
+  potion's, didn't apply from a spell).
+- **Resistance**: whether NPCs have a cap isn't public (taken as 100).
 - **Perks**: Mod Spell Magnitude (owner: the caster; tabs: spell, target)
   and Mod Incoming Spell Magnitude (owner: the target; tab: spell) scale
   magnitudes; not for constant effects or potions.
@@ -57,8 +72,6 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   projectile) and, like a first blow, starts the target's fight and an
   assault. Instant health damage goes through the combat damage path (a
   flinch); damage over time wears health down in whole points without one.
-- **Absorb** takes from the target and gives the caster as much as was
-  taken (at once or per second).
 - **Effects end** on the dead (except No Death Dispel) and on actors
   unloaded; abilities come back when they load. Finished effects' scripts are
   kept 30 real seconds for `OnEffectFinish`.
@@ -76,10 +89,8 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   gains, from tomes, scripts or the console.
 - **Calm, fear, frenzy, rally** (archetypes 6, 7, 8, 38; turn undead 24
   as fear) hold the effect's actor value (aggression, confidence) at a
-  value of their own: CommonLibSSE's `TargetValueModifierEffect` subclasses
-  give calm -1, demoralize 0 and frenzy 3; rally's isn't given, so it is
-  foolhardy (4), which fits "won't flee". Two such effects on one value
-  stack as holds (each holds the difference from what it found).
+  value of their own (above). Two such effects on one value stack as holds
+  (each holds the difference from what it found).
 - **Their level cap**: calm, fear and frenzy land only on targets whose
   level is at most the magnitude (UESP: "creatures and people up to level
   N"; "Target Level does not apply to Rally effects"). The magnitude is the
@@ -124,7 +135,7 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   public.
 - **Bound weapons** (archetype 17; the weapon is the related form): the
   weapon is put in the target's inventory and equipped in the right hand; at the end it is
-  unequipped and every one taken away. Put away (another weapon taken up,
-  another bound weapon cast) it ends at the next second's check, as the
-  game dispels a bound weapon unequipped. Bound Bow's arrows come from its
-  effect's own script.
+  unequipped and every one taken away. Put away (another weapon taken up)
+  it lasts on: in the game Bound Sword's effect was still on 5 s after an
+  iron sword took its hand (`test-mod autotest4`). Bound Bow's arrows come
+  from its effect's own script.

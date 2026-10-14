@@ -52,16 +52,28 @@ Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
   enabled quests make 94 at startup (notes, rewards, MS09's Geirlund and Vidrald...).
   Papyrus `PlaceAtMe` / `PlaceActorAtMe` and console `placeatme` make them too.
 
+## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
+
+Optional aliases of a quest of ours, started by script:
+
+- Forced to a reference disabled first, and unique to an actor killed first
+  (neither alias allowing it): empty. Unique to an actor with no placed
+  reference: empty, the quest starting all the same.
+- Created at the player from an NPC with the PC level mult (x1), at create
+  levels easy, medium and very hard: level 1 each (the player's), so the
+  create level made no difference to it.
+- Matching (in the loaded area) two NPCs placed 500 then 200 units from the
+  player: the first placed without "Closest", the nearer with it.
+
 ## Open questions
 
 - What `ALNT` other than 0 would mean, and how far "near" reaches.
-- The create level (`ALCL`) is ignored; leveled actors pick by their form id
-  like placed ones.
-- Which of several matching references the game takes without "Closest" (here
-  the first persistent one in load order), and whether it searches anything
-  beyond persistent references when "In loaded area" isn't set.
-- Forced references and unique actors fill whether dead or disabled; a unique
-  actor without a placed reference fails the quest.
+- The create level (`ALCL`) is ignored; whether it changes a leveled actor's
+  pick isn't known.
+- Which of several matching references the game takes without "Closest" (the
+  first placed of two in the game; here the first persistent one in load
+  order, else the first loaded), and whether it searches anything beyond
+  persistent references when "In loaded area" isn't set.
 - Location aliases don't reserve locations; location keyword data is only
   what scripts set (`SetKeywordData`); cleared locations:
   `known_ambiguities/cleared.md`.

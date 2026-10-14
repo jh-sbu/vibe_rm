@@ -43,14 +43,11 @@ impl Engine {
         for (key, rt) in &self.cells {
             for (i, a) in rt.actors.iter().enumerate() {
                 let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());
-                // Not with both hands on a weapon (a two-handed one, a bow).
-                let both = self
-                    .inventories
-                    .get(&a.ref_id)
-                    .is_some_and(|i| i.both_hands() && i.held(LEFT) != a.torch);
+                // Also with both hands on a weapon: it is put away for the
+                // torch (`test-mod autotest4`: given a greatsword and a
+                // torch at night, an NPC held the torch and no weapon).
                 let want = dark
                     && humanoid
-                    && !both
                     && !a.in_furniture()
                     && a.seat.is_none()
                     && a.objects.is_empty();
@@ -70,8 +67,8 @@ impl Engine {
     }
 
     /// Light (`Some`) or put away (`None`) a torch: it takes the place of the
-    /// shield or second weapon in the left hand (`Inventory::hold`) and the
-    /// graph raises it.
+    /// shield or second weapon in the left hand, or of a weapon in both
+    /// (`Inventory::hold`), back when it is put away; the graph raises it.
     fn hold_torch(&mut self, key: CellKey, index: usize, actor: FormId, torch: Option<FormId>) {
         let speeds = self.weapon_speed_mults(actor);
         let lo = &self.lo;
@@ -86,18 +83,30 @@ impl Engine {
         let inv = self.inventories.entry(actor).or_default();
         if let Some(t) = old {
             inv.take_off(t);
-            // What it set aside, unless the hand was taken since.
-            if let Some(s) = a.stowed_left.take()
-                && inv.held(LEFT).is_none()
-            {
-                inv.hold(lo, s, &[LEFT]);
+            // What it set aside, unless the hand was taken since: a weapon
+            // that had both hands gets them back.
+            if let Some(s) = a.stowed_left.take() {
+                if a.stowed_both {
+                    if inv.held(RIGHT).is_none() {
+                        inv.hold(lo, s, &[RIGHT, LEFT]);
+                    }
+                } else if inv.held(LEFT).is_none() {
+                    inv.hold(lo, s, &[LEFT]);
+                }
             }
+            a.stowed_both = false;
         }
         if let Some(t) = torch {
-            // The shield, or a second weapon.
-            a.stowed_left = inv.held(LEFT).filter(
-                |&f| matches!(lo.tag_of(f).map(|t| t.0), Some(t) if t == *b"ARMO" || t == *b"WEAP"),
-            );
+            // A weapon in both hands, else the shield or a second weapon.
+            if inv.both_hands() {
+                a.stowed_left = inv.held(RIGHT);
+                a.stowed_both = true;
+                inv.release(lo, RIGHT);
+            } else {
+                a.stowed_left = inv.held(LEFT).filter(
+                    |&f| matches!(lo.tag_of(f).map(|t| t.0), Some(t) if t == *b"ARMO" || t == *b"WEAP"),
+                );
+            }
             inv.hold(lo, t, &[LEFT]);
         }
         a.hands = crate::ai::combat::fighting_hands(lo, inv);
@@ -501,10 +510,14 @@ impl Engine {
         let lo = &self.lo;
         if let Some(inv) = self.inventories.get_mut(&a.ref_id) {
             inv.take_off(torch);
-            if let Some(s) = a.stowed_left
-                && inv.held(LEFT).is_none()
-            {
-                inv.hold(lo, s, &[LEFT]);
+            if let Some(s) = a.stowed_left {
+                if a.stowed_both {
+                    if inv.held(RIGHT).is_none() {
+                        inv.hold(lo, s, &[RIGHT, LEFT]);
+                    }
+                } else if inv.held(LEFT).is_none() {
+                    inv.hold(lo, s, &[LEFT]);
+                }
             }
         }
     }

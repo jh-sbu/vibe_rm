@@ -33,6 +33,15 @@ records); `vrm-tool scenes <data> [scene]` dumps one scene or counts over all
 - Phases use `IsSceneActionComplete` 910 times; `IsScenePlaying` (packages),
   `IsInScene` (quests), `IsScenePackageRunning` are implemented too.
 
+## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
+
+- `Start` with the owning quest stopped, or its actor's alias empty, played
+  nothing; with the alias filled a scene of one 3 s timer played and was
+  over 4 s later.
+- A scene whose only phase's start conditions never pass was over at once.
+- Killing the actor of a scene whose actor ends it on death ended it within
+  a second; a scene flagged to stop its quest on end stopped it.
+
 ## Choices made without a source
 
 - With completion conditions, the phase waits for them alone (actions ending
@@ -41,9 +50,10 @@ records); `vrm-tool scenes <data> [scene]` dumps one scene or counts over all
 - Speakers and package actors must be loaded: a scene whose actors are
   elsewhere waits for them (their scene packages still move them off-screen,
   through whereabouts). Off-screen scenes in the game may play on regardless.
-- `Start` fails when the owning quest isn't running, a required alias is
-  empty, the scene's conditions fail or an actor is in another scene;
-  `ForceStart` ignores conditions and takes actors from other scenes.
+- `Start` fails when the scene's conditions fail; `ForceStart` ignores them.
+  Both take actors from other scenes, which stop (in the game a scene
+  started with its actor in another played; whether that one stopped then or
+  only at the later `ForceStart` wasn't seen).
 - A travel / escort package is done when the actor stands in the package's
   place within its radius + 150 units; sit / sleep when in the furniture; force
   greet once the conversation it opened has ended. Procedures not run here

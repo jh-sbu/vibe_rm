@@ -115,6 +115,9 @@ not a health threshold. It is compared with a *threat ratio*:
     `fFleeDistance*` / `fFleeDoneDistance*`, which Skyrim.esm sets (5000 / 3000) and
     which may belong to the Flee package procedure and Fear effects
     (`Actor::InitiateFlee(fleeFromDist, fleeToDist)`).
+    In the game (`test-mod autotest4`) a coward set on by a level 50 brute fled
+    at once, unharmed or harmed by 1 (cowards are exempted here too), and
+    read combat state 0 eight seconds on, 2400 units away.
 11. **Health regeneration in combat.** `fCombatHealthRegenRateMult` is 0, yet players
     report fled NPCs coming back "once they have recovered enough health". The
     mechanism is unclear: regeneration after leaving combat, potions, or the ratio

@@ -24,16 +24,26 @@ their bases and scripts.
   (with the actor as `akActionRef`) to the reference's scripts and the
   aliases it fills; `GetTriggerObjectCount`.
 
+## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
+
+A box of half extent 128 with a script logging its events:
+
+- An NPC entered it standing with its centre 20 and 10 units outside a side
+  (and at 0), not 40: about the 20 units of reach used here.
+- An NPC killed inside left it; an iron sword placed in it entered nothing;
+  the player entered and left; NPCs deleted inside left it.
+- Disabled, it sent `OnTriggerLeave` for the NPC inside, and
+  `OnTriggerEnter` again when enabled.
+
 ## Choices made without a source
 
 - Phantom volumes reach a body within 20 units of one of its three points,
   as primitives do; a phantom on an animated node doesn't move with it.
 - Who sets them off: the player and loaded, living actors, tested at three
-  heights over their feet with 20 units of reach (a capsule, roughly). Bodies,
-  items and projectiles don't.
+  heights over their feet with 20 units of reach (a capsule, roughly).
+  Projectiles don't.
 - Actors already inside when the cell loads enter on the first update.
-- Disabled triggers send nothing (and forget who was inside); a script moving
-  a trigger doesn't move its volume.
+- A script moving a trigger doesn't move its volume.
 
 ## Open questions
 

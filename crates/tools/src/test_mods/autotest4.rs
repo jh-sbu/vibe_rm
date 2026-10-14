@@ -77,7 +77,15 @@
 //! near aliases' reach, item pickup ownership and `XRNK`, scene flag 0x4
 //! and looping dialogue, the flee check's timing and its ending.
 //!
-//! Not yet run in the game.
+//! Run in Skyrim SE (2026-10-13): the results are in `known_ambiguities/`
+//! (magic, skills, perks, shouts, alias fills and packages, the Story
+//! Manager, scenes, assistance, hands, triggers). Not settled: the spells of
+//! ours with potions' fortify effects didn't apply from a spell (the
+//! condition scale and recheck, `HasShout`, the ability's effect), the
+//! player's spells cast by script didn't go at the target (the perk tests),
+//! held NPCs neither fought nor regenerated, the bowl sent no trap events,
+//! and whether scene completion conditions end a phase wasn't seen:
+//! `autotest5` follows these up.
 
 use anyhow::{Context, Result};
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, write_plugin};

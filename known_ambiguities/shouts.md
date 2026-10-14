@@ -26,6 +26,12 @@ records; the game settings; `magicmenu.swf` (the shout card) and
   (`sSingleDragonSoulCount` / `sMultipleDragonSoulCount`). Unlocking is on
   the Ready Weapon key (R); without a soul, `sFailSpendSoul`.
 
+- **Stats** (`test-mod autotest4`, a shout of ours): `TeachWord` of its
+  first word counted a Word Of Power Learned and a Shout Learned; its
+  `UnlockWord` a Word Of Power Unlocked and a Shout Unlocked; the later
+  words' a word each; the third unlocked, a Shout Mastered. `AddShout`
+  counted nothing.
+
 ## Open (choices made here)
 
 - **When the shout goes out**: when the key comes up, or as soon as it has
@@ -39,8 +45,5 @@ records; the game settings; `magicmenu.swf` (the shout card) and
   solid between.
 - **NPCs' shouts**: their record's (`SPLO`) and `AddShout`'s count for
   `HasShout`.
-- **Stats**: Words Of Power Learned / Unlocked on each word, Shouts Learned
-  on a shout's first word known, Shouts Unlocked on its first word
-  unlocked, Shouts Mastered when all are unlocked, Times Shouted.
 - **The Story Manager's new voice power event** (`NVPE`) isn't sent: what
   starts it and its members aren't published.
