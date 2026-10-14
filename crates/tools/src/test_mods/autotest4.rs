@@ -405,13 +405,13 @@ fn name(c: &mut Code, f: Arg) -> Arg {
 }
 
 /// A float as text (`Num`).
-fn num_of(c: &mut Code, f: Arg) -> Arg {
+pub(super) fn num_of(c: &mut Code, f: Arg) -> Arg {
     let v = c.temp("Float");
     c.cast(v.clone(), f);
     c.own("Num", "String", [v])
 }
 
-fn now(c: &mut Code) -> Arg {
+pub(super) fn now(c: &mut Code) -> Arg {
     c.global("Utility", "GetCurrentRealTime", [])
 }
 
@@ -422,11 +422,11 @@ fn since_start(c: &mut Code) -> Arg {
     num_of(c, dt)
 }
 
-fn health(c: &mut Code, a: &Arg) -> Arg {
+pub(super) fn health(c: &mut Code, a: &Arg) -> Arg {
     c.method("Actor", a.clone(), "GetActorValue", [string("Health")])
 }
 
-fn set_av(c: &mut Code, a: &Arg, av: &str, value: f32) {
+pub(super) fn set_av(c: &mut Code, a: &Arg, av: &str, value: f32) {
     c.method(
         "Actor",
         a.clone(),
@@ -444,7 +444,7 @@ fn force_av(c: &mut Code, a: &Arg, av: &str, value: f32) {
     );
 }
 
-fn restrain(c: &mut Code, a: &Arg) {
+pub(super) fn restrain(c: &mut Code, a: &Arg) {
     c.method("Actor", a.clone(), "SetRestrained", [true.into()]);
 }
 
@@ -458,7 +458,7 @@ fn cast(c: &mut Code, spell: &str, source: &Arg, target: &Arg) {
 }
 
 /// One placed (`Place`) and kept in a variable of its own.
-fn fresh(c: &mut Code, var: &str, base: &str, x: f32, y: f32) -> Arg {
+pub(super) fn fresh(c: &mut Code, var: &str, base: &str, x: f32, y: f32) -> Arg {
     let a = place(c, base, x, y);
     let v = c.local(var, "Actor");
     c.assign(v.clone(), a);
@@ -466,7 +466,7 @@ fn fresh(c: &mut Code, var: &str, base: &str, x: f32, y: f32) -> Arg {
 }
 
 /// `"text" + value` lines: a report's way of saying a number.
-fn put_num(c: &mut Code, r: &Arg, text: &str, value: Arg) {
+pub(super) fn put_num(c: &mut Code, r: &Arg, text: &str, value: Arg) {
     let n = num_of(c, value);
     put(c, r, text, n);
 }
@@ -640,7 +640,7 @@ fn log_trap() -> FunctionBuilder {
 }
 
 /// A test function's start: an empty report.
-fn report() -> (Code, Arg) {
+pub(super) fn report() -> (Code, Arg) {
     let mut c = Code::new("String");
     let r = c.local("r", "String");
     c.assign(r.clone(), string(""));
