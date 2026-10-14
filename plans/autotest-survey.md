@@ -134,6 +134,10 @@ Left out so far:
   value wasn't kept), `fCombatDetectionFleeingLostRemoveTime`,
   `fCombatLowFleeingTargetHitPercent` and the `fCombatDialogueFlee*`
   timers the roadmap's combat items wait on.
+- **Cloaks** (`magic.md`): Flame Cloak cast on the player (`Spell.Cast`),
+  NPCs held (`SetDontMove`) at 150, 200 and 250 units, one fighting the
+  player and one not: health each half second (the reach, the rate, who
+  it spares).
 - **Soul trap** (`soul-trap.md`): `Kill` then `TrapSoul` from the player
   on a placed wolf and a bandit, the player holding chosen gems; reading
   `GetItemCount` of the empty and filled forms after: which gem a white
