@@ -42,6 +42,7 @@ pub mod ep {
     pub const MOD_PICKPOCKET_CHANCE: u8 = 56;
     pub const CAN_PICKPOCKET_EQUIPPED_ITEM: u8 = 61;
     pub const SHOULD_APPLY_PLACED_ITEM: u8 = 84;
+    pub const MOD_FALLING_DAMAGE: u8 = 58;
     pub const MOD_LOCKPICK_SWEET_SPOT: u8 = 59;
     pub const MAKE_LOCKPICKS_UNBREAKABLE: u8 = 65;
     pub const MOD_ARMOR_RATING: u8 = 85;
