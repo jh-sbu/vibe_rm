@@ -194,6 +194,12 @@ Last in a run, or a run of their own:
   dialogue, but cannot drive the player menu unattended with vanilla
   Papyrus. Random-group behavior can be probed partially through Say(),
   but that alone does not establish player-menu pooling or prompt choice.
+  Vanilla cases to check by hand: whether Rorik offers rumors (his RUMO
+  topic is outside a top-level branch); which prompt Orgnar shows when the
+  MS13 rumor ("Have you heard any rumors lately?") is the one drawn, and
+  for a test topic whose FULL differs from the GMST when it is pooled with
+  others; and Geldis Sadri's "Haven't heard anything lately" line turning
+  up while his other rumors still qualify.
 - Rendering: image space, particles, impacts, decals, environment maps,
   grass, foot IK.
 - Weather looks: rain, snow, lightning, clouds, sky statics, auroras; sounds.

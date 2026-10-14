@@ -12,8 +12,10 @@ greying entries that aren't new).
 Response selection and the shared Rumors entry are described, with sources
 and unresolved arbitration rules, in [dialogue-selection.md](dialogue-selection.md).
 Entries retain the INFO selected when the list was built; clicking does not
-select a new random response. Rumors use a stable logical identity so that
-the last-clicked option remains selected when its underlying topic changes.
+select a new random response. The pooled Rumors entry uses a stable logical
+identity so that the last-clicked option remains selected when its
+underlying topic changes; RUMO topics among an INFO's linked choices keep
+their own.
 
 ## Unconfirmed: choices made
 
