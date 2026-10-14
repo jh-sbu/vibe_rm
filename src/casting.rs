@@ -50,7 +50,7 @@ const PROJ_CONE: u16 = 0x10;
 
 /// Units in a foot of an effect's area: Fireball's 15 feet are its
 /// explosion's 320 units.
-const UNITS_PER_FOOT: f32 = 320.0 / 15.0;
+pub(crate) const UNITS_PER_FOOT: f32 = 320.0 / 15.0;
 /// How often a concentration spell lands on what it reaches (seconds).
 const CONCENTRATION_TICK: f32 = 0.25;
 /// Contact spells' reach, and target actor spells' without a range.

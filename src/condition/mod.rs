@@ -334,10 +334,18 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         543 => b(e.scripts.quests.get(&p1).is_some_and(|q| q.completed)), // GetQuestCompleted
         72 => b(subj_base == Some(p1) || subject == Some(p1)),         // GetIsID
         136 => b(subject == Some(p1)),                                 // GetIsReference
+        // IsHostileToActor: either fights the other. With no actor (a
+        // magic effect's: cloaks' damage), the effect's caster.
+        719 => {
+            let other = if p1.is_null() { ctx.target } else { Some(p1) };
+            b(subject.zip(other).is_some_and(|(s, o)| {
+                e.combat_target(s) == Some(o) || e.combat_target(o) == Some(s)
+            }))
+        }
         70 => b(subj_base.map(|n| e.npc_is_female(n) as u32) == Some(c.p1)), // GetIsSex
-        131 => b(e.npc_is_female(FormId(0x7)) as u32 == c.p1),         // GetPCIsSex
-        69 => b(subj_base.and_then(|n| e.npc_race(n)) == Some(p1)),    // GetIsRace
-        130 => b(e.npc_race(FormId(0x7)) == Some(p1)),                 // GetPCIsRace
+        131 => b(e.npc_is_female(FormId(0x7)) as u32 == c.p1),               // GetPCIsSex
+        69 => b(subj_base.and_then(|n| e.npc_race(n)) == Some(p1)),          // GetIsRace
+        130 => b(e.npc_race(FormId(0x7)) == Some(p1)),                       // GetPCIsRace
         // Rank -1 (potential followers' `CurrentFollowerFaction`) isn't membership.
         71 => b(subject.is_some_and(|s| e.npc_factions(s).iter().any(|&(f, r)| f == p1 && r >= 0))), // GetInFaction
         73 => Some(

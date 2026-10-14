@@ -181,3 +181,12 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   it lasts on: in the game Bound Sword's effect was still on 5 s after an
   iron sword took its hand (`test-mod autotest4`). Bound Bow's arrows come
   from its effect's own script.
+- **Cloaks** (archetype 35; UESP's cloak pages: "8 pts in 10 ft", one
+  cloak at a time, "smart"): the cloak's magnitude is its reach in feet
+  (as areas are), and once a second from the start it gives its related
+  spell (`Flames`: 8 a second for 1 s) to every living actor (and the
+  player) that near the wearer; that spell's own `IsHostileToActor`
+  condition, with no actor given, is taken against the caster (the
+  wearer), and hostile as "either fights the other". The cloak's own
+  conditions run on the wearer as other effects' do (Flame Cloak's "in
+  combat, or the player").
