@@ -1043,8 +1043,8 @@ game each piece unlocks.
      "don't slow you down"), fast travel refused over-encumbered (with the
      map), followers' "can't carry any more"
    - Perks, more: staggers,
-     recovering arrows, bow zoom, Ignore Running During Detection, lockpicks'
-     starting arc and key rewards; refunds and the Legendary reset; NPCs' skills advancing
+     recovering arrows, bow zoom, Ignore Running During Detection, key
+     rewards; refunds and the Legendary reset; NPCs' skills advancing
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; doors
      opened by actors remembered; looping sounds of enabled references checked

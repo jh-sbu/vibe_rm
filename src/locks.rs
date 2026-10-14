@@ -156,6 +156,17 @@ impl Engine {
         else {
             return;
         };
+        // Quick Hands: "Mod Lockpicking Crime Chance" (0), picked unnoticed.
+        let chance = self.perk_entry_point(
+            crate::perks::ep::MOD_LOCKPICKING_CRIME_CHANCE,
+            PLAYER_REF,
+            &[Some(lock)],
+            1.0,
+        );
+        if chance < 1.0 && (self.rand() % 10_000) as f32 / 10_000.0 >= chance {
+            log::info!("picking {lock}, owned by {owner}, unnoticed");
+            return;
+        }
         let is_faction = self.lo.tag_of(owner).is_some_and(|t| t.0 == *b"FACT");
         let victim = if is_faction {
             None
@@ -206,8 +217,22 @@ impl Engine {
         let durability = [2.0, 1.0, 0.75, 0.5, 0.25][difficulty - 1] * (1.0 + 0.5 * skill / 100.0);
         let room = 90.0 - sweet / 2.0;
         let centre = (self.rand() % 10_000) as f32 / 10_000.0 * 2.0 * room - room;
+        // Locksmith: "Set Lockpick Starting Arc" (45): the pick starts
+        // somewhere that wide around the sweet spot's middle, not straight up.
+        let arc = self.perk_entry_point(
+            crate::perks::ep::SET_LOCKPICK_STARTING_ARC,
+            PLAYER_REF,
+            &[Some(lock)],
+            180.0,
+        );
+        let pick = if arc < 180.0 {
+            let off = (self.rand() % 10_000) as f32 / 10_000.0 * arc - arc / 2.0;
+            (centre + off).clamp(-90.0, 90.0)
+        } else {
+            0.0
+        };
         log::info!(
-            "picking {lock} (difficulty {difficulty}, skill {skill:.0}): sweet spot {sweet:.1} deg at {centre:.1}, partial {partial:.1}, pick lasts {durability:.2} s"
+            "picking {lock} (difficulty {difficulty}, skill {skill:.0}): sweet spot {sweet:.1} deg at {centre:.1}, partial {partial:.1}, pick lasts {durability:.2} s, starts at {pick:.1}"
         );
         self.lockpick = Some(Lockpick {
             lock,
@@ -217,7 +242,7 @@ impl Engine {
             sweet,
             partial,
             durability,
-            pick: 0.0,
+            pick,
             turn: 0.0,
             strain: 0.0,
             turning: false,
