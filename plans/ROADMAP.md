@@ -1006,7 +1006,6 @@ game each piece unlocks.
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
    - Triggers: water and lava damage volumes
-   - Actor values: temporary (magic) modifiers
    - Magic, more: detect life, telekinesis, soul trap, cloaks, slow time;
      taper, area, addictions, potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target); bound weapons kept
@@ -1029,7 +1028,6 @@ game each piece unlocks.
      (`fCombatDialogueFlee*`); the group strength timer
      (`fCombatGroupCombatStrengthUpdateTime`); impacts' hazards (`NAM2`),
      second sound (`NAM1`) and results (bounce, impale, stick)
-   - Lockpicking: enchantments and potions, "Auto Attempt"
    - Perks, more: carry weight, falling damage, armor weight, staggers,
      recovering arrows, bow zoom, Ignore Running During Detection, lockpicks'
      starting arc and key rewards, Green Thumb on harvests, Light Foot on
