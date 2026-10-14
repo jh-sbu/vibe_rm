@@ -45,6 +45,8 @@ pub mod ep {
     pub const MOD_FALLING_DAMAGE: u8 = 58;
     pub const MOD_ARMOR_WEIGHT: u8 = 32;
     pub const MOD_INGREDIENTS_HARVESTED: u8 = 87;
+    pub const SET_LOCKPICK_STARTING_ARC: u8 = 63;
+    pub const MOD_LOCKPICKING_CRIME_CHANCE: u8 = 86;
     pub const MOD_LOCKPICK_SWEET_SPOT: u8 = 59;
     pub const MAKE_LOCKPICKS_UNBREAKABLE: u8 = 65;
     pub const MOD_ARMOR_RATING: u8 = 85;

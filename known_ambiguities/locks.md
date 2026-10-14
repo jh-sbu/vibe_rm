@@ -64,7 +64,12 @@ and location pages, CK wiki descriptions) and the game's data files.
 
 1. **Lockpicking.** How the turn falls off across the partial zone, the turning
    speed, and whether strain carries over between attempts with one pick are
-   guesses. Leveled locks use their authored level.
+   guesses. Leveled locks use their authored level. Locksmith's "Set
+   Lockpick Starting Arc" (45) is read as the pick starting somewhere in a
+   45° arc around the sweet spot's middle (UESP: "starts close to the lock
+   opening position"); without it the pick starts straight up. Quick Hands'
+   "Mod Lockpicking Crime Chance" (set to 0) is taken as the chance (from 1)
+   that picking an owned lock is a crime at all.
 2. **Which doors a package locks.** "Home" is a guess: the sleep location's cell.
    The game may use ownership (`XOWN` on doors and cells), the location
    (`LCTN`), or the package's own location.
