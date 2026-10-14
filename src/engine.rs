@@ -1392,6 +1392,7 @@ impl Engine {
         for (d, _) in descs {
             self.inventories.entry(d.ref_id).or_insert(d.inventory);
         }
+        let runtimes_ids: Vec<FormId> = runtimes.iter().map(|a| a.ref_id).collect();
         // Placed as corpses ("Starts Dead"): they lie as ragdolls from the start.
         let corpses: Vec<FormId> = runtimes
             .iter()
@@ -1409,10 +1410,15 @@ impl Engine {
                 .extend(runtimes.iter().filter_map(|a| a.capsule));
             rt.actors.extend(runtimes);
         }
+        let living: Vec<FormId> = runtimes_ids
+            .into_iter()
+            .filter(|r| !corpses.contains(r))
+            .collect();
         for r in corpses {
             let lying = self.world_state.body_poses.get(&r).cloned();
             self.kill_actor_lying(r, lying);
         }
+        self.carry_unloaded_damage(&living);
     }
 
     /// Pick the idle-tree events for getting on and off each furniture marker in
