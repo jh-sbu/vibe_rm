@@ -4,7 +4,7 @@
 //! prompt is their own verb (`RNAM`: "Harvest", "Catch"...). A harvested
 //! plant shows its harvested model (its switch nodes on their second child)
 //! and grows back after `iHoursToRespawnCell`. Taking from someone else's
-//! is stealing. Choices: `known_ambiguities/harvest.md`.
+//! is stealing. Green Thumb doubles the produce. Choices: `known_ambiguities/harvest.md`.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -94,7 +94,17 @@ impl Engine {
             self.play_sound(s, at);
         }
         let before: Vec<(FormId, i32)> = self.inventory_mut(PLAYER_REF).items.clone();
-        self.add_item(PLAYER_REF, f.produce, 1);
+        // Green Thumb: "Mod Ingredients Harvested" sets how many (2).
+        let count = self
+            .perk_entry_point(
+                crate::perks::ep::MOD_INGREDIENTS_HARVESTED,
+                PLAYER_REF,
+                &[Some(base)],
+                1.0,
+            )
+            .round()
+            .max(1.0) as i32;
+        self.add_item(PLAYER_REF, f.produce, count);
         // What the produce (a leveled list, perhaps) came to.
         let after = self.inventory_mut(PLAYER_REF).items.clone();
         for (item, n) in after {
