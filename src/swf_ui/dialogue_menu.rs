@@ -13,6 +13,7 @@
 
 use ui_swf::{GameCall, Menu, UiSwf, Value};
 
+use crate::dialogue::OptionId;
 use crate::engine::Engine;
 use esp::FormId;
 
@@ -30,10 +31,10 @@ pub(super) struct DialogueMenu {
     line: Option<f64>,
     /// The topics last listed, and whether they're up now (until one is
     /// clicked or a line starts).
-    topics: Vec<FormId>,
+    topics: Vec<OptionId>,
     listed: bool,
     /// The topic last clicked, to keep selected when the list comes back.
-    clicked: Option<FormId>,
+    clicked: Option<OptionId>,
     /// Whether the menu was told a voice is ready since the last click: it
     /// takes no clicks until it has been.
     ready: bool,
@@ -103,7 +104,7 @@ impl DialogueMenu {
         if c.current.is_some() || c.ending || self.listed {
             return;
         }
-        let topics: Vec<FormId> = c.options.iter().map(|(t, _, _)| t.id).collect();
+        let topics: Vec<OptionId> = c.options.iter().map(|o| o.id()).collect();
         let selected = self
             .clicked
             .and_then(|id| topics.iter().position(|&t| t == id))
@@ -112,7 +113,7 @@ impl DialogueMenu {
             .options
             .iter()
             .enumerate()
-            .flat_map(|(i, (_, prompt, new))| [text(prompt), Value::Bool(*new), num(i as f32)])
+            .flat_map(|(i, o)| [text(&o.prompt), Value::Bool(o.new), num(i as f32)])
             .collect();
         list.push(num(selected));
         self.menu.callback("PopulateDialogueList", &list);
@@ -141,7 +142,7 @@ impl DialogueMenu {
                         .conversation
                         .as_ref()
                         .and_then(|c| c.options.get(i))
-                        .map(|(t, _, _)| t.id);
+                        .map(|o| o.id());
                     self.listed = false;
                     self.ready = false;
                     engine.choose_topic(i);

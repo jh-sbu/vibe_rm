@@ -9,6 +9,12 @@ list's entries as `text, topicIsNew, topicIndex` triples ending with the topic
 to select, -1 for none; `ALLOW_PROGRESS_DELAY` 750 ms; `DialogueCenteredList`
 greying entries that aren't new).
 
+Response selection and the shared Rumors entry are described, with sources
+and unresolved arbitration rules, in [dialogue-selection.md](dialogue-selection.md).
+Entries retain the INFO selected when the list was built; clicking does not
+select a new random response. Rumors use a stable logical identity so that
+the last-clicked option remains selected when its underlying topic changes.
+
 ## Unconfirmed: choices made
 
 - **When it is told what.** A line starting: `ShowDialogueText` and at once

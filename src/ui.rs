@@ -561,7 +561,7 @@ impl Ui {
             return;
         }
         let (hover, clicked) = ctx.input(|i| (i.pointer.hover_pos(), i.pointer.primary_clicked()));
-        let mut entries: Vec<&str> = c.options.iter().map(|o| o.1.as_str()).collect();
+        let mut entries: Vec<&str> = c.options.iter().map(|o| o.prompt.as_str()).collect();
         entries.push("Goodbye.");
         for (i, text) in entries.iter().enumerate() {
             let r = shadow(Pos2::new(x, y), text, 20.0, Color32::from_gray(225));
