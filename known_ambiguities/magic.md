@@ -51,15 +51,26 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   100 (`fPlayerMaxResistance`, 85, the game's value). The extra over the
   magnitude is the effect's taper (below): 4.9 of 50, Fireball's 7.9 of 40.
 
-## Open (choices made here): taper
+## Confirmed in the game (`test-mod taper`, 2026-10-13)
 
 - **Taper** (`MGEF` `DATA` 0x1C weight, 0x34 curve, 0x38 duration): after an
-  instant value change the value goes on changing at weight x magnitude a
-  second, falling as `(1 - t / duration) ^ curve` to nothing at the
-  duration: `magnitude x weight x duration / (curve + 1)` in all. Fire
-  damage's (0.3, 2, 1 s; the area one's 2 s) gives 5 of 50 and 8 of 40,
-  as the game took 4.9 and 7.9; that reading of the fields is ours. Lasting
-  effects' taper (after they end) isn't done.
+  instant value change, and after a lasting one ends, the value goes on
+  changing at weight x magnitude a second, falling as `(1 - t / duration) ^
+  curve`. The game applies it every frame (60 a second) at the frame's end
+  rate, so the total is a little under `magnitude x weight x duration /
+  (curve + 1)`: for 50 points, Firebolt's (0.3, 2, 1 s) 4.875, Fireball's
+  (2 s) 9.875, Fire Storm's (4 s) 19.875, a trap poison's (0.2, 2, 1 s) 3.25,
+  Storm Call's bolt (1, 1, 1 s) 24.583, all to the thousandth; Healing
+  Hands' (1, 0, 0.3 s) healed 15 more; Lightning Bolt's (0.01, 0, 0.1 s) 0.05.
+  Frost has none. Fire at 10 a second for 3 s took 30.886: its lasting
+  change lands a fraction each frame (not in whole points) and tapers after.
+
+## Open (choices made here): taper
+
+- Whether an absorb's gain to the caster tapers too, and the second actor
+  value of a dual effect (Ice Spike's stamina, Lightning Bolt's magicka:
+  both read 0 lost, regenerated too fast to tell); taken as tapering as the primary. The
+  absorb, frost rune, trap fire and spriggan swarm copies never landed.
 - **Absorb health** of 20 took 20 from the target and gave the caster 20.
 - **Calm, fear, frenzy, rally** held aggression -1 (Calm), confidence 0
   (Fear), aggression 3 (Fury, whose other effect sets confidence 4) and

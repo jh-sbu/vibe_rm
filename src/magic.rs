@@ -336,8 +336,6 @@ pub struct ActiveEffect {
     pub active: bool,
     /// What it holds on its actor values (primary, secondary) to give back.
     pub held: [f32; 2],
-    /// Per-second change not yet applied (applied in whole points).
-    carry: f32,
     /// Its magic effect has scripts (running on `ObjectId::Effect(id)`).
     pub scripted: bool,
     pub done: bool,
@@ -570,7 +568,6 @@ impl Engine {
                 elapsed: 0.0,
                 active: false,
                 held: [0.0; 2],
-                carry: 0.0,
                 scripted: !mgef.scripts.is_empty(),
                 done: false,
                 quiet,
@@ -839,13 +836,15 @@ impl Engine {
     /// Change an actor value by `amount` now (damage when negative): health
     /// through the combat damage path (a kill is the caster's, unless it
     /// landed quietly), absorbing gives the caster what the target lost.
-    /// Tapers run down: an instant value change goes on at `taper weight x
-    /// magnitude` a second, falling as `(1 - t / duration) ^ curve` to nothing
-    /// at the taper duration, so `magnitude x weight x duration / (curve + 1)`
-    /// in all. The game's fire spells lost that much more than their
-    /// magnitude: 50 points with Firebolt's taper (0.3, 2, 1 s) 54.9,
-    /// Fireball's 40 (0.3, 2, 2 s) 47.9 (`test-mod autotest4`); the reading
-    /// of the fields is ours.
+    /// Tapers run down: after an instant value change, or a lasting one's
+    /// end, the value goes on changing at `taper weight x magnitude` a
+    /// second, falling as `(1 - t / duration) ^ curve` to nothing at the
+    /// taper duration: `magnitude x weight x duration / (curve + 1)` in all,
+    /// a little less as it is applied each frame at the frame's end rate.
+    /// In the game (`test-mod taper`) 50 points of fire with (0.3, 2, 1 s)
+    /// took 4.875 more, with 2 s 9.875 and 4 s 19.875; poison with (0.2, 2,
+    /// 1 s) 3.25; Storm Call's bolt (1, 1, 1 s) 24.583; a heal (1, 0, 0.3 s)
+    /// 15: those sums at 60 frames a second. Frost has none.
     fn update_tapers(&mut self, dt: f32) {
         if self.magic.tapers.is_empty() || dt <= 0.0 {
             return;
@@ -860,7 +859,7 @@ impl Engine {
                 continue;
             }
             let end = (elapsed + dt).min(seconds);
-            let amount = taper_amount(rate, curve, seconds, elapsed, end);
+            let amount = taper_step(rate, curve, seconds, elapsed, end);
             self.change_value(&x, &mgef, amount, false);
             if end < seconds {
                 keep.push((x, mgef, rate, end));
@@ -977,11 +976,6 @@ impl Engine {
         let Some(mgef) = self.magic_effect(x.effect) else {
             return;
         };
-        // What per-second change is left over lands now.
-        if x.carry != 0.0 {
-            self.magic.effects[i].carry = 0.0;
-            self.change_value(&x, &mgef, x.carry, false);
-        }
         if mgef.archetype == archetype::PEAK_VALUE_MODIFIER {
             self.release(i, &mgef);
             self.recompute_peaks(x.target, &mgef);
@@ -1125,20 +1119,29 @@ impl Engine {
                     archetype::VALUE_MODIFIER | archetype::DUAL_VALUE_MODIFIER | archetype::ABSORB
                 );
             let mut apply = None;
+            let mut taper = None;
             if per_second {
                 let sign = if mgef.has(flags::DETRIMENTAL) {
                     -1.0
                 } else {
                     1.0
                 };
-                x.carry += sign * x.magnitude * step;
-                if x.carry.abs() >= 1.0 || ends {
-                    let amount = std::mem::take(&mut x.carry);
-                    apply = Some((x.clone(), amount));
+                // Every frame, fractions too (the game's fire over time
+                // wore health down 3.0 a quarter second at 10 a second:
+                // `test-mod taper`).
+                apply = Some((x.clone(), sign * x.magnitude * step));
+                // Its taper follows it (it went on after: about the 1 that
+                // 10 a second's makes).
+                let [weight, _, seconds] = mgef.taper;
+                if ends && weight > 0.0 && seconds > 0.0 {
+                    taper = Some((x.clone(), sign * x.magnitude * weight));
                 }
             }
             if let Some((snapshot, amount)) = apply {
                 self.change_value(&snapshot, &mgef, amount, false);
+            }
+            if let Some((snapshot, rate)) = taper {
+                self.magic.tapers.push((snapshot, mgef.clone(), rate, 0.0));
             }
             if ends {
                 self.finish_magic_effect(id);
@@ -1351,11 +1354,11 @@ pub struct EffectView {
     pub effect_archetype: u32,
 }
 
-/// A taper's change between `from` and `to` seconds after it began: the
-/// integral of `rate x (1 - t / seconds) ^ curve`.
-fn taper_amount(rate: f32, curve: f32, seconds: f32, from: f32, to: f32) -> f32 {
-    let left = |t: f32| (1.0 - (t / seconds).min(1.0)).powf(curve + 1.0);
-    rate * seconds / (curve + 1.0) * (left(from) - left(to))
+/// A taper's change over a frame from `from` to `to` seconds after it
+/// began: `rate x (1 - t / seconds) ^ curve` at the frame's end, for its
+/// length.
+fn taper_step(rate: f32, curve: f32, seconds: f32, from: f32, to: f32) -> f32 {
+    rate * (1.0 - (to / seconds).min(1.0)).powf(curve) * (to - from)
 }
 
 /// Whether a projectile (`PROJ`) has an explosion (`DATA` 0x24).
@@ -1371,25 +1374,30 @@ fn projectile_explodes(lo: &esp::LoadOrder, proj: FormId) -> bool {
 
 #[cfg(test)]
 mod taper_tests {
-    use super::taper_amount;
+    use super::taper_step;
 
+    /// At 60 frames a second, what the game added (`test-mod taper`).
     #[test]
-    fn tapers_add_the_measured_burn() {
-        // Firebolt's fire damage taper on 50 points, Fireball's on 40.
+    fn tapers_add_the_measured_amounts() {
         let total = |m: f32, w: f32, c: f32, d: f32| {
-            (0..100)
-                .map(|i| {
-                    taper_amount(
-                        m * w,
-                        c,
-                        d,
-                        d * i as f32 / 100.0,
-                        d * (i + 1) as f32 / 100.0,
-                    )
-                })
+            let frames = (d * 60.0).round() as usize;
+            (0..frames)
+                .map(|i| taper_step(m * w, c, d, i as f32 / 60.0, (i + 1) as f32 / 60.0))
                 .sum::<f32>()
         };
-        assert!((total(50.0, 0.3, 2.0, 1.0) - 5.0).abs() < 1e-3);
-        assert!((total(40.0, 0.3, 2.0, 2.0) - 8.0).abs() < 1e-3);
+        for (m, w, c, d, game) in [
+            (50.0, 0.3, 2.0, 1.0, 4.875),
+            (50.0, 0.3, 2.0, 2.0, 9.875),
+            (50.0, 0.3, 2.0, 4.0, 19.875),
+            (50.0, 0.2, 2.0, 1.0, 3.25),
+            (50.0, 1.0, 1.0, 1.0, 24.583),
+            (50.0, 1.0, 0.0, 0.3, 15.0),
+        ] {
+            let t = total(m, w, c, d);
+            assert!(
+                (t - game).abs() < 0.01,
+                "{m} {w} {c} {d}: {t} against {game}"
+            );
+        }
     }
 }
