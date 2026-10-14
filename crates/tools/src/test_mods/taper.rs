@@ -29,7 +29,14 @@
 //! | absorb health (a draugr axe's) | 0.2, 2, 1 s | 3.3, given? |
 //! | frost rune (health, stamina) | 0.3, 2, 3 s | 15 |
 //!
-//! Not yet run in the game.
+//! Run 2026-10-13: every landing effect matched the reading summed per frame
+//! at 60 fps (the frame's end rate): fire 4.875, fire area 9.875, Fire
+//! Storm 19.875, trap poison 3.25, Storm Call 24.583, heal 15 (65 healed),
+//! shock 0.05, frost 0. Fire 10 a second for 3 s took 30.886: 30 applied a
+//! fraction a frame, then a 1 s taper after. Frost's stamina and shock's
+//! magicka read 0 lost (regeneration hides them). The absorb, trap fire,
+//! frost rune and swarm copies never landed (no change in 6 s), so an
+//! absorb's gain is still untested.
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, write_plugin};
