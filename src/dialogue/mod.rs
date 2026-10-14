@@ -92,17 +92,33 @@ mod tests {
     #[test]
     fn rumor_prompt_follows_selected_info_and_identity_survives_topic_changes() {
         let (topic, info) = candidate(1, 11, info_flags::RANDOM);
-        let default = DialogueOption::new(topic, info, true, "Localized rumors?");
+        let default = DialogueOption {
+            pooled: true,
+            ..DialogueOption::new(topic, info, true, "Localized rumors?")
+        };
         assert_eq!(default.prompt, "Localized rumors?");
         let (mut topic, mut info) = candidate(2, 21, info_flags::RANDOM);
         topic.prompt = "Topic prompt".into();
         info.prompt = Some("Give me the latest gossip.".into());
-        let selected = DialogueOption::new(topic, info, false, "Localized rumors?");
+        let selected = DialogueOption {
+            pooled: true,
+            ..DialogueOption::new(topic, info, false, "Localized rumors?")
+        };
         assert_eq!(selected.prompt, "Give me the latest gossip.");
         assert_eq!(selected.info.id, FormId(21));
         assert_eq!(selected.topic.quest, FormId(102));
         assert!(!selected.new);
         assert_eq!(default.id(), selected.id());
+    }
+
+    #[test]
+    fn linked_rumor_topics_keep_separate_identities() {
+        let make = |id| {
+            let (topic, info) = candidate(id, id + 10, info_flags::RANDOM);
+            DialogueOption::new(topic, info, true, "Rumors?")
+        };
+        assert_eq!(make(1).id(), OptionId::Topic(FormId(1)));
+        assert_ne!(make(1).id(), make(2).id());
     }
 
     #[test]
@@ -159,7 +175,8 @@ pub struct Info {
     pub end_fragment: Option<String>,
 }
 
-/// Rumors share one menu entry even when the chosen topic changes quests.
+/// The pooled rumor entry keeps one identity even when the chosen topic
+/// changes quests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionId {
     Topic(FormId),
@@ -173,11 +190,14 @@ pub struct DialogueOption {
     pub info: Info,
     pub prompt: String,
     pub new: bool,
+    /// The top-level rumor entry pooled across quests, as opposed to a RUMO
+    /// topic listed on its own among an INFO's linked choices.
+    pub pooled: bool,
 }
 
 impl DialogueOption {
     pub fn id(&self) -> OptionId {
-        if self.topic.subtype == *b"RUMO" {
+        if self.pooled {
             OptionId::Rumors
         } else {
             OptionId::Topic(self.topic.id)
@@ -197,6 +217,7 @@ impl DialogueOption {
             info,
             prompt,
             new,
+            pooled: false,
         }
     }
 }
@@ -529,8 +550,16 @@ impl Engine {
     }
 
     /// One RUMO entry across running quests, rather than one entry per branch.
+    /// Only topics in a top-level branch take part: Rorik's patrol comments
+    /// are RUMO in a branch that isn't, and he offers no rumors in the game.
     fn rumor_option(&mut self, npc_ref: FormId) -> Option<DialogueOption> {
         let mut topics = self.topics_of_subtype(b"RUMO");
+        topics.retain(|t| {
+            self.lo
+                .get(t.branch)
+                .and_then(|r| r.get(b"DNAM").and_then(|d| d.first()).copied())
+                .is_some_and(|f| f & 0x1 != 0)
+        });
         let priority = |t: &Topic| {
             self.lo
                 .get(t.quest)
@@ -548,8 +577,10 @@ impl Engine {
                     .map(|i| (t.clone(), i)),
             );
         }
-        self.select_response(infos)
-            .map(|(t, i)| self.dialogue_option(t, i))
+        self.select_response(infos).map(|(t, i)| DialogueOption {
+            pooled: true,
+            ..self.dialogue_option(t, i)
+        })
     }
 
     /// Topics the player can choose at the top level.
