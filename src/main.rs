@@ -46,6 +46,7 @@ mod script;
 mod shouts;
 mod skills;
 mod sleep;
+mod soul_trap;
 mod spells;
 mod stats;
 mod story;
