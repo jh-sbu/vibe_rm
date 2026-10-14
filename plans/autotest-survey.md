@@ -85,6 +85,13 @@ script), perk ranks, near aliases' reach (ALNT), item pickup ownership and
 looping dialogue (dialogue records), the flee check's timing and ending a
 flee (tier 3's statistics), and the "do all before repeating" node flags.
 
+Its run (2026-10-13) left the magic conditions' scale and recheck,
+`HasShout`, the ability section's effect, the player's magnitude perks,
+health regeneration, friendly hits, scene completion, the area radius and
+the traps unsettled (the tests, not the game, at fault: see `autotest4`'s
+module doc). `test-mod autotest5` rebuilds them, with `taper`'s open ends
+(absorbs' gain, dual effects' second values, the copies that never landed).
+
 - **Story manager** (`story-manager.md`): which actor node and quest event
   conditions run on (the file's open question); members' order; reset
   hours; max running; `SendStoryEventAndWait`; item pickup (AIPL) owner and

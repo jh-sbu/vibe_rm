@@ -45,7 +45,7 @@ use papyrus::build::{Arg, FunctionBuilder, ScriptBuilder, auto_var, id, string};
 use papyrus::pex::op;
 
 use super::autotest2::{Npc, Vanilla, line, place_fn, put, remove};
-use super::autotest4::{fresh, health, now, put_num, report, restrain, set_av};
+use super::autotest4::{fresh, now, put_num, report, restrain, set_av};
 use super::records::{self, Effect, spell};
 use super::script::{Code, num, on_update};
 use super::{TestMod, own};
@@ -199,13 +199,15 @@ const CASES: &[Case] = &[
     ),
 ];
 
-/// `Timeline(Spell sp, Actor caster, Actor t, String second, Bool logCaster)`:
-/// casts `sp` and logs what it does.
-fn timeline() -> FunctionBuilder {
+/// `Timeline(Spell sp, Actor caster, Actor t, String av, String second, Bool
+/// logCaster)`: casts `sp` and logs what it does to `t`'s `av` (and
+/// `second`, and the caster's `av` with `logCaster`).
+pub(super) fn timeline() -> FunctionBuilder {
     let mut c = Code::new("String");
     let sp = c.param("sp", "Spell");
     let caster = c.param("caster", "Actor");
     let t = c.param("t", "Actor");
+    let av = c.param("av", "String");
     let second = c.param("second", "String");
     let log_caster = c.param("logCaster", "Bool");
     let r = c.local("r", "String");
@@ -215,16 +217,19 @@ fn timeline() -> FunctionBuilder {
         c.assign(l.clone(), v);
         l
     };
-    let h = health(&mut c, &t);
+    let value = |c: &mut Code, a: &Arg, av: &Arg| {
+        c.method("Actor", a.clone(), "GetActorValue", [av.clone()])
+    };
+    let h = value(&mut c, &t, &av);
     let h0 = keep(&mut c, "h0", h);
-    let s = c.method("Actor", t.clone(), "GetActorValue", [second.clone()]);
+    let s = value(&mut c, &t, &second);
     let s0 = keep(&mut c, "s0", s);
-    let hc = health(&mut c, &caster);
+    let hc = value(&mut c, &caster, &av);
     let c0 = keep(&mut c, "c0", hc);
     let t0 = now(&mut c);
     let start = keep(&mut c, "start", t0);
     c.method("Spell", sp, "Cast", [caster.clone(), t.clone()]);
-    // The impact: the first change of the target's health.
+    // The impact: the first change of the target's value.
     let (top, hit, missed) = (c.label(), c.label(), c.label());
     c.bind(top);
     c.wait(0.05);
@@ -232,7 +237,7 @@ fn timeline() -> FunctionBuilder {
     let dt = c.calc(op::FSUB, "Float", tn, start.clone());
     let over = c.calc(op::CMP_GT, "Bool", dt, 6.0f32.into());
     c.jmpt(over, missed);
-    let hn = health(&mut c, &t);
+    let hn = value(&mut c, &t, &av);
     let same = c.calc(op::CMP_EQ, "Bool", hn, h0.clone());
     c.jmpt(same, top);
     c.jmp(hit);
@@ -243,13 +248,14 @@ fn timeline() -> FunctionBuilder {
     let ti = now(&mut c);
     let at = c.calc(op::FSUB, "Float", ti, start);
     put_num(&mut c, &r, "impact after ", at);
-    line(&mut c, &r, " s; health lost from then on, every 0.25 s:");
+    put(&mut c, &r, " s; ", av.clone());
+    line(&mut c, &r, " lost from then on, every 0.25 s:");
     let samples = (SPAN / 0.25) as i32;
     let i = c.local("i", "Int");
     c.assign(i.clone(), 0.into());
     let (top, done) = (c.label(), c.label());
     c.bind(top);
-    let lost = health(&mut c, &t);
+    let lost = value(&mut c, &t, &av);
     let lost = c.calc(op::FSUB, "Float", h0.clone(), lost);
     put_num(&mut c, &r, " ", lost);
     let enough = c.calc(op::CMP_GE, "Bool", i.clone(), samples.into());
@@ -258,13 +264,13 @@ fn timeline() -> FunctionBuilder {
     c.wait(0.25);
     c.jmp(top);
     c.bind(done);
-    let s1 = c.method("Actor", t.clone(), "GetActorValue", [second.clone()]);
+    let s1 = value(&mut c, &t, &second);
     let ds = c.calc(op::FSUB, "Float", s0, s1);
     put(&mut c, &r, "; ", second);
     put_num(&mut c, &r, " lost ", ds);
     let skip = c.label();
     c.jmpf(log_caster, skip);
-    let hc = health(&mut c, &caster);
+    let hc = value(&mut c, &caster, &av);
     let gained = c.calc(op::FSUB, "Float", hc, c0);
     put_num(&mut c, &r, "; the caster gained ", gained);
     c.bind(skip);
@@ -328,6 +334,7 @@ fn test(case: &Case, index: usize) -> FunctionBuilder {
             auto_var(&format!("Spell{index}")),
             caster.clone(),
             t.clone(),
+            string("Health"),
             string(case.second),
             case.caster.into(),
         ],

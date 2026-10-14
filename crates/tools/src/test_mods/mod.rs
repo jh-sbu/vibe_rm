@@ -18,6 +18,7 @@ mod autotest;
 mod autotest2;
 mod autotest3;
 mod autotest4;
+mod autotest5;
 mod pex;
 mod records;
 pub mod results;
@@ -31,6 +32,7 @@ pub const NAMES: &[&str] = &[
     "autotest2",
     "autotest3",
     "autotest4",
+    "autotest5",
     "pex",
     "taper",
     "venv",
@@ -55,6 +57,7 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
         "autotest2" => autotest2::build(lo),
         "autotest3" => autotest3::build(lo),
         "autotest4" => autotest4::build(lo),
+        "autotest5" => autotest5::build(lo),
         "pex" => pex::build(),
         "taper" => taper::build(lo),
         "venv" => Ok(TestMod {
