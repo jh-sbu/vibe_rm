@@ -2415,6 +2415,9 @@ impl Engine {
         let sneak_speed = self.player_sneak_speed();
         self.player
             .update(&mut self.physics, &cam, input, sneak_speed, dt);
+        if let Some(h) = self.player.landed_from {
+            self.player_landed(h);
+        }
         let stride = (self.player.position - before).truncate().length();
         self.player.moving = dt > 0.0 && stride / dt > 1.0;
         self.player.running = self.player.moving && (run || sprint);

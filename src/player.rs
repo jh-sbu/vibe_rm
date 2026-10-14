@@ -87,7 +87,17 @@ pub struct Player {
     pub moving: bool,
     pub running: bool,
     pub sprinting: bool,
+    /// The highest the capsule has been since it left the ground.
+    fall_top: Option<f32>,
+    /// How far it came down, if it landed this update.
+    pub landed_from: Option<f32>,
+    /// Where the last update left it (a jump from there is a teleport).
+    last: Vec3,
 }
+
+/// Moved further than this between updates, the player was put somewhere
+/// (a load door, `MoveTo`): a fall in progress doesn't count from before.
+const TELEPORT: f32 = 256.0;
 
 pub const WALK_SPEED: f32 = 110.0;
 pub const RUN_SPEED: f32 = 300.0;
@@ -112,6 +122,9 @@ impl Player {
             moving: false,
             running: false,
             sprinting: false,
+            fall_top: None,
+            landed_from: None,
+            last: eye - Vec3::Z * EYE_OFFSET,
         }
     }
 
@@ -129,6 +142,10 @@ impl Player {
         dt: f32,
     ) {
         self.jumped = false;
+        self.landed_from = None;
+        if self.noclip || self.position.distance(self.last) > TELEPORT {
+            self.fall_top = None;
+        }
         let crouch = if self.sneaking && !self.noclip {
             1.0
         } else {
@@ -145,6 +162,7 @@ impl Player {
                 + Vec3::Z * input.up;
             self.position += v.normalize_or_zero() * speed * dt;
             self.vertical_velocity = 0.0;
+            self.last = self.position;
             return;
         }
         let fwd = Vec3::new(camera.yaw.sin(), camera.yaw.cos(), 0.0);
@@ -175,5 +193,12 @@ impl Player {
         }
         self.grounded = grounded;
         self.position = pos;
+        self.last = pos;
+        if !grounded {
+            let top = self.fall_top.get_or_insert(pos.z);
+            *top = top.max(pos.z);
+        } else if let Some(top) = self.fall_top.take() {
+            self.landed_from = Some(top - pos.z);
+        }
     }
 }

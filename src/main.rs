@@ -15,6 +15,7 @@ mod crime;
 mod detection;
 mod dialogue;
 mod engine;
+mod falling;
 mod footsteps;
 mod gift;
 mod grab;

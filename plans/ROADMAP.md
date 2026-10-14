@@ -507,6 +507,10 @@ game each piece unlocks.
   `HasKeyword` includes their race's; `GetInFaction` / `GetFactionRank` and door
   ownership follow templates. Console `templates <ref>`; vrm-tool `npc-templates`.
   Open questions: `known_ambiguities/npc-templates.md`
+- Falling damage: the player's falls past `fJumpFallHeightMin` hurt by
+  UESP's formula (the `fJumpFall*` settings), the "Mod Falling Damage"
+  perk entry point (Cushioned) applied; deep water spares them
+  (`src/falling.rs`, `known_ambiguities/falling.md`)
 - Actor values: one store per actor that conditions (`GetActorValue`,
   `GetBaseActorValue`, `GetPermanentActorValue`, `GetActorValuePercent`), Papyrus
   (`Get` / `Set` / `Force` / `Mod` / `Damage` / `RestoreActorValue`,
@@ -997,6 +1001,7 @@ game each piece unlocks.
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
      `known_ambiguities/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
+     (and falls hurting NPCs: `fJumpFall*NPC`, `crate::falling`)
    - Scenes: the player's own lines (skipped for now; see `known_ambiguities/scenes.md`);
      priority between scenes
    - Physics, more: arrows sticking in loose objects; opened display-case lids
@@ -1026,7 +1031,7 @@ game each piece unlocks.
      (`fCombatDialogueFlee*`); the group strength timer
      (`fCombatGroupCombatStrengthUpdateTime`); impacts' hazards (`NAM2`),
      second sound (`NAM1`) and results (bounce, impale, stick)
-   - Perks, more: carry weight, falling damage, armor weight, staggers,
+   - Perks, more: carry weight, armor weight, staggers,
      recovering arrows, bow zoom, Ignore Running During Detection, lockpicks'
      starting arc and key rewards, Green Thumb on harvests, Light Foot on
      pressure plates; refunds and the Legendary reset; NPCs' skills advancing
