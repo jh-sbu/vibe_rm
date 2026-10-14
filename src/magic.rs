@@ -42,6 +42,7 @@ pub mod archetype {
     pub const BOUND_WEAPON: u32 = 17;
     pub const SUMMON_CREATURE: u32 = 18;
     pub const PARALYSIS: u32 = 21;
+    pub const SOUL_TRAP: u32 = 23;
     pub const TURN_UNDEAD: u32 = 24;
     pub const CURE_PARALYSIS: u32 = 27;
     pub const CURE_POISON: u32 = 29;
@@ -367,6 +368,8 @@ pub struct Magic {
     tapers: Vec<(ActiveEffect, Arc<MagicEffect>, f32, f32)>,
     effect_cache: std::cell::RefCell<HashMap<FormId, Option<Arc<MagicEffect>>>>,
     item_cache: std::cell::RefCell<HashMap<FormId, Option<Arc<MagicItem>>>>,
+    /// Bodies whose soul has been taken (`crate::soul_trap`).
+    pub souls_taken: HashSet<FormId>,
 }
 
 impl Engine {
@@ -1086,6 +1089,13 @@ impl Engine {
                 .is_some_and(|r| self.is_dead(r) || !self.actor_cells.contains_key(&r));
             if summon_gone {
                 log::debug!("{id}: its summon is dead or gone");
+            }
+            // Dying under a soul trap gives up the soul.
+            if dead
+                && mgef.archetype == archetype::SOUL_TRAP
+                && let Some(caster) = x.caster
+            {
+                self.trap_soul(caster, x.target);
             }
             if gone || dead || summon_gone {
                 self.finish_magic_effect(id);

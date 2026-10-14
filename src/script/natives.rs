@@ -792,6 +792,15 @@ pub fn call(
         ("objectreference", "getheadingangle") => v(Value::Float(0.0)),
         // ------------------------------------------------------------- Actor
         ("actor", "isdead") => v(Value::Bool(me.is_some_and(|r| e.is_dead(r)))),
+        // `Caster.TrapSoul(Victim)` (the soul trap effect's script, as it
+        // finishes): the dead victim's soul into the caster's gems.
+        ("actor", "trapsoul") => {
+            let trapped = match (me, form_arg(args, 0)) {
+                (Some(caster), Some(victim)) => e.trap_soul(caster, victim),
+                _ => false,
+            };
+            v(Value::Bool(trapped))
+        }
         ("actor", "kill") | ("actor", "killessential") | ("actor", "killsilent") => {
             if let Some(r) = me {
                 let killer = form_arg(args, 0);

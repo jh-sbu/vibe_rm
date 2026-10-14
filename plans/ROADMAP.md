@@ -507,6 +507,10 @@ game each piece unlocks.
   `HasKeyword` includes their race's; `GetInFaction` / `GetFactionRank` and door
   ownership follow templates. Console `templates <ref>`; vrm-tool `npc-templates`.
   Open questions: `known_ambiguities/npc-templates.md`
+- Soul trap: `Actor.TrapSoul` (the soul trap effect's script) and archetype
+  23 effects put a dead actor's soul (by level; people's black) into the
+  smallest of the caster's empty gems that holds it ("Soul captured!",
+  Souls Trapped); `src/soul_trap.rs`, `known_ambiguities/soul-trap.md`
 - Carry weight: what an actor carries weighs its items, worn armor through
   "Mod Armor Weight" (Conditioning, Unhindered); the player over their
   `CarryWeight` walks, told `sOverEncumbered` (`src/encumbrance.rs`,
@@ -1014,7 +1018,9 @@ game each piece unlocks.
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
    - Triggers: water and lava damage volumes
-   - Magic, more: detect life, telekinesis, soul trap, cloaks, slow time;
+   - Magic, more: detect life, telekinesis, cloaks, slow time; trapped
+     souls kept with their gems when they change hands (dropped, stored,
+     sold: `Inventory::souls` stays with the trapper);
      taper, area, addictions, potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target); bound weapons kept
      from being dropped or stored; the cost counting Fortify school effects

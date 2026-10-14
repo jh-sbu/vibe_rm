@@ -262,6 +262,10 @@ pub struct Inventory {
     /// How many of an item belong to someone else (item, owner, count): the
     /// player's stolen goods, kept apart within `items`' counts.
     pub owned: Vec<(FormId, FormId, i32)>,
+    /// How many of a soul gem hold a soul (1 petty .. 5 grand) their record
+    /// doesn't (gem, soul, count): trapped into an empty gem, kept apart
+    /// within `items`' counts and taken last.
+    pub souls: Vec<(FormId, u8, i32)>,
     /// What is held (`RIGHT`, `LEFT`, `VOICE`): weapons, spells, a shield, a
     /// torch; a power or shout. What fills both hands is in each.
     held: [Option<FormId>; 3],
@@ -417,8 +421,43 @@ impl Inventory {
         if self.items[i].1 <= 0 {
             self.items.remove(i);
         }
+        // Those holding a soul go last.
+        let mut extra = self.souls_in(form) - self.count(form);
+        for (_, _, c) in self.souls.iter_mut().filter(|(f, _, _)| *f == form) {
+            let t = (*c).min(extra.max(0));
+            *c -= t;
+            extra -= t;
+        }
+        self.souls.retain(|(_, _, c)| *c > 0);
         self.unequip_if_short(form);
         out
+    }
+
+    /// How many of a soul gem hold a soul of the side list's.
+    fn souls_in(&self, form: FormId) -> i32 {
+        self.souls
+            .iter()
+            .filter(|(f, _, _)| *f == form)
+            .map(|(_, _, n)| n)
+            .sum()
+    }
+
+    /// Of the soul gems `form` carried, how many hold no soul but their
+    /// record's.
+    pub fn without_soul(&self, form: FormId) -> i32 {
+        self.count(form) - self.souls_in(form)
+    }
+
+    /// One of the carried `form` gems takes a `soul` (1 petty .. 5 grand).
+    pub fn put_soul(&mut self, form: FormId, soul: u8) {
+        match self
+            .souls
+            .iter_mut()
+            .find(|(f, s, _)| *f == form && *s == soul)
+        {
+            Some((_, _, c)) => *c += 1,
+            None => self.souls.push((form, soul, 1)),
+        }
     }
 
     /// What is worn and wielded: armor, ammunition, the items in hand.
