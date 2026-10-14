@@ -602,19 +602,24 @@ impl Engine {
     /// (and an assault).
     fn hostile_magic_landed(&mut self, target: FormId, caster: FormId, item: FormId) {
         self.break_calm(target);
-        let projectile = self
-            .magic_item(item)
-            .and_then(|m| self.item_projectile(&m))
-            .map_or(Value::None, |p| self.object_value(p));
+        let projectile = self.magic_item(item).and_then(|m| self.item_projectile(&m));
+        let proj_value = projectile.map_or(Value::None, |p| self.object_value(p));
         let args = vec![
             self.object_value(caster),
             self.object_value(item),
-            projectile,
+            proj_value,
             Value::Bool(false),
             Value::Bool(false),
             Value::Bool(false),
             Value::Bool(false),
         ];
+        // A projectile with an explosion strikes twice: Firebolt's (and a
+        // spell of ours with only its fire damage) sent two alike 0.1 s apart
+        // in the game (`test-mod autotest4`), its projectile exploding
+        // (`PROJ` `DATA` 0x24); the second taken as the explosion's.
+        if projectile.is_some_and(|p| projectile_explodes(&self.lo, p)) {
+            self.send_script_event(target, "OnHit", args.clone());
+        }
         self.send_script_event(target, "OnHit", args);
         if target == PLAYER_REF {
             return;
@@ -1049,20 +1054,9 @@ impl Engine {
                 self.finish_magic_effect(id);
                 continue;
             }
-            // A bound weapon put away (another taken up) is gone.
-            if sync
-                && x.active
-                && mgef.archetype == archetype::BOUND_WEAPON
-                && !mgef.related.is_null()
-                && !self
-                    .inventories
-                    .get(&x.target)
-                    .is_some_and(|i| i.is_equipped(mgef.related))
-            {
-                log::debug!("{}: {} put away", x.target, mgef.related);
-                self.finish_magic_effect(id);
-                continue;
-            }
+            // A bound weapon put away (another taken up) leaves the effect
+            // on: in the game it was still on 5 s after an iron sword took
+            // the bound sword's hand (`test-mod autotest4`).
             if sync && (x.duration > 0.0) {
                 let pass = self.effect_conditions_pass(&x, &mgef);
                 if pass && !x.active {
@@ -1311,4 +1305,15 @@ pub struct EffectView {
     pub id: u64,
     pub item: FormId,
     pub effect_archetype: u32,
+}
+
+/// Whether a projectile (`PROJ`) has an explosion (`DATA` 0x24).
+fn projectile_explodes(lo: &esp::LoadOrder, proj: FormId) -> bool {
+    lo.get(proj)
+        .and_then(|r| {
+            r.get(b"DATA")
+                .and_then(|d| d.get(0x24..0x28))
+                .map(|b| u32::from_le_bytes(b.try_into().unwrap()) != 0)
+        })
+        .unwrap_or(false)
 }

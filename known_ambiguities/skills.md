@@ -36,12 +36,17 @@ below (Skyrim.esm / Update.esm).
   allows 0 (x0.5 gave 0). A fixed level ignores calc min and max (7 with max
   2 gave 7) (`test-mod autotest2`).
 
+- **The cost of a level** (`test-mod autotest4`): `AdvanceSkill(skill, 10)`
+  calls until a skill rose: One-Handed 21 to 22 took 12 (the current level's
+  cost, 757.5 XP, with what was left over from the last rise; the level
+  before's would take 11) and 51 to 52 took 67 (678 by the current level,
+  653 by the one before); Lockpicking 1 each (`AdvanceSkill`'s value goes
+  through the use mult and offset: 10 x 45 + 10 = 460, over its 386). So
+  the cost uses the current level, XP past a level carries over, and
+  `AdvanceSkill`'s value is a use's base XP.
+
 ## Open (choices made here)
 
-- **Which level the cost uses.** UESP gives `improve mult x (level - 1)^1.95 +
-  offset` but works its example with the current level (lockpicking 15 to 16:
-  349.13). The example is followed: the current level.
-- **XP past a level carries over** into the next.
 - **No UESP number has a setting**: a sneak attack shot is 2.5 Sneak XP, a
   bash 5 Block XP.
 - **Block** trains by the damage stopped (before armor), **armor** by the rest
@@ -55,8 +60,6 @@ below (Skyrim.esm / Update.esm).
   The 2.5 XP for becoming hidden isn't given.
 - **Blows**: every landed blow trains, blocked or not; hitting objects or
   corpses doesn't. Power attacks earn the same as basic ones.
-- **`Game.AdvanceSkill`'s value** is treated as a use's base XP (through the use
-  mult). The CK wiki calls it "skill usage", which suggests that.
 - **Training** (UESP Skyrim:Trainers; `src/training.rs`). Settled: the
   trainer's class `DATA` has the skill it teaches at byte 4 (from
   One-handed) and the level it teaches up to at byte 5 (50, 75, 90 in the

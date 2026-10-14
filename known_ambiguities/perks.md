@@ -39,6 +39,14 @@ perks`).
   Cutpurse's +50 "will still max out at 90%"); Keymaster sets 100, so keys
   come out at the cap.
 
+## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
+
+- A perk with a quest section, added to the player, set the stage on a
+  quest of ours that wasn't running, which started it; removing the perk
+  left the stage set and the quest running.
+- A perk with an ability section gave the player the ability spell, and
+  removing it took the spell away.
+
 ## Open (choices made here)
 
 - **Quest sections on quests not running.** Most perks' stages are on
@@ -50,7 +58,8 @@ perks`).
   in one fragment would otherwise restart it.
 
 - **Priority order**: entries apply lowest priority first. The CK's meaning
-  of the number isn't documented in a public source.
+  of the number isn't documented in a public source (`autotest4`'s test of
+  it failed: the player's spell cast by script didn't go at the target).
 - **Ranks**: an entry applies while the owner's rank of the perk is above the
   entry's rank. The vanilla perks have one rank per record, so this is
   untested.
@@ -76,8 +85,6 @@ perks`).
   observer's skill factor while the target sneaks (UESP: the Sneak skill and
   its perks reduce the noticer's skill factor, but gives no formula for how
   the perk's 20..40% enters it).
-- **Quest sections** set their stage when the perk is added (the CK wiki's
-  description); nothing undoes it on removal.
 - **Buying**: one perk point per rank, if the rank's conditions pass on the
   player.
 - **Ability sections** are spells the owner knows: constant ones take effect

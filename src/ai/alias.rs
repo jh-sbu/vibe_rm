@@ -1,6 +1,7 @@
 //! Quest alias packages (`ALPC`): an actor filling a reference alias of a running
 //! quest runs that alias's packages ahead of its own, those of higher priority
-//! quests first. Their conditions, alias locations and alias targets are read in
+//! quests first, at the same priority the alias filled last first (`test-mod
+//! autotest4`). Their conditions, alias locations and alias targets are read in
 //! the package's owner quest (`QNAM`), else the alias's quest.
 
 use std::collections::HashMap;
@@ -17,8 +18,9 @@ use crate::engine::Engine;
 pub struct AliasPackages {
     /// `ScriptState::alias_gen` the index was built at.
     built: Option<u64>,
-    /// Actor -> (quest priority, quest, alias) it fills in running quests.
-    fills: HashMap<FormId, Vec<(u8, FormId, u32)>>,
+    /// Actor -> (quest priority, when filled, quest, alias) it fills in
+    /// running quests.
+    fills: HashMap<FormId, Vec<(u8, u64, FormId, u32)>>,
     packages: HashMap<(FormId, u32), Arc<Vec<Package>>>,
 }
 
@@ -46,7 +48,7 @@ impl Engine {
     /// priority quest first.
     pub(crate) fn alias_packages(&mut self, achr: FormId) -> Vec<Package> {
         if self.alias_packs.built != Some(self.scripts.alias_gen) {
-            let mut fills: HashMap<FormId, Vec<(u8, FormId, u32)>> = HashMap::new();
+            let mut fills: HashMap<FormId, Vec<(u8, u64, FormId, u32)>> = HashMap::new();
             for (&q, st) in self
                 .scripts
                 .quests
@@ -59,12 +61,21 @@ impl Engine {
                     .and_then(|r| r.get(b"DNAM").and_then(|d| d.get(2).copied()))
                     .unwrap_or(0);
                 for (&alias, &r) in &st.aliases {
-                    fills.entry(r).or_default().push((priority, q, alias));
+                    let at = st.filled_at.get(&alias).copied().unwrap_or(0);
+                    fills.entry(r).or_default().push((priority, at, q, alias));
                 }
             }
             for v in fills.values_mut() {
-                // Higher priority first; ties in a stable order.
-                v.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+                // Higher priority first; at the same, the latest filled (in
+                // the game, of two quests' aliases forced to one actor the
+                // second's package ran, either way round, and of one quest's
+                // two the second forced).
+                v.sort_by(|a, b| {
+                    b.0.cmp(&a.0)
+                        .then(b.1.cmp(&a.1))
+                        .then(a.2.cmp(&b.2))
+                        .then(a.3.cmp(&b.3))
+                });
             }
             log::debug!("{} references fill aliases of running quests", fills.len());
             self.alias_packs.fills = fills;
@@ -75,7 +86,7 @@ impl Engine {
         };
         log::trace!("{achr} fills {fills:?}");
         let mut out = Vec::new();
-        for (_, q, alias) in fills {
+        for (_, _, q, alias) in fills {
             let packs = match self.alias_packs.packages.get(&(q, alias)) {
                 Some(p) => p.clone(),
                 None => {

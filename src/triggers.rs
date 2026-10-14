@@ -173,8 +173,11 @@ impl Engine {
                 let r = self.cells[&key].triggers[i].ref_id;
                 let disabled = self.is_disabled(r);
                 let t = &mut self.cells.get_mut(&key).unwrap().triggers[i];
+                // Disabled, those inside leave it (in the game they got
+                // `OnTriggerLeave`, and entered again when it was enabled:
+                // `test-mod autotest4`).
                 if disabled {
-                    t.inside.clear();
+                    events.extend(t.inside.drain(..).map(|b| (r, b, false)));
                     continue;
                 }
                 let now: Vec<FormId> = bodies

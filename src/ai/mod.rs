@@ -403,9 +403,11 @@ pub struct ActorRuntime {
     pub(crate) dead: bool,
     pub(crate) ragdoll: Option<(crate::physics::Ragdoll, crate::world::ragdoll::RagdollPose)>,
     /// The lit torch it holds, and what it put away for it (a shield, a
-    /// second weapon).
+    /// second weapon, a weapon in both hands).
     pub(crate) torch: Option<FormId>,
     pub(crate) stowed_left: Option<FormId>,
+    /// What `stowed_left` set aside had both hands.
+    pub(crate) stowed_both: bool,
     /// The armor and weapons its models show (see `Engine::update_worn`).
     pub(crate) worn: Vec<FormId>,
     /// The graph raised `IdleFurnitureExit`: out of the furniture.
@@ -496,6 +498,7 @@ impl ActorRuntime {
             bleeding: None,
             torch: None,
             stowed_left: None,
+            stowed_both: false,
             worn: Vec::new(),
             weapon_out: false,
             equipment_changed: false,

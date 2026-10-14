@@ -707,9 +707,11 @@ fn style_dual_wields(lo: &LoadOrder, style: FormId) -> bool {
 /// was equipped by hand: a melee weapon unless its combat style favours ranged
 /// ones (guards carry their bow but wear their sword), the one that scores best in
 /// its hands (base damage scaled by the NPC's skill with it), and with a one-handed
-/// weapon (or none) its best shield; or, when its style allows dual wielding,
-/// its next best one-handed weapon in the left hand (a second of the same one
-/// too). Staffs, crossbows and weapons without a model (creature attacks) are
+/// weapon (or none) its best shield; or, when its style allows dual wielding
+/// and it carries no shield, its next best one-handed weapon in the left hand
+/// (a second of the same one too). A shield wins over a second weapon (`test-mod
+/// autotest4`: a dual wielding NPC given two swords and a shield held one
+/// sword and the shield). Staffs, crossbows and weapons without a model (creature attacks) are
 /// left alone; unplayable ones with a model are the NPCs' own (giants' clubs,
 /// Dremora greatswords, the Keepers' dragonbone).
 pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, style: FormId) {
@@ -754,9 +756,13 @@ pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, sty
     if let Some((_, _, f, _)) = best {
         inv.equip(lo, f);
     }
-    // A second weapon for the left hand, in place of a shield.
+    let carries_shield = inv.items.iter().any(|&(f, _)| {
+        lo.get(f)
+            .is_some_and(|r| r.tag().0 == *b"ARMO" && armor_slots(&r) & SLOT_SHIELD != 0)
+    });
+    // A second weapon for the left hand, with no shield to hold.
     let second = best
-        .filter(|b| b.3.one_handed() && style_dual_wields(lo, style))
+        .filter(|b| b.3.one_handed() && style_dual_wields(lo, style) && !carries_shield)
         .and_then(|b| {
             one_handed
                 .iter()

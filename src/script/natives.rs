@@ -1478,9 +1478,12 @@ pub fn call(
             if let (Some(Value::Object(ObjectId::Alias { quest, alias }, _)), Some(r)) =
                 (this, form_arg(args, 0))
             {
+                e.scripts.fill_seq += 1;
+                let seq = e.scripts.fill_seq;
                 let q = e.scripts.quests.entry(FormId(*quest)).or_default();
                 if func == "forcerefto" || !q.aliases.contains_key(alias) {
                     q.aliases.insert(*alias, r);
+                    q.filled_at.insert(*alias, seq);
                     e.scripts.alias_gen += 1;
                 }
             }

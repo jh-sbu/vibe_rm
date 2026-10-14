@@ -12,6 +12,18 @@ public documentation and the game's data files only.
 - A negative faction rank isn't membership (potential followers carry
   `CurrentFollowerFaction` at -1), so such factions are ignored for combat.
 
+## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
+
+An enemy set on a victim, a helper of ours placed off to the side; after 8 s:
+
+- An ally of the victim's faction helping allies joined from 500 and from
+  2500 units away, not from 5000 (taken here as within 4000).
+- One helping nobody didn't; a friend of the victim's faction helping only
+  allies didn't; a friend helping friends and allies did.
+- A member of a faction friendly to itself, struck 8 times 2 s apart by our
+  25 point fire bolt cast by script from another member, never turned on it
+  (whether the bolts landed wasn't checked).
+
 ## What the implementation does
 
 - Every detection pass (once a second), an actor not in combat with assistance
@@ -34,4 +46,5 @@ public documentation and the game's data files only.
    join an attack on the player do so through assistance alone, and stay
    hostile only for that fight.
 3. **Friendly hits.** `iFriendHitCombatAllowed` (4 in Skyrim.esm) suggests friends
-   forgive some hits before fighting back. Every hit starts a fight here.
+   forgive some hits before fighting back. Every hit starts a fight here. In the
+   game 8 script-cast bolts from a faction friend started none (above).

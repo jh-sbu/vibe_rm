@@ -16,7 +16,12 @@ the actor's own) and UESP *Mod File Format/QUST* (`ALST` ... `ALPC` ... `ALED`) 
   resolve), alias locations and targets resolve through that quest's fills.
 - Whereabouts of persistent actors follow alias packages too.
 
+- At the same priority, the alias filled last comes first (`test-mod
+  autotest4`): of two quests' aliases forced to one NPC, the second quest's
+  package ran whichever went first; of one quest's two aliases forced to it,
+  the second forced's (alias 0, forced after alias 1) ran.
+
 ## Open questions
 
-- Order among aliases of quests with the same priority (here: by quest and alias
-  id), and among several aliases of one quest.
+- Whether "filled last" is the right reading: in the game's tests start and
+  fill order went together, and alias 0 was also the lower id.

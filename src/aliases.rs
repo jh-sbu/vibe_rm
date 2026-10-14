@@ -351,11 +351,23 @@ impl Engine {
                 },
             )
         };
+        // Forced references and unique actors too are left empty dead or
+        // disabled, unless the alias allows it (`test-mod autotest4`: a
+        // forced reference disabled and a unique actor killed first went
+        // unfilled).
+        let alive_enabled = |r: &FormId| {
+            (a.has(flags::ALLOW_DEAD) || !self.is_dead(*r))
+                && (a.has(flags::ALLOW_DISABLED) || !self.is_disabled(*r))
+        };
         match &a.fill {
             Fill::Empty => None,
-            Fill::Forced(r) => Some(*r),
+            Fill::Forced(r) => Some(*r).filter(alive_enabled),
             Fill::Unique(npc) if *npc == FormId(0x7) => Some(PLAYER_REF),
-            Fill::Unique(npc) => self.npc_refs_index().get(npc).copied(),
+            Fill::Unique(npc) => self
+                .npc_refs_index()
+                .get(npc)
+                .copied()
+                .filter(alive_enabled),
             Fill::Specific(l) => Some(*l),
             // The event's reference or location, if the alias's conditions take it.
             Fill::FromEvent(m) => self
@@ -457,12 +469,11 @@ impl Engine {
             match filled {
                 Some(r) => {
                     log::trace!("{edid} alias {} = {r}", a.name);
-                    self.scripts
-                        .quests
-                        .entry(q)
-                        .or_default()
-                        .aliases
-                        .insert(a.id, r);
+                    self.scripts.fill_seq += 1;
+                    let seq = self.scripts.fill_seq;
+                    let st = self.scripts.quests.entry(q).or_default();
+                    st.aliases.insert(a.id, r);
+                    st.filled_at.insert(a.id, seq);
                 }
                 None if !a.has(flags::OPTIONAL) && a.fill != Fill::Empty => {
                     // Story Manager attempts fail all the time (the event's actors aren't the ones).

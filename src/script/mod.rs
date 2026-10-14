@@ -47,6 +47,8 @@ pub struct QuestState {
     pub journal_seq: u64,
     /// Reference alias fills: alias id -> reference.
     pub aliases: HashMap<u32, FormId>,
+    /// When each alias was filled (`ScriptState::fill_seq`).
+    pub filled_at: HashMap<u32, u64>,
     /// The Story Manager event that started it.
     pub event: Option<crate::story::StoryEvent>,
 }
@@ -89,6 +91,8 @@ pub struct ScriptState {
     /// Bumped whenever a quest starts or stops or an alias fill changes (actors'
     /// alias packages follow).
     pub alias_gen: u64,
+    /// Counts alias fills: which is the latest.
+    pub fill_seq: u64,
     /// Set when a native changed enable state; the engine re-syncs visibility.
     pub visibility_dirty: bool,
     pub warned: HashSet<String>,
