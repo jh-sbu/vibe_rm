@@ -22,7 +22,7 @@ An enemy set on a victim, a helper of ours placed off to the side; after 8 s:
   allies didn't; a friend helping friends and allies did.
 - A member of a faction friendly to itself, struck 8 times 2 s apart by our
   25 point fire bolt cast by script from another member, never turned on it
-  (whether the bolts landed wasn't checked).
+  (`autotest5`: each bolt landed, 27.4 health with its taper).
 
 ## What the implementation does
 
@@ -47,4 +47,5 @@ An enemy set on a victim, a helper of ours placed off to the side; after 8 s:
    hostile only for that fight.
 3. **Friendly hits.** `iFriendHitCombatAllowed` (4 in Skyrim.esm) suggests friends
    forgive some hits before fighting back. Every hit starts a fight here. In the
-   game 8 script-cast bolts from a faction friend started none (above).
+   game 8 script-cast bolts from a faction friend landed and started none
+   (above): whether spells, script casts or friends' hits don't count is open.

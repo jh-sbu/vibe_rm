@@ -704,15 +704,28 @@ impl Engine {
         let area = item.effects.iter().map(|e| e.area).max().unwrap_or(0) as f32;
         if area > 0.0 {
             let radius = area * UNITS_PER_FOOT;
+            // The blast reaches what it can see from where it went off:
+            // walls and bodies (the struck one's too) shelter those behind.
+            let in_sight = |to: Vec3, actor: FormId| {
+                let d = to.distance(at);
+                d < 1.0
+                    || match self.physics.raycast_excluding(at, (to - at) / d, d, caster) {
+                        Some((_, owner)) => owner == Some(actor),
+                        None => true,
+                    }
+            };
             let near = self
                 .cells
                 .values()
                 .flat_map(|rt| &rt.actors)
                 .filter(|a| !a.dead && a.ref_id != caster)
-                .filter(|a| (a.pos + Vec3::Z * BODY_CENTRE * a.scale).distance(at) <= radius)
-                .map(|a| a.ref_id);
-            let player = (caster != PLAYER_REF && self.player.position.distance(at) <= radius)
-                .then_some(PLAYER_REF);
+                .map(|a| (a.ref_id, a.pos + Vec3::Z * BODY_CENTRE * a.scale))
+                .filter(|&(id, mid)| mid.distance(at) <= radius && in_sight(mid, id))
+                .map(|(id, _)| id);
+            let player = (caster != PLAYER_REF
+                && self.player.position.distance(at) <= radius
+                && in_sight(self.player.position, PLAYER_REF))
+            .then_some(PLAYER_REF);
             for a in near.chain(player) {
                 if !struck.contains(&a) {
                     struck.push(a);

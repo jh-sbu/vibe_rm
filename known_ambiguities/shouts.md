@@ -43,7 +43,8 @@ records; the game settings; `magicmenu.swf` (the shout card) and
   middle is within the projectile's range and its cone spread (`PROJ`
   `DATA` 0x44, 15 degrees, taken as either side of the middle) with nothing
   solid between.
-- **NPCs' shouts**: their record's (`SPLO`) and `AddShout`'s count for
-  `HasShout`.
+- **NPCs' shouts**: their record's (`SPLO`) count for `HasShout`;
+  `AddShout`'s do (`test-mod autotest5`: a spell needing the target to have
+  Unrelenting Force landed only after `AddShout` gave it to the NPC).
 - **The Story Manager's new voice power event** (`NVPE`) isn't sent: what
   starts it and its members aren't published.

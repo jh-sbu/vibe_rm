@@ -121,7 +121,10 @@ not a health threshold. It is compared with a *threat ratio*:
 11. **Health regeneration in combat.** `fCombatHealthRegenRateMult` is 0, yet players
     report fled NPCs coming back "once they have recovered enough health". The
     mechanism is unclear: regeneration after leaving combat, potions, or the ratio
-    shifting as the player is hurt. We regenerate only out of combat.
+    shifting as the player is hurt. In the game (`test-mod autotest5`) NPCs
+    read `HealRate` 0 and didn't heal at all, in a fight or out of one; here
+    NPCs heal only at a `HealRate` given them (by script or an effect), out
+    of combat.
 
 ## Values taken from the game's own settings table
 

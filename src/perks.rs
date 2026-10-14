@@ -8,7 +8,7 @@
 //! value, and conditions on tabs: tab 0 runs on the perk's owner, the others on
 //! what the entry point is about (the weapon, the target, the lock...). Where
 //! the engine reaches a hook it passes the number through every matching
-//! entry of the actor's perks, lowest priority first.
+//! entry of the actor's perks, highest priority first.
 //!
 //! Actors' perks are their NPC record's (`PRKR`, a template's when it gives the
 //! spell list) with those scripts and the console added or removed. The player
@@ -384,7 +384,9 @@ impl Engine {
         if matching.is_empty() {
             return value;
         }
-        matching.sort_by_key(|m| m.0);
+        // Highest priority first (`test-mod autotest5`); ties in the order of
+        // the actor's perks.
+        matching.sort_by_key(|m| std::cmp::Reverse(m.0));
         let mut v = value;
         for (_, p, i) in matching {
             let Section::Point(pt) = &p.entries[i].section else {
