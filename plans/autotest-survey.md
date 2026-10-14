@@ -128,6 +128,12 @@ Left out so far:
   UESP's 50?); Sneak of a deer (15 + offset 70); a "PC level mult" copy of
   `EncDremoraMelee06` with calc min 46 (skills past 100 at runtime: as its
   `DNAM`, or held at 100?).
+- **Settings to read** (`GetGameSettingFloat / Int`, values the plugins
+  lack): `iSoundLevelNormal`, `Loud`, `VeryLoud` (`detection.md`: weapons
+  stay silent without them; `autotest2` read `iSoundLevelLoud` but the
+  value wasn't kept), `fCombatDetectionFleeingLostRemoveTime`,
+  `fCombatLowFleeingTargetHitPercent` and the `fCombatDialogueFlee*`
+  timers the roadmap's combat items wait on.
 - **Actors' keywords** (`npc-templates.md`): `HasKeyword` on an NPC wearing
   armor with `ArmorHeavy`, and under a spell whose effect has a keyword
   its race lacks.
