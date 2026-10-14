@@ -464,11 +464,52 @@ struct WindowState {
     engine: Engine,
     keys: HashSet<KeyCode>,
     grabbed: bool,
+    /// Restore gameplay capture after the last menu closes.
+    resume_capture: bool,
     last: Instant,
     fps_timer: Instant,
     frames: u32,
     #[cfg(feature = "remote-console")]
     remote: Option<crate::remote::RemoteConsole>,
+}
+
+impl WindowState {
+    fn menu_takes_mouse(&self) -> bool {
+        self.ui.console.open || self.engine.conversation.is_some() || self.engine.menu_up()
+    }
+
+    fn release_mouse(&mut self) {
+        self.grabbed = false;
+        let _ = self.window.set_cursor_grab(CursorGrabMode::None);
+        self.window.set_cursor_visible(true);
+        self.keys.clear();
+    }
+
+    fn capture_mouse(&mut self) {
+        let result = self
+            .window
+            .set_cursor_grab(CursorGrabMode::Locked)
+            .or_else(|_| self.window.set_cursor_grab(CursorGrabMode::Confined));
+        match result {
+            Ok(()) => {
+                self.grabbed = true;
+                self.window.set_cursor_visible(false);
+            }
+            Err(e) => log::warn!("could not capture mouse: {e}"),
+        }
+    }
+
+    fn sync_mouse_capture(&mut self) {
+        if self.menu_takes_mouse() {
+            if self.grabbed {
+                self.resume_capture = true;
+                self.release_mouse();
+            }
+        } else if self.resume_capture && self.window.has_focus() {
+            self.resume_capture = false;
+            self.capture_mouse();
+        }
+    }
 }
 
 struct App {
@@ -553,6 +594,7 @@ impl App {
             engine,
             keys: HashSet::new(),
             grabbed: false,
+            resume_capture: false,
             last: Instant::now(),
             fps_timer: Instant::now(),
             frames: 0,
@@ -584,12 +626,11 @@ impl ApplicationHandler for App {
         let Some(s) = &mut self.state else { return };
         if let DeviceEvent::MouseMotion { delta } = event
             && s.grabbed
+            && !s.menu_takes_mouse()
             && !s.engine.disabled_controls.looking
         {
             let sens = 0.0025;
-            if !s.engine.menu_up() {
-                s.engine.input_event("Look");
-            }
+            s.engine.input_event("Look");
             s.engine.camera.yaw += delta.0 as f32 * sens;
             s.engine.camera.pitch =
                 (s.engine.camera.pitch - delta.1 as f32 * sens).clamp(-1.55, 1.55);
@@ -600,12 +641,13 @@ impl ApplicationHandler for App {
         let Some(s) = &mut self.state else { return };
         // The console and dialogue menu take input while open.
         let console_open = s.ui.console.open || s.engine.conversation.is_some();
-        if s.engine.conversation.is_some() && s.grabbed {
-            s.grabbed = false;
-            let _ = s.window.set_cursor_grab(CursorGrabMode::None);
-            s.window.set_cursor_visible(true);
-            s.keys.clear();
+        // Losing focus cancels automatic restoration; a click resumes play.
+        // Handle this before menus can consume the event.
+        if matches!(&event, WindowEvent::Focused(false)) {
+            s.resume_capture = false;
+            s.release_mouse();
         }
+        s.sync_mouse_capture();
         // A message box (the game's menus) takes the keyboard and mouse while up.
         if !s.ui.console.open
             && let Some(swf) = &mut s.swf
@@ -641,11 +683,7 @@ impl ApplicationHandler for App {
                     {
                         s.ui.toggle_console();
                         s.keys.clear();
-                        if s.ui.console.open && s.grabbed {
-                            s.grabbed = false;
-                            let _ = s.window.set_cursor_grab(CursorGrabMode::None);
-                            s.window.set_cursor_visible(true);
-                        }
+                        s.sync_mouse_capture();
                         return;
                     }
                     if s.ui.console.open || s.engine.conversation.is_some() || s.engine.menu_up() {
@@ -673,9 +711,8 @@ impl ApplicationHandler for App {
                                 s.engine.menu = Some(crate::items::Menu::Journal);
                             } else if code == KeyCode::Escape {
                                 if s.grabbed {
-                                    s.grabbed = false;
-                                    let _ = s.window.set_cursor_grab(CursorGrabMode::None);
-                                    s.window.set_cursor_visible(true);
+                                    s.resume_capture = false;
+                                    s.release_mouse();
                                 } else {
                                     el.exit();
                                 }
@@ -747,11 +784,7 @@ impl ApplicationHandler for App {
                             }
                             // Menus take the mouse.
                             if s.engine.menu_up() {
-                                if s.grabbed {
-                                    s.grabbed = false;
-                                    let _ = s.window.set_cursor_grab(CursorGrabMode::None);
-                                    s.window.set_cursor_visible(true);
-                                }
+                                s.sync_mouse_capture();
                                 s.keys.clear();
                                 return;
                             }
@@ -868,14 +901,7 @@ impl ApplicationHandler for App {
                     && s.engine.conversation.is_none()
                     && !s.engine.menu_up()
                 {
-                    let ok = s
-                        .window
-                        .set_cursor_grab(CursorGrabMode::Locked)
-                        .or_else(|_| s.window.set_cursor_grab(CursorGrabMode::Confined));
-                    if ok.is_ok() {
-                        s.grabbed = true;
-                        s.window.set_cursor_visible(false);
-                    }
+                    s.capture_mouse();
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -903,13 +929,8 @@ impl ApplicationHandler for App {
                     el.exit();
                     return;
                 }
-                // A menu or message box opened by a script takes the mouse.
-                if s.engine.menu_up() && s.grabbed {
-                    s.grabbed = false;
-                    let _ = s.window.set_cursor_grab(CursorGrabMode::None);
-                    s.window.set_cursor_visible(true);
-                    s.keys.clear();
-                }
+                // Includes menus and dialogue opened or closed by scripts/SWF.
+                s.sync_mouse_capture();
                 let frame = match s.surface.get_current_texture() {
                     wgpu::CurrentSurfaceTexture::Success(t)
                     | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -938,6 +959,10 @@ impl ApplicationHandler for App {
                     out,
                     size,
                 );
+                // egui can also close a menu or the console during this frame.
+                s.sync_mouse_capture();
+                // egui's cursor output must respect gameplay's mouse capture.
+                s.window.set_cursor_visible(!s.grabbed);
                 s.engine.renderer.queue.present(frame);
                 s.frames += 1;
                 if s.fps_timer.elapsed().as_secs_f32() >= 1.0 {
