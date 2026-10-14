@@ -119,7 +119,9 @@ Left out so far:
 - **Torches** (`hands.md`): does an NPC that put its weapon away for a
   torch take it back to fight?
 - **Triggers** (`triggers.md`): collision layers (which objects each kind
-  reacts to).
+  reacts to); `OnTrigger`'s interval and whether one comes on the entering
+  frame (an NPC standing in a scripted box, the script logging
+  `Utility.GetCurrentRealTime` at each event).
 - The "do all before repeating" Story Manager node flags.
 
 ## Tier 3: long or statistical (minutes each)

@@ -456,11 +456,23 @@ pub fn project_clip_paths(dir: &str, animation: &str, female: bool) -> Vec<Strin
     out
 }
 
-/// Loads and caches clips per (clip path, skeleton path).
+/// A skeleton's bones, for the clip cache's key: objects whose models differ
+/// share a project's rig path (traps), and each binds a clip to its own
+/// model's nodes.
+fn bones_key(skeleton: &Skeleton) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for b in &skeleton.bones {
+        b.name.hash(&mut h);
+    }
+    h.finish()
+}
+
+/// Loads and caches clips per (clip path, skeleton path, the skeleton's bones).
 #[derive(Default)]
 pub struct AnimationLibrary {
     havok_skeletons: HashMap<String, Option<Arc<havok::Skeleton>>>,
-    clips: HashMap<(String, String), Option<Arc<BoundClip>>>,
+    clips: HashMap<(String, String, u64), Option<Arc<BoundClip>>>,
     /// Root motion per behaviour project, by clip name.
     motions: HashMap<String, Arc<HashMap<String, Arc<Motion>>>>,
 }
@@ -565,6 +577,7 @@ impl AnimationLibrary {
         let key = (
             format!("{clip}@{}", project.unwrap_or_default()),
             nif_skeleton_path.to_owned(),
+            bones_key(skeleton),
         );
         if let Some(c) = self.clips.get(&key) {
             return c.clone();
@@ -646,6 +659,7 @@ impl AnimationLibrary {
         let key = (
             format!("{clip}@{}#reversed", project.name),
             nif_skeleton_path.to_owned(),
+            bones_key(skeleton),
         );
         if let Some(c) = self.clips.get(&key) {
             return c.clone();

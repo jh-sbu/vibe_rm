@@ -2377,7 +2377,7 @@ impl Engine {
         self.update_traps();
         self.update_whereabouts(dt);
         self.update_actors(dt);
-        self.update_triggers();
+        self.update_triggers(dt);
         self.update_story();
         self.update_map_markers(dt);
         self.update_quest_targets(dt);

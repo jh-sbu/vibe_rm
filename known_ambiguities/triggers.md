@@ -44,6 +44,14 @@ A box of half extent 128 with a script logging its events:
   Projectiles don't.
 - Actors already inside when the cell loads enter on the first update.
 - A script moving a trigger doesn't move its volume.
+- `OnTrigger` (41 scripts: `TrapPoisonGas` and `DLC1LD_LavaTriggerScript`
+  place an explosion on each one inside that hasn't the effect yet, the
+  fire plates and pressure plates count who stays): the CK wiki's "about
+  twice a second" read as every 0.5 s of real time, the clock starting when
+  the first one steps in, one event for each one inside, the first an
+  interval after entering (not at once). The wiki gives no exact rate, and
+  whether `OnTriggerEnter`'s frame also sends one is not said. Who sets it
+  off is the same as for entering.
 
 ## Open questions
 
