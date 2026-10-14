@@ -2398,6 +2398,7 @@ impl Engine {
         self.update_skin_decals();
         let cam = self.camera_copy();
         let mut input = input;
+        self.encumber_player(&mut input);
         if input.sprint && (input.forward != 0.0 || input.right != 0.0) && !self.player.noclip {
             input.sprint = self.player_sprint(dt);
             // Sprinting stands them up.
