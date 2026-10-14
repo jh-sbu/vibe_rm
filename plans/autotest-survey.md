@@ -134,6 +134,12 @@ Left out so far:
   value wasn't kept), `fCombatDetectionFleeingLostRemoveTime`,
   `fCombatLowFleeingTargetHitPercent` and the `fCombatDialogueFlee*`
   timers the roadmap's combat items wait on.
+- **Soul trap** (`soul-trap.md`): `Kill` then `TrapSoul` from the player
+  on a placed wolf and a bandit, the player holding chosen gems; reading
+  `GetItemCount` of the empty and filled forms after: which gem a white
+  soul takes beside a black one, whether a grand soul into an empty grand
+  gem becomes `SoulGemGrandFilled`, and `TrapSoul`'s result for a black
+  soul with no black gem.
 - **Actors' keywords** (`npc-templates.md`): `HasKeyword` on an NPC wearing
   armor with `ArmorHeavy`, and under a spell whose effect has a keyword
   its race lacks.
