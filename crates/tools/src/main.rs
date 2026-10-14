@@ -2899,6 +2899,63 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("mgef-tapers") => {
+            // mgef-tapers <data dir>: magic effects with a taper (DATA 0x1C
+            // weight, 0x34 curve, 0x38 duration): archetype, actor values,
+            // casting, delivery, flags, and the items using each.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut users: std::collections::HashMap<esp::FormId, Vec<String>> =
+                std::collections::HashMap::new();
+            for tag in [b"SPEL", b"ENCH", b"ALCH", b"SCRL", b"INGR"] {
+                for &id in lo.ids_of_type(tag) {
+                    let Some(rec) = lo.get(id) else { continue };
+                    for s in rec.subrecords().filter(|s| s.tag.0 == *b"EFID") {
+                        users
+                            .entry(rec.fid(s.form_id(0)))
+                            .or_default()
+                            .push(rec.editor_id().unwrap_or_default());
+                    }
+                }
+            }
+            for &id in lo.ids_of_type(b"MGEF") {
+                let Some(rec) = lo.get(id) else { continue };
+                let Some(d) = rec.get(b"DATA").filter(|d| d.len() >= 0x58) else {
+                    continue;
+                };
+                let u = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+                let f = |o: usize| f32::from_bits(u(o));
+                if f(0x1C) == 0.0 && f(0x38) == 0.0 {
+                    continue;
+                }
+                let av = |o: usize| match u(o) as i32 {
+                    -1 => "-".to_owned(),
+                    v => esp::actor_value::NAMES
+                        .get(v as usize)
+                        .map_or(v.to_string(), |n| n.to_string()),
+                };
+                let used = users.get(&id).map_or(0, Vec::len);
+                let example = users
+                    .get(&id)
+                    .and_then(|v| v.first().cloned())
+                    .unwrap_or_default();
+                println!(
+                    "{id} {} arch {} av {} / {} resist {} taper {} {} {}s cast {} deliv {} flags {:08x} used {used} ({example})",
+                    rec.editor_id().unwrap_or_default(),
+                    u(0x40),
+                    av(0x44),
+                    av(0x58),
+                    av(0x10),
+                    f(0x1C),
+                    f(0x34),
+                    f(0x38),
+                    u(0x50),
+                    u(0x54),
+                    u(0),
+                );
+            }
+        }
         Some("esp-has") => {
             // esp-has <data dir> <TAG> <SUB>: records of a type with a subrecord,
             // and its first four bytes (often a form id).

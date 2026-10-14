@@ -22,6 +22,7 @@ mod pex;
 mod records;
 pub mod results;
 mod script;
+mod taper;
 mod venv;
 
 /// The test mods by name: what `test-mod` builds.
@@ -31,6 +32,7 @@ pub const NAMES: &[&str] = &[
     "autotest3",
     "autotest4",
     "pex",
+    "taper",
     "venv",
 ];
 
@@ -54,6 +56,7 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
         "autotest3" => autotest3::build(lo),
         "autotest4" => autotest4::build(lo),
         "pex" => pex::build(),
+        "taper" => taper::build(lo),
         "venv" => Ok(TestMod {
             plugin: venv::build(lo)?,
             scripts: Vec::new(),
