@@ -91,6 +91,8 @@ health regeneration, friendly hits, scene completion, the area radius and
 the traps unsettled (the tests, not the game, at fault: see `autotest4`'s
 module doc). `test-mod autotest5` rebuilds them, with `taper`'s open ends
 (absorbs' gain, dual effects' second values, the copies that never landed).
+Its run (2026-10-13) settled all but the recheck interval, trap events and
+absorb magicka's gain (`autotest5`'s module doc).
 
 - **Story manager** (`story-manager.md`): which actor node and quest event
   conditions run on (the file's open question); members' order; reset

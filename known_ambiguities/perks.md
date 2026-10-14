@@ -47,6 +47,14 @@ perks`).
 - A perk with an ability section gave the player the ability spell, and
   removing it took the spell away.
 
+## Confirmed in the game (`test-mod autotest5`, 2026-10-13)
+
+- **Priority order**: entries apply highest priority first. With Mod Spell
+  Magnitude +10 at priority 0 and x2 at 1, the player's 50 point frost
+  spell took 110 (x2 first); with +10 at 1 and x2 at 0, 120.
+- An ability section's constant effect works: +7 One-handed while the perk
+  was had.
+
 ## Open (choices made here)
 
 - **Quest sections on quests not running.** Most perks' stages are on
@@ -57,9 +65,6 @@ perks`).
   wait for the end of the script run here, so `SetStage` followed by `Stop`
   in one fragment would otherwise restart it.
 
-- **Priority order**: entries apply lowest priority first. The CK's meaning
-  of the number isn't documented in a public source (`autotest4`'s test of
-  it failed: the player's spell cast by script didn't go at the target).
 - **Ranks**: an entry applies while the owner's rank of the perk is above the
   entry's rank. The vanilla perks have one rank per record, so this is
   untested.

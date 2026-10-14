@@ -42,11 +42,17 @@ records); `vrm-tool scenes <data> [scene]` dumps one scene or counts over all
 - Killing the actor of a scene whose actor ends it on death ended it within
   a second; a scene flagged to stop its quest on end stopped it.
 
-## Choices made without a source
+## Confirmed in the game (`test-mod autotest5`, 2026-10-13)
 
-- With completion conditions, the phase waits for them alone (actions ending
-  there may still be running and are stopped); MorthalInitialScene's phase 0
-  only has head tracking actions and waits on "Aslfur within 1000 of the player".
+- With completion conditions, the phase waits for them alone: a phase with
+  a 20 s timer ended (and its scene with it) within 0.32 s of its completion
+  condition coming true, and at once when it already was; a scene of a 5 s
+  timer and no conditions lasted 5 s. (MorthalInitialScene's phase 0 only
+  has head tracking actions and waits on "Aslfur within 1000 of the
+  player".)
+- A scene whose only phase's start conditions fail was never playing.
+
+## Choices made without a source
 - Speakers and package actors must be loaded: a scene whose actors are
   elsewhere waits for them (their scene packages still move them off-screen,
   through whereabouts). Off-screen scenes in the game may play on regardless.

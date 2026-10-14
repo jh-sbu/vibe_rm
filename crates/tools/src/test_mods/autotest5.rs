@@ -44,7 +44,18 @@
 //!   regeneration rates set to 0, so absorbs' gain and dual effects' second
 //!   values can be read.
 //!
-//! Not yet run in the game.
+//! Run in Skyrim SE (2026-10-13), the results in `known_ambiguities/`
+//! (actor values, magic, perks, shouts, scenes, casting, combat, traps):
+//! the condition scale is 0..1; `HasShout` sees `AddShout`; abilities and
+//! perks' ability sections work; Mod Spell Magnitude applies the highest
+//! priority first; the player's target actor casts hit and Augmented
+//! Flames scales the taper too; NPCs read `HealRate` 0 and don't heal;
+//! friends' bolts landed without a fight; completion conditions end a phase
+//! at once; the area blast spares those behind a body; absorb health's gain
+//! and dual effects' second values take the taper. Not settled: the
+//! recheck (frost has No Duration: it landed once), the traps (the bowl
+//! came to rest beside the NPC, the rock didn't fall), absorb magicka
+//! giving the caster nothing.
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, write_plugin};

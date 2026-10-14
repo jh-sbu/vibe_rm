@@ -46,14 +46,17 @@ Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
   contact spells 160 units.
 - **Target location** spells without a projectile land where the view meets
   the world (within 4096 units), on the actors in their area.
-- **Area** (`test-mod autotest4`): Fireball cast by an NPC at an NPC struck
-  that one and NPCs about 100 and 200 units off, not those about 300 to 470
-  off nor the caster 300 off; the distances shifted as the blast moved them,
-  so the edge isn't pinned down (15 feet is about 320 units).
+- **Area** (`test-mod autotest4`, `autotest5`): Fireball cast by an NPC at
+  an NPC struck that one and, of NPCs measured before the blast, one 279
+  units off to the side, not those 95, 152, 221 and 253 off behind it (the
+  struck one's body between), nor any 335 to 490 off, nor the caster. In
+  `autotest4`'s line of NPCs, each behind the last, the third was spared.
+  The blast pushed the sheltered ones all the same.
 - **Area** spells strike every live actor whose body's middle is within the
-  radius (the player too when someone else casts it), never the caster; a
-  hostile spell delivered on oneself with an area (Battle Cry) lands on the
-  others around but not on the caster.
+  radius (the player too when someone else casts it) and in sight of where
+  it went off, nothing solid and no body (the struck one's too) between;
+  never the caster. A hostile spell delivered on oneself with an area
+  (Battle Cry) lands on the others around but not on the caster.
 - **Skill XP**: the spell's base cost (`SPIT`) times its school's effect's
   skill usage multiplier, through the skill's `AVSK`; hostile spells give
   it for each actor they land on, the rest when cast; concentration spells a

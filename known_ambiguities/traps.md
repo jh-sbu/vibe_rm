@@ -40,6 +40,14 @@ themselves.
 - What the player holds doesn't hit the player.
 - Which objects are traps: those whose scripts (or the scripts they extend)
   define any of the three events. The engine's own rule isn't public.
+  Not yet seen in the game: `autotest4`'s scripted bowl, dropped onto and
+  pushed at a held NPC, sent no trap event; `autotest5`'s, dropped from
+  250 units above one (its script's `OnLoad` ran), came to rest beside it,
+  104 units off, again with no event and no harm. The game's falling rock
+  (`TrapFallingRockSm01_Rock`) placed 300 units up and given
+  `SetMotionType` dynamic didn't fall. A plugin with a copy of that rock
+  under our own id crashes the game while it loads plugins, with or
+  without a script of ours and its alternate textures (`MODS`).
 
 - Parts moved by objects' behaviour graphs (swinging maces and blades, a
   rig's supports) hit like keyframed traps (motion type 4), with the

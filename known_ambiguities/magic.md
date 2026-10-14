@@ -65,12 +65,31 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   Frost has none. Fire at 10 a second for 3 s took 30.886: its lasting
   change lands a fraction each frame (not in whole points) and tapers after.
 
+## Confirmed in the game (`test-mod autotest5`, 2026-10-13)
+
+- **Taper's reach** (50 points, cast with target actor delivery, the
+  actors' regeneration off): Firebolt's fire took 54.875 as when aimed. An
+  absorb health's taper reaches the caster too: the draugr axe's (0.2, 2,
+  1 s) took 53.25 and gave 53.25. A dual effect's second value takes the
+  taper at its weight: Storm Call's bolt 74.583 health and 37.292 magicka,
+  Lightning Bolt's 50.05 and 25.025, a lightning rune's (0.3, 2, 3 s) 64.875
+  and 32.437; Ice Spike's 50 and 50 stamina. The spriggans' swarm (0.5, 2,
+  3 s) took 74.792 and a trap's fire 53.25. (In `taper` the trap rune and
+  trap fire copies kept their condition, `GetLevel` of the player >= 30.)
+- **Magnitude perks**: Augmented Flames (x1.25) made the player's 50 point
+  fire spell take 68.594: 62.5 and that magnitude's taper.
+- **Ability effects**: an ability of a fortify effect on One-handed (+7)
+  raised it while the player had it, from `AddSpell` or a perk's ability
+  section; a self spell of it (+10 for 60 s) too, until dispelled. The
+  potions' fortify skill effects raise the skill's damage modifier (actor
+  value 135), not the skill.
+
 ## Open (choices made here): taper
 
-- Whether an absorb's gain to the caster tapers too, and the second actor
-  value of a dual effect (Ice Spike's stamina, Lightning Bolt's magicka:
-  both read 0 lost, regenerated too fast to tell); taken as tapering as the primary. The
-  absorb, frost rune, trap fire and spriggan swarm copies never landed.
+- **Absorb magicka**: the College staff's effect (`MG07StaffEffect`: 1, 0,
+  1 s) took 100 magicka for 50 and gave the caster none, where the absorb
+  health gave all it took; taken here as giving what it takes, as absorb
+  health does.
 - **Absorb health** of 20 took 20 from the target and gave the caster 20.
 - **Calm, fear, frenzy, rally** held aggression -1 (Calm), confidence 0
   (Fear), aggression 3 (Fury, whose other effect sets confidence 4) and
@@ -83,8 +102,9 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
 - **Conditions** of fire-and-forget effects with no duration that fail
   don't land; lasting and constant ones wait, looked at again every second,
   and stop (`OnEffectFinish`) or start again (`OnEffectStart`) as they
-  change (the game's interval isn't known: the test's lasting effect, a
-  potion's, didn't apply from a spell).
+  change (the game's interval isn't known: `autotest4`'s lasting effect
+  was a potion's, which raises another value; `autotest5`'s was frost,
+  whose No Duration flag makes it land once, so neither measured it).
 - **Resistance**: whether NPCs have a cap isn't public (taken as 100).
 - **Perks**: Mod Spell Magnitude (owner: the caster; tabs: spell, target)
   and Mod Incoming Spell Magnitude (owner: the target; tab: spell) scale
@@ -92,7 +112,8 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
 - **A hostile spell landing** sends `OnHit` (the spell as its source, no
   projectile) and, like a first blow, starts the target's fight and an
   assault. Instant health damage goes through the combat damage path (a
-  flinch); damage over time wears health down in whole points without one.
+  flinch); damage over time wears health down a little each frame without
+  one.
 - **Effects end** on the dead (except No Death Dispel) and on actors
   unloaded; abilities come back when they load. Finished effects' scripts are
   kept 30 real seconds for `OnEffectFinish`.

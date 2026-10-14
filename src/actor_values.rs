@@ -109,7 +109,10 @@ impl Engine {
             av::HEALTH => (f32_at(&race(), 36) + offset(36)).max(5.0),
             av::MAGICKA => f32_at(&race(), 40) + offset(38),
             av::STAMINA => (f32_at(&race(), 44) + offset(40)).max(10.0),
-            av::HEAL_RATE => f32_at(&race(), 84),
+            // The race's rate is the player's: NPCs read 0 and don't heal
+            // (`test-mod autotest5`).
+            av::HEAL_RATE if actor == PLAYER_REF => f32_at(&race(), 84),
+            av::HEAL_RATE => 0.0,
             av::MAGICKA_RATE => f32_at(&race(), 88),
             av::STAMINA_RATE => f32_at(&race(), 92),
             av::CARRY_WEIGHT => f32_at(&race(), 48),
@@ -293,6 +296,9 @@ impl Engine {
         let changed = |i: u32| self.scripts.actor_values.contains_key(&(actor, i));
         if changed(av::HEALTH) && actor != PLAYER_REF {
             s.max_health = self.av_max(actor, av::HEALTH).max(1.0);
+        }
+        if actor != PLAYER_REF {
+            s.health_regen = self.actor_value(actor, av::HEAL_RATE).max(0.0);
         }
         if changed(av::STAMINA) {
             s.max_stamina = self.av_max(actor, av::STAMINA).max(0.0);

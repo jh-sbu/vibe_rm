@@ -29,8 +29,10 @@ use them (`vrm-tool av-conditions <data>`).
   Papyrus's `GetActorValuePercentage` is current over base plus permanent
   modifier, 0..1, and 1 when that is 0.
 
-## Open questions
-
-- A few conditions compare `GetActorValuePercent` against 30, 60, 75, which
-  then always pass; whether the condition function scales differently from
-  Papyrus's is unknown.
+- The `GetActorValuePercent` condition is 0..1 as Papyrus's is (`test-mod
+  autotest5`): on a full-health target, `>= 0.5` passed and `>= 50` didn't;
+  at 40% neither. The few vanilla conditions comparing it against 30, 60, 75
+  never pass.
+- NPCs' `HealRate` reads 0 (as does `CombatHealthRegenMult`), though their
+  race's `DATA` has 0.7: that is the player's. Our NPCs at 90 of 300 health
+  didn't heal in 30 s, free, held or fighting (`test-mod autotest5`).
