@@ -328,6 +328,27 @@ impl Engine {
         m.damage = (m.damage - amount).min(0.0);
     }
 
+    /// Actors just loaded take the health and stamina damage scripts did them
+    /// while away (`DamageActorValue` on an unloaded actor), as if done now:
+    /// health brought to nothing kills them, or bleeds out the essential.
+    pub(crate) fn carry_unloaded_damage(&mut self, actors: &[FormId]) {
+        for &actor in actors {
+            for index in [av::HEALTH, av::STAMINA] {
+                let Some(m) = self.scripts.actor_values.get_mut(&(actor, index)) else {
+                    continue;
+                };
+                let damage = std::mem::take(&mut m.damage);
+                if damage < 0.0 {
+                    log::debug!(
+                        "{actor} loads with {} {damage:.0}",
+                        av::NAMES[index as usize]
+                    );
+                    self.damage_actor_value(actor, index, -damage);
+                }
+            }
+        }
+    }
+
     /// After a change to its most, a loaded actor's (or the player's) combat
     /// stats follow, and its live health / stamina move by as much.
     fn actor_value_changed(&mut self, actor: FormId, index: u32, before: f32) {

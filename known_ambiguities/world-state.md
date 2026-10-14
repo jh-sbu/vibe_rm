@@ -12,9 +12,10 @@ only: nothing is written to disk until saves exist.
 - `ACHR` record flag `0x200` is "Starts Dead": such actors (C04's Silver Hand
   bodies, `TreasCorpseSkeletonRigid`) are placed as corpses, quietly (no
   `OnDying` / `OnDeath`).
-- NPCs regenerate `health_regen` percent (race `DATA`) of their health a second
-  out of combat; one that unloads hurt is given what that rate would have
-  restored meanwhile (real seconds). Waiting and sleeping also advance that
+- NPCs regenerate their `HealRate` percent of their health a second out of
+  combat, which is 0 for NPCs (`actor-values.md`: they don't heal); one that
+  unloads hurt is given what that rate would have restored meanwhile (real
+  seconds). Waiting and sleeping also advance that
   healing through `heal_away`: each game hour adds 180 seconds of recovery
   (`HOUR_SECONDS`, currently fixed at `3600 / 20` in `src/sleep.rs`).
 - Game-start quest scripts call `MoveTo` on 17 references once it works (MG01
@@ -22,6 +23,12 @@ only: nothing is written to disk until saves exist.
   Elements, the Companions are gathered in Jorrvaskr...).
 
 ## Open questions
+
+- Health and stamina damage scripts do to an unloaded actor
+  (`DamageActorValue`) is kept and taken when it loads, as if done then:
+  brought to nothing it dies (the essential bleed out) as it loads, with
+  no killer. Whether the game kills it while away (`OnDeath` sooner, the
+  body where it was) is unconfirmed.
 
 - Living actors' positions aren't kept when they unload: their schedules (or a
   script move) decide where they are next.

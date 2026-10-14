@@ -515,7 +515,8 @@ game each piece unlocks.
   race and the offsets, auto-calculated stats from the class at the NPC's
   level, "PC level mult" ones too: `esp::auto_calc`), a permanent modifier
   and damage over them. Live health and
-  stamina are folded in (damaging health to nothing kills); changes to health,
+  stamina are folded in (damaging health to nothing kills; damage done
+  while unloaded is taken as the actor loads); changes to health,
   stamina, aggression, confidence, assistance and the armor and block skills
   reach combat. `Variable01`-`10` and `WaitingForPlayer` now gate packages and
   lines as scripts set them. Console `[ref.]getav`, `setav`, `modav`, `forceav`,
@@ -1003,9 +1004,7 @@ game each piece unlocks.
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
    - Triggers: water and lava damage volumes
-   - Actor values: temporary (magic) modifiers; damage to
-     unloaded actors carried into their live values; names past
-     `WaitingForPlayer`; `HasKeyword` counting worn items' and effects' keywords
+   - Actor values: temporary (magic) modifiers; `HasKeyword` counting worn items' and effects' keywords
    - Magic, more: detect life, telekinesis, soul trap, cloaks, slow time;
      taper, area, addictions, potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target); bound weapons kept
