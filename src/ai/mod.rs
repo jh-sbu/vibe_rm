@@ -1528,14 +1528,21 @@ impl ActorRuntime {
                 if !self.graph_event(&seat.clips.event, &mut w.clips) {
                     continue;
                 }
+                let mut raised = Vec::new();
                 if let Some(g) = &mut self.graph {
                     g.set_variable("isInFurniture", 1.0);
                     let settle = seat.clips.enter_time() + 1.0;
                     let mut t = 0.0;
                     while t < settle {
-                        g.update(0.25, w.clips.vfs, w.clips.anims, &self.skeleton);
+                        let frame = g.update(0.25, w.clips.vfs, w.clips.anims, &self.skeleton);
+                        raised.extend(frame.raised);
                         t += 0.25;
                     }
+                }
+                // Keep the objects drawn or put away while skipping the entry.
+                // Sounds, footsteps and other transient events stay skipped.
+                for r in raised {
+                    self.anim_object_event(&r.event.to_ascii_lowercase(), r.payload.as_deref());
                 }
                 w.furniture.reserve(fid, mi, self.ref_id);
                 self.seat = Some(seat);
@@ -1787,20 +1794,8 @@ impl ActorRuntime {
             {
                 log::trace!(target: "combat_events", "{} raised {}{}", self.ref_id, r.event, r.payload.as_deref().map(|p| format!(" ({p})")).unwrap_or_default());
             }
+            self.anim_object_event(&e, r.payload.as_deref());
             match e.as_str() {
-                "animobjdraw" => {
-                    if let Some(anio) = r.payload
-                        && !self.objects.iter().any(|o| o.eq_ignore_ascii_case(&anio))
-                    {
-                        self.objects.push(anio);
-                        self.objects_changed = true;
-                    }
-                }
-                "animobjectunequip" => {
-                    self.objects_changed |= !self.objects.is_empty();
-                    self.objects.clear();
-                    self.carrying = false;
-                }
                 "idlefurnitureexit" => self.out_of_furniture = true,
                 "weapondraw" | "weaponsheathe" => {
                     let out = e == "weapondraw";
@@ -1827,6 +1822,26 @@ impl ActorRuntime {
             }
         }
         frame.pose
+    }
+
+    /// Apply persistent object state, including during furniture entry fast-forward.
+    fn anim_object_event(&mut self, event: &str, payload: Option<&str>) {
+        match event {
+            "animobjdraw" => {
+                if let Some(anio) = payload
+                    && !self.objects.iter().any(|o| o.eq_ignore_ascii_case(anio))
+                {
+                    self.objects.push(anio.to_owned());
+                    self.objects_changed = true;
+                }
+            }
+            "animobjectunequip" => {
+                self.objects_changed |= !self.objects.is_empty();
+                self.objects.clear();
+                self.carrying = false;
+            }
+            _ => {}
+        }
     }
 
     /// Play the idle `clips` describe in the furniture, then go back to the seat's
