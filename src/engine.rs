@@ -34,8 +34,8 @@ pub(crate) struct CellRuntime {
     pub(crate) doors: Vec<Door>,
     /// Doors and other keyframe-animated objects.
     pub(crate) animated: Vec<crate::world::animated::AnimatedObject>,
-    /// Water planes: south-west corner, size and surface height.
-    pub(crate) water: Vec<(glam::Vec2, f32, f32)>,
+    /// Water surfaces, retaining the resolved WATR form for gameplay.
+    pub(crate) water: Vec<crate::water::WaterSurface>,
     /// Scripted trigger volumes.
     pub(crate) triggers: Vec<crate::triggers::Trigger>,
     /// Placed hazards (`PHZD`).
@@ -2116,11 +2116,15 @@ impl Engine {
     fn add_water(&mut self, key: CellKey, planes: Vec<(f32, f32, f32, f32, FormId)>) {
         let mut params = Vec::new();
         if let Some(rt) = self.cells.get_mut(&key) {
-            rt.water.extend(
-                planes
-                    .iter()
-                    .map(|&(x, y, size, h, _)| (glam::Vec2::new(x, y), size, h)),
-            );
+            rt.water
+                .extend(planes.iter().map(|&(x, y, size, height, water_type)| {
+                    crate::water::WaterSurface {
+                        corner: glam::Vec2::new(x, y),
+                        size,
+                        height,
+                        water_type,
+                    }
+                }));
         }
         for (x, y, size, h, wt) in planes {
             if let Some(p) = records::water_params(&self.lo, wt) {

@@ -58,6 +58,7 @@ mod training;
 mod traps;
 mod triggers;
 mod ui;
+mod water;
 mod weather;
 mod world;
 mod world_state;

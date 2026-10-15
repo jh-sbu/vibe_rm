@@ -697,6 +697,10 @@ game each piece unlocks.
   Open questions: `known_ambiguities/traps.md` Papyrus variables and locals start at their type's
   default (an `Int` at 0, not None). vrm-tool `triggers`. Open questions:
   `known_ambiguities/triggers.md`
+- Water types: loaded cell surfaces retain their resolved `XCWT` / worldspace
+  `NAM2` water type; `IsInDangerousWater` tests the `WATR` `FNAM` damage flag
+  for actors touching it, including wading. Console `[ref.]isindangerouswater`;
+  contact threshold and unloaded actors: `known_ambiguities/water.md`
 - Detection: one detection value per observer and target from the CK wiki's
   formula and the game settings (`fSneakBaseValue`, `fSneakMaxDistance` and
   its exterior multiplier, distance attenuation; sound from movement, worn
@@ -1045,10 +1049,10 @@ game each piece unlocks.
      dropping their collision; prismatic and malleable constraints (none in the
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
-   - Water types: which one a body is in (cells' `XCWT`, worldspaces'
-     `NAM2`), `IsInDangerousWater` (`WATR` `FNAM` 0x1: Apocrypha's water
-     harming swimmers through `DLC2abApoWaterDamage`; mods' water
-     detection), contact spells (`XNAM`), damage per second (`DATA`); see
+   - Water (loaded types and `IsInDangerousWater`: see Done): swimming and
+     `IsSwimming`, unloaded actors' contact, contact spells (`XNAM`);
+     `WATR` `DATA` is unused in SSE per xEdit, not damage per second.
+     See `known_ambiguities/water.md` and
      `known_ambiguities/triggers.md` (lava is scripted triggers, fires
      are placed hazards: see Done)
    - Magic, more: detect life, telekinesis, slow time; trapped

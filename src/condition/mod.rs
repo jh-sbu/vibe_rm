@@ -621,7 +621,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             b(subject.is_some_and(|s| e.combat_state(s) != crate::ai::combat::CombatState::None))
         } // IsInCombat
         580 => b(subject.is_some_and(|s| e.is_bleeding_out(s))), // IsBleedingOut
-        // Nobody casts, swims or feeds yet.
+        332 => b(subject.is_some_and(|s| e.is_in_dangerous_water(s))),
+        // Nobody flies, swims or feeds yet.
         101 | 185 | 226 => b(false),
         // Behaviour graph variables of the subject's graph (the idle-picking
         // fallback below answers for actors without one).

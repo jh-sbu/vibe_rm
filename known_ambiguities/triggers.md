@@ -71,13 +71,15 @@ A box of half extent 128 with a script logging its events:
   its own (`DATA` is 0 everywhere, no `XNAM` contact spell). Vanilla sets
   it only on `DLC2ApocryphaWater` and `DLC2ApocryphaWaterSmall`, whose harm
   is an ability: `DLC2abApoWaterDamage` (in Apocrypha) gives
-  `DLC2abApoWaterDamageActual`, 70 health a second while swimming, both
-  conditioned on `IsInDangerousWater`. Mods use the flag as a water
+  `DLC2abApoWaterDamageActual`, with separate effects conditioned on
+  swimming (70 magnitude) and dangerous water (25 magnitude). Mods use the flag as a water
   detector: Wade In Water and needs mods (SunHelm's waterskins and
   drinking) want every water type flagged, through xEdit / zEdit patchers
-  or an SKSE utility setting it at load. Not modelled yet: the condition,
-  which water type a body is in (cells' `XCWT`, worldspaces' `NAM2`), the
-  contact spell. The Soul Cairn's lava is `DLC1LD_LavaTriggerScript` on
+  or an SKSE utility setting it at load. Loaded water types and the
+  dangerous-water condition are now modelled in `src/water.rs`; swimming,
+  unloaded actors' contact and the contact spell remain open. xEdit marks
+  `WATR` `DATA` unused in SSE. See `water.md` for sources and choices.
+  The Soul Cairn's lava is `DLC1LD_LavaTriggerScript` on
   trigger volumes, which run.
 
 ## Open questions
