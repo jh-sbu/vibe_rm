@@ -3111,7 +3111,7 @@ impl Engine {
         to: Option<FormId>,
         mark: Option<FormId>,
     ) -> Vec<(Option<FormId>, i32)> {
-        let parts = self.inventory_mut(r).remove_split(item, count, only);
+        let (parts, souls) = self.inventory_mut(r).remove_with_souls(item, count, only);
         let n: i32 = parts.iter().map(|(_, n)| n).sum();
         self.inventory_event(r, false, item, n, to);
         if let Some(to) = to.filter(|_| n > 0) {
@@ -3119,6 +3119,11 @@ impl Engine {
             for &(owner, k) in &parts {
                 let owner = owner.or(mark).filter(|&o| Some(o) != to_base);
                 self.inventory_mut(to).add_owned(item, owner, k);
+            }
+            for (soul, k) in souls {
+                for _ in 0..k {
+                    self.inventory_mut(to).put_soul(item, soul);
+                }
             }
             self.inventory_event(to, true, item, n, Some(r));
         }

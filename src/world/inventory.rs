@@ -425,8 +425,20 @@ impl Inventory {
         n: i32,
         only: Option<Option<FormId>>,
     ) -> Vec<(Option<FormId>, i32)> {
+        self.remove_with_souls(form, n, only).0
+    }
+
+    /// Remove items together with their per-instance souls. Callers moving
+    /// items to another inventory must restore these souls there after adding
+    /// the item counts. Destructive removal deliberately discards them.
+    pub fn remove_with_souls(
+        &mut self,
+        form: FormId,
+        n: i32,
+        only: Option<Option<FormId>>,
+    ) -> (Vec<(Option<FormId>, i32)>, Vec<(u8, i32)>) {
         let Some(i) = self.items.iter().position(|(f, _)| *f == form) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let mut left = n.max(0);
         let mut out = Vec::new();
@@ -456,9 +468,13 @@ impl Inventory {
             self.items.remove(i);
         }
         // Those holding a soul go last.
+        let mut souls = Vec::new();
         let mut extra = self.souls_in(form) - self.count(form);
-        for (_, _, c) in self.souls.iter_mut().filter(|(f, _, _)| *f == form) {
+        for (_, soul, c) in self.souls.iter_mut().filter(|(f, _, _)| *f == form) {
             let t = (*c).min(extra.max(0));
+            if t > 0 {
+                souls.push((*soul, t));
+            }
             *c -= t;
             extra -= t;
         }
@@ -468,7 +484,7 @@ impl Inventory {
             self.poisoned.retain(|(w, _, _)| *w != form);
         }
         self.unequip_if_short(form);
-        out
+        (out, souls)
     }
 
     /// The poison on one of the carried `weapon`s, with its doses left.
@@ -922,6 +938,72 @@ mod tests {
             inv.add(f, n);
         }
         inv
+    }
+
+    #[test]
+    fn soul_removal_takes_empty_gems_first_and_returns_each_size() {
+        let gem = FormId(0x300);
+        let mut inv = carrying(&[(gem, 5), (SWORD, 1)]);
+        inv.put_soul(gem, 1);
+        inv.put_soul(gem, 1);
+        inv.put_soul(gem, 4);
+        assert!(inv.remove_with_souls(gem, 1, None).1.is_empty());
+        let (parts, souls) = inv.remove_with_souls(gem, 3, None);
+        assert_eq!(parts, vec![(None, 3)]);
+        assert_eq!(souls, vec![(1, 2)]);
+        assert_eq!(inv.souls, vec![(gem, 4, 1)]);
+        let (parts, souls) = inv.remove_with_souls(gem, 99, None);
+        assert_eq!(parts, vec![(None, 1)]);
+        assert_eq!(souls, vec![(4, 1)]);
+        assert!(inv.souls.is_empty());
+        assert_eq!(inv.count(SWORD), 1);
+    }
+
+    #[test]
+    fn soul_transfer_round_trip_conserves_counts_and_sizes() {
+        let gem = FormId(0x300);
+        let owner = FormId(0x400);
+        let mut source = Inventory::default();
+        source.add_owned(gem, Some(owner), 2);
+        source.put_soul(gem, 2);
+        source.put_soul(gem, 5);
+        let mut destination = Inventory::default();
+        let transfer = |from: &mut Inventory, to: &mut Inventory| {
+            let (parts, souls) = from.remove_with_souls(gem, 2, Some(Some(owner)));
+            for (owner, n) in parts {
+                to.add_owned(gem, owner, n);
+            }
+            for (size, n) in souls {
+                for _ in 0..n {
+                    to.put_soul(gem, size);
+                }
+            }
+        };
+        transfer(&mut source, &mut destination);
+        transfer(&mut destination, &mut source);
+        assert_eq!(source.count_owned(gem, Some(owner)), 2);
+        assert_eq!(source.souls, vec![(gem, 2, 1), (gem, 5, 1)]);
+        assert!(destination.souls.is_empty());
+        assert_eq!(source.count(gem) + destination.count(gem), 2);
+        assert_eq!(source.souls_in(gem) + destination.souls_in(gem), 2);
+    }
+
+    #[test]
+    fn failed_removal_and_destroying_gems_do_not_leave_or_duplicate_souls() {
+        let gem = FormId(0x300);
+        let mut inv = carrying(&[(gem, 1)]);
+        inv.put_soul(gem, 3);
+        for n in [0, -1] {
+            assert_eq!(inv.remove_with_souls(gem, n, None), (vec![], vec![]));
+        }
+        assert_eq!(
+            inv.remove_with_souls(gem, 1, Some(Some(SWORD))),
+            (vec![], vec![])
+        );
+        assert_eq!(inv.souls, vec![(gem, 3, 1)]);
+        inv.remove_split(gem, 1, None);
+        assert!(inv.souls.is_empty());
+        assert_eq!(inv.remove_with_souls(gem, 1, None), (vec![], vec![]));
     }
 
     #[test]

@@ -525,7 +525,9 @@ game each piece unlocks.
 - Soul trap: `Actor.TrapSoul` (the soul trap effect's script) and archetype
   23 effects put a dead actor's soul (by level; people's black) into the
   smallest of the caster's empty gems that holds it ("Soul captured!",
-  Souls Trapped); `src/soul_trap.rs`, `known_ambiguities/soul-trap.md`
+  Souls Trapped); inventory transfers (including storage, gifts, barter and
+  script removal to another container) carry the per-item souls as well;
+  `src/soul_trap.rs`, `known_ambiguities/soul-trap.md`
 - Poisons: used from the inventory, asked about (`sPoisonConfirmMessage`,
   a bow's next shot) and put on the weapon held (staffs, a poisoned weapon
   and empty hands refuse); a dose per blow, Concentrated Poison's two
@@ -1056,9 +1058,9 @@ game each piece unlocks.
      See `known_ambiguities/water.md` and
      `known_ambiguities/triggers.md` (lava is scripted triggers, fires
      are placed hazards: see Done)
-   - Magic, more: detect life, telekinesis, slow time; trapped
-     souls kept with their gems when they change hands (dropped, stored,
-     sold: `Inventory::souls` stays with the trapper);
+   - Magic, more: detect life, telekinesis, slow time; dropped soul gems'
+     per-item souls (public reports describe emptying: see
+     `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
      taper, area, addictions, potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target)
    - Crime, more: arrests (yielding by sheathing, guards following through
