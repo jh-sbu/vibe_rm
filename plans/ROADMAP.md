@@ -528,7 +528,8 @@ game each piece unlocks.
 - Carry weight: what an actor carries weighs its items, worn armor through
   "Mod Armor Weight" (Conditioning, Unhindered); the player over their
   `CarryWeight` walks, told `sOverEncumbered` (`src/encumbrance.rs`,
-  `known_ambiguities/encumbrance.md`)
+  `known_ambiguities/encumbrance.md`); worn armor slowing the player
+  (`fMoveEncumEffect*`, `fMoveWeightMax`)
 - Falling damage: the player's falls past `fJumpFallHeightMin` hurt by
   UESP's formula (the `fJumpFall*` settings), the "Mod Falling Damage"
   perk entry point (Cushioned) applied; deep water spares them
@@ -1055,9 +1056,8 @@ game each piece unlocks.
      (`fCombatDialogueFlee*`); the group strength timer
      (`fCombatGroupCombatStrengthUpdateTime`); impacts' hazards (`NAM2`),
      second sound (`NAM1`) and results (bounce, impale, stick)
-   - Encumbrance, more: worn armor's weight slowing the wearer
-     (`fMoveEncumEffect`, `fMoveWeightMax`; Conditioning and Unhindered
-     "don't slow you down"), fast travel refused over-encumbered (with the
+   - Encumbrance, more: worn armor slowing NPCs (the player: see Done),
+     fast travel refused over-encumbered (with the
      map), followers' "can't carry any more"
    - Perks, more: staggers, bow zoom, key rewards; refunds and the Legendary reset; NPCs' skills advancing
    - World state: moved references appearing at once when moved out of an

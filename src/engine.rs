@@ -2414,8 +2414,9 @@ impl Engine {
             self.test_jump = false;
         }
         let sneak_speed = self.player_sneak_speed();
+        let armor_speed = self.armor_speed_mult(PLAYER_REF);
         self.player
-            .update(&mut self.physics, &cam, input, sneak_speed, dt);
+            .update(&mut self.physics, &cam, input, sneak_speed, armor_speed, dt);
         if let Some(h) = self.player.landed_from {
             self.player_landed(h);
         }
