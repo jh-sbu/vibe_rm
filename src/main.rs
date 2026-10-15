@@ -22,6 +22,7 @@ mod footsteps;
 mod gift;
 mod grab;
 mod harvest;
+mod hazards;
 mod imagespace;
 mod impacts;
 mod items;

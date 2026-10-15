@@ -144,6 +144,11 @@ Left out so far:
   soul takes beside a black one, whether a grand soul into an empty grand
   gem becomes `SoulGemGrandFilled`, and `TrapSoul`'s result for a black
   soul with no black gem.
+- **Placed hazards** (`triggers.md`): a test cell with a placed
+  `FireLgPlacedHazard` (scale 1, and a copy at 2): the player moved
+  (`MoveTo` with offsets) 40, 60, 80 and 120 units from it, held, health
+  read after 2 s at each: the reach (feet? scaled?) and the rate. Needs a
+  `PHZD` record writer.
 - **Ethereal** (`magic.md`): `VoiceBecomeEthereal3` cast by script on
   a held NPC, then a Firebolt cast at it and `DamageActorValue` health on
   it: health after each (magic spared, scripts not?), and whether the
