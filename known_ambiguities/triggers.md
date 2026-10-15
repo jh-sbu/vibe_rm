@@ -53,6 +53,22 @@ A box of half extent 128 with a script logging its events:
   whether `OnTriggerEnter`'s frame also sends one is not said. Who sets it
   off is the same as for entering.
 
+- **Placed hazards** (`PHZD`, `src/hazards.rs`): the radius (`HAZD`
+  `DATA` 0x04) read in feet, as spells' areas are (3 for
+  `FireLgPlacedHazard`, 40 for the Throat of the World's blizzard), and
+  scaled by the reference's scale (the Ratway fire's 0.68 makes 44
+  units); reached from three heights over a body's feet, as triggers'.
+  Each interval (0x10) gives the spell again, replacing the last, quietly
+  (no `OnHit`, no fight), with the hazard as the caster. Unused: the limit
+  (`FireLgPlacedHazard`'s is the float 1.0), lifetime (placed ones never
+  end), image space radius, light, impact data set, sound and model (the
+  placed fires' flames are separate statics: whether the hazard's
+  `FXFire01New.nif` is drawn too is unknown), drop to ground, align to
+  normal. Disabled hazards do nothing.
+- **Water and lava**: no vanilla water type does damage (`WATR` `DATA` 0,
+  no `XNAM` spell); the Soul Cairn's lava is `DLC1LD_LavaTriggerScript`
+  on trigger volumes, which run.
+
 ## Open questions
 
 - Collision layers of trigger volumes (`XTRI`, `BGSCollisionLayer`): which

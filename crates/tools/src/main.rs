@@ -3056,6 +3056,56 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("hazards") => {
+            // hazards <data dir> [base edid substring]: placed hazards (PHZD) with
+            // their base, cell (an exterior's grid) and position.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let want = args.get(2).map(|w| w.to_ascii_lowercase());
+            for &id in lo.ids_of_type(b"PHZD") {
+                let Some(rec) = lo.get(id) else { continue };
+                let base = rec
+                    .get(b"NAME")
+                    .filter(|d| d.len() >= 4)
+                    .map(|d| rec.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+                    .unwrap_or(esp::FormId::NULL);
+                let edid = lo
+                    .get(base)
+                    .and_then(|b| b.editor_id().map(|e| e.to_string()))
+                    .unwrap_or_default();
+                if want
+                    .as_ref()
+                    .is_some_and(|w| !edid.to_ascii_lowercase().contains(w))
+                {
+                    continue;
+                }
+                let pos = rec
+                    .get(b"DATA")
+                    .filter(|d| d.len() >= 12)
+                    .map(|d| {
+                        let f = |o: usize| f32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+                        format!("{:.0},{:.0},{:.0}", f(0), f(4), f(8))
+                    })
+                    .unwrap_or_default();
+                let cell = lo.cell_of_ref(id).and_then(|c| lo.get(c));
+                let place = cell
+                    .map(|c| {
+                        let grid = c
+                            .get(b"XCLC")
+                            .filter(|d| d.len() >= 8)
+                            .map(|d| {
+                                let i =
+                                    |o: usize| i32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+                                format!(" ({},{})", i(0), i(4))
+                            })
+                            .unwrap_or_default();
+                        format!("{} {}{grid}", c.form_id, c.editor_id().unwrap_or_default())
+                    })
+                    .unwrap_or_else(|| "?".into());
+                println!("{id} {base} {edid} in {place} at {pos}");
+            }
+        }
         Some("esp-has") => {
             // esp-has <data dir> <TAG> <SUB>: records of a type with a subrecord,
             // and its first four bytes (often a form id).

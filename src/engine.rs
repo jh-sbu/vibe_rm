@@ -38,6 +38,8 @@ pub(crate) struct CellRuntime {
     pub(crate) water: Vec<(glam::Vec2, f32, f32)>,
     /// Scripted trigger volumes.
     pub(crate) triggers: Vec<crate::triggers::Trigger>,
+    /// Placed hazards (`PHZD`).
+    pub(crate) hazards: Vec<crate::hazards::Hazard>,
     /// Loose objects (simulated bodies).
     pub(crate) loose: Vec<crate::loose::Loose>,
 }
@@ -1751,6 +1753,7 @@ impl Engine {
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_actors(key, &actors);
         self.load_triggers(key, &refs);
+        self.load_hazards(key, &refs);
         self.load_decals(key, &refs);
         self.load_activate_parents(&refs);
         self.attach_cell_scripts(&refs);
@@ -2002,6 +2005,7 @@ impl Engine {
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_actors(key, &actors);
         self.load_triggers(key, &refs);
+        self.load_hazards(key, &refs);
         self.load_activate_parents(&refs);
         self.attach_cell_scripts(&refs);
         self.attach_cell_scripts(&made_ids);
@@ -2385,6 +2389,7 @@ impl Engine {
         self.update_whereabouts(dt);
         self.update_actors(dt);
         self.update_triggers(dt);
+        self.update_hazards(dt);
         self.update_story();
         self.update_map_markers(dt);
         self.update_quest_targets(dt);
