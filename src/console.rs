@@ -131,6 +131,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "[ref.]addperk / removeperk / hasperk <perk>   give, take or check a perk".into(),
             "[ref.]perkep <entry point> <value> [subject...]   a value through the ref's perks (tabs 1, 2...)".into(),
             "perkpoints [n]        the player's perk points (or set them)".into(),
+            "legendary <skill>     reset a mastered skill to 15 and refund its perks".into(),
         ],
         "detect" => engine.describe_detection(),
         "skills" if args.first() == Some(&"open") => {
@@ -140,6 +141,15 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             vec![]
         }
         "skills" => engine.describe_skills(),
+        "legendary" => {
+            let Some(skill) = args.first().and_then(|s| crate::skills::skill_index(s)) else {
+                return vec!["usage: legendary <skill>".into()];
+            };
+            if !engine.make_skill_legendary(skill) {
+                return vec!["skill must be at base level 100".into()];
+            }
+            engine.describe_skills()
+        }
         "perkpoints" => {
             if let Some(n) = args.first().and_then(|a| a.parse::<u32>().ok()) {
                 engine.skills.perk_points = n;

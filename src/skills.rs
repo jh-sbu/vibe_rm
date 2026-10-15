@@ -48,6 +48,8 @@ pub fn player_level() -> u16 {
 pub struct Skills {
     /// Skill XP towards each skill's next level (by index from `FIRST_SKILL`).
     pub xp: [f32; SKILL_COUNT],
+    /// Times each skill has been made Legendary.
+    pub legendary: [u32; SKILL_COUNT],
     pub level: u16,
     /// Character XP towards the next level up.
     pub level_xp: f32,
@@ -66,6 +68,7 @@ impl Default for Skills {
     fn default() -> Self {
         Skills {
             xp: [0.0; SKILL_COUNT],
+            legendary: [0; SKILL_COUNT],
             level: player_level(),
             level_xp: 0.0,
             pending: 0,
@@ -119,6 +122,28 @@ fn printf(fmt: &str, s: &str, i: i64) -> String {
 }
 
 impl Engine {
+    /// Reset a mastered skill and refund its perk tree, without awarding XP.
+    /// Rules: Prima's Skyrim SE guide, "Legendary Difficulty and Skills".
+    pub fn make_skill_legendary(&mut self, skill: u32) -> bool {
+        if !(av::FIRST_SKILL..=av::LAST_SKILL).contains(&skill)
+            || !can_make_legendary(skill, self.av_base(PLAYER_REF, skill))
+        {
+            return false;
+        }
+        let tree_perks = self
+            .perk_tree(skill)
+            .into_iter()
+            .flat_map(|node| self.perk_ranks(node.perk))
+            .collect();
+        let refund = legendary_refund(&tree_perks, &self.actor_perks(PLAYER_REF));
+        for perk in &refund {
+            self.remove_perk(PLAYER_REF, *perk);
+        }
+        self.set_actor_value(PLAYER_REF, skill, 15.0);
+        self.skills.record_legendary(skill, refund.len() as u32);
+        true
+    }
+
     /// A skill's `AVSK` (the skill's `AVIF` is `0x446 + index`). Without one:
     /// a use is its base XP and a level `2 x level ^ curve`, as most skills.
     pub fn skill_curve(&self, skill: u32) -> SkillCurve {
@@ -458,14 +483,38 @@ impl Engine {
         )];
         for skill in av::FIRST_SKILL..=av::LAST_SKILL {
             out.push(format!(
-                "  {:12} {:>3.0}  {:>7.1} / {:.1}",
+                "  {:12} {:>3.0}  {:>7.1} / {:.1}  Legendary {}",
                 av::NAMES[skill as usize],
                 self.av_base(PLAYER_REF, skill),
                 s.xp[(skill - av::FIRST_SKILL) as usize],
-                self.skill_xp_needed(skill)
+                self.skill_xp_needed(skill),
+                s.legendary[(skill - av::FIRST_SKILL) as usize]
             ));
         }
         out
+    }
+}
+
+pub(crate) fn can_make_legendary(skill: u32, base: f32) -> bool {
+    (av::FIRST_SKILL..=av::LAST_SKILL).contains(&skill) && base >= SKILL_MAX
+}
+
+/// NNAM chains represent separately purchased ranks. Count each owned form
+/// once, even if a mod's tree references it in several nodes.
+fn legendary_refund(tree: &HashSet<FormId>, owned: &[(FormId, u8)]) -> HashSet<FormId> {
+    owned
+        .iter()
+        .map(|p| p.0)
+        .filter(|p| tree.contains(p))
+        .collect()
+}
+
+impl Skills {
+    fn record_legendary(&mut self, skill: u32, refund: u32) {
+        let i = (skill - av::FIRST_SKILL) as usize;
+        self.xp[i] = 0.0;
+        self.legendary[i] = self.legendary[i].saturating_add(1);
+        self.perk_points = self.perk_points.saturating_add(refund);
     }
 }
 
@@ -475,6 +524,53 @@ const SNEAK_SHOT_XP: f32 = 2.5;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legendary_eligibility_and_refunds() {
+        assert!(!can_make_legendary(av::ONE_HANDED, 99.0));
+        assert!(can_make_legendary(av::ONE_HANDED, 100.0));
+        assert!(!can_make_legendary(av::HEALTH, 100.0));
+        // Two owned ranks in a three-rank tree, a duplicate tree node, and
+        // an unrelated perk (such as the player's built-in skill boosts).
+        let tree = [FormId(1), FormId(2), FormId(3), FormId(1)].into();
+        let owned = [(FormId(1), 1), (FormId(2), 1), (FormId(9), 1)];
+        let refund = legendary_refund(&tree, &owned);
+        assert_eq!(refund, [FormId(1), FormId(2)].into());
+        let remaining: Vec<_> = owned
+            .into_iter()
+            .filter(|p| !refund.contains(&p.0))
+            .collect();
+        assert!(legendary_refund(&tree, &remaining).is_empty());
+    }
+
+    #[test]
+    fn repeated_legendary_keeps_character_progress() {
+        let mut skills = Skills {
+            level: 42,
+            level_xp: 75.0,
+            pending: 2,
+            perk_points: 3,
+            trained: 4,
+            ..Default::default()
+        };
+        skills.xp.fill(12.0);
+        let i = (av::ONE_HANDED - av::FIRST_SKILL) as usize;
+        skills.record_legendary(av::ONE_HANDED, 2);
+        skills.record_legendary(av::ONE_HANDED, 0);
+        assert_eq!(skills.legendary[i], 2);
+        assert_eq!(skills.xp[i], 0.0);
+        assert_eq!(skills.xp[(av::LAST_SKILL - av::FIRST_SKILL) as usize], 12.0);
+        assert_eq!(skills.perk_points, 5);
+        assert_eq!(
+            (
+                skills.level,
+                skills.level_xp,
+                skills.pending,
+                skills.trained
+            ),
+            (42, 75.0, 2, 4)
+        );
+    }
 
     const LOCKPICKING: SkillCurve = SkillCurve {
         use_mult: 45.0,

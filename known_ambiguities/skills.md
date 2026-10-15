@@ -29,6 +29,13 @@ below (Skyrim.esm / Update.esm).
   The game clears the flag on the book's base, so another copy doesn't teach;
   that is the same thing.
 
+- **Legendary skills**: [Prima's Skyrim SE guide](https://primagames.com/eguides/elder-scrolls-v-skyrim-special-edition-eguide/Training/training-part-1-character-creation/legendary-difficulty-and-skills)
+  documents the skills-menu confirmation at 100, reset to 15, perk refund,
+  repeatable advancement and the counter for repeated resets. Implemented in
+  the skills menu and console `legendary <skill>`. Refunds follow the skill's
+  AVIF tree and NNAM rank chains; separately owned rank forms each return one
+  point, and duplicate nodes cannot refund the same form twice.
+
 - **NPC levels** (`GetLevel`): `ACBS` level, or with the PC level mult flag
   (0x80) the player's level x mult / 1000, rounded down (1.5 and 1.667 at
   level 1 gave 1), at least calc min (`test-mod autotest`) and at most calc
@@ -46,6 +53,17 @@ below (Skyrim.esm / Update.esm).
   `AdvanceSkill`'s value is a use's base XP.
 
 ## Open (choices made here)
+
+- **Legendary edge cases**: the public guide does not specify modified versus
+  base skill eligibility, fractional XP after a script sets a skill to 100,
+  or refunding script-granted perks, shared nodes across modded trees, and
+  PERK records owned with a rank field greater than one instead of separate
+  NNAM rank forms. Here eligibility uses base skill >= 100; the reset clears
+  that skill's fractional XP, preserves character XP, pending level ups,
+  training count and learned books, and returns one point per owned tree
+  form regardless of its source or rank field. A shared perk is removed
+  once. The reset itself awards no skill / character XP or skill-increase
+  event. These edge choices need observable tests before claiming parity.
 
 - **No UESP number has a setting**: a sneak attack shot is 2.5 Sneak XP, a
   bash 5 Block XP.
