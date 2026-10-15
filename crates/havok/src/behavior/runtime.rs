@@ -1416,6 +1416,27 @@ impl Ctx<'_> {
                 self.set_modifier_output(gi, m.m, "speedOut", goal);
             }
             (
+                _,
+                Modifier::InterpValue {
+                    source,
+                    target,
+                    result,
+                    duration,
+                },
+            ) => {
+                // A step of the way each update: dt of the duration (all of it
+                // past the end), from wherever `source` is now.
+                let from = self.modifier_bound(gi, m.m, "source").unwrap_or(*source);
+                let to = self.modifier_bound(gi, m.m, "target").unwrap_or(*target);
+                let f = if *duration > 1e-4 {
+                    (dt / duration).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                let _ = result;
+                self.set_modifier_output(gi, m.m, "result", from + (to - from) * f);
+            }
+            (
                 ModKind::Damping {
                     damped,
                     error_sum,

@@ -317,6 +317,15 @@ pub enum Modifier {
         raw: f32,
         damped: f32,
     },
+    /// `BSInterpValueModifier`: the bound `result` goes from `source` towards
+    /// `target`, the whole way over `duration` seconds (the 1HM graph's
+    /// `SpeedDamped` following `Speed`, which picks the attacks on the move).
+    InterpValue {
+        source: f32,
+        target: f32,
+        result: f32,
+        duration: f32,
+    },
     /// `BSLookAtModifier`: turn a chain of bones (spine, neck, head) and the eyes
     /// towards a target. The engine applies it to the pose.
     LookAt(LookAt),
@@ -707,6 +716,13 @@ impl<'a> Reader<'a> {
                 kd: p.f32(o + 0x58),
                 raw: p.f32(o + 0x60),
                 damped: p.f32(o + 0x64),
+            },
+            // After hkbModifier: source, target, result, duration.
+            "BSInterpValueModifier" => Modifier::InterpValue {
+                source: p.f32(o + 0x50),
+                target: p.f32(o + 0x54),
+                result: p.f32(o + 0x58),
+                duration: p.f32(o + 0x5C),
             },
             "BSLookAtModifier" => {
                 let bones = |at: u32| {
