@@ -10,6 +10,15 @@ UESP's MESG and QUST record layouts; the game settings (`sOk`,
 `sMiscQuestName`); and the game's data (`vrm-tool messages`, `vrm-tool
 quest-log`, console `sqs`).
 
+## Notification delivery
+
+Notifications have sequence numbers independent of their display timestamps.
+This prevents this engine's HUD from losing a notification at game time zero
+or one queued after the preceding HUD update without the clock advancing
+(for example, while paused). Retention and the egui fade still use game time.
+This is an internal delivery fix; the menu-pause timing question below and
+MESG icons / display durations remain open.
+
 ## Settled from the data
 
 - **Every passing log entry applies, not only the first.** Stages put an
