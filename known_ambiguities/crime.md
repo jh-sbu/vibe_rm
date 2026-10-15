@@ -137,6 +137,13 @@ locations name it.
 
 ## Choices made without a source
 
+- `GetAmountSoldStolen` (condition 190) remains unimplemented. A public
+  [Skyrim LE mod author's test report](https://forums.nexusmods.com/topic/9557203-le-help-with-a-script-to-get-the-values-of-stolen-items/)
+  says it stays zero after stolen goods are sold, despite the older games'
+  function counting sales. That report does not establish SE behavior,
+  nominal value versus actual payment, or any reset rules. Do not infer a
+  Skyrim counter from Oblivion's documentation; test SE observably first.
+
 - Placing items in pockets trains no Pickpocket and counts no statistic;
   what is placed keeps the owner it had (a stolen item stays stolen).
 - A poison placed with Poisoned: one dose is used up on the victim at once
