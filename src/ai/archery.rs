@@ -547,7 +547,10 @@ impl Engine {
             return;
         }
         let Some(arrow) = self.arrows_of(PLAYER_REF) else {
-            self.scripts.notify("You have no arrows.");
+            let text = self
+                .gmst_string("sNoArrows")
+                .unwrap_or_else(|| "No arrows equipped.".into());
+            self.scripts.notify(text);
             return;
         };
         let power = (held / full).min(1.0);
@@ -713,8 +716,16 @@ impl Engine {
                 0.0,
                 super::combat::Struck::Shot(arrow.projectile, poison),
             );
-            let chance = crate::ai::combat::gmst_i32(&self.lo, "iArrowInventoryChance", 33)
-                .clamp(0, 100) as u64;
+            // The shooter's perks (Hunter's Discipline: 66).
+            let base = crate::ai::combat::gmst_i32(&self.lo, "iArrowInventoryChance", 33) as f32;
+            let chance = self
+                .perk_entry_point(
+                    crate::perks::ep::MOD_RECOVER_ARROW_CHANCE,
+                    shooter,
+                    &[],
+                    base,
+                )
+                .clamp(0.0, 100.0) as u64;
             if target != PLAYER_REF && self.rand() % 100 < chance {
                 self.add_item(target, arrow.ammo, 1);
             }
