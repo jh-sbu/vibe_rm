@@ -20,6 +20,15 @@ pub struct MessageBox {
     /// The script waiting in `Message.Show` (`Vm::signal_with`); none for
     /// `Debug.MessageBox`.
     pub key: Option<u64>,
+    /// What the engine does with the answer, for its own questions.
+    pub action: Option<BoxAction>,
+}
+
+/// A question the engine asks the player itself, done on the first button.
+#[derive(Debug, Clone, Copy)]
+pub enum BoxAction {
+    /// Put a dose of `poison` on `weapon` (`crate::poisons`).
+    Poison { weapon: FormId, poison: FormId },
 }
 
 /// A help message (`ShowAsHelpMessage`): shown for `duration` seconds every
@@ -319,6 +328,7 @@ impl Engine {
             text,
             buttons: shown,
             key: Some(key),
+            action: None,
         });
         NativeResult::WaitFor {
             key,
@@ -336,6 +346,24 @@ impl Engine {
             text,
             buttons: vec![(0, ok)],
             key: None,
+            action: None,
+        });
+    }
+
+    /// A question of the engine's own: `action` is done if the player
+    /// answers with the first of `buttons`.
+    pub fn ask(&mut self, text: String, buttons: Vec<String>, action: BoxAction) {
+        log::info!("message box: {text:?} {buttons:?}");
+        self.messages.boxes.push_back(MessageBox {
+            title: String::new(),
+            text,
+            buttons: buttons
+                .into_iter()
+                .enumerate()
+                .map(|(i, b)| (i as i32, b))
+                .collect(),
+            key: None,
+            action: Some(action),
         });
     }
 
@@ -348,6 +376,12 @@ impl Engine {
         log::info!("message box button {index}");
         if let Some(key) = b.key {
             self.vm.signal_with(key, Value::Int(index));
+        }
+        match b.action {
+            Some(BoxAction::Poison { weapon, poison }) if index == 0 => {
+                self.apply_poison(PLAYER_REF, weapon, poison)
+            }
+            _ => {}
         }
     }
 

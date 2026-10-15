@@ -1357,7 +1357,9 @@ impl Engine {
             return Err(format!("{item} isn't a potion or ingredient"));
         };
         if m.spell_type == spell_type::POISON {
-            return Err("poisons go on weapons (not done yet)".into());
+            // Used from the inventory, a poison goes on the weapon
+            // (`crate::poisons`); what `EquipItem` does with one is open.
+            return Err("poisons go on weapons from the inventory".into());
         }
         if self.item_count(actor, item) <= 0 {
             return Err(format!("{actor} doesn't carry {item}"));

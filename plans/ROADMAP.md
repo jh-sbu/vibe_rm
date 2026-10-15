@@ -516,6 +516,11 @@ game each piece unlocks.
   23 effects put a dead actor's soul (by level; people's black) into the
   smallest of the caster's empty gems that holds it ("Soul captured!",
   Souls Trapped); `src/soul_trap.rs`, `known_ambiguities/soul-trap.md`
+- Poisons: used from the inventory, asked about (`sPoisonConfirmMessage`,
+  a bow's next shot) and put on the weapon held (staffs, a poisoned weapon
+  and empty hands refuse); a dose per blow, Concentrated Poison's two
+  (Mod Poison Dose Count), a bow's dose leaving with the arrow; Poisons
+  Used (`src/poisons.rs`, `known_ambiguities/poisons.md`)
 - Carry weight: what an actor carries weighs its items, worn armor through
   "Mod Armor Weight" (Conditioning, Unhindered); the player over their
   `CarryWeight` walks, told `sOverEncumbered` (`src/encumbrance.rs`,
@@ -986,7 +991,7 @@ game each piece unlocks.
    bound weapons in the casting
    hand, light, paralysis,
    invisibility breaking; illusion spells chosen by NPCs; enchantment charges,
-   poisons; `known_ambiguities/magic.md`), shouts (see Done: NPCs and dragons
+   NPCs poisoning their weapons; `known_ambiguities/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
    waiting on casting, crafting, barter, critical hits, attack types;
    `known_ambiguities/perks.md`), inventory (player's, armor from
@@ -1068,7 +1073,7 @@ game each piece unlocks.
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the quantity slider's use for more than dropping, recharging
      (`AttemptChargeItem`, soul gems), scrolls and soul gems on their own cards
-     (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, poisons,
+     (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, which weapon is poisoned,
      equipping scrolls and torches in a hand, the best-in-class star, the
      survival warmth rating
    - The HUD: enemy health brackets sized to the name; `Message.Show` icons

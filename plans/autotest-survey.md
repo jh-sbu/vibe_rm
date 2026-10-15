@@ -144,6 +144,13 @@ Left out so far:
   soul takes beside a black one, whether a grand soul into an empty grand
   gem becomes `SoulGemGrandFilled`, and `TrapSoul`'s result for a black
   soul with no black gem.
+- **Poisons** (`poisons.md`), partial: `EquipItem` of a poison on the
+  player holding an Iron Sword, and on an NPC holding one: `GetItemCount`
+  of the poison after (used, kept, drunk: `HasMagicEffect` of its
+  effect on the one equipping it). Last in a run: if it asks the player,
+  the message box stops the script. Should the NPC's weapon take it, that
+  NPC fighting a held target would show whether a blocked blow uses the
+  dose (the target's health over its poison's duration).
 - **Actors' keywords** (`npc-templates.md`): `HasKeyword` on an NPC wearing
   armor with `ArmorHeavy`, and under a spell whose effect has a keyword
   its race lacks.

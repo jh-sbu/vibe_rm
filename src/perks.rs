@@ -54,6 +54,7 @@ pub mod ep {
     pub const MOD_BUY_PRICES: u8 = 8;
     pub const MOD_SELL_PRICES: u8 = 60;
     pub const MOD_COMMANDED_ACTOR_LIMIT: u8 = 68;
+    pub const MOD_POISON_DOSE_COUNT: u8 = 83;
 }
 
 /// An entry point's value (`EPFT` / `EPFD`).
