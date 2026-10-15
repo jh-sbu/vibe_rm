@@ -9,6 +9,17 @@ callbacks, the `ItemSelect` and `FadeDone(index)` calls, Tab fading it out;
 `Hotkey1`..`Hotkey8` on 1 to 8, the favorites menu's Cancel on Favorites,
 Tween Menu and Pause).
 
+## Settled from the data
+
+- **Keyboard alternatives.** The installed `Skyrim - Interface.bsa` asset
+  `interface/controls/pc/controlmap.txt` gives `Hotkey1` through `Hotkey8`
+  two comma-separated keyboard scan codes each: the number row and the
+  corresponding numpad key. Both are accepted for assigning favorites and
+  using them in the world. The first remains the key shown by button art.
+  Custom control maps supply these bindings in both places, instead of the
+  world always using the number row. `--menu-key Numpad1` through `Numpad8`
+  are available for offscreen checks. No control map asset is stored here.
+
 ## Unconfirmed: choices made
 
 - **Filling the list.** `PopulateItems` names a function the movie doesn't

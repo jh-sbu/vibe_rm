@@ -3578,7 +3578,7 @@ impl Engine {
             }
         }
         // Drop notifications older than a few seconds.
-        self.scripts.notifications.retain(|(_, t)| now - t < 6.0);
+        self.scripts.notifications.retain(|n| now - n.at < 6.0);
         self.update_messages();
     }
 

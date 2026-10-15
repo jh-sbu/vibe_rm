@@ -249,7 +249,7 @@ impl Ui {
         }
         // Script notifications (top left, like Skyrim's HUD messages).
         let now = engine.scripts.real_time;
-        for (i, (text, t)) in engine
+        for (i, notification) in engine
             .scripts
             .notifications
             .iter()
@@ -257,14 +257,14 @@ impl Ui {
             .take(6)
             .enumerate()
         {
-            let age = (now - t) as f32;
+            let age = (now - notification.at) as f32;
             let alpha = ((6.0 - age) / 1.5).clamp(0.0, 1.0);
             let col = Color32::from_rgba_unmultiplied(240, 240, 240, (alpha * 255.0) as u8);
             let y = rect.top() + 60.0 + i as f32 * 22.0;
             painter.text(
                 Pos2::new(rect.left() + 30.0, y),
                 Align2::LEFT_TOP,
-                text,
+                &notification.text,
                 FontId::proportional(17.0),
                 col,
             );

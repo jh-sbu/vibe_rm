@@ -132,6 +132,11 @@ impl SwfUi {
         })
     }
 
+    /// A favorite slot from any keyboard binding in the installed control map.
+    pub fn favorite_hotkey(&self, code: winit::keyboard::KeyCode) -> Option<usize> {
+        self.buttons.hotkey(code)
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         self.hud.menu.resize(width, height);
         self.message_box.menu.resize(width, height);
@@ -751,8 +756,7 @@ impl SwfUi {
             && let Some(favorites) = &mut self.favorites
         {
             let scan = code.to_scancode();
-            let hotkey = (0..8)
-                .find(|k| scan.is_some() && scan == self.buttons.key(&format!("Hotkey{}", k + 1)));
+            let hotkey = self.buttons.hotkey(code);
             if favorites.closing {
                 return code != winit::keyboard::KeyCode::Backquote;
             } else if code == winit::keyboard::KeyCode::Escape
@@ -946,6 +950,8 @@ struct Buttons {
     /// Event name to its keyboard key (DirectInput scan code) and mouse
     /// button.
     codes: std::collections::HashMap<String, (Option<u32>, Option<u32>)>,
+    /// All keyboard alternatives, including the favorites numpad bindings.
+    keys: std::collections::HashMap<String, Vec<u32>>,
 }
 
 impl Buttons {
@@ -954,6 +960,10 @@ impl Buttons {
             .read("interface/controls/pc/controlmap.txt")
             .map(|b| String::from_utf8_lossy(&b).into_owned())
             .unwrap_or_default();
+        Self::from_controlmap(&text)
+    }
+
+    fn from_controlmap(text: &str) -> Self {
         // Event: (keyboard, mouse) columns as written; `!0,Other Event` refers
         // to another event's key. The first context naming an event wins.
         let mut raw: std::collections::HashMap<String, (String, String)> = Default::default();
@@ -967,30 +977,47 @@ impl Buttons {
                     .or_insert((cols[1].trim().to_string(), cols[2].trim().to_string()));
             }
         }
-        let resolve = |column: usize, event: &str| -> Option<u32> {
+        let resolve = |column: usize, event: &str| -> Vec<u32> {
             let mut event = event.to_string();
             for _ in 0..4 {
-                let (keyboard, mouse) = raw.get(&event)?;
+                let Some((keyboard, mouse)) = raw.get(&event) else {
+                    return Vec::new();
+                };
                 let value = if column == 0 { keyboard } else { mouse };
                 match value.strip_prefix("!0,") {
                     // The first event it refers to.
-                    Some(other) => event = other.split(",!0,").next()?.to_string(),
+                    Some(other) => {
+                        event = other.split(",!0,").next().unwrap_or_default().to_string()
+                    }
                     None => {
-                        // Of alternatives ("0x02,0x4f") the first; a
-                        // combination ("0x2a+0x0f") shows its last key.
-                        let first = value.split(',').next()?;
-                        let code = first.rsplit('+').next()?.trim();
-                        return u32::from_str_radix(code.trim_start_matches("0x"), 16)
-                            .ok()
-                            .filter(|&c| c != 0xff);
+                        // Keep alternatives for input; button art uses the first.
+                        // Chords retain the existing last-key interpretation.
+                        return value
+                            .split(',')
+                            .filter_map(|alternative| {
+                                let code = alternative.rsplit('+').next()?.trim();
+                                u32::from_str_radix(code.trim_start_matches("0x"), 16)
+                                    .ok()
+                                    .filter(|&c| c != 0xff)
+                            })
+                            .collect();
                     }
                 }
             }
-            None
+            Vec::new()
         };
+        let keys = raw.keys().map(|e| (e.clone(), resolve(0, e))).collect();
         let codes: std::collections::HashMap<_, _> = raw
             .keys()
-            .map(|e| (e.clone(), (resolve(0, e), resolve(1, e))))
+            .map(|e| {
+                (
+                    e.clone(),
+                    (
+                        resolve(0, e).first().copied(),
+                        resolve(1, e).first().copied(),
+                    ),
+                )
+            })
             .collect();
         let art = codes
             .iter()
@@ -1001,7 +1028,7 @@ impl Buttons {
                 Some((e.clone(), art))
             })
             .collect();
-        let buttons = Buttons { art, codes };
+        let buttons = Buttons { art, codes, keys };
         log::debug!(
             "{} user events with key art (Activate {}, Tween Menu {}, Jump {}, Sprint {})",
             buttons.art.len(),
@@ -1011,6 +1038,16 @@ impl Buttons {
             buttons.art("Sprint"),
         );
         buttons
+    }
+
+    fn hotkey(&self, code: winit::keyboard::KeyCode) -> Option<usize> {
+        use winit::platform::scancode::PhysicalKeyExtScancode;
+        let scan = code.to_scancode()?;
+        (0..8).find(|k| {
+            self.keys
+                .get(&format!("Hotkey{}", k + 1))
+                .is_some_and(|keys| keys.contains(&scan))
+        })
     }
 
     /// A user event's keyboard key, as a DirectInput scan code.
@@ -1208,8 +1245,8 @@ struct Sent {
     crosshair: Option<Option<String>>,
     subtitle: Option<String>,
     help: Option<String>,
-    /// The newest notification shown (its time).
-    notified: f64,
+    /// The newest notification shown (its sequence number).
+    notified: u64,
     /// The newest banner shown (its time).
     banner: f64,
     sneaking: bool,
@@ -1450,10 +1487,10 @@ impl Hud {
     /// Script notifications (`Debug.Notification`), each once, top left.
     fn notifications(&mut self, engine: &Engine) {
         let mut newest = self.sent.notified;
-        for (message, at) in &engine.scripts.notifications {
-            if *at > self.sent.notified {
-                self.call("ShowMessage", &[text(message)]);
-                newest = newest.max(*at);
+        for notification in &engine.scripts.notifications {
+            if notification.id > self.sent.notified {
+                self.call("ShowMessage", &[text(&notification.text)]);
+                newest = newest.max(notification.id);
             }
         }
         self.sent.notified = newest;
@@ -1631,6 +1668,44 @@ pub fn key_code(name: &str) -> Option<winit::keyboard::KeyCode> {
         K::Digit6,
         K::Digit7,
         K::Digit8,
+        K::Numpad1,
+        K::Numpad2,
+        K::Numpad3,
+        K::Numpad4,
+        K::Numpad5,
+        K::Numpad6,
+        K::Numpad7,
+        K::Numpad8,
     ];
     KEYS.iter().copied().find(|k| format!("{k:?}") == name)
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+    use winit::keyboard::KeyCode as K;
+
+    #[test]
+    fn favorites_accept_alternatives_and_custom_bindings() {
+        // Synthetic control map: a remapped slot, an alias, an unbound slot,
+        // and a later context that must not replace the gameplay mapping.
+        let buttons = Buttons::from_controlmap(
+            "Hotkey1\t0x10,0x4f\t0xff\nHotkey2\t!0,Hotkey1\t0xff\n\
+             Hotkey3\t0xff\t0xff\nHotkey1\t0x03\t0xff\n",
+        );
+        assert_eq!(buttons.hotkey(K::KeyQ), Some(0));
+        assert_eq!(buttons.hotkey(K::Numpad1), Some(0));
+        assert_eq!(buttons.hotkey(K::Digit1), None);
+        assert_eq!(buttons.hotkey(K::Digit2), None);
+        assert_eq!(buttons.hotkey(K::Numpad3), None);
+        assert_eq!(buttons.art("Hotkey1"), "Q");
+        assert_eq!(buttons.keys["Hotkey2"], buttons.keys["Hotkey1"]);
+        assert!(buttons.keys["Hotkey3"].is_empty());
+    }
+
+    #[test]
+    fn offscreen_input_names_include_numpad() {
+        assert_eq!(key_code("Numpad1"), Some(K::Numpad1));
+        assert_eq!(key_code("Numpad8"), Some(K::Numpad8));
+    }
 }

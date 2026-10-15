@@ -51,7 +51,8 @@ game each piece unlocks.
   level and school meter, readying spells in a hand (`Actor.EquipSpell` /
   `GetEquippedSpell`), favorites; `known_ambiguities/magic-menu.md`); the favorites
   menu (`favoritesmenu.swf` on Q: favorite items, spells and powers, equipping
-  them, hotkeys 1 to 8 set there and used in the world;
+  them, hotkeys 1 to 8 set there and used in the world (top-row and numpad
+  bindings from the control map);
   `known_ambiguities/favorites.md`); the tween menu (`tweenmenu.swf` on Tab: Skills,
   Magic, Items, the date and level; the item and magic menus come back to
   it; `known_ambiguities/tween-menu.md`); sleeping and waiting (`sleepwaitmenu.swf`
@@ -888,6 +889,7 @@ game each piece unlocks.
    - Objects' behaviour graphs (see Done): graph state in saves (kept across
      cell loads in memory)
    - Chooser start states, selectors' own blends
+     (`known_ambiguities/selectors.md`)
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
      properties other than bone weights;
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
@@ -1086,8 +1088,7 @@ game each piece unlocks.
      equipping scrolls and torches in a hand, the best-in-class star, the
      survival warmth rating
    - The HUD: enemy health brackets sized to the name; `Message.Show` icons
-     (`INAM`) and notifications' display time (`TNAM`); the favorites
-     hotkeys' second (numpad) binding; controller rumble for camera shakes
+     (`INAM`) and notifications' display time (`TNAM`); controller rumble for camera shakes
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
      (crafting, magic and shouts, horses stolen,

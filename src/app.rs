@@ -790,7 +790,7 @@ impl ApplicationHandler for App {
                             }
                             // Hotkeys 1 to 8 use their favorites (in
                             // dialogue they pick topics).
-                            const HOTKEYS: [KeyCode; 8] = [
+                            const HOTKEYS: [KeyCode; 16] = [
                                 KeyCode::Digit1,
                                 KeyCode::Digit2,
                                 KeyCode::Digit3,
@@ -799,10 +799,21 @@ impl ApplicationHandler for App {
                                 KeyCode::Digit6,
                                 KeyCode::Digit7,
                                 KeyCode::Digit8,
+                                KeyCode::Numpad1,
+                                KeyCode::Numpad2,
+                                KeyCode::Numpad3,
+                                KeyCode::Numpad4,
+                                KeyCode::Numpad5,
+                                KeyCode::Numpad6,
+                                KeyCode::Numpad7,
+                                KeyCode::Numpad8,
                             ];
                             if !event.repeat
                                 && s.engine.conversation.is_none()
-                                && let Some(key) = HOTKEYS.iter().position(|&k| k == code)
+                                && let Some(key) = s.swf.as_ref().map_or_else(
+                                    || HOTKEYS.iter().position(|&k| k == code).map(|i| i % 8),
+                                    |swf| swf.favorite_hotkey(code),
+                                )
                             {
                                 s.engine.use_hotkey(key);
                             }

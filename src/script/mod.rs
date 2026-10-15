@@ -53,10 +53,18 @@ pub struct QuestState {
     pub event: Option<crate::story::StoryEvent>,
 }
 
+/// A HUD notification with an identity independent of the game clock.
+pub struct Notification {
+    pub id: u64,
+    pub text: String,
+    pub at: f64,
+}
+
 /// Script-visible world state and queues.
 #[derive(Default)]
 pub struct ScriptState {
-    pub notifications: Vec<(String, f64)>,
+    pub notifications: Vec<Notification>,
+    notification_seq: u64,
     pub timers: Vec<Timer>,
     pub quests: HashMap<FormId, QuestState>,
     /// Containers the player has taken something from (Chests Looted).
@@ -116,7 +124,12 @@ impl ScriptState {
     pub fn notify(&mut self, s: impl Into<String>) {
         let s = s.into();
         log::info!("notification: {s}");
-        self.notifications.push((s, self.real_time));
+        self.notification_seq += 1;
+        self.notifications.push(Notification {
+            id: self.notification_seq,
+            text: s,
+            at: self.real_time,
+        });
     }
 }
 
@@ -149,5 +162,31 @@ impl papyrus::Host for EngineHost<'_> {
             ObjectId::Alias { .. } => matches!(class, "alias" | "referencealias" | "locationalias"),
             ObjectId::Effect(_) => class == "activemagiceffect",
         }
+    }
+}
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+
+    #[test]
+    fn notifications_at_zero_and_on_a_paused_clock_keep_distinct_ids() {
+        let mut state = ScriptState::default();
+        state.notify("first");
+        let delivered = state.notifications[0].id;
+        assert!(delivered > 0);
+        state.notify("second");
+        assert_eq!(state.notifications[0].at, state.notifications[1].at);
+        let pending: Vec<_> = state
+            .notifications
+            .iter()
+            .filter(|n| n.id > delivered)
+            .map(|n| n.text.as_str())
+            .collect();
+        assert_eq!(pending, ["second"]);
+        let last = state.notifications[1].id;
+        state.notifications.clear();
+        state.notify("after pruning");
+        assert!(state.notifications[0].id > last);
     }
 }
