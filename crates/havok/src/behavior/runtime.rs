@@ -413,6 +413,8 @@ pub struct Instance {
     queue: VecDeque<Event>,
     raised: Vec<Raised>,
     rng: u64,
+    /// State changes so far (see [`Instance::changes`]).
+    changes: u64,
     /// Transitions taken, when tracing.
     trace: Option<Vec<String>>,
 }
@@ -424,6 +426,7 @@ struct Ctx<'a> {
     queue: &'a mut VecDeque<Event>,
     raised: &'a mut Vec<Raised>,
     rng: &'a mut u64,
+    changes: &'a mut u64,
     clips: &'a mut dyn ClipSource,
     trace: Option<&'a mut Vec<String>>,
 }
@@ -1039,6 +1042,7 @@ impl Ctx<'_> {
         for e in enters {
             self.raise(gi, e.event, e.payload);
         }
+        *self.changes += 1;
         if let Some(trace) = self.trace.as_deref_mut() {
             let name = |id: i32| {
                 states
@@ -1176,6 +1180,7 @@ impl Ctx<'_> {
                 if want != *index
                     && let Some(&c) = children.get(want)
                 {
+                    *self.changes += 1;
                     if let Some(trace) = self.trace.as_deref_mut() {
                         let var = graph
                             .bound(g, "selectedGeneratorIndex")
@@ -1695,6 +1700,7 @@ impl Instance {
             queue: VecDeque::new(),
             raised: Vec::new(),
             rng: seed | 1,
+            changes: 0,
             trace: None,
         }
     }
@@ -1721,9 +1727,17 @@ impl Instance {
             queue: &mut self.queue,
             raised: &mut self.raised,
             rng: &mut self.rng,
+            changes: &mut self.changes,
             clips,
             trace: self.trace.as_mut(),
         }
+    }
+
+    /// How many times a state machine changed state, or a selector its
+    /// child, so far: a caller keeping the graph in some state (moving,
+    /// say) sees when the graph may have left it.
+    pub fn changes(&self) -> u64 {
+        self.changes
     }
 
     /// Record transitions taken (see [`Instance::take_trace`]).
@@ -1808,6 +1822,7 @@ impl Instance {
                 queue: &mut VecDeque::new(),
                 raised: &mut Vec::new(),
                 rng: &mut self.rng.clone(),
+                changes: &mut 0,
                 clips: &mut |_: &str| None,
                 trace: None,
             };

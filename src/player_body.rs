@@ -31,9 +31,10 @@ pub struct PlayerBody {
     /// The graph's movement type states (`iState`): default and sneaking.
     state: Option<f32>,
     sneak_state: Option<f32>,
-    moving: bool,
-    sneaking: bool,
-    sprinting: bool,
+    /// How the graph was last told they move, and its state changes by then
+    /// ([`GraphAnim::changes`]): told again when either changes.
+    told: Option<Stance>,
+    told_at: u64,
     /// Off the ground this long; whether the graph was told they fall (or jumped).
     airborne: Option<f32>,
     fell: bool,
@@ -103,9 +104,8 @@ impl Engine {
             ),
             state: None,
             sneak_state: None,
-            moving: false,
-            sneaking: false,
-            sprinting: false,
+            told: None,
+            told_at: 0,
             airborne: None,
             fell: false,
             drawn: false,
@@ -255,6 +255,33 @@ struct Motion {
     blocking: bool,
 }
 
+/// Moving, sprinting and sneaking, as the graph is told them.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Stance {
+    moving: bool,
+    sprinting: bool,
+    sneaking: bool,
+}
+
+impl Stance {
+    /// The events putting the graph in this stance, from wherever it is: the
+    /// graph ignores those for where it already is. A sprint ends while
+    /// moving (standing, the graph ignores `SprintStop`, and its locomotion
+    /// sprints again at the next `moveStart`).
+    fn events(self) -> [&'static str; 3] {
+        let sneak = if self.sneaking {
+            "SneakStart"
+        } else {
+            "SneakStop"
+        };
+        match (self.moving, self.sprinting) {
+            (false, _) => [sneak, "SprintStop", "moveStop"],
+            (true, false) => [sneak, "moveStart", "SprintStop"],
+            (true, true) => [sneak, "moveStart", "SprintStart"],
+        }
+    }
+}
+
 /// How long off the ground, not having jumped, before they fall.
 const FALL_AFTER: f32 = 0.3;
 
@@ -267,8 +294,15 @@ impl PlayerBody {
         )
     }
 
-    fn event(g: &mut GraphAnim, ev: &str) -> bool {
-        let took = g.send_event(ev);
+    /// Handle an event in the graph now; whether it took it (changed state).
+    fn event(
+        g: &mut GraphAnim,
+        ev: &str,
+        vfs: &vfs::Vfs,
+        anims: &mut crate::world::animation::AnimationLibrary,
+        skeleton: &Skeleton,
+    ) -> bool {
+        let took = g.handle_event(ev, vfs, anims, skeleton);
         log::debug!(
             "player body: {ev}{}",
             if took {
@@ -298,14 +332,6 @@ impl PlayerBody {
         };
         self.graph_heading = self.heading;
         let g = self.graph.as_mut()?;
-        if m.sneaking != self.sneaking {
-            g.send_event(if m.sneaking {
-                "SneakStart"
-            } else {
-                "SneakStop"
-            });
-            self.sneaking = m.sneaking;
-        }
         let state = if m.sneaking {
             self.sneak_state.or(self.state)
         } else {
@@ -336,7 +362,8 @@ impl PlayerBody {
         // The guard goes up with the weapon out (and down when it is put away).
         let guard = m.blocking && self.drawn;
         if guard != self.guard {
-            let took = Self::event(g, if guard { "blockStart" } else { "blockStop" });
+            let ev = if guard { "blockStart" } else { "blockStop" };
+            let took = Self::event(g, ev, vfs, anims, &self.skeleton);
             if took || !guard {
                 self.guard = guard;
                 g.set_variable("IsBlocking", if guard { 1.0 } else { 0.0 });
@@ -346,52 +373,58 @@ impl PlayerBody {
         // without one, a fall; back on it, the landing, after which the graph
         // stands again until told they move.
         if m.jumped && self.airborne.is_none() {
-            Self::event(
-                g,
-                if m.walking {
-                    "JumpDirectionalStart"
-                } else {
-                    "JumpStandingStart"
-                },
-            );
+            let ev = if m.walking {
+                "JumpDirectionalStart"
+            } else {
+                "JumpStandingStart"
+            };
+            // A jump the graph won't play (mid-swing, say) is a fall later.
+            self.fell = Self::event(g, ev, vfs, anims, &self.skeleton);
             self.airborne = Some(0.0);
-            self.fell = true;
         } else if let Some(t) = self.airborne.as_mut() {
             *t += dt;
             if m.grounded {
                 // Only a jump or a fall the graph knows of ends in a landing
                 // (not a step down a slope).
                 if self.fell {
-                    Self::event(
-                        g,
-                        if m.walking {
-                            "JumpLandDirectional"
-                        } else {
-                            "JumpLand"
-                        },
-                    );
-                    self.moving = false;
-                    self.sprinting = false;
+                    let ev = if m.walking {
+                        "JumpLandDirectional"
+                    } else {
+                        "JumpLand"
+                    };
+                    Self::event(g, ev, vfs, anims, &self.skeleton);
                 }
                 self.airborne = None;
             } else if !self.fell && *t >= FALL_AFTER {
-                Self::event(g, "JumpFall");
-                self.fell = true;
+                // Until the graph takes it.
+                self.fell = Self::event(g, "JumpFall", vfs, anims, &self.skeleton);
             }
         } else if !m.grounded {
             self.airborne = Some(0.0);
             self.fell = false;
         }
-        if self.airborne.is_none() || !self.fell {
-            if m.walking != self.moving {
-                Self::event(g, if m.walking { "moveStart" } else { "moveStop" });
-                self.moving = m.walking;
+        // On the ground, the graph is told how they move when that changes,
+        // and again whenever it changed state since: much it does on its own
+        // (a landing, a draw, the end of a swing) puts it back to standing,
+        // and an event can come while it is between states and won't take it
+        // (the landing's own `JumpLandEnd` queues behind what is sent with it).
+        let stance = Stance {
+            moving: m.walking,
+            sprinting: m.sprinting && m.walking,
+            sneaking: m.sneaking,
+        };
+        if (self.airborne.is_none() || !self.fell)
+            && (self.told != Some(stance) || g.changes() != self.told_at)
+        {
+            for ev in stance.events() {
+                g.send_event(ev);
             }
-            let sprint = m.sprinting && m.walking;
-            if sprint != self.sprinting {
-                Self::event(g, if sprint { "SprintStart" } else { "SprintStop" });
-                self.sprinting = sprint;
+            if self.told != Some(stance) {
+                log::debug!("player body: {stance:?}");
             }
+            self.told = Some(stance);
+            // Taken, these change it again: told once more, then ignored.
+            self.told_at = g.changes();
         }
         let frame = g.update(dt, vfs, anims, &self.skeleton);
         for r in &frame.raised {
@@ -442,10 +475,12 @@ pub(crate) struct PlayerSwing {
 impl Engine {
     /// Send an event to the player's body's graph; whether it took it.
     pub(crate) fn player_graph_event(&mut self, ev: &str) -> bool {
-        self.player_body
-            .as_mut()
-            .and_then(|b| b.graph.as_mut())
-            .is_some_and(|g| PlayerBody::event(g, ev))
+        self.player_body.as_mut().is_some_and(|b| {
+            let Some(g) = b.graph.as_mut() else {
+                return false;
+            };
+            PlayerBody::event(g, ev, &self.vfs, &mut self.anims, &b.skeleton)
+        })
     }
 
     /// Whether the player's body has a graph and their weapon (or fists) is
@@ -465,7 +500,7 @@ impl Engine {
         };
         match body.direction {
             None => "attackPowerStartInPlace",
-            Some(_) if body.sprinting => "attackPowerStart_Sprint",
+            Some(_) if body.told.is_some_and(|t| t.sprinting) => "attackPowerStart_Sprint",
             Some(d) => match ((d * 4.0).round() as i32).rem_euclid(4) {
                 0 => "attackPowerStartForward",
                 1 => "attackPowerStartRight",
@@ -503,7 +538,8 @@ impl Engine {
         let Some(g) = body.graph.as_mut() else {
             return false;
         };
-        let took = PlayerBody::event(g, if draw { "WeapEquip" } else { "Unequip" });
+        let ev = if draw { "WeapEquip" } else { "Unequip" };
+        let took = PlayerBody::event(g, ev, &self.vfs, &mut self.anims, &body.skeleton);
         if took {
             body.drawn = draw;
             body.ready = false;

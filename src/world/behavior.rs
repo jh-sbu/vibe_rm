@@ -404,6 +404,11 @@ impl GraphAnim {
         self.inst.set_variable(name, value)
     }
 
+    /// How many times the graph changed state so far (`Instance::changes`).
+    pub fn changes(&self) -> u64 {
+        self.inst.changes()
+    }
+
     /// Queue an event for the next update.
     pub fn send_event(&mut self, name: &str) -> bool {
         self.inst.send_event(name)
