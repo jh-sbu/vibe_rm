@@ -521,6 +521,10 @@ game each piece unlocks.
   and empty hands refuse); a dose per blow, Concentrated Poison's two
   (Mod Poison Dose Count), a bow's dose leaving with the arrow; Poisons
   Used (`src/poisons.rs`, `known_ambiguities/poisons.md`)
+- Ethereal (Become Ethereal): no blows, bashes or harmful magic land on or
+  from the ethereal, no stagger, no falling damage (nor for the paralyzed);
+  the player attacking, casting or activating ends it (`src/ethereal.rs`,
+  `known_ambiguities/magic.md`)
 - Carry weight: what an actor carries weighs its items, worn armor through
   "Mod Armor Weight" (Conditioning, Unhindered); the player over their
   `CarryWeight` walks, told `sOverEncumbered` (`src/encumbrance.rs`,
@@ -1019,8 +1023,7 @@ game each piece unlocks.
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
      `known_ambiguities/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
-     (and falls hurting NPCs: `fJumpFall*NPC`, `crate::falling`); falls
-     sparing the ethereal and the paralyzed (UESP)
+     (and falls hurting NPCs: `fJumpFall*NPC`, `crate::falling`)
    - Scenes: the player's own lines (skipped for now; see `known_ambiguities/scenes.md`);
      priority between scenes
    - Physics, more: arrows sticking in loose objects; opened display-case lids

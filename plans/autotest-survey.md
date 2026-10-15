@@ -144,6 +144,10 @@ Left out so far:
   soul takes beside a black one, whether a grand soul into an empty grand
   gem becomes `SoulGemGrandFilled`, and `TrapSoul`'s result for a black
   soul with no black gem.
+- **Ethereal** (`magic.md`): `VoiceBecomeEthereal3` cast by script on
+  a held NPC, then a Firebolt cast at it and `DamageActorValue` health on
+  it: health after each (magic spared, scripts not?), and whether the
+  Firebolt's `OnHit` reaches its script.
 - **Poisons** (`poisons.md`), partial: `EquipItem` of a poison on the
   player holding an Iron Sword, and on an NPC holding one: `GetItemCount`
   of the poison after (used, kept, drunk: `HasMagicEffect` of its

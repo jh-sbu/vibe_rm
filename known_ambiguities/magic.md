@@ -190,3 +190,15 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   wearer), and hostile as "either fights the other". The cloak's own
   conditions run on the wearer as other effects' do (Flame Cloak's "in
   combat, or the player").
+- **Ethereal** (archetype 41, Become Ethereal; `src/ethereal.rs`; UESP's
+  Become Ethereal: no damage dealt or taken, falls and poison included;
+  "fighting, opening containers, or talking" ends it; Unrelenting Force
+  doesn't move them): blows and bashes to or from an ethereal actor
+  don't land at all (no `OnHit`, no impact, no poison dose), where the
+  game might send the hit with no damage; magic takes none of its health
+  (other values still drop) and doesn't stagger it; scripts'
+  `DamageActorValue` still hurts (UESP's exceptions are scripted). The
+  player attacking, casting or activating anything ends it; shouts,
+  powers and drinking potions don't (UESP: powers fail, "most potions
+  don't work": neither is modelled). NPCs go on fighting an ethereal
+  player.
