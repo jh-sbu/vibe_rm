@@ -29,6 +29,36 @@ pub struct ItemInfo {
     pub weight: f32,
 }
 
+/// Weapon restrictions authored in `WEAP`: `DNAM` flags at byte 12
+/// (xEdit's TES5 record definitions; CommonLibSSE's `TESObjectWEAP::Data::Flag`).
+/// Keep these separate from `item_info`: hidden weapons still equip and
+/// contribute to combat and inventory counts.
+fn weapon_restrictions(lo: &LoadOrder, form: FormId) -> (bool, bool) {
+    let Some(rec) = lo.get(form).filter(|r| r.tag().0 == *b"WEAP") else {
+        return (false, false);
+    };
+    let flags = rec
+        .get(b"DNAM")
+        .and_then(|d| d.get(12))
+        .copied()
+        .unwrap_or(0);
+    (
+        flags & 0x08 != 0,
+        flags & 0x80 != 0 || rec.flags() & 0x04 != 0,
+    )
+}
+
+/// Whether an item can be shown and selected in inventory menus. Bound
+/// weapons and NPC-only weapons are non-playable, not absent from inventory.
+pub fn item_playable(lo: &LoadOrder, form: FormId) -> bool {
+    !weapon_restrictions(lo, form).1
+}
+
+/// Whether a weapon's Can't Drop flag allows it to be dropped.
+pub fn item_droppable(lo: &LoadOrder, form: FormId) -> bool {
+    !weapon_restrictions(lo, form).0
+}
+
 /// Name, kind, value and weight of an inventory item; `None` for forms that aren't
 /// items (and lights that can't be carried).
 pub fn item_info(lo: &LoadOrder, form: FormId) -> Option<ItemInfo> {

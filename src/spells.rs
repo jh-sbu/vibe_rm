@@ -2,8 +2,8 @@
 //! or shout (the magic menu, `Actor.EquipSpell` / `GetEquippedSpell`), and
 //! what the magic menu says of a spell: its school, level and magicka cost.
 //!
-//! Casting them isn't built yet (see the roadmap). The cost formula is
-//! UESP's reading of the game settings; see `known_ambiguities/magic-menu.md`.
+//! The cost is shared by the magic menu and casting. Sources and remaining
+//! questions: `known_ambiguities/magic-menu.md`.
 
 use esp::FormId;
 use esp::actor_value as av;
@@ -153,6 +153,16 @@ impl Engine {
             .filter(|s| (FIRST_SCHOOL..=LAST_SCHOOL).contains(s))
     }
 
+    /// The spell's authored casting perk (`SPIT` byte 32), used by
+    /// `SpellHasCastingPerk` in the Novice .. Master cost perks. This is
+    /// a property of the spell, independent of who owns the perk.
+    pub fn spell_casting_perk(&self, spell: FormId) -> Option<FormId> {
+        let rec = self.lo.get(spell).filter(|r| r.tag().0 == *b"SPEL")?;
+        let bytes = rec.get(b"SPIT")?.get(32..36)?;
+        let perk = rec.fid(FormId(u32::from_le_bytes(bytes.try_into().unwrap())));
+        (!perk.is_null()).then_some(perk)
+    }
+
     /// The level of a spell (Novice to Master) by its costliest effect's
     /// minimum skill.
     pub fn spell_level_name(&self, spell: FormId) -> String {
@@ -186,7 +196,8 @@ impl Engine {
     /// concentration spells): the record's cost (`SPIT`, which the Creation
     /// Kit works out when it isn't set by hand), less for skill in the school
     /// (`fMagicCasterPCSkillCostBase`, `fMagicPCSkillCostScale`), through the
-    /// caster's `ModSpellCost` perks.
+    /// caster's `ModSpellCost` perks (including `PerkSkillBoosts`, which
+    /// applies the school's Fortify cost reduction from the game records).
     pub fn spell_cost(&self, caster: FormId, spell: FormId) -> f32 {
         let base = self
             .lo

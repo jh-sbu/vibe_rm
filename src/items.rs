@@ -290,6 +290,9 @@ impl Engine {
         n: i32,
         stack: Option<Option<FormId>>,
     ) -> i32 {
+        if !crate::world::inventory::item_playable(&self.lo, item) {
+            return 0;
+        }
         let mark = if to == PLAYER_REF {
             self.stolen_from(item, from, true)
         } else {
@@ -595,6 +598,9 @@ impl Engine {
         let inv = self.inventory_mut(r).clone();
         let mut out: Vec<ListedItem> = Vec::new();
         for &(item, _) in &inv.items {
+            if !crate::world::inventory::item_playable(&self.lo, item) {
+                continue;
+            }
             let Some(info) = item_info(&self.lo, item) else {
                 continue;
             };

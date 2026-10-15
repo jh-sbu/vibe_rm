@@ -303,6 +303,9 @@ impl Engine {
     /// falling. Papyrus `DropObject`, the console's `drop`, the inventory's
     /// right click.
     pub fn drop_item(&mut self, holder: FormId, item: FormId, count: i32) -> Option<FormId> {
+        if !crate::world::inventory::item_droppable(&self.lo, item) {
+            return None;
+        }
         let (place, feet) = self.current_place_of(holder)?;
         let heading = if holder == crate::engine::PLAYER_REF {
             self.camera.yaw

@@ -604,6 +604,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 })
             })
         })),
+        // SpellHasCastingPerk: the spell tab's authored perk, not HasPerk
+        // on its caster. Vanilla cost perks use this to select their tier.
+        713 => b(subject.and_then(|s| e.spell_casting_perk(s)) == Some(p1)),
         632 => b(subject.is_some_and(|s| e.is_casting(s))), // IsCasting
         627 => b(false),                                    // IsDualCasting: nobody dual casts yet
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))), // GetIsCurrentPackage

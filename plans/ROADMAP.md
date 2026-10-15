@@ -371,7 +371,12 @@ game each piece unlocks.
   their charge time and cast when it comes up, concentration spells going on
   while it is held), paying magicka (by the second for concentration), the
   meter blinking and "You don't have enough Magicka" without it; powers on
-  Z, greater powers once a day. Deliveries: self, contact, target actor,
+  Z, greater powers once a day. Spell costs include Fortify school effects
+  (`AlterationMod` .. `RestorationMod`) through the game's `PerkSkillBoosts`
+  entries, shared by casting and the magic menu, stacking to free casting
+  at 100%; `SpellHasCastingPerk` lets the Novice .. Master perks halve
+  the cost of their spell tiers (`known_ambiguities/magic-menu.md`).
+  Deliveries: self, contact, target actor,
   aimed (missiles flying as their `PROJ` does, flames and beams reaching at
   once) and target location; areas striking the actors around where a
   spell lands; impacts (scorch decals) from the effect's impact data set.
@@ -404,7 +409,10 @@ game each piece unlocks.
   with their spells; spells and arrows strike actors made while playing
   (they flew through them). Open questions: `known_ambiguities/magic.md`
 - Bound weapons: the effect's weapon in hand while it lasts (Bound Bow's
-  script giving its arrows), gone at the end or when put away
+  script giving its arrows), gone at the end or when put away. Weapon
+  `Can't Drop` flags prevent dropping; non-playable weapons stay out of
+  inventory, container, barter and gift lists and their transfers, so bound
+  weapons remain with the caster (`known_ambiguities/inventory-restrictions.md`)
 - Shouts: words of power learned and unlocked (`Game.TeachWord`,
   `UnlockWord`, `IsWordUnlocked`; a dragon soul in the magic menu), the
   shouts they give, `AddShout` / `RemoveShout` / `EquipShout` /
@@ -1047,8 +1055,7 @@ game each piece unlocks.
      souls kept with their gems when they change hands (dropped, stored,
      sold: `Inventory::souls` stays with the trapper);
      taper, area, addictions, potion and food flags; image-space modifiers
-     applied by effects (`TriggerIfNotActive`'s target); bound weapons kept
-     from being dropped or stored; the cost counting Fortify school effects
+     applied by effects (`TriggerIfNotActive`'s target)
    - Crime, more: arrests (yielding by sheathing, guards following through
      doors, opening the cell after five hits, The Chill, the follower wait
      marker, `GetArrestingActor`, the jail outfit); Cidhna Mine and the Orc

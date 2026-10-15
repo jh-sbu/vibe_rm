@@ -21,6 +21,11 @@ perks`).
   multiply by actor value x factor, 14 multiply by 1 + actor value x factor.
   The two-float functions' first float is the actor value's index
   (`PerkSkillBoosts`: 96.0 .. 107.0 with 0.01).
+- **Casting costs**: `SpellHasCastingPerk` (713) reads the spell's authored
+  casting perk (`SPIT` byte 32), so the Novice .. Master perks select the
+  right spells. `PerkSkillBoosts` supplies Fortify school cost reductions
+  through `ModSpellCost`, not a separate hardcoded multiplier. Sources and
+  remaining questions: `known_ambiguities/magic-menu.md`.
 - **Owners**: the NPC record's `PRKR` (perk, rank), from the template giving
   the spell list (`template::SPELLS`); the player's from `NPC_ 00000007` (12
   perks: skill boosts, Allow Shouting, Well Fitted...).

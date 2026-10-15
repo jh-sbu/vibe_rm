@@ -12,7 +12,8 @@ Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
 - **Charge times** are the spell's `SPIT` charge time (Firebolt 0.5 s,
   Flames 0); fire-and-forget spells let go sooner aren't cast.
 - **Cost** is `crate::spells::spell_cost` (paid when cast; concentration
-  spells by the second while held).
+  spells by the second while held), including the school's Fortify cost
+  reduction (`known_ambiguities/magic-menu.md`).
 - **Magicka comes back** at the race's `MagickaRate` (percent of the most a
   second) times `MagickaRateMult` (base 100, as `SpeedMult`), times
   `fCombatMagickaRegenRateMult` (0.33) while fighting.

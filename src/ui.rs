@@ -1040,7 +1040,7 @@ impl Ui {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         target: &wgpu::TextureView,
-        output: egui::FullOutput,
+        mut output: egui::FullOutput,
         size: [u32; 2],
     ) {
         let ppp = output.pixels_per_point;
@@ -1082,6 +1082,8 @@ impl Ui {
         for id in &output.textures_delta.free {
             self.renderer.free_texture(id);
         }
+        // All deltas have been applied; epaint checks this when they drop.
+        output.textures_delta.clear();
     }
 }
 
