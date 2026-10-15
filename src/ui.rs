@@ -1216,11 +1216,39 @@ fn perk_tree_view(ctx: &egui::Context, engine: &mut Engine, skill: u32) {
         })
         .collect();
     let mut buy = None;
+    let confirm_id = egui::Id::new("legendary_confirmation").with(skill);
+    let mut confirm = ctx.data(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
+    let mut legendary = false;
     egui::Window::new(format!("{} perks", engine.skill_name(skill)))
         .anchor(Align2::RIGHT_CENTER, vec2(-20.0, 0.0))
         .resizable(false)
         .collapsible(false)
         .show(ctx, |ui| {
+            let count = engine.skills.legendary[(skill - esp::actor_value::FIRST_SKILL) as usize];
+            if count > 0 {
+                ui.label(format!("Legendary {count}"));
+            }
+            if crate::skills::can_make_legendary(
+                skill,
+                engine.av_base(crate::engine::PLAYER_REF, skill),
+            ) {
+                if confirm {
+                    ui.label("Reset this skill to 15 and return its perk points?");
+                    ui.horizontal(|ui| {
+                        if ui.button("Confirm").clicked() {
+                            legendary = true;
+                            confirm = false;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            confirm = false;
+                        }
+                    });
+                } else if ui.button("Make Legendary").clicked() {
+                    confirm = true;
+                }
+            } else {
+                confirm = false;
+            }
             let size = vec2(460.0, 380.0);
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
             let painter = ui.painter_at(rect);
@@ -1324,9 +1352,12 @@ fn perk_tree_view(ctx: &egui::Context, engine: &mut Engine, skill: u32) {
                 }
             }
         });
-    if let Some(p) = buy {
+    if legendary {
+        engine.make_skill_legendary(skill);
+    } else if let Some(p) = buy {
         engine.buy_perk(p);
     }
+    ctx.data_mut(|d| d.insert_temp(confirm_id, confirm));
     ctx.data_mut(|d| d.insert_temp(sel_id, selected));
 }
 

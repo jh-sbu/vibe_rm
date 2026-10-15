@@ -325,7 +325,10 @@ game each piece unlocks.
   `IncrementSkillBy`, `GetGameSettingFloat` / `Int`, `Actor.GetLevel`;
   condition `GetLevel`. Console `skills`, `player.advskill`, `player.incpcs`,
   `player.advlevel`, `levelup`, `getlevel`, `<ref>.showtrainingmenu`,
-  `<ref>.train`. Open questions:
+  `<ref>.train`. Legendary skills: at base 100 the skills menu offers a
+  confirmed reset to 15, returning the owned perk ranks in that skill's tree;
+  repeated resets counted, skill XP cleared, character progress kept.
+  Console `legendary <skill>`. Open questions:
   `known_ambiguities/skills.md`
 - Perks: `PERK` records (requirements, rank chains, quest and entry point
   sections with their tabs' conditions and functions); actors' perks from
@@ -1037,7 +1040,7 @@ game each piece unlocks.
      disabled fighting putting the weapon away, the POV type argument
    - Sneak attacks (see Done): NPCs sneaking up on the player
    - Skills (see Done): the other skills' uses as their systems come (magic,
-     crafting, speech), rested bonuses, Legendary skills
+     crafting, speech), rested bonuses
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
