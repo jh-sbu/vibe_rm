@@ -139,11 +139,11 @@ pub(crate) fn left_strikes(hands: [Fights; 2]) -> bool {
 }
 
 /// What a blow is struck with: a hand (the weapon in it, or the fist), or a
-/// shot (its projectile; the bow's the weapon).
+/// shot (its projectile and the poison it carries; the bow's the weapon).
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Struck {
     Hand(usize),
-    Shot(FormId),
+    Shot(FormId, Option<FormId>),
 }
 
 /// Hit frames raised (`HitFrame`): without a payload, and with `Left`.
@@ -1734,13 +1734,21 @@ impl Engine {
     ) {
         // What the blow is struck with is the attacker's weapon while it lands
         // (`weapon_of`: perks' conditions, skills, impacts, `OnHit`).
-        let (weapon, projectile) = match by {
-            Struck::Hand(h) => (self.weapon_in_hand(attacker, h), None),
-            Struck::Shot(p) => (self.weapon_of(attacker), Some(p)),
+        let (weapon, projectile, poison) = match by {
+            Struck::Hand(h) => {
+                let weapon = self.weapon_in_hand(attacker, h);
+                let poison = weapon.and_then(|w| self.take_poison_dose(attacker, w));
+                (weapon, None, poison)
+            }
+            Struck::Shot(p, poison) => (self.weapon_of(attacker), Some(p), poison),
         };
         let before = self.striking.replace((attacker, weapon));
         self.land_blow(target, attacker, damage, power, stagger, projectile);
         self.striking = before;
+        // A poison on the weapon (or the arrow) lands with the blow.
+        if let Some(p) = poison {
+            self.apply_item(p, Some(attacker), target);
+        }
     }
 
     fn land_blow(

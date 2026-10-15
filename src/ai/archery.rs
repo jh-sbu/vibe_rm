@@ -158,6 +158,8 @@ pub struct Projectile {
     /// The spell it carries: where it lands, its effects do (no damage of
     /// its own, never stuck anywhere).
     pub spell: Option<FormId>,
+    /// The poison it carries from the bow (`crate::poisons`).
+    pub poison: Option<FormId>,
     /// Seconds it may fly.
     pub lifetime: f32,
 }
@@ -393,6 +395,10 @@ impl Engine {
             self.models.get(&m)
         });
         let vel = dir.normalize_or_zero() * arrow.speed * speed_mult;
+        // A poisoned bow's dose goes with the shot, whatever it strikes.
+        let poison = self
+            .weapon_of(shooter)
+            .and_then(|b| self.take_poison_dose(shooter, b));
         log::info!(
             "{shooter} looses {} ({damage:.0} damage, {:.0} units/s)",
             arrow.ammo,
@@ -409,6 +415,7 @@ impl Engine {
             stuck: None,
             dir: vel.normalize_or_zero(),
             spell: None,
+            poison,
             lifetime: FLIGHT_TIME,
         });
     }
@@ -446,6 +453,7 @@ impl Engine {
             stuck: None,
             dir: vel.normalize_or_zero(),
             spell: Some(spell),
+            poison: None,
             lifetime,
         });
     }
@@ -554,8 +562,9 @@ impl Engine {
     /// up in their inventory, `iArrowInventoryChance`), the player, or the world
     /// (stuck there a while). The scene's moving instances follow them.
     pub(crate) fn update_projectiles(&mut self, dt: f32) {
-        // (target, shooter, damage, arrow, where, flying)
-        let mut hits: Vec<(FormId, FormId, f32, Arrow, Vec3, Vec3)> = Vec::new();
+        // (target, shooter, damage, arrow, where, flying, poison)
+        type Hit = (FormId, FormId, f32, Arrow, Vec3, Vec3, Option<FormId>);
+        let mut hits: Vec<Hit> = Vec::new();
         let mut stuck: Vec<(FormId, Vec3, f32, Option<FormId>, Vec3)> = Vec::new();
         // References struck (shooter, what, the arrow's velocity).
         let mut struck: Vec<(FormId, FormId, Vec3)> = Vec::new();
@@ -608,6 +617,7 @@ impl Engine {
                             p.arrow.clone(),
                             p.pos,
                             dir,
+                            p.poison,
                         )),
                     }
                     p.stuck = Some(0.0);
@@ -625,7 +635,15 @@ impl Engine {
                     p.pos = start + dir * t;
                     match owner.filter(|&o| is_actor(o)) {
                         Some(actor) => {
-                            hits.push((actor, p.shooter, p.damage, p.arrow.clone(), p.pos, dir));
+                            hits.push((
+                                actor,
+                                p.shooter,
+                                p.damage,
+                                p.arrow.clone(),
+                                p.pos,
+                                dir,
+                                p.poison,
+                            ));
                             p.stuck = Some(0.0);
                         }
                         None => {
@@ -681,7 +699,7 @@ impl Engine {
                 !gone
             });
         }
-        for (target, shooter, damage, arrow, at, dir) in hits {
+        for (target, shooter, damage, arrow, at, dir, poison) in hits {
             if target != PLAYER_REF && self.is_dead(target) {
                 continue;
             }
@@ -693,7 +711,7 @@ impl Engine {
                 damage,
                 false,
                 0.0,
-                super::combat::Struck::Shot(arrow.projectile),
+                super::combat::Struck::Shot(arrow.projectile, poison),
             );
             let chance = crate::ai::combat::gmst_i32(&self.lo, "iArrowInventoryChance", 33)
                 .clamp(0, 100) as u64;

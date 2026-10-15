@@ -381,6 +381,7 @@ impl Engine {
             ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor => {
                 self.equip_in(PLAYER_REF, row.item, hand)
             }
+            ItemKind::Potion if self.is_poison(row.item) => self.offer_poison(row.item),
             ItemKind::Potion | ItemKind::Ingredient => self.consume(PLAYER_REF, row.item),
             ItemKind::Book if let Some(spell) = self.tome_spell(row.item) => {
                 self.read_spell_tome(row.item, spell);

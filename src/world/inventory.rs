@@ -266,6 +266,10 @@ pub struct Inventory {
     /// doesn't (gem, soul, count): trapped into an empty gem, kept apart
     /// within `items`' counts and taken last.
     pub souls: Vec<(FormId, u8, i32)>,
+    /// Weapons carrying a poison (weapon, poison, doses left): one of the
+    /// weapons carried, kept apart within `items`' counts and taken last
+    /// (the game's `ExtraPoison` on one instance).
+    pub poisoned: Vec<(FormId, FormId, i32)>,
     /// What is held (`RIGHT`, `LEFT`, `VOICE`): weapons, spells, a shield, a
     /// torch; a power or shout. What fills both hands is in each.
     held: [Option<FormId>; 3],
@@ -429,8 +433,39 @@ impl Inventory {
             extra -= t;
         }
         self.souls.retain(|(_, _, c)| *c > 0);
+        // The poisoned one goes last.
+        if self.count(form) <= 0 {
+            self.poisoned.retain(|(w, _, _)| *w != form);
+        }
         self.unequip_if_short(form);
         out
+    }
+
+    /// The poison on one of the carried `weapon`s, with its doses left.
+    pub fn poison_on(&self, weapon: FormId) -> Option<(FormId, i32)> {
+        self.poisoned
+            .iter()
+            .find(|(w, _, _)| *w == weapon)
+            .map(|&(_, p, n)| (p, n))
+    }
+
+    /// One of the carried `weapon`s takes `doses` of `poison`.
+    pub fn poison(&mut self, weapon: FormId, poison: FormId, doses: i32) {
+        self.poisoned.retain(|(w, _, _)| *w != weapon);
+        if doses > 0 && self.count(weapon) > 0 {
+            self.poisoned.push((weapon, poison, doses));
+        }
+    }
+
+    /// A dose of the poison on `weapon` used: the poison, if it had one.
+    pub fn take_poison_dose(&mut self, weapon: FormId) -> Option<FormId> {
+        let i = self.poisoned.iter().position(|(w, _, _)| *w == weapon)?;
+        let poison = self.poisoned[i].1;
+        self.poisoned[i].2 -= 1;
+        if self.poisoned[i].2 <= 0 {
+            self.poisoned.remove(i);
+        }
+        Some(poison)
     }
 
     /// How many of a soul gem hold a soul of the side list's.
@@ -925,5 +960,25 @@ mod tests {
         assert_eq!(inv.release_by(LEFT, magic), Some(GREATSWORD));
         assert_eq!(inv.held_all(), [None, None, None]);
         assert!(inv.equipped().is_empty());
+    }
+
+    #[test]
+    fn poison_doses_run_out_and_go_with_the_last_weapon() {
+        const POISON: FormId = FormId(0x300);
+        let mut inv = carrying(&[(SWORD, 2)]);
+        inv.poison(SWORD, POISON, 2);
+        assert_eq!(inv.poison_on(SWORD), Some((POISON, 2)));
+        assert_eq!(inv.take_poison_dose(SWORD), Some(POISON));
+        assert_eq!(inv.take_poison_dose(SWORD), Some(POISON));
+        assert_eq!(inv.take_poison_dose(SWORD), None);
+        // The poisoned one is taken last.
+        inv.poison(SWORD, POISON, 1);
+        inv.remove_split(SWORD, 1, None);
+        assert_eq!(inv.poison_on(SWORD), Some((POISON, 1)));
+        inv.remove_split(SWORD, 1, None);
+        assert_eq!(inv.poison_on(SWORD), None);
+        // None carried, none poisoned.
+        inv.poison(SWORD, POISON, 1);
+        assert_eq!(inv.poison_on(SWORD), None);
     }
 }
