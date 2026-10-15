@@ -135,13 +135,15 @@ impl Player {
         self.position + Vec3::Z * (EYE_OFFSET - SNEAK_DROP * self.crouch)
     }
 
-    /// `sneak_speed`: the share of their usual speed they keep sneaking.
+    /// `sneak_speed`: the share of their usual speed they keep sneaking;
+    /// `armor_speed`: the share their worn armor leaves them.
     pub fn update(
         &mut self,
         physics: &mut Physics,
         camera: &Camera,
         input: MoveInput,
         sneak_speed: f32,
+        armor_speed: f32,
         dt: f32,
     ) {
         self.jumped = false;
@@ -176,7 +178,8 @@ impl Player {
             RUN_SPEED
         } else {
             WALK_SPEED
-        } * if self.sneaking { sneak_speed } else { 1.0 };
+        } * if self.sneaking { sneak_speed } else { 1.0 }
+            * armor_speed;
         let horizontal = (fwd * input.forward + right * input.right).normalize_or_zero() * speed;
         if self.grounded && input.jump {
             self.vertical_velocity = JUMP_SPEED;
