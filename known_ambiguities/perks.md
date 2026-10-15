@@ -94,3 +94,8 @@ perks`).
   player.
 - **Ability sections** are spells the owner knows: constant ones take effect
   (`known_ambiguities/magic.md`).
+- **Recovering arrows**: Mod Recover Arrow Chance (Hunter's Discipline sets
+  66) changes `iArrowInventoryChance` (33), the chance an arrow striking an
+  actor ends up in its inventory, rolled as it strikes (living or not);
+  UESP's "from dead bodies" may mean the game rolls only when the body is
+  searched.
