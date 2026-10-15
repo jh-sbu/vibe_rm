@@ -55,6 +55,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "set gamehour to <h>   set time of day".into(),
             "player.setpos x y z   teleport within the current location".into(),
             "getpos                print position".into(),
+            "[ref.]isindangerouswater   whether an actor touches flagged cell water".into(),
             "tdt                   toggle debug text".into(),
             "tai                   toggle actor AI".into(),
             "tsh                   toggle sun shadows".into(),
@@ -878,7 +879,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 46] = [
+const ITEM_COMMANDS: [&str; 47] = [
     "drop",
     "teachword",
     "unlockword",
@@ -899,6 +900,7 @@ const ITEM_COMMANDS: [&str; 46] = [
     "incpcs",
     "advlevel",
     "getlevel",
+    "isindangerouswater",
     "setcrimegold",
     "paycrimegold",
     "getrelationshiprank",
@@ -972,6 +974,10 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             )]
         }
         "getlevel" => vec![format!("{r}: level {}", engine.actor_level(r))],
+        "isindangerouswater" => vec![format!(
+            "{r}: IsInDangerousWater = {}",
+            u8::from(engine.is_in_dangerous_water(r))
+        )],
         "addperk" | "removeperk" | "hasperk" => {
             let Some(p) = args.first().and_then(|a| engine.resolve_form(a)) else {
                 return vec![format!("usage: [ref.]{cmd} <perk>")];

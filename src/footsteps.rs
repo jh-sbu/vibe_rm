@@ -78,19 +78,6 @@ impl Engine {
         Some(self.surface_material(surface, at))
     }
 
-    /// The height of the water surface over a point, if any loaded cell has water there.
-    pub(crate) fn water_level(&self, at: Vec3) -> Option<f32> {
-        self.cells
-            .values()
-            .flat_map(|c| &c.water)
-            .filter(|(corner, size, _)| {
-                let d = at.truncate() - *corner;
-                (0.0..=*size).contains(&d.x) && (0.0..=*size).contains(&d.y)
-            })
-            .map(|w| w.2)
-            .reduce(f32::max)
-    }
-
     /// The material type (MATT) of a surface at a point: the collision's Havok
     /// material, or the landscape texture showing most there.
     pub(crate) fn surface_material(&self, surface: Surface, at: Vec3) -> FormId {
