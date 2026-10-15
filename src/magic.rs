@@ -53,6 +53,7 @@ pub mod archetype {
     pub const STAGGER: u32 = 33;
     pub const PEAK_VALUE_MODIFIER: u32 = 34;
     pub const RALLY: u32 = 38;
+    pub const ETHEREALIZE: u32 = 41;
 
     /// Target value modifiers (CommonLibSSE `TargetValueModifierEffect`)
     /// hold their actor value at a value of their own while they last, and
@@ -779,6 +780,7 @@ impl Engine {
             }),
             archetype::STAGGER => {
                 if x.target != PLAYER_REF
+                    && !self.is_ethereal(x.target)
                     && let Some(g) = self.actor_mut(x.target).and_then(|a| a.graph.as_mut())
                 {
                     g.set_variable("staggerMagnitude", x.magnitude.clamp(0.0, 1.0));
@@ -915,6 +917,10 @@ impl Engine {
             return;
         }
         if a == av::HEALTH && amount < 0.0 {
+            if self.is_ethereal(target) {
+                log::debug!("{target} is ethereal: no harm from magic");
+                return;
+            }
             // A blow at once, or enough to kill, goes through the damage path
             // (a flinch, death, bleeding out); a little at a time just wears
             // health down.

@@ -101,6 +101,7 @@ impl Engine {
         let Some(spell) = self.hand_spell(hand) else {
             return false;
         };
+        self.player_breaks_ethereal();
         if self.disabled_controls.fighting
             || self.player_dead()
             || self.conversation.is_some()

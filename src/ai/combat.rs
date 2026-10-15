@@ -1732,6 +1732,10 @@ impl Engine {
         stagger: f32,
         by: Struck,
     ) {
+        if self.is_ethereal(target) || self.is_ethereal(attacker) {
+            log::info!("{attacker}'s blow passes through {target}: ethereal");
+            return;
+        }
         // What the blow is struck with is the attacker's weapon while it lands
         // (`weapon_of`: perks' conditions, skills, impacts, `OnHit`).
         let (weapon, projectile, poison) = match by {
@@ -1893,6 +1897,10 @@ impl Engine {
         power: bool,
         stagger: f32,
     ) {
+        if self.is_ethereal(target) || self.is_ethereal(attacker) {
+            log::info!("{attacker}'s bash passes through {target}: ethereal");
+            return;
+        }
         // Bashing perks (Power Bash, Deadly Bash...): with the shield, else the
         // weapon.
         let with = self
@@ -2654,6 +2662,7 @@ impl Engine {
         if self.disabled_controls.fighting {
             return;
         }
+        self.player_breaks_ethereal();
         if self.player_cast_press(hand) {
             return;
         }
@@ -2869,6 +2878,7 @@ impl Engine {
         if self.disabled_controls.fighting {
             return;
         }
+        self.player_breaks_ethereal();
         // One swing at a time, until it has landed.
         if self.player_dead()
             || self.conversation.is_some()

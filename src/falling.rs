@@ -1,7 +1,8 @@
 //! Falling damage: the player coming down further than `fJumpFallHeightMin`
 //! (600 units) takes `((height - min) x fJumpFallHeightMult)^fJumpFallHeightExponent`
 //! (UESP's Skyrim:Damage), through the "Mod Falling Damage" perk entry point
-//! (Cushioned halves it in heavy armor). Landing in deep water spares them.
+//! (Cushioned halves it in heavy armor). Landing in deep water spares them,
+//! as does being ethereal or paralyzed.
 //! The NPC settings (`...NPC`: 450, 0.1, 1.65) wait for NPCs that fall.
 //! `known_ambiguities/falling.md`.
 
@@ -34,6 +35,14 @@ impl Engine {
     pub(crate) fn player_landed(&mut self, height: f32) {
         let damage = fall_damage(&self.lo, height, false);
         if damage <= 0.0 || self.player_dead() {
+            return;
+        }
+        // Ethereal (UESP's Become Ethereal) and paralyzed (UESP's Damage)
+        // players are spared.
+        if self.is_ethereal(PLAYER_REF)
+            || self.actor_value(PLAYER_REF, esp::actor_value::PARALYSIS) > 0.0
+        {
+            log::info!("player falls {height:.0} units unharmed");
             return;
         }
         let middle = self.player.position;

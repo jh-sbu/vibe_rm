@@ -16,6 +16,7 @@ mod detection;
 mod dialogue;
 mod encumbrance;
 mod engine;
+mod ethereal;
 mod falling;
 mod footsteps;
 mod gift;

@@ -2618,6 +2618,7 @@ impl Engine {
             log::debug!("activation disabled: {owner} ({name})");
             return Ok(());
         }
+        self.player_breaks_ethereal();
         let rf = self.reference_of(owner).context("reference vanished")?;
         let is_actor = self.created(owner).map_or_else(
             || self.lo.tag_of(owner).is_some_and(|t| t.0 == *b"ACHR"),
