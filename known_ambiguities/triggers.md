@@ -65,9 +65,20 @@ A box of half extent 128 with a script logging its events:
   placed fires' flames are separate statics: whether the hazard's
   `FXFire01New.nif` is drawn too is unknown), drop to ground, align to
   normal. Disabled hazards do nothing.
-- **Water and lava**: no vanilla water type does damage (`WATR` `DATA` 0,
-  no `XNAM` spell); the Soul Cairn's lava is `DLC1LD_LavaTriggerScript`
-  on trigger volumes, which run.
+- **Water and lava**: water "damage" is the `WATR` `FNAM` flag 0x1
+  (CommonLibSSE `kCauseDamage`, `GetDangerous`), which the
+  `IsInDangerousWater` condition (332) reads; the water does no damage of
+  its own (`DATA` is 0 everywhere, no `XNAM` contact spell). Vanilla sets
+  it only on `DLC2ApocryphaWater` and `DLC2ApocryphaWaterSmall`, whose harm
+  is an ability: `DLC2abApoWaterDamage` (in Apocrypha) gives
+  `DLC2abApoWaterDamageActual`, 70 health a second while swimming, both
+  conditioned on `IsInDangerousWater`. Mods use the flag as a water
+  detector: Wade In Water and needs mods (SunHelm's waterskins and
+  drinking) want every water type flagged, through xEdit / zEdit patchers
+  or an SKSE utility setting it at load. Not modelled yet: the condition,
+  which water type a body is in (cells' `XCWT`, worldspaces' `NAM2`), the
+  contact spell. The Soul Cairn's lava is `DLC1LD_LavaTriggerScript` on
+  trigger volumes, which run.
 
 ## Open questions
 

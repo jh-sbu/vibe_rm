@@ -1033,8 +1033,11 @@ game each piece unlocks.
      dropping their collision; prismatic and malleable constraints (none in the
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
-   - Water types' damage per second (`WATR` `DATA`) and contact spells
-     (`XNAM`): none in the vanilla data (lava is scripted triggers, fires
+   - Water types: which one a body is in (cells' `XCWT`, worldspaces'
+     `NAM2`), `IsInDangerousWater` (`WATR` `FNAM` 0x1: Apocrypha's water
+     harming swimmers through `DLC2abApoWaterDamage`; mods' water
+     detection), contact spells (`XNAM`), damage per second (`DATA`); see
+     `known_ambiguities/triggers.md` (lava is scripted triggers, fires
      are placed hazards: see Done)
    - Magic, more: detect life, telekinesis, slow time; trapped
      souls kept with their gems when they change hands (dropped, stored,
