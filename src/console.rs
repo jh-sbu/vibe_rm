@@ -1139,7 +1139,7 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             let n = args.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
             match engine.drop_item(r, item, n) {
                 Some(m) => vec![format!("{r} dropped {item} as {m}")],
-                None => vec![format!("{r} has no {item} to drop")],
+                None => vec![format!("{r} can't drop {item}")],
             }
         }
         "placeatme" => {
