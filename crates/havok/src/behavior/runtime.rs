@@ -8,7 +8,8 @@
 //! cross-fading over the transition's blend time; clips advance and fire their
 //! triggers; blenders weight their children by (bound) variables; selectors pick a
 //! child by a variable; modifiers that steer control flow run alongside their
-//! generators. Pose modifiers (IK, look-at, ragdoll) are not run.
+//! generators. Pose settings (twist, foot IK, look-at) are exposed to the engine,
+//! which applies them to the sampled pose.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -1963,6 +1964,30 @@ impl Instance {
             })
     }
 
+    /// Twist modifiers running now, with bound angle and enable resolved. The
+    /// pose consumer chooses which authored modes it can apply.
+    pub fn twists(&self) -> Vec<Twist> {
+        self.running_modifiers()
+            .into_iter()
+            .filter_map(|(gi, m)| {
+                let Modifier::Twist(t) = &self.shared.graph(gi).modifiers[m] else {
+                    return None;
+                };
+                let mut t = t.clone();
+                for (member, v) in self.bound_members(gi, m) {
+                    match member {
+                        "enable" => t.enabled = v.is_finite() && v != 0.0,
+                        "twistAngle" => t.angle_degrees = v,
+                        // Other bindings require typed/vector graph variables;
+                        // fail closed instead of applying stale authored data.
+                        _ => return None,
+                    }
+                }
+                t.enabled.then_some(t)
+            })
+            .collect()
+    }
+
     /// Look-at modifiers running now (enabled), with their bound members resolved:
     /// target on / off, per-bone `enabled` and gains.
     pub fn look_ats(&self) -> Vec<LookAt> {
@@ -2216,6 +2241,109 @@ mod tests {
             *f = user_fraction;
         }
         instance(BehaviorGraph::new("G", Some(0), vec![c], vec![]))
+    }
+
+    #[test]
+    fn twists_resolve_angle_enable_and_event_driven_activation() {
+        let mut g = BehaviorGraph::new(
+            "Twist",
+            Some(0),
+            vec![
+                Generator::Wrap {
+                    name: "Wrapped".into(),
+                    class: "hkbModifierGenerator".into(),
+                    child: Some(1),
+                    modifier: Some(0),
+                },
+                clip("Loop", ClipMode::Looping, vec![]),
+            ],
+            vec!["On".into(), "Off".into()],
+        );
+        let angle = g.add_variable("Angle", VarType::Real, 20.0);
+        let enabled = g.add_variable("Enabled", VarType::Bool, 1.0);
+        g.modifiers = vec![
+            Modifier::EventDriven {
+                child: Some(1),
+                activate: 0,
+                deactivate: 1,
+                active_by_default: false,
+            },
+            Modifier::Twist(Twist {
+                enabled: false,
+                axis: glam::Vec3::X,
+                angle_degrees: 5.0,
+                start_bone: 1,
+                end_bone: 1,
+                set_angle_method: 0,
+                axis_coordinates: 0,
+                additive: true,
+            }),
+        ];
+        g.modifier_bindings = vec![
+            vec![],
+            vec![
+                Binding {
+                    member: "twistAngle".into(),
+                    variable: angle,
+                },
+                Binding {
+                    member: "enable".into(),
+                    variable: enabled,
+                },
+            ],
+        ];
+        let mut i = instance(g);
+        assert!(i.twists().is_empty());
+        i.handle_event("On", &mut durations);
+        assert_eq!(i.twists()[0].angle_degrees, 20.0);
+        i.set_variable("Angle", -40.0);
+        assert_eq!(i.twists()[0].angle_degrees, -40.0);
+        i.set_variable("Enabled", 0.0);
+        assert!(i.twists().is_empty());
+        i.set_variable("Enabled", 1.0);
+        assert_eq!(i.twists().len(), 1);
+        i.handle_event("Off", &mut durations);
+        assert!(i.twists().is_empty());
+    }
+
+    #[test]
+    fn twists_honor_unbound_disable_and_reject_unsupported_bindings() {
+        let t = Twist {
+            enabled: false,
+            axis: glam::Vec3::X,
+            angle_degrees: 30.0,
+            start_bone: 0,
+            end_bone: 0,
+            set_angle_method: 0,
+            axis_coordinates: 0,
+            additive: true,
+        };
+        for bound in [false, true] {
+            let mut g = BehaviorGraph::new(
+                "Twist",
+                Some(0),
+                vec![Generator::Wrap {
+                    name: "Wrapped".into(),
+                    class: "hkbModifierGenerator".into(),
+                    child: None,
+                    modifier: Some(0),
+                }],
+                vec![],
+            );
+            let mut t = t.clone();
+            t.enabled = bound;
+            g.modifiers = vec![Modifier::Twist(t)];
+            let v = g.add_variable("Bone", VarType::Real, f32::NAN);
+            g.modifier_bindings = vec![if bound {
+                vec![Binding {
+                    member: "startBoneIndex".into(),
+                    variable: v,
+                }]
+            } else {
+                vec![]
+            }];
+            assert!(instance(g).twists().is_empty());
+        }
     }
 
     fn time(i: &Instance) -> f32 {

@@ -128,6 +128,9 @@ game each piece unlocks.
 - Head tracking: humanoids' `BSLookAtModifier` (spine, neck, head and eye bones, each
   within its limit, eased by the graph's gains, off past the overall limit) turns NPCs
   towards the player close by and while talking (`bHeadTracking`, `LookAtOutOfRange`)
+- Single-bone additive LINEAR `hkbTwistModifier` poses: bound angle and enable,
+  event activation, model and local axes, Havok-to-NIF bone mapping. Angle units,
+  chains, other modes and blending limits: `known_ambiguities/twist-modifier.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;
@@ -919,7 +922,8 @@ game each piece unlocks.
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
-   - Pose modifiers: twist, keyframe bones; foot IK locking planted feet, aligning the
+   - Pose modifiers: twist chains, non-additive modes and branch blending
+     (`known_ambiguities/twist-modifier.md`), keyframe bones; foot IK locking planted feet, aligning the
      body with the ground (`alignWorldFromModelGain`), legs' ungrounded events;
      creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
