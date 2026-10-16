@@ -18,9 +18,9 @@ use super::twist;
 #[derive(Default)]
 pub struct GraphLibrary {
     projects: HashMap<String, Option<Arc<ProjectRuntime>>>,
-    /// By (directory, root graph): projects naming the same graphs share them
-    /// (`DefaultMale.hkx` and `DefaultFemale.hkx`).
-    graphs: HashMap<(String, String), Arc<Shared>>,
+    /// By (directory, root graph, character file): character properties and
+    /// driver settings stay with their character, even when graphs are shared.
+    graphs: HashMap<(String, String, String), Arc<Shared>>,
 }
 
 /// Add animation data triggers (clip generator name -> (seconds, `Event[.Payload]`))
@@ -133,7 +133,11 @@ impl GraphLibrary {
             )?)
             .map_err(|e| log::warn!("{file}: {e}"))
             .ok()?;
-            let key = (dir.to_owned(), character.behavior.to_ascii_lowercase());
+            let key = (
+                dir.to_owned(),
+                character.behavior.to_ascii_lowercase(),
+                character_file.to_ascii_lowercase().replace('\\', "/"),
+            );
             let shared = match self.graphs.get(&key) {
                 Some(s) => s.clone(),
                 None => {

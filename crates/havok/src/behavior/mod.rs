@@ -485,6 +485,14 @@ pub struct Binding {
     pub variable: usize,
 }
 
+/// A read-only input bound to a named character property. Property indices are
+/// graph-local; names resolve them against the project's character file.
+#[derive(Debug, Clone)]
+pub struct PropertyBinding {
+    pub member: String,
+    pub property: String,
+}
+
 pub struct BehaviorGraph {
     pub name: String,
     pub root: Option<GenId>,
@@ -493,6 +501,7 @@ pub struct BehaviorGraph {
     pub bindings: Vec<Vec<Binding>>,
     pub modifiers: Vec<Modifier>,
     pub modifier_bindings: Vec<Vec<Binding>>,
+    pub modifier_property_bindings: Vec<Vec<PropertyBinding>>,
     pub events: Vec<String>,
     /// Graph variables, their types and initial (word) values.
     pub variables: Vec<String>,
@@ -515,6 +524,7 @@ impl BehaviorGraph {
             generators,
             modifiers: Vec::new(),
             modifier_bindings: Vec::new(),
+            modifier_property_bindings: Vec::new(),
             events,
             variables: Vec::new(),
             variable_types: Vec::new(),
@@ -566,6 +576,7 @@ struct Reader<'a> {
     mod_ids: std::collections::HashMap<u32, ModId>,
     modifiers: Vec<Modifier>,
     modifier_bindings: Vec<Vec<Binding>>,
+    modifier_property_bindings: Vec<Vec<PropertyBinding>>,
     /// The graph's character property names (what type-1 bindings index).
     character_properties: Vec<String>,
 }
@@ -674,6 +685,28 @@ impl<'a> Reader<'a> {
             })
     }
 
+    fn property_bindings_of(&self, o: u32) -> Vec<PropertyBinding> {
+        let Some(set) = self.p.ptr(o + 0x10) else {
+            return Vec::new();
+        };
+        let (Some(data), n) = self.p.array(set + 0x10) else {
+            return Vec::new();
+        };
+        (0..n as u32)
+            .map(|i| data + i * 0x28)
+            .filter(|&b| self.p.u8(b + 0x21) == 1)
+            .filter_map(|b| {
+                Some(PropertyBinding {
+                    member: self.p.string(b)?,
+                    property: self
+                        .character_properties
+                        .get(usize::try_from(self.p.i32(b + 0x1C)).ok()?)?
+                        .to_ascii_lowercase(),
+                })
+            })
+            .collect()
+    }
+
     /// String payload of the `hkbEventPayload` pointed to from `slot`.
     fn payload(&self, slot: u32) -> Option<String> {
         self.p
@@ -740,6 +773,8 @@ impl<'a> Reader<'a> {
         self.mod_ids.insert(o, id);
         self.modifiers.push(Modifier::Other(String::new()));
         self.modifier_bindings.push(self.bindings_of(o));
+        self.modifier_property_bindings
+            .push(self.property_bindings_of(o));
         let p = self.p;
         let class = self.class(o);
         let m = match class {
@@ -1064,6 +1099,7 @@ impl BehaviorGraph {
             mod_ids: Default::default(),
             modifiers: Vec::new(),
             modifier_bindings: Vec::new(),
+            modifier_property_bindings: Vec::new(),
             character_properties: string_array(0x40),
         };
         let root = p.ptr(graph + 0x80).map(|g| r.generator(g));
@@ -1103,6 +1139,7 @@ impl BehaviorGraph {
             bindings: r.bindings,
             modifiers: r.modifiers,
             modifier_bindings: r.modifier_bindings,
+            modifier_property_bindings: r.modifier_property_bindings,
             events,
             variables,
             variable_types,
@@ -1174,6 +1211,9 @@ pub struct Character {
     /// Bone weight properties (lowercase name -> weight per bone), which graphs
     /// bind bone switches to.
     pub bone_weights: std::collections::HashMap<String, Vec<f32>>,
+    /// Authored scalar properties (lowercase name -> bool/int/real converted to
+    /// f32). Pointer/vector properties are excluded; these inputs are immutable.
+    pub scalar_properties: std::collections::HashMap<String, f32>,
 }
 
 /// `hkbFootIkDriverInfo`: the legs and how far to look for the ground.
@@ -1227,6 +1267,35 @@ pub fn project_character_file(bytes: &[u8]) -> Result<String> {
 }
 
 impl Character {
+    fn read_scalar_properties(
+        p: &Packfile,
+        data: Option<u32>,
+        names: &[String],
+    ) -> std::collections::HashMap<String, f32> {
+        let mut properties = std::collections::HashMap::new();
+        let Some(data) = data else { return properties };
+        let (Some(infos), ni) = p.array(data + 0x60) else {
+            return properties;
+        };
+        let Some(values) = p.ptr(data + 0x80) else {
+            return properties;
+        };
+        let (Some(words), nw) = p.array(values + 0x10) else {
+            return properties;
+        };
+        for (i, name) in names.iter().enumerate().take(nw.min(ni) as usize) {
+            let word = p.i32(words + i as u32 * 4);
+            let value = match p.u8(infos + i as u32 * 6 + 4) {
+                0 => f32::from(word != 0),
+                1..=3 => word as f32,
+                4 => f32::from_bits(word as u32),
+                _ => continue,
+            };
+            properties.insert(name.to_ascii_lowercase(), value);
+        }
+        properties
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Character> {
         let p = Packfile::parse(bytes)?;
         let o = p
@@ -1278,6 +1347,7 @@ impl Character {
         let mut bone_weights = std::collections::HashMap::new();
         let names = string_array(&p, o + 0x50);
         let data = p.objects_of("hkbCharacterData").next();
+        let scalar_properties = Self::read_scalar_properties(&p, data, &names);
         // Property types (`hkbVariableInfo`: role, flags, type); 5 is a pointer.
         let (infos, ni) = data.map_or((None, 0), |c| p.array(c + 0x60));
         if let Some(values) = data.and_then(|c| p.ptr(c + 0x80)) {
@@ -1314,7 +1384,144 @@ impl Character {
             behavior: s(0xb8),
             foot_ik,
             bone_weights,
+            scalar_properties,
         })
+    }
+}
+
+#[cfg(test)]
+mod character_property_tests {
+    use super::*;
+
+    fn word(data: &mut [u8], at: usize, value: u32) {
+        data[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn fixture() -> Packfile {
+        // Synthetic character value tables and modifier bindings. No asset bytes.
+        let mut data = vec![0u8; 0x600];
+        word(&mut data, 0x68, 7);
+        word(&mut data, 0x198, 7);
+        for (i, (ty, value)) in [
+            (0, -5i32),
+            (1, -7),
+            (2, -300),
+            (3, -40000),
+            (4, (-1.25f32).to_bits() as i32),
+            (5, 4),
+            (6, 5),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            data[0x100 + i * 6 + 4] = ty;
+            word(&mut data, 0x200 + i * 4, value as u32);
+        }
+        word(&mut data, 0x318, 4);
+        let mut pointers = vec![
+            (0x60, 0x100),
+            (0x80, 0x180),
+            (0x190, 0x200),
+            (0x290, 0x300),
+            (0x310, 0x380),
+        ];
+        for (i, (member, index, kind)) in [
+            ("rawValue", 4, 1),
+            ("enable", 0, 1),
+            ("invalid", 99, 1),
+            ("dampedValue", 2, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let b = 0x380 + i * 0x28;
+            let s = 0x480 + i * 0x20;
+            data[s..s + member.len()].copy_from_slice(member.as_bytes());
+            word(&mut data, b + 0x1C, index);
+            data[b + 0x20] = 0xFF; // unpartitioned binding
+            data[b + 0x21] = kind;
+            pointers.push((b as u32, s as u32));
+        }
+        let start = 0xB0;
+        let end = data.len();
+        let fixes = end + pointers.len() * 8;
+        let mut bytes = vec![0u8; start + fixes];
+        word(&mut bytes, 0, 0x57E0_E057);
+        word(&mut bytes, 4, 0x10C0_C010);
+        word(&mut bytes, 12, 8);
+        bytes[16] = 8;
+        bytes[17] = 1;
+        word(&mut bytes, 20, 2);
+        bytes[0x40..0x4E].copy_from_slice(b"__classnames__");
+        word(&mut bytes, 0x54, start as u32);
+        bytes[0x70..0x78].copy_from_slice(b"__data__");
+        word(&mut bytes, 0x84, start as u32);
+        word(&mut bytes, 0x88, end as u32);
+        for at in [0x8C, 0x90, 0x94, 0xA0] {
+            word(&mut bytes, at, fixes as u32);
+        }
+        bytes[start..start + end].copy_from_slice(&data);
+        for (i, (source, target)) in pointers.into_iter().enumerate() {
+            word(&mut bytes, start + end + i * 8, source);
+            word(&mut bytes, start + end + i * 8 + 4, target);
+        }
+        Packfile::parse(&bytes).unwrap()
+    }
+
+    #[test]
+    fn scalar_character_properties_decode_types_and_exclude_non_scalars() {
+        let p = fixture();
+        let names = [
+            "Bool", "Byte", "Int16", "Int32", "Real", "Pointer", "Vector", "Missing",
+        ]
+        .map(String::from);
+        let values = Character::read_scalar_properties(&p, Some(0), &names);
+        assert_eq!(values.len(), 5);
+        for (name, value) in [
+            ("bool", 1.0),
+            ("byte", -7.0),
+            ("int16", -300.0),
+            ("int32", -40000.0),
+            ("real", -1.25),
+        ] {
+            assert_eq!(values[name], value);
+        }
+        assert!(Character::read_scalar_properties(&p, None, &names).is_empty());
+    }
+
+    #[test]
+    fn property_bindings_use_graph_names_and_do_not_become_variable_outputs() {
+        let p = fixture();
+        let r = Reader {
+            p: &p,
+            classes: Default::default(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["ENABLE", "Unused", "Output", "Other", "GAIN"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let properties = r.property_bindings_of(0x280);
+        assert_eq!(properties.len(), 2);
+        assert_eq!(
+            (&*properties[0].member, &*properties[0].property),
+            ("rawValue", "gain")
+        );
+        assert_eq!(
+            (&*properties[1].member, &*properties[1].property),
+            ("enable", "enable")
+        );
+        let variables = r.bindings_of(0x280);
+        assert_eq!(variables.len(), 1);
+        assert_eq!(
+            (&*variables[0].member, variables[0].variable),
+            ("dampedValue", 2)
+        );
     }
 }
 
