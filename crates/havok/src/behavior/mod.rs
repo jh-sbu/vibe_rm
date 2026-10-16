@@ -165,6 +165,8 @@ pub struct BlendChild {
     pub weight_variable: Option<usize>,
     /// Per-bone weights (Havok skeleton bone order), if the child affects only some bones.
     pub bone_weights: Option<Vec<f32>>,
+    /// Character property bound to `boneWeights`, resolved for this character.
+    pub bone_weights_property: Option<String>,
 }
 
 pub const BLEND_SYNC: u16 = 0x1;
@@ -1063,6 +1065,7 @@ impl<'a> Reader<'a> {
                             .find(|b| b.member == "weight")
                             .map(|b| b.variable),
                         bone_weights: self.bone_weights(p.ptr(c + 0x38)),
+                        bone_weights_property: self.character_property(c, "boneWeights"),
                     });
                 }
                 Generator::Blender {
@@ -1508,12 +1511,18 @@ mod character_property_tests {
             word(&mut data, 0x200 + i * 4, value as u32);
         }
         word(&mut data, 0x318, 4);
+        // A blender at 0x280 can also use this binding set on its one child.
+        word(&mut data, 0x2E8, 1);
+        word(&mut data, 0x5C0, 1.0f32.to_bits());
         let mut pointers = vec![
             (0x60, 0x100),
             (0x80, 0x180),
             (0x190, 0x200),
             (0x290, 0x300),
             (0x310, 0x380),
+            (0x2E0, 0x570),
+            (0x570, 0x580),
+            (0x590, 0x300),
         ];
         for (i, (member, index, kind)) in [
             ("rawValue", 4, 1),
@@ -1622,6 +1631,39 @@ mod character_property_tests {
         assert_eq!(r.property_bindings[id].len(), 2);
         assert_eq!(r.property_bindings[id][0].property, "gain");
         assert_eq!(r.bindings[id].len(), 1);
+    }
+
+    #[test]
+    fn blender_children_retain_bone_weight_property_names() {
+        let mut p = fixture();
+        p.data[0x480..0x48B].copy_from_slice(b"boneWeights");
+        let mut r = Reader {
+            p: &p,
+            classes: [(0x280, "hkbBlenderGenerator")].into(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            property_bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["Unused", "Other", "Third", "Fourth", "ArmMask"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let id = r.generator(0x280);
+        let Generator::Blender { children, .. } = &r.generators[id] else {
+            panic!("expected blender");
+        };
+        assert_eq!(children.len(), 1);
+        assert_eq!(
+            children[0].bone_weights_property.as_deref(),
+            Some("ArmMask")
+        );
+        assert_eq!(children[0].weight, 1.0);
+        assert!(children[0].bone_weights.is_none());
+        assert!(children[0].weight_variable.is_none());
     }
 }
 

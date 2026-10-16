@@ -91,6 +91,8 @@ pub struct Shared {
     default_masks: HashMap<(usize, GenId), Arc<[f32]>>,
     /// Bone switches' children's weights, character properties resolved.
     switch_weights: HashMap<(usize, GenId), Vec<Arc<[f32]>>>,
+    /// Blender children's masks, including character-property bindings.
+    blend_masks: HashMap<(usize, GenId), Vec<Option<Arc<[f32]>>>>,
 }
 
 impl Shared {
@@ -107,6 +109,7 @@ impl Shared {
             promoted: HashMap::new(),
             default_masks: HashMap::new(),
             switch_weights: HashMap::new(),
+            blend_masks: HashMap::new(),
             project: project.clone(),
         };
         for (gi, (_, g)) in project.graphs.iter().enumerate() {
@@ -168,6 +171,25 @@ impl Shared {
                         if !promoted.is_empty() {
                             s.promoted.insert((gi, id), promoted);
                         }
+                    }
+                    Generator::Blender { children, .. } => {
+                        let masks = children
+                            .iter()
+                            .map(|c| {
+                                c.bone_weights_property
+                                    .as_ref()
+                                    .and_then(|p| {
+                                        s.project
+                                            .character
+                                            .as_ref()?
+                                            .bone_weights
+                                            .get(&p.to_ascii_lowercase())
+                                    })
+                                    .or(c.bone_weights.as_ref())
+                                    .map(|w| Arc::from(w.as_slice()))
+                            })
+                            .collect();
+                        s.blend_masks.insert((gi, id), masks);
                     }
                     Generator::BoneSwitch {
                         children,
@@ -1696,8 +1718,7 @@ impl Ctx<'_> {
                 }
             }
             Kind::Blend { children, .. } => {
-                let graph = self.shared.graph(gi);
-                let Generator::Blender { children: defs, .. } = &graph.generators[g] else {
+                let Some(masks) = self.shared.blend_masks.get(&(gi, g)) else {
                     return;
                 };
                 let additive: Vec<bool> = children
@@ -1705,9 +1726,9 @@ impl Ctx<'_> {
                     .map(|c| c.as_ref().is_some_and(is_additive))
                     .collect();
                 let w = self.blend_weights(gi, g, &additive);
-                for ((c, wi), def) in children.iter().zip(w).zip(defs) {
+                for ((c, wi), child_mask) in children.iter().zip(w).zip(masks) {
                     let Some(c) = c else { continue };
-                    match &def.bone_weights {
+                    match child_mask {
                         Some(bw) if !bw.is_empty() => {
                             let m = combine(mask, bw);
                             self.collect(c, weight * wi, Some(&m), out);
@@ -2492,12 +2513,14 @@ mod tests {
                             weight: 0.0,
                             weight_variable: None,
                             bone_weights: None,
+                            bone_weights_property: None,
                         },
                         BlendChild {
                             generator: Some(2),
                             weight: 1.0,
                             weight_variable: None,
                             bone_weights: None,
+                            bone_weights_property: None,
                         },
                     ],
                 },
@@ -2536,6 +2559,118 @@ mod tests {
         assert_eq!(time(&i), 0.5);
         i.update(0.25, &mut durations);
         assert_eq!(time(&i), 1.0);
+    }
+
+    fn masked_blend(name: &str, children: Vec<BlendChild>) -> Generator {
+        Generator::Blender {
+            name: name.into(),
+            parameter: 0.0,
+            min_cyclic: 0.0,
+            max_cyclic: 1.0,
+            flags: 0,
+            children,
+        }
+    }
+
+    fn masked_child(
+        generator: GenId,
+        property: Option<&str>,
+        mask: Option<Vec<f32>>,
+    ) -> BlendChild {
+        BlendChild {
+            generator: Some(generator),
+            weight: 1.0,
+            weight_variable: None,
+            bone_weights: mask,
+            bone_weights_property: property.map(String::from),
+        }
+    }
+
+    #[test]
+    fn blender_character_masks_replace_authored_masks_and_compose_with_parent() {
+        let graph = || {
+            BehaviorGraph::new(
+                "Masks",
+                Some(0),
+                vec![
+                    masked_blend("Parent", vec![masked_child(1, Some("OUTER"), None)]),
+                    masked_blend(
+                        "Inner",
+                        vec![
+                            masked_child(2, Some("Arm"), Some(vec![0.0, 0.0, 0.0])),
+                            masked_child(3, None, None),
+                        ],
+                    ),
+                    clip("Arm", ClipMode::Looping, vec![]),
+                    clip("Full", ClipMode::Looping, vec![]),
+                ],
+                vec![],
+            )
+        };
+        // The same graph has a different resolved mask for each character.
+        for (arm, expected) in [
+            (vec![1.0, 0.5, 0.0], vec![0.5, 0.5, 0.0]),
+            (vec![0.0, 0.25, 1.0], vec![0.0, 0.25, 0.25]),
+        ] {
+            let shared = Shared::new(Arc::new(Project {
+                graphs: vec![("g".into(), graph())],
+                character: Some(Character {
+                    bone_weights: [("outer".into(), vec![0.5, 1.0, 0.25]), ("arm".into(), arm)]
+                        .into(),
+                    ..Default::default()
+                }),
+            }));
+            let mut i = Instance::new(shared, 1);
+            i.update(0.1, &mut durations);
+            let samples = i.samples();
+            assert_eq!(samples.len(), 2);
+            assert_eq!(samples[0].mask.as_deref(), Some(expected.as_slice()));
+            assert_eq!(
+                samples[1].mask.as_deref(),
+                Some([0.5, 1.0, 0.25].as_slice())
+            );
+            assert_eq!(samples[0].weight, 0.5);
+            assert_eq!(samples[1].weight, 0.5);
+        }
+    }
+
+    #[test]
+    fn unavailable_blender_character_masks_keep_authored_fallbacks() {
+        for character in [
+            None,
+            Some(Character::default()),
+            Some(Character {
+                // A scalar property is not a bone-weight array, even with the same name.
+                scalar_properties: [("mask".into(), 1.0)].into(),
+                ..Default::default()
+            }),
+        ] {
+            let g = BehaviorGraph::new(
+                "Fallback",
+                Some(0),
+                vec![
+                    masked_blend(
+                        "Blend",
+                        vec![
+                            masked_child(1, Some("Mask"), Some(vec![0.25, 1.0])),
+                            masked_child(2, Some("Mask"), None),
+                        ],
+                    ),
+                    clip("Authored", ClipMode::Looping, vec![]),
+                    clip("Unmasked", ClipMode::Looping, vec![]),
+                ],
+                vec![],
+            );
+            let shared = Shared::new(Arc::new(Project {
+                graphs: vec![("g".into(), g)],
+                character,
+            }));
+            let mut i = Instance::new(shared, 1);
+            i.update(0.0, &mut durations);
+            let samples = i.samples();
+            assert_eq!(samples[0].mask.as_deref(), Some([0.25, 1.0].as_slice()));
+            assert!(samples[1].mask.is_none());
+        }
     }
 
     #[test]
@@ -3269,6 +3404,7 @@ mod tests {
             weight: w,
             weight_variable: None,
             bone_weights: None,
+            bone_weights_property: None,
         };
         let mut back = clip("Back", ClipMode::SinglePlay, vec![]);
         if let Generator::Clip { speed, .. } = &mut back {

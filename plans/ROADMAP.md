@@ -142,6 +142,10 @@ game each piece unlocks.
   state-machine start ID use the runtime's existing input paths, with graph
   variables taking precedence. Remaining inputs and lifecycle questions:
   `known_ambiguities/character-properties.md`
+- Blender-child `boneWeights` character properties resolve per character
+  (arms, upper body and mounted-combat masks), preserving existing parent-mask
+  composition and authored fallbacks. Remaining limits:
+  `known_ambiguities/character-properties.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;
