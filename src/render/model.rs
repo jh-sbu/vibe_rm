@@ -1229,51 +1229,138 @@ mod node_controller_tests {
         }
     }
 
+    fn moving_fixture(count: usize, rotating: bool) -> Nif {
+        use nif::anim::{RotationKeys, TransformData, TransformInterpolator};
+
+        let mut n = fixture();
+        n.blocks.truncate(1);
+        if let Block::Node(root) = &mut n.blocks[0] {
+            root.children = (0..count).map(|i| Ref(1 + i as i32 * 5)).collect();
+        }
+        for i in 0..count {
+            let node = n.blocks.len() as i32;
+            let origin = Vec3::X * (10.0 + i as f32 * 4.0);
+            let end = origin + Vec3::Z * 2.0;
+            let rotations = if rotating {
+                RotationKeys::Quat(vec![
+                    (0.0, glam::Quat::IDENTITY),
+                    (
+                        1.0,
+                        glam::Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
+                    ),
+                ])
+            } else {
+                RotationKeys::None
+            };
+            n.blocks.extend([
+                Block::Node(nif::Node {
+                    av: nif::AvObject {
+                        net: nif::ObjectNet {
+                            name: format!("Moving{i}"),
+                            controller: Ref(node + 1),
+                            extra_data: Vec::new(),
+                        },
+                        transform: nif::Transform {
+                            translation: origin,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    kind: NodeKind::Plain,
+                    children: vec![Ref(node + 4)],
+                    effects: Vec::new(),
+                }),
+                Block::NodeController(nif::anim::NodeController {
+                    next: Ref(-1),
+                    kind: nif::anim::NodeControllerKind::Transform,
+                    timing: nif::anim::Timing {
+                        flags: 8,
+                        frequency: 1.0,
+                        phase: 0.0,
+                        start: 0.0,
+                        stop: 1.0,
+                    },
+                    interpolator: Ref(node + 2),
+                }),
+                Block::TransformInterpolator(TransformInterpolator {
+                    translation: Vec3::NAN,
+                    rotation: glam::Quat::NAN,
+                    scale: f32::NAN,
+                    data: Ref(node + 3),
+                }),
+                Block::TransformData(Box::new(TransformData {
+                    rotations,
+                    translations: if rotating {
+                        Vec::new()
+                    } else {
+                        vec![(0.0, origin), (1.0, end)]
+                    },
+                    ..Default::default()
+                })),
+                Block::TriShape(nif::TriShape {
+                    av: nif::AvObject {
+                        net: nif::ObjectNet {
+                            controller: Ref(-1),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    bound_center: Vec3::ZERO,
+                    bound_radius: 1.0,
+                    skin: Ref(-1),
+                    shader: Ref(-1),
+                    alpha: Ref(-1),
+                    vertex_desc: 0,
+                    geometry: Geometry {
+                        positions: vec![Vec3::ZERO, Vec3::X, Vec3::Y],
+                        triangles: vec![[0, 1, 2]],
+                        ..Default::default()
+                    },
+                    dynamic: false,
+                }),
+            ]);
+        }
+        n
+    }
+
     #[test]
-    #[ignore = "requires a licensed Skyrim SE install in SKYRIM_DATA"]
-    fn installed_world_controller_assets() {
-        let data =
-            std::env::var_os("SKYRIM_DATA").expect("set SKYRIM_DATA to the game's Data directory");
-        let vfs = vfs::Vfs::new(std::path::Path::new(&data), &[]);
-        for (path, count) in [
-            (
-                "meshes/architecture/solitude/farms/sfarmhousemillfan.nif",
-                1,
-            ),
-            ("meshes/architecture/solitude/farms/ssawwaterwheel.nif", 1),
-            (
-                "meshes/architecture/solitude/clutter/sropefestivalline01.nif",
-                9,
-            ),
-        ] {
-            let bytes = vfs.read(path).expect(path);
-            let n = Nif::parse(&bytes).expect(path);
+    fn synthetic_world_controllers_preserve_geometry_and_animate_parts() {
+        for (count, rotating) in [(1, true), (1, false), (9, false)] {
+            let n = moving_fixture(count, rotating);
             let controllers = node_controllers(&n);
-            assert_eq!(controllers.len(), count, "{path}");
+            assert_eq!(controllers.len(), count);
             let normal = convert(&n);
             let controlled = convert_controlled(&n, &Default::default(), &controllers);
             assert!(
                 normal.animated.is_empty(),
-                "standalone channels are not sequences: {path}"
+                "standalone channels are not sequences"
             );
+            assert_eq!(normal.meshes.len(), count, "default loads retain geometry");
             assert!(
-                !normal.meshes.is_empty(),
-                "default loads retain static geometry: {path}"
+                controlled.meshes.is_empty(),
+                "split meshes are not drawn twice"
             );
-            assert_eq!(controlled.animated.len(), count, "{path}");
-            for c in &controllers {
+            assert_eq!(controlled.animated.len(), count);
+            for (i, c) in controllers.iter().enumerate() {
                 let part = controlled
                     .animated
                     .iter()
                     .find(|p| p.block == c.block)
-                    .expect(path);
+                    .expect("controller target has its own part");
+                assert_eq!(part.model.meshes.len(), 1);
+                assert_eq!(part.model.meshes[0].indices, [0, 1, 2]);
                 let before = c.transform(0.0, part.rest).unwrap();
                 let after = c.transform(0.25, part.rest).unwrap();
-                assert_ne!(
-                    before, after,
-                    "controller moves its part: {path} {}",
-                    c.node
-                );
+                assert!(before.abs_diff_eq(part.rest, 1e-6));
+                let origin = Vec3::X * (10.0 + i as f32 * 4.0);
+                let expected = if rotating {
+                    Mat4::from_translation(origin)
+                        * Mat4::from_rotation_z(std::f32::consts::FRAC_PI_2 * 0.25)
+                } else {
+                    Mat4::from_translation(origin + Vec3::Z * 0.5)
+                };
+                assert!(after.abs_diff_eq(expected, 1e-6), "{}", c.node);
+                assert_ne!(before, after, "controller moves its part: {}", c.node);
             }
         }
     }
