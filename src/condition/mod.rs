@@ -560,6 +560,10 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .unwrap_or(0.0),
         ), // GetKeywordDataForCurrentLocation
         403 => Some(e.relationship_rank(subject?, p1) as f32), // GetRelationshipRank
+        258 => b(e.has_association(subject?, Some(p1), FormId(c.p2))), // HasAssociationType
+        259 => b(e.has_family_relationship(subject?, Some(p1))), // HasFamilyRelationship
+        617 => b(e.has_association(subject?, None, p1)), // HasAssociationTypeAny
+        618 => b(e.has_family_relationship(subject?, None)), // HasFamilyRelationshipAny
         615 | 616 => Some(e.relationship_extreme(subject?, c.func == 615) as f32), // GetHighest / GetLowestRelationshipRank
         726 => b(subject.is_none()),                                               // DoesNotExist
         372 => b(subject.is_some_and(|s| {

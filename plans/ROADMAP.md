@@ -637,6 +637,10 @@ game each piece unlocks.
   event get its Papyrus `OnStory...` event with the data. Quests' own event
   conditions. Relationships (`RELA`):
   `GetRelationshipRank` and highest / lowest, Papyrus get / set. Conditions
+  `HasAssociationType` / `HasAssociationTypeAny` and `HasFamilyRelationship` /
+  `HasFamilyRelationshipAny` query direct authored links and their association's
+  family flag; secret metadata retained, behavior still pending
+  (`known_ambiguities/relationships.md`). Conditions
   `GetIsCurrentPackage`, `IsInList`, `DoesNotExist`, location keyword data.
   Cleared locations: by their bosses dying or `SetCleared`, with the banner,
   the cleared music and Dungeons Cleared; `IsCleared`, `GetLocationCleared`,
@@ -941,9 +945,9 @@ game each piece unlocks.
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
    - Kill events' crime status for NPC killers; the "sold" acquire type;
-     assault events for blows to the player; relationship association types
-     (`HasFamilyRelationship`, `HasParentRelationship`) and secret
-     relationships; `WarnIfNoChildQuestStarted`
+     assault events for blows to the player; `HasParentRelationship` and secret
+     relationship behavior (`known_ambiguities/relationships.md`);
+     `WarnIfNoChildQuestStarted`
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
    - Quiet Casting, Shadow Warrior (with casting); blindness, and spells
