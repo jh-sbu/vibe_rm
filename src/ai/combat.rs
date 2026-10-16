@@ -721,6 +721,9 @@ pub struct Combat {
     pub(crate) flee_distance: f32,
     pub(crate) safe: f32,
     threat_near: bool,
+    /// Seconds until another FLEE dialogue attempt, while fleeing. A newly
+    /// entered flee can speak immediately; leaving it cancels the countdown.
+    pub(crate) flee_dialogue: f32,
     /// Seconds the target has gone undetected, and where it was last detected.
     pub(crate) unseen: f32,
     pub(crate) last_seen: Option<Vec3>,
@@ -786,6 +789,7 @@ impl Combat {
             flee_distance: 0.0,
             safe: 0.0,
             threat_near: false,
+            flee_dialogue: 0.0,
             unseen: 0.0,
             last_seen: None,
         }

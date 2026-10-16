@@ -44,7 +44,22 @@ pub struct Barks {
     topics: HashMap<[u8; 4], Vec<Topic>>,
 }
 
+impl Barks {
+    fn available(&self, now: f64) -> bool {
+        self.current.is_none() && now >= self.quiet_until
+    }
+}
+
 impl Engine {
+    /// Whether an incidental line can start without interrupting another line
+    /// or the quiet interval after it. Timed combat dialogue uses this too.
+    pub(crate) fn bark_channel_available(&self) -> bool {
+        self.barks.available(self.scripts.real_time)
+            && self.conversation.is_none()
+            && self.ai_enabled
+            && self.scene_lines().is_empty()
+    }
+
     /// Topics of a subtype, highest priority first (cached).
     pub(crate) fn bark_topics(&mut self, sub: &[u8; 4]) -> Vec<Topic> {
         if let Some(t) = self.barks.topics.get(sub) {
@@ -76,11 +91,7 @@ impl Engine {
             }
             return;
         }
-        if self.conversation.is_some()
-            || now < self.barks.quiet_until
-            || !self.ai_enabled
-            || !self.scene_lines().is_empty()
-        {
+        if !self.bark_channel_available() {
             return;
         }
         let player = self.player.position;
@@ -188,5 +199,31 @@ impl Engine {
             return true;
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Bark, Barks};
+    use esp::FormId;
+
+    #[test]
+    fn occupied_barks_and_their_quiet_interval_defer_timed_dialogue() {
+        let mut barks = Barks::default();
+        assert!(barks.available(0.0));
+        barks.current = Some(Bark {
+            speaker: FormId(1),
+            name: "Synthetic speaker".into(),
+            text: "Synthetic line".into(),
+            voice: None,
+            ends_at: 2.0,
+        });
+        // A nominally ended bark still owns the channel until update_barks
+        // clears it (voice playback may extend it).
+        assert!(!barks.available(3.0));
+        barks.current = None;
+        barks.quiet_until = 5.0;
+        assert!(!barks.available(4.99));
+        assert!(barks.available(5.0));
     }
 }
