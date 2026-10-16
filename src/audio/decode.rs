@@ -150,45 +150,151 @@ pub fn decode(path: &str, d: &[u8], rate: u32) -> Option<Clip> {
 mod tests {
     use super::*;
 
-    fn game_vfs() -> Option<vfs::Vfs> {
-        let dir = vfs::locate_data_dir()?;
-        let names = esp::LoadOrder::default_plugin_list(&dir, None);
-        Some(vfs::Vfs::new(dir, &names))
+    fn pcm_wav(channels: u16, bits: u16, samples: &[u8]) -> Vec<u8> {
+        let rate = 44100u32;
+        let align = channels * bits / 8;
+        let mut bytes = b"RIFF\0\0\0\0WAVEfmt ".to_vec();
+        bytes.extend(16u32.to_le_bytes());
+        bytes.extend(1u16.to_le_bytes());
+        bytes.extend(channels.to_le_bytes());
+        bytes.extend(rate.to_le_bytes());
+        bytes.extend((rate * u32::from(align)).to_le_bytes());
+        bytes.extend(align.to_le_bytes());
+        bytes.extend(bits.to_le_bytes());
+        // An odd-sized unknown chunk tests RIFF padding as well as sample decoding.
+        bytes.extend(b"JUNK\x01\0\0\0\x42\0data");
+        bytes.extend((samples.len() as u32).to_le_bytes());
+        bytes.extend(samples);
+        if samples.len() % 2 != 0 {
+            bytes.push(0);
+        }
+        let size = (bytes.len() - 8) as u32;
+        bytes[4..8].copy_from_slice(&size.to_le_bytes());
+        bytes
     }
 
     #[test]
-    fn decode_game_sounds() {
-        let Some(v) = game_vfs() else {
-            eprintln!("no game data; skipping");
-            return;
-        };
-        let wav_path = v
-            .list("sound/fx/")
-            .into_iter()
-            .find(|p| p.ends_with(".wav"))
-            .expect("a wav");
-        let w = decode(&wav_path, &v.read(&wav_path).unwrap(), 44100).expect("wav decodes");
-        assert!(w.frames() > 0);
-        let xwm_path = v
-            .list("music/")
-            .into_iter()
-            .find(|p| p.ends_with(".xwm"))
-            .expect("an xwm");
-        let x =
-            decode(&xwm_path, &v.read(&xwm_path).unwrap(), 44100).expect("xwm decodes via ffmpeg");
-        assert!(x.duration() > 1.0, "{xwm_path}: {}s", x.duration());
-        let fuz_path = v
-            .list("sound/voice/skyrim.esm/")
-            .into_iter()
-            .find(|p| p.ends_with(".fuz"))
-            .expect("a fuz");
-        let f = decode(&fuz_path, &v.read(&fuz_path).unwrap(), 44100).expect("fuz decodes");
-        assert!(f.duration() > 0.1);
-        eprintln!(
-            "{wav_path}: {:.2}s, {xwm_path}: {:.2}s, {fuz_path}: {:.2}s",
-            w.duration(),
-            x.duration(),
-            f.duration()
+    fn decode_synthetic_pcm_wavs() {
+        for (channels, bits, data, expected) in [
+            (
+                1,
+                8,
+                vec![0, 128, 192],
+                vec![-1.0, -1.0, 0.0, 0.0, 0.5, 0.5],
+            ),
+            (2, 8, vec![0, 192, 128, 64], vec![-1.0, 0.5, 0.0, -0.5]),
+            (
+                1,
+                16,
+                vec![0, 128, 0, 0, 0, 64],
+                vec![-1.0, -1.0, 0.0, 0.0, 0.5, 0.5],
+            ),
+            (
+                2,
+                16,
+                vec![0, 128, 0, 64, 0, 0, 0, 192],
+                vec![-1.0, 0.5, 0.0, -0.5],
+            ),
+        ] {
+            let clip = decode("synthetic.wav", &pcm_wav(channels, bits, &data), 22050)
+                .expect("synthetic PCM decodes without FFmpeg");
+            assert_eq!(clip.samples, expected);
+            assert_eq!(clip.rate, 44100);
+            assert_eq!(clip.frames(), expected.len() / 2);
+            assert_eq!(clip.duration(), clip.frames() as f32 / 44100.0);
+        }
+    }
+
+    fn synthetic_xwma() -> Vec<u8> {
+        let pcm: Vec<u8> = (0..11025)
+            .flat_map(|i| {
+                let angle = i as f32 * std::f32::consts::TAU * 440.0 / 44100.0;
+                ((angle.sin() * 10000.0) as i16).to_le_bytes()
+            })
+            .collect();
+        let mut child = Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "s16le",
+                "-ar",
+                "44100",
+                "-ac",
+                "1",
+                "-i",
+                "pipe:0",
+                "-c:a",
+                "wmav2",
+                "-b:a",
+                "48k",
+                "-f",
+                "wav",
+                "pipe:1",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("FFmpeg is required for the synthetic compressed-audio test");
+        let mut stdin = child.stdin.take().unwrap();
+        let writer = std::thread::spawn(move || stdin.write_all(&pcm));
+        let output = child.wait_with_output().unwrap();
+        writer.join().unwrap().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
         );
+        let mut bytes = output.stdout;
+        assert_eq!(&bytes[..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WAVE");
+        // FFmpeg has a WMA WAV muxer, but no xWMA muxer. xWMA uses the same
+        // fmt/data chunks under RIFF/XWMA. Keep the generated codec extradata;
+        // this tests our decoding paths, not vanilla encoder compatibility.
+        // Format reference: https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/xwma.c
+        bytes[8..12].copy_from_slice(b"XWMA");
+        let size = (bytes.len() - 8) as u32;
+        bytes[4..8].copy_from_slice(&size.to_le_bytes());
+        let mut p = 12;
+        loop {
+            assert!(p + 8 <= bytes.len(), "encoded WAV needs a data chunk");
+            let size = u32_at(&bytes, p + 4) as usize;
+            if &bytes[p..p + 4] == b"data" {
+                // Pipe output uses an unknown chunk length; our in-memory
+                // fixture has a known end and can supply the actual size.
+                let size = (bytes.len() - p - 8) as u32;
+                bytes[p + 4..p + 8].copy_from_slice(&size.to_le_bytes());
+                break;
+            }
+            p += 8 + size + (size & 1);
+        }
+        bytes
+    }
+
+    #[test]
+    fn decode_synthetic_xwma_and_fuz() {
+        let audio = synthetic_xwma();
+        let clip = decode("synthetic.xwm", &audio, 22050).expect("xWMA decodes via FFmpeg");
+        assert_eq!(clip.rate, 22050);
+        assert!(clip.duration() > 0.1 && clip.duration() < 0.5);
+        assert!(clip.samples.iter().all(|s| s.is_finite()));
+        assert!(clip.samples.iter().any(|s| s.abs() > 0.01));
+        assert!(clip.samples.chunks_exact(2).all(|s| s[0] == s[1]));
+
+        let lip = b"synthetic lip data";
+        let mut fuz = b"FUZE".to_vec();
+        fuz.extend(1u32.to_le_bytes());
+        fuz.extend((lip.len() as u32).to_le_bytes());
+        fuz.extend(lip);
+        fuz.extend(&audio);
+        assert_eq!(fuz_audio(&fuz), Some(audio.as_slice()));
+        let wrapped = decode("synthetic.fuz", &fuz, 22050).expect("FUZ payload decodes");
+        assert_eq!(wrapped.rate, clip.rate);
+        assert_eq!(wrapped.samples, clip.samples);
+        assert!(fuz_audio(b"FUZE").is_none());
+        assert!(fuz_audio(b"NOPE\x01\0\0\0\0\0\0\0").is_none());
+        assert!(fuz_audio(b"FUZE\x01\0\0\0\xff\xff\xff\xff").is_none());
     }
 }
