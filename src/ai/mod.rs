@@ -386,7 +386,7 @@ pub struct ActorRuntime {
     /// one and the magicka), and its casts to make: one for a
     /// fire-and-forget spell, one each landing of a concentration spell.
     pub(crate) combat_spell: Option<casters::CombatSpell>,
-    pub(crate) casts: u32,
+    pub(crate) casts: Option<casters::CombatCast>,
     pub(crate) arrow_release: bool,
     pub(crate) loose: bool,
     /// Practising with weapons (UseWeapon), and where its loosed arrow aims.
@@ -486,7 +486,7 @@ impl ActorRuntime {
             bow: false,
             bow_speed: 1.0,
             combat_spell: None,
-            casts: 0,
+            casts: None,
             arrow_release: false,
             practice: None,
             practice_aim: None,
@@ -2903,6 +2903,9 @@ impl Engine {
         self.update_force_greets(dt);
         self.evaluate_packages(dt);
         self.update_practice_weapons();
+        // Choose before the AI requests landings, so a newly needed heal does
+        // not replace the offensive spell that an earlier step already threw.
+        self.update_combat_spells();
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self
             .barks
             .current
@@ -3237,7 +3240,6 @@ impl Engine {
         self.update_guards(dt, &started);
         self.resolve_swings(swings);
         self.update_bleedouts(dt);
-        self.update_combat_spells();
         self.update_clear_shots();
         self.loose_arrows();
         self.npc_casts();

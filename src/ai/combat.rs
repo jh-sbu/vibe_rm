@@ -1149,6 +1149,20 @@ impl ActorRuntime {
             self.turn_towards(to.normalize_or_zero(), dt);
             return None;
         }
+        // A restorative self spell can interrupt an archer's next shot too.
+        if let Some(spell) = self.combat_spell.filter(|s| s.self_target) {
+            if let Some(c) = self.combat.as_mut()
+                && c.draw != super::archery::Draw::Idle
+            {
+                // Lower an interrupted bow before casting. Returning to it
+                // must draw a new arrow, rather than release the old timer.
+                c.draw = super::archery::Draw::Idle;
+                self.arrow_release = false;
+                self.loose = false;
+                return Some("attackStop".into());
+            }
+            return self.caster_step(dt, w, target, dist, spell);
+        }
         if self.bow {
             return self.archer_step(dt, w, target, dist);
         }

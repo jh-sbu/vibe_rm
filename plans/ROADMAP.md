@@ -415,6 +415,11 @@ game each piece unlocks.
   strongest offensive spell while their magicka lasts (keeping their
   distance, throwing or channelling it at their target), then by hand;
   their magicka comes back. Open questions: `known_ambiguities/casting.md`
+- NPC combat self-healing: injured fighters choose an affordable known
+  self-delivered Health restoration spell, check its effects' conditions on
+  themselves and pay magicka through the existing casting pipeline. Healing
+  bypasses enemy range/sight and cancels a pending bow draw. Start/stop
+  thresholds and scoring remain provisional: `known_ambiguities/npc-healing.md`
 - Illusion's hold on fighting: calm, fear (and turn undead), frenzy and rally
   effects hold the target's aggression or confidence at their own value
   (calm -1, fear 0, frenzy 3, rally foolhardy) for as long as they last,
@@ -1073,7 +1078,7 @@ game each piece unlocks.
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: NPCs' casting animations (the magic
-   behaviour's states) and healing themselves, spells chosen by their
+   behaviour's states), native healing thresholds and timing, spells chosen by their
    scores, wards, summons and buffs in combat, the player's casting
    animations and hands in the graph,
    dual casting, runes, wards, effect visuals (spell projectiles' models run

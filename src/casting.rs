@@ -30,7 +30,7 @@ use glam::Vec3;
 use crate::ai::casters::CombatSpell;
 use crate::ai::combat::gmst_f32;
 use crate::engine::{Engine, PLAYER_REF};
-use crate::magic::{MagicItem, flags, spell_type};
+use crate::magic::{EffectItem, MagicEffect, MagicItem, archetype, flags, spell_type};
 use crate::spells::{CONCENTRATION, LEFT, RIGHT, VOICE};
 
 /// Deliveries (`SPIT` / `MGEF`).
@@ -85,8 +85,38 @@ pub struct Casting {
     powers_used: HashMap<FormId, f32>,
     /// The magicka meter should blink (counted; the HUD blinks for each).
     pub magicka_blinks: u32,
-    /// Actors' offensive spells, read once.
-    offensive: HashMap<FormId, std::sync::Arc<Vec<CombatSpell>>>,
+    /// Candidates from the actor's current known spells. Conditions and costs
+    /// are checked when choosing; AddSpell / RemoveSpell rebuild this cache.
+    npc_spells: HashMap<FormId, std::sync::Arc<NpcSpells>>,
+}
+
+#[derive(Debug, Default)]
+struct NpcSpells {
+    known: Vec<FormId>,
+    offensive: Vec<CombatSpell>,
+    healing: Vec<CombatSpell>,
+}
+
+/// Provisional combat policy, not the native scoring formula; see
+/// `known_ambiguities/npc-healing.md` for the evidence and unresolved settings.
+fn needs_combat_healing(health: f32, max_health: f32, continuing: bool) -> bool {
+    health > 0.0 && health < max_health * if continuing { 1.0 } else { 0.5 }
+}
+
+/// Restore current Health, as opposed to fortifying its maximum or absorbing
+/// it from someone else. A dual value modifier can restore Health second.
+fn restores_health(effect: &MagicEffect, item: &EffectItem) -> bool {
+    if effect.has(flags::DETRIMENTAL | flags::RECOVER | flags::HOSTILE) || item.magnitude <= 0.0 {
+        return false;
+    }
+    match effect.archetype {
+        archetype::VALUE_MODIFIER => effect.primary == Some(av::HEALTH),
+        archetype::DUAL_VALUE_MODIFIER => {
+            effect.primary == Some(av::HEALTH)
+                || (effect.secondary == Some(av::HEALTH) && effect.second_weight > 0.0)
+        }
+        _ => false,
+    }
 }
 
 impl Engine {
@@ -337,14 +367,13 @@ impl Engine {
         }
     }
 
-    /// Each actor in combat whose style favours magic fights with the
-    /// strongest offensive spell it has the magicka for (none: by hand).
+    /// Injured fighters first choose an affordable self heal. Otherwise those
+    /// whose style favours magic choose an offensive spell (none: by hand).
     pub(crate) fn update_combat_spells(&mut self) {
-        let fighters: Vec<(FormId, bool)> = self
+        let fighters: Vec<(FormId, bool, bool, bool)> = self
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.combat.as_ref().is_some_and(|c| !c.fleeing))
             .map(|a| {
                 // Equal scores: those with no weapon to hand (atronachs) cast.
                 let unarmed = || {
@@ -355,53 +384,104 @@ impl Engine {
                 };
                 let caster = a.stats.magic_mult > a.stats.melee_mult
                     || (a.stats.magic_mult == a.stats.melee_mult && unarmed());
-                (a.ref_id, caster)
+                let active = !a.dead
+                    && a.bleeding.is_none()
+                    && a.combat.as_ref().is_some_and(|c| !c.fleeing);
+                (
+                    a.ref_id,
+                    active,
+                    caster,
+                    a.combat_spell.is_some_and(|s| s.self_target),
+                )
             })
             .collect();
-        for (actor, caster) in fighters {
-            let pick = if caster {
+        for (actor, active, caster, continuing) in fighters {
+            let pick = if active {
                 let magicka = self.actor_value(actor, av::MAGICKA);
-                let spells = self.offensive_spells(actor);
-                spells
+                let spells = self.npc_spells(actor);
+                let heal = needs_combat_healing(
+                    self.actor_value(actor, av::HEALTH),
+                    self.av_max(actor, av::HEALTH),
+                    continuing,
+                );
+                let healing = spells
+                    .healing
                     .iter()
+                    .filter(|s| heal && self.healing_spell_works(actor, s.spell))
                     .map(|s| (*s, self.spell_cost(actor, s.spell)))
                     // A concentration spell for a second or more.
                     .filter(|(_, cost)| *cost <= magicka)
                     .max_by(|a, b| a.1.total_cmp(&b.1))
-                    .map(|(s, _)| s)
+                    .map(|(s, _)| s);
+                healing.or_else(|| {
+                    spells
+                        .offensive
+                        .iter()
+                        .filter(|_| caster)
+                        .map(|s| (*s, self.spell_cost(actor, s.spell)))
+                        .filter(|(_, cost)| *cost <= magicka)
+                        .max_by(|a, b| a.1.total_cmp(&b.1))
+                        .map(|(s, _)| s)
+                })
             } else {
                 None
             };
             if let Some(a) = self.actor_mut(actor)
                 && a.combat_spell != pick
             {
-                if pick.is_none() && a.combat_spell.is_some() {
-                    log::debug!("{actor} has no spell to fight with: by hand");
-                }
                 // A spell being channelled stops with it.
                 if let Some(c) = a.combat.as_mut()
-                    && a.combat_spell.is_some_and(|s| Some(s) != pick)
+                    && c.channel > 0.0
                 {
                     c.channel = 0.0;
+                    if let Some(g) = a.graph.as_mut() {
+                        g.send_event("CastStop");
+                    }
                 }
                 a.combat_spell = pick;
             }
         }
     }
 
-    /// The hostile spells an actor knows that it can throw at a foe (aimed or
-    /// at a target actor), read once.
-    fn offensive_spells(&mut self, actor: FormId) -> std::sync::Arc<Vec<CombatSpell>> {
-        if let Some(s) = self.casting.offensive.get(&actor) {
+    /// Read candidates again when the actor's known spell list changes. The
+    /// effects' live target conditions are deliberately not cached here.
+    fn npc_spells(&mut self, actor: FormId) -> std::sync::Arc<NpcSpells> {
+        let known = self.actor_spells(actor);
+        if let Some(s) = self
+            .casting
+            .npc_spells
+            .get(&actor)
+            .filter(|s| s.known == known)
+        {
             return s.clone();
         }
-        let mut out = Vec::new();
-        for spell in self.actor_spells(actor) {
+        let mut out = NpcSpells {
+            known,
+            ..Default::default()
+        };
+        for &spell in &out.known {
             let Some(item) = self.magic_item(spell) else {
                 continue;
             };
-            if item.spell_type != spell_type::SPELL
-                || !matches!(item.delivery, delivery::AIMED | delivery::TARGET_ACTOR)
+            if item.spell_type != spell_type::SPELL || !matches!(item.cast_type, 1 | CONCENTRATION)
+            {
+                continue;
+            }
+            if item.delivery == delivery::SELF && !self.item_hostile(&item) {
+                if item.effects.iter().any(|ei| {
+                    self.magic_effect(ei.effect)
+                        .is_some_and(|m| restores_health(&m, ei))
+                }) {
+                    out.healing.push(CombatSpell {
+                        spell,
+                        range: 0.0,
+                        concentration: item.cast_type == CONCENTRATION,
+                        self_target: true,
+                    });
+                }
+                continue;
+            }
+            if !matches!(item.delivery, delivery::AIMED | delivery::TARGET_ACTOR)
                 || !self.item_hostile(&item)
             {
                 continue;
@@ -417,15 +497,36 @@ impl Engine {
                     .and_then(|p| crate::ai::archery::spell_projectile(&self.lo, p))
                     .map_or(LOCATION_RANGE, |s| s.range)
             };
-            out.push(CombatSpell {
+            out.offensive.push(CombatSpell {
                 spell,
                 range: range.min(crate::ai::archery::BOW_RANGE),
                 concentration: item.cast_type == CONCENTRATION,
+                self_target: false,
             });
         }
         let out = std::sync::Arc::new(out);
-        self.casting.offensive.insert(actor, out.clone());
+        self.casting.npc_spells.insert(actor, out.clone());
         out
+    }
+
+    /// At least one restorative effect can currently reach this actor. The
+    /// ordinary effect pipeline still evaluates conditions again on landing.
+    fn healing_spell_works(&self, actor: FormId, spell: FormId) -> bool {
+        let Some(item) = self.magic_item(spell) else {
+            return false;
+        };
+        let ctx = crate::condition::Context {
+            subject: Some(actor),
+            target: Some(actor),
+            ..Default::default()
+        };
+        item.effects.iter().any(|ei| {
+            self.magic_effect(ei.effect).is_some_and(|m| {
+                restores_health(&m, ei)
+                    && crate::condition::evaluate(self, &ei.conditions, ctx)
+                    && crate::condition::evaluate(self, &m.conditions, ctx)
+            })
+        })
     }
 
     /// Casters' casts this frame go at their targets' bodies, paid in
@@ -434,17 +535,23 @@ impl Engine {
         let mut casts: Vec<(FormId, CombatSpell, u32, FormId, Vec3)> = Vec::new();
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut() {
-                let n = std::mem::take(&mut a.casts);
-                if n == 0 {
+                let Some(cast) = a.casts.take() else { continue };
+                if a.dead || a.bleeding.is_some() || a.combat.as_ref().is_none_or(|c| c.fleeing) {
                     continue;
                 }
-                if let (Some(s), Some(c)) = (a.combat_spell, a.combat.as_ref()) {
-                    casts.push((a.ref_id, s, n, c.target, a.pos + Vec3::Z * 110.0 * a.scale));
-                }
+                casts.push((
+                    a.ref_id,
+                    cast.spell,
+                    cast.landings,
+                    cast.target,
+                    a.pos + Vec3::Z * 110.0 * a.scale,
+                ));
             }
         }
         for (actor, spell, n, target, eye) in casts {
-            let aim = if target == PLAYER_REF {
+            let aim = if spell.self_target {
+                Some(eye)
+            } else if target == PLAYER_REF {
                 Some(self.player.position)
             } else {
                 self.actor_ref(target)
@@ -457,6 +564,13 @@ impl Engine {
                 1.0
             };
             for _ in 0..n {
+                // Several landings can be queued by a long frame; do not spend
+                // another dose once an earlier one restored all its health.
+                if spell.self_target
+                    && self.actor_value(actor, av::HEALTH) >= self.av_max(actor, av::HEALTH)
+                {
+                    break;
+                }
                 let cost = self.spell_cost(actor, spell.spell) * share;
                 if self.actor_value(actor, av::MAGICKA) < cost {
                     break;
@@ -808,4 +922,87 @@ fn cone_spread(lo: &esp::LoadOrder, proj: FormId) -> f32 {
         .filter(|s| *s > 0.0)
         .unwrap_or(15.0)
         .to_radians()
+}
+
+#[cfg(test)]
+mod npc_healing_tests {
+    use super::*;
+
+    #[test]
+    fn emergency_healing_starts_below_half_and_ends_at_full_health() {
+        assert!(!needs_combat_healing(100.0, 100.0, false));
+        assert!(!needs_combat_healing(50.0, 100.0, false));
+        assert!(needs_combat_healing(49.0, 100.0, false));
+        assert!(needs_combat_healing(75.0, 100.0, true));
+        assert!(!needs_combat_healing(100.0, 100.0, true));
+        assert!(!needs_combat_healing(0.0, 100.0, true));
+        assert!(!needs_combat_healing(-1.0, 100.0, false));
+        // The current maximum includes fortification and actor-value changes.
+        assert!(needs_combat_healing(75.0, 200.0, false));
+    }
+
+    #[test]
+    fn restorative_candidates_exclude_fortification_damage_and_absorption() {
+        let item = EffectItem {
+            effect: FormId(1),
+            magnitude: 10.0,
+            area: 0,
+            duration: 1,
+            conditions: Vec::new(),
+        };
+        let effect = MagicEffect {
+            archetype: archetype::VALUE_MODIFIER,
+            primary: Some(av::HEALTH),
+            ..Default::default()
+        };
+        assert!(restores_health(&effect, &item));
+        for flags in [flags::RECOVER, flags::DETRIMENTAL, flags::HOSTILE] {
+            assert!(!restores_health(
+                &MagicEffect {
+                    flags,
+                    ..effect.clone()
+                },
+                &item
+            ));
+        }
+        assert!(!restores_health(
+            &MagicEffect {
+                archetype: archetype::ABSORB,
+                ..effect.clone()
+            },
+            &item
+        ));
+        assert!(!restores_health(
+            &MagicEffect {
+                primary: Some(av::STAMINA),
+                ..effect
+            },
+            &item
+        ));
+        let dual = MagicEffect {
+            archetype: archetype::DUAL_VALUE_MODIFIER,
+            primary: Some(av::STAMINA),
+            secondary: Some(av::HEALTH),
+            second_weight: 0.5,
+            ..Default::default()
+        };
+        assert!(restores_health(&dual, &item));
+        assert!(!restores_health(
+            &MagicEffect {
+                second_weight: 0.0,
+                ..dual
+            },
+            &item
+        ));
+        assert!(!restores_health(
+            &MagicEffect {
+                primary: Some(av::HEALTH),
+                ..Default::default()
+            },
+            &EffectItem {
+                magnitude: 0.0,
+                ..item
+            }
+        ));
+    }
 }
