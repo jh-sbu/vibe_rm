@@ -581,6 +581,8 @@ pub struct BehaviorGraph {
     pub generators: Vec<Generator>,
     /// Variable bindings of each generator (same indices as `generators`).
     pub bindings: Vec<Vec<Binding>>,
+    /// Read-only scalar character inputs, indexed like `generators`.
+    pub property_bindings: Vec<Vec<PropertyBinding>>,
     pub modifiers: Vec<Modifier>,
     pub modifier_bindings: Vec<Vec<Binding>>,
     pub modifier_property_bindings: Vec<Vec<PropertyBinding>>,
@@ -603,6 +605,7 @@ impl BehaviorGraph {
             name: name.to_owned(),
             root,
             bindings: vec![Vec::new(); generators.len()],
+            property_bindings: vec![Vec::new(); generators.len()],
             generators,
             modifiers: Vec::new(),
             modifier_bindings: Vec::new(),
@@ -655,6 +658,7 @@ struct Reader<'a> {
     ids: std::collections::HashMap<u32, GenId>,
     generators: Vec<Generator>,
     bindings: Vec<Vec<Binding>>,
+    property_bindings: Vec<Vec<PropertyBinding>>,
     mod_ids: std::collections::HashMap<u32, ModId>,
     modifiers: Vec<Modifier>,
     modifier_bindings: Vec<Vec<Binding>>,
@@ -993,6 +997,7 @@ impl<'a> Reader<'a> {
         self.ids.insert(o, id);
         self.generators.push(Generator::Other(String::new()));
         self.bindings.push(self.bindings_of(o));
+        self.property_bindings.push(self.property_bindings_of(o));
         let p = self.p;
         let class = self.class(o);
         let name = p.string(o + NODE_NAME).unwrap_or_default();
@@ -1179,6 +1184,7 @@ impl BehaviorGraph {
             ids: Default::default(),
             generators: Vec::new(),
             bindings: Vec::new(),
+            property_bindings: Vec::new(),
             mod_ids: Default::default(),
             modifiers: Vec::new(),
             modifier_bindings: Vec::new(),
@@ -1220,6 +1226,7 @@ impl BehaviorGraph {
             root,
             generators: r.generators,
             bindings: r.bindings,
+            property_bindings: r.property_bindings,
             modifiers: r.modifiers,
             modifier_bindings: r.modifier_bindings,
             modifier_property_bindings: r.modifier_property_bindings,
@@ -1575,12 +1582,13 @@ mod character_property_tests {
     #[test]
     fn property_bindings_use_graph_names_and_do_not_become_variable_outputs() {
         let p = fixture();
-        let r = Reader {
+        let mut r = Reader {
             p: &p,
             classes: Default::default(),
             ids: Default::default(),
             generators: vec![],
             bindings: vec![],
+            property_bindings: vec![],
             mod_ids: Default::default(),
             modifiers: vec![],
             modifier_bindings: vec![],
@@ -1605,6 +1613,15 @@ mod character_property_tests {
             (&*variables[0].member, variables[0].variable),
             ("dampedValue", 2)
         );
+        // The same bindable layout applies to generators. Registration retains
+        // both input tables and memoising a shared node must not append either.
+        r.classes.insert(0x280, "hkbClipGenerator");
+        let id = r.generator(0x280);
+        assert_eq!(r.generator(0x280), id);
+        assert_eq!(r.property_bindings.len(), r.generators.len());
+        assert_eq!(r.property_bindings[id].len(), 2);
+        assert_eq!(r.property_bindings[id][0].property, "gain");
+        assert_eq!(r.bindings[id].len(), 1);
     }
 }
 
