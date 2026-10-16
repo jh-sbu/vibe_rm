@@ -531,8 +531,9 @@ impl Engine {
         }
     }
 
-    /// The player's bow: drawn while the attack button is held, loosed when it
-    /// comes up (arrows from the inventory). An arrow loosed before the bow is
+    /// Spawn the player's arrow (from the inventory), called at the body's
+    /// `arrowRelease` notification, or directly by the console. The stored
+    /// button hold determines draw strength. An arrow loosed before the bow is
     /// fully drawn flies slower and strikes softer, in proportion; loosed
     /// straight away, it isn't nocked and nothing flies.
     pub fn player_loose(&mut self, held: f32) {

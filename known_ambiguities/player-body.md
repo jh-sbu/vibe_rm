@@ -54,6 +54,38 @@ variable names; the race's attack data (`ATKE`) for attack events.
   next attack waits 0.4 s (the graphs' blend out of an attack): the clip
   blending out raises `attackStop` again, which would end an attack
   started meanwhile. How the game gates it is unknown.
+- **Bow release timing.** The player's button release now asks the body's
+  graph for `attackRelease`; only an accepted draw followed by an accepted
+  release can produce an arrow at `arrowRelease`. Ammo consumption and aim
+  are evaluated at that notification, while draw strength keeps the button's
+  hold duration. PolarRobotFrog's public
+  [first-person animation modding guide](https://www.nexusmods.com/skyrimspecialedition/mods/97555)
+  identifies `arrowRelease` as the annotation that fires the arrow/bolt. The
+  third-person graph still supplies this timing in both views until a separate
+  first-person body exists. Installed `Skyrim - Animations.bsa`'s
+  `meshes/animationdata/defaultmale.txt` confirms `arrowRelease` in `Bow_Release`
+  at 0.0333333 s, and `SneakBow_Release` at 0.0666667 s. The project's `hkb-run`
+  tool also confirms accepted `bowAttackStart` / `attackRelease` transitions
+  and duplicate upper/lower-body release clips; that tool omits the animation
+  data triggers that `GraphLibrary` adds at runtime. Only asset metadata was
+  inspected; no engine binaries or downloadable tool bundles were examined,
+  and no assets were added to the repository.
+- **Interrupted or duplicate bow releases.** A missing `arrowRelease` cancels
+  the pending shot after 1.5 seconds, without spending ammo or firing on a
+  timer. Sheathing, body rebuilding (including equipment changes), death,
+  conversation and disabling fighting cancel it too; rejected graph events
+  cannot queue a shot. Interrupted draws and refused releases ask the graph
+  to lower the bow with `attackStop`, as for NPCs. Another draw waits until
+  no `arrowRelease` has arrived for 0.4 seconds, so outgoing layered/blending
+  clips' duplicate events do not
+  consume another arrow or a newly queued shot. Events during drawing are
+  ignored; a button release during that quiet interval cancels the draw.
+  Both limits and these cancellation policies are chosen; public sources do
+  not specify the game's policies, exact blend completion gates, or which
+  equipment/aim/ammo it snapshots before release. A notification received in
+  the same update as the timeout wins, since its time within that update is
+  not exposed to the player event consumer. The console's direct `pshoot`
+  and a player without a body graph retain immediate firing.
 - **The third-person camera's starting distance** is 200 units, chosen by
   eye: the `[Camera]` defaults (STEP's default INI listing) give the zoom
   limits (`fVanityModeMinDist` 155, `fVanityModeMaxDist` 600) and the

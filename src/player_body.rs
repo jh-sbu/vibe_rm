@@ -46,10 +46,9 @@ pub struct PlayerBody {
     ready: bool,
     /// The guard is up in the graph (`blockStart`).
     guard: bool,
-    /// The graph's `HitFrame`s this update (a swing lands: `HIT_RIGHT`,
-    /// `HIT_LEFT`), and whether it raised `attackStop` (a swing is over).
-    hit_frames: u8,
-    attack_stop: bool,
+    combat_events: PlayerCombatEvents,
+    /// A bow shot waiting for this body's graph to release it.
+    bow: PlayerBow,
     /// `Direction` while moving (none standing), and sprinting.
     direction: Option<f32>,
 }
@@ -74,6 +73,10 @@ impl Engine {
     /// Assemble the player's body from their record and what they wear,
     /// keeping its facing.
     pub(crate) fn build_player_body(&mut self) {
+        // A new skeleton/graph cannot complete the old graph's bow draw.
+        if self.player_body.as_ref().is_some_and(|b| b.bow.drawing) {
+            self.player_attack_held = None;
+        }
         let heading = self
             .player_body
             .as_ref()
@@ -112,8 +115,8 @@ impl Engine {
             weapon_out: false,
             ready: false,
             guard: false,
-            hit_frames: 0,
-            attack_stop: false,
+            combat_events: PlayerCombatEvents::default(),
+            bow: PlayerBow::default(),
             direction: None,
         };
         let mut pose = skel.model_space(&skel.bind_locals());
@@ -187,6 +190,8 @@ impl Engine {
         let feet = self.player_feet();
         let third = self.third_person;
         let yaw = self.camera.yaw;
+        let can_shoot =
+            !self.player_dead() && self.conversation.is_none() && !self.disabled_controls.fighting;
         let flat = moved.truncate();
         let walking = self.player.moving && !self.player.noclip;
         let motion = Motion {
@@ -202,6 +207,13 @@ impl Engine {
         let Some(body) = self.player_body.as_mut() else {
             return;
         };
+        let cancel_draw = !can_shoot && body.bow.drawing;
+        if !can_shoot && (body.bow.drawing || body.bow.shot.is_some()) {
+            body.bow.cancel();
+            if let Some(g) = body.graph.as_mut() {
+                PlayerBody::event(g, "attackStop", &self.vfs, &mut self.anims, &body.skeleton);
+            }
+        }
         // In first person, and with their weapon out, they face the view;
         // otherwise in third person where they go.
         if !third || body.drawn {
@@ -214,9 +226,14 @@ impl Engine {
         let out = body.weapon_out;
         let pose = body.animate(dt, &motion, &self.vfs, &mut self.anims);
         let transform = body.transform(feet);
-        let hit = std::mem::take(&mut body.hit_frames);
-        let stop = std::mem::take(&mut body.attack_stop);
+        let events = std::mem::take(&mut body.combat_events);
+        let shot = body
+            .bow
+            .update(events.arrow_release, can_shoot && body.drawn, dt);
         let (skel, weapon_out) = (body.skeleton.clone(), body.weapon_out);
+        if cancel_draw {
+            self.player_attack_held = None;
+        }
         if weapon_out != out {
             log::debug!(
                 "player's weapon {}",
@@ -228,7 +245,10 @@ impl Engine {
                 inst.equipment = equipment;
             }
         }
-        self.update_player_swing(hit, stop, dt);
+        self.update_player_swing(events.hit_frames, events.attack_stop, dt);
+        if let Some(held) = shot {
+            self.player_loose(held);
+        }
         if let Some(inst) = self.scene.player.as_mut() {
             inst.transform = transform;
             inst.shadow_only = !third;
@@ -429,18 +449,34 @@ impl PlayerBody {
         let frame = g.update(dt, vfs, anims, &self.skeleton);
         for r in &frame.raised {
             log::trace!(target: "player_events", "player raised {}{}", r.event, r.payload.as_deref().map(|p| format!(" ({p})")).unwrap_or_default());
+            self.combat_events.record(&r.event, r.payload.as_deref());
             match r.event.to_ascii_lowercase().as_str() {
                 "weapondraw" => self.weapon_out = true,
                 "weaponsheathe" => self.weapon_out = false,
-                "hitframe" => {
-                    self.hit_frames |= crate::ai::combat::hit_frame_bit(r.payload.as_deref())
-                }
-                "attackstop" => self.attack_stop = true,
                 "weapequip_out" => self.ready = self.drawn,
                 _ => {}
             }
         }
         Some(frame.pose)
+    }
+}
+
+/// Collapse duplicate body-part layer notifications into one update's events.
+#[derive(Default)]
+struct PlayerCombatEvents {
+    hit_frames: u8,
+    attack_stop: bool,
+    arrow_release: bool,
+}
+
+impl PlayerCombatEvents {
+    fn record(&mut self, event: &str, payload: Option<&str>) {
+        match event.to_ascii_lowercase().as_str() {
+            "hitframe" => self.hit_frames |= crate::ai::combat::hit_frame_bit(payload),
+            "attackstop" => self.attack_stop = true,
+            "arrowrelease" => self.arrow_release = true,
+            _ => {}
+        }
     }
 }
 
@@ -451,6 +487,71 @@ const SWING_TIMEOUT: f32 = 1.5;
 /// How long the character graphs blend out of an attack (`AttackState` to
 /// the ready state on `attackStop`).
 const ATTACK_BLEND_OUT: f32 = 0.4;
+
+/// A missing release notification cancels the shot rather than firing it at an
+/// invented time. These limits are runtime choices, not published game rules.
+const BOW_RELEASE_TIMEOUT: f32 = 1.5;
+const BOW_RELEASE_QUIET: f32 = 0.4;
+
+/// One draw/release at a time. The outgoing clip can raise `arrowRelease`
+/// repeatedly while blending out; drain it before allowing another draw.
+#[derive(Default)]
+struct PlayerBow {
+    drawing: bool,
+    shot: Option<(f32, f32)>, // held draw duration, seconds waiting for release
+    quiet: f32,
+}
+
+impl PlayerBow {
+    fn start(&mut self, accept: impl FnOnce() -> bool) -> bool {
+        if self.drawing || self.shot.is_some() || self.quiet > 0.0 || !accept() {
+            return false;
+        }
+        self.drawing = true;
+        true
+    }
+
+    fn release(&mut self, held: f32, accept: impl FnOnce() -> bool) -> bool {
+        if !self.drawing {
+            return false;
+        }
+        if self.quiet > 0.0 || !accept() {
+            self.cancel();
+            return false;
+        }
+        self.drawing = false;
+        self.shot = Some((held, 0.0));
+        true
+    }
+
+    fn cancel(&mut self) {
+        if self.drawing || self.shot.is_some() {
+            self.quiet = BOW_RELEASE_QUIET;
+        }
+        self.drawing = false;
+        self.shot = None;
+    }
+
+    /// Return a draw duration once, only on its release notification. Events
+    /// outside a pending release are drained, including duplicate layer events.
+    fn update(&mut self, arrow_release: bool, can_shoot: bool, dt: f32) -> Option<f32> {
+        self.quiet = (self.quiet - dt).max(0.0);
+        if !can_shoot {
+            self.cancel();
+        }
+        if arrow_release {
+            self.quiet = BOW_RELEASE_QUIET;
+            return self.shot.take().map(|(held, _)| held);
+        }
+        if let Some((_, waited)) = self.shot.as_mut() {
+            *waited += dt;
+            if *waited >= BOW_RELEASE_TIMEOUT {
+                self.cancel();
+            }
+        }
+        None
+    }
+}
 
 /// A swing of the player's waiting for the graph's `HitFrame`s to land.
 pub(crate) struct PlayerSwing {
@@ -473,6 +574,52 @@ pub(crate) struct PlayerSwing {
 }
 
 impl Engine {
+    /// Begin a bow draw only when the graph can take it. Without a body graph,
+    /// retain the immediate release used by the console and graphless player.
+    pub(crate) fn player_begin_bow_draw(&mut self) -> bool {
+        let Some(body) = self.player_body.as_mut() else {
+            return true;
+        };
+        let Some(g) = body.graph.as_mut() else {
+            return true;
+        };
+        if !body.drawn || !body.ready {
+            return false;
+        }
+        body.bow.start(|| {
+            PlayerBody::event(
+                g,
+                "bowAttackStart",
+                &self.vfs,
+                &mut self.anims,
+                &body.skeleton,
+            )
+        })
+    }
+
+    /// Releasing the button requests the release animation. Its `arrowRelease`
+    /// notification later consumes ammo and spawns the projectile.
+    pub(crate) fn player_release_bow(&mut self, held: f32) {
+        let Some(body) = self.player_body.as_mut().filter(|b| b.graph.is_some()) else {
+            self.player_loose(held);
+            return;
+        };
+        let g = body.graph.as_mut().unwrap();
+        let drawing = body.bow.drawing;
+        let released = body.bow.release(held, || {
+            PlayerBody::event(
+                g,
+                "attackRelease",
+                &self.vfs,
+                &mut self.anims,
+                &body.skeleton,
+            )
+        });
+        if drawing && !released {
+            PlayerBody::event(g, "attackStop", &self.vfs, &mut self.anims, &body.skeleton);
+        }
+    }
+
     /// Send an event to the player's body's graph; whether it took it.
     pub(crate) fn player_graph_event(&mut self, ev: &str) -> bool {
         self.player_body.as_mut().is_some_and(|b| {
@@ -543,6 +690,9 @@ impl Engine {
         if took {
             body.drawn = draw;
             body.ready = false;
+            if !draw {
+                body.bow.cancel();
+            }
             log::info!(
                 "player {} their weapon",
                 if draw { "draws" } else { "sheathes" }
@@ -703,5 +853,155 @@ impl Engine {
     pub fn zoom_third_person(&mut self, by: f32) {
         self.third_person_distance =
             (self.third_person_distance + by).clamp(THIRD_PERSON_MIN, THIRD_PERSON_MAX);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bow_requires_accepted_draw_and_release() {
+        let mut bow = PlayerBow::default();
+        assert!(!bow.release(1.0, || panic!("no draw to release")));
+        assert!(!bow.start(|| false));
+        assert!(!bow.drawing);
+        assert!(bow.start(|| true));
+        assert!(!bow.start(|| panic!("already drawing")));
+        assert!(!bow.release(1.0, || false));
+        assert!(!bow.drawing);
+        assert!(bow.shot.is_none());
+        assert!(!bow.start(|| panic!("rejected release still quarantines outgoing events")));
+        assert_eq!(bow.update(true, true, 0.0), None);
+    }
+
+    #[test]
+    fn bow_releases_once_then_drains_duplicates_before_next_draw() {
+        let mut bow = PlayerBow::default();
+        assert!(bow.start(|| true));
+        assert!(bow.release(0.75, || true));
+        assert_eq!(bow.update(false, true, 0.1), None);
+        assert_eq!(bow.update(true, true, 0.1), Some(0.75));
+        assert_eq!(bow.update(true, true, 0.3), None);
+        assert!(!bow.start(|| panic!("duplicate extends quiet interval")));
+        bow.update(false, true, BOW_RELEASE_QUIET);
+        assert!(bow.start(|| true));
+        // An unexpected old notification during drawing cannot arm a shot.
+        assert_eq!(bow.update(true, true, 0.0), None);
+        assert!(!bow.release(1.0, || panic!("outgoing event still in quarantine")));
+        assert_eq!(bow.update(true, true, 0.0), None);
+    }
+
+    #[test]
+    fn bow_cancellation_and_missing_event_never_fire() {
+        for cancel_during_draw in [false, true] {
+            let mut bow = PlayerBow::default();
+            assert!(bow.start(|| true));
+            if !cancel_during_draw {
+                assert!(bow.release(1.0, || true));
+            }
+            assert_eq!(bow.update(true, false, 0.1), None);
+            assert!(!bow.drawing);
+            assert!(bow.shot.is_none());
+            assert_eq!(bow.update(true, true, 0.0), None);
+        }
+        let mut bow = PlayerBow::default();
+        assert!(bow.start(|| true));
+        assert!(bow.release(1.0, || true));
+        assert_eq!(bow.update(false, true, BOW_RELEASE_TIMEOUT), None);
+        assert!(bow.shot.is_none());
+        assert_eq!(bow.update(true, true, 0.0), None);
+    }
+
+    #[test]
+    fn bow_notification_wins_over_timeout_crossed_in_same_update() {
+        let mut bow = PlayerBow::default();
+        assert!(bow.start(|| true));
+        assert!(bow.release(0.8, || true));
+        assert_eq!(bow.update(true, true, BOW_RELEASE_TIMEOUT + 0.1), Some(0.8));
+        assert_eq!(bow.update(true, true, 0.0), None);
+    }
+
+    #[test]
+    fn bow_clip_trigger_flows_through_player_event_collector() {
+        use havok::behavior::runtime::{Instance, Shared};
+        use havok::behavior::{
+            BehaviorGraph, ClipMode, Generator, Project, State, Transition, Trigger,
+        };
+
+        // Entirely synthetic: idle -> draw -> release, with two identical
+        // notifications in the release clip (as body-part layers can produce).
+        let state = |id, transitions| State {
+            id,
+            name: format!("s{id}"),
+            generator: Some(id as usize + 1),
+            transitions,
+            enter_events: vec![],
+            exit_events: vec![],
+        };
+        let clip = |name: &str, triggers| Generator::Clip {
+            name: name.into(),
+            animation: name.into(),
+            mode: ClipMode::SinglePlay,
+            speed: 1.0,
+            user_fraction: 0.0,
+            triggers,
+            crop_start: 0.0,
+            crop_end: 0.0,
+            start_time: 0.0,
+        };
+        let notification = Trigger {
+            time: 0.2,
+            from_end: false,
+            event: 2,
+            payload: None,
+        };
+        let graph = BehaviorGraph::new(
+            "SyntheticBow",
+            Some(0),
+            vec![
+                Generator::StateMachine {
+                    name: "Root".into(),
+                    start: 0,
+                    start_variable: None,
+                    start_mode: Default::default(),
+                    change_event: None,
+                    states: vec![
+                        state(0, vec![Transition::new(0, 1, None)]),
+                        state(1, vec![Transition::new(1, 2, None)]),
+                        state(2, vec![]),
+                    ],
+                    wildcards: vec![],
+                },
+                clip("Idle", vec![]),
+                clip("Draw", vec![]),
+                clip("Release", vec![notification.clone(), notification]),
+            ],
+            ["bowAttackStart", "attackRelease", "ArRoWrElEaSe"]
+                .map(String::from)
+                .to_vec(),
+        );
+        let mut graph = Instance::new(
+            Shared::new(Arc::new(Project {
+                graphs: vec![("synthetic".into(), graph)],
+                character: None,
+            })),
+            1,
+        );
+        let mut durations = |_: &str| Some(1.0);
+        graph.update(0.0, &mut durations);
+        let mut bow = PlayerBow::default();
+        assert!(bow.start(|| graph.handle_event("bowAttackStart", &mut durations)));
+        assert!(bow.release(0.9, || graph.handle_event("attackRelease", &mut durations)));
+        let mut releases = Vec::new();
+        for dt in [0.1, 0.11, 0.1] {
+            graph.update(dt, &mut durations);
+            let mut events = PlayerCombatEvents::default();
+            for event in graph.take_raised() {
+                events.record(&event.event, event.payload.as_deref());
+            }
+            releases.push(bow.update(events.arrow_release, true, dt));
+        }
+        assert_eq!(releases, [None, Some(0.9), None]);
     }
 }

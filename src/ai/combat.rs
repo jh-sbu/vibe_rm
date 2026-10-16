@@ -2712,8 +2712,8 @@ impl Engine {
             }
             Some(_) => {}
             None => {
-                if hand == RIGHT && self.player_has_bow() {
-                    self.player_graph_event("bowAttackStart");
+                if hand == RIGHT && self.player_has_bow() && !self.player_begin_bow_draw() {
+                    return;
                 }
                 self.player_attack_held = Some(AttackHold { side, held: 0.0 });
             }
@@ -2818,8 +2818,7 @@ impl Engine {
             return;
         };
         if held.side == Side::Right && self.player_has_bow() {
-            self.player_graph_event("attackRelease");
-            self.player_loose(held.held);
+            self.player_release_bow(held.held);
         } else {
             self.player_attack(held.side, false);
         }
