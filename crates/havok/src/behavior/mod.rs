@@ -193,6 +193,8 @@ pub enum Generator {
         start_variable: Option<usize>,
         /// How the start state is picked when the machine activates.
         start_mode: StartMode,
+        /// Authored notification for state / transition changes.
+        change_event: Option<EventProperty>,
         states: Vec<State>,
         wildcards: Vec<Transition>,
     },
@@ -841,6 +843,7 @@ impl<'a> Reader<'a> {
                         (2, _) => StartMode::Random,
                         _ => StartMode::Default,
                     },
+                    change_event: (p.i32(o + 0x48) >= 0).then(|| self.event_property(o + 0x48)),
                     states,
                     wildcards: self.transitions(p.ptr(o + 0xA0)),
                 }

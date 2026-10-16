@@ -1019,7 +1019,12 @@ impl Ctx<'_> {
     fn transition(&mut self, node: &mut Node, t: &Transition) {
         let (gi, sm) = (node.gi, node.g);
         let graph = self.shared.graph(gi);
-        let Generator::StateMachine { states, .. } = &graph.generators[sm] else {
+        let Generator::StateMachine {
+            states,
+            change_event,
+            ..
+        } = &graph.generators[sm]
+        else {
             return;
         };
         let Kind::Machine(m) = &mut node.kind else {
@@ -1082,6 +1087,13 @@ impl Ctx<'_> {
         *m = MachineState::new(id, child);
         m.from = from;
         m.locked = locked;
+        // Queue the notification after installing the destination: the event
+        // may itself trigger another transition (including in a parent graph).
+        // Activation / blend-end notification timing remains unresolved; see
+        // known_ambiguities/state-machine-events.md.
+        if let Some(e) = change_event {
+            self.raise(gi, e.event, e.payload.clone());
+        }
         if let Generator::StateMachine {
             start_mode: StartMode::Sync(v),
             ..
@@ -2153,6 +2165,7 @@ mod tests {
                 start: 0,
                 start_variable: None,
                 start_mode: Default::default(),
+                change_event: None,
                 states: vec![
                     state(0, 1, vec![Transition::new(0, 1, None)]),
                     state(1, 2, vec![Transition::new(1, 2, None)]),
@@ -2210,6 +2223,121 @@ mod tests {
     }
 
     #[test]
+    fn state_change_event_reaches_the_destination_and_preserves_payload() {
+        let mut g = graph();
+        let changed = g.events.len() as i32;
+        g.events.push("Changed".into());
+        if let Generator::StateMachine {
+            change_event,
+            states,
+            ..
+        } = &mut g.generators[0]
+        {
+            *change_event = Some(EventProperty {
+                event: changed,
+                payload: Some("authored payload".into()),
+            });
+            // A listener in the destination immediately continues to the loop.
+            states[1].transitions = vec![Transition::new(changed, 2, None)];
+        }
+        let mut i = instance(g);
+        assert!(i.handle_event("Sit", &mut durations));
+        assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+        assert_eq!(
+            i.take_raised(),
+            vec![
+                Raised {
+                    event: "Changed".into(),
+                    payload: Some("authored payload".into())
+                },
+                Raised {
+                    event: "Changed".into(),
+                    payload: Some("authored payload".into())
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn state_change_event_waits_for_initiation_and_fires_at_blend_start() {
+        let mut g = windowed(false);
+        let changed = g.events.len() as i32;
+        g.events.push("Changed".into());
+        if let Generator::StateMachine {
+            change_event,
+            states,
+            ..
+        } = &mut g.generators[0]
+        {
+            *change_event = Some(EventProperty {
+                event: changed,
+                payload: None,
+            });
+            states[0].transitions[0].blend = Some(0.5);
+        }
+        let mut i = instance(g);
+        i.take_raised();
+        assert!(i.handle_event("Out", &mut durations));
+        assert!(i.take_raised().is_empty());
+        i.update(1.0, &mut durations);
+        assert_eq!(
+            i.take_raised()
+                .iter()
+                .filter(|e| e.event == "Changed")
+                .count(),
+            1
+        );
+        i.update(0.25, &mut durations);
+        assert_eq!(playing(&i), [("Loop".into(), 0.5), ("Exit".into(), 0.5)]);
+        assert!(i.take_raised().is_empty());
+    }
+
+    #[test]
+    fn state_change_event_maps_from_a_referenced_graph() {
+        let root = BehaviorGraph::new(
+            "Root",
+            Some(0),
+            vec![Generator::Reference {
+                name: "Ref".into(),
+                behavior: "g".into(),
+            }],
+            vec!["Unrelated".into(), "Changed".into()],
+        );
+        let mut g = graph();
+        let changed = g.events.len() as i32;
+        g.events.push("Changed".into());
+        if let Generator::StateMachine { change_event, .. } = &mut g.generators[0] {
+            *change_event = Some(EventProperty {
+                event: changed,
+                payload: None,
+            });
+        }
+        let shared = Shared::new(Arc::new(Project {
+            graphs: vec![("root".into(), root), ("g".into(), g)],
+            character: None,
+        }));
+        let mut i = Instance::new(shared, 1);
+        i.update(0.0, &mut durations);
+        assert!(i.handle_event("Sit", &mut durations));
+        assert_eq!(
+            i.take_raised(),
+            vec![Raised {
+                event: "Changed".into(),
+                payload: None
+            }]
+        );
+        i.update(1.1, &mut durations); // The clip-end trigger commits another transition.
+        assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+        assert_eq!(
+            i.take_raised()
+                .iter()
+                .filter(|e| e.event == "Changed")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn current_state_output_reaches_child_start_states() {
         let mut g = BehaviorGraph::new(
             "G",
@@ -2220,6 +2348,7 @@ mod tests {
                     start: 42,
                     start_variable: None,
                     start_mode: StartMode::Default,
+                    change_event: None,
                     states: vec![
                         state(42, 1, vec![Transition::new(0, 7, None)]),
                         state(7, 1, vec![]),
@@ -2231,6 +2360,7 @@ mod tests {
                     start: 7,
                     start_variable: Some(0),
                     start_mode: StartMode::Default,
+                    change_event: None,
                     states: vec![state(7, 2, vec![]), state(42, 3, vec![])],
                     wildcards: vec![],
                 },
@@ -2445,6 +2575,7 @@ mod tests {
                 start: 0,
                 start_variable: None,
                 start_mode: Default::default(),
+                change_event: None,
                 states: vec![state(0, 1, vec![]), state(1, 2, vec![])],
                 wildcards: vec![],
             },
@@ -2454,6 +2585,7 @@ mod tests {
                 start: 5,
                 start_variable: None,
                 start_mode: Default::default(),
+                change_event: None,
                 states: vec![state(5, 3, vec![]), state(7, 4, vec![])],
                 wildcards: vec![kneel],
             },
@@ -2496,6 +2628,7 @@ mod tests {
                 start: 0,
                 start_variable: None,
                 start_mode: Default::default(),
+                change_event: None,
                 states: vec![
                     state(0, 1, vec![out]),
                     state(1, 2, vec![]),

@@ -369,6 +369,7 @@ mod tests {
                 start: 0,
                 start_variable: None,
                 start_mode: Default::default(),
+                change_event: None,
                 states: vec![state(0, 1, vec![]), state(1, 2, vec![])],
                 wildcards: vec![tr(0, 1, Some(7)), tr(3, 1, None)],
             },
@@ -379,6 +380,7 @@ mod tests {
                 start: 5,
                 start_variable: None,
                 start_mode: Default::default(),
+                change_event: None,
                 states: vec![
                     state(5, 3, vec![]),
                     state(7, 4, vec![tr(1, 8, None)]),
