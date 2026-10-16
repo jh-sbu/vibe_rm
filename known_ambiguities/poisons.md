@@ -10,6 +10,23 @@ with a count, `ArrowProjectile::poison`, `PlayerCharacter::pendingPoison`,
 the `PoisonedWeapon` event and its misc stat incrementer, Poisons Used),
 UESP's Skyrim:Poisons (one hit per application; staffs can't be poisoned).
 
+The inventory's weapon card now shows the game's poison icon. The installed
+`Interface/inventory components/ItemCard.swf` asset and the embedded card code
+in `inventorymenu.swf`, `containermenu.swf`, `bartermenu.swf` and `giftmenu.swf`
+all read the card object's `poisoned` boolean in `ItemCard.__set__itemInfo`
+and select `PoisonInstance`'s `On` or `Off` frame. This is asset inspection,
+not inspection of executable engine data. The shared list renderer
+`InventoryScrollingList.SetEntryText` has no corresponding poison field;
+the existing card icon is used without inventing a list marker. The public
+[Poisoning Extended SE description](https://www.nexusmods.com/skyrimspecialedition/mods/13368?tab=description)
+also describes the existing snake icon and adds the poison name beside it.
+The vanilla field exposes only a boolean, so this implementation does not
+add a poison name or remaining dose count to the card.
+
+The card reads the row's source inventory (including merchant stock and
+received gifts), and applying or exhausting poison refreshes it even when
+the item's count and equipped hands remain unchanged.
+
 ## Choices made without a source
 
 - **Which hand**: the right hand's weapon, else the left's. With two
@@ -36,9 +53,13 @@ UESP's Skyrim:Poisons (one hit per application; staffs can't be poisoned).
   the game poisons the weapon, asks, or drinks it is unknown.
 - **NPCs** never poison their own weapons; whether any do in combat is
   unknown.
-- **The inventory** doesn't show which weapon is poisoned; the vanilla
-  item card's strings name nothing of the kind, so whether the card or the
-  name shows it is unknown.
+- **Poison icons on grouped weapons**: the runtime's form-level poison
+  metadata has no ownership or individual-instance identity. A row's icon
+  currently means that at least one copy of that weapon form in its source
+  inventory is poisoned; if owned and unowned stacks of the same form are
+  listed separately, both get the icon. The assets expose the boolean but
+  do not resolve how the original engine splits or selects those instances.
+  Correct instance grouping and poison-preserving transfers remain open.
 - **The dose count's tabs**: Mod Poison Dose Count is given the weapon
   and the poison for its second and third tabs (Concentrated Poison has
   conditions on none).

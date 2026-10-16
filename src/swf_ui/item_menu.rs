@@ -211,13 +211,14 @@ struct Row {
 
 /// What the list shows, to know when it must be filled again: each row's side,
 /// item, owner and count, what is worn and what is in hand, the favorites,
-/// and the soul shown on each gem's card.
+/// the soul shown on each gem's card and the poison icon on each weapon's.
 type Listed = (
     Vec<(bool, FormId, Option<FormId>, i32)>,
     Vec<FormId>,
     [Option<FormId>; 3],
     Vec<FormId>,
     Vec<Option<u8>>,
+    Vec<bool>,
 );
 
 pub(super) struct ItemMenu {
@@ -479,9 +480,13 @@ impl ItemMenu {
             .get(&PLAYER_REF)
             .cloned()
             .unwrap_or_default();
-        let listed = listed_state(&rows, &inv, &engine.favorites, |r| {
-            self.soul_level(engine, r)
-        });
+        let listed = listed_state(
+            &rows,
+            &inv,
+            &engine.favorites,
+            |r| self.soul_level(engine, r),
+            |r| row_poisoned(&self.kind, r, &engine.inventories),
+        );
         if self.listed.as_ref() != Some(&listed) {
             let entries: Vec<Value> = rows
                 .iter()
@@ -539,7 +544,12 @@ impl ItemMenu {
     /// pickpocketing, the chance to take one (or place one: the menu says
     /// "TO PLACE" on the player's side).
     fn card(&self, engine: &Engine, r: &Row) -> Value {
-        let mut card = item_card(engine, &r.item, self.soul_level(engine, r));
+        let mut card = item_card(
+            engine,
+            &r.item,
+            self.soul_level(engine, r),
+            row_poisoned(&self.kind, r, &engine.inventories),
+        );
         if let Value::Object(fields) = &mut card {
             let favorite = !r.theirs && engine.favorites.contains(&r.item.item);
             fields.insert("favorite".into(), Value::Bool(favorite));
@@ -818,9 +828,9 @@ fn dragon_souls_text(engine: &Engine) -> String {
 /// The item card: name, count, value and weight, and by kind the armor rating,
 /// damage, effects or description, with how much worn armor or the weapon
 /// held would change.
-fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>) -> Value {
+fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>, poisoned: bool) -> Value {
     let item = row.item;
-    let mut f = common_card(row);
+    let mut f = common_card(row, poisoned);
     let worn = engine
         .inventories
         .get(&PLAYER_REF)
@@ -921,13 +931,16 @@ fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>) -> Value {
     object(f)
 }
 
-fn common_card(row: &ListedItem) -> Vec<(&'static str, Value)> {
+fn common_card(row: &ListedItem, poisoned: bool) -> Vec<(&'static str, Value)> {
     vec![
         ("name", text(&row.info.name)),
         ("count", num(row.count as f32)),
         ("value", num(row.info.value as f32)),
         ("weight", num(row.info.weight)),
         ("stolen", Value::Bool(row.owner.is_some())),
+        // ItemCard.__set__itemInfo selects PoisonInstance's On / Off frame
+        // from this boolean for weapon cards (all four item menus).
+        ("poisoned", Value::Bool(poisoned)),
     ]
 }
 
@@ -936,6 +949,7 @@ fn listed_state(
     inv: &Inventory,
     favorites: &[FormId],
     soul: impl Fn(&Row) -> Option<u8>,
+    poisoned: impl Fn(&Row) -> bool,
 ) -> Listed {
     (
         rows.iter()
@@ -947,7 +961,25 @@ fn listed_state(
         // Filling a gem can change only its soul metadata, leaving the
         // base form, count and ownership unchanged.
         rows.iter().map(soul).collect(),
+        // Applying or exhausting a poison can leave the inventory's forms,
+        // counts, ownership and equipped hands unchanged.
+        rows.iter().map(poisoned).collect(),
     )
+}
+
+/// The card represents the row's source inventory, including gifts received
+/// from another actor. Poison metadata currently belongs to a weapon form,
+/// not an individual instance or ownership stack; see poisons.md.
+fn row_poisoned(kind: &Kind, row: &Row, inventories: &HashMap<FormId, Inventory>) -> bool {
+    row.item.info.kind == ItemKind::Weapon
+        && inventories
+            .get(&kind.source(row.theirs))
+            .is_some_and(|inv| {
+                inv.count(row.item.item) > 0
+                    && inv
+                        .poison_on(row.item.item)
+                        .is_some_and(|(_, doses)| doses > 0)
+            })
 }
 
 fn row_soul_level(
@@ -1066,7 +1098,7 @@ mod tests {
                 charge_time: 3.5,
                 ..Default::default()
             };
-            let mut fields = common_card(&row.item);
+            let mut fields = common_card(&row.item, false);
             let kind = scroll_fields(&mut fields, Some(&magic), "Burns for 10 seconds.", "Adept");
             fields.push(("type", Value::Number(kind)));
             let Value::Object(fields) = object(fields) else {
@@ -1111,7 +1143,7 @@ mod tests {
                 "Localized soul"
             );
             let row = row(ItemKind::SoulGem, false);
-            let mut fields = common_card(&row.item);
+            let mut fields = common_card(&row.item, false);
             let kind = soul_fields(&mut fields, Some(level), |_| Some("Localized soul".into()));
             fields.push(("type", Value::Number(kind)));
             let Value::Object(fields) = object(fields) else {
@@ -1226,9 +1258,13 @@ mod tests {
         container.add(GEM, 2);
         let mut inventories = HashMap::from([(ACTOR, container)]);
         let snapshot = |inventories: &HashMap<FormId, Inventory>| {
-            listed_state(&rows, &player, &[], |r| {
-                row_soul_level(&kind, r, inventories, 0)
-            })
+            listed_state(
+                &rows,
+                &player,
+                &[],
+                |r| row_soul_level(&kind, r, inventories, 0),
+                |r| row_poisoned(&kind, r, inventories),
+            )
         };
         let empty = snapshot(&inventories);
         inventories.get_mut(&ACTOR).unwrap().put_soul(GEM, 1);
@@ -1241,5 +1277,161 @@ mod tests {
         assert_eq!(empty.4, vec![Some(0)]);
         assert_eq!(mixed.4, vec![None]);
         assert_eq!(filled.4, vec![Some(1)]);
+    }
+
+    #[test]
+    fn poison_cards_use_the_rows_inventory_in_every_item_menu() {
+        let poison = FormId(0xB00);
+        for (kind, theirs, source) in [
+            (Kind::Inventory, false, PLAYER_REF),
+            (
+                Kind::Container {
+                    owner: ACTOR,
+                    npc: false,
+                },
+                false,
+                PLAYER_REF,
+            ),
+            (
+                Kind::Container {
+                    owner: ACTOR,
+                    npc: false,
+                },
+                true,
+                ACTOR,
+            ),
+            (
+                Kind::Container {
+                    owner: ACTOR,
+                    npc: true,
+                },
+                true,
+                ACTOR,
+            ),
+            (Kind::Pickpocket { victim: ACTOR }, false, PLAYER_REF),
+            (Kind::Pickpocket { victim: ACTOR }, true, ACTOR),
+            (
+                Kind::Barter {
+                    vendor: ACTOR,
+                    stock: STOCK,
+                    info: None,
+                },
+                false,
+                PLAYER_REF,
+            ),
+            (
+                Kind::Barter {
+                    vendor: ACTOR,
+                    stock: STOCK,
+                    info: None,
+                },
+                true,
+                STOCK,
+            ),
+            (
+                Kind::Gift {
+                    actor: ACTOR,
+                    giving: true,
+                },
+                false,
+                PLAYER_REF,
+            ),
+            (
+                Kind::Gift {
+                    actor: ACTOR,
+                    giving: false,
+                },
+                false,
+                ACTOR,
+            ),
+        ] {
+            let row = row(ItemKind::Weapon, theirs);
+            let mut inventories: HashMap<_, _> = [PLAYER_REF, ACTOR, STOCK]
+                .into_iter()
+                .map(|actor| {
+                    let mut inv = Inventory::default();
+                    inv.add(GEM, 2);
+                    (actor, inv)
+                })
+                .collect();
+            inventories.get_mut(&source).unwrap().poison(GEM, poison, 1);
+            assert!(row_poisoned(&kind, &row, &inventories), "{kind:?}");
+            let Value::Object(fields) = object(common_card(
+                &row.item,
+                row_poisoned(&kind, &row, &inventories),
+            )) else {
+                unreachable!()
+            };
+            assert_eq!(fields["poisoned"], Value::Bool(true));
+            // The same base weapon in every other inventory must not
+            // inherit the source's poison status, or the reverse.
+            for (&actor, inv) in &mut inventories {
+                inv.poison(GEM, poison, if actor == source { 0 } else { 1 });
+            }
+            assert!(!row_poisoned(&kind, &row, &inventories), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn applying_and_exhausting_poison_refreshes_the_card_without_inventory_changes() {
+        let rows = [row(ItemKind::Weapon, false)];
+        let mut inv = Inventory::default();
+        inv.add(GEM, 2);
+        let poison = FormId(0xB00);
+        let mut inventories = HashMap::from([(PLAYER_REF, inv)]);
+        let snapshot = |inventories: &HashMap<FormId, Inventory>| {
+            listed_state(
+                &rows,
+                &inventories[&PLAYER_REF],
+                &[],
+                |_| None,
+                |r| row_poisoned(&Kind::Inventory, r, inventories),
+            )
+        };
+        let clean = snapshot(&inventories);
+        inventories
+            .get_mut(&PLAYER_REF)
+            .unwrap()
+            .poison(GEM, poison, 2);
+        let poisoned = snapshot(&inventories);
+        assert_eq!(clean.0, poisoned.0, "same form, owner, count and side");
+        assert_ne!(clean, poisoned);
+        assert_eq!(poisoned.5, vec![true]);
+        inventories
+            .get_mut(&PLAYER_REF)
+            .unwrap()
+            .take_poison_dose(GEM);
+        assert_eq!(snapshot(&inventories), poisoned, "one dose remains");
+        inventories
+            .get_mut(&PLAYER_REF)
+            .unwrap()
+            .take_poison_dose(GEM);
+        assert_eq!(snapshot(&inventories), clean);
+        let Value::Object(fields) = object(common_card(&rows[0].item, false)) else {
+            unreachable!()
+        };
+        assert_eq!(fields["poisoned"], Value::Bool(false));
+        assert!(!row_poisoned(&Kind::Inventory, &rows[0], &HashMap::new()));
+        let inv = inventories.get_mut(&PLAYER_REF).unwrap();
+        // Invalid/stale metadata must not put the icon on unrelated item
+        // kinds or weapons no longer in the inventory.
+        inv.poisoned.push((GEM, poison, 0));
+        assert!(!row_poisoned(&Kind::Inventory, &rows[0], &inventories));
+        inventories.get_mut(&PLAYER_REF).unwrap().poisoned[0].2 = 1;
+        assert!(!row_poisoned(
+            &Kind::Inventory,
+            &row(ItemKind::Ammo, false),
+            &inventories
+        ));
+        inventories
+            .get_mut(&PLAYER_REF)
+            .unwrap()
+            .remove_split(GEM, 2, None);
+        inventories
+            .get_mut(&PLAYER_REF)
+            .unwrap()
+            .poisoned
+            .push((GEM, poison, 1));
+        assert!(!row_poisoned(&Kind::Inventory, &rows[0], &inventories));
     }
 }

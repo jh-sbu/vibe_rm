@@ -32,6 +32,8 @@ game each piece unlocks.
   and their change if worn, effects, the bottom bar's stats; equipping, using,
   reading, dropping, favorites; scroll spell cards and localized soul-gem
   cards, refreshed when a gem is filled (`known_ambiguities/inventory-cards.md`);
+  weapon cards' poison icon, refreshed when poison is applied or exhausted
+  (`known_ambiguities/poisons.md`);
   `showinventory open`); containers, bodies,
   teammates' inventories and pockets (`containermenu.swf`: taking, storing,
   giving, Take All, the pickpocket chance) and bartering (`bartermenu.swf`
@@ -1167,7 +1169,7 @@ game each piece unlocks.
      rotating and zooming it), the quantity slider's use for more than dropping, recharging
      (`AttemptChargeItem`, soul gems), rows grouped by captured soul with per-item
      selection and transfers (`known_ambiguities/inventory-cards.md`), ingredients' learned
-     effects, which weapon is poisoned,
+     effects,
      equipping scrolls and torches in a hand, the best-in-class star, the
      survival warmth rating
    - The HUD: enemy health brackets sized to the name; notifications' display
