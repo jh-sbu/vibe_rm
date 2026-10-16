@@ -22,8 +22,8 @@ no game assets are stored in the repository.
   controller with a 16.666668 s cycle. Neither model has a named sequence.
   `meshes/architecture/solitude/clutter/sropefestivalline01.nif` has nine
   active looping node transform controllers with staggered key ranges.
-  The opt-in installed-asset test checks these three models without copying
-  them into the repository.
+  These observations remain asset evidence; automated tests use synthetic
+  models and do not require an installed game.
 
 ## Implemented behavior
 
@@ -76,3 +76,6 @@ no game assets are stored in the repository.
 Synthetic tests cover block identity, controlled roots, empty parents,
 manager/inactive filtering, nested transforms/visibility, scaled bounds,
 Disable preservation, APP_INIT timing and coexistence with a named sequence.
+Synthetic models with one rotating node, one translating node and nine
+translating nodes also check geometry retention, splitting without duplicate
+meshes, and sampled transforms.
