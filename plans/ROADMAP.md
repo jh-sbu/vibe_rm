@@ -30,7 +30,9 @@ game each piece unlocks.
   (`messagebox.swf`, answered with the mouse or keys); the inventory
   (`inventorymenu.swf`: categories, the item card with armor rating and damage
   and their change if worn, effects, the bottom bar's stats; equipping, using,
-  reading, dropping, favorites; `showinventory open`); containers, bodies,
+  reading, dropping, favorites; scroll spell cards and localized soul-gem
+  cards, refreshed when a gem is filled (`known_ambiguities/inventory-cards.md`);
+  `showinventory open`); containers, bodies,
   teammates' inventories and pockets (`containermenu.swf`: taking, storing,
   giving, Take All, the pickpocket chance) and bartering (`bartermenu.swf`
   from `Actor.ShowBarterMenu`: merchant chests, buy / sell lists, stolen
@@ -1120,8 +1122,9 @@ game each piece unlocks.
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the quantity slider's use for more than dropping, recharging
-     (`AttemptChargeItem`, soul gems), scrolls and soul gems on their own cards
-     (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, which weapon is poisoned,
+     (`AttemptChargeItem`, soul gems), rows grouped by captured soul with per-item
+     selection and transfers (`known_ambiguities/inventory-cards.md`), ingredients' learned
+     effects, which weapon is poisoned,
      equipping scrolls and torches in a hand, the best-in-class star, the
      survival warmth rating
    - The HUD: enemy health brackets sized to the name; notifications' display
