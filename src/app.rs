@@ -839,7 +839,7 @@ impl ApplicationHandler for App {
                             // F switches between first and third person.
                             if code == KeyCode::KeyF
                                 && !event.repeat
-                                && !s.engine.disabled_controls.cam_switch
+                                && !s.engine.disabled_controls.camera_switch_disabled()
                             {
                                 let third = !s.engine.third_person;
                                 s.engine.set_third_person(third);
@@ -870,7 +870,10 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 40.0,
                 };
-                if s.grabbed && s.engine.third_person && !s.engine.disabled_controls.cam_switch {
+                if s.grabbed
+                    && s.engine.third_person
+                    && !s.engine.disabled_controls.camera_switch_disabled()
+                {
                     s.engine.zoom_third_person(-lines * 30.0);
                 }
             }

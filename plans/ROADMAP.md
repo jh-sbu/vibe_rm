@@ -433,7 +433,9 @@ game each piece unlocks.
 - Player controls from scripts: `DisablePlayerControls` / `EnablePlayerControls`
   (Papyrus's defaults for missing arguments) stop the player moving, fighting
   (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
-  and activating; the `Is...ControlsEnabled` queries. Console `epc`. Open
+  and activating; disabling fighting sheathes a drawn weapon. The POV type
+  argument keeps Script and Werewolf camera locks separately; the
+  `Is...ControlsEnabled` queries. Console `epc`. Open
   questions: `known_ambiguities/player-controls.md`
 - The player's body: their NPC record's race, sex and skin, what they have
   equipped (rebuilt when it changes) and a head of the race's default head parts
@@ -1036,8 +1038,7 @@ game each piece unlocks.
      the camera stopping short of actors, a vanity camera; the head's morphs
      (`.tri`), tint layers (`TINI` / `TINC`), hair colour (`HCLF`) and
      texture sets (`HDPT` `TNAM`), with character creation
-   - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`;
-     disabled fighting putting the weapon away, the POV type argument
+   - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`
    - Sneak attacks (see Done): NPCs sneaking up on the player
    - Skills (see Done): the other skills' uses as their systems come (magic,
      crafting, speech), rested bonuses

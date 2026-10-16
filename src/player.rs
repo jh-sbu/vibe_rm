@@ -11,7 +11,10 @@ use crate::render::Camera;
 pub struct DisabledControls {
     pub movement: bool,
     pub fighting: bool,
-    pub cam_switch: bool,
+    /// Camera switching disabled by scripts (POV type 0).
+    cam_switch: bool,
+    /// Separate POV lock owned by beast transformations (POV type 1).
+    werewolf_cam_switch: bool,
     pub looking: bool,
     pub sneaking: bool,
     pub menu: bool,
@@ -20,9 +23,32 @@ pub struct DisabledControls {
 }
 
 impl DisabledControls {
+    /// Apply the selected controls, preserving flags whose argument is false.
+    /// Only the camera flag is scoped by Papyrus's `aiDisablePOVType`.
+    pub fn apply(&mut self, disable: bool, selected: [bool; 8], pov_type: i32) {
+        for (i, flag) in self.flags_mut().into_iter().enumerate() {
+            if i != 2 && selected[i] {
+                *flag = disable;
+            }
+        }
+        if selected[2] {
+            match pov_type {
+                0 => self.cam_switch = disable,
+                1 => self.werewolf_cam_switch = disable,
+                // No public contract exists for other values. Do not release
+                // another system's camera lock for an unknown owner.
+                _ => (),
+            }
+        }
+    }
+
+    pub fn camera_switch_disabled(&self) -> bool {
+        self.cam_switch || self.werewolf_cam_switch
+    }
+
     /// The controls in Papyrus's argument order (movement, fighting, camera
     /// switch, looking, sneaking, menus, activation, journal tabs).
-    pub fn flags_mut(&mut self) -> [&mut bool; 8] {
+    fn flags_mut(&mut self) -> [&mut bool; 8] {
         [
             &mut self.movement,
             &mut self.fighting,
@@ -47,6 +73,7 @@ impl DisabledControls {
             "journal",
         ];
         let mut c = *self;
+        c.cam_switch = self.camera_switch_disabled();
         let off: Vec<&str> = c
             .flags_mut()
             .into_iter()
@@ -59,6 +86,78 @@ impl DisabledControls {
         } else {
             format!("disabled: {}", off.join(", "))
         }
+    }
+}
+
+#[cfg(test)]
+mod control_tests {
+    use super::DisabledControls;
+
+    const CAMERA: [bool; 8] = [false, false, true, false, false, false, false, false];
+
+    #[test]
+    fn enabling_one_pov_owner_preserves_the_other_owners_lock() {
+        for (first, second) in [(0, 1), (1, 0)] {
+            let mut controls = DisabledControls::default();
+            controls.apply(true, CAMERA, first);
+            controls.apply(true, CAMERA, second);
+            controls.apply(false, CAMERA, first);
+            assert!(controls.camera_switch_disabled());
+            assert_eq!(controls.describe(), "disabled: camera switch");
+            controls.apply(false, CAMERA, second);
+            assert!(!controls.camera_switch_disabled());
+            assert_eq!(controls.describe(), "all player controls enabled");
+        }
+    }
+
+    #[test]
+    fn false_camera_argument_preserves_both_pov_locks() {
+        let mut controls = DisabledControls::default();
+        controls.apply(true, CAMERA, 1);
+        let mut selected = [true; 8];
+        selected[2] = false;
+        controls.apply(false, selected, 1);
+        assert!(controls.camera_switch_disabled());
+        controls.apply(false, CAMERA, 1);
+        assert!(!controls.camera_switch_disabled());
+    }
+
+    #[test]
+    fn other_controls_are_shared_across_pov_owners() {
+        let mut controls = DisabledControls::default();
+        controls.apply(true, [true; 8], 1);
+        controls.apply(false, [true; 8], 0);
+        assert!(controls.camera_switch_disabled());
+        assert!(!controls.movement);
+        assert!(!controls.fighting);
+        assert!(!controls.looking);
+        assert!(!controls.sneaking);
+        assert!(!controls.menu);
+        assert!(!controls.activate);
+        assert!(!controls.journal);
+        // The developer console's full reset clears both owners.
+        controls = DisabledControls::default();
+        assert!(!controls.camera_switch_disabled());
+    }
+
+    #[test]
+    fn unknown_pov_owners_preserve_camera_locks_but_apply_other_controls() {
+        let mut controls = DisabledControls::default();
+        controls.apply(true, CAMERA, 0);
+        controls.apply(true, CAMERA, 1);
+        for unknown in [-1, 2, i32::MAX] {
+            controls.apply(false, [true; 8], unknown);
+            assert!(controls.camera_switch_disabled());
+            assert!(!controls.movement);
+            controls.apply(true, [true; 8], unknown);
+            assert!(controls.movement);
+        }
+        controls.apply(false, CAMERA, 0);
+        assert!(controls.camera_switch_disabled());
+        controls.apply(false, CAMERA, 1);
+        assert!(!controls.camera_switch_disabled());
+        controls.apply(true, CAMERA, 2);
+        assert!(!controls.camera_switch_disabled());
     }
 }
 
