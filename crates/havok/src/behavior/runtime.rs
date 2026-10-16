@@ -1994,6 +1994,53 @@ impl Instance {
             )
     }
 
+    /// Running character-rotation modifiers with scalar inputs resolved. This
+    /// does not rotate the actor: coordinate space and motion composition are
+    /// not established. Unsupported bindings omit the modifier rather than
+    /// exposing an authored value in place of a bound vector.
+    pub fn character_rotations(&self) -> Vec<RotateCharacter> {
+        self.running_modifiers()
+            .into_iter()
+            .filter_map(|(gi, m)| {
+                let Modifier::RotateCharacter(r) = &self.shared.graph(gi).modifiers[m] else {
+                    return None;
+                };
+                let graph = self.shared.graph(gi);
+                let members = graph.modifier_bindings[m]
+                    .iter()
+                    .map(|b| b.member.as_str())
+                    .chain(
+                        graph
+                            .modifier_property_bindings
+                            .get(m)
+                            .into_iter()
+                            .flatten()
+                            .map(|b| b.member.as_str()),
+                    );
+                for member in members {
+                    if !matches!(member, "enable" | "degreesPerSecond" | "speedMultiplier")
+                        || self
+                            .shared
+                            .modifier_input(gi, m, member, &self.values)
+                            .is_none()
+                    {
+                        return None;
+                    }
+                }
+                let mut r = r.clone();
+                for (member, v) in self.bound_members(gi, m) {
+                    match member {
+                        "enable" => r.enabled = v.is_finite() && v != 0.0,
+                        "degreesPerSecond" => r.degrees_per_second = v,
+                        "speedMultiplier" => r.speed_multiplier = v,
+                        _ => return None,
+                    }
+                }
+                r.enabled.then_some(r)
+            })
+            .collect()
+    }
+
     /// Twist modifiers running now, with bound angle and enable resolved. The
     /// pose consumer chooses which authored modes it can apply.
     pub fn twists(&self) -> Vec<Twist> {
@@ -2271,6 +2318,193 @@ mod tests {
             *f = user_fraction;
         }
         instance(BehaviorGraph::new("G", Some(0), vec![c], vec![]))
+    }
+
+    #[test]
+    fn character_rotations_follow_scalar_inputs_and_event_lifecycle() {
+        let mut g = BehaviorGraph::new(
+            "Rotation",
+            Some(0),
+            vec![Generator::Wrap {
+                name: "Wrapped".into(),
+                class: "hkbModifierGenerator".into(),
+                child: None,
+                modifier: Some(0),
+            }],
+            vec!["On".into(), "Off".into()],
+        );
+        let rate = g.add_variable("Rate", VarType::Real, -45.0);
+        let multiplier = g.add_variable("Multiplier", VarType::Real, 0.5);
+        let enabled = g.add_variable("Enabled", VarType::Bool, 1.0);
+        g.modifiers = vec![
+            Modifier::EventDriven {
+                child: Some(1),
+                activate: 0,
+                deactivate: 1,
+                active_by_default: false,
+            },
+            Modifier::RotateCharacter(RotateCharacter {
+                enabled: false,
+                degrees_per_second: 90.0,
+                speed_multiplier: 1.0,
+                axis: glam::Vec4::new(0.0, 0.0, 1.0, 0.0),
+            }),
+        ];
+        g.modifier_bindings = vec![
+            vec![],
+            vec![
+                Binding {
+                    member: "degreesPerSecond".into(),
+                    variable: rate,
+                },
+                Binding {
+                    member: "speedMultiplier".into(),
+                    variable: multiplier,
+                },
+                Binding {
+                    member: "enable".into(),
+                    variable: enabled,
+                },
+            ],
+        ];
+        let mut i = instance(g);
+        assert!(i.character_rotations().is_empty());
+        i.handle_event("On", &mut durations);
+        let r = i.character_rotations();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].degrees_per_second, -45.0);
+        assert_eq!(r[0].speed_multiplier, 0.5);
+        assert_eq!(r[0].axis, glam::Vec4::new(0.0, 0.0, 1.0, 0.0));
+        i.set_variable("Rate", 30.0);
+        i.set_variable("Multiplier", -2.0);
+        assert_eq!(i.character_rotations()[0].degrees_per_second, 30.0);
+        assert_eq!(i.character_rotations()[0].speed_multiplier, -2.0);
+        i.set_variable("Enabled", 0.0);
+        assert!(i.character_rotations().is_empty());
+        i.set_variable("Enabled", f32::NAN);
+        assert!(i.character_rotations().is_empty());
+        i.set_variable("Enabled", 1.0);
+        assert_eq!(i.character_rotations().len(), 1);
+        i.handle_event("Off", &mut durations);
+        assert!(i.character_rotations().is_empty());
+    }
+
+    #[test]
+    fn character_rotations_retain_authored_inputs_and_omit_unsupported_bindings() {
+        for case in 0..5 {
+            let enabled = case != 1;
+            let mut g = BehaviorGraph::new(
+                "Rotation",
+                Some(0),
+                vec![Generator::Wrap {
+                    name: "Wrapped".into(),
+                    class: "hkbModifierGenerator".into(),
+                    child: None,
+                    modifier: Some(0),
+                }],
+                vec![],
+            );
+            g.modifiers = vec![Modifier::RotateCharacter(RotateCharacter {
+                enabled,
+                degrees_per_second: -60.0,
+                speed_multiplier: 0.75,
+                axis: glam::Vec4::new(2.0, 3.0, 4.0, 5.0),
+            })];
+            let axis = g.add_variable("Axis", VarType::Real, 1.0);
+            g.modifier_bindings = vec![if case == 2 {
+                vec![Binding {
+                    member: "axisOfRotation".into(),
+                    variable: axis,
+                }]
+            } else {
+                vec![]
+            }];
+            g.modifier_property_bindings = vec![match case {
+                3 => vec![PropertyBinding {
+                    member: "axisOfRotation".into(),
+                    property: "Axis".into(),
+                }],
+                4 => vec![PropertyBinding {
+                    member: "degreesPerSecond".into(),
+                    property: "MissingRate".into(),
+                }],
+                _ => vec![],
+            }];
+            let r = instance(g).character_rotations();
+            if case == 0 {
+                assert_eq!(r.len(), 1);
+                assert_eq!(r[0].degrees_per_second, -60.0);
+                assert_eq!(r[0].speed_multiplier, 0.75);
+                assert_eq!(r[0].axis, glam::Vec4::new(2.0, 3.0, 4.0, 5.0));
+            } else {
+                assert!(r.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn character_rotation_properties_supply_inputs_with_variable_precedence() {
+        let mut g = BehaviorGraph::new(
+            "Rotation",
+            Some(0),
+            vec![Generator::Wrap {
+                name: "Wrapped".into(),
+                class: "hkbModifierGenerator".into(),
+                child: None,
+                modifier: Some(0),
+            }],
+            vec![],
+        );
+        g.modifiers = vec![Modifier::RotateCharacter(RotateCharacter {
+            enabled: false,
+            degrees_per_second: 90.0,
+            speed_multiplier: 1.0,
+            axis: glam::Vec4::Z,
+        })];
+        let multiplier = g.add_variable("Multiplier", VarType::Real, -0.25);
+        g.modifier_bindings = vec![vec![Binding {
+            member: "speedMultiplier".into(),
+            variable: multiplier,
+        }]];
+        g.modifier_property_bindings = vec![vec![
+            PropertyBinding {
+                member: "enable".into(),
+                property: "Enabled".into(),
+            },
+            PropertyBinding {
+                member: "degreesPerSecond".into(),
+                property: "Rate".into(),
+            },
+            PropertyBinding {
+                member: "speedMultiplier".into(),
+                property: "Multiplier".into(),
+            },
+        ]];
+        let mut character = Character::default();
+        character.scalar_properties = HashMap::from([
+            ("enabled".into(), 1.0),
+            ("rate".into(), -120.0),
+            ("multiplier".into(), 2.0),
+        ]);
+        let mut i = Instance::new(
+            Shared::new(Arc::new(Project {
+                graphs: vec![("root.hkx".into(), g)],
+                character: Some(character),
+            })),
+            1,
+        );
+        i.update(0.0, &mut durations);
+        let r = i.character_rotations();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].degrees_per_second, -120.0);
+        assert_eq!(r[0].speed_multiplier, -0.25);
+        assert_eq!(
+            i.variable("Rate"),
+            None,
+            "property stays separate from variables"
+        );
+        i.set_variable("Multiplier", 0.5);
+        assert_eq!(i.character_rotations()[0].speed_multiplier, 0.5);
     }
 
     #[test]

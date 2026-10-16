@@ -131,6 +131,10 @@ game each piece unlocks.
 - Single-bone additive LINEAR `hkbTwistModifier` poses: bound angle and enable,
   event activation, model and local axes, Havok-to-NIF bone mapping. Angle units,
   chains, other modes and blending limits: `known_ambiguities/twist-modifier.md`
+- `hkbRotateCharacterModifier` data and active inputs: authored enable, rate,
+  multiplier and aligned axis retained; scalar variable / character-property
+  bindings and event gates exposed by the runtime. Actor rotation is still
+  pending: `known_ambiguities/rotate-character.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;
@@ -960,8 +964,9 @@ game each piece unlocks.
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
      properties on generators, blender children and transition effects,
      runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`);
-     `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
-     way events are chosen
+     applying `hkbRotateCharacterModifier` (inputs parsed: see Done;
+     `known_ambiguities/rotate-character.md`); the other action trees
+     (`ActionTurnLeft`...) as the way events are chosen
    - Carry furniture (wood piles done, see Done): packages or sandboxing that
      take a carrier to where the load goes (now any wood pile it happens to pick);
      buckets (`OffsetCarryBucketStart`: nothing in the idle tree sends it) and

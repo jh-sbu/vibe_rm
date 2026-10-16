@@ -336,7 +336,38 @@ pub enum Modifier {
     FootIkControls(FootIkGains),
     /// `hkbTwistModifier`: authored axis, angle and bone endpoints.
     Twist(Twist),
+    /// `hkbRotateCharacterModifier`: character rotation settings. These are
+    /// exposed by the runtime but not yet applied to the actor's world transform.
+    RotateCharacter(RotateCharacter),
     Other(String),
+}
+
+/// Authored `hkbRotateCharacterModifier` inputs. Coordinate space, composition
+/// with root motion, and branch blending remain unresolved; see
+/// `known_ambiguities/rotate-character.md`.
+#[derive(Debug, Clone)]
+pub struct RotateCharacter {
+    pub enabled: bool,
+    pub degrees_per_second: f32,
+    pub speed_multiplier: f32,
+    /// Preserve all four serialized components without interpreting the axis.
+    pub axis: glam::Vec4,
+}
+
+impl RotateCharacter {
+    fn read(p: &Packfile, o: u32) -> Self {
+        Self {
+            enabled: p.u8(o + 0x48) != 0,
+            degrees_per_second: p.f32(o + 0x50),
+            speed_multiplier: p.f32(o + 0x54),
+            axis: glam::Vec4::new(
+                p.f32(o + 0x60),
+                p.f32(o + 0x64),
+                p.f32(o + 0x68),
+                p.f32(o + 0x6C),
+            ),
+        }
+    }
 }
 
 /// `hkbTwistModifier` settings. Only single-bone, additive, LINEAR twists are
@@ -412,6 +443,57 @@ mod twist_tests {
         assert_eq!(t.angle_degrees, -35.0);
         assert_eq!((t.start_bone, t.end_bone), (-1, 7));
         assert_eq!((t.set_angle_method, t.axis_coordinates), (2, 1));
+    }
+}
+
+#[cfg(test)]
+mod rotate_character_tests {
+    use super::*;
+
+    #[test]
+    fn reader_retains_distinct_rates_aligned_axis_and_static_enable() {
+        // Synthetic packfile, with deliberately distinct values and nonzero
+        // alignment padding so an incorrect packed-vector offset is caught.
+        let data_start = 0xB0;
+        let mut bytes = vec![0u8; data_start + 0x70];
+        let word = |bytes: &mut [u8], at: usize, value: u32| {
+            bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        };
+        word(&mut bytes, 0, 0x57E0_E057);
+        word(&mut bytes, 4, 0x10C0_C010);
+        word(&mut bytes, 12, 8);
+        bytes[16] = 8;
+        bytes[17] = 1;
+        word(&mut bytes, 20, 2);
+        bytes[0x40..0x4E].copy_from_slice(b"__classnames__");
+        word(&mut bytes, 0x54, data_start as u32);
+        bytes[0x70..0x78].copy_from_slice(b"__data__");
+        word(&mut bytes, 0x84, data_start as u32);
+        for at in [0x88, 0x8C, 0x90, 0x94, 0xA0] {
+            word(&mut bytes, at, 0x70);
+        }
+        let d = &mut bytes[data_start..];
+        d[0x48] = 1;
+        for (at, value) in [
+            (0x50, -120.0f32),
+            (0x54, 0.25),
+            (0x58, 99.0),
+            (0x5C, 98.0),
+            (0x60, 2.0),
+            (0x64, 3.0),
+            (0x68, 4.0),
+            (0x6C, 5.0),
+        ] {
+            word(d, at, value.to_bits());
+        }
+        let p = Packfile::parse(&bytes).unwrap();
+        let r = RotateCharacter::read(&p, 0);
+        assert!(r.enabled);
+        assert_eq!(r.degrees_per_second, -120.0);
+        assert_eq!(r.speed_multiplier, 0.25);
+        assert_eq!(r.axis, glam::Vec4::new(2.0, 3.0, 4.0, 5.0));
+        bytes[data_start + 0x48] = 0;
+        assert!(!RotateCharacter::read(&Packfile::parse(&bytes).unwrap(), 0).enabled);
     }
 }
 
@@ -840,6 +922,7 @@ impl<'a> Reader<'a> {
                 duration: p.f32(o + 0x5C),
             },
             "hkbTwistModifier" => Modifier::Twist(Twist::read(p, o)),
+            "hkbRotateCharacterModifier" => Modifier::RotateCharacter(RotateCharacter::read(p, o)),
             "BSLookAtModifier" => {
                 let bones = |at: u32| {
                     let (data, n) = p.array(o + at);
