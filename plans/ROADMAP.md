@@ -794,7 +794,8 @@ game each piece unlocks.
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
 - Loaded placed objects' standalone `NiTransformController` / `NiVisController`
-  chains: nested poses and visibility, independent controller clocks and
+  chains on nodes and rigid `BSTriShape` / `NiTriShape` / `NiTriStrips`
+  geometry (also in effects): nested poses and visibility, independent controller clocks and
   block-identity targets, scaled bounds and hidden parts omitted from shadows
   and particles. Limits and timing choices: `known_ambiguities/node-controllers.md`
 - Particle systems: `NiParticleSystem` with its data, emitters (box, cylinder, sphere),
@@ -974,7 +975,7 @@ game each piece unlocks.
    - Footsteps: swimming (and swimming itself), splashes, decals
    - `BSBehaviorGraphExtraData`'s "controls base skeleton"; script-set graph
      variables (`SetAnimationVariable*`) surviving the AI's own writes
-   - Later / separate: standalone node controllers on geometry, attachments,
+   - Later / separate: standalone controllers on skinned geometry, particle systems, attachments,
      distant and loose objects; collision following standalone transforms,
      persistence and driver arbitration (`known_ambiguities/node-controllers.md`);
      texture flip controllers (`NiFlipController`), shader controllers inside sequences (only the

@@ -1,9 +1,9 @@
 # Standalone NIF node controllers
 
 Loaded placed objects now run `NiTransformController` and `NiVisController`
-chains on their nodes, independently of named sequences. Effects continue to
-use their existing effect clock. No engine executable data was examined and
-no game assets are stored in the repository.
+chains on their nodes and rigid geometry, independently of named sequences.
+Effects continue to use their existing effect clock. No engine executable data
+was examined and no game assets are stored in the repository.
 
 ## Public and asset evidence
 
@@ -13,6 +13,10 @@ no game assets are stored in the repository.
   manager-controlled, cycle and animation-type bits, with `APP_TIME` and
   `APP_INIT` as the animation types. This establishes the serialized controls,
   but does not specify Skyrim's initialization and controller arbitration.
+- The same schema defines `NiVisController` as targeting `NiAVObject`;
+  `BSTriShape` inherits it directly, and `NiTriShape` / `NiTriStrips` through
+  `NiGeometry`. Geometry therefore uses the existing transform and visibility
+  evaluator; no engine binary inspection or game-derived fixtures were needed.
 - Installed Skyrim SE assets, read through the repository's BSA/NIF readers:
   `meshes/architecture/solitude/farms/sfarmhousemillfan.nif` has one active
   looping transform controller, flags `0x48`, with a 13.333334 s cycle.
@@ -35,6 +39,11 @@ no game assets are stored in the repository.
   duplicate or empty names cannot select unrelated nodes. Empty parent parts
   remain in the flattened hierarchy. Children inherit their animated parent's
   transform and visibility. Scaling updates the render bounds.
+- Rigid `BSTriShape`, `NiTriShape` and `NiTriStrips` can own controller chains.
+  Each controlled shape becomes one part with vertices in its local space;
+  its rest transform and ancestors apply once. Geometry filters still apply,
+  and a same-named uncontrolled sibling remains static. Effects use this same
+  conversion. Skinned shapes retain the existing bone-driven path.
 - APP_TIME controllers sample the renderer's simulation clock; APP_INIT
   controllers sample time since the placed object loaded. Frequency, phase and
   cycle use the existing NIF timing evaluator. Boolean keys step at their key
@@ -59,11 +68,12 @@ no game assets are stored in the repository.
 - **Competing drivers:** ordering between standalone controllers, named
   sequences and behavior poses needs a game-side comparison. The precedence
   above is this runtime's policy, not a claim about original engine order.
-- **Target scope:** controllers directly attached to geometry, initially
-  hidden NIF subtrees, controller chains interrupted by an unparsed controller,
-  and standalone animation of distant references, actor attachments, loose
-  physics objects and harvested variants remain unsupported. Node discovery
-  and splitting currently handle `NiNode` targets only.
+- **Target scope:** controllers directly attached to skinned geometry or
+  particle systems, initially hidden NIF subtrees, controller chains interrupted
+  by an unparsed controller, and standalone animation of distant references,
+  actor attachments, loose physics objects and harvested variants remain
+  unsupported. Rigid geometry
+  uses the same render-only controller policy as nodes; collision is not moved.
 - **Physics and particles:** standalone transforms move render parts, not
   their collision. Graph-driven collision retains its existing behavior.
   World-space particles in moving standalone parts do not yet receive the
@@ -79,3 +89,21 @@ Disable preservation, APP_INIT timing and coexistence with a named sequence.
 Synthetic models with one rotating node, one translating node and nine
 translating nodes also check geometry retention, splitting without duplicate
 meshes, and sampled transforms.
+Synthetic geometry tests cover all three supported shape formats, local
+vertices and inherited placement, directly controlled shape roots, nested
+node/shape chains, stepped visibility, duplicate names, shape filtering,
+effect conversion and skinned exclusion.
+
+## Texture flips: evidence gap
+
+`NiFlipController` remains unsupported. The public
+[Niftools schema](https://github.com/niftools/nifxml/blob/develop/nif.xml)
+describes texture-slot indices and `NiSourceTexture` references, with a float
+interpolator in the supported NIF version. Its `Delta` field belongs only to
+older versions. The schema does not establish a mapping onto Skyrim's
+`BSShaderTextureSet` / `BSEffectShaderProperty` bindings. No public evidence
+reviewed here establishes Skyrim's acceptance of those targets or frame-index
+rounding and out-of-range behavior. This is an unresolved compatibility question,
+not evidence that Skyrim rejects all flip controllers. Implementing legacy
+`NiTexturingProperty` or inventing a BS shader slot mapping would exceed the
+bounded geometry-controller work above.

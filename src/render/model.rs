@@ -530,8 +530,8 @@ fn sequences(nif: &Nif) -> Vec<Sequence> {
     out
 }
 
-/// A node's own controller (outside any sequence): an effect's nodes moving,
-/// scaling and showing over time.
+/// A scene object's own controller (outside any sequence): nodes and rigid
+/// geometry moving, scaling and showing over time.
 pub struct NodeChannel {
     pub node: String,
     /// The node's block (names may repeat).
@@ -573,13 +573,25 @@ impl NodeChannel {
     }
 }
 
-/// The nodes' own transform and visibility controllers, those a sequence
-/// doesn't drive (manager-controlled): active, or started with the model.
+/// Scene objects supported by standalone controllers. Skinned geometry keeps
+/// its bone-driven rendering; splitting it would lose the skin's model space.
+fn standalone_av(block: &Block) -> Option<&nif::AvObject> {
+    match block {
+        Block::Node(n) => Some(&n.av),
+        Block::TriShape(t) if t.skin.is_none() => Some(&t.av),
+        Block::NiTriShape(g) | Block::NiTriStrips(g) if g.skin.is_none() => Some(&g.av),
+        _ => None,
+    }
+}
+
+/// The nodes' and rigid geometry's transform and visibility controllers,
+/// those a sequence doesn't drive (manager-controlled): active, or started
+/// with the model.
 pub fn node_controllers(nif: &Nif) -> Vec<NodeChannel> {
     let mut out = Vec::new();
     for (i, b) in nif.blocks.iter().enumerate() {
-        let Block::Node(n) = b else { continue };
-        let mut c = n.av.net.controller;
+        let Some(av) = standalone_av(b) else { continue };
+        let mut c = av.net.controller;
         let mut seen = 0;
         while let Some(Block::NodeController(nc)) = nif.get(c) {
             seen += 1;
@@ -602,7 +614,7 @@ pub fn node_controllers(nif: &Nif) -> Vec<NodeChannel> {
                         _ => None,
                     };
                     NodeDrive::Transform(Channel {
-                        node: n.av.net.name.clone(),
+                        node: av.net.name.clone(),
                         interpolator: i.clone(),
                         data,
                     })
@@ -619,7 +631,7 @@ pub fn node_controllers(nif: &Nif) -> Vec<NodeChannel> {
                 _ => continue,
             };
             out.push(NodeChannel {
-                node: n.av.net.name.clone(),
+                node: av.net.name.clone(),
                 block: i as i32,
                 timing: t,
                 drive,
@@ -970,10 +982,14 @@ impl Walk<'_> {
         {
             return;
         }
+        if !matches!(block, Block::Node(_)) && !(self.keep)(&av.net.name) {
+            return;
+        }
         // A controller may also animate the root, whose static placement is ignored.
-        if matches!(block, Block::Node(_))
-            && (self.controlled_blocks.contains(&r.0)
-                || (depth > 0 && self.animated_nodes.contains(av.net.name.as_str())))
+        if (self.controlled_blocks.contains(&r.0) && standalone_av(block).is_some())
+            || (matches!(block, Block::Node(_))
+                && depth > 0
+                && self.animated_nodes.contains(av.net.name.as_str()))
         {
             // In the part's own space: its particles' emitter objects too.
             let node = parent * local_transform(av, depth);
@@ -1007,6 +1023,10 @@ impl Walk<'_> {
                     }
                     _ => {}
                 }
+            } else {
+                // The shape itself is the part. Its local transform belongs
+                // to AnimatedPart::rest, so keep its vertices in shape space.
+                sub.geometry(nif, block, Mat4::IDENTITY);
             }
             let (bound_center, bound_radius) = bounds_of(
                 sub.meshes
@@ -1039,10 +1059,6 @@ impl Walk<'_> {
             return;
         }
         let world = parent * local_transform(av, depth);
-        if !matches!(block, Block::Node(_)) && !(self.keep)(&av.net.name) {
-            return;
-        }
-        let (out, skinned) = (&mut self.meshes, &mut self.skinned);
         match block {
             Block::ParticleSystem(p) => {
                 if let Some(d) = super::particles::describe(nif, p, world, self.root) {
@@ -1091,6 +1107,14 @@ impl Walk<'_> {
                     }
                 }
             }
+            _ => self.geometry(nif, block, world),
+        }
+    }
+
+    fn geometry(&mut self, nif: &Nif, block: &Block, world: Mat4) {
+        let Some(av) = block.av() else { return };
+        let (out, skinned) = (&mut self.meshes, &mut self.skinned);
+        match block {
             Block::TriShape(t) if !t.skin.is_none() => {
                 let mat = material(nif, t.shader, t.alpha);
                 if let Some(m) = build_skinned(nif, t.skin, &t.geometry, &av.net.name, mat) {
@@ -1362,6 +1386,205 @@ mod node_controller_tests {
                 assert!(after.abs_diff_eq(expected, 1e-6), "{}", c.node);
                 assert_ne!(before, after, "controller moves its part: {}", c.node);
             }
+        }
+    }
+
+    /// One controlled shape below an ordinary node, in each supported format.
+    fn geometry_fixture(kind: usize) -> Nif {
+        let mut n = moving_fixture(1, false);
+        if let Block::Node(parent) = &mut n.blocks[1] {
+            parent.av.net.controller = Ref(-1);
+        }
+        if let Block::TriShape(shape) = &mut n.blocks[5] {
+            shape.av.net.controller = Ref(2);
+            shape.av.net.name = "SameName".into();
+            shape.av.transform.translation = Vec3::Y * 3.0;
+        }
+        if let Block::TransformData(data) = &mut n.blocks[4] {
+            data.translations = vec![(0.0, Vec3::Y * 3.0), (1.0, Vec3::Y * 5.0)];
+        }
+        if kind != 0 {
+            let Block::TriShape(shape) = n.blocks[5].clone() else {
+                unreachable!()
+            };
+            let data = Ref(n.blocks.len() as i32);
+            n.blocks.push(Block::TriShapeData(nif::TriShapeData {
+                geometry: shape.geometry,
+                center: shape.bound_center,
+                radius: shape.bound_radius,
+            }));
+            let shape = nif::NiGeometry {
+                av: shape.av,
+                data,
+                skin: shape.skin,
+                shader: shape.shader,
+                alpha: shape.alpha,
+            };
+            n.blocks[5] = if kind == 1 {
+                Block::NiTriShape(shape)
+            } else {
+                Block::NiTriStrips(shape)
+            };
+        }
+        n
+    }
+
+    #[test]
+    fn rigid_shape_controllers_keep_vertices_local_and_parent_placement_once() {
+        for kind in 0..3 {
+            let n = geometry_fixture(kind);
+            let controllers = node_controllers(&n);
+            assert_eq!(controllers.len(), 1);
+            assert_eq!(controllers[0].block, 5);
+            let normal = convert(&n);
+            let controlled = convert_controlled(&n, &Default::default(), &controllers);
+            assert!(normal.animated.is_empty());
+            assert_eq!(normal.meshes.len(), 1);
+            assert!(controlled.meshes.is_empty());
+            assert_eq!(controlled.animated.len(), 1);
+            let part = &controlled.animated[0];
+            let mesh = &part.model.meshes[0];
+            assert_eq!(mesh.vertices[0].position, Vec3::ZERO.to_array());
+            assert_eq!(mesh.indices, [0, 1, 2]);
+            for (local, original) in mesh.vertices.iter().zip(&normal.meshes[0].vertices) {
+                let position =
+                    (part.parent * part.rest).transform_point3(Vec3::from(local.position));
+                assert!(position.abs_diff_eq(Vec3::from(original.position), 1e-6));
+            }
+            let after = controllers[0].transform(0.25, part.rest).unwrap();
+            let position = (part.parent * after).transform_point3(Vec3::ZERO);
+            assert!(position.abs_diff_eq(Vec3::new(10.0, 3.5, 0.0), 1e-6));
+            let (effect, effect_controllers) = convert_effect(&n);
+            assert_eq!(effect_controllers.len(), 1);
+            assert_eq!(effect.animated[0].block, 5);
+        }
+    }
+
+    #[test]
+    fn controlled_root_geometry_ignores_authored_placement_and_keeps_local_vertices() {
+        for kind in 0..3 {
+            let mut n = geometry_fixture(kind);
+            n.roots = vec![5];
+            // The shape has an authored Y translation of 3; root placement
+            // belongs to the reference instead. Animation still drives it.
+            let controllers = node_controllers(&n);
+            let normal = convert(&n);
+            let controlled = convert_controlled(&n, &Default::default(), &controllers);
+            assert_eq!(normal.meshes.len(), 1);
+            assert_eq!(normal.meshes[0].vertices[0].position, Vec3::ZERO.to_array());
+            assert!(controlled.meshes.is_empty());
+            assert_eq!(controlled.animated.len(), 1);
+            let root = &controlled.animated[0];
+            assert_eq!(root.block, 5);
+            assert_eq!(root.parent, Mat4::IDENTITY);
+            assert_eq!(root.rest, Mat4::IDENTITY);
+            assert_eq!(root.within, None);
+            assert_eq!(root.model.meshes.len(), 1);
+            let mesh = &root.model.meshes[0];
+            assert_eq!(mesh.indices, [0, 1, 2]);
+            assert_eq!(mesh.vertices[0].position, Vec3::ZERO.to_array());
+            let pose = controllers[0].transform(0.25, root.rest).unwrap();
+            assert!(
+                pose.transform_point3(Vec3::ZERO)
+                    .abs_diff_eq(Vec3::Y * 3.5, 1e-6)
+            );
+        }
+    }
+
+    #[test]
+    fn geometry_visibility_and_nested_node_controller_keep_separate_parts() {
+        let mut n = geometry_fixture(0);
+        let visibility = n.blocks.len() as i32;
+        n.blocks.extend([
+            Block::NodeController(nif::anim::NodeController {
+                next: Ref(-1),
+                kind: nif::anim::NodeControllerKind::Visibility,
+                timing: nif::anim::Timing {
+                    flags: 8,
+                    frequency: 1.0,
+                    phase: 0.0,
+                    start: 0.0,
+                    stop: 1.0,
+                },
+                interpolator: Ref(visibility + 1),
+            }),
+            Block::BoolInterpolator(nif::psys::BoolInterpolator {
+                value: true,
+                data: Ref(visibility + 2),
+            }),
+            Block::ValueKeys(nif::anim::ValueKeys {
+                keys: vec![(0.0, Vec3::X), (0.5, Vec3::ZERO)],
+            }),
+        ]);
+        if let Block::Node(parent) = &mut n.blocks[1] {
+            parent.av.net.controller = Ref(visibility);
+        }
+        if let Block::NodeController(c) = &mut n.blocks[2] {
+            c.next = Ref(visibility);
+        }
+        let controllers = node_controllers(&n);
+        let controlled = convert_controlled(&n, &Default::default(), &controllers);
+        assert_eq!(
+            controllers.len(),
+            3,
+            "parent visibility plus two shape channels"
+        );
+        assert_eq!(controlled.animated.len(), 2);
+        assert!(controlled.animated[0].model.meshes.is_empty());
+        let shape = &controlled.animated[1];
+        assert_eq!(shape.block, 5);
+        assert_eq!(shape.within, Some((0, Mat4::IDENTITY)));
+        assert_eq!(shape.model.meshes.len(), 1);
+        let visibility = controllers
+            .iter()
+            .find(|c| c.block == 5 && c.visible(0.0).is_some())
+            .unwrap();
+        assert_eq!(visibility.visible(0.49), Some(true));
+        assert_eq!(visibility.visible(0.5), Some(false));
+        assert_eq!(visibility.visible(1.0), Some(true));
+    }
+
+    #[test]
+    fn geometry_targets_use_block_identity_and_respect_shape_filter() {
+        let mut n = geometry_fixture(0);
+        let mut sibling = n.blocks[5].clone();
+        if let Block::TriShape(shape) = &mut sibling {
+            shape.av.net.controller = Ref(-1);
+        }
+        let sibling_index = n.blocks.len() as i32;
+        n.blocks.push(sibling);
+        if let Block::Node(parent) = &mut n.blocks[1] {
+            parent.children.push(Ref(sibling_index));
+        }
+        let controllers = node_controllers(&n);
+        let controlled = convert_controlled(&n, &Default::default(), &controllers);
+        assert_eq!(controlled.animated.len(), 1);
+        assert_eq!(
+            controlled.meshes.len(),
+            1,
+            "same-named sibling stays static"
+        );
+        let filtered = convert_inner(
+            &n,
+            &|name| name != "SameName",
+            &Default::default(),
+            &controllers.iter().map(|c| c.block).collect(),
+            Mat4::IDENTITY,
+        );
+        assert!(filtered.meshes.is_empty());
+        assert!(filtered.animated.is_empty());
+    }
+
+    #[test]
+    fn skinned_shapes_are_excluded_from_standalone_geometry_splitting() {
+        for kind in 0..3 {
+            let mut n = geometry_fixture(kind);
+            match &mut n.blocks[5] {
+                Block::TriShape(shape) => shape.skin = Ref(100),
+                Block::NiTriShape(shape) | Block::NiTriStrips(shape) => shape.skin = Ref(100),
+                _ => unreachable!(),
+            }
+            assert!(node_controllers(&n).is_empty());
         }
     }
 }
