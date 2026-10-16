@@ -75,6 +75,14 @@ pub struct MaterialDesc {
 #[derive(Debug, Clone)]
 pub struct MaterialAnim {
     pub channels: Vec<MaterialChannel>,
+    /// Interpolators bound by named sequences, separate from standalone clocks.
+    pub sequences: Vec<MaterialSequence>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MaterialSequence {
+    pub name: String,
+    pub channels: Vec<MaterialChannel>,
 }
 
 #[derive(Debug, Clone)]
@@ -104,13 +112,17 @@ impl MaterialAnim {
 /// ones and those started with their model (effects').
 fn material_anim(nif: &Nif, mut controller: Ref) -> Option<std::sync::Arc<MaterialAnim>> {
     let mut channels = Vec::new();
-    let mut seen = 0;
+    let mut sequences = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     while let Some(Block::ShaderController(c)) = nif.get(controller) {
-        seen += 1;
-        if seen > 64 {
+        if !seen.insert(controller.0) {
             break;
         }
+        sequence_material_channels(nif, controller, &mut sequences);
         controller = c.next;
+        if c.timing.flags & 0x20 != 0 {
+            continue;
+        }
         if !c.timing.active() && !c.timing.app_init() {
             continue;
         }
@@ -133,7 +145,72 @@ fn material_anim(nif: &Nif, mut controller: Ref) -> Option<std::sync::Arc<Materi
             started: c.timing.active(),
         });
     }
-    (!channels.is_empty()).then(|| std::sync::Arc::new(MaterialAnim { channels }))
+    (!channels.is_empty() || !sequences.is_empty()).then(|| {
+        std::sync::Arc::new(MaterialAnim {
+            channels,
+            sequences,
+        })
+    })
+}
+
+/// A sequence supplies the interpolator; the property's controller identifies
+/// its variable. Never substitute the controller's blend interpolator or bind
+/// by a possibly duplicated node name.
+fn sequence_material_channels(nif: &Nif, controller: Ref, out: &mut Vec<MaterialSequence>) {
+    let (timing, variable, color, lighting, alpha_test) = match nif.get(controller) {
+        Some(Block::ShaderController(c)) => (c.timing, c.variable, c.color, c.lighting, false),
+        Some(Block::AlphaTestController(c)) => (c.timing, 0, false, false, true),
+        _ => return,
+    };
+    for block in &nif.blocks {
+        let Block::ControllerSequence(seq) = block else {
+            continue;
+        };
+        for cb in seq.blocks.iter().filter(|cb| cb.controller == controller) {
+            let Some(keys) = material_value_keys(nif, cb.interpolator, color) else {
+                continue;
+            };
+            let index = out
+                .iter()
+                .position(|s| s.name == seq.name)
+                .unwrap_or_else(|| {
+                    out.push(MaterialSequence {
+                        name: seq.name.clone(),
+                        channels: Vec::new(),
+                    });
+                    out.len() - 1
+                });
+            out[index].channels.push(MaterialChannel {
+                timing,
+                keys,
+                variable,
+                color,
+                lighting,
+                alpha_test,
+                started: false,
+            });
+        }
+    }
+}
+
+fn material_value_keys(nif: &Nif, interpolator: Ref, color: bool) -> Option<nif::anim::ValueKeys> {
+    let Some(Block::ValueInterpolator(i)) = nif.get(interpolator) else {
+        return None;
+    };
+    match nif.get(i.data) {
+        Some(Block::ValueKeys(k)) if !k.keys.is_empty() => Some(k.clone()),
+        _ if (if color {
+            i.value.is_finite() && i.value.min_element() > -1.0e30
+        } else {
+            i.value.x.is_finite() && i.value.x > -1.0e30
+        }) =>
+        {
+            Some(nif::anim::ValueKeys {
+                keys: vec![(0.0, i.value)],
+            })
+        }
+        _ => None,
+    }
 }
 
 /// Merge the alpha property's own chain without replacing shader animation.
@@ -146,6 +223,24 @@ fn alpha_test_anim(
     while let Some(Block::AlphaTestController(c)) = nif.get(controller) {
         if !seen.insert(controller.0) {
             break;
+        }
+        let mut sequences = Vec::new();
+        sequence_material_channels(nif, controller, &mut sequences);
+        if !sequences.is_empty() {
+            let a = anim.get_or_insert_with(|| {
+                std::sync::Arc::new(MaterialAnim {
+                    channels: Vec::new(),
+                    sequences: Vec::new(),
+                })
+            });
+            let a = std::sync::Arc::make_mut(a);
+            for sequence in sequences {
+                if let Some(existing) = a.sequences.iter_mut().find(|s| s.name == sequence.name) {
+                    existing.channels.extend(sequence.channels);
+                } else {
+                    a.sequences.push(sequence);
+                }
+            }
         }
         controller = c.next;
         // Sequence-owned values require the manager's interpolator binding.
@@ -170,6 +265,7 @@ fn alpha_test_anim(
         let a = anim.get_or_insert_with(|| {
             std::sync::Arc::new(MaterialAnim {
                 channels: Vec::new(),
+                sequences: Vec::new(),
             })
         });
         std::sync::Arc::make_mut(a).channels.push(MaterialChannel {
@@ -351,6 +447,185 @@ mod alpha_test_tests {
         assert_eq!(anim.channels[0].variable, 6);
         assert!(anim.channels[1].alpha_test);
     }
+
+    fn sequence_fixture() -> Nif {
+        let mut n = fixture(8 | 4 | 0x20, 42.0);
+        n.blocks.extend([
+            Block::ControllerSequence(Box::new(nif::anim::ControllerSequence {
+                name: "Fade".into(),
+                blocks: vec![nif::anim::ControlledBlock {
+                    interpolator: Ref(4),
+                    controller: Ref(1),
+                    node: "SameName".into(),
+                    controller_type: "BSNiAlphaPropertyTestRefController".into(),
+                }],
+                cycle: 2,
+                frequency: 2.0,
+                start: 0.0,
+                stop: 2.0,
+                text_keys: Ref(-1),
+            })),
+            Block::ValueInterpolator(nif::anim::ValueInterpolator {
+                value: Vec3::splat(-f32::MAX),
+                data: Ref(5),
+            }),
+            Block::ValueKeys(nif::anim::ValueKeys {
+                keys: vec![(0.0, Vec3::ZERO), (2.0, Vec3::X * 255.0)],
+            }),
+        ]);
+        n
+    }
+
+    #[test]
+    fn sequences_bind_property_controller_identity_and_sequence_interpolator() {
+        let mut n = sequence_fixture();
+        let a = material(&n, Ref(-1), Ref(0)).anim.unwrap();
+        assert!(a.channels.is_empty());
+        assert!(!a.started());
+        assert_eq!(a.sequences.len(), 1);
+        assert_eq!(
+            a.sequences[0].channels[0].keys.sample(1.0).unwrap().x,
+            127.5
+        );
+        let Block::ControllerSequence(seq) = &mut n.blocks[3] else {
+            unreachable!()
+        };
+        seq.blocks[0].controller = Ref(-1);
+        assert!(material(&n, Ref(-1), Ref(0)).anim.is_none());
+        // An identical target name cannot replace a missing controller link.
+    }
+
+    #[test]
+    fn sequence_shader_float_and_color_use_bound_interpolators() {
+        for color in [false, true] {
+            let mut n = sequence_fixture();
+            let Block::AlphaTestController(alpha) = &n.blocks[1] else {
+                unreachable!()
+            };
+            n.blocks[1] = Block::ShaderController(nif::anim::ShaderController {
+                next: Ref(-1),
+                timing: alpha.timing,
+                interpolator: Ref(2),
+                variable: if color { 0 } else { 6 },
+                color,
+                lighting: false,
+            });
+            let a = material_anim(&n, Ref(1)).unwrap();
+            assert!(a.channels.is_empty());
+            let c = &a.sequences[0].channels[0];
+            assert_eq!(c.color, color);
+            assert!(!c.alpha_test);
+            assert_eq!(c.keys.sample(1.0).unwrap().x, 127.5);
+        }
+    }
+
+    #[test]
+    fn material_only_sequence_splits_rigid_shapes_by_identity() {
+        for kind in 0..3 {
+            let mut n = sequence_fixture();
+            n.roots = vec![6];
+            n.blocks.push(Block::Node(nif::Node {
+                av: nif::AvObject::default(),
+                kind: NodeKind::Plain,
+                children: vec![Ref(7), Ref(8)],
+                effects: Vec::new(),
+            }));
+            for alpha in [Ref(0), Ref(-1)] {
+                n.blocks.push(Block::TriShape(nif::TriShape {
+                    av: nif::AvObject {
+                        net: nif::ObjectNet {
+                            name: "SameName".into(),
+                            controller: Ref(-1),
+                            extra_data: Vec::new(),
+                        },
+                        transform: nif::Transform {
+                            translation: Vec3::Y * 3.0,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    bound_center: Vec3::ZERO,
+                    bound_radius: 1.0,
+                    skin: Ref(-1),
+                    shader: Ref(-1),
+                    alpha,
+                    vertex_desc: 0,
+                    dynamic: false,
+                    geometry: Geometry {
+                        positions: vec![Vec3::ZERO, Vec3::X, Vec3::Y],
+                        triangles: vec![[0, 1, 2]],
+                        ..Default::default()
+                    },
+                }));
+            }
+            if kind > 0 {
+                let Block::TriShape(shape) = n.blocks[7].clone() else {
+                    unreachable!()
+                };
+                n.blocks.push(Block::TriShapeData(nif::TriShapeData {
+                    geometry: shape.geometry,
+                    center: Vec3::ZERO,
+                    radius: 1.0,
+                }));
+                let shape = nif::NiGeometry {
+                    av: shape.av,
+                    data: Ref(9),
+                    skin: Ref(-1),
+                    shader: Ref(-1),
+                    alpha: Ref(0),
+                };
+                n.blocks[7] = if kind == 1 {
+                    Block::NiTriShape(shape)
+                } else {
+                    Block::NiTriStrips(shape)
+                };
+            }
+            let default = convert(&n);
+            assert_eq!(default.meshes.len(), 2);
+            assert!(default.animated.is_empty());
+            let m = convert_controlled(&n, &Default::default(), &[]);
+            assert_eq!(m.meshes.len(), 1);
+            assert_eq!(m.animated.len(), 1);
+            assert_eq!(m.animated[0].block, 7);
+            assert_eq!(m.animated[0].model.meshes[0].vertices[0].position, [0.0; 3]);
+            assert_eq!(m.animated[0].rest.w_axis.truncate(), Vec3::Y * 3.0);
+            assert_eq!(m.sequences.len(), 1);
+            assert!(m.sequences[0].channels.is_empty());
+            assert_eq!(m.sequences[0].frequency, 2.0);
+
+            // A sequence-driven parent may become empty after its material
+            // child is split. Keep its flattened identity and child's link.
+            let parent = Ref(n.blocks.len() as i32);
+            n.blocks.push(Block::Node(nif::Node {
+                av: nif::AvObject {
+                    net: nif::ObjectNet {
+                        name: "Parent".into(),
+                        controller: Ref(-1),
+                        extra_data: Vec::new(),
+                    },
+                    transform: nif::Transform {
+                        translation: Vec3::X * 4.0,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                kind: NodeKind::Plain,
+                children: vec![Ref(7)],
+                effects: Vec::new(),
+            }));
+            let Block::Node(root) = &mut n.blocks[6] else {
+                unreachable!()
+            };
+            root.children[0] = parent;
+            let m = convert_controlled(&n, &["Parent".to_owned()].into(), &[]);
+            assert_eq!(m.animated.len(), 2);
+            assert_eq!(m.animated[0].block, parent.0);
+            assert!(m.animated[0].model.meshes.is_empty());
+            assert_eq!(m.animated[1].block, 7);
+            assert_eq!(m.animated[1].within, Some((0, Mat4::IDENTITY)));
+            assert_eq!(m.animated[1].parent.w_axis.truncate(), Vec3::X * 4.0);
+        }
+    }
 }
 
 impl Default for MaterialDesc {
@@ -488,6 +763,7 @@ pub struct Sequence {
     pub cycle: u32,
     pub start: f32,
     pub stop: f32,
+    pub frequency: f32,
     pub channels: Vec<Channel>,
 }
 
@@ -517,12 +793,24 @@ fn sequences(nif: &Nif) -> Vec<Sequence> {
                 })
             })
             .collect();
-        if !channels.is_empty() {
+        let has_material = seq.blocks.iter().any(|cb| {
+            matches!(
+                nif.get(cb.controller),
+                Some(Block::ShaderController(_) | Block::AlphaTestController(_))
+            ) && material_value_keys(
+                nif,
+                cb.interpolator,
+                matches!(nif.get(cb.controller), Some(Block::ShaderController(c)) if c.color),
+            )
+            .is_some()
+        });
+        if !channels.is_empty() || has_material {
             out.push(Sequence {
                 name: seq.name.clone(),
                 cycle: seq.cycle,
                 start: seq.start,
                 stop: seq.stop,
+                frequency: seq.frequency,
                 channels,
             });
         }
@@ -671,7 +959,25 @@ pub fn convert_controlled(
     split: &std::collections::HashSet<String>,
     controllers: &[NodeChannel],
 ) -> CpuModel {
-    let blocks = controllers.iter().map(|c| c.block).collect();
+    let mut blocks: std::collections::HashSet<_> = controllers.iter().map(|c| c.block).collect();
+    // Sequence-only material animation must still create a placed-object part
+    // and keep the sequence. Default/actor conversions retain static geometry.
+    for (index, block) in nif.blocks.iter().enumerate() {
+        if standalone_av(block).is_none() {
+            continue;
+        }
+        let (shader, alpha) = match block {
+            Block::TriShape(s) => (s.shader, s.alpha),
+            Block::NiTriShape(s) | Block::NiTriStrips(s) => (s.shader, s.alpha),
+            _ => continue,
+        };
+        if material(nif, shader, alpha)
+            .anim
+            .is_some_and(|a| !a.sequences.is_empty())
+        {
+            blocks.insert(index as i32);
+        }
+    }
     convert_inner(nif, &|_| true, split, &blocks, Mat4::IDENTITY)
 }
 
