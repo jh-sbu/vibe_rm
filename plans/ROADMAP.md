@@ -483,7 +483,8 @@ game each piece unlocks.
   graph from the player's movement (walking, running, sneaking, turning,
   strafing and walking backwards by `Direction`, sprinting, jumping, falling
   and landing), drawing and sheathing (R), swings and power attacks by
-  movement landing at the graph's `HitFrame`, bow draws, blocking and bashes. A
+  movement landing at the graph's `HitFrame`, bow draws with arrows loosed at
+  the graph's `arrowRelease`, blocking and bashes. A
   third-person camera (F; the wheel zooms 155 to 600 units) over the right
   shoulder, centred and farther back with the weapon drawn (the `[Camera]`
   defaults), stopping short of walls; aim rays from the eye through the
@@ -1105,9 +1106,8 @@ game each piece unlocks.
      `_1stperson` skeleton, `1stperson*` models, its own graph); casting,
      Critical Charge, basic attacks by direction and sprinting
      (`attackStartSprint`, the left hand's `...SprintLeftHand`: left out of
-     the attack data with the mounted ones), `attackStop`; arrows
-     loosed at the graph's `arrowRelease` and bashes landing at its
-     `HitFrame` (both land at once now); re-equipping keeping the weapon
+     the attack data with the mounted ones), `attackStop`; bashes landing at
+     the graph's `HitFrame` (bashes land at once now); re-equipping keeping the weapon
      drawn (it rebuilds the body); footsteps from the graph's events (now the
      first-person stride), foot IK and head tracking; a ragdoll when they die;
      the camera stopping short of actors, a vanity camera; the head's morphs

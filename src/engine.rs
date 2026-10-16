@@ -2443,8 +2443,8 @@ impl Engine {
         self.player.running = self.player.moving && (run || sprint);
         self.player.sprinting = self.player.moving && sprint;
         self.update_player_footsteps(dt, stride, run, sprint);
-        self.update_player_body(self.player.position - before, dt);
         self.camera.position = self.player.eye();
+        self.update_player_body(self.player.position - before, dt);
         self.update_third_person_camera(dt);
         self.update_streaming();
         self.update_lod();
