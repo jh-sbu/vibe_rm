@@ -45,9 +45,11 @@ isn't public; the choices below are what the movies' code allows.
   crosshair is on is hurt and alive, hidden (0) otherwise; a new target's
   percent goes to `EnemyHealthMeter.SetPercent`, a change to
   `SetTargetPercent`, the name to `BracketsInstance.RolloverNameInstance`.
-- **Modes.** `ShowElements("All", true)` at start, `"DialogueMode"` on and off
-  with conversations; the HUD isn't drawn while the inventory, journal or
-  skills menu is up. `SetPlatform(0, false)` (PC).
+- **Modes.** `ShowElements("All", true)` at start; subsequent groups are
+  `"MovementDisabled"`, `"CartMode"`, `"DialogueMode"` or `"All"`, replacing
+  the previous group. Precedence and cart mode's movement interaction are
+  recorded in `player-controls.md`. The HUD isn't drawn while the inventory,
+  journal or skills menu is up. `SetPlatform(0, false)` (PC).
 - **Key art.** `RefreshActivateButtonArt` gets the Activate event's key and
   `GetButtonFromUserEvent` (a help message's `[Event]`) is answered with the
   event's key, both as the art the menus export (`E`, `L-Shift`), from

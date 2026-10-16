@@ -435,7 +435,9 @@ game each piece unlocks.
   (attacks, bashes, blocking, shooting), looking, sneaking, opening the inventory
   and activating; disabling fighting sheathes a drawn weapon. The POV type
   argument keeps Script and Werewolf camera locks separately; the
-  `Is...ControlsEnabled` queries. Console `epc`. Open
+  `Is...ControlsEnabled` queries. `SetHudCartMode` selects the cart HUD's
+  visibility group in both SWF and fallback HUDs; disabling movement temporarily
+  overrides it, restoring cart mode when movement is enabled. Console `epc`. Open
   questions: `known_ambiguities/player-controls.md`
 - The player's body: their NPC record's race, sex and skin, what they have
   equipped (rebuilt when it changes) and a head of the race's default head parts
@@ -1041,7 +1043,8 @@ game each piece unlocks.
      the camera stopping short of actors, a vanity camera; the head's morphs
      (`.tri`), tint layers (`TINI` / `TINC`), hair colour (`HCLF`) and
      texture sets (`HDPT` `TNAM`), with character creation
-   - Player control from scripts: `SetPlayerAIDriven`, `SetHudCartMode`
+   - Player control from scripts: `SetPlayerAIDriven` (player package execution,
+     including scene and quest-alias packages)
    - Sneak attacks (see Done): NPCs sneaking up on the player
    - Skills (see Done): the other skills' uses as their systems come (magic,
      crafting, speech), rested bonuses

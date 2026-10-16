@@ -5,6 +5,41 @@ use glam::Vec3;
 use crate::physics::{GRAVITY, Physics};
 use crate::render::Camera;
 
+/// HUD visibility groups supported by the game's HUD movie.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum HudMode {
+    #[default]
+    All,
+    Cart,
+    MovementDisabled,
+    Dialogue,
+}
+
+impl HudMode {
+    /// Movement disabling temporarily overrides cart mode without clearing it.
+    /// Cart mode takes precedence over dialogue here; see player-controls.md.
+    pub fn select(cart: bool, movement_disabled: bool, dialogue: bool) -> Self {
+        if movement_disabled {
+            Self::MovementDisabled
+        } else if cart {
+            Self::Cart
+        } else if dialogue {
+            Self::Dialogue
+        } else {
+            Self::All
+        }
+    }
+
+    pub fn movie_name(self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Cart => "CartMode",
+            Self::MovementDisabled => "MovementDisabled",
+            Self::Dialogue => "DialogueMode",
+        }
+    }
+}
+
 /// Which of the player's controls scripts have disabled
 /// (`Game.DisablePlayerControls` / `EnablePlayerControls`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -91,7 +126,42 @@ impl DisabledControls {
 
 #[cfg(test)]
 mod control_tests {
-    use super::DisabledControls;
+    use super::{DisabledControls, HudMode};
+
+    #[test]
+    fn cart_mode_returns_after_movement_is_enabled() {
+        let mut controls = DisabledControls::default();
+        let movement = [true, false, false, false, false, false, false, false];
+        assert_eq!(
+            HudMode::select(true, controls.movement, false),
+            HudMode::Cart
+        );
+        controls.apply(true, movement, 0);
+        assert_eq!(
+            HudMode::select(true, controls.movement, false),
+            HudMode::MovementDisabled
+        );
+        controls.apply(false, movement, 0);
+        assert_eq!(
+            HudMode::select(true, controls.movement, false),
+            HudMode::Cart
+        );
+        assert_eq!(
+            HudMode::select(false, controls.movement, false),
+            HudMode::All
+        );
+    }
+
+    #[test]
+    fn clearing_cart_mode_restores_the_other_active_mode() {
+        assert_eq!(
+            HudMode::select(false, true, false),
+            HudMode::MovementDisabled
+        );
+        assert_eq!(HudMode::select(false, false, true), HudMode::Dialogue);
+        assert_eq!(HudMode::select(true, false, true), HudMode::Cart);
+        assert_eq!(HudMode::select(true, true, true), HudMode::MovementDisabled);
+    }
 
     const CAMERA: [bool; 8] = [false, false, true, false, false, false, false, false];
 

@@ -120,8 +120,10 @@ impl Ui {
         ));
         let rect = ctx.content_rect();
         let c = rect.center();
+        let mode = engine.hud_mode();
+        let full_hud = mode == crate::player::HudMode::All;
         // Crosshair
-        if !self.console.open {
+        if full_hud && !self.console.open {
             let s = Stroke::new(1.5, Color32::from_rgba_unmultiplied(235, 235, 235, 200));
             painter.line_segment([Pos2::new(c.x - 6.0, c.y), Pos2::new(c.x - 2.0, c.y)], s);
             painter.line_segment([Pos2::new(c.x + 2.0, c.y), Pos2::new(c.x + 6.0, c.y)], s);
@@ -148,7 +150,7 @@ impl Ui {
             }
         }
         // Activation prompt
-        if let Some((_, name)) = &engine.look_target {
+        if full_hud && let Some((_, name)) = &engine.look_target {
             let verb = engine.look_verb();
             let pos = Pos2::new(c.x, c.y + rect.height() * 0.14);
             painter.text(
@@ -216,7 +218,7 @@ impl Ui {
             let fill = egui::Rect::from_min_size(r.min, egui::vec2(w * frac.clamp(0.0, 1.0), 10.0));
             painter.rect_filled(fill, 3.0, colour);
         };
-        if engine.player_health < engine.player_max_health() {
+        if full_hud && engine.player_health < engine.player_max_health() {
             bar(
                 &painter,
                 Pos2::new(c.x, rect.bottom() - 40.0),
@@ -225,7 +227,8 @@ impl Ui {
             );
         }
         // Stamina (bottom right) while not full.
-        if let Some((st, max)) = engine.stamina(crate::engine::PLAYER_REF)
+        if full_hud
+            && let Some((st, max)) = engine.stamina(crate::engine::PLAYER_REF)
             && st < max
         {
             bar(
@@ -235,7 +238,8 @@ impl Ui {
                 Color32::from_rgb(40, 150, 60),
             );
         }
-        if let Some((r, _)) = &engine.look_target
+        if full_hud
+            && let Some((r, _)) = &engine.look_target
             && let Some((h, max)) = engine.actor_health(*r)
             && h < max
             && h > 0.0
@@ -288,7 +292,7 @@ impl Ui {
             .messages
             .banners
             .first()
-            .filter(|_| !engine.menu_up())
+            .filter(|_| !engine.menu_up() && mode != crate::player::HudMode::Cart)
         {
             let age = (now - b.at) as f32;
             let total = crate::messages::BANNER_SECONDS as f32;
@@ -314,6 +318,12 @@ impl Ui {
                     Color32::from_rgba_unmultiplied(shade, shade, shade, a),
                 );
             }
+        }
+        if matches!(
+            mode,
+            crate::player::HudMode::Cart | crate::player::HudMode::MovementDisabled
+        ) {
+            return;
         }
         // Compass-ish heading and location at the top.
         let heading =

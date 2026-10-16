@@ -1253,7 +1253,7 @@ struct Sent {
     eye_frame: Option<i32>,
     sneak_text: Option<String>,
     enemy: Option<(FormId, i32)>,
-    dialogue: bool,
+    mode: crate::player::HudMode,
     /// Magicka meter blinks shown.
     magicka_blinks: u32,
     shout: Option<f32>,
@@ -1319,13 +1319,17 @@ impl Hud {
         self.banners(engine);
         self.sneak(engine);
         self.enemy(engine);
-        let dialogue = engine.conversation.is_some();
-        if dialogue != self.sent.dialogue {
+        let mode = engine.hud_mode();
+        if mode != self.sent.mode {
             self.call(
                 "ShowElements",
-                &[text("DialogueMode"), Value::Bool(dialogue)],
+                &[text(self.sent.mode.movie_name()), Value::Bool(false)],
             );
-            self.sent.dialogue = dialogue;
+            self.call(
+                "ShowElements",
+                &[text(mode.movie_name()), Value::Bool(true)],
+            );
+            self.sent.mode = mode;
         }
     }
 
