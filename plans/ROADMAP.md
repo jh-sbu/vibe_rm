@@ -792,7 +792,9 @@ game each piece unlocks.
   birth rate and visibility controllers, gravity, drag, rotation, scale, simple colour,
   subtexture flipping and spawning on death, run on the CPU near the camera and drawn as
   camera-facing (or motion-aligned) quads with their effect materials: fires burn and
-  smoke. Greyscale palettes are looked up clamped. Open questions:
+  smoke. Drag respects its object's axis, position, scale, range and falloff,
+  preserving perpendicular velocity. Greyscale palettes are looked up clamped.
+  Open questions:
   `known_ambiguities/particles.md`
 - Addon nodes: a model's `BSValueNode`s take the addon node (ADDN) whose index is
   their value, its model (the `MPS` master particle systems) placed at the node and
@@ -1176,7 +1178,8 @@ game each piece unlocks.
    spaces, room bounds and portals); effect models' skinned meshes,
    `BSProceduralLightningController` and sequence-owned shader / alpha-test
    controllers; particles'
-   decay, turbulence and drag, rotation axis, speed to aspect, subtexture
+   decay, turbulence, drag's exact formula and animated objects, rotation axis,
+   speed to aspect, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather, bounties,

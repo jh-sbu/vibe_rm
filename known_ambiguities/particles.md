@@ -49,8 +49,8 @@ are used below is this engine's reading.
   motion on screen.
 - **Forces.** Planar gravity adds its strength along its object's axis (or
   the world's when world aligned) a second; spherical gravity pulls towards
-  its object. Drag takes its percentage of
-  the velocity a second.
+  its object. Drag damps the velocity component along its object's axis,
+  within its range and falloff; the formula and evidence are below.
 - **Rotation** spins quads in the screen plane at speed ± variation
   (random sign when asked) from angle ± variation.
 - **Subtextures.** Without a subtexture modifier each particle shows one
@@ -74,3 +74,51 @@ are used below is this engine's reading.
   master particle cap and flags). Here each node gets its own copy of the
   addon's systems, placed at the node's rest transform, so a chandelier's
   candles flicker independently.
+
+## Directional drag
+
+Public evidence:
+
+- The community-maintained [Niftools schema](https://github.com/niftools/nifxml/blob/develop/nif.xml)
+  defines the drag object as the position/orientation basis, the axis as a
+  local direction, range as the fully affected distance, and range falloff
+  as the distance where the effect stops. It does not define an update formula.
+- The community [GECK NiPSysDragModifier documentation](https://geckwiki.com/index.php?title=NiPSysDragModifier)
+  describes slowing along the object's local axis and interprets falloff as
+  an additional distance beyond range. This is cross-game documentation,
+  not a Skyrim SE runtime measurement. Its additive-distance interpretation
+  is more specific than, and potentially conflicts with, the schema's wording.
+- Installed Skyrim SE `Skyrim - Meshes0.bsa` and `Skyrim - Meshes1.bsa`, read
+  only through the repository's BSA/NIF asset readers, contain 2245 parsed
+  drag modifiers. None has zero range or falloff; 2233 have both at FLT_MAX.
+  The remaining 12 have range/falloff 100/1000 (11) or 300/750 (1).
+  `meshes/architecture/markarth/water/markarthwaterfallcliff04.nif` has separate
+  X/Y/Z modifiers with percentages 0.05/0.01/0.03; this supports independent
+  axis damping instead of applying all three percentages to every component.
+  The finite values occur there, in `markarthwaterfallcliff03.nif`, and in
+  `meshes/effects/fxtg09nocturnalbirds.nif`. Assets establish authored inputs,
+  not the original runtime's formula. No assets were copied into this repo.
+
+Implemented policy and unresolved behavior:
+
+- Capture the drag object's rest transform when describing the system;
+  normalize its transformed axis and scale range/falloff by its uniform
+  scale. Animated drag objects are not followed. Missing objects use the
+  existing particle-object fallback (the system transform). Exact scale and
+  missing-object behavior require observation.
+- Use radial distance from the object's centre, full strength up to range,
+  then linear decay over an **additional** falloff distance. The decay curve,
+  additive versus absolute endpoint interpretation, and possible special
+  zero-range behavior remain unresolved. Here zero range affects the centre,
+  and zero falloff cuts off immediately outside range; negative distances
+  clamp to zero. The inspected assets do not resolve those boundary cases.
+- Reduce only the parallel velocity component by
+  `clamp(percentage * influence * dt, 0, 1)`, preserving the existing
+  per-second Euler attenuation policy. The exact temporal formula is still
+  unknown. Zero axes do nothing; nonpositive/nonfinite percentages do nothing;
+  large percentages stop the parallel component without reversing it.
+  Ordering against other force modifiers retains the existing renderer policy.
+
+Synthetic tests exercise description wiring, translated/rotated/scaled drag
+objects, positive and negative velocity components, range/falloff boundaries,
+inactive modifiers, zero axes/distances and invalid/large percentages.
