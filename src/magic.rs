@@ -400,26 +400,10 @@ impl Engine {
     /// giving the spell list), its race's, its perks' abilities and those
     /// added, less those removed.
     pub fn actor_spells(&self, actor: FormId) -> Vec<FormId> {
-        let mut out: Vec<FormId> = Vec::new();
-        let splo = |rec: &esp::LoadedRecord<'_>, out: &mut Vec<FormId>| {
-            for s in rec
-                .subrecords()
-                .filter(|s| s.tag.0 == *b"SPLO" && s.data.len() >= 4)
-            {
-                out.push(rec.fid(FormId(s.u32(0))));
-            }
-        };
-        if let Some(t) = self.templates_of(actor) {
-            if let Some(rec) = t.record(&self.lo, crate::world::template::SPELLS, b"SPLO") {
-                splo(&rec, &mut out);
-            }
-            if let Some(race) = t
-                .form(&self.lo, crate::world::template::TRAITS, b"RNAM")
-                .and_then(|r| self.lo.get(r))
-            {
-                splo(&race, &mut out);
-            }
-        }
+        let mut out = self
+            .templates_of(actor)
+            .map(|t| t.spells(&self.lo))
+            .unwrap_or_default();
         for &(perk, _) in self.actor_perks(actor).iter() {
             if let Some(p) = self.perk(perk) {
                 for en in &p.entries {

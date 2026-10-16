@@ -306,17 +306,10 @@ impl Engine {
         }
         let mut v: Vec<(FormId, u8)> = Vec::new();
         let removed = self.perks.removed.get(&actor);
-        if let Some(rec) = self
-            .templates_of(actor)
-            .and_then(|t| t.record(&self.lo, crate::world::template::SPELLS, b"PRKR"))
-        {
-            for s in rec
-                .subrecords()
-                .filter(|s| s.tag.0 == *b"PRKR" && s.data.len() >= 5)
-            {
-                let id = rec.fid(FormId(s.u32(0)));
+        if let Some(t) = self.templates_of(actor) {
+            for (id, rank) in t.perks(&self.lo) {
                 if !removed.is_some_and(|r| r.contains(&id)) {
-                    v.push((id, s.data[4].max(1)));
+                    v.push((id, rank));
                 }
             }
         }

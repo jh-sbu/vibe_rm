@@ -9,7 +9,6 @@ use esp::{FormId, LoadOrder, LoadedRecord};
 pub const TRAITS: u16 = 0x1;
 pub const STATS: u16 = 0x2;
 pub const FACTIONS: u16 = 0x4;
-#[allow(dead_code)] // no magic yet
 pub const SPELLS: u16 = 0x8;
 pub const AI_DATA: u16 = 0x10;
 pub const AI_PACKAGES: u16 = 0x20;
@@ -137,6 +136,38 @@ impl Sources {
             .filter(|f| !f.is_null())
     }
 
+    /// Spells and abilities from the spell-list part, plus the traits race's.
+    /// An empty spell list stays empty: unlike scalar fields read by `record`,
+    /// it must not fall through to a later template. Perks use this same source.
+    pub fn spells(&self, lo: &LoadOrder) -> Vec<FormId> {
+        let mut out = Vec::new();
+        let npc = lo.get(self.of(SPELLS));
+        let race = self.form(lo, TRAITS, b"RNAM").and_then(|r| lo.get(r));
+        for rec in npc.into_iter().chain(race) {
+            out.extend(
+                rec.subrecords()
+                    .filter(|s| s.tag.0 == *b"SPLO" && s.data.len() >= 4)
+                    .map(|s| rec.fid(s.form_id(0)))
+                    .filter(|f| !f.is_null()),
+            );
+        }
+        out
+    }
+
+    /// Perks and ranks from the spell-list part. No `PRKR` means no record
+    /// perks, even when a later template has some. Ability perk entries are
+    /// added to the actor's known spells by the magic system.
+    pub fn perks(&self, lo: &LoadOrder) -> Vec<(FormId, u8)> {
+        let Some(rec) = lo.get(self.of(SPELLS)) else {
+            return Vec::new();
+        };
+        rec.subrecords()
+            .filter(|s| s.tag.0 == *b"PRKR" && s.data.len() >= 5)
+            .map(|s| (rec.fid(s.form_id(0)), s.data[4].max(1)))
+            .filter(|(f, _)| !f.is_null())
+            .collect()
+    }
+
     /// Factions and ranks: the factions part's own, none when it lists none
     /// (the game doesn't take them from the template then: `test-mod
     /// autotest2`). A negative rank isn't membership (potential followers'
@@ -179,3 +210,7 @@ pub fn template_flags(rec: &LoadedRecord<'_>) -> u16 {
         .filter(|d| d.len() >= 20)
         .map_or(0, |d| u16::from_le_bytes([d[18], d[19]]))
 }
+
+#[cfg(test)]
+#[path = "template_tests.rs"]
+mod tests;
