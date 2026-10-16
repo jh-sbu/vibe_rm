@@ -12,6 +12,7 @@ use super::animation::{AnimationLibrary, BoundClip, Motion, project_clip_paths};
 use super::footik::{self, FootIkState};
 use super::lookat::{self, LookAtState};
 use super::skeleton::Skeleton;
+use super::twist;
 
 /// Behaviour projects' shared runtime tables, by project file.
 #[derive(Default)]
@@ -577,6 +578,15 @@ impl GraphAnim {
                 scale: s,
             })
             .collect();
+        let twists = self.inst.twists();
+        if !twists.is_empty() {
+            let map = self
+                .hk_bones
+                .get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
+            for t in &twists {
+                twist::apply(t, map, skeleton, &mut locals);
+            }
+        }
         // Feet on the ground (while the graph runs its foot IK controls), then head
         // tracking on top (the first look-at modifier running).
         if let Some(ik) = self

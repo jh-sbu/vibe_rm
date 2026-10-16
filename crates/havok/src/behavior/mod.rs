@@ -272,7 +272,7 @@ impl Generator {
     }
 }
 
-/// Modifiers that steer the graph (others are kept by class name and ignored).
+/// Graph control and pose modifiers (others are kept by class name and ignored).
 #[derive(Debug, Clone)]
 pub enum Modifier {
     List(Vec<ModId>),
@@ -334,7 +334,85 @@ pub enum Modifier {
     /// `hkbFootIkControlsModifier`: foot placement runs while it does, with its gains.
     /// The engine applies it to the pose.
     FootIkControls(FootIkGains),
+    /// `hkbTwistModifier`: authored axis, angle and bone endpoints.
+    Twist(Twist),
     Other(String),
+}
+
+/// `hkbTwistModifier` settings. Only single-bone, additive, LINEAR twists are
+/// currently applied to poses; see `known_ambiguities/twist-modifier.md`.
+#[derive(Debug, Clone)]
+pub struct Twist {
+    pub enabled: bool,
+    pub axis: glam::Vec3,
+    pub angle_degrees: f32,
+    pub start_bone: i16,
+    pub end_bone: i16,
+    /// Serialized enum: 0 is LINEAR. Other values are retained, not applied.
+    pub set_angle_method: u8,
+    /// Serialized enum: 0 model coordinates, 1 local coordinates.
+    pub axis_coordinates: u8,
+    pub additive: bool,
+}
+
+impl Twist {
+    fn read(p: &Packfile, o: u32) -> Self {
+        Self {
+            enabled: p.u8(o + 0x48) != 0,
+            axis: glam::Vec3::new(p.f32(o + 0x50), p.f32(o + 0x54), p.f32(o + 0x58)),
+            angle_degrees: p.f32(o + 0x60),
+            start_bone: p.i16(o + 0x64),
+            end_bone: p.i16(o + 0x66),
+            set_angle_method: p.u8(o + 0x68),
+            axis_coordinates: p.u8(o + 0x69),
+            additive: p.u8(o + 0x6A) != 0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod twist_tests {
+    use super::*;
+
+    #[test]
+    fn twist_reader_reads_distinct_authored_fields_and_signed_indices() {
+        // Entirely synthetic packfile: empty class section and one data block.
+        let data_start = 0xB0;
+        let mut bytes = vec![0u8; data_start + 0x70];
+        let word = |bytes: &mut [u8], at: usize, value: u32| {
+            bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        };
+        word(&mut bytes, 0, 0x57E0_E057);
+        word(&mut bytes, 4, 0x10C0_C010);
+        word(&mut bytes, 12, 8);
+        bytes[16] = 8;
+        bytes[17] = 1;
+        word(&mut bytes, 20, 2);
+        bytes[0x40..0x4E].copy_from_slice(b"__classnames__");
+        word(&mut bytes, 0x54, data_start as u32);
+        bytes[0x70..0x78].copy_from_slice(b"__data__");
+        word(&mut bytes, 0x84, data_start as u32);
+        for at in [0x88, 0x8C, 0x90, 0x94, 0xA0] {
+            word(&mut bytes, at, 0x70);
+        }
+        let d = &mut bytes[data_start..];
+        d[0x48] = 1;
+        for (at, value) in [(0x50, 2.0f32), (0x54, 3.0), (0x58, 4.0), (0x60, -35.0)] {
+            word(d, at, value.to_bits());
+        }
+        d[0x64..0x66].copy_from_slice(&(-1i16).to_le_bytes());
+        d[0x66..0x68].copy_from_slice(&(7i16).to_le_bytes());
+        d[0x68] = 2;
+        d[0x69] = 1;
+        d[0x6A] = 1;
+        let p = Packfile::parse(&bytes).unwrap();
+        let t = Twist::read(&p, 0);
+        assert!(t.enabled && t.additive);
+        assert_eq!(t.axis, glam::Vec3::new(2.0, 3.0, 4.0));
+        assert_eq!(t.angle_degrees, -35.0);
+        assert_eq!((t.start_bone, t.end_bone), (-1, 7));
+        assert_eq!((t.set_angle_method, t.axis_coordinates), (2, 1));
+    }
 }
 
 /// `hkbFootIkGains` (bound members, such as
@@ -726,6 +804,7 @@ impl<'a> Reader<'a> {
                 result: p.f32(o + 0x58),
                 duration: p.f32(o + 0x5C),
             },
+            "hkbTwistModifier" => Modifier::Twist(Twist::read(p, o)),
             "BSLookAtModifier" => {
                 let bones = |at: u32| {
                     let (data, n) = p.array(o + at);
