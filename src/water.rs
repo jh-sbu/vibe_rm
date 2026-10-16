@@ -119,18 +119,48 @@ mod tests {
     }
 
     #[test]
-    fn installed_water_flags_distinguish_apocrypha_from_default_water() {
-        // Optional local asset check; no game data is copied into the repo.
-        let Some(data) = vfs::locate_data_dir() else {
-            return;
-        };
-        let names = esp::LoadOrder::default_plugin_list(&data, None);
-        let lo = esp::LoadOrder::load(&data, &names).unwrap();
-        let Some(apocrypha) = lo.find_editor_id("DLC2ApocryphaWater") else {
-            return;
-        };
-        let ordinary = lo.find_editor_id("DefaultWater").unwrap();
-        let mut surfaces = [surface(0.0, 100.0, apocrypha.0)];
+    fn synthetic_water_flags_distinguish_dangerous_from_ordinary_water() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = Fixture(
+            std::env::temp_dir().join(format!("vrm-water-flags-{}-{stamp}", std::process::id())),
+        );
+        std::fs::create_dir(&dir.0).unwrap();
+        let water = |id| RecordBuilder::new(b"WATR", FormId(id));
+        let groups = [
+            Node::top(
+                b"WATR",
+                vec![
+                    water(0x800).field(b"FNAM", &[1]),
+                    water(0x801).field(b"FNAM", &[0]),
+                    water(0x802).field(b"FNAM", &[2]),
+                    water(0x803),
+                    water(0x804).field(b"FNAM", &[]),
+                    water(0x806).field(b"FNAM", &[3]),
+                ],
+            ),
+            Node::top(
+                b"STAT",
+                vec![RecordBuilder::new(b"STAT", FormId(0x805)).field(b"FNAM", &[1])],
+            ),
+        ];
+        std::fs::write(
+            dir.0.join("Water.esp"),
+            write_plugin(0, &[], "test", "synthetic water flags", 0x808, &groups),
+        )
+        .unwrap();
+        let lo = esp::LoadOrder::load(&dir.0, &["Water.esp".into()]).unwrap();
+        let mut surfaces = [surface(0.0, 100.0, 0x800)];
         assert!(dangerous_water_at(
             &lo,
             &surfaces,
@@ -141,17 +171,20 @@ mod tests {
             &surfaces,
             Vec3::new(10.0, 10.0, 101.0)
         ));
-        surfaces[0].water_type = ordinary;
-        assert!(!dangerous_water_at(
+        surfaces[0].water_type = FormId(0x806);
+        assert!(dangerous_water_at(
             &lo,
             &surfaces,
             Vec3::new(10.0, 10.0, 99.0)
         ));
-        surfaces[0].water_type = FormId::NULL;
-        assert!(!dangerous_water_at(
-            &lo,
-            &surfaces,
-            Vec3::new(10.0, 10.0, 99.0)
-        ));
+        // Ordinary/other flags, absent/empty fields, a non-water record,
+        // a missing record and a null reference must all be safe.
+        for id in [0x801, 0x802, 0x803, 0x804, 0x805, 0x807, 0] {
+            surfaces[0].water_type = FormId(id);
+            assert!(
+                !dangerous_water_at(&lo, &surfaces, Vec3::new(10.0, 10.0, 99.0)),
+                "water type {id:08X}"
+            );
+        }
     }
 }

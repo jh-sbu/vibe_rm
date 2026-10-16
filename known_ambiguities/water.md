@@ -53,9 +53,10 @@ contact with a surface whose WATR FNAM has bit 0 set. The console's
 Synthetic tests cover adjacent cells with different types/heights (including
 negative coordinates), overlap selection, and shallow/deep/dry feet. They
 validate the chosen geometric rules, not the original engine's threshold.
-An optional installed-asset test also checks the actual Apocrypha and
-DefaultWater flags, wet/dry positions and a missing water form; it passed
-locally with Dragonborn loaded. All 55 engine unit tests passed.
+A synthetic plugin tests dangerous and ordinary flags, unrelated flag bits,
+wet/dry positions, absent/empty flag fields, and invalid water forms without
+an installed game. Earlier installed-asset checks passed with Dragonborn
+loaded; the automated test now checks the query independently of those assets.
 
 Hardware-rendered checks (2026-10-15) passed outside the sandbox using
 Vulkan on AMD Radeon Graphics (RADV RENOIR), Mesa 26.2.3:
