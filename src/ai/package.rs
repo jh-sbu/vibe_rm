@@ -49,10 +49,20 @@ pub struct UseWeapon {
     pub weapon: WeaponKind,
     /// "Target to Attack" / "Target 01".."03" (one picked per barrage).
     pub targets: [Option<Target>; 3],
+    /// The matching target must be within this radius of its trigger reference.
+    pub triggers: [Option<WeaponTrigger>; 3],
+    /// Keep a bow drawn without releasing, or face the target without swinging.
+    pub aim_only: bool,
     /// Seconds between barrages.
     pub pause: (f32, f32),
     /// Attacks per barrage.
     pub attacks: (u32, u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WeaponTrigger {
+    pub reference: Target,
+    pub radius: f32,
 }
 
 /// What a sandboxing actor may do besides wander (the template's "Allow ..." inputs).
@@ -546,6 +556,13 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
             int("minattacksperbarrage").unwrap_or(1).max(1),
             int("maxattacksperbarrage").unwrap_or(3).max(1),
         );
+        let trigger = |reference: &str, radius: &str| {
+            target(reference).map(|reference| WeaponTrigger {
+                reference,
+                // The vanilla templates use Int inputs for trigger distances.
+                radius: int(radius).unwrap_or(0) as f32,
+            })
+        };
         UseWeapon {
             weapon: match target("weapontype") {
                 Some(Target::ObjectType(19)) => WeaponKind::Melee,
@@ -558,7 +575,18 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
                 target("target02"),
                 target("target03"),
             ],
-            pause: (pause.0.min(pause.1), pause.0.max(pause.1)),
+            triggers: [
+                trigger("triggerref", "triggerradius")
+                    .or_else(|| trigger("triggerref01", "triggerradius01")),
+                trigger("triggerref02", "triggerradius02"),
+                trigger("triggerref03", "triggerradius03"),
+            ],
+            aim_only: flag("aimonlydontfireusuallyfalse").unwrap_or(false),
+            pause: if flag("pausebetweenbarrages").unwrap_or(true) {
+                (pause.0.min(pause.1), pause.0.max(pause.1))
+            } else {
+                (0.0, 0.0)
+            },
             attacks: (attacks.0.min(attacks.1), attacks.0.max(attacks.1)),
         }
     });
@@ -850,6 +878,118 @@ pub fn npc_packages(lo: &LoadOrder, src: &crate::world::template::Sources) -> Ve
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn use_weapon_controls_are_read_by_template_input_names() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let template_id = FormId(0x800);
+        let package_id = FormId(0x801);
+        let names = [
+            (4, "Target 01"),
+            (28, "Trigger Ref 01"),
+            (30, "Trigger Radius 01"),
+            (37, "Target 02"),
+            (39, "Trigger Ref 02"),
+            (38, "Trigger Radius 02"),
+            (40, "Target 03"),
+            (41, "Trigger Ref 03"),
+            (42, "Trigger Radius 03"),
+            (34, "Aim Only, Don't Fire? (usually false)"),
+            (10, "Pause between Barrages?"),
+            (12, "Min Pause:"),
+            (13, "Max Pause:"),
+            (14, "Min Attacks per Barrage:"),
+            (15, "Max Attacks per Barrage"),
+        ];
+        let mut template = RecordBuilder::new(b"PACK", template_id)
+            .zstring(b"EDID", "UseWeaponMultiTarget")
+            .field(b"XNAM", &[]);
+        for (index, name) in names {
+            template = template.field(b"UNAM", &[index]).zstring(b"BNAM", name);
+        }
+        let mut pkcu = 15u32.to_le_bytes().to_vec();
+        pkcu.extend_from_slice(&template_id.0.to_le_bytes());
+        let mut package = RecordBuilder::new(b"PACK", package_id).field(b"PKCU", &pkcu);
+        for (index, reference) in [
+            (4, 0x900u32),
+            (28, 0x901),
+            (37, 0x902),
+            (39, 0x903),
+            (40, 0x904),
+            (41, 0x905),
+        ] {
+            let mut target = 0u32.to_le_bytes().to_vec();
+            target.extend_from_slice(&reference.to_le_bytes());
+            package = package
+                .zstring(b"ANAM", "SingleRef")
+                .field(b"PTDA", &target)
+                .field(b"UNAM", &[index]);
+        }
+        for (index, value) in [(30, 150i32), (38, 250), (42, 350), (14, 2), (15, 5)] {
+            package = package
+                .zstring(b"ANAM", "Int")
+                .field(b"CNAM", &value.to_le_bytes())
+                .field(b"UNAM", &[index]);
+        }
+        for (index, value) in [(34, 1), (10, 0)] {
+            package = package
+                .zstring(b"ANAM", "Bool")
+                .field(b"CNAM", &[value])
+                .field(b"UNAM", &[index]);
+        }
+        for (index, value) in [(12, 3.0f32), (13, 7.0)] {
+            package = package
+                .zstring(b"ANAM", "Float")
+                .f32(b"CNAM", value)
+                .field(b"UNAM", &[index]);
+        }
+        let bytes = write_plugin(
+            0,
+            &[],
+            "test",
+            "synthetic weapon controls",
+            0x906,
+            &[Node::top(b"PACK", vec![template, package])],
+        );
+        let directory =
+            std::env::temp_dir().join(format!("vrm-weapon-inputs-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("Controls.esp");
+        std::fs::write(&path, bytes).unwrap();
+        let lo = LoadOrder::load(&directory, &["Controls.esp".into()]).unwrap();
+        let controls = parse(&lo, package_id).unwrap().use_weapon.unwrap();
+        assert!(controls.aim_only);
+        assert_eq!(controls.pause, (0.0, 0.0));
+        assert_eq!(controls.attacks, (2, 5));
+        assert_eq!(
+            controls.targets,
+            [
+                Some(Target::Ref(FormId(0x900))),
+                Some(Target::Ref(FormId(0x902))),
+                Some(Target::Ref(FormId(0x904)))
+            ]
+        );
+        assert_eq!(
+            controls.triggers,
+            [
+                Some(WeaponTrigger {
+                    reference: Target::Ref(FormId(0x901)),
+                    radius: 150.0
+                }),
+                Some(WeaponTrigger {
+                    reference: Target::Ref(FormId(0x903)),
+                    radius: 250.0
+                }),
+                Some(WeaponTrigger {
+                    reference: Target::Ref(FormId(0x905)),
+                    radius: 350.0
+                }),
+            ]
+        );
+        drop(lo);
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
 
     #[test]
     fn schedule_wraps_midnight() {

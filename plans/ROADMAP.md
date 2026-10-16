@@ -598,7 +598,10 @@ game each piece unlocks.
   ambush ends), procedures by tree for unknown templates (HoldPosition,
   GuardPost), and UseWeapon practice: archers take a bow of the package's
   weapon type, draw and loose at the targets in barrages, melee fighters swing.
-  Open questions: `known_ambiguities/package-trees.md`
+  Each target's trigger reference / radius gates its attacks; Aim Only holds
+  a bow drawn without release, and pauses between barrages are optional.
+  Open questions: `known_ambiguities/package-trees.md`,
+  `known_ambiguities/use-weapon.md`
 - Enable state: references follow their enable parent (`XESP`, or its opposite)
   unless scripts set them; enabling or disabling a parent shows or hides its
   children (cells, sounds, furniture, actors). Actors flagged "Starts Dead" are
@@ -1009,8 +1012,8 @@ game each piece unlocks.
      activate / carry, flee, orbit packages; ambush triggers (sleepers'
      reduced detection: see Detection);
      escorts' follower min / max distances and several followers, riding,
-     the follower object list and `PreferPreferredPath?`; UseWeapon's trigger
-     refs and radii, "Aim Only", "Never End", barrages, time limits and power
+     the follower object list and `PreferPreferredPath?`; UseWeapon's
+     "Never End", finite barrage completion, time limits and power
      attacks; fleeing to doors, cover and allies (`fCombatFlee*`), threat
      avoidance outside combat (`fCombatAvoidThreatsChance`, `AVTH`); actors
      that can't reach their target backing away; force-greets' "moving into a
