@@ -57,4 +57,6 @@ which form lists NPCs name (`vrm-tool pack-lists <data>`).
   20 ranged, or a specific weapon) in hand, draw and attack one of the targets
   per barrage ("Min / Max Attacks per Barrage", "Min / Max Pause"); archers loose
   arrows at the target's bounds centre (harmless, they stick), melee swings
-  strike nothing. The old weapon comes back afterwards.
+  strike nothing. The old weapon comes back afterwards. Per-target trigger
+  distances, Aim Only and optional pauses are implemented; remaining lifecycle
+  and timing questions are in [use-weapon.md](use-weapon.md).

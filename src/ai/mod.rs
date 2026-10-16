@@ -2797,11 +2797,26 @@ impl Engine {
                         Some(g) if behaviour == Behaviour::Follow => (g.distance * 0.5, g.distance),
                         _ => p.follow_radius,
                     };
-                    let practice = p.use_weapon.map(|u| practice::PracticeGoal {
-                        weapon: u.weapon,
-                        targets: u.targets.map(|t| self.package_target_ref(a, p, t)),
-                        pause: u.pause,
-                        attacks: u.attacks,
+                    let practice = p.use_weapon.map(|u| {
+                        let targets = u.targets.map(|t| self.package_target_ref(a, p, t));
+                        practice::PracticeGoal {
+                            weapon: u.weapon,
+                            targets,
+                            aim_offsets: targets.map(|t| {
+                                t.map_or(Vec3::ZERO, |t| {
+                                    practice::aim_point(&self.lo, t, Vec3::ZERO)
+                                })
+                            }),
+                            triggers: u.triggers.map(|t| {
+                                t.map(|t| practice::PracticeTrigger {
+                                    reference: self.package_target_ref(a, p, Some(t.reference)),
+                                    radius: t.radius,
+                                })
+                            }),
+                            aim_only: u.aim_only,
+                            pause: u.pause,
+                            attacks: u.attacks,
+                        }
                     });
                     Goal {
                         practice,
@@ -2928,13 +2943,19 @@ impl Engine {
                         targets.insert(t, p);
                     }
                 }
-                // Practice targets: where to aim at them.
+                // Practice distance checks use reference origins; aim offsets
+                // are separate so another actor's follow target stays an origin.
                 Some(Goal {
                     practice: Some(pg), ..
                 }) => {
-                    for t in pg.targets.into_iter().flatten() {
+                    for t in pg.targets.into_iter().flatten().chain(
+                        pg.triggers
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|t| t.reference),
+                    ) {
                         if let Some(p) = self.ref_position(t) {
-                            targets.insert(t, practice::aim_point(&self.lo, t, p));
+                            targets.insert(t, p);
                         }
                     }
                 }
