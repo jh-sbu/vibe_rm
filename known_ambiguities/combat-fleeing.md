@@ -65,7 +65,9 @@ not a health threshold. It is compared with a *threat ratio*:
   `fFleeIsSafeTimer` seconds there, it leaves the fight. Cornered with the threat
   in reach, it fights. When a check finds the ratio back at or above its threshold,
   it stops fleeing and fights again.
-- A `FLEE` dialogue line when it starts to flee. Cowards don't draw.
+- A `FLEE` dialogue attempt when it starts to flee, then again after intervals
+  between `fCombatDialogueFleeMinElapsedTime` and `MaxElapsedTime`. Cowards don't
+  draw. Busy dialogue defers an attempt until its channel becomes available.
 - `GetThreatRatio` (subject strength / parameter's strength) and `IsFleeing`.
 
 ## Gaps
@@ -125,6 +127,37 @@ not a health threshold. It is compared with a *threat ratio*:
     read `HealRate` 0 and didn't heal at all, in a fight or out of one; here
     NPCs heal only at a `HealRate` given them (by script or an effect), out
     of combat.
+12. **Flee dialogue scheduling.** The public
+    [CommonLibSSE-NG `CombatState` header](https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/main/include/RE/C/CombatState.h)
+    identifies a per-actor `fleeDialogueTimer`, separate from the threat-ratio
+    timer. The
+    [GECK settings list](https://geckwiki.com/index.php?title=Complete_List_of_GameSettings)
+    and a public
+    [Skyrim-era settings list](https://pastebin.com/pKz1u9Fg)
+    report `fCombatDialogueFleeMinElapsedTime` / `MaxElapsedTime` as 3 / 5 seconds.
+    Reading the installed base plugins with `vrm-tool gmst <Data>
+    fCombatDialogueFlee` (2026-10-16) found no matching overrides. The 3 / 5
+    defaults therefore come from public lists, not a new runtime measurement.
+
+    Those sources establish the timer and settings, but leave its scheduling
+    unresolved: when it first expires, the distribution between minimum and
+    maximum, whether waits start at line start or completion, whether a failed
+    selection consumes a wait, and how interrupted or resumed flees affect it.
+    Our explicit policy preserves the immediate entry attempt and rolls a
+    uniform interval after each selection attempt, including no eligible INFO.
+    The countdown uses simulation `dt`, independently of threat-ratio checks;
+    zero `dt` does not advance it. Leaving flee cancels the wait and the next
+    entry is immediately eligible; a new combat has a fresh timer. Dead actors
+    and actors in bleedout do not attempt flee dialogue.
+
+    An occupied bark, active conversation, scene line, the existing two-second
+    bark quiet period, or disabled AI keeps a due attempt pending without
+    rolling another interval. Actors participating in a scene also defer their
+    attempts. This reuses the incidental-dialogue gate; it is our arbitration
+    policy rather than a claim about Skyrim's priority or retry rules. A large
+    frame does not queue multiple catch-up lines. The meaning of
+    `fCombatDialogueFleeDistanceMult` (distance from whom, and multiplied by what)
+    is still unconfirmed; it is not used to invent a range limit.
 
 ## Values taken from the game's own settings table
 

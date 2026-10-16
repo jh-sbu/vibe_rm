@@ -234,7 +234,11 @@ game each piece unlocks.
   furthest from the threat out to `fCombatFleeDistance*`, wait there and leave the
   fight after `fFleeIsSafeTimer`; hurt or approached they check again, and turn back
   when the ratio recovers; cornered, they fight. Cowards don't draw. NPCs' health
-  comes back out of combat. `GetThreatRatio`, `IsFleeing`; `cstats` shows strength
+  comes back out of combat. Flee dialogue retries on its own timer using
+  `fCombatDialogueFleeMinElapsedTime` / `MaxElapsedTime`, deferring while
+  another line or conversation owns the channel; scheduling choices remain
+  documented in `known_ambiguities/combat-fleeing.md`.
+  `GetThreatRatio`, `IsFleeing`; `cstats` shows strength
   and confidence. Open questions: `known_ambiguities/combat-fleeing.md`
 - Assistance: actors not fighting join a fight they see where an ally (same or
   allied faction) or, for those who help friends too, a friend is fighting someone
@@ -1128,8 +1132,8 @@ game each piece unlocks.
      argument, trespass for opening a lock
    - Combat, more: attackers forgetting a lost fleeing target
      (`fCombatDetectionFleeingLostRemoveTime`,
-     `fCombatLowFleeingTargetHitPercent`); flee dialogue on a timer
-     (`fCombatDialogueFlee*`); the group strength timer
+     `fCombatLowFleeingTargetHitPercent`); flee dialogue's distance rules
+     (`fCombatDialogueFleeDistanceMult`; timer scheduling: see Done); the group strength timer
      (`fCombatGroupCombatStrengthUpdateTime`); impacts' hazards (`NAM2`),
      results (bounce, impale, stick)
    - Encumbrance, more: worn armor slowing NPCs (the player: see Done),

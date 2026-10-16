@@ -17,6 +17,37 @@ use crate::engine::{Engine, Location, PLAYER_REF};
 /// its flee checks (`fCombatThreatRatioUpdateTime`).
 const STRENGTH_UPDATE: (&str, f32) = ("fCombatStrengthUpdateTime", 1.0);
 const THREAT_RATIO_UPDATE: (&str, f32) = ("fCombatThreatRatioUpdateTime", 5.0);
+/// FLEE dialogue attempt intervals. The settings and per-actor timer are public;
+/// exact Skyrim scheduling remains open (see combat-fleeing.md).
+const FLEE_DIALOGUE_MIN: (&str, f32) = ("fCombatDialogueFleeMinElapsedTime", 3.0);
+const FLEE_DIALOGUE_MAX: (&str, f32) = ("fCombatDialogueFleeMaxElapsedTime", 5.0);
+
+fn flee_dialogue_interval(min: f32, max: f32, roll: u64) -> f32 {
+    let min = if min.is_finite() {
+        min.max(0.0)
+    } else {
+        FLEE_DIALOGUE_MIN.1
+    };
+    let max = if max.is_finite() {
+        max.max(min)
+    } else {
+        FLEE_DIALOGUE_MAX.1.max(min)
+    };
+    min + (roll % 10_000) as f32 / 10_000.0 * (max - min)
+}
+
+impl Combat {
+    /// A blocked dialogue channel leaves the timer due. Inactive flees cancel
+    /// their wait, so another flee starts with an immediate attempt.
+    fn flee_dialogue_due(&mut self, dt: f32) -> bool {
+        if !self.fleeing {
+            self.flee_dialogue = 0.0;
+            return false;
+        }
+        self.flee_dialogue = (self.flee_dialogue - dt.max(0.0)).max(0.0);
+        self.flee_dialogue <= 0.0
+    }
+}
 
 /// A fleeing actor this near its threat thinks again (the GECK's
 /// `fCombatFleeBoostConfidenceTargetRadius`; Skyrim has no such setting).
@@ -222,6 +253,7 @@ impl Engine {
             self.end_combat(r);
         }
         if checks.is_empty() {
+            self.update_flee_dialogue(dt);
             return;
         }
         // Everyone fighting, and the player while anyone fights them.
@@ -246,7 +278,6 @@ impl Engine {
                 strength: self.combat_strength(PLAYER_REF),
             });
         }
-        let mut fled = Vec::new();
         for r in checks {
             let own = self.actor_ref(r).map_or(0.0, |a| a.strength);
             let ratio = group_threat_ratio(r, own, &fighters);
@@ -274,25 +305,89 @@ impl Engine {
                     a.health,
                     a.stats.max_health
                 );
-                fled.push(r);
             } else if c.fleeing && ratio >= threshold {
                 c.fleeing = false;
                 c.away_to = None;
                 log::info!("{r} stops fleeing (threat ratio {ratio:.3} >= {threshold:.3})");
             }
         }
-        for r in fled {
-            if self.barks.current.is_none() {
-                self.bark(r, b"FLEE");
+        self.update_flee_dialogue(dt);
+    }
+
+    /// Repeat FLEE lines on their own timer, independent of strength and threat
+    /// ratio checks. Busy channels defer an attempt; an attempted selection
+    /// (including no eligible INFO) waits a full new interval before retrying.
+    fn update_flee_dialogue(&mut self, dt: f32) {
+        let due: Vec<FormId> = self
+            .cells
+            .values_mut()
+            .flat_map(|rt| rt.actors.iter_mut())
+            .filter(|a| !a.dead && a.bleeding.is_none())
+            .filter_map(|a| {
+                let c = a.combat.as_mut()?;
+                c.flee_dialogue_due(dt).then_some(a.ref_id)
+            })
+            .collect();
+        if due.is_empty() {
+            return;
+        }
+        let min = gmst_f32(&self.lo, FLEE_DIALOGUE_MIN.0, FLEE_DIALOGUE_MIN.1);
+        let max = gmst_f32(&self.lo, FLEE_DIALOGUE_MAX.0, FLEE_DIALOGUE_MAX.1);
+        for r in due {
+            if !self.bark_channel_available() {
+                break;
             }
+            if self.scene_of_actor(r).is_some() {
+                continue;
+            }
+            let wait = flee_dialogue_interval(min, max, self.rand());
+            if let Some(c) = self.actor_mut(r).and_then(|a| a.combat.as_mut()) {
+                c.flee_dialogue = wait;
+            }
+            self.bark(r, b"FLEE");
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Fighter, group_threat_ratio};
+    use super::{Combat, Fighter, flee_dialogue_interval, group_threat_ratio};
     use esp::FormId;
+
+    #[test]
+    fn flee_dialogue_repeats_independently_of_threat_checks() {
+        let mut c = Combat::new(FormId(1));
+        c.threat_check = 100.0;
+        assert!(!c.flee_dialogue_due(1.0));
+        c.fleeing = true;
+        assert!(c.flee_dialogue_due(0.0));
+        c.flee_dialogue = flee_dialogue_interval(3.0, 5.0, 5_000);
+        assert_eq!(c.flee_dialogue, 4.0);
+        assert!(!c.flee_dialogue_due(3.0));
+        assert!(!c.flee_dialogue_due(0.0)); // A paused frame does not consume time.
+        assert!(c.flee_dialogue_due(1.0));
+        assert_eq!(c.threat_check, 100.0);
+        // A blocked channel does not restart the timer; one large update does
+        // not accumulate several attempts for the next frame.
+        assert!(c.flee_dialogue_due(30.0));
+        assert_eq!(c.flee_dialogue, 0.0);
+        c.flee_dialogue = 5.0;
+        c.fleeing = false;
+        assert!(!c.flee_dialogue_due(0.0));
+        c.fleeing = true;
+        assert!(c.flee_dialogue_due(0.0));
+        assert_eq!(Combat::new(FormId(2)).flee_dialogue, 0.0);
+    }
+
+    #[test]
+    fn flee_dialogue_settings_bound_the_interval() {
+        assert_eq!(flee_dialogue_interval(7.0, 7.0, 9_999), 7.0);
+        assert_eq!(flee_dialogue_interval(3.0, 5.0, 0), 3.0);
+        assert!((3.0..5.0).contains(&flee_dialogue_interval(3.0, 5.0, 9_999)));
+        assert_eq!(flee_dialogue_interval(8.0, 2.0, 5_000), 8.0);
+        assert_eq!(flee_dialogue_interval(-1.0, -2.0, 5_000), 0.0);
+        assert_eq!(flee_dialogue_interval(f32::NAN, f32::INFINITY, 5_000), 4.0);
+    }
 
     #[test]
     fn sides_sum_their_strength() {
