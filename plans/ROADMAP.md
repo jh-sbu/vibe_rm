@@ -841,8 +841,12 @@ game each piece unlocks.
 - Standalone alpha-test controllers (`BSNiAlphaPropertyTestRefController`):
   alpha-property chains merged with shader animation, keyed and constant
   references on the existing material clocks, shared object / shadow cutouts.
-  Sequence-owned channels remain deferred; open questions:
-  `known_ambiguities/alpha-test-controllers.md`
+  Open questions: `known_ambiguities/alpha-test-controllers.md`
+- Named NIF sequences on placed rigid objects bind shader float / colour and
+  alpha-test interpolators by exact controller reference, including material-only
+  animated parts. Each reference has its own material uniforms and sequence
+  clock, with terminal samples retained. Sequence timing and arbitration choices,
+  and remaining actor / effect scope: `known_ambiguities/sequence-material-controllers.md`
 - Environment maps: lighting shaders with environment (or eye environment) mapping
   reflect their cube map (texture set slot 4, sampled with the world's axes: the vanilla
   maps keep the sky on +Z) along the reflected view, masked by the environment mask
@@ -998,8 +1002,10 @@ game each piece unlocks.
    - Later / separate: standalone controllers on skinned geometry, particle systems, attachments,
      distant and loose objects; collision following standalone transforms,
      persistence and driver arbitration (`known_ambiguities/node-controllers.md`);
-     texture flip controllers (`NiFlipController`), shader controllers inside sequences (only the
-     property's own controller chain runs, on the global clock)
+     texture flip controllers (`NiFlipController`); actor / effect graph shader
+     controllers inside sequences and sequence blending (placed rigid objects'
+     named material sequences: see Done;
+     `known_ambiguities/sequence-material-controllers.md`)
 2. **Story Manager** (core and fifteen events done; see Done)
    - Events waiting on their systems: crafting, item
      removal (dropping now exists; the event's data needs a source), NPCs' spell casts, new voice powers, bribe /
@@ -1207,8 +1213,8 @@ game each piece unlocks.
    round actors; decals' normal maps, specular, parallax and colour alpha;
    `ENVMAP_LIGHT_FADE` (`sf2` bit 15); unscripted trigger volumes (acoustic
    spaces, room bounds and portals); effect models' skinned meshes,
-   `BSProceduralLightningController` and sequence-owned shader / alpha-test
-   controllers; particles'
+   `BSProceduralLightningController` and actor / effect graph sequence-owned
+   shader / alpha-test controllers (placed rigid objects: see Done); particles'
    decay, turbulence, drag's exact formula and animated objects, rotation axis,
    speed to aspect, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes

@@ -153,14 +153,36 @@ struct MaterialClock {
     /// When it started (an effect's, all its controllers running from
     /// then); else the started controllers run on the renderer's clock.
     start: Option<f32>,
+    /// Set only on a placed object's private material copy. Retains a
+    /// completed sequence's terminal sample until the next selection.
+    sequence: MaterialSequenceClock,
+}
+
+#[derive(Default)]
+struct MaterialSequenceClock {
+    selected: std::sync::Mutex<Option<(String, f32)>>,
+}
+
+impl MaterialSequenceClock {
+    fn select(&self, name: &str, time: f32) {
+        *self.selected.lock().unwrap() = Some((name.to_owned(), time));
+    }
+
+    fn apply(&self, anim: &model::MaterialAnim, u: MaterialUniform) -> MaterialUniform {
+        match self.selected.lock().unwrap().as_ref() {
+            Some((name, t)) => u.sequenced(anim, name, *t),
+            None => u,
+        }
+    }
 }
 
 impl MaterialClock {
     fn at(&self, now: f32) -> MaterialUniform {
-        match self.start {
+        let u = match self.start {
             Some(s) => self.base.animated(&self.anim, now - s, true),
             None => self.base.animated(&self.anim, now, false),
-        }
+        };
+        self.sequence.apply(&self.anim, u)
     }
 }
 
@@ -168,12 +190,40 @@ impl MaterialUniform {
     /// The values with a material's controllers applied at `t` seconds (only
     /// those started unless `all`).
     fn animated(&self, anim: &model::MaterialAnim, t: f32, all: bool) -> MaterialUniform {
+        self.apply_channels(anim.channels.iter().filter(|c| all || c.started), t, true)
+    }
+
+    fn sequenced(&self, anim: &model::MaterialAnim, name: &str, t: f32) -> MaterialUniform {
+        let Some(seq) = anim
+            .sequences
+            .iter()
+            .find(|s| s.name.eq_ignore_ascii_case(name))
+        else {
+            return *self;
+        };
+        // `t` is already a selected sequence's key time. Apply its frequency
+        // and cycle once, in AnimatedObject, as for transform channels.
+        self.apply_channels(seq.channels.iter(), t, false)
+    }
+
+    fn apply_channels<'a>(
+        &self,
+        channels: impl Iterator<Item = &'a model::MaterialChannel>,
+        t: f32,
+        standalone: bool,
+    ) -> MaterialUniform {
         let mut u = *self;
-        for c in anim.channels.iter().filter(|c| all || c.started) {
-            let Some(v) = c.keys.sample(c.timing.key_time(t)) else {
+        for c in channels {
+            let Some(v) = c
+                .keys
+                .sample(if standalone { c.timing.key_time(t) } else { t })
+            else {
                 continue;
             };
             let f = v.x;
+            if !f.is_finite() || (c.color && !v.is_finite()) {
+                continue;
+            }
             if c.alpha_test {
                 // The controller keys share NiAlphaProperty's byte range.
                 // Keep the negative sentinel when alpha testing is disabled.
@@ -219,6 +269,7 @@ mod alpha_test_tests {
 
     fn animation(started: bool) -> model::MaterialAnim {
         model::MaterialAnim {
+            sequences: Vec::new(),
             channels: vec![model::MaterialChannel {
                 timing: nif::anim::Timing {
                     flags: 8 | 4,
@@ -278,6 +329,54 @@ mod alpha_test_tests {
         a.channels[0].keys.keys = vec![(0.0, Vec3::splat(-100.0))];
         assert_eq!(base.animated(&a, 0.5, true).params[1], 0.0);
     }
+
+    #[test]
+    fn sequence_material_copies_keep_independent_clocks_and_terminal_samples() {
+        let mut base = <MaterialUniform as bytemuck::Zeroable>::zeroed();
+        base.params[1] = 0.25;
+        let mut anim = animation(true);
+        let mut alpha = anim.channels.remove(0);
+        // Sequence time is already mapped; this unrelated standalone clock
+        // must neither multiply it nor clamp it to the controller's range.
+        alpha.timing.frequency = 7.0;
+        alpha.timing.phase = 9.0;
+        alpha.timing.start = 10.0;
+        alpha.timing.stop = 20.0;
+        let mut uv = alpha.clone();
+        uv.alpha_test = false;
+        uv.variable = 6;
+        uv.keys.keys = vec![(0.0, Vec3::ZERO), (2.0, Vec3::X)];
+        anim.sequences.push(model::MaterialSequence {
+            name: "Fade".into(),
+            channels: vec![alpha],
+        });
+        anim.channels.push(uv);
+        let anim = Arc::new(anim); // Shared animation data, independent cursors.
+        let first = MaterialSequenceClock::default();
+        let second = MaterialSequenceClock::default();
+        let standalone = base.animated(&anim, 0.1, false);
+        assert_eq!(standalone.uv[0], 1.0);
+        first.select("Fade", 0.5);
+        assert_eq!(first.apply(&anim, standalone).params[1], 0.25);
+        assert_eq!(second.apply(&anim, standalone).params[1], 0.25);
+        second.select("fade", 1.5);
+        assert_eq!(second.apply(&anim, standalone).params[1], 0.75);
+        assert_eq!(first.apply(&anim, standalone).params[1], 0.25);
+        first.select("Fade", 2.0);
+        assert_eq!(first.apply(&anim, standalone).params[1], 1.0);
+        // No new selection after sequence completion: terminal state holds.
+        assert_eq!(
+            first
+                .apply(&anim, base.animated(&anim, 100.0, false))
+                .params[1],
+            1.0
+        );
+        // Selecting a sequence without this material's channel restores its
+        // base + standalone values, rather than leaking the previous sequence.
+        first.select("Open", 0.0);
+        assert_eq!(first.apply(&anim, standalone).params[1], 0.25);
+        assert_eq!(first.apply(&anim, standalone).uv[0], 1.0);
+    }
 }
 
 pub struct GpuPart {
@@ -323,6 +422,20 @@ pub struct GpuModel {
     pub particles: Vec<particles::GpuParticles>,
     pub bound_center: Vec3,
     pub bound_radius: f32,
+}
+
+impl GpuModel {
+    /// Select the material sample on a model created by `sequence_model`.
+    /// Renderer animation uploads this state before ordinary and shadow draws.
+    pub fn set_material_sequence(&self, name: &str, time: f32) {
+        for part in &self.parts {
+            if let Some(clock) = &part.material.anim {
+                if !clock.anim.sequences.is_empty() {
+                    clock.sequence.select(name, time);
+                }
+            }
+        }
+    }
 }
 
 pub struct Instance {
@@ -1388,6 +1501,7 @@ impl Renderer {
                     buf: ubuf,
                     desc: m.clone(),
                     start: None,
+                    sequence: MaterialSequenceClock::default(),
                 })
             }),
             billboard: m.billboard.is_some(),
@@ -1442,6 +1556,67 @@ impl Renderer {
             self.animated.lock().unwrap().push(Arc::downgrade(&mat));
         }
         mat
+    }
+
+    /// Share geometry but give sequence-controlled materials to this reference
+    /// alone. Static materials and standalone-only animations stay shared.
+    pub fn sequence_model(&self, model: &Arc<GpuModel>) -> Arc<GpuModel> {
+        if !model.parts.iter().any(|p| {
+            p.material
+                .anim
+                .as_ref()
+                .is_some_and(|a| !a.anim.sequences.is_empty())
+        }) {
+            return model.clone();
+        }
+        let copy = |m: &Arc<GpuMaterial>| {
+            let Some(clock) = m.anim.as_ref().filter(|a| !a.anim.sequences.is_empty()) else {
+                return m.clone();
+            };
+            let mut mat = self.create_material(&clock.desc);
+            mat.key = m.key;
+            let mat = Arc::new(mat);
+            self.animated.lock().unwrap().push(Arc::downgrade(&mat));
+            mat
+        };
+        Arc::new(GpuModel {
+            path: model.path.clone(),
+            parts: model
+                .parts
+                .iter()
+                .map(|p| GpuPart {
+                    vbuf: p.vbuf.clone(),
+                    ibuf: p.ibuf.clone(),
+                    index_count: p.index_count,
+                    material: copy(&p.material),
+                    bound_center: p.bound_center,
+                    bound_radius: p.bound_radius,
+                })
+                .collect(),
+            skinned: model
+                .skinned
+                .iter()
+                .map(|p| GpuSkinnedPart {
+                    vbuf: p.vbuf.clone(),
+                    ibuf: p.ibuf.clone(),
+                    index_count: p.index_count,
+                    material: p.material.clone(),
+                    bone_names: p.bone_names.clone(),
+                    skin_to_bone: p.skin_to_bone.clone(),
+                    name: p.name.clone(),
+                })
+                .collect(),
+            particles: model
+                .particles
+                .iter()
+                .map(|p| particles::GpuParticles {
+                    desc: p.desc.clone(),
+                    material: p.material.clone(),
+                })
+                .collect(),
+            bound_center: model.bound_center,
+            bound_radius: model.bound_radius,
+        })
     }
 
     /// A model sharing `model`'s geometry, its animated materials on a clock

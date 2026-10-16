@@ -300,7 +300,18 @@ impl ModelCache {
             let effect = p.ends_with("#effect");
             // Keep empty parent parts too: their transforms and visibility
             // drive descendants, and `within` refers to the original indices.
-            let hierarchy = effect || !controllers.is_empty();
+            let hierarchy = effect
+                || !controllers.is_empty()
+                || m.as_ref().is_some_and(|m| {
+                    m.animated.iter().any(|part| {
+                        part.model.meshes.iter().any(|mesh| {
+                            mesh.material
+                                .anim
+                                .as_ref()
+                                .is_some_and(|a| !a.sequences.is_empty())
+                        })
+                    })
+                });
             if let Some(cpu) = m.as_mut().filter(|m| effect || !m.animated.is_empty()) {
                 let parts = std::mem::take(&mut cpu.animated)
                     .into_iter()

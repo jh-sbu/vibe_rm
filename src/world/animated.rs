@@ -100,7 +100,7 @@ impl AnimatedObject {
         let mut completed = false;
         if let Some((si, t)) = &mut self.playing {
             let seq = &self.anim.sequences[*si];
-            *t += dt;
+            *t += dt * seq.frequency;
             let len = (seq.stop - seq.start).max(1e-3);
             if *t > seq.stop {
                 if seq.cycle == 0 {
@@ -147,6 +147,10 @@ impl AnimatedObject {
             let pose = parent * local;
             poses.push((pose, shown));
             if let Some(inst) = instances.get_mut(ii) {
+                if let Some((si, t)) = self.playing {
+                    inst.model
+                        .set_material_sequence(&self.anim.sequences[si].name, t);
+                }
                 set_transform(inst, self.transform * pose);
                 // Preserve the reference's hidden flag (Disable, moved away,
                 // taken items). Visibility animation only controls its opacity.
@@ -325,6 +329,7 @@ mod node_controller_tests {
             cycle: 2,
             start: 0.0,
             stop: 2.0,
+            frequency: 1.0,
             channels: vec![channel("Child", Vec3::Z * 8.0)],
         });
         assert!(obj.play("Open"));
@@ -338,6 +343,29 @@ mod node_controller_tests {
         let terminal = instances[1].transform;
         obj.update(0.0, 21.5, &mut instances);
         assert_eq!(instances[1].transform, terminal);
+    }
+
+    #[test]
+    fn material_only_sequence_uses_its_frequency_and_restarts_on_selection() {
+        let (mut obj, mut instances) = fixture();
+        Arc::get_mut(&mut obj.anim)
+            .unwrap()
+            .sequences
+            .push(model::Sequence {
+                name: "Fade".into(),
+                cycle: 2,
+                start: 0.0,
+                stop: 2.0,
+                frequency: 2.0,
+                channels: Vec::new(),
+            });
+        assert!(obj.play("fade"));
+        obj.update(0.5, 100.0, &mut instances);
+        assert_eq!(obj.playing, Some((0, 1.0)));
+        obj.update(0.75, 100.75, &mut instances);
+        assert_eq!(obj.playing, None);
+        assert!(obj.play("Fade"));
+        assert_eq!(obj.playing, Some((0, 0.0)));
     }
 }
 
@@ -355,7 +383,10 @@ impl Engine {
         let anim = self.models.anim(model)?;
         let mut idx = Vec::new();
         for part in &anim.parts {
-            let mut inst = Instance::new(part.model.clone(), transform * part.parent * part.rest);
+            let mut inst = Instance::new(
+                self.renderer.sequence_model(&part.model),
+                transform * part.parent * part.rest,
+            );
             inst.ref_id = ref_id.0;
             inst.hidden = self.is_disabled(ref_id);
             idx.push(instances.len());

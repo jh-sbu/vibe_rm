@@ -32,12 +32,14 @@ property; the controller does not enable it.
 
 ## Remaining limits and choices
 
-- **Sequences.** Manager-controlled controllers are parsed but excluded from
-  standalone playback. Alduin and the inspected lurker projectile explosion
-  bind their float interpolators through `NiControllerSequence` and
-  `NiBlendFloatInterpolator`; binding and blending those shader / alpha
-  channels during graph sequence playback remains unimplemented. This change
-  supports property-owned standalone controllers, including mod content.
+- **Sequences.** Manager-controlled controllers are excluded from standalone
+  playback. Named sequences on placed rigid objects now bind shader / alpha
+  interpolators by exact controller reference; see
+  [sequence-material-controllers.md](sequence-material-controllers.md).
+  Alduin and the inspected lurker projectile explosion bind float interpolators
+  through `NiControllerSequence` and `NiBlendFloatInterpolator`; actor / effect
+  graph playback and sequence blending remain unimplemented, so those cases
+  are still outside the supported subset.
 - **Quantization.** References are sampled continuously and divided by 255,
   following NifSkope. This renderer clamps the result to 0..1. Whether Skyrim
   rounds or truncates to a byte at intermediate key values, or clamps
