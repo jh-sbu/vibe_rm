@@ -61,7 +61,7 @@ pub struct MaterialDesc {
     pub tint: Vec3,
     /// Distant LOD geometry: clipped where full-detail cells are loaded.
     pub lod: bool,
-    /// The shader property's controllers (scrolling, pulsing).
+    /// Shader and alpha property's controllers (scrolling, pulsing, cutouts).
     pub anim: Option<std::sync::Arc<MaterialAnim>>,
     /// Under a billboard node: its model-space origin and mode. The mesh's
     /// vertices are then in the node's space, turned to the camera when drawn.
@@ -70,7 +70,7 @@ pub struct MaterialDesc {
     pub grass: bool,
 }
 
-/// A material's animated values: its shader property's float and colour
+/// A material's animated values: shader float / colour and alpha-test
 /// controllers, sampled over time.
 #[derive(Debug, Clone)]
 pub struct MaterialAnim {
@@ -85,6 +85,9 @@ pub struct MaterialChannel {
     pub variable: u32,
     pub color: bool,
     pub lighting: bool,
+    /// Drives the alpha property's test reference; the shader-specific fields
+    /// above are unused for this channel.
+    pub alpha_test: bool,
     /// Running from the start (active); else started with its model, as an
     /// effect's (`APP_INIT`) are.
     pub started: bool,
@@ -126,10 +129,228 @@ fn material_anim(nif: &Nif, mut controller: Ref) -> Option<std::sync::Arc<Materi
             variable: c.variable,
             color: c.color,
             lighting: c.lighting,
+            alpha_test: false,
             started: c.timing.active(),
         });
     }
     (!channels.is_empty()).then(|| std::sync::Arc::new(MaterialAnim { channels }))
+}
+
+/// Merge the alpha property's own chain without replacing shader animation.
+fn alpha_test_anim(
+    nif: &Nif,
+    mut controller: Ref,
+    anim: &mut Option<std::sync::Arc<MaterialAnim>>,
+) {
+    let mut seen = std::collections::HashSet::new();
+    while let Some(Block::AlphaTestController(c)) = nif.get(controller) {
+        if !seen.insert(controller.0) {
+            break;
+        }
+        controller = c.next;
+        // Sequence-owned values require the manager's interpolator binding.
+        if c.timing.flags & 0x20 != 0 {
+            continue;
+        }
+        if !c.timing.active() && !c.timing.app_init() {
+            continue;
+        }
+        let Some(Block::ValueInterpolator(i)) = nif.get(c.interpolator) else {
+            continue;
+        };
+        let keys = match nif.get(i.data) {
+            Some(Block::ValueKeys(k)) if !k.keys.is_empty() => k.clone(),
+            // NiFloatInterpolator can hold a pose value without any data.
+            // Its default -FLT_MAX is an unset pose, not a test reference.
+            _ if i.value.x.is_finite() && i.value.x > -1.0e30 => nif::anim::ValueKeys {
+                keys: vec![(0.0, i.value)],
+            },
+            _ => continue,
+        };
+        let a = anim.get_or_insert_with(|| {
+            std::sync::Arc::new(MaterialAnim {
+                channels: Vec::new(),
+            })
+        });
+        std::sync::Arc::make_mut(a).channels.push(MaterialChannel {
+            timing: c.timing,
+            keys,
+            variable: 0,
+            color: false,
+            lighting: false,
+            alpha_test: true,
+            started: c.timing.active(),
+        });
+    }
+}
+
+#[cfg(test)]
+mod alpha_test_tests {
+    use super::*;
+
+    fn fixture(flags: u16, pose: f32) -> Nif {
+        Nif {
+            header: nif::Header {
+                version: 0x14020007,
+                user_version: 12,
+                bs_version: 100,
+                block_types: Vec::new(),
+                block_type_index: Vec::new(),
+                block_sizes: Vec::new(),
+                block_offsets: Vec::new(),
+                strings: Vec::new(),
+            },
+            roots: Vec::new(),
+            blocks: vec![
+                Block::Alpha(nif::AlphaProperty {
+                    net: nif::ObjectNet {
+                        name: String::new(),
+                        extra_data: Vec::new(),
+                        controller: Ref(1),
+                    },
+                    flags: 1 << 9,
+                    threshold: 64,
+                }),
+                Block::AlphaTestController(nif::anim::AlphaTestController {
+                    next: Ref(-1),
+                    timing: nif::anim::Timing {
+                        flags,
+                        frequency: 1.0,
+                        phase: 0.0,
+                        start: 0.0,
+                        stop: 2.0,
+                    },
+                    interpolator: Ref(2),
+                }),
+                Block::ValueInterpolator(nif::anim::ValueInterpolator {
+                    value: Vec3::new(pose, 0.0, 0.0),
+                    data: Ref(-1),
+                }),
+            ],
+        }
+    }
+
+    #[test]
+    fn alpha_property_pose_and_keyed_controller() {
+        let mut n = fixture(8, 127.5);
+        let m = material(&n, Ref(-1), Ref(0));
+        assert_eq!(m.alpha_test, Some(64.0 / 255.0));
+        let a = m.anim.unwrap();
+        assert!(a.started());
+        assert!(a.channels[0].alpha_test);
+        assert_eq!(a.channels[0].keys.sample(1.0).unwrap().x, 127.5);
+
+        let Block::ValueInterpolator(i) = &mut n.blocks[2] else {
+            unreachable!()
+        };
+        i.data = Ref(3);
+        n.blocks.push(Block::ValueKeys(nif::anim::ValueKeys {
+            keys: vec![(0.0, Vec3::ZERO), (2.0, Vec3::new(255.0, 0.0, 0.0))],
+        }));
+        let m = material(&n, Ref(-1), Ref(0));
+        assert_eq!(
+            m.anim.unwrap().channels[0].keys.sample(1.0).unwrap().x,
+            127.5
+        );
+    }
+
+    #[test]
+    fn alpha_controller_eligibility() {
+        for (flags, pose) in [(0, 127.5), (8 | 0x20, 127.5), (8, -f32::MAX), (8, f32::NAN)] {
+            assert!(
+                material(&fixture(flags, pose), Ref(-1), Ref(0))
+                    .anim
+                    .is_none()
+            );
+        }
+        let mut n = fixture(1, 127.5);
+        assert!(!material(&n, Ref(-1), Ref(0)).anim.unwrap().started());
+        let Block::Alpha(a) = &mut n.blocks[0] else {
+            unreachable!()
+        };
+        a.flags = 0;
+        let m = material(&n, Ref(-1), Ref(0));
+        assert!(m.alpha_test.is_none());
+        assert!(m.anim.is_none());
+    }
+
+    #[test]
+    fn alpha_and_shader_property_chains_both_survive() {
+        let mut n = fixture(8, 127.5);
+        n.blocks.extend([
+            Block::EffectShader(Box::new(nif::EffectShader {
+                net: nif::ObjectNet {
+                    name: String::new(),
+                    extra_data: Vec::new(),
+                    controller: Ref(4),
+                },
+                flags1: 0,
+                flags2: 0,
+                uv_offset: Vec2::ZERO,
+                uv_scale: Vec2::ONE,
+                source_texture: String::new(),
+                clamp_mode: 3,
+                lighting_influence: 0,
+                falloff: Vec4::ONE,
+                emissive_color: Vec4::ONE,
+                emissive_multiple: 1.0,
+                soft_falloff_depth: 0.0,
+                greyscale_texture: String::new(),
+            })),
+            Block::ShaderController(nif::anim::ShaderController {
+                next: Ref(-1),
+                timing: nif::anim::Timing {
+                    flags: 8,
+                    frequency: 1.0,
+                    phase: 0.0,
+                    start: 0.0,
+                    stop: 2.0,
+                },
+                interpolator: Ref(5),
+                variable: 6,
+                color: false,
+                lighting: false,
+            }),
+            Block::ValueInterpolator(nif::anim::ValueInterpolator {
+                value: Vec3::splat(-f32::MAX),
+                data: Ref(6),
+            }),
+            Block::ValueKeys(nif::anim::ValueKeys {
+                keys: vec![(0.0, Vec3::ZERO), (2.0, Vec3::X)],
+            }),
+        ]);
+        let m = material(&n, Ref(3), Ref(0));
+        let anim = m.anim.unwrap();
+        assert_eq!(anim.channels.len(), 2);
+        let shader = &anim.channels[0];
+        assert!(!shader.alpha_test && !shader.color && !shader.lighting);
+        assert_eq!(shader.variable, 6);
+        assert_eq!(
+            shader.keys.sample(shader.timing.key_time(1.0)).unwrap().x,
+            0.5
+        );
+        assert!(anim.channels[1].alpha_test);
+        assert_eq!(anim.channels[1].keys.sample(1.0).unwrap().x, 127.5);
+    }
+
+    #[test]
+    fn alpha_chain_merges_and_breaks_cycles() {
+        let mut n = fixture(8, 127.5);
+        let mut anim = material(&n, Ref(-1), Ref(0)).anim;
+        let original = &mut std::sync::Arc::make_mut(anim.as_mut().unwrap()).channels[0];
+        original.alpha_test = false;
+        original.variable = 6; // an existing shader U-offset channel
+        let Block::AlphaTestController(c) = &mut n.blocks[1] else {
+            unreachable!()
+        };
+        c.next = Ref(1);
+        alpha_test_anim(&n, Ref(1), &mut anim);
+        let anim = anim.unwrap();
+        assert_eq!(anim.channels.len(), 2);
+        assert!(!anim.channels[0].alpha_test);
+        assert_eq!(anim.channels[0].variable, 6);
+        assert!(anim.channels[1].alpha_test);
+    }
 }
 
 impl Default for MaterialDesc {
@@ -965,6 +1186,7 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
         }
         if a.test_enabled() {
             m.alpha_test = Some(a.threshold as f32 / 255.0);
+            alpha_test_anim(nif, a.net.controller, &mut m.anim);
         }
     }
     m
