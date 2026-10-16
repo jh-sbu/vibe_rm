@@ -41,6 +41,115 @@ pub enum Orientation {
     ProjectileReflection,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+
+    #[test]
+    fn impact_sounds_preserve_independent_slots_and_plugin_references() {
+        // Entirely synthetic plugins. Put impacts in the second load-order slot
+        // so an unremapped local sound reference cannot accidentally pass.
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = Fixture(
+            std::env::temp_dir().join(format!("vrm-impact-sounds-{}-{stamp}", std::process::id())),
+        );
+        std::fs::create_dir(&dir.0).unwrap();
+        let mut data = [0u8; 24];
+        data[20] = 1; // Valid sound-only impact: No Decal Data.
+        let impact = |id| RecordBuilder::new(b"IPCT", FormId(id)).field(b"DATA", &data);
+        let records = vec![
+            impact(0x800)
+                .form(b"SNAM", FormId(0xA00))
+                .form(b"NAM1", FormId(0xA01)),
+            impact(0x801).form(b"SNAM", FormId(0xA00)),
+            impact(0x802).form(b"NAM1", FormId(0xA01)),
+            impact(0x803)
+                .form(b"SNAM", FormId(0))
+                .form(b"NAM1", FormId(0xA01)),
+            impact(0x804)
+                .field(b"SNAM", &[0, 1, 2])
+                .form(b"NAM1", FormId(0xA01)),
+            impact(0x805)
+                .form(b"SNAM", FormId(0xA00))
+                .form(b"NAM1", FormId(0)),
+            impact(0x806)
+                .form(b"SNAM", FormId(0xA00))
+                .field(b"NAM1", &[0, 1, 2]),
+            impact(0x807),
+        ];
+        let mut pair = 0x901u32.to_le_bytes().to_vec();
+        pair.extend_from_slice(&0x800u32.to_le_bytes());
+        let groups = [
+            Node::top(b"IPCT", records),
+            Node::top(
+                b"MATT",
+                vec![
+                    RecordBuilder::new(b"MATT", FormId(0x900)).form(b"PNAM", FormId(0x901)),
+                    RecordBuilder::new(b"MATT", FormId(0x901)),
+                ],
+            ),
+            Node::top(
+                b"IPDS",
+                vec![RecordBuilder::new(b"IPDS", FormId(0xB00)).field(b"PNAM", &pair)],
+            ),
+        ];
+        std::fs::write(
+            dir.0.join("Empty.esp"),
+            write_plugin(0, &[], "test", "", 0x800, &[]),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.0.join("Impacts.esp"),
+            write_plugin(0, &[], "test", "", 0xB01, &groups),
+        )
+        .unwrap();
+        let lo = LoadOrder::load(&dir.0, &["Empty.esp".into(), "Impacts.esp".into()]).unwrap();
+        let a = Some(FormId(0x01000A00));
+        let b = Some(FormId(0x01000A01));
+        for (i, expected) in [
+            [a, b],
+            [a, None],
+            [None, b],
+            [None, b],
+            [None, b],
+            [a, None],
+            [a, None],
+            [None, None],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = FormId(0x01000800 + i as u32);
+            let parsed = Impact::load(&lo, id).unwrap();
+            assert_eq!(parsed.sounds, expected, "impact {id}");
+            assert!(parsed.decal.is_none());
+        }
+        let mut sets = crate::world::footsteps::Impacts::default();
+        assert_eq!(
+            sets.sounds(&lo, FormId(0x01000B00), FormId(0x01000900)),
+            [a, b]
+        );
+        assert_eq!(
+            sets.sounds(&lo, FormId(0x01000B00), FormId(0xDEAD)),
+            [None; 2]
+        );
+        assert_eq!(
+            crate::world::footsteps::impact_sounds(&lo.get(FormId(0x01000900)).unwrap()),
+            [None; 2]
+        );
+    }
+}
+
 /// An impact (IPCT).
 #[derive(Debug, Clone)]
 pub struct Impact {
@@ -55,7 +164,8 @@ pub struct Impact {
     /// How far from the impact point its decal may land.
     pub placement_radius: f32,
     pub decal: Option<DecalData>,
-    pub sound: Option<FormId>,
+    /// Both impact sounds (`SNAM`, `NAM1`), in slot order.
+    pub sounds: [Option<FormId>; 2],
 }
 
 impl Impact {
@@ -94,7 +204,7 @@ impl Impact {
             angle_threshold: f(8),
             placement_radius: f(12),
             decal,
-            sound: form(b"SNAM"),
+            sounds: crate::world::footsteps::impact_sounds(&rec),
         })
     }
 }
@@ -411,7 +521,7 @@ impl Engine {
                 .unwrap_or_default(),
             landing.at
         );
-        if let Some(s) = impact.sound {
+        for s in impact.sounds.into_iter().flatten() {
             self.play_sound(s, landing.at);
         }
         if std::env::var_os("VRM_NO_IMPACTS").is_some() {

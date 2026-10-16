@@ -810,7 +810,8 @@ game each piece unlocks.
 - Impacts: melee blows, bashes and arrows look up the impact (IPCT) their impact data
   set (weapon `INAM`, bash `BIDS`, the race's `NAM5` bare-handed) has for the material
   struck (the target race's `NAM4`, the blocking shield's or weapon's `BAMT`, the
-  surface's for arrows in the world): its sound plays, its effect model runs (blood
+  surface's for arrows in the world): both sounds (`SNAM`, `NAM1`) play,
+  including for footstep impacts; its effect model runs (blood
   sprays, emitting for the impact's duration) and its decal lands, for a wound on the
   floor or wall behind the target (at most 64 kept) and on its body: a box held by the
   bone passing nearest the wound, moving with the pose and ragdoll (8 an actor, 48 in all).
@@ -1083,7 +1084,7 @@ game each piece unlocks.
      `fCombatLowFleeingTargetHitPercent`); flee dialogue on a timer
      (`fCombatDialogueFlee*`); the group strength timer
      (`fCombatGroupCombatStrengthUpdateTime`); impacts' hazards (`NAM2`),
-     second sound (`NAM1`) and results (bounce, impale, stick)
+     results (bounce, impale, stick)
    - Encumbrance, more: worn armor slowing NPCs (the player: see Done),
      fast travel refused over-encumbered (with the
      map), followers' "can't carry any more"

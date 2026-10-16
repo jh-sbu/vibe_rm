@@ -110,7 +110,7 @@ impl Engine {
         let Some(material) = self.ground_material(step.at) else {
             return;
         };
-        let sound = self.footsteps.impacts.sound(&self.lo, ipds, material);
+        let sounds = self.footsteps.impacts.sounds(&self.lo, ipds, material);
         if log::log_enabled!(target: "footsteps", log::Level::Trace) {
             let surface = self
                 .physics
@@ -121,9 +121,9 @@ impl Engine {
                 .get(material)
                 .and_then(|r| r.editor_id())
                 .unwrap_or_default();
-            log::trace!(target: "footsteps", "{} {:?} at {:.0} on {name} ({surface:?}): {sound:?}", step.tag, step.gait, step.at);
+            log::trace!(target: "footsteps", "{} {:?} at {:.0} on {name} ({surface:?}): {sounds:?}", step.tag, step.gait, step.at);
         }
-        if let Some(s) = sound {
+        for s in sounds.into_iter().flatten() {
             self.play_sound(s, step.at);
         }
     }
