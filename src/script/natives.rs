@@ -222,6 +222,10 @@ pub fn call(
         ("game", "ismenucontrolsenabled") => v(Value::Bool(!e.disabled_controls.menu)),
         ("game", "isactivatecontrolsenabled") => v(Value::Bool(!e.disabled_controls.activate)),
         ("game", "isjournalcontrolsenabled") => v(Value::Bool(!e.disabled_controls.journal)),
+        ("game", "sethudcartmode") => {
+            e.hud_cart_mode = args.first().is_none_or(Value::as_bool);
+            none()
+        }
         ("game", "forcefirstperson") => {
             e.set_third_person(false);
             none()

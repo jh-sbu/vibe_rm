@@ -52,3 +52,41 @@ and `ForceThirdPerson` remain script commands independent of user input.
 - **Menus** covers the tween menu (Tab), the inventory (I), the magic menu
   (P), the favorites menu (Q) and the skills (K); the console stays open to
   the developer.
+
+## HUD cart mode
+
+`Game.SetHudCartMode(abSetCartMode = true)` now selects the HUD's cart
+visibility group; false restores the ordinary group. This changes visibility,
+not movement or other control flags. The requested state survives disabled
+movement: `MovementDisabled` temporarily replaces `CartMode`, then cart mode
+returns when movement is enabled. The default argument and this interaction
+are documented by the [Creation Kit documentation mirrored in Papyrus
+Index](https://papyrus.bellcube.dev/skyrimse/script/game/function/sethudcartmode/).
+
+The game's UI asset code is publicly available in the [HUDMenu asset
+reconstruction](https://github.com/Mardoxx/skyrimui/blob/master/src/hudmenu/HUDMenu.as),
+`SetModes` and `ShowElements`. Cart mode retains notifications, subtitles and
+help; movement-disabled mode also retains quest banners. Both hide the
+crosshair, activation text, meters, sneak indicator and compass. The SWF path
+uses these visibility groups; the egui fallback applies the same exclusions.
+No asset code or game assets were added to the repository.
+
+Unresolved: public documentation does not establish cart mode's precedence
+against conversations or whether mode changes within one simulation frame
+should be observed individually. Here disabled movement takes precedence,
+then cart mode, then dialogue; the HUD sees the final state each frame. The
+fallback conversation UI retains its existing separate presentation. Changes
+to quest banners' expiration while hidden remain outside this implementation.
+No engine executable or binary data was inspected.
+
+## Player AI-driven mode remains pending
+
+[SetPlayerAIDriven's public
+contract](https://papyrus.bellcube.dev/skyrimse/script/game/function/setplayeraidriven/)
+(default true) permits the player to run AI packages. The current package
+scheduler operates on NPC actor runtimes; the player has a separate movement
+and body controller. This needs player package execution, including scene and
+quest-alias packages, before the native can be meaningfully supported. It has
+not been replaced with a movement-disable toggle or an inert success stub.
+Exact arbitration between user input and package motion remains unverified;
+public information reviewed here does not settle it.

@@ -166,6 +166,8 @@ pub struct Engine {
     pub(crate) grab: crate::grab::Grab,
     /// Player controls scripts have disabled.
     pub disabled_controls: crate::player::DisabledControls,
+    /// Requested by Game.SetHudCartMode; movement disabling overrides it temporarily.
+    pub hud_cart_mode: bool,
     /// The journal opens on the tab it was closed on (Esc), not on the
     /// quests (the journal key).
     pub journal_last_tab: bool,
@@ -408,6 +410,7 @@ impl Engine {
             traps: Default::default(),
             anim_events: Default::default(),
             disabled_controls: Default::default(),
+            hud_cart_mode: false,
             journal_last_tab: false,
             quit_requested: false,
             // Full: clamped to their most on the first update.
@@ -2335,6 +2338,14 @@ impl Engine {
     // ---------------------------------------------------------------- weather
 
     // --------------------------------------------------------------- gameplay
+
+    pub fn hud_mode(&self) -> crate::player::HudMode {
+        crate::player::HudMode::select(
+            self.hud_cart_mode,
+            self.disabled_controls.movement,
+            self.conversation.is_some(),
+        )
+    }
 
     /// Advance the simulation by `dt` seconds.
     pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
