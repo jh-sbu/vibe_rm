@@ -489,7 +489,10 @@ game each piece unlocks.
 - Synchronised blends of single-play clips (directional attacks) end instead of
   cycling, and their heaviest child raises the clip triggers
 - Character property bindings: bone switches bound to the character's bone weight
-  properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored
+  properties (`LeftArm`, `ShieldOnly`...: `hkbCharacterData` values) layer as authored;
+  read-only scalar properties drive supported modifier inputs and pose gates
+  (`IsMale`, `IsThirdPerson`), with character-specific runtime caches.
+  Limits: `known_ambiguities/character-properties.md`
 - Patrol (linked-ref routes with idle markers on the way, repeat / start at nearest),
   follow and escort packages (leading the target to the destination, waiting while it
   lags more than "Distance to Wait for Follower(s)" behind, turning in place to face
@@ -948,7 +951,8 @@ game each piece unlocks.
    - Chooser start states, selectors' own blends
      (`known_ambiguities/selectors.md`)
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
-     properties other than bone weights;
+     properties on generators, blender children and transition effects,
+     runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`);
      `hkbRotateCharacterModifier`; the other action trees (`ActionTurnLeft`...) as the
      way events are chosen
    - Carry furniture (wood piles done, see Done): packages or sandboxing that

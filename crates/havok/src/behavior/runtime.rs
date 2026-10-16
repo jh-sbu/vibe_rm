@@ -233,6 +233,40 @@ impl Shared {
     fn graph(&self, gi: usize) -> &BehaviorGraph {
         &self.project.graphs[gi].1
     }
+
+    fn modifier_properties(&self, gi: usize, m: ModId) -> impl Iterator<Item = (&str, f32)> {
+        self.graph(gi)
+            .modifier_property_bindings
+            .get(m)
+            .into_iter()
+            .flatten()
+            .filter_map(|b| {
+                let value = self
+                    .project
+                    .character
+                    .as_ref()?
+                    .scalar_properties
+                    .get(&b.property.to_ascii_lowercase())?;
+                Some((b.member.as_str(), *value))
+            })
+    }
+
+    fn modifier_input(&self, gi: usize, m: ModId, member: &str, values: &[f32]) -> Option<f32> {
+        self.graph(gi)
+            .modifier_bindings
+            .get(m)
+            .into_iter()
+            .flatten()
+            .find(|b| b.member == member)
+            .and_then(|b| self.maps[gi].vars.get(b.variable))
+            .and_then(|&v| values.get(v))
+            .copied()
+            .or_else(|| {
+                self.modifier_properties(gi, m)
+                    .find(|(name, _)| *name == member)
+                    .map(|(_, value)| value)
+            })
+    }
 }
 
 fn wildcards_of(g: &Generator) -> &[Transition] {
@@ -466,11 +500,7 @@ impl Ctx<'_> {
 
     /// Value of the variable bound to `member` of modifier `m`.
     fn modifier_bound(&self, gi: usize, m: ModId, member: &str) -> Option<f32> {
-        let v = self.shared.graph(gi).modifier_bindings[m]
-            .iter()
-            .find(|b| b.member == member)?
-            .variable;
-        Some(self.var(gi, v))
+        self.shared.modifier_input(gi, m, member, self.values)
     }
 
     /// Write `value` to the variable bound to `member` of modifier `m`, if any.
@@ -1397,11 +1427,9 @@ impl Ctx<'_> {
     fn advance_modifier(&mut self, m: &mut ModState, dt: f32) {
         let gi = m.gi;
         let graph = self.shared.graph(gi);
-        if let Some(v) = graph.modifier_bindings[m.m]
-            .iter()
-            .find(|b| b.member == "enable")
-            .map(|b| b.variable)
-            && self.var(gi, v) == 0.0
+        if self
+            .modifier_bound(gi, m.m, "enable")
+            .is_some_and(|v| v == 0.0)
         {
             return;
         }
@@ -1893,16 +1921,9 @@ impl Instance {
     /// modifiers opened up.
     fn running_modifiers(&self) -> Vec<(usize, ModId)> {
         fn mods(shared: &Shared, m: &ModState, values: &[f32], out: &mut Vec<(usize, ModId)>) {
-            let enabled = shared.graph(m.gi).modifier_bindings[m.m]
-                .iter()
-                .find(|b| b.member == "enable")
-                .is_none_or(|b| {
-                    shared.maps[m.gi]
-                        .vars
-                        .get(b.variable)
-                        .and_then(|&v| values.get(v))
-                        .is_some_and(|v| *v != 0.0)
-                });
+            let enabled = shared
+                .modifier_input(m.gi, m.m, "enable", values)
+                .is_none_or(|v| v != 0.0);
             if !enabled {
                 return;
             }
@@ -1962,6 +1983,15 @@ impl Instance {
                     .and_then(|&v| self.values.get(v))?;
                 Some((b.member.as_str(), *v))
             })
+            .chain(
+                self.shared
+                    .modifier_properties(gi, m)
+                    .filter(move |(member, _)| {
+                        !self.shared.graph(gi).modifier_bindings[m]
+                            .iter()
+                            .any(|b| b.member == *member)
+                    }),
+            )
     }
 
     /// Twist modifiers running now, with bound angle and enable resolved. The
@@ -2304,6 +2334,141 @@ mod tests {
         assert_eq!(i.twists().len(), 1);
         i.handle_event("Off", &mut durations);
         assert!(i.twists().is_empty());
+    }
+
+    #[test]
+    fn character_properties_gate_updates_and_poses_without_becoming_variables() {
+        fn character_instance(enabled: bool) -> Instance {
+            let mut g = BehaviorGraph::new(
+                "Properties",
+                Some(0),
+                vec![Generator::Wrap {
+                    name: "Wrapped".into(),
+                    class: "hkbModifierGenerator".into(),
+                    child: None,
+                    modifier: Some(0),
+                }],
+                vec![],
+            );
+            g.add_variable("Result", VarType::Real, 0.0);
+            g.modifiers = vec![
+                Modifier::List(vec![1, 2]),
+                Modifier::Expressions(vec!["Result = 7".into()]),
+                Modifier::Twist(Twist {
+                    enabled: true,
+                    axis: glam::Vec3::Z,
+                    angle_degrees: 9.0,
+                    start_bone: 0,
+                    end_bone: 0,
+                    set_angle_method: 0,
+                    axis_coordinates: 0,
+                    additive: true,
+                }),
+            ];
+            g.modifier_bindings = vec![vec![], vec![], vec![]];
+            let gate = || PropertyBinding {
+                member: "enable".into(),
+                property: "ISMALE".into(),
+            };
+            g.modifier_property_bindings = vec![
+                vec![],
+                vec![gate()],
+                vec![
+                    gate(),
+                    PropertyBinding {
+                        member: "twistAngle".into(),
+                        property: "angle".into(),
+                    },
+                ],
+            ];
+            let character = Character {
+                scalar_properties: [
+                    ("ismale".into(), f32::from(enabled)),
+                    ("angle".into(), -25.0),
+                ]
+                .into_iter()
+                .collect(),
+                ..Default::default()
+            };
+            let project = Project {
+                graphs: vec![("root.hkx".into(), g)],
+                character: Some(character),
+            };
+            Instance::new(Shared::new(Arc::new(project)), 1)
+        }
+        let mut enabled = character_instance(true);
+        let mut disabled = character_instance(false);
+        enabled.update(0.1, &mut durations);
+        disabled.update(0.1, &mut durations);
+        assert_eq!(enabled.variable("Result"), Some(7.0));
+        assert_eq!(disabled.variable("Result"), Some(0.0));
+        assert_eq!(enabled.twists()[0].angle_degrees, -25.0);
+        assert!(disabled.twists().is_empty());
+        assert!(!enabled.set_variable("IsMale", 0.0));
+        assert_eq!(enabled.variable("IsMale"), None);
+        assert_eq!(enabled.twists().len(), 1);
+    }
+
+    #[test]
+    fn scalar_modifier_properties_supply_inputs_but_do_not_receive_outputs() {
+        let mut g = BehaviorGraph::new(
+            "Properties",
+            Some(0),
+            vec![Generator::Wrap {
+                name: "Wrapped".into(),
+                class: "hkbModifierGenerator".into(),
+                child: None,
+                modifier: Some(0),
+            }],
+            vec![],
+        );
+        let output = g.add_variable("SpeedOut", VarType::Real, 0.0);
+        g.modifiers = vec![Modifier::SpeedSampler { goal_speed: 1.0 }];
+        g.modifier_bindings = vec![vec![Binding {
+            member: "speedOut".into(),
+            variable: output,
+        }]];
+        g.modifier_property_bindings = vec![vec![
+            PropertyBinding {
+                member: "goalSpeed".into(),
+                property: "speed".into(),
+            },
+            PropertyBinding {
+                member: "speedOut".into(),
+                property: "unchanged".into(),
+            },
+        ]];
+        let character = Character {
+            scalar_properties: [("speed".into(), 42.0), ("unchanged".into(), 9.0)]
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        };
+        let mut i = Instance::new(
+            Shared::new(Arc::new(Project {
+                graphs: vec![("root.hkx".into(), g)],
+                character: Some(character),
+            })),
+            1,
+        );
+        i.update(0.1, &mut durations);
+        assert_eq!(i.variable("SpeedOut"), Some(42.0));
+        assert_eq!(
+            i.shared
+                .project
+                .character
+                .as_ref()
+                .unwrap()
+                .scalar_properties["unchanged"],
+            9.0
+        );
+        assert_eq!(
+            i.bound_members(0, 0)
+                .find(|(m, _)| *m == "speedOut")
+                .unwrap()
+                .1,
+            42.0
+        );
     }
 
     #[test]
