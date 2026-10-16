@@ -66,6 +66,15 @@ pub struct Messages {
 /// How long a banner stays up.
 pub const BANNER_SECONDS: f64 = 4.0;
 
+/// xEdit's TES5 MESG definition: TNAM is an unsigned integer in seconds,
+/// applicable to notifications only. Missing or truncated data uses our
+/// existing default; zero remains an explicit zero-length display time.
+fn notification_duration(tnam: Option<&[u8]>) -> f64 {
+    tnam.and_then(|d| d.get(..4))
+        .map(|d| u32::from_le_bytes(d.try_into().unwrap()) as f64)
+        .unwrap_or(crate::script::NOTIFICATION_SECONDS)
+}
+
 /// The key or button a control (as message text names it in brackets) is
 /// bound to here.
 pub fn control_key(control: &str) -> Option<&'static str> {
@@ -252,7 +261,11 @@ impl Engine {
         let Some(rec) = self.lo.get(m) else {
             return NativeResult::Value(Value::Int(0));
         };
-        let message_box = rec.get(b"DNAM").is_some_and(|d| d[0] & 1 != 0);
+        let message_box = rec
+            .get(b"DNAM")
+            .and_then(|d| d.first())
+            .is_some_and(|d| d & 1 != 0);
+        let duration = notification_duration(rec.get(b"TNAM"));
         let quest = rec
             .get(b"QNAM")
             .filter(|d| d.len() >= 4)
@@ -294,7 +307,7 @@ impl Engine {
         let text = self.replace_text_tags(&format_floats(&text, args), quest);
         if !message_box {
             if !text.is_empty() {
-                self.scripts.notify(text);
+                self.scripts.notify_for(text, duration);
             }
             return NativeResult::Value(Value::Int(0));
         }
@@ -513,6 +526,64 @@ fn capitalise(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notification_display_time_is_unsigned_integer_seconds() {
+        assert_eq!(notification_duration(Some(&12u32.to_le_bytes())), 12.0);
+        assert_eq!(
+            notification_duration(Some(&u32::MAX.to_le_bytes())),
+            u32::MAX as f64
+        );
+        assert_eq!(notification_duration(Some(&0u32.to_le_bytes())), 0.0);
+        assert_eq!(
+            notification_duration(None),
+            crate::script::NOTIFICATION_SECONDS
+        );
+        for truncated in [&[][..], &[1][..], &[1, 2][..], &[1, 2, 3][..]] {
+            assert_eq!(
+                notification_duration(Some(truncated)),
+                crate::script::NOTIFICATION_SECONDS
+            );
+        }
+    }
+
+    #[test]
+    fn authored_notification_lifetimes_coexist_with_default_notifications() {
+        let mut scripts = crate::script::ScriptState::default();
+        scripts.real_time = 10.0;
+        scripts.notify_for("short", notification_duration(Some(&2u32.to_le_bytes())));
+        scripts.notify_for("long", notification_duration(Some(&12u32.to_le_bytes())));
+        scripts.notify("default");
+        assert_eq!(scripts.notifications[0].alpha(10.0), 1.0);
+        assert!((scripts.notifications[0].alpha(11.25) - 0.5).abs() < 1e-6);
+        assert_eq!(scripts.notifications[0].alpha(12.0), 0.0);
+        scripts.notifications.retain(|n| n.is_active(12.0));
+        assert_eq!(
+            scripts
+                .notifications
+                .iter()
+                .map(|n| n.text.as_str())
+                .collect::<Vec<_>>(),
+            ["long", "default"]
+        );
+        scripts.notifications.retain(|n| n.is_active(16.0));
+        assert_eq!(scripts.notifications.len(), 1);
+        assert_eq!(scripts.notifications[0].text, "long");
+        assert!(scripts.notifications[0].is_active(21.999));
+        assert!(!scripts.notifications[0].is_active(22.0));
+    }
+
+    #[test]
+    fn zero_display_time_is_expired_and_subsecond_fade_is_finite() {
+        let mut scripts = crate::script::ScriptState::default();
+        scripts.notify_for("zero", notification_duration(Some(&0u32.to_le_bytes())));
+        assert!(!scripts.notifications[0].is_active(0.0));
+        assert_eq!(scripts.notifications[0].alpha(0.0), 0.0);
+        scripts.notify_for("one", notification_duration(Some(&1u32.to_le_bytes())));
+        assert_eq!(scripts.notifications[1].alpha(0.0), 1.0);
+        assert_eq!(scripts.notifications[1].alpha(0.5), 0.5);
+        assert_eq!(scripts.notifications[1].alpha(1.0), 0.0);
+    }
 
     #[test]
     fn floats_format_like_printf() {

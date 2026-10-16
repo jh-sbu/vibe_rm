@@ -850,7 +850,9 @@ game each piece unlocks.
 - Messages and the journal: `Message.Show` puts up a message box (title, text,
   the buttons whose conditions pass, `sOk` when none) and its script waits for
   the button, resuming with its index (`Vm::signal_with`); `Debug.MessageBox`;
-  other messages as notifications. Text tags: `%.0f` from `Show`'s arguments,
+  other messages as notifications, with MESG `TNAM` display times in the
+  fallback HUD (the SWF's animation still controls its notification lifetime).
+  Text tags: `%.0f` from `Show`'s arguments,
   `<Alias=...>` with `.ShortName` and pronoun forms, `<Global=...>`, `[Control]`
   as the key bound to it. Help messages (`ShowAsHelpMessage`: shown for a while,
   coming back after an interval up to a number of times, until the player does
@@ -1107,8 +1109,9 @@ game each piece unlocks.
      (`ICT_SPELL`, `soulLVL`), ingredients' learned effects, which weapon is poisoned,
      equipping scrolls and torches in a hand, the best-in-class star, the
      survival warmth rating
-   - The HUD: enemy health brackets sized to the name; `Message.Show` icons
-     (`INAM`) and notifications' display time (`TNAM`); controller rumble for camera shakes
+   - The HUD: enemy health brackets sized to the name; notifications' display
+     time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;
+     `known_ambiguities/messages.md`); controller rumble for camera shakes
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
      (crafting, magic and shouts, horses stolen,

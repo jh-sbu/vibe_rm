@@ -1489,7 +1489,11 @@ impl Hud {
         let mut newest = self.sent.notified;
         for notification in &engine.scripts.notifications {
             if notification.id > self.sent.notified {
-                self.call("ShowMessage", &[text(&notification.text)]);
+                // The asset's ShowMessage accepts only text. Its animation
+                // controls display duration; see known_ambiguities/messages.md.
+                if notification.is_active(engine.scripts.real_time) {
+                    self.call("ShowMessage", &[text(&notification.text)]);
+                }
                 newest = newest.max(notification.id);
             }
         }

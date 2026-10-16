@@ -3586,8 +3586,8 @@ impl Engine {
                 log::warn!("moveto failed: {e:#}");
             }
         }
-        // Drop notifications older than a few seconds.
-        self.scripts.notifications.retain(|n| now - n.at < 6.0);
+        // MESG notifications keep their authored display time.
+        self.scripts.notifications.retain(|n| n.is_active(now));
         self.update_messages();
     }
 

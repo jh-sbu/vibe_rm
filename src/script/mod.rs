@@ -58,6 +58,25 @@ pub struct Notification {
     pub id: u64,
     pub text: String,
     pub at: f64,
+    /// Seconds on the unpaused real-time clock; MESG notifications use TNAM.
+    pub duration: f64,
+}
+
+/// Existing duration for notifications without an authored MESG display time.
+pub const NOTIFICATION_SECONDS: f64 = 6.0;
+
+impl Notification {
+    pub fn is_active(&self, now: f64) -> bool {
+        now - self.at < self.duration
+    }
+
+    /// The fallback HUD keeps its existing fade, bounded by the display time.
+    pub fn alpha(&self, now: f64) -> f32 {
+        if !self.is_active(now) {
+            return 0.0;
+        }
+        ((self.duration - (now - self.at)) / self.duration.min(1.5)).clamp(0.0, 1.0) as f32
+    }
 }
 
 /// Script-visible world state and queues.
@@ -122,6 +141,10 @@ pub struct ScriptState {
 
 impl ScriptState {
     pub fn notify(&mut self, s: impl Into<String>) {
+        self.notify_for(s, NOTIFICATION_SECONDS);
+    }
+
+    pub(crate) fn notify_for(&mut self, s: impl Into<String>, duration: f64) {
         let s = s.into();
         log::info!("notification: {s}");
         self.notification_seq += 1;
@@ -129,6 +152,7 @@ impl ScriptState {
             id: self.notification_seq,
             text: s,
             at: self.real_time,
+            duration,
         });
     }
 }
