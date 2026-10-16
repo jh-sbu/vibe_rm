@@ -253,12 +253,12 @@ impl Ui {
             .scripts
             .notifications
             .iter()
+            .filter(|n| n.is_active(now))
             .rev()
             .take(6)
             .enumerate()
         {
-            let age = (now - notification.at) as f32;
-            let alpha = ((6.0 - age) / 1.5).clamp(0.0, 1.0);
+            let alpha = notification.alpha(now);
             let col = Color32::from_rgba_unmultiplied(240, 240, 240, (alpha * 255.0) as u8);
             let y = rect.top() + 60.0 + i as f32 * 22.0;
             painter.text(

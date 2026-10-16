@@ -16,8 +16,34 @@ Notifications have sequence numbers independent of their display timestamps.
 This prevents this engine's HUD from losing a notification at game time zero
 or one queued after the preceding HUD update without the clock advancing
 (for example, while paused). Retention and the egui fade still use game time.
-This is an internal delivery fix; the menu-pause timing question below and
-MESG icons / display durations remain open.
+This is an internal delivery fix; the menu-pause timing question below remains
+open.
+
+`Message.Show` now reads notification display time from MESG `TNAM`, an
+unsigned 32-bit integer in seconds. The notification queue retains each entry
+for its own display time, and the fallback egui HUD fades it out at that expiry.
+`Debug.Notification` and notifications without a complete `TNAM` keep this
+engine's existing six-second default. Message boxes still wait for a button;
+their `TNAM` does not close them.
+
+Format source: [xEdit's public TES5 MESG definition](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.5/Core/wbDefinitionsTES5.pas)
+(`wbRecord(MESG)`, `TNAM` is `itU32`, `INAM` is `Icon (unused)`). The editor
+describes Display Time as seconds for a non-box message; see
+[Creation Kit Message](https://ck.uesp.net/wiki/Message).
+`INAM` is an unused leftover in Skyrim, so no icon lookup is implemented.
+
+The game's HUD movie still controls its own notification animations. Inspection
+of the locally extracted **game asset** `Interface/hudmenu.swf` (the existing
+`spike/swf/out/hudmenu.dis`) shows that `HUDMovieBase.ShowMessage(asMessage)`
+takes only text and appends it to `MessagesInstance.MessageArray`.
+`Messages.Update` creates `MessageText` clips and starts their `FadeOut`
+timeline; it does not consume a per-message duration. No duration argument is
+invented for that call. Expired notifications are skipped before delivery, but
+once delivered to the SWF, an authored `TNAM` cannot yet change its lifetime.
+Resolving how the original game reconciles TNAM with this asset's fixed
+animation requires public evidence or further asset work; no engine binary
+inspection was performed. No game assets or asset disassemblies are added by
+this change.
 
 ## Settled from the data
 
@@ -33,6 +59,12 @@ MESG icons / display durations remain open.
 
 ## Open
 
+- **Display-time edge cases.** The original game's handling of missing,
+  truncated, zero or extremely large `TNAM` values, exact fade timing, and
+  whether queueing delays count toward the authored display time are not
+  documented by the format schema. Here zero expires immediately, malformed
+  data uses the existing default, timing starts when queued, and the fallback
+  HUD keeps its existing 1.5-second fade (shortened for shorter durations).
 - **Help messages "done".** Here an input event counts only while its help
   message is up (shown or waiting to come back); after that the event's help
   doesn't show again until `ResetHelpMessage`. The wiki doesn't say whether the
