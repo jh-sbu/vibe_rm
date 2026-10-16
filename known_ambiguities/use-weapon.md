@@ -22,6 +22,9 @@ or other engine binary data was examined, and no game assets are included here.
   and [UseWeapon templates](https://skyrimeasy.blog-rpg.com/ck/packagetemplate08).
   The author reports that Aim Only holds a bow drawn, trigger distances compare
   the target to its trigger reference, and barrage pauses are optional.
+  Revisited 2026-10-16: both pages identify Always Power Attack; the
+  procedure experiments report that enabling it forces power attacks, while
+  disabling it permits random power attacks.
 
 ## Current behavior
 
@@ -37,6 +40,29 @@ or other engine binary data was examined, and no game assets are included here.
 - Leaving a trigger range before release cancels the draw with `attackStop`.
   A rejected stop is retried before drawing again or sheathing. A released
   shot finishes normally. A new eligible barrage can start after cancellation.
+
+## Always Power Attack
+
+The named Bool input is carried from the package into practice. When enabled,
+melee practice selects a right-hand, non-bash power attack from the actor's
+existing attack data that fits its equipped hands, preferring the stationary
+`attackPowerStartInPlace` when available. Bare fists and creature attacks use
+that same authored-data selection. Aim Only still suppresses swings, and bows
+retain their draw/release behavior. Each accepted swing consumes one attack in
+the current barrage; graph rejection or no suitable authored attack consumes
+none. These rules have synthetic regression coverage without game assets.
+
+The public experiments establish the flag's intent, but not its exact attack
+selection or exhaustion rules. Preferring stationary then first authored
+right-hand power attack is a local policy, not verified Skyrim selection.
+Actors without a fitting power attack currently keep the barrage pending.
+Practice still uses its existing swing recovery times, consumes no stamina and
+causes no melee damage; exhaustion, power-attack-specific recovery, and creature
+behavior need original-game observation. False or missing flags preserve the
+existing basic-only melee path; the reported random power attacks are still
+unsupported. Bows do not power attack in this implementation; any special
+original-game handling of this flag for ranged weapons remains unverified.
+Finite completion, resumption and time limits remain outside this change.
 
 ## Unresolved behavior and limitations
 
@@ -56,7 +82,8 @@ or other engine binary data was examined, and no game assets are included here.
   policy: an absent trigger imposes no gate, and a missing declared radius
   becomes zero. Exact inherited defaults need further investigation.
 - Never End, finite barrage completion, the simultaneous Wait's attack time
-  limit, Always Power Attack, Hold when Blocked, head tracking, Always Hit,
+  limit, random power attacks when the flag is false, Hold when Blocked,
+  head tracking, Always Hit,
   damage and combat-start flags, and acquisition of weapons from the world
   remain unsupported. Finite completion needs package/procedure lifecycle
   handling. Practice attacks retain their existing harmless behavior.
