@@ -801,6 +801,11 @@ game each piece unlocks.
   scaling, emissive colour and multiple, alpha and falloff animate on every material
   that has them (clouds, auroras, waterfalls, magic), by the controllers' frequency,
   phase and loop / reverse / clamp cycles
+- Standalone alpha-test controllers (`BSNiAlphaPropertyTestRefController`):
+  alpha-property chains merged with shader animation, keyed and constant
+  references on the existing material clocks, shared object / shadow cutouts.
+  Sequence-owned channels remain deferred; open questions:
+  `known_ambiguities/alpha-test-controllers.md`
 - Environment maps: lighting shaders with environment (or eye environment) mapping
   reflect their cube map (texture set slot 4, sampled with the world's axes: the vanilla
   maps keep the sky on +Z) along the reflected view, masked by the environment mask
@@ -1162,7 +1167,8 @@ game each piece unlocks.
    round actors; decals' normal maps, specular, parallax and colour alpha;
    `ENVMAP_LIGHT_FADE` (`sf2` bit 15); unscripted trigger volumes (acoustic
    spaces, room bounds and portals); effect models' skinned meshes,
-   `BSProceduralLightningController` and alpha test controllers; particles'
+   `BSProceduralLightningController` and sequence-owned shader / alpha-test
+   controllers; particles'
    decay, turbulence and drag, rotation axis, speed to aspect, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves**: an engine-native save format (reading .ess later), writing out

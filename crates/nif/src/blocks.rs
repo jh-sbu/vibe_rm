@@ -381,6 +381,7 @@ pub enum Block {
     TransformData(Box<crate::anim::TransformData>),
     TextKeys(Vec<(f32, String)>),
     ShaderController(crate::anim::ShaderController),
+    AlphaTestController(crate::anim::AlphaTestController),
     NodeController(crate::anim::NodeController),
     ValueInterpolator(crate::anim::ValueInterpolator),
     ValueKeys(crate::anim::ValueKeys),
@@ -1003,6 +1004,9 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
                 ty.ends_with("ColorController"),
                 ty.starts_with("BSLighting"),
             )?)
+        }
+        "BSNiAlphaPropertyTestRefController" => {
+            Block::AlphaTestController(crate::anim::alpha_test_controller(r)?)
         }
         "NiTransformController" => Block::NodeController(crate::anim::node_controller(
             r,

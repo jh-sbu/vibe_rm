@@ -116,6 +116,25 @@ pub struct ShaderController {
     pub lighting: bool,
 }
 
+/// `BSNiAlphaPropertyTestRefController`: animates a `NiAlphaProperty`'s
+/// alpha-test reference in the property's byte range (0..255).
+#[derive(Debug, Clone)]
+pub struct AlphaTestController {
+    pub next: Ref,
+    pub timing: Timing,
+    pub interpolator: Ref,
+}
+
+pub(crate) fn alpha_test_controller(r: &mut Reader) -> Result<AlphaTestController> {
+    let (next, timing) = timing(r)?;
+    let interpolator = r.block_ref()?;
+    Ok(AlphaTestController {
+        next,
+        timing,
+        interpolator,
+    })
+}
+
 /// What a node's own controller drives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeControllerKind {
@@ -441,6 +460,30 @@ impl TransformData {
 #[cfg(test)]
 mod tests {
     use super::Timing;
+
+    #[test]
+    fn alpha_test_controller_layout() {
+        // Synthetic SSE NiTimeController + NiSingleInterpController payload.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&7i32.to_le_bytes());
+        bytes.extend_from_slice(&76u16.to_le_bytes());
+        for v in [2.0f32, 0.5, 1.0, 4.0] {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        bytes.extend_from_slice(&3i32.to_le_bytes()); // target
+        bytes.extend_from_slice(&9i32.to_le_bytes()); // interpolator
+        let mut r = crate::reader::Reader::new(&bytes);
+        let Some(crate::Block::AlphaTestController(c)) =
+            crate::blocks::parse_block("BSNiAlphaPropertyTestRefController", &mut r).unwrap()
+        else {
+            panic!("alpha-test controller not dispatched");
+        };
+        assert_eq!(r.remaining(), 0);
+        assert_eq!(c.next.0, 7);
+        assert_eq!(c.interpolator.0, 9);
+        assert_eq!(c.timing.flags, 76);
+        assert_eq!(c.timing.key_time(1.0), 2.5);
+    }
 
     fn timing(cycle: u16) -> Timing {
         Timing {

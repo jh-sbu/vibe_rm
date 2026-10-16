@@ -174,6 +174,14 @@ impl MaterialUniform {
                 continue;
             };
             let f = v.x;
+            if c.alpha_test {
+                // The controller keys share NiAlphaProperty's byte range.
+                // Keep the negative sentinel when alpha testing is disabled.
+                if u.params[1] >= 0.0 && f.is_finite() {
+                    u.params[1] = (f / 255.0).clamp(0.0, 1.0);
+                }
+                continue;
+            }
             match (c.lighting, c.color, c.variable) {
                 // Effect shaders.
                 (false, false, 0) => u.emissive[3] = f,
@@ -202,6 +210,73 @@ impl MaterialUniform {
             }
         }
         u
+    }
+}
+
+#[cfg(test)]
+mod alpha_test_tests {
+    use super::*;
+
+    fn animation(started: bool) -> model::MaterialAnim {
+        model::MaterialAnim {
+            channels: vec![model::MaterialChannel {
+                timing: nif::anim::Timing {
+                    flags: 8 | 4,
+                    frequency: 2.0,
+                    phase: 0.0,
+                    start: 0.0,
+                    stop: 2.0,
+                },
+                keys: nif::anim::ValueKeys {
+                    keys: vec![(0.0, Vec3::ZERO), (2.0, Vec3::new(255.0, 0.0, 0.0))],
+                },
+                variable: 0,
+                color: false,
+                lighting: false,
+                alpha_test: true,
+                started,
+            }],
+        }
+    }
+
+    #[test]
+    fn alpha_threshold_uses_controller_clock_and_byte_range() {
+        let mut base = <MaterialUniform as bytemuck::Zeroable>::zeroed();
+        base.params = [0.7, 0.25, 0.0, 0.0];
+        let a = animation(true);
+        let u = base.animated(&a, 0.5, false);
+        assert_eq!(u.params[1], 0.5);
+        assert_eq!(u.params[0], 0.7);
+        assert_eq!(u.emissive, base.emissive);
+        assert_eq!(base.animated(&a, 10.0, false).params[1], 1.0);
+        let a = animation(false);
+        assert_eq!(base.animated(&a, 0.5, false).params[1], 0.25);
+        assert_eq!(base.animated(&a, 0.5, true).params[1], 0.5);
+
+        let mut a = animation(true);
+        let mut shader = a.channels[0].clone();
+        shader.alpha_test = false;
+        shader.variable = 6; // effect-shader U offset
+        shader.keys.keys = vec![(0.0, Vec3::new(0.75, 0.0, 0.0))];
+        a.channels.insert(0, shader);
+        let u = base.animated(&a, 0.5, false);
+        assert_eq!(u.uv[0], 0.75);
+        assert_eq!(u.params[1], 0.5);
+    }
+
+    #[test]
+    fn alpha_threshold_preserves_disabled_and_rejects_nonfinite() {
+        let mut base = <MaterialUniform as bytemuck::Zeroable>::zeroed();
+        let mut a = animation(true);
+        base.params[1] = -1.0;
+        assert_eq!(base.animated(&a, 0.5, true).params[1], -1.0);
+        base.params[1] = 0.25;
+        for v in [f32::NAN, f32::INFINITY] {
+            a.channels[0].keys.keys = vec![(0.0, Vec3::splat(v))];
+            assert_eq!(base.animated(&a, 0.5, true).params[1], 0.25);
+        }
+        a.channels[0].keys.keys = vec![(0.0, Vec3::splat(-100.0))];
+        assert_eq!(base.animated(&a, 0.5, true).params[1], 0.0);
     }
 }
 
