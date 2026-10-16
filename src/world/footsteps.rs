@@ -70,13 +70,18 @@ pub struct Impacts {
 }
 
 impl Impacts {
-    /// The sound (SNDR) an impact data set makes on a material: its own entry, or
+    /// The sounds (SNDR or SOUN) an impact data set makes on a material: its own entry, or
     /// its parent material's (stone stairs sound as stone).
-    pub fn sound(&mut self, lo: &LoadOrder, ipds: FormId, material: FormId) -> Option<FormId> {
-        let rec = lo.get(self.impact(lo, ipds, material)?)?;
-        let d = rec.get(b"SNAM")?;
-        let s = rec.fid(FormId(u32::from_le_bytes(d.get(..4)?.try_into().ok()?)));
-        (!s.is_null()).then_some(s)
+    pub fn sounds(
+        &mut self,
+        lo: &LoadOrder,
+        ipds: FormId,
+        material: FormId,
+    ) -> [Option<FormId>; 2] {
+        self.impact(lo, ipds, material)
+            .and_then(|id| lo.get(id))
+            .map(|rec| impact_sounds(&rec))
+            .unwrap_or([None; 2])
     }
 
     /// The impact (IPCT) an impact data set has for a material: its own
@@ -102,6 +107,19 @@ impl Impacts {
         }
         None
     }
+}
+
+/// IPCT's independent sound slots. A missing, null or truncated slot does not
+/// suppress the other one. Resolve each reference in the impact's plugin.
+pub(crate) fn impact_sounds(rec: &esp::LoadedRecord<'_>) -> [Option<FormId>; 2] {
+    if rec.tag().0 != *b"IPCT" {
+        return [None; 2];
+    }
+    [b"SNAM", b"NAM1"].map(|tag| {
+        let bytes = rec.get(tag)?.get(..4)?;
+        let id = rec.fid(FormId(u32::from_le_bytes(bytes.try_into().ok()?)));
+        (!id.is_null()).then_some(id)
+    })
 }
 
 /// The material type (MATT) of a landscape texture (LTEX `MNAM`).

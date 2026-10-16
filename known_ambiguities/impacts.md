@@ -23,9 +23,32 @@ places impacts isn't public.
 - **Effects stop by duration.** The blood sprays' emitters
   (`BSPSysMultiTargetEmitterCtlr`) loop with their visibility on all
   cycle, so the impact's duration must be what ends the emitting.
+- **Two sound references.** IPCT `SNAM` is Sound 1 and `NAM1` Sound 2,
+  each optionally referencing SNDR, SOUN or null, according to
+  [xEdit's public TES5 definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.5/Core/wbDefinitionsTES5.pas#L8307).
+  Both references are resolved in the impact's plugin; absent, null or
+  truncated references are ignored independently. This applies to weapon,
+  projectile and footstep impacts.
 
 ## Open (choices made here)
 
+- **Sound playback.** Both populated slots are submitted at the impact
+  position through the existing sound-descriptor pipeline, including for
+  footsteps. This follows the Creation Kit ImpactData description's plural
+  impact sounds ([public wiki mirror](https://tesck.ru/index.php/ImpactData))
+  and a [mod author's report of two conditional footstep descriptors](https://forums.nexusmods.com/topic/919650-footstep-impact-sounds/).
+  The format establishes two slots, but does not establish exact timing,
+  duplicate-reference handling, or whether every impact trigger plays both.
+  Here they start together, and equal references are submitted twice.
+  Physics collisions may use the slots as soft/hard alternatives; that path
+  is not implemented or inferred here. The existing sound pipeline's
+  descriptor-condition support also limits fidelity for conditional slots.
+- **Sound-only records without the no-decal flag.** The existing full
+  impact loader requires `DNAM` when `DATA` does not set No Decal Data;
+  a missing texture set therefore prevents weapon/projectile sound playback
+  too. Footsteps read the sound slots without loading decals. Whether
+  unflagged records without `DNAM` should still sound needs confirmation;
+  the second-sound change preserves this existing loader behavior.
 - **Where a blow lands**: on the target's side facing the attacker, at
   0.7 of its height (120 units for NPCs, scaled); the game uses the
   weapon's actual contact. Arrows land where they strike.
