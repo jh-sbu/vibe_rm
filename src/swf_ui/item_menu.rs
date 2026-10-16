@@ -15,7 +15,7 @@
 //! which it passes on as `AttemptEquip`, `DropItem` and `XButtonPress` or
 //! handles itself. What is guessed is in `known_ambiguities/swf-hud.md`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
 use esp::FormId;
@@ -43,8 +43,10 @@ mod card {
     pub const BOOK: f64 = 4.0;
     pub const FOOD: f64 = 5.0;
     pub const POTION: f64 = 6.0;
+    pub const SPELL: f64 = 7.0;
     pub const INGREDIENT: f64 = 8.0;
     pub const KEY: f64 = 9.0;
+    pub const SOUL_GEMS: f64 = 12.0;
 }
 
 /// Equip icons (`InventoryDefines.ES_*`): worn, wielded in the left hand,
@@ -185,6 +187,19 @@ impl Kind {
             Kind::Barter { stock, .. } => Some(*stock),
         }
     }
+
+    /// The inventory a row comes from; gifts have one side even when the
+    /// actor gives to the player.
+    fn source(&self, theirs: bool) -> FormId {
+        match self {
+            Kind::Gift {
+                actor,
+                giving: false,
+            } => *actor,
+            _ if theirs => self.other().unwrap_or(PLAYER_REF),
+            _ => PLAYER_REF,
+        }
+    }
 }
 
 /// A row of the list: the other side's (a container's...) or the player's.
@@ -195,12 +210,14 @@ struct Row {
 }
 
 /// What the list shows, to know when it must be filled again: each row's side,
-/// item, owner and count, what is worn and what is in hand, the favorites.
+/// item, owner and count, what is worn and what is in hand, the favorites,
+/// and the soul shown on each gem's card.
 type Listed = (
     Vec<(bool, FormId, Option<FormId>, i32)>,
     Vec<FormId>,
     [Option<FormId>; 3],
     Vec<FormId>,
+    Vec<Option<u8>>,
 );
 
 pub(super) struct ItemMenu {
@@ -462,14 +479,9 @@ impl ItemMenu {
             .get(&PLAYER_REF)
             .cloned()
             .unwrap_or_default();
-        let listed: Listed = (
-            rows.iter()
-                .map(|r| (r.theirs, r.item.item, r.item.owner, r.item.count))
-                .collect(),
-            inv.equipped().to_vec(),
-            inv.held_all(),
-            engine.favorites.clone(),
-        );
+        let listed = listed_state(&rows, &inv, &engine.favorites, |r| {
+            self.soul_level(engine, r)
+        });
         if self.listed.as_ref() != Some(&listed) {
             let entries: Vec<Value> = rows
                 .iter()
@@ -527,7 +539,7 @@ impl ItemMenu {
     /// pickpocketing, the chance to take one (or place one: the menu says
     /// "TO PLACE" on the player's side).
     fn card(&self, engine: &Engine, r: &Row) -> Value {
-        let mut card = item_card(engine, &r.item);
+        let mut card = item_card(engine, &r.item, self.soul_level(engine, r));
         if let Value::Object(fields) = &mut card {
             let favorite = !r.theirs && engine.favorites.contains(&r.item.item);
             fields.insert("favorite".into(), Value::Bool(favorite));
@@ -537,6 +549,18 @@ impl ItemMenu {
             }
         }
         card
+    }
+
+    fn soul_level(&self, engine: &Engine, r: &Row) -> Option<u8> {
+        if r.item.info.kind != ItemKind::SoulGem {
+            return None;
+        }
+        let base = engine
+            .lo
+            .get(r.item.item)
+            .and_then(|rec| rec.get(b"SOUL").and_then(|d| d.first()).copied())
+            .unwrap_or(0);
+        row_soul_level(&self.kind, r, &engine.inventories, base)
     }
 
     /// The row selected in the items list.
@@ -794,20 +818,40 @@ fn dragon_souls_text(engine: &Engine) -> String {
 /// The item card: name, count, value and weight, and by kind the armor rating,
 /// damage, effects or description, with how much worn armor or the weapon
 /// held would change.
-fn item_card(engine: &Engine, row: &ListedItem) -> Value {
+fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>) -> Value {
     let item = row.item;
-    let mut f: Vec<(&'static str, Value)> = vec![
-        ("name", text(&row.info.name)),
-        ("count", num(row.count as f32)),
-        ("value", num(row.info.value as f32)),
-        ("weight", num(row.info.weight)),
-        ("stolen", Value::Bool(row.owner.is_some())),
-    ];
+    let mut f = common_card(row);
     let worn = engine
         .inventories
         .get(&PLAYER_REF)
         .is_some_and(|i| i.equipped().contains(&item));
     let kind = match row.info.kind {
+        ItemKind::Scroll => {
+            let magic = engine.magic_item(item);
+            let kind = scroll_fields(
+                &mut f,
+                magic.as_deref(),
+                &engine.effects_text(item),
+                &engine.spell_level_name(item),
+            );
+            // ICT_SPELL selects the school meter in the inventory's bottom
+            // bar too. Clear it explicitly for a scroll without a school.
+            let school = engine.spell_school(item);
+            f.push((
+                "magicSchoolName",
+                text(&school.map_or_else(String::new, |s| engine.skill_name(s))),
+            ));
+            f.push((
+                "magicSchoolLevel",
+                num(school.map_or(0.0, |s| engine.av_base(PLAYER_REF, s).floor())),
+            ));
+            f.push((
+                "magicSchoolPct",
+                num(school.map_or(0.0, |s| engine.skill_progress(s) * 100.0)),
+            ));
+            kind
+        }
+        ItemKind::SoulGem => soul_fields(&mut f, soul, |name| engine.gmst_string(name)),
         ItemKind::Armor => {
             let none = engine.protection_of(PLAYER_REF, &[]).rating;
             let rating = engine.protection_of(PLAYER_REF, &[item]).rating - none;
@@ -871,8 +915,331 @@ fn item_card(engine: &Engine, row: &ListedItem) -> Value {
             card::BOOK
         }
         ItemKind::Key => card::KEY,
-        ItemKind::Scroll | ItemKind::SoulGem | ItemKind::Light | ItemKind::Misc => card::MISC,
+        ItemKind::Light | ItemKind::Misc => card::MISC,
     };
     f.push(("type", Value::Number(kind)));
     object(f)
+}
+
+fn common_card(row: &ListedItem) -> Vec<(&'static str, Value)> {
+    vec![
+        ("name", text(&row.info.name)),
+        ("count", num(row.count as f32)),
+        ("value", num(row.info.value as f32)),
+        ("weight", num(row.info.weight)),
+        ("stolen", Value::Bool(row.owner.is_some())),
+    ]
+}
+
+fn listed_state(
+    rows: &[Row],
+    inv: &Inventory,
+    favorites: &[FormId],
+    soul: impl Fn(&Row) -> Option<u8>,
+) -> Listed {
+    (
+        rows.iter()
+            .map(|r| (r.theirs, r.item.item, r.item.owner, r.item.count))
+            .collect(),
+        inv.equipped().to_vec(),
+        inv.held_all(),
+        favorites.to_vec(),
+        // Filling a gem can change only its soul metadata, leaving the
+        // base form, count and ownership unchanged.
+        rows.iter().map(soul).collect(),
+    )
+}
+
+fn row_soul_level(
+    kind: &Kind,
+    row: &Row,
+    inventories: &HashMap<FormId, Inventory>,
+    base: u8,
+) -> Option<u8> {
+    soul_level(
+        inventories.get(&kind.source(row.theirs)),
+        row.item.item,
+        base,
+    )
+}
+
+fn scroll_fields(
+    fields: &mut Vec<(&'static str, Value)>,
+    magic: Option<&crate::magic::MagicItem>,
+    effects: &str,
+    level: &str,
+) -> f64 {
+    fields.push(("effects", text(effects)));
+    fields.push(("castLevel", text(level)));
+    // The SWF uses zero for the per-second layout, any other value for the
+    // normal layout. This is not the scroll's charge time in seconds.
+    let concentration = magic.is_some_and(|m| m.cast_type == crate::spells::CONCENTRATION);
+    fields.push(("castTime", num(if concentration { 0.0 } else { 1.0 })));
+    // Scrolls consume the item, not the caster's magicka.
+    fields.push(("spellCost", num(0.0)));
+    card::SPELL
+}
+
+fn soul_fields(
+    fields: &mut Vec<(&'static str, Value)>,
+    level: Option<u8>,
+    setting: impl FnOnce(&str) -> Option<String>,
+) -> f64 {
+    fields.push(("soulLVL", text(&soul_name(level, setting))));
+    card::SOUL_GEMS
+}
+
+/// A homogeneous stack's actual soul, including per-item captures. Rows are
+/// still grouped by form/owner, while soul metadata has no owner identity;
+/// do not select an arbitrary soul when the form has several kinds of gem.
+fn soul_level(inv: Option<&Inventory>, item: FormId, base: u8) -> Option<u8> {
+    let Some(inv) = inv else {
+        return (base <= 5).then_some(base);
+    };
+    let mut level = (inv.without_soul(item) > 0).then_some(base);
+    for &(_, soul, _) in inv.souls.iter().filter(|&&(f, _, n)| f == item && n > 0) {
+        if level.is_some_and(|x| x != soul) {
+            return None;
+        }
+        level = Some(soul);
+    }
+    level.or(Some(base)).filter(|&x| x <= 5)
+}
+
+fn soul_name(level: Option<u8>, setting: impl FnOnce(&str) -> Option<String>) -> String {
+    let (key, english) = match level {
+        Some(0) => ("sEmpty", "Empty"),
+        Some(1) => ("sSoulLevelNamePetty", "Petty"),
+        Some(2) => ("sSoulLevelNameLesser", "Lesser"),
+        Some(3) => ("sSoulLevelNameCommon", "Common"),
+        Some(4) => ("sSoulLevelNameGreater", "Greater"),
+        Some(5) => ("sSoulLevelNameGrand", "Grand"),
+        // A neutral placeholder for unresolved mixed or invalid soul data.
+        _ => return "—".into(),
+    };
+    setting(key).unwrap_or_else(|| english.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::magic::MagicItem;
+    use crate::world::inventory::ItemInfo;
+
+    const GEM: FormId = FormId(0x800);
+    const ACTOR: FormId = FormId(0x900);
+    const STOCK: FormId = FormId(0xA00);
+
+    fn row(kind: ItemKind, theirs: bool) -> Row {
+        Row {
+            item: ListedItem {
+                item: GEM,
+                owner: Some(ACTOR),
+                count: 2,
+                info: ItemInfo {
+                    name: "Synthetic item".into(),
+                    kind,
+                    value: 125,
+                    weight: 0.5,
+                },
+            },
+            theirs,
+        }
+    }
+
+    fn gems(count: i32, soul: u8) -> Inventory {
+        let mut inv = Inventory::default();
+        inv.add(GEM, count);
+        for _ in 0..count {
+            inv.put_soul(GEM, soul);
+        }
+        inv
+    }
+
+    #[test]
+    fn scroll_payload_keeps_item_stats_and_has_no_magicka_cost() {
+        let row = row(ItemKind::Scroll, false);
+        for (cast_type, expected) in [(1, 1.0), (crate::spells::CONCENTRATION, 0.0)] {
+            let magic = MagicItem {
+                cast_type,
+                cost: Some(500.0),
+                charge_time: 3.5,
+                ..Default::default()
+            };
+            let mut fields = common_card(&row.item);
+            let kind = scroll_fields(&mut fields, Some(&magic), "Burns for 10 seconds.", "Adept");
+            fields.push(("type", Value::Number(kind)));
+            let Value::Object(fields) = object(fields) else {
+                unreachable!()
+            };
+            assert_eq!(fields["name"], text("Synthetic item"));
+            assert_eq!(fields["count"], num(2.0));
+            assert_eq!(fields["value"], num(125.0));
+            assert_eq!(fields["weight"], num(0.5));
+            assert_eq!(fields["stolen"], Value::Bool(true));
+            assert_eq!(fields["effects"], text("Burns for 10 seconds."));
+            assert_eq!(fields["castLevel"], text("Adept"));
+            assert_eq!(fields["castTime"], num(expected));
+            assert_eq!(fields["spellCost"], num(0.0));
+            assert_eq!(fields["type"], Value::Number(7.0));
+        }
+        let mut fields = Vec::new();
+        scroll_fields(&mut fields, None, "", "Novice");
+        let Value::Object(fields) = object(fields) else {
+            unreachable!()
+        };
+        assert_eq!(fields["castTime"], num(1.0));
+        assert_eq!(fields["effects"], text(""));
+    }
+
+    #[test]
+    fn soul_labels_use_game_settings_and_cover_empty_through_grand() {
+        for (level, key, fallback) in [
+            (0, "sEmpty", "Empty"),
+            (1, "sSoulLevelNamePetty", "Petty"),
+            (2, "sSoulLevelNameLesser", "Lesser"),
+            (3, "sSoulLevelNameCommon", "Common"),
+            (4, "sSoulLevelNameGreater", "Greater"),
+            (5, "sSoulLevelNameGrand", "Grand"),
+        ] {
+            assert_eq!(soul_name(Some(level), |_| None), fallback);
+            assert_eq!(
+                soul_name(Some(level), |setting| {
+                    assert_eq!(setting, key);
+                    Some("Localized soul".into())
+                }),
+                "Localized soul"
+            );
+            let row = row(ItemKind::SoulGem, false);
+            let mut fields = common_card(&row.item);
+            let kind = soul_fields(&mut fields, Some(level), |_| Some("Localized soul".into()));
+            fields.push(("type", Value::Number(kind)));
+            let Value::Object(fields) = object(fields) else {
+                unreachable!()
+            };
+            assert_eq!(fields["type"], Value::Number(12.0));
+            assert_eq!(fields["soulLVL"], text("Localized soul"));
+            assert_eq!(fields["count"], num(2.0));
+            assert_eq!(fields["value"], num(125.0));
+            assert_eq!(fields["weight"], num(0.5));
+        }
+        assert_eq!(soul_name(None, |_| panic!("mixed is not empty")), "—");
+        assert_eq!(soul_name(Some(6), |_| None), "—");
+    }
+
+    #[test]
+    fn soul_state_uses_captured_souls_without_claiming_a_mixed_stack_is_empty() {
+        let mut inv = Inventory::default();
+        inv.add(GEM, 2);
+        assert_eq!(soul_level(Some(&inv), GEM, 0), Some(0));
+        assert_eq!(soul_level(Some(&inv), GEM, 5), Some(5));
+        inv.put_soul(GEM, 1);
+        assert_eq!(soul_level(Some(&inv), GEM, 0), None);
+        inv.put_soul(GEM, 1);
+        assert_eq!(soul_level(Some(&inv), GEM, 0), Some(1));
+        inv.souls[0].2 = 1;
+        inv.put_soul(GEM, 3);
+        assert_eq!(soul_level(Some(&inv), GEM, 0), None);
+        assert_eq!(soul_level(None, GEM, 5), Some(5));
+        assert_eq!(soul_level(None, GEM, 6), None);
+        assert_eq!(soul_level(Some(&gems(1, 6)), GEM, 0), None);
+    }
+
+    #[test]
+    fn soul_cards_read_the_inventory_of_the_actual_giver_or_side() {
+        let inventories = HashMap::from([
+            (PLAYER_REF, gems(2, 1)),
+            (ACTOR, gems(2, 3)),
+            (STOCK, gems(2, 5)),
+        ]);
+        let mine = row(ItemKind::SoulGem, false);
+        let theirs = row(ItemKind::SoulGem, true);
+        for kind in [
+            Kind::Inventory,
+            Kind::Container {
+                owner: ACTOR,
+                npc: false,
+            },
+            Kind::Container {
+                owner: ACTOR,
+                npc: true,
+            },
+            Kind::Pickpocket { victim: ACTOR },
+            Kind::Barter {
+                vendor: ACTOR,
+                stock: STOCK,
+                info: None,
+            },
+            Kind::Gift {
+                actor: ACTOR,
+                giving: true,
+            },
+        ] {
+            assert_eq!(row_soul_level(&kind, &mine, &inventories, 0), Some(1));
+        }
+        for kind in [
+            Kind::Container {
+                owner: ACTOR,
+                npc: false,
+            },
+            Kind::Pickpocket { victim: ACTOR },
+        ] {
+            assert_eq!(row_soul_level(&kind, &theirs, &inventories, 0), Some(3));
+        }
+        assert_eq!(
+            row_soul_level(
+                &Kind::Barter {
+                    vendor: ACTOR,
+                    stock: STOCK,
+                    info: None
+                },
+                &theirs,
+                &inventories,
+                0
+            ),
+            Some(5)
+        );
+        // Gifts received are on the menu's only (non-theirs) side.
+        assert_eq!(
+            row_soul_level(
+                &Kind::Gift {
+                    actor: ACTOR,
+                    giving: false
+                },
+                &mine,
+                &inventories,
+                0
+            ),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn filling_in_place_changes_the_list_snapshot_and_refreshes_the_card() {
+        let rows = [row(ItemKind::SoulGem, true)];
+        let player = Inventory::default();
+        let kind = Kind::Container {
+            owner: ACTOR,
+            npc: false,
+        };
+        let mut container = Inventory::default();
+        container.add(GEM, 2);
+        let mut inventories = HashMap::from([(ACTOR, container)]);
+        let snapshot = |inventories: &HashMap<FormId, Inventory>| {
+            listed_state(&rows, &player, &[], |r| {
+                row_soul_level(&kind, r, inventories, 0)
+            })
+        };
+        let empty = snapshot(&inventories);
+        inventories.get_mut(&ACTOR).unwrap().put_soul(GEM, 1);
+        let mixed = snapshot(&inventories);
+        inventories.get_mut(&ACTOR).unwrap().put_soul(GEM, 1);
+        let filled = snapshot(&inventories);
+        assert_eq!(empty.0, filled.0, "same form, owner, count and side");
+        assert_ne!(empty, mixed);
+        assert_ne!(mixed, filled);
+        assert_eq!(empty.4, vec![Some(0)]);
+        assert_eq!(mixed.4, vec![None]);
+        assert_eq!(filled.4, vec![Some(1)]);
+    }
 }

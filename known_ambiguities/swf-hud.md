@@ -106,8 +106,12 @@ isn't public; the choices below are what the movies' code allows.
   weapon's `damageChange` against the one held; `effects`: each magic effect's
   description with `<mag>` and `<dur>` filled in, Survival Mode's `[SURV=...]`
   parts dropped; a book's `CNAM` description; `potionType` from a potion's first effect
-  (magicka 1, stamina 2, else health 0) for the bottom bar's meter. Scrolls,
-  soul gems and torches get the misc card, as nothing says otherwise.
+  (magicka 1, stamina 2, else health 0) for the bottom bar's meter. Scrolls
+  use `ICT_SPELL` with effects, casting level and zero magicka cost; soul
+  gems use `ICT_SOUL_GEMS` with localized `soulLVL`, including homogeneous
+  captured-soul stacks. Mixed soul stacks show a neutral dash. The asset
+  evidence and unresolved grouping/display choices are recorded in
+  [inventory-cards.md](inventory-cards.md). Torches still use the misc card.
 - **The bottom bar** (`UpdatePlayerInfo`): `armor` (the player's rating),
   `damage` (the held weapon's base damage, 0 unarmed), `encumbrance` (the
   items' weight), `maxEncumbrance` (`CarryWeight`), `gold`, and health,
