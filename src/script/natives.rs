@@ -194,16 +194,16 @@ pub fn call(
         }
         ("game", "isplayersleeping") | ("game", "isfasttravelenabled") => v(Value::Bool(false)),
         // Player controls: each flag given true disables (enables) that control,
-        // in the order of `DisabledControls::flags_mut`. Missing arguments take
+        // in Papyrus argument order. Missing arguments take
         // Papyrus's defaults.
         ("game", "disableplayercontrols") | ("game", "enableplayercontrols") => {
             let disable = func == "disableplayercontrols";
             const DISABLE: [bool; 8] = [true, true, false, false, false, true, true, false];
-            for (i, flag) in e.disabled_controls.flags_mut().into_iter().enumerate() {
-                if args.get(i).map_or(!disable || DISABLE[i], |a| a.as_bool()) {
-                    *flag = disable;
-                }
-            }
+            let selected = std::array::from_fn(|i| {
+                args.get(i).map_or(!disable || DISABLE[i], |a| a.as_bool())
+            });
+            let pov_type = args.get(8).map_or(0, Value::as_int);
+            e.disabled_controls.apply(disable, selected, pov_type);
             log::info!("{func}: {}", e.disabled_controls.describe());
             // Disabling fighting puts a drawn weapon away (`test-mod
             // autotest`).
@@ -214,7 +214,9 @@ pub fn call(
         }
         ("game", "ismovementcontrolsenabled") => v(Value::Bool(!e.disabled_controls.movement)),
         ("game", "isfightingcontrolsenabled") => v(Value::Bool(!e.disabled_controls.fighting)),
-        ("game", "iscamswitchcontrolsenabled") => v(Value::Bool(!e.disabled_controls.cam_switch)),
+        ("game", "iscamswitchcontrolsenabled") => {
+            v(Value::Bool(!e.disabled_controls.camera_switch_disabled()))
+        }
         ("game", "islookingcontrolsenabled") => v(Value::Bool(!e.disabled_controls.looking)),
         ("game", "issneakingcontrolsenabled") => v(Value::Bool(!e.disabled_controls.sneaking)),
         ("game", "ismenucontrolsenabled") => v(Value::Bool(!e.disabled_controls.menu)),
