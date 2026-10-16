@@ -119,6 +119,58 @@ pub struct GravityDesc {
 }
 
 #[derive(Debug, Clone)]
+pub struct DragDesc {
+    /// Model-space direction and centre of the drag object.
+    pub axis: Vec3,
+    pub position: Vec3,
+    pub percentage: f32,
+    /// Full-strength radius, followed by a linear falloff distance.
+    pub range: f32,
+    pub falloff: f32,
+    pub active: Curve,
+}
+
+impl DragDesc {
+    fn from_object(
+        object: Mat4,
+        axis: Vec3,
+        percentage: f32,
+        range: f32,
+        falloff: f32,
+        active: Curve,
+    ) -> Self {
+        let scale = object.x_axis.truncate().length();
+        Self {
+            axis: object.transform_vector3(axis).normalize_or_zero(),
+            position: object.w_axis.truncate(),
+            percentage,
+            range: range.max(0.0) * scale,
+            falloff: falloff.max(0.0) * scale,
+            active,
+        }
+    }
+
+    fn apply(&self, position: Vec3, velocity: &mut Vec3, dt: f32) {
+        if !self.percentage.is_finite() || self.percentage <= 0.0 {
+            return;
+        }
+        let distance = position.distance(self.position);
+        let influence = if distance <= self.range {
+            1.0
+        } else if self.falloff > 0.0 {
+            (1.0 - (distance - self.range) / self.falloff).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        // Only the component parallel to the object's axis is damped.
+        // Temporal attenuation and linear falloff are explicit runtime
+        // choices; see known_ambiguities/particles.md.
+        let loss = (self.percentage * influence * dt).clamp(0.0, 1.0);
+        *velocity -= self.axis * velocity.dot(self.axis) * loss;
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct SpawnDesc {
     pub percentage: f32,
     pub count: (u16, u16),
@@ -142,8 +194,7 @@ pub struct ParticleDesc {
     pub velocity_oriented: bool,
     pub emitters: Vec<EmitterDesc>,
     pub gravity: Vec<GravityDesc>,
-    /// Drag: the share of the velocity lost a second.
-    pub drag: Vec<(f32, Curve)>,
+    pub drag: Vec<DragDesc>,
     /// Rotation: speed and variation, start angle and variation, random sign.
     pub rotation: Option<(f32, f32, f32, f32, bool)>,
     /// Size over the particle's life.
@@ -361,7 +412,20 @@ pub fn describe(
                     active: active(m),
                 });
             }
-            ModifierKind::Drag { percentage, .. } => d.drag.push((*percentage, active(m))),
+            ModifierKind::Drag {
+                object,
+                axis,
+                percentage,
+                range,
+                falloff,
+            } => d.drag.push(DragDesc::from_object(
+                object_at(*object),
+                *axis,
+                *percentage,
+                *range,
+                *falloff,
+                active(m),
+            )),
             ModifierKind::Rotation {
                 speed,
                 speed_variation,
@@ -535,13 +599,12 @@ impl ParticleState {
                 p.velocity += dir * strength * dt;
             }
         }
-        for (pct, active) in &d.drag {
-            if active.sample(t) < 0.5 {
+        for drag in &d.drag {
+            if drag.active.sample(t) < 0.5 {
                 continue;
             }
-            let k = (1.0 - pct * dt).max(0.0);
             for p in &mut self.particles {
-                p.velocity *= k;
+                drag.apply(p.position, &mut p.velocity, dt);
             }
         }
         for p in &mut self.particles {
@@ -767,6 +830,192 @@ pub struct ParticleBatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn drag_fixture(object: nif::Transform, axis: Vec3, range: f32, falloff: f32) -> ParticleDesc {
+        let node = |transform, children| {
+            Block::Node(nif::Node {
+                av: nif::AvObject {
+                    transform,
+                    ..Default::default()
+                },
+                kind: nif::NodeKind::Plain,
+                children,
+                effects: Vec::new(),
+            })
+        };
+        let nif = Nif {
+            header: nif::Header {
+                version: 0x14020007,
+                user_version: 12,
+                bs_version: 100,
+                block_types: Vec::new(),
+                block_type_index: Vec::new(),
+                block_sizes: Vec::new(),
+                block_offsets: Vec::new(),
+                strings: Vec::new(),
+            },
+            roots: vec![0],
+            blocks: vec![
+                node(nif::Transform::default(), vec![Ref(1)]),
+                node(object, Vec::new()),
+                Block::ParticleData(Box::new(nif::psys::ParticleData {
+                    max_particles: 10,
+                    subtexture_offsets: Vec::new(),
+                    aspect_ratio: 1.0,
+                    aspect_flags: 0,
+                    speed_to_aspect: (0.0, 0.0, 0.0),
+                })),
+                Block::ParticleModifier(Box::new(nif::psys::Modifier {
+                    name: "drag".into(),
+                    order: 4000,
+                    active: true,
+                    kind: ModifierKind::Drag {
+                        object: Ref(1),
+                        axis,
+                        percentage: 0.5,
+                        range,
+                        falloff,
+                    },
+                })),
+                Block::ParticleModifier(Box::new(nif::psys::Modifier {
+                    name: "emitter".into(),
+                    order: 1000,
+                    active: false,
+                    kind: ModifierKind::Emitter(nif::psys::Emitter {
+                        speed: 0.0,
+                        speed_variation: 0.0,
+                        declination: 0.0,
+                        declination_variation: 0.0,
+                        planar_angle: 0.0,
+                        planar_angle_variation: 0.0,
+                        color: Vec4::ONE,
+                        radius: 1.0,
+                        radius_variation: 0.0,
+                        life_span: 10.0,
+                        life_span_variation: 0.0,
+                        shape: EmitterShape::Sphere {
+                            object: Ref(1),
+                            radius: 0.0,
+                        },
+                    }),
+                })),
+            ],
+        };
+        let sys = nif::psys::ParticleSystem {
+            av: nif::AvObject {
+                net: nif::ObjectNet {
+                    controller: Ref(-1),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            bound_center: Vec3::ZERO,
+            bound_radius: 100.0,
+            shader: Ref(-1),
+            alpha: Ref(-1),
+            data: Ref(2),
+            world_space: false,
+            modifiers: vec![Ref(3), Ref(4)],
+            strip: false,
+        };
+        describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap()
+    }
+
+    fn particle(position: Vec3, velocity: Vec3) -> Particle {
+        Particle {
+            position,
+            velocity,
+            age: 0.0,
+            life: 10.0,
+            radius: 1.0,
+            color: Vec4::ONE,
+            angle: 0.0,
+            spin: 0.0,
+            frame: 0.0,
+            generation: 0,
+        }
+    }
+
+    #[test]
+    fn drag_uses_object_axis_position_and_scale() {
+        let d = drag_fixture(
+            nif::Transform {
+                translation: Vec3::new(10.0, 20.0, 30.0),
+                rotation: Mat3::from_rotation_z(std::f32::consts::FRAC_PI_2),
+                scale: 2.0,
+            },
+            Vec3::X,
+            2.0,
+            3.0,
+        );
+        assert!(d.drag[0].axis.abs_diff_eq(Vec3::Y, 1e-6));
+        assert_eq!(d.drag[0].position, Vec3::new(10.0, 20.0, 30.0));
+        assert_eq!((d.drag[0].range, d.drag[0].falloff), (4.0, 6.0));
+        let mut s = ParticleState::new(1);
+        s.particles
+            .push(particle(d.drag[0].position, Vec3::new(2.0, -4.0, 6.0)));
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert!(
+            s.particles[0]
+                .velocity
+                .abs_diff_eq(Vec3::new(2.0, -3.0, 6.0), 1e-6)
+        );
+        assert!(
+            s.particles[0]
+                .position
+                .abs_diff_eq(Vec3::new(11.0, 18.5, 33.0), 1e-6)
+        );
+    }
+
+    #[test]
+    fn drag_range_and_falloff_limit_parallel_damping() {
+        let d = drag_fixture(nif::Transform::default(), Vec3::X, 2.0, 4.0);
+        let mut s = ParticleState::new(1);
+        for distance in [0.0, 2.0, 4.0, 6.0, 8.0] {
+            s.particles
+                .push(particle(Vec3::Y * distance, Vec3::new(4.0, 2.0, -3.0)));
+        }
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        for (p, x) in s.particles.iter().zip([3.0, 3.0, 3.5, 4.0, 4.0]) {
+            assert_eq!(p.velocity, Vec3::new(x, 2.0, -3.0));
+        }
+    }
+
+    #[test]
+    fn drag_respects_active_curve_and_zero_parameters() {
+        let mut d = drag_fixture(nif::Transform::default(), Vec3::X, 0.0, 0.0);
+        d.drag[0].active = Curve::constant(0.0);
+        let mut s = ParticleState::new(1);
+        s.particles.push(particle(Vec3::ZERO, Vec3::ONE));
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(s.particles[0].velocity, Vec3::ONE);
+
+        d.drag[0].active = Curve::constant(1.0);
+        s.particles[0].position = Vec3::ZERO;
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(s.particles[0].velocity, Vec3::new(0.75, 1.0, 1.0));
+        s.particles[0].position = Vec3::Y;
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(s.particles[0].velocity, Vec3::new(0.75, 1.0, 1.0));
+    }
+
+    #[test]
+    fn drag_degenerate_axis_and_large_percentage_do_not_reverse_velocity() {
+        let mut d = drag_fixture(nif::Transform::default(), Vec3::ZERO, f32::MAX, f32::MAX);
+        let mut velocity = Vec3::new(-2.0, 3.0, 4.0);
+        d.drag[0].apply(Vec3::ZERO, &mut velocity, 1.0);
+        assert_eq!(velocity, Vec3::new(-2.0, 3.0, 4.0));
+        d.drag[0].axis = Vec3::X;
+        d.drag[0].percentage = 10.0;
+        d.drag[0].apply(Vec3::ZERO, &mut velocity, 1.0);
+        assert_eq!(velocity, Vec3::new(0.0, 3.0, 4.0));
+        for percentage in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            d.drag[0].percentage = percentage;
+            let mut velocity = Vec3::ONE;
+            d.drag[0].apply(Vec3::ZERO, &mut velocity, 1.0);
+            assert_eq!(velocity, Vec3::ONE);
+        }
+    }
 
     #[test]
     fn simple_color_fades_and_blends() {
