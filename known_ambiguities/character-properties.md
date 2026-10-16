@@ -1,8 +1,9 @@
-# Scalar character properties in behavior modifiers and generators
+# Character properties in behavior modifiers and generators
 
 Implemented in `crates/havok/src/behavior/{mod.rs,runtime.rs}` and
 `src/world/behavior.rs`: read-only scalar inputs to supported modifiers and
-generator members already handled by the runtime.
+generator members already handled by the runtime, plus bone-weight array inputs
+on blender children and bone switches.
 
 ## Public and asset evidence
 
@@ -66,8 +67,7 @@ generator members already handled by the runtime.
   Generator members not listed above are retained but not evaluated, including
   forwarding `BSCyclicBlendTransitionGenerator`'s `fBlendParameter` property to
   its child. The inspected humanoid graphs did not show scalar uses there.
-  Character-property bone-weight bindings on blender children also remain
-  outside this change (bone switches already support them). The static
+  Blender-child bone-weight properties are supported as described below. The static
   event-to-clip planning resolver still uses its existing variable-default and
   authored-member paths; it does not resolve scalar generator properties.
 - Activation/deactivation callbacks and event-driven modifiers retain their
@@ -83,3 +83,43 @@ start/speed, user-controlled time, selector inputs and live variable precedence,
 state selection and read-only outputs, synchronized parametric blending and
 missing/non-scalar fallback. These invented graphs test this implementation's
 input handling, not original-engine lifecycle parity.
+
+## Blender-child bone-weight properties
+
+The runtime now retains `hkbBlenderGeneratorChild`'s character-property binding
+for `boneWeights` and resolves it against the character's existing
+`hkbBoneWeightArray` property table. This extends the same property-binding
+mechanism described by the community guide above; it does not treat a pointer
+property as a scalar or a writable graph variable.
+
+An in-memory audit of installed Skyrim SE game assets found 32 such bindings
+across the 17 graphs reachable from the humanoid `0_master.hkx`. They reference
+`LeftArm`, `RightArm`, `UpperBody`, `Arms`, `LeftForearm`, `LeftHand`,
+`MountedCombatBowBlend` and `SaddleOffsetBoneWeights`. DefaultMale supplies a
+99-bone weight array for each of these names. Examples include `blockbehavior.hkx`
+(`UpperBody`), `magicbehavior.hkx` (left/right arms), `1hm_behavior.hkx` (arms and
+hands), `weapequip.hkx`, and `horsebehavior.hkx` (mounted combat/saddle masks).
+The child uses the same binding-set pointer at 0x10, type-1 binding records and
+graph-local property-name table already established above. These are observations
+of authored assets, not a claim about every game version or mod.
+
+Resolved arrays replace the child's authored `boneWeights` array. Missing
+characters, names, or non-array properties retain that authored fallback. Names
+resolve case-insensitively, and resolved masks belong to the shared runtime for
+that character, so another character using the same graph can supply another
+array. Existing mask composition is preserved: parent and child weights multiply
+per bone; scalar child-weight normalization and additive handling do not change.
+
+Original-engine handling of missing/mistyped bindings, empty arrays, mismatched
+skeleton lengths and per-bone normalization is still unverified. This change
+keeps the existing mask policies for those cases: empty arrays add no mask, and
+composition treats missing entries as 1. Runtime property overrides remain
+unsupported, as do graph-variable pointer bindings on `boneWeights`. Synthetic
+tests cover graph-name retention, case-insensitive
+resolution, distinct characters, replacing authored masks, nested mask
+composition, unchanged scalar weights and missing/non-array fallback. They
+validate this supported input path, not those unresolved parity questions.
+
+Only public community documentation and game behavior/character assets were
+examined. No engine binary data or SDK mirrors were used, and no game assets
+or asset bytes were copied into the repository.

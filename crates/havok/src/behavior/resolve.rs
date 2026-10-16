@@ -410,6 +410,7 @@ mod tests {
                 weight: 1.0,
                 weight_variable: None,
                 bone_weights: None,
+                bone_weights_property: None,
             }],
         };
         let other = BehaviorGraph::new(
