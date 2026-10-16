@@ -784,6 +784,10 @@ game each piece unlocks.
 - Keyframe animation: NiControllerManager / NiControllerSequence / NiTransformInterpolator
   / NiTransformData; animated nodes drawn as separate parts; doors open and close (player
   activation, NPCs walking through) with their leaves' collision; statics loop "Idle"
+- Loaded placed objects' standalone `NiTransformController` / `NiVisController`
+  chains: nested poses and visibility, independent controller clocks and
+  block-identity targets, scaled bounds and hidden parts omitted from shadows
+  and particles. Limits and timing choices: `known_ambiguities/node-controllers.md`
 - Particle systems: `NiParticleSystem` with its data, emitters (box, cylinder, sphere),
   birth rate and visibility controllers, gravity, drag, rotation, scale, simple colour,
   subtexture flipping and spawning on death, run on the CPU near the camera and drawn as
@@ -958,9 +962,10 @@ game each piece unlocks.
    - Footsteps: swimming (and swimming itself), splashes, decals
    - `BSBehaviorGraphExtraData`'s "controls base skeleton"; script-set graph
      variables (`SetAnimationVariable*`) surviving the AI's own writes
-   - Later / separate: NiTransformController and NiVisController (non-sequence)
-     outside effects (impact effects run them: see Done), texture flip controllers
-     (`NiFlipController`), shader controllers inside sequences (only the
+   - Later / separate: standalone node controllers on geometry, attachments,
+     distant and loose objects; collision following standalone transforms,
+     persistence and driver arbitration (`known_ambiguities/node-controllers.md`);
+     texture flip controllers (`NiFlipController`), shader controllers inside sequences (only the
      property's own controller chain runs, on the global clock)
 2. **Story Manager** (core and fifteen events done; see Done)
    - Events waiting on their systems: crafting, item

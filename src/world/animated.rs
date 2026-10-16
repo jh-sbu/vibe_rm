@@ -1,5 +1,6 @@
 //! Animated objects: doors that open and close, statics that loop an "Idle"
-//! keyframe sequence (water wheels, flags, machinery), and objects run by a
+//! keyframe sequence (water wheels, flags, machinery), objects with
+//! standalone NIF transform / visibility controllers, and objects run by a
 //! behaviour graph of their own (traps, pressure plates, levers), whose clips
 //! move the model's parts and the collision on them as `PlayAnimation`'s
 //! events drive it.
@@ -36,6 +37,10 @@ pub struct AnimatedObject {
     pub clear_for: f32,
     /// Sequence playing and its time.
     pub playing: Option<(usize, f32)>,
+    /// Time since this loaded object started its APP_INIT controllers.
+    pub age: f32,
+    /// Last local pose of every part, retaining a completed sequence's pose.
+    locals: Vec<Mat4>,
     /// The behaviour graph running it, if its model has one.
     pub graph: Option<ObjectGraph>,
 }
@@ -88,35 +93,67 @@ impl AnimatedObject {
         true
     }
 
-    /// Advance the playing sequence and pose the parts.
-    fn update(&mut self, dt: f32, instances: &mut [Instance]) {
-        let Some((si, t)) = &mut self.playing else {
-            return;
-        };
-        let seq = &self.anim.sequences[*si];
-        *t += dt;
-        let len = (seq.stop - seq.start).max(1e-3);
-        if *t > seq.stop {
-            if seq.cycle == 0 {
-                *t = seq.start + (*t - seq.start) % len;
-            } else {
-                *t = seq.stop;
+    /// Advance a sequence and the object's own controllers. A graph, if any,
+    /// overwrites these transforms afterward (visibility still applies).
+    fn update(&mut self, dt: f32, clock: f32, instances: &mut [Instance]) {
+        self.age += dt;
+        let mut completed = false;
+        if let Some((si, t)) = &mut self.playing {
+            let seq = &self.anim.sequences[*si];
+            *t += dt;
+            let len = (seq.stop - seq.start).max(1e-3);
+            if *t > seq.stop {
+                if seq.cycle == 0 {
+                    *t = seq.start + (*t - seq.start) % len;
+                } else {
+                    *t = seq.stop;
+                }
             }
+            completed = seq.cycle != 0 && *t >= seq.stop;
         }
-        let t = *t;
-        for (part, &ii) in self.anim.parts.iter().zip(&self.instances) {
-            let Some(ch) = seq
-                .channels
+        let mut poses = Vec::with_capacity(self.anim.parts.len());
+        for (i, (part, &ii)) in self.anim.parts.iter().zip(&self.instances).enumerate() {
+            // Keep completed sequences' terminal pose until another is played.
+            let mut local = self.locals[i];
+            let mut shown = true;
+            for c in self
+                .anim
+                .controllers
                 .iter()
-                .find(|c| c.node.eq_ignore_ascii_case(&part.node))
-            else {
-                continue;
-            };
+                .filter(|c| c.block == part.block)
+            {
+                let t = controller_time(c.timing, clock, self.age);
+                if let Some(m) = c.transform(t, part.rest) {
+                    local = m;
+                }
+                if let Some(v) = c.visible(t) {
+                    shown &= v;
+                }
+            }
+            // A sequence owns its keyed transforms while playing, without
+            // stopping unrelated controllers or visibility channels.
+            if let Some((si, t)) = self.playing {
+                if let Some(ch) = self.anim.sequences[si]
+                    .channels
+                    .iter()
+                    .find(|c| c.node.eq_ignore_ascii_case(&part.node))
+                {
+                    local = ch.sample(t, part.rest);
+                }
+            }
+            let (parent, parent_shown) = part_parent(part.parent, part.within, &poses);
+            shown &= parent_shown;
+            self.locals[i] = local;
+            let pose = parent * local;
+            poses.push((pose, shown));
             if let Some(inst) = instances.get_mut(ii) {
-                set_transform(inst, self.transform * part.parent * ch.sample(t, part.rest));
+                set_transform(inst, self.transform * pose);
+                // Preserve the reference's hidden flag (Disable, moved away,
+                // taken items). Visibility animation only controls its opacity.
+                inst.tint.w = if shown { 1.0 } else { 0.0 };
             }
         }
-        if seq.cycle != 0 && t >= seq.stop {
+        if completed {
             self.playing = None;
         }
     }
@@ -125,6 +162,183 @@ impl AnimatedObject {
 fn set_transform(inst: &mut Instance, m: Mat4) {
     inst.transform = m;
     inst.world_center = m.transform_point3(inst.model.bound_center);
+    inst.world_radius = inst.model.bound_radius
+        * m.x_axis
+            .truncate()
+            .length()
+            .max(m.y_axis.truncate().length())
+            .max(m.z_axis.truncate().length());
+}
+
+fn controller_time(timing: nif::anim::Timing, clock: f32, age: f32) -> f32 {
+    if timing.app_init() { age } else { clock }
+}
+
+/// A flattened part follows its earlier parent, including that parent's
+/// visibility, instead of the parent's model-space rest transform.
+fn part_parent(rest: Mat4, within: Option<(usize, Mat4)>, poses: &[(Mat4, bool)]) -> (Mat4, bool) {
+    within
+        .and_then(|(i, relative)| poses.get(i).map(|&(pose, shown)| (pose * relative, shown)))
+        .unwrap_or((rest, true))
+}
+
+#[cfg(test)]
+mod node_controller_tests {
+    use super::*;
+    use crate::render::{GpuModel, model};
+    use crate::world::loader::AnimPart;
+    use nif::anim::{Timing, TransformData, TransformInterpolator, ValueKeys};
+
+    fn timing(flags: u16) -> Timing {
+        Timing {
+            flags,
+            frequency: 1.0,
+            phase: 0.0,
+            start: 0.0,
+            stop: 2.0,
+        }
+    }
+
+    fn channel(node: &str, end: Vec3) -> model::Channel {
+        model::Channel {
+            node: node.into(),
+            interpolator: TransformInterpolator {
+                translation: Vec3::NAN,
+                rotation: glam::Quat::NAN,
+                scale: f32::NAN,
+                data: nif::Ref(-1),
+            },
+            data: Some(Arc::new(TransformData {
+                translations: vec![(0.0, Vec3::ZERO), (2.0, end)],
+                scales: vec![(0.0, 1.0), (2.0, 3.0)],
+                ..Default::default()
+            })),
+        }
+    }
+
+    fn fixture() -> (AnimatedObject, Vec<Instance>) {
+        // Empty GPU models need no device; exercising object posing, not rendering.
+        let model = Arc::new(GpuModel {
+            path: String::new(),
+            parts: Vec::new(),
+            skinned: Vec::new(),
+            particles: Vec::new(),
+            bound_center: Vec3::X,
+            bound_radius: 2.0,
+        });
+        let anim = Arc::new(ModelAnim {
+            parts: vec![
+                AnimPart {
+                    node: "Parent".into(),
+                    block: 1,
+                    parent: Mat4::IDENTITY,
+                    rest: Mat4::IDENTITY,
+                    model: model.clone(),
+                    within: None,
+                },
+                AnimPart {
+                    node: "Child".into(),
+                    block: 2,
+                    parent: Mat4::IDENTITY,
+                    rest: Mat4::from_translation(Vec3::Y),
+                    model: model.clone(),
+                    within: Some((0, Mat4::from_translation(Vec3::X))),
+                },
+            ],
+            sequences: Vec::new(),
+            controllers: vec![
+                model::NodeChannel {
+                    node: "Parent".into(),
+                    block: 1,
+                    timing: timing(8),
+                    drive: model::NodeDrive::Transform(channel("Parent", Vec3::X * 10.0)),
+                },
+                model::NodeChannel {
+                    node: "Parent".into(),
+                    block: 1,
+                    timing: timing(8),
+                    drive: model::NodeDrive::Visibility {
+                        value: true,
+                        keys: Some(ValueKeys {
+                            keys: vec![(0.0, Vec3::ZERO), (1.0, Vec3::ONE)],
+                        }),
+                    },
+                },
+            ],
+            start: 0.0,
+            graph: None,
+        });
+        let obj = AnimatedObject {
+            ref_id: FormId(1),
+            transform: Mat4::IDENTITY,
+            position: Vec3::ZERO,
+            instances: vec![0, 1],
+            colliders: Vec::new(),
+            door: false,
+            open: false,
+            auto: false,
+            clear_for: 0.0,
+            playing: None,
+            age: 0.0,
+            locals: anim.parts.iter().map(|p| p.rest).collect(),
+            anim,
+            graph: None,
+        };
+        (
+            obj,
+            vec![
+                Instance::new(model.clone(), Mat4::IDENTITY),
+                Instance::new(model, Mat4::IDENTITY),
+            ],
+        )
+    }
+
+    #[test]
+    fn standalone_controllers_propagate_pose_visibility_and_scaled_bounds() {
+        let (mut obj, mut instances) = fixture();
+        instances[1].hidden = true; // A scripted Disable remains authoritative.
+        obj.update(0.5, 0.5, &mut instances);
+        assert_eq!(instances[0].tint.w, 0.0);
+        assert_eq!(instances[1].tint.w, 0.0);
+        assert!(instances[1].hidden);
+        assert!(
+            (instances[1].transform.w_axis.truncate() - Vec3::new(4.0, 1.5, 0.0)).length() < 1e-5
+        );
+        assert!((instances[1].world_radius - 3.0).abs() < 1e-5);
+        obj.update(0.5, 1.0, &mut instances);
+        assert_eq!(instances[1].tint.w, 1.0);
+        assert!(instances[1].hidden);
+        assert!(
+            (instances[1].transform.w_axis.truncate() - Vec3::new(7.0, 2.0, 0.0)).length() < 1e-5
+        );
+        assert!((instances[1].world_radius - 4.0).abs() < 1e-5);
+        assert!((instances[1].world_center - Vec3::new(9.0, 2.0, 0.0)).length() < 1e-5);
+    }
+
+    #[test]
+    fn app_init_uses_object_age_and_sequence_only_owns_its_keyed_transform() {
+        let (mut obj, mut instances) = fixture();
+        let anim = Arc::get_mut(&mut obj.anim).unwrap();
+        anim.controllers[0].timing.flags |= 1;
+        anim.sequences.push(model::Sequence {
+            name: "Open".into(),
+            cycle: 2,
+            start: 0.0,
+            stop: 2.0,
+            channels: vec![channel("Child", Vec3::Z * 8.0)],
+        });
+        assert!(obj.play("Open"));
+        obj.update(0.5, 20.0, &mut instances);
+        // Parent uses age 0.5 (x=2.5, scale=1.5), child sequence z=2.
+        assert!(
+            (instances[1].transform.w_axis.truncate() - Vec3::new(4.0, 0.0, 3.0)).length() < 1e-5
+        );
+        obj.update(1.5, 21.5, &mut instances);
+        assert!(obj.playing.is_none());
+        let terminal = instances[1].transform;
+        obj.update(0.0, 21.5, &mut instances);
+        assert_eq!(instances[1].transform, terminal);
+    }
 }
 
 impl Engine {
@@ -155,6 +369,7 @@ impl Engine {
             ref_id,
             transform,
             position: transform.w_axis.truncate(),
+            locals: anim.parts.iter().map(|p| p.rest).collect(),
             anim,
             instances: idx,
             colliders: colliders
@@ -167,6 +382,7 @@ impl Engine {
             auto: false,
             clear_for: 0.0,
             playing: None,
+            age: 0.0,
             graph: None,
         };
         // Machinery and the like loop their idle animation.
@@ -455,7 +671,7 @@ impl Engine {
             }
             if let Some(rc) = self.scene.cells.get_mut(key) {
                 for obj in &mut rt.animated {
-                    obj.update(dt, &mut rc.instances);
+                    obj.update(dt, self.renderer.time, &mut rc.instances);
                     // Behaviour graphs pose the parts and carry their collision.
                     let Some(g) = obj.graph.as_mut() else {
                         continue;

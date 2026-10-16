@@ -649,8 +649,18 @@ pub fn animation_start(nif: &Nif) -> f32 {
 /// own drawn apart, to be moved, scaled and shown by them.
 pub fn convert_effect(nif: &Nif) -> (CpuModel, Vec<NodeChannel>) {
     let controllers = node_controllers(nif);
-    let split = controllers.iter().map(|c| c.node.clone()).collect();
-    (convert_split(nif, &|_| true, &split), controllers)
+    let model = convert_controlled(nif, &Default::default(), &controllers);
+    (model, controllers)
+}
+
+/// Keep controller targets by block identity: names can be empty or repeated.
+pub fn convert_controlled(
+    nif: &Nif,
+    split: &std::collections::HashSet<String>,
+    controllers: &[NodeChannel],
+) -> CpuModel {
+    let blocks = controllers.iter().map(|c| c.block).collect();
+    convert_inner(nif, &|_| true, split, &blocks, Mat4::IDENTITY)
 }
 
 pub fn convert(nif: &Nif) -> CpuModel {
@@ -682,7 +692,13 @@ pub fn convert_filtered(nif: &Nif, keep: &dyn Fn(&str) -> bool) -> CpuModel {
 /// [`convert`] with the model's root placed at `root`: an addon node's
 /// model, to be merged into its host's ([`CpuModel::merge`]).
 pub fn convert_at(nif: &Nif, root: Mat4) -> CpuModel {
-    convert_inner(nif, &|_| true, &Default::default(), root)
+    convert_inner(
+        nif,
+        &|_| true,
+        &Default::default(),
+        &Default::default(),
+        root,
+    )
 }
 
 impl CpuModel {
@@ -707,13 +723,14 @@ pub fn convert_split(
     keep: &dyn Fn(&str) -> bool,
     split: &std::collections::HashSet<String>,
 ) -> CpuModel {
-    convert_inner(nif, keep, split, Mat4::IDENTITY)
+    convert_inner(nif, keep, split, &Default::default(), Mat4::IDENTITY)
 }
 
 fn convert_inner(
     nif: &Nif,
     keep: &dyn Fn(&str) -> bool,
     split: &std::collections::HashSet<String>,
+    controlled_blocks: &std::collections::HashSet<i32>,
     root: Mat4,
 ) -> CpuModel {
     let sequences = sequences(nif);
@@ -730,6 +747,7 @@ fn convert_inner(
         animated: Vec::new(),
         addons: Vec::new(),
         animated_nodes: &animated_nodes,
+        controlled_blocks,
         keep,
         root,
     };
@@ -880,6 +898,7 @@ struct Walk<'a> {
     animated: Vec<AnimatedPart>,
     addons: Vec<(i32, Mat4)>,
     animated_nodes: &'a std::collections::HashSet<&'a str>,
+    controlled_blocks: &'a std::collections::HashSet<i32>,
     keep: &'a dyn Fn(&str) -> bool,
     /// Where the model's root is placed (particle emitters' objects).
     root: Mat4,
@@ -951,10 +970,10 @@ impl Walk<'_> {
         {
             return;
         }
-        // An animated node (not the root): its subtree becomes a separately drawn part.
-        if depth > 0
-            && matches!(block, Block::Node(_))
-            && self.animated_nodes.contains(av.net.name.as_str())
+        // A controller may also animate the root, whose static placement is ignored.
+        if matches!(block, Block::Node(_))
+            && (self.controlled_blocks.contains(&r.0)
+                || (depth > 0 && self.animated_nodes.contains(av.net.name.as_str())))
         {
             // In the part's own space: its particles' emitter objects too.
             let node = parent * local_transform(av, depth);
@@ -965,6 +984,7 @@ impl Walk<'_> {
                 animated: Vec::new(),
                 addons: Vec::new(),
                 animated_nodes: self.animated_nodes,
+                controlled_blocks: self.controlled_blocks,
                 keep: self.keep,
                 root: node.inverse() * self.root,
             };
@@ -1012,7 +1032,7 @@ impl Walk<'_> {
                 node: av.net.name.clone(),
                 block: r.0,
                 parent,
-                rest: av.transform.to_mat4(),
+                rest: local_transform(av, depth),
                 model,
                 within: None,
             });
@@ -1114,6 +1134,148 @@ fn tex(s: &str) -> Option<String> {
         None
     } else {
         Some(texture_path(s))
+    }
+}
+
+#[cfg(test)]
+mod node_controller_tests {
+    use super::*;
+
+    fn fixture() -> Nif {
+        let node = |name: &str, controller: i32, children: Vec<Ref>| {
+            Block::Node(nif::Node {
+                av: nif::AvObject {
+                    net: nif::ObjectNet {
+                        name: name.into(),
+                        controller: Ref(controller),
+                        extra_data: Vec::new(),
+                    },
+                    ..Default::default()
+                },
+                kind: NodeKind::Plain,
+                children,
+                effects: Vec::new(),
+            })
+        };
+        Nif {
+            header: nif::Header {
+                version: 0x14020007,
+                user_version: 12,
+                bs_version: 100,
+                block_types: Vec::new(),
+                block_type_index: Vec::new(),
+                block_sizes: Vec::new(),
+                block_offsets: Vec::new(),
+                strings: Vec::new(),
+            },
+            roots: vec![0],
+            blocks: vec![
+                node("Root", -1, vec![Ref(1), Ref(2)]),
+                node("", 3, Vec::new()),
+                node("", -1, Vec::new()),
+                Block::NodeController(nif::anim::NodeController {
+                    next: Ref(-1),
+                    kind: nif::anim::NodeControllerKind::Visibility,
+                    timing: nif::anim::Timing {
+                        flags: 8,
+                        frequency: 1.0,
+                        phase: 0.0,
+                        start: 0.0,
+                        stop: 2.0,
+                    },
+                    interpolator: Ref(4),
+                }),
+                Block::BoolInterpolator(nif::psys::BoolInterpolator {
+                    value: true,
+                    data: Ref(-1),
+                }),
+            ],
+        }
+    }
+
+    #[test]
+    fn controller_targets_split_by_block_even_with_duplicate_empty_names() {
+        let n = fixture();
+        let controllers = node_controllers(&n);
+        let m = convert_controlled(&n, &Default::default(), &controllers);
+        assert_eq!(m.animated.len(), 1);
+        assert_eq!(m.animated[0].block, 1);
+        assert!(controllers[0].visible(0.5).unwrap());
+    }
+
+    #[test]
+    fn controlled_root_and_empty_nested_parents_keep_their_hierarchy() {
+        let mut n = fixture();
+        if let Block::Node(root) = &mut n.blocks[0] {
+            root.av.net.controller = Ref(3);
+            root.av.transform.translation = Vec3::splat(100.0);
+        }
+        let controllers = node_controllers(&n);
+        let m = convert_controlled(&n, &Default::default(), &controllers);
+        assert_eq!(m.animated.len(), 2);
+        assert_eq!(m.animated[0].block, 0);
+        assert_eq!(m.animated[0].rest, Mat4::IDENTITY);
+        assert_eq!(m.animated[1].within, Some((0, Mat4::IDENTITY)));
+    }
+
+    #[test]
+    fn manager_controlled_and_inactive_channels_stay_out_of_standalone_updates() {
+        let mut n = fixture();
+        for (flags, expected) in [(0, 0), (8 | 0x20, 0), (1, 1), (8, 1)] {
+            if let Block::NodeController(c) = &mut n.blocks[3] {
+                c.timing.flags = flags;
+            }
+            assert_eq!(node_controllers(&n).len(), expected);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a licensed Skyrim SE install in SKYRIM_DATA"]
+    fn installed_world_controller_assets() {
+        let data =
+            std::env::var_os("SKYRIM_DATA").expect("set SKYRIM_DATA to the game's Data directory");
+        let vfs = vfs::Vfs::new(std::path::Path::new(&data), &[]);
+        for (path, count) in [
+            (
+                "meshes/architecture/solitude/farms/sfarmhousemillfan.nif",
+                1,
+            ),
+            ("meshes/architecture/solitude/farms/ssawwaterwheel.nif", 1),
+            (
+                "meshes/architecture/solitude/clutter/sropefestivalline01.nif",
+                9,
+            ),
+        ] {
+            let bytes = vfs.read(path).expect(path);
+            let n = Nif::parse(&bytes).expect(path);
+            let controllers = node_controllers(&n);
+            assert_eq!(controllers.len(), count, "{path}");
+            let normal = convert(&n);
+            let controlled = convert_controlled(&n, &Default::default(), &controllers);
+            assert!(
+                normal.animated.is_empty(),
+                "standalone channels are not sequences: {path}"
+            );
+            assert!(
+                !normal.meshes.is_empty(),
+                "default loads retain static geometry: {path}"
+            );
+            assert_eq!(controlled.animated.len(), count, "{path}");
+            for c in &controllers {
+                let part = controlled
+                    .animated
+                    .iter()
+                    .find(|p| p.block == c.block)
+                    .expect(path);
+                let before = c.transform(0.0, part.rest).unwrap();
+                let after = c.transform(0.25, part.rest).unwrap();
+                assert_ne!(
+                    before, after,
+                    "controller moves its part: {path} {}",
+                    c.node
+                );
+            }
+        }
     }
 }
 

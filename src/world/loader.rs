@@ -65,7 +65,7 @@ fn attach_addons(
 pub struct ModelAnim {
     pub parts: Vec<AnimPart>,
     pub sequences: Vec<model::Sequence>,
-    /// An effect's nodes' own controllers (`path#effect`).
+    /// Nodes' own transform / visibility controllers, outside sequences.
     pub controllers: Vec<model::NodeChannel>,
     /// The time its animation starts at (its text keys' `start`).
     pub start: f32,
@@ -82,7 +82,7 @@ pub struct AnimPart {
     pub rest: glam::Mat4,
     pub model: Arc<GpuModel>,
     /// The part it lies in and its parent's transform in that part's node
-    /// (kept for effects: [`model::AnimatedPart::within`]).
+    /// ([`model::AnimatedPart::within`]).
     pub within: Option<(usize, glam::Mat4)>,
 }
 
@@ -162,7 +162,8 @@ impl ModelCache {
                 // `path#rigid`: skinned shapes posed at rest (sky models);
                 // `path#grass`: drawn as grass ([`crate::world::grass`]);
                 // `path#effect`: an effect's, its nodes' controllers kept
-                // ([`model::convert_effect`]); `path#harvested`: a plant
+                // ([`model::convert_effect`]); `path#world`: placed objects'
+                // standalone node controllers; `path#harvested`: a plant
                 // harvested ([`crate::harvest`]).
                 let (file, variant) = p
                     .split_once('#')
@@ -213,10 +214,7 @@ impl ModelCache {
                                 Some("scb") => model::convert_filtered(&n, &|name| {
                                     name.to_ascii_lowercase().starts_with("scb")
                                 }),
-                                Some(_) => model::convert_filtered(&n, &|name| {
-                                    !name.to_ascii_lowercase().starts_with("scb")
-                                }),
-                                None => {
+                                Some("world") | None => {
                                     // Nodes of bodies of their own, and those a
                                     // behaviour graph moves, are drawn apart.
                                     let mut split =
@@ -224,8 +222,16 @@ impl ModelCache {
                                     if graph.is_some() {
                                         split.extend(n.animated_nodes());
                                     }
-                                    model::convert_split(&n, &|_| true, &split)
+                                    if variant == Some("world") {
+                                        controllers = model::node_controllers(&n);
+                                        model::convert_controlled(&n, &split, &controllers)
+                                    } else {
+                                        model::convert_split(&n, &|_| true, &split)
+                                    }
                                 }
+                                Some(_) => model::convert_filtered(&n, &|name| {
+                                    !name.to_ascii_lowercase().starts_with("scb")
+                                }),
                             };
                             let mut m = m;
                             if !m.addons.is_empty() {
@@ -292,10 +298,13 @@ impl ModelCache {
             // its parts all (those holding only particles, addons or other
             // parts too).
             let effect = p.ends_with("#effect");
+            // Keep empty parent parts too: their transforms and visibility
+            // drive descendants, and `within` refers to the original indices.
+            let hierarchy = effect || !controllers.is_empty();
             if let Some(cpu) = m.as_mut().filter(|m| effect || !m.animated.is_empty()) {
                 let parts = std::mem::take(&mut cpu.animated)
                     .into_iter()
-                    .filter(|a| effect || !a.model.meshes.is_empty())
+                    .filter(|a| hierarchy || !a.model.meshes.is_empty())
                     .map(|a| {
                         let mut g = renderer.upload_model(&a.model);
                         g.path = format!("{p}#{}", a.node);
@@ -305,7 +314,7 @@ impl ModelCache {
                             parent: a.parent,
                             rest: a.rest,
                             model: Arc::new(g),
-                            within: a.within.filter(|_| effect),
+                            within: a.within.filter(|_| hierarchy),
                         }
                     })
                     .collect();
