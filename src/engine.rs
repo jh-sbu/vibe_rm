@@ -901,23 +901,21 @@ impl Engine {
     /// Draw objects in a loaded cell, with their collision: loose objects as
     /// bodies of their own (falling at once when `fresh`ly made).
     pub(crate) fn add_objects(&mut self, key: CellKey, objects: &[PlacedObject], fresh: bool) {
-        // Harvested plants as they look harvested.
-        let harvested: Vec<PlacedObject>;
-        let objects = if objects.iter().any(|o| self.is_harvested(o.ref_id)) {
-            harvested = objects
-                .iter()
-                .map(|o| {
-                    let mut o = o.clone();
-                    if self.is_harvested(o.ref_id) {
-                        o.model = format!("{}#harvested", o.model);
-                    }
-                    o
-                })
-                .collect();
-            &harvested[..]
-        } else {
-            objects
-        };
+        // Placed objects run their standalone node controllers. Other model
+        // users (attachments, far references) keep their existing static form.
+        let placed: Vec<PlacedObject> = objects
+            .iter()
+            .map(|o| {
+                let mut o = o.clone();
+                if self.is_harvested(o.ref_id) {
+                    o.model = format!("{}#harvested", o.model);
+                } else if !o.model.contains('#') {
+                    o.model = format!("{}#world", o.model);
+                }
+                o
+            })
+            .collect();
+        let objects = &placed;
         let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let (Some(mut rc), Some(mut rt)) = (self.scene.cells.remove(&key), self.cells.remove(&key))
@@ -1893,7 +1891,7 @@ impl Engine {
                 continue;
             }
             let near = inst.world_center.distance(cam) < RANGE + inst.world_radius;
-            if inst.hidden || !near {
+            if inst.hidden || inst.tint.w <= 0.0 || !near {
                 inst.particles.clear();
                 continue;
             }

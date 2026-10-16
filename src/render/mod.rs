@@ -2153,6 +2153,7 @@ impl Renderer {
                 HashMap::new();
             for inst in scene.cells.values().flat_map(|c| c.instances.iter()) {
                 if inst.hidden
+                    || inst.tint.w <= 0.0
                     || inst.world_radius < min_radius
                     || !c.sees(inst.world_center, inst.world_radius)
                 {
