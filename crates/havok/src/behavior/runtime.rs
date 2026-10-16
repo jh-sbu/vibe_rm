@@ -487,6 +487,22 @@ impl Ctx<'_> {
             .graph(gi)
             .bound(g, member)
             .map(|v| self.var(gi, v))
+            .or_else(|| {
+                let binding = self
+                    .shared
+                    .graph(gi)
+                    .property_bindings
+                    .get(g)?
+                    .iter()
+                    .find(|b| b.member == member)?;
+                self.shared
+                    .project
+                    .character
+                    .as_ref()?
+                    .scalar_properties
+                    .get(&binding.property.to_ascii_lowercase())
+                    .copied()
+            })
     }
 
     /// Publish the state ID (not its index in `states`) through an authored
@@ -605,8 +621,11 @@ impl Ctx<'_> {
                     states,
                     ..
                 } => {
-                    // A bound start state takes the variable's value (`i1stPerson`...).
-                    let bound = start_variable.map(|v| self.var(gi, v) as i32);
+                    // Keep the explicit variable field for graphs built in code;
+                    // parsed variable/property bindings use the common input path.
+                    let bound = start_variable
+                        .map(|v| self.var(gi, v) as i32)
+                        .or_else(|| self.bound(gi, g, "startStateId").map(|v| v as i32));
                     let by_mode = match *start_mode {
                         StartMode::Sync(v) => Some(self.var(gi, v) as i32),
                         StartMode::Random if !states.is_empty() => {
@@ -2318,6 +2337,205 @@ mod tests {
             *f = user_fraction;
         }
         instance(BehaviorGraph::new("G", Some(0), vec![c], vec![]))
+    }
+
+    fn property(member: &str, name: &str) -> PropertyBinding {
+        PropertyBinding {
+            member: member.into(),
+            property: name.into(),
+        }
+    }
+
+    fn property_instance(g: BehaviorGraph, properties: &[(&str, f32)]) -> Instance {
+        let character = Character {
+            scalar_properties: properties
+                .iter()
+                .map(|(name, value)| (name.to_ascii_lowercase(), *value))
+                .collect(),
+            ..Default::default()
+        };
+        let mut i = Instance::new(
+            Shared::new(Arc::new(Project {
+                graphs: vec![("g".into(), g)],
+                character: Some(character),
+            })),
+            1,
+        );
+        i.update(0.0, &mut durations);
+        i
+    }
+
+    #[test]
+    fn scalar_generator_properties_drive_clip_start_speed_and_user_time() {
+        let mut g = BehaviorGraph::new(
+            "G",
+            Some(0),
+            vec![clip("Loop", ClipMode::SinglePlay, vec![])],
+            vec![],
+        );
+        g.property_bindings[0] = vec![
+            property("startTime", "START"),
+            property("playbackSpeed", "Speed"),
+        ];
+        let mut i = property_instance(g, &[("start", 0.25), ("speed", -2.0)]);
+        assert_eq!(time(&i), 1.75); // Reverse starts at end minus startTime.
+        i.update(0.25, &mut durations);
+        assert_eq!(time(&i), 1.25);
+        assert_eq!(i.samples()[0].prev_time, 1.75);
+        assert!(!i.set_variable("Speed", 7.0));
+        i.update(0.25, &mut durations);
+        assert_eq!(time(&i), 0.75);
+
+        let mut g = BehaviorGraph::new(
+            "G",
+            Some(0),
+            vec![clip("Loop", ClipMode::UserControlled, vec![])],
+            vec![],
+        );
+        g.property_bindings[0] = vec![property("userControlledTimeFraction", "Fraction")];
+        let mut i = property_instance(g, &[("fraction", 0.75)]);
+        assert_eq!(time(&i), 1.5);
+        i.update(3.0, &mut durations);
+        assert_eq!(time(&i), 1.5);
+    }
+
+    #[test]
+    fn scalar_generator_properties_select_children_with_live_variable_precedence() {
+        let mut g = BehaviorGraph::new(
+            "G",
+            Some(0),
+            vec![
+                Generator::Selector {
+                    name: "Select".into(),
+                    children: vec![1, 2],
+                    index: 0,
+                },
+                clip("First", ClipMode::Looping, vec![]),
+                clip("Second", ClipMode::Looping, vec![]),
+            ],
+            vec![],
+        );
+        g.property_bindings[0] = vec![property("selectedGeneratorIndex", "Choice")];
+        let mut i = property_instance(g, &[("choice", 1.0)]);
+        assert_eq!(playing(&i), [("Second".into(), 1.0)]);
+        i.update(0.25, &mut durations);
+        assert_eq!(playing(&i), [("Second".into(), 1.0)]);
+        let mut g = BehaviorGraph::new(
+            "G",
+            Some(0),
+            vec![
+                Generator::Selector {
+                    name: "Select".into(),
+                    children: vec![1, 2],
+                    index: 1,
+                },
+                clip("First", ClipMode::Looping, vec![]),
+                clip("Second", ClipMode::Looping, vec![]),
+            ],
+            vec![],
+        );
+        g.property_bindings[0] = vec![property("selectedGeneratorIndex", "Choice")];
+        let choice = g.add_variable("Choice", VarType::Int, 0.0);
+        g.bindings[0] = vec![Binding {
+            member: "selectedGeneratorIndex".into(),
+            variable: choice,
+        }];
+        let mut i = property_instance(g, &[("choice", 1.0)]);
+        assert_eq!(playing(&i), [("First".into(), 1.0)]);
+        assert!(i.set_variable("Choice", 1.0));
+        i.update(0.0, &mut durations);
+        assert_eq!(playing(&i), [("Second".into(), 1.0)]);
+        assert!(i.set_variable("Choice", 0.0));
+        i.update(0.0, &mut durations);
+        assert_eq!(playing(&i), [("First".into(), 1.0)]);
+    }
+
+    #[test]
+    fn scalar_generator_properties_supply_start_states_but_never_receive_outputs() {
+        let mut g = graph();
+        g.property_bindings[0] = vec![
+            property("startStateId", "Start"),
+            property("currentStateId", "Output"),
+        ];
+        let mut i = property_instance(g, &[("start", 2.0), ("output", -7.0)]);
+        assert_eq!(i.active_states(), ["s2"]);
+        assert!(i.handle_event("Stand", &mut durations));
+        i.update(0.6, &mut durations);
+        assert_eq!(i.active_states(), ["s0"]);
+        assert_eq!(
+            i.shared
+                .project
+                .character
+                .as_ref()
+                .unwrap()
+                .scalar_properties["output"],
+            -7.0
+        );
+        assert_eq!(i.variable("Output"), None);
+    }
+
+    #[test]
+    fn scalar_generator_properties_drive_synchronised_parametric_blends() {
+        let mut g = BehaviorGraph::new(
+            "G",
+            Some(0),
+            vec![
+                Generator::Blender {
+                    name: "Blend".into(),
+                    parameter: 0.0,
+                    min_cyclic: 0.0,
+                    max_cyclic: 1.0,
+                    flags: BLEND_PARAMETRIC | BLEND_SYNC,
+                    children: vec![
+                        BlendChild {
+                            generator: Some(1),
+                            weight: 0.0,
+                            weight_variable: None,
+                            bone_weights: None,
+                        },
+                        BlendChild {
+                            generator: Some(2),
+                            weight: 1.0,
+                            weight_variable: None,
+                            bone_weights: None,
+                        },
+                    ],
+                },
+                clip("Enter", ClipMode::SinglePlay, vec![]),
+                clip("Loop", ClipMode::SinglePlay, vec![]),
+            ],
+            vec![],
+        );
+        g.property_bindings[0] = vec![property("blendParameter", "Blend")];
+        g.property_bindings[2] = vec![property("playbackSpeed", "Speed")];
+        let mut i = property_instance(g, &[("blend", 0.5), ("speed", 2.0)]);
+        assert_eq!(playing(&i), [("Enter".into(), 0.5), ("Loop".into(), 0.5)]);
+        i.update(0.25, &mut durations);
+        let samples = i.samples();
+        // Both child cycles are 1 s after the property scales Loop's 2 s clip.
+        assert_eq!(samples[0].time, 0.25);
+        assert_eq!(samples[1].time, 0.5);
+    }
+
+    #[test]
+    fn unavailable_generator_properties_keep_authored_inputs() {
+        let mut c = clip("Loop", ClipMode::SinglePlay, vec![]);
+        if let Generator::Clip {
+            start_time, speed, ..
+        } = &mut c
+        {
+            *start_time = 0.5;
+            *speed = 2.0;
+        }
+        let mut g = BehaviorGraph::new("G", Some(0), vec![c], vec![]);
+        g.property_bindings[0] = vec![
+            property("startTime", "Absent"),
+            property("playbackSpeed", "NonScalar"),
+        ];
+        let mut i = property_instance(g, &[]);
+        assert_eq!(time(&i), 0.5);
+        i.update(0.25, &mut durations);
+        assert_eq!(time(&i), 1.0);
     }
 
     #[test]
