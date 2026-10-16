@@ -2814,6 +2814,7 @@ impl Engine {
                                 })
                             }),
                             aim_only: u.aim_only,
+                            always_power_attack: u.always_power_attack,
                             pause: u.pause,
                             attacks: u.attacks,
                         }

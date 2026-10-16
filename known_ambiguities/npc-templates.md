@@ -65,6 +65,13 @@ Remaining questions and limits:
 - `SPLO` can also name a leveled spell (`LVSP`) according to xEdit. Its FormID
   is inherited, but the magic system does not yet expand that list into usable
   spells. Exact spell-list selection and refresh behavior remain unverified.
+  Public research on 2026-10-16 did not resolve whether eligibility uses the
+  actor's level or the player's, when selections refresh, or how copied actors
+  behave. A [firsthand Skyrim LE report](https://forums.nexusmods.com/topic/9690643-le-how-do-you-add-a-leveled-spell-list-to-an-npc/)
+  says a copied actor's leveled spell list yields nothing, and its script
+  workaround is not evidence for native selection. The public CK LeveledSpell
+  page could not be fetched in that session. Expansion remains deferred rather
+  than transferring Oblivion rules or inventing a refresh policy.
 
 ## Open questions
 

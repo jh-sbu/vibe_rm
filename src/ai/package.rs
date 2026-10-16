@@ -53,6 +53,8 @@ pub struct UseWeapon {
     pub triggers: [Option<WeaponTrigger>; 3],
     /// Keep a bow drawn without releasing, or face the target without swinging.
     pub aim_only: bool,
+    /// Require a power attack for each melee swing.
+    pub always_power_attack: bool,
     /// Seconds between barrages.
     pub pause: (f32, f32),
     /// Attacks per barrage.
@@ -582,6 +584,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
                 trigger("triggerref03", "triggerradius03"),
             ],
             aim_only: flag("aimonlydontfireusuallyfalse").unwrap_or(false),
+            always_power_attack: flag("alwayspowerattack").unwrap_or(false),
             pause: if flag("pausebetweenbarrages").unwrap_or(true) {
                 (pause.0.min(pause.1), pause.0.max(pause.1))
             } else {
@@ -895,6 +898,7 @@ mod tests {
             (41, "Trigger Ref 03"),
             (42, "Trigger Radius 03"),
             (34, "Aim Only, Don't Fire? (usually false)"),
+            (35, "Always Power Attack?"),
             (10, "Pause between Barrages?"),
             (12, "Min Pause:"),
             (13, "Max Pause:"),
@@ -907,7 +911,7 @@ mod tests {
         for (index, name) in names {
             template = template.field(b"UNAM", &[index]).zstring(b"BNAM", name);
         }
-        let mut pkcu = 15u32.to_le_bytes().to_vec();
+        let mut pkcu = 16u32.to_le_bytes().to_vec();
         pkcu.extend_from_slice(&template_id.0.to_le_bytes());
         let mut package = RecordBuilder::new(b"PACK", package_id).field(b"PKCU", &pkcu);
         for (index, reference) in [
@@ -931,7 +935,7 @@ mod tests {
                 .field(b"CNAM", &value.to_le_bytes())
                 .field(b"UNAM", &[index]);
         }
-        for (index, value) in [(34, 1), (10, 0)] {
+        for (index, value) in [(34, 1), (35, 1), (10, 0)] {
             package = package
                 .zstring(b"ANAM", "Bool")
                 .field(b"CNAM", &[value])
@@ -943,13 +947,22 @@ mod tests {
                 .f32(b"CNAM", value)
                 .field(b"UNAM", &[index]);
         }
+        let explicit_false = RecordBuilder::new(b"PACK", FormId(0x802))
+            .field(b"PKCU", &pkcu)
+            .zstring(b"ANAM", "Bool")
+            .field(b"CNAM", &[0])
+            .field(b"UNAM", &[35]);
+        let absent = RecordBuilder::new(b"PACK", FormId(0x803)).field(b"PKCU", &pkcu);
         let bytes = write_plugin(
             0,
             &[],
             "test",
             "synthetic weapon controls",
             0x906,
-            &[Node::top(b"PACK", vec![template, package])],
+            &[Node::top(
+                b"PACK",
+                vec![template, package, explicit_false, absent],
+            )],
         );
         let directory =
             std::env::temp_dir().join(format!("vrm-weapon-inputs-{}", std::process::id()));
@@ -959,6 +972,16 @@ mod tests {
         let lo = LoadOrder::load(&directory, &["Controls.esp".into()]).unwrap();
         let controls = parse(&lo, package_id).unwrap().use_weapon.unwrap();
         assert!(controls.aim_only);
+        assert!(controls.always_power_attack);
+        for id in [FormId(0x802), FormId(0x803)] {
+            assert!(
+                !parse(&lo, id)
+                    .unwrap()
+                    .use_weapon
+                    .unwrap()
+                    .always_power_attack
+            );
+        }
         assert_eq!(controls.pause, (0.0, 0.0));
         assert_eq!(controls.attacks, (2, 5));
         assert_eq!(

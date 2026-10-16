@@ -600,6 +600,8 @@ game each piece unlocks.
   weapon type, draw and loose at the targets in barrages, melee fighters swing.
   Each target's trigger reference / radius gates its attacks; Aim Only holds
   a bow drawn without release, and pauses between barrages are optional.
+  Always Power Attack selects a fitting authored melee power attack; rejected
+  or unavailable attacks preserve the barrage count.
   Open questions: `known_ambiguities/package-trees.md`,
   `known_ambiguities/use-weapon.md`
 - Enable state: references follow their enable parent (`XESP`, or its opposite)
@@ -1025,8 +1027,9 @@ game each piece unlocks.
      reduced detection: see Detection);
      escorts' follower min / max distances and several followers, riding,
      the follower object list and `PreferPreferredPath?`; UseWeapon's
-     "Never End", finite barrage completion, time limits and power
-     attacks; fleeing to doors, cover and allies (`fCombatFlee*`), threat
+     "Never End", finite barrage completion, time limits and random power
+     attacks when not forced; fleeing to doors, cover and allies (`fCombatFlee*`),
+     threat
      avoidance outside combat (`fCombatAvoidThreatsChance`, `AVTH`); actors
      that can't reach their target backing away; force-greets' "moving into a
      new space", player keyword and riding checks, "Greet Using Preferred

@@ -3,7 +3,8 @@
 //! barrages of "Min / Max Attacks per Barrage", pausing "Min / Max Pause"
 //! seconds between them when enabled. Trigger distances gate each target;
 //! "Aim Only" keeps a bow drawn without releasing. Practice arrows stick in
-//! the target; melee swings strike nothing. Outside combat only.
+//! the target; melee swings strike nothing. Always Power Attack selects an
+//! authored power attack suited to the actor's hands. Outside combat only.
 
 use esp::FormId;
 use glam::Vec3;
@@ -20,6 +21,7 @@ pub struct PracticeGoal {
     pub aim_offsets: [Vec3; 3],
     pub triggers: [Option<PracticeTrigger>; 3],
     pub aim_only: bool,
+    pub always_power_attack: bool,
     pub pause: (f32, f32),
     pub attacks: (u32, u32),
 }
@@ -91,6 +93,7 @@ impl Practice {
         goal: &PracticeGoal,
         bow: bool,
         bow_speed: f32,
+        melee_event: Option<&str>,
         off: f32,
         arrow_release: bool,
         rand: &mut dyn FnMut() -> u64,
@@ -110,7 +113,10 @@ impl Practice {
             }
             Phase::Ready if goal.aim_only => {}
             Phase::Ready => {
-                if event("attackStart") {
+                let Some(melee_event) = melee_event else {
+                    return false;
+                };
+                if event(melee_event) {
                     self.left -= 1;
                     self.wait = uniform(rand, 1.2, 2.2);
                     if self.left == 0 {
@@ -154,6 +160,33 @@ impl Practice {
         *self = Self::default();
         true
     }
+}
+
+/// The forced melee attack must exist in the actor's attack data and suit its
+/// hands. Prefer the stationary weapon attack; otherwise use its first authored
+/// right-hand power attack (including bare-handed and creature attacks). A missing
+/// power attack keeps the barrage pending instead of silently making a basic one.
+fn practice_attack_event(
+    always_power_attack: bool,
+    attacks: &[super::combat::Attack],
+    hands: [super::combat::Fights; 2],
+    bare_handed: bool,
+) -> Option<&str> {
+    if !always_power_attack {
+        return Some("attackStart");
+    }
+    let eligible = |attack: &&super::combat::Attack| {
+        attack.power()
+            && attack.flags & 0x2 == 0 // ATKD: bash, not a practice swing.
+            && attack.side() == super::combat::Side::Right
+            && attack.fits(hands, bare_handed)
+    };
+    let mut available = attacks.iter().filter(eligible);
+    available
+        .clone()
+        .find(|a| a.event.eq_ignore_ascii_case("attackPowerStartInPlace"))
+        .or_else(|| available.next())
+        .map(|a| a.event.as_str())
 }
 
 impl ActorRuntime {
@@ -216,11 +249,19 @@ impl ActorRuntime {
             return;
         }
         let release = std::mem::take(&mut self.arrow_release);
+        let stats = self.stats.clone();
+        let melee_event = practice_attack_event(
+            goal.always_power_attack,
+            &stats.attacks,
+            self.hands,
+            self.stats.bare_handed,
+        );
         let fire = p.attack_step(
             dt,
             goal,
             self.bow,
             self.bow_speed,
+            melee_event,
             off,
             release,
             w.rand,
@@ -344,9 +385,132 @@ mod tests {
             aim_offsets: [Vec3::Z * 500.0; 3],
             triggers: [None; 3],
             aim_only: false,
+            always_power_attack: false,
             pause: (4.0, 4.0),
             attacks: (1, 1),
         }
+    }
+
+    fn attack(event: &str, flags: u32) -> super::super::combat::Attack {
+        super::super::combat::Attack {
+            event: event.to_owned(),
+            damage_mult: 1.0,
+            chance: 1.0,
+            flags,
+            strike_angle: 45.0,
+            stagger: 0.0,
+            stamina_mult: 1.0,
+            attack_type: FormId::NULL,
+        }
+    }
+
+    #[test]
+    fn forced_power_attacks_follow_authored_hands_and_prefer_standing() {
+        use super::super::combat::Fights::{Fist, Not, Weapon};
+        let attacks = [
+            attack("attackStart", 0),
+            attack("attackPowerStartForward", 4),
+            attack("attackPowerStartInPlaceLeftHand", 4),
+            attack("attackPowerStartDualWield", 4),
+            attack("bashPowerStart", 6),
+            attack("attackPowerStartInPlace", 4),
+            attack("attackPowerStartH2HRight", 4),
+        ];
+        assert_eq!(
+            practice_attack_event(true, &attacks, [Weapon, Not], true),
+            Some("attackPowerStartInPlace")
+        );
+        assert_eq!(
+            practice_attack_event(true, &attacks, [Fist, Fist], true),
+            Some("attackPowerStartH2HRight")
+        );
+        // Creatures without humanoid H2H data can use their authored attacks.
+        let creature = [attack("attackCreaturePower", 4)];
+        assert_eq!(
+            practice_attack_event(true, &creature, [Fist, Fist], false),
+            Some("attackCreaturePower")
+        );
+        assert_eq!(
+            practice_attack_event(false, &[], [Fist, Fist], true),
+            Some("attackStart")
+        );
+        assert_eq!(practice_attack_event(true, &[], [Weapon, Not], true), None);
+        assert_eq!(
+            practice_attack_event(true, &attacks[..5], [Fist, Fist], true),
+            None,
+            "weapon, left-hand, dual and bash attacks cannot replace a fist's power swing"
+        );
+    }
+
+    #[test]
+    fn forced_power_swing_commits_one_attack_only_when_the_graph_accepts() {
+        let mut goal = goal();
+        goal.always_power_attack = true;
+        let mut practice = Practice {
+            left: 1,
+            ..Practice::default()
+        };
+        let event = Some("attackPowerStartInPlace");
+        assert!(
+            !practice.attack_step(0.0, &goal, false, 1.0, event, 0.0, false, &mut || 0, |e| {
+                assert_eq!(e, event.unwrap());
+                false
+            })
+        );
+        assert_eq!(practice.left, 1);
+        assert!(
+            !practice.attack_step(1.0, &goal, false, 1.0, None, 0.0, false, &mut || 0, |_| {
+                panic!("missing authored power attack must not fall back to a normal swing")
+            })
+        );
+        assert_eq!(practice.left, 1);
+        assert!(
+            !practice.attack_step(0.0, &goal, false, 1.0, event, 0.0, false, &mut || 0, |e| {
+                assert_eq!(e, event.unwrap());
+                true
+            })
+        );
+        assert_eq!(practice.left, 0);
+        assert_eq!(
+            practice.wait, 5.2,
+            "one swing completes the barrage and adds its pause"
+        );
+    }
+
+    #[test]
+    fn forced_power_does_not_override_aim_only_or_bow_release() {
+        let mut goal = goal();
+        goal.always_power_attack = true;
+        goal.aim_only = true;
+        let mut practice = Practice {
+            left: 1,
+            ..Practice::default()
+        };
+        let power = Some("attackPowerStartInPlace");
+        assert!(!practice.attack_step(
+            0.0,
+            &goal,
+            false,
+            1.0,
+            power,
+            0.0,
+            false,
+            &mut || 0,
+            |_| { panic!("aim-only must suppress forced power swings") }
+        ));
+        assert_eq!(practice.left, 1);
+        goal.aim_only = false;
+        let mut events = Vec::new();
+        // Bows follow their own draw/release events even without a melee attack.
+        for dt in [0.0, 3.0, 0.1, 1.0] {
+            practice.attack_step(dt, &goal, true, 1.0, None, 0.0, true, &mut || 0, |e| {
+                events.push(e.to_owned());
+                true
+            });
+        }
+        assert_eq!(events, ["bowAttackStart", "attackRelease"]);
+        assert_eq!(practice.left, 0);
+        assert!(practice.wait > goal.pause.0);
     }
 
     #[test]
@@ -359,12 +523,20 @@ mod tests {
         };
         let mut events = Vec::new();
         for _ in 0..20 {
-            assert!(
-                !practice.attack_step(1.0, &goal, true, 1.0, 0.0, true, &mut || 0, |event| {
+            assert!(!practice.attack_step(
+                1.0,
+                &goal,
+                true,
+                1.0,
+                Some("attackStart"),
+                0.0,
+                true,
+                &mut || 0,
+                |event| {
                     events.push(event.to_owned());
                     true
-                })
-            );
+                }
+            ));
         }
         assert_eq!(events, ["bowAttackStart"]);
         assert!(matches!(practice.phase, Phase::Drawing(..)));
@@ -372,23 +544,43 @@ mod tests {
 
         // Removing Aim Only releases the existing draw rather than redrawing.
         goal.aim_only = false;
-        assert!(
-            !practice.attack_step(0.1, &goal, true, 1.0, 0.0, false, &mut || 0, |event| {
+        assert!(!practice.attack_step(
+            0.1,
+            &goal,
+            true,
+            1.0,
+            Some("attackStart"),
+            0.0,
+            false,
+            &mut || 0,
+            |event| {
                 events.push(event.to_owned());
                 true
-            })
-        );
+            }
+        ));
         assert_eq!(events, ["bowAttackStart", "attackRelease"]);
-        assert!(
-            practice.attack_step(0.1, &goal, true, 1.0, 0.0, true, &mut || 0, |_| panic!(
-                "no further attack event before recovery"
-            ))
-        );
-        assert!(
-            !practice.attack_step(0.1, &goal, true, 1.0, 0.0, true, &mut || 0, |_| panic!(
-                "one release must not spawn a second arrow"
-            ))
-        );
+        assert!(practice.attack_step(
+            0.1,
+            &goal,
+            true,
+            1.0,
+            Some("attackStart"),
+            0.0,
+            true,
+            &mut || 0,
+            |_| panic!("no further attack event before recovery")
+        ));
+        assert!(!practice.attack_step(
+            0.1,
+            &goal,
+            true,
+            1.0,
+            Some("attackStart"),
+            0.0,
+            true,
+            &mut || 0,
+            |_| panic!("one release must not spawn a second arrow")
+        ));
     }
 
     #[test]
@@ -399,20 +591,46 @@ mod tests {
             left: 2,
             ..Practice::default()
         };
-        assert!(
-            !practice.attack_step(10.0, &goal, false, 1.0, 0.0, false, &mut || 0, |_| panic!(
-                "aim-only melee must not attack"
-            ))
-        );
+        assert!(!practice.attack_step(
+            10.0,
+            &goal,
+            false,
+            1.0,
+            Some("attackStart"),
+            0.0,
+            false,
+            &mut || 0,
+            |_| panic!("aim-only melee must not attack")
+        ));
         assert_eq!(practice.left, 2);
         goal.aim_only = false;
-        practice.attack_step(0.0, &goal, false, 1.0, 0.0, false, &mut || 0, |event| {
-            assert_eq!(event, "attackStart");
-            true
-        });
+        practice.attack_step(
+            0.0,
+            &goal,
+            false,
+            1.0,
+            Some("attackStart"),
+            0.0,
+            false,
+            &mut || 0,
+            |event| {
+                assert_eq!(event, "attackStart");
+                true
+            },
+        );
         assert_eq!(practice.left, 1);
         assert_eq!(practice.wait, 1.2);
-        practice.attack_step(2.0, &goal, false, 1.0, 0.0, false, &mut || 0, |_| true);
+        practice.attack_step(
+            2.0,
+            &goal,
+            false,
+            1.0,
+            Some("attackStart"),
+            0.0,
+            false,
+            &mut || 0,
+            |_| true,
+        );
         assert_eq!(practice.left, 0);
         assert_eq!(practice.wait, 5.2);
 
@@ -420,7 +638,17 @@ mod tests {
         goal.pause = (0.0, 0.0);
         practice.left = 1;
         practice.wait = 0.0;
-        practice.attack_step(0.0, &goal, false, 1.0, 0.0, false, &mut || 0, |_| true);
+        practice.attack_step(
+            0.0,
+            &goal,
+            false,
+            1.0,
+            Some("attackStart"),
+            0.0,
+            false,
+            &mut || 0,
+            |_| true,
+        );
         assert_eq!(practice.wait, 1.2);
     }
 
@@ -469,11 +697,17 @@ mod tests {
             false
         }));
         assert!(matches!(practice.phase, Phase::Cancelling));
-        assert!(
-            !practice.attack_step(10.0, &goal(), true, 1.0, 0.0, true, &mut || 0, |_| panic!(
-                "pending cancellation cannot start or release an attack"
-            ))
-        );
+        assert!(!practice.attack_step(
+            10.0,
+            &goal(),
+            true,
+            1.0,
+            Some("attackStart"),
+            0.0,
+            true,
+            &mut || 0,
+            |_| panic!("pending cancellation cannot start or release an attack")
+        ));
         assert!(practice.cancel(|event| {
             assert_eq!(event, "attackStop");
             true
