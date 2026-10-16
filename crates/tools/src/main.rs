@@ -984,6 +984,7 @@ fn main() -> Result<()> {
                         start,
                         start_variable,
                         start_mode,
+                        change_event,
                         states,
                         wildcards,
                     } => {
@@ -1006,6 +1007,13 @@ fn main() -> Result<()> {
                             "{pad}sm {name} start {start}{}{mode}",
                             var.unwrap_or_default()
                         );
+                        if let Some(e) = change_event {
+                            println!(
+                                "{pad}  on change: {} payload {:?}",
+                                g.event_name(e.event).unwrap_or("?"),
+                                e.payload
+                            );
+                        }
                         let tr = |t: &havok::behavior::Transition| {
                             let mut s = format!(
                                 "--{}--> {} nested {:?}",

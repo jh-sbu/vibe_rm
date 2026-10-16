@@ -95,6 +95,9 @@ game each piece unlocks.
   State machines publish their `currentStateId` bindings on entry and transition
   (blocking, one-handed weapon and equipped-item state variables); timing choices:
   `known_ambiguities/state-machine-outputs.md`.
+  Authored state / transition change events retain their payload and graph-local
+  mapping, raised when a transition commits; additional notification boundaries
+  remain unresolved (`known_ambiguities/state-machine-events.md`).
   The AI sends events (`moveStart`, furniture enter / exit, `IdleStop`...) and sets
   variables (`Speed`, `isInFurniture`, `IsNPC`, `weapAdj`...), follows the graph's root
   motion in furniture and takes anim objects and `IdleFurnitureExit` from its events;
@@ -929,7 +932,9 @@ game each piece unlocks.
      buckets (`OffsetCarryBucketStart`: nothing in the idle tree sends it) and
      DLC2 stone piles (no instant exit to carry them away)
    - Delayed state changes (`FLAG_DELAY_STATE_CHANGE`), blending effects' event /
-     self-transition modes (`vrm-tool hkb-flags` counts and lists them)
+     self-transition modes (`vrm-tool hkb-flags` counts and lists them);
+     change-notification activation / completion / interruption timing
+     (`known_ambiguities/state-machine-events.md`)
    - Engine variables and events still missing: combat, first person;
      INFO speaker / listener idles; listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes, decals
