@@ -63,6 +63,8 @@ pub struct Transition {
     pub blend: Option<f32>,
     /// Variable bound to the blend's duration, if any.
     pub blend_variable: Option<usize>,
+    /// Read-only character property bound to the blend's duration, if any.
+    pub blend_property: Option<String>,
     /// `hkbExpressionCondition` that must hold.
     pub condition: Option<String>,
     pub priority: i16,
@@ -719,6 +721,7 @@ impl<'a> Reader<'a> {
                                 .find(|b| b.member == "duration")
                         })
                         .map(|b| b.variable),
+                    blend_property: effect.and_then(|e| self.character_property(e, "duration")),
                     condition: condition.and_then(|c| self.p.string(c + 0x10)),
                     priority: self.p.i16(t + 0x40),
                     trigger: (flags & FLAG_USE_TRIGGER_INTERVAL != 0).then(|| self.interval(t)),
@@ -1495,7 +1498,7 @@ mod character_property_tests {
 
     fn fixture() -> Packfile {
         // Synthetic character value tables and modifier bindings. No asset bytes.
-        let mut data = vec![0u8; 0x600];
+        let mut data = vec![0u8; 0x800];
         word(&mut data, 0x68, 7);
         word(&mut data, 0x198, 7);
         for (i, (ty, value)) in [
@@ -1517,6 +1520,11 @@ mod character_property_tests {
         // A blender at 0x280 can also use this binding set on its one child.
         word(&mut data, 0x2E8, 1);
         word(&mut data, 0x5C0, 1.0f32.to_bits());
+        // A transition array references the bindable object as its effect.
+        word(&mut data, 0x618, 1);
+        word(&mut data, 0x670, 3);
+        word(&mut data, 0x674, 7);
+        word(&mut data, 0x2D0, 0.75f32.to_bits());
         let mut pointers = vec![
             (0x60, 0x100),
             (0x80, 0x180),
@@ -1526,6 +1534,8 @@ mod character_property_tests {
             (0x2E0, 0x570),
             (0x570, 0x580),
             (0x590, 0x300),
+            (0x610, 0x640),
+            (0x660, 0x280),
         ];
         for (i, (member, index, kind)) in [
             ("rawValue", 4, 1),
@@ -1701,6 +1711,37 @@ mod character_property_tests {
         assert_eq!(children[0].weight_variable, Some(2));
         assert_eq!(children[0].weight, 1.0);
         assert!(children[0].bone_weights_property.is_none());
+    }
+
+    #[test]
+    fn transition_effects_retain_duration_property_and_variable_bindings() {
+        let mut p = fixture();
+        for (at, len) in [(0x480, 8), (0x4E0, 11)] {
+            p.data[at..at + len].fill(0);
+            p.data[at..at + 8].copy_from_slice(b"duration");
+        }
+        let r = Reader {
+            p: &p,
+            classes: [(0x280, "hkbBlendingTransitionEffect")].into(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            property_bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["Other", "Unused", "Third", "Fourth", "BlendDuration"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let transitions = r.transitions(Some(0x600));
+        assert_eq!(transitions.len(), 1);
+        let t = &transitions[0];
+        assert_eq!((t.event, t.to_state), (3, 7));
+        assert_eq!(t.blend, Some(0.75));
+        assert_eq!(t.blend_property.as_deref(), Some("BlendDuration"));
+        assert_eq!(t.blend_variable, Some(2));
     }
 }
 

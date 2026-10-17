@@ -3,7 +3,8 @@
 Implemented in `crates/havok/src/behavior/{mod.rs,runtime.rs}` and
 `src/world/behavior.rs`: read-only scalar inputs to supported modifiers and
 generator members already handled by the runtime, scalar blender-child weights,
-and bone-weight array inputs on blender children and bone switches.
+transition-effect duration, and bone-weight array inputs on blender children and
+bone switches.
 
 ## Public and asset evidence
 
@@ -63,7 +64,8 @@ and bone-weight array inputs on blender children and bone switches.
 - Shared runtime caching includes the character-file identity. DefaultMale and
   DefaultFemale can use the same root graph while retaining their own property
   values and character driver settings.
-- Scalar bindings on transition effects remain unsupported.
+- Transition effects resolve the scalar `duration` property at the existing
+  transition-commit read site (see below); other effect members remain unsupported.
   Generator members not listed above are retained but not evaluated, including
   forwarding `BSCyclicBlendTransitionGenerator`'s `fBlendParameter` property to
   its child. The inspected humanoid graphs did not show scalar uses there.
@@ -148,7 +150,7 @@ the same resolved weights for cycle lengths and trigger-master selection.
 Original-engine policies for missing or duplicate bindings, invalid/non-finite
 values, and binding update/lifecycle timing remain unverified. This extension
 preserves the existing runtime's policies rather than asserting parity. It
-does not add `worldFromModelWeight`, transition-effect inputs, property
+does not add `worldFromModelWeight`, other transition-effect inputs, property
 overrides, or property evaluation to the static event-to-clip resolver.
 
 Synthetic tests cover parser retention alongside a duplicate variable input,
@@ -158,3 +160,40 @@ for absent or non-scalar properties, live variable precedence, and parametric we
 by synchronized clips. They verify this input path, not original-engine parity.
 Only public community documentation and synthetic fixtures were used for this
 extension; no engine binary data was examined and no assets were added.
+
+## Transition-effect duration properties
+
+`hkbBlendingTransitionEffect.duration` now retains its type-1 character-property
+binding and resolves the scalar by graph-local property name when the transition
+commits. This uses the same binding-set layout and the existing duration read
+path for graph variables; variable bindings retain precedence over properties.
+Case-insensitive property lookup and authored fallback for missing characters,
+missing names and non-scalar values follow the other supported scalar inputs.
+Properties remain read-only and outside the animation-variable namespace.
+
+The public [Souls Modding behavior guide](https://www.soulsmodding.com/doku.php?id=topic%3Ahavok_behavior_editing#hkbvariablebindingsets)
+describes character properties and variables sharing binding sets that target
+object members. This supports extending the shared input mechanism, but concerns
+another game's Havok version and does not establish Skyrim transition-effect
+lifecycle behavior. An in-memory audit of the installed Skyrim SE behavior
+assets found 230 `hkbBlendingTransitionEffect` objects across the 17 graphs
+reachable from the humanoid `0_master.hkx`; none bound `duration` to a character
+property. This extension therefore does not establish a vanilla Skyrim use of
+property-bound duration.
+
+The runtime samples duration when a transition commits, including transitions
+waiting for their initiate interval, and keeps that duration while the blend
+plays. Its existing cross-fade curve, uninterruptibility and non-positive-duration
+handling are unchanged. Exact original-engine sampling and update timing,
+missing/duplicate-binding policy, and invalid or non-finite duration handling
+remain unverified. Other transition-effect members, runtime property overrides,
+and the static event-to-clip resolver's property evaluation remain unsupported.
+
+Synthetic tests cover parser retention of a graph-local property name alongside
+a duplicate variable input, distinct characters, case-insensitive scalar lookup,
+read-only handling, authored fallback for missing or non-scalar values, and
+variable precedence sampled when a pending transition commits. They validate
+this implementation's input path, not original-engine parity. Only the public
+community guide and game behavior assets were examined for this extension; no
+SDK source or engine binary data was examined, and no game assets or asset bytes
+were copied into the repository.
