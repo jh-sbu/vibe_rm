@@ -20,6 +20,12 @@ testing on a property that has it disabled.
   the former does not copy sequence timing fields. Its alpha controller
   divides the sampled test reference by 255. This supports the binding and
   units, but does not establish Skyrim's sequence-clock arbitration.
+- [NifSkope's `Controller::ctrlTime`](https://github.com/niftools/nifskope/blob/develop/src/gl/glcontroller.cpp)
+  interprets reverse mode as repeated forward and return legs, calculating
+  cycle position relative to the start time. Together with the schema's
+  `CycleType` values, this supports reverse sequence sampling over a nonzero
+  key range. It does not establish original-game sequence activation,
+  retention or arbitration policy.
 
 Only these public community sources and synthetic models were used for this
 change. No game engine binary or executable data was examined and no game
@@ -46,10 +52,17 @@ assets or game-derived test fixtures are included.
   or advancing one copy therefore cannot animate another copy's materials.
   Both the ordinary and cutout-shadow passes use the resulting uniform.
 - The runtime uses the selected sequence's key time for both transforms and
-  material keys: its frequency advances the key clock once, its loop / clamp
+  material keys: its frequency advances the key clock once, its loop / reverse / clamp
   handling maps that time, and the property's standalone frequency, phase and
   range are not applied again. This is an explicit runtime policy pending an
   original-game comparison, not a claim established by NifSkope.
+- Reverse sequences repeatedly run from start to stop and back, remain
+  selected at both turning points, and restart at start when selected again.
+  Playback stores a bounded phase covering both legs and sends the sampled
+  key time to transforms and material channels; a large frame step can cross
+  several cycles without losing direction. Start offsets and positive
+  nonunit frequencies apply to both legs. Zero or inverted ranges hold the
+  start sample; loop and reverse stay selected, while clamp completes.
 - A completed clamped sequence retains its terminal material sample. A new
   selection restarts its key clock and replaces the old selection. Materials
   not keyed by that new sequence return to their base plus standalone values.
@@ -63,9 +76,7 @@ assets or game-derived test fixtures are included.
   scopes with duplicate sequence names and simultaneous sequence ownership
   need separate handling. No claim is made that these runtime policies match
   the original engine's arbitration.
-- Reverse cycle mode retains the existing placed-sequence limitation (it
-  reaches and holds the stop pose rather than ping-pong playback). Negative
-  frequency / backwards playback, nonlinear float or colour interpolation,
+- Negative frequency / backwards playback, nonlinear float or colour interpolation,
   initialization ordering and save / reload clock persistence remain separate
   work. Positive sequence frequency is now respected by transforms as well
   as material channels.
@@ -85,5 +96,9 @@ Synthetic tests cover material-only conversion in all three rigid formats,
 duplicate names and exact controller identity, sequence interpolator binding,
 float / colour channels, nonunit sequence frequency without a second controller
 clock mapping, independent material cursors, terminal retention and reselection,
-and coexistence with standalone channels. These tests do not require a GPU or
+and coexistence with standalone channels. Reverse-cycle tests cover actual
+placed-object transforms, repeated turns, reselection, skipped cycles, nonzero
+start and nonunit frequency, and shader float / colour and alpha-test samples
+on both legs. Loop / clamp endpoint and degenerate-range regression checks
+also use synthetic sequences. These tests do not require a GPU or
 an installed game; visual parity and original-engine timing remain unverified.

@@ -35,7 +35,7 @@ pub struct AnimatedObject {
     /// Opened for a passing actor (closes again by itself).
     pub auto: bool,
     pub clear_for: f32,
-    /// Sequence playing and its time.
+    /// Sequence playing and its phase (reverse cycles include the return leg).
     pub playing: Option<(usize, f32)>,
     /// Time since this loaded object started its APP_INIT controllers.
     pub age: f32,
@@ -98,19 +98,12 @@ impl AnimatedObject {
     fn update(&mut self, dt: f32, clock: f32, instances: &mut [Instance]) {
         self.age += dt;
         let mut completed = false;
-        if let Some((si, t)) = &mut self.playing {
+        let sequence_sample = self.playing.as_mut().map(|(si, phase)| {
             let seq = &self.anim.sequences[*si];
-            *t += dt * seq.frequency;
-            let len = (seq.stop - seq.start).max(1e-3);
-            if *t > seq.stop {
-                if seq.cycle == 0 {
-                    *t = seq.start + (*t - seq.start) % len;
-                } else {
-                    *t = seq.stop;
-                }
-            }
-            completed = seq.cycle != 0 && *t >= seq.stop;
-        }
+            let (time, done) = seq.advance(phase, dt);
+            completed = done;
+            (*si, time)
+        });
         let mut poses = Vec::with_capacity(self.anim.parts.len());
         for (i, (part, &ii)) in self.anim.parts.iter().zip(&self.instances).enumerate() {
             // Keep completed sequences' terminal pose until another is played.
@@ -132,7 +125,7 @@ impl AnimatedObject {
             }
             // A sequence owns its keyed transforms while playing, without
             // stopping unrelated controllers or visibility channels.
-            if let Some((si, t)) = self.playing {
+            if let Some((si, t)) = sequence_sample {
                 if let Some(ch) = self.anim.sequences[si]
                     .channels
                     .iter()
@@ -147,7 +140,7 @@ impl AnimatedObject {
             let pose = parent * local;
             poses.push((pose, shown));
             if let Some(inst) = instances.get_mut(ii) {
-                if let Some((si, t)) = self.playing {
+                if let Some((si, t)) = sequence_sample {
                     inst.model
                         .set_material_sequence(&self.anim.sequences[si].name, t);
                 }
@@ -366,6 +359,76 @@ mod node_controller_tests {
         assert_eq!(obj.playing, None);
         assert!(obj.play("Fade"));
         assert_eq!(obj.playing, Some((0, 0.0)));
+    }
+
+    #[test]
+    fn reverse_sequence_turns_at_both_endpoints_and_reselection_restarts() {
+        let (mut obj, mut instances) = fixture();
+        let anim = Arc::get_mut(&mut obj.anim).unwrap();
+        anim.controllers.clear();
+        let mut transform = channel("Parent", Vec3::X * 8.0);
+        transform.data = Some(Arc::new(TransformData {
+            translations: vec![(3.0, Vec3::ZERO), (5.0, Vec3::X * 8.0)],
+            ..Default::default()
+        }));
+        anim.sequences.push(model::Sequence {
+            name: "Idle".into(),
+            cycle: 1,
+            start: 3.0,
+            stop: 5.0,
+            frequency: 2.0,
+            channels: vec![transform],
+        });
+        assert!(obj.play("Idle"));
+        for x in [4.0, 8.0, 4.0, 0.0, 4.0] {
+            obj.update(0.5, 100.0, &mut instances);
+            assert_eq!(instances[0].transform.w_axis.x, x);
+            assert!(obj.playing.is_some());
+        }
+        assert!(obj.play("idle"));
+        obj.update(0.0, 100.0, &mut instances);
+        assert_eq!(instances[0].transform.w_axis.x, 0.0);
+        // One update can skip several complete out-and-back cycles.
+        obj.update(8.25, 108.25, &mut instances);
+        assert_eq!(instances[0].transform.w_axis.x, 2.0);
+        assert_eq!(obj.playing, Some((0, 3.5)));
+    }
+
+    #[test]
+    fn sequence_cycle_endpoints_and_degenerate_ranges_stay_finite() {
+        let mut seq = model::Sequence {
+            name: "Idle".into(),
+            cycle: 0,
+            start: 3.0,
+            stop: 5.0,
+            frequency: 2.0,
+            channels: Vec::new(),
+        };
+        let mut phase = seq.start;
+        assert_eq!(seq.advance(&mut phase, 1.0), (5.0, false));
+        assert_eq!(seq.advance(&mut phase, 0.25), (3.5, false));
+        seq.cycle = 2;
+        phase = seq.start;
+        assert_eq!(seq.advance(&mut phase, 1.0), (5.0, true));
+        assert_eq!(seq.advance(&mut phase, 10.0), (5.0, true));
+        for stop in [3.0, 2.0] {
+            seq.stop = stop;
+            for cycle in [0, 1, 2] {
+                seq.cycle = cycle;
+                phase = seq.start;
+                assert_eq!(seq.advance(&mut phase, 10.0), (3.0, cycle == 2));
+                assert_eq!(phase, 3.0);
+            }
+        }
+        // A short but nonzero reverse range must not use an artificial length.
+        seq.cycle = 1;
+        seq.start = 0.0;
+        seq.stop = 0.0005;
+        seq.frequency = 1.0;
+        phase = 0.0;
+        let (time, done) = seq.advance(&mut phase, 0.00075);
+        assert!((time - 0.00025).abs() < 1e-8);
+        assert!(!done);
     }
 }
 

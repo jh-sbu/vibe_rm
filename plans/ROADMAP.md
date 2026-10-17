@@ -849,7 +849,9 @@ game each piece unlocks.
 - Named NIF sequences on placed rigid objects bind shader float / colour and
   alpha-test interpolators by exact controller reference, including material-only
   animated parts. Each reference has its own material uniforms and sequence
-  clock, with terminal samples retained. Sequence timing and arbitration choices,
+  clock, with terminal samples retained. Reverse cycles retain both playback
+  legs with one sampled key clock for transforms and materials, including start
+  offsets and positive nonunit frequency. Sequence timing and arbitration choices,
   and remaining actor / effect scope: `known_ambiguities/sequence-material-controllers.md`
 - Environment maps: lighting shaders with environment (or eye environment) mapping
   reflect their cube map (texture set slot 4, sampled with the world's axes: the vanilla
