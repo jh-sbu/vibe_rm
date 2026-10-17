@@ -409,6 +409,7 @@ mod tests {
                 generator: Some(1),
                 weight: 1.0,
                 weight_variable: None,
+                weight_property: None,
                 bone_weights: None,
                 bone_weights_property: None,
             }],

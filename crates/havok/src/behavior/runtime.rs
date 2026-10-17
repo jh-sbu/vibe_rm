@@ -1594,7 +1594,21 @@ impl Ctx<'_> {
         };
         let raw: Vec<f32> = children
             .iter()
-            .map(|c| c.weight_variable.map_or(c.weight, |v| self.var(gi, v)))
+            .map(|c| {
+                c.weight_variable
+                    .map(|v| self.var(gi, v))
+                    .or_else(|| {
+                        let property = c.weight_property.as_ref()?;
+                        self.shared
+                            .project
+                            .character
+                            .as_ref()?
+                            .scalar_properties
+                            .get(&property.to_ascii_lowercase())
+                            .copied()
+                    })
+                    .unwrap_or(c.weight)
+            })
             .collect();
         let mut w = vec![0.0; children.len()];
         if flags & BLEND_PARAMETRIC != 0 && !children.is_empty() {
@@ -2512,6 +2526,7 @@ mod tests {
                             generator: Some(1),
                             weight: 0.0,
                             weight_variable: None,
+                            weight_property: None,
                             bone_weights: None,
                             bone_weights_property: None,
                         },
@@ -2519,6 +2534,7 @@ mod tests {
                             generator: Some(2),
                             weight: 1.0,
                             weight_variable: None,
+                            weight_property: None,
                             bone_weights: None,
                             bone_weights_property: None,
                         },
@@ -2581,8 +2597,150 @@ mod tests {
             generator: Some(generator),
             weight: 1.0,
             weight_variable: None,
+            weight_property: None,
             bone_weights: mask,
             bone_weights_property: property.map(String::from),
+        }
+    }
+
+    fn child_weight_graph(flags: u16) -> BehaviorGraph {
+        let mut first = masked_child(1, None, None);
+        first.weight_property = Some("WEIGHT".into());
+        let mut second = masked_child(2, None, None);
+        second.weight = 3.0;
+        BehaviorGraph::new(
+            "Weights",
+            Some(0),
+            vec![
+                Generator::Blender {
+                    name: "Blend".into(),
+                    parameter: 1.0,
+                    min_cyclic: 0.0,
+                    max_cyclic: 4.0,
+                    flags,
+                    children: vec![first, second],
+                },
+                clip("Enter", ClipMode::Looping, vec![]),
+                clip("Loop", ClipMode::Looping, vec![]),
+            ],
+            vec![],
+        )
+    }
+
+    #[test]
+    fn scalar_blender_child_properties_normalize_per_character_and_stay_read_only() {
+        for (weight, expected) in [(1.0, 0.25), (3.0, 0.5)] {
+            let mut i = property_instance(child_weight_graph(0), &[("weight", weight)]);
+            assert_eq!(
+                playing(&i),
+                [("Enter".into(), expected), ("Loop".into(), 1.0 - expected)]
+            );
+            assert!(!i.set_variable("Weight", 99.0));
+            i.update(0.25, &mut durations);
+            assert_eq!(i.samples()[0].weight, expected);
+            assert_eq!(
+                i.shared
+                    .project
+                    .character
+                    .as_ref()
+                    .unwrap()
+                    .scalar_properties["weight"],
+                weight
+            );
+        }
+        let i = property_instance(child_weight_graph(0), &[("weight", -2.0)]);
+        assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+    }
+
+    #[test]
+    fn scalar_blender_child_properties_preserve_live_variable_precedence() {
+        let mut g = child_weight_graph(0);
+        let weight = g.add_variable("Weight", VarType::Real, 9.0);
+        let Generator::Blender { children, .. } = &mut g.generators[0] else {
+            unreachable!();
+        };
+        children[0].weight_variable = Some(weight);
+        let mut i = property_instance(g, &[("weight", 3.0)]);
+        assert_eq!(playing(&i), [("Enter".into(), 0.75), ("Loop".into(), 0.25)]);
+        assert!(i.set_variable("Weight", 0.0));
+        i.update(0.0, &mut durations);
+        assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+        assert!(i.set_variable("Weight", 1.0));
+        i.update(0.0, &mut durations);
+        assert_eq!(playing(&i), [("Enter".into(), 0.25), ("Loop".into(), 0.75)]);
+    }
+
+    #[test]
+    fn unavailable_scalar_blender_child_properties_keep_authored_weights() {
+        for character in [
+            None,
+            Some(Character::default()),
+            Some(Character {
+                bone_weights: [("weight".into(), vec![99.0])].into(),
+                ..Default::default()
+            }),
+        ] {
+            let shared = Shared::new(Arc::new(Project {
+                graphs: vec![("g".into(), child_weight_graph(0))],
+                character,
+            }));
+            let mut i = Instance::new(shared, 1);
+            i.update(0.0, &mut durations);
+            assert_eq!(playing(&i), [("Enter".into(), 0.25), ("Loop".into(), 0.75)]);
+        }
+    }
+
+    #[test]
+    fn scalar_blender_child_properties_drive_parametric_positions_and_sync() {
+        let mut i = property_instance(
+            child_weight_graph(BLEND_PARAMETRIC | BLEND_SYNC),
+            &[("weight", -1.0)],
+        );
+        assert_eq!(playing(&i), [("Enter".into(), 0.5), ("Loop".into(), 0.5)]);
+        i.update(0.75, &mut durations);
+        let samples = i.samples();
+        // Halfway through the 1.5 s weighted cycle: 1 s and 2 s clips
+        // follow the same phase using the property-derived weights.
+        assert!((samples[0].time - 0.5).abs() < 1e-6);
+        assert!((samples[1].time - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn scalar_blender_child_properties_keep_additive_weights_out_of_normalization() {
+        struct AdditiveClips;
+        impl ClipSource for AdditiveClips {
+            fn duration(&mut self, animation: &str) -> Option<f32> {
+                durations(animation)
+            }
+
+            fn additive(&mut self, animation: &str) -> bool {
+                animation == "Loop"
+            }
+        }
+
+        for (overlay, expected) in [(0.25, 0.25), (2.0, 1.0), (-1.0, 0.0)] {
+            let mut g = child_weight_graph(0);
+            let Generator::Blender { children, .. } = &mut g.generators[0] else {
+                unreachable!();
+            };
+            children[1].weight_property = Some("Overlay".into());
+            let shared = Shared::new(Arc::new(Project {
+                graphs: vec![("g".into(), g)],
+                character: Some(Character {
+                    scalar_properties: [("weight".into(), 3.0), ("overlay".into(), overlay)].into(),
+                    ..Default::default()
+                }),
+            }));
+            let mut i = Instance::new(shared, 1);
+            i.update(0.0, &mut AdditiveClips);
+            let samples = i.samples();
+            assert_eq!(samples[0].animation.as_ref(), "Enter");
+            assert_eq!(samples[0].weight, 1.0);
+            assert!(!samples[0].additive);
+            assert_eq!(samples.get(1).map_or(0.0, |s| s.weight), expected);
+            if let Some(additive) = samples.get(1) {
+                assert!(additive.additive);
+            }
         }
     }
 
@@ -3403,6 +3561,7 @@ mod tests {
             generator: Some(g),
             weight: w,
             weight_variable: None,
+            weight_property: None,
             bone_weights: None,
             bone_weights_property: None,
         };
