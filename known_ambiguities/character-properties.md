@@ -2,8 +2,8 @@
 
 Implemented in `crates/havok/src/behavior/{mod.rs,runtime.rs}` and
 `src/world/behavior.rs`: read-only scalar inputs to supported modifiers and
-generator members already handled by the runtime, plus bone-weight array inputs
-on blender children and bone switches.
+generator members already handled by the runtime, scalar blender-child weights,
+and bone-weight array inputs on blender children and bone switches.
 
 ## Public and asset evidence
 
@@ -63,7 +63,7 @@ on blender children and bone switches.
 - Shared runtime caching includes the character-file identity. DefaultMale and
   DefaultFemale can use the same root graph while retaining their own property
   values and character driver settings.
-- Scalar bindings on blender children and transition effects remain unsupported.
+- Scalar bindings on transition effects remain unsupported.
   Generator members not listed above are retained but not evaluated, including
   forwarding `BSCyclicBlendTransitionGenerator`'s `fBlendParameter` property to
   its child. The inspected humanoid graphs did not show scalar uses there.
@@ -123,3 +123,38 @@ validate this supported input path, not those unresolved parity questions.
 Only public community documentation and game behavior/character assets were
 examined. No engine binary data or SDK mirrors were used, and no game assets
 or asset bytes were copied into the repository.
+
+## Blender-child scalar weight properties
+
+`hkbBlenderGeneratorChild.weight` now retains its type-1 character-property
+binding and resolves a scalar from the character by graph-local property name.
+The public [Souls Modding behavior reference](https://www.soulsmodding.com/doku.php?id=common-refmat%3Ahavok_behavior_reference#hkbblendergeneratorchild)
+documents the child's binding set and scalar weight, including its role as a
+position relative to a parametric blender's parameter. Combined with the
+guide's description of constant character-property inputs, this supports
+extending the existing input path. Both documents concern another game's
+Havok version. No Skyrim asset using a scalar child-weight property binding
+was established for this extension; serialized bindings use the same layout
+as the existing asset-backed child bone-weight bindings above.
+
+Variable bindings take precedence over duplicate property bindings; missing
+characters, missing names and non-scalar properties preserve the authored
+weight. Names resolve case-insensitively. Properties remain read-only and
+separate from graph variables. Resolved values enter the existing blender
+algorithm: ordinary weights normalize, additive weights keep their existing
+clamp, and parametric children use weights as positions. Synchronization uses
+the same resolved weights for cycle lengths and trigger-master selection.
+
+Original-engine policies for missing or duplicate bindings, invalid/non-finite
+values, and binding update/lifecycle timing remain unverified. This extension
+preserves the existing runtime's policies rather than asserting parity. It
+does not add `worldFromModelWeight`, transition-effect inputs, property
+overrides, or property evaluation to the static event-to-clip resolver.
+
+Synthetic tests cover parser retention alongside a duplicate variable input,
+case-insensitive per-character scalar values, read-only handling, ordinary
+normalization, additive clamp and negative-weight handling, authored fallback
+for absent or non-scalar properties, live variable precedence, and parametric weights used
+by synchronized clips. They verify this input path, not original-engine parity.
+Only public community documentation and synthetic fixtures were used for this
+extension; no engine binary data was examined and no assets were added.

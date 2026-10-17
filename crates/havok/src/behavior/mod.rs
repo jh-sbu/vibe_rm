@@ -163,6 +163,8 @@ pub struct BlendChild {
     pub weight: f32,
     /// Variable bound to `weight`.
     pub weight_variable: Option<usize>,
+    /// Read-only scalar character property bound to `weight`.
+    pub weight_property: Option<String>,
     /// Per-bone weights (Havok skeleton bone order), if the child affects only some bones.
     pub bone_weights: Option<Vec<f32>>,
     /// Character property bound to `boneWeights`, resolved for this character.
@@ -1064,6 +1066,7 @@ impl<'a> Reader<'a> {
                             .into_iter()
                             .find(|b| b.member == "weight")
                             .map(|b| b.variable),
+                        weight_property: self.character_property(c, "weight"),
                         bone_weights: self.bone_weights(p.ptr(c + 0x38)),
                         bone_weights_property: self.character_property(c, "boneWeights"),
                     });
@@ -1664,6 +1667,40 @@ mod character_property_tests {
         assert_eq!(children[0].weight, 1.0);
         assert!(children[0].bone_weights.is_none());
         assert!(children[0].weight_variable.is_none());
+    }
+
+    #[test]
+    fn blender_children_retain_scalar_weight_properties_and_variable_bindings() {
+        let mut p = fixture();
+        // Retarget the synthetic scalar input and variable output to the child's
+        // weight. Duplicate sources are preserved; runtime variables win.
+        for (at, len) in [(0x480, 8), (0x4E0, 11)] {
+            p.data[at..at + len].fill(0);
+            p.data[at..at + 6].copy_from_slice(b"weight");
+        }
+        let mut r = Reader {
+            p: &p,
+            classes: [(0x280, "hkbBlenderGenerator")].into(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            property_bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["Unused", "Other", "Third", "Fourth", "BlendWeight"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let id = r.generator(0x280);
+        let Generator::Blender { children, .. } = &r.generators[id] else {
+            panic!("expected blender");
+        };
+        assert_eq!(children[0].weight_property.as_deref(), Some("BlendWeight"));
+        assert_eq!(children[0].weight_variable, Some(2));
+        assert_eq!(children[0].weight, 1.0);
+        assert!(children[0].bone_weights_property.is_none());
     }
 }
 

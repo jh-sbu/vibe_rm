@@ -146,6 +146,10 @@ game each piece unlocks.
   (arms, upper body and mounted-combat masks), preserving existing parent-mask
   composition and authored fallbacks. Remaining limits:
   `known_ambiguities/character-properties.md`
+- Blender-child scalar `weight` character properties feed ordinary, additive
+  and parametric blends, including synchronized timing, with graph-variable
+  precedence and authored fallbacks. Evidence and remaining limits:
+  `known_ambiguities/character-properties.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;
@@ -981,7 +985,8 @@ game each piece unlocks.
    - Chooser start states, selectors' own blends
      (`known_ambiguities/selectors.md`)
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
-     properties on remaining generator members, blender children and transition effects,
+     properties on remaining generator members, blender-child members beyond `weight`
+     and `boneWeights`, and transition effects,
      runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`);
      applying `hkbRotateCharacterModifier` (inputs parsed: see Done;
      `known_ambiguities/rotate-character.md`); the other action trees
