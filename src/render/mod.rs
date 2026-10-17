@@ -279,6 +279,7 @@ mod alpha_test_tests {
                     stop: 2.0,
                 },
                 keys: nif::anim::ValueKeys {
+                    interpolation: 1,
                     keys: vec![(0.0, Vec3::ZERO), (2.0, Vec3::new(255.0, 0.0, 0.0))],
                 },
                 variable: 0,
@@ -288,6 +289,45 @@ mod alpha_test_tests {
                 started,
             }],
         }
+    }
+
+    #[test]
+    fn constant_material_keys_preserve_uv_colour_and_cutout_steps() {
+        let mut base = <MaterialUniform as bytemuck::Zeroable>::zeroed();
+        base.params[1] = 0.25;
+        let mut anim = animation(true);
+        let alpha = &mut anim.channels[0];
+        alpha.keys.interpolation = 5;
+        let mut uv = alpha.clone();
+        uv.alpha_test = false;
+        uv.variable = 6;
+        uv.keys.keys = vec![(0.0, Vec3::ZERO), (2.0, Vec3::splat(0.5))];
+        let mut colour = uv.clone();
+        colour.variable = 0;
+        colour.color = true;
+        colour.keys.keys = vec![(0.0, Vec3::X), (2.0, Vec3::Y)];
+        anim.channels.extend([uv, colour]);
+        // Controller frequency 2 maps clock 0.5 to the key midpoint 1.0.
+        for (clock, expected_uv, expected_alpha, expected_colour) in [
+            (-1.0, 0.0, 0.0, Vec3::X),
+            (0.49, 0.0, 0.0, Vec3::X),
+            (0.5, 0.5, 1.0, Vec3::Y),
+            (0.51, 0.5, 1.0, Vec3::Y),
+            (1.0, 0.5, 1.0, Vec3::Y),
+            (20.0, 0.5, 1.0, Vec3::Y),
+        ] {
+            let u = base.animated(&anim, clock, false);
+            assert_eq!(u.uv[0], expected_uv);
+            assert_eq!(u.params[1], expected_alpha);
+            assert_eq!(&u.emissive[..3], &expected_colour.to_array());
+        }
+        anim.sequences.push(model::MaterialSequence {
+            name: "Atlas".into(),
+            channels: anim.channels.clone(),
+        });
+        // Sequence time has already been mapped; frequency must not apply twice.
+        assert_eq!(base.sequenced(&anim, "Atlas", 0.75).uv[0], 0.0);
+        assert_eq!(base.sequenced(&anim, "Atlas", 1.0).uv[0], 0.5);
     }
 
     #[test]

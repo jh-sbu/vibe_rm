@@ -895,6 +895,11 @@ game each piece unlocks.
   land on (sizes between the data's minimum and maximum, 2x2 subtextures, enable state).
   `VRM_NO_DECALS=1` turns them off; vrm-tool `decals` lists them. Open questions:
   `known_ambiguities/decals.md`
+- NIF float / colour `CONST_KEY` interpolation retains its source type and
+  selects nearest endpoints for shader and alpha-test channels, named material
+  sequences and particle float curves. Boolean keys retain their hold behavior.
+  Midpoint ties and remaining interpolation limits:
+  `known_ambiguities/value-key-interpolation.md`
 - Impacts: melee blows, bashes and arrows look up the impact (IPCT) their impact data
   set (weapon `INAM`, bash `BIDS`, the race's `NAM5` bare-handed) has for the material
   struck (the target race's `NAM4`, the blocking shield's or weapon's `BAMT`, the
@@ -1026,7 +1031,8 @@ game each piece unlocks.
    - Later / separate: standalone controllers on skinned geometry, particle systems, attachments,
      distant and loose objects; collision following standalone transforms,
      persistence and driver arbitration (`known_ambiguities/node-controllers.md`);
-     texture flip controllers (`NiFlipController`); actor / effect graph shader
+     texture flip controllers (`NiFlipController`;
+     `known_ambiguities/texture-flip-controllers.md`); actor / effect graph shader
      controllers inside sequences and sequence blending (placed rigid objects'
      named material sequences: see Done;
      `known_ambiguities/sequence-material-controllers.md`)
