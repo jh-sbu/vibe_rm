@@ -1201,36 +1201,7 @@ impl BehaviorGraph {
             character_properties: string_array(0x40),
         };
         let root = p.ptr(graph + 0x80).map(|g| r.generator(g));
-        // A BSCyclicBlendTransitionGenerator's fBlendParameter is its blender's
-        // parameter (the blender's own is left unbound: locomotion's Direction).
-        for g in 0..r.generators.len() {
-            let Generator::Wrap {
-                class,
-                child: Some(c),
-                ..
-            } = &r.generators[g]
-            else {
-                continue;
-            };
-            let c = *c;
-            if class != "BSCyclicBlendTransitionGenerator"
-                || !matches!(r.generators[c], Generator::Blender { .. })
-                || r.bindings[c].iter().any(|b| b.member == "blendParameter")
-            {
-                continue;
-            }
-            if let Some(v) = r.bindings[g]
-                .iter()
-                .find(|b| b.member == "fBlendParameter")
-                .map(|b| b.variable)
-            {
-                r.bindings[c].push(Binding {
-                    member: "blendParameter".into(),
-                    variable: v,
-                });
-            }
-        }
-        Ok(BehaviorGraph {
+        let mut graph = BehaviorGraph {
             name,
             root,
             generators: r.generators,
@@ -1243,7 +1214,52 @@ impl BehaviorGraph {
             variables,
             variable_types,
             variable_defaults,
-        })
+        };
+        graph.forward_cyclic_blend_inputs();
+        Ok(graph)
+    }
+
+    /// The cyclic wrapper supplies its blender's parameter. Keep the existing
+    /// variable forwarding policy, and supply read-only properties where neither
+    /// the wrapper nor the child supplies a variable input.
+    fn forward_cyclic_blend_inputs(&mut self) {
+        for g in 0..self.generators.len() {
+            let Generator::Wrap {
+                class,
+                child: Some(c),
+                ..
+            } = &self.generators[g]
+            else {
+                continue;
+            };
+            let c = *c;
+            if class != "BSCyclicBlendTransitionGenerator"
+                || !matches!(self.generators[c], Generator::Blender { .. })
+                || self.bound(c, "blendParameter").is_some()
+            {
+                continue;
+            }
+            if let Some(variable) = self.bound(g, "fBlendParameter") {
+                self.bindings[c].push(Binding {
+                    member: "blendParameter".into(),
+                    variable,
+                });
+            } else if !self.property_bindings[c]
+                .iter()
+                .any(|b| b.member == "blendParameter")
+            {
+                if let Some(property) = self.property_bindings[g]
+                    .iter()
+                    .find(|b| b.member == "fBlendParameter")
+                    .map(|b| b.property.clone())
+                {
+                    self.property_bindings[c].push(PropertyBinding {
+                        member: "blendParameter".into(),
+                        property,
+                    });
+                }
+            }
+        }
     }
 
     pub fn event_id(&self, name: &str) -> Option<i32> {
@@ -1644,6 +1660,35 @@ mod character_property_tests {
         assert_eq!(r.property_bindings[id].len(), 2);
         assert_eq!(r.property_bindings[id][0].property, "gain");
         assert_eq!(r.bindings[id].len(), 1);
+    }
+
+    #[test]
+    fn cyclic_wrappers_retain_scalar_property_names_and_variable_bindings() {
+        let mut p = fixture();
+        for (at, len) in [(0x480, 8), (0x4E0, 11)] {
+            p.data[at..at + len].fill(0);
+            p.data[at..at + 15].copy_from_slice(b"fBlendParameter");
+        }
+        let mut r = Reader {
+            p: &p,
+            classes: [(0x280, "BSCyclicBlendTransitionGenerator")].into(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            property_bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["Unused", "Other", "Third", "Fourth", "Direction"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let id = r.generator(0x280);
+        assert_eq!(r.property_bindings[id][0].member, "fBlendParameter");
+        assert_eq!(r.property_bindings[id][0].property, "direction");
+        assert_eq!(r.bindings[id][0].member, "fBlendParameter");
+        assert_eq!(r.bindings[id][0].variable, 2);
     }
 
     #[test]

@@ -66,9 +66,10 @@ bone switches.
   values and character driver settings.
 - Transition effects resolve the scalar `duration` property at the existing
   transition-commit read site (see below); other effect members remain unsupported.
-  Generator members not listed above are retained but not evaluated, including
-  forwarding `BSCyclicBlendTransitionGenerator`'s `fBlendParameter` property to
-  its child. The inspected humanoid graphs did not show scalar uses there.
+  `BSCyclicBlendTransitionGenerator.fBlendParameter` properties now forward to
+  its blender child (see below). Other generator members not listed above remain
+  retained but unevaluated. The inspected humanoid graphs did not show scalar
+  character-property uses on the cyclic wrapper.
   Blender-child bone-weight properties are supported as described below. The static
   event-to-clip planning resolver still uses its existing variable-default and
   authored-member paths; it does not resolve scalar generator properties.
@@ -197,3 +198,48 @@ this implementation's input path, not original-engine parity. Only the public
 community guide and game behavior assets were examined for this extension; no
 SDK source or engine binary data was examined, and no game assets or asset bytes
 were copied into the repository.
+
+## Cyclic-wrapper blend-parameter properties
+
+`BSCyclicBlendTransitionGenerator.fBlendParameter` now forwards its read-only
+character-property binding to its `hkbBlenderGenerator` child's `blendParameter`,
+using the existing variable-forwarding path. The child resolves that property by
+case-insensitive character name at its existing parameter reads; cyclic weighting
+and synchronized cycle lengths consume the same parameter. Character properties
+stay separate from graph variables and cannot be changed by animation-variable
+writes. Missing characters, names and non-scalar properties retain the child's
+authored blend parameter, as for direct blender property inputs.
+
+The community-authored [Skyrim locomotion behavior overview](https://skmod.hatenablog.com/entry/animation/Behavior-4)
+examines `mt_behavior.hkx` and describes the cyclic wrapper followed by the
+Direction blender. Its discussion explicitly labels parts of the blend algorithm
+as inference. Existing repository observations in
+[`player-body.md`](player-body.md) establish that locomotion binds `Direction` to
+the wrapper's `fBlendParameter` while leaving its child unbound. The public
+[Souls Modding behavior guide](https://www.soulsmodding.com/doku.php?id=topic%3Ahavok_behavior_editing#hkbvariablebindingsets)
+describes character properties as constant binding inputs to object members.
+Together these support extending the existing forwarding mechanism; they do not
+establish original-engine property-specific timing or a vanilla Skyrim use of
+this binding. No additional installed game assets were examined for this change.
+
+Existing child variable inputs keep precedence over the wrapper. A wrapper
+variable takes precedence over its duplicate property input, following the
+existing forwarding policy. An explicitly bound child property is preserved
+rather than replaced by a wrapper property. Exact original-engine policies for
+conflicting/shared child bindings remain unverified. For shared blenders, the
+first forwarded binding of each source type wins in generator order, and any
+variable input takes precedence over a property input. A missing wrapper property retains the child's authored parameter;
+the wrapper's own authored `fBlendParameter` is still not parsed or used as a
+fallback. Freeze/cross-blend events, transition duration/curve, and the cyclic
+wrapper's lifecycle are not implemented by this extension and need separate
+public or asset evidence. Runtime overrides and static event-to-clip property
+evaluation also remain unsupported.
+
+Synthetic tests cover binding-name retention alongside a duplicate variable,
+per-character values, case-insensitive lookup, cyclic wraparound, synchronized
+clip times, read-only handling, absent/non-scalar fallback, live variable
+precedence, preserved explicit child inputs, and exclusion of other wrappers or
+non-blender children. These validate the supported input path, not engine parity.
+Only public community behavior analysis and invented fixtures were used as
+implementation evidence; no game-engine binary files were examined and no assets
+were added to the repository.
