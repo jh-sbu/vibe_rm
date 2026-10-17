@@ -79,7 +79,7 @@ impl Timing {
         match (self.flags >> 1) & 3 {
             // Reverse: back and forth.
             1 => {
-                let c = k.rem_euclid(2.0 * len);
+                let c = (k - self.start).rem_euclid(2.0 * len);
                 self.start + if c > len { 2.0 * len - c } else { c }
             }
             2 => k.clamp(self.start, self.stop),
@@ -504,5 +504,59 @@ mod tests {
         t.frequency = 2.0;
         t.phase = 1.0;
         assert_eq!(t.key_time(5.0), 1.0);
+    }
+
+    #[test]
+    fn reverse_key_time_uses_start_relative_phase_on_both_legs() {
+        let t = Timing {
+            start: 3.0,
+            stop: 5.0,
+            frequency: 2.0,
+            phase: 1.0,
+            ..timing(1)
+        };
+        // The scaled clock reaches start at t=1, stop at t=2 and returns
+        // to start at t=3. Include times before start and skipped cycles.
+        for (clock, expected) in [
+            (-1.0, 3.0),
+            (-0.5, 4.0),
+            (0.0, 5.0),
+            (0.5, 4.0),
+            (1.0, 3.0),
+            (1.5, 4.0),
+            (2.0, 5.0),
+            (2.5, 4.0),
+            (3.0, 3.0),
+            (3.5, 4.0),
+            (9.5, 4.0),
+        ] {
+            assert_eq!(t.key_time(clock), expected, "clock={clock}");
+        }
+    }
+
+    #[test]
+    fn key_time_nonzero_loop_clamp_and_degenerate_ranges() {
+        let mut t = Timing {
+            start: 3.0,
+            stop: 5.0,
+            frequency: 2.0,
+            phase: 1.0,
+            ..timing(0)
+        };
+        assert_eq!(t.key_time(1.0), 3.0);
+        assert_eq!(t.key_time(1.5), 4.0);
+        assert_eq!(t.key_time(2.0), 3.0);
+        t.flags = timing(2).flags;
+        assert_eq!(t.key_time(0.0), 3.0);
+        assert_eq!(t.key_time(1.5), 4.0);
+        assert_eq!(t.key_time(2.5), 5.0);
+        for stop in [3.0, 2.0] {
+            t.stop = stop;
+            for cycle in [0, 1, 2] {
+                t.flags = timing(cycle).flags;
+                assert_eq!(t.key_time(-100.0), 3.0);
+                assert_eq!(t.key_time(100.0), 3.0);
+            }
+        }
     }
 }

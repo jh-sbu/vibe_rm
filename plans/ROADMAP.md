@@ -825,6 +825,9 @@ game each piece unlocks.
   geometry (also in effects): nested poses and visibility, independent controller clocks and
   block-identity targets, scaled bounds and hidden parts omitted from shadows
   and particles. Limits and timing choices: `known_ambiguities/node-controllers.md`
+- Standalone reverse controller cycles respect nonzero start times, frequency
+  and phase across node, material and particle animation; remaining timing
+  questions: `known_ambiguities/node-controllers.md`
 - Particle systems: `NiParticleSystem` with its data, emitters (box, cylinder, sphere),
   birth rate and visibility controllers, gravity, drag, rotation, scale, simple colour,
   subtexture flipping and spawning on death, run on the CPU near the camera and drawn as

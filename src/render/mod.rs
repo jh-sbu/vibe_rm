@@ -331,6 +331,41 @@ mod alpha_test_tests {
     }
 
     #[test]
+    fn standalone_reverse_material_channels_respect_nonzero_start() {
+        let base = <MaterialUniform as bytemuck::Zeroable>::zeroed();
+        let mut anim = animation(true);
+        let alpha = &mut anim.channels[0];
+        alpha.timing.flags = 8 | 2;
+        alpha.timing.phase = 1.0;
+        alpha.timing.start = 3.0;
+        alpha.timing.stop = 5.0;
+        alpha.keys.keys = vec![(3.0, Vec3::ZERO), (5.0, Vec3::X * 255.0)];
+        let mut uv = alpha.clone();
+        uv.alpha_test = false;
+        uv.variable = 6;
+        uv.keys.keys = vec![(3.0, Vec3::ZERO), (5.0, Vec3::X)];
+        let mut color = uv.clone();
+        color.color = true;
+        color.variable = 0;
+        color.keys.keys = vec![(3.0, Vec3::ZERO), (5.0, Vec3::ONE)];
+        anim.channels.extend([uv, color]);
+        for (time, expected) in [
+            (1.0, 0.0),
+            (1.5, 0.5),
+            (2.0, 1.0),
+            (2.5, 0.5),
+            (3.0, 0.0),
+            (3.5, 0.5),
+            (9.5, 0.5),
+        ] {
+            let u = base.animated(&anim, time, false);
+            assert_eq!(u.params[1], expected, "alpha at {time}");
+            assert_eq!(u.uv[0], expected, "U offset at {time}");
+            assert_eq!(u.emissive[..3], [expected; 3], "colour at {time}");
+        }
+    }
+
+    #[test]
     fn sequence_material_copies_keep_independent_clocks_and_terminal_samples() {
         let mut base = <MaterialUniform as bytemuck::Zeroable>::zeroed();
         base.params[1] = 0.25;

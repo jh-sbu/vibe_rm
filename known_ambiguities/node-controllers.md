@@ -48,6 +48,11 @@ was examined and no game assets are stored in the repository.
   controllers sample time since the placed object loaded. Frequency, phase and
   cycle use the existing NIF timing evaluator. Boolean keys step at their key
   times. Inactive APP_TIME and manager-controlled channels do not run.
+- Standalone reverse cycles now reflect the scaled, phase-shifted clock
+  relative to the authored start time. A range of 3..5 samples 3, 4, 5,
+  4, 3 at key-clock times 3, 4, 5, 6, 7. The shared evaluator also feeds
+  standalone material and particle controllers; named sequences keep their
+  separate sequence clock.
 - Named sequences override their keyed transforms while playing and leave
   unrelated controllers running. Parts without an independent controller retain
   their terminal local poses afterward; standalone controllers keep updating.
@@ -82,14 +87,14 @@ was examined and no game assets are stored in the repository.
 - **Timing and curves:** playback-backwards/forced-update/scaled-time flags
   beyond the existing evaluator and exact nonlinear key interpolation remain
   separate work. This change does not claim to resolve them.
-  The standalone timing evaluator's reverse branch currently calculates phase
-  without subtracting the controller's start time. Public
+  Reverse cycles now use the start-relative clock described by public
   [NifSkope `Controller::ctrlTime`](https://github.com/niftools/nifskope/blob/develop/src/gl/glcontroller.cpp)
-  instead uses the time relative to start; standalone reverse controllers
-  with a nonzero start can therefore sample the wrong point. Named placed
-  sequences now use a separate offset-aware evaluator; correcting the shared
-  standalone evaluator and checking its existing consumers remain separate
-  work.
+  for both forward and return legs. This fixes the previous phase error for
+  nonzero starts; it does not establish Skyrim's clock initialization policy.
+  Existing loop sampling still wraps at the exact stop time, whereas
+  NifSkope preserves an in-range stop sample before extrapolating. That
+  endpoint policy remains unchanged and needs original-game comparison;
+  clamp sampling also retains its existing behavior.
 
 Synthetic tests cover block identity, controlled roots, empty parents,
 manager/inactive filtering, nested transforms/visibility, scaled bounds,
@@ -101,6 +106,11 @@ Synthetic geometry tests cover all three supported shape formats, local
 vertices and inherited placement, directly controlled shape roots, nested
 node/shape chains, stepped visibility, duplicate names, shape filtering,
 effect conversion and skinned exclusion.
+Standalone reverse regression tests cover nonzero starts, frequency and
+phase, both turning points, times before start and skipped cycles; actual
+placed-object transforms and stepped visibility under both clock types;
+material float / colour and alpha-test samples; and particle linear / stepped
+curves. Loop / clamp and degenerate-range checks retain existing behavior.
 
 ## Texture flips: evidence gap
 
