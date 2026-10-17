@@ -82,6 +82,14 @@ was examined and no game assets are stored in the repository.
 - **Timing and curves:** playback-backwards/forced-update/scaled-time flags
   beyond the existing evaluator and exact nonlinear key interpolation remain
   separate work. This change does not claim to resolve them.
+  The standalone timing evaluator's reverse branch currently calculates phase
+  without subtracting the controller's start time. Public
+  [NifSkope `Controller::ctrlTime`](https://github.com/niftools/nifskope/blob/develop/src/gl/glcontroller.cpp)
+  instead uses the time relative to start; standalone reverse controllers
+  with a nonzero start can therefore sample the wrong point. Named placed
+  sequences now use a separate offset-aware evaluator; correcting the shared
+  standalone evaluator and checking its existing consumers remain separate
+  work.
 
 Synthetic tests cover block identity, controlled roots, empty parents,
 manager/inactive filtering, nested transforms/visibility, scaled bounds,

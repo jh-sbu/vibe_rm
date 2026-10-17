@@ -377,6 +377,48 @@ mod alpha_test_tests {
         assert_eq!(first.apply(&anim, standalone).params[1], 0.25);
         assert_eq!(first.apply(&anim, standalone).uv[0], 1.0);
     }
+
+    #[test]
+    fn reverse_sequence_samples_material_channels_on_both_legs() {
+        let base = <MaterialUniform as bytemuck::Zeroable>::zeroed();
+        let mut anim = animation(false);
+        let mut alpha = anim.channels.remove(0);
+        alpha.keys.keys = vec![(3.0, Vec3::ZERO), (5.0, Vec3::X * 255.0)];
+        // Property timing must not remap the sequence's sampled key time.
+        alpha.timing.frequency = 7.0;
+        alpha.timing.phase = 20.0;
+        let mut uv = alpha.clone();
+        uv.alpha_test = false;
+        uv.variable = 6;
+        uv.keys.keys = vec![(3.0, Vec3::ZERO), (5.0, Vec3::X)];
+        let mut color = uv.clone();
+        color.color = true;
+        color.variable = 0;
+        color.keys.keys = vec![(3.0, Vec3::ZERO), (5.0, Vec3::ONE)];
+        anim.sequences.push(model::MaterialSequence {
+            name: "Idle".into(),
+            channels: vec![alpha, uv, color],
+        });
+        let seq = model::Sequence {
+            name: "Idle".into(),
+            cycle: 1,
+            start: 3.0,
+            stop: 5.0,
+            frequency: 2.0,
+            channels: Vec::new(),
+        };
+        let clock = MaterialSequenceClock::default();
+        let mut phase = seq.start;
+        for expected in [0.5, 1.0, 0.5, 0.0, 0.5] {
+            let (time, done) = seq.advance(&mut phase, 0.5);
+            assert!(!done);
+            clock.select(&seq.name, time);
+            let u = clock.apply(&anim, base);
+            assert_eq!(u.params[1], expected);
+            assert_eq!(u.uv[0], expected);
+            assert_eq!(u.emissive[..3], [expected; 3]);
+        }
+    }
 }
 
 pub struct GpuPart {

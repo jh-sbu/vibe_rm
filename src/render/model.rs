@@ -767,6 +767,43 @@ pub struct Sequence {
     pub channels: Vec<Channel>,
 }
 
+impl Sequence {
+    /// Advance a bounded playback phase and return the key time and completion.
+    /// Reverse cycles keep their return leg in the phase; storing only the
+    /// sampled key time would lose the direction on the next update.
+    pub(crate) fn advance(&self, phase: &mut f32, dt: f32) -> (f32, bool) {
+        *phase += dt * self.frequency;
+        let len = self.stop - self.start;
+        if len <= 0.0 {
+            *phase = self.start;
+            return (self.start, self.cycle >= 2);
+        }
+        match self.cycle {
+            0 => {
+                // Keep the first stop sample, as for existing loop playback.
+                if *phase > self.stop || *phase < self.start {
+                    *phase = self.start + (*phase - self.start).rem_euclid(len);
+                }
+                (*phase, false)
+            }
+            1 => {
+                let offset = (*phase - self.start).rem_euclid(2.0 * len);
+                *phase = self.start + offset;
+                let time = if offset <= len {
+                    self.start + offset
+                } else {
+                    self.stop - (offset - len)
+                };
+                (time, false)
+            }
+            _ => {
+                *phase = (*phase).clamp(self.start, self.stop);
+                (*phase, *phase >= self.stop)
+            }
+        }
+    }
+}
+
 /// Controller sequences of a model with transform channels, and the nodes they move.
 fn sequences(nif: &Nif) -> Vec<Sequence> {
     let mut out = Vec::new();
