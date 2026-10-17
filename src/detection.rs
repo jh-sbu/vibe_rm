@@ -230,6 +230,27 @@ struct Target {
 }
 
 impl Engine {
+    /// The explicit actor flag set by Papyrus `SetAlert`, also queried by
+    /// `IsAlerted` and the `GetIsAlerted` condition. The public Skyrim docs do
+    /// not establish its relationship to detection's Alert / Combat / Lost
+    /// states; see `known_ambiguities/detection.md`.
+    pub fn is_alerted(&self, actor: FormId) -> bool {
+        self.world_state.alerted.contains(&actor)
+    }
+
+    /// Set or clear the explicit alerted flag without inventing a combat target
+    /// or interrupting a search. Retained in memory even while its cell unloads.
+    pub fn set_alerted(&mut self, actor: FormId, alerted: bool) {
+        if !self.is_actor_ref(actor) {
+            return;
+        }
+        if alerted {
+            self.world_state.alerted.insert(actor);
+        } else {
+            self.world_state.alerted.remove(&actor);
+        }
+    }
+
     pub(crate) fn detection_settings(&self) -> DetectionSettings {
         *self
             .detection

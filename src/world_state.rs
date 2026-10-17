@@ -16,6 +16,9 @@ use crate::engine::Engine;
 
 #[derive(Default)]
 pub struct WorldState {
+    /// Explicit Papyrus `SetAlert` flags, independent of loaded actor runtimes.
+    /// Automatic detection-state changes are not mapped to this flag yet.
+    pub alerted: std::collections::HashSet<FormId>,
     /// Dead actors and where their bodies lie.
     pub dead: HashMap<FormId, (Place, Vec3)>,
     /// Animated doors the player left open.
