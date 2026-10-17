@@ -2758,7 +2758,6 @@ impl Engine {
                     let ctx = crate::condition::Context {
                         subject: Some(a.ref_id),
                         quest: p.quest,
-                        package: Some(p.id),
                         ..Default::default()
                     };
                     p.schedule.matches(self.hour, self.day)

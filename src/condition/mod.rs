@@ -29,6 +29,10 @@ pub struct Condition {
     /// package data), and whether the first parameter is an input (flag 0x08).
     pub pack_input: Option<u8>,
     pub p1_input: bool,
+    /// GetNumericPackageData: the value of the package input the first
+    /// parameter names, worked out when the package is parsed (`None`: the
+    /// input is missing or not numeric, and the condition fails).
+    pub package_data: Option<f32>,
     /// Parameters naming quest aliases ("use aliases", flag 0x02): the first
     /// parameter is an alias id of the condition's quest.
     pub p1_alias: bool,
@@ -53,9 +57,16 @@ pub const RUN_ON_NOTHING: u32 = u32::MAX;
 
 /// Parse all CTDA subrecords of a record, attaching CIS1/CIS2 string parameters.
 pub fn parse_all(rec: &LoadedRecord<'_>) -> Vec<Condition> {
+    parse_all_before(rec, None)
+}
+
+/// As [`parse_all`], stopping at the first `stop` subrecord (a package's
+/// procedure tree, `XNAM`, whose branches have conditions of their own).
+pub fn parse_all_before(rec: &LoadedRecord<'_>, stop: Option<&[u8; 4]>) -> Vec<Condition> {
     let mut out: Vec<Condition> = Vec::new();
     for s in rec.subrecords() {
         match &s.tag.0 {
+            t if Some(t) == stop => break,
             b"CTDA" => {
                 if let Some(c) = parse(rec, s.data) {
                     out.push(c);
@@ -133,6 +144,7 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
         string_p2: None,
         pack_input: (u32_at(20) == 6 && d.len() >= 32).then(|| u32_at(28) as u8),
         p1_input: flags & 0x08 != 0,
+        package_data: None,
         p1_alias,
         p1_ref: None,
         event_member: if u32_at(20) == RUN_ON_EVENT_DATA && d.len() >= 32 {
@@ -146,9 +158,11 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
 /// `run_on`: the data of the Story Manager event behind the quest.
 const RUN_ON_EVENT_DATA: u32 = 7;
 const GET_EVENT_DATA: u16 = 576;
+/// Its first parameter is a package input's index (see `Condition::package_data`).
+pub const GET_NUMERIC_PACKAGE_DATA: u16 = 612;
 
 /// Whether parameter `n` of function `func` is a form reference (vs. an int/enum).
-fn param_is_form(func: u16, n: u8) -> bool {
+pub(crate) fn param_is_form(func: u16, n: u8) -> bool {
     let Some(f) = functions::find(func) else {
         return false;
     };
@@ -188,10 +202,6 @@ pub struct Context {
     /// For furniture idles, the furniture reference.
     pub target: Option<FormId>,
     pub quest: Option<FormId>,
-    /// The concrete package whose conditions or template branches are being
-    /// checked. Numeric package data belongs to this package, even while a
-    /// different package is still running on the actor.
-    pub package: Option<FormId>,
     /// Set when picking from the IDLE tree.
     pub idle: Option<IdleQuery>,
 }
@@ -306,7 +316,7 @@ fn b(x: bool) -> Option<f32> {
     Some(if x { 1.0 } else { 0.0 })
 }
 
-/// Value of a condition function; `None` means "unsupported" (treated as passing).
+/// Value of a condition function; `None` means "unsupported" (the condition fails).
 fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Context) -> Option<f32> {
     let p1 = match c.p1_ref {
         Some(RefOf::Subject) => ctx.subject?,
@@ -317,13 +327,11 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
     };
     let subj_base = subject.and_then(|s| e.base_of(s));
     match c.func {
-        612 => ctx
-            .package
-            .and_then(|package| crate::ai::package::numeric_data(&e.lo, package, c.p1)), // GetNumericPackageData
-        18 => Some(e.hour),                                            // GetCurrentTime
-        170 => Some((e.day % 7) as f32),                               // GetDayOfWeek
-        77 => Some((e.peek_rand() % 100) as f32),                      // GetRandomPercent
-        74 => Some(e.global_value(p1)),                                // GetGlobalValue
+        GET_NUMERIC_PACKAGE_DATA => c.package_data,
+        18 => Some(e.hour),                       // GetCurrentTime
+        170 => Some((e.day % 7) as f32),          // GetDayOfWeek
+        77 => Some((e.peek_rand() % 100) as f32), // GetRandomPercent
+        74 => Some(e.global_value(p1)),           // GetGlobalValue
         56 => b(e.scripts.quests.get(&p1).is_some_and(|q| q.running)), // GetQuestRunning
         50 => b(subject.is_some_and(|s| e.talked_to_pc.contains(&s))), // GetTalkedToPC
         58 => Some(
@@ -339,8 +347,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .get(&p1)
             .is_some_and(|q| q.done.contains(&(c.p2 as u16)))), // GetStageDone
         543 => b(e.scripts.quests.get(&p1).is_some_and(|q| q.completed)), // GetQuestCompleted
-        72 => b(subj_base == Some(p1) || subject == Some(p1)),         // GetIsID
-        136 => b(subject == Some(p1)),                                 // GetIsReference
+        72 => b(subj_base == Some(p1) || subject == Some(p1)), // GetIsID
+        136 => b(subject == Some(p1)),            // GetIsReference
         // IsHostileToActor: either fights the other. With no actor (a
         // magic effect's: cloaks' damage), the effect's caster.
         719 => {
@@ -569,8 +577,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         403 => Some(e.relationship_rank(subject?, p1) as f32), // GetRelationshipRank
         258 => b(e.has_association(subject?, Some(p1), FormId(c.p2))), // HasAssociationType
         259 => b(e.has_family_relationship(subject?, Some(p1))), // HasFamilyRelationship
-        617 => b(e.has_association(subject?, None, p1)), // HasAssociationTypeAny
-        618 => b(e.has_family_relationship(subject?, None)), // HasFamilyRelationshipAny
+        617 => b(e.has_association(subject?, None, p1)),       // HasAssociationTypeAny
+        618 => b(e.has_family_relationship(subject?, None)),   // HasFamilyRelationshipAny
         615 | 616 => Some(e.relationship_extreme(subject?, c.func == 615) as f32), // GetHighest / GetLowestRelationshipRank
         726 => b(subject.is_none()),                                               // DoesNotExist
         372 => b(subject.is_some_and(|s| {
