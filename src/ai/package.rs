@@ -375,24 +375,28 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
     indices.into_iter().zip(values).collect()
 }
 
-/// Work out a GetNumericPackageData condition's value from the package's
-/// inputs (by `UNAM` index). Booleans are 0 or 1; integers and floats share the
-/// condition function's floating-point result. Missing, malformed and
-/// nonnumeric inputs leave it `None`, so the condition fails rather than
-/// silently making `GetNumericPackageData == 0` pass.
+/// Work out the package input a GetNumericPackageData or
+/// GetWithinPackageLocation condition reads (by `UNAM` index). Numbers:
+/// booleans are 0 or 1; integers and floats share the condition function's
+/// floating-point result. Missing, malformed and other kinds of input leave it
+/// `None`, so the condition fails rather than silently making
+/// `GetNumericPackageData == 0` pass.
 fn package_data(c: &mut Condition, input: impl Fn(u8) -> Option<Input>) {
-    if c.func != condition::GET_NUMERIC_PACKAGE_DATA {
-        return;
-    }
-    c.package_data = u8::try_from(c.p1)
-        .ok()
-        .and_then(input)
-        .and_then(|value| match value {
-            Input::Bool(value) => Some(u8::from(value) as f32),
-            Input::Int(value) => Some(value as f32),
-            Input::Float(value) if value.is_finite() => Some(value),
+    use condition::PackageData;
+    let input = || u8::try_from(c.p1).ok().and_then(&input);
+    c.package_data = match c.func {
+        condition::GET_NUMERIC_PACKAGE_DATA => input().and_then(|value| match value {
+            Input::Bool(value) => Some(PackageData::Number(u8::from(value) as f32)),
+            Input::Int(value) => Some(PackageData::Number(value as f32)),
+            Input::Float(value) if value.is_finite() => Some(PackageData::Number(value)),
             _ => None,
-        });
+        }),
+        condition::GET_WITHIN_PACKAGE_LOCATION => input().and_then(|value| match value {
+            Input::Location(l) => Some(PackageData::Location(l)),
+            _ => None,
+        }),
+        _ => return,
+    };
 }
 
 /// Input names of a template package, by index (`UNAM` + `BNAM` after the procedure tree).
@@ -911,8 +915,8 @@ pub fn npc_packages(lo: &LoadOrder, src: &crate::world::template::Sources) -> Ve
 }
 
 #[cfg(test)]
-#[path = "package_numeric_tests.rs"]
-mod numeric_tests;
+#[path = "package_data_tests.rs"]
+mod data_tests;
 
 #[cfg(test)]
 mod tests {

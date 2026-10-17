@@ -29,10 +29,10 @@ pub struct Condition {
     /// package data), and whether the first parameter is an input (flag 0x08).
     pub pack_input: Option<u8>,
     pub p1_input: bool,
-    /// GetNumericPackageData: the value of the package input the first
-    /// parameter names, worked out when the package is parsed (`None`: the
-    /// input is missing or not numeric, and the condition fails).
-    pub package_data: Option<f32>,
+    /// GetNumericPackageData / GetWithinPackageLocation: the package input the
+    /// first parameter names, worked out when the package is parsed (`None`:
+    /// the input is missing or of the wrong kind, and the condition fails).
+    pub package_data: Option<PackageData>,
     /// Parameters naming quest aliases ("use aliases", flag 0x02): the first
     /// parameter is an alias id of the condition's quest.
     pub p1_alias: bool,
@@ -40,6 +40,13 @@ pub struct Condition {
     pub p1_ref: Option<RefOf>,
     /// Run on a Story Manager event's data (`run_on` 7): the member (`R1`, `L2`...).
     pub event_member: [u8; 2],
+}
+
+/// A package input a condition reads (see `Condition::package_data`).
+#[derive(Debug, Clone, Copy)]
+pub enum PackageData {
+    Number(f32),
+    Location(crate::ai::package::Location),
 }
 
 /// A reference worked out for whoever the condition runs on.
@@ -158,8 +165,9 @@ pub fn parse(rec: &LoadedRecord<'_>, d: &[u8]) -> Option<Condition> {
 /// `run_on`: the data of the Story Manager event behind the quest.
 const RUN_ON_EVENT_DATA: u32 = 7;
 const GET_EVENT_DATA: u16 = 576;
-/// Its first parameter is a package input's index (see `Condition::package_data`).
+/// Their first parameter is a package input's index (see `Condition::package_data`).
 pub const GET_NUMERIC_PACKAGE_DATA: u16 = 612;
+pub const GET_WITHIN_PACKAGE_LOCATION: u16 = 325;
 
 /// Whether parameter `n` of function `func` is a form reference (vs. an int/enum).
 pub(crate) fn param_is_form(func: u16, n: u8) -> bool {
@@ -327,7 +335,17 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
     };
     let subj_base = subject.and_then(|s| e.base_of(s));
     match c.func {
-        GET_NUMERIC_PACKAGE_DATA => c.package_data,
+        GET_NUMERIC_PACKAGE_DATA => match c.package_data {
+            Some(PackageData::Number(v)) => Some(v),
+            _ => None,
+        },
+        // The location is placed for the actor whose package it is.
+        GET_WITHIN_PACKAGE_LOCATION => match c.package_data {
+            Some(PackageData::Location(l)) => e
+                .within_package_location(subject?, ctx.subject?, l, ctx.quest)
+                .and_then(b),
+            _ => None,
+        },
         18 => Some(e.hour),                       // GetCurrentTime
         170 => Some((e.day % 7) as f32),          // GetDayOfWeek
         77 => Some((e.peek_rand() % 100) as f32), // GetRandomPercent

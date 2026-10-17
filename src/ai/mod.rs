@@ -28,6 +28,7 @@ use crate::world::movement::MoveSpeeds;
 use crate::world::skeleton::Skeleton;
 use furniture::{FurnitureWorld, Seat, Use};
 use package::{Allow, Behaviour, LocationKind, Package, Target};
+use schedule::Place;
 
 /// Forward walk speed (units/s) when the walk clip has no root motion.
 pub const WALK_SPEED: f32 = 80.0;
@@ -2639,6 +2640,71 @@ impl Engine {
             LocationKind::NearEditor | LocationKind::Other(_) => Some(a.editor_pos),
         };
         (centre.unwrap_or(a.editor_pos), loc.radius)
+    }
+
+    /// GetWithinPackageLocation: whether `subject` is within package location
+    /// `loc`, placed for `actor`, the actor whose package it is, as its force
+    /// greet trigger is (`None`: that actor isn't loaded, or an alias is empty).
+    /// "In cell" and "in location alias" ask whether the subject is there.
+    pub(crate) fn within_package_location(
+        &self,
+        subject: FormId,
+        actor: FormId,
+        loc: package::Location,
+        quest: Option<FormId>,
+    ) -> Option<bool> {
+        match loc.kind {
+            LocationKind::InCell(c) => {
+                let cell = self.lo.cell(c)?;
+                return Some(match (self.ref_current_place(subject)?, cell.world) {
+                    (Place::Interior(i), None) => i == c,
+                    (Place::Exterior(w, g), Some(world)) => w == world && cell.grid == Some(g),
+                    _ => false,
+                });
+            }
+            LocationKind::InLocAlias(alias) => {
+                let l = quest.and_then(|q| self.alias_ref(q, alias))?;
+                return Some(
+                    self.ref_current_location(subject)
+                        .is_some_and(|s| self.location_within(s, l)),
+                );
+            }
+            _ => {}
+        }
+        let (centre, radius) = self.location_target(self.actor_ref(actor)?, loc, quest);
+        Some(self.ref_position(subject)?.distance(centre) <= radius)
+    }
+
+    /// The cell a reference is in now: the player's, a loaded actor's, a
+    /// persistent actor's whereabouts, else where it was placed or moved to.
+    fn ref_current_place(&self, r: FormId) -> Option<Place> {
+        let grid = |p: Vec3| {
+            let size = crate::world::terrain::CELL_SIZE;
+            ((p.x / size).floor() as i32, (p.y / size).floor() as i32)
+        };
+        let loaded = match self.location {
+            crate::engine::Location::Interior(c) if r == PLAYER_REF => Some(Place::Interior(c)),
+            crate::engine::Location::Exterior { world, .. } if r == PLAYER_REF => {
+                Some(Place::Exterior(world, grid(self.ref_position(r)?)))
+            }
+            crate::engine::Location::Exterior { world, .. } => match self.actor_cells.get(&r) {
+                Some(crate::render::CellKey::Exterior(x, y)) => {
+                    Some(Place::Exterior(world, (*x, *y)))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(place) = loaded {
+            return Some(place);
+        }
+        if let Some(crate::render::CellKey::Interior(c)) = self.actor_cells.get(&r) {
+            return Some(Place::Interior(*c));
+        }
+        if let Some((place, _)) = self.whereabouts.of.get(&r) {
+            return Some(*place);
+        }
+        self.place_of_ref(r, self.ref_position(r)?)
     }
 
     /// The reference a package target input names for actor `a`.

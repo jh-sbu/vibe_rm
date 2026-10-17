@@ -637,6 +637,11 @@ game each piece unlocks.
   during loaded and persistent actor package selection. Missing or unsupported
   values fail the condition. Remaining input and context limits:
   `known_ambiguities/package-trees.md`
+- `GetWithinPackageLocation` conditions check the subject against a package
+  `Location` input placed for the package's actor (force greet, travel-to-radius,
+  civil war hold-position and Dawnguard disguised vampire template branches,
+  which always failed before). Package start positions and unloaded actors:
+  `known_ambiguities/package-trees.md`
 - Package procedures: packages with their own procedure tree (draugr ambushes
   in sarcophagi, thrones and alcoves: creatures use furniture through their own
   graphs' `ActionActivate` branch, starting in it and getting out when the

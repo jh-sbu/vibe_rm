@@ -1,4 +1,5 @@
-//! Numeric package conditions over synthetic records; no game assets.
+//! Package data conditions (GetNumericPackageData, GetWithinPackageLocation)
+//! over synthetic records; no game assets.
 
 use super::*;
 use esp::writer::{Node, RecordBuilder, write_plugin};
@@ -13,7 +14,7 @@ impl Fixture {
             .unwrap()
             .as_nanos();
         let dir = std::env::temp_dir().join(format!(
-            "vrm-numeric-package-{}-{stamp}-{}",
+            "vrm-package-data-{}-{stamp}-{}",
             std::process::id(),
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
@@ -53,13 +54,51 @@ fn input(record: RecordBuilder, index: u8, kind: &str, bytes: &[u8]) -> RecordBu
         .field(b"UNAM", &[index])
 }
 
-fn numeric_condition(index: u32, value: f32, flags: u8) -> [u8; 32] {
+fn location_input(
+    record: RecordBuilder,
+    index: u8,
+    kind: u32,
+    value: u32,
+    radius: i32,
+) -> RecordBuilder {
+    let mut pldt = kind.to_le_bytes().to_vec();
+    pldt.extend_from_slice(&value.to_le_bytes());
+    pldt.extend_from_slice(&radius.to_le_bytes());
+    record
+        .zstring(b"ANAM", "Location")
+        .field(b"PLDT", &pldt)
+        .field(b"UNAM", &[index])
+}
+
+fn package_condition(func: u16, index: u32, value: f32, flags: u8) -> [u8; 32] {
     let mut data = [0; 32];
     data[0] = flags;
     data[4..8].copy_from_slice(&value.to_le_bytes());
-    data[8..10].copy_from_slice(&612u16.to_le_bytes());
+    data[8..10].copy_from_slice(&func.to_le_bytes());
     data[12..16].copy_from_slice(&index.to_le_bytes());
     data
+}
+
+fn numeric_condition(index: u32, value: f32, flags: u8) -> [u8; 32] {
+    package_condition(condition::GET_NUMERIC_PACKAGE_DATA, index, value, flags)
+}
+
+fn location_condition(index: u32, value: f32) -> [u8; 32] {
+    package_condition(condition::GET_WITHIN_PACKAGE_LOCATION, index, value, 0)
+}
+
+fn number(c: &Condition) -> Option<f32> {
+    match c.package_data {
+        Some(condition::PackageData::Number(v)) => Some(v),
+        _ => None,
+    }
+}
+
+fn location(c: &Condition) -> Option<Location> {
+    match c.package_data {
+        Some(condition::PackageData::Location(l)) => Some(l),
+        _ => None,
+    }
 }
 
 #[test]
@@ -107,7 +146,7 @@ fn numeric_package_data_uses_sparse_indices_and_preserves_numeric_types() {
     assert_eq!(p.conditions.len(), cases.len());
     for ((index, expected), c) in cases.into_iter().zip(&p.conditions) {
         assert_eq!(c.p1, index);
-        assert_eq!(c.package_data, expected, "index {index}");
+        assert_eq!(number(c), expected, "index {index}");
     }
 }
 
@@ -137,7 +176,7 @@ fn assert_branches(lo: &LoadOrder, package: FormId, value: f32) {
         };
         assert_eq!(c.p1, 201, "input indices must not be FormIDs");
         assert_eq!(c.run_on, 0, "numeric inputs must not resolve as references");
-        assert_eq!(c.package_data, Some(value));
+        assert_eq!(number(c), Some(value));
     }
 }
 
@@ -172,4 +211,72 @@ fn branches_of_a_package_with_its_own_tree_have_only_their_own_conditions() {
     let lo = fixture.load(vec![package]);
     assert!(parse(&lo, id(0x800)).unwrap().conditions.is_empty());
     assert_branches(&lo, id(0x800), 0.0);
+}
+
+#[test]
+fn within_package_location_reads_location_inputs_only() {
+    let fixture = Fixture::new();
+    let mut record = RecordBuilder::new(b"PACK", FormId(0x800));
+    for (index, value) in [(62, 1.0), (75, 0.0), (5, 1.0), (99, 1.0)] {
+        record = record.field(b"CTDA", &location_condition(index, value));
+    }
+    // GetNumericPackageData doesn't read a location.
+    record = record.field(b"CTDA", &numeric_condition(62, 0.0, 0));
+    record = location_input(record, 62, 0, 0x14, 500);
+    record = location_input(record, 75, 12, 0, 300);
+    record = input(record, 5, "Bool", &[1]);
+    let lo = fixture.load(vec![record]);
+    let p = parse(&lo, id(0x800)).unwrap();
+    let [near_player, near_self, bool_input, missing, numeric] = p.conditions.as_slice() else {
+        panic!("{:?}", p.conditions);
+    };
+    let l = location(near_player).unwrap();
+    assert!(matches!(l.kind, LocationKind::NearReference(r) if r == id(0x14)));
+    assert_eq!(l.radius, 500.0);
+    let l = location(near_self).unwrap();
+    assert!(matches!(l.kind, LocationKind::NearSelf));
+    assert_eq!(l.radius, 300.0);
+    for c in [bool_input, missing, numeric] {
+        assert!(c.package_data.is_none(), "{c:?}");
+    }
+}
+
+#[test]
+fn within_package_location_in_template_branches_reads_the_concrete_package() {
+    let fixture = Fixture::new();
+    // TravelToRadius-like: travel until within the location, then hold position.
+    let template = RecordBuilder::new(b"PACK", FormId(0x800))
+        .field(b"XNAM", &[])
+        .zstring(b"ANAM", "Stacked")
+        .u32(b"PRCB", 2)
+        .zstring(b"ANAM", "Procedure")
+        .field(b"CTDA", &location_condition(0, 0.0))
+        .zstring(b"PNAM", "Travel")
+        .zstring(b"ANAM", "Procedure")
+        .zstring(b"PNAM", "HoldPosition");
+    let mut pkcu = 1u32.to_le_bytes().to_vec();
+    pkcu.extend_from_slice(&0x800u32.to_le_bytes());
+    let packages = [(0x801, 1000), (0x802, 250)].map(|(form, radius)| {
+        location_input(
+            RecordBuilder::new(b"PACK", FormId(form)).field(b"PKCU", &pkcu),
+            0,
+            1,
+            0x3C,
+            radius,
+        )
+    });
+    let lo = fixture.load(std::iter::once(template).chain(packages).collect());
+    for (package, radius) in [(id(0x801), 1000.0), (id(0x802), 250.0)] {
+        let branches = expand(&lo, package);
+        assert_eq!(branches.len(), 2);
+        let [c] = branches[0].conditions.as_slice() else {
+            panic!("{:?}", branches[0].conditions);
+        };
+        assert_eq!(c.p1, 0);
+        assert_eq!(c.run_on, 0);
+        let l = location(c).unwrap();
+        assert!(matches!(l.kind, LocationKind::InCell(_)));
+        assert_eq!(l.radius, radius);
+        assert!(branches[1].conditions.is_empty());
+    }
 }
