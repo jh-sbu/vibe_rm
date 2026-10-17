@@ -1049,7 +1049,7 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                 },
                 None => r,
             };
-            if !engine.apply_item(s, Some(r), target) {
+            if !engine.cast_item(s, Some(r), target) {
                 return vec![format!("{s} didn't land on {target}")];
             }
             engine.describe_effects(target)

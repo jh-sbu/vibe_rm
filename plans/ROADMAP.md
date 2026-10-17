@@ -47,7 +47,8 @@ game each piece unlocks.
   completed quests, Toggle Active (`Quest.SetActive` / `IsActive`), the
   Stats page (`Game.IncrementStat` / `QueryStat`; kills, crimes, bounties,
   jail, locks and pockets picked, theft, gold, chests, books, skills, food
-  and potions, barters, quest completions), the
+  and potions, barters, quest completions, spell / school / shout usage
+  favorites), the
   bottom bar's date and level; `known_ambiguities/journal.md`); gifts
   (`giftmenu.swf` from `Actor.ShowGiftMenu`: the gift filter, giving and
   taking, favor points for the script; `known_ambiguities/gifts.md`); the magic
@@ -1208,8 +1209,8 @@ game each piece unlocks.
      `known_ambiguities/messages.md`); controller rumble for camera shakes
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
-     (crafting, magic and shouts, horses stolen,
-     critical strikes, backstabs, disarms; the Favorite ones)
+     (crafting, dragon souls collected, horses stolen,
+     critical strikes, backstabs, disarms; Favorite Weapon)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets; the charge and
      survival meters, load door info, favor mode

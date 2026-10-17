@@ -351,7 +351,10 @@ impl Engine {
 
     /// Shout the readied shout, held for `held` seconds.
     pub fn player_shout(&mut self, held: f32) {
-        let Some(shout) = self.equipped_shout(PLAYER_REF).and_then(|s| self.shout(s)) else {
+        let Some(shout_id) = self.equipped_shout(PLAYER_REF) else {
+            return;
+        };
+        let Some(shout) = self.shout(shout_id) else {
             return;
         };
         let level = self.shout_level(&shout);
@@ -376,6 +379,7 @@ impl Engine {
             self.shouts.recovery
         );
         self.increment_stat("Times Shouted", 1);
+        self.count_shout_use(shout_id);
         self.cast(PLAYER_REF, word.spell, 1.0);
     }
 

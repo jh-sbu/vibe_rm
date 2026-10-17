@@ -465,6 +465,16 @@ impl Engine {
         had
     }
 
+    /// An explicit script/console cast, separate from effects landing through
+    /// projectiles, areas, concentration ticks or passive abilities.
+    pub fn cast_item(&mut self, item: FormId, caster: Option<FormId>, target: FormId) -> bool {
+        let landed = self.apply_item(item, caster, target);
+        if landed && let Some(caster) = caster {
+            self.count_spell_cast(caster, item);
+        }
+        landed
+    }
+
     /// Apply an item's effects to `target` (no aiming or projectile: it lands).
     /// The same item's effects already on the target are replaced.
     pub fn apply_item(&mut self, item: FormId, caster: Option<FormId>, target: FormId) -> bool {
