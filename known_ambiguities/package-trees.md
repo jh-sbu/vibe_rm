@@ -33,11 +33,11 @@ which form lists NPCs name (`vrm-tool pack-lists <data>`).
 
 `GetNumericPackageData` (condition function 612) reads a concrete package's
 authored `Bool`, `Int` or `Float` input by its `UNAM` index. Booleans produce
-0 or 1; integers and floats produce a floating-point condition value. Both
-loaded actor selection and persistent actors' schedule selection supply the
-candidate package to the condition context. A template branch therefore reads
-the candidate's values, rather than the template's values or the actor's
-previously selected package. Sparse indices are not ordinal positions or
+0 or 1; integers and floats produce a floating-point condition value. The
+value is worked out when the package (or each of its expanded template
+branches) is parsed and stored on the condition. A template branch therefore
+reads the concrete package's values, rather than the template's values or the
+actor's previously selected package. Sparse indices are not ordinal positions or
 FormIDs. Numeric inputs are not resolved as reference parameters.
 
 Public evidence (consulted 2026-10-17):
@@ -73,8 +73,8 @@ Limits and unresolved behavior:
 - The evidenced use checks a numeric input from the package context. Running a
   condition *on* numeric package data (`run_on` 6) is not established by these
   sources. Existing run-on-package-data support resolves reference inputs;
-  numeric values used as subjects still fail. Calls outside a package context
-  also fail rather than guessing the actor's current package.
+  numeric values used as subjects still fail. Conditions outside a package
+  record also fail rather than guessing the actor's current package.
 
 Synthetic tests cover sparse indices, types, invalid inputs, indices beyond a
 byte, cross-plugin index preservation and concrete-package values in expanded
