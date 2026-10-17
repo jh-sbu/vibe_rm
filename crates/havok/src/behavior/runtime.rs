@@ -2666,6 +2666,146 @@ mod tests {
         assert_eq!(samples[1].time, 0.5);
     }
 
+    fn cyclic_property_graph() -> BehaviorGraph {
+        let mut g = BehaviorGraph::new(
+            "Cyclic",
+            Some(0),
+            vec![
+                Generator::Wrap {
+                    name: "Direction".into(),
+                    class: "BSCyclicBlendTransitionGenerator".into(),
+                    child: Some(1),
+                    modifier: None,
+                },
+                Generator::Blender {
+                    name: "Blend".into(),
+                    parameter: 0.125,
+                    min_cyclic: 0.0,
+                    max_cyclic: 1.0,
+                    flags: BLEND_PARAMETRIC | BLEND_CYCLIC | BLEND_SYNC,
+                    children: vec![
+                        BlendChild {
+                            weight: 0.0,
+                            ..masked_child(2, None, None)
+                        },
+                        BlendChild {
+                            weight: 0.5,
+                            ..masked_child(3, None, None)
+                        },
+                    ],
+                },
+                clip("Enter", ClipMode::Looping, vec![]),
+                clip("Loop", ClipMode::Looping, vec![]),
+            ],
+            vec![],
+        );
+        g.property_bindings[0] = vec![property("fBlendParameter", "DIRECTION")];
+        g
+    }
+
+    #[test]
+    fn cyclic_wrapper_properties_drive_per_character_weights_and_synchronization() {
+        for (direction, expected) in [(0.25, [0.5, 0.5]), (1.375, [0.25, 0.75])] {
+            let mut g = cyclic_property_graph();
+            g.forward_cyclic_blend_inputs();
+            g.forward_cyclic_blend_inputs(); // Shared nodes must not duplicate bindings.
+            assert_eq!(g.property_bindings[1].len(), 1);
+            let mut i = property_instance(g, &[("direction", direction)]);
+            assert_eq!(
+                playing(&i),
+                [("Enter".into(), expected[0]), ("Loop".into(), expected[1])]
+            );
+            assert!(!i.set_variable("Direction", 0.0));
+            i.update(0.25, &mut durations);
+            let samples = i.samples();
+            let cycle = expected[0] + 2.0 * expected[1];
+            assert!((samples[0].time - 0.25 / cycle).abs() < 1e-6);
+            assert!((samples[1].time - 0.5 / cycle).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn unavailable_cyclic_wrapper_properties_keep_authored_blender_parameter() {
+        let graph = || {
+            let mut g = cyclic_property_graph();
+            g.forward_cyclic_blend_inputs();
+            g
+        };
+        let mut non_scalar = property_instance(graph(), &[]);
+        Arc::get_mut(&mut Arc::get_mut(&mut non_scalar.shared).unwrap().project)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .bone_weights
+            .insert("direction".into(), vec![0.5]);
+        for i in [
+            instance(graph()),
+            property_instance(graph(), &[]),
+            non_scalar,
+        ] {
+            assert_eq!(playing(&i), [("Enter".into(), 0.75), ("Loop".into(), 0.25)]);
+        }
+    }
+
+    #[test]
+    fn cyclic_wrapper_variables_keep_precedence_and_update_live() {
+        let mut g = cyclic_property_graph();
+        let direction = g.add_variable("Direction", VarType::Real, 0.0);
+        g.bindings[0] = vec![Binding {
+            member: "fBlendParameter".into(),
+            variable: direction,
+        }];
+        g.forward_cyclic_blend_inputs();
+        assert!(g.property_bindings[1].is_empty());
+        let mut i = property_instance(g, &[("direction", 0.25)]);
+        assert_eq!(playing(&i), [("Enter".into(), 1.0)]);
+        assert!(i.set_variable("Direction", 0.5));
+        i.update(0.0, &mut durations);
+        assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+    }
+
+    #[test]
+    fn cyclic_wrapper_properties_preserve_explicit_child_inputs_and_other_wrappers() {
+        let mut direct = cyclic_property_graph();
+        direct.property_bindings[1] = vec![property("blendParameter", "Direct")];
+        direct.forward_cyclic_blend_inputs();
+        assert_eq!(direct.property_bindings[1].len(), 1);
+        assert_eq!(
+            playing(&property_instance(
+                direct,
+                &[("direction", 0.25), ("direct", 0.5)]
+            )),
+            [("Loop".into(), 1.0)]
+        );
+
+        let mut variable = cyclic_property_graph();
+        let direct = variable.add_variable("Direct", VarType::Real, 0.0);
+        variable.bindings[1] = vec![Binding {
+            member: "blendParameter".into(),
+            variable: direct,
+        }];
+        variable.forward_cyclic_blend_inputs();
+        assert!(variable.property_bindings[1].is_empty());
+        assert_eq!(
+            playing(&property_instance(variable, &[("direction", 0.25)])),
+            [("Enter".into(), 1.0)]
+        );
+
+        let mut unrelated = cyclic_property_graph();
+        let Generator::Wrap { class, .. } = &mut unrelated.generators[0] else {
+            unreachable!();
+        };
+        *class = "BSiStateTaggingGenerator".into();
+        unrelated.forward_cyclic_blend_inputs();
+        assert!(unrelated.property_bindings[1].is_empty());
+
+        let mut non_blender = cyclic_property_graph();
+        non_blender.generators[1] = clip("Enter", ClipMode::Looping, vec![]);
+        non_blender.forward_cyclic_blend_inputs();
+        assert!(non_blender.property_bindings[1].is_empty());
+    }
+
     #[test]
     fn unavailable_generator_properties_keep_authored_inputs() {
         let mut c = clip("Loop", ClipMode::SinglePlay, vec![]);

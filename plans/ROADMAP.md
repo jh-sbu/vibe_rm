@@ -154,6 +154,10 @@ game each piece unlocks.
 - Transition-effect `duration` character properties resolve per character at
   transition commit, with graph-variable precedence and authored fallbacks.
   Evidence and lifecycle limits: `known_ambiguities/character-properties.md`
+- Cyclic blend wrappers forward `fBlendParameter` character properties to their
+  blender children, including cyclic weights and synchronized clip timing.
+  Existing variable precedence and authored fallbacks remain; wrapper lifecycle
+  limits: `known_ambiguities/character-properties.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;
