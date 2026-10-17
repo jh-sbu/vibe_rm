@@ -1109,6 +1109,15 @@ impl Ctx<'_> {
         let blend = t
             .blend_variable
             .map(|v| self.var(gi, v))
+            .or_else(|| {
+                self.shared
+                    .project
+                    .character
+                    .as_ref()?
+                    .scalar_properties
+                    .get(&t.blend_property.as_ref()?.to_ascii_lowercase())
+                    .copied()
+            })
             .or(t.blend)
             .unwrap_or(0.0);
         let old_child = m.child.take();
@@ -2507,6 +2516,107 @@ mod tests {
             -7.0
         );
         assert_eq!(i.variable("Output"), None);
+    }
+
+    fn duration_property_graph() -> BehaviorGraph {
+        let mut transition = Transition::new(0, 1, None);
+        transition.blend = Some(0.75);
+        transition.blend_property = Some("DURATION".into());
+        BehaviorGraph::new(
+            "G",
+            Some(0),
+            vec![
+                Generator::StateMachine {
+                    name: "Root".into(),
+                    start: 0,
+                    start_variable: None,
+                    start_mode: Default::default(),
+                    change_event: None,
+                    states: vec![state(0, 1, vec![transition]), state(1, 2, vec![])],
+                    wildcards: vec![],
+                },
+                clip("Old", ClipMode::Looping, vec![]),
+                clip("New", ClipMode::Looping, vec![]),
+            ],
+            vec!["Switch".into()],
+        )
+    }
+
+    #[test]
+    fn transition_duration_properties_are_per_character_and_read_only() {
+        // Existing cross-fades use smoothstep, so a quarter of a 1 s blend
+        // gives the new clip weight 0.15625 (rounded by playing()).
+        for (duration, old_weight, new_weight) in [(1.0, 0.84, 0.16), (0.5, 0.5, 0.5)] {
+            let mut i = property_instance(duration_property_graph(), &[("duration", duration)]);
+            assert!(i.handle_event("Switch", &mut durations));
+            i.update(0.25, &mut durations);
+            assert_eq!(
+                playing(&i),
+                [("Old".into(), old_weight), ("New".into(), new_weight)]
+            );
+            assert!(!i.set_variable("Duration", 7.0));
+            assert_eq!(i.variable("Duration"), None);
+            assert_eq!(
+                i.shared
+                    .project
+                    .character
+                    .as_ref()
+                    .unwrap()
+                    .scalar_properties["duration"],
+                duration
+            );
+            i.update(duration, &mut durations);
+            assert_eq!(playing(&i), [("New".into(), 1.0)]);
+        }
+    }
+
+    #[test]
+    fn unavailable_transition_duration_properties_preserve_authored_fallback() {
+        let mut non_scalar = property_instance(duration_property_graph(), &[]);
+        Arc::get_mut(&mut Arc::get_mut(&mut non_scalar.shared).unwrap().project)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .bone_weights
+            .insert("duration".into(), vec![0.5]);
+        for mut i in [
+            instance(duration_property_graph()),
+            property_instance(duration_property_graph(), &[]),
+            non_scalar,
+        ] {
+            assert!(i.handle_event("Switch", &mut durations));
+            i.update(0.375, &mut durations);
+            assert_eq!(playing(&i), [("Old".into(), 0.5), ("New".into(), 0.5)]);
+        }
+    }
+
+    #[test]
+    fn transition_duration_variables_win_and_are_sampled_when_pending_transition_commits() {
+        let mut g = duration_property_graph();
+        let duration = g.add_variable("Duration", VarType::Real, 0.25);
+        let Generator::StateMachine { states, .. } = &mut g.generators[0] else {
+            panic!("expected state machine");
+        };
+        let t = &mut states[0].transitions[0];
+        t.blend_variable = Some(duration);
+        t.initiate = Some(Interval {
+            enter_event: -1,
+            exit_event: -1,
+            enter_time: 0.5,
+            exit_time: 0.0,
+        });
+        let mut i = property_instance(g, &[("duration", 4.0)]);
+        i.handle_event("Switch", &mut durations);
+        assert_eq!(playing(&i), [("Old".into(), 1.0)]);
+        assert!(i.set_variable("Duration", 1.0));
+        i.update(0.5, &mut durations);
+        assert_eq!(i.active_states(), ["s1"]);
+        assert!(i.set_variable("Duration", 0.0));
+        i.update(0.5, &mut durations);
+        assert_eq!(playing(&i), [("Old".into(), 0.5), ("New".into(), 0.5)]);
+        i.update(0.5, &mut durations);
+        assert_eq!(playing(&i), [("New".into(), 1.0)]);
     }
 
     #[test]

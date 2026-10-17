@@ -150,6 +150,9 @@ game each piece unlocks.
   and parametric blends, including synchronized timing, with graph-variable
   precedence and authored fallbacks. Evidence and remaining limits:
   `known_ambiguities/character-properties.md`
+- Transition-effect `duration` character properties resolve per character at
+  transition commit, with graph-variable precedence and authored fallbacks.
+  Evidence and lifecycle limits: `known_ambiguities/character-properties.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;
@@ -997,7 +1000,7 @@ game each piece unlocks.
      (`known_ambiguities/selectors.md`)
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
      properties on remaining generator members, blender-child members beyond `weight`
-     and `boneWeights`, and transition effects,
+     and `boneWeights`, and transition-effect members beyond `duration`,
      runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`);
      applying `hkbRotateCharacterModifier` (inputs parsed: see Done;
      `known_ambiguities/rotate-character.md`); the other action trees
