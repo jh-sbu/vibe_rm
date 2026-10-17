@@ -1105,7 +1105,7 @@ pub fn call(
                 (source, form_arg(args, 1))
             };
             if let (Some(s), Some(t)) = (me, target.or(source)) {
-                e.apply_item(s, blame, t);
+                e.cast_item(s, blame, t);
             }
             none()
         }

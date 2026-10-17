@@ -131,6 +131,8 @@ pub struct ScriptState {
     /// The player's statistics (`Game.IncrementStat`, the journal's Stats
     /// page) by name.
     pub stats: HashMap<String, i32>,
+    /// Spell, school and shout usage for the journal's named statistics.
+    pub magic_usage: crate::stats::MagicUsage,
     /// The forms, aliases and effects registered for sleep
     /// (`RegisterForSleep`: `OnSleepStart`, `OnSleepStop`).
     pub sleep_listeners: Vec<ObjectId>,

@@ -72,6 +72,8 @@ struct HandCast {
     /// Concentration: cast and going on; seconds to its next landing.
     flowing: bool,
     tick: f32,
+    /// A concentration channel counts once when it actually starts landing.
+    counted: bool,
 }
 
 /// The player's casting: what each hand holds ready, magicka's wait to come
@@ -156,6 +158,7 @@ impl Engine {
             held: 0.0,
             flowing: false,
             tick: 0.0,
+            counted: false,
         });
         if item.cast_type == CONCENTRATION {
             self.start_concentration(hand);
@@ -182,6 +185,7 @@ impl Engine {
         if self.can_pay(h.spell, &item) {
             let cost = self.spell_cost(PLAYER_REF, h.spell);
             self.spend_magicka(cost);
+            self.count_spell_cast(PLAYER_REF, h.spell);
             self.cast(PLAYER_REF, h.spell, 1.0);
         }
         true
@@ -294,6 +298,10 @@ impl Engine {
                 h.tick -= dt;
                 if h.tick <= 0.0 {
                     h.tick += CONCENTRATION_TICK;
+                    if !h.counted {
+                        self.count_spell_cast(PLAYER_REF, h.spell);
+                        h.counted = true;
+                    }
                     self.cast(PLAYER_REF, h.spell, CONCENTRATION_TICK);
                 }
             }

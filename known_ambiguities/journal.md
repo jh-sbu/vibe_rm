@@ -101,6 +101,22 @@ its data isn't public; the choices below are what the movie's code allows.
     each skill book that taught; Skill Increases each skill point however
     gained; Food Eaten, Ingredients Eaten and Potions Used each one used;
     Barters each purchase or sale.
+- **Magic usage favorites.** The public [player statistics report](https://www.gamesas.com/time-share-some-stats-t245123.html)
+  shows Favorite Spell, Favorite School and Favorite Shout values, but also
+  reports a school the player says they did not use. The native scoring,
+  tie breaking, whether misses count, and concentration weighting are not
+  established by those observations. Here each paid hand release counts
+  once even if it misses; a concentration channel counts once, at its first
+  paid delivery, independently in each hand. Repeated effect ticks, area
+  targets and projectile impacts do not count again. Explicit script
+  `Spell.Cast` / `RemoteCast` and console casts count once if an effect
+  lands, attributed to the caster (RemoteCast's blame actor). Only normal
+  `SPEL` spells count, excluding scrolls, abilities, powers and a shout's
+  backing spell. A successful shout counts once by `SHOU`, irrespective of
+  the number of words spoken. The favorite is the most used form or school;
+  equal counts keep the incumbent until another overtakes it. School names
+  use the translated `AVIF` name. These policies need in-game comparison;
+  no engine binaries were examined to choose them.
 - **The System page**: the Creations entry is left out (`ShouldShowMod`
   false). With the game's menus, Esc no longer lets go of the mouse or
   quits: it opens the journal (egui's HUD keeps the old Esc).

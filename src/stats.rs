@@ -5,6 +5,9 @@
 //! Which page category each statistic is listed under, and the calendar's
 //! weekday on the first day, aren't published: see `known_ambiguities/journal.md`.
 
+use std::collections::HashMap;
+use std::hash::Hash;
+
 use esp::FormId;
 
 use crate::engine::Engine;
@@ -127,7 +130,7 @@ pub const STATS: &[(&str, u8)] = &[
     ("Winterhold Bounty", CRIME),
 ];
 
-/// The favorites the page shows by name; none counted yet.
+/// The favorites the page shows by name.
 const NAMED: &[&str] = &[
     "Favorite Weapon",
     "Favorite Spell",
@@ -176,6 +179,34 @@ pub enum StatValue {
     Name(String),
 }
 
+/// Usage favorites are independent of the player's manually favorited items.
+/// Ties keep the incumbent; native weighting and ties are unconfirmed (journal.md).
+#[derive(Default)]
+pub struct MagicUsage {
+    spells: Usage<FormId>,
+    schools: Usage<u32>,
+    shouts: Usage<FormId>,
+}
+
+#[derive(Default)]
+struct Usage<T> {
+    counts: HashMap<T, u64>,
+    favorite: Option<T>,
+}
+
+impl<T: Copy + Eq + Hash> Usage<T> {
+    fn record(&mut self, id: T) {
+        let count = self.counts.entry(id).or_default();
+        *count = count.saturating_add(1);
+        if self
+            .favorite
+            .is_none_or(|f| self.counts[&id] > self.counts[&f])
+        {
+            self.favorite = Some(id);
+        }
+    }
+}
+
 /// 1st, 2nd, 3rd, 4th ... 11th, 12th, 13th, 21st.
 fn ordinal(n: u32) -> String {
     let suffix = match (n % 10, n % 100) {
@@ -189,6 +220,28 @@ fn ordinal(n: u32) -> String {
 }
 
 impl Engine {
+    /// One paid hand cast (a concentration channel counts at its first delivery),
+    /// or one explicit Spell.Cast/RemoteCast. Landing effects never count here.
+    pub(crate) fn count_spell_cast(&mut self, caster: FormId, spell: FormId) {
+        if caster != crate::engine::PLAYER_REF
+            || !self.lo.tag_of(spell).is_some_and(|t| t.0 == *b"SPEL")
+            || self
+                .magic_item(spell)
+                .is_none_or(|m| m.spell_type != crate::magic::spell_type::SPELL)
+        {
+            return;
+        }
+        let school = self.spell_school(spell);
+        self.scripts.magic_usage.spells.record(spell);
+        if let Some(school) = school {
+            self.scripts.magic_usage.schools.record(school);
+        }
+    }
+
+    pub(crate) fn count_shout_use(&mut self, shout: FormId) {
+        self.scripts.magic_usage.shouts.record(shout);
+    }
+
     /// `Game.IncrementStat`.
     pub fn increment_stat(&mut self, name: &str, by: i32) {
         *self.scripts.stats.entry(name.to_string()).or_default() += by;
@@ -259,7 +312,23 @@ impl Engine {
             return StatValue::Count(gold);
         }
         if NAMED.iter().any(|n| n.eq_ignore_ascii_case(name)) {
-            return StatValue::Name(String::new());
+            let usage = &self.scripts.magic_usage;
+            let value = if name.eq_ignore_ascii_case("Favorite Spell") {
+                usage
+                    .spells
+                    .favorite
+                    .and_then(|id| self.magic_item(id).map(|m| m.name.clone()))
+            } else if name.eq_ignore_ascii_case("Favorite School") {
+                usage.schools.favorite.map(|skill| self.skill_name(skill))
+            } else if name.eq_ignore_ascii_case("Favorite Shout") {
+                usage
+                    .shouts
+                    .favorite
+                    .and_then(|id| self.shout(id).map(|s| s.name.clone()))
+            } else {
+                None
+            };
+            return StatValue::Name(value.unwrap_or_default());
         }
         let count = self
             .scripts
@@ -333,7 +402,22 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::ordinal;
+    use super::{Usage, ordinal};
+
+    #[test]
+    fn usage_favorites_keep_the_incumbent_on_ties() {
+        let mut usage = Usage::<u32>::default();
+        assert_eq!(usage.favorite, None);
+        usage.record(2);
+        usage.record(1);
+        assert_eq!(usage.favorite, Some(2));
+        usage.record(1);
+        assert_eq!(usage.favorite, Some(1));
+        usage.record(2);
+        assert_eq!(usage.favorite, Some(1));
+        usage.record(2);
+        assert_eq!(usage.favorite, Some(2));
+    }
 
     #[test]
     fn ordinals() {
@@ -349,3 +433,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "stats_tests.rs"]
+mod action_tests;
