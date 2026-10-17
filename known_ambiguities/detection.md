@@ -34,6 +34,11 @@ stealth points.
 - Detection states Normal / Alert / Combat / Lost and detection events (CK
   wiki "Detection").
 - `GetLightLevel` (Papyrus) is 0 to 150. `GetDetected`, `IsDetectedBy`.
+- The Skyrim CK wiki documents [`SetAlert(bool abAlerted = true)`](https://ck.uesp.net/w/index.php?title=SetAlert_-_Actor&oldid=15309)
+  as setting or clearing an actor's alerted state, and
+  [`IsAlerted()`](https://ck.uesp.net/w/index.php?title=IsAlerted_-_Actor&oldid=12200)
+  as querying it. The public [SKSE vanilla command list](https://skse.silverlock.org/vanilla_commands.html)
+  lists `GetIsAlerted` at 0x105B (condition index 91 after subtracting 0x1000).
 - Skyrim.esm: `fSneakBaseValue` -15, `fSneakMaxDistance` 2500,
   `fSneakExteriorDistanceMult` 2.1, `fSneakLightMult` 0.33,
   `fSneakLightExteriorMult` 0.5, `fDetectionSneakLightMod` 15,
@@ -96,6 +101,17 @@ stealth points.
   `CombatToNormal` isn't said.
 - The sneak eye opens with the most any actor detects the player by against
   the combat threshold, or with the stealth points lost, whichever is more.
+- **Explicit script alert flag**: Papyrus `SetAlert`, `IsAlerted`, and CTDA
+  `GetIsAlerted` share a per-actor flag, initially false. An omitted setter
+  argument means true; false clears it. A missing receiver does nothing and
+  a missing condition subject queries false. Only actor references, including
+  the player, created actors and unloaded placed actors, can receive the flag.
+  The flag lives in `WorldState`, so unloading or recreating a loaded actor
+  runtime does not clear it. This implements the documented set/query contract;
+  sharing it with the condition is a choice based on the command name. It
+  neither starts nor cancels combat/searches, changes hostility, draws weapons,
+  nor modifies detection values. Automatic detection-state transitions leave
+  this explicit flag alone until their relationship has a source.
 
 ## Open questions
 
@@ -107,6 +123,14 @@ stealth points.
   attacks make no sound until a source turns up.
 - The "Combat Search" behaviour itself (where searchers look, for how long)
   is unsourced; see above.
+- **Alert flag versus detection Alert**: the Skyrim `SetAlert` / `IsAlerted`
+  pages do not specify how this flag relates to the Normal / Alert / Combat /
+  Lost detection states, weapons drawn, or `GetCombatState`. The setter's CK
+  note mentions a player forge/equip-animation problem, but does not define
+  the intended animation behavior. No target or search location is supplied
+  by the setter. Automatic flag updates, any weapon-posture side effects,
+  `SetAlert(false)` during a fight/search, and reset/death/save lifetime need
+  evidence; only explicit flag changes and in-memory retention are implemented.
 - `fSneakStealthboyMult` and `fSneakNoticedMin` aren't in the plugins and
   read 0 in the game, as a setting that doesn't exist does: left out.
   (`fSneakLightMoveMult` 0.01, `fSneakLightRunMult` 0.2, `fSneakCombatMod`

@@ -783,6 +783,10 @@ game each piece unlocks.
   `CombatToLost`...). Actors have stealth points too. Voice types through
   templates (leveled actors' barks and `GetIsVoiceType`). Open questions:
   `known_ambiguities/detection.md`
+- Papyrus `SetAlert` / `IsAlerted` and condition `GetIsAlerted` share an explicit
+  actor flag retained across cell unloading in memory. Automatic detection-state
+  coupling and weapon-posture effects remain unresolved:
+  `known_ambiguities/detection.md`
 - Actor avoidance: walkers keep clear of other actors and the player, sidestep or queue
   when blocked, and stop short of a destination someone is standing on
 - Anim objects: `AnimObjDraw` events (state enter events and clip triggers with ANIO
@@ -1033,8 +1037,9 @@ game each piece unlocks.
      `iSoundLevel*` values, which no public source gives; weapons are silent
      until then
    - Finding bodies by detection
-   - Combat searches following a target through load doors; `GetIsAlerted` /
-     `SetAlert` tied to the Alert state; witnesses who hear a sneak attack
+   - Combat searches following a target through load doors; automatic alert-flag
+     changes and weapon-posture effects of `SetAlert` need evidence
+     (`known_ambiguities/detection.md`); witnesses who hear a sneak attack
      alerted (with action sounds)
 4. **AI depth**
    - Actor execution across loading and processing transitions: durable state

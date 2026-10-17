@@ -1305,10 +1305,16 @@ pub fn call(
                 .is_some_and(|(r, by)| e.detects(by, r)),
         )),
         ("actor", "getlightlevel") => v(Value::Float(me.map_or(0.0, |r| e.light_level(r)))),
-        ("actor", "evaluatepackage")
-        | ("actor", "setrestrained")
-        | ("actor", "setdontmove")
-        | ("actor", "setalert") => none(),
+        ("actor", "isalerted") => v(Value::Bool(me.is_some_and(|r| e.is_alerted(r)))),
+        ("actor", "setalert") => {
+            if let Some(r) = me {
+                e.set_alerted(r, args.first().is_none_or(|a| a.as_bool()));
+            }
+            none()
+        }
+        ("actor", "evaluatepackage") | ("actor", "setrestrained") | ("actor", "setdontmove") => {
+            none()
+        }
         ("actor", "getsitstate") | ("actor", "getsleepstate") => v(Value::Int(0)),
         ("actorbase", "getsex") => v(Value::Int(
             me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0),

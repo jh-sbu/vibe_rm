@@ -619,6 +619,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         463 => b(e.grabbed_ref().is_some_and(|g| g == p1)), // IsPlayerGrabbedRef
         286 => b(subject.is_some_and(|s| e.is_sneaking(s))), // IsSneaking
         45 => b(subject.is_some_and(|s| e.detects(s, p1))), // GetDetected
+        91 => b(subject.is_some_and(|s| e.is_alerted(s))),  // GetIsAlerted
         711 => Some(subject.map_or(0.0, |s| e.light_level(s))), // GetLightLevel
         255 => b(subject.is_some_and(|s| e.offers_services_now(s))), // GetOffersServicesNow
         289 => {
