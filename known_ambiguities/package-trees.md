@@ -78,8 +78,51 @@ Limits and unresolved behavior:
 
 Synthetic tests cover sparse indices, types, invalid inputs, indices beyond a
 byte, cross-plugin index preservation and concrete-package values in expanded
-branches. An optional headless renderer test exercises the condition evaluator's
-branch selection and missing-data failures without loading game assets.
+branches, including a package with its own tree.
+
+## Package location conditions
+
+`GetWithinPackageLocation` (condition function 325) asks whether its subject is
+within the location a package `Location` input names. Its parameter is an input
+index whatever the "use package data" flag says ([xEdit's Skyrim
+definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas):
+`ptPackdata`; CommonLibSSE-NG's `TESCondition.h`: `kGetWithinPackageLocation = 325`).
+The CK wiki page was not reachable (Cloudflare) when this was written.
+
+The base game masters use it 56 times, all but one in procedure trees: the
+ForceGreet, ForceGreetFromSitting, ForceGreetWaitSitting and SayToPlayer
+templates (the player, run on through a target input, within the trigger
+location; the greeter within the force greet distance of the player),
+TravelToRadius / TravelVariableSpeed (travel until within each radius), the
+civil war hold-position packages (travel until within the hold location, then
+hold) and the Dawnguard disguised vampire packages. Expanded, the masters'
+packages carry 1,798 such conditions, every one naming a `Location` input
+(near reference 1,171, near current 290, near self 189, near alias 108, near
+editor 20, near linked reference 16, in cell 4). Until now every one failed,
+so their branches never ran.
+
+The location is worked out when the package is parsed and placed for the actor
+whose package it is (the condition context's subject), with the rule force
+greet triggers use: within the radius (3D, inclusive) of a reference's,
+alias's or linked reference's position, the actor's own position (near self,
+near current) or its editor position. "In cell" asks whether the subject is in
+that interior cell, or in that exterior cell's grid square; "in location
+alias" whether the subject's current location is within the alias's location.
+
+Limits and unresolved behavior:
+
+- xEdit names location kind 2 "Near Package Start Location". The engine keeps
+  no package start position, so it uses the actor's current position, as force
+  greet triggers and travel goals already do; an actor is then always within
+  its own "near current" location.
+- When the package's actor isn't loaded (persistent actors' schedule
+  selection), near-style locations can't be placed and the condition fails.
+- An empty alias, a missing input or a non-location input fails the condition.
+- Whether the native check uses 3D or horizontal distance, and whether an
+  exterior "in cell" means the grid square, is unverified.
+
+An autotest for the start position, the distance and the radius's edge is
+planned in `plans/autotest-survey.md` (tier 2).
 
 ## Open questions
 

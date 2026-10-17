@@ -163,6 +163,21 @@ Left out so far:
 - **Actors' keywords** (`npc-templates.md`): `HasKeyword` on an NPC wearing
   armor with `ArmorHeavy`, and under a spell whose effect has a keyword
   its race lacks.
+- **Package locations** (`package-trees.md`), `GetWithinPackageLocation`:
+  an NPC held (`SetDontMove`) in the test cell with two packages, the first
+  conditioned on `GetWithinPackageLocation` (its own condition, as the
+  Dawnguard disguised vampire package has it), the second a fallback; after
+  each step `EvaluatePackage` and `GetCurrentPackage` say whether it passed.
+  Run on a probe reference (`run_on` 2) with a "near reference" location of
+  radius 200: the probe moved (`MoveTo` with offsets) 190 and 210 units
+  away horizontally, then 150 across and 150 up (212 in 3D, 150 flat):
+  3D or flat, and whether the edge counts. Run on the NPC with a "near
+  package start" (kind 2) location of radius 200: the package started, the
+  NPC moved 400 units, re-evaluated: still within (its current position) or
+  not (where the package started), and again after the fallback has run in
+  between (whether the start resets). Needs a `PACK` writer (own conditions,
+  `PKCU` to a vanilla template such as `TravelToRadius`, `PLDT` inputs). An
+  exterior "in cell" (the grid square or not) needs travel: tier 4.
 
 ## Tier 3: long or statistical (minutes each)
 
