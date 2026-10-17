@@ -29,6 +29,58 @@ which form lists NPCs name (`vrm-tool pack-lists <data>`).
   `DefaultMasterPackageList`, 292 `PackageDefDraugr`, 70 the dragons', 62 the
   guards' and so on; most have no packages of their own.
 
+## Numeric package data conditions
+
+`GetNumericPackageData` (condition function 612) reads a concrete package's
+authored `Bool`, `Int` or `Float` input by its `UNAM` index. Booleans produce
+0 or 1; integers and floats produce a floating-point condition value. Both
+loaded actor selection and persistent actors' schedule selection supply the
+candidate package to the condition context. A template branch therefore reads
+the candidate's values, rather than the template's values or the actor's
+previously selected package. Sparse indices are not ordinal positions or
+FormIDs. Numeric inputs are not resolved as reference parameters.
+
+Public evidence (consulted 2026-10-17):
+
+- [xEdit's Skyrim definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas)
+  identify function 612 and an integer first parameter. Its PACK definition
+  stores `ANAM` type names, `CNAM` Boolean bytes / 32-bit integers / floats and
+  byte-sized `UNAM` indices separately from the procedure tree. This change
+  exposes the existing package parser's typed values to conditions.
+- A modder's firsthand [Forcegreet tutorial](https://www.gamesas.com/forcegreet-tutorial-t261109.html)
+  describes the template's `GetNumericPackageData` check for the Boolean
+  "Player must be detected" input: zero means false and selects a different
+  procedure-tree branch. This is public CK authoring evidence, not a controlled
+  comparison against this project's runtime.
+- [SKSE's public vanilla command table](https://skse.silverlock.org/vanilla_commands.html)
+  independently labels the argument as numeric package data. It does not
+  establish missing-value behavior or procedure lifecycle timing.
+
+Limits and unresolved behavior:
+
+- Missing, nonnumeric, malformed or nonfinite inputs fail the condition,
+  including comparisons against zero. Native invalid-input return values are
+  not established; failure follows this project's unsupported-condition policy.
+- Support is scoped to authored values in package-selection conditions and
+  the template branches already exposed by `expand`. Sequence/Simultaneous
+  execution, nested branch switching and inherited/default or dynamically
+  changing or global-backed package data still need implementation and evidence.
+- The existing parser interprets `Int` as signed 32-bit, whereas xEdit displays
+  its storage as unsigned. Negative values' native interpretation is not
+  established; tests of negative inputs check the parser's current convention,
+  not native equivalence. Condition values use `f32`, so integers above 2^24
+  can lose precision. Native large-integer comparison behavior is unverified.
+- The evidenced use checks a numeric input from the package context. Running a
+  condition *on* numeric package data (`run_on` 6) is not established by these
+  sources. Existing run-on-package-data support resolves reference inputs;
+  numeric values used as subjects still fail. Calls outside a package context
+  also fail rather than guessing the actor's current package.
+
+Synthetic tests cover sparse indices, types, invalid inputs, indices beyond a
+byte, cross-plugin index preservation and concrete-package values in expanded
+branches. An optional headless renderer test exercises the condition evaluator's
+branch selection and missing-data failures without loading game assets.
+
 ## Open questions
 
 - Trees with a `Stacked` root are split into branches (first branch whose
