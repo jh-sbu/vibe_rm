@@ -831,6 +831,40 @@ pub struct ParticleBatch {
 mod tests {
     use super::*;
 
+    #[test]
+    fn reverse_particle_curves_respect_nonzero_start_and_step_keys() {
+        let linear = Curve {
+            timing: Some(nif::anim::Timing {
+                flags: 8 | 2,
+                frequency: 2.0,
+                phase: 1.0,
+                start: 3.0,
+                stop: 5.0,
+            }),
+            keys: vec![(3.0, 0.0), (4.0, 10.0), (5.0, 20.0)],
+            value: -1.0,
+            step: false,
+        };
+        let stepped = Curve {
+            step: true,
+            ..linear.clone()
+        };
+        for (time, expected, held) in [
+            (1.0, 0.0, 0.0),
+            (1.25, 5.0, 0.0),
+            (1.5, 10.0, 10.0),
+            (2.0, 20.0, 20.0),
+            (2.25, 15.0, 10.0),
+            (2.5, 10.0, 10.0),
+            (2.75, 5.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (9.25, 5.0, 0.0),
+        ] {
+            assert_eq!(linear.sample(time), expected, "linear at {time}");
+            assert_eq!(stepped.sample(time), held, "stepped at {time}");
+        }
+    }
+
     fn drag_fixture(object: nif::Transform, axis: Vec3, range: f32, falloff: f32) -> ParticleDesc {
         let node = |transform, children| {
             Block::Node(nif::Node {

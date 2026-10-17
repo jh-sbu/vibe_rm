@@ -339,6 +339,55 @@ mod node_controller_tests {
     }
 
     #[test]
+    fn standalone_reverse_pose_and_visibility_use_nonzero_start() {
+        for app_init in [false, true] {
+            let (mut obj, mut instances) = fixture();
+            let anim = Arc::get_mut(&mut obj.anim).unwrap();
+            for c in &mut anim.controllers {
+                c.timing = Timing {
+                    flags: 8 | 2 | u16::from(app_init),
+                    frequency: 2.0,
+                    phase: 1.0,
+                    start: 3.0,
+                    stop: 5.0,
+                };
+            }
+            let model::NodeDrive::Transform(c) = &mut anim.controllers[0].drive else {
+                panic!("fixture transform missing");
+            };
+            c.data = Some(Arc::new(TransformData {
+                translations: vec![(3.0, Vec3::ZERO), (5.0, Vec3::X * 8.0)],
+                ..Default::default()
+            }));
+            anim.controllers[1].drive = model::NodeDrive::Visibility {
+                value: true,
+                keys: Some(ValueKeys {
+                    keys: vec![(3.0, Vec3::ZERO), (4.0, Vec3::ONE)],
+                }),
+            };
+            let mut previous = 0.0;
+            for (time, x, shown) in [
+                (1.0, 0.0, 0.0),
+                (1.5, 4.0, 1.0),
+                (2.0, 8.0, 1.0),
+                (2.5, 4.0, 1.0),
+                (3.0, 0.0, 0.0),
+                (3.5, 4.0, 1.0),
+                (9.5, 4.0, 1.0),
+            ] {
+                // APP_INIT follows object age despite an unrelated global clock.
+                let clock = if app_init { 100.0 } else { time };
+                obj.update(time - previous, clock, &mut instances);
+                previous = time;
+                assert_eq!(instances[0].transform.w_axis.x, x, "time={time}");
+                assert_eq!(instances[1].transform.w_axis.x, x + 1.0);
+                assert_eq!(instances[0].tint.w, shown);
+                assert_eq!(instances[1].tint.w, shown);
+            }
+        }
+    }
+
+    #[test]
     fn material_only_sequence_uses_its_frequency_and_restarts_on_selection() {
         let (mut obj, mut instances) = fixture();
         Arc::get_mut(&mut obj.anim)
