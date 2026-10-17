@@ -17,14 +17,22 @@ use nif::{Block, Nif, Ref};
 use super::GpuMaterial;
 use super::model::{MaterialDesc, Vertex};
 
+#[derive(Debug, Clone, Copy)]
+enum CurveInterpolation {
+    Linear,
+    /// Float CONST_KEY selects the nearest endpoint.
+    Nearest,
+    /// Boolean keys hold their value until the next key.
+    Step,
+}
+
 /// A float driven by a controller: its timing and keys, or a constant.
 #[derive(Debug, Clone)]
 pub struct Curve {
     timing: Option<nif::anim::Timing>,
     keys: Vec<(f32, f32)>,
     value: f32,
-    /// Bool keys hold their value until the next key.
-    step: bool,
+    interpolation: CurveInterpolation,
 }
 
 impl Curve {
@@ -33,7 +41,7 @@ impl Curve {
             timing: None,
             keys: Vec::new(),
             value,
-            step: false,
+            interpolation: CurveInterpolation::Linear,
         }
     }
 
@@ -48,7 +56,11 @@ impl Curve {
         let i = self.keys.partition_point(|key| key.0 <= k);
         let (t0, a) = self.keys[i - 1];
         match self.keys.get(i) {
-            Some(&(t1, b)) if t1 > t0 && !self.step => a + (b - a) * (k - t0) / (t1 - t0),
+            Some(&(t1, b)) if t1 > t0 => match self.interpolation {
+                CurveInterpolation::Linear => a + (b - a) * (k - t0) / (t1 - t0),
+                CurveInterpolation::Nearest if (k - t0) / (t1 - t0) >= 0.5 => b,
+                _ => a,
+            },
             _ => a,
         }
     }
@@ -59,9 +71,16 @@ impl Curve {
 fn curve(nif: &Nif, timing: nif::anim::Timing, interpolator: Ref, fallback: f32) -> Curve {
     match nif.get(interpolator) {
         Some(Block::ValueInterpolator(i)) => {
-            let keys = match nif.get(i.data) {
-                Some(Block::ValueKeys(k)) => k.keys.iter().map(|(t, v)| (*t, v.x)).collect(),
-                _ => Vec::new(),
+            let (keys, interpolation) = match nif.get(i.data) {
+                Some(Block::ValueKeys(k)) => (
+                    k.keys.iter().map(|(t, v)| (*t, v.x)).collect(),
+                    if k.interpolation == 5 {
+                        CurveInterpolation::Nearest
+                    } else {
+                        CurveInterpolation::Linear
+                    },
+                ),
+                _ => (Vec::new(), CurveInterpolation::Linear),
             };
             Curve {
                 timing: Some(timing),
@@ -71,7 +90,7 @@ fn curve(nif: &Nif, timing: nif::anim::Timing, interpolator: Ref, fallback: f32)
                 } else {
                     fallback
                 },
-                step: false,
+                interpolation,
             }
         }
         Some(Block::BoolInterpolator(i)) => {
@@ -83,7 +102,7 @@ fn curve(nif: &Nif, timing: nif::anim::Timing, interpolator: Ref, fallback: f32)
                 timing: Some(timing),
                 keys,
                 value: i.value as u8 as f32,
-                step: true,
+                interpolation: CurveInterpolation::Step,
             }
         }
         _ => Curve::constant(fallback),
@@ -832,6 +851,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn imported_float_constant_curve_differs_from_boolean_steps() {
+        let mut nif = Nif {
+            header: nif::Header {
+                version: 0x14020007,
+                user_version: 12,
+                bs_version: 100,
+                block_types: Vec::new(),
+                block_type_index: Vec::new(),
+                block_sizes: Vec::new(),
+                block_offsets: Vec::new(),
+                strings: Vec::new(),
+            },
+            blocks: vec![
+                Block::ValueInterpolator(nif::anim::ValueInterpolator {
+                    value: Vec3::splat(-f32::MAX),
+                    data: Ref(1),
+                }),
+                Block::ValueKeys(nif::anim::ValueKeys {
+                    keys: vec![(2.0, Vec3::ZERO), (6.0, Vec3::ONE)],
+                    interpolation: 5,
+                }),
+            ],
+            roots: Vec::new(),
+        };
+        let timing = nif::anim::Timing {
+            flags: 8 | 4,
+            frequency: 2.0,
+            phase: 0.0,
+            start: 2.0,
+            stop: 6.0,
+        };
+        let nearest = curve(&nif, timing, Ref(0), -1.0);
+        for (clock, expected) in [
+            (-1.0, 0.0),
+            (1.99, 0.0),
+            (2.0, 1.0),
+            (2.01, 1.0),
+            (3.0, 1.0),
+            (10.0, 1.0),
+        ] {
+            assert_eq!(nearest.sample(clock), expected);
+        }
+        nif.blocks[0] = Block::BoolInterpolator(nif::psys::BoolInterpolator {
+            value: true,
+            data: Ref(1),
+        });
+        let stepped = curve(&nif, timing, Ref(0), -1.0);
+        assert_eq!(stepped.sample(2.0), 0.0);
+        assert_eq!(stepped.sample(2.99), 0.0);
+        assert_eq!(stepped.sample(3.0), 1.0);
+    }
+
+    #[test]
     fn reverse_particle_curves_respect_nonzero_start_and_step_keys() {
         let linear = Curve {
             timing: Some(nif::anim::Timing {
@@ -843,10 +915,10 @@ mod tests {
             }),
             keys: vec![(3.0, 0.0), (4.0, 10.0), (5.0, 20.0)],
             value: -1.0,
-            step: false,
+            interpolation: CurveInterpolation::Linear,
         };
         let stepped = Curve {
-            step: true,
+            interpolation: CurveInterpolation::Step,
             ..linear.clone()
         };
         for (time, expected, held) in [

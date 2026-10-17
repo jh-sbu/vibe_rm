@@ -257,6 +257,7 @@ mod node_controller_tests {
                     drive: model::NodeDrive::Visibility {
                         value: true,
                         keys: Some(ValueKeys {
+                            interpolation: 1,
                             keys: vec![(0.0, Vec3::ZERO), (1.0, Vec3::ONE)],
                         }),
                     },
@@ -362,6 +363,7 @@ mod node_controller_tests {
             anim.controllers[1].drive = model::NodeDrive::Visibility {
                 value: true,
                 keys: Some(ValueKeys {
+                    interpolation: 1,
                     keys: vec![(3.0, Vec3::ZERO), (4.0, Vec3::ONE)],
                 }),
             };

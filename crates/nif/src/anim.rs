@@ -173,14 +173,36 @@ pub struct ValueInterpolator {
 }
 
 /// `NiFloatData` / `NiPosData` keys (floats in x).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ValueKeys {
     pub keys: Vec<(f32, Vec3)>,
+    /// NIF KeyType: 1 linear, 2 quadratic, 3 TBC, 5 constant.
+    /// Quadratic / TBC retain the existing linear approximation.
+    pub interpolation: u32,
+}
+
+impl Default for ValueKeys {
+    fn default() -> Self {
+        Self {
+            keys: Vec::new(),
+            interpolation: 1,
+        }
+    }
 }
 
 impl ValueKeys {
+    /// Sample float / colour keys. Boolean controllers sample their preceding
+    /// key explicitly, rather than using float CONST_KEY midpoint selection.
     pub fn sample(&self, t: f32) -> Option<Vec3> {
-        lerp_keys(&self.keys, t, |a, b, f| a.lerp(b, f))
+        lerp_keys(&self.keys, t, |a, b, f| {
+            // Public NifSkope / OpenMW float and colour evaluators select
+            // the nearest key for CONST_KEY (unlike boolean visibility).
+            if self.interpolation == 5 {
+                if f < 0.5 { a } else { b }
+            } else {
+                a.lerp(b, f)
+            }
+        })
     }
 }
 
@@ -239,17 +261,24 @@ pub(crate) fn value_interpolator(r: &mut Reader, point3: bool) -> Result<ValueIn
 
 /// `NiBoolData`: byte keys, as 0 / 1 in x.
 pub(crate) fn bool_keys(r: &mut Reader) -> Result<ValueKeys> {
-    let keys = key_group(r, |r| Ok(Vec3::new(r.u8()? as f32, 0.0, 0.0)))?;
-    Ok(ValueKeys { keys })
+    let (keys, interpolation) =
+        key_group_with_interpolation(r, |r| Ok(Vec3::new(r.u8()? as f32, 0.0, 0.0)))?;
+    Ok(ValueKeys {
+        keys,
+        interpolation,
+    })
 }
 
 pub(crate) fn value_keys(r: &mut Reader, point3: bool) -> Result<ValueKeys> {
-    let keys = if point3 {
-        key_group(r, |r| r.vec3())?
+    let (keys, interpolation) = if point3 {
+        key_group_with_interpolation(r, |r| r.vec3())?
     } else {
-        key_group(r, |r| Ok(Vec3::new(r.f32()?, 0.0, 0.0)))?
+        key_group_with_interpolation(r, |r| Ok(Vec3::new(r.f32()?, 0.0, 0.0)))?
     };
-    Ok(ValueKeys { keys })
+    Ok(ValueKeys {
+        keys,
+        interpolation,
+    })
 }
 
 pub(crate) fn controller_manager(r: &mut Reader) -> Result<Vec<Ref>> {
@@ -339,11 +368,18 @@ pub(crate) fn transform_interpolator(r: &mut Reader) -> Result<TransformInterpol
 /// A key group: count, interpolation, then (time, value[, forward, backward][, tbc]).
 fn key_group<T>(
     r: &mut Reader,
-    mut value: impl FnMut(&mut Reader) -> Result<T>,
+    value: impl FnMut(&mut Reader) -> Result<T>,
 ) -> Result<Vec<(f32, T)>> {
+    key_group_with_interpolation(r, value).map(|(keys, _)| keys)
+}
+
+fn key_group_with_interpolation<T>(
+    r: &mut Reader,
+    mut value: impl FnMut(&mut Reader) -> Result<T>,
+) -> Result<(Vec<(f32, T)>, u32)> {
     let n = r.u32()?;
     if n == 0 {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), 1));
     }
     let interp = r.u32()?;
     let mut out = Vec::with_capacity(n.min(4096) as usize);
@@ -364,7 +400,7 @@ fn key_group<T>(
         }
         out.push((t, v));
     }
-    Ok(out)
+    Ok((out, interp))
 }
 
 pub(crate) fn transform_data(r: &mut Reader) -> Result<TransformData> {
@@ -460,6 +496,101 @@ impl TransformData {
 #[cfg(test)]
 mod tests {
     use super::Timing;
+
+    fn parsed_value_keys(point3: bool, interpolation: u32) -> super::ValueKeys {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&interpolation.to_le_bytes());
+        for (time, value) in [(2.0f32, 0.0f32), (6.0, 8.0), (10.0, 16.0)] {
+            bytes.extend_from_slice(&time.to_le_bytes());
+            for component in 0..if point3 { 3 } else { 1 } {
+                bytes.extend_from_slice(&(value + component as f32).to_le_bytes());
+            }
+            // Existing nonlinear approximation must still consume the payload.
+            for _ in 0..match interpolation {
+                2 => {
+                    if point3 {
+                        6
+                    } else {
+                        2
+                    }
+                }
+                3 => 3,
+                _ => 0,
+            } {
+                bytes.extend_from_slice(&0.0f32.to_le_bytes());
+            }
+        }
+        let mut r = crate::reader::Reader::new(&bytes);
+        let Some(crate::Block::ValueKeys(keys)) =
+            crate::blocks::parse_block(if point3 { "NiPosData" } else { "NiFloatData" }, &mut r)
+                .unwrap()
+        else {
+            panic!("value data not dispatched");
+        };
+        assert_eq!(r.remaining(), 0);
+        assert_eq!(keys.interpolation, interpolation);
+        keys
+    }
+
+    #[test]
+    fn constant_float_and_colour_keys_select_nearest_endpoint() {
+        for point3 in [false, true] {
+            let keys = parsed_value_keys(point3, 5);
+            for (time, expected) in [
+                (-1.0, 0.0),
+                (2.0, 0.0),
+                (3.99, 0.0),
+                (4.0, 8.0),
+                (4.01, 8.0),
+                (6.0, 8.0),
+                (7.99, 8.0),
+                (8.0, 16.0),
+                (10.0, 16.0),
+                (20.0, 16.0),
+            ] {
+                let value = keys.sample(time).unwrap();
+                assert_eq!(value.x, expected, "point3={point3}, time={time}");
+                if point3 {
+                    assert_eq!(value.y, expected + 1.0);
+                    assert_eq!(value.z, expected + 2.0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn linear_and_nonlinear_approximations_still_blend() {
+        for point3 in [false, true] {
+            for interpolation in [1, 2, 3] {
+                let keys = parsed_value_keys(point3, interpolation);
+                assert_eq!(keys.sample(3.0).unwrap().x, 2.0);
+                assert_eq!(keys.sample(5.0).unwrap().x, 6.0);
+            }
+        }
+    }
+
+    #[test]
+    fn empty_value_group_has_no_interpolation_field() {
+        for point3 in [false, true] {
+            let bytes = [0u32.to_le_bytes(), 0x12345678u32.to_le_bytes()].concat();
+            let mut r = crate::reader::Reader::new(&bytes);
+            let keys = super::value_keys(&mut r, point3).unwrap();
+            assert_eq!(keys.sample(0.0), None);
+            assert_eq!(r.u32().unwrap(), 0x12345678);
+        }
+    }
+
+    #[test]
+    fn one_constant_key_holds_at_all_times() {
+        let keys = super::ValueKeys {
+            keys: vec![(3.0, glam::Vec3::ONE)],
+            interpolation: 5,
+        };
+        for time in [-10.0, 3.0, 20.0] {
+            assert_eq!(keys.sample(time), Some(glam::Vec3::ONE));
+        }
+    }
 
     #[test]
     fn alpha_test_controller_layout() {
