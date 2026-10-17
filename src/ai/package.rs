@@ -375,6 +375,24 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
     indices.into_iter().zip(values).collect()
 }
 
+/// An authored numeric package input by its `UNAM` index. Booleans are 0 or 1;
+/// integers and floats share the condition function's floating-point result.
+/// Missing, malformed and nonnumeric inputs remain unsupported rather than
+/// silently making a `GetNumericPackageData == 0` condition pass.
+pub(crate) fn numeric_data(lo: &LoadOrder, package: FormId, index: u32) -> Option<f32> {
+    let index = u8::try_from(index).ok()?;
+    let rec = lo.get(package).filter(|r| r.tag().0 == *b"PACK")?;
+    inputs(&rec)
+        .into_iter()
+        .find(|(i, _)| *i == index)
+        .and_then(|(_, value)| match value {
+            Input::Bool(value) => Some(u8::from(value) as f32),
+            Input::Int(value) => Some(value as f32),
+            Input::Float(value) if value.is_finite() => Some(value),
+            _ => None,
+        })
+}
+
 /// Input names of a template package, by index (`UNAM` + `BNAM` after the procedure tree).
 fn input_names(lo: &LoadOrder, template: FormId) -> std::collections::HashMap<u8, String> {
     let mut out = std::collections::HashMap::new();
@@ -844,7 +862,9 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
                     None => (condition::RUN_ON_NOTHING, FormId::NULL),
                 };
             }
-            if c.p1_input {
+            // GetNumericPackageData already names a numeric input by index;
+            // it must not be resolved as a reference-valued parameter.
+            if c.p1_input && c.func != 612 {
                 match resolve(c.p1 as u8) {
                     Some(Ok(r)) => c.p1 = r.0,
                     Some(Err(of)) => c.p1_ref = Some(of),
@@ -877,6 +897,10 @@ pub fn npc_packages(lo: &LoadOrder, src: &crate::world::template::Sources) -> Ve
     }
     out
 }
+
+#[cfg(test)]
+#[path = "package_numeric_tests.rs"]
+mod numeric_tests;
 
 #[cfg(test)]
 mod tests {

@@ -632,6 +632,11 @@ game each piece unlocks.
   `DefaultMasterPackageList` patrol from their linked markers, follow linked
   actors or sandbox where they stood instead of standing still. vrm-tool
   `pack-tree`, `pack-lists`. Open questions: `known_ambiguities/package-trees.md`
+- `GetNumericPackageData` conditions read authored Bool, Int and Float inputs
+  by index from the candidate package, including expanded template branches
+  during loaded and persistent actor package selection. Missing or unsupported
+  values fail the condition. Remaining input and context limits:
+  `known_ambiguities/package-trees.md`
 - Package procedures: packages with their own procedure tree (draugr ambushes
   in sarcophagi, thrones and alcoves: creatures use furniture through their own
   graphs' `ActionActivate` branch, starting in it and getting out when the
@@ -1108,8 +1113,10 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; paths round locked animated doors
    - Templates: leveled spell lists (`LVSP`) expanded into usable spells;
      selection and refresh behavior need evidence (`known_ambiguities/npc-templates.md`)
-   - Package trees: branches of `Sequence` / `Simultaneous` roots, `GetNumericPackageData`,
-     guard / wait / find / acquire procedures
+   - Package trees: branches of `Sequence` / `Simultaneous` roots,
+     guard / wait / find / acquire procedures; numeric package-data defaults,
+     runtime changes and contexts beyond candidate package selection
+     (`known_ambiguities/package-trees.md`)
    - Vehicles: carts pulled by horses (`TetherToHorse`; the carriage held to the
      horse by physics constraints), passengers riding seated in them (`SetVehicle`)
    - Dragons: flying, circling, landing and perching; breath and shout attacks

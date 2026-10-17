@@ -188,6 +188,10 @@ pub struct Context {
     /// For furniture idles, the furniture reference.
     pub target: Option<FormId>,
     pub quest: Option<FormId>,
+    /// The concrete package whose conditions or template branches are being
+    /// checked. Numeric package data belongs to this package, even while a
+    /// different package is still running on the actor.
+    pub package: Option<FormId>,
     /// Set when picking from the IDLE tree.
     pub idle: Option<IdleQuery>,
 }
@@ -313,6 +317,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
     };
     let subj_base = subject.and_then(|s| e.base_of(s));
     match c.func {
+        612 => ctx
+            .package
+            .and_then(|package| crate::ai::package::numeric_data(&e.lo, package, c.p1)), // GetNumericPackageData
         18 => Some(e.hour),                                            // GetCurrentTime
         170 => Some((e.day % 7) as f32),                               // GetDayOfWeek
         77 => Some((e.peek_rand() % 100) as f32),                      // GetRandomPercent
