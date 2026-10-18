@@ -19,6 +19,9 @@ pub struct Skeleton {
     /// Standing height (model space): the top of the root's `BSBound`, 128
     /// without one (humans' is 128; giants' 269, wolves' 79).
     pub height: f32,
+    /// Half the width (x) and length (y) of what it stands on: the root's
+    /// `BSBound` (humans' 22 by 14, wolves' 20 by 74), 20 by 20 without one.
+    pub footprint: glam::Vec2,
     /// The bodies and joints it falls as when its actor dies.
     pub ragdoll: Option<std::sync::Arc<super::ragdoll::RagdollDesc>>,
 }
@@ -27,6 +30,7 @@ impl Skeleton {
     pub fn from_nif(nif: &Nif) -> Skeleton {
         let mut s = Skeleton {
             height: 128.0,
+            footprint: glam::Vec2::splat(20.0),
             ..Default::default()
         };
         for &root in &nif.roots {
@@ -40,13 +44,16 @@ impl Skeleton {
             .and_then(|a| {
                 a.net.extra_data.iter().find_map(|&e| match nif.get(e) {
                     Some(Block::ExtraData(nif::ExtraData::Bound { center, dimensions })) => {
-                        Some(center.z + dimensions.z)
+                        Some((center.z + dimensions.z, dimensions.truncate()))
                     }
                     _ => None,
                 })
             });
-        if let Some(h) = bound.filter(|h| *h > 1.0) {
+        if let Some((h, _)) = bound.filter(|(h, _)| *h > 1.0) {
             s.height = h;
+        }
+        if let Some((_, f)) = bound.filter(|(_, f)| f.min_element() > 1.0) {
+            s.footprint = f;
         }
         s.ragdoll = super::ragdoll::RagdollDesc::from_nif(nif, &s).map(std::sync::Arc::new);
         s

@@ -278,6 +278,17 @@ fn uniform(rand: &mut dyn FnMut() -> u64, lo: f32, hi: f32) -> f32 {
     lo + (rand() % 1000) as f32 / 1000.0 * (hi - lo)
 }
 
+/// An actor's footprint ([`ActorRuntime::footprint`]): the points within
+/// `radius` of the segment `a`-`b`, at height `z`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Footprint {
+    pub id: FormId,
+    pub z: f32,
+    pub a: glam::Vec2,
+    pub b: glam::Vec2,
+    pub radius: f32,
+}
+
 /// Runtime state of one spawned actor.
 pub struct ActorRuntime {
     pub ref_id: FormId,
@@ -830,6 +841,68 @@ impl ActorRuntime {
             // No room to step aside: wait behind them.
             _ if blocked => self.pos = before,
             _ => {}
+        }
+    }
+
+    /// What it stands on, seen from above: its bound's footprint, the long
+    /// way a segment (along its heading for a wolf or a horse) and the short
+    /// way the radius about it.
+    pub(crate) fn footprint(&self) -> Footprint {
+        let half = self.skeleton.footprint * self.scale;
+        let fwd = glam::Vec2::new(self.heading.sin(), self.heading.cos());
+        let (axis, along) = if half.y >= half.x {
+            (fwd, half.y - half.x)
+        } else {
+            (fwd.perp(), half.x - half.y)
+        };
+        let c = self.pos.truncate();
+        Footprint {
+            id: self.ref_id,
+            z: self.pos.z,
+            a: c - axis * along,
+            b: c + axis * along,
+            radius: half.min_element(),
+        }
+    }
+
+    /// A fighter steps out of the others' footprints (all but its target's:
+    /// it closes to reach that one), half of each overlap (the other steps
+    /// too, or will). Stays on the navmesh.
+    fn keep_apart(&mut self, others: &[Footprint], target: FormId, nav: &nav::NavWorld) {
+        let me = self.footprint();
+        let mut push = glam::Vec2::ZERO;
+        for o in others {
+            if o.id == self.ref_id || o.id == target || (o.z - me.z).abs() > 100.0 {
+                continue;
+            }
+            let (s, dist) = archery::segment_distance(
+                me.a.extend(0.0),
+                me.b.extend(0.0),
+                o.a.extend(0.0),
+                o.b.extend(0.0),
+            );
+            let overlap = me.radius + o.radius - dist;
+            if overlap <= 0.0 {
+                continue;
+            }
+            // From the nearest point of theirs to the nearest of ours.
+            let p = me.a.lerp(me.b, s);
+            let along = o.b - o.a;
+            let t = (p - o.a).dot(along) / along.length_squared().max(1e-6);
+            let q = o.a + along * t.clamp(0.0, 1.0);
+            let away = (p - q)
+                .try_normalize()
+                .or_else(|| (me.a + me.b - o.a - o.b).try_normalize())
+                .unwrap_or(glam::Vec2::new(self.heading.cos(), -self.heading.sin()));
+            push += away * overlap * 0.5;
+        }
+        if push == glam::Vec2::ZERO {
+            return;
+        }
+        let mut p = self.pos + push.extend(0.0);
+        if let Some(z) = nav.height_at(p).filter(|z| (z - self.pos.z).abs() < 30.0) {
+            p.z = z;
+            self.pos = p;
         }
     }
 
@@ -3204,6 +3277,14 @@ impl Engine {
             .map(|a| (a.ref_id, a.pos))
             .collect();
         bodies.push((PLAYER_REF, player));
+        // And the footprints of those standing, for fighters to keep out of.
+        let footprints: Vec<Footprint> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && !a.in_furniture())
+            .map(|a| a.footprint())
+            .collect();
         if log::log_enabled!(log::Level::Trace) {
             let free: Vec<&ActorRuntime> = self
                 .cells
@@ -3312,6 +3393,7 @@ impl Engine {
                                     started.push((a.ref_id, target));
                                 }
                             }
+                            a.keep_apart(&footprints, target, &nav);
                         }
                         None => {
                             log::debug!("{} loses {target} (gone)", a.ref_id);
