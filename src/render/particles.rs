@@ -485,6 +485,8 @@ pub struct ParticleDesc {
     pub subtextures: Vec<Vec4>,
     /// Quads' width over height.
     pub aspect: f32,
+    /// Optional speed-dependent width/height ratio (aspect flag bit 8).
+    pub speed_aspect: Option<SpeedAspect>,
     /// Quads stand along the particle's motion (aspect flag 1, "velocity
     /// orientation") instead of turning by their rotation.
     pub velocity_oriented: bool,
@@ -508,6 +510,44 @@ pub struct ParticleDesc {
     /// The system's bounds in model space.
     pub bound_center: Vec3,
     pub bound_radius: f32,
+}
+
+/// Two authored aspect ratios and their model-space speed thresholds.
+/// Linear interpolation and fixed quad height are renderer policies; see
+/// known_ambiguities/particles.md.
+#[derive(Debug, Clone, Copy)]
+pub struct SpeedAspect {
+    aspect2: f32,
+    speed1: f32,
+    speed2: f32,
+}
+
+impl SpeedAspect {
+    fn new((aspect2, speed1, speed2): (f32, f32, f32)) -> Option<Self> {
+        (aspect2.is_finite()
+            && aspect2 > 0.0
+            && speed1.is_finite()
+            && speed1 >= 0.0
+            && speed2.is_finite()
+            && speed2 > speed1)
+            .then_some(Self {
+                aspect2,
+                speed1,
+                speed2,
+            })
+    }
+
+    fn at(self, aspect1: f32, velocity: Vec3) -> f32 {
+        if !velocity.is_finite() {
+            return aspect1;
+        }
+        // Double precision keeps finite high speeds and endpoint ratios from
+        // overflowing while computing the speed and convex interpolation.
+        let f = ((velocity.as_dvec3().length() - f64::from(self.speed1))
+            / (f64::from(self.speed2) - f64::from(self.speed1)))
+        .clamp(0.0, 1.0);
+        (f64::from(aspect1) * (1.0 - f) + f64::from(self.aspect2) * f) as f32
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -627,11 +667,14 @@ pub fn describe(
         material,
         max: data.max_particles.max(1) as usize,
         subtextures: data.subtexture_offsets.clone(),
-        aspect: if data.aspect_ratio > 0.0 {
+        aspect: if data.aspect_ratio.is_finite() && data.aspect_ratio > 0.0 {
             data.aspect_ratio
         } else {
             1.0
         },
+        speed_aspect: (data.aspect_flags & (1 << 8) != 0)
+            .then(|| SpeedAspect::new(data.speed_to_aspect))
+            .flatten(),
         velocity_oriented: data.aspect_flags & 1 != 0,
         emitters: Vec::new(),
         gravity: Vec::new(),
@@ -1232,7 +1275,10 @@ impl ParticleState {
                     right = up.cross(forward);
                 }
             }
-            let (right, up) = (right * size * d.aspect, up * size);
+            let aspect = d
+                .speed_aspect
+                .map_or(d.aspect, |a| a.at(d.aspect, p.velocity));
+            let (right, up) = (right * size * aspect, up * size);
             let centre = model.transform_point3(p.position);
             let cell = if cells == 0 {
                 Vec4::new(0.0, 1.0, 0.0, 1.0)
@@ -1497,6 +1543,174 @@ mod tests {
             spin: 0.0,
             frame: 0.0,
             generation: 0,
+        }
+    }
+
+    fn aspect_fixture(flags: u16, aspect: f32, params: (f32, f32, f32)) -> ParticleDesc {
+        let (mut nif, sys) = drag_nif_fixture(nif::Transform::default(), Vec3::X, f32::MAX, 0.0);
+        let Block::ParticleData(data) = &mut nif.blocks[2] else {
+            unreachable!()
+        };
+        data.aspect_flags = flags;
+        data.aspect_ratio = aspect;
+        data.speed_to_aspect = params;
+        describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap()
+    }
+
+    fn aspect_quad(d: &ParticleDesc, p: Particle, model: Mat4) -> Vec<Vertex> {
+        let mut state = ParticleState::new(1);
+        state.particles.push(p);
+        let mut vertices = Vec::new();
+        state.quads(d, model, Vec3::X, Vec3::Y, &mut vertices);
+        assert_eq!(vertices.len(), 6);
+        assert!(vertices.iter().all(|v| Vec3::from(v.position).is_finite()));
+        vertices
+    }
+
+    fn quad_dimensions(vertices: &[Vertex]) -> (f32, f32) {
+        let a = Vec3::from(vertices[0].position);
+        let b = Vec3::from(vertices[1].position);
+        let c = Vec3::from(vertices[2].position);
+        (a.distance(b), b.distance(c))
+    }
+
+    #[test]
+    fn speed_aspect_uses_bit_eight_and_preserves_disabled_quads() {
+        let p = particle(Vec3::ZERO, Vec3::X * 20.0);
+        let ordinary = aspect_fixture(0, 2.0, (4.0, 5.0, 15.0));
+        let baseline = aspect_quad(&ordinary, p, Mat4::IDENTITY);
+        assert_eq!(quad_dimensions(&baseline), (4.0, 2.0));
+        // Bit 3 (value 8) must not accidentally enable bit 8 (value 256).
+        let disabled = aspect_fixture(8, 2.0, (4.0, 5.0, 15.0));
+        assert!(disabled.speed_aspect.is_none());
+        let unchanged = aspect_quad(&disabled, p, Mat4::IDENTITY);
+        for (a, b) in baseline.iter().zip(&unchanged) {
+            assert_eq!(a.position, b.position);
+            assert_eq!(a.uv, b.uv);
+            assert_eq!(a.color, b.color);
+        }
+        let enabled = aspect_fixture(1 << 8, 2.0, (4.0, 5.0, 15.0));
+        assert!(enabled.speed_aspect.is_some());
+        assert_eq!(
+            quad_dimensions(&aspect_quad(&enabled, p, Mat4::IDENTITY)),
+            (8.0, 2.0)
+        );
+    }
+
+    #[test]
+    fn speed_aspect_clamps_and_interpolates_current_three_dimensional_speed() {
+        let d = aspect_fixture(1 << 8, 2.0, (4.0, 5.0, 15.0));
+        for (velocity, width) in [
+            (Vec3::ZERO, 4.0),
+            (Vec3::X * 5.0, 4.0),
+            (Vec3::new(-6.0, 0.0, 8.0), 6.0),
+            (Vec3::Z * 15.0, 8.0),
+            (Vec3::splat(f32::MAX), 8.0),
+        ] {
+            assert_eq!(
+                quad_dimensions(&aspect_quad(
+                    &d,
+                    particle(Vec3::ZERO, velocity),
+                    Mat4::IDENTITY
+                )),
+                (width, 2.0),
+                "velocity {velocity:?}"
+            );
+        }
+        // Aspect 2 may narrow the quad as well as widen it.
+        let narrowing = aspect_fixture(1 << 8, 4.0, (2.0, 5.0, 15.0));
+        assert_eq!(
+            quad_dimensions(&aspect_quad(
+                &narrowing,
+                particle(Vec3::ZERO, Vec3::X * 10.0),
+                Mat4::IDENTITY
+            )),
+            (6.0, 2.0)
+        );
+    }
+
+    #[test]
+    fn speed_aspect_combines_with_rotation_orientation_and_instance_scale() {
+        let mut d = aspect_fixture(1 << 8, 2.0, (4.0, 5.0, 15.0));
+        let mut p = particle(Vec3::ZERO, Vec3::X * 10.0);
+        p.angle = std::f32::consts::FRAC_PI_2;
+        let rotated = aspect_quad(&d, p, Mat4::IDENTITY);
+        assert!((quad_dimensions(&rotated).0 - 6.0).abs() < 1e-5);
+        let edge = Vec3::from(rotated[1].position) - Vec3::from(rotated[0].position);
+        assert!(edge.normalize().abs_diff_eq(Vec3::Y, 1e-5));
+
+        d.velocity_oriented = true;
+        let model = Mat4::from_scale_rotation_translation(
+            Vec3::splat(2.0),
+            glam::Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
+            Vec3::new(12.0, 34.0, 56.0),
+        );
+        let oriented = aspect_quad(&d, p, model);
+        let (width, height) = quad_dimensions(&oriented);
+        // Model scale doubles dimensions, but not the speed used for aspect.
+        assert!((width - 12.0).abs() < 1e-5);
+        assert!((height - 4.0).abs() < 1e-5);
+        let along = Vec3::from(oriented[2].position) - Vec3::from(oriented[1].position);
+        assert!(along.normalize().abs_diff_eq(Vec3::Y, 1e-5));
+    }
+
+    #[test]
+    fn speed_aspect_tracks_velocity_changed_by_forces() {
+        let d = aspect_fixture(1 << 8, 2.0, (4.0, 0.0, 10.0));
+        let mut state = ParticleState::new(1);
+        state.particles.push(particle(Vec3::ZERO, Vec3::X * 10.0));
+        state.step(&d, 1.0, Mat3::IDENTITY);
+        assert_eq!(state.particles[0].velocity, Vec3::X * 5.0);
+        let mut vertices = Vec::new();
+        state.quads(&d, Mat4::IDENTITY, Vec3::X, Vec3::Y, &mut vertices);
+        assert_eq!(quad_dimensions(&vertices), (6.0, 2.0));
+    }
+
+    #[test]
+    fn speed_aspect_invalid_inputs_fall_back_to_finite_static_quads() {
+        for params in [
+            (4.0, 5.0, 5.0),
+            (4.0, 15.0, 5.0),
+            (4.0, -1.0, 5.0),
+            (0.0, 0.0, 5.0),
+            (-1.0, 0.0, 5.0),
+            (f32::NAN, 0.0, 5.0),
+            (f32::INFINITY, 0.0, 5.0),
+            (4.0, f32::NAN, 5.0),
+            (4.0, 0.0, f32::INFINITY),
+        ] {
+            let d = aspect_fixture(1 << 8, 2.0, params);
+            assert!(d.speed_aspect.is_none(), "{params:?}");
+            assert_eq!(
+                quad_dimensions(&aspect_quad(
+                    &d,
+                    particle(Vec3::ZERO, Vec3::X * 10.0),
+                    Mat4::IDENTITY
+                )),
+                (4.0, 2.0)
+            );
+        }
+        let d = aspect_fixture((1 << 8) | 1, 2.0, (4.0, 0.0, 10.0));
+        for velocity in [Vec3::splat(f32::NAN), Vec3::splat(f32::INFINITY)] {
+            assert_eq!(
+                quad_dimensions(&aspect_quad(
+                    &d,
+                    particle(Vec3::ZERO, velocity),
+                    Mat4::IDENTITY
+                )),
+                (4.0, 2.0)
+            );
+        }
+        for invalid_aspect in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let d = aspect_fixture(1 << 8, invalid_aspect, (4.0, 0.0, 10.0));
+            assert_eq!(
+                quad_dimensions(&aspect_quad(
+                    &d,
+                    particle(Vec3::ZERO, Vec3::ZERO),
+                    Mat4::IDENTITY
+                )),
+                (2.0, 2.0)
+            );
         }
     }
 

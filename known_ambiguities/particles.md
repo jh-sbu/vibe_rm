@@ -233,3 +233,38 @@ missing references, manager activation, transformed planes/spheres, finite
 bounds and degeneracies, swept entry, restitution, earliest and repeated impacts,
 death/spawn interaction, generation limits, capacity and the full spawn-count
 integer range.
+
+## Speed to aspect
+
+Public evidence:
+
+- The community-maintained [Niftools schema](https://github.com/niftools/nifxml/blob/develop/nif.xml)
+  identifies `AspectFlags` bit 8 (mask 256) as enabling speed to aspect.
+  `NiParticlesData` stores the base aspect ratio followed by a second aspect
+  ratio and two speed thresholds. It specifies no interpolation or sizing
+  algorithm. No public source found resolves the behavior below.
+- No game assets or engine binary data were examined for this change. Fixtures
+  are synthetic; no game assets were added to the repository.
+
+Implemented policy and unresolved behavior:
+
+- With bit 8 enabled, linearly interpolate from the base aspect at speed 1 to
+  the second aspect at speed 2, clamping outside that interval. Measure the
+  current full three-dimensional velocity in model space, after forces and
+  collisions; instance scale and camera projection do not alter this speed.
+  Exact interpolation, speed space, and whether the original runtime uses
+  current or birth velocity remain unresolved.
+- Continue interpreting aspect as width over height, varying quad width while
+  preserving height. Apply it after rotation or velocity orientation. Whether
+  the original runtime instead varies height, preserves area, or handles the
+  velocity-aligned axis differently remains unresolved. Initial rotation from
+  velocity (bit 1) remains unsupported.
+- Invalid second aspects (nonpositive or nonfinite), negative/nonfinite speed
+  thresholds, and equal/reversed thresholds disable speed to aspect for that
+  system. Invalid base aspects become 1; nonfinite particle velocities use the
+  base aspect. These malformed-input policies are not runtime observations.
+
+Synthetic description and quad tests exercise the enable mask, unchanged
+disabled output, endpoint clamping, interpolation and narrowing, full velocity
+magnitude, rotation and velocity orientation, instance scaling, forces changing
+speed, and invalid-input fallbacks.

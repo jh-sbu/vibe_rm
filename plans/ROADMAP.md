@@ -930,6 +930,9 @@ game each piece unlocks.
   Collider managers resolve planar and spherical chains at object rest
   transforms, with swept point contacts, bounce, collision spawning/death and
   bounded repeated impacts; contact and response policies remain documented below.
+  Speed-to-aspect (aspect flag bit 8) interpolates between authored ratios
+  using current model-space speed, composed with rotation and velocity orientation;
+  interpolation, sizing and speed-space policies remain documented below.
   Open questions:
   `known_ambiguities/particles.md`
 - Addon nodes: a model's `BSValueNode`s take the addon node (ADDN) whose index is
@@ -1333,7 +1336,7 @@ game each piece unlocks.
    `BSProceduralLightningController` and actor / effect graph sequence-owned
    shader / alpha-test controllers (placed rigid objects: see Done); particles'
    decay, turbulence, drag's exact formula and animated objects, rotation axis,
-   speed to aspect, subtexture
+   speed-to-aspect runtime fidelity, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves**: an engine-native save format (reading .ess later), writing out
    the scripts' state, inventories, `WorldState` and the weather, bounties,

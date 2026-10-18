@@ -34,8 +34,10 @@ pub struct ParticleData {
     /// Texture atlas cells (u offset, v offset, u size, v size).
     pub subtexture_offsets: Vec<Vec4>,
     pub aspect_ratio: f32,
-    /// Aspect flags: 1 aspect from speed, 2 aspect fixed width...
+    /// Aspect flags: bit 0 velocity orientation, bit 1 initial rotation from
+    /// velocity, bit 8 speed to aspect enabled (niftools' AspectFlags).
     pub aspect_flags: u16,
+    /// Second aspect ratio, first speed, second speed (niftools' field order).
     pub speed_to_aspect: (f32, f32, f32),
 }
 
