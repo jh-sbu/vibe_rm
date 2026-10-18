@@ -898,7 +898,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 47] = [
+const ITEM_COMMANDS: [&str; 48] = [
     "drop",
     "teachword",
     "unlockword",
@@ -907,6 +907,7 @@ const ITEM_COMMANDS: [&str; 47] = [
     "equipshout",
     "addspell",
     "removespell",
+    "equipspell",
     "cast",
     "effects",
     "dispelallspells",
@@ -1044,6 +1045,20 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             let mut out = vec![format!("{r} {cmd} {s}: {done}")];
             out.extend(engine.describe_effects(r));
             out
+        }
+        "equipspell" => {
+            // [ref.]equipspell <spell> <left|right|voice>: ready it in that hand.
+            let slot = match args.get(1).map(|a| a.to_ascii_lowercase()).as_deref() {
+                Some("left") => crate::spells::LEFT,
+                Some("right") => crate::spells::RIGHT,
+                Some("voice") => crate::spells::VOICE,
+                _ => return vec![format!("usage: [ref.]{cmd} <spell> <left|right|voice>")],
+            };
+            let Some(s) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec![format!("usage: [ref.]{cmd} <spell> <left|right|voice>")];
+            };
+            engine.equip_spell(r, s, slot);
+            vec![format!("{r} readies {s} in slot {slot}")]
         }
         "cast" => {
             // [ref.]cast <spell> [target]: the ref casts it on the target (itself).

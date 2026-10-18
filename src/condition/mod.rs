@@ -673,7 +673,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // on its caster. Vanilla cost perks use this to select their tier.
         713 => b(subject.and_then(|s| e.spell_casting_perk(s)) == Some(p1)),
         632 => b(subject.is_some_and(|s| e.is_casting(s))), // IsCasting
-        627 => b(false),                                    // IsDualCasting: nobody dual casts yet
+        627 => b(subject.is_some_and(|s| e.is_dual_casting(s))), // IsDualCasting
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))), // GetIsCurrentPackage
         579 => b(subject.is_some_and(|s| e.equipped_shout(s) == Some(p1))), // GetEquippedShout
         378 => b(subject.is_some_and(|s| e.has_shout(s, p1))), // HasShout

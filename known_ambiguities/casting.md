@@ -45,6 +45,24 @@ hands' casting events.
   `..._SpellRelease_Event`. The engine listens for `MRh_SpellFire_Event` /
   `MLh_SpellFire_Event` (CommonLibSSE's `FixedStrings`). The hand types are
   9 with a spell in hand (`test-mod autotest2`).
+- **Dual casting** needs the school's dual casting perk: `AlterationDualCasting`
+  .. `RestorationDualCasting` set entry point 75 (`CanDualCastSpell`) to 1
+  for spells of their skill (`EPMagic_SpellHasSkill`). A dual cast costs
+  `fMagicDualCastingCostMult` (2.8) times as much and charges
+  `fMagicDualCastingTimeMult` (1) times as long. Spells flagged `SPIT`
+  0x800000 (`kNoDualCastMods`) aren't changed by it. An effect's power
+  scales its magnitude if flagged 0x200000 (`kPowerAffectsMagnitude`:
+  Firebolt, Healing) and its duration if 0x400000
+  (`kPowerAffectsDuration`); its dual casting scale is `MGEF` `DATA` 0x70
+  (1 for most, Fireball's 1.1).
+- **Dual casting in the graph** (`magicbehavior.hkx`): the left hand's
+  state machine takes `DualMagic_SpellAimedStart`, `..._SpellSelfStart`,
+  `..._SpellAimedConcentrationStart`, `..._SpellSelfConcentrationStart` and
+  `..._WardStart` from any state into `Dual_Cast` (there is no telekinesis
+  one) and from there runs on the left hand's events (`MLh_SpellReady_Event`,
+  `MLh_SpellRelease_Event`); its release clips raise `MLh_SpellFire_Event`
+  (`DMagAimRelease`: at 0.17 s) and `MLh_Equipped_Event`. The right hand's
+  machine stays in its ready state.
 
 ## Open (choices made here)
 
@@ -134,7 +152,21 @@ hands' casting events.
   engine sends the hand's own `..._Equipped_Event` to bring it back to
   ready (the graph has no cancelling event); when neither hand is casting
   or playing out a release (its clip's `..._Equipped_Event`, or 1.5 s),
-  `CastStop`. Dual casting (`DualMagic_...`) isn't built.
+  `CastStop`.
+- **Dual casting's power**: an effect's magnitude or duration (as its flags
+  say) is multiplied by `fMagicDualCastingEffectivenessBase` (2.2) times its
+  dual casting scale (Fireball: 2.42). Whether the scale multiplies the base
+  or only its excess over 1 isn't published. The power goes before the
+  caster's and target's perks, and dual cast calm, fear and frenzy reach
+  higher levels. Skill XP is a single cast's; whether a dual cast teaches
+  more isn't published. `EffectWasDualCast` isn't evaluated.
+- **Starting a dual cast** (the player): the second hand pressed within 0.2 s
+  of the first, holding the same spell, with the perk and the magicka for
+  the dual cost; otherwise each hand casts its own. The first hand's cast
+  becomes the dual cast as it stands (what a concentration spell landed
+  in that moment stays). Letting go of either button lets it go; a hand
+  losing the spell ends it. The window isn't published. NPCs don't dual
+  cast (`CombatBehaviorPrepareDualCast` in the game).
 - **Casters' hands** (`ActorRuntime::set_hand_vars`): while an NPC fights
   with a spell its graph's hand types say a spell is in hand (it holds none
   in its inventory): the left hand beside a one-handed weapon in the right

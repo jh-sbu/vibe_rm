@@ -24,6 +24,14 @@
 //! (`..._SpellRelease_Event`); a charged spell is cast at its release clip's
 //! `..._SpellFire_Event`. When neither hand casts any more, `CastStop`.
 //!
+//! The same spell in both hands, both buttons pressed together and the
+//! school's dual casting perk (`CanDualCastSpell`) make a dual cast: one
+//! spell from both hands, costing `fMagicDualCastingCostMult` times as much,
+//! its effects' magnitude or duration (as their flags say) scaled by
+//! `fMagicDualCastingEffectivenessBase` times their dual casting scale. The
+//! graph casts it on the left hand's state machine (`DualMagic_...Start`,
+//! then the left hand's events).
+//!
 //! Sources: UESP's Magic Overview, Magicka and Spells pages, the records
 //! (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`, `EXPL` radius) and the game
 //! settings. Choices: `known_ambiguities/casting.md`.
@@ -72,6 +80,9 @@ const POWER_RECHARGE_DAYS: f32 = 1.0;
 /// How long a spell let go may wait for its release clip's `SpellFire`,
 /// and then for the clip to end; a choice (`known_ambiguities/casting.md`).
 const FIRE_TIMEOUT: f32 = 1.5;
+/// How soon after one hand the other must start the same spell for the two
+/// to be a dual cast (seconds); a choice (`known_ambiguities/casting.md`).
+const DUAL_WINDOW: f32 = 0.2;
 
 /// A spell held ready in a hand.
 #[derive(Debug, Clone)]
@@ -88,6 +99,8 @@ struct HandCast {
     /// charged (fire-and-forget) or flowing (concentration).
     graph: bool,
     told_ready: bool,
+    /// Cast from both hands (held as the left's).
+    dual: bool,
 }
 
 /// A charged spell let go in the graph: cast at its hand's `SpellFire`, then
@@ -95,6 +108,7 @@ struct HandCast {
 #[derive(Debug, Clone, Copy)]
 struct Firing {
     spell: FormId,
+    dual: bool,
     fired: bool,
     /// Seconds waiting for the next of those.
     waited: f32,
@@ -192,6 +206,7 @@ impl Engine {
             || self.conversation.is_some()
             || self.casting.hands[hand].is_some()
             || self.casting.firing[hand].is_some_and(|f| !f.fired)
+            || self.player_dual_casting()
         {
             return true;
         }
@@ -203,10 +218,13 @@ impl Engine {
         let Some(item) = self.magic_item(spell) else {
             return true;
         };
-        if !self.can_pay(spell, &item) {
+        if self.player_has_graph() && !self.player_weapon_ready() {
             return true;
         }
-        if self.player_has_graph() && !self.player_weapon_ready() {
+        if self.player_dual_start(hand, spell, &item) {
+            return true;
+        }
+        if !self.can_pay(spell, &item, false) {
             return true;
         }
         // Where the graph has no casting for the hands (a spell beside a
@@ -221,6 +239,7 @@ impl Engine {
             counted: false,
             graph,
             told_ready: false,
+            dual: false,
         });
         if item.cast_type == CONCENTRATION {
             self.start_concentration(hand);
@@ -231,6 +250,12 @@ impl Engine {
     /// A hand's attack button came up: a charged spell is cast, a
     /// concentration spell stops. True if the hand was casting.
     pub fn player_cast_release(&mut self, hand: usize) -> bool {
+        // Either button lets a dual cast go.
+        let hand = if self.player_dual_casting() {
+            LEFT
+        } else {
+            hand
+        };
         let Some(h) = self.casting.hands[hand].take() else {
             return false;
         };
@@ -243,7 +268,7 @@ impl Engine {
         let Some(item) = self.magic_item(h.spell) else {
             return true;
         };
-        if h.held + 1e-3 < item.charge_time {
+        if h.held + 1e-3 < self.charge_time(&item, h.dual) {
             log::debug!("{} let go before it charged", item.name);
             if h.graph {
                 self.player_hand_idle(hand);
@@ -259,6 +284,7 @@ impl Engine {
             if self.player_graph_event(&format!("{p}_SpellRelease_Event")) {
                 self.casting.firing[hand] = Some(Firing {
                     spell: h.spell,
+                    dual: h.dual,
                     fired: false,
                     waited: 0.0,
                 });
@@ -268,13 +294,91 @@ impl Engine {
             }
             return true;
         }
-        if self.can_pay(h.spell, &item) {
-            let cost = self.spell_cost(PLAYER_REF, h.spell);
+        if self.can_pay(h.spell, &item, h.dual) {
+            let cost = self.player_spell_cost(h.spell, h.dual);
             self.spend_magicka(cost);
             self.count_spell_cast(PLAYER_REF, h.spell);
-            self.cast(PLAYER_REF, h.spell, 1.0);
+            self.cast_with(PLAYER_REF, h.spell, 1.0, h.dual);
         }
         true
+    }
+
+    /// Whether the player is dual casting: holding a spell from both hands,
+    /// or letting one go that hasn't left yet.
+    fn player_dual_casting(&self) -> bool {
+        self.casting.hands[LEFT].as_ref().is_some_and(|h| h.dual)
+            || self.casting.firing[LEFT].is_some_and(|f| f.dual && !f.fired)
+    }
+
+    /// Whether an actor is dual casting (`IsDualCasting`; only the player).
+    pub fn is_dual_casting(&self, actor: FormId) -> bool {
+        actor == PLAYER_REF && self.player_dual_casting()
+    }
+
+    /// `hand` starts `spell` while the other hand started the same spell
+    /// within `DUAL_WINDOW`: with the school's dual casting perk and the
+    /// magicka for it, the two become one dual cast (true), the graph casting
+    /// it with the left hand (`DualMagic_...Start`, the right hand back to
+    /// ready). Else each hand casts its own.
+    fn player_dual_start(&mut self, hand: usize, spell: FormId, item: &MagicItem) -> bool {
+        let other = if hand == LEFT { RIGHT } else { LEFT };
+        let Some(o) = self.casting.hands[other].clone() else {
+            return false;
+        };
+        if o.spell != spell
+            || o.dual
+            || o.held > DUAL_WINDOW
+            || item.spell_type != spell_type::SPELL
+            || !self.perk_flag(
+                crate::perks::ep::CAN_DUAL_CAST_SPELL,
+                PLAYER_REF,
+                &[Some(spell)],
+            )
+            || !self.affords(spell, item, true)
+        {
+            return false;
+        }
+        if o.graph {
+            let start = format!("DualMagic_{}", self.cast_start(item));
+            // Ignored in the casting state, where the other hand's cast is.
+            self.player_graph_event("BeginCastLeft");
+            if !self.player_graph_event(&start) {
+                log::debug!("the graph won't dual cast {}", item.name);
+                return false;
+            }
+            if other == RIGHT {
+                self.player_graph_event("MRh_Equipped_Event");
+            }
+            // The left hand's last release, if still playing out, gives way.
+            self.casting.firing[LEFT] = None;
+        }
+        log::debug!("player dual casts {}", item.name);
+        self.casting.hands[other] = None;
+        self.casting.hands[LEFT] = Some(HandCast {
+            told_ready: false,
+            dual: true,
+            ..o
+        });
+        true
+    }
+
+    /// A spell's charge time, dual cast or not.
+    fn charge_time(&self, item: &MagicItem, dual: bool) -> f32 {
+        if dual {
+            item.charge_time * gmst_f32(&self.lo, "fMagicDualCastingTimeMult", 1.0)
+        } else {
+            item.charge_time
+        }
+    }
+
+    /// What a spell costs the player, dual cast or not.
+    fn player_spell_cost(&self, spell: FormId, dual: bool) -> f32 {
+        let cost = self.spell_cost(PLAYER_REF, spell);
+        if dual {
+            cost * gmst_f32(&self.lo, "fMagicDualCastingCostMult", 2.8)
+        } else {
+            cost
+        }
     }
 
     /// Whether an actor is casting by hand (only the player does yet).
@@ -339,12 +443,12 @@ impl Engine {
                 self.casting.firing[hand] = Some(f);
                 if let Some(item) = self.magic_item(f.spell)
                     && !self.player_dead()
-                    && self.can_pay(f.spell, &item)
+                    && self.can_pay(f.spell, &item, f.dual)
                 {
-                    let cost = self.spell_cost(PLAYER_REF, f.spell);
+                    let cost = self.player_spell_cost(f.spell, f.dual);
                     self.spend_magicka(cost);
                     self.count_spell_cast(PLAYER_REF, f.spell);
-                    self.cast(PLAYER_REF, f.spell, 1.0);
+                    self.cast_with(PLAYER_REF, f.spell, 1.0, f.dual);
                 }
                 continue;
             }
@@ -361,12 +465,12 @@ impl Engine {
     }
 
     /// Whether the player has the magicka for a spell (a second of a
-    /// concentration spell); if not, the meter blinks and they are told.
-    fn can_pay(&mut self, spell: FormId, item: &MagicItem) -> bool {
+    /// concentration spell), dual cast or not.
+    fn affords(&self, spell: FormId, item: &MagicItem, dual: bool) -> bool {
         if item.spell_type != spell_type::SPELL {
             return true;
         }
-        let cost = self.spell_cost(PLAYER_REF, spell);
+        let cost = self.player_spell_cost(spell, dual);
         let have = self.actor_value(PLAYER_REF, av::MAGICKA);
         // A concentration spell starts with any magicka at all.
         let need = if item.cast_type == CONCENTRATION {
@@ -374,7 +478,12 @@ impl Engine {
         } else {
             cost
         };
-        if have + 1e-3 >= need {
+        have + 1e-3 >= need
+    }
+
+    /// As `affords`; if not, the meter blinks and the player is told.
+    fn can_pay(&mut self, spell: FormId, item: &MagicItem, dual: bool) -> bool {
+        if self.affords(spell, item, dual) {
             return true;
         }
         self.casting.magicka_blinks += 1;
@@ -446,7 +555,10 @@ impl Engine {
             casting = true;
             // The spell left the hand (unequipped, a weapon took it), or the
             // hands were put away.
-            if self.hand_spell(hand) != Some(h.spell) || (h.graph && !self.player_weapon_drawn()) {
+            if self.hand_spell(hand) != Some(h.spell)
+                || (h.dual && self.hand_spell(RIGHT) != Some(h.spell))
+                || (h.graph && !self.player_weapon_drawn())
+            {
                 self.casting.hands[hand] = None;
                 if h.graph {
                     self.player_hand_idle(hand);
@@ -461,7 +573,7 @@ impl Engine {
                     Some("SpellRelease_Event")
                 } else {
                     self.magic_item(h.spell)
-                        .filter(|item| h.held + 1e-3 >= item.charge_time)
+                        .filter(|item| h.held + 1e-3 >= self.charge_time(item, h.dual))
                         .map(|_| "SpellReady_Event")
                 };
                 if let Some(ev) = ready {
@@ -470,7 +582,7 @@ impl Engine {
                 }
             }
             if h.flowing {
-                let cost = self.spell_cost(PLAYER_REF, h.spell) * dt;
+                let cost = self.player_spell_cost(h.spell, h.dual) * dt;
                 if self.actor_value(PLAYER_REF, av::MAGICKA) < cost {
                     log::debug!("player's magicka ran out");
                     self.casting.magicka_blinks += 1;
@@ -488,7 +600,7 @@ impl Engine {
                         self.count_spell_cast(PLAYER_REF, h.spell);
                         h.counted = true;
                     }
-                    self.cast(PLAYER_REF, h.spell, CONCENTRATION_TICK);
+                    self.cast_with(PLAYER_REF, h.spell, CONCENTRATION_TICK, h.dual);
                 }
             }
             self.casting.hands[hand] = Some(h);
@@ -804,7 +916,7 @@ impl Engine {
                 }
                 self.damage_actor_value(actor, av::MAGICKA, cost);
                 let dir = (aim - eye).normalize_or_zero();
-                self.cast_from(actor, spell.spell, share, eye, dir);
+                self.cast_from(actor, spell.spell, share, eye, dir, false);
             }
         }
     }
@@ -813,6 +925,11 @@ impl Engine {
     /// way it faces), already paid for; `share` is the part of a second a
     /// concentration spell's landing stands for (1 for others).
     pub(crate) fn cast(&mut self, caster: FormId, spell: FormId, share: f32) {
+        self.cast_with(caster, spell, share, false);
+    }
+
+    /// A spell cast as `cast`, `dual`: dual cast.
+    fn cast_with(&mut self, caster: FormId, spell: FormId, share: f32, dual: bool) {
         let (eye, dir) = if caster == PLAYER_REF {
             self.player_aim()
         } else {
@@ -824,7 +941,7 @@ impl Engine {
                 None => return,
             }
         };
-        self.cast_from(caster, spell, share, eye, dir);
+        self.cast_from(caster, spell, share, eye, dir, dual);
     }
 
     /// A spell cast by `caster` from `eye` along `dir`.
@@ -835,12 +952,14 @@ impl Engine {
         share: f32,
         eye: Vec3,
         dir: Vec3,
+        dual: bool,
     ) {
         let Some(item) = self.magic_item(spell) else {
             return;
         };
         if item.cast_type != CONCENTRATION || share >= 1.0 {
-            log::info!("{caster} casts {} ({spell})", item.name);
+            let how = if dual { " dual cast" } else { "" };
+            log::info!("{caster} casts {} ({spell}){how}", item.name);
         }
         let hostile = self.item_hostile(&item);
         // Non-hostile spells teach by being cast; hostile ones by landing.
@@ -857,9 +976,9 @@ impl Engine {
             // A hostile spell around the caster (Battle Cry) spares them.
             delivery::SELF if hostile => {
                 let at = self.feet_of(caster).unwrap_or(eye);
-                self.spell_lands(caster, spell, None, at, dir)
+                self.spell_lands(caster, spell, None, at, dir, dual)
             }
-            delivery::SELF => self.spell_lands(caster, spell, Some(caster), eye, dir),
+            delivery::SELF => self.spell_lands(caster, spell, Some(caster), eye, dir, dual),
             delivery::CONTACT | delivery::TARGET_ACTOR => {
                 let reach = if item.delivery == delivery::CONTACT {
                     CONTACT_REACH
@@ -871,7 +990,7 @@ impl Engine {
                 if let Some((t, Some(actor))) = self.spell_ray(eye, dir, reach, caster)
                     && self.is_actor_ref(actor)
                 {
-                    self.spell_lands(caster, spell, Some(actor), eye + dir * t, dir);
+                    self.spell_lands(caster, spell, Some(actor), eye + dir * t, dir, dual);
                 }
             }
             _ => {
@@ -883,26 +1002,26 @@ impl Engine {
                         let spread = cone_spread(&self.lo, proj);
                         for (actor, at) in self.actors_in_cone(caster, eye, dir, shot.range, spread)
                         {
-                            self.spell_lands(caster, spell, Some(actor), at, dir);
+                            self.spell_lands(caster, spell, Some(actor), at, dir, dual);
                         }
                     }
                     Some((proj, shot)) if reaches_at_once(&self.lo, proj) => {
                         match self.spell_ray(eye, dir, shot.range, caster) {
                             Some((t, owner)) => {
                                 let actor = owner.filter(|&o| self.is_actor_ref(o));
-                                self.spell_lands(caster, spell, actor, eye + dir * t, dir);
+                                self.spell_lands(caster, spell, actor, eye + dir * t, dir, dual);
                             }
                             None => {}
                         }
                     }
                     Some((_, shot)) => {
                         let from = eye + dir * 20.0 - Vec3::Z * 6.0;
-                        self.spawn_spell_projectile(caster, spell, shot, from, dir);
+                        self.spawn_spell_projectile(caster, spell, shot, from, dir, dual);
                     }
                     None => {
                         if let Some((t, owner)) = self.spell_ray(eye, dir, LOCATION_RANGE, caster) {
                             let actor = owner.filter(|&o| self.is_actor_ref(o));
-                            self.spell_lands(caster, spell, actor, eye + dir * t, dir);
+                            self.spell_lands(caster, spell, actor, eye + dir * t, dir, dual);
                         }
                     }
                 }
@@ -1012,7 +1131,8 @@ impl Engine {
     }
 
     /// A spell lands at `at` (flying along `dir`): on the actor struck, and on
-    /// every actor within its area; its impact there.
+    /// every actor within its area; its impact there. `dual`: it was dual
+    /// cast.
     pub(crate) fn spell_lands(
         &mut self,
         caster: FormId,
@@ -1020,6 +1140,7 @@ impl Engine {
         target: Option<FormId>,
         at: Vec3,
         dir: Vec3,
+        dual: bool,
     ) {
         let Some(item) = self.magic_item(spell) else {
             return;
@@ -1039,7 +1160,7 @@ impl Engine {
             self.magic_effect(e.effect)
                 .is_some_and(|m| m.archetype == crate::magic::archetype::SUMMON_CREATURE)
         }) {
-            self.apply_item_at(spell, caster, caster, at);
+            self.apply_cast(spell, caster, caster, Some(at), dual);
             return;
         }
         let mut struck: Vec<FormId> = target.into_iter().collect();
@@ -1081,7 +1202,7 @@ impl Engine {
             1.0
         };
         for t in struck {
-            if self.apply_item(spell, Some(caster), t)
+            if self.apply_cast(spell, caster, t, None, dual)
                 && hostile
                 && caster == PLAYER_REF
                 && t != PLAYER_REF
