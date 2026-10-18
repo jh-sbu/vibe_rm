@@ -2656,6 +2656,9 @@ impl Engine {
     }
 
     pub fn graph_states(&self, r: FormId) -> Option<Vec<String>> {
+        if r == crate::engine::PLAYER_REF {
+            return self.player_graph_states();
+        }
         let key = self.actor_cells.get(&r)?;
         let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;
         Some(a.graph.as_ref()?.active_states())

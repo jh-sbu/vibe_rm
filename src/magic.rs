@@ -88,6 +88,9 @@ pub mod flags {
     pub const DETRIMENTAL: u32 = 0x4;
     pub const NO_DURATION: u32 = 0x200;
     pub const HIDE_IN_UI: u32 = 0x8000;
+    /// A spell's power (dual casting) scales its magnitude, its duration.
+    pub const POWER_AFFECTS_MAGNITUDE: u32 = 0x20_0000;
+    pub const POWER_AFFECTS_DURATION: u32 = 0x40_0000;
     pub const NO_DEATH_DISPEL: u32 = 0x1000_0000;
 }
 
@@ -110,6 +113,9 @@ pub mod spell_type {
 
 /// The constant effect casting type.
 pub const CONSTANT_EFFECT: u32 = 0;
+
+/// `SPIT` flag: dual casting doesn't change the spell's effects.
+const NO_DUAL_CAST_MODS: u32 = 0x80_0000;
 
 /// How often abilities and conditions are looked at again (seconds).
 const SYNC_INTERVAL: f32 = 1.0;
@@ -136,6 +142,9 @@ pub struct MagicEffect {
     pub impacts: FormId,
     /// Skill XP for a use is scaled by this.
     pub skill_usage_mult: f32,
+    /// Dual cast, its power is `fMagicDualCastingEffectivenessBase` times
+    /// this (`DATA` 0x70: Fireball's 1.1).
+    pub dual_cast_scale: f32,
     /// Taper (`DATA` 0x1C weight, 0x34 curve, 0x38 duration): what lingers
     /// after the effect (fire's burn).
     pub taper: [f32; 3],
@@ -174,6 +183,7 @@ impl MagicEffect {
             projectile: fid(u(0x48)),
             impacts: fid(u(0x64)),
             skill_usage_mult: f(0x68),
+            dual_cast_scale: if d.len() >= 0x74 { f(0x70) } else { 1.0 },
             taper: [f(0x1C), f(0x34), f(0x38)],
             keywords: rec
                 .get(b"KWDA")
@@ -499,26 +509,28 @@ impl Engine {
     /// Apply an item's effects to `target` (no aiming or projectile: it lands).
     /// The same item's effects already on the target are replaced.
     pub fn apply_item(&mut self, item: FormId, caster: Option<FormId>, target: FormId) -> bool {
-        self.apply_item_as(item, caster, target, false, None)
+        self.apply_item_as(item, caster, target, false, None, false)
     }
 
-    /// Apply an item's effects as `apply_item`, landing at `at` (a target
-    /// location spell: where a summon appears).
-    pub fn apply_item_at(
+    /// Apply a spell cast by `caster` as `apply_item`, landing at `at` (a
+    /// target location spell: where a summon appears); `dual`: dual cast,
+    /// its effects stronger or longer by their power.
+    pub fn apply_cast(
         &mut self,
         item: FormId,
         caster: FormId,
         target: FormId,
-        at: glam::Vec3,
+        at: Option<glam::Vec3>,
+        dual: bool,
     ) -> bool {
-        self.apply_item_as(item, Some(caster), target, false, Some(at))
+        self.apply_item_as(item, Some(caster), target, false, at, dual)
     }
 
     /// Apply an item's effects as `apply_item`, but unnoticed: hostile effects
     /// landing aren't a blow that starts a fight (a poison slipped into
     /// someone's pockets).
     pub fn apply_item_quietly(&mut self, item: FormId, caster: FormId, target: FormId) -> bool {
-        self.apply_item_as(item, Some(caster), target, true, None)
+        self.apply_item_as(item, Some(caster), target, true, None, false)
     }
 
     fn apply_item_as(
@@ -528,10 +540,12 @@ impl Engine {
         target: FormId,
         quiet: bool,
         at: Option<glam::Vec3>,
+        dual: bool,
     ) -> bool {
         let Some(m) = self.magic_item(item) else {
             return false;
         };
+        let dual = dual && m.flags & NO_DUAL_CAST_MODS == 0;
         if self.is_dead(target) && target != PLAYER_REF {
             return false;
         }
@@ -563,7 +577,18 @@ impl Engine {
             if !passes && !constant && ei.duration == 0 {
                 continue;
             }
-            let magnitude = self.effect_magnitude(&m, &mgef, ei.magnitude, caster, target);
+            // Dual cast: the power scales what the effect says it does.
+            let power = if dual {
+                crate::ai::combat::gmst_f32(&self.lo, "fMagicDualCastingEffectivenessBase", 2.2)
+                    * mgef.dual_cast_scale
+            } else {
+                1.0
+            };
+            let mut base = ei.magnitude;
+            if mgef.has(flags::POWER_AFFECTS_MAGNITUDE) {
+                base *= power;
+            }
+            let magnitude = self.effect_magnitude(&m, &mgef, base, caster, target);
             // Calm, fear and frenzy reach only those up to their magnitude's
             // level; one too strong for it is still struck by a hostile spell.
             if archetype::level_capped(mgef.archetype)
@@ -582,6 +607,8 @@ impl Engine {
                 f32::INFINITY
             } else if mgef.has(flags::NO_DURATION) {
                 0.0
+            } else if mgef.has(flags::POWER_AFFECTS_DURATION) {
+                ei.duration as f32 * power
             } else {
                 ei.duration as f32
             };

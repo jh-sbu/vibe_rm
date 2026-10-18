@@ -158,6 +158,8 @@ pub struct Projectile {
     /// The spell it carries: where it lands, its effects do (no damage of
     /// its own, never stuck anywhere).
     pub spell: Option<FormId>,
+    /// Its spell was dual cast.
+    pub dual: bool,
     /// The poison it carries from the bow (`crate::poisons`).
     pub poison: Option<FormId>,
     /// Seconds it may fly.
@@ -415,6 +417,7 @@ impl Engine {
             stuck: None,
             dir: vel.normalize_or_zero(),
             spell: None,
+            dual: false,
             poison,
             lifetime: FLIGHT_TIME,
         });
@@ -429,6 +432,7 @@ impl Engine {
         shot: Arrow,
         from: Vec3,
         dir: Vec3,
+        dual: bool,
     ) {
         let model = shot.model.clone().and_then(|m| {
             self.models
@@ -453,6 +457,7 @@ impl Engine {
             stuck: None,
             dir: vel.normalize_or_zero(),
             spell: Some(spell),
+            dual,
             poison: None,
             lifetime,
         });
@@ -573,7 +578,7 @@ impl Engine {
         // References struck (shooter, what, the arrow's velocity).
         let mut struck: Vec<(FormId, FormId, Vec3)> = Vec::new();
         // Spells landing (caster, spell, the actor struck, where, flying).
-        let mut landed: Vec<(FormId, FormId, Option<FormId>, Vec3, Vec3)> = Vec::new();
+        let mut landed: Vec<(FormId, FormId, Option<FormId>, Vec3, Vec3, bool)> = Vec::new();
         let player = self.player.position;
         let (pr, ph) = (self.physics.player_radius, self.physics.player_half_height);
         // Placed actors, and those made while playing.
@@ -613,7 +618,9 @@ impl Engine {
                 (_, Some(t)) if world.is_none_or(|(w, _)| t < w) => {
                     p.pos = start + dir * t;
                     match p.spell {
-                        Some(s) => landed.push((p.shooter, s, Some(PLAYER_REF), p.pos, dir)),
+                        Some(s) => {
+                            landed.push((p.shooter, s, Some(PLAYER_REF), p.pos, dir, p.dual))
+                        }
                         None => hits.push((
                             PLAYER_REF,
                             p.shooter,
@@ -629,7 +636,7 @@ impl Engine {
                 (Some((t, owner)), _) if p.spell.is_some() => {
                     p.pos = start + dir * t;
                     let actor = owner.filter(|&o| is_actor(o));
-                    landed.push((p.shooter, p.spell.unwrap(), actor, p.pos, dir));
+                    landed.push((p.shooter, p.spell.unwrap(), actor, p.pos, dir, p.dual));
                     if let Some(o) = owner.filter(|_| actor.is_none()) {
                         struck.push((p.shooter, o, p.vel));
                     }
@@ -673,8 +680,8 @@ impl Engine {
         for (shooter, what, vel) in struck {
             self.strike(what, shooter, vel * ARROW_MASS, false);
         }
-        for (caster, spell, target, at, dir) in landed {
-            self.spell_lands(caster, spell, target, at, dir);
+        for (caster, spell, target, at, dir, dual) in landed {
+            self.spell_lands(caster, spell, target, at, dir, dual);
         }
         for &(shooter, at, _, _, dir) in &stuck {
             self.arrow_impact(shooter, None, at, dir);

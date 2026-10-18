@@ -658,6 +658,11 @@ impl Engine {
     }
 
     /// Whether the player's body runs a behaviour graph.
+    /// The states the player's body's graph is in (console `gstate`).
+    pub(crate) fn player_graph_states(&self) -> Option<Vec<String>> {
+        Some(self.player_body.as_ref()?.graph.as_ref()?.active_states())
+    }
+
     pub(crate) fn player_has_graph(&self) -> bool {
         self.player_body.as_ref().is_some_and(|b| b.graph.is_some())
     }
