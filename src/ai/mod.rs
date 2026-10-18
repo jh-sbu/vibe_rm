@@ -24,6 +24,7 @@ use glam::{Mat4, Quat, Vec3};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::world::animation::{ActorAnim, BoundClip};
 use crate::world::behavior::{GraphAnim, ProjectRuntime};
+use crate::world::inventory::{LEFT, RIGHT};
 use crate::world::movement::MoveSpeeds;
 use crate::world::skeleton::Skeleton;
 use furniture::{FurnitureWorld, Seat, Use};
@@ -409,6 +410,12 @@ pub struct ActorRuntime {
     /// fire-and-forget spell, one each landing of a concentration spell.
     pub(crate) combat_spell: Option<casters::CombatSpell>,
     pub(crate) casts: Option<casters::CombatCast>,
+    /// The hand it casts with in its graph while it fights with a spell (set
+    /// by the engine: `ActorRuntime::set_hand_vars`); its graph raised the
+    /// hands' `SpellFire` and `Equipped` (a release clip over).
+    pub(crate) cast_hand: Option<usize>,
+    pub(crate) spell_fire: [bool; 2],
+    pub(crate) hand_equipped: [bool; 2],
     pub(crate) arrow_release: bool,
     pub(crate) loose: bool,
     /// Practising with weapons (UseWeapon), and where its loosed arrow aims.
@@ -509,6 +516,9 @@ impl ActorRuntime {
             bow_speed: 1.0,
             combat_spell: None,
             casts: None,
+            cast_hand: None,
+            spell_fire: [false; 2],
+            hand_equipped: [false; 2],
             arrow_release: false,
             practice: None,
             practice_aim: None,
@@ -1889,6 +1899,10 @@ impl ActorRuntime {
                 }
                 "hitframe" => self.hit_frames |= combat::hit_frame_bit(r.payload.as_deref()),
                 "arrowrelease" => self.arrow_release = true,
+                "mrh_spellfire_event" => self.spell_fire[RIGHT] = true,
+                "mlh_spellfire_event" => self.spell_fire[LEFT] = true,
+                "mrh_equipped_event" => self.hand_equipped[RIGHT] = true,
+                "mlh_equipped_event" => self.hand_equipped[LEFT] = true,
                 // Body-part layers running the same clips (humanoids' arms) raise
                 // their triggers again: one sound each.
                 "soundplay" | "npcsoundplay" => {
@@ -3354,7 +3368,13 @@ impl Engine {
                     // only one gone (dead, unloaded) is lost.
                     match positions.get(&target) {
                         Some(&tp) => {
-                            if let Some(ev) = a.combat_step(dt, &mut world, tp) {
+                            let step = a.combat_step(dt, &mut world, tp);
+                            if let Some(ev) = step.as_deref().filter(|e| e.starts_with("BeginCast"))
+                            {
+                                // A cast, its events already sent by the caster.
+                                log::debug!("{} casts: {ev}", a.ref_id);
+                                started.push((a.ref_id, target));
+                            } else if let Some(ev) = step {
                                 // Attacks the graph has no state for fall back to the basic
                                 // one (not a bow's draw, release or lowering).
                                 let bow = matches!(
