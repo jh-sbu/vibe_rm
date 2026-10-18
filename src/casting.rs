@@ -189,9 +189,37 @@ fn restores_health(effect: &MagicEffect, item: &EffectItem) -> bool {
 }
 
 impl Engine {
-    /// What a hand (`RIGHT`, `LEFT`) holds, if a spell.
+    /// What a hand (`RIGHT`, `LEFT`) casts: its spell, or its staff's
+    /// enchantment.
     fn hand_spell(&self, hand: usize) -> Option<FormId> {
         self.equipped_spell(PLAYER_REF, hand)
+            .or_else(|| self.staff_in(PLAYER_REF, hand).map(|(_, ench)| ench))
+    }
+
+    /// The staff in the player's hands that casts `ench`, if it is a staff's.
+    fn player_staff_of(&self, ench: FormId) -> Option<FormId> {
+        [RIGHT, LEFT]
+            .into_iter()
+            .filter_map(|h| self.staff_in(PLAYER_REF, h))
+            .find(|&(_, e)| e == ench)
+            .map(|(staff, _)| staff)
+    }
+
+    /// What the player has to pay for `spell` with: magicka, or its staff's
+    /// charge.
+    fn player_reserve(&self, spell: FormId) -> f32 {
+        match self.player_staff_of(spell) {
+            Some(staff) => self.weapon_charge(PLAYER_REF, staff),
+            None => self.actor_value(PLAYER_REF, av::MAGICKA),
+        }
+    }
+
+    /// Pay for `spell`: from its staff's charge, else magicka.
+    fn player_pay(&mut self, spell: FormId, amount: f32) {
+        match self.player_staff_of(spell) {
+            Some(staff) => self.spend_weapon_charge(PLAYER_REF, staff, amount),
+            None => self.spend_magicka(amount),
+        }
     }
 
     /// A hand's attack button went down: casting starts if it holds a spell
@@ -296,7 +324,7 @@ impl Engine {
         }
         if self.can_pay(h.spell, &item, h.dual) {
             let cost = self.player_spell_cost(h.spell, h.dual);
-            self.spend_magicka(cost);
+            self.player_pay(h.spell, cost);
             self.count_spell_cast(PLAYER_REF, h.spell);
             self.cast_with(PLAYER_REF, h.spell, 1.0, h.dual);
         }
@@ -397,8 +425,12 @@ impl Engine {
         }
     }
 
-    /// What a spell costs the player, dual cast or not.
+    /// What a spell costs the player, dual cast or not (a staff's
+    /// enchantment, in charge).
     fn player_spell_cost(&self, spell: FormId, dual: bool) -> f32 {
+        if self.player_staff_of(spell).is_some() {
+            return self.staff_cost(PLAYER_REF, spell);
+        }
         let cost = self.spell_cost(PLAYER_REF, spell);
         if dual {
             cost * gmst_f32(&self.lo, "fMagicDualCastingCostMult", 2.8)
@@ -472,7 +504,7 @@ impl Engine {
                     && self.can_pay(f.spell, &item, f.dual)
                 {
                     let cost = self.player_spell_cost(f.spell, f.dual);
-                    self.spend_magicka(cost);
+                    self.player_pay(f.spell, cost);
                     self.count_spell_cast(PLAYER_REF, f.spell);
                     self.cast_with(PLAYER_REF, f.spell, 1.0, f.dual);
                 }
@@ -493,11 +525,12 @@ impl Engine {
     /// Whether the player has the magicka for a spell (a second of a
     /// concentration spell), dual cast or not.
     fn affords(&self, spell: FormId, item: &MagicItem, dual: bool) -> bool {
-        if item.spell_type != spell_type::SPELL {
+        if item.spell_type != spell_type::SPELL && item.spell_type != spell_type::STAFF_ENCHANTMENT
+        {
             return true;
         }
         let cost = self.player_spell_cost(spell, dual);
-        let have = self.actor_value(PLAYER_REF, av::MAGICKA);
+        let have = self.player_reserve(spell);
         // A concentration spell starts with any magicka at all.
         let need = if item.cast_type == CONCENTRATION {
             cost.min(1.0)
@@ -512,12 +545,24 @@ impl Engine {
         if self.affords(spell, item, dual) {
             return true;
         }
+        if self.player_staff_of(spell).is_some() {
+            self.notify_no_charge();
+            return false;
+        }
         self.casting.magicka_blinks += 1;
         let text = self
             .gmst_string("sMagicCastInsufficientMagicka")
             .unwrap_or_else(|| "You don't have enough Magicka".into());
         self.scripts.notify(text);
         false
+    }
+
+    /// "Your item has insufficient charge".
+    fn notify_no_charge(&mut self) {
+        let text = self
+            .gmst_string("sMagicCastInsufficientItemCharge")
+            .unwrap_or_else(|| "Your item has insufficient charge".into());
+        self.scripts.notify(text);
     }
 
     /// Take magicka from the player; it waits a moment to come back.
@@ -578,7 +623,8 @@ impl Engine {
             let Some(mut h) = self.casting.hands[hand].clone() else {
                 continue;
             };
-            casting = true;
+            // Staffs leave magicka coming back.
+            casting |= self.player_staff_of(h.spell).is_none();
             // The spell left the hand (unequipped, a weapon took it), or the
             // hands were put away.
             if self.hand_spell(hand) != Some(h.spell)
@@ -609,16 +655,24 @@ impl Engine {
             }
             if h.flowing {
                 let cost = self.player_spell_cost(h.spell, h.dual) * dt;
-                if self.actor_value(PLAYER_REF, av::MAGICKA) < cost {
-                    log::debug!("player's magicka ran out");
-                    self.casting.magicka_blinks += 1;
+                if self.player_reserve(h.spell) < cost {
+                    let staff = self.player_staff_of(h.spell).is_some();
+                    log::debug!(
+                        "player's {} ran out",
+                        if staff { "staff" } else { "magicka" }
+                    );
+                    if staff {
+                        self.notify_no_charge();
+                    } else {
+                        self.casting.magicka_blinks += 1;
+                    }
                     self.casting.hands[hand] = None;
                     if h.graph {
                         self.player_hand_idle(hand);
                     }
                     continue;
                 }
-                self.spend_magicka(cost);
+                self.player_pay(h.spell, cost);
                 h.tick -= dt;
                 if h.tick <= 0.0 {
                     h.tick += CONCENTRATION_TICK;

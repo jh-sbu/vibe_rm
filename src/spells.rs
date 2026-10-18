@@ -32,6 +32,15 @@ pub const CONCENTRATION: u32 = 2;
 /// `ModSpellCost` (`BGSEntryPoint`).
 const MOD_SPELL_COST: u8 = 38;
 
+/// What skill in a school leaves of a cost: `1 - (fMagicCasterPCSkillCostBase
+/// x skill) ^ fMagicPCSkillCostScale` (0.59 at 100).
+pub(crate) fn skill_cost_factor(lo: &esp::LoadOrder, skill: f32) -> f32 {
+    let g = |name, default| crate::ai::combat::gmst_f32(lo, name, default);
+    let k = g("fMagicCasterPCSkillCostBase", 0.0025);
+    let scale = g("fMagicPCSkillCostScale", 0.65);
+    1.0 - (k * skill).powf(scale)
+}
+
 impl Engine {
     /// The spell, power or shout `actor` holds in a slot (`RIGHT`, `LEFT`,
     /// `VOICE`).
@@ -210,11 +219,8 @@ impl Engine {
             .unwrap_or(0.0);
         let mut cost = base;
         if let Some(school) = self.spell_school(spell) {
-            let g = |name, default| crate::ai::combat::gmst_f32(&self.lo, name, default);
             let skill = self.actor_value(caster, school).clamp(0.0, 100.0);
-            let k = g("fMagicCasterPCSkillCostBase", 0.0025);
-            let scale = g("fMagicPCSkillCostScale", 0.65);
-            cost *= 1.0 - (k * skill).powf(scale);
+            cost *= skill_cost_factor(&self.lo, skill);
         }
         cost = self.perk_entry_point(MOD_SPELL_COST, caster, &[Some(spell)], cost);
         cost.max(0.0)

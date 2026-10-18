@@ -51,6 +51,7 @@ mod skills;
 mod sleep;
 mod soul_trap;
 mod spells;
+mod staffs;
 mod stats;
 mod story;
 mod swf_ui;
