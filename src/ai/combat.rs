@@ -1899,8 +1899,11 @@ impl Engine {
         }
         self.damage_by(target, damage, Some(attacker), stagger, sneak.is_some());
         // An enchanted weapon's (a bow's, for a shot) enchantment lands with
-        // the blow.
-        if let Some(ench) = weapon.and_then(|w| self.item_enchantment(w)) {
+        // the blow, paid from its charge.
+        if let Some(w) = weapon
+            && let Some(ench) = self.item_enchantment(w)
+            && self.pay_weapon_charge(attacker, w, ench)
+        {
             self.apply_item(ench, Some(attacker), target);
         }
     }

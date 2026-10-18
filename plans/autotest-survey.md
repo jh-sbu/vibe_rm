@@ -173,7 +173,12 @@ Left out so far:
   before and after, at Destruction 15 and at 100 (`SetActorValue`), with
   and without Novice / Apprentice Destruction (`AddPerk`): the cost and
   what lowers it. Then `RightItemCharge` after the staff is dropped and
-  picked up again (charge carried?).
+  picked up again (charge carried?). Weapons: an NPC held with an Iron
+  Sword of Burning set on a held target (`StartCombat`), its
+  `RightItemCharge` read after each `OnHit` the target's alias sees
+  (spent per blow? for blocked blows? do NPCs' weapons drain at all?);
+  the player's charge after `RemoveItem` into a container and back
+  (`staffs.md`'s enchanted weapons).
 - **Ethereal** (`magic.md`): `VoiceBecomeEthereal3` cast by script on
   a held NPC, then a Firebolt cast at it and `DamageActorValue` health on
   it: health after each (magic spared, scripts not?), and whether the

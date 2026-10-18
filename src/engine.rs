@@ -3124,8 +3124,11 @@ impl Engine {
         to: Option<FormId>,
         mark: Option<FormId>,
     ) -> Vec<(Option<FormId>, i32)> {
+        let charge = self.inventory_mut(r).charge_left(item);
         let (parts, souls) = self.inventory_mut(r).remove_with_souls(item, count, only);
         let n: i32 = parts.iter().map(|(_, n)| n).sum();
+        // The spent one goes last: its charge goes with it.
+        let charge = charge.filter(|_| self.inventory_mut(r).count(item) <= 0);
         self.inventory_event(r, false, item, n, to);
         if let Some(to) = to.filter(|_| n > 0) {
             let to_base = self.base_of(to);
@@ -3137,6 +3140,12 @@ impl Engine {
                 for _ in 0..k {
                     self.inventory_mut(to).put_soul(item, soul);
                 }
+            }
+            if let Some(left) = charge {
+                let full = self.weapon_capacity(item);
+                let inv = self.inventory_mut(to);
+                let left = inv.charge_left(item).map_or(left, |c| c.min(left));
+                inv.set_charge(item, left, full);
             }
             self.inventory_event(to, true, item, n, Some(r));
         }
