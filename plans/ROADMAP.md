@@ -77,7 +77,9 @@ game each piece unlocks.
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
   (schedule + conditions), sandbox / travel behaviour, idle/walk cross-fade,
-  persistent NPC whereabouts with leaving / arriving through load doors
+  persistent NPC whereabouts with leaving / arriving through load doors;
+  multi-location sandboxes moving between their stops (the tree's repeating
+  branch; `known_ambiguities/package-trees.md`)
 - AI furniture: chairs, benches, stools, beds, bedrolls and wall-lean markers from NIF
   furniture markers; ownership; reservations; sit / sleep packages and sandbox
   "Allow ..." inputs; enter / exit clips placed by root motion from the behaviour
@@ -1118,7 +1120,9 @@ game each piece unlocks.
    - Off-screen travel between worldspaces; paths round locked animated doors
    - Templates: leveled spell lists (`LVSP`) expanded into usable spells;
      selection and refresh behavior need evidence (`known_ambiguities/npc-templates.md`)
-   - Package trees: branches of `Sequence` / `Simultaneous` roots,
+   - Package trees: branches of `Sequence` / `Simultaneous` roots (multi-location
+     sandboxes' stops done: see Done; their "in cell" stops elsewhere, per-stop
+     unlocking and progress kept across loads remain),
      guard / wait / find / acquire procedures; numeric package-data defaults,
      runtime changes and contexts beyond candidate package selection
      (`known_ambiguities/package-trees.md`)

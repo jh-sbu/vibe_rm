@@ -181,6 +181,17 @@ Left out so far:
 
 ## Tier 3: long or statistical (minutes each)
 
+- **Multi-location sandboxing** (`package-trees.md`): an NPC with a
+  `SandboxMultiLocation` package (Random? false, then true) over three
+  markers 1,500 units apart in the test cell, times 20, 40 and 0 seconds.
+  Poll `GetDistance` to each marker every second for five minutes, with
+  `Utility.GetCurrentRealTime` and `GetCurrentGameTime`: which marker it
+  is at, when it arrives and when it sets off. Run once at TimeScale 20 and
+  once at 200: real or game seconds, whether the clock starts on arrival or
+  when the package starts, the start stop, the zero-time stop skipped, and
+  (random) whether the same marker comes twice running. Needs the `PACK`
+  writer of the package location test.
+
 - Detection (`detection.md`): view cone, searching after losing a target,
   the 10 s lost timer, observer skill at range, the exterior multiplier,
   sound level to hearing distance (`CreateDetectionEvent`).

@@ -106,6 +106,14 @@ impl Goal {
     }
 }
 
+/// Where an actor is in its package's `Package::stops`: the stop, and when it
+/// got there (real time; `None`: still on its way).
+#[derive(Debug, Clone, Copy, Default)]
+struct StopProgress {
+    index: usize,
+    arrived: Option<f64>,
+}
+
 /// A point on a patrol route.
 #[derive(Debug, Clone, Copy)]
 pub struct PatrolPoint {
@@ -337,6 +345,8 @@ pub struct ActorRuntime {
     pub look_at: Option<Vec3>,
     /// The goal was set by hand (console `travel`): packages leave it alone.
     pinned: bool,
+    /// Which of a multi-location sandbox package's stops it is at.
+    stop: StopProgress,
     /// Running whatever the package's gait (an escort fallen behind).
     hurry: bool,
     /// Whom to face while standing (an escort waiting, a follower in range), and
@@ -519,6 +529,7 @@ impl ActorRuntime {
             search: None,
             look_at: None,
             pinned: false,
+            stop: StopProgress::default(),
             hurry: false,
             face: None,
             out_of_furniture: false,
@@ -2810,9 +2821,69 @@ impl Engine {
         out
     }
 
+    /// Multi-location sandboxers: once one has been at its stop for the stop's
+    /// time, on to the next (in order, or another picked at random), its
+    /// package's goal worked out again at once.
+    fn advance_sandbox_stops(&mut self) {
+        let now = self.scripts.real_time;
+        let mut seed = self.rand() | 1;
+        for rt in self.cells.values_mut() {
+            for a in &mut rt.actors {
+                if a.pinned || a.dead || a.combat.is_some() {
+                    continue;
+                }
+                let Some(p) = a.current.and_then(|i| a.packages.get(i)) else {
+                    continue;
+                };
+                let (Some(stop), Some(goal)) = (p.stops.get(a.stop.index), a.goal) else {
+                    continue;
+                };
+                if goal.behaviour != Behaviour::Sandbox {
+                    continue;
+                }
+                let Some(since) = a.stop.arrived else {
+                    // Arrived: within the area it sandboxes in.
+                    let r = goal.radius.clamp(SANDBOX_MIN, SANDBOX_MAX);
+                    if a.pos.truncate().distance(goal.centre.truncate()) <= r {
+                        a.stop.arrived = Some(now);
+                    }
+                    continue;
+                };
+                if now - since < stop.seconds as f64 {
+                    continue;
+                }
+                let n = p.stops.len();
+                a.stop.index = if p.random_stops && n > 1 {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    (a.stop.index + 1 + seed as usize % (n - 1)) % n
+                } else {
+                    (a.stop.index + 1) % n
+                };
+                a.stop.arrived = None;
+                a.next_eval = 0.0;
+                log::debug!(
+                    "{} sandboxes on at stop {} of {}",
+                    a.ref_id,
+                    a.stop.index,
+                    p.editor_id
+                );
+                a.interrupt(&mut self.furniture);
+            }
+        }
+    }
+
     /// Choose each actor's package and goal.
     fn evaluate_packages(&mut self, dt: f32) {
         self.refresh_alias_packages();
+        let mut seed = self.rand() | 1;
+        let mut rand = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
         let mut decisions = Vec::new();
         let mut creature_ways = Vec::new();
         for (key, rt) in &self.cells {
@@ -2829,9 +2900,21 @@ impl Engine {
                     p.schedule.matches(self.hour, self.day)
                         && crate::condition::evaluate(self, &p.conditions, ctx)
                 });
+                // A multi-location sandbox starts at its first stop, or a random one.
+                let stop = match pick.map(|pi| &a.packages[pi]) {
+                    Some(_) if pick == a.current => a.stop,
+                    Some(p) if p.random_stops && !p.stops.is_empty() => StopProgress {
+                        index: rand() as usize % p.stops.len(),
+                        arrived: None,
+                    },
+                    _ => StopProgress::default(),
+                };
                 let goal = pick.map(|pi| {
                     let p = &a.packages[pi];
-                    let (centre, radius) = self.package_target(a, p);
+                    let (centre, radius) = match p.stops.get(stop.index) {
+                        Some(s) => self.location_target(a, s.location, p.quest),
+                        None => self.package_target(a, p),
+                    };
                     let target = self.package_target_ref(a, p, p.target);
                     // A force greeter waits (standing, sandboxing or seated) until it
                     // sets off to the player.
@@ -2907,7 +2990,7 @@ impl Engine {
                         sneak: p.sneak,
                     }
                 });
-                decisions.push((*key, i, pick, goal));
+                decisions.push((*key, i, pick, goal, stop));
             }
         }
         for rt in self.cells.values_mut() {
@@ -2920,7 +3003,7 @@ impl Engine {
                 f.ways.push(way);
             }
         }
-        for (key, i, pick, goal) in decisions {
+        for (key, i, pick, goal, stop) in decisions {
             let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else {
                 continue;
             };
@@ -2949,6 +3032,7 @@ impl Engine {
                 let first = a.current.is_none();
                 a.current = pick;
                 a.goal = goal;
+                a.stop = stop;
                 if !first {
                     a.interrupt(&mut self.furniture);
                 }
@@ -2967,6 +3051,7 @@ impl Engine {
     /// Run AI and animation for every loaded actor.
     pub(crate) fn update_actors(&mut self, dt: f32) {
         self.update_force_greets(dt);
+        self.advance_sandbox_stops();
         self.evaluate_packages(dt);
         self.update_practice_weapons();
         // Choose before the AI requests landings, so a newly needed heal does

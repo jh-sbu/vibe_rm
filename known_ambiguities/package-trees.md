@@ -124,6 +124,55 @@ Limits and unresolved behavior:
 An autotest for the start position, the distance and the radius's edge is
 planned in `plans/autotest-survey.md` (tier 2).
 
+## Multi-location sandboxing
+
+`SandboxMultiLocation` (67 base-game packages) and `SandboxWorkingMultiLocation`
+(14) sandbox at up to six locations in turn. Their tree: a root `Sequence` of
+Travel and UnlockDoors to Location 1 (only when "Unlock On Arrival?"), a first
+pass (a `Sequence` when "Random?" is false, else a `Random`) of Sandbox + Wait
+per location, then a branch flagged "Repeat when Complete" (`PRCB` flags bit 0,
+per [xEdit's Skyrim definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas))
+of one `Sequence` per location: Travel, UnlockDoors when asked, then
+`Simultaneous` Sandbox and Wait for "Location N Time (seconds)". Each
+location's branch is conditioned on its time being above zero.
+
+The engine reads this from the tree rather than the template's name
+(`package::sandbox_stops`): the first repeating `Sequence` / `Random` whose
+conditions the package's own data passes (`condition::evaluate_package_data`:
+only `GetNumericPackageData`, decided when parsed), and each of its passing
+children that sandboxes at a location and waits. Sandbox packages with two
+or more such stops get `Package::stops`. All 81 multi-location packages with
+two or more locations do (`HodSleepingGiant19x3` has one); every vanilla one
+is random. The actor sandboxes about its stop; once within the sandbox area
+it starts the stop's clock, and when that has run it gives up what it is
+doing and heads for the next.
+
+Choices not settled by public sources:
+
+- The wait is in real seconds. The inputs are named "(seconds)"; DoNothing's
+  Wait input is named "ActualSeconds". Real against game seconds (the
+  authored 30 to 300 would be 1.5 to 15 real seconds at TimeScale 20) isn't
+  established.
+- The clock starts on arrival, as the per-location `Sequence` runs Travel
+  before its Sandbox + Wait. A `Simultaneous` branch is taken to end when its
+  Wait does (Sandbox never completes); that is inferred, not documented.
+- The first pass is folded into the rotation: a sequential package starts at
+  its first stop, a random one at a random stop (the tree's random first pass
+  has no Travel; the actor walks there anyway). Each random pick is another
+  stop than the current one; whether `Random` can pick the same child twice
+  running is unknown.
+- Progress isn't kept: a new package, a cell load or a wait / sleep (the
+  actor put back at Location 1 by `jump_to_schedules`) starts over. Unloaded
+  actors' whereabouts use Location 1 only.
+- "In cell" stops in another cell (Kynesgrove's campfire and inn) aren't
+  travelled to: such a stop sandboxes about the actor's editor place, as "in
+  cell" locations already do. Per-stop UnlockDoors isn't done.
+- The sequential branch's `Simultaneous` nodes for locations 2 to 6 check
+  Location 1's time (`GetNumericPackageData` 0x20), as authored; they are
+  followed as written. No vanilla package is sequential.
+
+An autotest is planned in `plans/autotest-survey.md` (tier 3).
+
 ## Open questions
 
 - Trees with a `Stacked` root are split into branches (first branch whose
