@@ -756,7 +756,7 @@ impl Engine {
     /// Injured fighters first choose an affordable self heal. Otherwise those
     /// whose style favours magic choose an offensive spell (none: by hand).
     pub(crate) fn update_combat_spells(&mut self) {
-        let fighters: Vec<(FormId, bool, bool, bool)> = self
+        let fighters: Vec<(FormId, bool, bool, bool, bool)> = self
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
@@ -778,10 +778,11 @@ impl Engine {
                     active,
                     caster,
                     a.combat_spell.is_some_and(|s| s.self_target),
+                    a.stats.staff_mult >= a.stats.magic_mult,
                 )
             })
             .collect();
-        for (actor, active, caster, continuing) in fighters {
+        for (actor, active, caster, continuing, staff_first) in fighters {
             let pick = if active {
                 let magicka = self.actor_value(actor, av::MAGICKA);
                 let spells = self.npc_spells(actor);
@@ -799,27 +800,35 @@ impl Engine {
                     .filter(|(_, cost)| *cost <= magicka)
                     .max_by(|a, b| a.1.total_cmp(&b.1))
                     .map(|(s, _)| s);
-                healing.or_else(|| {
-                    spells
-                        .offensive
-                        .iter()
-                        .filter(|_| caster)
-                        .map(|s| (*s, self.spell_cost(actor, s.spell)))
-                        .filter(|(_, cost)| *cost <= magicka)
-                        .max_by(|a, b| a.1.total_cmp(&b.1))
-                        .map(|(s, _)| s)
+                // A staff in hand is fought with by anyone holding it: first,
+                // if the style weighs staffs as much as magic, else when
+                // there is no spell to cast.
+                let staff = self.npc_staff_spell(actor);
+                let spell = spells
+                    .offensive
+                    .iter()
+                    .filter(|_| caster)
+                    .map(|s| (*s, self.spell_cost(actor, s.spell)))
+                    .filter(|(_, cost)| *cost <= magicka)
+                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(s, _)| s);
+                healing.or(if staff_first {
+                    staff.or(spell)
+                } else {
+                    spell.or(staff)
                 })
             } else {
                 None
             };
-            // Both hands free (no one-handed weapon in the right), the
-            // caster may dual cast what its perks let it.
-            let one_handed = self
-                .inventories
-                .get(&actor)
-                .is_some_and(|i| i.hand(&self.lo, false).one_handed());
+            // Both hands free (no one-handed weapon or staff in the right),
+            // the caster may dual cast what its perks let it.
+            let one_handed = self.inventories.get(&actor).is_some_and(|i| {
+                let right = i.hand(&self.lo, false);
+                right.one_handed() || right == crate::world::inventory::HandType::Staff
+            });
             let pick = pick.map(|s| CombatSpell {
-                dual: !one_handed
+                dual: !s.staff
+                    && !one_handed
                     && self.perk_flag(
                         crate::perks::ep::CAN_DUAL_CAST_SPELL,
                         actor,
@@ -835,13 +844,7 @@ impl Engine {
             let speeds = self.weapon_speed_mults(actor);
             let inv = self.inventories.get(&actor).cloned().unwrap_or_default();
             let vars = crate::ai::combat::hand_graph_vars(&self.lo, &inv, speeds);
-            let hand = pick.map(|_| {
-                if inv.hand(&self.lo, false).one_handed() {
-                    LEFT
-                } else {
-                    RIGHT
-                }
-            });
+            let hand = pick.map(|s| if one_handed && !s.staff { LEFT } else { RIGHT });
             if let Some(a) = self.actor_mut(actor) {
                 // A spell being channelled stops with it; one thrown plays
                 // out, unless there is none to fight with now.
@@ -910,39 +913,55 @@ impl Engine {
                         start: self.cast_start(&item),
                         charge: item.charge_time,
                         dual: false,
+                        staff: false,
                     });
                 }
                 continue;
             }
-            if !matches!(item.delivery, delivery::AIMED | delivery::TARGET_ACTOR)
-                || !self.item_hostile(&item)
-            {
-                continue;
-            }
-            let range = if item.delivery == delivery::TARGET_ACTOR {
-                if item.range > 0.0 {
-                    item.range
-                } else {
-                    TARGET_RANGE
-                }
-            } else {
-                self.item_projectile(&item)
-                    .and_then(|p| crate::ai::archery::spell_projectile(&self.lo, p))
-                    .map_or(LOCATION_RANGE, |s| s.range)
-            };
-            out.offensive.push(CombatSpell {
-                spell,
-                range: range.min(crate::ai::archery::BOW_RANGE),
-                concentration: item.cast_type == CONCENTRATION,
-                self_target: false,
-                start: self.cast_start(&item),
-                charge: item.charge_time,
-                dual: false,
-            });
+            out.offensive.extend(self.offensive_spell(&item));
         }
         let out = std::sync::Arc::new(out);
         self.casting.npc_spells.insert(actor, out.clone());
         out
+    }
+
+    /// A hostile aimed or target actor spell (or staff enchantment) to
+    /// fight with.
+    fn offensive_spell(&self, item: &MagicItem) -> Option<CombatSpell> {
+        if !matches!(item.delivery, delivery::AIMED | delivery::TARGET_ACTOR)
+            || !self.item_hostile(item)
+        {
+            return None;
+        }
+        let range = if item.delivery == delivery::TARGET_ACTOR {
+            if item.range > 0.0 {
+                item.range
+            } else {
+                TARGET_RANGE
+            }
+        } else {
+            self.item_projectile(item)
+                .and_then(|p| crate::ai::archery::spell_projectile(&self.lo, p))
+                .map_or(LOCATION_RANGE, |s| s.range)
+        };
+        Some(CombatSpell {
+            spell: item.id,
+            range: range.min(crate::ai::archery::BOW_RANGE),
+            concentration: item.cast_type == CONCENTRATION,
+            self_target: false,
+            start: self.cast_start(item),
+            charge: item.charge_time,
+            dual: false,
+            staff: item.spell_type == spell_type::STAFF_ENCHANTMENT,
+        })
+    }
+
+    /// The staff in an NPC's right hand as a spell to fight with, while it
+    /// has the charge for a cast (a second of a concentration one).
+    fn npc_staff_spell(&self, actor: FormId) -> Option<CombatSpell> {
+        let (staff, ench) = self.staff_in(actor, RIGHT)?;
+        let spell = self.offensive_spell(&*self.magic_item(ench)?)?;
+        (self.staff_cost(actor, ench) <= self.weapon_charge(actor, staff)).then_some(spell)
     }
 
     /// At least one restorative effect can currently reach this actor. The
@@ -1008,6 +1027,22 @@ impl Engine {
                     && self.actor_value(actor, av::HEALTH) >= self.av_max(actor, av::HEALTH)
                 {
                     break;
+                }
+                if spell.staff {
+                    let Some((staff, ench)) = self
+                        .staff_in(actor, RIGHT)
+                        .filter(|&(_, e)| e == spell.spell)
+                    else {
+                        break;
+                    };
+                    let cost = self.staff_cost(actor, ench) * share;
+                    if self.weapon_charge(actor, staff) < cost {
+                        break;
+                    }
+                    self.spend_weapon_charge(actor, staff, cost);
+                    let dir = (aim - eye).normalize_or_zero();
+                    self.cast_from(actor, spell.spell, share, eye, dir, false);
+                    continue;
                 }
                 let cost = self.spell_cost(actor, spell.spell) * share;
                 let magicka = self.actor_value(actor, av::MAGICKA);

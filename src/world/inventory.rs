@@ -825,6 +825,30 @@ fn style_weights(lo: &LoadOrder, style: FormId) -> (f32, f32) {
     csgd.map_or((1.0, 1.0), |d| (f(&d, 12), f(&d, 20)))
 }
 
+/// A combat style's staff score multiplier (`CSGD` 0x20; 1 without one).
+fn style_staff_weight(lo: &LoadOrder, style: FormId) -> f32 {
+    lo.get(style)
+        .and_then(|r| {
+            let d = r.get(b"CSGD")?.get(0x20..0x24)?;
+            Some(f32::from_le_bytes(d.try_into().unwrap()))
+        })
+        .unwrap_or(1.0)
+}
+
+/// The enchanted staff an NPC would take up: the most valuable it carries.
+fn best_staff(lo: &LoadOrder, inv: &Inventory) -> Option<FormId> {
+    inv.items
+        .iter()
+        .filter_map(|&(f, _)| {
+            let rec = lo.get(f).filter(|r| r.tag().0 == *b"WEAP")?;
+            let staff = HandType::of_weapon(weapon_anim_type(&rec)) == HandType::Staff;
+            (staff && rec.get(b"EITM").is_some() && weapon_model(lo, f).is_some())
+                .then(|| (item_info(lo, f).map_or(0, |i| i.value), f))
+        })
+        .max_by_key(|s| s.0)
+        .map(|s| s.1)
+}
+
 /// Combat style `DATA` flag: allow dual wielding (`csMercerFreyMelee`,
 /// `csDraugrMagicAllowDual`...).
 const STYLE_DUAL_WIELD: u32 = 0x4;
@@ -850,11 +874,22 @@ fn style_dual_wields(lo: &LoadOrder, style: FormId) -> bool {
 /// autotest4`: a dual wielding NPC given two swords and a shield held one
 /// sword and the shield). Staffs, crossbows and weapons without a model (creature attacks) are
 /// left alone; unplayable ones with a model are the NPCs' own (giants' clubs,
-/// Dremora greatswords, the Keepers' dragonbone).
+/// Dremora greatswords, the Keepers' dragonbone). An enchanted staff (the
+/// most valuable) is taken up instead, in the right hand with the left left
+/// free for spells, when the style weighs staffs (`CSGD` 0x20) at least as
+/// much as melee and ranged weapons (warlocks, dragon priests, Falmer
+/// shamans; `known_ambiguities/staffs.md`).
 pub fn equip_weapons(lo: &LoadOrder, inv: &mut Inventory, skill_npc: FormId, style: FormId) {
     let skill = lo.get(skill_npc).map_or([15.0; 4], |r| skills(&r));
     let (melee, ranged) = style_weights(lo, style);
     let archer = ranged > melee;
+    if style_staff_weight(lo, style) >= melee.max(ranged)
+        && let Some(staff) = best_staff(lo, inv)
+    {
+        log::debug!("{skill_npc} takes up its staff {staff}");
+        inv.hold(lo, staff, &[RIGHT]);
+        return;
+    }
     let mut best: Option<(bool, f32, FormId, HandType)> = None;
     let mut one_handed: Vec<(f32, FormId, i32)> = Vec::new();
     for &(f, n) in &inv.items {

@@ -27,6 +27,9 @@ pub struct CombatSpell {
     /// Its caster may dual cast it: both hands free and a perk letting it
     /// (`CanDualCastSpell`).
     pub dual: bool,
+    /// The enchantment of the staff in its right hand, paid from its charge;
+    /// the hand stays a staff's to the graph.
+    pub staff: bool,
 }
 
 #[cfg(test)]
@@ -87,6 +90,7 @@ mod tests {
             start: "SpellSelfStart",
             charge: 0.0,
             dual: false,
+            staff: false,
         }
     }
 
@@ -572,6 +576,9 @@ impl ActorRuntime {
             g.set_variable(var, value);
         }
         let spell = crate::world::inventory::HandType::Spell.for_graph();
+        if self.combat_spell.is_some_and(|s| s.staff) {
+            return;
+        }
         match self.cast_hand {
             Some(LEFT) => {
                 g.set_variable("iLeftHandType", spell);
