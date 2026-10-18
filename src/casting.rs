@@ -1191,10 +1191,17 @@ impl Engine {
             self.apply_cast(spell, caster, caster, Some(at), dual);
             return;
         }
-        let mut struck: Vec<FormId> = target.into_iter().collect();
-        let area = item.effects.iter().map(|e| e.area).max().unwrap_or(0) as f32;
-        if area > 0.0 {
-            let radius = area * UNITS_PER_FOOT;
+        // The one struck takes every effect; the others within an effect's
+        // area that effect (bit `i` of the mask for the `i`th effect).
+        let mut struck: Vec<(FormId, Option<u64>)> =
+            target.map(|t| (t, None)).into_iter().collect();
+        let radii: Vec<f32> = item
+            .effects
+            .iter()
+            .map(|e| e.area as f32 * UNITS_PER_FOOT)
+            .collect();
+        let radius = radii.iter().copied().fold(0.0, f32::max);
+        if radius > 0.0 {
             // The blast reaches what it can see from where it went off:
             // walls and bodies (the struck one's too) shelter those behind.
             let in_sight = |to: Vec3, actor: FormId| {
@@ -1210,18 +1217,22 @@ impl Engine {
                 .values()
                 .flat_map(|rt| &rt.actors)
                 .filter(|a| !a.dead && a.ref_id != caster)
-                .map(|a| (a.ref_id, a.pos + Vec3::Z * BODY_CENTRE * a.scale))
-                .filter(|&(id, mid)| mid.distance(at) <= radius && in_sight(mid, id))
-                .map(|(id, _)| id);
-            let player = (caster != PLAYER_REF
-                && self.player.position.distance(at) <= radius
-                && in_sight(self.player.position, PLAYER_REF))
-            .then_some(PLAYER_REF);
-            for a in near.chain(player) {
-                if !struck.contains(&a) {
-                    struck.push(a);
-                }
-            }
+                .map(|a| (a.ref_id, a.pos + Vec3::Z * BODY_CENTRE * a.scale));
+            let player = (caster != PLAYER_REF).then_some((PLAYER_REF, self.player.position));
+            let reached: Vec<(FormId, u64)> = near
+                .chain(player)
+                .filter(|&(id, _)| target != Some(id))
+                .filter_map(|(id, mid)| {
+                    let d = mid.distance(at);
+                    let mask = radii
+                        .iter()
+                        .enumerate()
+                        .filter(|&(i, &r)| i < 64 && r > 0.0 && d <= r)
+                        .fold(0u64, |m, (i, _)| m | 1 << i);
+                    (mask != 0 && in_sight(mid, id)).then_some((id, mask))
+                })
+                .collect();
+            struck.extend(reached.into_iter().map(|(id, mask)| (id, Some(mask))));
         }
         let hostile = self.item_hostile(&item);
         let share = if item.cast_type == CONCENTRATION {
@@ -1229,12 +1240,12 @@ impl Engine {
         } else {
             1.0
         };
-        for t in struck {
-            if self.apply_cast(spell, caster, t, None, dual)
-                && hostile
-                && caster == PLAYER_REF
-                && t != PLAYER_REF
-            {
+        for (t, effects) in struck {
+            let landed = match effects {
+                None => self.apply_cast(spell, caster, t, None, dual),
+                Some(mask) => self.apply_cast_effects(spell, caster, t, dual, mask),
+            };
+            if landed && hostile && caster == PLAYER_REF && t != PLAYER_REF {
                 self.magic_skill_use(&item, share);
             }
         }

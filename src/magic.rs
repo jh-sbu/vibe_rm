@@ -114,6 +114,9 @@ pub mod spell_type {
 /// The constant effect casting type.
 pub const CONSTANT_EFFECT: u32 = 0;
 
+/// Every effect of an item (`apply_item_as`'s mask).
+const ALL_EFFECTS: u64 = u64::MAX;
+
 /// `SPIT` flag: a dual cast lands as two casts' worth, without dual
 /// casting's bonus (`test-mod dualcast`).
 const NO_DUAL_CAST_MODS: u32 = 0x80_0000;
@@ -508,7 +511,7 @@ impl Engine {
     /// Apply an item's effects to `target` (no aiming or projectile: it lands).
     /// The same item's effects already on the target are replaced.
     pub fn apply_item(&mut self, item: FormId, caster: Option<FormId>, target: FormId) -> bool {
-        self.apply_item_as(item, caster, target, false, None, false)
+        self.apply_item_as(item, caster, target, false, None, false, ALL_EFFECTS)
     }
 
     /// Apply a spell cast by `caster` as `apply_item`, landing at `at` (a
@@ -522,14 +525,28 @@ impl Engine {
         at: Option<glam::Vec3>,
         dual: bool,
     ) -> bool {
-        self.apply_item_as(item, Some(caster), target, false, at, dual)
+        self.apply_item_as(item, Some(caster), target, false, at, dual, ALL_EFFECTS)
+    }
+
+    /// Apply some of a spell's effects (bit `i` of `effects` for its `i`th)
+    /// as `apply_cast`: those whose area reaches an actor other than the one
+    /// struck. The same effects of it already on the target are replaced.
+    pub fn apply_cast_effects(
+        &mut self,
+        item: FormId,
+        caster: FormId,
+        target: FormId,
+        dual: bool,
+        effects: u64,
+    ) -> bool {
+        self.apply_item_as(item, Some(caster), target, false, None, dual, effects)
     }
 
     /// Apply an item's effects as `apply_item`, but unnoticed: hostile effects
     /// landing aren't a blow that starts a fight (a poison slipped into
     /// someone's pockets).
     pub fn apply_item_quietly(&mut self, item: FormId, caster: FormId, target: FormId) -> bool {
-        self.apply_item_as(item, Some(caster), target, true, None, false)
+        self.apply_item_as(item, Some(caster), target, true, None, false, ALL_EFFECTS)
     }
 
     fn apply_item_as(
@@ -540,10 +557,12 @@ impl Engine {
         quiet: bool,
         at: Option<glam::Vec3>,
         dual: bool,
+        effects: u64,
     ) -> bool {
         let Some(m) = self.magic_item(item) else {
             return false;
         };
+        let applies = |index: usize| index >= 64 || effects & (1 << index) != 0;
         // Dual cast: `fMagicDualCastingEffectivenessBase` whatever the
         // effect's dual casting scale (`DATA` 0x70), on its duration if it
         // says so, else its magnitude (`test-mod dualcast`).
@@ -557,11 +576,13 @@ impl Engine {
         if self.is_dead(target) && target != PLAYER_REF {
             return false;
         }
-        self.dispel(target, |x| x.item == item);
+        self.dispel(target, |x| x.item == item && applies(x.index));
         // One cloak at a time: a new one ends the last (UESP).
-        let cloak = m.effects.iter().any(|e| {
-            self.magic_effect(e.effect)
-                .is_some_and(|g| g.archetype == archetype::CLOAK)
+        let cloak = m.effects.iter().enumerate().any(|(i, e)| {
+            applies(i)
+                && self
+                    .magic_effect(e.effect)
+                    .is_some_and(|g| g.archetype == archetype::CLOAK)
         });
         if cloak {
             self.dispel(target, |x| x.effect_archetype == archetype::CLOAK);
@@ -570,6 +591,9 @@ impl Engine {
         let mut any = false;
         let mut hostile = false;
         for (index, ei) in m.effects.iter().enumerate() {
+            if !applies(index) {
+                continue;
+            }
             let Some(mgef) = self.magic_effect(ei.effect) else {
                 continue;
             };
@@ -1016,6 +1040,7 @@ impl Engine {
                 pick(&EffectView {
                     id: x.id,
                     item: x.item,
+                    index: x.index,
                     effect_archetype: self
                         .magic_effect(x.effect)
                         .map_or(u32::MAX, |m| m.archetype),
@@ -1474,6 +1499,8 @@ impl Engine {
 pub struct EffectView {
     pub id: u64,
     pub item: FormId,
+    /// Which of the item's effects.
+    pub index: usize,
     pub effect_archetype: u32,
 }
 

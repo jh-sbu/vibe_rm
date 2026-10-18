@@ -101,11 +101,16 @@ hands' casting events.
   struck one's body between), nor any 335 to 490 off, nor the caster. In
   `autotest4`'s line of NPCs, each behind the last, the third was spared.
   The blast pushed the sheltered ones all the same.
-- **Area** spells strike every live actor whose body's middle is within the
-  radius (the player too when someone else casts it) and in sight of where
-  it went off, nothing solid and no body (the struck one's too) between;
-  never the caster. A hostile spell delivered on oneself with an area
-  (Battle Cry) lands on the others around but not on the caster.
+- **Area** is each effect's own: the actor struck takes every effect of
+  the spell, and every other live actor whose body's middle is within an
+  effect's radius (the player too when someone else casts it) and in sight
+  of where it went off, nothing solid and no body (the struck one's too)
+  between, takes that effect; never the caster. Fire Storm's three rings
+  (`Fire Storm 100` / `65` / `25`) fall off so; Fast Healing's
+  `PerkRestoreStaminaFFSelfArea` (15 feet, for those with Respite) doesn't
+  carry its heal to the others around. A hostile spell delivered on oneself
+  with an area (Battle Cry) lands on the others around but not on the
+  caster.
 - **Skill XP**: the spell's base cost (`SPIT`) times its school's effect's
   skill usage multiplier, through the skill's `AVSK`; hostile spells give
   it for each actor they land on, the rest when cast; concentration spells a
