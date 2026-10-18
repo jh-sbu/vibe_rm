@@ -4,9 +4,9 @@
 //! (whole at once when dual cast) up to `fMagicWardPowerMaxBase` times its
 //! magnitude, and builds again after a hit even while it is struck. A spell
 //! from in front of a warded actor meets the ward: a hostile one no
-//! stronger than the ward is absorbed, taking its strength from the ward;
-//! a stronger one breaks it (the ward is gone, its caster staggered) and is
-//! stopped too. Neither does anything to the warded actor. Wards from gear
+//! stronger than the ward is absorbed, taking its strength from the ward
+//! (the casting hand recoils: `wardAbsorb`); a stronger one breaks it (the
+//! ward is gone, its caster staggered: `WardBreak`) and is stopped too. Neither does anything to the warded actor. Wards from gear
 //! (Spellbreaker's while blocking: a constant `WardPower`) absorb as cast
 //! ones do but aren't worn down, and let through what is too strong for
 //! them. The ward's actor hears `OnWardHit` (caster, spell, status: 0 a
@@ -227,6 +227,9 @@ impl Engine {
                         self.damage_actor_value(target, av::MAGICKA, -strength * share);
                     }
                 }
+                if !wards.is_empty() {
+                    self.ward_graph_event(target, false);
+                }
                 log::debug!(
                     "{target}'s ward ({ward:.0}) absorbs {} ({strength:.1})",
                     item.name
@@ -248,7 +251,7 @@ impl Engine {
                     }
                     self.dispel_effect(id);
                 }
-                self.ward_broken_stagger(target);
+                self.ward_graph_event(target, true);
                 BROKEN
             }
         };
@@ -257,13 +260,23 @@ impl Engine {
         true
     }
 
-    /// A broken ward staggers its caster (the player's body has no stagger
-    /// yet).
-    fn ward_broken_stagger(&mut self, actor: FormId) {
-        if actor == PLAYER_REF || self.is_ethereal(actor) {
+    /// The ward's caster's graph is told: `wardAbsorb` (the ward loop's
+    /// recoil) or `WardBreak` (the master graph's stagger; the `WardAbsorbed`
+    /// and `WardBroken` idles' events). Graphs without `WardBreak`
+    /// (creatures) stagger as from a blow.
+    fn ward_graph_event(&mut self, actor: FormId, broken: bool) {
+        let event = if broken { "WardBreak" } else { "wardAbsorb" };
+        if actor == PLAYER_REF {
+            self.player_graph_event(event);
             return;
         }
-        if let Some(g) = self.actor_mut(actor).and_then(|a| a.graph.as_mut()) {
+        if broken && self.is_ethereal(actor) {
+            return;
+        }
+        if let Some(g) = self.actor_mut(actor).and_then(|a| a.graph.as_mut())
+            && !g.send_event(event)
+            && broken
+        {
             g.set_variable("staggerMagnitude", 0.5);
             g.send_event("staggerStart");
         }

@@ -614,7 +614,7 @@ game each piece unlocks.
   magnitude a second to `fMagicWardPowerMaxBase` times it (whole at once
   dual cast), and after hits builds again; spells, scrolls, staffs and
   shouts from in front are absorbed, wearing it down, or break it (the
-  ward gone, an NPC staggered), doing nothing to the warded either way;
+  ward gone, its caster staggered: `WardBreak`), doing nothing to the warded either way;
   gear wards (Spellbreaker) absorb without wearing; `OnWardHit` (First
   Lessons' Tolfdir); Ward Absorb's magicka. A concentration spell's
   effects without a duration (the ward's armor too) last while it is held
@@ -1158,8 +1158,7 @@ game each piece unlocks.
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
-   scores, NPCs raising wards (and their `WardAbsorbed` / `WardBroken` idles,
-   `IsWardState`), the player staggered by a broken ward, summons and buffs in combat, staffs, runes, effect visuals (spell projectiles' models run
+   scores, NPCs raising wards (and `IsWardState`, the `ActionWardHit` idles), summons and buffs in combat, staffs, runes, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
