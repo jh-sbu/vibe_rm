@@ -280,3 +280,104 @@ fn within_package_location_in_template_branches_reads_the_concrete_package() {
         assert!(branches[1].conditions.is_empty());
     }
 }
+
+fn prcb(children: u32, flags: u32) -> [u8; 8] {
+    let mut d = [0; 8];
+    d[..4].copy_from_slice(&children.to_le_bytes());
+    d[4..].copy_from_slice(&flags.to_le_bytes());
+    d
+}
+
+/// One stop of a SandboxMultiLocation-like rotation: a branch that runs when
+/// its time is above zero, sandboxing at its location while waiting its time.
+fn stop_branch(record: RecordBuilder, location: u8, time: u8) -> RecordBuilder {
+    record
+        .zstring(b"ANAM", "Sequence")
+        .field(b"CTDA", &numeric_condition(time as u32, 0.0, 0x40))
+        .field(b"PRCB", &prcb(1, 0))
+        .zstring(b"ANAM", "Simultaneous")
+        .field(b"PRCB", &prcb(2, 0))
+        .zstring(b"ANAM", "Procedure")
+        .zstring(b"PNAM", "Sandbox")
+        .field(b"PKC2", &[location])
+        .zstring(b"ANAM", "Procedure")
+        .zstring(b"PNAM", "Wait")
+        .field(b"PKC2", &[time])
+}
+
+#[test]
+fn multi_location_sandboxes_rotate_through_the_stops_their_data_enables() {
+    let fixture = Fixture::new();
+    // Root: travel, then a repeating Random (Random? true) or Sequence (false)
+    // over three stops. Op 2 (`>`) is flags 0x40.
+    let mut template = RecordBuilder::new(b"PACK", FormId(0x800))
+        .zstring(b"EDID", "SandboxMultiLocation")
+        .field(b"XNAM", &[])
+        .zstring(b"ANAM", "Sequence")
+        .field(b"PRCB", &prcb(3, 0))
+        .zstring(b"ANAM", "Procedure")
+        .zstring(b"PNAM", "Travel")
+        .field(b"PKC2", &[0]);
+    for (kind, random) in [("Random", 1.0), ("Sequence", 0.0)] {
+        template = template
+            .zstring(b"ANAM", kind)
+            .field(b"CTDA", &numeric_condition(92, random, 0))
+            .field(b"PRCB", &prcb(3, 1));
+        for (location, time) in [(0, 32), (35, 41), (37, 43)] {
+            template = stop_branch(template, location, time);
+        }
+    }
+    let mut pkcu = 1u32.to_le_bytes().to_vec();
+    pkcu.extend_from_slice(&0x800u32.to_le_bytes());
+    let packages = [(0x801, false), (0x802, true)].map(|(form, random)| {
+        let mut p = RecordBuilder::new(b"PACK", FormId(form)).field(b"PKCU", &pkcu);
+        p = input(p, 92, "Bool", &[u8::from(random)]);
+        for (location, time, reference, seconds) in [
+            (0, 32, 0x10, 120.0f32),
+            (35, 41, 0x11, 90.0),
+            (37, 43, 0x12, 0.0),
+        ] {
+            p = location_input(p, location, 0, reference, 256);
+            p = input(p, time, "Float", &seconds.to_le_bytes());
+        }
+        p
+    });
+    let lo = fixture.load(std::iter::once(template).chain(packages).collect());
+    for (package, random) in [(id(0x801), false), (id(0x802), true)] {
+        let p = parse(&lo, package).unwrap();
+        assert_eq!(p.behaviour, Behaviour::Sandbox);
+        assert_eq!(p.random_stops, random);
+        // The third stop's time is zero: its branch doesn't run.
+        let [a, b] = p.stops.as_slice() else {
+            panic!("{:?}", p.stops);
+        };
+        assert!(matches!(a.location.kind, LocationKind::NearReference(r) if r == id(0x10)));
+        assert_eq!(a.seconds, 120.0);
+        assert!(matches!(b.location.kind, LocationKind::NearReference(r) if r == id(0x11)));
+        assert_eq!(b.seconds, 90.0);
+    }
+}
+
+#[test]
+fn package_data_conditions_decide_alone_only_when_every_one_is_numeric_package_data() {
+    let fixture = Fixture::new();
+    let record = input(
+        RecordBuilder::new(b"PACK", FormId(0x800))
+            .field(b"CTDA", &numeric_condition(5, 1.0, 0))
+            .field(b"CTDA", &numeric_condition(6, 0.0, 0x40)),
+        5,
+        "Bool",
+        &[1],
+    );
+    let record = input(record, 6, "Float", &0.0f32.to_le_bytes());
+    let lo = fixture.load(vec![record]);
+    let p = parse(&lo, id(0x800)).unwrap();
+    assert_eq!(
+        condition::evaluate_package_data(&p.conditions[..1]),
+        Some(true)
+    );
+    assert_eq!(condition::evaluate_package_data(&p.conditions), Some(false));
+    let mut world = p.conditions[0].clone();
+    world.func = 0;
+    assert_eq!(condition::evaluate_package_data(&[world]), None);
+}

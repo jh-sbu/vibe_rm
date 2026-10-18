@@ -237,12 +237,36 @@ pub struct IdleQuery {
 }
 
 pub fn evaluate(e: &Engine, conds: &[Condition], ctx: Context) -> bool {
-    // Skyrim combines ORs before ANDs: (a OR b) AND (c OR d) ...
+    combine(conds, |c| eval_one(e, c, ctx))
+}
+
+/// Conditions the package alone decides (GetNumericPackageData against a
+/// number, its input worked out with `package_data`): whether they pass.
+/// `None` when any needs the world.
+pub fn evaluate_package_data(conds: &[Condition]) -> Option<bool> {
+    let numbers = conds
+        .iter()
+        .map(|c| match (c.func, c.package_data, c.use_global) {
+            (GET_NUMERIC_PACKAGE_DATA, Some(PackageData::Number(v)), false) => Some(v),
+            // An input missing or of another kind: the condition fails.
+            (GET_NUMERIC_PACKAGE_DATA, None, false) => Some(f32::NAN),
+            _ => None,
+        })
+        .collect::<Option<Vec<f32>>>()?;
+    let mut lhs = numbers.into_iter();
+    Some(combine(conds, |c| {
+        let v = lhs.next().unwrap_or(f32::NAN);
+        !v.is_nan() && compare(c.op, v, c.value)
+    }))
+}
+
+/// Skyrim combines ORs before ANDs: (a OR b) AND (c OR d) ...
+fn combine(conds: &[Condition], mut eval: impl FnMut(&Condition) -> bool) -> bool {
     let mut result = true;
     let mut group = false;
     let mut in_group = false;
     for c in conds {
-        let v = eval_one(e, c, ctx);
+        let v = eval(c);
         group = if in_group { group || v } else { v };
         in_group = true;
         if !c.or {
@@ -309,7 +333,11 @@ fn eval_one(e: &Engine, c: &Condition, ctx: Context) -> bool {
     } else {
         c.value
     };
-    match c.op {
+    compare(c.op, lhs, rhs)
+}
+
+fn compare(op: u8, lhs: f32, rhs: f32) -> bool {
+    match op {
         0 => (lhs - rhs).abs() < 1e-4,
         1 => (lhs - rhs).abs() >= 1e-4,
         2 => lhs > rhs,

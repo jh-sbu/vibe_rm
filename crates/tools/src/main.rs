@@ -1927,6 +1927,53 @@ fn main() -> Result<()> {
                     input_names.get(i).map_or("", String::as_str)
                 );
             }
+            // A package's own values (before its XNAM, if it has a tree), in UNAM order.
+            if t.is_some() {
+                let mut values: Vec<(String, String)> = Vec::new();
+                let mut indices = Vec::new();
+                for sr in rec.subrecords() {
+                    match &sr.tag.0 {
+                        b"XNAM" => break,
+                        b"ANAM" => values.push((sr.zstring(), String::new())),
+                        b"CNAM" | b"PLDT" | b"PTDA" if !values.is_empty() => {
+                            let kind = values.last().unwrap().0.clone();
+                            let v = match (&sr.tag.0, kind.as_str()) {
+                                (b"CNAM", "Bool") => {
+                                    format!("{}", sr.data.first().copied().unwrap_or(0) != 0)
+                                }
+                                (b"CNAM", "Float") if sr.data.len() >= 4 => {
+                                    format!("{}", sr.f32(0))
+                                }
+                                (b"CNAM", "Int") if sr.data.len() >= 4 => format!("{}", sr.i32(0)),
+                                (b"PLDT", _) if sr.data.len() >= 12 => format!(
+                                    "location type {} {:08X} radius {}",
+                                    sr.u32(0),
+                                    sr.u32(4),
+                                    sr.i32(8)
+                                ),
+                                (b"PTDA", _) if sr.data.len() >= 8 => {
+                                    format!("target type {} {:08X}", sr.u32(0), sr.u32(4))
+                                }
+                                _ => format!("{:02X?}", sr.data),
+                            };
+                            values.last_mut().unwrap().1 = v;
+                        }
+                        b"UNAM" if !sr.data.is_empty() => indices.push(sr.data[0]),
+                        _ => {}
+                    }
+                }
+                println!(
+                    "package {} {}",
+                    rec.form_id(),
+                    rec.editor_id().unwrap_or_default()
+                );
+                for (i, (k, v)) in indices.iter().zip(&values) {
+                    println!(
+                        "  value {i:3} {k:14} {:28} {v}",
+                        input_names.get(i).map_or("", String::as_str)
+                    );
+                }
+            }
             const OPS: [&str; 6] = ["==", "!=", ">", ">=", "<", "<="];
             let mut in_tree = false;
             for sr in tree.subrecords() {
