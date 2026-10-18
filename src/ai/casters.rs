@@ -24,6 +24,9 @@ pub struct CombatSpell {
     /// `crate::casting::cast_start_event`), and its charge time (`SPIT`).
     pub start: &'static str,
     pub charge: f32,
+    /// Its caster may dual cast it: both hands free and a perk letting it
+    /// (`CanDualCastSpell`).
+    pub dual: bool,
 }
 
 #[cfg(test)]
@@ -83,6 +86,7 @@ mod tests {
             self_target: true,
             start: "SpellSelfStart",
             charge: 0.0,
+            dual: false,
         }
     }
 
@@ -166,6 +170,7 @@ mod tests {
                     spell,
                     target: FormId(1),
                     landings: 1,
+                    dual: false,
                 },
             };
             actor.combat.as_mut().unwrap().hand_cast = Some(hand_cast(HandPhase::Released));
@@ -276,6 +281,8 @@ pub(crate) struct CombatCast {
     pub spell: CombatSpell,
     pub target: FormId,
     pub landings: u32,
+    /// Cast from both hands.
+    pub dual: bool,
 }
 
 /// Seconds between a caster's throws, and how long it channels a
@@ -290,6 +297,9 @@ pub(crate) const CHANNEL_TICK: f32 = 0.25;
 const FIRE_TIMEOUT: f32 = 1.5;
 /// Seconds before a caster whose graph won't start a cast tries again.
 const REFUSED_RETRY: f32 = 0.5;
+/// How often a caster that may dual cast its spell does (a choice:
+/// `known_ambiguities/casting.md`).
+const DUAL_CHANCE: f32 = 0.5;
 
 /// Where a hand casting through the graph is.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -374,6 +384,7 @@ impl ActorRuntime {
                 self.graph_event(&ev, &mut w.clips);
             }
             let c = self.combat.as_mut()?;
+            let dual = c.hand_cast.is_some_and(|h| h.cast.dual);
             // A landing each tick while it lasts.
             let before = (c.channel / CHANNEL_TICK).ceil();
             c.channel -= dt;
@@ -383,6 +394,7 @@ impl ActorRuntime {
                 spell,
                 target: recipient,
                 landings,
+                dual,
             });
             if c.channel <= 0.0 {
                 c.channel = 0.0;
@@ -394,19 +406,23 @@ impl ActorRuntime {
         if c.cooldown > 0.0 || off > 0.2 {
             return None;
         }
+        let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
         let cast = CombatCast {
             spell,
             target: recipient,
             landings: 1,
+            dual: spell.dual && humanoid && uniform(w.rand, 0.0, 1.0) < DUAL_CHANCE,
         };
-        let hand = self.cast_hand.unwrap_or(RIGHT);
-        let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
-        if humanoid && !self.start_hand_cast(hand, cast, w) {
-            // Not drawn yet, or busy (a stagger): again shortly.
-            if let Some(c) = self.combat.as_mut() {
-                c.cooldown = REFUSED_RETRY;
-            }
-            return None;
+        let mut hand = self.cast_hand.unwrap_or(RIGHT);
+        if humanoid {
+            let Some(started) = self.start_hand_cast(hand, cast, w) else {
+                // Not drawn yet, or busy (a stagger): again shortly.
+                if let Some(c) = self.combat.as_mut() {
+                    c.cooldown = REFUSED_RETRY;
+                }
+                return None;
+            };
+            hand = started;
         }
         let c = self.combat.as_mut()?;
         if spell.concentration {
@@ -426,24 +442,47 @@ impl ActorRuntime {
     }
 
     /// Into the graph's casting state (ignored there already), then the
-    /// hand's kind of cast. False if the graph won't.
-    fn start_hand_cast(&mut self, hand: usize, cast: CombatCast, w: &mut World) -> bool {
+    /// hand's kind of cast; a dual cast on the left hand's state machine
+    /// (`DualMagic_...Start`), or with `hand` alone if the graph won't. The
+    /// hand casting, or `None` if the graph won't.
+    fn start_hand_cast(
+        &mut self,
+        hand: usize,
+        mut cast: CombatCast,
+        w: &mut World,
+    ) -> Option<usize> {
         if !self.drawn || !self.weapon_out {
-            return false;
+            return None;
         }
-        let begin = if hand == LEFT {
-            "BeginCastLeft"
-        } else {
-            "BeginCastRight"
-        };
-        let began = self.graph_event(begin, &mut w.clips);
-        let start = format!("{}_{}", hand_prefix(hand), cast.spell.start);
-        if !self.graph_event(&start, &mut w.clips) {
-            log::debug!("{}: the graph won't take {start}", self.ref_id);
-            if began {
-                self.graph_event("CastStop", &mut w.clips);
+        let mut hand = hand;
+        if cast.dual {
+            let began = self.graph_event("BeginCastLeft", &mut w.clips);
+            let start = format!("DualMagic_{}", cast.spell.start);
+            if self.graph_event(&start, &mut w.clips) {
+                hand = LEFT;
+            } else {
+                log::debug!("{}: the graph won't take {start}", self.ref_id);
+                if began {
+                    self.graph_event("CastStop", &mut w.clips);
+                }
+                cast.dual = false;
             }
-            return false;
+        }
+        if !cast.dual {
+            let begin = if hand == LEFT {
+                "BeginCastLeft"
+            } else {
+                "BeginCastRight"
+            };
+            let began = self.graph_event(begin, &mut w.clips);
+            let start = format!("{}_{}", hand_prefix(hand), cast.spell.start);
+            if !self.graph_event(&start, &mut w.clips) {
+                log::debug!("{}: the graph won't take {start}", self.ref_id);
+                if began {
+                    self.graph_event("CastStop", &mut w.clips);
+                }
+                return None;
+            }
         }
         self.spell_fire = [false; 2];
         self.hand_equipped = [false; 2];
@@ -455,7 +494,7 @@ impl ActorRuntime {
                 cast,
             });
         }
-        true
+        Some(hand)
     }
 
     /// A thrown spell through the graph: charged for its charge time, let

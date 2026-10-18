@@ -362,6 +362,8 @@ pub struct ActiveEffect {
     pub at: Option<glam::Vec3>,
     /// Summons: the actor it brought.
     pub summoned: Option<FormId>,
+    /// Its spell was dual cast (`EffectWasDualCast`).
+    pub dual: bool,
 }
 
 /// Magic on actors: the active effects, spells added and removed, and what was
@@ -574,6 +576,7 @@ impl Engine {
             let ctx = Context {
                 subject: Some(target),
                 target: caster,
+                dual_cast: dual,
                 ..Default::default()
             };
             // Fire-and-forget effects whose conditions fail don't land; constant
@@ -630,6 +633,7 @@ impl Engine {
                 quiet,
                 at,
                 summoned: None,
+                dual,
             });
             log::debug!(
                 "{target}: {} from {} ({item}): magnitude {magnitude:.1}, {duration}s",
@@ -1241,6 +1245,7 @@ impl Engine {
         let ctx = Context {
             subject: Some(x.target),
             target: x.caster,
+            dual_cast: x.dual,
             ..Default::default()
         };
         let item_conds = self

@@ -310,9 +310,14 @@ impl Engine {
             || self.casting.firing[LEFT].is_some_and(|f| f.dual && !f.fired)
     }
 
-    /// Whether an actor is dual casting (`IsDualCasting`; only the player).
+    /// Whether an actor is dual casting (`IsDualCasting`).
     pub fn is_dual_casting(&self, actor: FormId) -> bool {
-        actor == PLAYER_REF && self.player_dual_casting()
+        if actor == PLAYER_REF {
+            return self.player_dual_casting();
+        }
+        self.actor_ref(actor)
+            .and_then(|a| a.combat.as_ref()?.hand_cast)
+            .is_some_and(|h| h.cast.dual)
     }
 
     /// `hand` starts `spell` while the other hand started the same spell
@@ -732,6 +737,21 @@ impl Engine {
             } else {
                 None
             };
+            // Both hands free (no one-handed weapon in the right), the
+            // caster may dual cast what its perks let it.
+            let one_handed = self
+                .inventories
+                .get(&actor)
+                .is_some_and(|i| i.hand(&self.lo, false).one_handed());
+            let pick = pick.map(|s| CombatSpell {
+                dual: !one_handed
+                    && self.perk_flag(
+                        crate::perks::ep::CAN_DUAL_CAST_SPELL,
+                        actor,
+                        &[Some(s.spell)],
+                    ),
+                ..s
+            });
             if self.actor_ref(actor).is_none_or(|a| a.combat_spell == pick) {
                 continue;
             }
@@ -814,6 +834,7 @@ impl Engine {
                         self_target: true,
                         start: self.cast_start(&item),
                         charge: item.charge_time,
+                        dual: false,
                     });
                 }
                 continue;
@@ -841,6 +862,7 @@ impl Engine {
                 self_target: false,
                 start: self.cast_start(&item),
                 charge: item.charge_time,
+                dual: false,
             });
         }
         let out = std::sync::Arc::new(out);
@@ -871,7 +893,7 @@ impl Engine {
     /// Casters' casts this frame go at their targets' bodies, paid in
     /// magicka (a landing's share of a second for concentration spells).
     pub(crate) fn npc_casts(&mut self) {
-        let mut casts: Vec<(FormId, CombatSpell, u32, FormId, Vec3)> = Vec::new();
+        let mut casts: Vec<(FormId, CombatSpell, u32, FormId, Vec3, bool)> = Vec::new();
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut() {
                 let Some(cast) = a.casts.take() else { continue };
@@ -884,10 +906,12 @@ impl Engine {
                     cast.landings,
                     cast.target,
                     a.pos + Vec3::Z * 110.0 * a.scale,
+                    cast.dual,
                 ));
             }
         }
-        for (actor, spell, n, target, eye) in casts {
+        let dual_mult = gmst_f32(&self.lo, "fMagicDualCastingCostMult", 2.8);
+        for (actor, spell, n, target, eye, dual) in casts {
             let aim = if spell.self_target {
                 Some(eye)
             } else if target == PLAYER_REF {
@@ -911,12 +935,16 @@ impl Engine {
                     break;
                 }
                 let cost = self.spell_cost(actor, spell.spell) * share;
-                if self.actor_value(actor, av::MAGICKA) < cost {
+                let magicka = self.actor_value(actor, av::MAGICKA);
+                // A dual cast it can't pay for goes as a single one.
+                let dual = dual && magicka >= cost * dual_mult;
+                let cost = if dual { cost * dual_mult } else { cost };
+                if magicka < cost {
                     break;
                 }
                 self.damage_actor_value(actor, av::MAGICKA, cost);
                 let dir = (aim - eye).normalize_or_zero();
-                self.cast_from(actor, spell.spell, share, eye, dir, false);
+                self.cast_from(actor, spell.spell, share, eye, dir, dual);
             }
         }
     }

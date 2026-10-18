@@ -176,14 +176,13 @@ hands' casting events.
   suggest) isn't known; it isn't read. The power goes before the caster's
   and target's perks, and dual cast calm, fear and frenzy reach higher
   levels. Skill XP is a single cast's; whether a dual cast teaches more
-  isn't published. `EffectWasDualCast` isn't evaluated.
+  isn't published.
 - **Starting a dual cast** (the player): the second hand pressed within 0.2 s
   of the first, holding the same spell, with the perk and the magicka for
   the dual cost; otherwise each hand casts its own. The first hand's cast
   becomes the dual cast as it stands (what a concentration spell landed
   in that moment stays). Letting go of either button lets it go; a hand
-  losing the spell ends it. The window isn't published. NPCs don't dual
-  cast (`CombatBehaviorPrepareDualCast` in the game).
+  losing the spell ends it. The window isn't published.
 - **Casters' hands** (`ActorRuntime::set_hand_vars`): while an NPC fights
   with a spell its graph's hand types say a spell is in hand (it holds none
   in its inventory): the left hand beside a one-handed weapon in the right
@@ -197,3 +196,20 @@ hands' casting events.
   (or 1.5 s); a concentration spell flowing the update after it starts and
   stopped by its hand's `Equipped` and `CastStop`. A thrown spell keeps the
   recipient it was started at.
+- **Casters dual casting**: a caster with both hands free (no one-handed
+  weapon) whose perks let it dual cast its spell (`CanDualCastSpell`; in
+  vanilla only Destruction Dual Casting, kept by some named mages and the
+  Forsworn magic templates: most warlock bosses list it but their template's
+  spell list replaces it) dual casts half its casts (each start, and each
+  retry after the graph refused one, rolled again), as the player does on
+  the left hand's state machine; the graph refusing `DualMagic_...Start`,
+  it casts with one hand. Paid 2.8 times, or cast singly when it can't pay
+  that. The game's choice (`CombatBehaviorPrepareDualCast`) isn't
+  published; the half is a guess. Its charge time isn't lengthened
+  (`fMagicDualCastingTimeMult` is 1).
+- **`EffectWasDualCast`** holds for an effect of a dual cast spell, when it
+  lands and when its conditions are looked at again. Impact's stagger
+  (`PerkImpactStaggerPushFFAimed` on Destruction's aimed spells) lands only
+  so, and with the caster's `Impact` perk (both conditions run on the
+  caster); dual cast, its magnitude (0.25 on Firebolt) gets the 2.2 too, as
+  any effect without the duration flag.
