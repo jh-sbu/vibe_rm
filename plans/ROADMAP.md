@@ -173,6 +173,10 @@ game each piece unlocks.
   start/end cropping at activation. Forward/reverse playback, user-controlled
   samples and synchronized timing share the resolved range; lifecycle and
   invalid-input limits: `known_ambiguities/clip-crop-properties.md`
+- Clip generators resolve scalar character-property and graph-variable `mode`
+  inputs at activation across single-play, looping, user-controlled and
+  ping-pong paths, including synchronized loop detection. Invalid-input and
+  lifecycle limits: `known_ambiguities/clip-mode-properties.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;

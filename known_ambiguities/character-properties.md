@@ -48,8 +48,8 @@ bone switches.
   property-name table and bindable-object layout as modifiers. The runtime
   resolves scalar properties for `playbackSpeed`, `startTime`,
   `userControlledTimeFraction`, `selectedGeneratorIndex`, `blendParameter`,
-  `minCyclicBlendParameter`, `maxCyclicBlendParameter`, and `startStateId` at their
-  existing input-read sites. Clip start and state-machine
+  `minCyclicBlendParameter`, `maxCyclicBlendParameter`, `mode`, and `startStateId` at their
+  existing input-read sites. Clip start/mode and state-machine
   start are read on activation; speed, user-controlled time, selector index and
   blend parameter follow their existing update/sample paths. Synchronized clips'
   cycle lengths also use property-bound speed. Variable bindings take precedence.
@@ -61,7 +61,8 @@ bone switches.
   ambiguity notes. The public guide establishes the shared binding concept;
   the existing Skyrim asset observations above establish the serialized layout.
   No additional Skyrim generator-specific use or original-engine lifecycle
-  behavior was established in this extension.
+  behavior was established in this extension. Clip mode's supported enums and
+  activation-only policy are detailed in [`clip-mode-properties.md`](clip-mode-properties.md).
 - Shared runtime caching includes the character-file identity. DefaultMale and
   DefaultFemale can use the same root graph while retaining their own property
   values and character driver settings.
