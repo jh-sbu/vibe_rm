@@ -161,6 +161,10 @@ game each piece unlocks.
   blender children, including cyclic weights and synchronized clip timing.
   Existing variable precedence and authored fallbacks remain; wrapper lifecycle
   limits: `known_ambiguities/character-properties.md`
+- Clip generators resolve scalar character properties and graph variables for
+  start/end cropping at activation. Forward/reverse playback, user-controlled
+  samples and synchronized timing share the resolved range; lifecycle and
+  invalid-input limits: `known_ambiguities/clip-crop-properties.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;
