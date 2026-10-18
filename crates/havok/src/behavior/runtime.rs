@@ -1641,18 +1641,40 @@ impl Ctx<'_> {
             // Children sit at their weights along the blend parameter; blend the two
             // around it (wrapping for cyclic blends such as direction).
             let mut p = self.bound(gi, g, "blendParameter").unwrap_or(*parameter);
-            if flags & BLEND_CYCLIC != 0 && max_cyclic > min_cyclic {
-                p = min_cyclic + (p - min_cyclic).rem_euclid(max_cyclic - min_cyclic);
+            let min_cyclic = self
+                .bound(gi, g, "minCyclicBlendParameter")
+                .filter(|v| v.is_finite())
+                .unwrap_or(*min_cyclic);
+            let max_cyclic = self
+                .bound(gi, g, "maxCyclicBlendParameter")
+                .filter(|v| v.is_finite())
+                .unwrap_or(*max_cyclic);
+            let period = max_cyclic - min_cyclic;
+            // Invalid ranges retain the existing non-cyclic endpoint policy.
+            // Reject overflow as well as non-finite authored endpoints before
+            // modulo can contaminate pose weights and synchronized clip times.
+            let cyclic = flags & BLEND_CYCLIC != 0
+                && min_cyclic.is_finite()
+                && max_cyclic.is_finite()
+                && period.is_finite()
+                && period > 0.0;
+            let wide_period = max_cyclic as f64 - min_cyclic as f64;
+            if cyclic {
+                // Even finite endpoints and a finite period can overflow a
+                // shifted f32 parameter. Widen the arithmetic, then return to
+                // the finite authored interval before computing child weights.
+                p = (min_cyclic as f64 + (p as f64 - min_cyclic as f64).rem_euclid(wide_period))
+                    as f32;
             }
             let mut order: Vec<usize> = (0..raw.len()).collect();
             order.sort_by(|&a, &b| raw[a].total_cmp(&raw[b]));
             let first = order[0];
             let last = *order.last().unwrap();
             if p <= raw[first] {
-                if flags & BLEND_CYCLIC != 0 && max_cyclic > min_cyclic && order.len() > 1 {
-                    let span = raw[first] + (max_cyclic - min_cyclic) - raw[last];
+                if cyclic && order.len() > 1 {
+                    let span = raw[first] as f64 + wide_period - raw[last] as f64;
                     let f = if span > 0.0 {
-                        (p + (max_cyclic - min_cyclic) - raw[last]) / span
+                        ((p as f64 + wide_period - raw[last] as f64) / span) as f32
                     } else {
                         1.0
                     };
@@ -1662,10 +1684,10 @@ impl Ctx<'_> {
                     w[first] = 1.0;
                 }
             } else if p >= raw[last] {
-                if flags & BLEND_CYCLIC != 0 && max_cyclic > min_cyclic && order.len() > 1 {
-                    let span = raw[first] + (max_cyclic - min_cyclic) - raw[last];
+                if cyclic && order.len() > 1 {
+                    let span = raw[first] as f64 + wide_period - raw[last] as f64;
                     let f = if span > 0.0 {
-                        (p - raw[last]) / span
+                        ((p as f64 - raw[last] as f64) / span) as f32
                     } else {
                         0.0
                     };
@@ -2966,6 +2988,216 @@ mod tests {
         assert!(i.set_variable("Direction", 0.5));
         i.update(0.0, &mut durations);
         assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+    }
+
+    fn cyclic_bounds_graph(wrapped: bool) -> BehaviorGraph {
+        let mut g = cyclic_property_graph();
+        if !wrapped {
+            g.root = Some(1);
+            g.property_bindings[1] = vec![property("blendParameter", "Direction")];
+        }
+        g.property_bindings[1].extend([
+            property("minCyclicBlendParameter", "MINIMUM"),
+            property("maxCyclicBlendParameter", "MAXIMUM"),
+        ]);
+        g.forward_cyclic_blend_inputs();
+        g
+    }
+
+    #[test]
+    fn cyclic_bound_properties_drive_direct_and_wrapped_weights_and_sync() {
+        for wrapped in [false, true] {
+            for (minimum, maximum, expected) in [(0.0, 2.0, [0.5, 0.5]), (-0.5, 1.0, [0.75, 0.25])]
+            {
+                let mut i = property_instance(
+                    cyclic_bounds_graph(wrapped),
+                    &[
+                        ("direction", 1.25),
+                        ("minimum", minimum),
+                        ("maximum", maximum),
+                    ],
+                );
+                assert_eq!(
+                    playing(&i),
+                    [("Enter".into(), expected[0]), ("Loop".into(), expected[1])]
+                );
+                assert!(!i.set_variable("Minimum", 99.0));
+                i.update(0.375, &mut durations);
+                let samples = i.samples();
+                let cycle = expected[0] + 2.0 * expected[1];
+                assert!((samples[0].time - 0.375 / cycle).abs() < 1e-6);
+                assert!((samples[1].time - 0.75 / cycle).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn cyclic_bound_variables_take_precedence_and_update_live() {
+        for wrapped in [false, true] {
+            let mut g = cyclic_bounds_graph(wrapped);
+            let minimum = g.add_variable("Minimum", VarType::Real, 0.0);
+            let maximum = g.add_variable("Maximum", VarType::Real, 2.0);
+            g.bindings[1] = vec![
+                Binding {
+                    member: "minCyclicBlendParameter".into(),
+                    variable: minimum,
+                },
+                Binding {
+                    member: "maxCyclicBlendParameter".into(),
+                    variable: maximum,
+                },
+            ];
+            let mut i = property_instance(
+                g,
+                &[("direction", 1.25), ("minimum", -0.5), ("maximum", 1.0)],
+            );
+            assert_eq!(playing(&i), [("Enter".into(), 0.5), ("Loop".into(), 0.5)]);
+            assert!(i.set_variable("Minimum", -0.5));
+            assert!(i.set_variable("Maximum", 1.0));
+            i.update(0.0, &mut durations);
+            assert_eq!(playing(&i), [("Enter".into(), 0.75), ("Loop".into(), 0.25)]);
+            i.update(0.3125, &mut durations);
+            let samples = i.samples();
+            assert_eq!(samples[0].time, 0.25);
+            assert_eq!(samples[1].time, 0.5);
+            // An invalid variable still wins over its property; its authored
+            // endpoint is used instead of falling through to that property.
+            assert!(i.set_variable("Minimum", f32::NAN));
+            assert!(i.set_variable("Maximum", f32::INFINITY));
+            i.update(0.0, &mut durations);
+            assert_eq!(playing(&i), [("Enter".into(), 0.5), ("Loop".into(), 0.5)]);
+        }
+    }
+
+    #[test]
+    fn unavailable_cyclic_bound_properties_keep_authored_endpoints() {
+        for wrapped in [false, true] {
+            for character in [
+                None,
+                Some(Character::default()),
+                Some(Character {
+                    bone_weights: [
+                        ("minimum".into(), vec![-1.0]),
+                        ("maximum".into(), vec![2.0]),
+                    ]
+                    .into(),
+                    ..Default::default()
+                }),
+            ] {
+                let mut g = cyclic_bounds_graph(wrapped);
+                // Keep the parameter independent of the unavailable character.
+                g.property_bindings[1].retain(|b| b.member != "blendParameter");
+                let Generator::Blender { parameter, .. } = &mut g.generators[1] else {
+                    unreachable!();
+                };
+                *parameter = 1.25;
+                let shared = Shared::new(Arc::new(Project {
+                    graphs: vec![("g".into(), g)],
+                    character,
+                }));
+                let mut i = Instance::new(shared, 1);
+                i.update(0.375, &mut durations);
+                assert_eq!(playing(&i), [("Enter".into(), 0.5), ("Loop".into(), 0.5)]);
+                assert_eq!(i.samples()[0].time, 0.25);
+                assert_eq!(i.samples()[1].time, 0.5);
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_cyclic_bounds_use_finite_fallbacks_or_disable_wrapping() {
+        for wrapped in [false, true] {
+            for (minimum, maximum, expected) in [
+                (
+                    f32::NAN,
+                    f32::INFINITY,
+                    vec![("Enter".into(), 0.5), ("Loop".into(), 0.5)],
+                ),
+                (0.0, 0.0, vec![("Loop".into(), 1.0)]),
+                (1.0, 0.0, vec![("Loop".into(), 1.0)]),
+                (-f32::MAX, f32::MAX, vec![("Loop".into(), 1.0)]),
+            ] {
+                let mut i = property_instance(
+                    cyclic_bounds_graph(wrapped),
+                    &[
+                        ("direction", 1.25),
+                        ("minimum", minimum),
+                        ("maximum", maximum),
+                    ],
+                );
+                assert_eq!(playing(&i), expected);
+                i.update(0.25, &mut durations);
+                assert!(
+                    i.samples()
+                        .iter()
+                        .all(|s| s.weight.is_finite() && s.time.is_finite())
+                );
+            }
+            let mut g = cyclic_bounds_graph(wrapped);
+            let Generator::Blender { max_cyclic, .. } = &mut g.generators[1] else {
+                unreachable!();
+            };
+            *max_cyclic = f32::INFINITY;
+            let mut i = property_instance(g, &[("direction", 1.25)]);
+            assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+            i.update(0.25, &mut durations);
+            assert_eq!(i.samples()[0].time, 0.25);
+        }
+    }
+
+    #[test]
+    fn finite_cyclic_bounds_wrap_extreme_parameters_without_overflow() {
+        for wrapped in [false, true] {
+            // The first case overflows p - minimum in f32. The second
+            // overflows p + period and first-child-position + period.
+            for (minimum, maximum, direction, positions) in [
+                (
+                    -f32::MAX,
+                    -f32::MAX / 2.0,
+                    f32::MAX,
+                    [-f32::MAX, -f32::MAX * 0.75],
+                ),
+                (
+                    f32::MAX / 2.0,
+                    f32::MAX,
+                    f32::MAX * 0.875,
+                    [f32::MAX / 2.0, f32::MAX * 0.75],
+                ),
+            ] {
+                let mut g = cyclic_bounds_graph(wrapped);
+                let Generator::Blender { children, .. } = &mut g.generators[1] else {
+                    unreachable!();
+                };
+                for (child, position) in children.iter_mut().zip(positions) {
+                    child.weight = position;
+                }
+                let mut i = property_instance(
+                    g,
+                    &[
+                        ("direction", direction),
+                        ("minimum", minimum),
+                        ("maximum", maximum),
+                    ],
+                );
+                let samples = i.samples();
+                assert!(!samples.is_empty());
+                assert!(
+                    samples
+                        .iter()
+                        .all(|s| s.weight.is_finite() && s.weight >= 0.0)
+                );
+                assert!((samples.iter().map(|s| s.weight).sum::<f32>() - 1.0).abs() < 1e-6);
+                let cycle: f32 = samples
+                    .iter()
+                    .map(|s| s.weight * durations(&s.animation).unwrap())
+                    .sum();
+                i.update(0.25, &mut durations);
+                for sample in i.samples() {
+                    let expected = 0.25 / cycle * durations(&sample.animation).unwrap();
+                    assert!((sample.time - expected).abs() < 1e-6);
+                }
+            }
+        }
     }
 
     #[test]

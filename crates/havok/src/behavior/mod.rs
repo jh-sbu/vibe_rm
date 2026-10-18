@@ -1692,6 +1692,51 @@ mod character_property_tests {
     }
 
     #[test]
+    fn blenders_retain_cyclic_bound_property_and_variable_bindings() {
+        for member in ["minCyclicBlendParameter", "maxCyclicBlendParameter"] {
+            let mut p = fixture();
+            for at in [0x480, 0x4E0] {
+                p.data[at..at + 0x20].fill(0);
+                p.data[at..at + member.len()].copy_from_slice(member.as_bytes());
+            }
+            p.data[0x2D0..0x2D4].copy_from_slice(&(-1.0f32).to_le_bytes());
+            p.data[0x2D4..0x2D8].copy_from_slice(&2.0f32.to_le_bytes());
+            let mut r = Reader {
+                p: &p,
+                classes: [(0x280, "hkbBlenderGenerator")].into(),
+                ids: Default::default(),
+                generators: vec![],
+                bindings: vec![],
+                property_bindings: vec![],
+                mod_ids: Default::default(),
+                modifiers: vec![],
+                modifier_bindings: vec![],
+                modifier_property_bindings: vec![],
+                character_properties: ["Unused", "Other", "Third", "Fourth", "Bound"]
+                    .map(String::from)
+                    .to_vec(),
+            };
+            let id = r.generator(0x280);
+            assert_eq!(r.generator(0x280), id);
+            let Generator::Blender {
+                min_cyclic,
+                max_cyclic,
+                ..
+            } = &r.generators[id]
+            else {
+                panic!("expected blender");
+            };
+            assert_eq!((*min_cyclic, *max_cyclic), (-1.0, 2.0));
+            assert_eq!(r.property_bindings[id][0].member, member);
+            assert_eq!(r.property_bindings[id][0].property, "bound");
+            assert_eq!(r.bindings[id][0].member, member);
+            assert_eq!(r.bindings[id][0].variable, 2);
+            assert_eq!(r.property_bindings[id].len(), 2);
+            assert_eq!(r.bindings[id].len(), 1);
+        }
+    }
+
+    #[test]
     fn blender_children_retain_bone_weight_property_names() {
         let mut p = fixture();
         p.data[0x480..0x48B].copy_from_slice(b"boneWeights");

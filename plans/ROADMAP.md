@@ -161,6 +161,10 @@ game each piece unlocks.
   blender children, including cyclic weights and synchronized clip timing.
   Existing variable precedence and authored fallbacks remain; wrapper lifecycle
   limits: `known_ambiguities/character-properties.md`
+- Cyclic blenders resolve `minCyclicBlendParameter` / `maxCyclicBlendParameter`
+  scalar character properties and live graph variables, sharing range inputs
+  between pose weights and synchronized timing for direct and wrapped blenders.
+  Invalid-input and lifecycle limits: `known_ambiguities/character-properties.md`
 - Clip generators resolve scalar character properties and graph variables for
   start/end cropping at activation. Forward/reverse playback, user-controlled
   samples and synchronized timing share the resolved range; lifecycle and

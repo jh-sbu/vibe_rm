@@ -40,3 +40,19 @@ for these assets. It does not establish the meaning of the remaining bytes at
 0x59..0x5F, nor the engine's defaults for omitted fields. No additional selector
 fields or blends were implemented based on that uncertainty. Only game asset
 data was inspected; no engine binary data was examined or committed.
+
+## Chooser start-state audit
+
+The public community-authored [CommonLibSSE-NG state-machine header](https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/main/include/RE/H/hkbStateMachine.h)
+identifies chooser start mode as 3 and the `startStateChooser` pointer at 0x60.
+A read-only audit of 423 behavior HKX assets under `/behaviors/` in the installed
+SE `Skyrim - Animations.bsa`, `Skyrim - Meshes0.bsa`, and `Skyrim - Meshes1.bsa`
+found 3,602 state machines: 3,220 default, 184 sync and 198 random; none used
+chooser mode or had a non-null chooser pointer, and no chooser object classes
+occurred. All 581 manual selectors had zero bytes at 0x59..0x5F. These findings
+do not prove what those selector bytes mean or that chooser mode cannot be used
+by mods or other assets. Chooser object layouts, selection rules and lifecycle
+remain unresolved; the reader/runtime still approximates mode 3 as default.
+No chooser or selector-blend implementation was inferred from this absence.
+Only asset data and public community source were examined, with no engine
+binary inspection and no asset copies added to the repository.
