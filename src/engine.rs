@@ -132,6 +132,8 @@ pub struct Engine {
     pub(crate) faction_relations: crate::ai::combat::FactionRelations,
     /// Armor and block game settings, read on first use.
     pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
+    /// Independently timed strength contributions of loaded combat members.
+    pub(crate) combat_group_strengths: crate::ai::threat::GroupStrengths,
     /// Who detects the player, and the player's stealth points.
     pub(crate) detection: crate::detection::Detection,
     /// The player's health, and when they died (if they have).
@@ -399,6 +401,7 @@ impl Engine {
             alias_packs: Default::default(),
             faction_relations: Default::default(),
             combat_settings: Default::default(),
+            combat_group_strengths: Default::default(),
             detection: Default::default(),
             player_blocking: false,
             player_body: None,

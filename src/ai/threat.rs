@@ -8,6 +8,8 @@
 //! with Skyrim's own settings; what can't be confirmed for Skyrim is listed in
 //! `known_ambiguities/combat-fleeing.md`.
 
+use std::collections::HashMap;
+
 use esp::{FormId, LoadOrder};
 
 use super::combat::{Combat, CombatStats, gmst_f32};
@@ -16,11 +18,75 @@ use crate::engine::{Engine, Location, PLAYER_REF};
 /// Seconds between a fighter's strength updates (`fCombatStrengthUpdateTime`) and
 /// its flee checks (`fCombatThreatRatioUpdateTime`).
 const STRENGTH_UPDATE: (&str, f32) = ("fCombatStrengthUpdateTime", 1.0);
+const GROUP_STRENGTH_UPDATE: (&str, f32) = ("fCombatGroupCombatStrengthUpdateTime", 2.0);
 const THREAT_RATIO_UPDATE: (&str, f32) = ("fCombatThreatRatioUpdateTime", 5.0);
 /// FLEE dialogue attempt intervals. The settings and per-actor timer are public;
 /// exact Skyrim scheduling remains open (see combat-fleeing.md).
 const FLEE_DIALOGUE_MIN: (&str, f32) = ("fCombatDialogueFleeMinElapsedTime", 3.0);
 const FLEE_DIALOGUE_MAX: (&str, f32) = ("fCombatDialogueFleeMaxElapsedTime", 5.0);
+
+/// CommonLibSSE's CombatMember has a groupStrengthUpdateTimer and threatValue,
+/// separate from CombatState's personal strength timer. These contributions
+/// sample the strength estimate directly, independently of the personal cache.
+/// Membership and timer phases are our policy; see combat-fleeing.md.
+#[derive(Default)]
+pub(crate) struct GroupStrengths {
+    members: HashMap<FormId, GroupStrength>,
+}
+
+struct GroupStrength {
+    value: f32,
+    remaining: f32,
+}
+
+impl GroupStrengths {
+    /// Drop departed members immediately; new members are sampled immediately.
+    /// Subsequent samples require elapsed simulation time, even at interval 0.
+    fn due(&mut self, members: &[FormId], dt: f32, interval: f32) -> Vec<FormId> {
+        self.members.retain(|id, _| members.contains(id));
+        let interval = if interval.is_finite() {
+            interval.max(0.0)
+        } else {
+            GROUP_STRENGTH_UPDATE.1
+        };
+        let dt = dt.max(0.0);
+        let mut due = Vec::new();
+        for &id in members {
+            match self.members.entry(id) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(GroupStrength {
+                        value: 0.0,
+                        remaining: interval,
+                    });
+                    due.push(id);
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    let sample = entry.get_mut();
+                    sample.remaining = (sample.remaining - dt).max(0.0);
+                    if dt > 0.0 && sample.remaining <= 0.0 {
+                        sample.remaining = interval;
+                        due.push(id);
+                    }
+                }
+            }
+        }
+        due
+    }
+
+    fn store(&mut self, id: FormId, value: f32) {
+        if let Some(sample) = self.members.get_mut(&id) {
+            sample.value = value;
+        }
+    }
+
+    fn strength(&self, id: FormId) -> f32 {
+        self.members.get(&id).map_or(0.0, |sample| sample.value)
+    }
+
+    pub(crate) fn remove(&mut self, id: FormId) {
+        self.members.remove(&id);
+    }
+}
 
 fn flee_dialogue_interval(min: f32, max: f32, roll: u64) -> f32 {
     let min = if min.is_finite() {
@@ -252,6 +318,31 @@ impl Engine {
             log::info!("{r} is safe");
             self.end_combat(r);
         }
+        // Keep this clock running even when no threat-ratio check is due.
+        // Death, bleedout, unloading and combat exit remove a contribution
+        // immediately; fleeing only masks it in the sums, leaving its clock live.
+        let mut members: Vec<FormId> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| a.combat.is_some() && !a.dead && a.bleeding.is_none())
+            .map(|a| a.ref_id)
+            .collect();
+        if !self.player_dead()
+            && members.iter().any(|&r| {
+                self.actor_ref(r)
+                    .and_then(|a| a.combat.as_ref())
+                    .is_some_and(|c| c.target == PLAYER_REF)
+            })
+        {
+            members.push(PLAYER_REF);
+        }
+        let group_every = gmst_f32(&self.lo, GROUP_STRENGTH_UPDATE.0, GROUP_STRENGTH_UPDATE.1);
+        let due = self.combat_group_strengths.due(&members, dt, group_every);
+        for id in due {
+            let strength = self.combat_strength(id);
+            self.combat_group_strengths.store(id, strength);
+        }
         if checks.is_empty() {
             self.update_flee_dialogue(dt);
             return;
@@ -267,7 +358,11 @@ impl Engine {
                 Some(Fighter {
                     id: a.ref_id,
                     target: Some(c.target),
-                    strength: if c.fleeing { 0.0 } else { a.strength },
+                    strength: if c.fleeing {
+                        0.0
+                    } else {
+                        self.combat_group_strengths.strength(a.ref_id)
+                    },
                 })
             })
             .collect();
@@ -275,7 +370,7 @@ impl Engine {
             fighters.push(Fighter {
                 id: PLAYER_REF,
                 target: None,
-                strength: self.combat_strength(PLAYER_REF),
+                strength: self.combat_group_strengths.strength(PLAYER_REF),
             });
         }
         for r in checks {
@@ -351,8 +446,101 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{Combat, Fighter, flee_dialogue_interval, group_threat_ratio};
+    use super::{Combat, Fighter, GroupStrengths, flee_dialogue_interval, group_threat_ratio};
+    use crate::engine::PLAYER_REF;
     use esp::FormId;
+
+    #[test]
+    fn group_contributions_refresh_independently_of_personal_strength() {
+        let (a, b) = (FormId(1), FormId(2));
+        let mut groups = GroupStrengths::default();
+        assert_eq!(groups.due(&[a, b], 0.0, 2.0), [a, b]);
+        groups.store(a, 100.0);
+        groups.store(b, 200.0);
+        // Personal strengths may already have refreshed at 1 s. Others still
+        // contribute their last group sample, but the actor counts its own
+        // personal strength, including when it is fleeing itself.
+        let own = 80.0;
+        assert!(groups.due(&[a, b], 1.0, 2.0).is_empty());
+        let fighters = |groups: &GroupStrengths| {
+            [
+                Fighter {
+                    id: a,
+                    target: Some(b),
+                    strength: 0.0, // Fleeing masks a's contribution to others.
+                },
+                Fighter {
+                    id: b,
+                    target: Some(a),
+                    strength: groups.strength(b),
+                },
+            ]
+        };
+        assert_eq!(group_threat_ratio(a, own, &fighters(&groups)), 80.0 / 200.0);
+        assert_eq!(groups.due(&[a, b], 1.0, 2.0), [a, b]);
+        // Sampling the current estimate (40) must not reuse a stale personal
+        // cache (say, 70) when the group's timer expires first.
+        groups.store(a, 60.0);
+        groups.store(b, 40.0);
+        assert_eq!(group_threat_ratio(a, own, &fighters(&groups)), 2.0);
+        assert_eq!(groups.strength(a), 60.0); // Fleeing did not stop its clock.
+        assert_eq!(
+            group_threat_ratio(b, 70.0, &fighters(&groups)),
+            f32::INFINITY
+        );
+    }
+
+    #[test]
+    fn group_membership_drops_departed_members_and_resamples_reentry() {
+        let a = FormId(1);
+        let mut groups = GroupStrengths::default();
+        assert_eq!(groups.due(&[a, PLAYER_REF], 0.0, 2.0), [a, PLAYER_REF]);
+        groups.store(a, 100.0);
+        groups.store(PLAYER_REF, 300.0);
+        assert!(groups.due(&[a, PLAYER_REF], 1.0, 2.0).is_empty());
+        assert_eq!(groups.strength(PLAYER_REF), 300.0);
+        // The engine excludes dead, bleeding, unloaded and departed fighters.
+        // A player no longer targeted by anyone is removed the same way.
+        assert!(groups.due(&[], 0.0, 2.0).is_empty());
+        assert_eq!(groups.strength(a), 0.0);
+        assert_eq!(groups.strength(PLAYER_REF), 0.0);
+        assert_eq!(groups.due(&[a, PLAYER_REF], 0.0, 2.0), [a, PLAYER_REF]);
+        groups.store(a, 50.0);
+        groups.store(PLAYER_REF, 90.0);
+        assert_eq!(groups.strength(PLAYER_REF), 90.0);
+        // Starting or switching fights invalidates the actor's old sample,
+        // even if no update observed it outside combat.
+        groups.remove(a);
+        assert_eq!(groups.due(&[a, PLAYER_REF], 0.0, 2.0), [a]);
+        assert_eq!(groups.strength(a), 0.0);
+        assert_eq!(groups.strength(PLAYER_REF), 90.0);
+    }
+
+    #[test]
+    fn group_timer_pauses_and_uses_the_setting_at_each_refresh() {
+        let a = FormId(1);
+        let mut groups = GroupStrengths::default();
+        assert_eq!(groups.due(&[a], 0.0, 2.0), [a]);
+        groups.store(a, 100.0);
+        assert!(groups.due(&[a], 0.0, 2.0).is_empty());
+        assert!(groups.due(&[a], -1.0, 2.0).is_empty());
+        assert!(groups.due(&[a], f32::NAN, 2.0).is_empty());
+        // A changed interval applies after the current wait, not retroactively.
+        assert!(groups.due(&[a], 1.0, 0.5).is_empty());
+        assert_eq!(groups.due(&[a], 1.0, 0.5), [a]);
+        assert!(groups.due(&[a], 0.25, 0.5).is_empty());
+        assert_eq!(groups.due(&[a], 0.25, 0.5), [a]);
+        // A large frame samples once and starts a new full interval.
+        assert_eq!(groups.due(&[a], 30.0, 0.5), [a]);
+        assert!(groups.due(&[a], 0.0, 0.5).is_empty());
+        assert_eq!(groups.due(&[a], 0.5, -1.0), [a]);
+        assert!(groups.due(&[a], 0.0, 0.0).is_empty());
+        assert_eq!(groups.due(&[a], 0.1, 0.0), [a]);
+        assert_eq!(groups.due(&[a], 0.1, f32::INFINITY), [a]);
+        assert!(groups.due(&[a], 1.0, f32::NAN).is_empty());
+        assert_eq!(groups.due(&[a], 1.0, f32::NAN), [a]);
+        assert_eq!(groups.strength(a), 100.0); // Due alone cannot change a sample.
+    }
 
     #[test]
     fn flee_dialogue_repeats_independently_of_threat_checks() {
