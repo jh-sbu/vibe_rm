@@ -29,6 +29,10 @@ pub struct WorldState {
     pub wounds: HashMap<FormId, Wounds>,
     /// References scripts moved (`MoveTo`, `SetPosition`, `SetAngle`): where to.
     pub moved: HashMap<FormId, Moved>,
+    /// Dropped weapon references' spent charge, one entry per depleted copy
+    /// in the reference's stack. Unlisted copies are full. This remains here
+    /// while cells unload and moves back to inventory state on pickup.
+    pub item_charges: HashMap<FormId, Vec<f32>>,
     /// Loose objects' breakable joints that broke (by index in the model).
     pub broken_joints: HashMap<FormId, Vec<usize>>,
     /// Objects' behaviour graphs as their cells unloaded (a lever pulled, a

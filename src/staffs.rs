@@ -225,6 +225,62 @@ mod tests {
         assert_eq!(e.weapon_charge(PLAYER_REF, STAFF), 10.0);
         e.remove_stack(PLAYER_REF, STAFF, 1, None, Some(chest), None);
         assert_eq!(e.weapon_charge(chest, STAFF), 10.0);
+        // Another depleted copy keeps its own value at the destination.
+        e.add_item(PLAYER_REF, STAFF, 1);
+        e.inventory_mut(PLAYER_REF).set_charge(STAFF, 35.0, 50.0);
+        e.remove_stack(PLAYER_REF, STAFF, 1, None, Some(chest), None);
+        assert_eq!(
+            e.inventories[&chest].charges,
+            vec![(STAFF, 10.0), (STAFF, 35.0)]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn dropping_and_picking_up_preserves_every_copys_charge() {
+        let (dir, mut e) = staff_engine();
+        e.location = crate::engine::Location::Interior(FormId(0x850));
+        e.add_item(PLAYER_REF, STAFF, 3);
+        e.inventory_mut(PLAYER_REF).set_charge(STAFF, 0.0, 50.0);
+        e.inventory_mut(PLAYER_REF).add_charge(STAFF, 25.0, 50.0);
+
+        // Full copies leave first, then the last depleted copy; the selected
+        // empty staff stays carried until the final drop.
+        let full = e.drop_item(PLAYER_REF, STAFF, 1).unwrap();
+        assert!(!e.world_state.item_charges.contains_key(&full));
+        assert_eq!(e.weapon_charge(PLAYER_REF, STAFF), 0.0);
+        let partial = e.drop_item(PLAYER_REF, STAFF, 1).unwrap();
+        assert_eq!(e.world_state.item_charges[&partial], vec![25.0]);
+        let empty = e.drop_item(PLAYER_REF, STAFF, 1).unwrap();
+        assert_eq!(e.world_state.item_charges[&empty], vec![0.0]);
+        assert!(e.drop_item(PLAYER_REF, STAFF, 1).is_none());
+        assert_eq!(e.world_state.item_charges.len(), 2);
+
+        assert!(e.take_item(empty));
+        assert!(!e.take_item(empty)); // A second activation cannot duplicate it.
+        assert!(e.take_item(partial));
+        assert!(e.take_item(full));
+        assert_eq!(e.item_count(PLAYER_REF, STAFF), 3);
+        assert_eq!(
+            e.inventories[&PLAYER_REF].charges,
+            vec![(STAFF, 0.0), (STAFF, 25.0)]
+        );
+        assert!(e.world_state.item_charges.is_empty());
+
+        // A dropped stack carries both depleted copies independently. Pickup
+        // merges them with another already-depleted staff without refilling it.
+        let stack = e.drop_item(PLAYER_REF, STAFF, 99).unwrap();
+        assert_eq!(e.created(stack).unwrap().count, 3);
+        assert_eq!(e.world_state.item_charges[&stack], vec![0.0, 25.0]);
+        e.add_item(PLAYER_REF, STAFF, 1);
+        e.inventory_mut(PLAYER_REF).set_charge(STAFF, 10.0, 50.0);
+        assert!(e.take_item(stack));
+        assert_eq!(e.item_count(PLAYER_REF, STAFF), 4);
+        assert_eq!(
+            e.inventories[&PLAYER_REF].charges,
+            vec![(STAFF, 10.0), (STAFF, 0.0), (STAFF, 25.0)]
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }
