@@ -1,8 +1,8 @@
 //! Particle systems (SSE layouts, after niftools' nif.xml): the system and its
 //! data, the modifiers that emit, age, move, scale, colour and animate the
 //! particles, and the controllers that drive them over time (birth rate,
-//! modifiers switched on and off). Colliders, bombs, strips and mesh
-//! particles are left unparsed.
+//! modifiers switched on and off). Bombs, strip data and mesh particles
+//! are left unparsed.
 
 use glam::{Vec3, Vec4};
 
@@ -66,6 +66,9 @@ pub enum ModifierKind {
     },
     BoundUpdate,
     Position,
+    ColliderManager {
+        collider: Ref,
+    },
     Gravity {
         object: Ref,
         axis: Vec3,
@@ -133,6 +136,32 @@ pub enum ModifierKind {
         object: Ref,
     },
     Emitter(Emitter),
+}
+
+/// A particle-only collider; its object supplies the position and orientation.
+#[derive(Debug, Clone)]
+pub struct Collider {
+    pub bounce: f32,
+    pub spawn_on_collide: bool,
+    pub die_on_collide: bool,
+    pub spawn: Ref,
+    pub parent: Ref,
+    pub next: Ref,
+    pub object: Ref,
+    pub shape: ColliderShape,
+}
+
+#[derive(Debug, Clone)]
+pub enum ColliderShape {
+    Plane {
+        width: f32,
+        height: f32,
+        x_axis: Vec3,
+        y_axis: Vec3,
+    },
+    Sphere {
+        radius: f32,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -365,7 +394,37 @@ pub(crate) fn parse(ty: &str, r: &mut Reader) -> Result<Option<crate::Block>> {
                 speed_to_aspect,
             }))
         }
+        "NiPSysPlanarCollider" | "NiPSysSphericalCollider" => {
+            let bounce = r.f32()?;
+            let spawn_on_collide = r.bool()?;
+            let die_on_collide = r.bool()?;
+            let spawn = r.block_ref()?;
+            let parent = r.block_ref()?;
+            let next = r.block_ref()?;
+            let object = r.block_ref()?;
+            let shape = if ty == "NiPSysPlanarCollider" {
+                ColliderShape::Plane {
+                    width: r.f32()?,
+                    height: r.f32()?,
+                    x_axis: r.vec3()?,
+                    y_axis: r.vec3()?,
+                }
+            } else {
+                ColliderShape::Sphere { radius: r.f32()? }
+            };
+            Block::ParticleCollider(Box::new(Collider {
+                bounce,
+                spawn_on_collide,
+                die_on_collide,
+                spawn,
+                parent,
+                next,
+                object,
+                shape,
+            }))
+        }
         "NiPSysAgeDeathModifier"
+        | "NiPSysColliderManager"
         | "NiPSysSpawnModifier"
         | "NiPSysBoundUpdateModifier"
         | "NiPSysPositionModifier"
@@ -403,6 +462,9 @@ pub(crate) fn parse(ty: &str, r: &mut Reader) -> Result<Option<crate::Block>> {
                     ModifierKind::BoundUpdate
                 }
                 "NiPSysPositionModifier" => ModifierKind::Position,
+                "NiPSysColliderManager" => ModifierKind::ColliderManager {
+                    collider: r.block_ref()?,
+                },
                 "NiPSysGravityModifier" => ModifierKind::Gravity {
                     object: r.block_ref()?,
                     axis: r.vec3()?,
@@ -548,4 +610,91 @@ pub(crate) fn parse(ty: &str, r: &mut Reader) -> Result<Option<crate::Block>> {
         "NiBoolData" => Block::ValueKeys(crate::anim::bool_keys(r)?),
         _ => return Ok(None),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Block;
+
+    #[test]
+    fn collider_shapes_read_common_links_and_exact_sse_layouts() {
+        for (ty, shape_words) in [
+            (
+                "NiPSysPlanarCollider",
+                vec![12.0f32, 8.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            ),
+            ("NiPSysSphericalCollider", vec![6.0f32]),
+        ] {
+            let mut bytes = 0.25f32.to_le_bytes().to_vec();
+            bytes.extend([1, 1]);
+            for reference in [7i32, 8, 9, 10] {
+                bytes.extend(reference.to_le_bytes());
+            }
+            for value in shape_words {
+                bytes.extend(value.to_le_bytes());
+            }
+            let mut r = Reader::new(&bytes);
+            r.bs_version = 100;
+            let Some(Block::ParticleCollider(c)) = parse(ty, &mut r).unwrap() else {
+                panic!()
+            };
+            assert_eq!(r.pos(), bytes.len());
+            assert_eq!(c.bounce, 0.25);
+            assert!(c.spawn_on_collide && c.die_on_collide);
+            assert_eq!(
+                (c.spawn, c.parent, c.next, c.object),
+                (Ref(7), Ref(8), Ref(9), Ref(10))
+            );
+            match c.shape {
+                ColliderShape::Plane {
+                    width,
+                    height,
+                    x_axis,
+                    y_axis,
+                } => {
+                    assert_eq!((width, height), (12.0, 8.0));
+                    assert_eq!((x_axis, y_axis), (Vec3::X, Vec3::Y));
+                }
+                ColliderShape::Sphere { radius } => assert_eq!(radius, 6.0),
+            }
+            for length in 0..bytes.len() {
+                let mut truncated = Reader::new(&bytes[..length]);
+                truncated.bs_version = 100;
+                assert!(
+                    parse(ty, &mut truncated).is_err(),
+                    "{ty} accepted {length} bytes"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn collider_manager_uses_modifier_header_then_collider_reference() {
+        let mut bytes = 0u32.to_le_bytes().to_vec(); // name string reference
+        bytes.extend(5000u32.to_le_bytes());
+        bytes.extend(2i32.to_le_bytes()); // target
+        bytes.push(0); // inactive
+        bytes.extend(19i32.to_le_bytes());
+        let strings = vec!["collisions".to_owned()];
+        let mut r = Reader::new(&bytes);
+        r.bs_version = 100;
+        r.strings = &strings;
+        let Some(Block::ParticleModifier(m)) = parse("NiPSysColliderManager", &mut r).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(r.pos(), bytes.len());
+        assert_eq!(m.name, "collisions");
+        assert_eq!(m.order, 5000);
+        assert!(!m.active);
+        assert!(matches!(
+            m.kind,
+            ModifierKind::ColliderManager { collider: Ref(19) }
+        ));
+        r.bs_version = 83;
+        r.set_pos(0);
+        assert!(parse("NiPSysColliderManager", &mut r).unwrap().is_none());
+        assert_eq!(r.pos(), 0);
+    }
 }

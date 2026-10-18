@@ -11,7 +11,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use glam::{Mat3, Mat4, Vec3, Vec4};
-use nif::psys::{ControllerKind, EmitterShape, FloatTarget, ModifierKind};
+use nif::psys::{ColliderShape, ControllerKind, EmitterShape, FloatTarget, ModifierKind};
 use nif::{Block, Nif, Ref};
 
 use super::GpuMaterial;
@@ -322,6 +322,161 @@ pub struct SpawnDesc {
     pub generations: u16,
 }
 
+fn spawn_desc(nif: &Nif, reference: Ref) -> Option<SpawnDesc> {
+    let Block::ParticleModifier(m) = nif.get(reference)? else {
+        return None;
+    };
+    let ModifierKind::Spawn {
+        generations,
+        percentage,
+        min,
+        max,
+        speed_variation,
+        direction_variation,
+        life_span,
+        life_span_variation,
+    } = m.kind
+    else {
+        return None;
+    };
+    Some(SpawnDesc {
+        percentage,
+        count: (min, max),
+        speed_variation,
+        direction_variation,
+        life_span,
+        life_span_variation,
+        generations,
+    })
+}
+
+/// A rest-pose particle collider. Contact and response policies are documented
+/// in known_ambiguities/particles.md; particles are swept as points.
+#[derive(Debug, Clone)]
+pub struct ColliderDesc {
+    collider_from_model: Mat4,
+    normal_to_model: Mat3,
+    shape: ColliderShape,
+    bounce: f32,
+    die: bool,
+    spawn: Option<SpawnDesc>,
+    active: Curve,
+}
+
+impl ColliderDesc {
+    fn new(
+        collider: &nif::psys::Collider,
+        object: Mat4,
+        active: Curve,
+        spawn: Option<SpawnDesc>,
+    ) -> Option<Self> {
+        let basis = match collider.shape {
+            ColliderShape::Plane {
+                width,
+                height,
+                x_axis,
+                y_axis,
+            } => {
+                if !width.is_finite()
+                    || width <= 0.0
+                    || !height.is_finite()
+                    || height <= 0.0
+                    || !x_axis.is_finite()
+                    || !y_axis.is_finite()
+                {
+                    return None;
+                }
+                // The authored axes define the rectangle. Normalize their
+                // lengths without changing their angle (a skew basis is valid).
+                let x = x_axis.normalize_or_zero();
+                let y = y_axis.normalize_or_zero();
+                let z = x.cross(y).normalize_or_zero();
+                if z == Vec3::ZERO {
+                    return None;
+                }
+                Mat4::from_mat3(Mat3::from_cols(x, y, z))
+            }
+            ColliderShape::Sphere { radius } => {
+                if !radius.is_finite() || radius <= 0.0 {
+                    return None;
+                }
+                Mat4::IDENTITY
+            }
+        };
+        let model_from_collider = object * basis;
+        if !model_from_collider.is_finite() || model_from_collider.determinant() == 0.0 {
+            return None;
+        }
+        let collider_from_model = model_from_collider.inverse();
+        if !collider_from_model.is_finite() {
+            return None;
+        }
+        Some(Self {
+            collider_from_model,
+            normal_to_model: Mat3::from_mat4(collider_from_model).transpose(),
+            shape: collider.shape.clone(),
+            bounce: if collider.bounce.is_finite() {
+                collider.bounce.max(0.0)
+            } else {
+                0.0
+            },
+            die: collider.die_on_collide,
+            spawn,
+            active,
+        })
+    }
+
+    /// Earliest entering contact along a segment, as a fraction and a model
+    /// normal pointing against travel. Planes collide from either side;
+    /// spheres are solid on their outside, so inside starts can escape.
+    fn contact(&self, start: Vec3, end: Vec3) -> Option<(f32, Vec3)> {
+        let a = self.collider_from_model.transform_point3(start);
+        let b = self.collider_from_model.transform_point3(end);
+        if !a.is_finite() || !b.is_finite() {
+            return None;
+        }
+        let delta = b - a;
+        if !delta.is_finite() {
+            return None;
+        }
+        let (fraction, normal) = match self.shape {
+            ColliderShape::Plane { width, height, .. } => {
+                if a.z == 0.0 || (a.z > 0.0 && b.z > 0.0) || (a.z < 0.0 && b.z < 0.0) {
+                    return None;
+                }
+                let fraction = a.z / (a.z - b.z);
+                let hit = a + delta * fraction;
+                if hit.x.abs() > width * 0.5 || hit.y.abs() > height * 0.5 {
+                    return None;
+                }
+                (fraction, Vec3::Z * a.z.signum())
+            }
+            ColliderShape::Sphere { radius } => {
+                // Double precision avoids cancellation for long sweeps and
+                // points close to the sphere. Tangential motion is no impact.
+                let a = a.as_dvec3();
+                let delta = delta.as_dvec3();
+                let aa = delta.length_squared();
+                let ab = a.dot(delta);
+                let c = a.length_squared() - f64::from(radius).powi(2);
+                let discriminant = ab * ab - aa * c;
+                if c < 0.0 || aa == 0.0 || ab >= 0.0 || discriminant <= 0.0 {
+                    return None;
+                }
+                let fraction = c / (-ab + discriminant.sqrt());
+                let normal = (a + delta * fraction).as_vec3().normalize_or_zero();
+                (fraction as f32, normal)
+            }
+        };
+        let normal = (self.normal_to_model * normal).normalize_or_zero();
+        (fraction.is_finite()
+            && (0.0..=1.0).contains(&fraction)
+            && normal.is_finite()
+            && normal != Vec3::ZERO)
+            .then_some((fraction, normal))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ParticleDesc {
     pub material: MaterialDesc,
@@ -336,6 +491,7 @@ pub struct ParticleDesc {
     pub emitters: Vec<EmitterDesc>,
     pub gravity: Vec<GravityDesc>,
     pub drag: Vec<DragDesc>,
+    pub colliders: Vec<ColliderDesc>,
     /// Rotation: speed and variation, start angle and variation, random sign.
     pub rotation: Option<(f32, f32, f32, f32, bool)>,
     /// Size over the particle's life.
@@ -480,6 +636,7 @@ pub fn describe(
         emitters: Vec::new(),
         gravity: Vec::new(),
         drag: Vec::new(),
+        colliders: Vec::new(),
         rotation: None,
         scales: Vec::new(),
         color: None,
@@ -495,6 +652,30 @@ pub fn describe(
             continue;
         };
         match &m.kind {
+            ModifierKind::ColliderManager { collider } => {
+                let mut reference = *collider;
+                let mut visited = BTreeSet::new();
+                while visited.insert(reference.0) {
+                    let Some(Block::ParticleCollider(c)) = nif.get(reference) else {
+                        break;
+                    };
+                    // Unresolved object references are skipped instead of
+                    // silently installing a collider at the system origin.
+                    if let Some(&object) = objects.get(&c.object.0)
+                        && let Some(desc) = ColliderDesc::new(
+                            c,
+                            object,
+                            active(m),
+                            c.spawn_on_collide
+                                .then(|| spawn_desc(nif, c.spawn))
+                                .flatten(),
+                        )
+                    {
+                        d.colliders.push(desc);
+                    }
+                    reference = c.next;
+                }
+            }
             ModifierKind::Emitter(e) => {
                 let obj = match &e.shape {
                     EmitterShape::Box { object, .. }
@@ -621,27 +802,8 @@ pub fn describe(
                 spawn_on_death: true,
                 spawn,
             } => {
-                if let Some(Block::ParticleModifier(s)) = nif.get(*spawn)
-                    && let ModifierKind::Spawn {
-                        generations,
-                        percentage,
-                        min,
-                        max,
-                        speed_variation,
-                        direction_variation,
-                        life_span,
-                        life_span_variation,
-                    } = s.kind
-                {
-                    d.spawn_on_death = Some(SpawnDesc {
-                        percentage,
-                        count: (min, max),
-                        speed_variation,
-                        direction_variation,
-                        life_span,
-                        life_span_variation,
-                        generations,
-                    });
+                if let Some(desc) = spawn_desc(nif, *spawn) {
+                    d.spawn_on_death = Some(desc);
                 }
             }
             _ => {}
@@ -759,10 +921,7 @@ impl ParticleState {
                 drag.apply(p.position, &mut p.velocity, dt);
             }
         }
-        for p in &mut self.particles {
-            p.position += p.velocity * dt;
-            p.angle += p.spin * dt;
-        }
+        self.move_particles(d, t, dt);
         // Emitting.
         for (ei, e) in d.emitters.iter().enumerate() {
             if self.stopped || e.active.sample(t) < 0.5 || e.visible.sample(t) < 0.5 {
@@ -778,6 +937,83 @@ impl ParticleState {
                 if let Some(p) = self.emit(d, e, t) {
                     self.particles.push(p);
                 }
+            }
+        }
+    }
+
+    fn move_particles(&mut self, d: &ParticleDesc, t: f32, dt: f32) {
+        let active: Vec<_> = d
+            .colliders
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.active.sample(t) >= 0.5)
+            .collect();
+        let mut spawns = Vec::new();
+        let mut i = 0;
+        while i < self.particles.len() {
+            let mut p = self.particles[i];
+            p.angle += p.spin * dt;
+            let mut remaining = dt;
+            let mut last = None;
+            let mut die = false;
+            // Bound repeated impacts between nearby/overlapping colliders.
+            // After the fourth impact stop at contact for this step.
+            for _ in 0..4 {
+                let end = p.position + p.velocity * remaining;
+                if !end.is_finite() {
+                    p.velocity = Vec3::ZERO;
+                    break;
+                }
+                let hit = active
+                    .iter()
+                    .filter(|(index, _)| Some(*index) != last)
+                    .filter_map(|&(index, c)| {
+                        c.contact(p.position, end)
+                            .map(|(fraction, normal)| (index, c, fraction, normal))
+                    })
+                    .min_by(|a, b| a.2.total_cmp(&b.2).then_with(|| a.0.cmp(&b.0)));
+                let Some((index, c, fraction, normal)) = hit else {
+                    p.position = end;
+                    break;
+                };
+                p.position = p
+                    .position
+                    .as_dvec3()
+                    .lerp(end.as_dvec3(), f64::from(fraction))
+                    .as_vec3();
+                if c.spawn.is_some() {
+                    spawns.push((index, p));
+                }
+                if c.die {
+                    die = true;
+                    break;
+                }
+                let normal = normal.as_dvec3();
+                let velocity = p.velocity.as_dvec3();
+                let reflected = (velocity
+                    - normal * ((1.0 + f64::from(c.bounce)) * velocity.dot(normal)))
+                .as_vec3();
+                p.velocity = if reflected.is_finite() {
+                    reflected
+                } else {
+                    Vec3::ZERO
+                };
+                remaining *= 1.0 - fraction;
+                last = Some(index);
+            }
+            if die {
+                self.particles.swap_remove(i);
+            } else {
+                self.particles[i] = p;
+                i += 1;
+            }
+        }
+        // Collision births use the incoming particle at contact. Defer them
+        // until every existing particle has moved; births do not collide or
+        // age again this step. Collision death does not also spawn on age death.
+        for (index, parent) in spawns {
+            if let Some(spawn) = &d.colliders[index].spawn {
+                self.spawn_from(d, spawn, &parent);
             }
         }
     }
@@ -927,11 +1163,16 @@ impl ParticleState {
 
     /// Particles spawned where `parent` died.
     fn spawn_from(&mut self, d: &ParticleDesc, s: &SpawnDesc, parent: &Particle) {
-        if parent.generation >= s.generations || self.rand() > s.percentage {
+        if parent.generation >= s.generations
+            || !s.percentage.is_finite()
+            || s.percentage <= 0.0
+            || self.rand() >= s.percentage.min(1.0)
+        {
             return;
         }
         let (lo, hi) = (s.count.0.min(s.count.1), s.count.0.max(s.count.1));
-        let n = lo + ((hi - lo + 1) as f32 * self.rand()).floor() as u16;
+        let n = u32::from(lo)
+            + ((u32::from(hi) - u32::from(lo) + 1) as f32 * self.rand()).floor() as u32;
         for _ in 0..n {
             if self.particles.len() >= d.max {
                 return;
@@ -1144,7 +1385,12 @@ mod tests {
         }
     }
 
-    fn drag_fixture(object: nif::Transform, axis: Vec3, range: f32, falloff: f32) -> ParticleDesc {
+    fn drag_nif_fixture(
+        object: nif::Transform,
+        axis: Vec3,
+        range: f32,
+        falloff: f32,
+    ) -> (Nif, nif::psys::ParticleSystem) {
         let node = |transform, children| {
             Block::Node(nif::Node {
                 av: nif::AvObject {
@@ -1231,6 +1477,11 @@ mod tests {
             modifiers: vec![Ref(3), Ref(4)],
             strip: false,
         };
+        (nif, sys)
+    }
+
+    fn drag_fixture(object: nif::Transform, axis: Vec3, range: f32, falloff: f32) -> ParticleDesc {
+        let (nif, sys) = drag_nif_fixture(object, axis, range, falloff);
         describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap()
     }
 
@@ -1574,6 +1825,352 @@ mod tests {
             let mut velocity = Vec3::ONE;
             d.drag[0].apply(Vec3::ZERO, &mut velocity, 1.0);
             assert_eq!(velocity, Vec3::ONE);
+        }
+    }
+
+    fn plane() -> ColliderShape {
+        ColliderShape::Plane {
+            width: 4.0,
+            height: 6.0,
+            x_axis: Vec3::X,
+            y_axis: Vec3::Y,
+        }
+    }
+
+    fn collider(shape: ColliderShape) -> nif::psys::Collider {
+        nif::psys::Collider {
+            bounce: 1.0,
+            spawn_on_collide: false,
+            die_on_collide: false,
+            spawn: Ref(-1),
+            parent: Ref(3),
+            next: Ref(-1),
+            object: Ref(1),
+            shape,
+        }
+    }
+
+    fn collider_desc(shape: ColliderShape, object: Mat4) -> ColliderDesc {
+        ColliderDesc::new(&collider(shape), object, Curve::constant(1.0), None).unwrap()
+    }
+
+    fn collision_fixture() -> ParticleDesc {
+        let mut d = drag_fixture(nif::Transform::default(), Vec3::X, 0.0, 0.0);
+        d.drag.clear();
+        d.colliders.push(collider_desc(plane(), Mat4::IDENTITY));
+        d
+    }
+
+    #[test]
+    fn collider_plane_sweeps_respect_edges_sides_and_object_axes() {
+        let c = collider_desc(plane(), Mat4::IDENTITY);
+        for (start, end, fraction, normal) in [
+            (Vec3::Z, -Vec3::Z, 0.5, Vec3::Z),
+            (-Vec3::Z, Vec3::Z, 0.5, -Vec3::Z),
+            (
+                Vec3::new(2.0, 3.0, 1.0),
+                Vec3::new(2.0, 3.0, 0.0),
+                1.0,
+                Vec3::Z,
+            ),
+        ] {
+            assert_eq!(c.contact(start, end), Some((fraction, normal)));
+        }
+        for (start, end) in [
+            (Vec3::Z, Vec3::Z * 2.0),
+            (Vec3::ZERO, Vec3::X),
+            (Vec3::new(2.01, 0.0, 1.0), Vec3::new(2.01, 0.0, -1.0)),
+            (Vec3::new(0.0, 3.01, 1.0), Vec3::new(0.0, 3.01, -1.0)),
+            (Vec3::splat(f32::NAN), Vec3::ZERO),
+        ] {
+            assert!(c.contact(start, end).is_none());
+        }
+        let object = Mat4::from_translation(Vec3::new(4.0, 5.0, 6.0))
+            * Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2)
+            * Mat4::from_scale(Vec3::splat(2.0));
+        let c = collider_desc(plane(), object);
+        let (fraction, normal) = c
+            .contact(
+                object.transform_point3(Vec3::Z),
+                object.transform_point3(-Vec3::Z),
+            )
+            .unwrap();
+        assert!((fraction - 0.5).abs() < 1e-5);
+        assert!((normal + Vec3::Y).length() < 1e-5);
+        assert!(
+            c.contact(
+                object.transform_point3(Vec3::new(2.1, 0.0, 1.0)),
+                object.transform_point3(Vec3::new(2.1, 0.0, -1.0))
+            )
+            .is_none()
+        );
+
+        let c = collider_desc(
+            ColliderShape::Plane {
+                width: 2.0,
+                height: 2.0,
+                x_axis: Vec3::Y * 3.0,
+                y_axis: Vec3::Z * 7.0,
+            },
+            Mat4::IDENTITY,
+        );
+        assert_eq!(c.contact(Vec3::X, -Vec3::X), Some((0.5, Vec3::X)));
+    }
+
+    #[test]
+    fn collider_sphere_sweeps_catch_entry_even_when_end_is_outside() {
+        let c = collider_desc(ColliderShape::Sphere { radius: 1.0 }, Mat4::IDENTITY);
+        let (fraction, normal) = c.contact(Vec3::Z * 3.0, Vec3::Z * -3.0).unwrap();
+        assert!((fraction - 1.0 / 3.0).abs() < 1e-6);
+        assert_eq!(normal, Vec3::Z);
+        assert_eq!(c.contact(Vec3::Z, Vec3::ZERO), Some((0.0, Vec3::Z)));
+        for (start, end) in [
+            (Vec3::ZERO, Vec3::Z * 3.0),
+            (Vec3::Z, Vec3::Z * 3.0),
+            (Vec3::Z * 3.0, Vec3::Z * 4.0),
+            (Vec3::Z * 3.0, Vec3::Z * 3.0),
+            (Vec3::new(-3.0, 1.0, 0.0), Vec3::new(3.0, 1.0, 0.0)),
+        ] {
+            assert!(c.contact(start, end).is_none());
+        }
+        let object = Mat4::from_translation(Vec3::X * 10.0) * Mat4::from_scale(Vec3::splat(2.0));
+        let c = collider_desc(ColliderShape::Sphere { radius: 1.0 }, object);
+        assert_eq!(
+            c.contact(Vec3::new(10.0, 0.0, 4.0), Vec3::new(10.0, 0.0, 0.0)),
+            Some((0.5, Vec3::Z))
+        );
+    }
+
+    #[test]
+    fn collider_description_follows_chain_and_active_controller_without_cycles() {
+        let object = nif::Transform {
+            translation: Vec3::new(1.0, 2.0, 3.0),
+            scale: 2.0,
+            ..Default::default()
+        };
+        let (mut nif, mut sys) = drag_nif_fixture(object, Vec3::X, 0.0, 0.0);
+        let Block::ParticleModifier(m) = &mut nif.blocks[3] else {
+            panic!()
+        };
+        m.kind = ModifierKind::ColliderManager { collider: Ref(5) };
+        let mut sphere = collider(ColliderShape::Sphere { radius: 1.0 });
+        sphere.next = Ref(6);
+        let mut planar = collider(plane());
+        planar.next = Ref(5); // malformed cycle must terminate with two colliders
+        planar.spawn_on_collide = true;
+        planar.spawn = Ref(7);
+        nif.blocks.extend([
+            Block::ParticleCollider(Box::new(sphere)),
+            Block::ParticleCollider(Box::new(planar)),
+            Block::ParticleModifier(Box::new(nif::psys::Modifier {
+                name: "spawn".into(),
+                order: 3000,
+                active: true,
+                kind: ModifierKind::Spawn {
+                    generations: 2,
+                    percentage: 1.0,
+                    min: 1,
+                    max: 1,
+                    speed_variation: 0.0,
+                    direction_variation: 0.0,
+                    life_span: 3.0,
+                    life_span_variation: 0.0,
+                },
+            })),
+            Block::ParticleController(nif::psys::ParticleController {
+                next: Ref(-1),
+                timing: nif::anim::Timing {
+                    flags: 8 | 4,
+                    frequency: 1.0,
+                    phase: 0.0,
+                    start: 0.0,
+                    stop: 1.0,
+                },
+                interpolator: Ref(9),
+                modifier: "drag".into(),
+                kind: ControllerKind::ModifierActive,
+            }),
+            Block::BoolInterpolator(nif::psys::BoolInterpolator {
+                value: false,
+                data: Ref(-1),
+            }),
+        ]);
+        sys.av.net.controller = Ref(8);
+        let d = describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap();
+        assert_eq!(d.colliders.len(), 2);
+        assert_eq!(d.colliders[0].active.sample(0.0), 0.0);
+        assert!(d.colliders[0].spawn.is_none());
+        assert_eq!(d.colliders[1].spawn.as_ref().unwrap().generations, 2);
+        assert_eq!(
+            d.colliders[0].contact(Vec3::new(1.0, 2.0, 7.0), Vec3::new(1.0, 2.0, 3.0)),
+            Some((0.5, Vec3::Z))
+        );
+        let Block::ParticleCollider(c) = &mut nif.blocks[5] else {
+            panic!()
+        };
+        c.object = Ref(1000); // missing objects skip this collider, retaining the next
+        assert_eq!(
+            describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY)
+                .unwrap()
+                .colliders
+                .len(),
+            1
+        );
+        let Block::ParticleCollider(c) = &mut nif.blocks[6] else {
+            panic!()
+        };
+        c.next = Ref(1000); // broken tail also terminates safely
+        c.spawn = Ref(1000);
+        let d = describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap();
+        assert_eq!(d.colliders.len(), 1);
+        assert!(d.colliders[0].spawn.is_none());
+    }
+
+    #[test]
+    fn collider_degenerate_shapes_and_transforms_are_skipped() {
+        let mut shapes = vec![
+            ColliderShape::Sphere { radius: 0.0 },
+            ColliderShape::Sphere { radius: -1.0 },
+            ColliderShape::Sphere { radius: f32::NAN },
+        ];
+        for (width, height, x_axis, y_axis) in [
+            (0.0, 1.0, Vec3::X, Vec3::Y),
+            (1.0, f32::INFINITY, Vec3::X, Vec3::Y),
+            (1.0, 1.0, Vec3::ZERO, Vec3::Y),
+            (1.0, 1.0, Vec3::X, Vec3::X),
+            (1.0, 1.0, Vec3::X, Vec3::splat(f32::NAN)),
+        ] {
+            shapes.push(ColliderShape::Plane {
+                width,
+                height,
+                x_axis,
+                y_axis,
+            });
+        }
+        for shape in shapes {
+            assert!(
+                ColliderDesc::new(&collider(shape), Mat4::IDENTITY, Curve::constant(1.0), None)
+                    .is_none()
+            );
+        }
+        for object in [Mat4::ZERO, Mat4::from_scale(Vec3::splat(f32::NAN))] {
+            assert!(
+                ColliderDesc::new(&collider(plane()), object, Curve::constant(1.0), None).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn collider_response_preserves_tangent_and_advances_remaining_time() {
+        let mut d = collision_fixture();
+        d.colliders[0].bounce = 0.5;
+        let mut s = ParticleState::new(1);
+        s.particles
+            .push(particle(Vec3::Z, Vec3::new(2.0, 0.0, -4.0)));
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(s.particles[0].position, Vec3::new(1.0, 0.0, 0.5));
+        assert_eq!(s.particles[0].velocity, Vec3::new(2.0, 0.0, 2.0));
+        d.colliders[0].active = Curve::constant(0.0);
+        s.particles[0] = particle(Vec3::Z, -Vec3::Z * 4.0);
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(s.particles[0].position, -Vec3::Z);
+        d.colliders = vec![collider_desc(
+            ColliderShape::Sphere { radius: 1.0 },
+            Mat4::IDENTITY,
+        )];
+        s.particles[0] = particle(Vec3::Z * 3.0, -Vec3::Z * 10.0);
+        s.step(&d, 1.0, Mat3::IDENTITY);
+        assert_eq!(s.particles[0].position, Vec3::Z * 9.0);
+        assert_eq!(s.particles[0].velocity, Vec3::Z * 10.0);
+    }
+
+    #[test]
+    fn collider_response_selects_earliest_and_bounds_repeated_contacts() {
+        let mut d = collision_fixture();
+        d.colliders
+            .insert(0, collider_desc(plane(), Mat4::from_translation(-Vec3::Z)));
+        d.colliders[0].die = true; // farther collider occurs first in the chain
+        let mut s = ParticleState::new(1);
+        s.particles.push(particle(Vec3::Z, -Vec3::Z * 4.0));
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(s.count(), 1);
+        assert_eq!(s.particles[0].position, Vec3::Z);
+        d.colliders[0] = collider_desc(plane(), Mat4::from_translation(Vec3::Z));
+        s.particles[0] = particle(Vec3::Z * 0.5, Vec3::Z * 1000.0);
+        s.step(&d, 1.0, Mat3::IDENTITY);
+        // Fraction rounding can leave a small residual at the fourth contact.
+        assert!(s.particles[0].position.length() < 1e-6);
+        assert_eq!(s.particles[0].velocity, Vec3::Z * 1000.0);
+        d.colliders[0].bounce = f32::MAX;
+        s.particles[0] = particle(Vec3::Z * 0.5, Vec3::Z * 1000.0);
+        s.step(&d, 1.0, Mat3::IDENTITY);
+        assert!((s.particles[0].position - Vec3::Z).length() < 1e-6);
+        assert_eq!(s.particles[0].velocity, Vec3::ZERO);
+        // A finite response can still overflow the remaining displacement.
+        d.colliders[0].bounce = f32::MAX * 0.25;
+        s.particles[0] = particle(Vec3::Z * 0.5, Vec3::Z);
+        s.move_particles(&d, s.time, 10.0);
+        assert!((s.particles[0].position - Vec3::Z).length() < 1e-6);
+        assert_eq!(s.particles[0].velocity, Vec3::ZERO);
+    }
+
+    #[test]
+    fn collider_spawn_and_death_defer_births_without_double_spawning() {
+        let mut d = collision_fixture();
+        let spawn = SpawnDesc {
+            percentage: 1.0,
+            count: (1, 1),
+            speed_variation: 0.0,
+            direction_variation: 0.0,
+            life_span: 3.0,
+            life_span_variation: 0.0,
+            generations: 2,
+        };
+        d.colliders[0].spawn = Some(spawn.clone());
+        d.colliders[0].die = true;
+        d.spawn_on_death = Some(SpawnDesc {
+            count: (2, 2),
+            ..spawn
+        });
+        let mut s = ParticleState::new(1);
+        s.particles.push(particle(Vec3::Z, -Vec3::Z * 4.0));
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(s.count(), 1);
+        let child = s.particles[0];
+        assert_eq!((child.age, child.life, child.generation), (0.0, 3.0, 1));
+        assert_eq!(child.position, Vec3::ZERO);
+        assert_eq!(child.velocity, -Vec3::Z * 4.0);
+        // Generation limits prevent collision births; collision death still acts.
+        s.particles[0] = Particle {
+            generation: 2,
+            ..particle(Vec3::Z, -Vec3::Z * 4.0)
+        };
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(s.count(), 0);
+    }
+
+    #[test]
+    fn collider_births_respect_capacity_and_full_u16_spawn_count_range() {
+        let mut d = collision_fixture();
+        d.max = 3;
+        d.colliders[0].spawn = Some(SpawnDesc {
+            percentage: 1.0,
+            count: (0, u16::MAX),
+            speed_variation: 0.0,
+            direction_variation: 0.0,
+            life_span: 3.0,
+            life_span_variation: 0.0,
+            generations: 2,
+        });
+        let mut s = ParticleState::new(1);
+        s.particles.push(particle(Vec3::Z, -Vec3::Z * 4.0));
+        s.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(s.count(), 3);
+        assert_eq!(s.particles[0].generation, 0);
+        for child in &s.particles[1..] {
+            assert_eq!(child.generation, 1);
+            assert_eq!(child.age, 0.0);
+            assert_eq!(child.position, Vec3::ZERO);
         }
     }
 

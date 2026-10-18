@@ -16,6 +16,9 @@ are used below is this engine's reading.
   (its vertex arrays are sized by a count SSE doesn't store: always empty;
   then atlas cells, aspect ratio and flags), the modifiers and emitters, the
   controllers and `NiBoolInterpolator` / `NiBoolData`.
+- **Collider layouts**: `NiPSysColliderManager`, `NiPSysPlanarCollider` and
+  `NiPSysSphericalCollider`, following the community schema. Runtime contact
+  and response choices remain open as described below.
 - **Atlas cells** are (u, width, v, height): the vanilla data's cells step
   their first and third values by the second and fourth.
 - **Simple colour fades**: `fade_out` is never below `fade_in` in the 1666
@@ -172,3 +175,61 @@ Synthetic tests cover NIF-description wiring for legacy and packed rigid
 geometry, unsupported deformation, all five placement modes, all three velocity
 modes, independently transformed meshes, surface sampling distribution, shared
 edges, primitive weights, missing normals and malformed topology/references.
+
+## Particle colliders
+
+Public evidence:
+
+- The community-maintained [Niftools schema](https://github.com/niftools/nifxml/blob/develop/nif.xml)
+  gives the collider manager's head reference, linked colliders, object basis,
+  bounce, spawn and death fields. Planes add dimensions and two local axes;
+  spheres add a radius. It supplies no contact or response algorithm.
+- The community [GECK planar collider documentation](https://geckwiki.com/index.php?title=NiPSysPlanarCollider)
+  describes the collision surface, bounce strength and separate impact spawn
+  and death switches. This is cross-game authoring documentation, not a
+  Skyrim SE runtime measurement.
+- No game assets or engine binary data were examined for this change. All
+  fixtures are synthetic; no game assets were added to the repository.
+
+Implemented policy and unresolved behavior:
+
+- Follow each manager's collider chain, stopping at missing references or a
+  repeated block. Skip colliders with missing object transforms or invalid
+  shapes, retaining the rest of their chain. The manager's active flag or
+  controller enables its entire chain. Parent pointers are retained by the
+  parser but do not redirect ownership. Cross-manager sharing and malformed
+  reference behavior in the original runtime remain unresolved.
+- Capture each object's rest transform. Normalize plane axes, preserving their
+  angle, and centre the finite rectangle on the object, extending half the
+  width/height each way. The object transforms the shape, including its scale;
+  normals use the inverse transpose. Reject nonfinite/nonpositive dimensions,
+  zero or collinear axes and noninvertible transforms. Exact axis normalization,
+  dimension interpretation and runtime transform sampling remain unresolved.
+- Sweep each particle's **centre point**, after forces, over its proposed step.
+  Planes act on both sides, including their edges. Starts exactly on a plane
+  are ignored. Spheres catch entry even when the endpoint is outside again;
+  inside starts may escape, surface starts moving inward collide, and tangent
+  paths do not. Particle radii and displayed scale do not enlarge colliders.
+  The original runtime's sidedness, overlap recovery, boundary tolerance,
+  swept versus discrete detection and radius handling remain unresolved.
+- Use the earliest impact, breaking simultaneous ties by description order.
+  Preserve tangential velocity and reverse the normal component multiplied by
+  bounce; negative/nonfinite bounce becomes zero. Bounce above one is allowed;
+  an overflowing response or displacement stops the particle. Advance the remaining step with
+  the reflected velocity. Ignore the just-hit collider on the next sweep and
+  stop at the fourth contact in one step. Restitution math, ordering, repeated
+  contacts and pathological-value behavior are implementation policies.
+- Impact spawning uses the referenced spawn modifier and the incoming particle
+  at contact, subject to existing chance, generation and system-cap policies.
+  Collision death removes the parent even if spawning fails and does not also
+  invoke age-death spawning. Queue impact births until existing particles have
+  moved; these newborns do not move or collide again in that step. Whether
+  spawning uses pre/post-bounce velocity, consumes remaining time, or observes
+  the spawn modifier's own active controller is unresolved (here that controller
+  is not consulted, matching the existing age-death spawn path).
+
+Synthetic tests cover exact decoder layouts and truncation, chain cycles and
+missing references, manager activation, transformed planes/spheres, finite
+bounds and degeneracies, swept entry, restitution, earliest and repeated impacts,
+death/spawn interaction, generation limits, capacity and the full spawn-count
+integer range.
