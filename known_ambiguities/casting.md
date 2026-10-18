@@ -55,6 +55,13 @@ hands' casting events.
   Firebolt, Healing) and its duration if 0x400000
   (`kPowerAffectsDuration`); its dual casting scale is `MGEF` `DATA` 0x70
   (1 for most, Fireball's 1.1).
+  Alteration's spells mostly gain duration this way: the flesh spells'
+  `ArmorFFSelf...` effects are flagged for duration (UESP: Oakflesh's 60 s
+  become 132 s dual cast, 198 s with Stability), Transmute's for neither
+  (UESP: no effect), Detect Life and Telekinesis for magnitude. Of player
+  spells' effects, Alteration's are 29 duration / 9 magnitude / 1 neither,
+  Conjuration's 38 / 10, Destruction's 67 magnitude, Illusion's 32 / 21,
+  Restoration's 15 duration / 23 magnitude / 44 neither / 1 both.
 - **Dual casting in the graph** (`magicbehavior.hkx`): the left hand's
   state machine takes `DualMagic_SpellAimedStart`, `..._SpellSelfStart`,
   `..._SpellAimedConcentrationStart`, `..._SpellSelfConcentrationStart` and
