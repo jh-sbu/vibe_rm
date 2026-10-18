@@ -553,18 +553,25 @@ pub(super) fn measure() -> FunctionBuilder {
 /// report in `Result<name>`, asks the game to save, then shows the reports.
 /// `mod_name` names the test mod in what's shown.
 pub(super) fn on_update(mod_name: &str, minutes: &str, tests: &[(&str, &str)]) -> FunctionBuilder {
+    on_update_with(
+        mod_name,
+        &format!("vibe_rm {mod_name} running: about {minutes}. Leave the game be."),
+        tests,
+    )
+}
+
+/// `on_update`, starting with the notification `note`.
+pub(super) fn on_update_with(
+    mod_name: &str,
+    note: &str,
+    tests: &[(&str, &str)],
+) -> FunctionBuilder {
     let mut c = Code::new("None");
     let ran = id("Ran");
     let go = c.label();
     c.jmpf(ran.clone(), go).ret(Arg::None).bind(go);
     c.assign(ran, true.into());
-    c.global(
-        "Debug",
-        "Notification",
-        [string(&format!(
-            "vibe_rm {mod_name} running: about {minutes}. Leave the game be."
-        ))],
-    );
+    c.global("Debug", "Notification", [string(note)]);
     for (name, _) in tests {
         let report = c.own(&format!("Test{name}"), "String", []);
         let var = id(&format!("Result{name}"));

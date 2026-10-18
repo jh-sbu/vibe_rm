@@ -155,8 +155,10 @@ hands' casting events.
   `CastStop`.
 - **Dual casting's power**: an effect's magnitude or duration (as its flags
   say) is multiplied by `fMagicDualCastingEffectivenessBase` (2.2) times its
-  dual casting scale (Fireball: 2.42). Whether the scale multiplies the base
-  or only its excess over 1 isn't published. The power goes before the
+  dual casting scale (Fireball: 2.42). Whether the scale multiplies the base,
+  only its excess over 1, or isn't about power at all (the `DUAL` record's
+  "inherit scale" flags suggest it may size the dual casting art) isn't
+  published; `test-mod dualcast` measures it. The power goes before the
   caster's and target's perks, and dual cast calm, fear and frenzy reach
   higher levels. Skill XP is a single cast's; whether a dual cast teaches
   more isn't published. `EffectWasDualCast` isn't evaluated.
