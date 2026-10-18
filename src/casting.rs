@@ -27,8 +27,8 @@
 //! The same spell in both hands, both buttons pressed together and the
 //! school's dual casting perk (`CanDualCastSpell`) make a dual cast: one
 //! spell from both hands, costing `fMagicDualCastingCostMult` times as much,
-//! its effects' magnitude or duration (as their flags say) scaled by
-//! `fMagicDualCastingEffectivenessBase` times their dual casting scale. The
+//! its effects' duration (those flagged so) or else magnitude multiplied by
+//! `fMagicDualCastingEffectivenessBase` (`test-mod dualcast`). The
 //! graph casts it on the left hand's state machine (`DualMagic_...Start`,
 //! then the left hand's events).
 //!

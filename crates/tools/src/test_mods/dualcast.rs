@@ -37,6 +37,13 @@
 //! flags and `kNoDualCastMods` gate it. A cast that rises by other than 50
 //! singly means the character's perks scale it (Stability lengthens
 //! Alteration spells): the dual cast's ratio to it is what counts.
+//!
+//! Run 2026-10-18 (a fresh level 1 character): reading C. Every single cast
+//! rose 50 for 3.85 s (the polling's start after the effect is on). Dual:
+//! Scale1, Scale15, Scale3 and Scale0 all +110 for 3.85 s; Duration15 +50
+//! for 8.33 s (x2.16); NoFlags +110, so effects without the duration flag
+//! gain magnitude, the magnitude flag or not; NoDualMods +100 for 3.86 s,
+//! twice the single cast without the bonus.
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, write_plugin};

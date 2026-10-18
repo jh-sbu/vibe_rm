@@ -49,12 +49,18 @@ hands' casting events.
   .. `RestorationDualCasting` set entry point 75 (`CanDualCastSpell`) to 1
   for spells of their skill (`EPMagic_SpellHasSkill`). A dual cast costs
   `fMagicDualCastingCostMult` (2.8) times as much and charges
-  `fMagicDualCastingTimeMult` (1) times as long. Spells flagged `SPIT`
-  0x800000 (`kNoDualCastMods`) aren't changed by it. An effect's power
-  scales its magnitude if flagged 0x200000 (`kPowerAffectsMagnitude`:
-  Firebolt, Healing) and its duration if 0x400000
-  (`kPowerAffectsDuration`); its dual casting scale is `MGEF` `DATA` 0x70
-  (1 for most, Fireball's 1.1).
+  `fMagicDualCastingTimeMult` (1) times as long.
+- **Dual casting's power** (`test-mod dualcast`, 2026-10-18): a flat
+  `fMagicDualCastingEffectivenessBase` (2.2), whatever the effect's dual
+  casting scale (`MGEF` `DATA` 0x70: scales 0, 1, 1.5 and 3 all dual cast
+  50 points to 110), so the scale isn't about power. It multiplies the
+  duration of effects flagged 0x400000 (`kPowerAffectsDuration`: 4 s to
+  8.3 s, the magnitude unchanged) and the magnitude of every other effect,
+  flagged 0x200000 (`kPowerAffectsMagnitude`) or not (an effect with
+  neither flag: 50 to 110). A spell flagged `SPIT` 0x800000
+  (`kNoDualCastMods`) dual cast lands twice its single magnitude (50 to
+  100): two casts' worth without the bonus. In vanilla that flag is on the
+  two-handed master spells (Fire Storm, Blizzard, Mayhem, the thralls).
   Alteration's spells mostly gain duration this way: the flesh spells'
   `ArmorFFSelf...` effects are flagged for duration (UESP: Oakflesh's 60 s
   become 132 s dual cast, 198 s with Stability), Transmute's for neither
@@ -160,15 +166,17 @@ hands' casting events.
   ready (the graph has no cancelling event); when neither hand is casting
   or playing out a release (its clip's `..._Equipped_Event`, or 1.5 s),
   `CastStop`.
-- **Dual casting's power**: an effect's magnitude or duration (as its flags
-  say) is multiplied by `fMagicDualCastingEffectivenessBase` (2.2) times its
-  dual casting scale (Fireball: 2.42). Whether the scale multiplies the base,
-  only its excess over 1, or isn't about power at all (the `DUAL` record's
-  "inherit scale" flags suggest it may size the dual casting art) isn't
-  published; `test-mod dualcast` measures it. The power goes before the
-  caster's and target's perks, and dual cast calm, fear and frenzy reach
-  higher levels. Skill XP is a single cast's; whether a dual cast teaches
-  more isn't published. `EffectWasDualCast` isn't evaluated.
+- **Dual casting's power, the rest**: effects flagged for both magnitude
+  and duration (Circle of Protection, the Dragonborn teleport FX) gain only
+  duration here, as the measured rule reads; not measured. With
+  `kNoDualCastMods` the power is taken as 2 for duration effects too, and
+  as one effect of twice the magnitude (the game may instead land each
+  hand's cast, stacking). What the dual casting scale does (perhaps the
+  dual casting art's size, which the `DUAL` record's "inherit scale" flags
+  suggest) isn't known; it isn't read. The power goes before the caster's
+  and target's perks, and dual cast calm, fear and frenzy reach higher
+  levels. Skill XP is a single cast's; whether a dual cast teaches more
+  isn't published. `EffectWasDualCast` isn't evaluated.
 - **Starting a dual cast** (the player): the second hand pressed within 0.2 s
   of the first, holding the same spell, with the perk and the magicka for
   the dual cost; otherwise each hand casts its own. The first hand's cast
