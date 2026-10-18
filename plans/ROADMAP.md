@@ -340,6 +340,10 @@ game each piece unlocks.
   `fWeaponBashMax`) x the attack's multiplier. Fighters bash a raised guard and,
   from their own guard, the swings coming at them, as the combat style's bash
   multipliers (`CSME`) have them. The player bashes by attacking with the guard up.
+  With the Power Bash idle's authored conditions satisfied, holding attack
+  makes a power bash; a tap makes an ordinary bash. Pending bashes cancel when
+  their guard, equipment or eligibility changes. Timing and fallback policies:
+  `known_ambiguities/power-bash.md`
   Console `pbash`; `cstats` shows the bash multipliers
 - Bows: archers (NPCs wielding a bow) close in until within range with a clear line,
   then stand (backing off between shots from a target close in, as readily as
@@ -1199,7 +1203,7 @@ game each piece unlocks.
    - Dragons: flying, circling, landing and perching; breath and shout attacks
      (with magic)
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
-   stuck in actors, sneak shots, power bashes for the player (perk), tempering
+   stuck in actors, sneak shots, tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
    scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, runes, effect visuals (spell projectiles' models run

@@ -49,6 +49,9 @@ const POWER_ATTACK_CHANCE: f32 = 0.6;
 /// Seconds the player holds the attack button for a power attack.
 const POWER_ATTACK_HOLD: f32 = 0.35;
 
+/// The player's power-bash idle: its authored conditions include the perk gate.
+const POWER_BASH_IDLE: FormId = FormId(0xE8452);
+
 /// How far a fleeing actor looks for somewhere to run to, how many places it
 /// weighs, and how near counts as there.
 const FLEE_STEP: f32 = 1200.0;
@@ -121,6 +124,54 @@ impl Side {
 pub(crate) struct AttackHold {
     pub side: Side,
     pub held: f32,
+    /// A bash held behind the guard: the shield and weapon when it started.
+    /// Keeping the equipment prevents a pending bash turning into another attack.
+    pub bash_with: Option<[Option<FormId>; 2]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BashHold {
+    Waiting,
+    Cancel,
+    Strike { power: bool },
+}
+
+/// Resolve one input update. Validity includes the guard, equipment and idle
+/// conditions; releasing a valid hold early asks for an ordinary bash.
+fn bash_hold_step(held: &mut f32, dt: f32, valid: bool, released: bool) -> BashHold {
+    if !valid {
+        return BashHold::Cancel;
+    }
+    if released {
+        return BashHold::Strike { power: false };
+    }
+    *held += dt.max(0.0);
+    if *held >= POWER_ATTACK_HOLD {
+        BashHold::Strike { power: true }
+    } else {
+        BashHold::Waiting
+    }
+}
+
+/// Prefer an affordable power bash when requested, otherwise an affordable
+/// ordinary bash. Never substitute a power bash for an ordinary one.
+fn player_bash_attack(
+    attacks: &[Attack],
+    power: bool,
+    stamina: f32,
+    costs: [f32; 2],
+) -> Option<(&Attack, f32)> {
+    let find = |power| {
+        attacks.iter().find_map(|a| {
+            let cost = costs[usize::from(a.power())] * a.stamina_mult;
+            (a.flags & ATK_BASH != 0 && a.power() == power && stamina >= cost).then_some((a, cost))
+        })
+    };
+    if power {
+        find(true).or_else(|| find(false))
+    } else {
+        find(false)
+    }
 }
 
 /// A hand's blow in a swing: its damage and reach.
@@ -2719,7 +2770,17 @@ impl Engine {
             return;
         }
         if hand == RIGHT && self.player_blocking {
-            self.player_bash();
+            if self.player_can_power_bash() {
+                if self.player_attack_held.is_none() {
+                    self.player_attack_held = Some(AttackHold {
+                        side: Side::Right,
+                        held: 0.0,
+                        bash_with: self.player_bash_equipment(),
+                    });
+                }
+            } else {
+                self.player_bash();
+            }
             return;
         }
         // A weapon put away comes out first (fists too).
@@ -2744,7 +2805,11 @@ impl Engine {
                 if hand == RIGHT && self.player_has_bow() && !self.player_begin_bow_draw() {
                     return;
                 }
-                self.player_attack_held = Some(AttackHold { side, held: 0.0 });
+                self.player_attack_held = Some(AttackHold {
+                    side,
+                    held: 0.0,
+                    bash_with: None,
+                });
             }
         }
     }
@@ -2783,34 +2848,54 @@ impl Engine {
             .map_or_else(Default::default, |i| fighting_hands(&self.lo, i))
     }
 
-    /// Attacking with the guard up: a bash at whatever actor is in front within
-    /// bash reach, with a shield or a weapon and the stamina for it (power bashes
-    /// need a perk the player doesn't have yet).
+    /// The shield and weapon available to bash with. Dual wielders cannot guard.
+    fn player_bash_equipment(&self) -> Option<[Option<FormId>; 2]> {
+        let equipment = [self.equipped_shield(PLAYER_REF), self.player_weapon()];
+        (!self.player_sheathed()
+            && !left_strikes(self.player_hands())
+            && equipment.iter().any(Option::is_some))
+        .then_some(equipment)
+    }
+
+    /// Eligibility comes from the PowerBash idle's conditions (vanilla:
+    /// HasPerk PowerBashPerk, GetIsID Player). Bows only make ordinary bashes.
+    fn player_can_power_bash(&self) -> bool {
+        self.player_bash_equipment().is_some()
+            && !self.player_has_bow()
+            && self.lo.get(POWER_BASH_IDLE).is_some_and(|r| {
+                crate::condition::evaluate(
+                    self,
+                    &crate::condition::parse_all(&r),
+                    crate::condition::Context {
+                        subject: Some(PLAYER_REF),
+                        ..Default::default()
+                    },
+                )
+            })
+    }
+
+    /// Attacking with the guard up: an ordinary bash at the actor in reach.
     pub fn player_bash(&mut self) {
+        self.player_bash_kind(false);
+    }
+
+    fn player_bash_kind(&mut self, power: bool) {
         if self.player_dead() || self.conversation.is_some() || self.disabled_controls.fighting {
             return;
         }
         let set = self.combat_settings();
-        if self.shield_rating(PLAYER_REF).is_none() && self.player_weapon().is_none() {
+        if self.player_bash_equipment().is_none() || (power && !self.player_can_power_bash()) {
             return;
         }
         let stats = self.player_stats();
-        let Some(attack) = stats
-            .attacks
-            .iter()
-            .find(|a| a.flags & ATK_BASH != 0 && a.flags & ATK_POWER == 0)
-            .cloned()
-        else {
+        let Some((attack, cost)) = player_bash_attack(
+            &stats.attacks,
+            power,
+            self.player_stamina,
+            [set.bash_stamina, set.power_bash_stamina],
+        ) else {
             return;
         };
-        let cost = set.bash_stamina * attack.stamina_mult;
-        if self.player_stamina < cost {
-            log::debug!(
-                "player hasn't the stamina to bash ({:.0} / {cost:.0})",
-                self.player_stamina
-            );
-            return;
-        }
         self.spend_stamina(PLAYER_REF, cost);
         self.player_graph_event(&attack.event);
         let skill = self.actor_value(PLAYER_REF, esp::actor_value::BLOCK);
@@ -2821,7 +2906,7 @@ impl Engine {
             && self.is_actor_ref(r)
             && !self.is_dead(r)
         {
-            self.bash_hit(r, PLAYER_REF, damage, false, attack.stagger);
+            self.bash_hit(r, PLAYER_REF, damage, attack.power(), attack.stagger);
         }
     }
 
@@ -2831,6 +2916,12 @@ impl Engine {
     pub fn player_attack_release(&mut self, hand: usize) {
         if hand == LEFT {
             self.player_blocking = false;
+            if self
+                .player_attack_held
+                .is_some_and(|h| h.bash_with.is_some())
+            {
+                self.player_attack_held = None;
+            }
         }
         if self.player_cast_release(hand) {
             return;
@@ -2840,13 +2931,23 @@ impl Engine {
         } else {
             Side::Right
         };
-        let Some(held) = self
+        let Some(mut held) = self
             .player_attack_held
             .take_if(|h| h.side == side || h.side == Side::Dual)
         else {
             return;
         };
-        if held.side == Side::Right && self.player_has_bow() {
+        if let Some(with) = held.bash_with {
+            let valid = self.player_blocking
+                && self.player_bash_equipment() == Some(with)
+                && self.player_can_power_bash();
+            if matches!(
+                bash_hold_step(&mut held.held, 0.0, valid, true),
+                BashHold::Strike { .. }
+            ) {
+                self.player_bash();
+            }
+        } else if held.side == Side::Right && self.player_has_bow() {
             self.player_release_bow(held.held);
         } else {
             self.player_attack(held.side, false);
@@ -2861,6 +2962,24 @@ impl Engine {
     /// Holding an attack button: a power attack once held long enough (a bow
     /// just draws on).
     pub(crate) fn update_player_attack(&mut self, dt: f32) {
+        if let Some(with) = self.player_attack_held.and_then(|h| h.bash_with) {
+            let valid = self.player_blocking
+                && self.player_bash_equipment() == Some(with)
+                && self.player_can_power_bash()
+                && !self.player_dead()
+                && self.conversation.is_none()
+                && !self.disabled_controls.fighting;
+            let h = self.player_attack_held.as_mut().unwrap();
+            match bash_hold_step(&mut h.held, dt, valid, false) {
+                BashHold::Waiting => {}
+                BashHold::Cancel => self.player_attack_held = None,
+                BashHold::Strike { power } => {
+                    self.player_attack_held = None;
+                    self.player_bash_kind(power);
+                }
+            }
+            return;
+        }
         let bow = self.player_has_bow();
         let Some(h) = self.player_attack_held.as_mut() else {
             return;
@@ -3536,4 +3655,65 @@ mod hand_tests {
         assert_eq!(hit_frame_bit(Some("Left")), HIT_LEFT);
         assert_eq!(hit_frame_bit(None), HIT_RIGHT);
     }
+
+    #[test]
+    fn bashes_select_the_affordable_kind_and_its_authored_cost() {
+        let mut normal = attack("testBash");
+        normal.flags = ATK_BASH;
+        normal.stamina_mult = 0.5;
+        let mut power = attack("testPowerBash");
+        power.flags = ATK_BASH | ATK_POWER;
+        power.stamina_mult = 2.0;
+        let attacks = [attack("notABash"), normal, power];
+        let pick = |want, stamina| {
+            player_bash_attack(&attacks, want, stamina, [20.0, 30.0])
+                .map(|(a, cost)| (a.event.as_str(), cost))
+        };
+        assert_eq!(pick(false, 100.0), Some(("testBash", 10.0)));
+        assert_eq!(pick(true, 60.0), Some(("testPowerBash", 60.0)));
+        assert_eq!(pick(true, 59.0), Some(("testBash", 10.0)));
+        assert_eq!(pick(false, 9.0), None);
+        assert_eq!(pick(true, 9.0), None);
+        assert!(player_bash_attack(&attacks[2..], false, 100.0, [20.0, 30.0]).is_none());
+    }
+
+    #[test]
+    fn bash_holds_distinguish_taps_holds_and_cancellation() {
+        let mut held = 0.0;
+        assert_eq!(
+            bash_hold_step(&mut held, 0.0, true, false),
+            BashHold::Waiting
+        );
+        assert_eq!(
+            bash_hold_step(&mut held, -1.0, true, false),
+            BashHold::Waiting
+        );
+        assert_eq!(held, 0.0);
+        assert_eq!(
+            bash_hold_step(&mut held, 0.2, true, false),
+            BashHold::Waiting
+        );
+        assert_eq!(
+            bash_hold_step(&mut held, 0.0, true, true),
+            BashHold::Strike { power: false }
+        );
+        // Invalidating a hold wins over release or crossing the threshold.
+        assert_eq!(
+            bash_hold_step(&mut held, 1.0, false, true),
+            BashHold::Cancel
+        );
+        assert_eq!(
+            bash_hold_step(&mut held, 1.0, false, false),
+            BashHold::Cancel
+        );
+        assert_eq!(held, 0.2);
+        assert_eq!(
+            bash_hold_step(&mut held, 0.2, true, false),
+            BashHold::Strike { power: true }
+        );
+    }
 }
+
+#[cfg(test)]
+#[path = "combat_bash_tests.rs"]
+mod bash_tests;
