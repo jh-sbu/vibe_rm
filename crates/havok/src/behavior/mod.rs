@@ -1663,6 +1663,46 @@ mod character_property_tests {
     }
 
     #[test]
+    fn clip_modes_retain_property_and_variable_bindings_without_changing_authored_mode() {
+        let mut p = fixture();
+        for at in [0x480, 0x4E0] {
+            p.data[at..at + 0x20].fill(0);
+            p.data[at..at + 4].copy_from_slice(b"mode");
+        }
+        p.data[0x2F2] = 3; // Authored hkbClipGenerator mode at node + 0x72.
+        let mut r = Reader {
+            p: &p,
+            classes: [(0x280, "hkbClipGenerator")].into(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            property_bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["Enable", "Unused", "Output", "Other", "Playback"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let id = r.generator(0x280);
+        assert!(matches!(
+            r.generators[id],
+            Generator::Clip {
+                mode: ClipMode::PingPong,
+                ..
+            }
+        ));
+        assert_eq!(r.property_bindings[id][0].member, "mode");
+        assert_eq!(r.property_bindings[id][0].property, "playback");
+        assert_eq!(r.bindings[id][0].member, "mode");
+        assert_eq!(r.bindings[id][0].variable, 2);
+        assert_eq!(r.generator(0x280), id);
+        assert_eq!(r.property_bindings.len(), 1);
+        assert_eq!(r.bindings.len(), 1);
+    }
+
+    #[test]
     fn cyclic_wrappers_retain_scalar_property_names_and_variable_bindings() {
         let mut p = fixture();
         for (at, len) in [(0x480, 8), (0x4E0, 11)] {

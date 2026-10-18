@@ -613,6 +613,16 @@ impl Ctx<'_> {
                     start_time,
                     ..
                 } => {
+                    // Mode determines the active clip's timing state. Resolve it
+                    // once with the other activation inputs; unsupported enum
+                    // values keep the authored mode rather than casting to zero.
+                    let mode = match self.bound(gi, g, "mode") {
+                        Some(0.0) => ClipMode::SinglePlay,
+                        Some(1.0) => ClipMode::Looping,
+                        Some(2.0) => ClipMode::UserControlled,
+                        Some(3.0) => ClipMode::PingPong,
+                        _ => *mode,
+                    };
                     let speed = self.bound(gi, g, "playbackSpeed").unwrap_or(*speed);
                     let full = self.clips.duration(animation).unwrap_or(0.0);
                     // Crops are activation inputs, like startTime. Keep one resolved
@@ -647,8 +657,8 @@ impl Ctx<'_> {
                         reverse: speed < 0.0,
                         additive,
                         looping: !matches!(mode, ClipMode::SinglePlay | ClipMode::UserControlled),
-                        user: *mode == ClipMode::UserControlled,
-                        ping_pong: *mode == ClipMode::PingPong,
+                        user: mode == ClipMode::UserControlled,
+                        ping_pong: mode == ClipMode::PingPong,
                         wrapped: false,
                         started: false,
                     })
@@ -2446,6 +2456,163 @@ mod tests {
         );
         i.update(0.0, &mut durations);
         i
+    }
+
+    fn mode_property_graph() -> BehaviorGraph {
+        let mut c = clip(
+            "Loop",
+            ClipMode::SinglePlay,
+            vec![Trigger {
+                time: 0.0,
+                from_end: true,
+                event: 0,
+                payload: Some("end".into()),
+            }],
+        );
+        if let Generator::Clip { user_fraction, .. } = &mut c {
+            *user_fraction = 0.25;
+        }
+        let mut g = BehaviorGraph::new("Modes", Some(0), vec![c], vec!["End".into()]);
+        g.property_bindings[0] = vec![property("mode", "PLAYBACK")];
+        g
+    }
+
+    #[test]
+    fn clip_mode_properties_drive_samples_wrapping_and_end_triggers() {
+        for (mode, expected_time, wrapped, end_event) in [
+            (0.0, 2.0, false, true),
+            (1.0, 0.5, true, true),
+            (2.0, 0.5, false, false),
+            (3.0, 1.5, true, true),
+        ] {
+            let mut i = property_instance(mode_property_graph(), &[("playback", mode)]);
+            assert_eq!(time(&i), if mode == 2.0 { 0.5 } else { 0.0 });
+            i.update(2.5, &mut durations);
+            let samples = i.samples();
+            assert_eq!(samples[0].time, expected_time, "mode {mode}");
+            assert_eq!(samples[0].wrapped, wrapped, "mode {mode}");
+            assert_eq!(i.take_raised().len(), usize::from(end_event), "mode {mode}");
+            assert!(!i.set_variable("Playback", 0.0));
+        }
+    }
+
+    #[test]
+    fn clip_mode_properties_keep_authored_fallback_for_missing_or_invalid_inputs() {
+        let mut absent = instance(mode_property_graph());
+        absent.update(2.5, &mut durations);
+        assert_eq!(time(&absent), 2.0);
+        // A pointer property with the same name cannot be used as an enum.
+        let mut non_scalar = Instance::new(
+            Shared::new(Arc::new(Project {
+                graphs: vec![("g".into(), mode_property_graph())],
+                character: Some(Character {
+                    bone_weights: [("playback".into(), vec![1.0])].into(),
+                    ..Default::default()
+                }),
+            })),
+            1,
+        );
+        non_scalar.update(2.5, &mut durations);
+        assert_eq!(time(&non_scalar), 2.0);
+        for properties in [vec![], vec![("unrelated", 1.0)]] {
+            let mut i = property_instance(mode_property_graph(), &properties);
+            i.update(2.5, &mut durations);
+            assert_eq!(time(&i), 2.0);
+            assert!(!i.samples()[0].wrapped);
+        }
+        for mode in [
+            -1.0,
+            0.5,
+            4.0,
+            256.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
+            let mut i = property_instance(mode_property_graph(), &[("playback", mode)]);
+            i.update(2.5, &mut durations);
+            assert_eq!(time(&i), 2.0, "invalid mode {mode}");
+            assert!(!i.samples()[0].wrapped);
+        }
+    }
+
+    #[test]
+    fn clip_mode_variables_take_precedence_and_resample_on_activation() {
+        let bound = mode_property_graph();
+        let mut g = BehaviorGraph::new(
+            "Modes",
+            Some(0),
+            vec![
+                Generator::StateMachine {
+                    name: "Root".into(),
+                    start: 0,
+                    start_variable: None,
+                    start_mode: Default::default(),
+                    change_event: None,
+                    states: vec![
+                        state(0, 1, vec![Transition::new(0, 1, None)]),
+                        state(1, 2, vec![Transition::new(1, 0, None)]),
+                    ],
+                    wildcards: vec![],
+                },
+                clip("Loop", ClipMode::SinglePlay, vec![]),
+                clip("Idle", ClipMode::Looping, vec![]),
+            ],
+            vec!["Switch".into(), "Back".into()],
+        );
+        g.property_bindings[1] = bound.property_bindings[0].clone();
+        let variable = g.add_variable("Mode", VarType::Int, 0.0);
+        g.bindings[1] = vec![Binding {
+            member: "mode".into(),
+            variable,
+        }];
+        let mut i = property_instance(g, &[("playback", 2.0)]);
+        i.update(2.5, &mut durations);
+        assert_eq!(time(&i), 2.0); // The variable overrides the user-controlled property.
+        assert!(i.set_variable("Mode", 1.0));
+        i.update(1.0, &mut durations);
+        assert_eq!(time(&i), 2.0); // The active clip retains its mode.
+        i.handle_event("Switch", &mut durations);
+        i.handle_event("Back", &mut durations);
+        i.update(2.5, &mut durations);
+        assert_eq!(time(&i), 0.5); // Reactivation resolves the looping variable.
+
+        assert!(i.set_variable("Mode", f32::NAN));
+        i.handle_event("Switch", &mut durations);
+        i.handle_event("Back", &mut durations);
+        i.update(2.5, &mut durations);
+        assert_eq!(time(&i), 2.0); // An invalid variable keeps authored mode, not the property.
+    }
+
+    #[test]
+    fn clip_mode_properties_supply_synchronized_looping_state() {
+        for mode in [0.0, 1.0] {
+            let mut blend = masked_blend(
+                "Sync",
+                vec![masked_child(1, None, None), masked_child(2, None, None)],
+            );
+            if let Generator::Blender { flags, .. } = &mut blend {
+                *flags = BLEND_SYNC;
+            }
+            let mut g = BehaviorGraph::new(
+                "ModeSync",
+                Some(0),
+                vec![
+                    blend,
+                    clip("Enter", ClipMode::SinglePlay, vec![]),
+                    clip("Loop", ClipMode::SinglePlay, vec![]),
+                ],
+                vec![],
+            );
+            g.property_bindings[1] = vec![property("mode", "Playback")];
+            let mut i = property_instance(g, &[("playback", mode)]);
+            i.update(2.0, &mut durations);
+            let samples = i.samples();
+            let phase = if mode == 0.0 { 1.0 } else { 1.0 / 3.0 };
+            assert!((samples[0].time - phase).abs() < 1e-6);
+            assert!((samples[1].time - phase * 2.0).abs() < 1e-6);
+            assert!(samples.iter().all(|s| s.wrapped == (mode == 1.0)));
+        }
     }
 
     #[test]
