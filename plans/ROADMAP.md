@@ -927,6 +927,9 @@ game each piece unlocks.
   Rigid mesh emitters sample vertices, face/edge centres and surfaces from
   referenced meshes, with normal, random or axis velocity; weighting and
   deformation limits remain documented below.
+  Collider managers resolve planar and spherical chains at object rest
+  transforms, with swept point contacts, bounce, collision spawning/death and
+  bounded repeated impacts; contact and response policies remain documented below.
   Open questions:
   `known_ambiguities/particles.md`
 - Addon nodes: a model's `BSValueNode`s take the addon node (ADDN) whose index is
@@ -1316,7 +1319,7 @@ game each piece unlocks.
    caster batches), HDR: eye adaptation, bloom, tone mapping and the image
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
    radial blur and motion blur (cinematic values and tint: see Done), particles'
-   remaining modifiers (colliders, skinned/deformed and animated mesh emission,
+   remaining modifiers (animated colliders, skinned/deformed and animated mesh emission,
    strips, LOD; see
    `known_ambiguities/particles.md`), distant LOD (BTR/BTO/trees),
    grass shadows and the grass cache, spells' impacts, soft effects (effect

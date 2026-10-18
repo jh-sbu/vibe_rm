@@ -388,6 +388,7 @@ pub enum Block {
     ParticleSystem(Box<crate::psys::ParticleSystem>),
     ParticleData(Box<crate::psys::ParticleData>),
     ParticleModifier(Box<crate::psys::Modifier>),
+    ParticleCollider(Box<crate::psys::Collider>),
     ParticleController(crate::psys::ParticleController),
     BoolInterpolator(crate::psys::BoolInterpolator),
     Unknown(String),
