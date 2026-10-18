@@ -149,6 +149,16 @@ Left out so far:
   (`MoveTo` with offsets) 40, 60, 80 and 120 units from it, held, health
   read after 2 s at each: the reach (feet? scaled?) and the rate. Needs a
   `PHZD` record writer.
+- **Wards** (`wards.md`), partial: the player holds Lesser Ward (the
+  script can't cast it held), told to by a message box answered before the
+  script goes on; the script reads `GetActorValue("WardPower")` every 0.1 s
+  with `Utility.GetCurrentRealTime` for 3 s (how fast it builds, to what:
+  40, 52?). Then a held NPC facing the player casts (`Spell.Cast` from it)
+  Flames-strength and Fireball-strength test spells at them: `WardPower`
+  and the player's health after each, `OnWardHit` statuses (an alias
+  script), magicka after with Ward Absorb added (`AddPerk`), and the same
+  from an NPC placed behind the player (the arc). Once dual cast (the
+  perk added: does it start whole?).
 - **Ethereal** (`magic.md`): `VoiceBecomeEthereal3` cast by script on
   a held NPC, then a Firebolt cast at it and `DamageActorValue` health on
   it: health after each (magic spared, scripts not?), and whether the

@@ -67,7 +67,7 @@ const PROJ_CONE: u16 = 0x10;
 /// explosion's 320 units.
 pub(crate) const UNITS_PER_FOOT: f32 = 320.0 / 15.0;
 /// How often a concentration spell lands on what it reaches (seconds).
-const CONCENTRATION_TICK: f32 = 0.25;
+pub(crate) const CONCENTRATION_TICK: f32 = 0.25;
 /// Contact spells' reach, and target actor spells' without a range.
 const CONTACT_REACH: f32 = 160.0;
 const TARGET_RANGE: f32 = 4096.0;
@@ -301,6 +301,27 @@ impl Engine {
             self.cast_with(PLAYER_REF, h.spell, 1.0, h.dual);
         }
         true
+    }
+
+    /// Whether a hand of the player's casts `spell` as a concentration spell
+    /// (its channelled effects last while it does).
+    pub(crate) fn player_holds_spell(&self, spell: FormId) -> bool {
+        self.casting
+            .hands
+            .iter()
+            .flatten()
+            .any(|h| h.flowing && h.spell == spell)
+    }
+
+    /// The hands casting `spell` stop (a ward broken).
+    pub(crate) fn player_stop_holding(&mut self, spell: FormId) {
+        for hand in [RIGHT, LEFT] {
+            if let Some(h) = self.casting.hands[hand].take_if(|h| h.spell == spell)
+                && h.graph
+            {
+                self.player_hand_idle(hand);
+            }
+        }
     }
 
     /// Whether the player is dual casting: holding a spell from both hands,
@@ -1142,7 +1163,7 @@ impl Engine {
     }
 
     /// Whether any of a spell's effects is hostile.
-    fn item_hostile(&self, item: &MagicItem) -> bool {
+    pub(crate) fn item_hostile(&self, item: &MagicItem) -> bool {
         item.effects.iter().any(|e| {
             self.magic_effect(e.effect)
                 .is_some_and(|m| m.has(flags::HOSTILE))

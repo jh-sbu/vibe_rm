@@ -608,6 +608,15 @@ game each piece unlocks.
   the Throat of the World's blizzard) give their spell to whoever is within
   reach every target interval (`src/hazards.rs`, vrm-tool `hazards`,
   `known_ambiguities/triggers.md`)
+- Wards (Accumulate Magnitude on `WardPower`): a ward held builds at its
+  magnitude a second to `fMagicWardPowerMaxBase` times it (whole at once
+  dual cast), and after hits builds again; spells, scrolls, staffs and
+  shouts from in front are absorbed, wearing it down, or break it (the
+  ward gone, an NPC staggered), doing nothing to the warded either way;
+  gear wards (Spellbreaker) absorb without wearing; `OnWardHit` (First
+  Lessons' Tolfdir); Ward Absorb's magicka. A concentration spell's
+  effects without a duration (the ward's armor too) last while it is held
+  (`src/wards.rs`, `known_ambiguities/wards.md`)
 - Ethereal (Become Ethereal): no blows, bashes or harmful magic land on or
   from the ethereal, no stagger, no falling damage (nor for the paralyzed);
   the player attacking, casting or activating ends it (`src/ethereal.rs`,
@@ -1147,7 +1156,8 @@ game each piece unlocks.
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
-   scores, wards, summons and buffs in combat, staffs, runes, wards, effect visuals (spell projectiles' models run
+   scores, NPCs raising wards (and their `WardAbsorbed` / `WardBroken` idles,
+   `IsWardState`), the player staggered by a broken ward, summons and buffs in combat, staffs, runes, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,

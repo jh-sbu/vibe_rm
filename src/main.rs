@@ -58,6 +58,7 @@ mod training;
 mod traps;
 mod triggers;
 mod ui;
+mod wards;
 mod water;
 mod weather;
 mod world;
