@@ -92,8 +92,9 @@ hands' casting events.
 - **How casters fight**: they close to 85% of the spell's range (at most
   2000 units, as archers) with a clear line, stand facing the target and
   throw a spell every 1.5 to 3 seconds, or channel a concentration spell
-  for 1.5 to 3 seconds, aimed at the middle of the target's body; no charge
-  time.
+  for 1.5 to 3 seconds, aimed at the middle of the target's body. Humanoids
+  charge a thrown spell for its charge time in their graph; creatures
+  (atronachs, whose graphs have no hands' casting) throw at once.
 - **The player is struck** by flames, beams and target actor spells that
   pass within their capsule (they aren't in the physics world).
 - **The Story Manager's spell cast event** (`CAST`) is sent for the player's
@@ -134,3 +135,16 @@ hands' casting events.
   ready (the graph has no cancelling event); when neither hand is casting
   or playing out a release (its clip's `..._Equipped_Event`, or 1.5 s),
   `CastStop`. Dual casting (`DualMagic_...`) isn't built.
+- **Casters' hands** (`ActorRuntime::set_hand_vars`): while an NPC fights
+  with a spell its graph's hand types say a spell is in hand (it holds none
+  in its inventory): the left hand beside a one-handed weapon in the right
+  (`BeginCastLeft`), else both hands, casting with the right. The graph
+  follows the types while drawn (`RootBoneSwitch_MSG` re-selects), so no
+  redraw. Which hand the game's NPCs ready their spells in isn't published.
+- **Casters' events** follow the player's: the start once the hands are out
+  (`weaponDraw`; refused, again 0.5 s later), `SpellReady` after the charge
+  time, `SpellRelease` the update after, the spell cast at `SpellFire`
+  (none within 1.5 s: nothing cast), `CastStop` when the release clip ends
+  (or 1.5 s); a concentration spell flowing the update after it starts and
+  stopped by its hand's `Equipped` and `CastStop`. A thrown spell keeps the
+  recipient it was started at.

@@ -439,7 +439,8 @@ game each piece unlocks.
   Console `pcast`. NPCs whose combat style favours magic fight with their
   strongest offensive spell while their magicka lasts (keeping their
   distance, throwing or channelling it at their target), then by hand;
-  their magicka comes back. Open questions: `known_ambiguities/casting.md`
+  their magicka comes back. Humanoid casters cast with a hand in their
+  graph, as the player does (the left beside a one-handed weapon). Open questions: `known_ambiguities/casting.md`
 - NPC combat self-healing: injured fighters choose an affordable known
   self-delivered Health restoration spell, check its effects' conditions on
   themselves and pay magicka through the existing casting pipeline. Healing
@@ -1140,8 +1141,7 @@ game each piece unlocks.
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
-   animations), magic (see Done; next: NPCs' casting animations (the magic
-   behaviour's states), native healing thresholds and timing, spells chosen by their
+   animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
    scores, wards, summons and buffs in combat, the player's
    dual casting (`DualMagic_...`) and staffs, runes, wards, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,

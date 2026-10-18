@@ -101,7 +101,7 @@ struct Firing {
 }
 
 /// The hands' names in the graphs' events.
-fn hand_prefix(hand: usize) -> &'static str {
+pub(crate) fn hand_prefix(hand: usize) -> &'static str {
     if hand == LEFT { "MLh" } else { "MRh" }
 }
 
@@ -288,16 +288,7 @@ impl Engine {
     /// graph ignores it there already), then the hand's kind of cast. False
     /// if the graph won't.
     fn player_hand_start(&mut self, hand: usize, item: &MagicItem) -> bool {
-        let archetype = item
-            .effects
-            .first()
-            .and_then(|e| self.magic_effect(e.effect))
-            .map(|e| e.archetype);
-        let start = format!(
-            "{}_{}",
-            hand_prefix(hand),
-            cast_start_event(item, archetype)
-        );
+        let start = format!("{}_{}", hand_prefix(hand), self.cast_start(item));
         let began = self.player_graph_event(if hand == LEFT {
             "BeginCastLeft"
         } else {
@@ -629,21 +620,50 @@ impl Engine {
             } else {
                 None
             };
-            if let Some(a) = self.actor_mut(actor)
-                && a.combat_spell != pick
-            {
-                // A spell being channelled stops with it.
+            if self.actor_ref(actor).is_none_or(|a| a.combat_spell == pick) {
+                continue;
+            }
+            // Fighting with a spell, it is in hand in the graph: the left
+            // beside a one-handed weapon, else the right.
+            let speeds = self.weapon_speed_mults(actor);
+            let inv = self.inventories.get(&actor).cloned().unwrap_or_default();
+            let vars = crate::ai::combat::hand_graph_vars(&self.lo, &inv, speeds);
+            let hand = pick.map(|_| {
+                if inv.hand(&self.lo, false).one_handed() {
+                    LEFT
+                } else {
+                    RIGHT
+                }
+            });
+            if let Some(a) = self.actor_mut(actor) {
+                // A spell being channelled stops with it; one thrown plays
+                // out, unless there is none to fight with now.
                 if let Some(c) = a.combat.as_mut()
                     && c.channel > 0.0
                 {
                     c.channel = 0.0;
-                    if let Some(g) = a.graph.as_mut() {
-                        g.send_event("CastStop");
-                    }
+                    a.stop_hand_cast();
+                }
+                if pick.is_none() {
+                    a.stop_hand_cast();
                 }
                 a.combat_spell = pick;
+                if a.cast_hand != hand {
+                    a.cast_hand = hand;
+                    a.set_hand_vars(vars);
+                }
             }
         }
+    }
+
+    /// A spell's kind of cast for the hands' graph events.
+    fn cast_start(&self, item: &MagicItem) -> &'static str {
+        let archetype = item
+            .effects
+            .first()
+            .and_then(|e| self.magic_effect(e.effect))
+            .map(|e| e.archetype);
+        cast_start_event(item, archetype)
     }
 
     /// Read candidates again when the actor's known spell list changes. The
@@ -680,6 +700,8 @@ impl Engine {
                         range: 0.0,
                         concentration: item.cast_type == CONCENTRATION,
                         self_target: true,
+                        start: self.cast_start(&item),
+                        charge: item.charge_time,
                     });
                 }
                 continue;
@@ -705,6 +727,8 @@ impl Engine {
                 range: range.min(crate::ai::archery::BOW_RANGE),
                 concentration: item.cast_type == CONCENTRATION,
                 self_target: false,
+                start: self.cast_start(&item),
+                charge: item.charge_time,
             });
         }
         let out = std::sync::Arc::new(out);

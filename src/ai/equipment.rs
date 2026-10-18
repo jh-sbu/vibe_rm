@@ -110,11 +110,7 @@ impl Engine {
             inv.hold(lo, t, &[LEFT]);
         }
         a.hands = crate::ai::combat::fighting_hands(lo, inv);
-        if let Some(g) = &mut a.graph {
-            for (var, value) in crate::ai::combat::hand_graph_vars(lo, inv, speeds) {
-                g.set_variable(var, value);
-            }
-        }
+        a.set_hand_vars(crate::ai::combat::hand_graph_vars(lo, inv, speeds));
         log::debug!(
             "{actor} {}",
             if torch.is_some() {
@@ -172,11 +168,7 @@ impl Engine {
         a.weapon_reach = reach;
         a.power_cost = cost;
         a.hands = crate::ai::combat::fighting_hands(lo, &inv);
-        if let Some(g) = &mut a.graph {
-            for (var, value) in crate::ai::combat::hand_graph_vars(lo, &inv, speeds) {
-                g.set_variable(var, value);
-            }
-        }
+        a.set_hand_vars(crate::ai::combat::hand_graph_vars(lo, &inv, speeds));
         self.refresh_equipment(key, index, actor);
         true
     }
@@ -493,11 +485,7 @@ impl Engine {
         if let Some(b) = bow {
             a.bow_speed = crate::ai::archery::bow_speed(lo, b);
         }
-        if let Some(g) = &mut a.graph {
-            for (var, value) in crate::ai::combat::hand_graph_vars(lo, &inv, speeds) {
-                g.set_variable(var, value);
-            }
-        }
+        a.set_hand_vars(crate::ai::combat::hand_graph_vars(lo, &inv, speeds));
         self.refresh_equipment(key, index, actor);
     }
 

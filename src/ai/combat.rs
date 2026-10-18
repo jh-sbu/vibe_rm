@@ -714,8 +714,10 @@ pub struct Combat {
     /// Archers: where they are in their shot, and whether they have a clear line
     /// to the target (set by the engine each frame).
     pub(crate) draw: super::archery::Draw,
-    /// Casters: seconds left of the concentration spell they are channelling.
+    /// Casters: seconds left of the concentration spell they are channelling,
+    /// and the hand casting in the graph.
     pub(crate) channel: f32,
+    pub(crate) hand_cast: Option<super::casters::HandCast>,
     pub(crate) clear_shot: bool,
     /// Running from the target rather than fighting it; where it is heading away
     /// from the target to (fleeing, or an archer backing off).
@@ -789,6 +791,7 @@ impl Combat {
             counter: false,
             draw: Default::default(),
             channel: 0.0,
+            hand_cast: None,
             clear_shot: false,
             fleeing: false,
             away_to: None,
