@@ -70,9 +70,29 @@ impl Engine {
         }
     }
 
-    /// What a cast of a staff enchantment costs `caster` in charge (a second
-    /// of it for concentration ones): its `ENIT` cost, less for skill in
-    /// its school as a spell's (`spell_cost`).
+    /// A blow of an enchanted `weapon` of `attacker`'s pays its
+    /// enchantment's cost from its charge: whether it could. Weapons without
+    /// a charge (`EAMT`: bound weapons, the Ebony Blade, Keening) need none.
+    pub(crate) fn pay_weapon_charge(
+        &mut self,
+        attacker: FormId,
+        weapon: FormId,
+        ench: FormId,
+    ) -> bool {
+        if self.weapon_capacity(weapon) <= 0.0 {
+            return true;
+        }
+        let cost = self.staff_cost(attacker, ench);
+        if self.weapon_charge(attacker, weapon) < cost {
+            return false;
+        }
+        self.spend_weapon_charge(attacker, weapon, cost);
+        true
+    }
+
+    /// What a cast of a staff enchantment, or a blow of an enchanted weapon,
+    /// costs `caster` in charge (a second of a concentration staff's): its
+    /// `ENIT` cost, less for skill in its school as a spell's (`spell_cost`).
     pub(crate) fn staff_cost(&self, caster: FormId, ench: FormId) -> f32 {
         let base = self
             .lo
@@ -187,6 +207,24 @@ mod tests {
         // Ten left: not enough.
         cast(&mut e);
         assert_eq!(e.actor_value(PLAYER_REF, av::RIGHT_ITEM_CHARGE), 10.0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn blows_pay_from_the_charge_which_goes_with_the_weapon() {
+        let (dir, mut e) = staff_engine();
+        e.add_item(PLAYER_REF, STAFF, 2);
+        assert!(e.pay_weapon_charge(PLAYER_REF, STAFF, ENCH));
+        assert!(e.pay_weapon_charge(PLAYER_REF, STAFF, ENCH));
+        assert!(!e.pay_weapon_charge(PLAYER_REF, STAFF, ENCH));
+        assert_eq!(e.weapon_charge(PLAYER_REF, STAFF), 10.0);
+        // The full one leaves first; the spent one takes its charge along.
+        let chest = FormId(0x899);
+        e.remove_stack(PLAYER_REF, STAFF, 1, None, Some(chest), None);
+        assert_eq!(e.weapon_charge(chest, STAFF), 50.0);
+        assert_eq!(e.weapon_charge(PLAYER_REF, STAFF), 10.0);
+        e.remove_stack(PLAYER_REF, STAFF, 1, None, Some(chest), None);
+        assert_eq!(e.weapon_charge(chest, STAFF), 10.0);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

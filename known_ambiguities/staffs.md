@@ -24,9 +24,11 @@ release clips for hand type 8: `StfMagicRight_Release`, `SpellFire` at
   and "Your item has insufficient charge" shows; the magicka meter doesn't
   blink.
 - **Which staff's charge**: one of the carried staffs of a kind carries
-  the charge spent (`Inventory::charges`); the others are full. Charge
-  isn't carried through transfers yet: a staff dropped, stored, sold or
-  given away is full again in its new inventory.
+  the charge spent (`Inventory::charges`); the others are full, and leave
+  first. When the spent one is stored, sold, given or taken, its charge
+  goes with it (where one of the kind is spent already, the lower charge
+  is kept). Dropped into the world it is full again: placed references
+  keep no charge yet.
 - **Magicka** keeps coming back while only staffs are being cast.
 - **An empty hand beside a staff** is a staff's (8) to the graph, as with
   spells (`casting.md`): otherwise a staff in the right hand alone leaves
@@ -64,5 +66,24 @@ spells isn't public. Here:
 
 - Recharging with soul gems; the HUD's charge meters; NPCs' self-cast
   and summoning staffs (only offensive ones are fought with).
-- Enchanted weapons' charge used by blows (their `EAMT` is read the same
-  way, but blows don't spend it yet).
+- Placed (dropped) weapons keeping their charge; the charge reduced by
+  Fortify Destruction-like items (UESP: "Items with enchantments that
+  reduce the magicka cost of spells will also affect charge levels on
+  weapons associated with that school"; `spell_cost` doesn't read the
+  schools' `...Mod` values yet).
+
+## Enchanted weapons
+
+UESP's Skyrim:Generic Magic Weapons gives each weapon "Charge/Cost =
+Uses" ("1000/18=55"), the cost lowered by the enchantment's school skill
+("about 1.7 times the uses" at 100), as staffs'. The weapons with an
+enchantment but no `EAMT` are the ones that never need recharging: bound
+weapons, the Ebony Blade, Keening, Bloodskal, trap darts. Here:
+
+- **A blow** that lands (blocked or not) pays the enchantment's `ENIT`
+  cost by the attacker's skill in its school, as a staff cast; a bow pays
+  for each arrow that strikes, not each shot loosed. With too little
+  left, the blow lands without the enchantment, and nothing is shown.
+- **No `EAMT`**: the enchantment always lands.
+- **NPCs' weapons** run dry as the player's do. Whether the game spares
+  NPCs isn't published.
