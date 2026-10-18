@@ -263,7 +263,10 @@ game each piece unlocks.
   (click). Console `startcombat <a> <b|player>`
 - Fleeing by threat ratio: each fighter's combat strength (damage a second x
   health over what its armor lets through) refreshed every
-  `fCombatStrengthUpdateTime`; its side's strength over the other side's (sides
+  `fCombatStrengthUpdateTime`; contributions to other fighters' group sums
+  refreshed separately every `fCombatGroupCombatStrengthUpdateTime`, including
+  the player's (each actor counts its own personal strength in its check);
+  its side's strength over the other side's (sides
   linked through who fights whom, the player among them) checked every
   `fCombatThreatRatioUpdateTime` against its confidence (`fConfidence<Level>`) plus a
   modifier rolled per fight (`fCombatConfidenceModifierMin` / `Max`); only the hurt
@@ -1254,8 +1257,8 @@ game each piece unlocks.
    - Combat, more: attackers forgetting a lost fleeing target
      (`fCombatDetectionFleeingLostRemoveTime`,
      `fCombatLowFleeingTargetHitPercent`); flee dialogue's distance rules
-     (`fCombatDialogueFleeDistanceMult`; timer scheduling: see Done); the group strength timer
-     (`fCombatGroupCombatStrengthUpdateTime`); impacts' hazards (`NAM2`),
+     (`fCombatDialogueFleeDistanceMult`; timer scheduling: see Done);
+     impacts' hazards (`NAM2`),
      results (bounce, impale, stick)
    - Encumbrance, more: worn armor slowing NPCs (the player: see Done),
      fast travel refused over-encumbered (with the

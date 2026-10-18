@@ -1474,6 +1474,8 @@ impl Engine {
         a.end_search();
         a.interrupt(&mut self.furniture);
         a.combat = Some(super::threat::new_combat(&self.lo, target, &a.stats, rolls));
+        a.strength_in = 0.0;
+        self.combat_group_strengths.remove(actor);
         let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());
         // Cowards run without drawing (unless cornered).
         let coward = a.stats.confidence == 0;
@@ -1515,6 +1517,7 @@ impl Engine {
         }
         a.set_guard(0.0);
         a.combat = None;
+        self.combat_group_strengths.remove(actor);
         a.halt(2.0);
         a.next_eval = 0.0;
         let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());

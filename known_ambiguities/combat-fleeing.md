@@ -51,6 +51,11 @@ not a health threshold. It is compared with a *threat ratio*:
 - Strength per actor = (weapon or unarmed base damage / attack interval) × health /
   (1 − armor reduction), refreshed every `fCombatStrengthUpdateTime`. The player's
   uses their weapon (or race unarmed damage), health and armor.
+- Contributions to other fighters' group sums are sampled separately every
+  `fCombatGroupCombatStrengthUpdateTime`, directly from the same strength estimate
+  rather than from the personal cache. The player uses this group timer too.
+  Each actor still counts its own personal strength when deciding whether to
+  flee. The timer policy and remaining uncertainties are recorded in gap 13.
 - Sides: everyone fighting my enemies, or fought by them, is on my side, and the
   other way round. The player is a member while anyone fights them.
 - Check timer: first check at a random point within `fCombatThreatRatioUpdateTime`,
@@ -158,6 +163,58 @@ not a health threshold. It is compared with a *threat ratio*:
     frame does not queue multiple catch-up lines. The meaning of
     `fCombatDialogueFleeDistanceMult` (distance from whom, and multiplied by what)
     is still unconfirmed; it is not used to invent a range limit.
+13. **Group strength timer.** The public
+    [CommonLibSSE-NG `CombatGroup` header](https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/main/include/RE/C/CombatGroup.h)
+    gives each `CombatMember` a `groupStrengthUpdateTimer` and `threatValue`.
+    Its separate
+    [`CombatState` header](https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/main/include/RE/C/CombatState.h)
+    has `strengthUpdateTimer`, `threatValue` and `threatRatioUpdateTimer`.
+    These support separate personal and group-member sampling clocks. They do
+    not establish what each sample contains, the timers' initial phases, or
+    their ordering with threat-ratio checks. The public
+    [Skyrim-era settings list](https://pastebin.com/pKz1u9Fg) reports the 2 s
+    group default, also matching the project's earlier observation below. No
+    new runtime measurement was made for this change.
+
+    Our policy samples each member immediately on joining, then every configured
+    interval of simulation time, even between threat-ratio checks. Both clocks
+    independently evaluate the same current strength formula; neither samples
+    the other's cache. Group sampling includes a living player while a loaded
+    fighter targets them. Loaded actors leave the group cache on death, bleedout,
+    combat exit or unloading; a new or switched fight invalidates that actor's
+    sample and resets its personal timer. Player departure and other membership
+    changes are reconciled on the next threat update. Starting another fight
+    after departure samples fresh values. These caches are not persisted.
+
+    Fleeing actors keep their group sampling clock, but their contribution to
+    others is masked to zero in the fighter snapshot, as before; they count
+    their own personal strength in their own check. Checks within one update
+    use the same snapshot even if an earlier check changes an actor's flee state.
+    Membership, bleedout exclusion, that zero-strength rule, and the player's
+    handling remain implementation choices, not confirmed Skyrim behavior.
+
+    Paused or negative `dt` does not advance an existing group timer. A large
+    frame performs one refresh and starts a full interval; there are no catch-up
+    samples. A changed setting applies when the current wait ends. Nonpositive
+    intervals refresh once per advancing update; nonfinite intervals use the 2 s
+    default. Exact engine behavior for these timing cases is unknown.
+14. **Forgetting fleeing combatants remains blocked by evidence.** The
+    [Ordinator author's Skyrim SE documentation](https://www.nexusmods.com/skyrimspecialedition/mods/1137?tab=docs)
+    lists `fCombatDetectionFleeingLostRemoveTime` changing from 30 to 45, and the
+    public [Skyrim-era settings list](https://pastebin.com/pKz1u9Fg) lists it as
+    30 and `fCombatLowFleeingTargetHitPercent` as 0.25. Those establish names and
+    reported defaults, not a removal algorithm. They do not resolve whether
+    "fleeing" in the removal timer refers to the observer, the target, or a
+    combat group's state; when the timer starts or resets; how renewed detection
+    or hits affect it; or how it combines with the other lost-target timers.
+
+    The hit-percent setting's role is also unconfirmed: its name does not
+    establish a damage threshold, hit probability, target-priority multiplier,
+    or relationship to forgetting. No behavior was implemented for either
+    setting solely from its name. Our current detection/search completion rules
+    remain as described in `known_ambiguities/detection.md`. Resolving this needs
+    public behavioral documentation or permitted asset evidence; the engine's
+    binary data was not examined.
 
 ## Values taken from the game's own settings table
 
@@ -170,7 +227,7 @@ used here:
 | `fConfidenceCowardly` | 1000 (also the GECK's value) |
 | `fConfidenceFoolhardy` | 0 (also the GECK's value) |
 | `fCombatStrengthUpdateTime` | 1.0 |
-| `fCombatGroupCombatStrengthUpdateTime` | 2.0 (not used yet) |
+| `fCombatGroupCombatStrengthUpdateTime` | 2.0 |
 | `fCombatFleeDistanceExterior` / `Interior` | 4096 / 2048 |
 | `fFleeIsSafeTimer` | 30 |
 
