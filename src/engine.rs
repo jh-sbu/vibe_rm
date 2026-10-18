@@ -185,6 +185,9 @@ pub struct Engine {
     /// Where `--wait` runs hold the camera instead (console `tcam`): position,
     /// yaw, pitch.
     pub test_camera: Option<(Vec3, f32, f32)>,
+    /// How far the third-person view is turned about the player, the body
+    /// still facing the view's own way (console `tpcam`; radians).
+    pub test_orbit: f32,
     /// A jump asked for from the console, taken once the player is on the ground.
     pub test_jump: bool,
     /// Frames left of the player walking (console `pwalk`).
@@ -420,6 +423,7 @@ impl Engine {
             player_stats: Default::default(),
             projectiles: Vec::new(),
             test_camera: None,
+            test_orbit: 0.0,
             test_jump: false,
             test_walk: 0,
             test_walk_input: Default::default(),

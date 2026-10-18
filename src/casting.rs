@@ -17,6 +17,13 @@
 //!
 //! Powers (the voice slot, Z) are cast at once, greater powers once a day.
 //!
+//! With a behaviour graph, the body casts with its hands: the graph enters
+//! its casting state (`BeginCastRight` / `BeginCastLeft`), the hand starts
+//! the spell's kind of cast (`MRh_SpellAimedStart`...), is told when it is
+//! charged (`..._SpellReady_Event`) or flowing and when it is let go
+//! (`..._SpellRelease_Event`); a charged spell is cast at its release clip's
+//! `..._SpellFire_Event`. When neither hand casts any more, `CastStop`.
+//!
 //! Sources: UESP's Magic Overview, Magicka and Spells pages, the records
 //! (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`, `EXPL` radius) and the game
 //! settings. Choices: `known_ambiguities/casting.md`.
@@ -62,6 +69,9 @@ const LOCATION_RANGE: f32 = 4096.0;
 const BODY_CENTRE: f32 = 60.0;
 /// Game days between a greater power's uses.
 const POWER_RECHARGE_DAYS: f32 = 1.0;
+/// How long a spell let go may wait for its release clip's `SpellFire`,
+/// and then for the clip to end; a choice (`known_ambiguities/casting.md`).
+const FIRE_TIMEOUT: f32 = 1.5;
 
 /// A spell held ready in a hand.
 #[derive(Debug, Clone)]
@@ -74,6 +84,48 @@ struct HandCast {
     tick: f32,
     /// A concentration channel counts once when it actually starts landing.
     counted: bool,
+    /// The hand casts it in the body's graph, and the graph was told it is
+    /// charged (fire-and-forget) or flowing (concentration).
+    graph: bool,
+    told_ready: bool,
+}
+
+/// A charged spell let go in the graph: cast at its hand's `SpellFire`, then
+/// the hand's release clip plays out (`Equipped`).
+#[derive(Debug, Clone, Copy)]
+struct Firing {
+    spell: FormId,
+    fired: bool,
+    /// Seconds waiting for the next of those.
+    waited: f32,
+}
+
+/// The hands' names in the graphs' events.
+fn hand_prefix(hand: usize) -> &'static str {
+    if hand == LEFT { "MLh" } else { "MRh" }
+}
+
+/// The event starting a hand's cast in the magic behaviour
+/// (`magicbehavior.hkx`'s `MRh_ReadyCast_Behavior`): its kind from the
+/// spell's casting type and delivery, wards (accumulating `WardPower`) and
+/// telekinesis by their first effect's archetype. Contact, target actor and
+/// target location spells are cast as aimed ones; a choice
+/// (`known_ambiguities/casting.md`).
+fn cast_start_event(item: &MagicItem, archetype: Option<u32>) -> &'static str {
+    match archetype {
+        Some(archetype::ACCUMULATE_MAGNITUDE) => return "WardStart",
+        Some(archetype::TELEKINESIS) => return "SpellTelekinesisStart",
+        _ => {}
+    }
+    match (
+        item.delivery == delivery::SELF,
+        item.cast_type == CONCENTRATION,
+    ) {
+        (true, false) => "SpellSelfStart",
+        (true, true) => "SpellSelfConcentrationStart",
+        (false, false) => "SpellAimedStart",
+        (false, true) => "SpellAimedConcentrationStart",
+    }
 }
 
 /// The player's casting: what each hand holds ready, magicka's wait to come
@@ -81,6 +133,7 @@ struct HandCast {
 #[derive(Debug, Default)]
 pub struct Casting {
     hands: [Option<HandCast>; 2],
+    firing: [Option<Firing>; 2],
     /// Seconds before the player's magicka comes back after being spent.
     magicka_wait: f32,
     /// Greater powers' last use (game days).
@@ -138,6 +191,7 @@ impl Engine {
             || self.player_dead()
             || self.conversation.is_some()
             || self.casting.hands[hand].is_some()
+            || self.casting.firing[hand].is_some_and(|f| !f.fired)
         {
             return true;
         }
@@ -152,6 +206,12 @@ impl Engine {
         if !self.can_pay(spell, &item) {
             return true;
         }
+        if self.player_has_graph() && !self.player_weapon_ready() {
+            return true;
+        }
+        // Where the graph has no casting for the hands (a spell beside a
+        // shield), the spell is cast without it.
+        let graph = self.player_has_graph() && self.player_hand_start(hand, &item);
         log::debug!("player readies {} in hand {hand}", item.name);
         self.casting.hands[hand] = Some(HandCast {
             spell,
@@ -159,6 +219,8 @@ impl Engine {
             flowing: false,
             tick: 0.0,
             counted: false,
+            graph,
+            told_ready: false,
         });
         if item.cast_type == CONCENTRATION {
             self.start_concentration(hand);
@@ -173,6 +235,9 @@ impl Engine {
             return false;
         };
         if h.flowing {
+            if h.graph {
+                self.player_hand_idle(hand);
+            }
             return true;
         }
         let Some(item) = self.magic_item(h.spell) else {
@@ -180,6 +245,27 @@ impl Engine {
         };
         if h.held + 1e-3 < item.charge_time {
             log::debug!("{} let go before it charged", item.name);
+            if h.graph {
+                self.player_hand_idle(hand);
+            }
+            return true;
+        }
+        if h.graph {
+            // Charged in the very update it was let go.
+            let p = hand_prefix(hand);
+            if !h.told_ready {
+                self.player_graph_event(&format!("{p}_SpellReady_Event"));
+            }
+            if self.player_graph_event(&format!("{p}_SpellRelease_Event")) {
+                self.casting.firing[hand] = Some(Firing {
+                    spell: h.spell,
+                    fired: false,
+                    waited: 0.0,
+                });
+            } else {
+                log::debug!("the graph won't release {}", item.name);
+                self.player_hand_idle(hand);
+            }
             return true;
         }
         if self.can_pay(h.spell, &item) {
@@ -193,7 +279,94 @@ impl Engine {
 
     /// Whether an actor is casting by hand (only the player does yet).
     pub fn is_casting(&self, actor: FormId) -> bool {
-        actor == PLAYER_REF && self.casting.hands.iter().any(Option::is_some)
+        actor == PLAYER_REF
+            && (self.casting.hands.iter().any(Option::is_some)
+                || self.casting.firing.iter().flatten().any(|f| !f.fired))
+    }
+
+    /// Start a hand's cast in the body's graph: into the casting state (the
+    /// graph ignores it there already), then the hand's kind of cast. False
+    /// if the graph won't.
+    fn player_hand_start(&mut self, hand: usize, item: &MagicItem) -> bool {
+        let archetype = item
+            .effects
+            .first()
+            .and_then(|e| self.magic_effect(e.effect))
+            .map(|e| e.archetype);
+        let start = format!(
+            "{}_{}",
+            hand_prefix(hand),
+            cast_start_event(item, archetype)
+        );
+        let began = self.player_graph_event(if hand == LEFT {
+            "BeginCastLeft"
+        } else {
+            "BeginCastRight"
+        });
+        if self.player_graph_event(&start) {
+            // The hand's last release, if still playing out, gives way.
+            self.casting.firing[hand] = None;
+            return true;
+        }
+        if began {
+            self.player_graph_event("CastStop");
+        }
+        false
+    }
+
+    /// A hand stopped casting in the graph: back to holding its spell ready,
+    /// and the graph out of its casting state once neither hand casts.
+    fn player_hand_idle(&mut self, hand: usize) {
+        self.player_graph_event(&format!("{}_Equipped_Event", hand_prefix(hand)));
+        self.player_cast_stop();
+    }
+
+    fn player_cast_stop(&mut self) {
+        if self.casting.hands.iter().all(Option::is_none)
+            && self.casting.firing.iter().all(Option::is_none)
+        {
+            self.player_graph_event("CastStop");
+        }
+    }
+
+    /// The body's graph raised its hands' `SpellFire` (`fire`) and
+    /// `Equipped` (`done`, the release clip over) this update: spells let go
+    /// are cast, paid for then, and hands done with their release free.
+    pub(crate) fn player_spell_events(&mut self, fire: [bool; 2], done: [bool; 2], dt: f32) {
+        for hand in [RIGHT, LEFT] {
+            let Some(mut f) = self.casting.firing[hand] else {
+                continue;
+            };
+            if f.fired && done[hand] {
+                self.casting.firing[hand] = None;
+                self.player_cast_stop();
+                continue;
+            }
+            if !f.fired && fire[hand] {
+                f.fired = true;
+                f.waited = 0.0;
+                self.casting.firing[hand] = Some(f);
+                if let Some(item) = self.magic_item(f.spell)
+                    && !self.player_dead()
+                    && self.can_pay(f.spell, &item)
+                {
+                    let cost = self.spell_cost(PLAYER_REF, f.spell);
+                    self.spend_magicka(cost);
+                    self.count_spell_cast(PLAYER_REF, f.spell);
+                    self.cast(PLAYER_REF, f.spell, 1.0);
+                }
+                continue;
+            }
+            f.waited += dt;
+            self.casting.firing[hand] = Some(f);
+            if f.waited >= FIRE_TIMEOUT {
+                if !f.fired {
+                    log::debug!("hand {hand}'s release never reached its SpellFire");
+                }
+                self.casting.firing[hand] = None;
+                self.player_hand_idle(hand);
+            }
+        }
     }
 
     /// Whether the player has the magicka for a spell (a second of a
@@ -280,18 +453,40 @@ impl Engine {
                 continue;
             };
             casting = true;
-            // The spell left the hand (unequipped, a weapon took it).
-            if self.hand_spell(hand) != Some(h.spell) {
+            // The spell left the hand (unequipped, a weapon took it), or the
+            // hands were put away.
+            if self.hand_spell(hand) != Some(h.spell) || (h.graph && !self.player_weapon_drawn()) {
                 self.casting.hands[hand] = None;
+                if h.graph {
+                    self.player_hand_idle(hand);
+                }
                 continue;
             }
             h.held += dt;
+            if h.graph && !h.told_ready {
+                // Told the update after it started, when the hand's own state
+                // machine is running.
+                let ready = if h.flowing {
+                    Some("SpellRelease_Event")
+                } else {
+                    self.magic_item(h.spell)
+                        .filter(|item| h.held + 1e-3 >= item.charge_time)
+                        .map(|_| "SpellReady_Event")
+                };
+                if let Some(ev) = ready {
+                    self.player_graph_event(&format!("{}_{ev}", hand_prefix(hand)));
+                    h.told_ready = true;
+                }
+            }
             if h.flowing {
                 let cost = self.spell_cost(PLAYER_REF, h.spell) * dt;
                 if self.actor_value(PLAYER_REF, av::MAGICKA) < cost {
                     log::debug!("player's magicka ran out");
                     self.casting.magicka_blinks += 1;
                     self.casting.hands[hand] = None;
+                    if h.graph {
+                        self.player_hand_idle(hand);
+                    }
                     continue;
                 }
                 self.spend_magicka(cost);
@@ -1012,5 +1207,55 @@ mod npc_healing_tests {
                 ..item
             }
         ));
+    }
+}
+
+#[cfg(test)]
+mod cast_start_tests {
+    use super::*;
+
+    fn spell(cast_type: u32, delivery: u32) -> MagicItem {
+        MagicItem {
+            cast_type,
+            delivery,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn hands_start_the_spells_kind_of_cast() {
+        let ff = 1; // fire and forget
+        // Firebolt, Flames, Fast Healing, Healing, Healing Hands.
+        assert_eq!(
+            cast_start_event(&spell(ff, delivery::AIMED), Some(0)),
+            "SpellAimedStart"
+        );
+        assert_eq!(
+            cast_start_event(&spell(CONCENTRATION, delivery::AIMED), Some(0)),
+            "SpellAimedConcentrationStart"
+        );
+        assert_eq!(
+            cast_start_event(&spell(ff, delivery::SELF), Some(0)),
+            "SpellSelfStart"
+        );
+        assert_eq!(
+            cast_start_event(&spell(CONCENTRATION, delivery::SELF), Some(0)),
+            "SpellSelfConcentrationStart"
+        );
+        assert_eq!(
+            cast_start_event(&spell(CONCENTRATION, delivery::TARGET_ACTOR), Some(0)),
+            "SpellAimedConcentrationStart"
+        );
+        // Lesser Ward and Telekinesis are self-delivered concentration spells.
+        let ward = Some(archetype::ACCUMULATE_MAGNITUDE);
+        assert_eq!(
+            cast_start_event(&spell(CONCENTRATION, delivery::SELF), ward),
+            "WardStart"
+        );
+        let tk = Some(archetype::TELEKINESIS);
+        assert_eq!(
+            cast_start_event(&spell(CONCENTRATION, delivery::SELF), tk),
+            "SpellTelekinesisStart"
+        );
     }
 }

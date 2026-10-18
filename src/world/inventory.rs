@@ -352,13 +352,10 @@ impl HandType {
         )
     }
 
-    /// As the behaviour graph's `iLeftHandType` / `iRightHandType` get it: a
-    /// spell's hand empty, as casting doesn't go through the graph yet.
+    /// As the behaviour graph's `iLeftHandType` / `iRightHandType` get it
+    /// (spells 9, as the game sets them: `known_ambiguities/player-body.md`).
     pub fn for_graph(self) -> f32 {
-        match self {
-            HandType::Spell => 0.0,
-            h => h as i32 as f32,
-        }
+        self as i32 as f32
     }
 }
 

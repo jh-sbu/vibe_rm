@@ -28,6 +28,9 @@ pub struct PlayerBody {
     graph_heading: f32,
     /// What they had equipped when it was built: rebuilt when that changes.
     worn: (Vec<FormId>, Option<FormId>),
+    /// What the hands and voice held when the graph was last told their
+    /// types: spells change them without a rebuild.
+    held: [Option<FormId>; 3],
     /// The graph's movement type states (`iState`): default and sneaking.
     state: Option<f32>,
     sneak_state: Option<f32>,
@@ -105,6 +108,7 @@ impl Engine {
                 inventory.equipped().to_vec(),
                 inventory.weapon_in(&self.lo, crate::world::inventory::LEFT),
             ),
+            held: inventory.held_all(),
             state: None,
             sneak_state: None,
             told: None,
@@ -187,6 +191,20 @@ impl Engine {
         {
             self.build_player_body();
         }
+        if let Some(inv) = self.inventories.get(&PLAYER_REF)
+            && let held = inv.held_all()
+            && self.player_body.as_ref().is_some_and(|b| b.held != held)
+        {
+            let speeds = self.weapon_speed_mults(PLAYER_REF);
+            let vars = crate::ai::combat::hand_graph_vars(&self.lo, inv, speeds);
+            let body = self.player_body.as_mut().unwrap();
+            body.held = held;
+            if let Some(g) = body.graph.as_mut() {
+                for (var, value) in vars {
+                    g.set_variable(var, value);
+                }
+            }
+        }
         let feet = self.player_feet();
         let third = self.third_person;
         let yaw = self.camera.yaw;
@@ -246,6 +264,7 @@ impl Engine {
             }
         }
         self.update_player_swing(events.hit_frames, events.attack_stop, dt);
+        self.player_spell_events(events.spell_fire, events.hand_equipped, dt);
         if let Some(held) = shot {
             self.player_loose(held);
         }
@@ -467,6 +486,10 @@ struct PlayerCombatEvents {
     hit_frames: u8,
     attack_stop: bool,
     arrow_release: bool,
+    /// By hand (`RIGHT`, `LEFT`): a spell's release clip reached its
+    /// `SpellFire`, or ended (`Equipped`).
+    spell_fire: [bool; 2],
+    hand_equipped: [bool; 2],
 }
 
 impl PlayerCombatEvents {
@@ -475,6 +498,10 @@ impl PlayerCombatEvents {
             "hitframe" => self.hit_frames |= crate::ai::combat::hit_frame_bit(payload),
             "attackstop" => self.attack_stop = true,
             "arrowrelease" => self.arrow_release = true,
+            "mrh_spellfire_event" => self.spell_fire[crate::spells::RIGHT] = true,
+            "mlh_spellfire_event" => self.spell_fire[crate::spells::LEFT] = true,
+            "mrh_equipped_event" => self.hand_equipped[crate::spells::RIGHT] = true,
+            "mlh_equipped_event" => self.hand_equipped[crate::spells::LEFT] = true,
             _ => {}
         }
     }
@@ -628,6 +655,11 @@ impl Engine {
             };
             PlayerBody::event(g, ev, &self.vfs, &mut self.anims, &b.skeleton)
         })
+    }
+
+    /// Whether the player's body runs a behaviour graph.
+    pub(crate) fn player_has_graph(&self) -> bool {
+        self.player_body.as_ref().is_some_and(|b| b.graph.is_some())
     }
 
     /// Whether the player's body has a graph and their weapon (or fists) is
@@ -786,6 +818,7 @@ impl Engine {
     pub fn view_camera(&self) -> crate::render::Camera {
         let mut cam = self.camera_copy();
         if self.third_person {
+            cam.yaw += self.test_orbit;
             // Over the shoulder first, then back, each short of a wall.
             let k = self.third_person_combat;
             let side = OVER_SHOULDER.lerp(OVER_SHOULDER_COMBAT, k);

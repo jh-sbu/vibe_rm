@@ -5,7 +5,9 @@ NPCs' combat spells) and `src/ai/casters.rs` (casters keeping their
 distance and casting), with spell projectiles flying as arrows do in
 `src/ai/archery.rs` and their impacts in `src/impacts.rs`. Sources: UESP's Magic Overview, Magicka and
 Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
-`EXPL`); the game settings in Skyrim.esm.
+`EXPL`); the game settings in Skyrim.esm; the character behaviour graphs
+(`magicbehavior.hkx`, read with `vrm-tool hkb-tree` / `hkb-run`) for the
+hands' casting events.
 
 ## Settled
 
@@ -28,6 +30,21 @@ Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
   (csWarlock: melee 0.25, magic 2.15; csHumanMeleeLvl1: 1 and 1).
 - **NPCs' magicka** doesn't come back while they cast
   (`bRegenNPCMagickaDuringCast` false).
+- **The hands in the graph** (`magicbehavior.hkx`): `BeginCastRight` /
+  `BeginCastLeft` take the graph from `MagicReadyState` to `CastingState`
+  and `CastStop` back. There each hand's state machine
+  (`MRh_ReadyCast_Behavior`, `MLh_...`) waits in its ready state for the
+  kind of cast: `..._SpellAimedStart`, `..._SpellSelfStart`,
+  `..._SpellAimedConcentrationStart`, `..._SpellSelfConcentrationStart`,
+  `..._WardStart`, `..._SpellTelekinesisStart`. A fire-and-forget hand
+  pre-charges and loops its charge until `..._SpellReady_Event`, holds it
+  ready until `..._SpellRelease_Event`, and its release clip raises
+  `..._SpellFire_Event` (Firebolt's `MRh_Release`: at 0.17 s) and, at its
+  end, `..._Equipped_Event`, the hand's wildcard back to ready. Concentration
+  and ward hands go from their charge loop to their casting loop on
+  `..._SpellRelease_Event`. The engine listens for `MRh_SpellFire_Event` /
+  `MLh_SpellFire_Event` (CommonLibSSE's `FixedStrings`). The hand types are
+  9 with a spell in hand (`test-mod autotest2`).
 
 ## Open (choices made here)
 
@@ -82,3 +99,38 @@ Spells pages; the records (`SPEL` `SPIT`, `MGEF` `DATA`, `PROJ` `DATA`,
 - **The Story Manager's spell cast event** (`CAST`) is sent for the player's
   spells with the caster as `R1` and the spell as `F1`; which members the
   game fills isn't published.
+- **Which kind of cast** (`cast_start_event`): self-delivered spells cast
+  as self, everything else (contact, target actor and target location too)
+  as aimed, fire-and-forget or concentration by the spell's casting type;
+  wards by their first effect's archetype (Accumulate Magnitude, on
+  `WardPower`) and telekinesis by its archetype, both self-delivered
+  concentration spells in the records. The records carry no casting
+  animation, and how the game picks isn't published.
+- **An empty hand beside a spell** is a spell's (9) to the graph, as both
+  hands' types: only the left hand's spell and staff states
+  (`1HM_Readied_BehaviorGraph`, its start bound to `iLeftHandType`) reach
+  the magic behaviour, so a spell in the right hand alone would otherwise
+  have none. `test-mod autotest2` read 9 with spells in both hands; a spell
+  in one hand alone wasn't measured.
+- **Hands the graph has no casting for**: a spell beside a weapon, shield or
+  torch (`iLeftHandType` 1 to 7, 10 to 12) leaves the graph outside the
+  magic behaviour; the graph refusing the start, the spell is cast as with
+  no graph, without animation. How the game animates these isn't known.
+- **When the hands are told** (the player): `BeginCast...` then the start
+  at the press, both only once the draw is over (`WeapEquip_Out`). `..._SpellReady_Event` the
+  update after the charge time is reached (or at the release, if that
+  comes first), and a concentration spell's `..._SpellRelease_Event` the
+  update after it starts, when the hand's state machine runs. A
+  concentration spell lands from the press, not from the end of its
+  pre-loop clip.
+- **Cast at `SpellFire`**: a charged fire-and-forget spell let go is cast,
+  and paid for, at its hand's `..._SpellFire_Event`; with no graph (or
+  before it has one) at once, as before. The graph refusing the release, or
+  no `SpellFire` within 1.5 s, casts nothing. Death in between casts
+  nothing.
+- **A hand stopping**: let go before it charged, a concentration spell
+  ended, magicka run out, the spell unequipped or the hands put away, the
+  engine sends the hand's own `..._Equipped_Event` to bring it back to
+  ready (the graph has no cancelling event); when neither hand is casting
+  or playing out a release (its clip's `..._Equipped_Event`, or 1.5 s),
+  `CastStop`. Dual casting (`DualMagic_...`) isn't built.
