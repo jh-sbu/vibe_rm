@@ -421,7 +421,10 @@ game each piece unlocks.
   their charge time and cast when it comes up, concentration spells going on
   while it is held), paying magicka (by the second for concentration), the
   meter blinking and "You don't have enough Magicka" without it; powers on
-  Z, greater powers once a day. Spell costs include Fortify school effects
+  Z, greater powers once a day. The player's body casts through its graph
+  (`magicbehavior.hkx`): each hand charges, holds and releases the spell's
+  kind of cast (aimed, self, concentration, ward, telekinesis), the spell
+  leaving at the release clip's `SpellFire`. Spell costs include Fortify school effects
   (`AlterationMod` .. `RestorationMod`) through the game's `PerkSkillBoosts`
   entries, shared by casting and the magic menu, stacking to free casting
   at 100%; `SpellHasCastingPerk` lets the Novice .. Master perks halve
@@ -1139,9 +1142,8 @@ game each piece unlocks.
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: NPCs' casting animations (the magic
    behaviour's states), native healing thresholds and timing, spells chosen by their
-   scores, wards, summons and buffs in combat, the player's casting
-   animations and hands in the graph,
-   dual casting, runes, wards, effect visuals (spell projectiles' models run
+   scores, wards, summons and buffs in combat, the player's
+   dual casting (`DualMagic_...`) and staffs, runes, wards, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,

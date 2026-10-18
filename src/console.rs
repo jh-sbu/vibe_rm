@@ -630,6 +630,15 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             engine.test_camera = Some((Vec3::new(x, y, z), yaw.to_radians(), pitch.to_radians()));
             vec!["ok".into()]
         }
+        "tpcam" => {
+            // tpcam <degrees>: turn the third-person view about the player
+            // (180 to see them from the front); their body keeps its facing.
+            let Some(deg) = args.first().and_then(|a| a.parse::<f32>().ok()) else {
+                return vec!["usage: tpcam <degrees>".into()];
+            };
+            engine.test_orbit = deg.to_radians();
+            vec!["ok".into()]
+        }
         "impact" => {
             // impact <IPCT> [distance]: an impact on whatever lies ahead of the
             // camera (within the distance, default 512), as an arrow's would be.

@@ -11,7 +11,7 @@ use glam::{Mat4, Vec3};
 use super::{ActorRuntime, State, World, uniform};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::perks::ep;
-use crate::world::inventory::{Inventory, LEFT, RIGHT};
+use crate::world::inventory::{HandType, Inventory, LEFT, RIGHT};
 use crate::world::ragdoll::RagdollPose;
 use crate::world::template::{self, Sources};
 
@@ -237,9 +237,18 @@ pub(crate) fn hand_graph_vars(
             .unwrap_or(1.0)
             * speed_mults[h]
     };
+    // An empty hand beside a spell is a spell's to the graph: only the left
+    // hand's spell (and staff) states reach the magic behaviour
+    // (`known_ambiguities/casting.md`).
+    let (mut right, mut left) = (inv.hand(lo, false), inv.hand(lo, true));
+    match (right, left) {
+        (HandType::Spell, HandType::Empty) => left = HandType::Spell,
+        (HandType::Empty, HandType::Spell) => right = HandType::Spell,
+        _ => {}
+    }
     [
-        ("iRightHandType", inv.hand(lo, false).for_graph()),
-        ("iLeftHandType", inv.hand(lo, true).for_graph()),
+        ("iRightHandType", right.for_graph()),
+        ("iLeftHandType", left.for_graph()),
         ("weaponSpeedMult", speed(RIGHT)),
         ("leftWeaponSpeedMult", speed(LEFT)),
     ]

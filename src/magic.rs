@@ -44,12 +44,15 @@ pub mod archetype {
     pub const INVISIBILITY: u32 = 11;
     pub const BOUND_WEAPON: u32 = 17;
     pub const SUMMON_CREATURE: u32 = 18;
+    pub const TELEKINESIS: u32 = 20;
     pub const PARALYSIS: u32 = 21;
     pub const SOUL_TRAP: u32 = 23;
     pub const CLOAK: u32 = 35;
     pub const TURN_UNDEAD: u32 = 24;
     pub const CURE_PARALYSIS: u32 = 27;
     pub const CURE_POISON: u32 = 29;
+    /// Wards (`WardPower`).
+    pub const ACCUMULATE_MAGNITUDE: u32 = 32;
     pub const STAGGER: u32 = 33;
     pub const PEAK_VALUE_MODIFIER: u32 = 34;
     pub const RALLY: u32 = 38;
