@@ -45,6 +45,15 @@ isn't public; the choices below are what the movies' code allows.
   crosshair is on is hurt and alive, hidden (0) otherwise; a new target's
   percent goes to `EnemyHealthMeter.SetPercent`, a change to
   `SetTargetPercent`, the name to `BracketsInstance.RolloverNameInstance`.
+  The brackets about the name are left to the game: the movie registers
+  `BracketsInstance` with it (`RegisterHUDComponents`), at alpha 0 and
+  playing its 100 frames, which part the two inner knots from the middle
+  (frame 1) to 74.5 px either side (frame 100), each frame 0.7525 px more;
+  the name field is 151 px wide and shrinks longer names (`textAutoSize`).
+  The engine shows the brackets with the meter, stopped at the frame that
+  puts each knot 4 px clear of the name's `textWidth`. The margin, and
+  whether the game rounds or animates the frame, are guesses: no public
+  source gives them (compare a screenshot by hand).
 - **Modes.** `ShowElements("All", true)` at start; subsequent groups are
   `"MovementDisabled"`, `"CartMode"`, `"DialogueMode"` or `"All"`, replacing
   the previous group. Precedence and cart mode's movement interaction are

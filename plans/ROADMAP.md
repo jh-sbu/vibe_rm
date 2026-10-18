@@ -26,7 +26,8 @@ game each piece unlocks.
   (`known_ambiguities/quest-targets.md`),
   location, the
   crosshair's activate text, subtitles, notifications, help messages, quest
-  banners, the sneak eye, enemy health, the activate key's art; message boxes
+  banners, the sneak eye, enemy health with the name between brackets
+  parted to fit it, the activate key's art; message boxes
   (`messagebox.swf`, answered with the mouse or keys); the inventory
   (`inventorymenu.swf`: categories, the item card with armor rating and damage
   and their change if worn, effects, the bottom bar's stats; equipping, using,
@@ -1235,7 +1236,7 @@ game each piece unlocks.
      effects,
      equipping scrolls and torches in a hand, the best-in-class star, the
      survival warmth rating
-   - The HUD: enemy health brackets sized to the name; notifications' display
+   - The HUD: notifications' display
      time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;
      `known_ambiguities/messages.md`); controller rumble for camera shakes
    - The journal's rest: the System page (saves, settings, controls, help,

@@ -1265,6 +1265,16 @@ struct Hud {
     sent: Sent,
 }
 
+/// The enemy name brackets' frame leaving room for a name `width` pixels
+/// wide: frame 1 puts the inner knots at the middle, each frame after moves
+/// them 0.7525 px further out, to 74.5 px either side at frame 100 (read from
+/// `hudmenu.swf`), about the name field's 151 px (longer names shrink). The
+/// game's own choice isn't public: the knots sit 4 px clear of the name.
+fn bracket_frame(width: f32) -> f32 {
+    const STEP: f32 = 74.4 / 99.0;
+    (1.0 + (width / 2.0 + 4.0) / STEP).round().clamp(1.0, 100.0)
+}
+
 fn num(v: f32) -> Value {
     Value::Number(v as f64)
 }
@@ -1607,10 +1617,22 @@ impl Hud {
             Some((r, name, percent)) => {
                 if self.sent.enemy.is_none_or(|(sr, _)| sr != r) {
                     self.menu.set(&format!("{e}._alpha"), Value::Number(100.0));
-                    self.menu.invoke(
-                        &format!("{e}.BracketsInstance.RolloverNameInstance.SetText"),
-                        &[text(name)],
-                    );
+                    let b = format!("{e}.BracketsInstance");
+                    self.menu
+                        .invoke(&format!("{b}.RolloverNameInstance.SetText"), &[text(name)]);
+                    // The brackets' 100 frames part their inner knots from the
+                    // middle to the field's edges (`bracket_frame`); the movie
+                    // leaves them hidden and playing for the game to set.
+                    let width = match self
+                        .menu
+                        .get(&format!("{b}.RolloverNameInstance.textWidth"))
+                    {
+                        Value::Number(n) => n as f32,
+                        _ => 0.0,
+                    };
+                    self.menu
+                        .invoke(&format!("{b}.gotoAndStop"), &[num(bracket_frame(width))]);
+                    self.menu.set(&format!("{b}._alpha"), Value::Number(100.0));
                     self.call("EnemyHealthMeter.SetPercent", &[num(percent as f32)]);
                 } else if self.sent.enemy.is_some_and(|(_, p)| p != percent) {
                     self.call("EnemyHealthMeter.SetTargetPercent", &[num(percent as f32)]);
@@ -1709,6 +1731,16 @@ mod input_tests {
         assert_eq!(buttons.art("Hotkey1"), "Q");
         assert_eq!(buttons.keys["Hotkey2"], buttons.keys["Hotkey1"]);
         assert!(buttons.keys["Hotkey3"].is_empty());
+    }
+
+    #[test]
+    fn enemy_brackets_part_for_the_name_within_their_frames() {
+        assert_eq!(bracket_frame(0.0), 6.0);
+        // "Wolf" (32 px): knots 20 px out.
+        assert_eq!(bracket_frame(32.0), 28.0);
+        assert!(bracket_frame(64.0) > bracket_frame(32.0));
+        assert_eq!(bracket_frame(151.4), 100.0);
+        assert_eq!(bracket_frame(1000.0), 100.0);
     }
 
     #[test]
