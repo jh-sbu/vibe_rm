@@ -322,6 +322,8 @@ pub struct CombatStats {
     /// (`CSGD` melee and magic score multipliers): casters prefer spells.
     pub melee_mult: f32,
     pub magic_mult: f32,
+    /// Its staff score multiplier (`CSGD` 0x20): staffs over spells.
+    pub staff_mult: f32,
 }
 
 /// A weapon's weight (`DATA`).
@@ -644,6 +646,9 @@ impl CombatStats {
         (s.melee_mult, s.magic_mult) = csgd
             .filter(|d| d.len() >= 0x14)
             .map_or((1.0, 1.0), |d| (f32_at(d, 0x0C), f32_at(d, 0x10)));
+        s.staff_mult = csgd
+            .filter(|d| d.len() >= 0x24)
+            .map_or(1.0, |d| f32_at(d, 0x20));
         // CSME: attack staggered, power attack staggered, power attack blocking,
         // bash, bash recoil, bash attack, bash power attack multipliers.
         let csme = style.as_ref().and_then(|r| r.get(b"CSME"));
@@ -3253,9 +3258,10 @@ impl Engine {
             self.actor_ref(actor).is_some_and(|a| a.guarding())
         ));
         out.push(format!(
-            "melee x{:.2}, magic x{:.2}, magicka {:.0}, fights with {:?}",
+            "melee x{:.2}, magic x{:.2}, staff x{:.2}, magicka {:.0}, fights with {:?}",
             stats.melee_mult,
             stats.magic_mult,
+            stats.staff_mult,
             self.actor_value(actor, esp::actor_value::MAGICKA),
             self.actor_ref(actor).and_then(|a| a.combat_spell)
         ));

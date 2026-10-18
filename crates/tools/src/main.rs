@@ -4531,6 +4531,72 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("item-users") => {
+            // item-users <data dir> <form id | editor id>: the NPCs, containers,
+            // outfits and leveled lists naming an item (`CNTO`, `INAM`, `LVLO`),
+            // and in turn those naming the leveled lists and outfits (three deep).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let id = match u32::from_str_radix(&args[2], 16) {
+                Ok(v) if args[2].len() == 8 => esp::FormId(v),
+                _ => lo.find_editor_id(&args[2]).context("editor id not found")?,
+            };
+            let mut users: std::collections::HashMap<esp::FormId, Vec<esp::FormId>> =
+                std::collections::HashMap::new();
+            for (tag, subs) in [
+                (b"NPC_", &[*b"CNTO", *b"DOFT"][..]),
+                (b"CONT", &[*b"CNTO"][..]),
+                (b"OTFT", &[*b"INAM"][..]),
+                (b"LVLI", &[*b"LVLO"][..]),
+            ] {
+                for &u in lo.ids_of_type(tag) {
+                    let Some(rec) = lo.get(u) else { continue };
+                    for s in rec.subrecords() {
+                        if !subs.contains(&s.tag.0) {
+                            continue;
+                        }
+                        // LVLO: level (u16 + pad), form; INAM: a list of forms.
+                        let at: Vec<usize> = match &s.tag.0 {
+                            b"LVLO" => vec![4],
+                            b"INAM" => (0..s.data.len() / 4).map(|i| i * 4).collect(),
+                            _ => vec![0],
+                        };
+                        for o in at {
+                            if let Some(b) = s.data.get(o..o + 4) {
+                                let f =
+                                    rec.fid(esp::FormId(u32::from_le_bytes(b.try_into().unwrap())));
+                                users.entry(f).or_default().push(u);
+                            }
+                        }
+                    }
+                }
+            }
+            fn show(
+                lo: &esp::LoadOrder,
+                users: &std::collections::HashMap<esp::FormId, Vec<esp::FormId>>,
+                id: esp::FormId,
+                depth: usize,
+            ) {
+                let mut seen = std::collections::HashSet::new();
+                for &u in users.get(&id).into_iter().flatten() {
+                    if !seen.insert(u) {
+                        continue;
+                    }
+                    let Some(rec) = lo.get(u) else { continue };
+                    println!(
+                        "{}{u} {} {}",
+                        "  ".repeat(depth),
+                        rec.tag(),
+                        rec.editor_id().unwrap_or_default()
+                    );
+                    if depth < 3 && matches!(&rec.tag().0, b"LVLI" | b"OTFT") {
+                        show(lo, users, u, depth + 1);
+                    }
+                }
+            }
+            show(&lo, &users, id, 0);
+        }
         Some("model-users") => {
             // model-users <data dir> <model path substring> [n]: base records whose
             // model's path has the substring, and up to n placed references of them
