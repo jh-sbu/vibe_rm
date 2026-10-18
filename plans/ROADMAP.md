@@ -635,7 +635,9 @@ game each piece unlocks.
   Enchanted weapons' blows pay their enchantment from the charge the same
   way (none needed without `EAMT`: bound weapons, the Ebony Blade), the
   blow landing without it once dry; spent charge goes with the weapon from
-  inventory to inventory (`src/staffs.rs`,
+  inventory to inventory. Charge in the inventory (T: the card's list of
+  souls; `src/recharge.rs`): each soul's size in charge, gems used up but
+  Azura's Star and the Black Star, Enchanting XP (`src/staffs.rs`,
   `known_ambiguities/staffs.md`)
 - Ethereal (Become Ethereal): no blows, bashes or harmful magic land on or
   from the ethereal, no stagger, no falling damage (nor for the paralyzed);
@@ -1176,8 +1178,7 @@ game each piece unlocks.
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
-   scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, recharging (staffs and weapons; dropped weapons keeping their charge;
-   `known_ambiguities/staffs.md`), runes, effect visuals (spell projectiles' models run
+   scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, dropped weapons keeping their charge (`known_ambiguities/staffs.md`), runes, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
@@ -1264,8 +1265,7 @@ game each piece unlocks.
      favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike); the menus' own cursor (`cursormenu.swf`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
-     rotating and zooming it), the quantity slider's use for more than dropping, recharging
-     (`AttemptChargeItem`, soul gems), rows grouped by captured soul with per-item
+     rotating and zooming it), the quantity slider's use for more than dropping, rows grouped by captured soul with per-item
      selection and transfers (`known_ambiguities/inventory-cards.md`), ingredients' learned
      effects,
      equipping scrolls and torches in a hand, the best-in-class star, the

@@ -546,6 +546,29 @@ impl Inventory {
         self.count(form) - self.souls_in(form)
     }
 
+    /// One of the carried `form` gems holding `soul` gives it up: a soul of
+    /// the side list's, else (`record`: the soul its record holds) one of
+    /// those holding none of the side list's. The gem is used up unless
+    /// `keep` (reusable gems, which then hold nothing; only side-list souls
+    /// can be taken from them). Whether there was one.
+    pub fn spend_soul(&mut self, form: FormId, soul: u8, record: u8, keep: bool) -> bool {
+        if let Some(i) = self
+            .souls
+            .iter()
+            .position(|&(f, s, n)| f == form && s == soul && n > 0)
+        {
+            self.souls[i].2 -= 1;
+            self.souls.retain(|(_, _, c)| *c > 0);
+        } else if soul == 0 || soul != record || keep || self.without_soul(form) <= 0 {
+            return false;
+        }
+        if !keep {
+            // Souls left are counted against those still carried: none go.
+            self.remove_split(form, 1, None);
+        }
+        true
+    }
+
     /// One of the carried `form` gems takes a `soul` (1 petty .. 5 grand).
     pub fn put_soul(&mut self, form: FormId, soul: u8) {
         match self
@@ -982,6 +1005,29 @@ mod tests {
 
     fn magic(f: FormId) -> bool {
         f == FLAMES
+    }
+
+    #[test]
+    fn spending_a_soul_uses_up_the_gem_unless_it_is_reusable() {
+        let gem = FormId(0x300);
+        let mut inv = carrying(&[(gem, 3)]);
+        inv.put_soul(gem, 2);
+        // An empty one has none to give; the one holding a lesser soul does.
+        assert!(!inv.spend_soul(gem, 0, 0, false));
+        assert!(!inv.spend_soul(gem, 5, 0, false));
+        assert!(inv.spend_soul(gem, 2, 0, false));
+        assert_eq!(inv.count(gem), 2);
+        assert!(inv.souls.is_empty());
+        // A reusable gem stays, empty.
+        inv.put_soul(gem, 5);
+        assert!(inv.spend_soul(gem, 5, 0, true));
+        assert_eq!(inv.count(gem), 2);
+        assert!(inv.souls.is_empty());
+        // Gems filled by their record give their record's soul.
+        let filled = FormId(0x301);
+        let mut inv = carrying(&[(filled, 1)]);
+        assert!(inv.spend_soul(filled, 1, 1, false));
+        assert_eq!(inv.count(filled), 0);
     }
 
     fn carrying(items: &[(FormId, i32)]) -> Inventory {

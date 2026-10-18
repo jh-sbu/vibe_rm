@@ -47,6 +47,8 @@ mod card {
     pub const INGREDIENT: f64 = 8.0;
     pub const KEY: f64 = 9.0;
     pub const SOUL_GEMS: f64 = 12.0;
+    /// The card's own list (the souls to charge a weapon with).
+    pub const LIST: f64 = 14.0;
 }
 
 /// Equip icons (`InventoryDefines.ES_*`): worn, wielded in the left hand,
@@ -219,6 +221,7 @@ type Listed = (
     Vec<FormId>,
     Vec<Option<u8>>,
     Vec<bool>,
+    Vec<Option<i32>>,
 );
 
 pub(super) struct ItemMenu {
@@ -240,6 +243,8 @@ pub(super) struct ItemMenu {
     pub closing: bool,
     /// Closing for the tween menu (`ShowTweenMenu`), not the world.
     to_tween: bool,
+    /// Charging: the weapon, and the souls listed on the card (gem, soul).
+    charging: Option<(FormId, Vec<(FormId, u8)>)>,
 }
 
 pub(super) fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
@@ -389,6 +394,7 @@ impl ItemMenu {
             player: None,
             closing: false,
             to_tween: false,
+            charging: None,
         };
         m.update(engine);
         if m.shows == Shown::Inventory && !indices.is_empty() {
@@ -486,6 +492,7 @@ impl ItemMenu {
             &engine.favorites,
             |r| self.soul_level(engine, r),
             |r| row_poisoned(&self.kind, r, &engine.inventories),
+            |r| self.charge(engine, r).map(|c| (c * 100.0).round() as i32),
         );
         if self.listed.as_ref() != Some(&listed) {
             let entries: Vec<Value> = rows
@@ -557,8 +564,77 @@ impl ItemMenu {
                 let chance = engine.pickpocket_chance(*victim, r.item.item, 1);
                 fields.insert("pickpocketChance".into(), num(chance.round()));
             }
+            // An enchanted weapon's charge meter (the percent left; the
+            // bottom bar offers Charge under 100).
+            if let Some(charge) = self.charge(engine, r) {
+                fields.insert("charge".into(), num(charge));
+                fields.insert("usedCharge".into(), num(charge));
+            }
         }
         card
+    }
+
+    /// A weapon row's charge, as a percent of its most, if it holds one.
+    fn charge(&self, engine: &Engine, r: &Row) -> Option<f32> {
+        if r.item.info.kind != ItemKind::Weapon {
+            return None;
+        }
+        engine.charge_percent(self.kind.source(r.theirs), r.item.item)
+    }
+
+    /// The control map's Charge Item key (the Wait key): the inventory's
+    /// selected weapon is charged (`AttemptChargeItem` asks for the souls
+    /// when it is short of its most).
+    pub fn charge_key(&self) {
+        if matches!(self.kind, Kind::Inventory) && self.charging.is_none() {
+            self.menu.callback("AttemptChargeItem", &[]);
+        }
+    }
+
+    /// The card's list of souls is up (Tab, not Esc, leaves it).
+    pub fn listing(&self) -> bool {
+        self.charging.is_some()
+    }
+
+    /// The souls to charge the selected weapon with, on the card's list:
+    /// each gem and soul, with how much of the meter it fills.
+    fn show_souls(&mut self, engine: &mut Engine) {
+        let Some(row) = self.selected().filter(|r| !r.theirs) else {
+            return;
+        };
+        let weapon = row.item.item;
+        let Some(now) = engine.charge_percent(PLAYER_REF, weapon) else {
+            return;
+        };
+        let souls = engine.charging_souls(PLAYER_REF);
+        if souls.is_empty() {
+            let msg = engine
+                .gmst_string("sNoChargeItems")
+                .unwrap_or_else(|| "No items to charge enchantment".into());
+            engine.scripts.notify(msg);
+            return;
+        }
+        let items: Vec<Value> = souls
+            .iter()
+            .map(|&(gem, soul)| {
+                let name = engine.form_name(gem);
+                let size = soul_name(Some(soul), |s| engine.gmst_string(s));
+                object([
+                    ("text", text(&format!("{name} ({size})"))),
+                    (
+                        "chargeAdded",
+                        num(engine.charge_added_percent(PLAYER_REF, weapon, soul)),
+                    ),
+                ])
+            })
+            .collect();
+        let card = object([
+            ("type", Value::Number(card::LIST)),
+            ("listItems", Value::List(items)),
+            ("currentCharge", num(now)),
+        ]);
+        self.menu.callback("UpdateItemCardInfo", &[card]);
+        self.charging = Some((weapon, souls));
     }
 
     fn soul_level(&self, engine: &Engine, r: &Row) -> Option<u8> {
@@ -617,6 +693,30 @@ impl ItemMenu {
                     engine.unequip_if_gone(PLAYER_REF, item);
                 } else {
                     engine.use_listed_item(&row.item, number(0).map(hand));
+                }
+            }
+            // Charge Item on a weapon short of its most.
+            "ShowSoulGemList" => self.show_souls(engine),
+            // A soul picked from the card's list (its index), or the list
+            // left (the card asks for itself again).
+            "ItemCardListCallback" => {
+                let Some((weapon, souls)) = self.charging.take() else {
+                    return true;
+                };
+                let picked = number(0).and_then(|i| souls.get(i as usize).copied());
+                if let Some((gem, soul)) = picked
+                    && engine.recharge(PLAYER_REF, weapon, gem, soul)
+                {
+                    self.update(engine);
+                    if let Some(card) = self.selected().map(|r| self.card(engine, &r)) {
+                        self.menu.callback("UpdateItemCardInfo", &[card]);
+                    }
+                }
+            }
+            "QuantitySliderOpen" if self.charging.is_some() => {
+                // The card's list closing without a pick (Tab).
+                if matches!(call.args.first(), Some(Value::Bool(false))) {
+                    self.charging = None;
                 }
             }
             "ItemDrop" => {
@@ -950,6 +1050,7 @@ fn listed_state(
     favorites: &[FormId],
     soul: impl Fn(&Row) -> Option<u8>,
     poisoned: impl Fn(&Row) -> bool,
+    charge: impl Fn(&Row) -> Option<i32>,
 ) -> Listed {
     (
         rows.iter()
@@ -964,6 +1065,8 @@ fn listed_state(
         // Applying or exhausting a poison can leave the inventory's forms,
         // counts, ownership and equipped hands unchanged.
         rows.iter().map(poisoned).collect(),
+        // Spending or restoring a weapon's charge changes only its card.
+        rows.iter().map(charge).collect(),
     )
 }
 
@@ -1264,6 +1367,7 @@ mod tests {
                 &[],
                 |r| row_soul_level(&kind, r, inventories, 0),
                 |r| row_poisoned(&kind, r, inventories),
+                |_| None,
             )
         };
         let empty = snapshot(&inventories);
@@ -1386,6 +1490,7 @@ mod tests {
                 &[],
                 |_| None,
                 |r| row_poisoned(&Kind::Inventory, r, inventories),
+                |_| None,
             )
         };
         let clean = snapshot(&inventories);
