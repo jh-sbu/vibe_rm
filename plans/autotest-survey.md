@@ -159,6 +159,13 @@ Left out so far:
   script), magicka after with Ward Absorb added (`AddPerk`), and the same
   from an NPC placed behind the player (the arc). Once dual cast (the
   perk added: does it start whole?).
+- **Staffs** (`staffs.md`), partial: staffs are cast with the attack
+  button, so the user casts a Staff of Firebolts once by hand when a
+  notification asks; the script reads `GetActorValue("RightItemCharge")`
+  before and after, at Destruction 15 and at 100 (`SetActorValue`), with
+  and without Novice / Apprentice Destruction (`AddPerk`): the cost and
+  what lowers it. Then `RightItemCharge` after the staff is dropped and
+  picked up again (charge carried?).
 - **Ethereal** (`magic.md`): `VoiceBecomeEthereal3` cast by script on
   a held NPC, then a Firebolt cast at it and `DamageActorValue` health on
   it: health after each (magic spared, scripts not?), and whether the

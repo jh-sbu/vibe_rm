@@ -300,6 +300,9 @@ pub struct Inventory {
     /// weapons carried, kept apart within `items`' counts and taken last
     /// (the game's `ExtraPoison` on one instance).
     pub poisoned: Vec<(FormId, FormId, i32)>,
+    /// Enchanted weapons with charge spent (weapon, charge left): one of
+    /// the weapons carried, the rest full; taken last.
+    pub charges: Vec<(FormId, f32)>,
     /// What is held (`RIGHT`, `LEFT`, `VOICE`): weapons, spells, a shield, a
     /// torch; a power or shout. What fills both hands is in each.
     held: [Option<FormId>; 3],
@@ -479,6 +482,7 @@ impl Inventory {
         // The poisoned one goes last.
         if self.count(form) <= 0 {
             self.poisoned.retain(|(w, _, _)| *w != form);
+            self.charges.retain(|(w, _)| *w != form);
         }
         self.unequip_if_short(form);
         (out, souls)
@@ -509,6 +513,22 @@ impl Inventory {
             self.poisoned.remove(i);
         }
         Some(poison)
+    }
+
+    /// The charge left on one of the carried `weapon`s, if any was spent.
+    pub fn charge_left(&self, weapon: FormId) -> Option<f32> {
+        self.charges
+            .iter()
+            .find(|(w, _)| *w == weapon)
+            .map(|&(_, c)| c)
+    }
+
+    /// One of the carried `weapon`s has `left` charge (`full`: none spent).
+    pub fn set_charge(&mut self, weapon: FormId, left: f32, full: f32) {
+        self.charges.retain(|(w, _)| *w != weapon);
+        if left < full && self.count(weapon) > 0 {
+            self.charges.push((weapon, left.max(0.0)));
+        }
     }
 
     /// How many of a soul gem hold a soul of the side list's.

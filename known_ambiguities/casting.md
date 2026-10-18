@@ -148,7 +148,8 @@ hands' casting events.
   (`1HM_Readied_BehaviorGraph`, its start bound to `iLeftHandType`) reach
   the magic behaviour, so a spell in the right hand alone would otherwise
   have none. `test-mod autotest2` read 9 with spells in both hands; a spell
-  in one hand alone wasn't measured.
+  in one hand alone wasn't measured. An empty hand beside a staff is a
+  staff's (8) the same way (`staffs.md`).
 - **Hands the graph has no casting for**: a spell beside a weapon, shield or
   torch (`iLeftHandType` 1 to 7, 10 to 12) leaves the graph outside the
   magic behaviour; the graph refusing the start, the spell is cast as with

@@ -617,6 +617,12 @@ game each piece unlocks.
   Lessons' Tolfdir); Ward Absorb's magicka. A concentration spell's
   effects without a duration (the ward's armor too) last while it is held
   (`src/wards.rs`, `known_ambiguities/wards.md`)
+- Staffs (the player's): a staff in hand casts its enchantment as a spell
+  through the body's graph (the staff release clips), paid from its charge
+  (`EAMT`) at the enchantment's cost less for skill in its school, "Your
+  item has insufficient charge" when it runs out; no skill gained;
+  `RightItemCharge` / `LeftItemCharge` (`src/staffs.rs`,
+  `known_ambiguities/staffs.md`)
 - Ethereal (Become Ethereal): no blows, bashes or harmful magic land on or
   from the ethereal, no stagger, no falling damage (nor for the paralyzed);
   the player attacking, casting or activating ends it (`src/ethereal.rs`,
@@ -1156,7 +1162,8 @@ game each piece unlocks.
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
-   scores, NPCs raising wards (and `IsWardState`, the `ActionWardHit` idles), summons and buffs in combat, staffs, runes, effect visuals (spell projectiles' models run
+   scores, NPCs raising wards (and `IsWardState`, the `ActionWardHit` idles), summons and buffs in combat, NPCs' staffs, recharging (staffs and weapons; blows spending
+   weapons' charge; charge carried through transfers), runes, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,

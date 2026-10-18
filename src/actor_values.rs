@@ -219,6 +219,7 @@ impl Engine {
             av::HEALTH => self.actor_health(actor),
             // The player's stamina is unset (infinite) until first worked out.
             av::STAMINA => self.stamina(actor).map(|(cur, max)| (cur.min(max), max)),
+            av::RIGHT_ITEM_CHARGE | av::LEFT_ITEM_CHARGE => self.hand_item_charge(actor, index),
             _ => None,
         }
     }
@@ -312,6 +313,16 @@ impl Engine {
                         if value <= 0.0 {
                             self.kill(actor, false, None);
                         }
+                    }
+                }
+                av::RIGHT_ITEM_CHARGE | av::LEFT_ITEM_CHARGE => {
+                    let hand = if index == av::LEFT_ITEM_CHARGE {
+                        crate::spells::LEFT
+                    } else {
+                        crate::spells::RIGHT
+                    };
+                    if let Some(w) = self.inventories.get(&actor).and_then(|i| i.held(hand)) {
+                        self.spend_weapon_charge(actor, w, current - value.max(0.0));
                     }
                 }
                 _ => {

@@ -237,13 +237,13 @@ pub(crate) fn hand_graph_vars(
             .unwrap_or(1.0)
             * speed_mults[h]
     };
-    // An empty hand beside a spell is a spell's to the graph: only the left
-    // hand's spell (and staff) states reach the magic behaviour
-    // (`known_ambiguities/casting.md`).
+    // An empty hand beside a spell is a spell's to the graph, beside a staff
+    // a staff's: only the left hand's spell and staff states reach the magic
+    // behaviour (`known_ambiguities/casting.md`).
     let (mut right, mut left) = (inv.hand(lo, false), inv.hand(lo, true));
     match (right, left) {
-        (HandType::Spell, HandType::Empty) => left = HandType::Spell,
-        (HandType::Empty, HandType::Spell) => right = HandType::Spell,
+        (h @ (HandType::Spell | HandType::Staff), HandType::Empty) => left = h,
+        (HandType::Empty, h @ (HandType::Spell | HandType::Staff)) => right = h,
         _ => {}
     }
     [
