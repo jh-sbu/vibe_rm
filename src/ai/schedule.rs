@@ -56,6 +56,9 @@ pub struct Whereabouts {
     /// the refresh in progress.
     pub package: HashMap<FormId, Option<FormId>>,
     pending_packages: HashMap<FormId, Option<FormId>>,
+    /// The package whose start (and end) each actor's home doors last
+    /// followed: a loaded actor's as its AI picks it, else the refresh's.
+    pub lock_package: HashMap<FormId, Option<FormId>>,
 }
 
 impl Whereabouts {
@@ -304,8 +307,23 @@ impl Engine {
         self.whereabouts.prev = std::mem::replace(&mut self.whereabouts.of, pending);
         self.whereabouts.by_place = by_place;
         self.whereabouts.cursor = 0;
-        let before = std::mem::replace(&mut self.whereabouts.package, pending_packages);
-        self.package_door_locks(&before);
+        self.whereabouts.package = pending_packages;
+        // Loaded actors' doors follow their AI's own picks (`evaluate_packages`).
+        let changed: Vec<_> = self
+            .whereabouts
+            .package
+            .iter()
+            .filter(|(a, _)| !self.actor_cells.contains_key(*a))
+            .filter(|(a, now)| self.whereabouts.lock_package.get(*a) != Some(*now))
+            .map(|(&a, &now)| {
+                (
+                    a,
+                    self.whereabouts.lock_package.get(&a).copied().flatten(),
+                    now,
+                )
+            })
+            .collect();
+        self.package_door_locks(changed);
         self.whereabouts.next_refresh = REFRESH_INTERVAL;
         true
     }
