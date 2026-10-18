@@ -690,7 +690,8 @@ game each piece unlocks.
 - Story Manager: events run down the tree of event, branch and quest nodes
   (`SMEN` / `SMBN` / `SMQN`) under their type, stacked or random, node
   conditions on the event's data, quests started with reset hours, max running,
-  num to run, do all before repeating and shared events. Events: NPCs striking
+  num to run, do all before repeating and shared events, "warn if no child
+  quest started" (a logged warning). Events: NPCs striking
   up conversations (`ADIA`: every town's conversation quests and their scenes),
   the player changing location (`CLOC`), script events
   (`Keyword.SendStoryEvent`), kills (`KILL`). "From event" aliases,
@@ -1056,8 +1057,7 @@ game each piece unlocks.
    - Story Manager state and relationship ranks in saves
    - Kill events' crime status for NPC killers; the "sold" acquire type;
      assault events for blows to the player; `HasParentRelationship` and secret
-     relationship behavior (`known_ambiguities/relationships.md`);
-     `WarnIfNoChildQuestStarted`
+     relationship behavior (`known_ambiguities/relationships.md`)
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
    - Quiet Casting, Shadow Warrior (with casting); blindness, and spells

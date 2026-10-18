@@ -226,7 +226,7 @@ impl Engine {
         if node.max_concurrent > 0 && self.story_running_under(id) >= node.max_concurrent as usize {
             return none;
         }
-        match &node.kind {
+        let out = match &node.kind {
             NodeKind::Event(_) | NodeKind::Branch => {
                 let mut kids = self.story.children.get(&id).cloned().unwrap_or_default();
                 if node.node_flags & flags::RANDOM != 0 {
@@ -316,7 +316,16 @@ impl Engine {
                     consumed: n > 0 && !shares,
                 }
             }
+        };
+        // The Creation Kit's debugging aid: a node reached that started nothing.
+        if node.node_flags & flags::WARN_IF_NO_CHILD_QUEST_STARTED != 0 && !out.started {
+            log::warn!(
+                "story manager: {} reached {} but no quest under it started",
+                event.name(),
+                node.editor_id
+            );
         }
+        out
     }
 
     fn shuffle<T>(&mut self, v: &mut [T]) {
