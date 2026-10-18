@@ -160,6 +160,14 @@ Left out so far:
   the message box stops the script. Should the NPC's weapon take it, that
   NPC fighting a held target would show whether a blocked blow uses the
   dose (the target's health over its poison's duration).
+- **Leveled spell lists** (`npc-templates.md`): test NPCs placed by
+  `PlaceAtMe`, each naming a test `LVSP` in its spell list: entries at
+  levels 1, 10 and 30 (no "all levels") on a level-30 NPC with the player
+  below 10 (`HasSpell` of each: the actor's level or the player's); twenty
+  of one with three level-1 entries (each pick's share, and whether
+  `Disable` / `Enable` or a second `PlaceAtMe` of the same reference's base
+  keeps a pick); twenty with 50% chance of none; `HasSpell` of the list's
+  own form. Needs an `LVSP` writer.
 - **Actors' keywords** (`npc-templates.md`): `HasKeyword` on an NPC wearing
   armor with `ArmorHeavy`, and under a spell whose effect has a keyword
   its race lacks.

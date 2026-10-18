@@ -397,13 +397,31 @@ impl Engine {
     }
 
     /// The spells an actor knows: its record's (`SPLO`, from the template
-    /// giving the spell list), its race's, its perks' abilities and those
-    /// added, less those removed.
+    /// giving the spell list; leveled spell lists rolled for the actor's
+    /// level by its id), its race's, its perks' abilities and those added,
+    /// less those removed.
     pub fn actor_spells(&self, actor: FormId) -> Vec<FormId> {
-        let mut out = self
+        let listed = self
             .templates_of(actor)
             .map(|t| t.spells(&self.lo))
             .unwrap_or_default();
+        let mut out = Vec::with_capacity(listed.len());
+        let mut level = None;
+        for s in listed {
+            if self.lo.tag_of(s).is_some_and(|t| t.0 == *b"LVSP") {
+                let level = *level.get_or_insert_with(|| self.actor_level(actor).max(1) as u16);
+                out.extend(crate::world::actor::resolve_spells(
+                    &self.lo,
+                    s,
+                    level,
+                    actor.0 as u64,
+                    &self.scripts.globals,
+                    0,
+                ));
+            } else {
+                out.push(s);
+            }
+        }
         for &(perk, _) in self.actor_perks(actor).iter() {
             if let Some(p) = self.perk(perk) {
                 for en in &p.entries {

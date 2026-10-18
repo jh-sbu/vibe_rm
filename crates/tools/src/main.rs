@@ -2803,6 +2803,40 @@ fn main() -> Result<()> {
                     lvln_flags[i]
                 );
             }
+            // Leveled spell lists (LVSP) named by NPCs' and races' spell lists.
+            let mut lvsp: std::collections::BTreeMap<esp::FormId, Vec<String>> = Default::default();
+            for tag in [b"NPC_", b"RACE"] {
+                for &id in lo.ids_of_type(tag) {
+                    let Some(rec) = lo.get(id) else { continue };
+                    for s in rec
+                        .subrecords()
+                        .filter(|s| s.tag.0 == *b"SPLO" && s.data.len() >= 4)
+                    {
+                        let f = rec.fid(s.form_id(0));
+                        if lo.get(f).is_some_and(|r| r.tag().0 == *b"LVSP") {
+                            lvsp.entry(f)
+                                .or_default()
+                                .push(rec.editor_id().unwrap_or_default().to_string());
+                        }
+                    }
+                }
+            }
+            println!("leveled spell lists in spell lists: {}", lvsp.len());
+            for (f, users) in &lvsp {
+                let rec = lo.get(*f).unwrap();
+                println!(
+                    "  {f} {} (none {}%, flags {:02X}) named by {}: {}",
+                    rec.editor_id().unwrap_or_default(),
+                    rec.get(b"LVLD")
+                        .and_then(|d| d.first().copied())
+                        .unwrap_or(0),
+                    rec.get(b"LVLF")
+                        .and_then(|d| d.first().copied())
+                        .unwrap_or(0),
+                    users.len(),
+                    users.iter().take(4).cloned().collect::<Vec<_>>().join(", ")
+                );
+            }
         }
         Some("pack-speeds") => {
             // pack-speeds <data dir>: packages by type, preferred speed flag / speed, sneak flag.

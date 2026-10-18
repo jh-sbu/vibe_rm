@@ -80,6 +80,11 @@ const LVL_USE_ALL: u8 = 0x04;
 /// level: with "calculate from all levels" every entry up to it, otherwise those of
 /// the highest level reached; the lowest-level entries if none is.
 fn eligible(rec: &LoadedRecord<'_>) -> Vec<(FormId, i32)> {
+    eligible_at(rec, crate::skills::player_level())
+}
+
+/// `eligible` at `level` rather than the player's.
+fn eligible_at(rec: &LoadedRecord<'_>, level: u16) -> Vec<(FormId, i32)> {
     let entries: Vec<(u16, FormId, i32)> = rec
         .subrecords()
         .filter(|s| s.tag.0 == *b"LVLO" && s.data.len() >= 8)
@@ -95,7 +100,7 @@ fn eligible(rec: &LoadedRecord<'_>) -> Vec<(FormId, i32)> {
             )
         })
         .collect();
-    let pc = crate::skills::player_level();
+    let pc = level;
     let flags = rec
         .get(b"LVLF")
         .and_then(|d| d.first().copied())
@@ -210,6 +215,45 @@ fn resolve_items_once(
     }
     let (e, n) = entries[((roll >> 8) % entries.len() as u64) as usize];
     resolve_items(lo, e, n * count, seed, globals, depth + 1)
+}
+
+/// The spells a leveled spell list (`LVSP`, or a plain spell) gives an actor
+/// of `level`: every eligible entry with "use all", otherwise one picked by
+/// `seed`; its chance of none can leave nothing. Nested lists are followed.
+pub(crate) fn resolve_spells(
+    lo: &LoadOrder,
+    id: FormId,
+    level: u16,
+    seed: u64,
+    globals: &Globals,
+    depth: u32,
+) -> Vec<FormId> {
+    let Some(rec) = lo.get(id).filter(|r| r.tag().0 == *b"LVSP") else {
+        return if id.is_null() { Vec::new() } else { vec![id] };
+    };
+    if depth > 8 {
+        return Vec::new();
+    }
+    let roll = mix(seed, id);
+    if (roll % 100) < chance_none(lo, &rec, globals) {
+        return Vec::new();
+    }
+    let entries = eligible_at(&rec, level);
+    let flags = rec
+        .get(b"LVLF")
+        .and_then(|d| d.first().copied())
+        .unwrap_or(0);
+    if flags & LVL_USE_ALL != 0 {
+        return entries
+            .into_iter()
+            .flat_map(|(e, _)| resolve_spells(lo, e, level, seed, globals, depth + 1))
+            .collect();
+    }
+    if entries.is_empty() {
+        return Vec::new();
+    }
+    let e = entries[((roll >> 8) % entries.len() as u64) as usize].0;
+    resolve_spells(lo, e, level, seed, globals, depth + 1)
 }
 
 struct NpcTraits {

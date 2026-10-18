@@ -62,16 +62,44 @@ Remaining questions and limits:
   real second. An NPC loaded between syncs can wait until the next one. Exact
   engine timing relative to loading and script events is not established by
   these sources; this change does not alter that cadence.
-- `SPLO` can also name a leveled spell (`LVSP`) according to xEdit. Its FormID
-  is inherited, but the magic system does not yet expand that list into usable
-  spells. Exact spell-list selection and refresh behavior remain unverified.
-  Public research on 2026-10-16 did not resolve whether eligibility uses the
-  actor's level or the player's, when selections refresh, or how copied actors
-  behave. A [firsthand Skyrim LE report](https://forums.nexusmods.com/topic/9690643-le-how-do-you-add-a-leveled-spell-list-to-an-npc/)
-  says a copied actor's leveled spell list yields nothing, and its script
-  workaround is not evidence for native selection. The public CK LeveledSpell
-  page could not be fetched in that session. Expansion remains deferred rather
-  than transferring Oblivion rules or inventing a refresh policy.
+
+## Leveled spell lists
+
+`SPLO` can also name a leveled spell list (`LVSP`; xEdit's definitions:
+`LVLD` chance none, `LVLF` flags, `LVLO` level / spell / count). The base
+game's NPCs name 29 of them, about 380 NPCs in all (`vrm-tool npc-templates`
+lists them): every bandit and ghost mage's destruction spell
+(`LSpellBandit01FireFrostShock`...: one of fire, frost or shock), dragon
+priests' spells, draugr overlords' 50 / 66% extra spell, the world-encounter
+battlemages' and conjurers' hands, vampires' 50% reanimation spells, Miraak's.
+Without expansion none of these actors had the spells.
+
+`Engine::actor_spells` now expands them (`world::actor::resolve_spells`), as
+leveled items are: "use all" (`0x04`) gives every eligible entry, otherwise
+one is picked; "calculate from all levels" (`0x01`) makes every entry up to
+the level eligible, otherwise those of the highest level reached; chance of
+none can leave nothing; nested lists are followed. Entries' counts are
+ignored, and so "each item in count" (`0x02`).
+
+Choices not settled by public sources (research on 2026-10-16 found none, see
+the [Skyrim LE report](https://forums.nexusmods.com/topic/9690643-le-how-do-you-add-a-leveled-spell-list-to-an-npc/)
+that a copied actor's leveled spell list yields nothing):
+
+- The level is the actor's own (`actor_level`), not the player's as for
+  leveled NPCs and items. Only two vanilla lists have entries above level 1
+  (`LSpellWEConjurerRighHand` 1 / 10 / 20 / 35, `DLC2MiraakLSpells` up to
+  60), so the choice touches little.
+- The pick is seeded by the actor's form id, so an actor keeps its pick
+  (and the chance-of-none roll) whenever it is asked. It is worked out each
+  time, not stored: a level change (the player's, for PC-level-mult NPCs)
+  can change an actor's spells mid-life. When the game rolls (on load, on
+  reset, once) is unknown.
+- `HasSpell` on the list's own form id is false (the actor has the rolled
+  spells, not the list).
+- The copied-actor report above (nothing given) isn't followed: vanilla
+  actors would lose their spells.
+
+An autotest is planned in `plans/autotest-survey.md` (tier 2).
 
 ## Open questions
 

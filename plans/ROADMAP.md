@@ -191,6 +191,9 @@ game each piece unlocks.
 - NPC spell-list templates: spells, abilities and perks come from the source
   selected by Use Spell List, through nested and leveled NPC templates; empty
   lists stay empty. Racial spells follow the traits source independently.
+  Leveled spell lists (`LVSP`: bandit and ghost mages, dragon priests,
+  draugr overlords, battlemages, vampires) are rolled for the actor's level,
+  each actor keeping its pick.
   Evidence and remaining limits: `known_ambiguities/npc-templates.md`
 - Inventories: NPCs' items (`CNTO`, leveled item counts, "each item in count"), outfits
   and containers' contents, kept by reference; `GetItemCount`, `GetEquipped`,
@@ -1120,8 +1123,8 @@ game each piece unlocks.
      locks changing as packages start rather than on the whereabouts refresh;
      actors stepping round loose clutter instead of shoving it
    - Off-screen travel between worldspaces; paths round locked animated doors
-   - Templates: leveled spell lists (`LVSP`) expanded into usable spells;
-     selection and refresh behavior need evidence (`known_ambiguities/npc-templates.md`)
+   - Templates: when leveled spell lists are rolled and at whose level
+     (expanded: see Done; `known_ambiguities/npc-templates.md`)
    - Package trees: branches of `Sequence` / `Simultaneous` roots (multi-location
      sandboxes' stops done: see Done; their "in cell" stops elsewhere, per-stop
      unlocking and progress kept across loads remain),
