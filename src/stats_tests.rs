@@ -152,8 +152,16 @@ fn fixture() -> (Fixture, Engine) {
         ),
     )
     .unwrap();
-    let lo = esp::LoadOrder::load(&fixture.0, &["Stats.esp".into()]).unwrap();
-    let vfs = vfs::Vfs::new(&fixture.0, &[]);
+    let mut engine = headless_engine(&fixture.0, "Stats.esp");
+    engine.set_actor_value(PLAYER_REF, av::MAGICKA, 1000.0);
+    (fixture, engine)
+}
+
+/// An engine on one plugin in `dir`, rendering to nothing (a headless GPU
+/// adapter: software Vulkan will do).
+pub(crate) fn headless_engine(dir: &std::path::Path, plugin: &str) -> Engine {
+    let lo = esp::LoadOrder::load(dir, &[plugin.into()]).unwrap();
+    let vfs = vfs::Vfs::new(dir, &[]);
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -170,9 +178,7 @@ fn fixture() -> (Fixture, Engine) {
     .unwrap();
     let renderer =
         crate::render::Renderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm, 16, 16);
-    let mut engine = Engine::new(lo, vfs, renderer, 12.0, None, 0);
-    engine.set_actor_value(PLAYER_REF, av::MAGICKA, 1000.0);
-    (fixture, engine)
+    Engine::new(lo, vfs, renderer, 12.0, None, 0)
 }
 
 fn spell_uses(e: &Engine, spell: FormId) -> u64 {

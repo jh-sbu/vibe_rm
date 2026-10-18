@@ -436,4 +436,4 @@ mod tests {
 
 #[cfg(test)]
 #[path = "stats_tests.rs"]
-mod action_tests;
+pub(crate) mod action_tests;

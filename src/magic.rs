@@ -108,6 +108,7 @@ pub mod spell_type {
     pub const INGREDIENT: u32 = 8;
     pub const ADDICTION: u32 = 10;
     pub const VOICE: u32 = 11;
+    pub const STAFF_ENCHANTMENT: u32 = 12;
     pub const SCROLL: u32 = 13;
 }
 
@@ -120,6 +121,10 @@ const ALL_EFFECTS: u64 = u64::MAX;
 /// `SPIT` flag: a dual cast lands as two casts' worth, without dual
 /// casting's bonus (`test-mod dualcast`).
 const NO_DUAL_CAST_MODS: u32 = 0x80_0000;
+
+/// Seconds a channelled effect lasts after its spell's last landing, when
+/// nothing says the spell is still cast (the player's hands do).
+const CHANNEL_LINGER: f32 = 0.5;
 
 /// How often abilities and conditions are looked at again (seconds).
 const SYNC_INTERVAL: f32 = 1.0;
@@ -367,6 +372,9 @@ pub struct ActiveEffect {
     pub summoned: Option<FormId>,
     /// Its spell was dual cast (`EffectWasDualCast`).
     pub dual: bool,
+    /// A concentration spell's effect without a duration (wards): it lasts
+    /// as long as the spell is cast, each landing keeping it on.
+    pub channelled: bool,
 }
 
 /// Magic on actors: the active effects, spells added and removed, and what was
@@ -576,6 +584,33 @@ impl Engine {
         if self.is_dead(target) && target != PLAYER_REF {
             return false;
         }
+        // A ward in the way stops it; a hostile spell stopped is still a blow.
+        if !quiet
+            && let Some(c) = caster.filter(|&c| c != target)
+            && self.ward_stops(target, c, &m, power)
+        {
+            if self.item_hostile(&m) {
+                self.hostile_magic_landed(target, c, item);
+            }
+            return false;
+        }
+        // A concentration spell landing again keeps its channelled effects
+        // on (cast the same way); the rest are replaced.
+        let mut kept: u64 = 0;
+        for x in self.magic.effects.iter_mut().filter(|x| {
+            x.target == target
+                && !x.done
+                && x.channelled
+                && x.item == item
+                && x.caster == caster
+                && x.dual == dual
+                && x.index < 64
+                && applies(x.index)
+        }) {
+            x.elapsed = 0.0;
+            kept |= 1 << x.index;
+        }
+        let applies = |index: usize| applies(index) && (index >= 64 || kept & (1 << index) == 0);
         self.dispel(target, |x| x.item == item && applies(x.index));
         // One cloak at a time: a new one ends the last (UESP).
         let cloak = m.effects.iter().enumerate().any(|(i, e)| {
@@ -629,8 +664,11 @@ impl Engine {
                 hostile |= mgef.has(flags::HOSTILE) && passes;
                 continue;
             }
+            let channelled = m.cast_type == crate::spells::CONCENTRATION && ei.duration == 0;
             let duration = if constant {
                 f32::INFINITY
+            } else if channelled {
+                CHANNEL_LINGER
             } else if mgef.has(flags::NO_DURATION) {
                 0.0
             } else if mgef.has(flags::POWER_AFFECTS_DURATION) {
@@ -658,6 +696,7 @@ impl Engine {
                 at,
                 summoned: None,
                 dual,
+                channelled,
             });
             log::debug!(
                 "{target}: {} from {} ({item}): magnitude {magnitude:.1}, {duration}s",
@@ -689,7 +728,7 @@ impl Engine {
     /// projectile: Firebolt's `FireboltProjectile01` in the game, `test-mod
     /// autotest2`) to the target, and like a first blow it starts a fight
     /// (and an assault).
-    fn hostile_magic_landed(&mut self, target: FormId, caster: FormId, item: FormId) {
+    pub(crate) fn hostile_magic_landed(&mut self, target: FormId, caster: FormId, item: FormId) {
         self.break_calm(target);
         let projectile = self.magic_item(item).and_then(|m| self.item_projectile(&m));
         let proj_value = projectile.map_or(Value::None, |p| self.object_value(p));
@@ -783,7 +822,7 @@ impl Engine {
         m
     }
 
-    fn effect_index(&self, id: u64) -> Option<usize> {
+    pub(crate) fn effect_index(&self, id: u64) -> Option<usize> {
         self.magic.effects.iter().position(|x| x.id == id)
     }
 
@@ -826,6 +865,15 @@ impl Engine {
                 }
             }
             archetype::PEAK_VALUE_MODIFIER => self.recompute_peaks(x.target, &mgef),
+            // A ward builds from nothing, or is whole at once dual cast.
+            archetype::ACCUMULATE_MAGNITUDE => {
+                let from = if x.dual {
+                    self.ward_most(x.magnitude)
+                } else {
+                    0.0
+                };
+                self.hold(i, &mgef, [from, 0.0]);
+            }
             a if archetype::target_value(a).is_some() && mgef.primary.is_some() => {
                 let to = archetype::target_value(a).unwrap_or_default();
                 let now = self.actor_value(x.target, mgef.primary.unwrap_or_default());
@@ -864,7 +912,7 @@ impl Engine {
     }
 
     /// Hold a change on the effect's actor values (primary, secondary).
-    fn hold(&mut self, i: usize, mgef: &MagicEffect, by: [f32; 2]) {
+    pub(crate) fn hold(&mut self, i: usize, mgef: &MagicEffect, by: [f32; 2]) {
         let target = self.magic.effects[i].target;
         let avs = [
             mgef.primary.or(match mgef.archetype {
@@ -1203,6 +1251,15 @@ impl Engine {
             let Some(i) = self.effect_index(id) else {
                 continue;
             };
+            // The player's channelled effects last while a hand casts the spell.
+            if x.channelled && x.caster == Some(PLAYER_REF) {
+                if self.player_holds_spell(x.item) {
+                    self.magic.effects[i].elapsed = 0.0;
+                } else {
+                    self.finish_magic_effect(id);
+                    continue;
+                }
+            }
             let x = &mut self.magic.effects[i];
             let step = dt.min((x.duration - x.elapsed).max(0.0));
             x.elapsed += dt;
@@ -1255,6 +1312,7 @@ impl Engine {
             }
         }
         self.magic.effects.retain(|x| !x.done);
+        self.update_wards(dt);
         self.update_tapers(dt);
         // Let finished effects' scripts go once they have had their time.
         let now = self.scripts.real_time;
