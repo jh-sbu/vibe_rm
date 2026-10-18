@@ -377,21 +377,17 @@ impl Engine {
         }
     }
 
-    /// Lock and unlock homes as actors' packages change: unlocking when a package
-    /// that unlocks doors starts or one that unlocks them on change ends, then
-    /// locking as sleepers who lock their doors turn in (so a household stays
-    /// locked while any of it sleeps).
+    /// Lock and unlock homes as actors' packages change (actor, old, new):
+    /// unlocking when a package that unlocks doors starts or one that unlocks
+    /// them on change ends, then locking as sleepers who lock their doors turn
+    /// in (so a household stays locked while any of it sleeps).
     pub(crate) fn package_door_locks(
         &mut self,
-        before: &std::collections::HashMap<FormId, Option<FormId>>,
+        changed: Vec<(FormId, Option<FormId>, Option<FormId>)>,
     ) {
-        let changed: Vec<(FormId, Option<FormId>, Option<FormId>)> = self
-            .whereabouts
-            .package
-            .iter()
-            .filter(|(a, now)| before.get(*a) != Some(*now))
-            .map(|(&a, &now)| (a, before.get(&a).copied().flatten(), now))
-            .collect();
+        for &(a, _, now) in &changed {
+            self.whereabouts.lock_package.insert(a, now);
+        }
         let mut unlock = Vec::new();
         let mut lock = Vec::new();
         for (achr, old, new) in changed {
@@ -418,6 +414,12 @@ impl Engine {
                 continue;
             }
             let doors = self.home_doors(achr, npc);
+            log::debug!(
+                "{achr} {} {}: {} its home doors {doors:?}",
+                old.map_or("none", |p| p.editor_id.as_str()),
+                new.map_or("none", |p| p.editor_id.as_str()),
+                if shuts { "locks" } else { "unlocks" }
+            );
             if shuts {
                 lock.extend(doors);
             } else {

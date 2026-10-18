@@ -3003,6 +3003,7 @@ impl Engine {
                 f.ways.push(way);
             }
         }
+        let mut lock_changes = Vec::new();
         for (key, i, pick, goal, stop) in decisions {
             let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else {
                 continue;
@@ -3016,6 +3017,16 @@ impl Engine {
             };
             if a.pinned || a.dead {
                 continue;
+            }
+            // Home doors follow the package as it starts, not at the next
+            // whereabouts refresh.
+            let id = pick.map(|pi| a.packages[pi].id);
+            let old = match self.whereabouts.lock_package.get(&a.ref_id) {
+                Some(&old) => old,
+                None => a.current.map(|pi| a.packages[pi].id),
+            };
+            if old != id {
+                lock_changes.push((a.ref_id, old, id));
             }
             if pick != a.current {
                 if let Some(p) = pick.map(|pi| &a.packages[pi]) {
@@ -3045,6 +3056,9 @@ impl Engine {
                     a.interrupt(&mut self.furniture);
                 }
             }
+        }
+        if !lock_changes.is_empty() {
+            self.package_door_locks(lock_changes);
         }
     }
 

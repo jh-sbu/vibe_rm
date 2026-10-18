@@ -1121,8 +1121,8 @@ game each piece unlocks.
    - Followers helping the player (`CurrentFollowerFaction` relations);
      `AllyKilled` lines
    - Locks: sleepers warning the player before locking and putting them out;
-     locks changing as packages start rather than on the whereabouts refresh;
-     actors stepping round loose clutter instead of shoving it
+     unloaded actors' locks changing as packages start rather than on the
+     whereabouts refresh (loaded actors' do); actors stepping round loose clutter instead of shoving it
    - Off-screen travel between worldspaces; paths round locked animated doors
    - Templates: when leveled spell lists are rolled and at whose level
      (expanded: see Done; `known_ambiguities/npc-templates.md`)

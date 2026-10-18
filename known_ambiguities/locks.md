@@ -47,10 +47,15 @@ and location pages, CK wiki descriptions) and the game's data files.
   the most the pick's place allows (`most_turn`: linear across the partial zones,
   5% outside), and strain at less than a full turn wears out the pick. Picked open,
   the door or container opens. The skill is the player record's (`NPC_` `DNAM`).
-- Each whereabouts refresh (every 20 s, for every persistent actor) compares
-  actors' packages with the previous refresh. When a package with 0x40 starts or
-  one with 0x80 ends, the actor's home doors unlock; when a sleep package with
-  "Lock Doors?" starts, they lock (locks applied after unlocks).
+- A loaded actor's home doors follow its package as its AI switches to it;
+  other persistent actors' follow each whereabouts refresh (every 20 s), which
+  compares their packages with the last ones their doors followed. When a
+  package with 0x40 starts or one with 0x80 ends, the actor's home doors
+  unlock; when a sleep package with "Lock Doors?" starts, they lock (locks
+  applied after unlocks). The two evaluations can pick differently (the
+  refresh doesn't see loaded state); each actor's doors follow only one of
+  them at a time, so they don't flip between them, but loading or unloading
+  can fire a change.
 - Animated (non-load) doors open for walkers who get past their lock: with the
   key, or owning it (the door's `XOWN`, else its cell's: the actor or one of its
   factions). So cages, cells and gates in dungeons and prisons, and the player's
