@@ -35,10 +35,28 @@ fn layer_blocks_player(layer: u8) -> bool {
     )
 }
 
-/// Collision groups: actors' capsules, and ragdoll bodies (which don't collide with
-/// either, only with the world).
+/// Collision groups: actors' capsules, and ragdoll bodies. Ragdolls (Havok's
+/// `DeadBip` layer) collide with the world and each other, not with the
+/// character controllers: the player's ([`Physics::move_player`]) or actors'
+/// capsules.
 const ACTOR_GROUP: Group = Group::GROUP_3;
 const RAGDOLL_GROUP: Group = Group::GROUP_2;
+
+/// Keeps the bodies of one ragdoll (their colliders' `user_data`) from
+/// colliding with each other: limbs overlap the body in many poses, and the
+/// joints keep them in place. Different ragdolls' bodies collide.
+struct RagdollHooks;
+
+impl PhysicsHooks for RagdollHooks {
+    fn filter_contact_pair(&self, c: &PairFilterContext) -> Option<SolverFlags> {
+        let (a, b) = (&c.colliders[c.collider1], &c.colliders[c.collider2]);
+        let one = |c: &Collider| c.active_hooks().contains(ActiveHooks::FILTER_CONTACT_PAIRS);
+        if one(a) && one(b) && a.user_data == b.user_data {
+            return None;
+        }
+        Some(SolverFlags::COMPUTE_RIGID_IMPULSES)
+    }
+}
 
 /// The player's mass pushing loose objects about (kg; no source).
 const PLAYER_MASS: f32 = 80.0;
@@ -139,6 +157,8 @@ pub struct Physics {
     /// The body the player holds (`crate::grab`): the character controller
     /// passes through it rather than standing on it or pushing it.
     pub held: Option<RigidBodyHandle>,
+    /// The next ragdoll's tag (its colliders' `user_data`; see `RagdollHooks`).
+    next_ragdoll: u64,
     /// Shapes only the activation ray finds (plants' non-collidable ones).
     picks: Vec<Pick>,
 }
@@ -185,6 +205,7 @@ impl Physics {
             broken: Vec::new(),
             anchored: Default::default(),
             held: None,
+            next_ragdoll: 1,
             picks: Vec::new(),
         }
     }
@@ -633,7 +654,7 @@ impl Physics {
     ) -> Ragdoll {
         let groups = InteractionGroups::new(
             RAGDOLL_GROUP,
-            Group::ALL ^ RAGDOLL_GROUP ^ ACTOR_GROUP,
+            Group::ALL ^ ACTOR_GROUP,
             InteractionTestMode::And,
         );
         let placed: Vec<(Pose, f32, SharedShape)> = desc
@@ -697,11 +718,14 @@ impl Physics {
             let collider = ColliderBuilder::new(shape)
                 .mass(b.mass)
                 .friction(0.8)
-                .collision_groups(groups);
+                .collision_groups(groups)
+                .active_hooks(ActiveHooks::FILTER_CONTACT_PAIRS)
+                .user_data(self.next_ragdoll as u128);
             let (h, c) = self.world.insert(body, collider);
             self.owners.insert(c, owner);
             bodies.push(h);
         }
+        self.next_ragdoll += 1;
         for j in &desc.joints {
             self.world
                 .insert_impulse_joint(bodies[j.a], bodies[j.b], joint(j, scale));
@@ -729,7 +753,7 @@ impl Physics {
 
     pub fn step(&mut self, dt: f32) {
         self.world.integration_parameters.dt = dt.clamp(1.0 / 240.0, 1.0 / 30.0);
-        self.world.step();
+        self.world.step_with_events(&RagdollHooks, &());
         self.break_joints();
     }
 
@@ -770,9 +794,15 @@ impl Physics {
     pub fn move_player(&mut self, pos: Vec3, desired: Vec3, dt: f32) -> (Vec3, bool) {
         let pose = Pose::from_translation(pos);
         let mut hits = Vec::new();
+        // Corpses don't stop the player, and aren't pushed.
+        let filter = QueryFilter::default().groups(InteractionGroups::new(
+            Group::ALL,
+            Group::ALL ^ RAGDOLL_GROUP,
+            InteractionTestMode::And,
+        ));
         let filter = match self.held {
-            Some(h) => QueryFilter::default().exclude_rigid_body(h),
-            None => QueryFilter::default(),
+            Some(h) => filter.exclude_rigid_body(h),
+            None => filter,
         };
         let m = {
             let qp = self.world.query_pipeline_with_filter(filter);
@@ -1067,6 +1097,7 @@ pub type CollisionCache = HashMap<String, Option<Arc<CollisionModel>>>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::ragdoll::{RagdollBody, RagdollDesc};
 
     /// A free ball of `mass` at the origin, and the world.
     fn ball(mass: f32) -> (Physics, RigidBodyHandle) {
@@ -1119,11 +1150,8 @@ mod tests {
         assert!(at.z < 0.0, "{at:?}");
     }
 
-    /// A torso beside a rock (a closed mesh, as rocks are), a leg hanging from
-    /// it with its foot through the rock.
-    #[test]
-    fn ragdoll_starting_in_a_rock_is_lifted_out_and_drags() {
-        use crate::world::ragdoll::{RagdollBody, RagdollDesc, ball};
+    /// A world with a floor whose top is at z = 0.
+    fn floor() -> Physics {
         let mut p = Physics::new();
         p.world.insert_collider(
             ColliderBuilder::cuboid(1000.0, 1000.0, 10.0)
@@ -1131,26 +1159,116 @@ mod tests {
                 .build(),
             None,
         );
-        let (v, t) = rapier3d::parry::shape::Cuboid::new(Vec3::splat(30.0)).to_trimesh();
-        let v = v.into_iter().map(|v| v + Vec3::Z * 10.0).collect();
-        p.world
-            .insert_collider(ColliderBuilder::trimesh(v, t).unwrap().build(), None);
-        // Scene queries see them after a step.
-        p.step(1.0 / 60.0);
-        let body = |p1: Vec3, p2: Vec3, radius: f32| RagdollBody {
+        p
+    }
+
+    /// A ragdoll body: a capsule of 10 kg.
+    fn capsule(p1: Vec3, p2: Vec3, radius: f32) -> RagdollBody {
+        RagdollBody {
             bone: 0,
             offset: Mat4::IDENTITY,
             p1,
             p2,
             radius,
             mass: 10.0,
+        }
+    }
+
+    /// A one-body ragdoll lying along x at `at`.
+    fn corpse(p: &mut Physics, at: Vec3, owner: u32) -> RigidBodyHandle {
+        let desc = RagdollDesc {
+            bodies: vec![capsule(Vec3::X * -30.0, Vec3::X * 30.0, 10.0)],
+            joints: Vec::new(),
         };
+        let rd = p.spawn_ragdoll(
+            &desc,
+            |_| Mat4::from_translation(at),
+            Vec3::ZERO,
+            esp::FormId(owner),
+        );
+        rd.bodies[0]
+    }
+
+    fn settle(p: &mut Physics, steps: u32) {
+        for _ in 0..steps {
+            p.step(1.0 / 60.0);
+        }
+    }
+
+    #[test]
+    fn corpses_pile_up() {
+        let mut p = floor();
+        let below = corpse(&mut p, Vec3::Z * 10.0, 1);
+        let above = corpse(&mut p, Vec3::Z * 60.0, 2);
+        settle(&mut p, 120);
+        let z = |h| p.body_pose(h).unwrap().0.w_axis.z;
+        assert!(z(below) < 12.0, "{}", z(below));
+        assert!(z(above) > 25.0, "fell through the other: {}", z(above));
+    }
+
+    #[test]
+    fn one_ragdolls_bodies_pass_through_each_other() {
+        let mut p = floor();
         let desc = RagdollDesc {
             bodies: vec![
-                body(Vec3::Y * -25.0, Vec3::Y * 25.0, 10.0),
-                body(Vec3::Z * -20.0, Vec3::Z * 20.0, 5.0),
+                capsule(Vec3::X * -30.0, Vec3::X * 30.0, 10.0),
+                capsule(Vec3::Y * -30.0, Vec3::Y * 30.0, 10.0),
             ],
-            joints: vec![ball(
+            joints: Vec::new(),
+        };
+        let rd = p.spawn_ragdoll(
+            &desc,
+            |_| Mat4::from_translation(Vec3::Z * 10.0),
+            Vec3::ZERO,
+            esp::FormId(1),
+        );
+        settle(&mut p, 60);
+        for h in rd.bodies {
+            let at = p.body_pose(h).unwrap().0.w_axis;
+            assert!(
+                at.x.hypot(at.y) < 1.0 && at.z < 12.0,
+                "pushed apart: {at:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_player_walks_through_corpses() {
+        let mut p = floor();
+        let body = corpse(&mut p, Vec3::new(0.0, 0.0, 10.0), 1);
+        settle(&mut p, 60);
+        let start = p.body_pose(body).unwrap().0.w_axis;
+        let centre = p.player_half_height + p.player_radius + 1.0;
+        let mut pos = Vec3::new(0.0, -80.0, centre);
+        for _ in 0..60 {
+            pos = p.move_player(pos, Vec3::Y * 4.0, 1.0 / 60.0).0;
+            p.step(1.0 / 60.0);
+        }
+        assert!(
+            pos.y > 100.0 && pos.z < centre + 2.0,
+            "stopped or climbed: {pos:?}"
+        );
+        let end = p.body_pose(body).unwrap().0.w_axis;
+        assert!(start.distance(end) < 1.0, "pushed: {start:?} -> {end:?}");
+    }
+
+    /// A torso beside a rock (a closed mesh, as rocks are), a leg hanging from
+    /// it with its foot through the rock.
+    #[test]
+    fn ragdoll_starting_in_a_rock_is_lifted_out_and_drags() {
+        let mut p = floor();
+        let (v, t) = rapier3d::parry::shape::Cuboid::new(Vec3::splat(30.0)).to_trimesh();
+        let v = v.into_iter().map(|v| v + Vec3::Z * 10.0).collect();
+        p.world
+            .insert_collider(ColliderBuilder::trimesh(v, t).unwrap().build(), None);
+        // Scene queries see them after a step.
+        p.step(1.0 / 60.0);
+        let desc = RagdollDesc {
+            bodies: vec![
+                capsule(Vec3::Y * -25.0, Vec3::Y * 25.0, 10.0),
+                capsule(Vec3::Z * -20.0, Vec3::Z * 20.0, 5.0),
+            ],
+            joints: vec![crate::world::ragdoll::ball(
                 0,
                 1,
                 [
