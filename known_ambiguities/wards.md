@@ -42,9 +42,12 @@ hold timer) and `MagicSystem::WardState` (none, absorb, break), and
   Friendly spells go through with `OnWardHit` status 0.
 - **Breaking**: a hostile spell stronger than the ward breaks the cast
   wards and is stopped all the same (UESP: no damage from the spell that
-  broke it). The player's hand casting it stops (to be cast again); NPCs
-  are staggered (`staggerMagnitude` 0.5, a choice); the player isn't (the
-  body has no stagger yet).
+  broke it). The player's hand casting it stops (to be cast again). The
+  caster's graph gets `WardBreak` (the master graph's stagger state, the
+  `WardBroken` idle's event), or `staggerStart` at 0.5 where it has none;
+  an absorbed spell sends `wardAbsorb` (the ward loop's own transition,
+  the `WardAbsorbed` idle's event). The game picks these through the
+  `ActionWardHit` idles; sent straight here.
 - **Stopped hostile spells still count as a blow**: `OnHit` and the fight
   or assault they start, as if they had landed. Whether the game sends
   `OnHit` for a warded spell isn't known.
@@ -63,8 +66,9 @@ hold timer) and `MagicSystem::WardState` (none, absorb, break), and
 
 ## Still open
 
-- NPCs raising wards in combat (`CombatMagicCasterWard`), their
-  `WardAbsorbed` / `WardBroken` idles (`ActionWardHit`) and `IsWardState`.
+- NPCs raising wards in combat (`CombatMagicCasterWard`); `IsWardState`
+  and the `ActionWardHit` idles chosen through it (creatures' own, such as
+  `DraugrWardAbsorbed`'s `recoilStart`).
 - The ward's sounds (`WardAbsorbSound`, `WardBreakSound`,
   `WardDeflectSound` default objects) and visuals.
 - `WardDeflection` (actor value 67): nothing in the records sets it.
