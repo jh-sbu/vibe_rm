@@ -617,7 +617,13 @@ game each piece unlocks.
   ward gone, its caster staggered: `WardBreak`), doing nothing to the warded either way;
   gear wards (Spellbreaker) absorb without wearing; `OnWardHit` (First
   Lessons' Tolfdir); Ward Absorb's magicka. A concentration spell's
-  effects without a duration (the ward's armor too) last while it is held
+  effects without a duration (the ward's armor too) last while it is held.
+  NPCs who know a ward (Vigilants, warlocks, Delphine...) raise it in the
+  hand their weapon leaves free while a hostile spell is being cast at
+  them, facing its caster, and let it go a moment after; after a ward ends
+  or breaks they wait before another. Ward hits pick their reaction from
+  the `ActionWardHit` idles through `IsWardState` (`WardAbsorbed`,
+  `WardBroken`, draugr, dragon priests' and Hermaeus Mora's daedra's own)
   (`src/wards.rs`, `known_ambiguities/wards.md`)
 - Staffs: a staff in hand casts its enchantment as a spell
   through the body's graph (the staff release clips), paid from its charge
@@ -1167,7 +1173,7 @@ game each piece unlocks.
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
-   scores, NPCs raising wards (and `IsWardState`, the `ActionWardHit` idles), summons and buffs in combat, recharging (staffs and weapons; blows spending
+   scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, recharging (staffs and weapons; blows spending
    weapons' charge; charge carried through transfers), runes, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy

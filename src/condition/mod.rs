@@ -677,6 +677,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         713 => b(subject.and_then(|s| e.spell_casting_perk(s)) == Some(p1)),
         632 => b(subject.is_some_and(|s| e.is_casting(s))), // IsCasting
         627 => b(subject.is_some_and(|s| e.is_dual_casting(s))), // IsDualCasting
+        602 => b(subject.is_some_and(|s| e.ward_state(s) == c.p1 as i32)), // IsWardState
         724 => b(ctx.dual_cast),                            // EffectWasDualCast
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))), // GetIsCurrentPackage
         579 => b(subject.is_some_and(|s| e.equipped_shout(s) == Some(p1))), // GetEquippedShout

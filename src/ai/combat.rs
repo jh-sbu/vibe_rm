@@ -724,6 +724,10 @@ pub struct Combat {
     pub(crate) channel: f32,
     pub(crate) hand_cast: Option<super::casters::HandCast>,
     pub(crate) clear_shot: bool,
+    /// Wards: seconds the ward is still kept up after the last spell seen
+    /// coming at it, and before another may be raised.
+    pub(crate) ward_keep: f32,
+    pub(crate) ward_wait: f32,
     /// Running from the target rather than fighting it; where it is heading away
     /// from the target to (fleeing, or an archer backing off).
     pub fleeing: bool,
@@ -798,6 +802,8 @@ impl Combat {
             channel: 0.0,
             hand_cast: None,
             clear_shot: false,
+            ward_keep: 0.0,
+            ward_wait: 0.0,
             fleeing: false,
             away_to: None,
             confidence_mod: 0.0,

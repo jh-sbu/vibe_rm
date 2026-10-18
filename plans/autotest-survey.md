@@ -158,7 +158,15 @@ Left out so far:
   and the player's health after each, `OnWardHit` statuses (an alias
   script), magicka after with Ward Absorb added (`AddPerk`), and the same
   from an NPC placed behind the player (the arc). Once dual cast (the
-  perk added: does it start whole?).
+  perk added: does it start whole?). NPCs' wards: a Vigilant of Stendarr
+  (`EncVigilantOfStendarr01NordM04`: Lesser Ward in the left hand) and a
+  fire warlock placed apart and set on each other (`StartCombat`), the
+  Vigilant's `WardPower` and the warlock's magicka (its drops mark its
+  casts; `IsCasting` is a condition, not a native) read every 0.1 s for
+  20 s against `GetCurrentRealTime`: how soon a ward comes up after a cast
+  starts, how long it outlasts it, and the gap before the next
+  (`wards.md`'s keep and wait). Then the Vigilant set on an NPC with only
+  a sword: does it ward at all with no spells coming?
 - **Staffs** (`staffs.md`), partial: staffs are cast with the attack
   button, so the user casts a Staff of Firebolts once by hand when a
   notification asks; the script reads `GetActorValue("RightItemCharge")`
