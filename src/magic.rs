@@ -512,6 +512,12 @@ impl Engine {
     /// An explicit script/console cast, separate from effects landing through
     /// projectiles, areas, concentration ticks or passive abilities.
     pub fn cast_item(&mut self, item: FormId, caster: Option<FormId>, target: FormId) -> bool {
+        let Some(magic) = self.magic_item(item) else {
+            return false;
+        };
+        if let Some(caster) = caster {
+            self.casting_breaks_invisibility(caster, &magic);
+        }
         let landed = self.apply_item(item, caster, target);
         if landed && let Some(caster) = caster {
             self.count_spell_cast(caster, item);

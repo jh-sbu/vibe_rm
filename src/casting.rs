@@ -1149,6 +1149,7 @@ impl Engine {
         let Some(item) = self.magic_item(spell) else {
             return;
         };
+        self.casting_breaks_invisibility(caster, &item);
         if item.cast_type != CONCENTRATION || share >= 1.0 {
             let how = if dual { " dual cast" } else { "" };
             log::info!("{caster} casts {} ({spell}){how}", item.name);

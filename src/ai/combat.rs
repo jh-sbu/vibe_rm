@@ -1780,6 +1780,7 @@ impl Engine {
             let strike_angle = attack.as_ref().map_or(35.0, |x| x.strike_angle);
             let stagger = attack.as_ref().map_or(0.0, |x| x.stagger);
             let Some((tp, th)) = self.actor_body(s.target) else {
+                self.break_invisibility(s.attacker);
                 continue;
             };
             let to = (tp - s.pos).truncate();
@@ -1796,6 +1797,7 @@ impl Engine {
                     s.target,
                     to.length()
                 );
+                self.break_invisibility(s.attacker);
                 continue;
             }
             let power = attack.as_ref().is_some_and(|x| x.flags & ATK_POWER != 0);
@@ -1811,6 +1813,9 @@ impl Engine {
                     Struck::Hand(s.hand),
                 );
             }
+            // The triggering blow tests sneak eligibility while still hidden.
+            // A missed hit frame ends invisibility too.
+            self.break_invisibility(s.attacker);
         }
     }
 
@@ -2908,6 +2913,7 @@ impl Engine {
         {
             self.bash_hit(r, PLAYER_REF, damage, attack.power(), attack.stagger);
         }
+        self.break_invisibility(PLAYER_REF);
     }
 
     /// An attack button came up: its hand's spell is cast, the guard
@@ -3150,6 +3156,7 @@ impl Engine {
         let ray = self.physics.raycast(eye, dir, reach);
         log::debug!("player attack: {ray:?} within {reach:.0}");
         let Some((_, Some(r))) = ray else {
+            self.break_invisibility(PLAYER_REF);
             return;
         };
         let actor = self.created(r).map_or_else(
@@ -3168,6 +3175,8 @@ impl Engine {
             log::info!("player strikes {r}");
             self.strike(r, PLAYER_REF, dir * push * crate::physics::METRE, power);
         }
+        // Resolve the first strike's sneak test before restoring visibility.
+        self.break_invisibility(PLAYER_REF);
     }
 
     /// Kill an actor, `killer` (if known) having dealt the blow: its scripts

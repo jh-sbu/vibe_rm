@@ -391,6 +391,7 @@ impl Engine {
         speed_mult: f32,
         damage: f32,
     ) {
+        self.break_invisibility(shooter);
         let model = arrow.model.clone().and_then(|m| {
             self.models
                 .load_all(&mut self.renderer, &self.vfs, std::slice::from_ref(&m));

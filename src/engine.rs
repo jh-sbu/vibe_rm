@@ -2662,6 +2662,7 @@ impl Engine {
             }
             return Ok(());
         }
+        self.break_invisibility(PLAYER_REF);
         {
             let mut vm = std::mem::take(&mut self.vm);
             let player = self.object_value(PLAYER_REF);

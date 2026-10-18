@@ -25,6 +25,7 @@ mod harvest;
 mod hazards;
 mod imagespace;
 mod impacts;
+mod invisibility;
 mod items;
 mod journal;
 mod locations;
