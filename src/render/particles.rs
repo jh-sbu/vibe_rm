@@ -7,7 +7,7 @@
 //! effect material. Where the Gamebryo semantics aren't public the choices
 //! are written down in `known_ambiguities/particles.md`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use glam::{Mat3, Mat4, Vec3, Vec4};
@@ -123,6 +123,128 @@ pub struct EmitterDesc {
     pub speed: Option<Curve>,
     pub radius: Option<Curve>,
     pub life_span: Option<Curve>,
+    /// Rigid mesh samples captured at the mesh's rest transform.
+    meshes: Vec<MeshEmission>,
+}
+
+#[derive(Debug, Clone)]
+struct MeshPrimitive {
+    positions: [Vec3; 3],
+    normals: [Vec3; 3],
+    /// One point, an edge, or a triangle.
+    count: usize,
+    cumulative_weight: f32,
+}
+
+#[derive(Debug, Clone)]
+struct MeshEmission {
+    object: Mat4,
+    primitives: Vec<MeshPrimitive>,
+}
+
+impl MeshEmission {
+    fn new(geometry: &nif::Geometry, object: Mat4, mode: u32) -> Option<Self> {
+        if !object.is_finite() || !object.determinant().is_finite() || object.determinant() == 0.0 {
+            return None;
+        }
+        let positions = &geometry.positions;
+        let mut triangles = Vec::new();
+        let mut edges = BTreeSet::new();
+        let mut normals = vec![Vec3::ZERO; positions.len()];
+        for &[a, b, c] in &geometry.triangles {
+            let indices = [a as usize, b as usize, c as usize];
+            if indices
+                .iter()
+                .any(|&i| i >= positions.len() || !positions[i].is_finite())
+            {
+                continue;
+            }
+            let [pa, pb, pc] = indices.map(|i| positions[i]);
+            let normal = (pb - pa).cross(pc - pa);
+            if !normal.is_finite() || normal.length_squared() <= 1e-12 {
+                continue;
+            }
+            triangles.push(indices);
+            for i in indices {
+                normals[i] += normal;
+            }
+            for (i, j) in [(a, b), (b, c), (c, a)] {
+                edges.insert((i.min(j) as usize, i.max(j) as usize));
+            }
+        }
+        for (i, normal) in normals.iter_mut().enumerate() {
+            if let Some(&authored) = geometry.normals.get(i)
+                && authored.is_finite()
+                && authored.length_squared() > 1e-12
+            {
+                *normal = authored;
+            }
+            *normal = normal.normalize_or_zero();
+        }
+        let mut primitives = Vec::new();
+        let mut weight_sum = 0.0;
+        let mut add = |indices: &[usize], weight: f32, centre: bool| {
+            if !weight.is_finite() || weight <= 0.0 || !(weight_sum + weight).is_finite() {
+                return;
+            }
+            let mut p = [Vec3::ZERO; 3];
+            let mut n = [Vec3::ZERO; 3];
+            for (j, &i) in indices.iter().enumerate() {
+                p[j] = positions[i];
+                n[j] = normals[i];
+            }
+            if centre {
+                p[0] = p.iter().sum::<Vec3>() / indices.len() as f32;
+                n[0] = n.iter().sum::<Vec3>().normalize_or_zero();
+            }
+            weight_sum += weight;
+            primitives.push(MeshPrimitive {
+                positions: p,
+                normals: n,
+                count: if centre { 1 } else { indices.len() },
+                cumulative_weight: weight_sum,
+            });
+        };
+        match mode {
+            0 => {
+                for (i, position) in positions.iter().enumerate() {
+                    if position.is_finite() {
+                        add(&[i], 1.0, false);
+                    }
+                }
+            }
+            1 | 3 => {
+                for indices in triangles {
+                    let [a, b, c] = indices.map(|i| positions[i]);
+                    let area = (b - a).cross(c - a).length() * 0.5;
+                    add(&indices, if mode == 3 { area } else { 1.0 }, mode == 1);
+                }
+            }
+            2 | 4 => {
+                for (a, b) in edges {
+                    let length = positions[a].distance(positions[b]);
+                    add(&[a, b], if mode == 4 { length } else { 1.0 }, mode == 2);
+                }
+            }
+            _ => {}
+        }
+        (!primitives.is_empty()).then_some(Self { object, primitives })
+    }
+}
+
+/// Mesh emission currently supports decoded rigid geometry only. Deformation
+/// and animated mesh transforms need a live geometry source, not a rest sample.
+fn mesh_geometry(nif: &Nif, mesh: Ref) -> Option<&nif::Geometry> {
+    match nif.get(mesh)? {
+        Block::TriShape(shape) if shape.skin.0 < 0 && !shape.dynamic => Some(&shape.geometry),
+        Block::NiTriShape(shape) | Block::NiTriStrips(shape) if shape.skin.0 < 0 => {
+            match nif.get(shape.data)? {
+                Block::TriShapeData(data) => Some(&data.geometry),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -406,6 +528,17 @@ pub fn describe(
                     speed: float_ctlr(&m.name, FloatTarget::EmitterSpeed),
                     radius: float_ctlr(&m.name, FloatTarget::EmitterInitialRadius),
                     life_span: float_ctlr(&m.name, FloatTarget::EmitterLifeSpan),
+                    meshes: match &e.shape {
+                        EmitterShape::Mesh {
+                            meshes, emit_from, ..
+                        } => meshes
+                            .iter()
+                            .filter_map(|&r| {
+                                MeshEmission::new(mesh_geometry(nif, r)?, object_at(r), *emit_from)
+                            })
+                            .collect(),
+                        _ => Vec::new(),
+                    },
                 });
             }
             ModifierKind::Gravity {
@@ -642,13 +775,14 @@ impl ParticleState {
                 if self.particles.len() >= d.max {
                     continue;
                 }
-                let p = self.emit(d, e, t);
-                self.particles.push(p);
+                if let Some(p) = self.emit(d, e, t) {
+                    self.particles.push(p);
+                }
             }
         }
     }
 
-    fn emit(&mut self, d: &ParticleDesc, e: &EmitterDesc, t: f32) -> Particle {
+    fn emit(&mut self, d: &ParticleDesc, e: &EmitterDesc, t: f32) -> Option<Particle> {
         let ep = &e.params;
         let local = match ep.shape {
             EmitterShape::Box {
@@ -680,6 +814,17 @@ impl ParticleState {
             decl.sin() * planar.sin(),
             decl.cos(),
         );
+        let (position, direction) = match ep.shape {
+            EmitterShape::Mesh {
+                velocity_type,
+                axis,
+                ..
+            } => self.mesh_sample(e, velocity_type, axis)?,
+            _ => (
+                e.object.transform_point3(local),
+                e.object.transform_vector3(dir_local).normalize_or_zero(),
+            ),
+        };
         let base_speed = e.speed.as_ref().map_or(ep.speed, |c| c.sample(t));
         let speed = base_speed + ep.speed_variation * 0.5 * self.rand_signed();
         let base_radius = e.radius.as_ref().map_or(ep.radius, |c| c.sample(t));
@@ -697,9 +842,9 @@ impl ParticleState {
             None => (0.0, 0.0),
         };
         let frame = self.start_frame(d);
-        Particle {
-            position: e.object.transform_point3(local),
-            velocity: e.object.transform_vector3(dir_local).normalize_or_zero() * speed,
+        Some(Particle {
+            position,
+            velocity: direction * speed,
             age: 0.0,
             life,
             radius,
@@ -708,7 +853,69 @@ impl ParticleState {
             spin,
             frame,
             generation: 0,
+        })
+    }
+
+    fn mesh_sample(
+        &mut self,
+        e: &EmitterDesc,
+        velocity_type: u32,
+        axis: Vec3,
+    ) -> Option<(Vec3, Vec3)> {
+        if e.meshes.is_empty() || velocity_type > 2 {
+            return None;
         }
+        // Uniform mesh selection; within a mesh surfaces are weighted by area
+        // or length. Exact engine weighting remains an ambiguity.
+        let mesh_index = ((self.rand() * e.meshes.len() as f32) as usize).min(e.meshes.len() - 1);
+        let mesh = &e.meshes[mesh_index];
+        let total = mesh.primitives.last()?.cumulative_weight;
+        let pick = self.rand() * total;
+        let index = mesh
+            .primitives
+            .partition_point(|p| p.cumulative_weight <= pick)
+            .min(mesh.primitives.len() - 1);
+        let primitive = &mesh.primitives[index];
+        let weights = match primitive.count {
+            2 => {
+                let t = self.rand();
+                [1.0 - t, t, 0.0]
+            }
+            3 => {
+                let u = self.rand().sqrt();
+                let v = self.rand();
+                [1.0 - u, u * (1.0 - v), u * v]
+            }
+            _ => [1.0, 0.0, 0.0],
+        };
+        let point: Vec3 = primitive
+            .positions
+            .iter()
+            .zip(weights)
+            .map(|(&p, w)| p * w)
+            .sum();
+        let direction = match velocity_type {
+            0 => {
+                let normal: Vec3 = primitive
+                    .normals
+                    .iter()
+                    .zip(weights)
+                    .map(|(&n, w)| n * w)
+                    .sum();
+                (Mat3::from_mat4(mesh.object).inverse().transpose() * normal).normalize_or_zero()
+            }
+            1 => {
+                let z = self.rand_signed();
+                let angle = self.rand() * std::f32::consts::TAU;
+                let radial = (1.0 - z * z).max(0.0).sqrt();
+                mesh.object
+                    .transform_vector3(Vec3::new(radial * angle.cos(), radial * angle.sin(), z))
+                    .normalize_or_zero()
+            }
+            _ => mesh.object.transform_vector3(axis).normalize_or_zero(),
+        };
+        let position = mesh.object.transform_point3(point);
+        (position.is_finite() && direction.is_finite()).then_some((position, direction))
     }
 
     fn start_frame(&mut self, d: &ParticleDesc) -> f32 {
@@ -1040,6 +1247,253 @@ mod tests {
             frame: 0.0,
             generation: 0,
         }
+    }
+
+    fn triangle_geometry() -> nif::Geometry {
+        nif::Geometry {
+            positions: vec![Vec3::ZERO, Vec3::X * 2.0, Vec3::Y * 2.0],
+            normals: vec![Vec3::Z; 3],
+            triangles: vec![[0, 1, 2]],
+            ..Default::default()
+        }
+    }
+
+    fn mesh_fixture(mode: u32, velocity_type: u32) -> ParticleDesc {
+        let mut d = drag_fixture(nif::Transform::default(), Vec3::X, 0.0, 0.0);
+        let e = &mut d.emitters[0];
+        e.params.shape = EmitterShape::Mesh {
+            meshes: vec![Ref(0)],
+            velocity_type,
+            emit_from: mode,
+            axis: Vec3::X,
+        };
+        e.params.speed = 5.0;
+        e.active = Curve::constant(1.0);
+        e.birth_rate = Curve::constant(10.0);
+        e.meshes = vec![MeshEmission::new(&triangle_geometry(), Mat4::IDENTITY, mode).unwrap()];
+        d
+    }
+
+    #[test]
+    fn mesh_description_resolves_rigid_legacy_and_packed_geometry() {
+        let template = mesh_fixture(1, 0);
+        let mut nif = Nif {
+            header: nif::Header {
+                version: 0x14020007,
+                user_version: 12,
+                bs_version: 100,
+                block_types: Vec::new(),
+                block_type_index: Vec::new(),
+                block_sizes: Vec::new(),
+                block_offsets: Vec::new(),
+                strings: Vec::new(),
+            },
+            roots: vec![0],
+            blocks: vec![
+                Block::Node(nif::Node {
+                    av: nif::AvObject::default(),
+                    kind: nif::NodeKind::Plain,
+                    children: vec![Ref(1)],
+                    effects: Vec::new(),
+                }),
+                Block::NiTriShape(nif::NiGeometry {
+                    av: nif::AvObject {
+                        transform: nif::Transform {
+                            translation: Vec3::X * 10.0,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    data: Ref(2),
+                    skin: Ref(-1),
+                    shader: Ref(-1),
+                    alpha: Ref(-1),
+                }),
+                Block::TriShapeData(nif::TriShapeData {
+                    geometry: triangle_geometry(),
+                    center: Vec3::ZERO,
+                    radius: 2.0,
+                }),
+                Block::ParticleData(Box::new(nif::psys::ParticleData {
+                    max_particles: 10,
+                    subtexture_offsets: Vec::new(),
+                    aspect_ratio: 1.0,
+                    aspect_flags: 0,
+                    speed_to_aspect: (0.0, 0.0, 0.0),
+                })),
+                Block::ParticleModifier(Box::new(nif::psys::Modifier {
+                    name: "mesh emitter".into(),
+                    order: 1000,
+                    active: true,
+                    kind: ModifierKind::Emitter(nif::psys::Emitter {
+                        shape: EmitterShape::Mesh {
+                            meshes: vec![Ref(-1), Ref(1), Ref(99)],
+                            velocity_type: 0,
+                            emit_from: 1,
+                            axis: Vec3::X,
+                        },
+                        ..template.emitters[0].params.clone()
+                    }),
+                })),
+            ],
+        };
+        let sys = nif::psys::ParticleSystem {
+            av: nif::AvObject::default(),
+            bound_center: Vec3::ZERO,
+            bound_radius: 100.0,
+            shader: Ref(-1),
+            alpha: Ref(-1),
+            data: Ref(3),
+            world_space: false,
+            modifiers: vec![Ref(4)],
+            strip: false,
+        };
+        let check = |nif: &Nif| {
+            let d = describe(nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap();
+            assert_eq!(d.emitters[0].meshes.len(), 1);
+            let mut state = ParticleState::new(1);
+            let p = state.emit(&d, &d.emitters[0], 0.0).unwrap();
+            assert!(
+                p.position
+                    .abs_diff_eq(Vec3::new(10.0 + 2.0 / 3.0, 2.0 / 3.0, 0.0), 1e-6)
+            );
+        };
+        check(&nif);
+        let av = nif.blocks[1].av().unwrap().clone();
+        nif.blocks[1] = Block::TriShape(nif::TriShape {
+            av,
+            bound_center: Vec3::ZERO,
+            bound_radius: 2.0,
+            skin: Ref(-1),
+            shader: Ref(-1),
+            alpha: Ref(-1),
+            vertex_desc: 0,
+            geometry: triangle_geometry(),
+            dynamic: false,
+        });
+        check(&nif);
+        if let Block::TriShape(shape) = &mut nif.blocks[1] {
+            shape.dynamic = true;
+        }
+        assert!(mesh_geometry(&nif, Ref(1)).is_none());
+        if let Block::TriShape(shape) = &mut nif.blocks[1] {
+            shape.dynamic = false;
+            shape.skin = Ref(0);
+        }
+        assert!(mesh_geometry(&nif, Ref(1)).is_none());
+    }
+
+    #[test]
+    fn mesh_emission_samples_vertices_centres_and_surfaces() {
+        for mode in 0..5 {
+            let d = mesh_fixture(mode, 0);
+            let mut state = ParticleState::new(13);
+            let vertices = [Vec3::ZERO, Vec3::X * 2.0, Vec3::Y * 2.0];
+            let edges = [Vec3::X, Vec3::Y, Vec3::X + Vec3::Y];
+            let mut sum = Vec3::ZERO;
+            for _ in 0..4096 {
+                let p = state.emit(&d, &d.emitters[0], 0.0).unwrap();
+                assert!(p.velocity.abs_diff_eq(Vec3::Z * 5.0, 1e-6));
+                assert_eq!(p.position.z, 0.0);
+                assert!(p.position.x >= 0.0 && p.position.y >= 0.0);
+                assert!(p.position.x + p.position.y <= 2.0 + 1e-6);
+                match mode {
+                    0 => assert!(vertices.contains(&p.position)),
+                    1 => assert!(
+                        p.position
+                            .abs_diff_eq(Vec3::new(2.0 / 3.0, 2.0 / 3.0, 0.0), 1e-6)
+                    ),
+                    2 => assert!(edges.contains(&p.position)),
+                    4 => assert!(
+                        p.position.x == 0.0
+                            || p.position.y == 0.0
+                            || (p.position.x + p.position.y - 2.0).abs() < 1e-6
+                    ),
+                    _ => {}
+                }
+                sum += p.position;
+            }
+            if mode == 3 {
+                assert!((sum / 4096.0).abs_diff_eq(Vec3::new(2.0 / 3.0, 2.0 / 3.0, 0.0), 0.025));
+            }
+        }
+    }
+
+    #[test]
+    fn mesh_emission_uses_each_mesh_transform_and_velocity_mode() {
+        let mut d = mesh_fixture(1, 0);
+        let transform = Mat4::from_scale_rotation_translation(
+            Vec3::splat(2.0),
+            glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            Vec3::new(10.0, 20.0, 30.0),
+        );
+        d.emitters[0]
+            .meshes
+            .push(MeshEmission::new(&triangle_geometry(), transform, 1).unwrap());
+        let mut state = ParticleState::new(37);
+        let centre = Vec3::new(2.0 / 3.0, 2.0 / 3.0, 0.0);
+        let mut counts = [0; 2];
+        for _ in 0..256 {
+            let p = state.emit(&d, &d.emitters[0], 0.0).unwrap();
+            if p.position.abs_diff_eq(centre, 1e-6) {
+                counts[0] += 1;
+                assert!(p.velocity.abs_diff_eq(Vec3::Z * 5.0, 1e-5));
+            } else {
+                counts[1] += 1;
+                assert!(
+                    p.position
+                        .abs_diff_eq(transform.transform_point3(centre), 1e-5)
+                );
+                assert!(p.velocity.abs_diff_eq(Vec3::X * 5.0, 1e-5));
+            }
+        }
+        assert!(counts.iter().all(|&count| count > 80));
+        d.emitters[0].meshes.remove(0);
+        if let EmitterShape::Mesh { velocity_type, .. } = &mut d.emitters[0].params.shape {
+            *velocity_type = 2;
+        }
+        let p = state.emit(&d, &d.emitters[0], 0.0).unwrap();
+        assert!(p.velocity.abs_diff_eq(-Vec3::Z * 5.0, 1e-5));
+        if let EmitterShape::Mesh { velocity_type, .. } = &mut d.emitters[0].params.shape {
+            *velocity_type = 1;
+        }
+        let mut sum = Vec3::ZERO;
+        for _ in 0..4096 {
+            let p = state.emit(&d, &d.emitters[0], 0.0).unwrap();
+            assert!((p.velocity.length() - 5.0).abs() < 1e-5);
+            sum += p.velocity;
+        }
+        assert!((sum / 4096.0).length() < 0.15);
+    }
+
+    #[test]
+    fn mesh_primitives_deduplicate_edges_weight_surfaces_and_reject_invalid_topology() {
+        let mut geometry = triangle_geometry();
+        geometry.positions.push(Vec3::new(2.0, 2.0, 0.0));
+        geometry
+            .triangles
+            .extend([[1, 3, 2], [0, 0, 0], [0, 1, 99]]);
+        geometry.normals.clear();
+        let edges = MeshEmission::new(&geometry, Mat4::IDENTITY, 2).unwrap();
+        assert_eq!(edges.primitives.len(), 5);
+        let faces = MeshEmission::new(&geometry, Mat4::IDENTITY, 3).unwrap();
+        assert_eq!(faces.primitives.len(), 2);
+        assert_eq!(faces.primitives[1].cumulative_weight, 4.0);
+        assert_eq!(faces.primitives[0].normals, [Vec3::Z; 3]);
+        let edges = MeshEmission::new(&geometry, Mat4::IDENTITY, 4).unwrap();
+        assert!(
+            (edges.primitives.last().unwrap().cumulative_weight - (8.0 + 8.0_f32.sqrt())).abs()
+                < 1e-6
+        );
+        geometry.triangles = vec![[0, 0, 0], [0, 1, 99]];
+        assert!(MeshEmission::new(&geometry, Mat4::IDENTITY, 3).is_none());
+        assert!(MeshEmission::new(&geometry, Mat4::ZERO, 0).is_none());
+        assert!(MeshEmission::new(&geometry, Mat4::IDENTITY, 99).is_none());
+        let mut d = mesh_fixture(0, 0);
+        d.emitters[0].meshes.clear();
+        let mut state = ParticleState::new(1);
+        state.step(&d, 0.5, Mat3::IDENTITY);
+        assert_eq!(state.count(), 0);
     }
 
     #[test]

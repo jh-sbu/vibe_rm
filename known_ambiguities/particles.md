@@ -37,7 +37,8 @@ are used below is this engine's reading.
   stops at the data's maximum count. Box emitters spread over their width,
   height and depth along the emitter object's x, y, z; cylinders over their
   radius in x / y and their height along z; spheres within their radius.
-  Mesh emitters emit at their first mesh's origin.
+  Rigid mesh emitters sample the referenced geometry; policies and remaining
+  limits are described below.
 - **Directions and variations.** Declination is the angle from the emitter
   object's +z, planar angle about it from +x; each varies by up to its
   variation either way. Speed, radius and life span vary by half their
@@ -122,3 +123,52 @@ Implemented policy and unresolved behavior:
 Synthetic tests exercise description wiring, translated/rotated/scaled drag
 objects, positive and negative velocity components, range/falloff boundaries,
 inactive modifiers, zero axes/distances and invalid/large percentages.
+
+## Rigid mesh emission
+
+Public evidence:
+
+- The community-maintained [Niftools schema](https://github.com/niftools/nifxml/blob/develop/nif.xml)
+  defines `NiPSysMeshEmitter` as emitting from its referenced meshes and
+  identifies five placement modes: vertices, face centres, edge centres,
+  face surfaces and edge surfaces. Its velocity modes identify mesh normals,
+  random directions and an authored emission axis. The schema marks the
+  surface interpretations and axis semantics as uncertain. The community
+  [GECK block overview](https://geckwiki.com/index.php?title=NIF_Block_Types)
+  independently describes mesh placement and selectable velocity computation,
+  but supplies no selection or interpolation formula. This is community
+  documentation, not original Skyrim SE runtime code or measurements.
+- No game assets or engine binary data were examined for this change. All
+  fixtures are synthetic geometry; no game assets were added to the repository.
+
+Implemented policy and unresolved behavior:
+
+- Resolve every supported rigid `BSTriShape`, `NiTriShape` or `NiTriStrips`
+  reference, retaining each mesh's own rest transform in model space. Choose
+  uniformly among meshes that have usable primitives. Mesh-reference
+  weighting, repeated references, references to nodes instead of geometry,
+  and the original runtime's missing-reference behavior remain unresolved.
+  Skinned meshes and `BSDynamicTriShape` are skipped; animated rigid meshes
+  use their rest transform. Live deformation and transform sampling are pending.
+- Sample vertices, triangle centres or unique indexed-edge centres uniformly.
+  Face surfaces use area-weighted triangles with uniform barycentric samples;
+  edge surfaces use length-weighted unique edges with uniform segment samples.
+  Weights are measured in mesh-local space. Exact runtime weighting, shared-edge
+  deduplication and whether surface sampling follows these interpretations
+  remain unresolved. Invalid indices, nonfinite vertices, degenerate triangles,
+  singular transforms and unsupported mode values do not produce particles.
+  Vertex mode can still sample finite vertices without valid triangles.
+- Normal velocity interpolates normalized authored vertex normals; missing or
+  invalid normals fall back to area-weighted adjacent triangle normals.
+  Transform the result with the mesh's inverse transpose. A normal that remains
+  zero produces zero velocity. Random velocity uses a uniform unit sphere;
+  directed velocity uses the emission axis in the selected mesh's local space.
+  Speed uses the existing emitter/controller and speed-variation path. Exact
+  normal interpolation, axis space and interactions with declination/planar
+  variation remain unresolved; those angular inputs are ignored for mesh
+  velocity modes here. Existing instance/world-space particle behavior applies.
+
+Synthetic tests cover NIF-description wiring for legacy and packed rigid
+geometry, unsupported deformation, all five placement modes, all three velocity
+modes, independently transformed meshes, surface sampling distribution, shared
+edges, primitive weights, missing normals and malformed topology/references.
