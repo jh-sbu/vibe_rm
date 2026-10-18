@@ -1003,6 +1003,7 @@ mod tests {
                     start: 0,
                     start_variable: None,
                     start_mode: Default::default(),
+                    sync_variable: None,
                     change_event: None,
                     states: vec![
                         state(0, vec![Transition::new(0, 1, None)]),

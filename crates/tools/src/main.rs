@@ -987,6 +987,7 @@ fn main() -> Result<()> {
                         change_event,
                         states,
                         wildcards,
+                        ..
                     } => {
                         let var = start_variable.map(|v| {
                             format!(

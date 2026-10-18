@@ -366,6 +366,8 @@ struct ClipState {
 #[derive(Debug)]
 struct MachineState {
     state: i32,
+    /// Resolved graph-local synchronization target, fixed for this activation.
+    sync_variable: Option<usize>,
     child: Option<Box<Node>>,
     /// The state being left: its node, seconds into the blend, blend length.
     from: Option<(Box<Node>, f32, f32)>,
@@ -382,9 +384,10 @@ struct MachineState {
 }
 
 impl MachineState {
-    fn new(state: i32, child: Option<Box<Node>>) -> MachineState {
+    fn new(state: i32, child: Option<Box<Node>>, sync_variable: Option<usize>) -> MachineState {
         MachineState {
             state,
+            sync_variable,
             child,
             from: None,
             elapsed: 0.0,
@@ -667,6 +670,7 @@ impl Ctx<'_> {
                     start,
                     start_variable,
                     start_mode,
+                    sync_variable,
                     states,
                     ..
                 } => {
@@ -675,7 +679,42 @@ impl Ctx<'_> {
                     let bound = start_variable
                         .map(|v| self.var(gi, v) as i32)
                         .or_else(|| self.bound(gi, g, "startStateId").map(|v| v as i32));
-                    let by_mode = match *start_mode {
+                    let authored_sync = sync_variable.or(match *start_mode {
+                        StartMode::Sync(v) => Some(v),
+                        _ => None,
+                    });
+                    // Bindings address this graph's variable table, never the
+                    // project's merged table. -1 is the authored no-variable
+                    // sentinel; malformed inputs preserve the authored index.
+                    let sync_variable = match self.bound(gi, g, "syncVariableIndex") {
+                        Some(-1.0) => None,
+                        Some(v)
+                            if v.is_finite()
+                                && v >= 0.0
+                                && v.fract() == 0.0
+                                && (v as f64) < graph.variables.len() as f64 =>
+                        {
+                            Some(v as usize)
+                        }
+                        _ => authored_sync,
+                    };
+                    let mode = match self.bound(gi, g, "startStateMode") {
+                        Some(0.0) => StartMode::Default,
+                        Some(1.0) => sync_variable.map_or(StartMode::Default, StartMode::Sync),
+                        Some(2.0) => StartMode::Random,
+                        // Chooser and malformed enums retain the existing mode.
+                        _ => match *start_mode {
+                            StartMode::Sync(_) => {
+                                sync_variable.map_or(StartMode::Default, StartMode::Sync)
+                            }
+                            mode => mode,
+                        },
+                    };
+                    let active_sync = match mode {
+                        StartMode::Sync(v) => Some(v),
+                        _ => None,
+                    };
+                    let by_mode = match mode {
                         StartMode::Sync(v) => Some(self.var(gi, v) as i32),
                         StartMode::Random if !states.is_empty() => {
                             Some(states[(self.rand() % states.len() as u64) as usize].id)
@@ -693,7 +732,7 @@ impl Ctx<'_> {
                             }
                             let child = generator
                                 .map(|c| Box::new(self.activate(gi, c, nested, depth + 1)));
-                            Kind::Machine(MachineState::new(id, child))
+                            Kind::Machine(MachineState::new(id, child, active_sync))
                         }
                         None => Kind::Empty,
                     }
@@ -1149,6 +1188,7 @@ impl Ctx<'_> {
             .unwrap_or(0.0);
         let old_child = m.child.take();
         let old_from = m.from.take();
+        let sync_variable = m.sync_variable;
         for e in exits {
             self.raise(gi, e.event, e.payload);
         }
@@ -1192,7 +1232,7 @@ impl Ctx<'_> {
         let Kind::Machine(m) = &mut node.kind else {
             return;
         };
-        *m = MachineState::new(id, child);
+        *m = MachineState::new(id, child, sync_variable);
         m.from = from;
         m.locked = locked;
         // Queue the notification after installing the destination: the event
@@ -1202,12 +1242,8 @@ impl Ctx<'_> {
         if let Some(e) = change_event {
             self.raise(gi, e.event, e.payload.clone());
         }
-        if let Generator::StateMachine {
-            start_mode: StartMode::Sync(v),
-            ..
-        } = &graph.generators[sm]
-        {
-            self.set_var(gi, *v, id as f32);
+        if let Some(v) = sync_variable {
+            self.set_var(gi, v, id as f32);
         }
     }
 
@@ -2379,6 +2415,7 @@ mod tests {
                 start: 0,
                 start_variable: None,
                 start_mode: Default::default(),
+                sync_variable: None,
                 change_event: None,
                 states: vec![
                     state(0, 1, vec![Transition::new(0, 1, None)]),
@@ -2548,6 +2585,7 @@ mod tests {
                     start: 0,
                     start_variable: None,
                     start_mode: Default::default(),
+                    sync_variable: None,
                     change_event: None,
                     states: vec![
                         state(0, 1, vec![Transition::new(0, 1, None)]),
@@ -2731,6 +2769,7 @@ mod tests {
                     start: 0,
                     start_variable: None,
                     start_mode: Default::default(),
+                    sync_variable: None,
                     change_event: None,
                     states: vec![
                         state(0, 1, vec![Transition::new(0, 1, None)]),
@@ -2910,6 +2949,303 @@ mod tests {
         assert_eq!(i.variable("Output"), None);
     }
 
+    fn start_property_graph() -> BehaviorGraph {
+        let mut g = BehaviorGraph::new(
+            "Starts",
+            Some(0),
+            vec![
+                Generator::StateMachine {
+                    name: "Root".into(),
+                    start: 10,
+                    start_variable: None,
+                    start_mode: StartMode::Default,
+                    sync_variable: Some(0),
+                    change_event: None,
+                    states: vec![
+                        state(10, 1, vec![Transition::new(0, 20, None)]),
+                        state(20, 2, vec![Transition::new(0, 30, None)]),
+                        state(30, 3, vec![Transition::new(0, 10, None)]),
+                    ],
+                    wildcards: vec![],
+                },
+                clip("Ten", ClipMode::Looping, vec![]),
+                clip("Twenty", ClipMode::Looping, vec![]),
+                clip("Thirty", ClipMode::Looping, vec![]),
+            ],
+            vec!["Cycle".into()],
+        );
+        g.add_variable("KeepA", VarType::Int, 20.0);
+        g.add_variable("KeepB", VarType::Int, 30.0);
+        g.property_bindings[0] = vec![
+            property("startStateMode", "MODE"),
+            property("syncVariableIndex", "Index"),
+        ];
+        g
+    }
+
+    #[test]
+    fn state_start_properties_select_per_character_modes_and_sync_variables() {
+        for (mode, index, expected) in [(0.0, 1.0, "s10"), (1.0, 0.0, "s20"), (1.0, 1.0, "s30")] {
+            let mut i =
+                property_instance(start_property_graph(), &[("mode", mode), ("index", index)]);
+            assert_eq!(i.active_states(), [expected]);
+            assert!(!i.set_variable("Mode", 0.0));
+            assert!(!i.set_variable("Index", 0.0));
+            assert!(i.handle_event("Cycle", &mut durations));
+            assert_eq!(
+                i.shared
+                    .project
+                    .character
+                    .as_ref()
+                    .unwrap()
+                    .scalar_properties["mode"],
+                mode
+            );
+            assert_eq!(
+                i.shared
+                    .project
+                    .character
+                    .as_ref()
+                    .unwrap()
+                    .scalar_properties["index"],
+                index
+            );
+            assert_eq!(
+                i.variable("KeepA"),
+                Some(if mode == 1.0 && index == 0.0 {
+                    30.0
+                } else {
+                    20.0
+                })
+            );
+            assert_eq!(
+                i.variable("KeepB"),
+                Some(if mode == 1.0 && index == 1.0 {
+                    10.0
+                } else {
+                    30.0
+                })
+            );
+        }
+        // A bound random mode follows the existing seeded random algorithm.
+        let mut authored = start_property_graph();
+        if let Generator::StateMachine { start_mode, .. } = &mut authored.generators[0] {
+            *start_mode = StartMode::Random;
+        }
+        let random = property_instance(start_property_graph(), &[("mode", 2.0)]);
+        let authored = instance(authored);
+        let mut random = Instance::new(random.shared.clone(), 17);
+        let mut authored = Instance::new(authored.shared.clone(), 17);
+        random.update(0.0, &mut durations);
+        authored.update(0.0, &mut durations);
+        assert_eq!(random.active_states(), authored.active_states());
+        assert_eq!(random.active_states(), ["s30"]); // Differs from default and sync starts.
+    }
+
+    #[test]
+    fn state_start_properties_preserve_authored_fallbacks_for_unsupported_values() {
+        let synced = || {
+            let mut g = start_property_graph();
+            if let Generator::StateMachine { start_mode, .. } = &mut g.generators[0] {
+                *start_mode = StartMode::Sync(0);
+            }
+            g
+        };
+        for invalid in [
+            -2.0,
+            0.5,
+            3.0,
+            999.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
+            assert_eq!(
+                property_instance(synced(), &[("mode", invalid)]).active_states(),
+                ["s20"]
+            );
+        }
+        for invalid in [
+            -2.0,
+            0.5,
+            2.0,
+            999.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
+            assert_eq!(
+                property_instance(synced(), &[("index", invalid)]).active_states(),
+                ["s20"]
+            );
+        }
+        for mut i in [instance(synced()), property_instance(synced(), &[])] {
+            assert_eq!(i.active_states(), ["s20"]);
+            assert!(i.handle_event("Cycle", &mut durations));
+            assert_eq!(i.variable("KeepA"), Some(30.0));
+        }
+        let mut non_scalar = property_instance(synced(), &[]);
+        Arc::get_mut(&mut Arc::get_mut(&mut non_scalar.shared).unwrap().project)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .bone_weights
+            .extend([("mode".into(), vec![0.0]), ("index".into(), vec![1.0])]);
+        // Re-activate after installing only array properties.
+        non_scalar.root = None;
+        non_scalar.update(0.0, &mut durations);
+        assert_eq!(non_scalar.active_states(), ["s20"]);
+
+        let mut disabled = property_instance(synced(), &[("index", -1.0)]);
+        assert_eq!(disabled.active_states(), ["s10"]);
+        assert!(disabled.handle_event("Cycle", &mut durations));
+        assert!(disabled.handle_event("Cycle", &mut durations));
+        assert_eq!(disabled.variable("KeepA"), Some(20.0));
+        let mut default = property_instance(synced(), &[("mode", 0.0)]);
+        assert_eq!(default.active_states(), ["s10"]);
+        assert!(default.handle_event("Cycle", &mut durations));
+        assert!(default.handle_event("Cycle", &mut durations));
+        assert_eq!(default.variable("KeepA"), Some(20.0));
+        // A sync-mode binding cannot fabricate an absent authored index.
+        let mut no_index = start_property_graph();
+        if let Generator::StateMachine { sync_variable, .. } = &mut no_index.generators[0] {
+            *sync_variable = None;
+        }
+        assert_eq!(
+            property_instance(no_index, &[("mode", 1.0)]).active_states(),
+            ["s10"]
+        );
+    }
+
+    #[test]
+    fn state_start_bindings_map_referenced_graph_local_sync_indices() {
+        let mut root = BehaviorGraph::new(
+            "Root",
+            Some(0),
+            vec![Generator::Reference {
+                name: "Ref".into(),
+                behavior: "g".into(),
+            }],
+            vec![],
+        );
+        root.add_variable("Unrelated", VarType::Int, 999.0);
+        let mut g = start_property_graph();
+        let mode = g.add_variable("ModeInput", VarType::Int, 1.0);
+        let index = g.add_variable("IndexInput", VarType::Int, 1.0);
+        g.bindings[0] = vec![
+            Binding {
+                member: "startStateMode".into(),
+                variable: mode,
+            },
+            Binding {
+                member: "syncVariableIndex".into(),
+                variable: index,
+            },
+        ];
+        let shared = Shared::new(Arc::new(Project {
+            graphs: vec![("root".into(), root), ("g".into(), g)],
+            character: Some(Character {
+                scalar_properties: [("mode".into(), 0.0), ("index".into(), 0.0)].into(),
+                ..Default::default()
+            }),
+        }));
+        let mut i = Instance::new(shared, 1);
+        i.update(0.0, &mut durations);
+        assert_eq!(i.active_states(), ["s30"]);
+        assert!(i.handle_event("Cycle", &mut durations));
+        assert_eq!(i.variable("KeepB"), Some(10.0));
+        assert_eq!(i.variable("KeepA"), Some(20.0));
+        assert_eq!(i.variable("Unrelated"), Some(999.0));
+    }
+
+    #[test]
+    fn state_start_variables_keep_precedence_and_resample_only_on_activation() {
+        let mut g = start_property_graph();
+        let mode = g.add_variable("ModeInput", VarType::Int, 1.0);
+        let index = g.add_variable("IndexInput", VarType::Int, 0.0);
+        let selected = g.add_variable("Selected", VarType::Int, 0.0);
+        g.bindings[0] = vec![
+            Binding {
+                member: "startStateMode".into(),
+                variable: mode,
+            },
+            Binding {
+                member: "syncVariableIndex".into(),
+                variable: index,
+            },
+        ];
+        g.generators.push(Generator::Selector {
+            name: "Select".into(),
+            children: vec![0, 1],
+            index: 0,
+        });
+        g.bindings.push(vec![Binding {
+            member: "selectedGeneratorIndex".into(),
+            variable: selected,
+        }]);
+        g.property_bindings.push(vec![]);
+        g.root = Some(4);
+        let mut i = property_instance(g, &[("mode", 0.0), ("index", 1.0)]);
+        assert_eq!(i.active_states(), ["s20"]);
+        i.set_variable("ModeInput", 0.0);
+        i.set_variable("IndexInput", 1.0);
+        i.set_variable("KeepB", 10.0);
+        i.update(0.0, &mut durations);
+        assert_eq!(i.active_states(), ["s20"]);
+        assert!(i.handle_event("Cycle", &mut durations));
+        assert_eq!(i.variable("KeepA"), Some(30.0)); // Frozen output slot.
+        assert_eq!(i.variable("KeepB"), Some(10.0));
+        let reactivate = |i: &mut Instance| {
+            i.set_variable("Selected", 1.0);
+            i.update(0.0, &mut durations);
+            i.set_variable("Selected", 0.0);
+            i.update(0.0, &mut durations);
+        };
+        reactivate(&mut i);
+        assert_eq!(i.active_states(), ["s10"]); // Bound default mode now applies.
+        i.set_variable("ModeInput", 1.0);
+        assert!(i.handle_event("Cycle", &mut durations));
+        assert_eq!(i.variable("KeepB"), Some(10.0)); // Default activation has no sync output.
+        i.set_variable("KeepB", 30.0);
+        reactivate(&mut i);
+        assert_eq!(i.active_states(), ["s30"]);
+        assert!(i.handle_event("Cycle", &mut durations));
+        assert_eq!(i.variable("KeepB"), Some(10.0));
+        assert_eq!(i.variable("KeepA"), Some(30.0));
+        // Invalid variables retain authored inputs and cannot fall through to
+        // duplicate valid properties.
+        i.set_variable("ModeInput", 3.0);
+        i.set_variable("IndexInput", f32::NAN);
+        reactivate(&mut i);
+        assert_eq!(i.active_states(), ["s10"]);
+    }
+
+    #[test]
+    fn state_start_property_changes_wait_for_reactivation_and_preserve_start_id_precedence() {
+        let mut g = start_property_graph();
+        g.property_bindings[0].push(property("startStateId", "Start"));
+        let mut i = property_instance(g, &[("mode", 1.0), ("index", 0.0), ("start", 30.0)]);
+        assert_eq!(i.active_states(), ["s30"]); // Explicit start ID still takes precedence.
+        let props = &mut Arc::get_mut(&mut Arc::get_mut(&mut i.shared).unwrap().project)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .scalar_properties;
+        props.insert("mode".into(), 0.0);
+        props.insert("index".into(), 1.0);
+        props.remove("start");
+        i.update(0.0, &mut durations);
+        assert_eq!(i.active_states(), ["s30"]);
+        assert!(i.handle_event("Cycle", &mut durations));
+        assert_eq!(i.variable("KeepA"), Some(10.0));
+        assert_eq!(i.variable("KeepB"), Some(30.0));
+        i.root = None;
+        i.update(0.0, &mut durations);
+        assert_eq!(i.active_states(), ["s10"]);
+    }
+
     fn duration_property_graph() -> BehaviorGraph {
         let mut transition = Transition::new(0, 1, None);
         transition.blend = Some(0.75);
@@ -2923,6 +3259,7 @@ mod tests {
                     start: 0,
                     start_variable: None,
                     start_mode: Default::default(),
+                    sync_variable: None,
                     change_event: None,
                     states: vec![state(0, 1, vec![transition]), state(1, 2, vec![])],
                     wildcards: vec![],
@@ -4238,6 +4575,7 @@ mod tests {
                     start: 42,
                     start_variable: None,
                     start_mode: StartMode::Default,
+                    sync_variable: None,
                     change_event: None,
                     states: vec![
                         state(42, 1, vec![Transition::new(0, 7, None)]),
@@ -4250,6 +4588,7 @@ mod tests {
                     start: 7,
                     start_variable: Some(0),
                     start_mode: StartMode::Default,
+                    sync_variable: None,
                     change_event: None,
                     states: vec![state(7, 2, vec![]), state(42, 3, vec![])],
                     wildcards: vec![],
@@ -4467,6 +4806,7 @@ mod tests {
                 start: 0,
                 start_variable: None,
                 start_mode: Default::default(),
+                sync_variable: None,
                 change_event: None,
                 states: vec![state(0, 1, vec![]), state(1, 2, vec![])],
                 wildcards: vec![],
@@ -4477,6 +4817,7 @@ mod tests {
                 start: 5,
                 start_variable: None,
                 start_mode: Default::default(),
+                sync_variable: None,
                 change_event: None,
                 states: vec![state(5, 3, vec![]), state(7, 4, vec![])],
                 wildcards: vec![kneel],
@@ -4520,6 +4861,7 @@ mod tests {
                 start: 0,
                 start_variable: None,
                 start_mode: Default::default(),
+                sync_variable: None,
                 change_event: None,
                 states: vec![
                     state(0, 1, vec![out]),

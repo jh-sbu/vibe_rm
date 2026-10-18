@@ -177,6 +177,10 @@ game each piece unlocks.
   inputs at activation across single-play, looping, user-controlled and
   ping-pong paths, including synchronized loop detection. Invalid-input and
   lifecycle limits: `known_ambiguities/clip-mode-properties.md`
+- State machines resolve scalar character-property and graph-variable
+  `startStateMode` / `syncVariableIndex` inputs at activation, preserving the
+  existing default/sync/random paths and graph-local sync state. Lifecycle,
+  invalid-input and chooser limits: `known_ambiguities/state-machine-start-properties.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;
