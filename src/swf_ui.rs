@@ -14,6 +14,7 @@
 //! (`_root.HUDMovieBaseInstance...`); how the game words some of them isn't
 //! known (`known_ambiguities/swf-hud.md`).
 
+mod cursor_menu;
 mod dialogue_menu;
 mod favorites_menu;
 mod item_menu;
@@ -40,6 +41,8 @@ pub struct SwfUi {
     pub ui: UiSwf,
     hud: Hud,
     message_box: MessageBoxMenu,
+    /// Optional: a missing or incompatible cursor keeps the system cursor.
+    cursor_menu: Option<cursor_menu::CursorMenu>,
     /// The inventory, while open.
     items: Option<item_menu::ItemMenu>,
     /// The item lists' positions, as the menu saved them on closing.
@@ -75,7 +78,7 @@ pub struct SwfUi {
     size: (u32, u32),
     /// The keyboard's modifiers and the cursor, for the menus' input.
     modifiers: winit::keyboard::ModifiersState,
-    cursor: (f64, f64),
+    pointer: cursor_menu::Pointer,
 }
 
 impl SwfUi {
@@ -100,6 +103,13 @@ impl SwfUi {
         let buttons = Arc::new(Buttons::load(&engine.vfs));
         let hud = Hud::open(&ui, size, &buttons)?;
         let message_box = MessageBoxMenu::open(&ui, size)?;
+        let cursor_menu = match cursor_menu::CursorMenu::open(&ui, size) {
+            Ok(cursor) => Some(cursor),
+            Err(e) => {
+                log::warn!("cursor menu: {e:#}; using system cursor");
+                None
+            }
+        };
         for menu in [&hud.menu, &message_box.menu] {
             let buttons = buttons.clone();
             menu.set_responder(move |call, _| respond(&buttons, call));
@@ -108,6 +118,7 @@ impl SwfUi {
             ui,
             hud,
             message_box,
+            cursor_menu,
             items: None,
             item_indices: Vec::new(),
             favorite: false,
@@ -128,7 +139,7 @@ impl SwfUi {
             buttons,
             size,
             modifiers: Default::default(),
-            cursor: (0.0, 0.0),
+            pointer: Default::default(),
         })
     }
 
@@ -140,6 +151,9 @@ impl SwfUi {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.hud.menu.resize(width, height);
         self.message_box.menu.resize(width, height);
+        if let Some(cursor) = &mut self.cursor_menu {
+            cursor.menu.resize(width, height);
+        }
         if let Some(items) = &mut self.items {
             items.menu.resize(width, height);
         }
@@ -189,6 +203,9 @@ impl SwfUi {
             if !self.message_box.answer(engine, &call) {
                 answer(&self.message_box.menu, engine, &call);
             }
+        }
+        if let Some(cursor) = &mut self.cursor_menu {
+            cursor.menu.advance(dt);
         }
     }
 
@@ -537,7 +554,6 @@ impl SwfUi {
         use winit::keyboard::{KeyCode, PhysicalKey};
         match event {
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
-            WindowEvent::CursorMoved { position, .. } => self.cursor = (position.x, position.y),
             _ => {}
         }
         if !self.wants_input() {
@@ -599,7 +615,7 @@ impl SwfUi {
             _ => {}
         }
         let menu = self.top();
-        let (x, y) = self.cursor;
+        let (x, y) = self.pointer.position();
         match event {
             WindowEvent::CursorMoved { .. } => menu.handle_event(PlayerEvent::MouseMove { x, y }),
             WindowEvent::MouseInput { state, button, .. } => {
@@ -847,6 +863,7 @@ impl SwfUi {
 
     pub fn click(&mut self, x: f64, y: f64) {
         use ui_swf::{MouseButton, PlayerEvent};
+        self.pointer.moved(x, y);
         if !self.wants_input() {
             return;
         }
@@ -870,6 +887,27 @@ impl SwfUi {
     /// Whether the HUD shows: not while a menu is up, as in the game.
     pub fn visible(engine: &Engine) -> bool {
         engine.menu.is_none()
+    }
+
+    /// Track the pointer even while the console handles input, so closing it
+    /// restores the menu cursor at its current position.
+    pub fn observe_pointer(&mut self, event: &winit::event::WindowEvent) {
+        self.pointer.observe(event);
+    }
+
+    /// Draws the cursor after the other UI. True when its texture was submitted,
+    /// allowing the window to keep the system cursor as a fallback.
+    pub fn draw_cursor(&mut self, target: &wgpu::TextureView, allowed: bool) -> bool {
+        let Some(position) = self.pointer.visible_position(allowed, self.wants_input()) else {
+            return false;
+        };
+        let Some(cursor) = &mut self.cursor_menu else {
+            return false;
+        };
+        cursor.position(position);
+        cursor.menu.render();
+        self.ui.composite(target, &[&cursor.menu]);
+        true
     }
 
     /// Draws the HUD over `target` when `visible`.

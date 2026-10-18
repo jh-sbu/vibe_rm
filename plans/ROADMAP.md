@@ -76,6 +76,10 @@ game each piece unlocks.
   Tab or Esc leaving; `known_ambiguities/dialogue-menu.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
+- The menus' cursor (`cursormenu.swf`): follows the pointer through viewport
+  scaling and resizing, drawn over the UI; the system cursor remains available
+  for the console and missing cursor assets. Scaling and visibility choices:
+  `known_ambiguities/cursor-menu.md`
 - AI: navmeshes (NVNM), A* + funnel pathfinding across cells, package selection
   (schedule + conditions), sandbox / travel behaviour, idle/walk cross-fade,
   persistent NPC whereabouts with leaving / arriving through load doors;
@@ -1277,7 +1281,7 @@ game each piece unlocks.
      done: see Done): the tween
      menu's Map (with the map); waiting's rest: getting into the bed first; the gamepad's d-pad
      favorites; the name popup with character creation; the gamepad (gilrs, as
-     the spike); the menus' own cursor (`cursormenu.swf`)
+     the spike)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the quantity slider's use for more than dropping, rows grouped by captured soul with per-item
      selection and transfers (`known_ambiguities/inventory-cards.md`), ingredients' learned

@@ -374,6 +374,9 @@ pub fn run(opts: Options) -> Result<()> {
                         swf.draw(view, hud_visible);
                     }
                     ui.paint(&r.device, &r.queue, view, out, size);
+                    if let Some(swf) = &mut swf {
+                        swf.draw_cursor(view, true);
+                    }
                 });
         log::info!("render stats: {:?}", engine.renderer.stats);
         write_png(
@@ -641,6 +644,9 @@ impl ApplicationHandler for App {
         let Some(s) = &mut self.state else { return };
         // The console and dialogue menu take input while open.
         let console_open = s.ui.console.open || s.engine.conversation.is_some();
+        if let Some(swf) = &mut s.swf {
+            swf.observe_pointer(&event);
+        }
         // Losing focus cancels automatic restoration; a click resumes play.
         // Handle this before menus can consume the event.
         if matches!(&event, WindowEvent::Focused(false)) {
@@ -975,8 +981,15 @@ impl ApplicationHandler for App {
                 );
                 // egui can also close a menu or the console during this frame.
                 s.sync_mouse_capture();
-                // egui's cursor output must respect gameplay's mouse capture.
-                s.window.set_cursor_visible(!s.grabbed);
+                let swf_cursor = s.swf.as_mut().is_some_and(|swf| {
+                    swf.draw_cursor(
+                        &view,
+                        !s.grabbed && !s.ui.console.open && s.window.has_focus(),
+                    )
+                });
+                // egui's cursor output must respect gameplay capture and the
+                // game's cursor, while retaining the console's system cursor.
+                s.window.set_cursor_visible(!s.grabbed && !swf_cursor);
                 s.engine.renderer.queue.present(frame);
                 s.frames += 1;
                 if s.fps_timer.elapsed().as_secs_f32() >= 1.0 {
