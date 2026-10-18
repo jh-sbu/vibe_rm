@@ -3160,7 +3160,7 @@ impl Engine {
         self.update_practice_weapons();
         // Choose before the AI requests landings, so a newly needed heal does
         // not replace the offensive spell that an earlier step already threw.
-        self.update_combat_spells();
+        self.update_combat_spells(dt);
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self
             .barks
             .current

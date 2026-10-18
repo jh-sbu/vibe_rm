@@ -164,6 +164,7 @@ struct NpcSpells {
     known: Vec<FormId>,
     offensive: Vec<CombatSpell>,
     healing: Vec<CombatSpell>,
+    wards: Vec<CombatSpell>,
 }
 
 /// Provisional combat policy, not the native scoring formula; see
@@ -440,6 +441,13 @@ impl Engine {
     }
 
     /// Whether an actor is casting by hand (only the player does yet).
+    /// The spells the player's hands are charging, holding or letting go.
+    pub(crate) fn player_casting_spells(&self) -> Vec<FormId> {
+        let held = self.casting.hands.iter().flatten().map(|h| h.spell);
+        let firing = self.casting.firing.iter().flatten().filter(|f| !f.fired);
+        held.chain(firing.map(|f| f.spell)).collect()
+    }
+
     pub fn is_casting(&self, actor: FormId) -> bool {
         actor == PLAYER_REF
             && (self.casting.hands.iter().any(Option::is_some)
@@ -753,9 +761,12 @@ impl Engine {
         }
     }
 
-    /// Injured fighters first choose an affordable self heal. Otherwise those
-    /// whose style favours magic choose an offensive spell (none: by hand).
-    pub(crate) fn update_combat_spells(&mut self) {
+    /// Injured fighters first choose an affordable self heal; then anyone a
+    /// spell is coming at raises a ward it knows (`crate::wards`). Otherwise
+    /// those whose style favours magic choose an offensive spell (none: by
+    /// hand).
+    pub(crate) fn update_combat_spells(&mut self, dt: f32) {
+        self.update_ward_threats(dt);
         let fighters: Vec<(FormId, bool, bool, bool, bool)> = self
             .cells
             .values()
@@ -800,6 +811,15 @@ impl Engine {
                     .filter(|(_, cost)| *cost <= magicka)
                     .max_by(|a, b| a.1.total_cmp(&b.1))
                     .map(|(s, _)| s);
+                // The strongest ward it can hold a second of.
+                let ward = spells
+                    .wards
+                    .iter()
+                    .filter(|_| self.wants_ward(actor))
+                    .map(|s| (*s, self.spell_cost(actor, s.spell)))
+                    .filter(|(_, cost)| *cost <= magicka)
+                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(s, _)| s);
                 // A staff in hand is fought with by anyone holding it: first,
                 // if the style weighs staffs as much as magic, else when
                 // there is no spell to cast.
@@ -812,7 +832,7 @@ impl Engine {
                     .filter(|(_, cost)| *cost <= magicka)
                     .max_by(|a, b| a.1.total_cmp(&b.1))
                     .map(|(s, _)| s);
-                healing.or(if staff_first {
+                healing.or(ward).or(if staff_first {
                     staff.or(spell)
                 } else {
                     spell.or(staff)
@@ -845,7 +865,20 @@ impl Engine {
             let inv = self.inventories.get(&actor).cloned().unwrap_or_default();
             let vars = crate::ai::combat::hand_graph_vars(&self.lo, &inv, speeds);
             let hand = pick.map(|s| if one_handed && !s.staff { LEFT } else { RIGHT });
+            let was_ward = self
+                .actor_ref(actor)
+                .is_some_and(|a| a.combat_spell.is_some_and(|s| s.ward));
+            let ward_wait = self.ward_wait_roll();
             if let Some(a) = self.actor_mut(actor) {
+                if let Some(c) = a.combat.as_mut() {
+                    if pick.is_some_and(|s| s.ward) {
+                        // Raised at once, whatever its last throw.
+                        c.cooldown = c.cooldown.min(0.0);
+                    } else if was_ward {
+                        c.ward_wait = c.ward_wait.max(ward_wait);
+                        c.ward_keep = 0.0;
+                    }
+                }
                 // A spell being channelled stops with it; one thrown plays
                 // out, unless there is none to fight with now.
                 if let Some(c) = a.combat.as_mut()
@@ -914,6 +947,25 @@ impl Engine {
                         charge: item.charge_time,
                         dual: false,
                         staff: false,
+                        ward: false,
+                    });
+                }
+                if item.cast_type == CONCENTRATION
+                    && item.effects.iter().any(|ei| {
+                        self.magic_effect(ei.effect)
+                            .is_some_and(|m| m.archetype == archetype::ACCUMULATE_MAGNITUDE)
+                    })
+                {
+                    out.wards.push(CombatSpell {
+                        spell,
+                        range: 0.0,
+                        concentration: true,
+                        self_target: true,
+                        start: self.cast_start(&item),
+                        charge: item.charge_time,
+                        dual: false,
+                        staff: false,
+                        ward: true,
                     });
                 }
                 continue;
@@ -953,6 +1005,7 @@ impl Engine {
             charge: item.charge_time,
             dual: false,
             staff: item.spell_type == spell_type::STAFF_ENCHANTMENT,
+            ward: false,
         })
     }
 
@@ -1024,6 +1077,7 @@ impl Engine {
                 // Several landings can be queued by a long frame; do not spend
                 // another dose once an earlier one restored all its health.
                 if spell.self_target
+                    && !spell.ward
                     && self.actor_value(actor, av::HEALTH) >= self.av_max(actor, av::HEALTH)
                 {
                     break;

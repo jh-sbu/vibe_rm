@@ -14,6 +14,13 @@
 //! Absorb (`ModWardMagickaAbsorptionPct`) gives back that share of an
 //! absorbed spell's strength as magicka.
 //!
+//! NPCs who know a ward raise it while fighting when a hostile spell is
+//! being cast at them (the player's aimed their way, or a caster's whose
+//! target they are), facing the enemy, and let it go a moment after the
+//! last; then they wait a while before warding again, as they do after a
+//! ward is broken. A ward hit's reaction is picked from the `ActionWardHit`
+//! idles by `IsWardState`.
+//!
 //! Sources: UESP's Skyrim:Ward (charging for about a second, whole at once
 //! dual cast, building again at a constant rate, the front only in about 90
 //! degrees, staggered when broken with no damage from the spell that broke
@@ -29,6 +36,7 @@ use esp::actor_value as av;
 use glam::Vec3;
 use papyrus::Value;
 
+use crate::casting::delivery;
 use crate::engine::{Engine, PLAYER_REF};
 use crate::magic::{MagicItem, archetype, flags, spell_type};
 
@@ -40,6 +48,35 @@ const WARD_HALF_ARC: f32 = std::f32::consts::FRAC_PI_4;
 const FRIENDLY: i32 = 0;
 const ABSORBED: i32 = 1;
 const BROKEN: i32 = 2;
+
+/// Seconds an NPC keeps its ward up after the last spell seen being cast
+/// at it, the seconds (from, to) it waits before raising one again, and how
+/// long a ward hit's outcome holds for `IsWardState`. Choices
+/// (`known_ambiguities/wards.md`).
+const WARD_KEEP: f32 = 1.0;
+const WARD_WAIT: (f32, f32) = (2.0, 4.0);
+const WARD_STATE_HOLD: f32 = 1.0;
+/// How far off the player's view an NPC may stand and be taken to be cast
+/// at (radians); a choice.
+const AIMED_HALF_ARC: f32 = std::f32::consts::FRAC_PI_6;
+/// The middle of an actor's body at scale 1.
+const BODY_CENTRE: f32 = 60.0;
+
+/// Whether one at `at` lies within the player's aim from `eye` along `dir`.
+fn aimed_at(eye: Vec3, dir: Vec3, at: Vec3) -> bool {
+    let to = at - eye;
+    to.length_squared() > 1.0 && to.angle_between(dir) <= AIMED_HALF_ARC
+}
+
+/// A combat timer's next value: the threat holds it at `WARD_KEEP`, else it
+/// runs down.
+fn keep_step(keep: f32, threatened: bool, dt: f32) -> f32 {
+    if threatened {
+        WARD_KEEP
+    } else {
+        (keep - dt).max(0.0)
+    }
+}
 
 /// Where a ward builds to after `dt` seconds more: at its magnitude a
 /// second, up to `most`.
@@ -89,11 +126,66 @@ impl Engine {
         magnitude * base
     }
 
-    /// Cast wards build up.
+    /// The seconds an NPC waits before warding again.
+    pub(crate) fn ward_wait_roll(&mut self) -> f32 {
+        let t = (self.rand() % 1000) as f32 / 1000.0;
+        WARD_WAIT.0 + t * (WARD_WAIT.1 - WARD_WAIT.0)
+    }
+
+    /// `IsWardState`: an actor's last ward hit while it holds (0: none).
+    pub(crate) fn ward_state(&self, actor: FormId) -> i32 {
+        self.magic.ward_states.get(&actor).map_or(0, |s| s.0)
+    }
+
+    /// Fighters see the hostile spells being cast at them: the player's
+    /// hands charging, holding or letting one go while aiming at them (if
+    /// they fight the player), casters' whose target they are. Their ward
+    /// timers run on.
+    pub(crate) fn update_ward_threats(&mut self, dt: f32) {
+        let player_threat = self.player_casting_spells().into_iter().any(|s| {
+            self.magic_item(s)
+                .is_some_and(|i| i.delivery != delivery::SELF && self.item_hostile(&i))
+        });
+        let (eye, dir) = (self.camera.position, self.camera.forward());
+        let actors = self.cells.values().flat_map(|rt| &rt.actors);
+        let cast_at: std::collections::HashSet<FormId> = actors
+            .filter(|a| !a.dead)
+            .filter_map(|a| {
+                let c = a.combat.as_ref().filter(|c| !c.fleeing)?;
+                let throwing = c.hand_cast.is_some_and(|h| !h.cast.spell.self_target);
+                let channelling = c.channel > 0.0 && a.combat_spell.is_some_and(|s| !s.self_target);
+                (throwing || channelling).then_some(c.target)
+            })
+            .collect();
+        for rt in self.cells.values_mut() {
+            for a in rt.actors.iter_mut() {
+                let at = a.pos + Vec3::Z * BODY_CENTRE * a.scale;
+                let Some(c) = a.combat.as_mut() else { continue };
+                let threatened = cast_at.contains(&a.ref_id)
+                    || (player_threat && c.target == PLAYER_REF && aimed_at(eye, dir, at));
+                c.ward_keep = keep_step(c.ward_keep, threatened, dt);
+                c.ward_wait = (c.ward_wait - dt).max(0.0);
+            }
+        }
+    }
+
+    /// Whether an NPC wants its ward up: a spell was cast at it lately, and
+    /// it has waited since its last ward ended or broke.
+    pub(crate) fn wants_ward(&self, actor: FormId) -> bool {
+        self.actor_ref(actor)
+            .and_then(|a| a.combat.as_ref())
+            .is_some_and(|c| c.ward_keep > 0.0 && c.ward_wait <= 0.0)
+    }
+
+    /// Cast wards build up; ward hits' outcomes wear off.
     pub(crate) fn update_wards(&mut self, dt: f32) {
         if dt <= 0.0 {
             return;
         }
+        self.magic.ward_states.retain(|_, s| {
+            s.1 -= dt;
+            s.1 > 0.0
+        });
         for i in 0..self.magic.effects.len() {
             let x = &self.magic.effects[i];
             if !x.active || x.done {
@@ -251,6 +343,17 @@ impl Engine {
                     }
                     self.dispel_effect(id);
                 }
+                // An NPC's hand stops, and it waits before warding again.
+                let wait = self.ward_wait_roll();
+                if let Some(a) = self.actor_mut(target)
+                    && let Some(c) = a.combat.as_mut()
+                    && a.combat_spell.is_some_and(|s| s.ward)
+                {
+                    c.channel = 0.0;
+                    c.ward_keep = 0.0;
+                    c.ward_wait = wait;
+                    a.stop_hand_cast();
+                }
                 self.ward_graph_event(target, true);
                 BROKEN
             }
@@ -260,26 +363,62 @@ impl Engine {
         true
     }
 
-    /// The ward's caster's graph is told: `wardAbsorb` (the ward loop's
-    /// recoil) or `WardBreak` (the master graph's stagger; the `WardAbsorbed`
-    /// and `WardBroken` idles' events). Graphs without `WardBreak`
-    /// (creatures) stagger as from a blow.
+    /// The ward's caster reacts to the hit: its `IsWardState` set, the
+    /// `ActionWardHit` idle for its graph played (`WardAbsorbed`'s
+    /// `wardAbsorb`, the ward loop's recoil; `WardBroken`'s `WardBreak`, the
+    /// master graph's stagger; draugr, dragon priests and Hermaeus Mora's
+    /// daedra have their own). Without one, `wardAbsorb` / `WardBreak` are
+    /// sent as they are, and graphs that take neither stagger as from a
+    /// blow when it breaks.
     fn ward_graph_event(&mut self, actor: FormId, broken: bool) {
-        let event = if broken { "WardBreak" } else { "wardAbsorb" };
+        let state = if broken { BROKEN } else { ABSORBED };
+        self.magic
+            .ward_states
+            .insert(actor, (state, WARD_STATE_HOLD));
+        if broken && actor != PLAYER_REF && self.is_ethereal(actor) {
+            return;
+        }
+        let fallback = if broken { "WardBreak" } else { "wardAbsorb" };
+        let event = self.ward_hit_idle(actor);
+        let event = event.as_deref().unwrap_or(fallback);
         if actor == PLAYER_REF {
             self.player_graph_event(event);
             return;
         }
-        if broken && self.is_ethereal(actor) {
-            return;
+        if let Some(g) = self.actor_mut(actor).and_then(|a| a.graph.as_mut()) {
+            if event == "staggerStart" {
+                g.set_variable("staggerMagnitude", 0.5);
+            }
+            if !g.send_event(event) && broken && event != "staggerStart" {
+                g.set_variable("staggerMagnitude", 0.5);
+                g.send_event("staggerStart");
+            }
         }
-        if let Some(g) = self.actor_mut(actor).and_then(|a| a.graph.as_mut())
-            && !g.send_event(event)
-            && broken
-        {
-            g.set_variable("staggerMagnitude", 0.5);
-            g.send_event("staggerStart");
-        }
+    }
+
+    /// The event of the `ActionWardHit` idle for `actor`'s graph whose
+    /// conditions pass.
+    fn ward_hit_idle(&mut self, actor: FormId) -> Option<String> {
+        use crate::condition::Context;
+        let root = self
+            .idles
+            .get_or_insert_with(|| crate::ai::idles::IdleIndex::build(&self.lo))
+            .find(&self.lo, "ActionWardHit")?;
+        let ctx = Context {
+            subject: Some(actor),
+            ..Default::default()
+        };
+        let ix = self.idles.as_ref()?;
+        let picked = if actor == PLAYER_REF {
+            ix.select(self, root, ctx)
+        } else {
+            let project = self.actor_ref(actor)?.graph.as_ref()?.project().clone();
+            ix.select_for(self, root, ctx, &project)
+        };
+        picked.map(|(idle, event)| {
+            log::debug!("{actor}'s ward hit: {idle} ({event})");
+            event
+        })
     }
 }
 
@@ -312,6 +451,21 @@ mod tests {
         assert!(in_front(at, north, Vec3::new(300.0, 500.0, 80.0)));
         assert!(!in_front(at, north, Vec3::new(500.0, 300.0, 0.0)));
         assert!(!in_front(at, north, Vec3::new(0.0, -500.0, 0.0)));
+    }
+
+    #[test]
+    fn npcs_see_the_players_spells_aimed_their_way() {
+        let eye = Vec3::new(0.0, 0.0, 120.0);
+        assert!(aimed_at(eye, Vec3::Y, Vec3::new(200.0, 1000.0, 60.0)));
+        assert!(!aimed_at(eye, Vec3::Y, Vec3::new(1000.0, 1000.0, 60.0)));
+        assert!(!aimed_at(eye, Vec3::Y, Vec3::new(0.0, -1000.0, 60.0)));
+    }
+
+    #[test]
+    fn a_ward_is_kept_a_moment_after_the_last_spell() {
+        assert_eq!(keep_step(0.0, true, 0.1), WARD_KEEP);
+        assert_eq!(keep_step(WARD_KEEP, false, 0.4), WARD_KEEP - 0.4);
+        assert_eq!(keep_step(0.1, false, 0.4), 0.0);
     }
 
     /// Synthetic records: a ward (40, as Lesser Ward) and a fire spell of

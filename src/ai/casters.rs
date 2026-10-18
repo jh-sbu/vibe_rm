@@ -30,6 +30,9 @@ pub struct CombatSpell {
     /// The enchantment of the staff in its right hand, paid from its charge;
     /// the hand stays a staff's to the graph.
     pub staff: bool,
+    /// A ward (a self spell accumulating `WardPower`), held facing the
+    /// enemy while spells are coming at it (`crate::wards`).
+    pub ward: bool,
 }
 
 #[cfg(test)]
@@ -91,6 +94,7 @@ mod tests {
             charge: 0.0,
             dual: false,
             staff: false,
+            ward: false,
         }
     }
 
@@ -210,6 +214,39 @@ mod tests {
     }
 
     #[test]
+    fn a_ward_is_raised_towards_the_enemy_and_held() {
+        with_world(|world| {
+            let mut actor = actor();
+            let ward = CombatSpell {
+                ward: true,
+                start: "WardStart",
+                ..healing(true)
+            };
+            // Behind it: it turns first.
+            let target = Vec3::new(0.0, -1000.0, 0.0);
+            assert!(
+                actor
+                    .caster_step(0.1, world, target, 1000.0, ward)
+                    .is_none()
+            );
+            assert!(actor.heading != 0.0);
+            actor.heading = std::f32::consts::PI;
+            assert_eq!(
+                actor
+                    .caster_step(0.1, world, target, 1000.0, ward)
+                    .as_deref(),
+                Some("BeginCastRight")
+            );
+            assert_eq!(actor.combat.as_ref().unwrap().channel, WARD_HOLD);
+            actor.combat.as_mut().unwrap().channel = 1.0;
+            actor.caster_step(0.5, world, target, 1000.0, ward);
+            let cast = actor.casts.take().unwrap();
+            assert_eq!(cast.target, actor.ref_id);
+            assert_eq!(cast.landings, 2);
+        });
+    }
+
+    #[test]
     fn offensive_spell_still_requires_a_clear_shot() {
         with_world(|world| {
             let mut actor = actor();
@@ -293,6 +330,10 @@ pub(crate) struct CombatCast {
 /// concentration spell (chosen by eye; no source).
 const THROW_COOLDOWN: (f32, f32) = (1.5, 3.0);
 const CHANNEL_TIME: (f32, f32) = (1.5, 3.0);
+/// The longest a ward is held at once (the engine lets it go sooner, once
+/// no spell has come at its caster for a while; a choice:
+/// `known_ambiguities/wards.md`).
+pub(crate) const WARD_HOLD: f32 = 10.0;
 /// Seconds between a channelled spell's landings (as the player's).
 pub(crate) const CHANNEL_TICK: f32 = 0.25;
 
@@ -367,7 +408,8 @@ impl ActorRuntime {
         self.speed = 0.0;
         self.state = State::Idle(1.0);
         let to = (target - self.pos).normalize_or_zero();
-        let off = if spell.self_target {
+        // A ward is held towards the enemy, as it covers the front only.
+        let off = if spell.self_target && !spell.ward {
             0.0
         } else {
             self.turn_towards(to, dt).abs()
@@ -429,7 +471,9 @@ impl ActorRuntime {
             hand = started;
         }
         let c = self.combat.as_mut()?;
-        if spell.concentration {
+        if spell.ward {
+            c.channel = WARD_HOLD;
+        } else if spell.concentration {
             c.channel = uniform(w.rand, CHANNEL_TIME.0, CHANNEL_TIME.1);
         } else if !humanoid {
             c.cooldown = uniform(w.rand, THROW_COOLDOWN.0, THROW_COOLDOWN.1);

@@ -398,6 +398,9 @@ pub struct Magic {
     item_cache: std::cell::RefCell<HashMap<FormId, Option<Arc<MagicItem>>>>,
     /// Bodies whose soul has been taken (`crate::soul_trap`).
     pub souls_taken: HashSet<FormId>,
+    /// Actors' last ward hit (`IsWardState`: absorbed 1, broken 2) and the
+    /// seconds it still holds (`crate::wards`).
+    pub ward_states: HashMap<FormId, (i32, f32)>,
 }
 
 impl Engine {

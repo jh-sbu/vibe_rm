@@ -4534,7 +4534,8 @@ fn main() -> Result<()> {
         Some("item-users") => {
             // item-users <data dir> <form id | editor id>: the NPCs, containers,
             // outfits and leveled lists naming an item (`CNTO`, `INAM`, `LVLO`),
-            // and in turn those naming the leveled lists and outfits (three deep).
+            // or a spell (`SPLO` of NPCs and races, leveled spell lists), and in
+            // turn those naming the leveled lists and outfits (three deep).
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let lo = esp::LoadOrder::load(data, &names)?;
@@ -4545,10 +4546,12 @@ fn main() -> Result<()> {
             let mut users: std::collections::HashMap<esp::FormId, Vec<esp::FormId>> =
                 std::collections::HashMap::new();
             for (tag, subs) in [
-                (b"NPC_", &[*b"CNTO", *b"DOFT"][..]),
+                (b"NPC_", &[*b"CNTO", *b"DOFT", *b"SPLO"][..]),
+                (b"RACE", &[*b"SPLO"][..]),
                 (b"CONT", &[*b"CNTO"][..]),
                 (b"OTFT", &[*b"INAM"][..]),
                 (b"LVLI", &[*b"LVLO"][..]),
+                (b"LVSP", &[*b"LVLO"][..]),
             ] {
                 for &u in lo.ids_of_type(tag) {
                     let Some(rec) = lo.get(u) else { continue };
@@ -4590,7 +4593,7 @@ fn main() -> Result<()> {
                         rec.tag(),
                         rec.editor_id().unwrap_or_default()
                     );
-                    if depth < 3 && matches!(&rec.tag().0, b"LVLI" | b"OTFT") {
+                    if depth < 3 && matches!(&rec.tag().0, b"LVLI" | b"LVSP" | b"OTFT") {
                         show(lo, users, u, depth + 1);
                     }
                 }

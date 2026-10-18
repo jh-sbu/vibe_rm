@@ -59,16 +59,46 @@ hold timer) and `MagicSystem::WardState` (none, absorb, break), and
 - **Channelled effects**: a concentration spell's effects with no
   duration (the ward and its armor, telekinesis) last while it is cast:
   the player's while a hand holds the spell, anyone else's half a second
-  after its last landing (NPCs don't ward yet). Landing again keeps them
+  after its last landing. Landing again keeps them
   rather than starting them over, unless it changes between dual and not.
 - **Restoration XP**: wards give their cast's XP as other self spells (a
   quarter of the base cost each landing); absorbing gives nothing more.
 
+## NPCs
+
+Public sources: CommonLibSSE's `CombatMagicCasterWard` (its own
+`CheckStartCast` / `CheckStopCast` and a cooldown timer, nothing about
+what they check), `MagicSystem::WardState`, the `ActionWardHit` idles
+(`WardAbsorbed` / `WardBroken` and draugr, dragon priest and Hermaeus
+Mora's daedra variants, each by `IsWardState`), and who knows a ward
+(`vrm-tool item-users WardLesser`...: Vigilants of Stendarr, warlocks,
+ghosts, Thalmor, battlemages, Delphine, the College's teachers; the
+`...LeftHand` copies are equipped in the left). No public source says
+when the game raises them; here:
+
+- **When**: fighting, while a hostile spell is being cast at it: the
+  player charging, holding or letting go a hostile non-self spell (or
+  staff) while aiming within 30 degrees of its body and fighting it, or
+  an NPC caster whose target it is charging, throwing or channelling one.
+  Spells already flying (the caster done) don't count beyond the keep
+  below. Every NPC that knows a ward does it, whatever its combat style.
+- **Before others**: after an emergency heal, before offensive spells and
+  staffs; a melee NPC stops fighting to hold it. The strongest ward it
+  can pay a second of.
+- **Keeping it**: held facing its enemy until 1 s after the last spell
+  seen being cast at it, at most 10 s at once, then 2 to 4 s before
+  another; a broken ward stops the hand and starts the same wait. The
+  graph's first refusal of `MLh_WardStart` while it is still entering the
+  magic state is retried half a second later, as other casts.
+- **`IsWardState`** is a ward hit's outcome for 1 s after it (or until
+  the next); 0 otherwise. The reaction played is the first passing
+  `ActionWardHit` idle for the actor's graph; `staggerStart` ones at
+  magnitude 0.5.
+
 ## Still open
 
-- NPCs raising wards in combat (`CombatMagicCasterWard`); `IsWardState`
-  and the `ActionWardHit` idles chosen through it (creatures' own, such as
-  `DraugrWardAbsorbed`'s `recoilStart`).
+- NPCs warding against arrows or blows, or against a spell already in
+  flight they see coming; whether combat styles weigh it.
 - The ward's sounds (`WardAbsorbSound`, `WardBreakSound`,
   `WardDeflectSound` default objects) and visuals.
 - `WardDeflection` (actor value 67): nothing in the records sets it.
