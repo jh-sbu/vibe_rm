@@ -212,6 +212,9 @@ pub struct Context {
     pub quest: Option<FormId>,
     /// Set when picking from the IDLE tree.
     pub idle: Option<IdleQuery>,
+    /// A magic effect's conditions: its spell was dual cast
+    /// (`EffectWasDualCast`).
+    pub dual_cast: bool,
 }
 
 /// The subject's furniture state while picking an idle.
@@ -674,6 +677,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         713 => b(subject.and_then(|s| e.spell_casting_perk(s)) == Some(p1)),
         632 => b(subject.is_some_and(|s| e.is_casting(s))), // IsCasting
         627 => b(subject.is_some_and(|s| e.is_dual_casting(s))), // IsDualCasting
+        724 => b(ctx.dual_cast),                            // EffectWasDualCast
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))), // GetIsCurrentPackage
         579 => b(subject.is_some_and(|s| e.equipped_shout(s) == Some(p1))), // GetEquippedShout
         378 => b(subject.is_some_and(|s| e.has_shout(s, p1))), // HasShout

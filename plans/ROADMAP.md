@@ -427,7 +427,9 @@ game each piece unlocks.
   leaving at the release clip's `SpellFire`. With the school's dual casting
   perk, the same spell in both hands pressed together is dual cast
   (`DualMagic_...` on the left hand's graph): 2.8 times the cost, its
-  effects' magnitude or duration 2.2 times. Console `equipspell`. Spell costs include Fortify school effects
+  effects' magnitude or duration 2.2 times; casters with both hands free and
+  the perk dual cast too, and Impact staggers on a dual cast
+  (`EffectWasDualCast`). Console `equipspell`. Spell costs include Fortify school effects
   (`AlterationMod` .. `RestorationMod`) through the game's `PerkSkillBoosts`
   entries, shared by casting and the magic menu, stacking to free casting
   at 100%; `SpellHasCastingPerk` lets the Novice .. Master perks halve
@@ -1145,8 +1147,7 @@ game each piece unlocks.
    stuck in actors, sneak shots, power bashes for the player (perk), tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
-   scores, wards, summons and buffs in combat, NPCs' dual casting,
-   the dual casting perks' extras (Impact's stagger), staffs, runes, wards, effect visuals (spell projectiles' models run
+   scores, wards, summons and buffs in combat, staffs, runes, wards, effect visuals (spell projectiles' models run
    behaviour graphs, particles and shader controllers; casting and hit art,
    lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
