@@ -47,8 +47,9 @@ bone switches.
 - Generator registrations retain type-1 bindings using the same graph-local
   property-name table and bindable-object layout as modifiers. The runtime
   resolves scalar properties for `playbackSpeed`, `startTime`,
-  `userControlledTimeFraction`, `selectedGeneratorIndex`, `blendParameter`, and
-  `startStateId` at their existing input-read sites. Clip start and state-machine
+  `userControlledTimeFraction`, `selectedGeneratorIndex`, `blendParameter`,
+  `minCyclicBlendParameter`, `maxCyclicBlendParameter`, and `startStateId` at their
+  existing input-read sites. Clip start and state-machine
   start are read on activation; speed, user-controlled time, selector index and
   blend parameter follow their existing update/sample paths. Synchronized clips'
   cycle lengths also use property-bound speed. Variable bindings take precedence.
@@ -245,3 +246,47 @@ non-blender children. These validate the supported input path, not engine parity
 Only public community behavior analysis and invented fixtures were used as
 implementation evidence; no game-engine binary files were examined and no assets
 were added to the repository.
+
+## Cyclic blender range inputs
+
+`hkbBlenderGenerator.minCyclicBlendParameter` and
+`maxCyclicBlendParameter` now resolve graph variables and read-only scalar
+character properties at the existing blender-weight read site. Direct blenders
+and blenders below `BSCyclicBlendTransitionGenerator` use the same resolved
+range for pose weights and synchronized clip timing. The wrapper still forwards
+only its existing `fBlendParameter` input; no wrapper range members are assumed.
+
+The community-authored [Skyrim Behavior Editor blender class](https://github.com/BrannigansLaw/Skyrim-Behavior-Editor-/blob/master/src/hkxclasses/behavior/generators/hkbblendergenerator.cpp)
+reads and writes both named real-valued range members. The public
+[Souls Modding binding guide](https://www.soulsmodding.com/doku.php?id=topic%3Ahavok_behavior_editing#hkbvariablebindingsets)
+describes variables and character properties as member inputs; that guide
+concerns another game's Havok version and does not establish Skyrim lifecycle
+semantics. A read-only audit of 423 behavior HKX assets under `/behaviors/` in
+the installed SE `Skyrim - Animations.bsa`, `Skyrim - Meshes0.bsa`, and
+`Skyrim - Meshes1.bsa` found 181 cyclic blenders: 180 with authored range 0..1
+and one with 0.375..0.625, read at the existing offsets 0x50/0x54. No variable
+or character-property binding to either range member was found in that audit.
+This extension therefore establishes a supported binding path, not a vanilla
+use of these inputs or original-engine update timing.
+
+Character names resolve case-insensitively. Variables take precedence over
+duplicate property inputs and update at the existing weight reads. Missing
+characters, names and non-scalar properties retain the authored endpoint.
+Non-finite bound values also retain that endpoint; an invalid variable does
+not fall through to a duplicate property. Equal, inverted, non-finite authored
+ranges and ranges whose width overflows f32 disable wrapping and use the
+existing non-cyclic endpoint selection. Finite cyclic wrapping and seam
+interpolation use f64 intermediates to avoid overflowing finite f32 inputs.
+These invalid-input policies are implementation safeguards, not established
+original-engine behavior.
+
+Original-engine range sampling/lifecycle, invalid or conflicting bindings,
+child positions outside the range, and non-finite blend parameters or child
+positions remain unverified. Runtime property overrides, other generator
+members and static event-to-clip property evaluation remain unsupported.
+Synthetic tests cover parser retention, distinct character ranges, direct and
+wrapped blenders, live variable precedence, read-only properties,
+missing/non-scalar fallbacks, invalid ranges, extreme finite arithmetic, and
+pose weights agreeing with synchronized clip times. Only public community
+source/documentation and game assets were examined; no engine binary data or
+SDK mirrors were used, and no game assets were added to the repository.
