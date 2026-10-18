@@ -445,6 +445,11 @@ game each piece unlocks.
   `UnequipItem`, `Spell.Cast` / `RemoteCast`, `ActiveMagicEffect`'s getters,
   `Dispel` and updates. Console `effects`, `addspell`, `removespell`, `cast`,
   `dispelallspells`; vrm-tool `magic`. Open questions: `known_ambiguities/magic.md`
+- Timed invisibility ends on resolved combat melee/bashes (including misses),
+  arrow release, actual spell delivery and player activation, including scripts'
+  `Activate(player)`. Charging and invisibility renewal preserve it; companion
+  effects remain. Timing, constant sources and other interaction limits:
+  `known_ambiguities/invisibility.md`
 - Magic, second part (casting by hand): the player casts the spell in either
   hand with that hand's attack button (fire-and-forget spells charging for
   their charge time and cast when it comes up, concentration spells going on
@@ -1222,7 +1227,8 @@ game each piece unlocks.
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
    bound weapons in the casting
    hand, light, paralysis,
-   invisibility breaking; illusion spells chosen by NPCs; enchantment charges,
+   invisibility's constant sources, potion rules and other interaction paths
+   (`known_ambiguities/invisibility.md`); illusion spells chosen by NPCs; enchantment charges,
    NPCs poisoning their weapons; `known_ambiguities/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
    waiting on casting, crafting, barter, critical hits, attack types;

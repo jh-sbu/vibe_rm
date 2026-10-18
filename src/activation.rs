@@ -60,6 +60,11 @@ impl Engine {
     /// scripts hear `OnActivate` (unless `default_only`), and unless its
     /// activation is blocked its children are activated in turn.
     pub(crate) fn activate_ref(&mut self, target: FormId, by: Option<FormId>, default_only: bool) {
+        // Scripts explicitly activating as the player also interrupt it
+        // (USKP's TGDoorCloserTriggerScript fix documents this behavior).
+        if by == Some(crate::engine::PLAYER_REF) && self.reference_of(target).is_some() {
+            self.break_invisibility(crate::engine::PLAYER_REF);
+        }
         if !default_only {
             let by = by.map_or(papyrus::Value::None, |b| self.object_value(b));
             self.send_script_event(target, "OnActivate", vec![by]);

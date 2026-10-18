@@ -28,7 +28,9 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
 - **Muffle** is `MovementNoiseMult` (Muffled Movement 0.5, Silence and the
   Muffle spell 1): movement noise in detection is scaled by 1 - it.
 - **Invisibility** (archetype 11) sets `Invisibility`; an invisible target
-  can't be seen (no visual factor).
+  can't be seen (no visual factor). Timed effects end on supported combat,
+  casting and activation actions; boundaries and remaining lifecycle limits:
+  [invisibility.md](invisibility.md).
 - **Magic armor** (`DamageResist`: Oakflesh, the armor set bonuses) adds to
   the armor rating.
 - **Effect scripts** run on an `ActiveMagicEffect` per effect:
