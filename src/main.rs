@@ -40,6 +40,7 @@ mod player;
 mod player_body;
 mod poisons;
 mod quest_targets;
+mod recharge;
 mod relationships;
 #[cfg(feature = "remote-console")]
 mod remote;

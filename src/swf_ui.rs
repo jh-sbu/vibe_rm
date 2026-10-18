@@ -795,8 +795,19 @@ impl SwfUi {
         if items.closing {
             // Fading out: the keys do nothing more.
             return code != winit::keyboard::KeyCode::Backquote;
+        } else if code == winit::keyboard::KeyCode::Escape && items.listing() {
+            // The card's list of souls: Esc leaves it as Tab does.
+            use ui_swf::PlayerEvent;
+            for key in ui_swf::input::keys(winit::keyboard::KeyCode::Tab) {
+                items.menu.handle_event(PlayerEvent::KeyDown { key });
+                items.menu.handle_event(PlayerEvent::KeyUp { key });
+            }
         } else if code == winit::keyboard::KeyCode::Escape {
             items.close();
+        } else if items.listing() {
+            return false;
+        } else if scan.is_some() && scan == self.buttons.key("Wait") {
+            items.charge_key();
         } else if scan.is_some() && scan == self.buttons.key("Ready Weapon") {
             items.x_button();
         } else if scan.is_some() && scan == self.buttons.key("Toggle POV") {

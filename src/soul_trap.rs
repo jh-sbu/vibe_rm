@@ -19,17 +19,17 @@ use crate::engine::{Engine, PLAYER_REF};
 const BLACK_GEM: u32 = 0x0002_0000;
 
 /// A soul gem as its record has it.
-struct Gem {
-    form: FormId,
+pub(crate) struct Gem {
+    pub form: FormId,
     /// The soul its record holds (0 empty).
-    soul: u8,
-    capacity: u8,
-    black: bool,
-    filled: Option<FormId>,
+    pub soul: u8,
+    pub capacity: u8,
+    pub black: bool,
+    pub filled: Option<FormId>,
 }
 
 impl Engine {
-    fn soul_gem(&self, form: FormId) -> Option<Gem> {
+    pub(crate) fn soul_gem(&self, form: FormId) -> Option<Gem> {
         let rec = self.lo.get(form).filter(|r| r.tag().0 == *b"SLGM")?;
         let byte = |tag: &[u8; 4]| rec.get(tag).and_then(|d| d.first().copied()).unwrap_or(0);
         Some(Gem {

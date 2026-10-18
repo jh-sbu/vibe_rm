@@ -64,8 +64,8 @@ spells isn't public. Here:
 
 ## Still open
 
-- Recharging with soul gems; the HUD's charge meters; NPCs' self-cast
-  and summoning staffs (only offensive ones are fought with).
+- The HUD's charge meters; NPCs' self-cast and summoning staffs (only
+  offensive ones are fought with); NPCs recharging.
 - Placed (dropped) weapons keeping their charge; the charge reduced by
   Fortify Destruction-like items (UESP: "Items with enchantments that
   reduce the magicka cost of spells will also affect charge levels on
@@ -87,3 +87,24 @@ weapons, the Ebony Blade, Keening, Bloodskal, trap darts. Here:
 - **No `EAMT`**: the enchantment always lands.
 - **NPCs' weapons** run dry as the player's do. Whether the game spares
   NPCs isn't published.
+
+## Recharging
+
+Implemented in `src/recharge.rs`, from the inventory (`inventorymenu.swf`:
+the card's `charge` under 100 offers Charge on the Wait key, T;
+`AttemptChargeItem`, `ShowSoulGemList`, the card's `ICT_LIST` with
+`listItems` / `currentCharge` / `chargeAdded`, `ItemCardListCallback`).
+Sources: UESP's Skyrim:Soul Gems (charges 250 / 500 / 1000 / 2000 /
+3000, gems consumed, Azura's Star and the Black Star not), Skyrim:Leveling
+(0.05 .. 0.6 base Enchanting XP, which is the charge times
+`fSkillUsageRechargeMult`), CommonLibSSE's `kKeywordReusableSoulGem`.
+
+- **The list**: one row for each gem and soul carried ("Petty Soul Gem
+  (Petty)"), smallest soul first; the game's labels and order aren't
+  known. With no soul at all, `sNoChargeItems` is shown and nothing opens.
+- **A soul bigger than what is missing** fills the weapon; the rest is
+  lost (XP still by the soul's size).
+- **Reusable gems** are left empty; one filled by its record (none in the
+  vanilla data) can't be used.
+- The card's meter takes `usedCharge` and `charge` both as the percent
+  left; what the game puts in `usedCharge` isn't known.

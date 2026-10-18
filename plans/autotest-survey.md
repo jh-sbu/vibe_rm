@@ -178,7 +178,11 @@ Left out so far:
   `RightItemCharge` read after each `OnHit` the target's alias sees
   (spent per blow? for blocked blows? do NPCs' weapons drain at all?);
   the player's charge after `RemoveItem` into a container and back
-  (`staffs.md`'s enchanted weapons).
+  (`staffs.md`'s enchanted weapons). Recharging is the inventory's (a
+  menu): manual, the user charging a half-spent sword with a petty soul
+  and then a grand one, the script reading `RightItemCharge`, the gems'
+  `GetItemCount` and Enchanting's `GetBaseActorValue` before and after
+  (XP itself isn't readable without SKSE).
 - **Ethereal** (`magic.md`): `VoiceBecomeEthereal3` cast by script on
   a held NPC, then a Firebolt cast at it and `DamageActorValue` health on
   it: health after each (magic spared, scripts not?), and whether the

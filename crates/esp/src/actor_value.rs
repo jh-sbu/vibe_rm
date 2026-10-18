@@ -189,6 +189,7 @@ pub const PICKPOCKET: u32 = 13;
 pub const LOCKPICKING: u32 = 14;
 pub const SNEAK: u32 = 15;
 pub const SPEECHCRAFT: u32 = 17;
+pub const ENCHANTING: u32 = 23;
 pub const LAST_SKILL: u32 = 23;
 pub const HEALTH: u32 = 24;
 pub const MAGICKA: u32 = 25;
