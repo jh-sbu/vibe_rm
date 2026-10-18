@@ -23,12 +23,20 @@ release clips for hand type 8: `StfMagicRight_Release`, `SpellFire` at
   staff any charge at all, and stops when a frame's share can't be paid),
   and "Your item has insufficient charge" shows; the magicka meter doesn't
   blink.
-- **Which staff's charge**: one of the carried staffs of a kind carries
-  the charge spent (`Inventory::charges`); the others are full, and leave
-  first. When the spent one is stored, sold, given or taken, its charge
-  goes with it (where one of the kind is spent already, the lower charge
-  is kept). Dropped into the world it is full again: placed references
-  keep no charge yet.
+- **Which staff's charge**: each depleted copy has its own sparse value in
+  `Inventory::charges`; copies without one are full. Casting, combat,
+  actor values and recharging select the first depleted copy. Full copies
+  leave first, then depleted copies in reverse insertion order, keeping
+  the selected copy until last. Values go with copies stored, sold,
+  given, taken or dropped, including when another depleted copy of the
+  same kind is already at the destination. Individual copies aren't yet
+  selectable in the menus or hands. Fully recharging the selected copy
+  removes its sparse entry and selects the next depleted copy, if any.
+  The game's instance-selection order, including how charge attaches to
+  separately owned copies and to two identical weapons in different
+  hands, isn't established. Here two same-base weapons in different hands
+  share the selected copy's charge; ownership and charge are independent,
+  so owner-filtered removal uses the same full-first charge ordering.
 - **Magicka** keeps coming back while only staffs are being cast.
 - **An empty hand beside a staff** is a staff's (8) to the graph, as with
   spells (`casting.md`): otherwise a staff in the right hand alone leaves
@@ -66,11 +74,36 @@ spells isn't public. Here:
 
 - The HUD's charge meters; NPCs' self-cast and summoning staffs (only
   offensive ones are fought with); NPCs recharging.
-- Placed (dropped) weapons keeping their charge; the charge reduced by
-  Fortify Destruction-like items (UESP: "Items with enchantments that
+- The charge reduced by Fortify Destruction-like items (UESP: "Items with
+  enchantments that
   reduce the magicka cost of spells will also affect charge levels on
   weapons associated with that school"; `spell_cost` doesn't read the
   schools' `...Mod` values yet).
+
+## Dropping and picking up
+
+Implemented in `src/loose.rs`, `src/items.rs`, `src/world_state.rs` and
+`src/world/inventory.rs`. A dropped reference keeps one value for each
+depleted copy in its stack; full copies need no entry. Picking it up
+restores these values without changing already-carried copies. The values
+live outside loaded-cell state, so unloading the cell doesn't discard them;
+as with other world state, disk saves remain pending.
+
+Public evidence for charge belonging to the instance, including a world
+reference:
+
+- [CommonLibSSE-NG's `ExtraCharge.h`](https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/main/include/RE/E/ExtraCharge.h)
+  identifies an instance extra-data entry with a floating-point charge.
+- [Creation Kit wiki: `GetItemCharge`](https://ck.uesp.net/wiki/GetItemCharge_-_ObjectReference)
+  documents the remaining charge on an ObjectReference.
+
+These establish instance state; retaining that state across drop/pickup is
+the implementation's inference. The public sources above don't establish
+the engine's exact drop-stack splitting or copy-selection order. A drop
+still creates one reference for the whole requested stack, now retaining
+every depleted copy's value. This work doesn't add charge overrides read
+from placed plugin references, or poisoned weapons'
+and soul gems' other per-copy state to dropped references.
 
 ## Enchanted weapons
 

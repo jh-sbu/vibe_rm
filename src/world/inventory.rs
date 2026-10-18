@@ -300,8 +300,9 @@ pub struct Inventory {
     /// weapons carried, kept apart within `items`' counts and taken last
     /// (the game's `ExtraPoison` on one instance).
     pub poisoned: Vec<(FormId, FormId, i32)>,
-    /// Enchanted weapons with charge spent (weapon, charge left): one of
-    /// the weapons carried, the rest full; taken last.
+    /// Enchanted weapons with charge spent (weapon, charge left), one entry
+    /// per depleted copy. Unlisted copies are full and taken first; the first
+    /// listed copy is the one used by casting, combat and recharging.
     pub charges: Vec<(FormId, f32)>,
     /// What is held (`RIGHT`, `LEFT`, `VOICE`): weapons, spells, a shield, a
     /// torch; a power or shout. What fills both hands is in each.
@@ -310,6 +311,15 @@ pub struct Inventory {
     /// weapon, a spell cast with both hands), rather than being one of a
     /// pair (two of the same sword).
     both: bool,
+}
+
+/// Items removed from an inventory, with the per-copy state that must travel
+/// with them when transferred or dropped.
+#[derive(Debug, Default, PartialEq)]
+pub struct RemovedItems {
+    pub parts: Vec<(Option<FormId>, i32)>,
+    pub souls: Vec<(u8, i32)>,
+    pub charges: Vec<f32>,
 }
 
 /// What an actor holds in a hand, as `GetEquippedItemType` and the behaviour
@@ -430,15 +440,29 @@ impl Inventory {
 
     /// Remove items together with their per-instance souls. Callers moving
     /// items to another inventory must restore these souls there after adding
-    /// the item counts. Destructive removal deliberately discards them.
+    /// the item counts. Weapon charge is discarded; transfers needing it
+    /// must use `remove_with_extras`. Destructive removal discards all extras.
     pub fn remove_with_souls(
         &mut self,
         form: FormId,
         n: i32,
         only: Option<Option<FormId>>,
     ) -> (Vec<(Option<FormId>, i32)>, Vec<(u8, i32)>) {
+        let removed = self.remove_with_extras(form, n, only);
+        (removed.parts, removed.souls)
+    }
+
+    /// Remove items and their sparse per-copy souls and weapon charges.
+    /// Full-charge copies leave first, then depleted copies in reverse order
+    /// so the copy selected by `charge_left` remains until the last removal.
+    pub fn remove_with_extras(
+        &mut self,
+        form: FormId,
+        n: i32,
+        only: Option<Option<FormId>>,
+    ) -> RemovedItems {
         let Some(i) = self.items.iter().position(|(f, _)| *f == form) else {
-            return (Vec::new(), Vec::new());
+            return RemovedItems::default();
         };
         let mut left = n.max(0);
         let mut out = Vec::new();
@@ -479,13 +503,26 @@ impl Inventory {
             extra -= t;
         }
         self.souls.retain(|(_, _, c)| *c > 0);
+        let mut extra =
+            self.charges.iter().filter(|(w, _)| *w == form).count() as i32 - self.count(form);
+        let mut charges = Vec::new();
+        for i in (0..self.charges.len()).rev() {
+            if extra > 0 && self.charges[i].0 == form {
+                charges.push(self.charges.remove(i).1);
+                extra -= 1;
+            }
+        }
+        charges.reverse();
         // The poisoned one goes last.
         if self.count(form) <= 0 {
             self.poisoned.retain(|(w, _, _)| *w != form);
-            self.charges.retain(|(w, _)| *w != form);
         }
         self.unequip_if_short(form);
-        (out, souls)
+        RemovedItems {
+            parts: out,
+            souls,
+            charges,
+        }
     }
 
     /// The poison on one of the carried `weapon`s, with its doses left.
@@ -523,10 +560,26 @@ impl Inventory {
             .map(|&(_, c)| c)
     }
 
-    /// One of the carried `weapon`s has `left` charge (`full`: none spent).
+    /// Update the selected carried copy's charge, leaving other copies alone.
+    /// A fully recharged copy needs no sparse entry; the next depleted copy
+    /// becomes selected until inventory rows can identify individual copies.
     pub fn set_charge(&mut self, weapon: FormId, left: f32, full: f32) {
-        self.charges.retain(|(w, _)| *w != weapon);
-        if left < full && self.count(weapon) > 0 {
+        if let Some(i) = self.charges.iter().position(|(w, _)| *w == weapon) {
+            if left < full {
+                self.charges[i].1 = left.max(0.0);
+            } else {
+                self.charges.remove(i);
+            }
+        } else {
+            self.add_charge(weapon, left, full);
+        }
+    }
+
+    /// Restore another depleted copy after adding its item count. Unlike
+    /// `set_charge`, this preserves any depleted copies already carried.
+    pub fn add_charge(&mut self, weapon: FormId, left: f32, full: f32) {
+        let depleted = self.charges.iter().filter(|(w, _)| *w == weapon).count() as i32;
+        if left < full && depleted < self.count(weapon) {
             self.charges.push((weapon, left.max(0.0)));
         }
     }
@@ -1036,6 +1089,71 @@ mod tests {
             inv.add(f, n);
         }
         inv
+    }
+
+    #[test]
+    fn charge_removal_keeps_full_copies_first_and_selected_copy_last() {
+        let mut inv = carrying(&[(SWORD, 4), (DAGGER, 1)]);
+        inv.set_charge(SWORD, 10.0, 100.0);
+        inv.add_charge(SWORD, 65.0, 100.0);
+        inv.set_charge(DAGGER, 5.0, 50.0);
+        assert!(inv.remove_with_extras(SWORD, 2, None).charges.is_empty());
+        assert_eq!(inv.remove_with_extras(SWORD, 1, None).charges, vec![65.0]);
+        assert_eq!(inv.charge_left(SWORD), Some(10.0));
+        assert_eq!(inv.remove_with_extras(SWORD, 99, None).charges, vec![10.0]);
+        assert_eq!(inv.charge_left(SWORD), None);
+        assert_eq!(inv.charge_left(DAGGER), Some(5.0));
+    }
+
+    #[test]
+    fn charge_transfer_preserves_distinct_copies_and_full_charge_implicit() {
+        let mut from = carrying(&[(SWORD, 3)]);
+        from.add_charge(SWORD, 0.0, 100.0);
+        from.add_charge(SWORD, 60.0, 100.0);
+        let mut to = carrying(&[(SWORD, 1)]);
+        to.set_charge(SWORD, 30.0, 100.0);
+        let removed = from.remove_with_extras(SWORD, 99, None);
+        for (owner, n) in removed.parts {
+            to.add_owned(SWORD, owner, n);
+        }
+        for left in removed.charges {
+            to.add_charge(SWORD, left, 100.0);
+        }
+        assert_eq!(to.count(SWORD), 4);
+        assert_eq!(to.charges, vec![(SWORD, 30.0), (SWORD, 0.0), (SWORD, 60.0)]);
+        assert!(from.charges.is_empty());
+        // Spending and recharging only change the selected copy.
+        to.set_charge(SWORD, 20.0, 100.0);
+        assert_eq!(to.charges, vec![(SWORD, 20.0), (SWORD, 0.0), (SWORD, 60.0)]);
+        to.set_charge(SWORD, 100.0, 100.0);
+        assert_eq!(to.charges, vec![(SWORD, 0.0), (SWORD, 60.0)]);
+        assert!(to.remove_with_extras(SWORD, 2, None).charges.is_empty());
+        assert_eq!(
+            to.remove_with_extras(SWORD, 2, None).charges,
+            vec![0.0, 60.0]
+        );
+    }
+
+    #[test]
+    fn failed_and_destructive_removal_never_leave_or_duplicate_charges() {
+        let mut inv = carrying(&[(SWORD, 1)]);
+        inv.set_charge(SWORD, 0.0, 100.0);
+        inv.add_charge(SWORD, 25.0, 100.0); // No spare copy to carry it.
+        for n in [0, -1] {
+            assert_eq!(
+                inv.remove_with_extras(SWORD, n, None),
+                RemovedItems::default()
+            );
+        }
+        assert_eq!(
+            inv.remove_with_extras(SWORD, 1, Some(Some(DAGGER))),
+            RemovedItems::default()
+        );
+        assert_eq!(inv.charges, vec![(SWORD, 0.0)]);
+        inv.remove_split(SWORD, 1, None);
+        assert!(inv.charges.is_empty());
+        inv.set_charge(SWORD, 0.0, 100.0); // An absent copy cannot acquire charge.
+        assert!(inv.charges.is_empty());
     }
 
     #[test]

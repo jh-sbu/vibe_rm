@@ -312,13 +312,17 @@ impl Engine {
         } else {
             self.ref_rotation(holder).z
         };
-        let n = self.remove_item(holder, item, count.max(1), None);
+        let removed = self.remove_stack_with_extras(holder, item, count.max(1), None, None, None);
+        let n: i32 = removed.parts.iter().map(|(_, n)| n).sum();
         if n <= 0 {
             return None;
         }
         let ahead = Vec3::new(heading.sin(), heading.cos(), 0.0);
         let at = feet + ahead * DROP_AHEAD + Vec3::Z * DROP_HEIGHT;
         let r = self.create_object_at(item, place, at, Vec3::new(0.0, 0.0, heading), n);
+        if !removed.charges.is_empty() {
+            self.world_state.item_charges.insert(r, removed.charges);
+        }
         log::info!("{holder} drops {n} {item} as {r}");
         let from = self.object_value(holder);
         self.send_script_event(r, "OnContainerChanged", vec![papyrus::Value::None, from]);

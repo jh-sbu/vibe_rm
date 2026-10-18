@@ -3124,32 +3124,42 @@ impl Engine {
         to: Option<FormId>,
         mark: Option<FormId>,
     ) -> Vec<(Option<FormId>, i32)> {
-        let charge = self.inventory_mut(r).charge_left(item);
-        let (parts, souls) = self.inventory_mut(r).remove_with_souls(item, count, only);
-        let n: i32 = parts.iter().map(|(_, n)| n).sum();
-        // The spent one goes last: its charge goes with it.
-        let charge = charge.filter(|_| self.inventory_mut(r).count(item) <= 0);
+        self.remove_stack_with_extras(r, item, count, only, to, mark)
+            .parts
+    }
+
+    /// As `remove_stack`, retaining removed per-copy state for callers that
+    /// put the items into a world reference instead of another inventory.
+    pub(crate) fn remove_stack_with_extras(
+        &mut self,
+        r: FormId,
+        item: FormId,
+        count: i32,
+        only: Option<Option<FormId>>,
+        to: Option<FormId>,
+        mark: Option<FormId>,
+    ) -> crate::world::inventory::RemovedItems {
+        let removed = self.inventory_mut(r).remove_with_extras(item, count, only);
+        let n: i32 = removed.parts.iter().map(|(_, n)| n).sum();
         self.inventory_event(r, false, item, n, to);
         if let Some(to) = to.filter(|_| n > 0) {
             let to_base = self.base_of(to);
-            for &(owner, k) in &parts {
+            for &(owner, k) in &removed.parts {
                 let owner = owner.or(mark).filter(|&o| Some(o) != to_base);
                 self.inventory_mut(to).add_owned(item, owner, k);
             }
-            for (soul, k) in souls {
+            for &(soul, k) in &removed.souls {
                 for _ in 0..k {
                     self.inventory_mut(to).put_soul(item, soul);
                 }
             }
-            if let Some(left) = charge {
-                let full = self.weapon_capacity(item);
-                let inv = self.inventory_mut(to);
-                let left = inv.charge_left(item).map_or(left, |c| c.min(left));
-                inv.set_charge(item, left, full);
+            let full = self.weapon_capacity(item);
+            for &left in &removed.charges {
+                self.inventory_mut(to).add_charge(item, left, full);
             }
             self.inventory_event(to, true, item, n, Some(r));
         }
-        parts
+        removed
     }
 
     pub fn formlist(&self, f: FormId) -> Vec<FormId> {

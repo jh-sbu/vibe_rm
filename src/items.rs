@@ -149,6 +149,12 @@ impl Engine {
         let stolen = self.stolen_from(base, r, false);
         self.inventory_mut(PLAYER_REF)
             .add_owned(base, stolen, count);
+        if let Some(charges) = self.world_state.item_charges.remove(&r) {
+            let full = self.weapon_capacity(base);
+            for left in charges {
+                self.inventory_mut(PLAYER_REF).add_charge(base, left, full);
+            }
+        }
         if stolen.is_some() {
             self.increment_stat("Items Stolen", count);
         }
