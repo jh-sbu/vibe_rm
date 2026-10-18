@@ -271,6 +271,27 @@ impl Menu {
         self.player.lock().unwrap().set_avm1_variable(path, value);
     }
 
+    /// Places a root-level clip's origin at viewport pixels, using the movie's
+    /// actual stage transform (including scaling and letterbox offsets).
+    pub fn position_clip(&self, path: &str, x: f64, y: f64) {
+        self.player
+            .lock()
+            .unwrap()
+            .mutate_with_update_context(|context| {
+                let point = context.stage.inverse_view_matrix() * swf::Point::from_pixels(x, y);
+                ruffle_core::external::set_avm1_variable(
+                    context,
+                    &format!("{path}._x"),
+                    Value::Number(point.x.to_pixels()),
+                );
+                ruffle_core::external::set_avm1_variable(
+                    context,
+                    &format!("{path}._y"),
+                    Value::Number(point.y.to_pixels()),
+                );
+            });
+    }
+
     /// A variable's value; objects come back as null.
     pub fn get(&self, path: &str) -> Value {
         self.player.lock().unwrap().get_avm1_variable(path)
