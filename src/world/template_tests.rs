@@ -276,3 +276,77 @@ fn spell_templates_resolve_ids_in_the_selected_sources_plugin() {
     assert_eq!(sources.spells(&lo), [id(0xA00), id(0xA10)]);
     assert_eq!(sources.perks(&lo), [(id(0xB00), 2)]);
 }
+
+fn lvsp(local: u32, none: u8, flags: u8, entries: &[(u16, u32)]) -> RecordBuilder {
+    entries.iter().fold(
+        RecordBuilder::new(b"LVSP", FormId(local))
+            .field(b"LVLD", &[none])
+            .field(b"LVLF", &[flags]),
+        |rec, &(level, local)| {
+            let mut data = [0; 12];
+            data[0..2].copy_from_slice(&level.to_le_bytes());
+            data[4..8].copy_from_slice(&local.to_le_bytes());
+            data[8..10].copy_from_slice(&1u16.to_le_bytes());
+            rec.field(b"LVLO", &data)
+        },
+    )
+}
+
+#[test]
+fn leveled_spell_lists_pick_one_entry_per_actor_or_give_all() {
+    use crate::world::actor::resolve_spells;
+    let fixture = Fixture::new();
+    let lo = fixture.load(
+        vec![],
+        vec![Node::top(
+            b"LVSP",
+            vec![
+                lvsp(0xC00, 0, 0x03, &[(1, 0xA00), (1, 0xA01), (1, 0xA02)]),
+                lvsp(0xC01, 0, 0x04, &[(1, 0xA00), (1, 0xC02)]),
+                lvsp(0xC02, 0, 0x00, &[(1, 0xA03)]),
+                lvsp(0xC03, 100, 0x04, &[(1, 0xA00)]),
+            ],
+        )],
+    );
+    let globals = Default::default();
+    let mut picked = std::collections::HashSet::new();
+    for seed in 0..64 {
+        let spells = resolve_spells(&lo, id(0xC00), 1, seed, &globals, 0);
+        assert_eq!(spells.len(), 1);
+        assert_eq!(spells, resolve_spells(&lo, id(0xC00), 1, seed, &globals, 0));
+        picked.insert(spells[0]);
+    }
+    assert_eq!(picked.len(), 3, "every entry is picked by some actor");
+    // "Use all", through a nested list; a plain spell passes through.
+    assert_eq!(
+        resolve_spells(&lo, id(0xC01), 1, 0, &globals, 0),
+        [id(0xA00), id(0xA03)]
+    );
+    assert_eq!(
+        resolve_spells(&lo, id(0xA05), 1, 0, &globals, 0),
+        [id(0xA05)]
+    );
+    assert!(resolve_spells(&lo, id(0xC03), 1, 0, &globals, 0).is_empty());
+}
+
+#[test]
+fn leveled_spell_lists_use_the_level_given() {
+    use crate::world::actor::resolve_spells;
+    let fixture = Fixture::new();
+    let lo = fixture.load(
+        vec![],
+        vec![Node::top(
+            b"LVSP",
+            vec![
+                lvsp(0xC00, 0, 0x00, &[(1, 0xA00), (10, 0xA01), (20, 0xA02)]),
+                lvsp(0xC01, 0, 0x05, &[(1, 0xA00), (10, 0xA01), (20, 0xA02)]),
+            ],
+        )],
+    );
+    let globals = Default::default();
+    let at = |list, level| resolve_spells(&lo, id(list), level, 0, &globals, 0);
+    assert_eq!(at(0xC00, 1), [id(0xA00)]);
+    assert_eq!(at(0xC00, 15), [id(0xA01)]);
+    assert_eq!(at(0xC00, 40), [id(0xA02)]);
+    assert_eq!(at(0xC01, 15), [id(0xA00), id(0xA01)]);
+}
