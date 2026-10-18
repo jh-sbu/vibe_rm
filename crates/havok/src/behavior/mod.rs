@@ -199,6 +199,9 @@ pub enum Generator {
         start_variable: Option<usize>,
         /// How the start state is picked when the machine activates.
         start_mode: StartMode,
+        /// Authored `syncVariableIndex`, retained even outside sync start mode
+        /// so a bound `startStateMode` can enable synchronization on activation.
+        sync_variable: Option<usize>,
         /// Authored notification for state / transition changes.
         change_event: Option<EventProperty>,
         states: Vec<State>,
@@ -1052,6 +1055,7 @@ impl<'a> Reader<'a> {
                         (2, _) => StartMode::Random,
                         _ => StartMode::Default,
                     },
+                    sync_variable: usize::try_from(p.i32(o + 0x7C)).ok(),
                     change_event: (p.i32(o + 0x48) >= 0).then(|| self.event_property(o + 0x48)),
                     states,
                     wildcards: self.transitions(p.ptr(o + 0xA0)),
@@ -1552,6 +1556,8 @@ mod character_property_tests {
             (0x590, 0x300),
             (0x610, 0x640),
             (0x660, 0x280),
+            // A separate synthetic state machine uses the same binding set.
+            (0x690, 0x300),
         ];
         for (i, (member, index, kind)) in [
             ("rawValue", 4, 1),
@@ -1700,6 +1706,60 @@ mod character_property_tests {
         assert_eq!(r.generator(0x280), id);
         assert_eq!(r.property_bindings.len(), 1);
         assert_eq!(r.bindings.len(), 1);
+    }
+
+    #[test]
+    fn state_machine_start_inputs_retain_bindings_and_inactive_sync_index() {
+        for member in ["startStateMode", "syncVariableIndex"] {
+            for (mode, index, expected) in [
+                (0, 7i32, StartMode::Default),
+                (1, 7, StartMode::Sync(7)),
+                (2, 7, StartMode::Random),
+                (1, -1, StartMode::Default),
+            ] {
+                let mut p = fixture();
+                for at in [0x480, 0x4E0] {
+                    p.data[at..at + 0x20].fill(0);
+                    p.data[at..at + member.len()].copy_from_slice(member.as_bytes());
+                }
+                word(&mut p.data, 0x6FC, index as u32);
+                p.data[0x706] = mode;
+                let mut r = Reader {
+                    p: &p,
+                    classes: [(0x680, "hkbStateMachine")].into(),
+                    ids: Default::default(),
+                    generators: vec![],
+                    bindings: vec![],
+                    property_bindings: vec![],
+                    mod_ids: Default::default(),
+                    modifiers: vec![],
+                    modifier_bindings: vec![],
+                    modifier_property_bindings: vec![],
+                    character_properties: ["Unused", "Other", "Output", "Third", "StartInput"]
+                        .map(String::from)
+                        .to_vec(),
+                };
+                let id = r.generator(0x680);
+                let Generator::StateMachine {
+                    start_mode,
+                    sync_variable,
+                    states,
+                    ..
+                } = &r.generators[id]
+                else {
+                    panic!("expected state machine");
+                };
+                assert_eq!(*start_mode, expected);
+                assert_eq!(*sync_variable, usize::try_from(index).ok());
+                assert!(states.is_empty());
+                assert_eq!(r.property_bindings[id][0].member, member);
+                assert_eq!(r.property_bindings[id][0].property, "startinput");
+                assert_eq!(r.bindings[id][0].member, member);
+                assert_eq!(r.bindings[id][0].variable, 2);
+                assert_eq!(r.generator(0x680), id);
+                assert_eq!(r.property_bindings.len(), 1);
+            }
+        }
     }
 
     #[test]
