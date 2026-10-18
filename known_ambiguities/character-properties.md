@@ -68,7 +68,9 @@ bone switches.
   transition-commit read site (see below); other effect members remain unsupported.
   `BSCyclicBlendTransitionGenerator.fBlendParameter` properties now forward to
   its blender child (see below). Other generator members not listed above remain
-  retained but unevaluated. The inspected humanoid graphs did not show scalar
+  retained but unevaluated, except clip start/end crop bindings, which resolve
+  at activation (see [`clip-crop-properties.md`](clip-crop-properties.md) for
+  supported behavior and lifecycle limits). The inspected humanoid graphs did not show scalar
   character-property uses on the cyclic wrapper.
   Blender-child bone-weight properties are supported as described below. The static
   event-to-clip planning resolver still uses its existing variable-default and

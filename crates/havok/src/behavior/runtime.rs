@@ -615,7 +615,24 @@ impl Ctx<'_> {
                 } => {
                     let speed = self.bound(gi, g, "playbackSpeed").unwrap_or(*speed);
                     let full = self.clips.duration(animation).unwrap_or(0.0);
-                    let length = (full - crop_start - crop_end).max(0.0);
+                    // Crops are activation inputs, like startTime. Keep one resolved
+                    // length/offset for samples, triggers and synchronized timing.
+                    let resolved_start = self
+                        .bound(gi, g, "cropStartAmountLocalTime")
+                        .filter(|v| v.is_finite())
+                        .unwrap_or(*crop_start);
+                    let resolved_end = self
+                        .bound(gi, g, "cropEndAmountLocalTime")
+                        .filter(|v| v.is_finite())
+                        .unwrap_or(*crop_end);
+                    let resolved_length = (full - resolved_start - resolved_end).max(0.0);
+                    // Invalid bound inputs must not introduce an infinite cycle.
+                    // Preserve the authored crop policy when their sum overflows.
+                    let (offset, length) = if resolved_length.is_finite() {
+                        (resolved_start, resolved_length)
+                    } else {
+                        (*crop_start, (full - crop_start - crop_end).max(0.0))
+                    };
                     let start = self
                         .bound(gi, g, "startTime")
                         .unwrap_or(*start_time)
@@ -626,7 +643,7 @@ impl Ctx<'_> {
                         t: start,
                         prev: start,
                         length,
-                        offset: *crop_start,
+                        offset,
                         reverse: speed < 0.0,
                         additive,
                         looping: !matches!(mode, ClipMode::SinglePlay | ClipMode::UserControlled),
@@ -2407,6 +2424,192 @@ mod tests {
         );
         i.update(0.0, &mut durations);
         i
+    }
+
+    #[test]
+    fn clip_crop_properties_drive_forward_reverse_samples_and_end_triggers() {
+        for (start, end, speed, initial, halfway, final_time) in [
+            (0.5, 0.25, 1.0, 0.5, 1.0, 1.75),
+            (0.25, 0.5, -1.0, 1.5, 1.0, 0.25),
+        ] {
+            let mut g = cropped_property_graph(ClipMode::SinglePlay);
+            g.events = vec!["End".into()];
+            if let Generator::Clip { triggers, .. } = &mut g.generators[0] {
+                triggers.push(Trigger {
+                    time: if speed < 0.0 { 0.0 } else { 1.25 },
+                    from_end: false,
+                    event: 0,
+                    payload: None,
+                });
+            }
+            let mut i = property_instance(
+                g,
+                &[("cropstart", start), ("cropend", end), ("speed", speed)],
+            );
+            assert_eq!(time(&i), initial);
+            assert!(i.take_raised().is_empty());
+            i.update(0.5, &mut durations);
+            assert_eq!(time(&i), halfway);
+            assert_eq!(i.samples()[0].prev_time, initial);
+            assert!(i.take_raised().is_empty());
+            i.update(1.0, &mut durations);
+            assert_eq!(time(&i), final_time);
+            assert_eq!(i.take_raised()[0].event, "End");
+            assert!(!i.set_variable("CropStart", 0.0));
+            assert_eq!(i.variable("CropStart"), None);
+            assert_eq!(
+                i.shared
+                    .project
+                    .character
+                    .as_ref()
+                    .unwrap()
+                    .scalar_properties["cropstart"],
+                start
+            );
+        }
+    }
+
+    fn cropped_property_graph(mode: ClipMode) -> BehaviorGraph {
+        let mut c = clip("Loop", mode, vec![]);
+        if let Generator::Clip {
+            crop_start,
+            crop_end,
+            user_fraction,
+            ..
+        } = &mut c
+        {
+            *crop_start = 0.25;
+            *crop_end = 0.25;
+            *user_fraction = 0.5;
+        }
+        let mut g = BehaviorGraph::new("Cropped", Some(0), vec![c], vec![]);
+        g.property_bindings[0] = vec![
+            property("cropStartAmountLocalTime", "CROPSTART"),
+            property("cropEndAmountLocalTime", "CropEnd"),
+            property("playbackSpeed", "Speed"),
+        ];
+        g
+    }
+
+    #[test]
+    fn clip_crop_properties_keep_authored_fallback_and_existing_length_policy() {
+        for mut i in [
+            instance(cropped_property_graph(ClipMode::UserControlled)),
+            property_instance(cropped_property_graph(ClipMode::UserControlled), &[]),
+        ] {
+            assert_eq!(time(&i), 1.0); // Authored .25 offset + half of 1.5 s.
+            i.update(1.0, &mut durations);
+            assert_eq!(time(&i), 1.0);
+        }
+        let i = property_instance(
+            cropped_property_graph(ClipMode::UserControlled),
+            &[("cropstart", 0.5), ("cropend", 0.25)],
+        );
+        assert_eq!(i.samples()[0].time, 1.125);
+        let i = property_instance(
+            cropped_property_graph(ClipMode::UserControlled),
+            &[("cropstart", 1.5), ("cropend", 1.0)],
+        );
+        assert_eq!(time(&i), 1.5); // Overcropped clips retain a zero usable length.
+
+        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -f32::MAX] {
+            let mut i = property_instance(
+                cropped_property_graph(ClipMode::SinglePlay),
+                &[("cropstart", invalid), ("cropend", invalid)],
+            );
+            assert_eq!(time(&i), 0.25);
+            i.update(0.5, &mut durations);
+            assert_eq!(time(&i), 0.75);
+        }
+        let mut i = property_instance(
+            cropped_property_graph(ClipMode::SinglePlay),
+            &[("cropstart", -0.25), ("cropend", 0.0)],
+        );
+        assert_eq!(time(&i), -0.25); // Finite negative crops keep the authored policy.
+        i.update(0.5, &mut durations);
+        assert_eq!(time(&i), 0.25);
+    }
+
+    #[test]
+    fn clip_crop_variables_take_precedence_and_resample_on_activation() {
+        let cropped = cropped_property_graph(ClipMode::SinglePlay);
+        let mut g = BehaviorGraph::new(
+            "Cropped",
+            Some(0),
+            vec![
+                Generator::StateMachine {
+                    name: "Root".into(),
+                    start: 0,
+                    start_variable: None,
+                    start_mode: Default::default(),
+                    change_event: None,
+                    states: vec![
+                        state(0, 1, vec![Transition::new(0, 1, None)]),
+                        state(1, 2, vec![Transition::new(1, 0, None)]),
+                    ],
+                    wildcards: vec![],
+                },
+                cropped.generators[0].clone(),
+                clip("Idle", ClipMode::Looping, vec![]),
+            ],
+            vec!["Switch".into(), "Back".into()],
+        );
+        g.property_bindings[1] = cropped.property_bindings[0].clone();
+        let start = g.add_variable("Start", VarType::Real, 0.25);
+        let end = g.add_variable("End", VarType::Real, 0.25);
+        g.bindings[1] = vec![
+            Binding {
+                member: "cropStartAmountLocalTime".into(),
+                variable: start,
+            },
+            Binding {
+                member: "cropEndAmountLocalTime".into(),
+                variable: end,
+            },
+        ];
+        let mut i = property_instance(g, &[("cropstart", 0.5), ("cropend", 0.5)]);
+        assert_eq!(time(&i), 0.25);
+        assert!(i.set_variable("Start", 0.75));
+        assert!(i.set_variable("End", 0.75));
+        i.update(0.5, &mut durations);
+        assert_eq!(time(&i), 0.75); // Active clips keep the activation's crop pair.
+        i.handle_event("Switch", &mut durations);
+        i.handle_event("Back", &mut durations);
+        assert_eq!(time(&i), 0.75);
+        i.update(1.0, &mut durations);
+        assert_eq!(time(&i), 1.25); // The new activation has only .5 s to play.
+    }
+
+    #[test]
+    fn clip_crop_properties_supply_synchronized_cycle_lengths() {
+        for (start, end, expected_first, expected_second) in
+            [(0.5, 0.5, 0.25, 0.75), (0.25, 0.25, 0.2, 0.55)]
+        {
+            let cropped = cropped_property_graph(ClipMode::Looping);
+            let mut blend = masked_blend(
+                "Sync",
+                vec![masked_child(1, None, None), masked_child(2, None, None)],
+            );
+            if let Generator::Blender { flags, .. } = &mut blend {
+                *flags = BLEND_SYNC;
+            }
+            let mut g = BehaviorGraph::new(
+                "CroppedSync",
+                Some(0),
+                vec![
+                    blend,
+                    clip("Enter", ClipMode::Looping, vec![]),
+                    cropped.generators[0].clone(),
+                ],
+                vec![],
+            );
+            g.property_bindings[2] = cropped.property_bindings[0].clone();
+            let mut i = property_instance(g, &[("cropstart", start), ("cropend", end)]);
+            i.update(0.25, &mut durations);
+            let samples = i.samples();
+            assert!((samples[0].time - expected_first).abs() < 1e-6);
+            assert!((samples[1].time - expected_second).abs() < 1e-6);
+        }
     }
 
     #[test]
