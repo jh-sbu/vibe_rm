@@ -59,9 +59,18 @@ pub struct Whereabouts {
     /// The package whose start (and end) each actor's home doors last
     /// followed: a loaded actor's as its AI picks it, else the refresh's.
     pub lock_package: HashMap<FormId, Option<FormId>>,
+    /// The half hour of game time the last refresh was due for.
+    slot: Option<i64>,
 }
 
 impl Whereabouts {
+    /// Whether game time (in hours) has entered a new half hour since the last
+    /// call: packages start on the hour or half hour, so the schedule can change.
+    fn crossed_slot(&mut self, hours: f64) -> bool {
+        let slot = (hours * 2.0).floor() as i64;
+        self.slot.replace(slot).is_some_and(|s| s != slot)
+    }
+
     /// A created actor: one of the persistent actors from now on, at `place`
     /// until the next refresh says otherwise.
     pub fn add_actor(&mut self, r: FormId, place: Place, pos: Vec3) {
@@ -428,6 +437,11 @@ impl Engine {
     /// Move loaded actors whose schedule changed: walk them out through doors, bring others in.
     pub(crate) fn update_whereabouts(&mut self, dt: f32) {
         self.whereabouts.next_refresh -= dt;
+        // Packages start on the hour or half hour: look then rather than up to
+        // a refresh later (unloaded actors' doors lock and unlock with them).
+        if self.whereabouts.crossed_slot(self.game_hours_total()) {
+            self.whereabouts.next_refresh = 0.0;
+        }
         if self.whereabouts.next_refresh > 0.0 || !self.ai_enabled {
             return;
         }
@@ -689,5 +703,23 @@ impl Engine {
         }
         self.put_torch_away_for_now(&a);
         log::debug!("{r} despawned from {key:?}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refresh_comes_due_each_half_hour() {
+        let mut w = Whereabouts::default();
+        // The first reading only sets the clock.
+        assert!(!w.crossed_slot(7.2));
+        assert!(!w.crossed_slot(7.45));
+        assert!(w.crossed_slot(7.5));
+        assert!(!w.crossed_slot(7.9));
+        assert!(w.crossed_slot(8.0));
+        // Midnight, and a day on.
+        assert!(w.crossed_slot(24.0 * 3.0 + 0.1));
     }
 }

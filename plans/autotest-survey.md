@@ -269,6 +269,10 @@ Last in a run, or a run of their own:
 - Harvest: produce, seasons, growing back after 240 hours (`harvest.md`).
 - NPCs and locked load doors, packages locking doors (`locks.md`).
 - Leaving through a locked door from inside (`locks.md`).
+- When an unloaded sleeper's home locks: `Utility.Wait` / `GetCurrentGameTime`
+  polling `IsLocked` on a shop door across its closing hour from another
+  worldspace, to see whether it flips at the package's start or later
+  (`locks.md`).
 - Owners set by script for stealing (`sleep-wait.md`).
 
 ## Manual only (a test mod the user plays)
