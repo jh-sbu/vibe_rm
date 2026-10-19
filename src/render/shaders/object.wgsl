@@ -80,6 +80,7 @@ struct Material {
     tint: vec4<f32>,        // skin / hair tint
     billboard: vec4<f32>,   // a billboard's model-space origin, mode + 1 (0: none)
     env: vec4<f32>,         // environment map scale, has cube map, has environment mask
+    decal: vec4<f32>,       // decal: parallax scale, passes, hard edge (alpha test without blending)
 };
 
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
@@ -499,6 +500,9 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
 // surface facing back along the projection (+Y). Surfaces turned away from
 // the projection (what passes through the box) fade out.
 
+// How far a parallax scale of 1 pushes the texture, as a fraction of it.
+const PARALLAX_DEPTH = 0.04;
+
 @group(2) @binding(0) var t_depth: texture_depth_2d;
 
 struct DecalIn {
@@ -570,30 +574,84 @@ fn fs_decal(in: DecalOut) -> @location(0) vec4<f32> {
     }
     let axis = normalize(in.m1.xyz);
     let facing = dot(n, -axis);
-    let uv = vec2<f32>(local.x + 0.5, 0.5 - local.z) * in.uv.zw + in.uv.xy;
+    var uv = vec2<f32>(local.x + 0.5, 0.5 - local.z) * in.uv.zw + in.uv.xy;
     // Mips from the box's own rate of change: the depth's edges would jump.
     let duv = vec2<f32>(1.0) / vec2<f32>(
         length(in.m0.xyz),
         length(in.m2.xyz),
     ) * in.uv.zw * length(world - frame.cam_pos.xyz) * 2.0 / frame.screen.y;
-    let base = textureSampleGrad(t_diffuse, s_main, uv, vec2<f32>(duv.x, 0.0), vec2<f32>(0.0, duv.y));
-    var alpha = base.a * in.tint.a * mat.params.x;
-    alpha *= smoothstep(0.15, 0.45, facing);
-    // Fading towards the box's near and far ends.
-    alpha *= 1.0 - smoothstep(0.35, 0.5, abs(local.y));
+    let ddx = vec2<f32>(duv.x, 0.0);
+    let ddy = vec2<f32>(0.0, duv.y);
+
+    // The texture's frame on the surface: u along the box's X, and the
+    // image's top along its Z, both flattened onto the surface.
+    let across = normalize(in.m0.xyz);
+    let up_dir = normalize(in.m2.xyz);
+    let tan_u = normalize(across - n * dot(n, across));
+    let tan_v = normalize(up_dir - n * dot(n, up_dir));
+
+    // Parallax (the height map is in the environment mask slot): the ray
+    // from the eye walks down through the height field in `passes` steps.
+    let passes = u32(mat.decal.y);
+    if (mat.decal.x > 0.0 && passes > 0u && mat.env.z > 0.5) {
+        let vt = vec3<f32>(dot(view_dir, tan_u), dot(view_dir, tan_v), max(dot(view_dir, n), 0.05));
+        let step_uv = vec2<f32>(vt.x, -vt.y) / vt.z * mat.decal.x * PARALLAX_DEPTH * in.uv.zw
+            / f32(passes);
+        var layer = 1.0;
+        var cur = uv;
+        var prev = uv;
+        var prev_gap = 0.0;
+        var gap = layer - textureSampleGrad(t_env_mask, s_main, cur, ddx, ddy).r;
+        for (var i = 0u; i < min(passes, 30u) && gap > 0.0; i++) {
+            prev = cur;
+            prev_gap = gap;
+            cur -= step_uv;
+            layer -= 1.0 / f32(passes);
+            gap = layer - textureSampleGrad(t_env_mask, s_main, cur, ddx, ddy).r;
+        }
+        // Between the last two samples, where the ray crossed the surface.
+        let t = prev_gap / max(prev_gap - gap, 0.0001);
+        uv = mix(prev, cur, clamp(t, 0.0, 1.0));
+        uv = clamp(uv, in.uv.xy, in.uv.xy + in.uv.zw);
+    }
+
+    let base = textureSampleGrad(t_diffuse, s_main, uv, ddx, ddy);
+    let fade = smoothstep(0.15, 0.45, facing)
+        // Fading towards the box's near and far ends.
+        * (1.0 - smoothstep(0.35, 0.5, abs(local.y)));
+    let opacity = in.tint.a * mat.params.x * fade;
+    var alpha = base.a * opacity;
     if (mat.params.y >= 0.0 && alpha < mat.params.y) {
         discard;
+    }
+    if (mat.decal.z > 0.5) {
+        alpha = opacity;
     }
     if (alpha <= 0.004) {
         discard;
     }
     let albedo = base.rgb * in.tint.rgb;
 
+    // The normal map bends the surface's normal in its frame; its alpha is
+    // the specular mask.
+    var spec_mask = 0.0;
+    if (mat.params.z > 0.5) {
+        let nt = textureSampleGrad(t_normal, s_main, uv, ddx, ddy);
+        let tn = nt.xyz * 2.0 - 1.0;
+        n = normalize(tn.x * tan_u + tn.y * tan_v + tn.z * n);
+        spec_mask = nt.a;
+    }
+    let gloss = max(mat.specular.w, 1.0);
+    var specular = vec3<f32>(0.0);
+
     var diffuse = ambient(n);
     let l = normalize(frame.sun_dir.xyz);
     let ndl = dot(n, l);
     if (ndl > 0.0) {
-        diffuse += frame.sun_color.rgb * ndl * sun_shadow(world, n);
+        let sun = sun_shadow(world, n);
+        diffuse += frame.sun_color.rgb * ndl * sun;
+        let h = normalize(l + view_dir);
+        specular += frame.sun_color.rgb * pow(max(dot(n, h), 0.0), gloss) * spec_mask * sun;
     }
     for (var i = 0u; i < 8u; i++) {
         let li = light_index(in.light_idx, i);
@@ -609,11 +667,17 @@ fn fs_decal(in: DecalOut) -> @location(0) vec4<f32> {
         }
         let x = dist / r;
         let att = clamp(1.0 - x * x, 0.0, 1.0);
-        diffuse += light.color.rgb * max(dot(n, d / max(dist, 0.001)), 0.0) * att;
+        let ld = d / max(dist, 0.001);
+        let nl = max(dot(n, ld), 0.0);
+        diffuse += light.color.rgb * nl * att;
+        if (nl > 0.0) {
+            let h = normalize(ld + view_dir);
+            specular += light.color.rgb * pow(max(dot(n, h), 0.0), gloss) * spec_mask * att;
+        }
     }
-    var color = albedo * diffuse;
+    var color = albedo * diffuse + specular * mat.specular.rgb;
     if (mat.params.w > 0.5 && mat.params.w < 1.5) {
-        let glow = textureSampleGrad(t_glow, s_main, uv, vec2<f32>(duv.x, 0.0), vec2<f32>(0.0, duv.y));
+        let glow = textureSampleGrad(t_glow, s_main, uv, ddx, ddy);
         color += glow.rgb * mat.emissive.rgb * mat.emissive.w;
     }
     return vec4<f32>(apply_fog(color, world), alpha);

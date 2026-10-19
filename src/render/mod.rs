@@ -74,6 +74,8 @@ struct MaterialUniform {
     billboard: [f32; 4],
     /// Environment map scale, has a cube map, has an environment mask.
     env: [f32; 4],
+    /// A decal's parallax scale and passes, and whether it's a hard-edged cutout.
+    decal: [f32; 4],
 }
 
 #[repr(C)]
@@ -1556,6 +1558,7 @@ impl Renderer {
                 has_env_mask as u32 as f32,
                 0.0,
             ],
+            decal: [m.parallax.x, m.parallax.y, m.hard_edge as u32 as f32, 0.0],
         };
         let ubuf = self
             .device

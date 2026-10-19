@@ -995,7 +995,8 @@ game each piece unlocks.
 - Projected decals: references to texture sets with decal data (`DODT`: blood sprays,
   burn marks, giants' paint, puddles) cast from the reference along its +Y onto the cell's
   collision and drawn as boxes over the opaque scene's depth, lit like the surface they
-  land on (sizes between the data's minimum and maximum, 2x2 subtextures, enable state).
+  land on (sizes between the data's minimum and maximum, 2x2 subtextures, enable state;
+  normal maps, shininess specular, parallax with a height map, hard-edged cutouts).
   `VRM_NO_DECALS=1` turns them off; vrm-tool `decals` lists them. Open questions:
   `known_ambiguities/decals.md`
 - NIF float / colour `CONST_KEY` interpolation retains its source type and
@@ -1346,7 +1347,7 @@ game each piece unlocks.
    clouds (see `known_ambiguities/weather.md`); weather's volumetric lighting, sun
    glare and damage, rain and snow kept off under roofs, lightning bolts, wind
    moving trees, grass and clouds; grass's vertex lighting flag and bending
-   round actors; decals' normal maps, specular, parallax and colour alpha;
+   round actors;
    `ENVMAP_LIGHT_FADE` (`sf2` bit 15); unscripted trigger volumes (acoustic
    spaces, room bounds and portals); effect models' skinned meshes,
    `BSProceduralLightningController` and actor / effect graph sequence-owned
