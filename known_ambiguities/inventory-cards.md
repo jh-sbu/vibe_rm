@@ -99,3 +99,18 @@ exact number compared or the tie rule, so:
   of its class is marked.
 - **Scope.** The player's rows only (worn items included), in every item
   menu; the other side's rows are never marked.
+
+## Ingredient cards' learned effects
+
+The card's contract is in `ItemCard.swf` (`itemEffect0..3` set to the effect's
+name when known, else `numItemEffects` slots read "$UNKNOWN"). Eating an
+ingredient learns effects by the entry point `kModInitialIngredientEffectsLearned`
+(72; Experimenter's ranks set it to 2, 3 and 4; the base is 1).
+
+- **Unconfirmed: the label.** The effect's magic effect name alone (for
+  example "Restore Health"), without magnitude or duration. Whether the card
+  also shows those once learned is not in the SWF's inputs, which carry text only.
+- **Unconfirmed: other ways to learn.** Alchemy teaching shared effects is
+  unbuilt (crafting). Whether anything else teaches effects (some quest
+  rewards, books) was not found in the data.
+- Learned effects are kept in memory with the world state, not yet in saves.

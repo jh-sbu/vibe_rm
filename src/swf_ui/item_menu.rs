@@ -1016,8 +1016,25 @@ fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>, poisoned: bool
             }
         }
         ItemKind::Ingredient => {
-            // Effects the player hasn't learned show as unknown.
-            let n = engine.magic_item(item).map_or(0, |m| m.effects.len());
+            // Effects the player hasn't learned show as unknown: the card
+            // labels `itemEffect0..3` it has a name for, the rest of
+            // `numItemEffects` "$UNKNOWN".
+            let effects = engine
+                .magic_item(item)
+                .map(|m| m.effects.clone())
+                .unwrap_or_default();
+            let n = effects.len();
+            let names: Vec<Option<String>> = effects
+                .iter()
+                .enumerate()
+                .map(|(i, e)| {
+                    engine
+                        .effect_learned(item, i)
+                        .then(|| engine.magic_effect(e.effect).map(|m| m.name.clone()))
+                        .flatten()
+                })
+                .collect();
+            f.extend(ingredient_labels(&names));
             f.push(("numItemEffects", num(n as f32)));
             card::INGREDIENT
         }
@@ -1035,6 +1052,16 @@ fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>, poisoned: bool
     };
     f.push(("type", Value::Number(kind)));
     object(f)
+}
+
+/// An ingredient card's `itemEffect0..3` for the effects the player has
+/// learned (`None`: not yet); the card leaves the others "$UNKNOWN".
+fn ingredient_labels(names: &[Option<String>]) -> Vec<(&'static str, Value)> {
+    ["itemEffect0", "itemEffect1", "itemEffect2", "itemEffect3"]
+        .into_iter()
+        .zip(names)
+        .filter_map(|(key, name)| name.as_ref().map(|n| (key, text(n))))
+        .collect()
 }
 
 fn common_card(row: &ListedItem, poisoned: bool) -> Vec<(&'static str, Value)> {
@@ -1256,6 +1283,18 @@ mod tests {
             inv.put_soul(GEM, soul);
         }
         inv
+    }
+
+    #[test]
+    fn ingredient_card_labels_only_learned_effects() {
+        let names = [
+            Some("Restore Health".to_string()),
+            None,
+            Some("Frenzy".into()),
+        ];
+        let labels = ingredient_labels(&names);
+        let keys: Vec<_> = labels.iter().map(|l| l.0).collect();
+        assert_eq!(keys, ["itemEffect0", "itemEffect2"]);
     }
 
     #[test]

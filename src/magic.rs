@@ -1582,8 +1582,33 @@ impl Engine {
         {
             self.play_sound(sound, at);
         }
+        if actor == crate::engine::PLAYER_REF {
+            self.learn_ingredient_effects(item);
+        }
         self.apply_item(item, Some(actor), actor);
         Ok(())
+    }
+
+    /// Eating an ingredient teaches its first effect, or as many as the
+    /// player's perks reveal (Experimenter: two, three, all four).
+    fn learn_ingredient_effects(&mut self, item: FormId) {
+        if self.lo.tag_of(item).map(|t| t.0) != Some(*b"INGR") {
+            return;
+        }
+        let n = self.perk_entry_point(
+            crate::perks::ep::MOD_INITIAL_INGREDIENT_EFFECTS_LEARNED,
+            crate::engine::PLAYER_REF,
+            &[Some(item)],
+            1.0,
+        );
+        for i in 0..n.max(0.0) as usize {
+            self.world_state.learned_effects.insert((item, i));
+        }
+    }
+
+    /// Whether the player knows an ingredient's effect (its index in the list).
+    pub fn effect_learned(&self, item: FormId, index: usize) -> bool {
+        self.world_state.learned_effects.contains(&(item, index))
     }
 
     /// Whether an item is a poison (`IsPoison`).
