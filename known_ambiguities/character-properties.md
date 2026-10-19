@@ -3,8 +3,8 @@
 Implemented in `crates/havok/src/behavior/{mod.rs,runtime.rs}` and
 `src/world/behavior.rs`: read-only scalar inputs to supported modifiers and
 generator members already handled by the runtime, scalar blender-child weights,
-transition-effect duration, and bone-weight array inputs on blender children and
-bone switches.
+transition-effect duration and self-transition mode, and bone-weight array inputs
+on blender children and bone switches.
 
 ## Public and asset evidence
 
@@ -72,8 +72,10 @@ bone switches.
 - Shared runtime caching includes the character-file identity. DefaultMale and
   DefaultFemale can use the same root graph while retaining their own property
   values and character driver settings.
-- Transition effects resolve the scalar `duration` property at the existing
-  transition-commit read site (see below); other effect members remain unsupported.
+- Transition effects resolve scalar `duration` and `selfTransitionMode` inputs at
+  transition commit (duration below; mode in
+  [`transition-self-mode-properties.md`](transition-self-mode-properties.md));
+  other effect members remain unsupported.
   `BSCyclicBlendTransitionGenerator.fBlendParameter` properties now forward to
   its blender child (see below). Other generator members not listed above remain
   retained but unevaluated, except clip start/end crop bindings, which resolve
@@ -197,7 +199,8 @@ waiting for their initiate interval, and keeps that duration while the blend
 plays. Its existing cross-fade curve, uninterruptibility and non-positive-duration
 handling are unchanged. Exact original-engine sampling and update timing,
 missing/duplicate-binding policy, and invalid or non-finite duration handling
-remain unverified. Other transition-effect members, runtime property overrides,
+remain unverified. Beyond duration and the separately documented self-transition
+mode, other transition-effect members, runtime property overrides,
 and the static event-to-clip resolver's property evaluation remain unsupported.
 
 Synthetic tests cover parser retention of a graph-local property name alongside

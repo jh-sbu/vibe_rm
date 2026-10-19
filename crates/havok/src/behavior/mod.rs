@@ -64,6 +64,10 @@ pub struct Transition {
     /// What entering the state it is already in does (the effect's
     /// `selfTransitionMode`).
     pub self_mode: SelfTransitionMode,
+    /// Variable bound to the effect's self-transition mode, if any.
+    pub self_mode_variable: Option<usize>,
+    /// Read-only character property bound to the effect's self-transition mode.
+    pub self_mode_property: Option<String>,
     /// Where events go while the cross-fade plays (the effect's `eventMode`).
     pub event_mode: EventMode,
     /// Variable bound to the blend's duration, if any.
@@ -774,6 +778,15 @@ impl<'a> Reader<'a> {
                     self_mode: effect.map_or_else(Default::default, |e| {
                         SelfTransitionMode::from_byte(self.p.u8(e + 0x48) as i8)
                     }),
+                    self_mode_variable: effect
+                        .and_then(|e| {
+                            self.bindings_of(e)
+                                .into_iter()
+                                .find(|b| b.member == "selfTransitionMode")
+                        })
+                        .map(|b| b.variable),
+                    self_mode_property: effect
+                        .and_then(|e| self.character_property(e, "selfTransitionMode")),
                     event_mode: effect.map_or_else(Default::default, |e| {
                         EventMode::from_byte(self.p.u8(e + 0x49) as i8)
                     }),
@@ -818,9 +831,11 @@ impl<'a> Reader<'a> {
             .filter(|&b| self.p.u8(b + 0x21) == 0)
             .filter_map(|b| {
                 let member = self.p.string(b)?;
-                // Flags currently support whole-member inputs only. Do not
-                // replace the entire bitfield with a single-bit binding.
-                if member == "flags" && self.p.u8(b + 0x20) != u8::MAX {
+                // These inputs support whole-member bindings only. Do not
+                // replace the entire bitfield / enum with a single bit.
+                if matches!(member.as_str(), "flags" | "selfTransitionMode")
+                    && self.p.u8(b + 0x20) != u8::MAX
+                {
                     return None;
                 }
                 Some(Binding {
@@ -840,6 +855,7 @@ impl<'a> Reader<'a> {
         (0..n as u32)
             .map(|i| data + i * 0x28)
             .filter(|&b| self.p.u8(b + 0x21) == 1 && self.p.string(b).is_some_and(|m| m == member))
+            .filter(|&b| member != "selfTransitionMode" || self.p.u8(b + 0x20) == u8::MAX)
             .find_map(|b| {
                 self.character_properties
                     .get(usize::try_from(self.p.i32(b + 0x1C)).ok()?)
@@ -859,7 +875,9 @@ impl<'a> Reader<'a> {
             .filter(|&b| self.p.u8(b + 0x21) == 1)
             .filter_map(|b| {
                 let member = self.p.string(b)?;
-                if member == "flags" && self.p.u8(b + 0x20) != u8::MAX {
+                if matches!(member.as_str(), "flags" | "selfTransitionMode")
+                    && self.p.u8(b + 0x20) != u8::MAX
+                {
                     return None;
                 }
                 Some(PropertyBinding {
@@ -2020,6 +2038,44 @@ mod character_property_tests {
         assert_eq!(t.blend, Some(0.75));
         assert_eq!(t.blend_property.as_deref(), Some("BlendDuration"));
         assert_eq!(t.blend_variable, Some(2));
+    }
+
+    #[test]
+    fn transition_effects_retain_whole_self_mode_bindings() {
+        for bit in [255, 0] {
+            let mut p = fixture();
+            for (at, binding) in [(0x480, 0x380), (0x4E0, 0x3F8)] {
+                p.data[at..at + 0x20].fill(0);
+                p.data[at..at + 18].copy_from_slice(b"selfTransitionMode");
+                p.data[binding + 0x20] = bit;
+            }
+            p.data[0x2C8] = 2; // Authored RESET at effect + 0x48.
+            let r = Reader {
+                p: &p,
+                classes: [(0x280, "hkbBlendingTransitionEffect")].into(),
+                ids: Default::default(),
+                generators: vec![],
+                bindings: vec![],
+                property_bindings: vec![],
+                mod_ids: Default::default(),
+                modifiers: vec![],
+                modifier_bindings: vec![],
+                modifier_property_bindings: vec![],
+                character_properties: ["Other", "Unused", "Third", "Fourth", "SelfMode"]
+                    .map(String::from)
+                    .to_vec(),
+            };
+            let transitions = r.transitions(Some(0x600));
+            let t = &transitions[0];
+            assert_eq!(t.self_mode, SelfTransitionMode::Reset);
+            assert_eq!(t.self_mode_variable, (bit == 255).then_some(2));
+            assert_eq!(
+                t.self_mode_property.as_deref(),
+                (bit == 255).then_some("SelfMode")
+            );
+            assert!(t.blend_variable.is_none());
+            assert!(t.blend_property.is_none());
+        }
     }
 }
 
