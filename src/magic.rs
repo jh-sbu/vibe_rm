@@ -902,6 +902,9 @@ impl Engine {
                 }
             }
             archetype::PARALYSIS => self.hold(i, &mgef, [1.0, 0.0]),
+            archetype::TELEKINESIS if x.target == PLAYER_REF && x.caster == Some(PLAYER_REF) => {
+                self.telekinesis_started(id, x.magnitude);
+            }
             archetype::CURE_DISEASE => self.cure(x.target, |m| m.spell_type == spell_type::DISEASE),
             archetype::CURE_POISON => self.cure(x.target, |m| m.spell_type == spell_type::POISON),
             archetype::CURE_PARALYSIS => self.dispel(x.target, |e| {
@@ -1135,6 +1138,9 @@ impl Engine {
         }
         if archetype::target_value(mgef.archetype).is_some() {
             self.target_value_stopped(x.target, mgef.archetype);
+        }
+        if mgef.archetype == archetype::TELEKINESIS {
+            self.telekinesis_stopped(id);
         }
         if mgef.archetype == archetype::BOUND_WEAPON && !mgef.related.is_null() {
             let _ = self.equip_item(x.target, mgef.related, false);

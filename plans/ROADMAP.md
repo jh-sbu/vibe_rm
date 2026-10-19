@@ -495,6 +495,11 @@ game each piece unlocks.
   animated objects) runs at its magnitude's share of real time (0.3, 0.2,
   0.1), the slowest winning; the player, magic timers and scripts stay in
   real time: `known_ambiguities/magic.md`
+- Telekinesis: the player's held Telekinesis spell grabs what the crosshair is
+  on up to the settings' distance (`fMagicTelekinesisBaseDistance`...) and
+  carries it as Activate's hold does, dropping it when the spell is let go;
+  holding something already shows `sMagicTelekinesisNoRecast`:
+  `known_ambiguities/telekinesis.md`
 - Illusion's hold on fighting: calm, fear (and turn undead), frenzy and rally
   effects hold the target's aggression or confidence at their own value
   (calm -1, fear 0, frenzy 3, rally foolhardy) for as long as they last,
@@ -1284,7 +1289,7 @@ game each piece unlocks.
      See `known_ambiguities/water.md` and
      `known_ambiguities/triggers.md` (lava is scripted triggers, fires
      are placed hazards: see Done)
-   - Magic, more: detect life, telekinesis; dropped soul gems'
+   - Magic, more: detect life, throwing with telekinesis; dropped soul gems'
      per-item souls (public reports describe emptying: see
      `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
      taper, area, addictions, potion and food flags; image-space modifiers

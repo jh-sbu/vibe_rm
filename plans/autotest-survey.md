@@ -213,6 +213,15 @@ Left out so far:
   (`PlaceAtMe` a book, `SetMotionType` dynamic) timed against it falling
   with and without the effect; an NPC walking a `TravelToRadius` leg timed
   likewise; the player's walk can't be scripted unattended.
+- **Telekinesis** (`telekinesis.md`): objects of increasing weight
+  (`PlaceAtMe` an iron ingot, a sword, an anvil-weight furniture piece, a
+  barrel) in the player's line of sight at 500 / 1500 / 2500 units
+  (`MoveTo` with offsets, the player held still), `Spell.Cast` of
+  `Telekinesis` on the player with `Game.GetPlayerGrabbedRef` after a
+  `Utility.Wait` (does a script cast grab; the reach; the heaviest lifted),
+  then the same with an object already grabbed (the no-recast message
+  can't be read, the held ref can). Crosshair aim may need the player
+  turned with `SetAngle`.
 - **Leveled spell lists** (`npc-templates.md`): test NPCs placed by
   `PlaceAtMe`, each naming a test `LVSP` in its spell list: entries at
   levels 1, 10 and 30 (no "all levels") on a level-30 NPC with the player
