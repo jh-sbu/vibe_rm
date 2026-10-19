@@ -576,7 +576,11 @@ impl Engine {
         let body = container && self.is_body(source);
         let owner = self.source_owner(source, container);
         let how = match () {
-            _ if owner.is_some_and(|o| self.is_stealing(item, o)) => 1,
+            _ if owner
+                .is_some_and(|o| self.is_stealing_ranked(item, o, self.ref_owner_rank(source))) =>
+            {
+                1
+            }
             _ if body => 6,
             _ if container => 5,
             _ => 4,
@@ -639,7 +643,7 @@ impl Engine {
         container: bool,
     ) -> Option<FormId> {
         self.source_owner(source, container)
-            .filter(|&o| self.is_stealing(item, o))
+            .filter(|&o| self.is_stealing_ranked(item, o, self.ref_owner_rank(source)))
     }
 
     /// An actor greeting another (`AHEL`: R1 who says hello, R2 to whom, L1

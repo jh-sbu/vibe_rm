@@ -67,6 +67,16 @@ and location pages, CK wiki descriptions) and the game's data files.
 
 ## Gaps
 
+0. **`XRNK`, the faction rank an owner asks.** Unconfirmed: an owned
+   reference's (or its cell's) `XRNK` is read as the lowest rank in the
+   owning faction that may use its things freely (xEdit names it the owner's
+   faction rank; no public source says what the game does with it). A
+   player (or, for an animated door's lock, an actor) in the faction below
+   that rank is treated as outside it: taking is stealing, picking a lock is
+   a crime, beds and cells are someone else's. -1 or no field asks nothing.
+   An owner a script set (`SetFactionOwner`) carries no rank. Ranks come
+   from the records' faction lists only.
+
 1. **Lockpicking.** How the turn falls off across the partial zone, the turning
    speed, and whether strain carries over between attempts with one pick are
    guesses. Leveled locks use their authored level. Locksmith's "Set

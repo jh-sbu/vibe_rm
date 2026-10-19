@@ -158,8 +158,6 @@ own or their templates'); a member is dead when their placed reference is.
 ## Open questions
 
 - Ownership: a faction member that is a generic NPC with several references
-  counts as dead only by its first. The required faction rank on owned
-  references (`XRNK`) is ignored, so a player in the owning faction may take
-  everything.
+  counts as dead only by its first.
 - Which of the player or the event's actors the node and quest event
   conditions run on (see the choices above).

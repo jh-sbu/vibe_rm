@@ -184,7 +184,13 @@ impl Engine {
     /// 500); no such member, no allowance. What the player or one of their
     /// factions owns never is.
     pub(crate) fn is_stealing(&self, item: FormId, owner: FormId) -> bool {
-        if owner == FormId(0x7) || self.player_factions().contains(&owner) {
+        self.is_stealing_ranked(item, owner, -1)
+    }
+
+    /// `is_stealing` for things that need `rank` in the owning faction
+    /// (`XRNK`; -1 none): a player in it below that rank is as good as outside.
+    pub(crate) fn is_stealing_ranked(&self, item: FormId, owner: FormId, rank: i32) -> bool {
+        if owner == FormId(0x7) || self.player_in_faction(owner, rank) {
             return false;
         }
         let Some(rec) = self.lo.get(owner) else {
@@ -216,11 +222,43 @@ impl Engine {
         }
     }
 
+    /// The rank in the owning faction a reference's things need (`XRNK`, on
+    /// the record holding the owner; -1 none, and for an owner a script set).
+    pub(crate) fn ref_owner_rank(&self, r: FormId) -> i32 {
+        if self.scripts.owners.contains_key(&r) {
+            return -1;
+        }
+        crate::ai::furniture::owner_and_rank_of(&self.lo, r).map_or(-1, |(_, rank)| rank)
+    }
+
+    /// Whether the player is in a faction at `rank` or better (-1: at all).
+    /// The player faction takes any rank.
+    pub(crate) fn player_in_faction(&self, faction: FormId, rank: i32) -> bool {
+        faction == FormId(0xDB1)
+            || self
+                .npc_factions(FormId(0x7))
+                .into_iter()
+                .any(|(f, r)| f == faction && i32::from(r) >= rank)
+    }
+
+    /// Whether what a reference's owner owns isn't the player's to take
+    /// freely (`owned_by_other`, with the rank the reference asks).
+    pub(crate) fn ref_owned_by_other(&self, r: FormId) -> bool {
+        let rank = self.ref_owner_rank(r);
+        self.ref_owner(r)
+            .is_some_and(|o| self.owned_by_other_ranked(o, rank))
+    }
+
     /// Whether what `owner` owns isn't the player's to take freely: another
     /// person's, or a faction's that can own things and the player isn't in
     /// (whatever its members' favor allows; see `is_stealing`).
     pub(crate) fn owned_by_other(&self, owner: FormId) -> bool {
-        if owner == FormId(0x7) || self.player_factions().contains(&owner) {
+        self.owned_by_other_ranked(owner, -1)
+    }
+
+    /// `owned_by_other` for things that need `rank` in the owning faction.
+    pub(crate) fn owned_by_other_ranked(&self, owner: FormId, rank: i32) -> bool {
+        if owner == FormId(0x7) || self.player_in_faction(owner, rank) {
             return false;
         }
         match self.lo.get(owner) {
