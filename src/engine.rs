@@ -1094,6 +1094,36 @@ impl Engine {
     /// mapped, rigid models (weapons, shields) hung from the bone they name and
     /// which item each of those comes from.
     #[allow(clippy::type_complexity)]
+    /// The graph a worn model poses the actor's own skeleton with
+    /// (`BSBehaviorGraphExtraData` "controls base skeleton": a tail), if the
+    /// skeleton has the bones it names.
+    fn wearer_graph(
+        &mut self,
+        d: &crate::world::actor::ActorDesc,
+        skel: &crate::world::skeleton::Skeleton,
+    ) -> Option<crate::world::behavior::GraphAnim> {
+        let path = d.models.iter().find_map(|(m, _)| {
+            self.models
+                .anim(m)?
+                .graph
+                .as_ref()
+                .filter(|g| g.2)
+                .map(|g| g.0.clone())
+        })?;
+        let project = self.graphs.project(&self.vfs, &path)?;
+        let character = project.shared.project.character.as_ref()?;
+        let rig = character.rig.to_ascii_lowercase().replace('\\', "/");
+        let rig = format!("{}/{}.nif", project.dir, rig.strip_suffix(".hkx")?);
+        log::debug!("{}: wearer graph {path}", d.ref_id);
+        Some(crate::world::behavior::GraphAnim::new(
+            project,
+            &rig,
+            d.female,
+            skel,
+            self.rng ^ d.ref_id.0 as u64 ^ 0x7a11,
+        ))
+    }
+
     pub(crate) fn actor_meshes(
         &mut self,
         d: &crate::world::actor::ActorDesc,
@@ -1319,6 +1349,9 @@ impl Engine {
                     self.rng ^ d.ref_id.0 as u64,
                 );
                 g.label = d.ref_id.to_string();
+                if let Some(tail) = self.wearer_graph(d, &skel) {
+                    g.attach_aux(tail);
+                }
                 if humanoid {
                     for (var, value) in
                         [("IsNPC", 1.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)]
