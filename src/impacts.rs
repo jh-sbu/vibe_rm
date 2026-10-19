@@ -8,6 +8,7 @@
 //! impact's duration; spells' meshes), its nodes' own controllers and its
 //! shaders' on a clock of its own, and leaves its decal on the surface it
 //! lands on: for a wound, the blood thrown onto the floor or wall behind.
+//! Some leave a hazard (`NAM2`, see `hazards.rs`) where they land.
 //! See `known_ambiguities/impacts.md`.
 
 use std::collections::{HashMap, VecDeque};
@@ -166,6 +167,8 @@ pub struct Impact {
     pub decal: Option<DecalData>,
     /// Both impact sounds (`SNAM`, `NAM1`), in slot order.
     pub sounds: [Option<FormId>; 2],
+    /// The hazard it leaves where it lands (`NAM2`).
+    pub hazard: Option<FormId>,
 }
 
 impl Impact {
@@ -205,6 +208,7 @@ impl Impact {
             placement_radius: f(12),
             decal,
             sounds: crate::world::footsteps::impact_sounds(&rec),
+            hazard: form(b"NAM2"),
         })
     }
 }
@@ -279,6 +283,8 @@ impl Effect {
 pub struct ImpactState {
     loaded: HashMap<FormId, Option<Arc<Impact>>>,
     effects: Vec<Effect>,
+    /// Hazards impacts left (`NAM2`), while they last.
+    pub(crate) hazards: Vec<crate::hazards::Hazard>,
     /// The cells holding the runtime decals, oldest first.
     decals: VecDeque<CellKey>,
     /// Decals on actors' bodies, by actor, oldest first.
@@ -526,6 +532,9 @@ impl Engine {
         }
         if std::env::var_os("VRM_NO_IMPACTS").is_some() {
             return;
+        }
+        if let Some(hazard) = impact.hazard {
+            self.spawn_hazard(hazard, landing.at);
         }
         self.start_effect(&impact, landing);
         self.impact_decal(&impact, landing);
