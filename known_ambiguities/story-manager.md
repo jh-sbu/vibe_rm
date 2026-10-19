@@ -33,6 +33,12 @@ or prints one event's tree.
   the one greeted, L1); dead body (`DEAD`: R1 who found it, R2 the body,
   L1); assault (`ASSU`: R1 victim, R2 attacker, L1, V1 crime); change
   relationship rank (`CHRR`: R1, R2, V1 old rank, V2 new).
+- Player remove item (`REMP`, CK wiki `OnStoryRemoveFromPlayer`: owner,
+  item reference, location, base form, remove type 0 none, 1 stolen, 2
+  consumed, 3 script, 4 dropped, 5 given, 6 put in a container; the page
+  notes consuming sends nothing). The `WIRemoveItem` quests (dropped items:
+  an NPC returning them, a guard objecting to a weapon left lying about, a
+  fight over one) read R1 / R2 and V1 == 4.
 - Crime events (CK wiki, the Papyrus `OnStory*` events' parameters):
   crime gold (`ADCR`: victim, criminal, faction, gold, crime -1 none, 0
   steal, 1 pickpocket, 2 trespass, 3 attack, 4 murder, 5 escape), arrest
@@ -163,3 +169,16 @@ own or their templates'); a member is dead when their placed reference is.
   everything.
 - Which of the player or the event's actors the node and quest event
   conditions run on (see the choices above).
+
+## Open: remove item and acquire types
+
+- **Unconfirmed: what REMP's owner and item references are.** The
+  `WIRemoveItem` quests need both aliases filled (R1 `Owner`, R2 `Item`, which
+  an NPC walks to and picks up). Sent here: R1 the player, R2 the dropped
+  object (or the container / person receiving it). The game's real owner
+  member for a drop is not published.
+- **Unconfirmed: selling and "sold".** `AQUIRE_TYPE` (CommonLibSSE) has no
+  sold value and the remove types no sold either, so selling to a merchant
+  sends no event, and neither do thrown or consumed items (the wiki says
+  consuming sends nothing). Giving a person an item sends "given" (5), which
+  includes pickpocket plants.

@@ -36,6 +36,15 @@ impl StoryEvent {
         }
     }
 
+    /// A player remove item event (`REMP`) without its location.
+    fn player_remove_item(item: FormId, reference: FormId, how: i32) -> Self {
+        let mut e = StoryEvent::new(b"REMP");
+        e.refs = [PLAYER_REF, reference];
+        e.form = item;
+        e.values[0] = how as f32;
+        e
+    }
+
     /// The form a member names (`R1`, `L2`, `K1`, `F1`), if set.
     pub fn member_form(&self, m: [u8; 2]) -> Option<FormId> {
         let f = match &m {
@@ -618,6 +627,16 @@ impl Engine {
         self.send_story_event(e);
     }
 
+    /// The player getting rid of an item (`REMP`: R1 the player as the item's
+    /// owner, R2 the item's reference: the dropped object, or the container
+    /// or person it went to, L1 where, F1 the item, V1 how: 4 dropped, 5
+    /// given, 6 put in a container; the Papyrus `OnStoryRemoveFromPlayer`).
+    pub(crate) fn send_player_remove_item(&mut self, item: FormId, reference: FormId, how: i32) {
+        let mut e = StoryEvent::player_remove_item(item, reference, how);
+        e.locs[0] = self.current_location().unwrap_or_default();
+        self.send_story_event(e);
+    }
+
     /// Whether a container is a body (bodies belong to nobody, not to the
     /// house they lie in).
     pub(crate) fn is_body(&self, r: FormId) -> bool {
@@ -767,5 +786,20 @@ impl Engine {
         e.locs[0] = jail.unwrap_or_default();
         e.values = [gold as f32, days as f32];
         self.send_story_event(e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remove_item_event_members() {
+        let e = StoryEvent::player_remove_item(FormId(0xf), FormId(0xff00_0001), 4);
+        assert_eq!(e.name(), "REMP");
+        assert_eq!(e.member_form(*b"R1"), Some(PLAYER_REF));
+        assert_eq!(e.member_form(*b"R2"), Some(FormId(0xff00_0001)));
+        assert_eq!(e.member_form(*b"F1"), Some(FormId(0xf)));
+        assert_eq!(e.member_value(*b"V1"), 4.0);
     }
 }
