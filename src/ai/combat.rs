@@ -953,6 +953,7 @@ impl ActorRuntime {
             .map(|(m, _)| m.run)
             .filter(|r| *r > walk)
             .unwrap_or(walk * 3.0)
+            * self.armor_speed_mult
     }
 
     /// Use up stamina; it doesn't come back for a moment (`update_stamina`).

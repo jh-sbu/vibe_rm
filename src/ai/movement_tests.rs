@@ -1,0 +1,203 @@
+//! Locomotion regressions using an empty world and synthetic actor state.
+
+use super::*;
+use std::collections::HashMap;
+
+fn actor() -> ActorRuntime {
+    let mut a = ActorRuntime::new(
+        FormId(1),
+        FormId(2),
+        Arc::new(Skeleton::default()),
+        Mat4::IDENTITY,
+        Vec::new(),
+        0.0,
+    );
+    let movement = |walk, run| MoveSpeeds {
+        walk,
+        run,
+        turn_walk: 4.0,
+        turn_run: 4.0,
+        turn_moving: 4.0,
+    };
+    a.moves = Some((movement(100.0, 300.0), 0.0));
+    a.sneak_moves = Some((movement(50.0, 150.0), 2.0));
+    a.goal = Some(Goal::travel(Vec3::Y * 1000.0));
+    a
+}
+
+fn with_world(test: impl FnOnce(&mut World<'_>)) {
+    let nav = nav::NavWorld::default();
+    let mut furniture = FurnitureWorld::default();
+    let vfs = vfs::Vfs::new("/nonexistent-vrm-movement-fixture", &[]);
+    let mut anims = crate::world::animation::AnimationLibrary::default();
+    let mut behaviors = crate::world::animation::BehaviorLibrary::default();
+    let mut world = World {
+        nav: &nav,
+        furniture: &mut furniture,
+        clips: Clips {
+            vfs: &vfs,
+            anims: &mut anims,
+            behaviors: &mut behaviors,
+        },
+        may_use: &|_, _, _| false,
+        claimed: &HashMap::new(),
+        patrols: &HashMap::new(),
+        targets: &HashMap::new(),
+        holds: &|_, _| false,
+        rand: &mut || 1,
+    };
+    test(&mut world);
+}
+
+#[test]
+fn armor_scales_package_gaits_and_combat_without_changing_animation_speeds() {
+    let mut a = actor();
+    assert_eq!(a.move_speed(), 100.0);
+    a.armor_speed_mult = crate::encumbrance::armor_speed(115.0, 115.0, 0.3);
+    for (gait, speed) in [
+        (package::Gait::Walk, 70.0),
+        (package::Gait::FastWalk, 105.0),
+        (package::Gait::Jog, 140.0),
+        (package::Gait::Run, 210.0),
+    ] {
+        a.goal.as_mut().unwrap().gait = gait;
+        assert_eq!(a.move_speed(), speed);
+    }
+    assert_eq!(a.run_speed(), 210.0);
+    assert_eq!(a.walk_speed(), 100.0);
+
+    a.goal.as_mut().unwrap().sneak = true;
+    assert_eq!(a.move_speed(), 105.0);
+    a.goal.as_mut().unwrap().gait = package::Gait::Walk;
+    assert_eq!(a.move_speed(), 35.0);
+    a.goal.as_mut().unwrap().sneak = false;
+    a.hurry = true;
+    assert_eq!(a.move_speed(), 210.0);
+
+    // Fallback locomotion (no MOVT or root-motion data) is slowed once too.
+    a.moves = None;
+    assert_eq!(a.run_speed(), WALK_SPEED * 3.0 * 0.7);
+    assert_eq!(a.walk_speed(), WALK_SPEED);
+}
+
+#[test]
+fn armor_slows_actual_package_steps_and_combat_chases() {
+    let mut a = actor();
+    let destination = Vec3::Y * 1000.0;
+    a.state = State::Walk {
+        path: vec![destination],
+        next: 0,
+        budget: 10.0,
+        to_seat: false,
+    };
+    a.armor_speed_mult = 0.7;
+    with_world(|w| {
+        assert!(a.step(1.0, w));
+        assert_eq!(a.pos, Vec3::Y * 70.0);
+        assert_eq!(a.speed(), 70.0);
+
+        a.pos = Vec3::ZERO;
+        a.combat = Some(combat::Combat::new(FormId(3)));
+        a.chase(1.0, w, destination, a.run_speed());
+        assert_eq!(a.pos, Vec3::Y * 210.0);
+        assert_eq!(a.speed(), 210.0);
+        assert!(matches!(a.gait(), crate::world::footsteps::Gait::Run));
+    });
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn equipped_armor_draw_state_and_perks_refresh_npc_movement() {
+    use crate::world::inventory::Inventory;
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+
+    struct Fixture(std::path::PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let fixture =
+        Fixture(std::env::temp_dir().join(format!("vrm-npc-armor-{}-{stamp}", std::process::id())));
+    std::fs::create_dir(&fixture.0).unwrap();
+    let armor = FormId(0x800);
+    let perk = FormId(0x801);
+    let mut data = [0; 8];
+    data[4..].copy_from_slice(&50.0f32.to_le_bytes());
+    let records = [
+        Node::top(
+            b"ARMO",
+            vec![RecordBuilder::new(b"ARMO", armor).field(b"DATA", &data)],
+        ),
+        Node::top(
+            b"PERK",
+            vec![
+                RecordBuilder::new(b"PERK", perk)
+                    .field(b"PRKE", &[2, 0, 0])
+                    .field(b"DATA", &[crate::perks::ep::MOD_ARMOR_WEIGHT, 1, 2])
+                    .field(b"EPFT", &[1])
+                    .f32(b"EPFD", 0.0)
+                    .field(b"PRKF", &[]),
+            ],
+        ),
+        Node::top(
+            b"GMST",
+            vec![
+                RecordBuilder::new(b"GMST", FormId(0x802))
+                    .zstring(b"EDID", "fMoveWeightMax")
+                    .f32(b"DATA", 100.0),
+                RecordBuilder::new(b"GMST", FormId(0x803))
+                    .zstring(b"EDID", "fMoveEncumEffect")
+                    .f32(b"DATA", 0.4),
+                RecordBuilder::new(b"GMST", FormId(0x804))
+                    .zstring(b"EDID", "fMoveEncumEffectNoWeapon")
+                    .f32(b"DATA", 0.2),
+            ],
+        ),
+    ];
+    std::fs::write(
+        fixture.0.join("Armor.esp"),
+        write_plugin(
+            0,
+            &[],
+            "test",
+            "synthetic NPC armor movement",
+            0x900,
+            &records,
+        ),
+    )
+    .unwrap();
+    let mut e = crate::stats::action_tests::headless_engine(&fixture.0, "Armor.esp");
+    let a = actor();
+    let npc = a.ref_id;
+    let key = crate::render::CellKey::Interior(FormId(0x810));
+    e.actor_cells.insert(npc, key);
+    e.cells.entry(key).or_default().actors.push(a);
+    let mut inv = Inventory::default();
+    inv.add(armor, 5); // Carried copies do not slow an actor.
+    e.inventories.insert(npc, inv);
+    let speed = |e: &Engine| e.cells[&key].actors[0].move_speed();
+
+    e.update_actor_encumbrance();
+    assert_eq!(speed(&e), 100.0);
+    e.inventories.get_mut(&npc).unwrap().wear(armor);
+    e.update_actor_encumbrance();
+    assert_eq!(e.worn_armor_weight(npc), 50.0);
+    assert_eq!(speed(&e), 90.0);
+    e.cells.get_mut(&key).unwrap().actors[0].drawn = true;
+    e.update_actor_encumbrance();
+    assert_eq!(speed(&e), 80.0);
+    assert!(e.add_perk(npc, perk));
+    e.update_actor_encumbrance();
+    assert_eq!(speed(&e), 100.0);
+    e.remove_perk(npc, perk);
+    e.update_actor_encumbrance();
+    assert_eq!(speed(&e), 80.0);
+    e.inventories.get_mut(&npc).unwrap().take_off(armor);
+    e.update_actor_encumbrance();
+    assert_eq!(speed(&e), 100.0);
+}
