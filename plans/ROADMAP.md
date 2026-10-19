@@ -922,7 +922,9 @@ game each piece unlocks.
   skill (`fLockpickSkillSweetSpotMult`, `fPartialPick*`), picks wearing out under
   strain and breaking. Sleep packages with
   "Lock Doors?" lock the sleeper's home doors, packages unlocking doors at start /
-  on change (`PKDT`) open them, so shops close at night. Papyrus `Lock`,
+  on change (`PKDT`) open them, so shops close at night (unloaded actors' as
+  their packages start: the schedule is looked at each half hour of game
+  time). Papyrus `Lock`,
   `IsLocked`, `GetLockLevel`, `SetLockLevel`; conditions `GetLocked`,
   `GetLockLevel`; console `lock` / `unlock`, `picklock`; vrm-tool `locks`. NPCs
   open locked animated doors only with the key or owning them (cages and cells
@@ -1214,8 +1216,7 @@ game each piece unlocks.
    - Followers helping the player (`CurrentFollowerFaction` relations);
      `AllyKilled` lines
    - Locks: sleepers warning the player before locking and putting them out;
-     unloaded actors' locks changing as packages start rather than on the
-     whereabouts refresh (loaded actors' do); actors stepping round loose clutter instead of shoving it
+     actors stepping round loose clutter instead of shoving it
    - Off-screen travel between worldspaces; paths round locked animated doors
    - Templates: when leveled spell lists are rolled and at whose level
      (expanded: see Done; `known_ambiguities/npc-templates.md`)
