@@ -55,6 +55,8 @@ pub mod archetype {
     pub const ACCUMULATE_MAGNITUDE: u32 = 32;
     pub const STAGGER: u32 = 33;
     pub const PEAK_VALUE_MODIFIER: u32 = 34;
+    /// Slow Time (`SlowTimeEffect`): the world's speed, as its magnitude.
+    pub const SLOW_TIME: u32 = 37;
     pub const RALLY: u32 = 38;
     pub const ETHEREALIZE: u32 = 41;
 
@@ -1424,6 +1426,24 @@ impl Engine {
         self.magic.effects.iter().find(|x| x.id == id)
     }
 
+    /// How fast the world runs: Slow Time's magnitude is the share of its
+    /// speed (0.3, 0.2, 0.1 for the shout's words), the slowest of any
+    /// lasting taking it. The player, and the effects themselves, keep real
+    /// time (`known_ambiguities/magic.md`).
+    pub fn world_speed(&self) -> f32 {
+        slow_time_speed(
+            self.magic
+                .effects
+                .iter()
+                .filter(|x| x.active && !x.done)
+                .filter(|x| {
+                    self.magic_effect(x.effect)
+                        .is_some_and(|m| m.archetype == archetype::SLOW_TIME)
+                })
+                .map(|x| x.magnitude),
+        )
+    }
+
     /// `HasMagicEffect`.
     pub fn has_magic_effect(&self, actor: FormId, effect: FormId) -> bool {
         self.magic
@@ -1579,6 +1599,12 @@ fn taper_step(rate: f32, curve: f32, seconds: f32, from: f32, to: f32) -> f32 {
     rate * (1.0 - (to / seconds).min(1.0)).powf(curve) * (to - from)
 }
 
+/// The world's speed under Slow Time effects of these magnitudes: the
+/// slowest, from the least a tick can step to normal speed.
+fn slow_time_speed(magnitudes: impl Iterator<Item = f32>) -> f32 {
+    magnitudes.fold(1.0, |speed, m| speed.min(m.clamp(0.01, 1.0)))
+}
+
 /// Whether a projectile (`PROJ`) has an explosion (`DATA` 0x24).
 fn projectile_explodes(lo: &esp::LoadOrder, proj: FormId) -> bool {
     lo.get(proj)
@@ -1592,7 +1618,15 @@ fn projectile_explodes(lo: &esp::LoadOrder, proj: FormId) -> bool {
 
 #[cfg(test)]
 mod taper_tests {
-    use super::taper_step;
+    use super::{slow_time_speed, taper_step};
+
+    #[test]
+    fn slow_time_takes_the_slowest() {
+        assert_eq!(slow_time_speed([].into_iter()), 1.0);
+        assert_eq!(slow_time_speed([0.3, 0.1, 0.2].into_iter()), 0.1);
+        assert_eq!(slow_time_speed([2.0].into_iter()), 1.0);
+        assert_eq!(slow_time_speed([0.0].into_iter()), 0.01);
+    }
 
     /// At 60 frames a second, what the game added (`test-mod taper`).
     #[test]
