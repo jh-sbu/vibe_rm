@@ -399,6 +399,42 @@ pub(crate) fn weapon_damage(lo: &LoadOrder, weapon: FormId) -> f32 {
         .unwrap_or(0.0)
 }
 
+/// A weapon's critical data (`CRDT`): what a critical strike with it adds to
+/// the blow (before the perks' "Calculate My Critical Hit Damage"), and the
+/// spell it casts on the target. xEdit's SSE layout is 24 bytes (damage,
+/// unused, percent mult, flags, unused, effect, unused); UESP's older one is
+/// 16 (the effect after the flags' padding).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CriticalData {
+    pub damage: f32,
+    /// Its "Critical Effect on Death" flag: the spell is for the killing blow.
+    pub on_death: bool,
+    pub effect: Option<FormId>,
+}
+
+/// A critical strike landing (`Engine::critical_strike`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CriticalStrike {
+    /// The damage it adds, not reduced by armor.
+    pub damage: f32,
+    /// The spell cast on the target with it.
+    pub effect: Option<FormId>,
+}
+
+pub(crate) fn weapon_critical(lo: &LoadOrder, weapon: FormId) -> Option<CriticalData> {
+    let rec = lo.get(weapon)?;
+    let d = rec.get(b"CRDT").filter(|d| d.len() >= 16)?;
+    let at = if d.len() >= 24 { 16 } else { 12 };
+    let effect = rec.fid(FormId(u32::from_le_bytes(
+        d[at..at + 4].try_into().unwrap(),
+    )));
+    Some(CriticalData {
+        damage: u16::from_le_bytes([d[0], d[1]]) as f32,
+        on_death: d[8] & 1 != 0,
+        effect: Some(effect).filter(|f| !f.is_null()),
+    })
+}
+
 fn f32_at(d: &[u8], o: usize) -> f32 {
     d.get(o..o + 4)
         .map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()))
@@ -1867,6 +1903,7 @@ impl Engine {
         projectile: Option<FormId>,
     ) {
         let weapon = self.weapon_of(attacker);
+        let blow = damage;
         // The attacker's perks (Armsman, Overdraw, Barbarian...), power attacks'
         // (Savage Strike...).
         let about = [weapon, Some(target)];
@@ -1911,6 +1948,19 @@ impl Engine {
             &[Some(attacker), weapon],
             damage,
         );
+        // A critical strike adds its damage past the armor.
+        let critical = self.critical_strike(target, attacker, weapon, blow);
+        if let Some(c) = &critical {
+            damage += c.damage;
+            if attacker == PLAYER_REF {
+                self.increment_stat("Critical Strikes", 1);
+            }
+        }
+        if critical.is_some() {
+            self.critically_hit.insert(target);
+        } else {
+            self.critically_hit.remove(&target);
+        }
         // Attacks that can stagger do so only some of the time (iStaggerAttackChance).
         let staggers = (self.rand() % 100) < self.combat_settings().stagger_chance;
         let mut stagger = if staggers { stagger } else { 0.0 };
@@ -1959,6 +2009,10 @@ impl Engine {
             }
         }
         self.damage_by(target, damage, Some(attacker), stagger, sneak.is_some());
+        // The weapon's critical effect lands with the strike.
+        if let Some(effect) = critical.and_then(|c| c.effect) {
+            self.apply_item(effect, Some(attacker), target);
+        }
         // An enchanted weapon's (a bow's, for a shot) enchantment lands with
         // the blow, paid from its charge.
         if let Some(w) = weapon
@@ -1967,6 +2021,59 @@ impl Engine {
         {
             self.apply_item(ench, Some(attacker), target);
         }
+    }
+
+    /// Whether a blow is a critical strike, and what it adds. The chance
+    /// (percent) is 0 until the attacker's perks "Calculate My Critical Hit
+    /// Chance" (Bladesman, Deep Wounds, Critical Shot set 10 / 15 / 20; the
+    /// Critical Charges set 100 for a sprinting power attack) and the target's
+    /// "Mod Enemy Critical Hit Chance" change it. The extra damage is the
+    /// weapon's `CRDT` damage through "Calculate My Critical Hit Damage"
+    /// (UESP's Skyrim:Damage: not changed by skill, tempering, sneak or power
+    /// attacks, nor ammunition). Bare hands add `unarmed` (the blow's
+    /// damage) x `fCombatUnarmedCritDamageMult`: our reading of the setting.
+    /// `known_ambiguities/critical-hits.md`.
+    pub(crate) fn critical_strike(
+        &mut self,
+        target: FormId,
+        attacker: FormId,
+        weapon: Option<FormId>,
+        unarmed: f32,
+    ) -> Option<CriticalStrike> {
+        let chance = self.perk_entry_point(
+            ep::CALCULATE_MY_CRITICAL_HIT_CHANCE,
+            attacker,
+            &[weapon, Some(target)],
+            0.0,
+        );
+        let chance = self.perk_entry_point(
+            ep::MOD_ENEMY_CRITICAL_HIT_CHANCE,
+            target,
+            &[Some(attacker), weapon],
+            chance,
+        );
+        if chance <= 0.0 || (self.rand() % 10_000) as f32 / 100.0 >= chance {
+            return None;
+        }
+        let data = weapon.and_then(|w| weapon_critical(&self.lo, w));
+        let base = match data {
+            Some(d) => d.damage,
+            None => unarmed * gmst_f32(&self.lo, "fCombatUnarmedCritDamageMult", 1.0),
+        };
+        let damage = self.perk_entry_point(
+            ep::CALCULATE_MY_CRITICAL_HIT_DAMAGE,
+            attacker,
+            &[weapon, Some(target)],
+            base,
+        );
+        log::info!("{attacker} strikes {target} critically: +{damage:.0}");
+        Some(CriticalStrike {
+            damage: damage.max(0.0),
+            // The killing blow's effect needs the target's death, which this
+            // blow's damage hasn't settled: only the others land (no vanilla
+            // weapon has either).
+            effect: data.filter(|d| !d.on_death).and_then(|d| d.effect),
+        })
     }
 
     /// A blow or shot is a sneak attack when the attacker is sneaking and the
@@ -3750,3 +3857,7 @@ mod bash_tests;
 #[cfg(test)]
 #[path = "combat_assault_tests.rs"]
 mod assault_tests;
+
+#[cfg(test)]
+#[path = "combat_critical_tests.rs"]
+mod critical_tests;

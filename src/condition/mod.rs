@@ -653,6 +653,10 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         682 => b(subject.is_some_and(|s| e.worn_with_keyword(s, p1) > 0)), // WornHasKeyword
         722 => Some(subject.map_or(0, |s| e.worn_with_keyword(s, p1)) as f32), // WornApparelHasKeywordCount
         569 => b(subject.is_some_and(|s| e.is_blocking(s))),                   // IsBlocking
+        // IsSprinting: only the player sprints so far (NPCs run).
+        568 => b(subject == Some(crate::engine::PLAYER_REF) && e.player.sprinting),
+        // GetLastHitCritical: the latest blow the subject took was a critical strike.
+        508 => b(subject.is_some_and(|s| e.critically_hit.contains(&s))),
         // IsAttackType: the attack it is making has that type keyword.
         697 => b(subject.and_then(|s| e.attack_type_of(s)) == Some(p1)),
         // Magic (`crate::magic`).

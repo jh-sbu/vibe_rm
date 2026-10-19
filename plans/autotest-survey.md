@@ -298,6 +298,12 @@ Left out so far:
   sound level to hearing distance (`CreateDetectionEvent`).
 - Melee reach standing still and the 1.3 margin (`melee-reach.md`).
 - Flee confidence statistics (`combat-fleeing.md`), 10-15 minutes.
+- Critical strikes (`critical-hits.md`): two actors with a test sword whose
+  `CRDT` percent mult is 0 and 1.0, a test perk setting the chance to 100,
+  fight (`StartCombat`) a tough target; compare the health lost per `OnHit`
+  (`GetActorValue` before and after) against the blow's damage: whether
+  the percent mult gates criticals, what a blocked or bare-handed critical
+  adds, and whether blocking stops it.
 - How often the weather changes, at a high TimeScale (`weather.md`).
 - Loose objects (`loose-objects.md`): `ApplyHavokImpulse` units and damping,
   drop position, corpses following the ragdoll.
