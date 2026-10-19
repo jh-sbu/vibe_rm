@@ -106,8 +106,9 @@ Script event nodes of ours under the game's script event root:
   crime when it wasn't fighting anyone and keeps the law (a faction that
   tracks crime). Blows to the player count the same way: the first blow
   or hostile spell from an actor not fighting them sends one (never a
-  crime: the player keeps no law) and starts that actor's fight, so the
-  rest don't. The event's members and when it is sent (every blow, or the
+  crime: the player keeps no law); the rest from it don't until it stops
+  fighting. The blow doesn't itself turn the attacker on the player (a
+  follower's stray arrow stays a follower). The event's members and when it is sent (every blow, or the
   first) are not in any public source found (CK wiki "Assault Actor
   Event" lists the victim, attacker and location; xEdit and CommonLibSSE
   name `ASSU` only); the first-blow rule is the one chosen.

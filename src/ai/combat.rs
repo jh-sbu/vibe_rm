@@ -1554,6 +1554,7 @@ impl Engine {
 
     /// Stop fighting, putting weapons away unless `keep_weapon` (to search).
     pub(crate) fn stop_fighting(&mut self, actor: FormId, keep_weapon: bool) {
+        self.crime.player_assailants.remove(&actor);
         let Some(key) = self.actor_cells.get(&actor).copied() else {
             return;
         };
@@ -2399,20 +2400,17 @@ impl Engine {
 
     /// A blow or hostile spell of `by` lands on the player: the first one
     /// from an actor that wasn't fighting them is an assault event (never a
-    /// crime: the player keeps no law), and starts the fight, so the next
-    /// ones aren't assaults (the same rule as for blows to actors).
+    /// crime: the player keeps no law). The next ones aren't, until it stops
+    /// fighting; the blow itself doesn't turn it on the player.
     pub(crate) fn assault_on_player(&mut self, by: FormId) {
         let first = by != PLAYER_REF
             && self.actor_ref(by).is_some_and(|a| {
                 !a.dead && a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF)
-            });
-        if !first {
-            return;
+            })
+            && self.crime.player_assailants.insert(by);
+        if first {
+            self.send_assault(PLAYER_REF, by, false);
         }
-        if !self.is_frenzied(by) {
-            self.start_combat(by, PLAYER_REF);
-        }
-        self.send_assault(PLAYER_REF, by, false);
     }
 
     /// Take health from an actor (or the player), with a flinch, and fight back.

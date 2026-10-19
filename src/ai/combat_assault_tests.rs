@@ -78,14 +78,9 @@ fn the_first_blow_to_the_player_from_a_stranger_is_an_assault_that_is_no_crime()
     let ev = e.scripts.quests[&ASSAULT_QUEST].event.clone().unwrap();
     assert_eq!(ev.refs, [PLAYER_REF, ATTACKER]);
     assert_eq!(ev.values[0], 0.0);
-    // The blow started the fight: the next ones are not assaults.
-    assert!(
-        e.actor_ref(ATTACKER)
-            .unwrap()
-            .combat
-            .as_ref()
-            .is_some_and(|c| c.target == PLAYER_REF)
-    );
+    // The blow doesn't turn the attacker on the player, but the next ones
+    // are not assaults.
+    assert!(e.actor_ref(ATTACKER).unwrap().combat.is_none());
     e.stop_quest(ASSAULT_QUEST);
     e.damage(PLAYER_REF, 5.0, Some(ATTACKER), 0.0);
     assert!(!e.scripts.quests[&ASSAULT_QUEST].running);
