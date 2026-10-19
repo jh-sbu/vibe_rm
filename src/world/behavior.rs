@@ -191,6 +191,8 @@ impl GraphLibrary {
 /// What a graph update produced.
 pub struct Frame {
     pub pose: Vec<Mat4>,
+    /// The bones' local transforms the pose is made of.
+    pub locals: Vec<Transform>,
     /// Root motion this update, in the actor's frame (+Y forward), and its
     /// counter-clockwise yaw.
     pub motion: (Vec3, f32),
@@ -224,6 +226,28 @@ pub struct GraphAnim {
     /// Variables a script set (`SetAnimationVariable*`): the engine's own writes
     /// to them (speed, state, head tracking...) no longer apply.
     pinned: ScriptPins,
+    /// A second graph posing some of the same skeleton's bones (a tail's).
+    aux: Option<Box<AuxGraph>>,
+}
+
+/// A graph running beside an actor's own, posing bones of the actor's skeleton
+/// that its graph leaves alone (`BSBehaviorGraphExtraData` "controls base
+/// skeleton": Argonians' and Khajiit tails).
+struct AuxGraph {
+    anim: GraphAnim,
+    /// The actor graph's variables it shares by name, copied over every update.
+    shared: Vec<String>,
+    /// The skeleton's bones it poses, once found.
+    bones: Option<Vec<usize>>,
+}
+
+/// Bones `bones` of `from` replace the same ones of `locals`.
+fn take_bones(locals: &mut [Transform], from: &[Transform], bones: &[usize]) {
+    for &b in bones {
+        if let (Some(l), Some(t)) = (locals.get_mut(b), from.get(b)) {
+            *l = *t;
+        }
+    }
 }
 
 /// Names of the graph variables scripts took over, matched ignoring case.
@@ -314,7 +338,24 @@ impl GraphAnim {
             bind: skeleton.bind_locals(),
             scratch: Vec::new(),
             pinned: ScriptPins::default(),
+            aux: None,
         }
+    }
+
+    /// Run `aux` beside this graph: it hears this graph's events and shares its
+    /// variables, and its poses of the skeleton's bones replace this graph's.
+    pub fn attach_aux(&mut self, aux: GraphAnim) {
+        let shared = aux
+            .project
+            .shared
+            .variables()
+            .map(|(name, _)| name.to_owned())
+            .collect();
+        self.aux = Some(Box::new(AuxGraph {
+            anim: aux,
+            shared,
+            bones: None,
+        }));
     }
 
     fn source<'a>(
@@ -417,6 +458,44 @@ impl GraphAnim {
             .filter(|v| (10.0..400.0).contains(v))
     }
 
+    /// Run the aux graph, if any, one update on: it hears the events this graph
+    /// raised, takes over the variables they share, and its bones' locals go
+    /// into `locals`.
+    fn pose_aux(
+        &mut self,
+        dt: f32,
+        raised: &[Raised],
+        vfs: &vfs::Vfs,
+        anims: &mut AnimationLibrary,
+        skeleton: &Skeleton,
+        locals: &mut [Transform],
+    ) {
+        let Some(mut aux) = self.aux.take() else {
+            return;
+        };
+        for r in raised {
+            aux.anim.inst.send_event(&r.event);
+        }
+        for name in &aux.shared {
+            if let Some(v) = self.inst.variable(name) {
+                aux.anim.inst.set_variable(name, v);
+            }
+        }
+        let frame = aux.anim.update(dt, vfs, anims, skeleton);
+        let bones = aux.bones.get_or_insert_with(|| {
+            let bones: Vec<usize> = anims
+                .havok_bone_map(vfs, &aux.anim.skeleton_path, skeleton)
+                .into_iter()
+                .flatten()
+                .collect();
+            log::debug!("{}: a second graph poses {} bones", self.label, bones.len());
+            bones
+        });
+        log::trace!("{}: tail {:?}", self.label, aux.anim.active_states());
+        take_bones(locals, &frame.locals, bones);
+        self.aux = Some(aux);
+    }
+
     pub fn project(&self) -> &Arc<ProjectRuntime> {
         &self.project
     }
@@ -448,6 +527,9 @@ impl GraphAnim {
 
     /// Queue an event for the next update.
     pub fn send_event(&mut self, name: &str) -> bool {
+        if let Some(a) = self.aux.as_mut() {
+            a.anim.send_event(name);
+        }
         self.inst.send_event(name)
     }
 
@@ -459,6 +541,9 @@ impl GraphAnim {
         anims: &mut AnimationLibrary,
         skeleton: &Skeleton,
     ) -> bool {
+        if let Some(a) = self.aux.as_mut() {
+            a.anim.inst.send_event(name);
+        }
         let (inst, mut src) = self.source(vfs, anims, skeleton);
         inst.handle_event(name, &mut src)
     }
@@ -617,6 +702,7 @@ impl GraphAnim {
                 scale: s,
             })
             .collect();
+        self.pose_aux(dt, &raised, vfs, anims, skeleton, &mut locals);
         let twists = self.inst.twists();
         if !twists.is_empty() {
             let map = self
@@ -669,6 +755,7 @@ impl GraphAnim {
         }
         Frame {
             pose: skeleton.model_space(&locals),
+            locals,
             motion,
             raised,
         }
@@ -677,7 +764,21 @@ impl GraphAnim {
 
 #[cfg(test)]
 mod pin_tests {
-    use super::ScriptPins;
+    use super::{ScriptPins, take_bones};
+    use nif::Transform;
+
+    #[test]
+    fn a_second_graph_replaces_only_its_own_bones() {
+        let at = |x: f32| Transform {
+            translation: glam::Vec3::X * x,
+            ..Transform::default()
+        };
+        let mut locals = vec![at(1.0), at(2.0), at(3.0)];
+        let from = vec![at(10.0), at(20.0), at(30.0)];
+        take_bones(&mut locals, &from, &[1, 7]);
+        let xs: Vec<f32> = locals.iter().map(|t| t.translation.x).collect();
+        assert_eq!(xs, [1.0, 20.0, 3.0]);
+    }
 
     #[test]
     fn pins_match_ignoring_case_and_once() {

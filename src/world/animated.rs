@@ -591,7 +591,7 @@ impl Engine {
         obj: &mut AnimatedObject,
         tagged: &[(ColliderHandle, Option<String>)],
     ) {
-        let Some((path, skeleton)) = obj.anim.graph.clone() else {
+        let Some((path, skeleton, false)) = obj.anim.graph.clone() else {
             return;
         };
         let Some(project) = self.graphs.project(&self.vfs, &path) else {
