@@ -1050,6 +1050,12 @@ game each piece unlocks.
   normal maps, shininess specular, parallax with a height map, hard-edged cutouts).
   `VRM_NO_DECALS=1` turns them off; vrm-tool `decals` lists them. Open questions:
   `known_ambiguities/decals.md`
+- Soft effects: effect shaders with the soft effect flag (`SLSF1` bit 30) fade where
+  they meet the opaque scene, by their soft falloff depth in world units (fog cards,
+  steam, smoke and fire at the floor and walls; particles with such a shader too): the
+  opaque pass's depth is copied before the blended draws, and only in frames that have
+  such draws. `VRM_NO_SOFT_EFFECTS=1` turns it off; vrm-tool `soft-effects` lists the
+  flag and depths. Open questions: `known_ambiguities/soft-effects.md`
 - NIF float / colour `CONST_KEY` interpolation retains its source type and
   selects nearest endpoints for shader and alpha-test channels, named material
   sequences and particle float curves. Boolean keys retain their hold behavior.
@@ -1389,8 +1395,7 @@ game each piece unlocks.
    remaining modifiers (animated colliders, skinned/deformed and animated mesh emission,
    strips, LOD; see
    `known_ambiguities/particles.md`), distant LOD (BTR/BTO/trees),
-   grass shadows and the grass cache, spells' impacts, soft effects (effect
-   shaders fading where they meet geometry: SLSF1 bit 30, soft falloff depth); eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
+   grass shadows and the grass cache, spells' impacts; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_ambiguities/weather.md`); weather's volumetric lighting, sun
    glare and damage, rain and snow kept off under roofs, lightning bolts, wind
    moving trees, grass and clouds; grass's vertex lighting flag and bending
