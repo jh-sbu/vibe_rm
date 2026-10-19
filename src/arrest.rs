@@ -26,6 +26,10 @@ const PURSUE_BARK: (f32, f32) = (6.0, 10.0);
 const ALARM_DISTANCE: f32 = 2048.0;
 /// A pursuing guard stops the player within this many units (no source).
 const ARREST_DISTANCE: f32 = 160.0;
+/// Seconds the player's weapons or spells must stay away before the guards
+/// they resisted accept the yield. CommonLibSSE's `PlayerCharacter` has a
+/// `yieldTimer`, but no source gives its length.
+const YIELD_DELAY: f32 = 2.0;
 
 /// A guard coming to arrest the player for its crime faction
 /// (`GetAlarmed`).
@@ -52,6 +56,13 @@ pub struct Arrests {
     pub jailed: Option<Sentence>,
     /// Days the player has spent in jail (`GetDaysInJail`).
     pub days_in_jail: i32,
+    /// The player has yielded in this fight already (CommonLibSSE
+    /// `attemptedYieldInCurrentCombat`: "set when yielding to guard for arrest
+    /// dialogue, prevents multiple arrest dialogues"); it lasts until nobody
+    /// fights them.
+    pub yield_attempted: bool,
+    /// Seconds the player's weapons have been away while guards fight them.
+    sheathed_for: f32,
 }
 
 /// A jail sentence: the faction's, so many days, and the prison marker
@@ -178,6 +189,7 @@ impl Engine {
         if let Some(door) = self.crime.arrests.pending.take() {
             self.send_player_through(door);
         }
+        self.update_yield(dt);
         if self
             .crime
             .arrests
@@ -260,6 +272,69 @@ impl Engine {
                     self.calm_guard(r);
                 }
             }
+        }
+    }
+
+    /// Whether the guards of `faction` would take a yield: they arrest (a
+    /// faction without the Arrest flag attacks whenever there is a bounty, and
+    /// has no arrest dialogue to go back to) and the bounty is below what they
+    /// attack on sight for. UESP: "Sometimes, you cannot yield, and the guards
+    /// will simply continue to attack"; which cases is inference.
+    fn yieldable(&self, faction: FormId) -> bool {
+        let owed = self.bounty(faction).total();
+        owed > 0
+            && CrimeValues::of(&self.lo, faction)
+                .is_some_and(|v| v.arrest && !(v.attack_on_sight && owed >= ATTACK_ON_SIGHT_GOLD))
+    }
+
+    /// Yielding (UESP *Skyrim:Crime*, "Resisting Arrest": "yielding to a guard
+    /// by sheathing your weapon or spells may prompt them to stop attacking and
+    /// to arrest you again, presenting the same options"). Guards fighting the
+    /// player for resisting an arrest they could make stop once the player has
+    /// had their weapons away for `YIELD_DELAY` seconds, and come to arrest them
+    /// again. Only once a fight (`yield_attempted`): resisting the second
+    /// arrest too leaves the guards fighting until the player is free of them.
+    fn update_yield(&mut self, dt: f32) {
+        let fighters: Vec<FormId> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.combat.as_ref().is_some_and(|c| c.target == PLAYER_REF))
+            .map(|a| a.ref_id)
+            .collect();
+        if fighters.is_empty() {
+            self.crime.arrests.yield_attempted = false;
+            self.crime.arrests.sheathed_for = 0.0;
+            return;
+        }
+        let factions: std::collections::BTreeSet<FormId> = fighters
+            .iter()
+            .filter(|&&r| self.is_guard(r))
+            .filter_map(|&r| self.crime_faction(r))
+            .filter(|f| self.crime.arrests.resisting.contains(f) && self.yieldable(*f))
+            .collect();
+        if factions.is_empty()
+            || self.crime.arrests.yield_attempted
+            || self.weapon_drawn(PLAYER_REF)
+        {
+            self.crime.arrests.sheathed_for = 0.0;
+            return;
+        }
+        self.crime.arrests.sheathed_for += dt;
+        if self.crime.arrests.sheathed_for < YIELD_DELAY {
+            return;
+        }
+        self.crime.arrests.yield_attempted = true;
+        self.crime.arrests.sheathed_for = 0.0;
+        for f in factions {
+            log::info!("the player yields to {f}'s guards");
+            self.crime.arrests.resisting.remove(&f);
+            for &g in &fighters {
+                if self.crime_faction(g) == Some(f) && self.is_guard(g) {
+                    self.end_combat(g);
+                }
+            }
+            self.raise_alarm(f);
         }
     }
 
@@ -582,5 +657,121 @@ impl Engine {
         self.scripts
             .notify(format!("You served {} days in jail.", s.days));
         self.queue_player_through(s.inside);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Yielding to guards, using generated records only. Engine owns a
+    //! renderer, so these need a headless GPU adapter.
+
+    use super::*;
+    use crate::ai::ActorRuntime;
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+    use glam::Mat4;
+    use std::sync::Arc;
+
+    const HOLD: FormId = FormId(0x810);
+    const OTHER_HOLD: FormId = FormId(0x811);
+    const GUARD: FormId = FormId(0x901);
+
+    struct Fixture(std::path::PathBuf);
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Track-crime factions; `HOLD` arrests, `OTHER_HOLD` only attacks.
+    fn fixture() -> (Fixture, Engine) {
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let f = Fixture(std::env::temp_dir().join(format!("vrm-yield-{}-{n}", std::process::id())));
+        std::fs::create_dir_all(&f.0).unwrap();
+        let faction = |id: FormId, arrest: u8| {
+            let mut crva = [0u8; 20];
+            crva[0] = arrest;
+            RecordBuilder::new(b"FACT", id)
+                .u32(b"DATA", 0x40)
+                .field(b"CRVA", &crva)
+        };
+        let records = [Node::top(
+            b"FACT",
+            vec![faction(HOLD, 1), faction(OTHER_HOLD, 0)],
+        )];
+        std::fs::write(
+            f.0.join("Yield.esp"),
+            write_plugin(0, &[], "test", "synthetic yielding", 0x900, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&f.0, "Yield.esp");
+        let key = crate::render::CellKey::Interior(FormId(0x820));
+        e.actor_cells.insert(GUARD, key);
+        e.cells
+            .entry(key)
+            .or_default()
+            .actors
+            .push(ActorRuntime::new(
+                GUARD,
+                FormId(2),
+                Arc::new(crate::world::skeleton::Skeleton::default()),
+                Mat4::IDENTITY,
+                Vec::new(),
+                0.0,
+            ));
+        e.set_faction_rank(GUARD, IS_GUARD_FACTION, 0);
+        e.set_crime_faction(GUARD, Some(HOLD));
+        (f, e)
+    }
+
+    /// The guard fighting the player, who resisted the arrest.
+    fn resist(e: &mut Engine, faction: FormId) {
+        e.set_crime_faction(GUARD, Some(faction));
+        e.mod_crime_gold(faction, 40, true);
+        e.set_player_resisting_arrest(GUARD);
+        assert!(e.actor_ref(GUARD).unwrap().combat.is_some());
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn sheathing_after_resisting_ends_the_fight_and_the_guard_comes_to_arrest_again() {
+        let (_f, mut e) = fixture();
+        resist(&mut e, HOLD);
+        // Not yet: the weapons must stay away a moment.
+        e.update_yield(YIELD_DELAY / 2.0);
+        assert!(e.actor_ref(GUARD).unwrap().combat.is_some());
+        e.update_yield(YIELD_DELAY);
+        assert!(e.actor_ref(GUARD).unwrap().combat.is_none());
+        assert!(!e.crime.arrests.resisting.contains(&HOLD));
+        assert!(e.is_alarmed(GUARD));
+        assert!(!e.crime_hostile(GUARD));
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn a_yield_is_taken_once_a_fight() {
+        let (_f, mut e) = fixture();
+        resist(&mut e, HOLD);
+        e.update_yield(YIELD_DELAY * 2.0);
+        assert!(e.crime.arrests.yield_attempted);
+        // Resisting the second arrest too: the guard fights on.
+        e.set_player_resisting_arrest(GUARD);
+        e.update_yield(YIELD_DELAY * 2.0);
+        assert!(e.actor_ref(GUARD).unwrap().combat.is_some());
+        // Once nobody fights the player, yielding is open again.
+        e.end_combat(GUARD);
+        e.update_yield(0.1);
+        assert!(!e.crime.arrests.yield_attempted);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn guards_without_an_arrest_dialogue_keep_attacking() {
+        let (_f, mut e) = fixture();
+        resist(&mut e, OTHER_HOLD);
+        e.update_yield(YIELD_DELAY * 2.0);
+        assert!(e.actor_ref(GUARD).unwrap().combat.is_some());
+        assert!(!e.crime.arrests.yield_attempted);
     }
 }
