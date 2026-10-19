@@ -1547,6 +1547,17 @@ impl Engine {
             };
             self.increment_stat(stat, 1);
         }
+        // The sound of drinking or eating (`ALCH` `ENIT`'s consume sound), where
+        // they stand.
+        if let Some(sound) = self
+            .lo
+            .get(item)
+            .filter(|r| r.tag().0 == *b"ALCH")
+            .and_then(|r| r.get(b"ENIT").and_then(|d| consume_sound(&d)))
+            && let Some(at) = self.ref_position(actor)
+        {
+            self.play_sound(sound, at);
+        }
         self.apply_item(item, Some(actor), actor);
         Ok(())
     }
@@ -1605,6 +1616,13 @@ fn taper_step(rate: f32, curve: f32, seconds: f32, from: f32, to: f32) -> f32 {
     rate * (1.0 - (to / seconds).min(1.0)).powf(curve) * (to - from)
 }
 
+/// The sound drinking or eating a potion (`ALCH` `ENIT`: value, flags,
+/// addiction, addiction chance, consume sound) makes, if it names one.
+fn consume_sound(enit: &[u8]) -> Option<FormId> {
+    let id = u32::from_le_bytes(enit.get(16..20)?.try_into().ok()?);
+    (id != 0).then_some(FormId(id))
+}
+
 /// The world's speed under Slow Time effects of these magnitudes: the
 /// slowest, from the least a tick can step to normal speed.
 fn slow_time_speed(magnitudes: impl Iterator<Item = f32>) -> f32 {
@@ -1624,7 +1642,19 @@ fn projectile_explodes(lo: &esp::LoadOrder, proj: FormId) -> bool {
 
 #[cfg(test)]
 mod taper_tests {
-    use super::{slow_time_speed, taper_step};
+    use super::{consume_sound, slow_time_speed, taper_step};
+    use esp::FormId;
+
+    #[test]
+    fn potions_name_their_consume_sound() {
+        // The Sweet Roll's `ENIT`: value 2, flags 3, no addiction, 0xCAF94.
+        let mut enit: Vec<u8> = vec![2, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(consume_sound(&enit), None);
+        enit.extend([0x94, 0xaf, 0x0c, 0]);
+        assert_eq!(consume_sound(&enit), Some(FormId(0xcaf94)));
+        enit[16..].fill(0);
+        assert_eq!(consume_sound(&enit), None);
+    }
 
     #[test]
     fn slow_time_takes_the_slowest() {

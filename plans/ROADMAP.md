@@ -502,6 +502,8 @@ game each piece unlocks.
   carries it as Activate's hold does, dropping it when the spell is let go;
   holding something already shows `sMagicTelekinesisNoRecast`:
   `known_ambiguities/telekinesis.md`
+- Drinking and eating: a potion's or food's own consume sound (`ENIT`) plays
+  where the actor stands: `known_ambiguities/magic.md`
 - Illusion's hold on fighting: calm, fear (and turn undead), frenzy and rally
   effects hold the target's aggression or confidence at their own value
   (calm -1, fear 0, frenzy 3, rally foolhardy) for as long as they last,
@@ -1294,7 +1296,7 @@ game each piece unlocks.
    - Magic, more: detect life, throwing with telekinesis; dropped soul gems'
      per-item souls (public reports describe emptying: see
      `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
-     taper, area, addictions, potion and food flags; image-space modifiers
+     taper, area, addictions, the rest of potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target)
    - Crime, more: arrests (yielding by sheathing, guards following through
      doors, opening the cell after five hits, The Chill, the follower wait
