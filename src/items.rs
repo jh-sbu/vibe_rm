@@ -277,12 +277,9 @@ impl Engine {
     fn faction_favor_cap(&self, faction: FormId) -> Option<i32> {
         let gmst = |name: &str, default: i32| crate::ai::combat::gmst_i32(&self.lo, name, default);
         let mut cap: Option<i32> = None;
-        for &npc in self.faction_members(faction) {
-            let alive = self
-                .npc_refs_index()
-                .get(&npc)
-                .is_none_or(|&r| !self.is_dead(r));
-            let rank = self.relationship_rank(npc, PLAYER_REF);
+        for (npc, actor) in self.faction_member_actors(faction) {
+            let alive = actor.is_none_or(|r| !self.is_dead(r));
+            let rank = self.relationship_rank(actor.unwrap_or(npc), PLAYER_REF);
             if !alive || rank <= 0 {
                 continue;
             }
@@ -295,6 +292,30 @@ impl Engine {
             cap = Some(cap.map_or(c, |x| x.min(c)));
         }
         cap
+    }
+
+    /// The NPCs that belong to a faction now, each with the reference to
+    /// watch for death: the records' members, less the actors scripts took
+    /// out of it, with the ones they put in.
+    fn faction_member_actors(&self, faction: FormId) -> Vec<(FormId, Option<FormId>)> {
+        let mut out: Vec<(FormId, Option<FormId>)> = self
+            .faction_members(faction)
+            .iter()
+            .map(|&npc| (npc, self.npc_refs_index().get(&npc).copied()))
+            .collect();
+        for (&actor, changes) in &self.scripts.faction_changes {
+            let Some(&rank) = changes.get(&faction) else {
+                continue;
+            };
+            let Some(npc) = self.base_of(actor).filter(|_| actor != PLAYER_REF) else {
+                continue;
+            };
+            out.retain(|&(n, r)| n != npc || r.is_some_and(|r| r != actor));
+            if rank >= 0 {
+                out.push((npc, Some(actor)));
+            }
+        }
+        out
     }
 
     /// A book's title and text.
@@ -760,3 +781,6 @@ fn without_survival(text: &str) -> String {
     out.push_str(rest);
     out
 }
+
+#[cfg(test)]
+mod faction_tests;

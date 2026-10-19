@@ -829,9 +829,61 @@ impl Engine {
     /// Factions and ranks of an actor (a reference, or an NPC record), from its
     /// templates when they give them.
     pub fn npc_factions(&self, actor: FormId) -> Vec<(FormId, i8)> {
-        self.templates_of(actor)
+        let mut out = self
+            .templates_of(actor)
             .map(|t| t.factions(&self.lo))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if let Some(changes) = self.faction_changes_of(actor) {
+            for (&faction, &rank) in changes {
+                match out.iter_mut().find(|x| x.0 == faction) {
+                    Some(x) => x.1 = rank,
+                    None => out.push((faction, rank)),
+                }
+            }
+        }
+        out
+    }
+
+    /// What scripts changed of an actor's factions. An NPC record stands for
+    /// its first reference (the player's record for the player).
+    fn faction_changes_of(&self, actor: FormId) -> Option<&std::collections::HashMap<FormId, i8>> {
+        if self.scripts.faction_changes.is_empty() {
+            return None;
+        }
+        let actor = match actor {
+            FormId(0x7) => PLAYER_REF,
+            a if self.lo.tag_of(a).is_some_and(|t| t.0 == *b"NPC_") => {
+                self.npc_refs_index().get(&a).copied()?
+            }
+            a => a,
+        };
+        self.scripts.faction_changes.get(&actor)
+    }
+
+    /// An actor's rank in a faction: -1 when it isn't in it.
+    pub fn faction_rank(&self, actor: FormId, faction: FormId) -> i32 {
+        self.npc_factions(actor)
+            .iter()
+            .find(|x| x.0 == faction)
+            .map_or(-1, |x| i32::from(x.1))
+    }
+
+    /// Puts an actor in a faction at a rank (-1: out of it).
+    pub fn set_faction_rank(&mut self, actor: FormId, faction: FormId, rank: i32) {
+        let actor = if actor == FormId(0x7) {
+            PLAYER_REF
+        } else {
+            actor
+        };
+        let rank = rank.clamp(-1, 127) as i8;
+        if self.faction_rank(actor, faction) != i32::from(rank) {
+            log::info!("{actor} faction {faction}: rank {rank}");
+        }
+        self.scripts
+            .faction_changes
+            .entry(actor)
+            .or_default()
+            .insert(faction, rank);
     }
 
     pub fn npc_voice_type(&self, npc: FormId) -> Option<FormId> {
