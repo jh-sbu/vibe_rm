@@ -855,7 +855,7 @@ pub fn container_inventory(
     inv
 }
 
-fn weapon_anim_type(rec: &LoadedRecord<'_>) -> u8 {
+pub fn weapon_anim_type(rec: &LoadedRecord<'_>) -> u8 {
     rec.get(b"DNAM")
         .and_then(|d| d.first().copied())
         .unwrap_or(0)
