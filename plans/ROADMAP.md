@@ -613,7 +613,9 @@ game each piece unlocks.
   alias's reference) and Papyrus `PlaceAtMe` / `PlaceActorAtMe` make references
   (`FF000800` up): items in containers go to the inventory, actors appear where
   they were made and live among the persistent actors (packages, whereabouts,
-  combat). Console `placeatme`
+  combat). Console `placeatme`. A quest stopping or starting over clears away
+  what its aliases created: items from the containers, objects lying about
+  (what the player holds, and actors, stay)
 - Force greet packages (ForceGreet / ForceGreetFromSitting templates): the greeter
   waits at its wait location (standing, sandboxing or in its seat) until the player
   is in the trigger location (and seen, if asked), walks up to within the force
@@ -1197,8 +1199,7 @@ game each piece unlocks.
      continuity; control for instrumentation such as quest aliases changing
      persistence. Use the observations to establish transition and catch-up rules
      before treating the current approximations as compatibility requirements.
-   - Alias fills: created objects cleaned up; created items placed in the
-     world (not a container) drawn and takeable; "from alias" locations
+   - Alias fills: created actors cleaned up; "from alias" locations
      followed through travel, not only at refresh; packages for "from event"
      aliases, and package targets by object id / type and interrupt data
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
