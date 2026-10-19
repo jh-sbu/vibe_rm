@@ -123,6 +123,17 @@ Left out so far:
   frame (an NPC standing in a scripted box, the script logging
   `Utility.GetCurrentRealTime` at each event).
 - The "do all before repeating" Story Manager node flags.
+- **UseWeapon completion** (`use-weapon.md`): the vanilla finite packages
+  (the Dragonsreach porch bowmen, `WhiterunDragonsreachPorchUseBow8x4`: Never
+  End off, 3 barrages of 3 to 8 attacks) can be watched unattended: a script on
+  the actor logging `GetCurrentPackage` and `Utility.GetCurrentRealTime` each
+  second (and `OnAnimationEvent` for `attackRelease` / `attackStart` if
+  registered) shows whether the package ends right after the third barrage's
+  last attack or after its pause, what the actor then runs, and whether the
+  package returns only after its schedule window reopens. Count of attacks per
+  barrage and the share of power attacks among unforced swings (melee training
+  packages with Always Power Attack off, e.g. `GuardSolitudeMeleeTrainingPackage`)
+  come from the same event log.
 - **NPC stats** (`actor-values.md`): `GetBaseActorValue` health of a
   non-auto-calc NPC with a health offset (a placed copy of Khayla: 155 or
   UESP's 50?); Sneak of a deer (15 + offset 70); a "PC level mult" copy of

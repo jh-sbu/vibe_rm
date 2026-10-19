@@ -58,11 +58,46 @@ right-hand power attack is a local policy, not verified Skyrim selection.
 Actors without a fitting power attack currently keep the barrage pending.
 Practice still uses its existing swing recovery times, consumes no stamina and
 causes no melee damage; exhaustion, power-attack-specific recovery, and creature
-behavior need original-game observation. False or missing flags preserve the
-existing basic-only melee path; the reported random power attacks are still
-unsupported. Bows do not power attack in this implementation; any special
-original-game handling of this flag for ranged weapons remains unverified.
-Finite completion, resumption and time limits remain outside this change.
+behavior need original-game observation. False or missing flags leave melee practice mostly basic swings; see
+random power attacks below. Bows do not power attack in this implementation;
+any special original-game handling of this flag for ranged weapons remains
+unverified.
+
+## Completion, Never End and the time limit
+
+The template's own input names, and `Skyrim.esm`'s packages' values for them
+(inspected with `vrm-tool pack-tree`), are the evidence. Never End? is true in
+every infinite vanilla package, which leave "End after this many Barrages" at 0.
+The 11 finite packages among the roughly 60 using the UseWeapon templates
+(e.g. the Dragonsreach porch bowmen) all have Never End off and a count of 3. The attack time
+input is 0 ("forever") in every vanilla package, so no vanilla data exercises it.
+The template runs a Wait procedure with that input next to the UseWeapon procedure.
+
+- Never End on keeps practising however many barrages have run. Never End off
+  with a count above 0 completes the package once that many barrages have
+  finished (a barrage finishes with its last attack; a cancelled one does not
+  count), without waiting out the final pause. A count of 0 with Never End
+  off is treated as no limit; whether the original ends at once is unknown.
+  A missing Never End input is treated as on (the old behavior).
+- A time limit above 0 completes the package once that many seconds have been
+  spent practising with the weapon drawn, in any phase; an arrow already loosed
+  still flies. Whether the original counts from arrival, from the first
+  attack, or pauses while waiting is unknown. Never End does not affect it.
+- A completed package is passed over while it still applies (schedule and
+  conditions), so the actor moves on to its next package, and runs afresh once
+  it has stopped applying and then applies again. Whether the original
+  instead resumes it, or leaves the actor idle, is unverified. Combat or
+  leaving the location drops the practice's counters (and so restarts both
+  limits).
+
+## Random power attacks
+
+Public experiments report that disabling Always Power Attack permits random
+power attacks. Each unforced melee swing (not a bow, not Aim Only) is a power
+attack with a flat 25% chance, using the same authored-attack choice as the
+forced case and falling back to a basic swing when the actor has no fitting
+power attack. The probability, and any dependence on combat style, skill or
+stamina, are unsourced.
 
 ## Unresolved behavior and limitations
 
@@ -81,9 +116,6 @@ Finite completion, resumption and time limits remain outside this change.
   overlap. Missing template inputs still use the existing parser's fallback
   policy: an absent trigger imposes no gate, and a missing declared radius
   becomes zero. Exact inherited defaults need further investigation.
-- Never End, finite barrage completion, the simultaneous Wait's attack time
-  limit, random power attacks when the flag is false, Hold when Blocked,
-  head tracking, Always Hit,
-  damage and combat-start flags, and acquisition of weapons from the world
-  remain unsupported. Finite completion needs package/procedure lifecycle
-  handling. Practice attacks retain their existing harmless behavior.
+- Hold when Blocked, head tracking, Always Hit, damage and combat-start
+  flags, and acquisition of weapons from the world remain unsupported.
+  Practice attacks retain their existing harmless behavior.

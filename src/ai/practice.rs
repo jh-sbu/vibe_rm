@@ -24,6 +24,12 @@ pub struct PracticeGoal {
     pub always_power_attack: bool,
     pub pause: (f32, f32),
     pub attacks: (u32, u32),
+    /// Practise until the package ends, whatever the barrage count.
+    pub never_end: bool,
+    /// Barrages after which the package completes (0: no limit); needs `!never_end`.
+    pub barrages: u32,
+    /// Seconds of attacking after which the package completes (0: no limit).
+    pub max_time: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -82,6 +88,10 @@ pub struct Practice {
     /// Seconds before the next step.
     wait: f32,
     phase: Phase,
+    /// Barrages finished, and seconds spent attacking, since practice began
+    /// (kept when a barrage is cancelled).
+    barrages_done: u32,
+    elapsed: f32,
 }
 
 impl Practice {
@@ -120,6 +130,7 @@ impl Practice {
                     self.left -= 1;
                     self.wait = uniform(rand, 1.2, 2.2);
                     if self.left == 0 {
+                        self.barrages_done += 1;
                         self.wait += uniform(rand, goal.pause.0, goal.pause.1);
                     }
                 } else {
@@ -142,6 +153,7 @@ impl Practice {
                     self.left = self.left.saturating_sub(1);
                     self.wait = uniform(rand, 0.6, 1.6);
                     if self.left == 0 {
+                        self.barrages_done += 1;
                         self.wait += uniform(rand, goal.pause.0, goal.pause.1);
                     }
                 }
@@ -151,28 +163,48 @@ impl Practice {
         fire
     }
 
+    /// Whether the package's own limits are reached: the finite barrage count
+    /// (once the last barrage's attacks are done) or the time spent attacking.
+    fn finished(&self, goal: &PracticeGoal) -> bool {
+        let barrages = !goal.never_end
+            && goal.barrages > 0
+            && self.barrages_done >= goal.barrages
+            && self.left == 0
+            && matches!(self.phase, Phase::Ready);
+        barrages || (goal.max_time > 0.0 && self.elapsed >= goal.max_time)
+    }
+
     /// An interrupted draw has no release; a released shot cannot be recalled.
     fn cancel(&mut self, mut event: impl FnMut(&str) -> bool) -> bool {
         if matches!(self.phase, Phase::Drawing(..) | Phase::Cancelling) && !event("attackStop") {
             self.phase = Phase::Cancelling;
             return false;
         }
-        *self = Self::default();
+        *self = Self {
+            barrages_done: self.barrages_done,
+            elapsed: self.elapsed,
+            ..Self::default()
+        };
         true
     }
 }
 
+/// Chance an unforced melee practice swing is a power attack (no source).
+const RANDOM_POWER_CHANCE: f32 = 0.25;
+
 /// The forced melee attack must exist in the actor's attack data and suit its
-/// hands. Prefer the stationary weapon attack; otherwise use its first authored
+/// hands (a random one falls back to a basic swing when it has none). Prefer the
+/// stationary weapon attack; otherwise use its first authored
 /// right-hand power attack (including bare-handed and creature attacks). A missing
 /// power attack keeps the barrage pending instead of silently making a basic one.
 fn practice_attack_event(
-    always_power_attack: bool,
+    forced: bool,
+    random: bool,
     attacks: &[super::combat::Attack],
     hands: [super::combat::Fights; 2],
     bare_handed: bool,
 ) -> Option<&str> {
-    if !always_power_attack {
+    if !forced && !random {
         return Some("attackStart");
     }
     let eligible = |attack: &&super::combat::Attack| {
@@ -187,12 +219,21 @@ fn practice_attack_event(
         .find(|a| a.event.eq_ignore_ascii_case("attackPowerStartInPlace"))
         .or_else(|| available.next())
         .map(|a| a.event.as_str())
+        .or((!forced).then_some("attackStart"))
 }
 
 impl ActorRuntime {
     /// One step of practice; `w.targets` has raw reference positions.
     pub(crate) fn practice_step(&mut self, dt: f32, goal: &PracticeGoal, w: &mut World) {
         self.speed = 0.0;
+        // A package that has run its course stays done until it stops applying.
+        let package = self
+            .current
+            .and_then(|i| self.packages.get(i))
+            .map(|p| p.id);
+        if package.is_some() && package == self.finished_package {
+            return;
+        }
         let mut p = self.practice.unwrap_or_default();
         if matches!(p.phase, Phase::Cancelling)
             || (p
@@ -248,10 +289,17 @@ impl ActorRuntime {
             self.practice = Some(p);
             return;
         }
+        p.elapsed += dt;
         let release = std::mem::take(&mut self.arrow_release);
         let stats = self.stats.clone();
+        // Unless forced, a swing is now and then a power attack.
+        let random = !goal.always_power_attack
+            && !self.bow
+            && !goal.aim_only
+            && uniform(w.rand, 0.0, 1.0) < RANDOM_POWER_CHANCE;
         let melee_event = practice_attack_event(
             goal.always_power_attack,
+            random,
             &stats.attacks,
             self.hands,
             self.stats.bare_handed,
@@ -270,6 +318,16 @@ impl ActorRuntime {
         if fire {
             self.loose = true;
             self.practice_aim = Some(aim);
+        }
+        if p.finished(goal) {
+            log::debug!(
+                "{} finished its practice after {} barrages, {:.0}s",
+                self.ref_id,
+                p.barrages_done,
+                p.elapsed
+            );
+            self.finished_package = package;
+            self.next_eval = 0.0;
         }
         self.practice = Some(p);
     }
@@ -388,6 +446,9 @@ mod tests {
             always_power_attack: false,
             pause: (4.0, 4.0),
             attacks: (1, 1),
+            never_end: true,
+            barrages: 0,
+            max_time: 0.0,
         }
     }
 
@@ -417,26 +478,38 @@ mod tests {
             attack("attackPowerStartH2HRight", 4),
         ];
         assert_eq!(
-            practice_attack_event(true, &attacks, [Weapon, Not], true),
+            practice_attack_event(true, false, &attacks, [Weapon, Not], true),
+            Some("attackPowerStartInPlace")
+        );
+        // Random power attacks use the same choice, but may fall back to a basic swing.
+        assert_eq!(
+            practice_attack_event(false, true, &attacks, [Weapon, Not], true),
             Some("attackPowerStartInPlace")
         );
         assert_eq!(
-            practice_attack_event(true, &attacks, [Fist, Fist], true),
+            practice_attack_event(false, true, &[], [Weapon, Not], true),
+            Some("attackStart")
+        );
+        assert_eq!(
+            practice_attack_event(true, false, &attacks, [Fist, Fist], true),
             Some("attackPowerStartH2HRight")
         );
         // Creatures without humanoid H2H data can use their authored attacks.
         let creature = [attack("attackCreaturePower", 4)];
         assert_eq!(
-            practice_attack_event(true, &creature, [Fist, Fist], false),
+            practice_attack_event(true, false, &creature, [Fist, Fist], false),
             Some("attackCreaturePower")
         );
         assert_eq!(
-            practice_attack_event(false, &[], [Fist, Fist], true),
+            practice_attack_event(false, false, &[], [Fist, Fist], true),
             Some("attackStart")
         );
-        assert_eq!(practice_attack_event(true, &[], [Weapon, Not], true), None);
         assert_eq!(
-            practice_attack_event(true, &attacks[..5], [Fist, Fist], true),
+            practice_attack_event(true, false, &[], [Weapon, Not], true),
+            None
+        );
+        assert_eq!(
+            practice_attack_event(true, false, &attacks[..5], [Fist, Fist], true),
             None,
             "weapon, left-hand, dual and bash attacks cannot replace a fist's power swing"
         );
@@ -715,5 +788,76 @@ mod tests {
         assert!(matches!(practice.phase, Phase::Ready));
         assert_eq!(practice.left, 0);
         assert_eq!(practice.target, None);
+    }
+
+    #[test]
+    fn finite_barrages_finish_only_when_the_last_one_is_done() {
+        let mut goal = goal();
+        goal.never_end = false;
+        goal.barrages = 2;
+        let mut practice = Practice {
+            left: 1,
+            ..Practice::default()
+        };
+        let swing = |practice: &mut Practice, goal: &PracticeGoal| {
+            practice.attack_step(
+                10.0,
+                goal,
+                false,
+                1.0,
+                Some("attackStart"),
+                0.0,
+                false,
+                &mut || 0,
+                |_| true,
+            );
+        };
+        swing(&mut practice, &goal);
+        assert_eq!(practice.barrages_done, 1);
+        assert!(!practice.finished(&goal));
+        practice.left = 1;
+        practice.phase = Phase::Drawing(0.0, 1.0);
+        assert!(!practice.finished(&goal), "a draw in progress is not done");
+        practice.phase = Phase::Ready;
+        swing(&mut practice, &goal);
+        assert_eq!(practice.barrages_done, 2);
+        assert!(practice.finished(&goal));
+        // Never End, or no count, keeps going.
+        goal.never_end = true;
+        assert!(!practice.finished(&goal));
+        goal.never_end = false;
+        goal.barrages = 0;
+        assert!(!practice.finished(&goal));
+    }
+
+    #[test]
+    fn cancelled_barrages_do_not_count_and_progress_survives_cancelling() {
+        let mut practice = Practice {
+            target: Some(0),
+            left: 2,
+            barrages_done: 1,
+            elapsed: 7.0,
+            phase: Phase::Drawing(0.0, 1.0),
+            ..Practice::default()
+        };
+        assert!(practice.cancel(|_| true));
+        assert_eq!((practice.barrages_done, practice.elapsed), (1, 7.0));
+        assert_eq!(practice.left, 0);
+    }
+
+    #[test]
+    fn time_limit_finishes_in_any_phase_and_zero_is_forever() {
+        let mut goal = goal();
+        let mut practice = Practice {
+            left: 3,
+            elapsed: 100.0,
+            phase: Phase::Drawing(0.0, 1.0),
+            ..Practice::default()
+        };
+        assert!(!practice.finished(&goal));
+        goal.max_time = 99.0;
+        assert!(practice.finished(&goal));
+        goal.max_time = 101.0;
+        assert!(!practice.finished(&goal));
     }
 }
