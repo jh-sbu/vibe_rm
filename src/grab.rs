@@ -2,6 +2,9 @@
 //! lying as a ragdoll) picks up the body under the crosshair and carries it
 //! in front of the camera; letting go drops it with the way it was moving.
 //! A tap activates as before (takes the item, searches the body).
+//! Telekinesis (a held spell of archetype 20) grabs the same way from much
+//! further, holding what it took until the spell is let go
+//! (`known_ambiguities/telekinesis.md`).
 
 use anyhow::Result;
 use esp::FormId;
@@ -45,6 +48,9 @@ pub(crate) struct Grab {
     /// Seconds Activate has been down over something that can be grabbed.
     pending: Option<f32>,
     pub held: Option<Held>,
+    /// The telekinesis effect holding it, if one does: Activate letting go
+    /// doesn't drop it.
+    telekinesis: Option<u64>,
 }
 
 impl Engine {
@@ -66,15 +72,21 @@ impl Engine {
         if self.grab.pending.take().is_some() {
             return self.activate();
         }
-        self.release_grab();
+        if self.grab.telekinesis.is_none() {
+            self.release_grab();
+        }
         Ok(())
     }
 
     /// The body under the crosshair that can be grabbed: its owner, the body,
     /// where the crosshair meets it and how far that is.
     fn grab_target(&self) -> Option<(FormId, RigidBodyHandle, Vec3, f32)> {
+        self.grab_target_within(GRAB_REACH)
+    }
+
+    fn grab_target_within(&self, reach: f32) -> Option<(FormId, RigidBodyHandle, Vec3, f32)> {
         let (eye, dir) = self.player_aim();
-        let (toi, owner, body) = self.physics.raycast_body(eye, dir, GRAB_REACH)?;
+        let (toi, owner, body) = self.physics.raycast_body(eye, dir, reach)?;
         let (owner, body) = (owner?, body?);
         let b = self.physics.world.bodies.get(body)?;
         // Fixed bodies (a sign's bracket, objects held by `SetMotionType`)
@@ -92,7 +104,17 @@ impl Engine {
         if self.grab.held.is_some() || self.disabled_controls.activate {
             return None;
         }
-        let (owner, body, at, toi) = self.grab_target()?;
+        let target = self.grab_target()?;
+        self.grab_body(target, HOLD_NEAREST)
+    }
+
+    /// Pick up a body found by `grab_target_within`, kept at least `nearest`
+    /// from the eye.
+    fn grab_body(
+        &mut self,
+        (owner, body, at, toi): (FormId, RigidBodyHandle, Vec3, f32),
+        nearest: f32,
+    ) -> Option<FormId> {
         let (_, local) = self.physics.body_local_point(body, at)?;
         self.disturb(owner);
         let mass = self.physics.joined_mass(body);
@@ -100,7 +122,7 @@ impl Engine {
             owner,
             body,
             local,
-            distance: toi.max(HOLD_NEAREST),
+            distance: toi.max(nearest),
             mass,
         });
         self.physics.held = Some(body);
@@ -112,11 +134,52 @@ impl Engine {
     /// Drop what the player holds, moving as it was (up to `DROP_SPEED`).
     pub fn release_grab(&mut self) -> Option<FormId> {
         let held = self.grab.held.take()?;
+        self.grab.telekinesis = None;
         self.physics.held = None;
         self.physics.cap_speed(held.body, DROP_SPEED);
         log::info!("player lets go of {}", held.owner);
         self.send_script_event(held.owner, "OnRelease", Vec::new());
         Some(held.owner)
+    }
+
+    /// How far a telekinesis spell of this magnitude reaches (the game
+    /// settings' base distance plus the multiplier's share of the magnitude).
+    pub(crate) fn telekinesis_reach(&self, magnitude: f32) -> f32 {
+        let gmst = |n: &str, d: f32| crate::ai::combat::gmst_f32(&self.lo, n, d);
+        reach_of(
+            gmst("fMagicTelekinesisBaseDistance", 2100.0),
+            gmst("fMagicTelekinesiDistanceMult", 1.0),
+            gmst("fMagicTelekinesisDistanceMin", 64.0),
+            magnitude,
+        )
+    }
+
+    /// The player's telekinesis spell took hold: it picks up what the
+    /// crosshair is on within its reach, unless something is held already.
+    pub(crate) fn telekinesis_started(&mut self, effect: u64, magnitude: f32) {
+        if self.grab.held.is_some() {
+            let msg = self
+                .gmst_string("sMagicTelekinesisNoRecast")
+                .unwrap_or_else(|| "You're already holding something.".into());
+            self.scripts.notify(msg);
+            return;
+        }
+        let nearest = crate::ai::combat::gmst_f32(&self.lo, "fMagicTelekinesisDistanceMin", 64.0);
+        let Some(target) = self.grab_target_within(self.telekinesis_reach(magnitude)) else {
+            return;
+        };
+        self.grab.pending = None;
+        if let Some(owner) = self.grab_body(target, nearest) {
+            log::info!("telekinesis holds {owner}");
+            self.grab.telekinesis = Some(effect);
+        }
+    }
+
+    /// A telekinesis effect ended: what it held drops.
+    pub(crate) fn telekinesis_stopped(&mut self, effect: u64) {
+        if self.grab.telekinesis == Some(effect) {
+            self.release_grab();
+        }
     }
 
     /// What the player holds (`GetPlayerGrabbedRef`).
@@ -234,5 +297,22 @@ impl Engine {
             }
             None => "holding nothing".into(),
         }
+    }
+}
+
+/// A telekinesis spell's reach: the base distance plus the multiplier's
+/// share of its magnitude, never under the minimum.
+fn reach_of(base: f32, mult: f32, min: f32, magnitude: f32) -> f32 {
+    (base + mult * magnitude).max(min)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reach_of;
+
+    #[test]
+    fn telekinesis_reaches_the_settings_distance() {
+        assert_eq!(reach_of(2100.0, 1.0, 64.0, 1.0), 2101.0);
+        assert_eq!(reach_of(0.0, 0.0, 64.0, 5.0), 64.0);
     }
 }
