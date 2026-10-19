@@ -242,6 +242,9 @@ pub enum FloatTarget {
     EmitterDeclination,
     EmitterPlanarAngle,
     InitialRotationSpeed,
+    InitialRotationSpeedVariation,
+    InitialRotationAngle,
+    InitialRotationAngleVariation,
 }
 
 /// `NiBoolInterpolator`'s value and keys (`NiBoolData`).
@@ -555,7 +558,10 @@ pub(crate) fn parse(ty: &str, r: &mut Reader) -> Result<Option<crate::Block>> {
         | "NiPSysEmitterLifeSpanCtlr"
         | "NiPSysEmitterDeclinationCtlr"
         | "NiPSysEmitterPlanarAngleCtlr"
-        | "NiPSysInitialRotSpeedCtlr" => {
+        | "NiPSysInitialRotSpeedCtlr"
+        | "NiPSysInitialRotSpeedVarCtlr"
+        | "NiPSysInitialRotAngleCtlr"
+        | "NiPSysInitialRotAngleVarCtlr" => {
             let (next, timing) = crate::anim::timing(r)?;
             if ty == "NiPSysUpdateCtlr" {
                 Block::ParticleController(ParticleController {
@@ -594,6 +600,15 @@ pub(crate) fn parse(ty: &str, r: &mut Reader) -> Result<Option<crate::Block>> {
                     "NiPSysEmitterPlanarAngleCtlr" => {
                         ControllerKind::Float(FloatTarget::EmitterPlanarAngle)
                     }
+                    "NiPSysInitialRotSpeedVarCtlr" => {
+                        ControllerKind::Float(FloatTarget::InitialRotationSpeedVariation)
+                    }
+                    "NiPSysInitialRotAngleCtlr" => {
+                        ControllerKind::Float(FloatTarget::InitialRotationAngle)
+                    }
+                    "NiPSysInitialRotAngleVarCtlr" => {
+                        ControllerKind::Float(FloatTarget::InitialRotationAngleVariation)
+                    }
                     _ => ControllerKind::Float(FloatTarget::InitialRotationSpeed),
                 };
                 Block::ParticleController(ParticleController {
@@ -618,6 +633,56 @@ pub(crate) fn parse(ty: &str, r: &mut Reader) -> Result<Option<crate::Block>> {
 mod tests {
     use super::*;
     use crate::Block;
+
+    #[test]
+    fn initial_rotation_controllers_read_exact_sse_layouts() {
+        for (ty, target) in [
+            (
+                "NiPSysInitialRotSpeedCtlr",
+                FloatTarget::InitialRotationSpeed,
+            ),
+            (
+                "NiPSysInitialRotSpeedVarCtlr",
+                FloatTarget::InitialRotationSpeedVariation,
+            ),
+            (
+                "NiPSysInitialRotAngleCtlr",
+                FloatTarget::InitialRotationAngle,
+            ),
+            (
+                "NiPSysInitialRotAngleVarCtlr",
+                FloatTarget::InitialRotationAngleVariation,
+            ),
+        ] {
+            let mut bytes = 7i32.to_le_bytes().to_vec(); // next controller
+            bytes.extend(10u16.to_le_bytes()); // active, reverse cycle
+            for value in [2.0f32, 1.0, 3.0, 5.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(8i32.to_le_bytes()); // target system
+            bytes.extend(9i32.to_le_bytes()); // interpolator
+            bytes.extend(0u32.to_le_bytes()); // modifier name
+            let strings = vec!["rotation".to_owned()];
+            let mut reader = Reader::new(&bytes);
+            reader.bs_version = 100;
+            reader.strings = &strings;
+            let Some(Block::ParticleController(c)) = parse(ty, &mut reader).unwrap() else {
+                panic!("{ty} was not decoded");
+            };
+            assert_eq!(reader.pos(), bytes.len());
+            assert_eq!((c.next, c.interpolator), (Ref(7), Ref(9)));
+            assert_eq!(c.modifier, "rotation");
+            assert_eq!(c.timing.flags, 10);
+            assert_eq!(c.timing.key_time(2.5), 4.0);
+            assert!(matches!(c.kind, ControllerKind::Float(t) if t == target));
+            for length in 0..bytes.len() {
+                let mut reader = Reader::new(&bytes[..length]);
+                reader.bs_version = 100;
+                reader.strings = &strings;
+                assert!(parse(ty, &mut reader).is_err(), "{ty}: {length} bytes");
+            }
+        }
+    }
 
     #[test]
     fn collider_shapes_read_common_links_and_exact_sse_layouts() {

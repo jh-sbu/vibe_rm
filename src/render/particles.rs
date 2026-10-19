@@ -494,8 +494,8 @@ pub struct ParticleDesc {
     pub gravity: Vec<GravityDesc>,
     pub drag: Vec<DragDesc>,
     pub colliders: Vec<ColliderDesc>,
-    /// Rotation: speed and variation, start angle and variation, random sign.
-    pub rotation: Option<(f32, f32, f32, f32, bool)>,
+    /// Initial rotation values, sampled when an emitter creates a particle.
+    pub rotation: Option<RotationDesc>,
     /// Size over the particle's life.
     pub scales: Vec<f32>,
     pub color: Option<SimpleColor>,
@@ -510,6 +510,16 @@ pub struct ParticleDesc {
     /// The system's bounds in model space.
     pub bound_center: Vec3,
     pub bound_radius: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct RotationDesc {
+    speed: Curve,
+    speed_variation: Curve,
+    angle: Curve,
+    angle_variation: Curve,
+    random_sign: bool,
+    active: Curve,
 }
 
 /// Two authored aspect ratios and their model-space speed thresholds.
@@ -810,13 +820,39 @@ pub fn describe(
                 random_sign,
                 ..
             } => {
-                d.rotation = Some((
-                    *speed,
-                    *speed_variation,
-                    *angle,
-                    *angle_variation,
-                    *random_sign,
-                ))
+                let standalone = |c: &nif::psys::ParticleController| {
+                    c.modifier == m.name
+                        && c.timing.flags & 0x20 == 0 // not manager controlled
+                        && (c.timing.active() || c.timing.app_init())
+                };
+                let rotation_curve = |target, fallback| {
+                    ctlrs
+                        .iter()
+                        .find(|c| {
+                            standalone(c)
+                                && matches!(c.kind, ControllerKind::Float(t) if t == target)
+                        })
+                        .map(|c| curve(nif, c.timing, c.interpolator, fallback))
+                        .unwrap_or_else(|| Curve::constant(fallback))
+                };
+                d.rotation = Some(RotationDesc {
+                    speed: rotation_curve(FloatTarget::InitialRotationSpeed, *speed),
+                    speed_variation: rotation_curve(
+                        FloatTarget::InitialRotationSpeedVariation,
+                        *speed_variation,
+                    ),
+                    angle: rotation_curve(FloatTarget::InitialRotationAngle, *angle),
+                    angle_variation: rotation_curve(
+                        FloatTarget::InitialRotationAngleVariation,
+                        *angle_variation,
+                    ),
+                    random_sign: *random_sign,
+                    active: ctlrs
+                        .iter()
+                        .find(|c| standalone(c) && matches!(c.kind, ControllerKind::ModifierActive))
+                        .map(|c| curve(nif, c.timing, c.interpolator, m.active as u8 as f32))
+                        .unwrap_or_else(|| Curve::constant(m.active as u8 as f32)),
+                });
             }
             ModifierKind::Scale(s) => d.scales = s.clone(),
             ModifierKind::SimpleColor {
@@ -1110,15 +1146,18 @@ impl ParticleState {
         let radius = (base_radius + ep.radius_variation * 0.5 * self.rand_signed()).max(0.0);
         let base_life = e.life_span.as_ref().map_or(ep.life_span, |c| c.sample(t));
         let life = (base_life + ep.life_span_variation * 0.5 * self.rand_signed()).max(0.05);
-        let (spin, angle) = match d.rotation {
-            Some((s, sv, a, av, random_sign)) => {
-                let mut spin = s + sv * self.rand_signed();
-                if random_sign && self.rand() < 0.5 {
+        let (spin, angle) = match &d.rotation {
+            Some(r) if r.active.sample(t) >= 0.5 => {
+                let mut spin = r.speed.sample(t) + r.speed_variation.sample(t) * self.rand_signed();
+                if r.random_sign && self.rand() < 0.5 {
                     spin = -spin;
                 }
-                (spin, a + av * self.rand_signed())
+                (
+                    spin,
+                    r.angle.sample(t) + r.angle_variation.sample(t) * self.rand_signed(),
+                )
             }
-            None => (0.0, 0.0),
+            _ => (0.0, 0.0),
         };
         let frame = self.start_frame(d);
         Some(Particle {
@@ -1529,6 +1568,203 @@ mod tests {
     fn drag_fixture(object: nif::Transform, axis: Vec3, range: f32, falloff: f32) -> ParticleDesc {
         let (nif, sys) = drag_nif_fixture(object, axis, range, falloff);
         describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap()
+    }
+
+    fn rotation_nif_fixture() -> (Nif, nif::psys::ParticleSystem) {
+        let (mut nif, sys) = drag_nif_fixture(nif::Transform::default(), Vec3::X, 0.0, 0.0);
+        nif.blocks[3] = Block::ParticleModifier(Box::new(nif::psys::Modifier {
+            name: "rotation".into(),
+            order: 3000,
+            active: true,
+            kind: ModifierKind::Rotation {
+                speed: 2.0,
+                speed_variation: 0.0,
+                angle: 0.25,
+                angle_variation: 0.0,
+                random_sign: false,
+                random_axis: false,
+                axis: Vec3::Z,
+            },
+        }));
+        (nif, sys)
+    }
+
+    fn rotation_controller(
+        nif: &mut Nif,
+        sys: &mut nif::psys::ParticleSystem,
+        target: FloatTarget,
+        value: f32,
+        keys: Vec<(f32, Vec3)>,
+    ) -> usize {
+        let index = nif.blocks.len();
+        nif.blocks.extend([
+            Block::ParticleController(nif::psys::ParticleController {
+                next: sys.av.net.controller,
+                timing: nif::anim::Timing {
+                    flags: 8 | 2, // active, reverse
+                    frequency: 2.0,
+                    phase: 1.0,
+                    start: 3.0,
+                    stop: 5.0,
+                },
+                interpolator: Ref(index as i32 + 1),
+                modifier: "rotation".into(),
+                kind: ControllerKind::Float(target),
+            }),
+            Block::ValueInterpolator(nif::anim::ValueInterpolator {
+                value: Vec3::splat(value),
+                data: Ref(index as i32 + 2),
+            }),
+            Block::ValueKeys(nif::anim::ValueKeys {
+                keys,
+                interpolation: 1,
+            }),
+        ]);
+        sys.av.net.controller = Ref(index as i32);
+        index
+    }
+
+    #[test]
+    fn initial_rotation_controllers_sample_at_birth_and_keep_existing_spin() {
+        let (mut nif, mut sys) = rotation_nif_fixture();
+        rotation_controller(
+            &mut nif,
+            &mut sys,
+            FloatTarget::InitialRotationSpeed,
+            -f32::MAX,
+            vec![(3.0, Vec3::splat(4.0)), (5.0, Vec3::splat(8.0))],
+        );
+        rotation_controller(
+            &mut nif,
+            &mut sys,
+            FloatTarget::InitialRotationAngle,
+            -f32::MAX,
+            vec![(3.0, Vec3::ZERO), (5.0, Vec3::splat(2.0))],
+        );
+        let d = describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap();
+        let mut s = ParticleState::new(19);
+        for (time, speed, angle) in [(1.0, 4.0, 0.0), (1.5, 6.0, 1.0), (2.5, 6.0, 1.0)] {
+            let p = s.emit(&d, &d.emitters[0], time).unwrap();
+            assert_eq!((p.spin, p.angle), (speed, angle));
+        }
+        let p = s.emit(&d, &d.emitters[0], 1.0).unwrap();
+        s.particles.push(p);
+        s.time = 2.0; // new births would now use speed 8 and angle 2
+        s.step(&d, 0.25, Mat3::IDENTITY);
+        assert_eq!(s.particles[0].spin, 4.0);
+        assert_eq!(s.particles[0].angle, 1.0);
+    }
+
+    #[test]
+    fn initial_rotation_variance_controllers_and_random_sign_affect_births() {
+        let (mut nif, mut sys) = rotation_nif_fixture();
+        rotation_controller(
+            &mut nif,
+            &mut sys,
+            FloatTarget::InitialRotationSpeedVariation,
+            0.5,
+            vec![],
+        );
+        rotation_controller(
+            &mut nif,
+            &mut sys,
+            FloatTarget::InitialRotationAngleVariation,
+            0.125,
+            vec![],
+        );
+        let mut d = describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap();
+        d.rotation.as_mut().unwrap().random_sign = true;
+        let mut s = ParticleState::new(17);
+        let mut signs = [false; 2];
+        let mut angles = Vec::new();
+        for _ in 0..100 {
+            let p = s.emit(&d, &d.emitters[0], 1.5).unwrap();
+            assert!((1.5..=2.5).contains(&p.spin.abs()));
+            assert!((0.125..=0.375).contains(&p.angle));
+            signs[usize::from(p.spin > 0.0)] = true;
+            angles.push(p.angle);
+        }
+        assert_eq!(signs, [true, true]);
+        assert!(angles.iter().any(|a| *a < 0.25));
+        assert!(angles.iter().any(|a| *a > 0.25));
+    }
+
+    #[test]
+    fn initial_rotation_uses_authored_defaults_for_unusable_controllers() {
+        for case in 0..6 {
+            let (mut nif, mut sys) = rotation_nif_fixture();
+            let index = rotation_controller(
+                &mut nif,
+                &mut sys,
+                FloatTarget::InitialRotationSpeed,
+                99.0,
+                vec![],
+            );
+            let Block::ParticleController(c) = &mut nif.blocks[index] else {
+                panic!()
+            };
+            match case {
+                0 => c.modifier = "another modifier".into(),
+                1 => c.timing.flags = 0,     // inactive
+                2 => c.timing.flags |= 0x20, // sequence owned
+                3 => c.interpolator = Ref(-1),
+                4 => {
+                    let Block::ValueInterpolator(i) = &mut nif.blocks[index + 1] else {
+                        panic!()
+                    };
+                    i.value = Vec3::splat(-f32::MAX); // unset, empty keys
+                }
+                _ => c.timing.flags = 1, // APP_INIT is allowed
+            }
+            let d = describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap();
+            let p = ParticleState::new(17)
+                .emit(&d, &d.emitters[0], 1.0)
+                .unwrap();
+            assert_eq!(p.spin, if case == 5 { 99.0 } else { 2.0 }, "case {case}");
+            assert_eq!(p.angle, 0.25);
+        }
+    }
+
+    #[test]
+    fn inactive_rotation_modifier_does_not_initialize_rotation() {
+        let (mut nif, sys) = rotation_nif_fixture();
+        let Block::ParticleModifier(m) = &mut nif.blocks[3] else {
+            panic!()
+        };
+        m.active = false;
+        let d = describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap();
+        let p = ParticleState::new(17)
+            .emit(&d, &d.emitters[0], 1.0)
+            .unwrap();
+        assert_eq!((p.spin, p.angle), (0.0, 0.0));
+    }
+
+    #[test]
+    fn rotation_activation_uses_only_eligible_standalone_controllers() {
+        for (flags, expected_spin) in [(0, 2.0), (8 | 0x20, 2.0), (8, 0.0), (1, 0.0)] {
+            let (mut nif, mut sys) = rotation_nif_fixture();
+            let index = rotation_controller(
+                &mut nif,
+                &mut sys,
+                FloatTarget::InitialRotationSpeed,
+                0.0,
+                vec![],
+            );
+            let Block::ParticleController(c) = &mut nif.blocks[index] else {
+                panic!()
+            };
+            c.kind = ControllerKind::ModifierActive;
+            c.timing.flags = flags;
+            nif.blocks[index + 1] = Block::BoolInterpolator(nif::psys::BoolInterpolator {
+                value: false,
+                data: Ref(-1),
+            });
+            let d = describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap();
+            let p = ParticleState::new(17)
+                .emit(&d, &d.emitters[0], 1.0)
+                .unwrap();
+            assert_eq!(p.spin, expected_spin, "flags {flags}");
+        }
     }
 
     fn particle(position: Vec3, velocity: Vec3) -> Particle {
