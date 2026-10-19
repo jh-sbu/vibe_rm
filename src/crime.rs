@@ -150,6 +150,9 @@ pub struct Crimes {
     pub crime_factions: HashMap<FormId, Option<FormId>>,
     /// Actors the player assaulted (a crime): killing them is murder.
     assaulted: HashSet<FormId>,
+    /// Actors whose blow or spell on the player was an assault: the next
+    /// ones aren't, until they stop fighting (see `assault_on_player`).
+    pub player_assailants: HashSet<FormId>,
     /// The value of what the player has stolen from each crime faction's
     /// people, unwitnessed and witnessed (CommonLibSSE `StolenItemValueStruct`).
     pub stolen_value: BTreeMap<FormId, (i32, i32)>,
