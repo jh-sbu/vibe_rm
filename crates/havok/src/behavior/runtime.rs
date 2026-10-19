@@ -1188,10 +1188,37 @@ impl Ctx<'_> {
         };
         let old = states.iter().find(|s| s.id == m.state);
         let new = states.iter().find(|s| s.id == t.to_state).expect("checked");
+        // Like duration, the effect's mode is an input at transition commit.
+        // Invalid bound enums retain the authored mode; a variable still takes
+        // precedence over a duplicate property even when its value is invalid.
+        let mode_input = if let Some(v) = t.self_mode_variable {
+            self.shared.maps[gi]
+                .vars
+                .get(v)
+                .and_then(|&mapped| self.values.get(mapped))
+                .copied()
+        } else {
+            t.self_mode_property.as_ref().and_then(|property| {
+                self.shared
+                    .project
+                    .character
+                    .as_ref()?
+                    .scalar_properties
+                    .get(&property.to_ascii_lowercase())
+                    .copied()
+            })
+        };
+        let self_mode = match mode_input {
+            Some(0.0) => SelfTransitionMode::ContinueIfCyclicBlendIfAcyclic,
+            Some(1.0) => SelfTransitionMode::Continue,
+            Some(2.0) => SelfTransitionMode::Reset,
+            Some(3.0) => SelfTransitionMode::Blend,
+            _ => t.self_mode,
+        };
         // Into the state it is in: the effect says whether that restarts it.
         let again = t.to_nested.is_none() && old.is_some_and(|s| s.id == new.id);
         if again
-            && match t.self_mode {
+            && match self_mode {
                 SelfTransitionMode::Continue => true,
                 SelfTransitionMode::ContinueIfCyclicBlendIfAcyclic => {
                     m.child.as_deref().is_some_and(cyclic)
@@ -1217,7 +1244,7 @@ impl Ctx<'_> {
             })
             .or(t.blend)
             .unwrap_or(0.0);
-        let blend = if again && t.self_mode == SelfTransitionMode::Reset {
+        let blend = if again && self_mode == SelfTransitionMode::Reset {
             0.0
         } else {
             blend
@@ -5018,6 +5045,10 @@ mod tests {
     /// A machine whose state 0 plays `first` and state 1 a single-play clip, and
     /// whose event `Again` leads back into state 0 over half a second.
     fn self_transition(first: ClipMode, mode: SelfTransitionMode) -> Instance {
+        instance(self_transition_graph(first, mode))
+    }
+
+    fn self_transition_graph(first: ClipMode, mode: SelfTransitionMode) -> BehaviorGraph {
         let mut again = Transition::new(0, 0, None);
         again.blend = Some(0.5);
         again.self_mode = mode;
@@ -5035,7 +5066,126 @@ mod tests {
             clip("Loop", first, vec![]),
             clip("Once", ClipMode::SinglePlay, vec![]),
         ];
-        instance(BehaviorGraph::new("G", Some(0), gens, vec!["Again".into()]))
+        BehaviorGraph::new("G", Some(0), gens, vec!["Again".into()])
+    }
+
+    fn self_mode_property_graph(first: ClipMode) -> BehaviorGraph {
+        let mut g = self_transition_graph(first, SelfTransitionMode::Blend);
+        let Generator::StateMachine { states, .. } = &mut g.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].self_mode_property = Some("SELFMODE".into());
+        g
+    }
+
+    #[test]
+    fn transition_self_mode_properties_are_per_character_and_read_only() {
+        for (mode, clip_mode, count, sample_time, changes) in [
+            (0.0, ClipMode::Looping, 1, 1.25, 0),
+            (0.0, ClipMode::SinglePlay, 2, 0.25, 1),
+            (1.0, ClipMode::SinglePlay, 1, 1.25, 0),
+            (2.0, ClipMode::Looping, 1, 0.25, 1),
+            (3.0, ClipMode::Looping, 2, 0.25, 1),
+        ] {
+            let mut i =
+                property_instance(self_mode_property_graph(clip_mode), &[("selfmode", mode)]);
+            i.update(1.0, &mut durations);
+            assert!(i.handle_event("Again", &mut durations));
+            i.update(0.25, &mut durations);
+            let samples = i.samples();
+            assert_eq!(samples.len(), count);
+            assert!(samples.iter().any(|s| (s.time - sample_time).abs() < 1e-5));
+            assert_eq!(i.changes(), changes);
+            assert!(!i.set_variable("SelfMode", 7.0));
+            assert_eq!(i.variable("SelfMode"), None);
+            assert_eq!(
+                i.shared
+                    .project
+                    .character
+                    .as_ref()
+                    .unwrap()
+                    .scalar_properties["selfmode"],
+                mode
+            );
+        }
+    }
+
+    #[test]
+    fn unavailable_or_invalid_transition_self_modes_keep_authored_mode() {
+        let graph = || self_mode_property_graph(ClipMode::Looping);
+        let mut non_scalar = property_instance(graph(), &[]);
+        Arc::get_mut(&mut Arc::get_mut(&mut non_scalar.shared).unwrap().project)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .bone_weights
+            .insert("selfmode".into(), vec![2.0]);
+        let mut instances = vec![
+            instance(graph()),
+            property_instance(graph(), &[]),
+            non_scalar,
+        ];
+        // An unresolved variable index preserves the authored BLEND, without
+        // reading either enum zero or the duplicate CONTINUE property.
+        let mut invalid_variable = graph();
+        let Generator::StateMachine { states, .. } = &mut invalid_variable.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].self_mode_variable = Some(99);
+        instances.push(property_instance(invalid_variable, &[("selfmode", 1.0)]));
+        for value in [
+            -1.0,
+            0.5,
+            4.0,
+            256.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
+            instances.push(property_instance(graph(), &[("selfmode", value)]));
+        }
+        for mut i in instances {
+            i.update(1.0, &mut durations);
+            assert!(i.handle_event("Again", &mut durations));
+            i.update(0.25, &mut durations);
+            assert_eq!(playing(&i), [("Loop".into(), 0.5), ("Loop".into(), 0.5)]);
+        }
+    }
+
+    #[test]
+    fn transition_self_mode_variables_win_at_pending_commit() {
+        for value in [2.0, f32::NAN] {
+            let mut g = self_mode_property_graph(ClipMode::Looping);
+            let variable = g.add_variable("Mode", VarType::Real, 1.0);
+            let Generator::StateMachine { states, .. } = &mut g.generators[0] else {
+                unreachable!()
+            };
+            let t = &mut states[0].transitions[0];
+            t.self_mode_variable = Some(variable);
+            t.initiate = Some(Interval {
+                enter_event: -1,
+                exit_event: -1,
+                enter_time: 1.0,
+                exit_time: 0.0,
+            });
+            let mut i = property_instance(g, &[("selfmode", 1.0)]);
+            i.update(0.5, &mut durations);
+            assert!(i.handle_event("Again", &mut durations));
+            assert_eq!(i.changes(), 0);
+            assert!(i.set_variable("Mode", value));
+            i.update(0.5, &mut durations);
+            assert_eq!(i.changes(), 1);
+            // After commit, changes to the input do not alter the chosen restart.
+            assert!(i.set_variable("Mode", 1.0));
+            i.update(0.25, &mut durations);
+            if value.is_nan() {
+                assert_eq!(playing(&i), [("Loop".into(), 0.5), ("Loop".into(), 0.5)]);
+            } else {
+                assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+                assert_eq!(time(&i), 0.25);
+            }
+        }
     }
 
     #[test]
