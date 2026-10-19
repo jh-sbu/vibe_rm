@@ -2579,7 +2579,7 @@ impl Engine {
         let Some(base) = self.base_of(*id) else {
             return "Activate".into();
         };
-        let owned = self.ref_owner(*id).is_some_and(|o| self.owned_by_other(o));
+        let owned = self.ref_owned_by_other(*id);
         match self.lo.tag_of(base).map(|t| t.0) {
             Some(t) if t == *b"DOOR" => "Open",
             Some(t) if t == *b"CONT" && owned => "Steal from",
@@ -2608,8 +2608,7 @@ impl Engine {
         if let Some((id, _)) = &self.look_target
             && self.base_of(*id).is_some_and(|b| self.flora(b).is_some())
         {
-            return !self.is_harvested(*id)
-                && self.ref_owner(*id).is_some_and(|o| self.owned_by_other(o));
+            return !self.is_harvested(*id) && self.ref_owned_by_other(*id);
         }
         matches!(&*self.look_verb(), "Steal" | "Steal from" | "Pickpocket")
     }

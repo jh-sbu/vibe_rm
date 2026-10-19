@@ -201,15 +201,28 @@ pub fn enter_start(m: &Marker, enter: &[Arc<BoundClip>]) -> (Vec3, f32) {
 
 /// Owner of a reference (`XOWN`), falling back to its cell's owner.
 pub(crate) fn owner_of(lo: &LoadOrder, r: FormId) -> Option<FormId> {
+    owner_and_rank_of(lo, r).map(|(owner, _)| owner)
+}
+
+/// The owner as `owner_of` finds it, with the rank its faction requires of
+/// whoever uses its things (`XRNK` of the record that holds the owner; -1
+/// when none is given).
+pub(crate) fn owner_and_rank_of(lo: &LoadOrder, r: FormId) -> Option<(FormId, i32)> {
     let own = |rec: &esp::LoadedRecord<'_>| {
-        rec.get(b"XOWN")
+        let owner = rec
+            .get(b"XOWN")
             .filter(|d| d.len() >= 4)
-            .map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+            .map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))?;
+        let rank = rec
+            .get(b"XRNK")
+            .filter(|d| d.len() >= 4)
+            .map_or(-1, |d| i32::from_le_bytes(d[0..4].try_into().unwrap()));
+        Some((owner, rank))
     };
     let rec = lo.get(r)?;
     own(&rec)
         .or_else(|| lo.get(lo.cell_of_ref(r)?).and_then(|c| own(&c)))
-        .filter(|f| !f.is_null())
+        .filter(|(f, _)| !f.is_null())
 }
 
 /// Whether `npc` may use `kind` of furniture owned by `owner`. Beds must be its own
@@ -533,6 +546,42 @@ pub fn ways_to_use(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owners_come_with_the_rank_their_faction_asks() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-xrnk-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let refr = |id: u32| RecordBuilder::new(b"REFR", FormId(id));
+        let records = [Node::top(
+            b"REFR",
+            vec![
+                refr(0x800).form(b"XOWN", FormId(0x900)).u32(b"XRNK", 2),
+                refr(0x801).form(b"XOWN", FormId(0x900)),
+                refr(0x802)
+                    .form(b"XOWN", FormId(0x900))
+                    .u32(b"XRNK", u32::MAX),
+                refr(0x803),
+            ],
+        )];
+        std::fs::write(
+            dir.join("Owners.esp"),
+            write_plugin(0, &[], "test", "", 0x804, &records),
+        )
+        .unwrap();
+        let lo = LoadOrder::load(&dir, &["Owners.esp".into()]).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let owner = Some((FormId(0x900), 2));
+        assert_eq!(owner_and_rank_of(&lo, FormId(0x800)).map(|o| o.1), Some(2));
+        assert_eq!(owner_and_rank_of(&lo, FormId(0x801)).map(|o| o.1), Some(-1));
+        assert_eq!(owner_and_rank_of(&lo, FormId(0x802)).map(|o| o.1), Some(-1));
+        assert_eq!(
+            owner_and_rank_of(&lo, FormId(0x800)).map(|o| o.0),
+            owner.map(|o| o.0)
+        );
+        assert_eq!(owner_and_rank_of(&lo, FormId(0x803)), None);
+        assert_eq!(owner_of(&lo, FormId(0x803)), None);
+    }
 
     #[test]
     fn to_world_turns_clockwise() {

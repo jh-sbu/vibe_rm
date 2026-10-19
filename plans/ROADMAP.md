@@ -820,7 +820,9 @@ game each piece unlocks.
   `GetInSharedCrimeFaction`. Stolen goods stay marked as their owners' (red in
   the menus, the red "Steal" / "Steal from" prompts) and are confiscated into
   the faction's stolen goods chest on paying; `GetStolenItemValue(NoCrime)`.
-  Picking a lock someone else owns is a crime when seen. Trespassing: in an
+  Picking a lock someone else owns is a crime when seen. An owned reference's
+  required faction rank (`XRNK`, on it or its cell) counts: a member below it
+  is as good as outside for stealing, locks, beds and cells. Trespassing: in an
   off limits cell, or a home while its owner's package locks the doors (not
   public areas), whoever sees the player warns them with the Trespass topic
   (`GetTrespassWarningLevel`, `IsTrespassing`), warns again, then calls the
@@ -1296,7 +1298,7 @@ game each piece unlocks.
      `GetAmountSoldStolen`; NPCs' crimes (`GetCrime`,
      `GetActorCrimePlayerEnemy`), the unreported crime faction; faction
      changes at runtime updating the favor cap; dropped items' ownership;
-     locks' `XRNK`, alias-given keys and factions, `Lock`'s "as owner"
+     locks' alias-given keys and factions, `Lock`'s "as owner"
      argument, trespass for opening a lock
    - Combat, more: attackers forgetting a lost fleeing target
      (`fCombatDetectionFleeingLostRemoveTime`,
