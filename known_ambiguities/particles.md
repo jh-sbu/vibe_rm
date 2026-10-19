@@ -56,7 +56,8 @@ are used below is this engine's reading.
   its object. Drag damps the velocity component along its object's axis,
   within its range and falloff; the formula and evidence are below.
 - **Rotation** spins quads in the screen plane at speed ± variation
-  (random sign when asked) from angle ± variation.
+  (random sign when asked) from angle ± variation. Standalone initial rotation
+  controllers supply these birth values; scope and unresolved details are below.
 - **Subtextures.** Without a subtexture modifier each particle shows one
   random cell. With one, it starts at the start frame plus up to the start
   fudge and flips on by (end - start) over its life.
@@ -268,3 +269,46 @@ Synthetic description and quad tests exercise the enable mask, unchanged
 disabled output, endpoint clamping, interpolation and narrowing, full velocity
 magnitude, rotation and velocity orientation, instance scaling, forces changing
 speed, and invalid-input fallbacks.
+
+## Initial rotation controllers
+
+Public evidence:
+
+- Local UESP searches for `NiPSysRotationModifier` and `BSPSysSubTexModifier`
+  found no matching pages. The public community-maintained
+  [NifTools schema](https://github.com/niftools/nifxml/blob/develop/nif.xml)
+  defines `NiPSysInitialRotSpeedCtlr`, `NiPSysInitialRotSpeedVarCtlr`,
+  `NiPSysInitialRotAngleCtlr` and `NiPSysInitialRotAngleVarCtlr` as float
+  modifier controllers, with no fields beyond their inherited controller
+  header, interpolator and modifier name in Skyrim SE. Their descriptions
+  identify initial speed, speed variation, angle and angle variation.
+  `NiPSysRotationModifier` specifies radians, radians per second, symmetric
+  plus/minus variation ranges and optional random negation of initial speed.
+- Only public schema text was examined for this change. Tests use synthetic
+  NIF blocks and bytes; no game assets, executable/library binary data or
+  leaked documents were examined or added.
+
+Implemented policy and unresolved behavior:
+
+- Match controllers by modifier name and float target. Sample all four values
+  at emitter birth on each controller's existing frequency/phase/cycle clock.
+  Missing interpolators and unset values without keys retain the modifier's
+  authored value. Inactive and manager-owned controllers are excluded;
+  active or APP_INIT standalone controllers are supported. Duplicate matches
+  use the first linked controller, following existing particle selection.
+- Retain the existing uniform variation and random-sign policy. Existing
+  particles keep their initial spin as time advances; controller changes
+  affect subsequent emitter births. Modifier activation gates initialization:
+  births while inactive start with zero angle/spin, while existing particles
+  continue rotating. Exact deactivation semantics remain unverified in Skyrim SE.
+- Sequence-owned rotation controllers, blending, rotation axes and initial
+  orientation from velocity remain deferred. The existing particle curve
+  sampler linearly interpolates quadratic/TBC keys after decoding, so their
+  tangent behavior is not reproduced. Spawned descendants retain the parent's
+  angle and spin instead of resampling initial rotation; original behavior is
+  unresolved. These limitations are not claims about Skyrim's engine behavior.
+
+Synthetic tests cover all four exact decoder layouts and every truncated
+payload, name/target matching, standalone eligibility, absent/unset data,
+nonzero-start reverse clocks, varied/random-sign births and stable existing
+particle rotation. No original-game runtime equivalence is claimed.

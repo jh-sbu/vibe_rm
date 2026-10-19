@@ -997,6 +997,9 @@ game each piece unlocks.
   Speed-to-aspect (aspect flag bit 8) interpolates between authored ratios
   using current model-space speed, composed with rotation and velocity orientation;
   interpolation, sizing and speed-space policies remain documented below.
+  Standalone initial rotation angle, speed and variance controllers sample
+  birth values on their own clocks, with modifier activation; axes, sequence
+  ownership and interpolation limits remain documented below.
   Open questions:
   `known_ambiguities/particles.md`
 - Addon nodes: a model's `BSValueNode`s take the addon node (ADDN) whose index is
