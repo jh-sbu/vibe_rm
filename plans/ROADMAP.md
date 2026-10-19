@@ -403,6 +403,13 @@ game each piece unlocks.
   sneak flag set. A survivor that wasn't fighting its attacker searches for
   it rather than fighting at once. Open questions:
   `known_ambiguities/sneak-attacks.md`
+- Critical strikes: the perks' "Calculate My Critical Hit Chance" (Bladesman,
+  Deep Wounds, Critical Shot 10 / 15 / 20 %, the Critical Charges 100 % for a
+  sprinting power attack) and "Mod Enemy Critical Hit Chance" give the chance;
+  a critical blow adds the weapon's `CRDT` damage through "Calculate My
+  Critical Hit Damage" (x1.25, x1.5, x2) past armor, counts the player's
+  "Critical Strikes" and sets `GetLastHitCritical`; `IsSprinting` is the
+  player's. Open questions: `known_ambiguities/critical-hits.md`
 - Skills and leveling: the player's skill uses earn XP by each skill's `AVSK`
   (use mult and offset), skills go up at `improve mult x level ^ fSkillUseCurve
   + offset` ("One-handed Increased to 21"), each level reached giving character
@@ -1288,7 +1295,7 @@ game each piece unlocks.
    (`known_ambiguities/invisibility.md`); illusion spells chosen by NPCs; enchantment charges,
    NPCs poisoning their weapons; `known_ambiguities/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
-   waiting on casting, crafting, barter, critical hits, attack types;
+   waiting on casting, crafting, barter, attack types;
    `known_ambiguities/perks.md`), inventory (player's, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
@@ -1374,7 +1381,7 @@ game each piece unlocks.
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
      (crafting, dragon souls collected, horses stolen,
-     critical strikes, backstabs, disarms; Favorite Weapon)
+     backstabs, disarms; Favorite Weapon)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets; the charge and
      survival meters, load door info, favor mode

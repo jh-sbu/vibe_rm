@@ -151,6 +151,9 @@ pub struct Engine {
     /// The attacker and what it strikes with while a blow lands
     /// (`Engine::weapon_of`).
     pub(crate) striking: Option<(FormId, Option<FormId>)>,
+    /// Actors whose latest blow taken was a critical strike
+    /// (`GetLastHitCritical`).
+    pub(crate) critically_hit: std::collections::HashSet<FormId>,
     /// Seen from behind the player rather than through their eyes.
     pub third_person: bool,
     /// How far behind the eye the third-person camera sits.
@@ -408,6 +411,7 @@ impl Engine {
             player_swing: None,
             player_attack_recovery: 0.0,
             striking: None,
+            critically_hit: Default::default(),
             third_person: false,
             third_person_distance: crate::player_body::THIRD_PERSON_DEFAULT,
             third_person_combat: 0.0,

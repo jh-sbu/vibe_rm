@@ -26,6 +26,9 @@ use crate::engine::{Engine, PLAYER_REF};
 
 /// Entry points used here (CommonLibSSE `BGSEntryPoint::ENTRY_POINTS`).
 pub mod ep {
+    pub const CALCULATE_MY_CRITICAL_HIT_CHANCE: u8 = 1;
+    pub const CALCULATE_MY_CRITICAL_HIT_DAMAGE: u8 = 2;
+    pub const MOD_ENEMY_CRITICAL_HIT_CHANCE: u8 = 17;
     pub const MOD_SNEAK_ATTACK_MULT: u8 = 18;
     pub const MOD_RECOVER_ARROW_CHANCE: u8 = 21;
     pub const MOD_SPELL_MAGNITUDE: u8 = 29;
