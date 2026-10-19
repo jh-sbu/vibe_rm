@@ -42,6 +42,10 @@ const ARROW_EMBED: f32 = 40.0;
 /// Bow animation type (`WEAP` `DNAM`).
 const ANIM_BOW: u8 = 7;
 
+#[cfg(test)]
+#[path = "archery_ammo_tests.rs"]
+mod ammo_tests;
+
 /// Where an archer is in its shot.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Draw {
@@ -92,6 +96,43 @@ pub fn arrow(lo: &LoadOrder, ammo: FormId) -> Option<Arrow> {
         a.model = crate::world::records::model_path(&rec);
     }
     Some(a)
+}
+
+/// Only non-bolt `AMMO` records can supply a bow, including explicitly worn
+/// ammunition. `arrow` also reads bolts for projectile users, so it deliberately
+/// does not impose this restriction itself.
+fn bow_ammo_damage(lo: &LoadOrder, ammo: FormId) -> Option<f32> {
+    let rec = lo.get(ammo).filter(|r| r.tag().0 == *b"AMMO")?;
+    let d = rec.get(b"DATA").filter(|d| d.len() >= 12)?;
+    let flags = u32::from_le_bytes(d[4..8].try_into().unwrap());
+    (flags & AMMO_NON_BOLT != 0).then(|| f32_at(d, 8))
+}
+
+/// Prefer carried, equipped arrows, otherwise the strongest carried arrows.
+/// NPCs with none use iron arrows. Keep the same compatibility check on all
+/// paths: a worn bolt must not suppress a usable arrow or be fired by a bow.
+fn arrows_in(
+    lo: &LoadOrder,
+    inv: Option<&crate::world::inventory::Inventory>,
+    npc: bool,
+) -> Option<Arrow> {
+    let carried = inv.map(|i| &i.items[..]).unwrap_or_default();
+    let equipped = inv.and_then(|i| {
+        i.equipped().iter().copied().find(|&f| {
+            carried.iter().any(|&(item, n)| item == f && n > 0) && bow_ammo_damage(lo, f).is_some()
+        })
+    });
+    let best = equipped.or_else(|| {
+        carried
+            .iter()
+            .filter(|&&(_, n)| n > 0)
+            .filter_map(|&(f, _)| bow_ammo_damage(lo, f).map(|damage| (f, damage)))
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|a| a.0)
+    });
+    let ammo =
+        best.or_else(|| (npc && bow_ammo_damage(lo, IRON_ARROW).is_some()).then_some(IRON_ARROW))?;
+    arrow(lo, ammo)
 }
 
 /// A `PROJ` record's gravity, speed, range and model (`DATA`), into `a`.
@@ -296,34 +337,7 @@ impl Engine {
     /// The arrows an actor (or the player) shoots: its best by damage, or iron
     /// ones for an NPC that has none (NPCs never run out).
     pub(crate) fn arrows_of(&self, actor: FormId) -> Option<Arrow> {
-        let inv = self.inventories.get(&actor);
-        let carried = inv.map(|i| &i.items[..]).unwrap_or_default();
-        let equipped = inv.and_then(|i| {
-            i.equipped()
-                .iter()
-                .copied()
-                .find(|&f| self.lo.tag_of(f).map(|t| t.0) == Some(*b"AMMO"))
-        });
-        let best = equipped
-            .filter(|&f| carried.iter().any(|&(i, n)| i == f && n > 0))
-            .or_else(|| {
-                carried
-                    .iter()
-                    .filter(|&&(_, n)| n > 0)
-                    .filter_map(|&(f, _)| {
-                        let rec = self.lo.get(f).filter(|r| r.tag().0 == *b"AMMO")?;
-                        let d = rec.get(b"DATA").filter(|d| d.len() >= 12)?;
-                        let flags = u32::from_le_bytes(d[4..8].try_into().unwrap());
-                        (flags & AMMO_NON_BOLT != 0).then_some((f, f32_at(d, 8)))
-                    })
-                    .max_by(|a, b| a.1.total_cmp(&b.1))
-                    .map(|a| a.0)
-            });
-        match best {
-            Some(a) => arrow(&self.lo, a),
-            None if actor != PLAYER_REF => arrow(&self.lo, IRON_ARROW),
-            None => None,
-        }
+        arrows_in(&self.lo, self.inventories.get(&actor), actor != PLAYER_REF)
     }
 
     /// Whether each archer has a clear shot at its target's body: nothing but the
