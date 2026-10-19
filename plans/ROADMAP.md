@@ -799,7 +799,8 @@ game each piece unlocks.
   `GetRelationshipRank` and highest / lowest, Papyrus get / set. Conditions
   `HasAssociationType` / `HasAssociationTypeAny` and `HasFamilyRelationship` /
   `HasFamilyRelationshipAny` query direct authored links and their association's
-  family flag; secret metadata retained, behavior still pending
+  family flag, `HasParentRelationship` the parent end of a Parent / Child link;
+  secret metadata retained, behavior still pending
   (`known_ambiguities/relationships.md`). Conditions
   `GetIsCurrentPackage`, `IsInList`, `DoesNotExist`, location keyword data.
   Cleared locations: by their bosses dying or `SetCleared`, with the banner,
@@ -1155,8 +1156,7 @@ game each piece unlocks.
      `known_ambiguities/story-cast-events.md`), new voice powers, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
-   - `HasParentRelationship` and secret
-     relationship behavior (`known_ambiguities/relationships.md`)
+   - Secret relationship behavior (`known_ambiguities/relationships.md`)
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
    - Quiet Casting, Shadow Warrior (with casting); blindness, and spells

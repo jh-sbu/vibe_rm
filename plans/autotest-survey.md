@@ -86,6 +86,11 @@ run (2026-10-13) settled all but three (`autotest5`'s module doc).
 
 ### Still to do
 
+- **HasParentRelationship** (`relationships.md`): a quest condition on
+  `HasParentRelationship` evaluated against NPC pairs linked by vanilla
+  Parent / Child, in-law, grandparent and boss / employee RELA records, in
+  both directions, logged by script: which end counts and which ASTPs.
+
 - **Remove item event's members** (`story-manager.md`): a test quest of ours under
   the game's REMP node (`OnStoryRemoveFromPlayer`) can log R1 / R2 / V1 after the script
   calls `DropObject`, `RemoveItem` into a container or an NPC: does R1 come out the player, and does
