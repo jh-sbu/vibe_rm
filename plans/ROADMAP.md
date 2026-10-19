@@ -1028,7 +1028,9 @@ game each piece unlocks.
   (`NiTransformController`, `NiVisController`) moved, scaled and shown by them (the
   sprays' emitters swept round, ice shards flying), their shader controllers
   started with them (`APP_INIT` ones too), world-space particles left where they
-  were emitted as their emitters move.
+  were emitted as their emitters move. An impact's hazard (`NAM2`) is left where
+  it lands: its spell touches whoever is within its radius on its interval for its
+  record's lifetime, the oldest of its kind going at its limit.
   Console `impact`; `VRM_NO_IMPACTS=1`
   leaves out effects and decals; vrm-tool `impacts`. Open questions:
   `known_ambiguities/impacts.md`
@@ -1305,8 +1307,8 @@ game each piece unlocks.
      (`fCombatDetectionFleeingLostRemoveTime`,
      `fCombatLowFleeingTargetHitPercent`); flee dialogue's distance rules
      (`fCombatDialogueFleeDistanceMult`; timer scheduling: see Done);
-     impacts' hazards (`NAM2`),
-     results (bounce, impale, stick)
+     impacts' results (bounce, impale, stick); their hazards' models, lights,
+     sounds and flags
    - Encumbrance, more: fast travel refused over-encumbered (with the
      map), followers' "can't carry any more"
    - Perks, more: staggers, bow zoom, key rewards; refunds and the Legendary reset; NPCs' skills advancing

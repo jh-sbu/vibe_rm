@@ -221,6 +221,10 @@ Left out so far:
   already at rank 2 (kept?), `SetFactionRank` and `ModFactionRank` on one
   that is out (joins? stays out?), after `RemoveFromFaction` (-1), and
   `IsInFaction` after each. Plain vanilla natives on a placed NPC.
+- **Impact hazards** (`impacts.md`): whether a hazard an impact's `NAM2`
+  leaves is observable by script (an arrow's impact at a known place, then
+  `Game.FindClosestReferenceOfType` for the `HAZD` base within its radius)
+  and how long it lasts against its record's lifetime.
 - **Package locations** (`package-trees.md`), `GetWithinPackageLocation`:
   an NPC held (`SetDontMove`) in the test cell with two packages, the first
   conditioned on `GetWithinPackageLocation` (its own condition, as the
