@@ -490,6 +490,11 @@ game each piece unlocks.
   themselves and pay magicka through the existing casting pipeline. Healing
   bypasses enemy range/sight and cancels a pending bow draw. Start/stop
   thresholds and scoring remain provisional: `known_ambiguities/npc-healing.md`
+- Slow Time (archetype 37, the shout's three words): while an effect lasts
+  the world (actors, projectiles, physics, particles, triggers, hazards,
+  animated objects) runs at its magnitude's share of real time (0.3, 0.2,
+  0.1), the slowest winning; the player, magic timers and scripts stay in
+  real time: `known_ambiguities/magic.md`
 - Illusion's hold on fighting: calm, fear (and turn undead), frenzy and rally
   effects hold the target's aggression or confidence at their own value
   (calm -1, fear 0, frenzy 3, rally foolhardy) for as long as they last,
@@ -1279,7 +1284,7 @@ game each piece unlocks.
      See `known_ambiguities/water.md` and
      `known_ambiguities/triggers.md` (lava is scripted triggers, fires
      are placed hazards: see Done)
-   - Magic, more: detect life, telekinesis, slow time; dropped soul gems'
+   - Magic, more: detect life, telekinesis; dropped soul gems'
      per-item souls (public reports describe emptying: see
      `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
      taper, area, addictions, potion and food flags; image-space modifiers

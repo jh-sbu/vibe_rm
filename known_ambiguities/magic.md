@@ -204,3 +204,24 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   powers and drinking potions don't (UESP: powers fail, "most potions
   don't work": neither is modelled). NPCs go on fighting an ethereal
   player.
+
+## Slow Time
+
+Implemented in `Engine::world_speed` (`src/magic.rs`) and the frame in
+`Engine::update`. Sources: CommonLibSSE-NG's `SlowTimeEffect` (a script
+effect started and finished with a sound loop) and `BSTimer`'s global time
+multiplier; the records (`VoiceSlowTime1`-`3`: archetype 37, magnitude 0.3,
+0.2, 0.1, duration 8, 12, 16 s; the effect's script only applies the image
+space modifiers).
+
+- Unconfirmed: the magnitude is taken as the world's share of real speed,
+  the slowest of any active effect winning. Actors' and projectiles'
+  updates, physics, particles, triggers, hazards and animated objects run at
+  that share; the player (movement, attacks, casting, shouting), the
+  effects' own timers and durations, scripts' waits and the game clock stay
+  in real time. The game may instead scale the effects' durations, the
+  waits, or the player's speed through a separate player multiplier (the
+  camera shot record has separate player, target and global time
+  multipliers). The change is immediate, not eased in or out. A test: time
+  Slow Time's duration, a falling object, an NPC's walk and the player's
+  walk against the real clock.

@@ -205,6 +205,14 @@ Left out so far:
   the message box stops the script. Should the NPC's weapon take it, that
   NPC fighting a held target would show whether a blocked blow uses the
   dose (the target's health over its poison's duration).
+- **Slow Time** (`magic.md`): `VoiceSlowTime1` cast by script on the
+  player, with `Utility.GetCurrentRealTime` and `Game.GetRealHoursPassed`
+  read at the start and when `HasMagicEffect` of its effect turns false
+  (the duration in real seconds: 8, or 26 if scaled), and a held NPC with
+  `Utility.Wait` marks (waits in slowed or real time?). A dropped object
+  (`PlaceAtMe` a book, `SetMotionType` dynamic) timed against it falling
+  with and without the effect; an NPC walking a `TravelToRadius` leg timed
+  likewise; the player's walk can't be scripted unattended.
 - **Leveled spell lists** (`npc-templates.md`): test NPCs placed by
   `PlaceAtMe`, each naming a test `LVSP` in its spell list: entries at
   levels 1, 10 and 30 (no "all levels") on a level-30 NPC with the player
