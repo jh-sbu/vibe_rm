@@ -100,6 +100,22 @@ toggles actor AI).
 - `spike/swf`: the spike that worked out running the menus (a harness and its
   notes)
 
+## Local UESP reference
+
+The manually downloaded UESP wiki dump can be indexed for offline research:
+
+```sh
+python3 scripts/uesp.py import refs/uespwiki-2026-10-11-current.xml
+python3 scripts/uesp.py search "armor rating"
+python3 scripts/uesp.py read "Skyrim:Armor" --sections
+```
+
+The SQLite index retains every page, with searches scoped to Skyrim-related
+namespaces by default. Queries return bounded snippets or numbered page sections
+with source revision links. See [the reference tool documentation](scripts/README.md)
+for filters, reading sections, and refreshing the index. The dump and database
+remain in ignored `refs/`.
+
 ## Verifying format support
 
 ```sh
