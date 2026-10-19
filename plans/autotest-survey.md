@@ -98,6 +98,12 @@ Tried and not settled:
   the game. Needs another way to make a trap move (activating the game's
   trap trigger?).
 
+- **Script-set animation variables vs the engine's writes**
+  (`object-graphs.md`): `SetAnimationVariableFloat("Speed", 0)` on a walking
+  NPC (or `Direction` / `IsBlocking`), then `GetAnimationVariableFloat` a few
+  frames later: does the script's value stick or does the engine's own write
+  replace it?
+
 Left out so far:
 
 - **Summons** (`magic.md`): placement, limit, follow distances (no way to

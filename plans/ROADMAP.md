@@ -1040,7 +1040,8 @@ game each piece unlocks.
   their `SoundPlay.<sound>` events. Parts the graphs move hit as keyframed traps
   (swinging blades and battering rams deal their damage); user-controlled and
   ping-pong clips; references' scripts keep their base's properties they don't set;
-  `Get/SetAnimationVariableBool/Int/Float` on actors' and objects' graphs. NPCs
+  `Get/SetAnimationVariableBool/Int/Float` on actors' and objects' graphs (a script's
+  value holds against the AI's own writes: `known_ambiguities/object-graphs.md`). NPCs
   getting into furniture activate it (`OnActivate`): a wood pile's
   `CarryFurnitureScript` hears the pick-up's `AddToInventory` and gives the actor
   its firewood. Carry furniture: the idle tree's ways on are picked for users with
@@ -1135,8 +1136,7 @@ game each piece unlocks.
    - Engine variables and events still missing: combat, first person;
      INFO speaker / listener idles; listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes, decals
-   - `BSBehaviorGraphExtraData`'s "controls base skeleton"; script-set graph
-     variables (`SetAnimationVariable*`) surviving the AI's own writes
+   - `BSBehaviorGraphExtraData`'s "controls base skeleton"
    - Later / separate: standalone controllers on skinned geometry, particle systems, attachments,
      distant and loose objects; collision following standalone transforms,
      persistence and driver arbitration (`known_ambiguities/node-controllers.md`);

@@ -221,6 +221,25 @@ pub struct GraphAnim {
     feet: FootIkState,
     bind: Vec<Transform>,
     scratch: Vec<havok::QsTransform>,
+    /// Variables a script set (`SetAnimationVariable*`): the engine's own writes
+    /// to them (speed, state, head tracking...) no longer apply.
+    pinned: ScriptPins,
+}
+
+/// Names of the graph variables scripts took over, matched ignoring case.
+#[derive(Default)]
+struct ScriptPins(Vec<String>);
+
+impl ScriptPins {
+    fn pin(&mut self, name: &str) {
+        if !self.holds(name) {
+            self.0.push(name.to_ascii_lowercase());
+        }
+    }
+
+    fn holds(&self, name: &str) -> bool {
+        self.0.iter().any(|p| p.eq_ignore_ascii_case(name))
+    }
 }
 
 /// Clip lookup for one actor while the graph runs.
@@ -294,6 +313,7 @@ impl GraphAnim {
             feet: FootIkState::default(),
             bind: skeleton.bind_locals(),
             scratch: Vec::new(),
+            pinned: ScriptPins::default(),
         }
     }
 
@@ -405,8 +425,20 @@ impl GraphAnim {
         self.inst.variable(name)
     }
 
+    /// The engine's own write (movement, combat, equipment...): ignored, and
+    /// false, for a variable a script took over.
     pub fn set_variable(&mut self, name: &str, value: f32) -> bool {
-        self.inst.set_variable(name, value)
+        !self.pinned.holds(name) && self.inst.set_variable(name, value)
+    }
+
+    /// A script's write (`SetAnimationVariable*`): the variable keeps the value
+    /// against the engine's later writes until a script sets it again.
+    pub fn set_script_variable(&mut self, name: &str, value: f32) -> bool {
+        let known = self.inst.set_variable(name, value);
+        if known {
+            self.pinned.pin(name);
+        }
+        known
     }
 
     /// How many times the graph changed state so far (`Instance::changes`).
@@ -640,5 +672,21 @@ impl GraphAnim {
             motion,
             raised,
         }
+    }
+}
+
+#[cfg(test)]
+mod pin_tests {
+    use super::ScriptPins;
+
+    #[test]
+    fn pins_match_ignoring_case_and_once() {
+        let mut p = ScriptPins::default();
+        assert!(!p.holds("Speed"));
+        p.pin("Speed");
+        p.pin("SPEED");
+        assert!(p.holds("speed"));
+        assert!(!p.holds("Direction"));
+        assert_eq!(p.0.len(), 1);
     }
 }

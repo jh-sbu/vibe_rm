@@ -48,3 +48,10 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
 - Graph events are matched to registrations and waits ignoring case (the blade
   raises `Reset`, its script waits for `reset`). In the game a registration
   for `WEAPONDRAW` got the player's `weaponDraw` (`test-mod autotest2`).
+- Script-set graph variables (`SetAnimationVariable*`) hold against the
+  engine's own writes (an actor's `Speed`, `iState`, `bHeadTracking`,
+  `IsBlocking`...) from the first script write on, until a script sets them
+  again. Unconfirmed: public sources don't say whether the game's own per-frame
+  writes win over a script's, or when it stops a held value. Chosen so a script
+  that sets a variable the engine also drives sees it stick; a graph's own
+  modifiers (expression and variable outputs) still write them.
