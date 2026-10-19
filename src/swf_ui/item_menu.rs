@@ -213,7 +213,8 @@ struct Row {
 
 /// What the list shows, to know when it must be filled again: each row's side,
 /// item, owner and count, what is worn and what is in hand, the favorites,
-/// the soul shown on each gem's card and the poison icon on each weapon's.
+/// the soul shown on each gem's card, the poison icon on each weapon's and
+/// the best-in-class star.
 type Listed = (
     Vec<(bool, FormId, Option<FormId>, i32)>,
     Vec<FormId>,
@@ -222,6 +223,7 @@ type Listed = (
     Vec<Option<u8>>,
     Vec<bool>,
     Vec<Option<i32>>,
+    Vec<bool>,
 );
 
 pub(super) struct ItemMenu {
@@ -486,6 +488,7 @@ impl ItemMenu {
             .get(&PLAYER_REF)
             .cloned()
             .unwrap_or_default();
+        let best = best_in_class(engine, &rows);
         let listed = listed_state(
             &rows,
             &inv,
@@ -493,12 +496,13 @@ impl ItemMenu {
             |r| self.soul_level(engine, r),
             |r| row_poisoned(&self.kind, r, &engine.inventories),
             |r| self.charge(engine, r).map(|c| (c * 100.0).round() as i32),
+            &best,
         );
         if self.listed.as_ref() != Some(&listed) {
             let entries: Vec<Value> = rows
                 .iter()
                 .enumerate()
-                .map(|(i, r)| self.entry(engine, i, r, &inv))
+                .map(|(i, r)| self.entry(engine, i, r, &inv, best[i]))
                 .collect();
             // The cards first: filling the list asks for the selected one's.
             *self.cards.lock().unwrap() = rows.iter().map(|r| self.card(engine, r)).collect();
@@ -516,7 +520,7 @@ impl ItemMenu {
     /// A row as the list's entry: its name, count, equip icon, categories,
     /// favorite star and whether taking it is stealing (red); `vrmRow` is its
     /// place in `rows`.
-    fn entry(&self, engine: &Engine, i: usize, r: &Row, inv: &Inventory) -> Value {
+    fn entry(&self, engine: &Engine, i: usize, r: &Row, inv: &Inventory, best: bool) -> Value {
         let item = &r.item;
         let favorite = !r.theirs && engine.favorites.contains(&item.item);
         let equip = match r.theirs {
@@ -543,6 +547,8 @@ impl ItemMenu {
             ("favorite", Value::Bool(favorite)),
             ("enabled", Value::Bool(true)),
             ("isStealing", Value::Bool(stealing)),
+            // The list adds `BestIcon.png` after the name.
+            ("bestInClass", Value::Bool(best)),
             ("vrmRow", num(i as f32)),
         ])
     }
@@ -1044,6 +1050,64 @@ fn common_card(row: &ListedItem, poisoned: bool) -> Vec<(&'static str, Value)> {
     ]
 }
 
+/// The class an item competes in for the best-in-class star: a weapon's
+/// animation type (`WEAP` `DNAM`: 1 sword ... 7 bow, 9 crossbow; not fists or
+/// staves), or an armor's slot. `None` for what is never marked.
+fn weapon_class(anim: u8) -> Option<u32> {
+    matches!(anim, 1..=7 | 9).then_some(0x100 + u32::from(anim))
+}
+
+/// An armor piece's class by its biped slots (`BOD2`): body, hands, feet,
+/// shield, then head. Jewelry, cloaks and the rest have none.
+fn armor_class(slots: u32) -> Option<u32> {
+    [0x4, 0x8, 0x80, 0x200, 0x1]
+        .into_iter()
+        .find(|bit| slots & bit != 0)
+}
+
+/// Marks, of the player's own rows, those that are the best of their class
+/// (see `known_ambiguities/inventory-cards.md`): the most armor rating for an
+/// armor slot, the most base damage for a weapon type, ties all marked.
+/// Enchantments, poisons and perks that don't change the card's number don't
+/// count.
+fn best_in_class(engine: &Engine, rows: &[Row]) -> Vec<bool> {
+    let none = engine.protection_of(PLAYER_REF, &[]).rating;
+    let scored: Vec<Option<(u32, f32)>> = rows
+        .iter()
+        .map(|r| {
+            if r.theirs {
+                return None;
+            }
+            let rec = engine.lo.get(r.item.item)?;
+            match r.item.info.kind {
+                ItemKind::Weapon => Some((
+                    weapon_class(crate::world::inventory::weapon_anim_type(&rec))?,
+                    crate::ai::combat::weapon_damage(&engine.lo, r.item.item),
+                )),
+                ItemKind::Armor => Some((
+                    armor_class(crate::world::inventory::armor_slots(&rec))?,
+                    engine.protection_of(PLAYER_REF, &[r.item.item]).rating - none,
+                )),
+                _ => None,
+            }
+        })
+        .collect();
+    marked_best(&scored)
+}
+
+/// Which (class, score) entries have their class's top score.
+fn marked_best(scored: &[Option<(u32, f32)>]) -> Vec<bool> {
+    let mut top: HashMap<u32, f32> = HashMap::new();
+    for &(class, score) in scored.iter().flatten() {
+        let t = top.entry(class).or_insert(score);
+        *t = t.max(score);
+    }
+    scored
+        .iter()
+        .map(|s| s.is_some_and(|(class, score)| score >= top[&class]))
+        .collect()
+}
+
 fn listed_state(
     rows: &[Row],
     inv: &Inventory,
@@ -1051,6 +1115,7 @@ fn listed_state(
     soul: impl Fn(&Row) -> Option<u8>,
     poisoned: impl Fn(&Row) -> bool,
     charge: impl Fn(&Row) -> Option<i32>,
+    best: &[bool],
 ) -> Listed {
     (
         rows.iter()
@@ -1067,6 +1132,8 @@ fn listed_state(
         rows.iter().map(poisoned).collect(),
         // Spending or restoring a weapon's charge changes only its card.
         rows.iter().map(charge).collect(),
+        // A skill or a new item can change which one is best.
+        best.to_vec(),
     )
 }
 
@@ -1189,6 +1256,31 @@ mod tests {
             inv.put_soul(GEM, soul);
         }
         inv
+    }
+
+    #[test]
+    fn best_in_class_marks_each_classs_top_score_with_ties() {
+        let scored = [
+            Some((weapon_class(1).unwrap(), 7.0)),
+            Some((weapon_class(1).unwrap(), 9.0)),
+            Some((weapon_class(1).unwrap(), 9.0)),
+            Some((weapon_class(2).unwrap(), 4.0)),
+            Some((armor_class(0x4).unwrap(), 20.0)),
+            None,
+        ];
+        assert_eq!(marked_best(&scored), [false, true, true, true, true, false]);
+    }
+
+    #[test]
+    fn classes_leave_out_staves_fists_and_jewelry() {
+        assert_eq!(weapon_class(0), None);
+        assert_eq!(weapon_class(8), None);
+        assert_ne!(weapon_class(7), weapon_class(9));
+        // A helmet covering head and hair, a body piece, jewelry.
+        assert_eq!(armor_class(0x3), armor_class(0x1));
+        assert_ne!(armor_class(0x4), armor_class(0x8));
+        assert_eq!(armor_class(0x20), None);
+        assert_eq!(armor_class(0x40), None);
     }
 
     #[test]
@@ -1368,6 +1460,7 @@ mod tests {
                 |r| row_soul_level(&kind, r, inventories, 0),
                 |r| row_poisoned(&kind, r, inventories),
                 |_| None,
+                &[false],
             )
         };
         let empty = snapshot(&inventories);
@@ -1491,6 +1584,7 @@ mod tests {
                 |_| None,
                 |r| row_poisoned(&Kind::Inventory, r, inventories),
                 |_| None,
+                &[false],
             )
         };
         let clean = snapshot(&inventories);
