@@ -262,6 +262,10 @@ Last in a run, or a run of their own:
 
 ## Manual only (a test mod the user plays)
 
+- **Best-in-class mark** (`inventory-cards.md`): drawn by the UI only, no
+  Papyrus reading. Seen in play: give the player several swords, daggers,
+  helmets and light/heavy body pieces, and note which carry the icon (classes,
+  ties, light against heavy, enchanted items).
 - **Rumor pooling and response arbitration** (`dialogue-selection.md`):
   create a dedicated NPC and running quests with RUMO topics, distinct
   prompts and INFO fragments recording counters and sequence numbers.
