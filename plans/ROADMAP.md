@@ -875,7 +875,8 @@ game each piece unlocks.
   flag) near a reported crime run after the player calling on them to halt
   and stop them with the arrest dialogue (blocking branches, `GetAlarmed`):
   pay (on the spot, or let out at the jail), go to jail, or resist; walking
-  off is resisting. Factions' Arrest / Attack on Sight flags make guards
+  off is resisting; sheathing afterwards is yielding (the guards stop and
+  arrest again, once a fight). Factions' Arrest / Attack on Sight flags make guards
   attack at a bounty. Jail: the sentence by bounty, belongings and stolen
   goods taken, the jail outfit, served by sleeping in the cell bed.
   `SendPlayerToJail`, `SetPlayerResistingArrest`, `GetDaysInJail`,
@@ -1331,7 +1332,7 @@ game each piece unlocks.
      `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
      taper, area, addictions, the rest of potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target)
-   - Crime, more: arrests (yielding by sheathing, guards following through
+   - Crime, more: arrests (guards following through
      doors, opening the cell after five hits, The Chill, the follower wait
      marker, `GetArrestingActor`, the jail outfit); Cidhna Mine and the Orc
      strongholds (`DialogueCrimeOrcs`); bribes, persuasion and Thanes; the
