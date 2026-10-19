@@ -69,9 +69,11 @@ pub struct ModelAnim {
     pub controllers: Vec<model::NodeChannel>,
     /// The time its animation starts at (its text keys' `start`).
     pub start: f32,
-    /// The behaviour graph project moving the parts (`meshes/...hkx`), and the
-    /// model's nodes as the skeleton its clips pose.
-    pub graph: Option<(String, Arc<crate::world::skeleton::Skeleton>)>,
+    /// The behaviour graph project moving the parts (`meshes/...hkx`), the
+    /// model's nodes as the skeleton its clips pose, and whether the graph
+    /// poses the wearer's own skeleton instead (`BSBehaviorGraphExtraData`'s
+    /// "controls base skeleton": a tail's, on top of the actor's graph).
+    pub graph: Option<(String, Arc<crate::world::skeleton::Skeleton>, bool)>,
 }
 
 pub struct AnimPart {
@@ -147,7 +149,7 @@ impl ModelCache {
             Option<CpuModel>,
             Option<crate::physics::shapes::CollisionModel>,
             Option<Arc<[nif::FurnitureMarker]>>,
-            Option<(String, Arc<crate::world::skeleton::Skeleton>)>,
+            Option<(String, Arc<crate::world::skeleton::Skeleton>, bool)>,
             Vec<model::NodeChannel>,
             f32,
         )> = missing
@@ -178,6 +180,7 @@ impl ModelCache {
                                 (
                                     format!("meshes/{}", f.replace('\\', "/").to_ascii_lowercase()),
                                     Arc::new(crate::world::skeleton::Skeleton::from_nif(&n)),
+                                    n.controls_base_skeleton(),
                                 )
                             });
                             let m = match variant {
@@ -312,7 +315,11 @@ impl ModelCache {
                         })
                     })
                 });
-            if let Some(cpu) = m.as_mut().filter(|m| effect || !m.animated.is_empty()) {
+            let wearer_graph = graph.as_ref().is_some_and(|g| g.2);
+            if let Some(cpu) = m
+                .as_mut()
+                .filter(|m| effect || wearer_graph || !m.animated.is_empty())
+            {
                 let parts = std::mem::take(&mut cpu.animated)
                     .into_iter()
                     .filter(|a| hierarchy || !a.model.meshes.is_empty())

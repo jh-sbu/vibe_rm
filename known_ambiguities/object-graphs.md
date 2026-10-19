@@ -9,7 +9,10 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
 
 - `BSBehaviorGraphExtraData`: a name, the behaviour project file relative to
   `meshes` (`Traps\RiggedRockFall\RiggedRockFall01.hkx`), and whether it
-  controls the base skeleton. The project has the same layout as an actor's:
+  controls the base skeleton (set on 4 of the 1199 vanilla meshes: the
+  Argonian and Khajiit tails, `AuxBones\Tail\TailProject.hkx`, whose five
+  `TailBone` bones are in the beast skeleton too; every other one, actors'
+  skeletons included, is 0). The project has the same layout as an actor's:
   character, skeleton (`characterassets/skeleton.hkx`), behaviours and clips.
 - The skeleton's bones are the model's nodes: the rigged rockfall's 21 bones
   are `Base01` and the 20 nodes carrying a `NiTransformController`.
@@ -48,3 +51,19 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
 - Graph events are matched to registrations and waits ignoring case (the blade
   raises `Reset`, its script waits for `reset`). In the game a registration
   for `WEAPONDRAW` got the player's `weaponDraw` (`test-mod autotest2`).
+- Script-set graph variables (`SetAnimationVariable*`) hold against the
+  engine's own writes (an actor's `Speed`, `iState`, `bHeadTracking`,
+  `IsBlocking`...) from the first script write on, until a script sets them
+  again. Unconfirmed: public sources don't say whether the game's own per-frame
+  writes win over a script's, or when it stops a held value. Chosen so a script
+  that sets a variable the engine also drives sees it stick; a graph's own
+  modifiers (expression and variable outputs) still write them.
+- A graph that controls the base skeleton (the tails') runs beside the actor's
+  own and poses only its skeleton's bones (`TailBone01..05`) over the actor
+  graph's. Unconfirmed: how the game feeds it. We copy every variable it shares
+  by name from the actor's graph each update and pass it the actor's events
+  and the events the actor's graph raises (`tailMTLocomotion`, `tailSprint`,
+  `tailCombatIdle`... are among 39 `tail*` events in the character graphs; the
+  aux graph's other triggers, `staggerStart` and the jumps, are events the AI
+  sends the actor's graph). It is set up when the actor spawns from the first
+  worn model with such a graph, and not again when it changes what it wears.

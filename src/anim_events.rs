@@ -67,7 +67,7 @@ impl Engine {
     pub(crate) fn set_anim_variable(&mut self, r: FormId, name: &str, value: f32) {
         match self.graph_mut(r) {
             Some(g) => {
-                if !g.set_variable(name, value) {
+                if !g.set_script_variable(name, value) {
                     log::debug!("{r}: no graph variable {name}");
                 }
             }

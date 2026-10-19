@@ -98,6 +98,18 @@ Tried and not settled:
   the game. Needs another way to make a trap move (activating the game's
   trap trigger?).
 
+- **Script-set animation variables vs the engine's writes**
+  (`object-graphs.md`): `SetAnimationVariableFloat("Speed", 0)` on a walking
+  NPC (or `Direction` / `IsBlocking`), then `GetAnimationVariableFloat` a few
+  frames later: does the script's value stick or does the engine's own write
+  replace it?
+
+- **Blending effects' modes** (`state-machine-events.md`): a script can't
+  send graph events to an NPC's state machine and read which clip plays, but
+  `SendAnimationEvent` of an event with a self-transition (a re-entered
+  weapon-state wildcard) then `GetAnimationVariable*` / timing of the
+  following animation would show whether the state restarted.
+
 Left out so far:
 
 - **Summons** (`magic.md`): placement, limit, follow distances (no way to
