@@ -38,6 +38,8 @@ pub struct WorldState {
     /// Objects' behaviour graphs as their cells unloaded (a lever pulled, a
     /// portcullis raised, a rockfall come down), to run on from there.
     pub object_graphs: HashMap<FormId, crate::world::behavior::GraphAnim>,
+    /// The player's learned ingredient effects: (ingredient, index in its list).
+    pub learned_effects: std::collections::HashSet<(FormId, usize)>,
 }
 
 /// Where a moved reference is now.

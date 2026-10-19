@@ -33,6 +33,8 @@ game each piece unlocks.
   and their change if worn, effects, the bottom bar's stats; equipping, using,
   reading, dropping, favorites; scroll spell cards and localized soul-gem
   cards, refreshed when a gem is filled, the best-in-class mark (`known_ambiguities/inventory-cards.md`);
+  ingredient cards' learned effects (eating one teaches its first, or as many as
+  Experimenter's entry point reveals; the rest read "$UNKNOWN");
   weapon cards' poison icon, refreshed when poison is applied or exhausted
   (`known_ambiguities/poisons.md`);
   `showinventory open`); containers, bodies,
@@ -1322,8 +1324,8 @@ game each piece unlocks.
      the spike)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the quantity slider's use for more than dropping, rows grouped by captured soul with per-item
-     selection and transfers (`known_ambiguities/inventory-cards.md`), ingredients' learned
-     effects,
+     selection and transfers (`known_ambiguities/inventory-cards.md`); alchemy
+     teaching the effects two ingredients share (waits on crafting),
      equipping scrolls and torches in a hand, the survival warmth rating
    - The HUD: notifications' display
      time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;
