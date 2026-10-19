@@ -452,6 +452,7 @@ impl GraphAnim {
         inst.update(dt, &mut src);
         let samples = inst.samples();
         let raised = inst.take_raised();
+        let turn = inst.character_turn(dt);
         let clips: Vec<Option<Arc<BoundClip>>> =
             samples.iter().map(|s| src.clip(&s.animation)).collect();
 
@@ -507,6 +508,8 @@ impl GraphAnim {
             motion.0 /= motion_weight;
             motion.1 /= motion_weight;
         }
+        // `hkbRotateCharacterModifier` turns the character on top of its clips' root motion.
+        motion.1 += turn;
         if log::log_enabled!(log::Level::Trace) {
             let bare: Vec<&str> = (0..n)
                 .filter(|&b| weight[b] <= 1e-6)

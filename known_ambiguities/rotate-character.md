@@ -2,8 +2,10 @@
 
 The reader now retains the authored character-rotation settings, and
 `Instance::character_rotations` exposes running modifiers with supported scalar
-inputs resolved. **No rotation is applied to actors yet.** The roadmap's actual
-character-turning integration remains pending.
+inputs resolved, and `Instance::character_turn(dt)` turns them into a yaw. The
+engine adds that yaw to the frame's root-motion yaw (`world/behavior.rs`), which
+only furniture use consumes today; **ordinary NPC heading is still driven by the
+AI, so no walking or standing actor is turned by the modifier.**
 
 ## Public and asset evidence
 
@@ -39,17 +41,26 @@ Tests use invented packfile contents and graphs.
   input, omits the modifier rather than presenting stale authored input. The
   active-settings accessor neither multiplies rates nor normalizes/interprets
   the axis.
-- `degreesPerSecond` names a rate with a degree unit, but the exact rotation step,
-  multiplier application, axis coordinate space, sign relative to actor yaw,
-  normalization requirements and vector W semantics still need public
-  documentation or controlled game-side observation. No formula is implemented
-  from the field names alone.
+- Chosen step: counter-clockwise yaw per update = `degreesPerSecond *
+  speedMultiplier` in radians times `dt` times the vertical (Z) component of the
+  normalized axis. All vanilla instances inspected use axis (0,0,1) with
+  rate 90 (bound to `TurnDelta` in the three character behaviours) and
+  multiplier 1, so the axis space, sign convention (positive = counter-clockwise,
+  right-handed Z up) and the multiplier as a plain factor are guesses that the
+  data does not contradict. Horizontal axis components are ignored (no pitch or
+  roll of the actor); a zero axis turns nothing; W is unused. Whether the engine
+  applies the product per frame as a rotation delta (as here) or the rate is
+  a target rotation speed folded into the animation-driven yaw is unconfirmed.
+- Contributions of several running modifiers are summed, added to (not blended
+  with) the weighted-average clip yaw. Branch weights are not applied.
 - Composition with clip root motion, actor-facing controls, generator transforms,
   and ordering when multiple rotation modifiers run remain unresolved. The
   current active-modifier traversal does not establish branch weights, masks,
   outgoing transition participation, or original enable-gate lifecycle behavior.
-  Integrating this accessor into actor movement before resolving these questions
-  could introduce double turns or apply a branch's rotation at full strength.
+  The yaw is therefore deliberately not fed to the AI's heading: the AI already
+  turns actors from the `turnLeft` / `turnRight` events, and adding the modifier
+  on top would double the turn. Only furniture, which already takes the root
+  motion yaw, sees it.
 - The AI and player body already supply `TurnDelta`, but its original-engine
   units and meaning relative to this modifier remain unverified. Turning through
   action-tree events also remains pending. Parsing and exposing these settings
