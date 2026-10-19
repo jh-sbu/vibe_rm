@@ -779,7 +779,8 @@ game each piece unlocks.
   get their scripts once the running scripts yield (they were lost before).
   More events: the player taking items (`AIPL`: picked up, from containers and
   bodies, stolen), NPCs greeting the player (`AHEL`), finding bodies (`DEAD`),
-  assaults (`ASSU`, crime when the victim keeps the law), relationship rank
+  assaults (`ASSU`, crime when the victim keeps the law; blows to the player
+  too, never a crime; NPC kills have crime status 0), relationship rank
   changes (`CHRR`). Crime events: crime gold added (`ADCR`), the player
   giving themselves up to the guard arresting them (`ARRT`: Thieves Guild
   `TG00`'s arrest monitor), jailed (`JAIL`: `JailQuest`, the Windhelm jail
@@ -1146,8 +1147,7 @@ game each piece unlocks.
      `known_ambiguities/story-cast-events.md`), new voice powers, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
-   - Kill events' crime status for NPC killers; the "sold" acquire type;
-     assault events for blows to the player; `HasParentRelationship` and secret
+   - The "sold" acquire type; `HasParentRelationship` and secret
      relationship behavior (`known_ambiguities/relationships.md`)
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:

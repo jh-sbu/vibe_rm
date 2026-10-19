@@ -104,7 +104,16 @@ Script event nodes of ours under the game's script event root:
   is chosen, so the quests it starts can supply it.
 - Assaults: the first blow an actor takes from someone it isn't fighting; a
   crime when it wasn't fighting anyone and keeps the law (a faction that
-  tracks crime). Blows to the player send none.
+  tracks crime). Blows to the player count the same way: the first blow
+  or hostile spell from an actor not fighting them sends one (never a
+  crime: the player keeps no law) and starts that actor's fight, so the
+  rest don't. The event's members and when it is sent (every blow, or the
+  first) are not in any public source found (CK wiki "Assault Actor
+  Event" lists the victim, attacker and location; xEdit and CommonLibSSE
+  name `ASSU` only); the first-blow rule is the one chosen.
+- Kills by NPCs: the kill event's crime status is 0. The crime system
+  tracks only the player's crimes (CK wiki "Crime"), so an NPC's murder
+  of anyone is not reported or counted; no source says otherwise.
 - Bodies: a living, calm humanoid within 1000 units with nothing between
   its eyes and the body (once a second), once for each finder and body.
 - Crime events' members beyond those: the other references R1, R2 in
