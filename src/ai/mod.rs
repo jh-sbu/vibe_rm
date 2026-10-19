@@ -426,6 +426,9 @@ pub struct ActorRuntime {
     pub(crate) loose: bool,
     /// Practising with weapons (UseWeapon), and where its loosed arrow aims.
     pub(crate) practice: Option<practice::Practice>,
+    /// A UseWeapon package that completed (its barrages or time ran out): it is
+    /// not picked again until it stops applying.
+    pub(crate) finished_package: Option<FormId>,
     pub(crate) practice_aim: Option<Vec3>,
     /// Took another weapon to practise: the one it had (to take back after).
     pub(crate) practice_weapon: Option<Option<FormId>>,
@@ -528,6 +531,7 @@ impl ActorRuntime {
             hand_equipped: [false; 2],
             arrow_release: false,
             practice: None,
+            finished_package: None,
             practice_aim: None,
             practice_weapon: None,
             loose: false,
@@ -2986,13 +2990,14 @@ impl Engine {
             seed
         };
         let mut decisions = Vec::new();
+        let mut forgotten = Vec::new();
         let mut creature_ways = Vec::new();
         for (key, rt) in &self.cells {
             for (i, a) in rt.actors.iter().enumerate() {
                 if a.next_eval - dt > 0.0 || a.exiting.is_some() {
                     continue;
                 }
-                let pick = a.packages.iter().position(|p| {
+                let applies = |p: &package::Package| {
                     let ctx = crate::condition::Context {
                         subject: Some(a.ref_id),
                         quest: p.quest,
@@ -3000,7 +3005,19 @@ impl Engine {
                     };
                     p.schedule.matches(self.hour, self.day)
                         && crate::condition::evaluate(self, &p.conditions, ctx)
-                });
+                };
+                // A completed package is passed over while it still applies, and
+                // runs afresh once it has stopped (and starts again).
+                let finished = a
+                    .finished_package
+                    .filter(|&id| a.packages.iter().any(|p| p.id == id && applies(p)));
+                if finished.is_none() && a.finished_package.is_some() {
+                    forgotten.push((*key, i));
+                }
+                let pick = a
+                    .packages
+                    .iter()
+                    .position(|p| applies(p) && Some(p.id) != finished);
                 // A multi-location sandbox starts at its first stop, or a random one.
                 let stop = match pick.map(|pi| &a.packages[pi]) {
                     Some(_) if pick == a.current => a.stop,
@@ -3067,6 +3084,9 @@ impl Engine {
                             always_power_attack: u.always_power_attack,
                             pause: u.pause,
                             attacks: u.attacks,
+                            never_end: u.never_end,
+                            barrages: u.barrages,
+                            max_time: u.max_time,
                         }
                     });
                     Goal {
@@ -3097,6 +3117,11 @@ impl Engine {
         for rt in self.cells.values_mut() {
             for a in &mut rt.actors {
                 a.next_eval -= dt;
+            }
+        }
+        for (key, i) in forgotten {
+            if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) {
+                a.finished_package = None;
             }
         }
         for (f, way) in creature_ways {
