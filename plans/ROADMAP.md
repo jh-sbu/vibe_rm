@@ -32,7 +32,7 @@ game each piece unlocks.
   (`inventorymenu.swf`: categories, the item card with armor rating and damage
   and their change if worn, effects, the bottom bar's stats; equipping, using,
   reading, dropping, favorites; scroll spell cards and localized soul-gem
-  cards, refreshed when a gem is filled (`known_ambiguities/inventory-cards.md`);
+  cards, refreshed when a gem is filled, the best-in-class mark (`known_ambiguities/inventory-cards.md`);
   weapon cards' poison icon, refreshed when poison is applied or exhausted
   (`known_ambiguities/poisons.md`);
   `showinventory open`); containers, bodies,
@@ -1322,8 +1322,7 @@ game each piece unlocks.
      rotating and zooming it), the quantity slider's use for more than dropping, rows grouped by captured soul with per-item
      selection and transfers (`known_ambiguities/inventory-cards.md`), ingredients' learned
      effects,
-     equipping scrolls and torches in a hand, the best-in-class star, the
-     survival warmth rating
+     equipping scrolls and torches in a hand, the survival warmth rating
    - The HUD: notifications' display
      time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;
      `known_ambiguities/messages.md`); controller rumble for camera shakes

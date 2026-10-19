@@ -69,3 +69,33 @@ base and captured souls, mixed/invalid state, every inventory source, and
 empty-to-mixed-to-filled refresh snapshots with unchanged row identity/count.
 They validate the implementation's contract, not the original game's UI
 appearance.
+
+## Best-in-class mark
+
+Implemented in `src/swf_ui/item_menu.rs` (`best_in_class`). The game's
+`InventoryScrollingList.SetEntryText` (read in the Interface SWFs' AS2, shared
+by the inventory, container, barter and gift menus) appends
+`<img src='BestIcon.png' vspace='2'>` to the text of an entry whose
+`bestInClass` is `true`; the menus' own art draws it, so the entry only
+carries the flag. The icon is a hollow triangle/diamond, not a star.
+
+Public community accounts (the Elder Scrolls fandom wiki's menu page; a Nexus
+mod description of the vanilla "BestInClass" feature; a forum post) say it
+marks, among the player's items, the best weapon (not staves) or apparel (not
+jewelry) of its type by armor rating or damage, with roughly ten classes in
+vanilla, and ignores enchantments and perks. No source gives the classes, the
+exact number compared or the tie rule, so:
+
+- **Classes.** A weapon's animation type (sword, dagger, axe, mace, two-hand
+  sword, two-hand axe/hammer, bow, crossbow), an armor's slot (body, hands,
+  feet, shield, head). That is 13 classes, not ~10; light and heavy armor
+  are compared together (the mod above says vanilla does and splits them in
+  its 24). Jewelry, cloaks, circlets and the rest, staves, fists and ammo are
+  never marked.
+- **What is compared.** The card's own numbers: base weapon damage; an
+  armor's rating through `protection_of` (skill and armor perks included,
+  enchantments not). Tempering and poisons are not tracked on items yet.
+- **Ties and singles.** Every item tied for the top is marked, and a lone item
+  of its class is marked.
+- **Scope.** The player's rows only (worn items included), in every item
+  menu; the other side's rows are never marked.
