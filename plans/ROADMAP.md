@@ -143,8 +143,9 @@ game each piece unlocks.
   chains, other modes and blending limits: `known_ambiguities/twist-modifier.md`
 - `hkbRotateCharacterModifier` data and active inputs: authored enable, rate,
   multiplier and aligned axis retained; scalar variable / character-property
-  bindings and event gates exposed by the runtime. Actor rotation is still
-  pending: `known_ambiguities/rotate-character.md`
+  bindings and event gates exposed by the runtime; running modifiers' yaw
+  (rate x multiplier x dt about the vertical axis) is added to the frame's root-motion
+  yaw. Open: `known_ambiguities/rotate-character.md`
 - Read-only scalar character properties on behaviour generators: clip start,
   playback speed and user-controlled time, selector index, blend parameter and
   state-machine start ID use the runtime's existing input paths, with graph
@@ -1116,8 +1117,8 @@ game each piece unlocks.
      properties on remaining generator members, blender-child members beyond `weight`
      and `boneWeights`, and transition-effect members beyond `duration`,
      runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`);
-     applying `hkbRotateCharacterModifier` (inputs parsed: see Done;
-     `known_ambiguities/rotate-character.md`); the other action trees
+     feeding `hkbRotateCharacterModifier`'s yaw (computed: see Done) into ordinary NPC
+     heading in place of the AI's own turning (`known_ambiguities/rotate-character.md`); the other action trees
      (`ActionTurnLeft`...) as the way events are chosen
    - Carry furniture (wood piles done, see Done): packages or sandboxing that
      take a carrier to where the load goes (now any wood pile it happens to pick);

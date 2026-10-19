@@ -2130,6 +2130,26 @@ impl Instance {
         active
     }
 
+    /// Counter-clockwise yaw in radians the running character-rotation modifiers turn the
+    /// character through in `dt` seconds: rate times multiplier along the vertical part of
+    /// each axis (see `known_ambiguities/rotate-character.md`). Unit-length axes are not
+    /// assumed; a zero or non-finite axis turns nothing.
+    pub fn character_turn(&self, dt: f32) -> f32 {
+        self.character_rotations()
+            .iter()
+            .map(|r| {
+                let axis = r.axis.truncate();
+                let up = if axis.length() > 1e-6 && axis.is_finite() {
+                    axis.normalize().z
+                } else {
+                    0.0
+                };
+                let turn = (r.degrees_per_second * r.speed_multiplier).to_radians() * dt * up;
+                if turn.is_finite() { turn } else { 0.0 }
+            })
+            .sum()
+    }
+
     /// Bound members of modifier `m` and their variables' values.
     fn bound_members(&self, gi: usize, m: ModId) -> impl Iterator<Item = (&str, f32)> {
         self.shared.graph(gi).modifier_bindings[m]
@@ -2152,9 +2172,7 @@ impl Instance {
             )
     }
 
-    /// Running character-rotation modifiers with scalar inputs resolved. This
-    /// does not rotate the actor: coordinate space and motion composition are
-    /// not established. Unsupported bindings omit the modifier rather than
+    /// Running character-rotation modifiers with scalar inputs resolved. Unsupported bindings omit the modifier rather than
     /// exposing an authored value in place of a bound vector.
     pub fn character_rotations(&self) -> Vec<RotateCharacter> {
         self.running_modifiers()
@@ -4312,6 +4330,43 @@ mod tests {
         assert_eq!(i.character_rotations().len(), 1);
         i.handle_event("Off", &mut durations);
         assert!(i.character_rotations().is_empty());
+    }
+
+    #[test]
+    fn character_turn_scales_rate_by_multiplier_axis_and_time() {
+        let turn = |rate: f32, mult: f32, axis: glam::Vec4, dt: f32| {
+            let mut g = BehaviorGraph::new(
+                "Rotation",
+                Some(0),
+                vec![Generator::Wrap {
+                    name: "Wrapped".into(),
+                    class: "hkbModifierGenerator".into(),
+                    child: None,
+                    modifier: Some(0),
+                }],
+                vec![],
+            );
+            g.modifiers = vec![Modifier::RotateCharacter(RotateCharacter {
+                enabled: true,
+                degrees_per_second: rate,
+                speed_multiplier: mult,
+                axis,
+            })];
+            g.modifier_bindings = vec![vec![]];
+            instance(g).character_turn(dt)
+        };
+        let up = glam::Vec4::Z;
+        assert!((turn(90.0, 1.0, up, 1.0) - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        assert!((turn(90.0, 0.5, up, 0.5) - std::f32::consts::FRAC_PI_2 / 4.0).abs() < 1e-5);
+        assert!(turn(-90.0, 1.0, up, 1.0) < 0.0);
+        // A downward axis reverses the turn; a longer one is normalized; a horizontal or
+        // zero one does not yaw.
+        assert!(turn(90.0, 1.0, -up, 1.0) < 0.0);
+        let long = glam::Vec4::new(0.0, 0.0, 4.0, 0.0);
+        assert!((turn(90.0, 1.0, long, 1.0) - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        assert_eq!(turn(90.0, 1.0, glam::Vec4::X, 1.0), 0.0);
+        assert_eq!(turn(90.0, 1.0, glam::Vec4::ZERO, 1.0), 0.0);
+        assert_eq!(turn(f32::NAN, 1.0, up, 1.0), 0.0);
     }
 
     #[test]
