@@ -61,6 +61,11 @@ pub struct Transition {
     pub flags: u16,
     /// Cross-fade time (`hkbBlendingTransitionEffect`); `None` switches at once.
     pub blend: Option<f32>,
+    /// What entering the state it is already in does (the effect's
+    /// `selfTransitionMode`).
+    pub self_mode: SelfTransitionMode,
+    /// Where events go while the cross-fade plays (the effect's `eventMode`).
+    pub event_mode: EventMode,
     /// Variable bound to the blend's duration, if any.
     pub blend_variable: Option<usize>,
     /// Read-only character property bound to the blend's duration, if any.
@@ -74,6 +79,55 @@ pub struct Transition {
     /// When the transition may begin (`FLAG_USE_INITIATE_INTERVAL`); one triggered
     /// earlier waits for it.
     pub initiate: Option<Interval>,
+}
+
+/// `hkbTransitionEffect::SelfTransitionMode`: a transition into the state the
+/// machine is in. Without an effect, the state restarts as `Blend` does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelfTransitionMode {
+    /// Carry on if the state's generator loops, else blend.
+    ContinueIfCyclicBlendIfAcyclic,
+    /// Stay as it is: nothing restarts.
+    Continue,
+    /// Restart at once, without a blend.
+    Reset,
+    /// Restart, blending from the state as it was.
+    #[default]
+    Blend,
+}
+
+impl SelfTransitionMode {
+    fn from_byte(b: i8) -> SelfTransitionMode {
+        match b {
+            0 => SelfTransitionMode::ContinueIfCyclicBlendIfAcyclic,
+            1 => SelfTransitionMode::Continue,
+            2 => SelfTransitionMode::Reset,
+            _ => SelfTransitionMode::Blend,
+        }
+    }
+}
+
+/// `hkbTransitionEffect::EventMode`: which side of a cross-fade hears events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EventMode {
+    /// As `IgnoreFromGenerator`: the state being left hears nothing.
+    #[default]
+    Default,
+    /// Both the state being left and the one entered hear them.
+    ProcessAll,
+    IgnoreFromGenerator,
+    IgnoreToGenerator,
+}
+
+impl EventMode {
+    fn from_byte(b: i8) -> EventMode {
+        match b {
+            1 => EventMode::ProcessAll,
+            2 => EventMode::IgnoreFromGenerator,
+            3 => EventMode::IgnoreToGenerator,
+            _ => EventMode::Default,
+        }
+    }
 }
 
 /// `hkbStateMachineTimeInterval`: a window in the current state, opened and
@@ -717,6 +771,12 @@ impl<'a> Reader<'a> {
                         .then(|| self.p.i32(t + 0x3C)),
                     flags,
                     blend: effect.map(|e| self.p.f32(e + 0x50)),
+                    self_mode: effect.map_or_else(Default::default, |e| {
+                        SelfTransitionMode::from_byte(self.p.u8(e + 0x48) as i8)
+                    }),
+                    event_mode: effect.map_or_else(Default::default, |e| {
+                        EventMode::from_byte(self.p.u8(e + 0x49) as i8)
+                    }),
                     blend_variable: effect
                         .and_then(|e| {
                             self.bindings_of(e)

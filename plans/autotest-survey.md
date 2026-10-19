@@ -104,6 +104,12 @@ Tried and not settled:
   frames later: does the script's value stick or does the engine's own write
   replace it?
 
+- **Blending effects' modes** (`state-machine-events.md`): a script can't
+  send graph events to an NPC's state machine and read which clip plays, but
+  `SendAnimationEvent` of an event with a self-transition (a re-entered
+  weapon-state wildcard) then `GetAnimationVariable*` / timing of the
+  following animation would show whether the state restarted.
+
 Left out so far:
 
 - **Summons** (`magic.md`): placement, limit, follow distances (no way to

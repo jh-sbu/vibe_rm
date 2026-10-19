@@ -381,6 +381,8 @@ struct MachineState {
     pending: Option<Transition>,
     /// An uninterruptible transition's blend is playing.
     locked: bool,
+    /// The blend's effect lets the state being left hear events too.
+    from_hears: bool,
 }
 
 impl MachineState {
@@ -395,6 +397,7 @@ impl MachineState {
             seq: 0,
             pending: None,
             locked: false,
+            from_hears: false,
         }
     }
 
@@ -988,7 +991,13 @@ impl Ctx<'_> {
                 let Kind::Machine(m) = &mut node.kind else {
                     unreachable!()
                 };
-                m.child.as_mut().is_some_and(|c| self.handle(c, ev)) || took == Took::Pending
+                let mut any = m.child.as_mut().is_some_and(|c| self.handle(c, ev));
+                if m.from_hears
+                    && let Some((f, _, _)) = &mut m.from
+                {
+                    any |= self.handle(f, ev);
+                }
+                any || took == Took::Pending
             }
             Kind::Blend { children, .. } => children
                 .iter_mut()
@@ -1179,6 +1188,19 @@ impl Ctx<'_> {
         };
         let old = states.iter().find(|s| s.id == m.state);
         let new = states.iter().find(|s| s.id == t.to_state).expect("checked");
+        // Into the state it is in: the effect says whether that restarts it.
+        let again = t.to_nested.is_none() && old.is_some_and(|s| s.id == new.id);
+        if again
+            && match t.self_mode {
+                SelfTransitionMode::Continue => true,
+                SelfTransitionMode::ContinueIfCyclicBlendIfAcyclic => {
+                    m.child.as_deref().is_some_and(cyclic)
+                }
+                _ => false,
+            }
+        {
+            return;
+        }
         let exits = old.map(|s| s.exit_events.clone()).unwrap_or_default();
         let (enters, generator, id) = (new.enter_events.clone(), new.generator, new.id);
         let blend = t
@@ -1195,6 +1217,11 @@ impl Ctx<'_> {
             })
             .or(t.blend)
             .unwrap_or(0.0);
+        let blend = if again && t.self_mode == SelfTransitionMode::Reset {
+            0.0
+        } else {
+            blend
+        };
         let old_child = m.child.take();
         let old_from = m.from.take();
         let sync_variable = m.sync_variable;
@@ -1242,6 +1269,7 @@ impl Ctx<'_> {
             return;
         };
         *m = MachineState::new(id, child, sync_variable);
+        m.from_hears = from.is_some() && t.event_mode == EventMode::ProcessAll;
         m.from = from;
         m.locked = locked;
         // Queue the notification after installing the destination: the event
@@ -1269,6 +1297,7 @@ impl Ctx<'_> {
                     if *t >= *len {
                         let (f, _, _) = m.from.take().unwrap();
                         m.locked = false;
+                        m.from_hears = false;
                         self.deactivate(*f);
                     } else {
                         self.advance(f, dt);
@@ -1902,6 +1931,19 @@ fn is_additive(node: &Node) -> bool {
     match &node.kind {
         Kind::Clip(c) => c.additive,
         Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => is_additive(c),
+        _ => false,
+    }
+}
+
+/// Whether the generator plays on forever: a looping or ping-pong clip, or a
+/// wrapper or blend of only such clips.
+fn cyclic(node: &Node) -> bool {
+    match &node.kind {
+        Kind::Clip(c) => c.looping || c.ping_pong,
+        Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => cyclic(c),
+        Kind::Blend { children, .. } => {
+            children.iter().flatten().all(cyclic) && children.iter().flatten().next().is_some()
+        }
         _ => false,
     }
 }
@@ -4971,6 +5013,132 @@ mod tests {
         assert_eq!(time(&i), 1.0);
         i.update(0.5, &mut durations);
         assert_eq!(time(&i), 0.5);
+    }
+
+    /// A machine whose state 0 plays `first` and state 1 a single-play clip, and
+    /// whose event `Again` leads back into state 0 over half a second.
+    fn self_transition(first: ClipMode, mode: SelfTransitionMode) -> Instance {
+        let mut again = Transition::new(0, 0, None);
+        again.blend = Some(0.5);
+        again.self_mode = mode;
+        let gens = vec![
+            Generator::StateMachine {
+                name: "Root".into(),
+                start: 0,
+                start_variable: None,
+                start_mode: Default::default(),
+                sync_variable: None,
+                change_event: None,
+                states: vec![state(0, 1, vec![again]), state(1, 2, vec![])],
+                wildcards: vec![],
+            },
+            clip("Loop", first, vec![]),
+            clip("Once", ClipMode::SinglePlay, vec![]),
+        ];
+        instance(BehaviorGraph::new("G", Some(0), gens, vec!["Again".into()]))
+    }
+
+    #[test]
+    fn self_transition_modes_continue_reset_or_blend() {
+        use SelfTransitionMode::*;
+        let again = |first, mode| {
+            let mut i = self_transition(first, mode);
+            i.update(1.0, &mut durations);
+            assert!(i.handle_event("Again", &mut durations));
+            i.update(0.25, &mut durations);
+            playing(&i)
+        };
+        // Continue and a looping state: it plays on, 1.25 s in.
+        let mut i = self_transition(ClipMode::Looping, Continue);
+        i.update(1.0, &mut durations);
+        i.handle_event("Again", &mut durations);
+        i.update(0.25, &mut durations);
+        assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+        assert_eq!(time(&i), 1.25);
+        assert_eq!(i.changes(), 0);
+        // Reset restarts at once, with no blend.
+        let mut i = self_transition(ClipMode::Looping, Reset);
+        i.update(1.0, &mut durations);
+        i.handle_event("Again", &mut durations);
+        i.update(0.25, &mut durations);
+        assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+        assert_eq!(time(&i), 0.25);
+        // Blend restarts, the old state fading out.
+        assert_eq!(
+            again(ClipMode::Looping, Blend),
+            [("Loop".into(), 0.5), ("Loop".into(), 0.5)]
+        );
+        // Continue if cyclic: a loop carries on, a single play blends.
+        assert_eq!(
+            again(ClipMode::Looping, ContinueIfCyclicBlendIfAcyclic),
+            [("Loop".into(), 1.0)]
+        );
+        assert_eq!(
+            again(ClipMode::SinglePlay, ContinueIfCyclicBlendIfAcyclic).len(),
+            2
+        );
+    }
+
+    /// State 0 is a machine of its own (`I0` -> `I1` on `Go`); `Leave` blends
+    /// out of it for a second into a clip.
+    fn leaving(mode: EventMode) -> Instance {
+        let mut leave = Transition::new(0, 1, None);
+        leave.blend = Some(1.0);
+        leave.event_mode = mode;
+        let gens = vec![
+            Generator::StateMachine {
+                name: "Root".into(),
+                start: 0,
+                start_variable: None,
+                start_mode: Default::default(),
+                sync_variable: None,
+                change_event: None,
+                states: vec![state(0, 1, vec![leave]), state(1, 4, vec![])],
+                wildcards: vec![],
+            },
+            Generator::StateMachine {
+                name: "Inner".into(),
+                start: 0,
+                start_variable: None,
+                start_mode: Default::default(),
+                sync_variable: None,
+                change_event: None,
+                states: vec![
+                    state(0, 2, vec![Transition::new(1, 1, None)]),
+                    state(1, 3, vec![]),
+                ],
+                wildcards: vec![],
+            },
+            clip("I0", ClipMode::Looping, vec![]),
+            clip("I1", ClipMode::Looping, vec![]),
+            clip("B", ClipMode::Looping, vec![]),
+        ];
+        instance(BehaviorGraph::new(
+            "G",
+            Some(0),
+            gens,
+            vec!["Leave".into(), "Go".into()],
+        ))
+    }
+
+    #[test]
+    fn event_mode_lets_the_state_being_left_hear_events_when_asked() {
+        for (mode, heard) in [
+            (EventMode::Default, "I0"),
+            (EventMode::IgnoreFromGenerator, "I0"),
+            (EventMode::ProcessAll, "I1"),
+        ] {
+            let mut i = leaving(mode);
+            assert!(i.handle_event("Leave", &mut durations));
+            i.update(0.25, &mut durations);
+            i.handle_event("Go", &mut durations);
+            i.update(0.25, &mut durations);
+            let names: Vec<String> = playing(&i).into_iter().map(|p| p.0).collect();
+            assert_eq!(names, [heard, "B"], "{mode:?}");
+            // The blend over, the old state is gone for good.
+            i.update(1.0, &mut durations);
+            assert_eq!(playing(&i), [("B".into(), 1.0)]);
+        }
     }
 
     #[test]
