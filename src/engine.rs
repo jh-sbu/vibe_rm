@@ -3505,8 +3505,10 @@ impl Engine {
         }
     }
 
-    /// Stop a quest: its aliases empty and its scenes stop.
+    /// Stop a quest: what its aliases created is cleaned up, they empty and its
+    /// scenes stop.
     pub fn stop_quest(&mut self, q: FormId) {
+        self.clean_up_alias_creations(q);
         let st = self.scripts.quests.entry(q).or_default();
         st.running = false;
         st.aliases.clear();

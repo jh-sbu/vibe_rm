@@ -379,6 +379,27 @@ pub struct ActiveEffect {
     pub channelled: bool,
 }
 
+/// What leveled spell lists gave actors, rolled when first asked for and kept.
+#[derive(Debug, Default)]
+struct RolledSpells(std::cell::RefCell<HashMap<(FormId, FormId), Vec<FormId>>>);
+
+impl RolledSpells {
+    /// What `list` gave `actor`, rolling it with `roll` the first time only.
+    fn get_or_roll(
+        &self,
+        actor: FormId,
+        list: FormId,
+        roll: impl FnOnce() -> Vec<FormId>,
+    ) -> Vec<FormId> {
+        if let Some(v) = self.0.borrow().get(&(actor, list)) {
+            return v.clone();
+        }
+        let v = roll();
+        self.0.borrow_mut().insert((actor, list), v.clone());
+        v
+    }
+}
+
 /// Magic on actors: the active effects, spells added and removed, and what was
 /// read.
 #[derive(Debug, Default)]
@@ -398,6 +419,7 @@ pub struct Magic {
     tapers: Vec<(ActiveEffect, Arc<MagicEffect>, f32, f32)>,
     effect_cache: std::cell::RefCell<HashMap<FormId, Option<Arc<MagicEffect>>>>,
     item_cache: std::cell::RefCell<HashMap<FormId, Option<Arc<MagicItem>>>>,
+    rolled: RolledSpells,
     /// Bodies whose soul has been taken (`crate::soul_trap`).
     pub souls_taken: HashSet<FormId>,
     /// Actors' last ward hit (`IsWardState`: absorbed 1, broken 2) and the
@@ -425,8 +447,8 @@ impl Engine {
     }
 
     /// The spells an actor knows: its record's (`SPLO`, from the template
-    /// giving the spell list; leveled spell lists rolled for the actor's
-    /// level by its id), its race's, its perks' abilities and those added,
+    /// giving the spell list; leveled spell lists rolled once, for the actor's
+    /// level then), its race's, its perks' abilities and those added,
     /// less those removed.
     pub fn actor_spells(&self, actor: FormId) -> Vec<FormId> {
         let listed = self
@@ -437,15 +459,17 @@ impl Engine {
         let mut level = None;
         for s in listed {
             if self.lo.tag_of(s).is_some_and(|t| t.0 == *b"LVSP") {
-                let level = *level.get_or_insert_with(|| self.actor_level(actor).max(1) as u16);
-                out.extend(crate::world::actor::resolve_spells(
-                    &self.lo,
-                    s,
-                    level,
-                    actor.0 as u64,
-                    &self.scripts.globals,
-                    0,
-                ));
+                out.extend(self.magic.rolled.get_or_roll(actor, s, || {
+                    let level = *level.get_or_insert_with(|| self.actor_level(actor).max(1) as u16);
+                    crate::world::actor::resolve_spells(
+                        &self.lo,
+                        s,
+                        level,
+                        actor.0 as u64,
+                        &self.scripts.globals,
+                        0,
+                    )
+                }));
             } else {
                 out.push(s);
             }
@@ -1687,5 +1711,25 @@ mod taper_tests {
                 "{m} {w} {c} {d}: {t} against {game}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod rolled_spells_tests {
+    use super::*;
+
+    #[test]
+    fn a_leveled_list_is_rolled_once_per_actor() {
+        let rolled = RolledSpells::default();
+        let (actor, other, list) = (FormId(0x10), FormId(0x11), FormId(0x20));
+        let a = rolled.get_or_roll(actor, list, || vec![FormId(0x30)]);
+        // Later asks (at another level, say) give the first roll.
+        let b = rolled.get_or_roll(actor, list, || vec![FormId(0x31)]);
+        assert_eq!(a, b);
+        // Another actor rolls its own.
+        assert_eq!(
+            rolled.get_or_roll(other, list, || vec![FormId(0x31)]),
+            vec![FormId(0x31)]
+        );
     }
 }

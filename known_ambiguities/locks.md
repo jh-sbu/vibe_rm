@@ -55,7 +55,10 @@ and location pages, CK wiki descriptions) and the game's data files.
   applied after unlocks). The two evaluations can pick differently (the
   refresh doesn't see loaded state); each actor's doors follow only one of
   them at a time, so they don't flip between them, but loading or unloading
-  can fire a change.
+  can fire a change. The refresh is also due at each half hour of game time,
+  so unloaded actors' doors follow their packages as they start (packages
+  start on the hour or half hour; unconfirmed: whether the game evaluates
+  unloaded actors at their start times or at some coarser cadence).
 - Animated (non-load) doors open for walkers who get past their lock: with the
   key, or owning it (the door's `XOWN`, else its cell's: the actor or one of its
   factions). So cages, cells and gates in dungeons and prisons, and the player's

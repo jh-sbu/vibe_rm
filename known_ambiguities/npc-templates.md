@@ -89,11 +89,11 @@ that a copied actor's leveled spell list yields nothing):
   leveled NPCs and items. Only two vanilla lists have entries above level 1
   (`LSpellWEConjurerRighHand` 1 / 10 / 20 / 35, `DLC2MiraakLSpells` up to
   60), so the choice touches little.
-- The pick is seeded by the actor's form id, so an actor keeps its pick
-  (and the chance-of-none roll) whenever it is asked. It is worked out each
-  time, not stored: a level change (the player's, for PC-level-mult NPCs)
-  can change an actor's spells mid-life. When the game rolls (on load, on
-  reset, once) is unknown.
+- The pick is seeded by the actor's form id, and rolled the first time the
+  actor's spells are asked for (a fight, `HasSpell`...), at its level then,
+  and kept for the session (not in saves, but the seed gives it again unless
+  the level has moved a threshold). Unconfirmed: when the game rolls (on
+  load, on reset, once) and whether a reset rolls anew.
 - `HasSpell` on the list's own form id is false (the actor has the rolled
   spells, not the list).
 - The copied-actor report above (nothing given) isn't followed: vanilla
