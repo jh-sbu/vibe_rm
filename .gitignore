@@ -1,6 +1,7 @@
 /target
 /refs
 /tests
+/scripts/__pycache__/
 # Never commit game assets
 *.bsa
 *.ba2
