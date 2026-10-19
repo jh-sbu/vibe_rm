@@ -631,8 +631,9 @@ game each piece unlocks.
   and leveled NPC lists picked per reference as its looks are, so a leveled draugr's
   health, factions and packages are the ones of the draugr it looks like. Actors'
   `HasKeyword` includes their race's; `GetInFaction` / `GetFactionRank` and door
-  ownership follow templates. Console `templates <ref>`; vrm-tool `npc-templates`.
-  Open questions: `known_ambiguities/npc-templates.md`
+  ownership follow templates. Leveled spell lists (`LVSP`) in spell lists are
+  expanded, rolled once for each actor when its spells are first asked for.
+  Console `templates <ref>`; vrm-tool `npc-templates`. Open questions: `known_ambiguities/npc-templates.md`
 - Cloaks: the wearer's cloak gives its spell once a second to those within
   its magnitude in feet whom it is hostile to (`IsHostileToActor`); one
   cloak at a time (`known_ambiguities/magic.md`)
@@ -1219,8 +1220,6 @@ game each piece unlocks.
    - Locks: sleepers warning the player before locking and putting them out;
      actors stepping round loose clutter instead of shoving it
    - Off-screen travel between worldspaces; paths round locked animated doors
-   - Templates: when leveled spell lists are rolled and at whose level
-     (expanded: see Done; `known_ambiguities/npc-templates.md`)
    - Package trees: branches of `Sequence` / `Simultaneous` roots (multi-location
      sandboxes' stops done: see Done; their "in cell" stops elsewhere, per-stop
      unlocking and progress kept across loads remain),
