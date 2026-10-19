@@ -16,6 +16,9 @@ pub mod schedule;
 mod summons;
 pub mod threat;
 
+#[cfg(test)]
+mod movement_tests;
+
 use std::sync::Arc;
 
 use esp::FormId;
@@ -303,6 +306,9 @@ pub struct ActorRuntime {
     /// `iState` values that select them.
     pub moves: Option<(MoveSpeeds, f32)>,
     pub sneak_moves: Option<(MoveSpeeds, f32)>,
+    /// Worn armor's speed multiplier, refreshed before each AI update. Keep
+    /// movement types and clip speeds unmodified for animation playback.
+    pub(crate) armor_speed_mult: f32,
     pub anim: Option<ActorAnim>,
     pub idle: Option<Arc<BoundClip>>,
     pub walk: Option<Arc<BoundClip>>,
@@ -477,6 +483,7 @@ impl ActorRuntime {
             graph_walk_speed: None,
             moves: None,
             sneak_moves: None,
+            armor_speed_mult: 1.0,
             anim: None,
             idle: None,
             walk: None,
@@ -637,7 +644,7 @@ impl ActorRuntime {
             || (self.walk_speed(), self.walk_speed() * 2.5),
             |(m, _)| (m.walk, m.run),
         );
-        if self.speed > (walk + run) / 2.0 {
+        if self.speed > (walk + run) / 2.0 * self.armor_speed_mult {
             Gait::Run
         } else {
             Gait::Walk
@@ -1742,6 +1749,10 @@ impl ActorRuntime {
     /// Speed for the package's gait: walking at the graph's walk, running at its
     /// movement type's run, sneaking at its sneaking movement type's walk.
     pub fn move_speed(&self) -> f32 {
+        self.base_move_speed() * self.armor_speed_mult
+    }
+
+    fn base_move_speed(&self) -> f32 {
         let walk = self.walk_speed();
         let (gait, sneak) = self
             .goal
@@ -3161,6 +3172,7 @@ impl Engine {
         // Choose before the AI requests landings, so a newly needed heal does
         // not replace the offensive spell that an earlier step already threw.
         self.update_combat_spells(dt);
+        self.update_actor_encumbrance();
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self
             .barks
             .current

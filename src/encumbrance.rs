@@ -1,7 +1,7 @@
 //! Carry weight: what an actor carries weighs its items' weights (`DATA`)
 //! times their counts, worn armor through the perks; the player carrying more than their `CarryWeight`
 //! is over-encumbered and can only walk (UESP's Skyrim:Carry Weight), told
-//! so (`sOverEncumbered`) as they become it. Worn armor slows the player:
+//! so (`sOverEncumbered`) as they become it. Worn armor slows actors:
 //! speed x (1 - effect x worn weight / `fMoveWeightMax`), the effect
 //! `fMoveEncumEffect` with a weapon drawn, else `fMoveEncumEffectNoWeapon`
 //! (the Oblivion CS wiki's movement formula, whose settings Skyrim keeps);
@@ -61,13 +61,37 @@ impl Engine {
     pub fn armor_speed_mult(&self, actor: FormId) -> f32 {
         let gmst = |n: &str, d: f32| crate::ai::combat::gmst_f32(&self.lo, n, d);
         let max = gmst("fMoveWeightMax", 115.0).max(1.0);
-        let drawn = actor == PLAYER_REF && self.player_weapon_drawn();
+        let drawn = self.weapon_drawn(actor);
         let effect = if drawn {
             gmst("fMoveEncumEffect", 0.3)
         } else {
             gmst("fMoveEncumEffectNoWeapon", 0.15)
         };
         armor_speed(self.worn_armor_weight(actor), max, effect)
+    }
+
+    /// Refresh loaded NPCs before locomotion, so equipment and armor-weight
+    /// perks changed since the last frame affect their next step.
+    pub(crate) fn update_actor_encumbrance(&mut self) {
+        let speeds: Vec<_> = self
+            .cells
+            .iter()
+            .flat_map(|(key, rt)| {
+                rt.actors
+                    .iter()
+                    .enumerate()
+                    .map(|(index, a)| (*key, index, self.armor_speed_mult(a.ref_id)))
+            })
+            .collect();
+        for (key, index, speed) in speeds {
+            if let Some(a) = self
+                .cells
+                .get_mut(&key)
+                .and_then(|rt| rt.actors.get_mut(index))
+            {
+                a.armor_speed_mult = speed;
+            }
+        }
     }
 
     /// Whether the player carries more than they can (and still run).
