@@ -225,3 +225,20 @@ space modifiers).
   multipliers). The change is immediate, not eased in or out. A test: time
   Slow Time's duration, a falling object, an NPC's walk and the player's
   walk against the real clock.
+
+## Drinking and eating sounds
+
+`Engine::consume` plays the potion's consume sound (`ALCH` `ENIT`'s last
+field: value, flags, addiction, addiction chance, sound; xEdit's `TES5`
+definitions, CommonLibSSE-NG's `AlchemyItem::Data::consumptionSound`) at the
+actor's position, whoever drinks. Food and drinks name their own (Sweet Roll
+0xCAF94, Ale 0xB6435).
+
+- Unconfirmed: ingredients (no sound field in their `ENIT`) and potions that
+  name none are silent here. The game probably has a default (the default
+  object `kPotionEquip` is a sound-like entry); no public source says which
+  or for what. Whether the sound is heard at the actor or at the camera for
+  the player, and whether NPC drinking in combat plays it, are also taken
+  without evidence.
+- The `Medicine` flag (0x10000) and addictions (spell type 10, the `ENIT`
+  addiction) have no effect: no vanilla record uses them.
