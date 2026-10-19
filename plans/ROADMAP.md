@@ -634,7 +634,9 @@ game each piece unlocks.
   alias's reference) and Papyrus `PlaceAtMe` / `PlaceActorAtMe` make references
   (`FF000800` up): items in containers go to the inventory, actors appear where
   they were made and live among the persistent actors (packages, whereabouts,
-  combat). Console `placeatme`
+  combat). Console `placeatme`. A quest stopping or starting over clears away
+  what its aliases created: items from the containers, objects lying about
+  (what the player holds, and actors, stay)
 - Force greet packages (ForceGreet / ForceGreetFromSitting templates): the greeter
   waits at its wait location (standing, sandboxing or in its seat) until the player
   is in the trigger location (and seen, if asked), walks up to within the force
@@ -648,8 +650,9 @@ game each piece unlocks.
   and leveled NPC lists picked per reference as its looks are, so a leveled draugr's
   health, factions and packages are the ones of the draugr it looks like. Actors'
   `HasKeyword` includes their race's; `GetInFaction` / `GetFactionRank` and door
-  ownership follow templates. Console `templates <ref>`; vrm-tool `npc-templates`.
-  Open questions: `known_ambiguities/npc-templates.md`
+  ownership follow templates. Leveled spell lists (`LVSP`) in spell lists are
+  expanded, rolled once for each actor when its spells are first asked for.
+  Console `templates <ref>`; vrm-tool `npc-templates`. Open questions: `known_ambiguities/npc-templates.md`
 - Cloaks: the wearer's cloak gives its spell once a second to those within
   its magnitude in feet whom it is hostile to (`IsHostileToActor`); one
   cloak at a time (`known_ambiguities/magic.md`)
@@ -947,7 +950,9 @@ game each piece unlocks.
   skill (`fLockpickSkillSweetSpotMult`, `fPartialPick*`), picks wearing out under
   strain and breaking. Sleep packages with
   "Lock Doors?" lock the sleeper's home doors, packages unlocking doors at start /
-  on change (`PKDT`) open them, so shops close at night. Papyrus `Lock`,
+  on change (`PKDT`) open them, so shops close at night (unloaded actors' as
+  their packages start: the schedule is looked at each half hour of game
+  time). Papyrus `Lock`,
   `IsLocked`, `GetLockLevel`, `SetLockLevel`; conditions `GetLocked`,
   `GetLockLevel`; console `lock` / `unlock`, `picklock`; vrm-tool `locks`. NPCs
   open locked animated doors only with the key or owning them (cages and cells
@@ -1228,8 +1233,7 @@ game each piece unlocks.
      continuity; control for instrumentation such as quest aliases changing
      persistence. Use the observations to establish transition and catch-up rules
      before treating the current approximations as compatibility requirements.
-   - Alias fills: created objects cleaned up; created items placed in the
-     world (not a container) drawn and takeable; "from alias" locations
+   - Alias fills: created actors cleaned up; "from alias" locations
      followed through travel, not only at refresh; packages for "from event"
      aliases, and package targets by object id / type and interrupt data
    - Remaining procedures: guard (restricted areas), use magic, dialogue,
@@ -1245,11 +1249,8 @@ game each piece unlocks.
    - Followers helping the player (`CurrentFollowerFaction` relations);
      `AllyKilled` lines
    - Locks: sleepers warning the player before locking and putting them out;
-     unloaded actors' locks changing as packages start rather than on the
-     whereabouts refresh (loaded actors' do); actors stepping round loose clutter instead of shoving it
+     actors stepping round loose clutter instead of shoving it
    - Off-screen travel between worldspaces; paths round locked animated doors
-   - Templates: when leveled spell lists are rolled and at whose level
-     (expanded: see Done; `known_ambiguities/npc-templates.md`)
    - Package trees: branches of `Sequence` / `Simultaneous` roots (multi-location
      sandboxes' stops done: see Done; their "in cell" stops elsewhere, per-stop
      unlocking and progress kept across loads remain),

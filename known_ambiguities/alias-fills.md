@@ -51,6 +51,10 @@ Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
   (spawned at once when it is loaded) and run their packages. The 443 start game
   enabled quests make 94 at startup (notes, rewards, MS09's Geirlund and Vidrald...).
   Papyrus `PlaceAtMe` / `PlaceActorAtMe` and console `placeatme` make them too.
+- Created references are cleaned up when their quest stops or its aliases are
+  filled again: items made in a container (not the player's) are taken out of
+  it, objects made in the world are disabled and forgotten. Ones the player
+  has (made in their inventory, or picked up) stay.
 
 ## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
 
@@ -67,6 +71,12 @@ Optional aliases of a quest of ours, started by script:
 
 ## Open questions
 
+- Clean-up (unconfirmed): no public source we could reach (CommonLibSSE's alias flags, the
+  data) says what is deleted and when; the cases are our choice. Actors
+  are kept (a created follower or quest giver vanishing on `Stop` would be
+  worse than one lingering), the player's items too. Whether the game also
+  deletes them when the alias is cleared by script (`Clear`), or when the
+  quest completes rather than stops, isn't known.
 - What `ALNT` other than 0 would mean, and how far "near" reaches.
 - The create level (`ALCL`) is ignored; whether it changes a leveled actor's
   pick isn't known.

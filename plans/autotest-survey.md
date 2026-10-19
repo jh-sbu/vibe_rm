@@ -307,6 +307,14 @@ Last in a run, or a run of their own:
 - Harvest: produce, seasons, growing back after 240 hours (`harvest.md`).
 - NPCs and locked load doors, packages locking doors (`locks.md`).
 - Leaving through a locked door from inside (`locks.md`).
+- When an unloaded sleeper's home locks: `Utility.Wait` / `GetCurrentGameTime`
+  polling `IsLocked` on a shop door across its closing hour from another
+  worldspace, to see whether it flips at the package's start or later
+  (`locks.md`).
+- Created references after their quest stops: a quest of ours with aliases
+  created at the player, in a chest and as an NPC, `Stop()`ped; then
+  `IsDisabled` / `GetParentCell` / `GetItemCount` on each, and the NPC alive
+  or not (`alias-fills.md`).
 - Owners set by script for stealing (`sleep-wait.md`).
 
 ## Manual only (a test mod the user plays)
