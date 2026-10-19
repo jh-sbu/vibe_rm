@@ -32,6 +32,26 @@ isn't public.
   into geometry); surfaces facing away from the projection fade out, which
   spares most passers-by. Grass in a box takes them too.
 - **Shading**: lit with the surface's normal from depth (ambient, sun with
-  shadows, point lights) and glow maps added.
+  shadows, point lights) and glow maps added. The texture set's normal map
+  bends that normal in the decal's frame (u along the box's X, the image's
+  top along its Z, flattened onto the surface) and its alpha masks a white
+  Blinn-Phong specular whose exponent is the `DODT` shininess (capped at 1024:
+  vanilla runs from 0, which gives none, to 40000). Whether the game's decal
+  specular is Blinn-Phong with that exponent is not public.
+- **Parallax** (`DODT` flag 0x01, the scale and the passes byte; xEdit: at
+  most 30). No vanilla decal sets the flag (vanilla scales are 1, and 0.175 on
+  the dragon's landing mark), so nothing is seen in the base game. A decal with
+  the flag and a height map (slot 4) is marched in that many steps along the
+  view ray; a scale of 1 shifts the texture by 0.04 of it at grazing angles.
+  That constant, and whether the height map is read as depth from the top, are
+  guesses.
+- **Alpha blending flag** (0x02). Decals always blend, except that an alpha
+  tested one without the flag (vanilla: giant paint, Riekling paint, the Soul
+  Cairn wall) is cut out hard-edged (opaque past the 0.5 test). Those with
+  neither flag (blood hits on actors, 0x08) still blend. What the game does with
+  no blending and no testing isn't known.
+- **Colour alpha.** The `DODT` colour's fourth byte is 0 in all 59 vanilla
+  sets, so it can't be an opacity (everything would vanish); it's ignored and
+  the colour's RGB tints the decal.
 - Decals made at runtime by impacts, on the world and on actors' bodies:
   `known_ambiguities/impacts.md`.

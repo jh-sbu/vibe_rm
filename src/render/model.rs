@@ -68,6 +68,11 @@ pub struct MaterialDesc {
     pub billboard: Option<(Vec3, u16)>,
     /// Grass: drawn instanced by its blades, swaying by its vertex alpha.
     pub grass: bool,
+    /// A decal's parallax (scale, passes), reading its height map from the
+    /// environment mask slot; passes 0 for none.
+    pub parallax: Vec2,
+    /// A decal's alpha test leaves what passes it opaque (no alpha blending).
+    pub hard_edge: bool,
 }
 
 /// A material's animated values: shader float / colour and alpha-test
@@ -663,6 +668,8 @@ impl Default for MaterialDesc {
             anim: None,
             billboard: None,
             grass: false,
+            parallax: Vec2::ZERO,
+            hard_edge: false,
         }
     }
 }

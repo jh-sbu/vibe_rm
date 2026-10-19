@@ -9,18 +9,22 @@
 //! `known_ambiguities/decals.md`.
 
 use esp::{FormId, LoadOrder};
-use glam::{Mat4, Vec3, Vec4};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 
 use super::records::{self, texture_path};
 use crate::engine::Engine;
 
-/// `DODT` flags.
 /// How far a decal's ray looks for its surface.
 pub const REACH: f32 = 1024.0;
 
-/// `DODT` flags used (0x01 parallax and 0x02 alpha blending aren't: decals
-/// always blend).
+/// The most `DODT` parallax passes (xEdit: it can't be higher than 30).
+pub const MAX_PASSES: u8 = 30;
+
+/// `DODT` flags. Decals blend whatever the alpha blending flag says, except
+/// an alpha tested one that lacks it: that's cut out hard-edged.
 pub mod flags {
+    pub const PARALLAX: u8 = 0x01;
+    pub const ALPHA_BLENDING: u8 = 0x02;
     pub const ALPHA_TESTING: u8 = 0x04;
     pub const NO_SUBTEXTURES: u8 = 0x08;
 }
@@ -32,11 +36,17 @@ pub struct DecalData {
     pub diffuse: String,
     pub normal: Option<String>,
     pub glow: Option<String>,
+    /// The height map (texture set slot 4), for parallax.
+    pub height: Option<String>,
     pub min_width: f32,
     pub max_width: f32,
     pub min_height: f32,
     pub max_height: f32,
     pub depth: f32,
+    /// Specular exponent: 0 for no specular shine.
+    pub shininess: f32,
+    pub parallax_scale: f32,
+    pub parallax_passes: u8,
     pub flags: u8,
     pub color: Vec4,
 }
@@ -69,14 +79,31 @@ impl DecalData {
             diffuse: tex(b"TX00")?,
             normal: tex(b"TX01"),
             glow: tex(b"TX03"),
+            height: tex(b"TX04"),
             min_width: f(0),
             max_width: f(4).max(f(0)),
             min_height: f(8),
             max_height: f(12).max(f(8)),
             depth: f(16),
+            shininess: f(20),
+            parallax_scale: f(24),
+            parallax_passes: d[28].min(MAX_PASSES),
             flags: d[29],
             color: Vec4::new(d[32] as f32, d[33] as f32, d[34] as f32, 255.0) / 255.0,
         })
+    }
+
+    /// It's shown with parallax: it has a height map and the flag.
+    pub fn parallax(&self) -> bool {
+        self.flags & flags::PARALLAX != 0
+            && self.height.is_some()
+            && self.parallax_passes > 0
+            && self.parallax_scale > 0.0
+    }
+
+    /// Its alpha test cuts it out with hard edges, not blending.
+    pub fn hard_edge(&self) -> bool {
+        self.flags & flags::ALPHA_TESTING != 0 && self.flags & flags::ALPHA_BLENDING == 0
     }
 
     /// Its texture is an atlas of 2x2 subtextures, one picked per decal.
@@ -226,6 +253,7 @@ impl Engine {
                     Some(&data.diffuse),
                     data.normal.as_ref(),
                     data.glow.as_ref(),
+                    data.height.as_ref().filter(|_| data.parallax()),
                 ]
                 .into_iter()
                 .flatten()
@@ -260,12 +288,14 @@ impl Engine {
     }
 }
 
-/// The object material a decal is drawn with (its textures, alpha test).
+/// The object material a decal is drawn with (its textures, specular, alpha
+/// test, parallax).
 fn material(d: &DecalData) -> crate::render::model::MaterialDesc {
     let mut m = crate::render::model::MaterialDesc {
         diffuse: Some(d.diffuse.clone()),
         normal: d.normal.clone(),
         glow: d.glow.clone(),
+        hard_edge: d.hard_edge(),
         ..Default::default()
     };
     if d.flags & flags::ALPHA_TESTING != 0 {
@@ -274,5 +304,79 @@ fn material(d: &DecalData) -> crate::render::model::MaterialDesc {
     if d.glow.is_some() {
         m.emissive = Vec4::ONE;
     }
+    // The normal map's alpha masks a white shine of the data's shininess
+    // (the exponent runs to 40000 in vanilla: far past a shine at all).
+    if d.shininess > 0.0 {
+        m.specular = Vec3::ONE;
+        m.glossiness = d.shininess.min(SHININESS_MAX);
+    }
+    if d.parallax() {
+        m.env_mask = d.height.clone();
+        m.parallax = Vec2::new(d.parallax_scale, d.parallax_passes as f32);
+    }
     m
+}
+
+/// The highest specular exponent a decal uses.
+const SHININESS_MAX: f32 = 1024.0;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn data(flags: u8) -> DecalData {
+        DecalData {
+            id: FormId(1),
+            diffuse: "d.dds".into(),
+            normal: Some("n.dds".into()),
+            glow: None,
+            height: Some("h.dds".into()),
+            min_width: 1.0,
+            max_width: 1.0,
+            min_height: 1.0,
+            max_height: 1.0,
+            depth: 1.0,
+            shininess: 400.0,
+            parallax_scale: 0.5,
+            parallax_passes: 4,
+            flags,
+            color: Vec4::ONE,
+        }
+    }
+
+    #[test]
+    fn specular_from_shininess() {
+        let mut d = data(0);
+        let m = material(&d);
+        assert_eq!(m.specular, Vec3::ONE);
+        assert_eq!(m.glossiness, 400.0);
+        d.shininess = 40000.0;
+        assert_eq!(material(&d).glossiness, SHININESS_MAX);
+        d.shininess = 0.0;
+        assert_eq!(material(&d).specular, Vec3::ZERO);
+    }
+
+    #[test]
+    fn parallax_needs_flag_and_height_map() {
+        let mut d = data(flags::PARALLAX);
+        let m = material(&d);
+        assert_eq!(m.env_mask.as_deref(), Some("h.dds"));
+        assert_eq!(m.parallax, Vec2::new(0.5, 4.0));
+        d.height = None;
+        assert_eq!(material(&d).parallax, Vec2::ZERO);
+        assert_eq!(material(&data(0)).parallax, Vec2::ZERO);
+        let mut d = data(flags::PARALLAX);
+        d.parallax_passes = 0;
+        assert!(!d.parallax());
+    }
+
+    #[test]
+    fn alpha_test_without_blending_is_hard_edged() {
+        assert!(data(flags::ALPHA_TESTING).hard_edge());
+        assert!(!data(flags::ALPHA_TESTING | flags::ALPHA_BLENDING).hard_edge());
+        assert!(!data(flags::NO_SUBTEXTURES).hard_edge());
+        let m = material(&data(flags::ALPHA_TESTING));
+        assert!(m.hard_edge);
+        assert_eq!(m.alpha_test, Some(0.5));
+    }
 }
