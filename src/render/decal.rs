@@ -37,6 +37,24 @@ impl GpuDecal {
     }
 }
 
+/// The layout binding a depth texture at group 2 (the decals' scene depth,
+/// and soft effects' copy of it).
+pub fn depth_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("scene depth"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Depth,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    })
+}
+
 pub struct DecalPipeline {
     pub pipeline: wgpu::RenderPipeline,
     depth_bgl: wgpu::BindGroupLayout,
@@ -71,21 +89,9 @@ impl DecalPipeline {
         frame_bgl: &wgpu::BindGroupLayout,
         material_bgl: &wgpu::BindGroupLayout,
         color_format: wgpu::TextureFormat,
+        depth_bgl: wgpu::BindGroupLayout,
         depth: &wgpu::TextureView,
     ) -> Self {
-        let depth_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("decal depth"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }],
-        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("decal"),
             bind_group_layouts: &[Some(frame_bgl), Some(material_bgl), Some(&depth_bgl)],

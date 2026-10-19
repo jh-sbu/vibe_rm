@@ -360,6 +360,44 @@ fn main() -> Result<()> {
                 println!("{k:4} {f}");
             }
         }
+        Some("soft-effects") => {
+            // soft-effects <bsa>...: effect shaders by the soft-effect flag (shader
+            // flags 1 bit 30) and soft falloff depth: how many, which depths, and a
+            // model using each.
+            use std::collections::BTreeMap;
+            let mut counts: BTreeMap<(bool, u32), (usize, String)> = BTreeMap::new();
+            for path in &args[1..] {
+                let a = bsa::Archive::open(path)?;
+                for p in a
+                    .paths()
+                    .filter(|p| p.ends_with(".nif"))
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+                {
+                    let Ok(n) = nif::Nif::parse(&a.read(&p)?.unwrap()) else {
+                        continue;
+                    };
+                    for b in &n.blocks {
+                        if let nif::Block::EffectShader(s) = b {
+                            let soft = s.flags1 & nif::sf1::SOFT_EFFECT != 0;
+                            let e = counts
+                                .entry((soft, s.soft_falloff_depth.to_bits()))
+                                .or_insert_with(|| (0, p.clone()));
+                            e.0 += 1;
+                        }
+                    }
+                }
+            }
+            let mut v: Vec<_> = counts.into_iter().collect();
+            v.sort_by_key(|e| std::cmp::Reverse(e.1.0));
+            for ((soft, depth), (n, p)) in v {
+                println!(
+                    "{n:6} soft flag {} depth {} {p}",
+                    soft as u8,
+                    f32::from_bits(depth)
+                );
+            }
+        }
         Some("msn-shapes") => {
             // msn-shapes <bsa>...: shapes whose lighting shader has model-space
             // normals, counted by whether they're drawn skinned; the files of

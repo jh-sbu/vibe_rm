@@ -337,6 +337,27 @@ fn light_index(idx: vec4<u32>, i: u32) -> u32 {
     return select(word & 0xFFFFu, word >> 16u, (i & 1u) == 1u);
 }
 
+@group(2) @binding(0) var t_depth: texture_depth_2d;
+
+// A soft effect's opacity where it meets the opaque scene (copied to
+// t_depth before the blended draws): full once the scene lies `range` world
+// units or more behind it along the view direction, fading to nothing where
+// it touches (or lies behind) the surface. The sky has no surface to meet.
+fn soft_fade(px: vec4<f32>, world_pos: vec3<f32>, range: f32) -> f32 {
+    let depth = textureLoad(t_depth, vec2<i32>(px.xy), 0);
+    // Reversed depth: 0 is the far plane.
+    if (depth <= 0.0) {
+        return 1.0;
+    }
+    let ndc = vec2<f32>(
+        (px.x / frame.screen.x) * 2.0 - 1.0,
+        1.0 - (px.y / frame.screen.y) * 2.0,
+    );
+    let h = frame.inv_view_proj * vec4<f32>(ndc, depth, 1.0);
+    let scene = h.xyz / h.w;
+    return clamp(dot(scene - world_pos, frame.cam_fwd.xyz) / range, 0.0, 1.0);
+}
+
 @fragment
 fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     if (mat.flags.z == 2u) {
@@ -394,6 +415,9 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
             let f = mat.falloff;
             let t = clamp((ndv - f.y) / max(f.x - f.y, 0.0001), 0.0, 1.0);
             a *= mix(f.w, f.z, t);
+        }
+        if (mat.env.w > 0.0) {
+            a *= soft_fade(in.clip, in.world_pos, mat.env.w);
         }
         if (mat.params.y >= 0.0 && a < mat.params.y) {
             discard;
@@ -502,8 +526,6 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
 
 // How far a parallax scale of 1 pushes the texture, as a fraction of it.
 const PARALLAX_DEPTH = 0.04;
-
-@group(2) @binding(0) var t_depth: texture_depth_2d;
 
 struct DecalIn {
     @location(0) pos: vec3<f32>,

@@ -72,7 +72,8 @@ struct MaterialUniform {
     tint: [f32; 4],
     /// A billboard's model-space origin and mode + 1 (0: not one).
     billboard: [f32; 4],
-    /// Environment map scale, has a cube map, has an environment mask.
+    /// Environment map scale, has a cube map, has an environment mask; and a
+    /// soft effect's falloff depth (0 for none).
     env: [f32; 4],
     /// A decal's parallax scale and passes, and whether it's a hard-edged cutout.
     decal: [f32; 4],
@@ -142,6 +143,9 @@ pub struct GpuMaterial {
     anim: Option<Box<MaterialClock>>,
     /// Turned to the camera in the vertex shader (casts no shadow).
     pub billboard: bool,
+    /// Fades where it meets the scene behind it: needs the opaque scene's depth
+    /// copied before it's drawn.
+    pub soft: bool,
 }
 
 /// An animated material's controllers and what they animate.
@@ -948,7 +952,14 @@ pub struct Renderer {
     pub color_format: wgpu::TextureFormat,
     pub width: u32,
     pub height: u32,
+    depth_tex: wgpu::Texture,
     depth_view: wgpu::TextureView,
+    /// A copy of the opaque scene's depth for soft effects to sample while
+    /// the depth buffer itself is written ([`Renderer::render`]), and the
+    /// group 2 binding of it every object pipeline's layout has.
+    soft_depth: wgpu::Texture,
+    soft_bg: wgpu::BindGroup,
+    depth_bgl: wgpu::BindGroupLayout,
     shadows: shadow::ShadowMaps,
     decals: decal::DecalPipeline,
     decal_buf: wgpu::Buffer,
@@ -1117,9 +1128,10 @@ impl Renderer {
                 },
             ],
         });
+        let depth_bgl = decal::depth_layout(&device);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("object"),
-            bind_group_layouts: &[Some(&frame_bgl), Some(&material_bgl)],
+            bind_group_layouts: &[Some(&frame_bgl), Some(&material_bgl), Some(&depth_bgl)],
             immediate_size: 0,
         });
         let frame_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1186,7 +1198,9 @@ impl Renderer {
             [0, 0, 0, 255],
             "black cube",
         ));
-        let depth_view = Self::make_depth(&device, width, height);
+        let (depth_tex, depth_view) = Self::make_depth(&device, width, height);
+        let (soft_depth, soft_view) = Self::make_depth_copy(&device, width, height);
+        let soft_bg = Self::bind_depth(&device, &depth_bgl, &soft_view);
         let skin_instance_buf = Self::make_vbuf(
             &device,
             1024 * std::mem::size_of::<SkinInstanceData>(),
@@ -1201,6 +1215,7 @@ impl Renderer {
             &frame_bgl,
             &material_bgl,
             color_format,
+            depth_bgl.clone(),
             &depth_view,
         );
         let water = water::WaterPipeline::new(&device, &frame_bgl, color_format);
@@ -1238,7 +1253,11 @@ impl Renderer {
             color_format,
             width,
             height,
+            depth_tex,
             depth_view,
+            soft_depth,
+            soft_bg,
+            depth_bgl,
             shadows,
             shadow_cascades: None,
             shadows_enabled: std::env::var_os("VRM_NO_SHADOWS").is_none(),
@@ -1323,31 +1342,74 @@ impl Renderer {
         })
     }
 
-    fn make_depth(device: &wgpu::Device, w: u32, h: u32) -> wgpu::TextureView {
-        device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("depth"),
-                size: wgpu::Extent3d {
-                    width: w.max(1),
-                    height: h.max(1),
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            })
-            .create_view(&Default::default())
+    fn make_depth(device: &wgpu::Device, w: u32, h: u32) -> (wgpu::Texture, wgpu::TextureView) {
+        let t = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("depth"),
+            size: wgpu::Extent3d {
+                width: w.max(1),
+                height: h.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let v = t.create_view(&Default::default());
+        (t, v)
+    }
+
+    /// The texture [`Renderer::render`] copies the opaque scene's depth to.
+    fn make_depth_copy(
+        device: &wgpu::Device,
+        w: u32,
+        h: u32,
+    ) -> (wgpu::Texture, wgpu::TextureView) {
+        let t = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("depth copy"),
+            size: wgpu::Extent3d {
+                width: w.max(1),
+                height: h.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let v = t.create_view(&Default::default());
+        (t, v)
+    }
+
+    fn bind_depth(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scene depth"),
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(view),
+            }],
+        })
     }
 
     pub fn resize(&mut self, w: u32, h: u32) {
         self.width = w.max(1);
         self.height = h.max(1);
-        self.depth_view = Self::make_depth(&self.device, self.width, self.height);
+        (self.depth_tex, self.depth_view) = Self::make_depth(&self.device, self.width, self.height);
         self.decals.rebind(&self.device, &self.depth_view);
+        let (copy, view) = Self::make_depth_copy(&self.device, self.width, self.height);
+        self.soft_bg = Self::bind_depth(&self.device, &self.depth_bgl, &view);
+        self.soft_depth = copy;
     }
 
     fn pipeline(&mut self, key: PipelineKey) -> &wgpu::RenderPipeline {
@@ -1515,6 +1577,14 @@ impl Renderer {
             (env, has_env) = (self.black_cube.clone(), false);
         }
         let (env_mask, has_env_mask) = self.texture_or(&m.env_mask, &self.white);
+        // The opaque scene's depth is copied before the blended draws: the
+        // opaque ones (and skinned ones, drawn with them) see none of it.
+        let soft_depth =
+            if m.blend == BlendMode::Opaque || std::env::var_os("VRM_NO_SOFT_EFFECTS").is_some() {
+                0.0
+            } else {
+                m.soft_depth
+            };
         let u = MaterialUniform {
             uv: [m.uv_offset.x, m.uv_offset.y, m.uv_scale.x, m.uv_scale.y],
             emissive: m.emissive.to_array(),
@@ -1556,7 +1626,7 @@ impl Renderer {
                 m.env_scale,
                 has_env as u32 as f32,
                 has_env_mask as u32 as f32,
-                0.0,
+                soft_depth,
             ],
             decal: [m.parallax.x, m.parallax.y, m.hard_edge as u32 as f32, 0.0],
         };
@@ -1625,6 +1695,7 @@ impl Renderer {
                 })
             }),
             billboard: m.billboard.is_some(),
+            soft: soft_depth > 0.0,
         }
     }
 
@@ -1669,7 +1740,14 @@ impl Renderer {
 
     /// A material for a model's part, kept for animating if it has controllers.
     fn shared_material(&self, m: &MaterialDesc, skinned: bool) -> Arc<GpuMaterial> {
-        let mut mat = self.create_material(m);
+        let mut mat = if skinned && m.soft_depth > 0.0 {
+            self.create_material(&MaterialDesc {
+                soft_depth: 0.0,
+                ..m.clone()
+            })
+        } else {
+            self.create_material(m)
+        };
         mat.key.skinned = skinned;
         let mat = Arc::new(mat);
         if mat.anim.as_ref().is_some_and(|a| a.anim.started()) {
@@ -2243,6 +2321,7 @@ impl Renderer {
                 );
             }
             pass.set_bind_group(0, &self.frame_bg, &[]);
+            pass.set_bind_group(2, &self.soft_bg, &[]);
             if scene.cells.values().any(|c| !c.terrain.is_empty()) {
                 pass.set_pipeline(&self.terrain.pipeline);
                 pass.set_index_buffer(self.terrain.ibuf.slice(..), wgpu::IndexFormat::Uint16);
@@ -2314,41 +2393,58 @@ impl Renderer {
                 }
                 pass.set_vertex_buffer(1, self.instance_buf.slice(..));
             }
+            // Soft effects fade where they meet the opaque scene: its depth is
+            // copied for them to sample while the blended draws write the
+            // depth buffer.
+            let soft = draws[opaque_count..].iter().any(|(d, _)| d.material().soft);
             // Decals: the opaque scene's depth read back, so in a pass of
             // their own with it attached read-only; then the rest.
-            if !decals.is_empty() {
+            if !decals.is_empty() || soft {
                 drop(pass);
                 let color = pre_post.as_ref().unwrap_or(target);
-                let mut dpass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("decals"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: color,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.depth_view,
-                        depth_ops: None,
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                dpass.set_pipeline(&self.decals.pipeline);
-                dpass.set_bind_group(0, &self.frame_bg, &[]);
-                dpass.set_bind_group(2, &self.decals.depth_bg, &[]);
-                dpass.set_vertex_buffer(0, self.decals.cube.slice(..));
-                dpass.set_vertex_buffer(1, self.decal_buf.slice(..));
-                for (i, (d, _)) in decals.iter().enumerate() {
-                    dpass.set_bind_group(1, &d.material.bind_group, &[]);
-                    dpass.draw(0..36, i as u32..i as u32 + 1);
+                if !decals.is_empty() {
+                    let mut dpass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("decals"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: color,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &self.depth_view,
+                            depth_ops: None,
+                            stencil_ops: None,
+                        }),
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                    dpass.set_pipeline(&self.decals.pipeline);
+                    dpass.set_bind_group(0, &self.frame_bg, &[]);
+                    dpass.set_bind_group(2, &self.decals.depth_bg, &[]);
+                    dpass.set_vertex_buffer(0, self.decals.cube.slice(..));
+                    dpass.set_vertex_buffer(1, self.decal_buf.slice(..));
+                    for (i, (d, _)) in decals.iter().enumerate() {
+                        dpass.set_bind_group(1, &d.material.bind_group, &[]);
+                        dpass.draw(0..36, i as u32..i as u32 + 1);
+                    }
+                    drop(dpass);
                 }
-                drop(dpass);
+                if soft {
+                    enc.copy_texture_to_texture(
+                        self.depth_tex.as_image_copy(),
+                        self.soft_depth.as_image_copy(),
+                        wgpu::Extent3d {
+                            width: self.width,
+                            height: self.height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                }
                 pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("main, after decals"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -2373,6 +2469,7 @@ impl Renderer {
                     multiview_mask: None,
                 });
                 pass.set_bind_group(0, &self.frame_bg, &[]);
+                pass.set_bind_group(2, &self.soft_bg, &[]);
                 current.set(None);
             }
             if scene.cells.values().any(|c| !c.water.is_empty()) {
