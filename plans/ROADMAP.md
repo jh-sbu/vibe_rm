@@ -33,6 +33,8 @@ game each piece unlocks.
   and their change if worn, effects, the bottom bar's stats; equipping, using,
   reading, dropping, favorites; scroll spell cards and localized soul-gem
   cards, refreshed when a gem is filled, the best-in-class mark (`known_ambiguities/inventory-cards.md`);
+  ingredient cards' learned effects (eating one teaches its first, or as many as
+  Experimenter's entry point reveals; the rest read "$UNKNOWN");
   weapon cards' poison icon, refreshed when poison is applied or exhausted
   (`known_ambiguities/poisons.md`);
   `showinventory open`); containers, bodies,
@@ -809,7 +811,9 @@ game each piece unlocks.
   bodies, stolen), NPCs greeting the player (`AHEL`), finding bodies (`DEAD`),
   assaults (`ASSU`, crime when the victim keeps the law; blows to the player
   too, never a crime; NPC kills have crime status 0), relationship rank
-  changes (`CHRR`). Crime events: crime gold added (`ADCR`), the player
+  changes (`CHRR`), the player dropping items, giving them and putting them in
+  containers (`REMP`: the `WIRemoveItem` quests; selling sends nothing,
+  `known_ambiguities/story-manager.md`). Crime events: crime gold added (`ADCR`), the player
   giving themselves up to the guard arresting them (`ARRT`: Thieves Guild
   `TG00`'s arrest monitor), jailed (`JAIL`: `JailQuest`, the Windhelm jail
   fight), escaping (`ESJA`: "Retrieve your possessions", the achievement)
@@ -819,7 +823,8 @@ game each piece unlocks.
   `GetRelationshipRank` and highest / lowest, Papyrus get / set. Conditions
   `HasAssociationType` / `HasAssociationTypeAny` and `HasFamilyRelationship` /
   `HasFamilyRelationshipAny` query direct authored links and their association's
-  family flag; secret metadata retained, behavior still pending
+  family flag, `HasParentRelationship` the parent end of a Parent / Child link;
+  secret metadata retained, behavior still pending
   (`known_ambiguities/relationships.md`). Conditions
   `GetIsCurrentPackage`, `IsInList`, `DoesNotExist`, location keyword data.
   Cleared locations: by their bosses dying or `SetCleared`, with the banner,
@@ -1184,14 +1189,12 @@ game each piece unlocks.
      named material sequences: see Done;
      `known_ambiguities/sequence-material-controllers.md`)
 2. **Story Manager** (core and fifteen events done; see Done)
-   - Events waiting on their systems: crafting, item
-     removal (dropping now exists; the event's data needs a source), NPCs'
+   - Events waiting on their systems: crafting, NPCs'
      spell casts (combat suppression and concentration cadence need evidence;
      `known_ambiguities/story-cast-events.md`), new voice powers, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
-   - The "sold" acquire type; `HasParentRelationship` and secret
-     relationship behavior (`known_ambiguities/relationships.md`)
+   - Secret relationship behavior (`known_ambiguities/relationships.md`)
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
    - Quiet Casting, Shadow Warrior (with casting); blindness, and spells
@@ -1352,8 +1355,8 @@ game each piece unlocks.
      the spike)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), the quantity slider's use for more than dropping, rows grouped by captured soul with per-item
-     selection and transfers (`known_ambiguities/inventory-cards.md`), ingredients' learned
-     effects,
+     selection and transfers (`known_ambiguities/inventory-cards.md`); alchemy
+     teaching the effects two ingredients share (waits on crafting),
      equipping scrolls and torches in a hand, the survival warmth rating
    - The HUD: notifications' display
      time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;

@@ -368,6 +368,15 @@ impl Engine {
             .iter()
             .map(|(_, n)| n)
             .sum();
+        if moved > 0 && from == PLAYER_REF {
+            // Given to a person (5) or put in a container (6).
+            let how = if self.actor_cells.contains_key(&to) {
+                5
+            } else {
+                6
+            };
+            self.send_player_remove_item(item, to, how);
+        }
         if moved > 0 && to == PLAYER_REF {
             self.count_taken(from, item, moved, mark.is_some());
             self.send_player_add_item(item, moved, from, true);
