@@ -204,3 +204,41 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   powers and drinking potions don't (UESP: powers fail, "most potions
   don't work": neither is modelled). NPCs go on fighting an ethereal
   player.
+
+## Slow Time
+
+Implemented in `Engine::world_speed` (`src/magic.rs`) and the frame in
+`Engine::update`. Sources: CommonLibSSE-NG's `SlowTimeEffect` (a script
+effect started and finished with a sound loop) and `BSTimer`'s global time
+multiplier; the records (`VoiceSlowTime1`-`3`: archetype 37, magnitude 0.3,
+0.2, 0.1, duration 8, 12, 16 s; the effect's script only applies the image
+space modifiers).
+
+- Unconfirmed: the magnitude is taken as the world's share of real speed,
+  the slowest of any active effect winning. Actors' and projectiles'
+  updates, physics, particles, triggers, hazards and animated objects run at
+  that share; the player (movement, attacks, casting, shouting), the
+  effects' own timers and durations, scripts' waits and the game clock stay
+  in real time. The game may instead scale the effects' durations, the
+  waits, or the player's speed through a separate player multiplier (the
+  camera shot record has separate player, target and global time
+  multipliers). The change is immediate, not eased in or out. A test: time
+  Slow Time's duration, a falling object, an NPC's walk and the player's
+  walk against the real clock.
+
+## Drinking and eating sounds
+
+`Engine::consume` plays the potion's consume sound (`ALCH` `ENIT`'s last
+field: value, flags, addiction, addiction chance, sound; xEdit's `TES5`
+definitions, CommonLibSSE-NG's `AlchemyItem::Data::consumptionSound`) at the
+actor's position, whoever drinks. Food and drinks name their own (Sweet Roll
+0xCAF94, Ale 0xB6435).
+
+- Unconfirmed: ingredients (no sound field in their `ENIT`) and potions that
+  name none are silent here. The game probably has a default (the default
+  object `kPotionEquip` is a sound-like entry); no public source says which
+  or for what. Whether the sound is heard at the actor or at the camera for
+  the player, and whether NPC drinking in combat plays it, are also taken
+  without evidence.
+- The `Medicine` flag (0x10000) and addictions (spell type 10, the `ENIT`
+  addiction) have no effect: no vanilla record uses them.
