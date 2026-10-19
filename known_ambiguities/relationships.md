@@ -40,12 +40,16 @@ secret links.
 
 ## Unresolved
 
-- `HasParentRelationship` (261): the available public descriptions say
-  only that it checks a parent relationship. They do not settle whether
-  it tests the RELA parent endpoint for all association types, only family
-  associations, or the specific biological parent/child association; nor
-  do they unambiguously identify which actor is the parent. The condition
-  remains unsupported rather than adopting one interpretation.
+- `HasParentRelationship` (261): the public descriptions say only that it
+  checks a parent relationship. Unconfirmed: here it is true when the
+  subject is the parent end of an authored `ParentChild` association (the
+  Father / Mother / Son / Daughter ASTP; in-law, grand and other ASTPs do not
+  count) with the actor given, or with anyone when none is. Why: the data
+  authors parents as the RELA parent NPC (`GerdurFrodnar`), and the
+  conditions on the ghost quests' topics (`WIKill0GhostTopic`: "I'm worried
+  about my daughter", "my mother would be worried about me";
+  `WIKill02HauntedTopic`) read as the subject being the parent. Whether the
+  game also counts other association types, or runtime changes, is open.
 - Secret relationships: the flag layouts are known, but the consulted
   sources do not settle which social behaviors suppress knowledge of the
   relationship, or whether direct family/association/rank/extreme queries

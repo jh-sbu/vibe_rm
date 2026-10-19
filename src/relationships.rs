@@ -108,6 +108,15 @@ impl AssociationIndex {
         self.matching(npc, other).any(|a| a.family)
     }
 
+    /// Whether `npc` is the parent end of a `kind` (the Parent / Child
+    /// association) link with `other`, or with anyone.
+    fn has_child(&self, npc: FormId, other: Option<FormId>, kind: FormId) -> bool {
+        !kind.is_null()
+            && self
+                .matching(npc, other)
+                .any(|a| a.kind == kind && a.parent == npc && other.is_none_or(|o| a.child == o))
+    }
+
     fn has_association(&self, npc: FormId, other: Option<FormId>, kind: FormId) -> bool {
         !kind.is_null() && self.matching(npc, other).any(|a| a.kind == kind)
     }
@@ -138,6 +147,26 @@ impl Engine {
             None => None,
         };
         self.association_index().has_family(npc, other)
+    }
+
+    /// `HasParentRelationship`: `actor` is the parent of `other` (or of anyone)
+    /// by an authored link of the Parent / Child association
+    /// (`known_ambiguities/relationships.md`).
+    pub fn has_parent_relationship(&self, actor: FormId, other: Option<FormId>) -> bool {
+        let (Some(npc), Some(kind)) = (
+            self.relationship_npc(actor),
+            self.lo.find_editor_id("ParentChild"),
+        ) else {
+            return false;
+        };
+        let other = match other {
+            Some(other) => match self.relationship_npc(other) {
+                Some(npc) => Some(npc),
+                None => return false,
+            },
+            None => None,
+        };
+        self.association_index().has_child(npc, other, kind)
     }
 
     /// A direct authored association of the requested type, in either direction.
@@ -403,6 +432,21 @@ mod tests {
         assert!(!index.has_association(id(1), None, FormId(0)));
         assert_eq!(index.records[0].parent, id(1));
         assert_eq!(index.records[0].child, id(2));
+    }
+
+    #[test]
+    fn parents_are_the_parent_end_of_the_parent_child_association() {
+        let fixture = Fixture::new();
+        let lo = fixture.load(vec![
+            relation(20, 1, 2, 10, 1),
+            relation(21, 3, 1, 11, 1), // another association
+        ]);
+        let index = AssociationIndex::load(&lo);
+        assert!(index.has_child(id(1), Some(id(2)), id(10)));
+        assert!(index.has_child(id(1), None, id(10)));
+        assert!(!index.has_child(id(2), Some(id(1)), id(10))); // the child
+        assert!(!index.has_child(id(3), Some(id(1)), id(10)));
+        assert!(!index.has_child(id(1), Some(id(2)), FormId(0)));
     }
 
     #[test]
