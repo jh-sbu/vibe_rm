@@ -112,7 +112,11 @@ game each piece unlocks.
   remain unresolved (`known_ambiguities/state-machine-events.md`).
   Blending effects' self-transition modes (a transition into the state already
   entered continues, restarts or blends) and event modes (`ProcessAll` lets the
-  state being left hear events while it fades) are honoured.
+  state being left hear events while it fades) are honoured. Argonian and Khajiit
+  NPCs' tails sway: a worn model whose `BSBehaviorGraphExtraData` controls the base
+  skeleton (the tail's `TailProject`) runs its graph beside the actor's, hearing its
+  events and sharing its variables by name, posing the `TailBone`s
+  (`known_ambiguities/object-graphs.md`).
   The AI sends events (`moveStart`, furniture enter / exit, `IdleStop`...) and sets
   variables (`Speed`, `isInFurniture`, `IsNPC`, `weapAdj`...), follows the graph's root
   motion in furniture and takes anim objects and `IdleFurnitureExit` from its events;
@@ -1124,7 +1128,9 @@ game each piece unlocks.
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
      properties on remaining generator members, blender-child members beyond `weight`
      and `boneWeights`, and transition-effect members beyond `duration`,
-     runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`);
+     runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`;
+     `vrm-tool hkb-props` lists the bindings: the humanoid and dragon projects bind
+     only two modifiers' `enable`);
      feeding `hkbRotateCharacterModifier`'s yaw (computed: see Done) into ordinary NPC
      heading in place of the AI's own turning (`known_ambiguities/rotate-character.md`); the other action trees
      (`ActionTurnLeft`...) as the way events are chosen
@@ -1139,7 +1145,9 @@ game each piece unlocks.
    - Engine variables and events still missing: combat, first person;
      INFO speaker / listener idles; listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes, decals
-   - `BSBehaviorGraphExtraData`'s "controls base skeleton"
+   - Argonian and Khajiit tails (`BSBehaviorGraphExtraData`'s "controls base
+     skeleton": done for NPCs, see Done): the player's own tail, tails after
+     what an actor wears changes
    - Later / separate: standalone controllers on skinned geometry, particle systems, attachments,
      distant and loose objects; collision following standalone transforms,
      persistence and driver arbitration (`known_ambiguities/node-controllers.md`);

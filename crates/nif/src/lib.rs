@@ -86,6 +86,19 @@ impl Nif {
         })
     }
 
+    /// Whether the model's behaviour graph controls its base skeleton.
+    pub fn controls_base_skeleton(&self) -> bool {
+        self.blocks.iter().any(|b| {
+            matches!(
+                b,
+                Block::ExtraData(ExtraData::BehaviorGraph {
+                    controls_base_skeleton: true,
+                    ..
+                })
+            )
+        })
+    }
+
     /// In a model with a behaviour graph, the nodes with a transform controller
     /// of their own: the bones the graph's clips move (a rigged rockfall's
     /// pieces, a pressure plate's springs).

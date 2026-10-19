@@ -444,6 +444,27 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("nif-graphs") => {
+            // nif-graphs <bsa>...: models with a behaviour graph, whether it controls
+            // the base skeleton, and the graph project.
+            for path in &args[1..] {
+                let a = bsa::Archive::open(path)?;
+                let mut paths: Vec<String> = a
+                    .paths()
+                    .filter(|p| p.ends_with(".nif"))
+                    .map(str::to_owned)
+                    .collect();
+                paths.sort();
+                for p in paths {
+                    let data = a.read(&p)?.unwrap();
+                    if let Ok(n) = nif::Nif::parse(&data)
+                        && let Some(g) = n.behavior_graph()
+                    {
+                        println!("{} {p} {g}", n.controls_base_skeleton() as u8);
+                    }
+                }
+            }
+        }
         Some("nif-verify") => {
             // Parse every NIF in the given archives; report blocks whose parse
             // didn't consume exactly the declared size.
@@ -1299,6 +1320,37 @@ fn main() -> Result<()> {
             println!("{total} transitions");
             for (b, c) in counts.iter().enumerate().filter(|(_, c)| **c > 0) {
                 println!("  {:#06x}: {c}", 1 << b);
+            }
+        }
+        Some("hkb-props") => {
+            // hkb-props <data dir> <project>: which generator and modifier members are
+            // bound to character properties, and how often.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let (_, project) = load_project(&v, &args[2])?;
+            let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+            let kind = |d: String| d.split([' ', '{', '(']).next().unwrap_or("").to_owned();
+            for (_, g) in &project.graphs {
+                for (gi, bindings) in g.property_bindings.iter().enumerate() {
+                    for b in bindings {
+                        let class = kind(format!("{:?}", g.generators[gi]));
+                        *counts
+                            .entry(format!("generator {class} .{}", b.member))
+                            .or_default() += 1;
+                    }
+                }
+                for (mi, bindings) in g.modifier_property_bindings.iter().enumerate() {
+                    for b in bindings {
+                        let class = kind(format!("{:?}", g.modifiers.get(mi)));
+                        *counts
+                            .entry(format!("modifier {class} .{}", b.member))
+                            .or_default() += 1;
+                    }
+                }
+            }
+            for (k, n) in counts {
+                println!("{n:5} {k}");
             }
         }
         Some("hkb-classes") => {
