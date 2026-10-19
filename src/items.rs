@@ -184,7 +184,13 @@ impl Engine {
     /// 500); no such member, no allowance. What the player or one of their
     /// factions owns never is.
     pub(crate) fn is_stealing(&self, item: FormId, owner: FormId) -> bool {
-        if owner == FormId(0x7) || self.player_factions().contains(&owner) {
+        self.is_stealing_ranked(item, owner, -1)
+    }
+
+    /// `is_stealing` for things that need `rank` in the owning faction
+    /// (`XRNK`; -1 none): a player in it below that rank is as good as outside.
+    pub(crate) fn is_stealing_ranked(&self, item: FormId, owner: FormId, rank: i32) -> bool {
+        if owner == FormId(0x7) || self.player_in_faction(owner, rank) {
             return false;
         }
         let Some(rec) = self.lo.get(owner) else {
@@ -216,11 +222,43 @@ impl Engine {
         }
     }
 
+    /// The rank in the owning faction a reference's things need (`XRNK`, on
+    /// the record holding the owner; -1 none, and for an owner a script set).
+    pub(crate) fn ref_owner_rank(&self, r: FormId) -> i32 {
+        if self.scripts.owners.contains_key(&r) {
+            return -1;
+        }
+        crate::ai::furniture::owner_and_rank_of(&self.lo, r).map_or(-1, |(_, rank)| rank)
+    }
+
+    /// Whether the player is in a faction at `rank` or better (-1: at all).
+    /// The player faction takes any rank.
+    pub(crate) fn player_in_faction(&self, faction: FormId, rank: i32) -> bool {
+        faction == FormId(0xDB1)
+            || self
+                .npc_factions(FormId(0x7))
+                .into_iter()
+                .any(|(f, r)| f == faction && i32::from(r) >= rank)
+    }
+
+    /// Whether what a reference's owner owns isn't the player's to take
+    /// freely (`owned_by_other`, with the rank the reference asks).
+    pub(crate) fn ref_owned_by_other(&self, r: FormId) -> bool {
+        let rank = self.ref_owner_rank(r);
+        self.ref_owner(r)
+            .is_some_and(|o| self.owned_by_other_ranked(o, rank))
+    }
+
     /// Whether what `owner` owns isn't the player's to take freely: another
     /// person's, or a faction's that can own things and the player isn't in
     /// (whatever its members' favor allows; see `is_stealing`).
     pub(crate) fn owned_by_other(&self, owner: FormId) -> bool {
-        if owner == FormId(0x7) || self.player_factions().contains(&owner) {
+        self.owned_by_other_ranked(owner, -1)
+    }
+
+    /// `owned_by_other` for things that need `rank` in the owning faction.
+    pub(crate) fn owned_by_other_ranked(&self, owner: FormId, rank: i32) -> bool {
+        if owner == FormId(0x7) || self.player_in_faction(owner, rank) {
             return false;
         }
         match self.lo.get(owner) {
@@ -239,12 +277,9 @@ impl Engine {
     fn faction_favor_cap(&self, faction: FormId) -> Option<i32> {
         let gmst = |name: &str, default: i32| crate::ai::combat::gmst_i32(&self.lo, name, default);
         let mut cap: Option<i32> = None;
-        for &npc in self.faction_members(faction) {
-            let alive = self
-                .npc_refs_index()
-                .get(&npc)
-                .is_none_or(|&r| !self.is_dead(r));
-            let rank = self.relationship_rank(npc, PLAYER_REF);
+        for (npc, actor) in self.faction_member_actors(faction) {
+            let alive = actor.is_none_or(|r| !self.is_dead(r));
+            let rank = self.relationship_rank(actor.unwrap_or(npc), PLAYER_REF);
             if !alive || rank <= 0 {
                 continue;
             }
@@ -257,6 +292,30 @@ impl Engine {
             cap = Some(cap.map_or(c, |x| x.min(c)));
         }
         cap
+    }
+
+    /// The NPCs that belong to a faction now, each with the reference to
+    /// watch for death: the records' members, less the actors scripts took
+    /// out of it, with the ones they put in.
+    fn faction_member_actors(&self, faction: FormId) -> Vec<(FormId, Option<FormId>)> {
+        let mut out: Vec<(FormId, Option<FormId>)> = self
+            .faction_members(faction)
+            .iter()
+            .map(|&npc| (npc, self.npc_refs_index().get(&npc).copied()))
+            .collect();
+        for (&actor, changes) in &self.scripts.faction_changes {
+            let Some(&rank) = changes.get(&faction) else {
+                continue;
+            };
+            let Some(npc) = self.base_of(actor).filter(|_| actor != PLAYER_REF) else {
+                continue;
+            };
+            out.retain(|&(n, r)| n != npc || r.is_some_and(|r| r != actor));
+            if rank >= 0 {
+                out.push((npc, Some(actor)));
+            }
+        }
+        out
     }
 
     /// A book's title and text.
@@ -722,3 +781,6 @@ fn without_survival(text: &str) -> String {
     out.push_str(rest);
     out
 }
+
+#[cfg(test)]
+mod faction_tests;

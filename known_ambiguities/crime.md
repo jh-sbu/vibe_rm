@@ -137,6 +137,14 @@ locations name it.
 
 ## Choices made without a source
 
+- Runtime faction changes. Unconfirmed: `AddToFaction` puts an actor in at
+  rank 0 and leaves one already in at its rank; `SetFactionRank` puts an
+  actor in at the rank when it was out; `ModFactionRank` on an actor that is
+  out does nothing (a rank never goes under 0); `RemoveFromFaction` takes it
+  out (rank -1, as a potential follower's). The CK wiki's pages weren't
+  reachable, so these follow the function names. Changes sit on the
+  reference; an NPC record stands for its first reference.
+
 - `GetAmountSoldStolen` (condition 190) remains unimplemented. A public
   [Skyrim LE mod author's test report](https://forums.nexusmods.com/topic/9557203-le-help-with-a-script-to-get-the-values-of-stolen-items/)
   says it stays zero after stolen goods are sold, despite the older games'
