@@ -1162,6 +1162,7 @@ impl Engine {
         if caster == PLAYER_REF && share >= 1.0 && item.spell_type == spell_type::SPELL {
             let mut e = crate::story::StoryEvent::new(b"CAST");
             e.refs[0] = caster;
+            e.locs[0] = self.ref_current_location(caster).unwrap_or_default();
             e.form = spell;
             self.send_story_event(e);
         }
@@ -1606,5 +1607,114 @@ mod cast_start_tests {
             cast_start_event(&spell(CONCENTRATION, delivery::SELF), tk),
             "SpellTelekinesisStart"
         );
+    }
+}
+
+#[cfg(test)]
+mod story_cast_tests {
+    use super::*;
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn cast_location_reaches_story_aliases_and_papyrus_and_is_not_stale() {
+        const SPELL: FormId = FormId(0x800);
+        const QUEST: FormId = FormId(0x810);
+        const CELL: FormId = FormId(0x820);
+        const LOCATION: FormId = FormId(0x821);
+
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = Fixture(
+            std::env::temp_dir().join(format!("vrm-story-cast-{}-{stamp}", std::process::id())),
+        );
+        std::fs::create_dir(&dir.0).unwrap();
+        let mut spit = [0; 36];
+        spit[16..20].copy_from_slice(&1u32.to_le_bytes()); // fire and forget
+        let records = [
+            Node::top(
+                b"SPEL",
+                vec![RecordBuilder::new(b"SPEL", SPELL).field(b"SPIT", &spit)],
+            ),
+            Node::top(
+                b"SMEN",
+                vec![RecordBuilder::new(b"SMEN", FormId(0x830)).field(b"ENAM", b"CAST")],
+            ),
+            Node::top(
+                b"SMQN",
+                vec![
+                    RecordBuilder::new(b"SMQN", FormId(0x831))
+                        .u32(b"PNAM", 0x830)
+                        .u32(b"NNAM", QUEST.0),
+                ],
+            ),
+            Node::top(
+                b"QUST",
+                vec![
+                    RecordBuilder::new(b"QUST", QUEST)
+                        .u32(b"ALLS", 0)
+                        .u32(b"FNAM", crate::aliases::flags::OPTIONAL)
+                        .field(b"ALFE", b"CAST")
+                        .field(b"ALFD", b"L1")
+                        .field(b"ALED", &[]),
+                ],
+            ),
+            Node::top(
+                b"CELL",
+                vec![RecordBuilder::new(b"CELL", CELL).u32(b"XLCN", LOCATION.0)],
+            ),
+            Node::top(b"LCTN", vec![RecordBuilder::new(b"LCTN", LOCATION)]),
+        ];
+        std::fs::write(
+            dir.0.join("StoryCast.esp"),
+            write_plugin(
+                0,
+                &[],
+                "test",
+                "synthetic cast story event",
+                0x900,
+                &records,
+            ),
+        )
+        .unwrap();
+        let mut engine = crate::stats::action_tests::headless_engine(&dir.0, "StoryCast.esp");
+        engine.location = crate::engine::Location::Interior(CELL);
+
+        // Exercise actual casting, Story Manager traversal, a from-event
+        // location alias, and the argument list delivered to quest scripts.
+        engine.cast(PLAYER_REF, SPELL, 1.0);
+        let state = &engine.scripts.quests[&QUEST];
+        assert!(state.running);
+        assert_eq!(state.aliases.get(&0), Some(&LOCATION));
+        let event = state.event.as_ref().unwrap();
+        assert_eq!(event.refs, [PLAYER_REF, FormId::NULL]);
+        assert_eq!(event.locs, [LOCATION, FormId::NULL]);
+        assert_eq!(event.form, SPELL);
+        let (name, args) = engine.story_papyrus_event(event).unwrap();
+        assert_eq!(name, "OnStoryCastMagic");
+        assert_eq!(args.len(), 4);
+        assert!(matches!(args[1], papyrus::Value::None));
+        assert_eq!(args[2].as_form(), Some(LOCATION.0));
+        assert_eq!(args[3].as_form(), Some(SPELL.0));
+
+        // A new cast with no location carries None, never the old location.
+        engine.stop_quest(QUEST);
+        engine.location = crate::engine::Location::Nowhere;
+        engine.cast(PLAYER_REF, SPELL, 1.0);
+        let state = &engine.scripts.quests[&QUEST];
+        assert!(state.running);
+        assert!(!state.aliases.contains_key(&0));
+        let event = state.event.as_ref().unwrap();
+        assert_eq!(event.locs, [FormId::NULL; 2]);
+        let (_, args) = engine.story_papyrus_event(event).unwrap();
+        assert!(matches!(args[2], papyrus::Value::None));
     }
 }

@@ -476,7 +476,9 @@ game each piece unlocks.
   spell lands; impacts (scorch decals) from the effect's impact data set.
   Destruction and the other schools gain XP from casting (hostile spells as
   they land). Magicka comes back at the race's rate times `MagickaRateMult`,
-  slower in combat, after a moment. The Story Manager's spell cast event.
+  slower in combat, after a moment. The Story Manager's player spell cast
+  event carries the current cast location into from-event aliases and
+  `OnStoryCastMagic` (`known_ambiguities/story-cast-events.md`).
   Console `pcast`. NPCs whose combat style favours magic fight with their
   strongest offensive spell while their magicka lasts (keeping their
   distance, throwing or channelling it at their target), then by hand;
@@ -1139,7 +1141,9 @@ game each piece unlocks.
      `known_ambiguities/sequence-material-controllers.md`)
 2. **Story Manager** (core and fifteen events done; see Done)
    - Events waiting on their systems: crafting, item
-     removal (dropping now exists; the event's data needs a source), NPCs' spell casts, new voice powers, bribe /
+     removal (dropping now exists; the event's data needs a source), NPCs'
+     spell casts (combat suppression and concentration cadence need evidence;
+     `known_ambiguities/story-cast-events.md`), new voice powers, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
    - Story Manager state and relationship ranks in saves
    - Kill events' crime status for NPC killers; the "sold" acquire type;
