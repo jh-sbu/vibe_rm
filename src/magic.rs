@@ -759,6 +759,7 @@ impl Engine {
         }
         self.send_script_event(target, "OnHit", args);
         if target == PLAYER_REF {
+            self.assault_on_player(caster);
             return;
         }
         let first = self.actor_ref(target).filter(|a| !a.dead).map(|a| {
