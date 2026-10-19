@@ -2397,6 +2397,24 @@ impl Engine {
         }
     }
 
+    /// A blow or hostile spell of `by` lands on the player: the first one
+    /// from an actor that wasn't fighting them is an assault event (never a
+    /// crime: the player keeps no law), and starts the fight, so the next
+    /// ones aren't assaults (the same rule as for blows to actors).
+    pub(crate) fn assault_on_player(&mut self, by: FormId) {
+        let first = by != PLAYER_REF
+            && self.actor_ref(by).is_some_and(|a| {
+                !a.dead && a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF)
+            });
+        if !first {
+            return;
+        }
+        if !self.is_frenzied(by) {
+            self.start_combat(by, PLAYER_REF);
+        }
+        self.send_assault(PLAYER_REF, by, false);
+    }
+
     /// Take health from an actor (or the player), with a flinch, and fight back.
     pub fn damage(&mut self, target: FormId, amount: f32, attacker: Option<FormId>, stagger: f32) {
         self.damage_by(target, amount, attacker, stagger, false);
@@ -2427,6 +2445,9 @@ impl Engine {
                 self.player_health = 0.0;
                 self.scripts.notify("You have died.");
                 self.player_died_at = Some(self.scripts.real_time);
+            }
+            if let Some(by) = attacker {
+                self.assault_on_player(by);
             }
             return;
         }
@@ -3727,3 +3748,7 @@ mod hand_tests {
 #[cfg(test)]
 #[path = "combat_bash_tests.rs"]
 mod bash_tests;
+
+#[cfg(test)]
+#[path = "combat_assault_tests.rs"]
+mod assault_tests;
