@@ -53,10 +53,15 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
   for `WEAPONDRAW` got the player's `weaponDraw` (`test-mod autotest2`).
 - Script-set graph variables (`SetAnimationVariable*`) hold against the
   engine's own writes (an actor's `Speed`, `iState`, `bHeadTracking`,
-  `IsBlocking`...) from the first script write on, until a script sets them
-  again. Unconfirmed: public sources don't say whether the game's own per-frame
-  writes win over a script's, or when it stops a held value. Chosen so a script
-  that sets a variable the engine also drives sees it stick; a graph's own
+  `IsBlocking`...) while the engine keeps writing the value it had before the
+  script's; once the engine's own value changes (another weapon equipped, a
+  new movement state) the engine's wins again. Unconfirmed: public sources
+  don't say whether the game's own per-frame writes win over a script's, or
+  when it stops a held value. Chosen so a script's value sticks without
+  freezing the variable for good: `DLC2BookDungeonControllerScript` sets the
+  player's `iLeftHandType` / `iRightHandType` to 0, which would otherwise
+  outlast every later change of weapons. Continuously varying values (`Speed`
+  while moving) go back to the engine's within a frame. A graph's own
   modifiers (expression and variable outputs) still write them.
 - A graph that controls the base skeleton (the tails') runs beside the actor's
   own and poses only its skeleton's bones (`TailBone01..05`) over the actor

@@ -224,7 +224,7 @@ pub struct GraphAnim {
     bind: Vec<Transform>,
     scratch: Vec<havok::QsTransform>,
     /// Variables a script set (`SetAnimationVariable*`): the engine's own writes
-    /// to them (speed, state, head tracking...) no longer apply.
+    /// of what it had before don't undo them; a change of its own does.
     pinned: ScriptPins,
     /// A second graph posing some of the same skeleton's bones (a tail's).
     aux: Option<Box<AuxGraph>>,
@@ -250,19 +250,38 @@ fn take_bones(locals: &mut [Transform], from: &[Transform], bones: &[usize]) {
     }
 }
 
-/// Names of the graph variables scripts took over, matched ignoring case.
+/// Graph variables scripts set, matched ignoring case, each with the value the
+/// engine had given it before.
 #[derive(Default)]
-struct ScriptPins(Vec<String>);
+struct ScriptPins(Vec<(String, f32)>);
 
 impl ScriptPins {
-    fn pin(&mut self, name: &str) {
-        if !self.holds(name) {
-            self.0.push(name.to_ascii_lowercase());
+    /// A script set `name` over the engine's `before`. A script setting it again
+    /// keeps the engine's value from the first time.
+    fn pin(&mut self, name: &str, before: f32) {
+        if self.find(name).is_none() {
+            self.0.push((name.to_ascii_lowercase(), before));
         }
     }
 
-    fn holds(&self, name: &str) -> bool {
-        self.0.iter().any(|p| p.eq_ignore_ascii_case(name))
+    fn find(&self, name: &str) -> Option<usize> {
+        self.0
+            .iter()
+            .position(|(p, _)| p.eq_ignore_ascii_case(name))
+    }
+
+    /// Whether the engine writing `value` to `name` should give way to the
+    /// script: it is what the engine had already. Anything else is a change of
+    /// the engine's own (an item equipped, a new state) and ends the pin.
+    fn holds(&mut self, name: &str, value: f32) -> bool {
+        let Some(i) = self.find(name) else {
+            return false;
+        };
+        if self.0[i].1 == value {
+            return true;
+        }
+        self.0.swap_remove(i);
+        false
     }
 }
 
@@ -505,17 +524,21 @@ impl GraphAnim {
     }
 
     /// The engine's own write (movement, combat, equipment...): ignored, and
-    /// false, for a variable a script took over.
+    /// false, while a script's value stands (`ScriptPins::holds`).
     pub fn set_variable(&mut self, name: &str, value: f32) -> bool {
-        !self.pinned.holds(name) && self.inst.set_variable(name, value)
+        !self.pinned.holds(name, value) && self.inst.set_variable(name, value)
     }
 
     /// A script's write (`SetAnimationVariable*`): the variable keeps the value
-    /// against the engine's later writes until a script sets it again.
+    /// while the engine goes on writing what it had before, until the engine's
+    /// own value changes.
     pub fn set_script_variable(&mut self, name: &str, value: f32) -> bool {
+        let Some(before) = self.inst.variable(name) else {
+            return false;
+        };
         let known = self.inst.set_variable(name, value);
         if known {
-            self.pinned.pin(name);
+            self.pinned.pin(name, before);
         }
         known
     }
@@ -783,11 +806,24 @@ mod pin_tests {
     #[test]
     fn pins_match_ignoring_case_and_once() {
         let mut p = ScriptPins::default();
-        assert!(!p.holds("Speed"));
-        p.pin("Speed");
-        p.pin("SPEED");
-        assert!(p.holds("speed"));
-        assert!(!p.holds("Direction"));
+        assert!(!p.holds("Speed", 0.0));
+        p.pin("Speed", 0.0);
+        p.pin("SPEED", 5.0);
+        assert!(p.holds("speed", 0.0));
+        assert!(!p.holds("Direction", 0.0));
         assert_eq!(p.0.len(), 1);
+    }
+
+    /// `DLC2BookDungeonControllerScript` sets the player's `iLeftHandType` to 0:
+    /// it stays while the engine writes the old hand type, and gives way when
+    /// something else is equipped.
+    #[test]
+    fn the_engine_changing_its_value_ends_a_pin() {
+        let mut p = ScriptPins::default();
+        p.pin("iLeftHandType", 1.0);
+        assert!(p.holds("iLeftHandType", 1.0));
+        assert!(p.holds("iLeftHandType", 1.0));
+        assert!(!p.holds("iLeftHandType", 4.0));
+        assert!(!p.holds("iLeftHandType", 1.0));
     }
 }
