@@ -665,7 +665,7 @@ impl Engine {
             return true;
         }
         drop(rec);
-        let owned = self.ref_owner(cell).is_some_and(|o| self.owned_by_other(o));
+        let owned = self.ref_owned_by_other(cell);
         owned && self.crime.private_homes.values().any(|&c| c == cell)
     }
 

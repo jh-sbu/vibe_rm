@@ -76,10 +76,9 @@ impl Engine {
         };
         if let Some(owner) = self.ref_owner(r)
             && (owner == npc
-                || self
-                    .npc_factions(achr)
-                    .iter()
-                    .any(|&(f, rank)| f == owner && rank >= 0))
+                || self.npc_factions(achr).iter().any(|&(f, rank)| {
+                    f == owner && i32::from(rank) >= self.ref_owner_rank(r).max(0)
+                }))
         {
             return true;
         }
@@ -130,8 +129,9 @@ impl Engine {
 
     /// Who owns a lock: the reference holding it, the door or container
     /// activated, or a load door's other side (`XOWN`, else their cell's owner:
-    /// a house's own door outside often has none).
-    fn lock_owner(&self, lock: FormId, then: FormId) -> Option<FormId> {
+    /// a house's own door outside often has none), with the rank its faction
+    /// asks.
+    fn lock_owner(&self, lock: FormId, then: FormId) -> Option<(FormId, i32)> {
         let partner = self
             .lo
             .get(then)
@@ -139,7 +139,7 @@ impl Engine {
         [Some(lock), Some(then), partner]
             .into_iter()
             .flatten()
-            .find_map(|r| self.ref_owner(r))
+            .find_map(|r| self.ref_owner(r).map(|o| (o, self.ref_owner_rank(r))))
     }
 
     /// Starting to pick a lock someone else owns is a crime, whether or not
@@ -152,7 +152,8 @@ impl Engine {
         }
         let Some(owner) = self
             .lock_owner(lock, then)
-            .filter(|&o| self.owned_by_other(o))
+            .filter(|&(o, rank)| self.owned_by_other_ranked(o, rank))
+            .map(|(o, _)| o)
         else {
             return;
         };

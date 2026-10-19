@@ -832,7 +832,13 @@ game each piece unlocks.
   `GetInSharedCrimeFaction`. Stolen goods stay marked as their owners' (red in
   the menus, the red "Steal" / "Steal from" prompts) and are confiscated into
   the faction's stolen goods chest on paying; `GetStolenItemValue(NoCrime)`.
-  Picking a lock someone else owns is a crime when seen. Trespassing: in an
+  Picking a lock someone else owns is a crime when seen. An owned reference's
+  required faction rank (`XRNK`, on it or its cell) counts: a member below it
+  is as good as outside for stealing, locks, beds and cells. Scripts put actors in
+  and out of factions (`AddToFaction`, `RemoveFromFaction`,
+  `RemoveFromAllFactions`, `SetFactionRank`, `ModFactionRank`; conditions and
+  `GetFactionRank` follow), and the members that let the player take a
+  faction's things (the favor cap) follow too. Trespassing: in an
   off limits cell, or a home while its owner's package locks the doors (not
   public areas), whoever sees the player warns them with the Trespass topic
   (`GetTrespassWarningLevel`, `IsTrespassing`), warns again, then calls the
@@ -1036,7 +1042,9 @@ game each piece unlocks.
   (`NiTransformController`, `NiVisController`) moved, scaled and shown by them (the
   sprays' emitters swept round, ice shards flying), their shader controllers
   started with them (`APP_INIT` ones too), world-space particles left where they
-  were emitted as their emitters move.
+  were emitted as their emitters move. An impact's hazard (`NAM2`) is left where
+  it lands: its spell touches whoever is within its radius on its interval for its
+  record's lifetime, the oldest of its kind going at its limit.
   Console `impact`; `VRM_NO_IMPACTS=1`
   leaves out effects and decals; vrm-tool `impacts`. Open questions:
   `known_ambiguities/impacts.md`
@@ -1306,16 +1314,15 @@ game each piece unlocks.
      adults, `PICC` lines, hired thugs; trespassers chased out, "Warn To
      Leave", `sNoWaitTrespass` / `sNoSleepTrespass`, sleepers waking to warn;
      `GetAmountSoldStolen`; NPCs' crimes (`GetCrime`,
-     `GetActorCrimePlayerEnemy`), the unreported crime faction; faction
-     changes at runtime updating the favor cap; dropped items' ownership;
-     locks' `XRNK`, alias-given keys and factions, `Lock`'s "as owner"
+     `GetActorCrimePlayerEnemy`), the unreported crime faction; dropped items' ownership;
+     locks' alias-given keys and factions, `Lock`'s "as owner"
      argument, trespass for opening a lock
    - Combat, more: attackers forgetting a lost fleeing target
      (`fCombatDetectionFleeingLostRemoveTime`,
      `fCombatLowFleeingTargetHitPercent`); flee dialogue's distance rules
      (`fCombatDialogueFleeDistanceMult`; timer scheduling: see Done);
-     impacts' hazards (`NAM2`),
-     results (bounce, impale, stick)
+     impacts' results (bounce, impale, stick); their hazards' models, lights,
+     sounds and flags
    - Encumbrance, more: fast travel refused over-encumbered (with the
      map), followers' "can't carry any more"
    - Perks, more: staggers, bow zoom, key rewards; refunds and the Legendary reset; NPCs' skills advancing

@@ -76,7 +76,7 @@ impl Engine {
             ));
         }
         if let Some(bed) = bed
-            && self.ref_owner(bed).is_some_and(|o| self.owned_by_other(o))
+            && self.ref_owned_by_other(bed)
         {
             return Some(("InOwnedBed", "You cannot %s in an owned bed."));
         }

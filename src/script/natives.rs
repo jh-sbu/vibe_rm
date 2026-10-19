@@ -858,9 +858,48 @@ pub fn call(
         ))),
         ("actor", "getfactionrank") => v(Value::Int(
             me.zip(form_arg(args, 0))
-                .and_then(|(r, f)| e.npc_factions(r).into_iter().find(|x| x.0 == f))
-                .map_or(-1, |x| x.1 as i32),
+                .map_or(-1, |(r, f)| e.faction_rank(r, f)),
         )),
+        // In a faction, an actor keeps the rank it has; out of it, it joins at 0.
+        ("actor", "addtofaction") => {
+            if let Some((r, f)) = me.zip(form_arg(args, 0))
+                && e.faction_rank(r, f) < 0
+            {
+                e.set_faction_rank(r, f, 0);
+            }
+            none()
+        }
+        ("actor", "removefromfaction") => {
+            if let Some((r, f)) = me.zip(form_arg(args, 0)) {
+                e.set_faction_rank(r, f, -1);
+            }
+            none()
+        }
+        ("actor", "removefromallfactions") => {
+            if let Some(r) = me {
+                for (f, _) in e.npc_factions(r) {
+                    e.set_faction_rank(r, f, -1);
+                }
+            }
+            none()
+        }
+        // Setting a rank puts the actor in the faction; changing one it isn't
+        // in is lost.
+        ("actor", "setfactionrank") => {
+            if let Some((r, f)) = me.zip(form_arg(args, 0)) {
+                e.set_faction_rank(r, f, arg(1).as_int());
+            }
+            none()
+        }
+        ("actor", "modfactionrank") => {
+            if let Some((r, f)) = me.zip(form_arg(args, 0)) {
+                let rank = e.faction_rank(r, f);
+                if rank >= 0 {
+                    e.set_faction_rank(r, f, (rank + arg(1).as_int()).max(0));
+                }
+            }
+            none()
+        }
         ("actor", "isarrested") => v(Value::Bool(false)),
         // ------------------------------------------------------------ Combat
         ("actor", "isincombat") => {
