@@ -59,6 +59,12 @@ pub struct UseWeapon {
     pub pause: (f32, f32),
     /// Attacks per barrage.
     pub attacks: (u32, u32),
+    /// "Never End?": keep practising however many barrages have run.
+    pub never_end: bool,
+    /// "End after this many Barrages" (0: no limit); unused when Never End is set.
+    pub barrages: u32,
+    /// "Max Time spent Attacking" in seconds (0 = forever).
+    pub max_time: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -627,6 +633,9 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
                 (0.0, 0.0)
             },
             attacks: (attacks.0.min(attacks.1), attacks.0.max(attacks.1)),
+            never_end: flag("neverend").unwrap_or(true),
+            barrages: int("endafterthismanybarrages").unwrap_or(0),
+            max_time: float(&["maxtimespentattacking0forever"], 0.0).max(0.0),
         }
     });
     // The first location input is the package's main location (a force greeter's
@@ -1036,6 +1045,9 @@ mod tests {
             (13, "Max Pause:"),
             (14, "Min Attacks per Barrage:"),
             (15, "Max Attacks per Barrage"),
+            (9, "Never End?"),
+            (11, "End after this many Barrages:"),
+            (16, "Max Time spent Attacking (0 = forever)"),
         ];
         let mut template = RecordBuilder::new(b"PACK", template_id)
             .zstring(b"EDID", "UseWeaponMultiTarget")
@@ -1061,19 +1073,26 @@ mod tests {
                 .field(b"PTDA", &target)
                 .field(b"UNAM", &[index]);
         }
-        for (index, value) in [(30, 150i32), (38, 250), (42, 350), (14, 2), (15, 5)] {
+        for (index, value) in [
+            (30, 150i32),
+            (38, 250),
+            (42, 350),
+            (14, 2),
+            (15, 5),
+            (11, 3),
+        ] {
             package = package
                 .zstring(b"ANAM", "Int")
                 .field(b"CNAM", &value.to_le_bytes())
                 .field(b"UNAM", &[index]);
         }
-        for (index, value) in [(34, 1), (35, 1), (10, 0)] {
+        for (index, value) in [(34, 1), (35, 1), (10, 0), (9, 0)] {
             package = package
                 .zstring(b"ANAM", "Bool")
                 .field(b"CNAM", &[value])
                 .field(b"UNAM", &[index]);
         }
-        for (index, value) in [(12, 3.0f32), (13, 7.0)] {
+        for (index, value) in [(12, 3.0f32), (13, 7.0), (16, 90.0)] {
             package = package
                 .zstring(b"ANAM", "Float")
                 .f32(b"CNAM", value)
@@ -1116,6 +1135,12 @@ mod tests {
         }
         assert_eq!(controls.pause, (0.0, 0.0));
         assert_eq!(controls.attacks, (2, 5));
+        assert!(!controls.never_end);
+        assert_eq!((controls.barrages, controls.max_time), (3, 90.0));
+        // Absent inputs keep practising indefinitely.
+        let absent = parse(&lo, FormId(0x803)).unwrap().use_weapon.unwrap();
+        assert!(absent.never_end);
+        assert_eq!((absent.barrages, absent.max_time), (0, 0.0));
         assert_eq!(
             controls.targets,
             [
