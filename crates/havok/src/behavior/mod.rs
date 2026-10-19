@@ -345,8 +345,8 @@ pub enum Modifier {
     FootIkControls(FootIkGains),
     /// `hkbTwistModifier`: authored axis, angle and bone endpoints.
     Twist(Twist),
-    /// `hkbRotateCharacterModifier`: character rotation settings. These are
-    /// exposed by the runtime but not yet applied to the actor's world transform.
+    /// `hkbRotateCharacterModifier`: character rotation settings; the
+    /// runtime turns them into a yaw the engine adds to root motion.
     RotateCharacter(RotateCharacter),
     Other(String),
 }
