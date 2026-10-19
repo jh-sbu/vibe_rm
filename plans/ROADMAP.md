@@ -181,6 +181,10 @@ game each piece unlocks.
   `startStateMode` / `syncVariableIndex` inputs at activation, preserving the
   existing default/sync/random paths and graph-local sync state. Lifecycle,
   invalid-input and chooser limits: `known_ambiguities/state-machine-start-properties.md`
+- Blenders resolve whole-member scalar character-property and graph-variable
+  `flags` inputs consistently across pose weights, synchronized timing and
+  trigger masters. Integer, bit-binding and lifecycle limits:
+  `known_ambiguities/blender-flags-properties.md`
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;

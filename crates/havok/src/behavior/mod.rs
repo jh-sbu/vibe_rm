@@ -757,8 +757,14 @@ impl<'a> Reader<'a> {
             // Binding type 0: a variable (1 would be a character property).
             .filter(|&b| self.p.u8(b + 0x21) == 0)
             .filter_map(|b| {
+                let member = self.p.string(b)?;
+                // Flags currently support whole-member inputs only. Do not
+                // replace the entire bitfield with a single-bit binding.
+                if member == "flags" && self.p.u8(b + 0x20) != u8::MAX {
+                    return None;
+                }
                 Some(Binding {
-                    member: self.p.string(b)?,
+                    member,
                     variable: usize::try_from(self.p.i32(b + 0x1C)).ok()?,
                 })
             })
@@ -792,8 +798,12 @@ impl<'a> Reader<'a> {
             .map(|i| data + i * 0x28)
             .filter(|&b| self.p.u8(b + 0x21) == 1)
             .filter_map(|b| {
+                let member = self.p.string(b)?;
+                if member == "flags" && self.p.u8(b + 0x20) != u8::MAX {
+                    return None;
+                }
                 Some(PropertyBinding {
-                    member: self.p.string(b)?,
+                    member,
                     property: self
                         .character_properties
                         .get(usize::try_from(self.p.i32(b + 0x1C)).ok()?)?
@@ -1792,8 +1802,14 @@ mod character_property_tests {
     }
 
     #[test]
-    fn blenders_retain_cyclic_bound_property_and_variable_bindings() {
-        for member in ["minCyclicBlendParameter", "maxCyclicBlendParameter"] {
+    fn blenders_retain_range_and_flag_property_and_variable_bindings() {
+        for (member, bit) in [
+            ("minCyclicBlendParameter", 255),
+            ("maxCyclicBlendParameter", 255),
+            ("flags", 255),
+            ("flags", 0),
+            ("flags", 15),
+        ] {
             let mut p = fixture();
             for at in [0x480, 0x4E0] {
                 p.data[at..at + 0x20].fill(0);
@@ -1801,6 +1817,10 @@ mod character_property_tests {
             }
             p.data[0x2D0..0x2D4].copy_from_slice(&(-1.0f32).to_le_bytes());
             p.data[0x2D4..0x2D8].copy_from_slice(&2.0f32.to_le_bytes());
+            p.data[0x2DA..0x2DC].copy_from_slice(&BLEND_SYNC.to_le_bytes());
+            for at in [0x380 + 0x20, 0x380 + 3 * 0x28 + 0x20] {
+                p.data[at] = bit;
+            }
             let mut r = Reader {
                 p: &p,
                 classes: [(0x280, "hkbBlenderGenerator")].into(),
@@ -1821,12 +1841,20 @@ mod character_property_tests {
             let Generator::Blender {
                 min_cyclic,
                 max_cyclic,
+                flags,
                 ..
             } = &r.generators[id]
             else {
                 panic!("expected blender");
             };
             assert_eq!((*min_cyclic, *max_cyclic), (-1.0, 2.0));
+            assert_eq!(*flags, BLEND_SYNC);
+            if bit != 255 {
+                assert!(r.bindings[id].is_empty());
+                assert_eq!(r.property_bindings[id].len(), 1);
+                assert_eq!(r.property_bindings[id][0].member, "enable");
+                continue;
+            }
             assert_eq!(r.property_bindings[id][0].member, member);
             assert_eq!(r.property_bindings[id][0].property, "bound");
             assert_eq!(r.bindings[id][0].member, member);

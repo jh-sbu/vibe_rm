@@ -48,7 +48,8 @@ bone switches.
   property-name table and bindable-object layout as modifiers. The runtime
   resolves scalar properties for `playbackSpeed`, `startTime`,
   `userControlledTimeFraction`, `selectedGeneratorIndex`, `blendParameter`,
-  `minCyclicBlendParameter`, `maxCyclicBlendParameter`, `mode`, `startStateId`,
+  `minCyclicBlendParameter`, `maxCyclicBlendParameter`, whole-member blender
+  `flags`, `mode`, `startStateId`,
   `startStateMode` and `syncVariableIndex` at their
   existing input-read sites. Clip start/mode and state-machine
   start are read on activation; speed, user-controlled time, selector index and
@@ -66,6 +67,8 @@ bone switches.
   activation-only policy are detailed in [`clip-mode-properties.md`](clip-mode-properties.md).
   State-machine mode/index inputs and their activation-only policy are detailed
   in [`state-machine-start-properties.md`](state-machine-start-properties.md).
+  Blender flags' supported bits, shared pose/timing reads and bit-binding limits
+  are detailed in [`blender-flags-properties.md`](blender-flags-properties.md).
 - Shared runtime caching includes the character-file identity. DefaultMale and
   DefaultFemale can use the same root graph while retaining their own property
   values and character driver settings.
