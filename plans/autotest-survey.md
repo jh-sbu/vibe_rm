@@ -216,6 +216,11 @@ Left out so far:
 - **Actors' keywords** (`npc-templates.md`): `HasKeyword` on an NPC wearing
   armor with `ArmorHeavy`, and under a spell whose effect has a keyword
   its race lacks.
+- **Runtime faction changes** (`crime.md`): a test NPC outside a faction;
+  `GetFactionRank` after `AddToFaction` (0?), after `AddToFaction` on one
+  already at rank 2 (kept?), `SetFactionRank` and `ModFactionRank` on one
+  that is out (joins? stays out?), after `RemoveFromFaction` (-1), and
+  `IsInFaction` after each. Plain vanilla natives on a placed NPC.
 - **Package locations** (`package-trees.md`), `GetWithinPackageLocation`:
   an NPC held (`SetDontMove`) in the test cell with two packages, the first
   conditioned on `GetWithinPackageLocation` (its own condition, as the

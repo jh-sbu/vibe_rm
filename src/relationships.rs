@@ -239,7 +239,7 @@ impl Engine {
     }
 
     /// The NPC records that belong to a faction (from their own or their
-    /// templates' faction lists; membership doesn't change at runtime yet).
+    /// templates' faction lists; what scripts changed is `faction_member_actors`).
     pub(crate) fn faction_members(&self, faction: FormId) -> &[FormId] {
         let members = self.relationships.members.get_or_init(|| {
             let mut out: HashMap<FormId, Vec<FormId>> = HashMap::new();

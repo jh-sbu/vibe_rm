@@ -822,7 +822,11 @@ game each piece unlocks.
   the faction's stolen goods chest on paying; `GetStolenItemValue(NoCrime)`.
   Picking a lock someone else owns is a crime when seen. An owned reference's
   required faction rank (`XRNK`, on it or its cell) counts: a member below it
-  is as good as outside for stealing, locks, beds and cells. Trespassing: in an
+  is as good as outside for stealing, locks, beds and cells. Scripts put actors in
+  and out of factions (`AddToFaction`, `RemoveFromFaction`,
+  `RemoveFromAllFactions`, `SetFactionRank`, `ModFactionRank`; conditions and
+  `GetFactionRank` follow), and the members that let the player take a
+  faction's things (the favor cap) follow too. Trespassing: in an
   off limits cell, or a home while its owner's package locks the doors (not
   public areas), whoever sees the player warns them with the Trespass topic
   (`GetTrespassWarningLevel`, `IsTrespassing`), warns again, then calls the
@@ -1296,8 +1300,7 @@ game each piece unlocks.
      adults, `PICC` lines, hired thugs; trespassers chased out, "Warn To
      Leave", `sNoWaitTrespass` / `sNoSleepTrespass`, sleepers waking to warn;
      `GetAmountSoldStolen`; NPCs' crimes (`GetCrime`,
-     `GetActorCrimePlayerEnemy`), the unreported crime faction; faction
-     changes at runtime updating the favor cap; dropped items' ownership;
+     `GetActorCrimePlayerEnemy`), the unreported crime faction; dropped items' ownership;
      locks' alias-given keys and factions, `Lock`'s "as owner"
      argument, trespass for opening a lock
    - Combat, more: attackers forgetting a lost fleeing target

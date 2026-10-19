@@ -139,6 +139,10 @@ pub struct ScriptState {
     /// References' and cells' owners set by scripts (`SetActorOwner`,
     /// `SetFactionOwner`; `None` clears it), over the data's.
     pub owners: HashMap<FormId, Option<FormId>>,
+    /// Factions scripts put actors (references) in or took them out of, over
+    /// their records' lists: the actor's rank there, -1 for out
+    /// (`AddToFaction`, `SetFactionRank`, `RemoveFromFaction`).
+    pub faction_changes: HashMap<FormId, HashMap<FormId, i8>>,
 }
 
 impl ScriptState {
