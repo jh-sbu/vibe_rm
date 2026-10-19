@@ -376,6 +376,10 @@ game each piece unlocks.
   The player wields a bow (`player.equipitem`), draws holding the attack button and
   looses on release (weaker and slower before full draw, nothing before the nock),
   using up arrows. Console `pshoot [secs]`, `tcam`
+- Bow ammunition selection rejects bolts, malformed records and exhausted
+  equipped stacks on every path; equipped compatible arrows take precedence,
+  with the existing NPC iron-arrow fallback. Sources and remaining auto-equip
+  questions: `known_ambiguities/archery-ammunition.md`
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
