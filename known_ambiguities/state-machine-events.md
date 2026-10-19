@@ -47,3 +47,27 @@ interval handling must not be taken as an implementation of that flag.
 No engine binary data, disassembly, decompilation or leaked SDK documents were
 used to implement this change. Search results pointing to proprietary SDK
 mirrors were excluded as evidence.
+
+## Blending effects' self-transition and event modes
+
+`hkbBlendingTransitionEffect` carries a `selfTransitionMode` (byte at 0x48)
+and an `eventMode` (0x49). The installed humanoid project holds self modes
+0..3 (153, 24, 17 and 36 effects) and event modes 0..2 (150, 75 and 5); no
+effect uses event mode 3. The value order and the meanings below are taken from
+the enumerators' names as they appear in community-posted behaviour XML
+(`CONTINUE_IF_CYCLIC_BLEND_IF_ACYCLIC`, `CONTINUE`, `RESET`, `BLEND`;
+`DEFAULT`, `PROCESS_ALL`, `IGNORE_FROM_GENERATOR`, `IGNORE_TO_GENERATOR`); no
+public source describes what they do.
+
+Unconfirmed: what we chose.
+
+- A transition into the state the machine is already in (allowed by
+  `FLAG_ALLOW_SELF_TRANSITION`) with `CONTINUE` does nothing: no restart, no
+  exit / enter events, no change notification. `RESET` restarts the state with
+  no blend. `BLEND` (and a transition with no effect) restarts it with the
+  authored blend. `CONTINUE_IF_CYCLIC_BLEND_IF_ACYCLIC` continues when the
+  state's generator is a looping or ping-pong clip, or a selector / wrapper /
+  blender of only such clips, else blends; machines count as acyclic.
+- `PROCESS_ALL` also offers events to the state being left while it fades out
+  (its nested machines and modifiers hear them); every other mode, including
+  `DEFAULT`, leaves it deaf, as before. `IGNORE_TO_GENERATOR` is not acted on.

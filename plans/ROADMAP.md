@@ -110,6 +110,9 @@ game each piece unlocks.
   Authored state / transition change events retain their payload and graph-local
   mapping, raised when a transition commits; additional notification boundaries
   remain unresolved (`known_ambiguities/state-machine-events.md`).
+  Blending effects' self-transition modes (a transition into the state already
+  entered continues, restarts or blends) and event modes (`ProcessAll` lets the
+  state being left hear events while it fades) are honoured.
   The AI sends events (`moveStart`, furniture enter / exit, `IdleStop`...) and sets
   variables (`Speed`, `isInFurniture`, `IsNPC`, `weapAdj`...), follows the graph's root
   motion in furniture and takes anim objects and `IdleFurnitureExit` from its events;
@@ -1131,8 +1134,8 @@ game each piece unlocks.
      take a carrier to where the load goes (now any wood pile it happens to pick);
      buckets (`OffsetCarryBucketStart`: nothing in the idle tree sends it) and
      DLC2 stone piles (no instant exit to carry them away)
-   - Delayed state changes (`FLAG_DELAY_STATE_CHANGE`), blending effects' event /
-     self-transition modes (`vrm-tool hkb-flags` counts and lists them);
+   - Delayed state changes (`FLAG_DELAY_STATE_CHANGE`; `vrm-tool hkb-flags` counts
+     and lists the flags);
      change-notification activation / completion / interruption timing
      (`known_ambiguities/state-machine-events.md`)
    - Engine variables and events still missing: combat, first person;
