@@ -530,6 +530,15 @@ impl Ctx<'_> {
             })
     }
 
+    /// Share the same flags between pose weighting and synchronized timing.
+    /// Reject invalid integer inputs before casting; a bound variable still
+    /// takes precedence over a duplicate property even when it is invalid.
+    fn blend_flags(&self, gi: usize, g: GenId, authored: u16) -> u16 {
+        self.bound(gi, g, "flags")
+            .filter(|v| v.is_finite() && *v >= 0.0 && *v <= u16::MAX as f32 && v.fract() == 0.0)
+            .map_or(authored, |v| v as u16)
+    }
+
     /// Publish the state ID (not its index in `states`) through an authored
     /// output binding. Do this before activating the state's child, whose
     /// selectors / start states may read the variable.
@@ -1280,7 +1289,7 @@ impl Ctx<'_> {
                 let Generator::Blender { flags, .. } = &graph.generators[g] else {
                     return;
                 };
-                if flags & BLEND_SYNC != 0 {
+                if self.blend_flags(gi, g, *flags) & BLEND_SYNC != 0 {
                     // Synchronised cyclic children share a phase; the cycle length is
                     // the weighted mix of theirs.
                     let weights = self.blend_weights(gi, g, &[]);
@@ -1664,6 +1673,7 @@ impl Ctx<'_> {
         else {
             return Vec::new();
         };
+        let flags = self.blend_flags(gi, g, *flags);
         let raw: Vec<f32> = children
             .iter()
             .map(|c| {
@@ -3814,6 +3824,221 @@ mod tests {
             ],
             vec![],
         )
+    }
+
+    fn flags_property_graph(authored: u16) -> BehaviorGraph {
+        let mut g = child_weight_graph(authored);
+        let Generator::Blender {
+            parameter,
+            children,
+            ..
+        } = &mut g.generators[0]
+        else {
+            unreachable!();
+        };
+        *parameter = 0.0;
+        children[0].weight_property = None;
+        g.property_bindings[0] = vec![property("flags", "BlendFlags")];
+        g.events = vec!["First".into(), "Second".into()];
+        for (id, time, event) in [(1, 0.2, 0), (2, 0.4, 1)] {
+            let Generator::Clip { triggers, .. } = &mut g.generators[id] else {
+                unreachable!();
+            };
+            triggers.push(Trigger {
+                time,
+                from_end: false,
+                event,
+                payload: None,
+            });
+        }
+        g
+    }
+
+    #[test]
+    fn blender_flag_properties_share_pose_sync_and_trigger_inputs() {
+        for (flags, weights, times, events) in [
+            (
+                0,
+                vec![("Enter".into(), 0.25), ("Loop".into(), 0.75)],
+                vec![0.375, 0.375],
+                vec!["First"],
+            ),
+            (
+                BLEND_PARAMETRIC,
+                vec![("Enter".into(), 1.0)],
+                vec![0.375],
+                vec!["First"],
+            ),
+            (
+                BLEND_PARAMETRIC | BLEND_CYCLIC,
+                vec![("Enter".into(), 0.5), ("Loop".into(), 0.5)],
+                vec![0.375, 0.375],
+                vec!["First"],
+            ),
+            (
+                BLEND_SYNC,
+                vec![("Enter".into(), 0.25), ("Loop".into(), 0.75)],
+                vec![0.375 / 1.75, 0.75 / 1.75],
+                vec!["Second"],
+            ),
+            (
+                BLEND_SYNC | BLEND_PARAMETRIC | BLEND_CYCLIC,
+                vec![("Enter".into(), 0.5), ("Loop".into(), 0.5)],
+                vec![0.25, 0.5],
+                vec!["Second"],
+            ),
+            (
+                0x8000,
+                vec![("Enter".into(), 0.25), ("Loop".into(), 0.75)],
+                vec![0.375, 0.375],
+                vec!["First"],
+            ),
+        ] {
+            let mut i = property_instance(flags_property_graph(0), &[("blendflags", flags as f32)]);
+            assert!(!i.set_variable("BlendFlags", 0.0));
+            assert_eq!(playing(&i), weights);
+            i.update(0.375, &mut durations);
+            for (sample, expected) in i.samples().iter().zip(times) {
+                assert!((sample.time - expected).abs() < 1e-6);
+            }
+            assert_eq!(
+                i.take_raised()
+                    .iter()
+                    .map(|e| e.event.as_str())
+                    .collect::<Vec<_>>(),
+                events
+            );
+            assert_eq!(
+                i.shared
+                    .project
+                    .character
+                    .as_ref()
+                    .unwrap()
+                    .scalar_properties["blendflags"],
+                flags as f32
+            );
+        }
+
+        let mut i = property_instance(
+            flags_property_graph(0),
+            &[(
+                "blendflags",
+                (BLEND_SYNC | BLEND_PARAMETRIC | BLEND_CYCLIC) as f32,
+            )],
+        );
+        i.update(1.875, &mut durations);
+        assert_eq!(i.samples()[0].time, 0.25);
+        assert_eq!(i.samples()[1].time, 0.5);
+        assert!(i.samples().iter().all(|s| s.wrapped));
+    }
+
+    #[test]
+    fn blender_flags_keep_authored_fallbacks_and_live_variable_precedence() {
+        for character in [
+            None,
+            Some(Character::default()),
+            Some(Character {
+                bone_weights: [("blendflags".into(), vec![0.0])].into(),
+                ..Default::default()
+            }),
+        ] {
+            let mut i = Instance::new(
+                Shared::new(Arc::new(Project {
+                    graphs: vec![("g".into(), flags_property_graph(BLEND_PARAMETRIC))],
+                    character,
+                })),
+                1,
+            );
+            i.update(0.0, &mut durations);
+            assert_eq!(playing(&i), [("Enter".into(), 1.0)]);
+        }
+        for bad in [
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            -1.0,
+            65536.0,
+            16.5,
+        ] {
+            let mut g = flags_property_graph(BLEND_PARAMETRIC);
+            let variable = g.add_variable("Flags", VarType::Int, BLEND_PARAMETRIC as f32);
+            g.bindings[0] = vec![Binding {
+                member: "flags".into(),
+                variable,
+            }];
+            let mut i = property_instance(g, &[("blendflags", 0.0)]);
+            assert_eq!(playing(&i), [("Enter".into(), 1.0)]);
+            assert!(i.set_variable("Flags", bad));
+            assert_eq!(playing(&i), [("Enter".into(), 1.0)]);
+            assert!(i.set_variable("Flags", (BLEND_PARAMETRIC | BLEND_CYCLIC) as f32));
+            assert_eq!(playing(&i), [("Enter".into(), 0.5), ("Loop".into(), 0.5)]);
+            assert!(i.set_variable("Flags", 0.0));
+            assert_eq!(playing(&i), [("Enter".into(), 0.25), ("Loop".into(), 0.75)]);
+
+            // Invalid properties also preserve the authored member.
+            let i = property_instance(
+                flags_property_graph(BLEND_PARAMETRIC),
+                &[("blendflags", bad)],
+            );
+            assert_eq!(playing(&i), [("Enter".into(), 1.0)]);
+        }
+    }
+
+    #[test]
+    fn nested_blender_flag_properties_drive_parent_cycle_and_master_selection() {
+        let mut g = flags_property_graph(0);
+        g.generators
+            .push(masked_blend("Outer", vec![masked_child(0, None, None)]));
+        let Generator::Blender { flags, .. } = &mut g.generators[3] else {
+            unreachable!()
+        };
+        *flags = BLEND_SYNC;
+        g.bindings.push(vec![]);
+        g.property_bindings.push(vec![]);
+        g.root = Some(3);
+        let mut i = property_instance(
+            g,
+            &[("blendflags", (BLEND_PARAMETRIC | BLEND_CYCLIC) as f32)],
+        );
+        i.update(0.375, &mut durations);
+        assert_eq!(playing(&i), [("Enter".into(), 0.5), ("Loop".into(), 0.5)]);
+        assert_eq!(i.samples()[0].time, 0.25);
+        assert_eq!(i.samples()[1].time, 0.5);
+        assert_eq!(
+            i.take_raised()
+                .iter()
+                .map(|e| e.event.as_str())
+                .collect::<Vec<_>>(),
+            ["Second"]
+        );
+    }
+
+    #[test]
+    fn blender_flag_properties_preserve_existing_additive_normalization() {
+        struct AdditiveClips;
+        impl ClipSource for AdditiveClips {
+            fn duration(&mut self, animation: &str) -> Option<f32> {
+                durations(animation)
+            }
+            fn additive(&mut self, animation: &str) -> bool {
+                animation == "Loop"
+            }
+        }
+        let shared = Shared::new(Arc::new(Project {
+            graphs: vec![("g".into(), flags_property_graph(BLEND_PARAMETRIC))],
+            character: Some(Character {
+                scalar_properties: [("blendflags".into(), 0.0)].into(),
+                ..Default::default()
+            }),
+        }));
+        let mut i = Instance::new(shared, 1);
+        i.update(0.0, &mut AdditiveClips);
+        let samples = i.samples();
+        assert_eq!(samples.len(), 2);
+        assert_eq!(samples[0].weight, 1.0);
+        assert!(!samples[0].additive);
+        assert_eq!(samples[1].weight, 1.0); // Existing additive clamp of authored weight 3.
+        assert!(samples[1].additive);
     }
 
     #[test]
