@@ -1,6 +1,6 @@
 # Local UESP search
 
-`uesp.py` requires Python 3.9+ with SQLite FTS5 support and no third-party Python
+`uesp.py` requires Python 3.9+ with SQLite 3.35+ and FTS5 support and no third-party Python
 packages. All commands work offline. Paths to the default database are relative
 to the repository, regardless of the current working directory.
 
@@ -19,7 +19,8 @@ models, redirects, namespace names, and source-file metadata. It rejects dumps
 with multiple revisions per page. XML escapes are decoded by the XML parser;
 wiki markup is preserved. Templates, Lua, and other wiki code are not executed.
 
-Re-run import to refresh from a newer dump. A temporary database is built and
+Re-run import to refresh from a newer dump, or when the tool reports an
+unsupported schema after an update. A temporary database is built and
 checked alongside the destination, then atomically replaces it. A failed import
 leaves the existing database intact. Allow space for the source, the new database,
 and any existing database during rebuilding. A forcibly killed process may leave
@@ -44,7 +45,12 @@ Namespace names are case-insensitive; numeric IDs also work (`info` lists them).
 `--all` includes everything, including talk, users, templates, and other games.
 Plain queries require all whitespace-separated terms; punctuation follows FTS5's
 Unicode tokenizer. Use `--query-syntax` for phrases, OR, NOT, NEAR, and prefixes
-(e.g. `animat*`). Matches are ranked with titles weighted above body text.
+(e.g. `animat*`). Record signatures lose their punctuation, so `NPC_` is searched
+as `NPC`; add `--title` with the page name (`Mod File Format NPC`) to find a record page.
+Ranking adds a title score, weighted above body text and normalized by title length
+(a separate title index), to a body score; partial title matches earn partial credit,
+so a long article is not outranked by short stubs that share a word. Redirects
+rank by title alone.
 Redirect aliases with the same destination and section are collapsed within a
 bounded candidate pool (20 times the requested limit).
 Search returns 5 snippets by default, at most 50; it does not expand redirects or

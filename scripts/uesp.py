@@ -4,9 +4,9 @@
 import argparse
 import bz2
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 import re
+import shlex
 import sqlite3
 import sys
 import tempfile
@@ -16,8 +16,9 @@ import xml.etree.ElementTree as ET
 
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "refs" / "uesp.sqlite3"
 DEFAULT_NAMESPACES = ("Skyrim", "Skyrim Mod", "Dragonborn", "Mod")
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 HEADING = re.compile(r"^(={1,6})\s*(.*?)\s*\1\s*$")
+TITLE_WEIGHT = 2.0
 
 
 def title_key(title):
@@ -66,6 +67,12 @@ def import_dump(source, destination):
             CREATE VIRTUAL TABLE pages_fts USING fts5(
                 title, text, content='pages', content_rowid='page_id',
                 tokenize='unicode61'
+            );
+            -- bm25 normalizes by the length of the whole row, so pages_fts
+            -- cannot rank titles fairly between long articles and short stubs.
+            -- The empty text column keeps column filters in raw queries valid.
+            CREATE VIRTUAL TABLE titles_fts USING fts5(
+                title, text, content='', tokenize='unicode61'
             );
         """)
         opener = bz2.open if source.suffix == ".bz2" else open
@@ -127,10 +134,12 @@ def import_dump(source, destination):
             CREATE INDEX pages_title_key ON pages(title_key);
             CREATE INDEX pages_namespace ON pages(namespace);
             INSERT INTO pages_fts(pages_fts) VALUES ('rebuild');
+            INSERT INTO titles_fts(rowid, title, text) SELECT page_id, title, '' FROM pages;
         """)
         db.commit()
         print("Validating full-text index…", file=sys.stderr, flush=True)
         db.execute("INSERT INTO pages_fts(pages_fts, rank) VALUES ('integrity-check', 1)")
+        db.execute("INSERT INTO titles_fts(titles_fts) VALUES ('integrity-check')")
         if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise ValueError("Database integrity check failed")
         db.commit()
@@ -171,13 +180,15 @@ def namespace_ids(db, names):
 
 def search(db, args):
     # Plain queries are ANDed literals; raw FTS syntax is explicitly opt-in.
-    expression = args.query if args.query_syntax else " AND ".join(
-        '"' + word.replace('"', '""') + '"' for word in args.query.split())
+    # Titles matching only some plain terms still earn partial title credit.
+    words = ['"' + word.replace('"', '""') + '"' for word in args.query.split()]
+    expression = args.query if args.query_syntax else " AND ".join(words)
     if not expression.strip():
         raise ValueError("Search query must not be empty")
+    title_expression = expression if args.query_syntax else " OR ".join(words)
     if args.title:
         expression = f"title : ({expression})"
-    params = [expression]
+    params = [title_expression, expression]
     restriction = ""
     if not args.all:
         ids = namespace_ids(db, args.namespace or DEFAULT_NAMESPACES)
@@ -185,14 +196,26 @@ def search(db, args):
         params.extend(ids)
     # Fetch a bounded pool so spelling aliases can be collapsed without losing
     # their useful title matches. Redirect text supplies any omitted fragment.
+    # Redirects rank by title alone; their body only repeats the target title.
+    # MATERIALIZED runs the title search once; inlined, it ran once per match.
     params.append(args.limit * 20)
     rows = db.execute("""
+        WITH titles AS MATERIALIZED (
+            SELECT rowid, bm25(titles_fts, 1.0, 0.0) AS score
+            FROM titles_fts WHERE titles_fts MATCH ?
+        )
         SELECT p.title, p.revision_id, p.redirect,
                CASE WHEN p.redirect IS NOT NULL THEN p.text ELSE '' END AS text,
                snippet(pages_fts, 1, '[', ']', ' … ', 36) AS excerpt
         FROM pages_fts JOIN pages p ON p.page_id = pages_fts.rowid
+        LEFT JOIN titles t ON t.rowid = p.page_id
         WHERE pages_fts MATCH ?
-    """ + restriction + " ORDER BY bm25(pages_fts, 8.0, 1.0), p.page_id LIMIT ?", params).fetchall()
+    """ + restriction + f"""
+        ORDER BY {TITLE_WEIGHT} * coalesce(t.score, 0)
+                 + CASE WHEN p.redirect IS NULL THEN bm25(pages_fts, 0.0, 1.0) ELSE 0 END,
+                 p.page_id
+        LIMIT ?
+    """, params).fetchall()
     if not rows:
         print("No matches. Try fewer terms, --title, another --namespace, or --all.")
     seen = set()
@@ -228,6 +251,21 @@ def lookup(db, title):
 def headings(lines):
     return [(i, len(m[1]), m[2]) for i, line in enumerate(lines)
             if (m := HEADING.match(line))]
+
+
+def continuation(page, section, line, args):
+    # Repeat every option that bounds the output so the next read stays in place.
+    command = ["read", shlex.quote(page["title"])]
+    if args.no_redirect:
+        command.append("--no-redirect")
+    if section is not None:
+        command += ["--section", shlex.quote(section)]
+    if args.sections:
+        command.append("--sections")
+    command += ["--start-line", str(line)]
+    if args.lines != 80:
+        command += ["--lines", str(args.lines)]
+    return " ".join(command)
 
 
 def read_page(db, args):
@@ -277,7 +315,7 @@ def read_page(db, args):
         if not selected:
             print("No section headings.")
         elif len(selected) > args.lines:
-            print(f"More headings: use --start-line {selected[args.lines][0] + 1}")
+            print("More headings: " + continuation(page, section, selected[args.lines][0] + 1, args))
         return
     output = []
     size = 0
@@ -296,7 +334,7 @@ def read_page(db, args):
     for line in output:
         print(line)
     if end < stop:
-        print(f"More: read {json.dumps(page['title'], ensure_ascii=False)} --start-line {end + 1}")
+        print("More: " + continuation(page, section, end + 1, args))
 
 
 def export_page(db, args):

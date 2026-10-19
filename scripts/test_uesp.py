@@ -4,6 +4,7 @@ import bz2
 from contextlib import redirect_stdout, redirect_stderr
 import io
 from pathlib import Path
+import shlex
 import sqlite3
 import tempfile
 import unittest
@@ -28,7 +29,7 @@ class UespTests(unittest.TestCase):
             ET.SubElement(namespaces, "namespace", key=str(n)).text = name
         pages = [
             ("Skyrim:Armor", 134, "Lead & {{Template}}\n== Armor Rating ==\narmor rating formula\n"
-             "=== Cap ===\nmaximum protection\n== Notes ==\nother notes", None),
+             "=== Cap ===\nmaximum protection\n== Notes ==\nother notes" + "\nfiller text" * 500, None),
             ("Skyrim:Armour", 134, "#REDIRECT [[Skyrim:Armor#Armor Rating]]", "Skyrim:Armor"),
             ("Online:Armor", 144, "armor rating online only", None),
             ("Skyrim Mod:Flags", 142, "record flags 0x0001 NPC_", None),
@@ -37,6 +38,9 @@ class UespTests(unittest.TestCase):
             ("Skyrim:LoopB", 134, "", "Skyrim:LoopA"),
             ("Skyrim:Empty", 134, "", None),
             ("Skyrim:Armour Rating", 134, "#REDIRECT [[Skyrim:Armor#Armor Rating]]", "Skyrim:Armor"),
+            ("Skyrim:Thalmor Armor", 134, "#REDIRECT [[Skyrim:Specialty Gear#Thalmor Armor]]",
+             "Skyrim:Specialty Gear"),
+            ("Skyrim:Iron Armor", 134, "iron armor", None),
         ]
         for i, (title, ns, text, redirect) in enumerate(pages, 1):
             page = ET.SubElement(root, "page")
@@ -60,7 +64,7 @@ class UespTests(unittest.TestCase):
 
     def test_import_preserves_content_and_provenance(self):
         with sqlite3.connect(self.db) as db:
-            self.assertEqual(db.execute("SELECT count(*) FROM pages").fetchone()[0], 9)
+            self.assertEqual(db.execute("SELECT count(*) FROM pages").fetchone()[0], 11)
             self.assertIn("Lead & {{Template}}", db.execute(
                 "SELECT text FROM pages WHERE page_id=1").fetchone()[0])
         code, out, _ = self.run_cli("read", "skyrim:armor", "--lines", "1")
@@ -87,6 +91,13 @@ class UespTests(unittest.TestCase):
         out = self.run_cli("search", "armour")[1]
         self.assertEqual(out.count("Redirect: Skyrim:Armor#Armor Rating"), 1)
 
+    def test_long_articles_outrank_short_pages(self):
+        # FTS5's bm25 normalizes by the whole row, so a long article once lost
+        # title matches to every short redirect and stub sharing a word.
+        for args in [("armor", "--title"), ("armor",)]:
+            out = self.run_cli("search", *args, "--limit", "1")[1]
+            self.assertTrue(out.startswith("Skyrim:Armor (revision 101)"), out)
+
     def test_redirect_section_and_line_numbers(self):
         code, out, err = self.run_cli("read", "Skyrim:Armour")
         self.assertEqual(code, 0, err)
@@ -102,6 +113,21 @@ class UespTests(unittest.TestCase):
         self.assertEqual(self.run_cli("read", "Skyrim:Missing")[0], 1)
         self.assertEqual(self.run_cli("read", "Skyrim:Armor", "--section", "Missing")[0], 1)
         self.assertIn("Lines 0-0 of 0", self.run_cli("read", "Skyrim:Empty")[1])
+
+    def test_continuation_hints_stay_in_section(self):
+        args, output = ["read", "Skyrim:Armour", "--lines", "1"], ""
+        for _ in range(10):
+            code, out, err = self.run_cli(*args)
+            self.assertEqual(code, 0, err)
+            output += out
+            hint = [line for line in out.splitlines() if line.startswith("More: ")]
+            if not hint:
+                break
+            args = shlex.split(hint[0].removeprefix("More: "))
+        self.assertIn("5: maximum protection", output)
+        self.assertNotIn("other notes", output)
+        out = self.run_cli("read", "Skyrim:Armour", "--no-redirect", "--lines", "1")[1]
+        self.assertNotIn("More: ", out)
 
     def test_failed_import_keeps_existing_database(self):
         before = self.db.read_bytes()

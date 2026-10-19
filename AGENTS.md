@@ -6,14 +6,15 @@ under ignored `refs/`; do not read or search the giant XML directly.
 
 ```sh
 python3 scripts/uesp.py search "armor rating"
-python3 scripts/uesp.py search "NPC_" --namespace "Skyrim Mod"
+python3 scripts/uesp.py search "Mod File Format NPC" --namespace "Skyrim Mod" --title
 python3 scripts/uesp.py read "Skyrim:Armor" --sections
 python3 scripts/uesp.py read "Skyrim:Armor" --section "Armor Rating"
 ```
 
 Search defaults to Skyrim, Skyrim Mod, Dragonborn, and Mod. Use `--namespace`
 (repeatable) for other namespaces, including Template and Skyrim talk, or `--all`
-for the whole wiki. Talk pages can provide research leads, but distinguish their
+for the whole wiki. Punctuation is ignored, so record signatures like `NPC_`
+are searched as `NPC`. Talk pages can provide research leads, but distinguish their
 discussion from documented behavior. Read follows redirects, prints revision
 links, and returns bounded, numbered lines; use `--start-line` to continue.
 
