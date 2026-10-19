@@ -326,6 +326,9 @@ impl Engine {
         log::info!("{holder} drops {n} {item} as {r}");
         let from = self.object_value(holder);
         self.send_script_event(r, "OnContainerChanged", vec![papyrus::Value::None, from]);
+        if holder == crate::engine::PLAYER_REF {
+            self.send_player_remove_item(item, r, 4);
+        }
         Some(r)
     }
 

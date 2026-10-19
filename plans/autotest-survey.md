@@ -86,6 +86,11 @@ run (2026-10-13) settled all but three (`autotest5`'s module doc).
 
 ### Still to do
 
+- **Remove item event's members** (`story-manager.md`): a test quest of ours under
+  the game's REMP node (`OnStoryRemoveFromPlayer`) can log R1 / R2 / V1 after the script
+  calls `DropObject`, `RemoveItem` into a container or an NPC: does R1 come out the player, and does
+  removing to an NPC or a container send 5 / 6, selling nothing?
+
 Tried and not settled:
 
 - **Magic conditions' recheck interval** (`magic.md`): needs a lasting
