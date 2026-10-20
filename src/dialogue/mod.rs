@@ -703,15 +703,18 @@ impl Engine {
     /// player...), else it greets the player with its first `HELO` line. A
     /// guard come to arrest the player starts the arrest.
     pub fn start_conversation(&mut self, npc_ref: FormId) {
+        if self.base_of(npc_ref).is_none() {
+            return;
+        }
+        if let Some(p) = self.crime.arrests.alarmed.get(&npc_ref) {
+            self.crime.arrests.arresting = Some((npc_ref, p.faction));
+        }
         let greeting = self.blocking_greeting(npc_ref).or_else(|| {
             self.bark_topics(b"HELO").into_iter().find_map(|t| {
                 let i = self.select_info(&t, npc_ref)?;
                 Some((t, i))
             })
         });
-        if let Some(p) = self.crime.arrests.alarmed.get(&npc_ref) {
-            self.crime.arrests.arresting = Some((npc_ref, p.faction));
-        }
         self.open_conversation(npc_ref, greeting);
     }
 

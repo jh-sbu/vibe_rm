@@ -1455,7 +1455,10 @@ game each piece unlocks.
      applied by effects (`TriggerIfNotActive`'s target)
    - Crime, more: arrests (guards following through
      doors, opening the cell after five hits, The Chill, the follower wait
-     marker, `GetArrestingActor`, the jail outfit); Cidhna Mine and the Orc
+     marker, the jail outfit); `GetArrestingActor` already checks the conversation
+     guard, and greeting selection now sees that context, but native return
+     semantics and pursuit timing remain unverified (`known_ambiguities/crime.md`);
+     Cidhna Mine and the Orc
      strongholds (`DialogueCrimeOrcs`); bribes, persuasion and Thanes; the
      bounty collector; horse theft and werewolf crimes; children telling
      adults, `PICC` lines, hired thugs; trespassers chased out, "Warn To

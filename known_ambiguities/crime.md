@@ -265,6 +265,31 @@ locations name it.
   days served. `abRealJail` is ignored.
 - Blocking branches (`DLBR` flag 0x2) are tried before `HELO` whenever the
   player talks to anyone, highest topic priority first.
+- **Arrest greeting context.** `GetArrestingActor` (condition 657) already
+  compares the condition subject to the guard in `arrests.arresting`;
+  it is not a newly implemented Papyrus getter. Automatic arrests and the
+  player talking to a pursuing guard now install that context before selecting
+  the greeting, so a greeting requiring condition 657 can pass. Automatic
+  selection failure restores the previous context; a reference without a base
+  cannot begin an arrest conversation. This fixes an internal ordering bug:
+  both callers previously selected the greeting before setting the guard.
+  Successful opening still marks crimes known before running INFO fragments.
+  The synthetic regression tests exercise these paths, not native Skyrim.
+  [UESP's function index](https://en.uesp.net/w/index.php?oldid=3566882)
+  documents the function's presence, but not its return semantics or the exact
+  pursuit/conversation boundary. The boolean comparison and lifecycle remain
+  our existing policy, unverified against Skyrim SE. `Actor.IsArrested` and
+  `Actor.IsArrestingTarget` are separate, unfinished Papyrus behavior.
+- **Stolen sales counter.** Condition 190 `GetAmountSoldStolen` and console
+  command 191 `ModAmountSoldStolen` are listed in the same
+  [UESP function index](https://en.uesp.net/w/index.php?oldid=3566882).
+  Their presence does not establish automatic tracking of Skyrim fence sales.
+  A [2021 modder's report](https://forums.nexusmods.com/topic/9557203-le-help-with-a-script-to-get-the-values-of-stolen-items/)
+  says the query stayed zero after selling stolen items in Skyrim, whereas
+  Oblivion used it for fenced gold. This is a reported observation, not a
+  behavior verified here. Whether Skyrim updates it automatically, what value
+  it counts, and how manual modification behaves remain unresolved; no counter
+  was added to barter based on Oblivion's behavior.
 - Escaping: unlocking a lock in the jail's interior (picked or with a key),
   or the player being anywhere else, while jailed. The bounty the sentence
   was for comes back without adding infamy, then the escape gold (with
