@@ -278,8 +278,7 @@ impl Engine {
                         true,
                         var.pitch,
                         None,
-                        0.0,
-                        0.0,
+                        crate::audio::Falloff::new(0.0, 0.0),
                     ) {
                         log::debug!("weather sound {snd} looping: {}", desc.files[0]);
                         self.weather.loops.push((w, snd, v));
@@ -338,8 +337,7 @@ impl Engine {
                 false,
                 var.pitch,
                 None,
-                0.0,
-                0.0,
+                crate::audio::Falloff::new(0.0, 0.0),
             );
         }
     }

@@ -1067,6 +1067,10 @@ game each piece unlocks.
   or a weather loop draws its playback rate (`BNAM` frequency shift and variance,
   percent) and gain (dB variance) afresh; the mixer plays voices at a rate. vrm-tool
   `sndr-stats` lists the values. Open questions: `known_ambiguities/sound-variation.md`
+- Sound output models (SOPM): a descriptor's `ONAM` gives its minimum and maximum distance
+  and the five-point attenuation curve its gain follows between them (the mixer's
+  `Falloff`); 2D models (the menus', dialogue's) play unpositioned; dialogue lines fade by
+  the default dialogue model. Open questions: `known_ambiguities/sound-output-models.md`
 - NIF float / colour `CONST_KEY` interpolation retains its source type and
   selects nearest endpoints for shader and alpha-test channels, named material
   sequences and particle float curves. Boolean keys retain their hold behavior.
@@ -1401,7 +1405,8 @@ game each piece unlocks.
      player's face built live from FaceGen data (sliders, head parts, tints);
      NPCs only use pre-baked heads
 7. **Audio**: lip sync; categories' mute when submerged and menu / dialogue ducking, the
-   Audio menu's sliders
+   Audio menu's sliders; output models' reverb send and speaker output (acoustic spaces),
+   sounds' priorities when voices run out
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), HDR: eye adaptation, bloom, tone mapping and the image
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
