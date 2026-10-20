@@ -9,8 +9,9 @@
 //! references), `WRLD` (the world state kept across cell loads and the
 //! references made while playing), `PLYR` (health, skills, perks, spells,
 //! shouts, favorites, dialogue heard), `CRIM` (bounties) and `BART`
-//! (restocks), and `VM` / `VMAR` (`super::vm`: the Papyrus VM). Not yet saved:
-//! active magic effects, scenes, the Story Manager, AI progress, objects'
+//! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
+//! and `VM` / `VMAR` (`super::vm`: the Papyrus VM). Not yet saved:
+//! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
 //!
 //! Form ids are saved as loaded (their top byte is the load-order index), so a
@@ -92,6 +93,8 @@ pub struct Snapshot {
     pub bounties: BTreeMap<FormId, crate::crime::Bounty>,
     pub stolen_value: BTreeMap<FormId, (i32, i32)>,
     pub restocked: HashMap<FormId, f64>,
+    pub(crate) story: crate::story::StoryState,
+    pub relationship_ranks: HashMap<(FormId, FormId), i32>,
     pub vm: super::vm::VmSnapshot,
 }
 
@@ -485,6 +488,8 @@ impl Snapshot {
             bounties: e.crime.bounties.clone(),
             stolen_value: e.crime.stolen_value.clone(),
             restocked: e.restocks.stocked.clone(),
+            story: e.story.saved_state(),
+            relationship_ranks: e.relationships.saved_ranks().clone(),
             vm: super::vm::VmSnapshot {
                 vm: e.vm.export(),
                 initialized: s.initialized.iter().copied().collect(),
@@ -757,6 +762,39 @@ impl Snapshot {
             w.f64(*at);
         }
         file.add(b"BART", w.0);
+        let mut w = Writer::default();
+        w.len(self.story.last_run.len());
+        for (quest, at) in sorted(&self.story.last_run) {
+            w.form(quest);
+            w.f64(*at);
+        }
+        put_form_sets(&mut w, &self.story.ran);
+        w.len(self.story.next_social.len());
+        for (actor, at) in sorted(&self.story.next_social) {
+            w.form(actor);
+            w.f64(*at);
+        }
+        w.bool(self.story.last_location.is_some());
+        if let Some(location) = self.story.last_location {
+            w.opt_form(location);
+        }
+        w.len(self.story.found_bodies.len());
+        // Finder/body pairs are directional, unlike relationship pairs.
+        for (finder, body) in sorted_set(&self.story.found_bodies) {
+            w.form(finder);
+            w.form(body);
+        }
+        w.f64(self.story.next_body_check);
+        file.add(b"STOR", w.0);
+
+        let mut w = Writer::default();
+        w.len(self.relationship_ranks.len());
+        for ((a, b), rank) in sorted(&self.relationship_ranks) {
+            w.form(a);
+            w.form(b);
+            w.i32(*rank);
+        }
+        file.add(b"RELA", w.0);
         self.vm.write(&mut file);
         file
     }
@@ -1025,6 +1063,36 @@ impl Snapshot {
             s.restocked.insert(chest, r.f64()?);
         }
         r.finish()?;
+        // Added sections are optional so older native saves remain readable.
+        if let Some(data) = file.section(b"STOR") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(12)? {
+                s.story.last_run.insert(r.form()?, r.f64()?);
+            }
+            s.story.ran = get_form_sets(&mut r)?;
+            for _ in 0..r.count(12)? {
+                s.story.next_social.insert(r.form()?, r.f64()?);
+            }
+            if r.bool()? {
+                s.story.last_location = Some(r.opt_form()?);
+            }
+            for _ in 0..r.count(8)? {
+                s.story.found_bodies.insert((r.form()?, r.form()?));
+            }
+            s.story.next_body_check = r.f64()?;
+            r.finish()?;
+        }
+        if let Some(data) = file.section(b"RELA") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(12)? {
+                let (a, b, rank) = (r.form()?, r.form()?, r.i32()?);
+                if a > b || !(-4..=4).contains(&rank) {
+                    return Err(Corrupt("invalid relationship pair or rank".into()));
+                }
+                s.relationship_ranks.insert((a, b), rank);
+            }
+            r.finish()?;
+        }
         s.vm = super::vm::VmSnapshot::read(file)?;
         Ok(s)
     }
@@ -1046,6 +1114,8 @@ impl Snapshot {
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.unload_all();
+        e.story.restore(self.story);
+        e.relationships.restore_ranks(self.relationship_ranks);
         e.day = self.day;
         e.hour = self.hour;
         let s = &mut e.scripts;

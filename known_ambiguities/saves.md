@@ -41,7 +41,15 @@ kept across cell loads (dead actors and their bodies, hurt actors, doors left
 open, moved references, charges of dropped weapons, broken joints, learned
 ingredient effects, explicit alerts); references made while playing; the
 player's health, stamina, skills, perks, spells, words of power and shouts,
-favorites, hotkeys; dialogue lines heard; bounties; merchants' restock times.
+favorites, hotkeys; dialogue lines heard; bounties; merchants' restock times;
+the Story Manager's quest reset times, per-node do-all-before-repeating rounds,
+social deadlines, last observed location (including an observed absence of a
+location), discovered finder/body pairs and body-check deadline; changed
+relationship ranks by actor pair. `STOR` and `RELA` are optional sections:
+older native saves load with empty story memory and no relationship overrides,
+replacing any memory in the destination engine. Authored story node caches
+rebuild from plugins; relationship overrides restore without change-rank events.
+The event currently being synchronously dispatched is transient and not saved.
 
 The scripting side (`vm.rs`, sections `VM` and `VMAR`): the scripts attached
 to each object with their variables and properties (`Vm::attach` keeps an
@@ -62,7 +70,7 @@ once and referred to by index.
   Registrations other than these (key, LOS gain, tracked hits...) aren't
   built in the engine yet.
 - Active magic effects (timed effects, summons, wards), the leveled spell
-  rolls, scenes playing, the Story Manager's memory, relationships, AI and
+  rolls, scenes playing, AI and
   package progress, schedules, objects' behaviour graphs, weather and
   detection state, and the player's spells held ready (the equipped spells
   are saved with the inventory's hands).
@@ -79,3 +87,14 @@ once and referred to by index.
   autosave, which is our guess for when the game prints it.
 - Console `save` with no name writes `console`.
 - Save names: letters, digits, spaces, `-` and `_`, up to 64.
+
+- **Story memory persistence:** the local UESP dump's
+  [Story Event Manager save-format page](https://en.uesp.net/w/index.php?oldid=2309086)
+  (revision 2309086) calls the original payload unknown; it does not establish
+  which cooldown, rotation, discovery, or social scheduling fields Skyrim SE
+  preserves. Our native sections retain all existing runtime memory so loading
+  does not reset those behaviors. This is a continuity choice for this engine,
+  not a claim that Skyrim SE persists the same fields. No executable data was
+  examined. With old saves lacking `STOR`, the first update establishes the
+  location baseline and body discoveries can happen again; that lost memory
+  cannot be recovered from those saves.

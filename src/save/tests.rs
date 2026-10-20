@@ -21,6 +21,11 @@ const QUEST: FormId = FormId(0x820);
 const PERK: FormId = FormId(0x830);
 const ACTOR: FormId = FormId(0x840);
 const CELL: FormId = FormId(0x850);
+const STORY_FIRST: FormId = FormId(0x860);
+const STORY_SECOND: FormId = FormId(0x861);
+const COOLDOWN: FormId = FormId(0x862);
+const RANK_EVENT: FormId = FormId(0x863);
+const LOCATION_EVENT: FormId = FormId(0x864);
 
 struct Fixture(std::path::PathBuf);
 
@@ -40,6 +45,55 @@ fn engine(name: &str) -> (Fixture, Engine) {
     );
     std::fs::create_dir(&f.0).unwrap();
     let records = [
+        Node::top(
+            b"NPC_",
+            vec![
+                RecordBuilder::new(b"NPC_", ACTOR),
+                RecordBuilder::new(b"NPC_", FormId(7)),
+            ],
+        ),
+        Node::top(
+            b"QUST",
+            [
+                STORY_FIRST,
+                STORY_SECOND,
+                COOLDOWN,
+                RANK_EVENT,
+                LOCATION_EVENT,
+            ]
+            .into_iter()
+            .map(|id| RecordBuilder::new(b"QUST", id))
+            .collect(),
+        ),
+        Node::top(
+            b"SMEN",
+            vec![
+                RecordBuilder::new(b"SMEN", FormId(0x870)).field(b"ENAM", b"LOCK"),
+                RecordBuilder::new(b"SMEN", FormId(0x871)).field(b"ENAM", b"SCPT"),
+                RecordBuilder::new(b"SMEN", FormId(0x872)).field(b"ENAM", b"CHRR"),
+                RecordBuilder::new(b"SMEN", FormId(0x873)).field(b"ENAM", b"CLOC"),
+            ],
+        ),
+        Node::top(
+            b"SMQN",
+            vec![
+                RecordBuilder::new(b"SMQN", FormId(0x880))
+                    .u32(b"PNAM", 0x870)
+                    .field(b"DNAM", &[0, 0, 1, 0])
+                    .u32(b"NNAM", STORY_FIRST.0)
+                    .u32(b"NNAM", STORY_SECOND.0),
+                RecordBuilder::new(b"SMQN", FormId(0x881))
+                    .u32(b"PNAM", 0x871)
+                    .u32(b"NNAM", COOLDOWN.0)
+                    .field(b"RNAM", &24.0f32.to_le_bytes()),
+                RecordBuilder::new(b"SMQN", FormId(0x882))
+                    .u32(b"PNAM", 0x872)
+                    .u32(b"NNAM", RANK_EVENT.0),
+                RecordBuilder::new(b"SMQN", FormId(0x883))
+                    .u32(b"PNAM", 0x873)
+                    .u32(b"NNAM", LOCATION_EVENT.0),
+            ],
+        ),
         Node::top(
             b"WEAP",
             vec![RecordBuilder::new(b"WEAP", SWORD).field(b"DNAM", &[0; 100])],
@@ -257,6 +311,16 @@ fn play(e: &mut Engine) {
     );
     e.crime.stolen_value.insert(FormId(0x912), (5, 6));
     e.restocks.stocked.insert(FormId(0x907), 48.0);
+    e.story.restore(crate::story::StoryState {
+        last_run: [(STORY_FIRST, 200.0)].into(),
+        ran: [(FormId(0x880), [STORY_FIRST].into())].into(),
+        next_social: [(ACTOR, 333.0)].into(),
+        last_location: Some(None),
+        found_bodies: [(ACTOR, FormId(0x999))].into(),
+        next_body_check: 322.0,
+    });
+    e.relationships
+        .restore_ranks([((ACTOR, FormId(0x999)), -3)].into());
 }
 
 #[test]
@@ -444,4 +508,141 @@ fn a_script_waiting_when_saved_finishes_after_loading() {
     }
     b.vm = vm;
     assert_eq!(b.vm.get_var(quest, "count"), Some(papyrus::Value::Int(2)));
+}
+
+/// Every runtime field is encoded without requiring a renderer or game assets.
+#[test]
+fn story_and_relationship_sections_are_deterministic_and_optional() {
+    let mut s = Snapshot::default();
+    s.story.last_run.insert(STORY_FIRST, 42.5);
+    s.story
+        .ran
+        .insert(FormId(0x880), [STORY_FIRST, STORY_SECOND].into());
+    s.story.next_social.insert(ACTOR, 100.25);
+    s.story.last_location = Some(Some(CELL));
+    s.story.found_bodies.insert((ACTOR, FormId(0x999)));
+    s.story.found_bodies.insert((FormId(0x999), ACTOR));
+    s.story.next_body_check = 101.5;
+    s.relationship_ranks.insert((FormId(7), ACTOR), -4);
+    s.relationship_ranks.insert((ACTOR, FormId(0x999)), 4);
+    let bytes = s.write().to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.story, s.story);
+    assert_eq!(read.relationship_ranks, s.relationship_ranks);
+    assert_eq!(read.write().to_bytes(), bytes);
+    // Distinguish never observed, observed no location, and observed location.
+    for location in [None, Some(None), Some(Some(CELL))] {
+        s.story.last_location = location;
+        assert_eq!(
+            Snapshot::read(&s.write()).unwrap().story.last_location,
+            location
+        );
+    }
+    let mut old = s.write();
+    old.sections
+        .retain(|(tag, _)| tag != b"STOR" && tag != b"RELA");
+    let read = Snapshot::read(&old).unwrap();
+    assert_eq!(read.story, Default::default());
+    assert!(read.relationship_ranks.is_empty());
+}
+
+#[test]
+fn malformed_story_and_relationship_sections_are_refused() {
+    let mut s = Snapshot::default();
+    s.story.last_run.insert(STORY_FIRST, 42.5);
+    s.story.ran.insert(FormId(0x880), [STORY_FIRST].into());
+    s.story.next_social.insert(ACTOR, 100.25);
+    s.story.last_location = Some(Some(CELL));
+    s.story.found_bodies.insert((ACTOR, FormId(0x999)));
+    s.relationship_ranks.insert((FormId(7), ACTOR), -4);
+    for tag in [b"STOR", b"RELA"] {
+        let file = s.write();
+        let payload = file.section(tag).unwrap();
+        for len in 0..payload.len() {
+            let mut cut = file.clone();
+            cut.sections
+                .iter_mut()
+                .find(|(t, _)| t == tag)
+                .unwrap()
+                .1
+                .truncate(len);
+            assert!(Snapshot::read(&cut).is_err(), "{tag:?} truncated at {len}");
+        }
+        let mut trailing = file;
+        trailing
+            .sections
+            .iter_mut()
+            .find(|(t, _)| t == tag)
+            .unwrap()
+            .1
+            .push(0);
+        assert!(Snapshot::read(&trailing).is_err());
+    }
+    for (a, b, rank) in [
+        (ACTOR, FormId(7), 0),
+        (FormId(7), ACTOR, -5),
+        (FormId(7), ACTOR, 5),
+    ] {
+        let mut s = Snapshot::default();
+        s.relationship_ranks.insert((a, b), rank);
+        assert!(Snapshot::read(&s.write()).is_err());
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn loading_preserves_story_selection_and_ranks_without_dispatching_events() {
+    use crate::story::StoryEvent;
+    let (_fixture, mut e) = engine("story");
+    e.ai_enabled = false;
+    e.update_story(); // Establish the no-location baseline.
+    e.set_relationship_rank(ACTOR, FormId(7), -2);
+    e.stop_quest(RANK_EVENT);
+    assert!(e.send_story_event(StoryEvent::new(b"LOCK")));
+    assert!(e.scripts.quests[&STORY_FIRST].running);
+    e.stop_quest(STORY_FIRST);
+    assert!(e.send_story_event(StoryEvent::new(b"SCPT")));
+    e.stop_quest(COOLDOWN);
+    let saved = Snapshot::capture(&e).write();
+    // Pollute the destination's rank, rotation, cooldown and dispatch context.
+    e.set_relationship_rank(ACTOR, FormId(7), 4);
+    assert!(e.send_story_event(StoryEvent::new(b"LOCK")));
+    e.story.active = Some(StoryEvent::new(b"TRES"));
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.relationship_rank(FormId(7), ACTOR), -2);
+    assert_eq!(e.relationship_rank(ACTOR, PLAYER_REF), -2);
+    assert!(!e.scripts.quests[&RANK_EVENT].running);
+    assert!(e.story.active.is_none());
+    e.update_story();
+    assert!(
+        !e.scripts
+            .quests
+            .get(&LOCATION_EVENT)
+            .is_some_and(|q| q.running)
+    );
+    assert!(
+        !e.send_story_event(StoryEvent::new(b"SCPT")),
+        "cooldown survives load"
+    );
+    assert!(e.send_story_event(StoryEvent::new(b"LOCK")));
+    assert!(
+        e.scripts.quests[&STORY_SECOND].running,
+        "rotation survives load"
+    );
+    assert!(!e.scripts.quests[&STORY_FIRST].running);
+    e.hour += 24.0;
+    assert!(
+        e.send_story_event(StoryEvent::new(b"SCPT")),
+        "cooldown expires normally"
+    );
+    // Old saves also replace stale state, using the default empty memory.
+    let mut old = saved;
+    old.sections
+        .retain(|(tag, _)| tag != b"STOR" && tag != b"RELA");
+    Snapshot::read(&old).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.relationship_rank(ACTOR, FormId(7)), 0);
+    assert_eq!(e.story.saved_state(), Default::default());
+    assert!(e.send_story_event(StoryEvent::new(b"LOCK")));
+    assert!(e.scripts.quests[&STORY_FIRST].running);
+    assert!(e.send_story_event(StoryEvent::new(b"SCPT")));
 }

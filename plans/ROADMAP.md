@@ -441,6 +441,12 @@ game each piece unlocks.
   `OnInit` done, update timers, and sleep, inventory filter and animation
   event registrations. `Game.RequestSave` / `RequestAutoSave` (written on the
   next update), console `save`, `load`, `saves`.
+- Saves retain Story Manager cooldowns, do-all-before-repeating rounds,
+  social deadlines, location and body-discovery memory, and changed
+  relationship ranks. Optional `STOR` / `RELA` sections preserve older native
+  saves; loading replaces runtime memory without dispatching rank-change
+  events. Original-game persistence equivalence remains unverified:
+  `known_ambiguities/saves.md`
 - Skills and leveling: the player's skill uses earn XP by each skill's `AVSK`
   (use mult and offset), skills go up at `improve mult x level ^ fSkillUseCurve
   + offset` ("One-handed Increased to 21"), each level reached giving character
@@ -1293,7 +1299,6 @@ game each piece unlocks.
      spell casts (combat suppression and concentration cadence need evidence;
      `known_ambiguities/story-cast-events.md`), new voice powers, bribe /
      intimidate / flatter; hellos between NPCs and creatures'
-   - Story Manager state and relationship ranks in saves
    - Secret relationship behavior (`known_ambiguities/relationships.md`)
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
@@ -1509,7 +1514,7 @@ game each piece unlocks.
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves** (the container, the engine's state and the Papyrus VM are done:
    see Done): threads waiting on message boxes or animation events,
-   active magic effects, scene state, the Story Manager and relationships,
+   active magic effects, scene state,
    AI progress, objects' behaviour graphs, weather and detection; reading the
    original's `.ess` saves later; a save / load menu (the System page),
    load orders that changed since the save, and the original's refusals to

@@ -100,6 +100,44 @@ pub struct StoryManager {
     next_body_check: f64,
 }
 
+/// Runtime memory only: authored node caches rebuild from the load order.
+/// The active event is a synchronous dispatch context, never resumed by a save.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct StoryState {
+    pub last_run: HashMap<FormId, f64>,
+    pub ran: HashMap<FormId, HashSet<FormId>>,
+    pub next_social: HashMap<FormId, f64>,
+    pub last_location: Option<Option<FormId>>,
+    pub found_bodies: HashSet<(FormId, FormId)>,
+    pub next_body_check: f64,
+}
+
+impl StoryManager {
+    pub(crate) fn saved_state(&self) -> StoryState {
+        StoryState {
+            last_run: self.last_run.clone(),
+            ran: self.ran.clone(),
+            next_social: self.next_social.clone(),
+            last_location: self.last_location,
+            found_bodies: self.found_bodies.clone(),
+            next_body_check: self.next_body_check,
+        }
+    }
+
+    pub(crate) fn restore(&mut self, state: StoryState) {
+        // Drop old dispatch state and rebuild the authored caches on demand.
+        *self = Self {
+            last_run: state.last_run,
+            ran: state.ran,
+            next_social: state.next_social,
+            last_location: state.last_location,
+            found_bodies: state.found_bodies,
+            next_body_check: state.next_body_check,
+            ..Default::default()
+        };
+    }
+}
+
 /// How far an NPC notices a body, and how often NPCs look (no source: about
 /// as far as they notice enemies, once a second). Stands in for detection,
 /// which isn't implemented.
@@ -814,6 +852,34 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restoring_memory_replaces_stale_history_and_dispatch_context() {
+        let saved = StoryState {
+            last_run: [(FormId(1), 24.5)].into(),
+            ran: [(FormId(2), [FormId(1)].into())].into(),
+            next_social: [(FormId(3), 10.0)].into(),
+            last_location: Some(None),
+            found_bodies: [(FormId(3), FormId(4))].into(),
+            next_body_check: 11.0,
+        };
+        let mut manager = StoryManager {
+            built: true,
+            roots: [(*b"LOCK", vec![FormId(9)])].into(),
+            children: [(FormId(9), vec![FormId(8)])].into(),
+            active: Some(StoryEvent::new(b"LOCK")),
+            ..Default::default()
+        };
+        manager.last_run.insert(FormId(99), 99.0);
+        manager.restore(saved.clone());
+        assert_eq!(manager.saved_state(), saved);
+        assert!(manager.active.is_none());
+        assert!(!manager.built);
+        assert!(manager.roots.is_empty());
+        assert!(manager.children.is_empty());
+        manager.restore(StoryState::default());
+        assert_eq!(manager.saved_state(), StoryState::default());
+    }
 
     #[test]
     fn remove_item_event_members() {
