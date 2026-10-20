@@ -1153,8 +1153,9 @@ game each piece unlocks.
   `PlayGamebryoAnimation` plays keyframe sequences. A pressure plate goes `Down`, its
   rigged rockfall `break`s and the rocks fall. Scripts get `OnCellLoad` once a
   cell's scripts are all attached; `GetOpenState` (Papyrus and condition) follows
-  animated doors and graphs' `Open` / `Close` events. The rotating pillar
-  puzzles turn, solve and open their gates.
+  animated doors and graphs' `Open` / `Close` events, the Papyrus call answering
+  at the end of the frame. The rotating pillar puzzles turn, solve and open their
+  gates; a pillar turned wrong afterwards closes the gate again.
   Open questions: `known_ambiguities/object-graphs.md`
 - Animation events for scripts: `RegisterForAnimationEvent` /
   `UnregisterForAnimationEvent` (forms, aliases, magic effects) send the events an
