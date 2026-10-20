@@ -9,6 +9,7 @@ pub mod furniture;
 mod greet;
 pub mod idles;
 mod influence;
+pub mod magic_practice;
 pub mod nav;
 pub mod package;
 pub mod practice;
@@ -82,6 +83,8 @@ pub struct Goal {
     pub sneak: bool,
     /// UseWeapon: the targets and barrage timing.
     pub practice: Option<practice::PracticeGoal>,
+    /// UseMagic: the spell, its target and timing.
+    pub magic: Option<magic_practice::MagicGoal>,
 }
 
 impl Goal {
@@ -106,6 +109,7 @@ impl Goal {
             gait: package::Gait::Walk,
             sneak: false,
             practice: None,
+            magic: None,
         }
     }
 }
@@ -432,6 +436,8 @@ pub struct ActorRuntime {
     pub(crate) practice_aim: Option<Vec3>,
     /// Took another weapon to practise: the one it had (to take back after).
     pub(crate) practice_weapon: Option<Option<FormId>>,
+    /// Practising a spell (UseMagic).
+    pub(crate) magic_practice: Option<magic_practice::MagicPractice>,
     pub(crate) detect_in: f32,
     /// Hit frames raised this update (`combat::HIT_RIGHT` / `HIT_LEFT`).
     hit_frames: u8,
@@ -534,6 +540,7 @@ impl ActorRuntime {
             finished_package: None,
             practice_aim: None,
             practice_weapon: None,
+            magic_practice: None,
             loose: false,
             power_cost: 20.0,
             detect_in: stagger,
@@ -1020,6 +1027,11 @@ impl ActorRuntime {
             self.practice_step(dt, &goal, w);
             return false;
         }
+        if matches!(self.state, State::Idle(_)) && self.magic_practising() {
+            let goal = self.goal.and_then(|g| g.magic).unwrap();
+            self.magic_practice_step(dt, &goal, w);
+            return false;
+        }
         match &mut self.state {
             State::Idle(t) => {
                 self.speed = 0.0;
@@ -1243,6 +1255,9 @@ impl ActorRuntime {
         if !self.practising() {
             self.end_practice(w);
         }
+        if !self.magic_practising() {
+            self.end_magic_practice(w);
+        }
         // VRM_AI_NO_SNAP: walk into furniture even on cell load (to watch enter animations).
         let fresh = std::mem::take(&mut self.fresh) && std::env::var_os("VRM_AI_NO_SNAP").is_none();
         self.give_up_seat(w.furniture);
@@ -1322,7 +1337,11 @@ impl ActorRuntime {
                     Some(goal.centre)
                 }
             }
-            Behaviour::Travel | Behaviour::Sleep | Behaviour::Sit | Behaviour::UseWeapon => {
+            Behaviour::Travel
+            | Behaviour::Sleep
+            | Behaviour::Sit
+            | Behaviour::UseWeapon
+            | Behaviour::UseMagic => {
                 let near = goal.radius.max(96.0);
                 (self.pos.truncate().distance(goal.centre.truncate()) > near).then_some(goal.centre)
             }
@@ -1535,7 +1554,8 @@ impl ActorRuntime {
             | Behaviour::Follow
             | Behaviour::Escort
             | Behaviour::ForceGreet
-            | Behaviour::UseWeapon => return false,
+            | Behaviour::UseWeapon
+            | Behaviour::UseMagic => return false,
         };
         let npc = self.npc;
         let mut options = Vec::new();
@@ -3089,8 +3109,26 @@ impl Engine {
                             max_time: u.max_time,
                         }
                     });
+                    let magic = p.use_magic.and_then(|u| {
+                        let target = u
+                            .target
+                            .map_or(Some(a.ref_id), |t| self.package_target_ref(a, p, Some(t)));
+                        Some(magic_practice::MagicGoal {
+                            spell: u.spell?,
+                            target,
+                            aim_offset: target.filter(|&t| t != a.ref_id).map_or(Vec3::ZERO, |t| {
+                                practice::aim_point(&self.lo, t, Vec3::ZERO)
+                            }),
+                            hold_when_blocked: u.hold_when_blocked,
+                            cast_time: u.cast_time,
+                            cooldown: u.cooldown,
+                            casts: u.casts,
+                            dual: u.dual,
+                        })
+                    });
                     Goal {
                         practice,
+                        magic,
                         any_furniture: matches!(
                             p.target,
                             Some(Target::ObjectType(package::OBJECT_TYPE_FURNITURE))
@@ -3196,6 +3234,7 @@ impl Engine {
         self.update_practice_weapons();
         // Choose before the AI requests landings, so a newly needed heal does
         // not replace the offensive spell that an earlier step already threw.
+        self.update_magic_blocks();
         self.update_combat_spells(dt);
         self.update_actor_encumbrance();
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self
@@ -3253,6 +3292,15 @@ impl Engine {
                         if let Some(p) = self.ref_position(t) {
                             targets.insert(t, p);
                         }
+                    }
+                }
+                Some(Goal {
+                    magic: Some(mg), ..
+                }) => {
+                    if let Some(t) = mg.target
+                        && let Some(p) = self.ref_position(t)
+                    {
+                        targets.insert(t, p);
                     }
                 }
                 _ => {}

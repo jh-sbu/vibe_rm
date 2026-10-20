@@ -30,6 +30,9 @@ pub enum Behaviour {
     /// Go to the location, draw and attack (or shoot at) the package's targets in
     /// barrages: training at dummies and archery butts (`Package::use_weapon`).
     UseWeapon,
+    /// Go to the location and cast the package's spell at its target now and then
+    /// (`Package::use_magic`): the College's casting practice.
+    UseMagic,
 }
 
 /// Which weapon a UseWeapon package wants (its "Weapon Type" input).
@@ -71,6 +74,25 @@ pub struct UseWeapon {
 pub struct WeaponTrigger {
     pub reference: Target,
     pub radius: f32,
+}
+
+/// The UseMagic template's inputs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UseMagic {
+    /// The spell to cast ("Spell": a specific object).
+    pub spell: Option<FormId>,
+    /// "Target": what to cast it at; the actor itself casts on itself.
+    pub target: Option<Target>,
+    /// "HoldWhenBlocked": wait while something is in the way.
+    pub hold_when_blocked: bool,
+    /// Seconds a concentration spell is held ("CastTimeMin" / "CastTimeMax").
+    pub cast_time: (f32, f32),
+    /// Seconds between casts ("CooldownTimeMin" / "CooldownTimeMax").
+    pub cooldown: (f32, f32),
+    /// Casts before the package is done ("NumToCastMin" / "NumToCastMax").
+    pub casts: (u32, u32),
+    /// "DualCast": cast with both hands where it can.
+    pub dual: bool,
 }
 
 /// What a sandboxing actor may do besides wander (the template's "Allow ..." inputs).
@@ -258,6 +280,7 @@ pub struct Package {
     /// Force greet packages' inputs.
     pub greet: Option<ForceGreet>,
     pub use_weapon: Option<UseWeapon>,
+    pub use_magic: Option<UseMagic>,
     /// Sandbox at each of these in turn (`SandboxMultiLocation`: its repeating
     /// branch of travel, sandbox and wait), in order or picked at random.
     pub stops: Vec<Stop>,
@@ -274,6 +297,8 @@ fn behaviour_of(template: &str) -> Behaviour {
         Behaviour::Patrol
     } else if t.starts_with("useweapon") {
         Behaviour::UseWeapon
+    } else if t == "usemagic" {
+        Behaviour::UseMagic
     } else if t.starts_with("forcegreet") {
         Behaviour::ForceGreet
     } else if t.starts_with("escort") {
@@ -638,6 +663,34 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
             max_time: float(&["maxtimespentattacking0forever"], 0.0).max(0.0),
         }
     });
+    let use_magic = (behaviour == Behaviour::UseMagic).then(|| {
+        let target = |k: &str| match named(k) {
+            Some(Input::Target(t)) => Some(t),
+            _ => None,
+        };
+        let range = |lo: f32, hi: f32| (lo.min(hi), lo.max(hi));
+        let cast_time = (float(&["casttimemin"], 0.0), float(&["casttimemax"], 0.0));
+        let cooldown = (
+            float(&["cooldowntimemin"], 1.0),
+            float(&["cooldowntimemax"], 1.0),
+        );
+        // The authored count can have its bounds the wrong way round (the
+        // Labyrinthian thrall's channel: min 10000000, max 0).
+        let min = int("numtocastmin").unwrap_or(1);
+        let max = int("numtocastmax").unwrap_or(min);
+        UseMagic {
+            spell: match target("spell") {
+                Some(Target::Object(f)) => Some(f),
+                _ => None,
+            },
+            target: target("target"),
+            hold_when_blocked: flag("holdwhenblocked").unwrap_or(false),
+            cast_time: range(cast_time.0.max(0.0), cast_time.1.max(0.0)),
+            cooldown: range(cooldown.0.max(0.0), cooldown.1.max(0.0)),
+            casts: (min.min(max).max(1), min.max(max).max(1)),
+            dual: flag("dualcast").unwrap_or(false),
+        }
+    });
     // The first location input is the package's main location (a force greeter's
     // wait location, where to use a weapon); likewise for targets.
     let location =
@@ -691,6 +744,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         unlock_on_change: pkdt_flags & PKDT_UNLOCK_ON_CHANGE != 0,
         greet,
         use_weapon,
+        use_magic,
         stops,
         random_stops,
     })
@@ -847,6 +901,7 @@ fn behaviour_of_procedure(name: &str) -> Behaviour {
         "Sleep" => Behaviour::Sleep,
         "ForceGreet" => Behaviour::ForceGreet,
         "UseWeapon" => Behaviour::UseWeapon,
+        "UseMagic" => Behaviour::UseMagic,
         _ => Behaviour::Hold,
     }
 }
@@ -1166,6 +1221,102 @@ mod tests {
                 }),
             ]
         );
+        drop(lo);
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn use_magic_controls_are_read_by_template_input_names() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let (template_id, package_id) = (FormId(0x800), FormId(0x801));
+        let names = [
+            (2, "Location"),
+            (3, "Spell"),
+            (4, "Target"),
+            (5, "HoldWhenBlocked"),
+            (6, "CastTimeMin"),
+            (7, "CastTimeMax"),
+            (8, "CooldownTimeMin"),
+            (9, "CooldownTimeMax"),
+            (10, "NumToCastMin"),
+            (11, "NumToCastMax"),
+            (12, "DualCast"),
+        ];
+        let mut template = RecordBuilder::new(b"PACK", template_id)
+            .zstring(b"EDID", "UseMagic")
+            .field(b"XNAM", &[]);
+        for (index, name) in names {
+            template = template.field(b"UNAM", &[index]).zstring(b"BNAM", name);
+        }
+        let mut pkcu = 16u32.to_le_bytes().to_vec();
+        pkcu.extend_from_slice(&template_id.0.to_le_bytes());
+        let target = |kind: u32, form: u32| {
+            let mut t = kind.to_le_bytes().to_vec();
+            t.extend_from_slice(&form.to_le_bytes());
+            t
+        };
+        let mut package = RecordBuilder::new(b"PACK", package_id).field(b"PKCU", &pkcu);
+        // The spell is an object id (type 1), the target a reference (0).
+        for (index, kind, form) in [(3, 1, 0x900), (4, 0, 0x901)] {
+            package = package
+                .zstring(b"ANAM", "TargetSelector")
+                .field(b"PTDA", &target(kind, form))
+                .field(b"UNAM", &[index]);
+        }
+        for (index, value) in [(10, 10_000_000i32), (11, 0)] {
+            package = package
+                .zstring(b"ANAM", "Int")
+                .field(b"CNAM", &value.to_le_bytes())
+                .field(b"UNAM", &[index]);
+        }
+        for (index, value) in [(5, 1), (12, 1)] {
+            package = package
+                .zstring(b"ANAM", "Bool")
+                .field(b"CNAM", &[value])
+                .field(b"UNAM", &[index]);
+        }
+        for (index, value) in [(6, 3.0f32), (7, 2.0), (8, 1.0), (9, 5.0)] {
+            package = package
+                .zstring(b"ANAM", "Float")
+                .f32(b"CNAM", value)
+                .field(b"UNAM", &[index]);
+        }
+        // A self-target package with nothing else authored.
+        let bare = RecordBuilder::new(b"PACK", FormId(0x802))
+            .field(b"PKCU", &pkcu)
+            .zstring(b"ANAM", "TargetSelector")
+            .field(b"PTDA", &target(6, 0))
+            .field(b"UNAM", &[4]);
+        let bytes = write_plugin(
+            0,
+            &[],
+            "test",
+            "synthetic casting practice",
+            0x906,
+            &[Node::top(b"PACK", vec![template, package, bare])],
+        );
+        let directory =
+            std::env::temp_dir().join(format!("vrm-magic-inputs-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("Magic.esp");
+        std::fs::write(&path, bytes).unwrap();
+        let lo = LoadOrder::load(&directory, &["Magic.esp".into()]).unwrap();
+        let parsed = parse(&lo, package_id).unwrap();
+        assert_eq!(parsed.behaviour, Behaviour::UseMagic);
+        let magic = parsed.use_magic.unwrap();
+        assert_eq!(magic.spell, Some(FormId(0x900)));
+        assert_eq!(magic.target, Some(Target::Ref(FormId(0x901))));
+        assert!(magic.hold_when_blocked && magic.dual);
+        // Bounds the wrong way round are read the right way round.
+        assert_eq!(magic.cast_time, (2.0, 3.0));
+        assert_eq!(magic.cooldown, (1.0, 5.0));
+        assert_eq!(magic.casts, (1, 10_000_000));
+        let bare = parse(&lo, FormId(0x802)).unwrap().use_magic.unwrap();
+        assert_eq!(bare.target, Some(Target::SelfRef));
+        assert_eq!(bare.spell, None);
+        assert_eq!(bare.casts, (1, 1));
+        assert!(!bare.hold_when_blocked && !bare.dual);
         drop(lo);
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(directory).unwrap();

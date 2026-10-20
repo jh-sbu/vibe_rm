@@ -493,12 +493,23 @@ impl ActorRuntime {
     /// hand's kind of cast; a dual cast on the left hand's state machine
     /// (`DualMagic_...Start`), or with `hand` alone if the graph won't. The
     /// hand casting, or `None` if the graph won't.
-    fn start_hand_cast(
+    fn start_hand_cast(&mut self, hand: usize, cast: CombatCast, w: &mut World) -> Option<usize> {
+        let h = self.begin_hand_cast(hand, cast, w)?;
+        if let Some(c) = self.combat.as_mut() {
+            c.hand_cast = Some(h);
+        }
+        Some(h.hand)
+    }
+
+    /// The graph events that start a hand's cast (`start_hand_cast` for the
+    /// one a fight keeps; casting practice keeps its own): the cast, with the
+    /// hand that took it, or `None` if the graph won't.
+    pub(crate) fn begin_hand_cast(
         &mut self,
         hand: usize,
         mut cast: CombatCast,
         w: &mut World,
-    ) -> Option<usize> {
+    ) -> Option<HandCast> {
         if !self.drawn || !self.weapon_out {
             return None;
         }
@@ -534,25 +545,41 @@ impl ActorRuntime {
         }
         self.spell_fire = [false; 2];
         self.hand_equipped = [false; 2];
-        if let Some(c) = self.combat.as_mut() {
-            c.hand_cast = Some(HandCast {
-                hand,
-                phase: HandPhase::Charging,
-                t: 0.0,
-                cast,
-            });
-        }
-        Some(hand)
+        Some(HandCast {
+            hand,
+            phase: HandPhase::Charging,
+            t: 0.0,
+            cast,
+        })
     }
 
     /// A thrown spell through the graph: charged for its charge time, let
     /// go, cast at its hand's `SpellFire`, done when its release clip ends.
-    fn throw_step(&mut self, dt: f32, w: &mut World, target: Vec3, mut h: HandCast) {
+    fn throw_step(&mut self, dt: f32, w: &mut World, target: Vec3, h: HandCast) {
         self.speed = 0.0;
         self.state = State::Idle(1.0);
         if !h.cast.spell.self_target {
             self.turn_towards((target - self.pos).normalize_or_zero(), dt);
         }
+        match self.advance_throw(dt, w, h) {
+            Some(h) => {
+                if let Some(c) = self.combat.as_mut() {
+                    c.hand_cast = Some(h);
+                }
+            }
+            None => self.end_throw(w),
+        }
+    }
+
+    /// A thrown spell's hand a moment on: the graph events its phase calls
+    /// for, the cast queued once released, and `None` when it is over (the
+    /// clip ended, or the graph never reached the release).
+    pub(crate) fn advance_throw(
+        &mut self,
+        dt: f32,
+        w: &mut World,
+        mut h: HandCast,
+    ) -> Option<HandCast> {
         h.t += dt;
         let p = hand_prefix(h.hand);
         let fired = std::mem::take(&mut self.spell_fire[h.hand]);
@@ -566,7 +593,7 @@ impl ActorRuntime {
                 if self.graph_event(&format!("{p}_SpellRelease_Event"), &mut w.clips) {
                     Some(HandPhase::Released)
                 } else {
-                    return self.end_throw(w);
+                    return None;
                 }
             }
             HandPhase::Released if fired => {
@@ -575,18 +602,16 @@ impl ActorRuntime {
             }
             HandPhase::Released if h.t >= FIRE_TIMEOUT => {
                 log::debug!("{}: its release never reached its SpellFire", self.ref_id);
-                return self.end_throw(w);
+                return None;
             }
-            HandPhase::Fired if ended || h.t >= FIRE_TIMEOUT => return self.end_throw(w),
+            HandPhase::Fired if ended || h.t >= FIRE_TIMEOUT => return None,
             _ => None,
         };
         if let Some(phase) = next {
             h.phase = phase;
             h.t = 0.0;
         }
-        if let Some(c) = self.combat.as_mut() {
-            c.hand_cast = Some(h);
-        }
+        Some(h)
     }
 
     fn end_throw(&mut self, w: &mut World) {
@@ -602,8 +627,13 @@ impl ActorRuntime {
         let Some(h) = self.combat.as_mut().and_then(|c| c.hand_cast.take()) else {
             return;
         };
+        self.release_hand(h.hand);
+    }
+
+    /// The graph's side of a hand done casting (`stop_hand_cast`).
+    pub(crate) fn release_hand(&mut self, hand: usize) {
         if let Some(g) = self.graph.as_mut() {
-            g.send_event(&format!("{}_Equipped_Event", hand_prefix(h.hand)));
+            g.send_event(&format!("{}_Equipped_Event", hand_prefix(hand)));
             g.send_event("CastStop");
         }
     }
