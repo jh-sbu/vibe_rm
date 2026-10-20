@@ -651,9 +651,9 @@ pub fn call(
                 let n = if args.len() > 1 { arg(1).as_int() } else { 1 };
                 e.add_item(r, item, n);
                 // An NPC given a weapon it would pick wields it at once;
-                // armor and shields it leaves be (a teammate wears armor:
-                // `test-mod autotest2`; there are no teammates yet).
-                if e.lo.tag_of(item).is_some_and(|t| t.0 == *b"WEAP") {
+                // armor and shields it leaves be, but a teammate wears armor
+                // (`test-mod autotest2`).
+                if e.lo.tag_of(item).is_some_and(|t| t.0 == *b"WEAP") || e.is_player_teammate(r) {
                     e.take_up_if_better(r, item);
                 }
             }
@@ -1299,7 +1299,18 @@ pub fn call(
             }
             none()
         }
-        ("actor", "isplayerteammate") | ("actor", "isonmount") => v(Value::Bool(false)),
+        ("actor", "isplayerteammate") => {
+            v(Value::Bool(me.is_some_and(|r| e.is_player_teammate(r))))
+        }
+        ("actor", "setplayerteammate") => {
+            if let Some(r) = me {
+                let on = args.first().is_none_or(Value::as_bool);
+                let favor = args.get(1).is_none_or(Value::as_bool);
+                e.set_player_teammate(r, on, favor);
+            }
+            none()
+        }
+        ("actor", "isonmount") => v(Value::Bool(false)),
         ("actor", "issneaking") => v(Value::Bool(me.is_some_and(|r| e.is_sneaking(r)))),
         ("actor", "isdetectedby") => v(Value::Bool(
             me.zip(form_arg(args, 0))

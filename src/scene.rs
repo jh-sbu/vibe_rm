@@ -779,9 +779,12 @@ impl Engine {
             // Procedures not run here.
             Behaviour::Hold => now - started >= UNSUPPORTED_PACKAGE_SECS,
             // Never done: they run until their end phase ends.
-            Behaviour::Sandbox | Behaviour::Follow | Behaviour::Patrol | Behaviour::UseWeapon => {
-                false
-            }
+            Behaviour::Sandbox
+            | Behaviour::Follow
+            | Behaviour::Patrol
+            | Behaviour::UseWeapon
+            | Behaviour::UseMagic
+            | Behaviour::Activate => false,
         }
     }
 

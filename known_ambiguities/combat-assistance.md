@@ -37,6 +37,17 @@ An enemy set on a victim, a helper of ours placed off to the side; after 8 s:
   they start any fight.
 - Helpers can be helped in turn, so a fight spreads through a group.
 
+- Followers: `CurrentFollowerFaction` (`0005C84E`) lists the player's faction
+  and one more as allies (`XNAM` reaction 2) in Skyrim.esm. Scripts' faction
+  changes (`AddToFaction`, `SetFactionRank`, `RemoveFromFaction`) update a
+  loaded actor's factions for fights at once and are applied again when it
+  loads; the player's own count as the player's side. A hired follower thus
+  helps the player in a fight as its AI data's assistance has it (Mjoll 2,
+  Faendal 1). Unconfirmed: that the game's followers help by this alone; its
+  teammate flag (`SetPlayerTeammate`; CommonLibSSE `Actor` flag
+  `kPlayerTeammate`) is not read yet, and no public source says what else it
+  changes in a fight.
+
 ## Gaps
 
 1. **Relationships.** `RELA` ranks (ally, confidant, friend...) between two NPCs

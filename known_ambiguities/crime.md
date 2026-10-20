@@ -162,8 +162,8 @@ locations name it.
 - Given items by a script's `AddItem` (`test-mod autotest2`), an NPC wielded
   each weapon it would pick at once (an iron sword, then a steel sword, then
   an iron greatsword), and wore no armor and no shield even 3.5 s later; a
-  teammate given a cuirass wore it. Here `AddItem` takes up weapons only
-  (there are no teammates yet).
+  teammate given a cuirass wore it. Here `AddItem` takes up weapons, and for a
+  teammate (`SetPlayerTeammate`) armor and shields as well.
 - An NPC given an item (placed in its pockets, or into a teammate's
   inventory) takes it up at once if it is better: armor when its armor
   rating with it (the inventory's rating, with its skills and perks) is
@@ -239,6 +239,21 @@ locations name it.
   bounty settled and not on a goodbye line, so "never mind" lets the player
   go) makes the faction's guards attack until it is paid; only guards, not
   UESP's "NPCs with high responsibility".
+- Yielding (`src/arrest.rs`, `update_yield`). Sources: UESP *Skyrim:Crime*,
+  "Resisting Arrest" (https://en.uesp.net/w/index.php?oldid=3639929): "yielding
+  to a guard by sheathing your weapon or spells may prompt them to stop
+  attacking and to arrest you again, presenting the same options. Sometimes,
+  you cannot yield"; CommonLibSSE `PlayerCharacter` (`yieldTimer`,
+  `attemptedYieldInCurrentCombat`: "set when yielding to guard for arrest
+  dialogue, prevents multiple arrest dialogues"). Unconfirmed, our choices: the
+  weapons (or spells: one "drawn" state) stay away 2 seconds (the timer's
+  length is nowhere); only guards of a faction that arrests and whose bounty
+  is below the Attack on Sight one take it (the "sometimes"), since without an
+  arrest dialogue there is nothing to go back to; once per fight, until nobody
+  fights the player. Not done: UESP's other ways (Calm on a guard, punching an
+  innocent while keeping fists raised), the `ACYI` ("accept yield") line, which
+  the generic voice lines carry but no source says guards speak here, and the
+  `HelpYielding` message.
 - Paying with "go to jail" sends the player through the jail's inner prison
   marker to the outer one (UESP: outside the jail); it is the alarmed
   guard's line that passes true.
