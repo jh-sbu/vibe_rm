@@ -3,8 +3,9 @@
 Destructible definitions and the initial per-reference stage query are
 implemented in `crates/esp/src/destructible.rs`,
 `src/world/destruction.rs`, `src/script/natives.rs` and
-`src/condition/mod.rs`. Health, damage, stage changes, visuals, events,
-clearing and saves remain unimplemented. Sources: UESP's DEST field page
+`src/condition/mod.rs`. Scripted `DamageObject` health/stage progression is
+also implemented; weapon/spell damage, stage side effects, events, clearing
+and saves remain unimplemented. Sources: UESP's DEST field page
 ([permanent rev 2334527](https://en.uesp.net/w/index.php?oldid=2334527)),
 [xEdit's TES5 definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas)
 (`wbDEST`, `EXPL`), CommonLibSSE's `BGSDestructibleObjectForm.h`, and the
@@ -38,6 +39,41 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   The initial `-1` policy is public-source-supported, not verified in Skyrim
   SE here. Stage threshold behavior, including authored 100% stages, remains
   unresolved and is not used to compute the initial stage.
+- **Scripted `DamageObject` subset.** The native returns no value. For a
+  reference listed in any currently instantiated `CellRuntime.refs`, a
+  positive finite amount subtracts from per-reference health initialized to
+  `DEST.health`; health is bounded to `[0, DEST.health]`. Invalid amounts,
+  missing DEST/zero max health, and unloaded references are no-ops. This
+  loaded boundary is the runtime cell reference list, not a separate check of
+  3D attachment. This follows the public Papyrus [DamageObject
+  page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/function/damageobject/)
+  only for the stated unloaded-object caveat; its note is observational and
+  we have not verified parity in game. The existing stage query reports `-1`
+  until a threshold is crossed. On a hit, crossed stages are considered in
+  authored array order; query state stores the last crossed `DSTD.index`, or
+  the first crossed `CAP_DAMAGE` stage's index when a cap applies. The first
+  crossed cap stage limits health to its own threshold and prevents that hit
+  from recording a later stage. Intermediate crossed stages currently have
+  no event or other side effect. These threshold and cap rules are explicit
+  implementation choices, not confirmed Skyrim behavior.
+- **Stage-number ambiguity.** The same Bellcube [GetCurrentDestructionStage
+  page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/function/getcurrentdestructionstage/)
+  documents untouched `-1`, but does not specify whether later script-visible
+  values correspond to `DSTD.index` or the separate model damage stage. A
+  public [destructible-object author
+  tutorial](https://skyrimmw.weebly.com/skyrim-modding/destructible-object-creation-breakable-stuff-skyrim-modding-tutorial)
+  calls the model damage stage what scripts reference. Runtime uses
+  `DSTD.index` per the current query policy; synthetic tests deliberately use
+  unequal values so this assumption stays visible. Mapping is unresolved.
+  Public vanilla [`ObjectReference.psc`](https://github.com/ianpatt/skse64/blob/master/scripts/vanilla/ObjectReference.psc)
+  declares the native but does not settle the mapping.
+- **Still absent from `DamageObject`.** It does not yet raise
+  `OnDestructionStageChanged`, emit explosions/debris, change the model,
+  collision, navmesh or flags (including disable/destroy), or persist to
+  saves. `ClearDestruction` is also not implemented. Bellcube's
+  [stage-changed event page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/event/ondestructionstagechanged/)
+  describes worsening-stage notification; event timing/arguments and all
+  side effects remain future work.
 - **Stage order.** In every vanilla record, `index` equals the stage's
   position and the health percentages descend. The last stage is usually
   at 0%.
@@ -76,18 +112,11 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   `ResourceObjectMine`, `CWFortNorPortcullis`) follow a stage that has a
   replacement with one that has none. Choice: the last replacement stays,
   as nothing says to go back to the base model.
-- **When a stage applies.** A prior candidate was the last stage whose health
-  percentage is at or above the object's current health percentage. That
-  would make a 100% stage (15 records, e.g. `TG02BeeHive`) active from the
-  start and the web's 99% stage active after its first point of damage. This
-  candidate conflicts with the public query note above that a completely
-  undamaged object appears to be stage `-1`; the stage-selection rule and
-  whether entering a stage runs its explosion/debris remain unresolved.
-- **Cap damage.** Choice: one hit can't carry the object past the stage it
-  enters. Its health stops at the next stage's threshold, so the web
-  always takes two blows. The alternative (health stops at the capping
-  stage's own threshold) gives the same count for the web but differs for
-  stages further apart.
+- **Damage threshold and cap parity.** Runtime currently records the last
+  crossed stage after damage and caps a hit at the first crossed cap stage's
+  own threshold; it does not run intermediate stage effects. This preserves
+  the documented untouched `-1`, but exact handling of 100% stages, overkill,
+  and later stages after a cap has not been checked in Skyrim SE.
 - **How much a weapon hit does.** Choice: the blow's damage as it would be
   to an actor before armor and blocking. Objects have no armor, and the
   game's formula for objects isn't public.
