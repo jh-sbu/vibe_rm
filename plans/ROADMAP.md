@@ -412,6 +412,10 @@ game each piece unlocks.
   Critical Hit Damage" (x1.25, x1.5, x2) past armor, counts the player's
   "Critical Strikes" and sets `GetLastHitCritical`; `IsSprinting` is the
   player's. Open questions: `known_ambiguities/critical-hits.md`
+- Scrolls (`known_ambiguities/scrolls.md`): used from the inventory or
+  favorites into the hand asked for (or away again), cast like a spell with
+  the scroll's charge time, free of magicka and skill, and used up by the
+  cast (one cut short isn't); `GetEquippedSpell` leaves them out.
 - Saves (`src/save/`, `known_ambiguities/saves.md`): the engine's own format
   (sections with CRCs, written through a temporary file) holding the clock,
   globals, quests, statistics, actor value changes, inventories with their
@@ -1393,7 +1397,8 @@ game each piece unlocks.
      rotating and zooming it), the quantity slider's use for more than dropping, rows grouped by captured soul with per-item
      selection and transfers (`known_ambiguities/inventory-cards.md`); alchemy
      teaching the effects two ingredients share (waits on crafting),
-     equipping scrolls and torches in a hand, the survival warmth rating
+     equipping torches in a hand (the player's body doesn't show a carried
+     light), the survival warmth rating
    - The HUD: notifications' display
      time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;
      `known_ambiguities/messages.md`); controller rumble for camera shakes

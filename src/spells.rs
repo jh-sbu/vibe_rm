@@ -42,13 +42,14 @@ pub(crate) fn skill_cost_factor(lo: &esp::LoadOrder, skill: f32) -> f32 {
 }
 
 impl Engine {
-    /// The spell, power or shout `actor` holds in a slot (`RIGHT`, `LEFT`,
-    /// `VOICE`).
+    /// The spell, power, shout or scroll `actor` holds in a slot (`RIGHT`,
+    /// `LEFT`, `VOICE`). A scroll is an item carried and held in a hand to
+    /// cast its spell once.
     pub fn equipped_spell(&self, actor: FormId, slot: usize) -> Option<FormId> {
-        self.inventories
-            .get(&actor)?
-            .held(slot)
-            .filter(|&f| matches!(self.lo.tag_of(f).map(|t| t.0), Some(t) if t == *b"SPEL" || t == *b"SHOU"))
+        self.inventories.get(&actor)?.held(slot).filter(|&f| {
+            matches!(self.lo.tag_of(f).map(|t| t.0),
+                    Some(t) if t == *b"SPEL" || t == *b"SHOU" || t == *b"SCRL")
+        })
     }
 
     /// Readies a spell the actor knows in a hand (powers and shouts in the

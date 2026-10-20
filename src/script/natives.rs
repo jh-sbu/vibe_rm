@@ -1105,7 +1105,10 @@ pub fn call(
             let Some(actor) = me else { return none() };
             match func {
                 "getequippedspell" => {
-                    let spell = e.equipped_spell(actor, source(0));
+                    // A scroll in the hand is an item, not a spell.
+                    let spell = e
+                        .equipped_spell(actor, source(0))
+                        .filter(|&s| e.lo.tag_of(s).is_some_and(|t| t.0 != *b"SCRL"));
                     return v(spell.map_or(Value::None, |s| e.object_value(s)));
                 }
                 "equipspell" => {
