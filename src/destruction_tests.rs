@@ -120,6 +120,13 @@ fn damage_object(e: &mut Engine, this: &Value, damage: f32) {
     ));
 }
 
+fn clear_destruction(e: &mut Engine, this: &Value) {
+    assert!(matches!(
+        crate::script::natives::call(e, "objectreference", "cleardestruction", Some(this), &[],),
+        papyrus::NativeResult::Value(Value::None)
+    ));
+}
+
 fn stage(
     index: u8,
     health_percent: u8,
@@ -307,4 +314,54 @@ fn damageobject_is_loaded_reference_gated_and_keeps_health_per_reference() {
             ..Default::default()
         }
     ));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn cleardestruction_resets_one_reference_even_when_unloaded_without_events() {
+    let (_dir, mut e) = fixture();
+    let this_a = e.object_value(REF_A);
+    let this_c = e.object_value(REF_C);
+    let cell = crate::render::CellKey::Interior(FormId(0x840));
+    e.cells.entry(cell).or_default().refs.extend([REF_A, REF_C]);
+
+    damage_object(&mut e, &this_a, 100.0);
+    damage_object(&mut e, &this_c, 2.0);
+    assert_eq!(e.current_destruction_stage(REF_A), 0);
+    assert_eq!(e.current_destruction_stage(REF_C), 0);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
+    assert_eq!(e.world_state.destruction[&REF_C].health, 99.0);
+
+    // Clear is not gated on the loaded-reference list. It resets C while A
+    // retains its independent state and queues no Papyrus events.
+    e.cells.get_mut(&cell).unwrap().refs.retain(|r| *r != REF_C);
+    assert!(e.scripts.pending_events.is_empty());
+    clear_destruction(&mut e, &this_c);
+    assert!(!e.world_state.destruction.contains_key(&REF_C));
+    assert_eq!(e.current_destruction_stage(REF_C), -1);
+    assert_eq!(current_stage(&mut e, &this_c), -1);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
+    assert!(e.scripts.pending_events.is_empty());
+
+    // Repeated clears are idempotent. CTDA sees the pristine -1 stage again.
+    clear_destruction(&mut e, &this_c);
+    let parsed = crate::condition::parse_all(&e.lo.get(QUEST).unwrap());
+    assert!(crate::condition::evaluate(
+        &e,
+        &parsed,
+        crate::condition::Context {
+            subject: Some(REF_C),
+            ..Default::default()
+        }
+    ));
+    assert!(e.scripts.pending_events.is_empty());
+
+    // Future supported damage initializes from authored full health, then
+    // meets the 99% cap. A stale pre-clear health value must not survive.
+    e.cells.get_mut(&cell).unwrap().refs.push(REF_C);
+    damage_object(&mut e, &this_c, 2.0);
+    assert_eq!(e.world_state.destruction[&REF_C].health, 99.0);
+    assert_eq!(e.current_destruction_stage(REF_C), 0);
+    assert_eq!(current_stage(&mut e, &this_c), 0);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
 }
