@@ -95,6 +95,14 @@ Script event nodes of ours under the game's script event root:
 
 ## Choices made without a source
 
+- Pick lock (`LOCK`, `OnStoryPickLock`) and trespass (`TRES`, `OnStoryTrespass`)
+  events are sent: `LOCK` as the player picks a lock open (R1 the player, R2
+  the lock); `TRES` at each trespass warning (R1 the warner, R2 the player, L1
+  the player's location, V1 the warning level 0 to 2). Only the Papyrus
+  events' parameter names are public; which actor is R1 / R2, whether a failed
+  pick sends `LOCK`, and what `TRES`'s V1 holds are inferred. The game's data has
+  no node listening to either.
+
 - An actor considers a conversation every 10 to 30 s (first one staggered),
   with a 10% chance, with the nearest other free humanoid within 500 units:
   alive, calm, not in a scene or talking to the player; interiors use the
