@@ -679,7 +679,8 @@ impl Engine {
     /// the attacker, L1 where, V1 whether it is a crime: the victim keeps the
     /// law and wasn't hostile). The player's crimes are reported.
     pub(crate) fn send_assault(&mut self, victim: FormId, attacker: FormId, crime: bool) {
-        if crime && attacker == crate::engine::PLAYER_REF {
+        // The player answers for their teammates' and summons' blows too.
+        if crime && self.responsible_for(attacker) == crate::engine::PLAYER_REF {
             self.player_assault(victim);
         }
         let mut e = StoryEvent::new(b"ASSU");

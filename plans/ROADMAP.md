@@ -322,7 +322,11 @@ game each piece unlocks.
   script's faction changes count in fights at once (`AddToFaction` of
   `CurrentFollowerFaction`, an ally of the player's faction in the data, makes a
   hired follower help the player as its assistance has it), and across cell
-  loads. `cstats` shows assistance. Open questions: `known_ambiguities/combat-assistance.md`
+  loads. `cstats` shows assistance. Player teammates (`SetPlayerTeammate`,
+  `IsPlayerTeammate`, `GetPlayerTeammate(Count)`) join the player's fights
+  whatever their factions, wear armor they are given, and the player answers
+  for their blows and their summons' as for their own (an assault on someone
+  who keeps the law; UESP Crime). Open questions: `known_ambiguities/combat-assistance.md`, `known_ambiguities/followers.md`
 - Bleedout: essential actors (and protected ones, except to the player) brought to zero
   health bleed out through the graph (`bleedOutStart` / `bleedOutStop`), dropped as
   targets, and get up after a while with a quarter of their health; the player can
@@ -1270,9 +1274,9 @@ game each piece unlocks.
      that can't reach their target backing away; force-greets' "moving into a
      new space", player keyword and riding checks, "Greet Using Preferred
      Path?", `ForceGreetWaitSitting` and alias trigger locations
-   - Followers: the player teammate flag (`SetPlayerTeammate`,
-     `IsPlayerTeammate`, `GetPlayerTeammate`: nothing reads it yet); followers'
-     attacks counting as the player's assault (UESP Crime); `AllyKilled` lines
+   - Followers: teammates' following through load doors, fast travel and
+     waiting, their other combat behaviour (`known_ambiguities/followers.md`);
+     `AllyKilled` lines
    - Locks: sleepers warning the player before locking and putting them out;
      actors stepping round loose clutter instead of shoving it
    - Off-screen travel between worldspaces; paths round locked animated doors

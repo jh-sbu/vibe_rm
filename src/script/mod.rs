@@ -143,6 +143,9 @@ pub struct ScriptState {
     /// their records' lists: the actor's rank there, -1 for out
     /// (`AddToFaction`, `SetFactionRank`, `RemoveFromFaction`).
     pub faction_changes: HashMap<FormId, HashMap<FormId, i8>>,
+    /// The player's teammates (`SetPlayerTeammate`) and whether the player
+    /// can ask each for favors.
+    pub teammates: HashMap<FormId, bool>,
 }
 
 impl ScriptState {

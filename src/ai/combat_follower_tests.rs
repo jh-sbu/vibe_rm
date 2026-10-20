@@ -122,3 +122,34 @@ fn the_players_own_faction_changes_count_as_theirs() {
     e.set_faction_rank(PLAYER_REF, BANDITS, -1);
     assert_eq!(e.player_factions(), [PLAYER_FACTION]);
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_teammate_takes_the_players_side_whatever_its_factions_and_assistance() {
+    let (_f, mut e) = fixture();
+    e.player.position = Vec3::ZERO;
+    e.actor_mut(HELPER).unwrap().stats = Arc::new(CombatStats {
+        assistance: 0,
+        ..CombatStats::default()
+    });
+    assert_eq!(joins(&mut e), None);
+    e.set_player_teammate(HELPER, true, true);
+    assert_eq!(joins(&mut e), Some(BANDIT));
+    // Not against its own side, nor the other fights of strangers.
+    e.set_faction_rank(HELPER, BANDITS, 0);
+    assert_eq!(joins(&mut e), None);
+    e.set_player_teammate(HELPER, false, true);
+    assert_eq!(joins(&mut e), None);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_teammates_blow_on_a_bystander_is_the_players_assault() {
+    let (_f, mut e) = fixture();
+    // The bandits keep the law here (a crime faction), the helper is theirs.
+    e.send_assault(BANDIT, HELPER, true);
+    assert!(!e.assaulted_by_player(BANDIT));
+    e.set_player_teammate(HELPER, true, true);
+    e.send_assault(BANDIT, HELPER, true);
+    assert!(e.assaulted_by_player(BANDIT));
+}
