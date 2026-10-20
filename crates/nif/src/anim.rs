@@ -177,10 +177,10 @@ pub struct ValueInterpolator {
 pub struct ValueKeys {
     pub keys: Vec<(f32, Vec3)>,
     /// NIF KeyType: 1 linear, 2 quadratic, 3 TBC, 5 constant.
-    /// TBC retains the existing linear approximation.
     pub interpolation: u32,
     /// Quadratic tangents in serialized (forward/incoming, backward/outgoing)
-    /// order, one pair per key. Tangents are in normalized segment units.
+    /// order, one pair per key. TBC keys store generated incoming/outgoing
+    /// tangents in the same array. Tangents are in normalized segment units.
     pub tangents: Vec<(Vec3, Vec3)>,
 }
 
@@ -201,7 +201,7 @@ impl ValueKeys {
         if t.is_nan() {
             return None;
         }
-        if self.interpolation == 2 && self.tangents.len() == self.keys.len() {
+        if matches!(self.interpolation, 2 | 3) && self.tangents.len() == self.keys.len() {
             let first = self.keys.first()?;
             if t <= first.0 {
                 return Some(first.1);
@@ -290,7 +290,7 @@ pub(crate) fn value_interpolator(r: &mut Reader, point3: bool) -> Result<ValueIn
 
 /// `NiBoolData`: byte keys, as 0 / 1 in x.
 pub(crate) fn bool_keys(r: &mut Reader) -> Result<ValueKeys> {
-    let (keys, interpolation, tangents) =
+    let (keys, interpolation, tangents, _) =
         key_group_with_interpolation(r, |r| Ok(Vec3::new(r.u8()? as f32, 0.0, 0.0)))?;
     Ok(ValueKeys {
         keys,
@@ -300,16 +300,63 @@ pub(crate) fn bool_keys(r: &mut Reader) -> Result<ValueKeys> {
 }
 
 pub(crate) fn value_keys(r: &mut Reader, point3: bool) -> Result<ValueKeys> {
-    let (keys, interpolation, tangents) = if point3 {
+    let (keys, interpolation, mut tangents, tbc) = if point3 {
         key_group_with_interpolation(r, |r| r.vec3())?
     } else {
         key_group_with_interpolation(r, |r| Ok(Vec3::new(r.f32()?, 0.0, 0.0)))?
     };
+    if interpolation == 3 {
+        tangents = tbc_tangents(&keys, &tbc);
+    }
     Ok(ValueKeys {
         keys,
         interpolation,
         tangents,
     })
+}
+
+/// Derive normalized Hermite tangents from tension, bias and continuity.
+/// Time weighting and one-sided endpoints follow public OpenMW nifkey.hpp.
+/// The schema and OpenMW disagree on serialized bias/continuity order; see
+/// known_ambiguities/tbc-value-interpolation.md for the chosen schema policy.
+fn tbc_tangents(keys: &[(f32, Vec3)], parameters: &[Vec3]) -> Vec<(Vec3, Vec3)> {
+    let mut tangents = vec![(Vec3::ZERO, Vec3::ZERO); keys.len()];
+    if keys.len() < 2 {
+        return tangents;
+    }
+    for (i, &(time, value)) in keys.iter().enumerate() {
+        let Vec3 {
+            x: tension,
+            y: bias,
+            z: continuity,
+        } = parameters[i];
+        let a = (1.0 - tension) * (1.0 - continuity) * (1.0 + bias);
+        let b = (1.0 - tension) * (1.0 + continuity) * (1.0 - bias);
+        let c = (1.0 - tension) * (1.0 + continuity) * (1.0 + bias);
+        let d = (1.0 - tension) * (1.0 - continuity) * (1.0 - bias);
+        tangents[i] = if i == 0 || i + 1 == keys.len() {
+            let delta = if i == 0 {
+                keys[1].1 - value
+            } else {
+                value - keys[i - 1].1
+            };
+            (delta * ((a + b) * 0.5), delta * ((c + d) * 0.5))
+        } else {
+            let (prev_time, prev_value) = keys[i - 1];
+            let (next_time, next_value) = keys[i + 1];
+            let span = next_time - prev_time;
+            if span == 0.0 {
+                continue;
+            }
+            let prev_delta = value - prev_value;
+            let next_delta = next_value - value;
+            (
+                (prev_delta * a + next_delta * b) * ((time - prev_time) / span),
+                (prev_delta * c + next_delta * d) * ((next_time - time) / span),
+            )
+        };
+    }
+    tangents
 }
 
 pub(crate) fn controller_manager(r: &mut Reader) -> Result<Vec<Ref>> {
@@ -401,20 +448,21 @@ fn key_group<T>(
     r: &mut Reader,
     value: impl FnMut(&mut Reader) -> Result<T>,
 ) -> Result<Vec<(f32, T)>> {
-    key_group_with_interpolation(r, value).map(|(keys, _, _)| keys)
+    key_group_with_interpolation(r, value).map(|(keys, _, _, _)| keys)
 }
 
 fn key_group_with_interpolation<T>(
     r: &mut Reader,
     mut value: impl FnMut(&mut Reader) -> Result<T>,
-) -> Result<(Vec<(f32, T)>, u32, Vec<(T, T)>)> {
+) -> Result<(Vec<(f32, T)>, u32, Vec<(T, T)>, Vec<Vec3>)> {
     let n = r.u32()?;
     if n == 0 {
-        return Ok((Vec::new(), 1, Vec::new()));
+        return Ok((Vec::new(), 1, Vec::new(), Vec::new()));
     }
     let interp = r.u32()?;
     let mut out = Vec::with_capacity(n.min(4096) as usize);
     let mut tangents = Vec::new();
+    let mut tbc = Vec::new();
     for _ in 0..n {
         let t = r.f32()?;
         let v = value(r)?;
@@ -423,15 +471,14 @@ fn key_group_with_interpolation<T>(
                 tangents.push((value(r)?, value(r)?));
             }
             3 => {
-                r.f32()?;
-                r.f32()?;
-                r.f32()?;
+                // Serialized order is tension, bias, continuity (NifTools).
+                tbc.push(r.vec3()?);
             }
             _ => {}
         }
         out.push((t, v));
     }
-    Ok((out, interp, tangents))
+    Ok((out, interp, tangents, tbc))
 }
 
 pub(crate) fn transform_data(r: &mut Reader) -> Result<TransformData> {
@@ -591,13 +638,103 @@ mod tests {
     }
 
     #[test]
-    fn linear_and_tbc_approximation_still_blend() {
+    fn linear_and_neutral_tbc_collinear_keys_still_blend() {
         for point3 in [false, true] {
             for interpolation in [1, 3] {
                 let keys = parsed_value_keys(point3, interpolation);
                 assert_eq!(keys.sample(3.0).unwrap().x, 2.0);
                 assert_eq!(keys.sample(5.0).unwrap().x, 6.0);
             }
+        }
+    }
+
+    #[test]
+    fn tbc_parser_uses_schema_order_and_nonuniform_tangent_weights() {
+        for point3 in [false, true] {
+            let mut bytes = [3u32.to_le_bytes(), 3u32.to_le_bytes()].concat();
+            // Distinct bias and continuity detect an accidental swap. Different
+            // segment lengths detect a missing time weight in interior tangents.
+            for (time, value) in [(2.0f32, 0.0f32), (6.0, 8.0), (14.0, 4.0)] {
+                bytes.extend_from_slice(&time.to_le_bytes());
+                for axis in 0..if point3 { 3 } else { 1 } {
+                    bytes.extend_from_slice(&(value * (axis + 1) as f32).to_le_bytes());
+                }
+                for parameter in [0.5f32, 0.25, -0.5] {
+                    // tension, bias, continuity
+                    bytes.extend_from_slice(&parameter.to_le_bytes());
+                }
+            }
+            let mut reader = crate::reader::Reader::new(&bytes);
+            let keys = super::value_keys(&mut reader, point3).unwrap();
+            assert_eq!(reader.remaining(), 0);
+            assert_eq!(keys.tangents[0].0.x, 4.5);
+            assert_eq!(keys.tangents[0].1.x, 3.5);
+            assert_eq!(keys.tangents[1].0.x, 2.25);
+            assert!((keys.tangents[1].1.x - 1.0 / 6.0).abs() < 1e-6);
+            assert_eq!(keys.tangents[2].0.x, -2.25);
+            assert_eq!(keys.tangents[2].1.x, -1.75);
+            for (time, expected) in [(-1.0, 0.0), (3.0, 1.63671875), (14.0, 4.0), (30.0, 4.0)] {
+                let sampled = keys.sample(time).unwrap();
+                assert_eq!(sampled.x, expected);
+                if point3 {
+                    assert_eq!(
+                        sampled,
+                        glam::Vec3::new(expected, expected * 2.0, expected * 3.0)
+                    );
+                }
+            }
+            assert_eq!(keys.sample(f32::NAN), None);
+            assert_eq!(keys.sample(3.0).unwrap().x, 1.63671875); // backward seek
+            for length in 0..bytes.len() {
+                let mut reader = crate::reader::Reader::new(&bytes[..length]);
+                assert!(
+                    super::value_keys(&mut reader, point3).is_err(),
+                    "length {length}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tbc_single_key_full_tension_and_zero_time_spans() {
+        let mut keys = parsed_value_keys(false, 3);
+        // Full tension zeroes both tangents, giving the same eased segment as
+        // a zero-tangent quadratic, while neutral TBC remained linear above.
+        keys.tangents = super::tbc_tangents(&keys.keys, &[glam::Vec3::X; 3]);
+        assert_eq!(keys.sample(3.0).unwrap().x, 1.25);
+        keys.keys.truncate(1);
+        keys.tangents = super::tbc_tangents(&keys.keys, &[glam::Vec3::ZERO]);
+        for t in [-1.0, 2.0, 20.0] {
+            assert_eq!(keys.sample(t), Some(glam::Vec3::ZERO));
+        }
+        assert!(super::tbc_tangents(&[], &[]).is_empty());
+        let duplicate = [
+            (1.0, glam::Vec3::ZERO),
+            (1.0, glam::Vec3::ONE),
+            (1.0, glam::Vec3::X),
+        ];
+        let tangents = super::tbc_tangents(&duplicate, &[glam::Vec3::ZERO; 3]);
+        assert_eq!(tangents[1], (glam::Vec3::ZERO, glam::Vec3::ZERO));
+    }
+
+    #[test]
+    fn neutral_tbc_preserves_linear_ramp_with_unequal_time_spacing() {
+        let values = [
+            (2.0, glam::Vec3::ZERO),
+            (6.0, glam::Vec3::splat(8.0)),
+            (14.0, glam::Vec3::splat(24.0)),
+        ];
+        let keys = super::ValueKeys {
+            keys: values.to_vec(),
+            interpolation: 3,
+            tangents: super::tbc_tangents(&values, &[glam::Vec3::ZERO; 3]),
+        };
+        assert_eq!(
+            keys.tangents[1],
+            (glam::Vec3::splat(8.0), glam::Vec3::splat(16.0))
+        );
+        for t in [2.0, 3.0, 5.0, 6.0, 7.0, 10.0, 13.0, 14.0] {
+            assert_eq!(keys.sample(t).unwrap(), glam::Vec3::splat((t - 2.0) * 2.0));
         }
     }
 

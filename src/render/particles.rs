@@ -20,7 +20,7 @@ use super::model::{MaterialDesc, Vertex};
 #[derive(Debug, Clone)]
 enum CurveInterpolation {
     Linear,
-    Quadratic(nif::anim::ValueKeys),
+    Hermite(nif::anim::ValueKeys),
     /// Float CONST_KEY selects the nearest endpoint.
     Nearest,
     /// Boolean keys hold their value until the next key.
@@ -51,7 +51,7 @@ impl Curve {
             return self.value;
         };
         let k = timing.key_time(t);
-        if let CurveInterpolation::Quadratic(keys) = &self.interpolation {
+        if let CurveInterpolation::Hermite(keys) = &self.interpolation {
             return keys.sample(k).map_or(self.value, |v| v.x);
         }
         if k <= first.0 {
@@ -78,8 +78,8 @@ fn curve(nif: &Nif, timing: nif::anim::Timing, interpolator: Ref, fallback: f32)
             let (keys, interpolation) = match nif.get(i.data) {
                 Some(Block::ValueKeys(k)) => (
                     k.keys.iter().map(|(t, v)| (*t, v.x)).collect(),
-                    if k.interpolation == 2 {
-                        CurveInterpolation::Quadratic(k.clone())
+                    if matches!(k.interpolation, 2 | 3) {
+                        CurveInterpolation::Hermite(k.clone())
                     } else if k.interpolation == 5 {
                         CurveInterpolation::Nearest
                     } else {
@@ -1442,6 +1442,15 @@ mod tests {
         assert_eq!(eased.sample(1.5), 0.15625);
         assert_eq!(eased.sample(2.5), 0.84375);
         assert_eq!(eased.sample(10.0), 1.0);
+        let Block::ValueKeys(keys) = &mut nif.blocks[1] else {
+            unreachable!();
+        };
+        keys.interpolation = 3;
+        // Derived TBC tangents must reach the float evaluator too.
+        keys.tangents = vec![(Vec3::ZERO, Vec3::splat(2.0)), (Vec3::ZERO, Vec3::ZERO)];
+        let tbc = curve(&nif, timing, Ref(0), -1.0);
+        assert_eq!(tbc.sample(1.5), 0.4375);
+        assert_eq!(tbc.sample(2.5), 0.9375);
         nif.blocks[0] = Block::BoolInterpolator(nif::psys::BoolInterpolator {
             value: true,
             data: Ref(1),

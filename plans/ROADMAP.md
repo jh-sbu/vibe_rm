@@ -1143,9 +1143,13 @@ game each piece unlocks.
   `known_ambiguities/value-key-interpolation.md`
 - Quadratic `NiFloatData` / `NiPosData` curves retain and evaluate their
   tangents for standalone and named-sequence material / alpha-test channels
-  and particle float controllers. TBC and transform interpolation remain
-  separate work; evidence and limits:
+  and particle float controllers. Transform interpolation remains separate
+  work; evidence and limits:
   `known_ambiguities/quadratic-value-interpolation.md`
+- TBC `NiFloatData` / `NiPosData` curves derive Hermite tangents for the same
+  material and particle channels, with nonuniform time weights. Public sources
+  disagree on bias / continuity order; the schema-order policy and remaining
+  parity limits are recorded in `known_ambiguities/tbc-value-interpolation.md`
 - Impacts: melee blows, bashes and arrows look up the impact (IPCT) their impact data
   set (weapon `INAM`, bash `BIDS`, the race's `NAM5` bare-handed) has for the material
   struck (the target race's `NAM4`, the blocking shield's or weapon's `BAMT`, the

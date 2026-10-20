@@ -303,8 +303,10 @@ Implemented policy and unresolved behavior:
   continue rotating. Exact deactivation semantics remain unverified in Skyrim SE.
 - Sequence-owned rotation controllers, blending, rotation axes and initial
   orientation from velocity remain deferred. The existing particle curve
-  sampler linearly interpolates quadratic/TBC keys after decoding, so their
-  tangent behavior is not reproduced. Spawned descendants retain the parent's
+  sampler now retains quadratic tangents and generated TBC tangents; TBC's
+  disputed parameter order and limits are described in
+  [tbc-value-interpolation.md](tbc-value-interpolation.md).
+  Spawned descendants retain the parent's
   angle and spin instead of resampling initial rotation; original behavior is
   unresolved. These limitations are not claims about Skyrim's engine behavior.
 
