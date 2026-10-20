@@ -30,6 +30,17 @@ pub struct Relationships {
     members: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
 }
 
+impl Relationships {
+    pub(crate) fn saved_ranks(&self) -> &HashMap<(FormId, FormId), i32> {
+        &self.changed
+    }
+
+    /// Restore overrides directly: loading must not send change-rank events.
+    pub(crate) fn restore_ranks(&mut self, ranks: HashMap<(FormId, FormId), i32>) {
+        self.changed = ranks;
+    }
+}
+
 /// Keep direction and secrecy even though association/family queries are symmetric.
 /// Neither the rank nor the parent/child labels imply a family association.
 #[derive(Debug)]
