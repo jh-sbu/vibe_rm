@@ -3453,7 +3453,11 @@ impl Engine {
             .as_ref()
             .is_some_and(|b| b.speaker == actor)
         {
-            self.barks.current = None;
+            if let Some(bark) = self.barks.current.take()
+                && let (Some(voice), Some(audio)) = (bark.voice, &self.audio)
+            {
+                audio.stop(voice);
+            }
         }
         // Whoever fought it looks for someone else.
         let fighting: Vec<FormId> = self
