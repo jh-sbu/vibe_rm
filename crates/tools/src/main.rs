@@ -398,6 +398,34 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("sndr-stats") => {
+            // sndr-stats <data dir>: the sound descriptors' BNAM fields (frequency
+            // shift and variance in percent, dB variance, static attenuation in dB):
+            // how many descriptors hold each combination, and one of them.
+            use std::collections::BTreeMap;
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut counts: BTreeMap<(i8, u8, u8, u16), (usize, String)> = BTreeMap::new();
+            for &id in lo.ids_of_type(b"SNDR") {
+                let Some(rec) = lo.get(id) else { continue };
+                let Some(b) = rec.get(b"BNAM").filter(|b| b.len() >= 6) else {
+                    continue;
+                };
+                let e = counts
+                    .entry((b[0] as i8, b[1], b[3], u16::from_le_bytes([b[4], b[5]])))
+                    .or_insert_with(|| (0, rec.editor_id().unwrap_or_default().to_owned()));
+                e.0 += 1;
+            }
+            let mut v: Vec<_> = counts.into_iter().collect();
+            v.sort_by_key(|e| std::cmp::Reverse(e.1.0));
+            for ((shift, var, dbvar, att), (n, edid)) in v {
+                println!(
+                    "{n:5} shift {shift:4}% variance {var:3}% dB variance {dbvar:3} attenuation {:.2} dB {edid}",
+                    att as f32 / 100.0
+                );
+            }
+        }
         Some("msn-shapes") => {
             // msn-shapes <bsa>...: shapes whose lighting shader has model-space
             // normals, counted by whether they're drawn skinned; the files of
