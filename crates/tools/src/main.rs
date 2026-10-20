@@ -426,6 +426,54 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("info-idles") => {
+            // info-idles <data dir>: dialogue responses' speaker (SNAM) and listener
+            // (LNAM) idle animations: how many responses name each, and the types
+            // of the records they point at.
+            use std::collections::BTreeMap;
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let mut counts: BTreeMap<(&str, String), (usize, String)> = BTreeMap::new();
+            let mut idles: BTreeMap<(&str, String), usize> = BTreeMap::new();
+            let (mut infos, mut responses) = (0usize, 0usize);
+            for &id in lo.ids_of_type(b"INFO") {
+                let Some(rec) = lo.get(id) else { continue };
+                infos += 1;
+                for sr in rec.subrecords() {
+                    let which = match &sr.tag.0 {
+                        b"TRDT" => {
+                            responses += 1;
+                            continue;
+                        }
+                        b"SNAM" => "speaker",
+                        b"LNAM" => "listener",
+                        _ => continue,
+                    };
+                    let Some(d) = sr.data.get(0..4) else { continue };
+                    let target = rec.fid(esp::FormId(u32::from_le_bytes(d.try_into().unwrap())));
+                    let (kind, edid) = match lo.get(target) {
+                        Some(t) => (
+                            String::from_utf8_lossy(&t.tag().0).into_owned(),
+                            t.editor_id().unwrap_or_default().to_owned(),
+                        ),
+                        None => ("none".to_owned(), String::new()),
+                    };
+                    let e = counts.entry((which, kind)).or_insert((0, edid.clone()));
+                    e.0 += 1;
+                    *idles.entry((which, edid)).or_default() += 1;
+                }
+            }
+            println!("{infos} INFO records, {responses} responses");
+            for ((which, kind), (n, edid)) in counts {
+                println!("{n:6} {which} idle -> {kind} (e.g. {edid})");
+            }
+            let mut v: Vec<_> = idles.into_iter().collect();
+            v.sort_by_key(|e| std::cmp::Reverse(e.1));
+            for ((which, edid), n) in v {
+                println!("{n:6} {which} {edid}");
+            }
+        }
         Some("msn-shapes") => {
             // msn-shapes <bsa>...: shapes whose lighting shader has model-space
             // normals, counted by whether they're drawn skinned; the files of

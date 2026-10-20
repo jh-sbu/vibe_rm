@@ -2552,6 +2552,18 @@ impl Engine {
             log::debug!("{actor}: no talking idle");
             return;
         };
+        self.send_gesture(key, actor, &idle.to_string(), &event);
+    }
+
+    /// Send `event` (the idle `label`) to the speaker's graph as a gesture; true
+    /// if the graph took it.
+    fn send_gesture(
+        &mut self,
+        key: crate::render::CellKey,
+        actor: FormId,
+        label: &str,
+        event: &str,
+    ) -> bool {
         let mut clips = Clips {
             vfs: &self.vfs,
             anims: &mut self.anims,
@@ -2562,17 +2574,38 @@ impl Engine {
             .get_mut(&key)
             .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == actor))
         else {
-            return;
+            return false;
         };
-        let took = a.graph_event(&event, &mut clips);
+        let took = a.graph_event(event, &mut clips);
         log::debug!(
-            "{actor} talks with {idle} ({event}){}",
+            "{actor} talks with {label} ({event}){}",
             if took {
                 ""
             } else {
                 ": the graph won't take it"
             }
         );
+        took
+    }
+
+    /// Gesture along with a response: the speaker idle the INFO names for it
+    /// (`SNAM`: pointing, giving, saluting...) when the speaker's graph takes
+    /// its event, else the random talking gesture.
+    pub(crate) fn line_gesture(&mut self, actor: FormId, idle: Option<FormId>) {
+        if let Some(idle) = idle
+            && let Some(key) = self.actor_cells.get(&actor).copied()
+            && let Some(event) = self.idle_event(idle)
+        {
+            let label = self
+                .lo
+                .get(idle)
+                .and_then(|r| r.editor_id())
+                .unwrap_or_else(|| idle.to_string());
+            if self.send_gesture(key, actor, &label, &event) {
+                return;
+            }
+        }
+        self.talking_gesture(actor);
     }
 
     /// The conversation is over: standing speakers stop their dialogue idle.

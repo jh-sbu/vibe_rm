@@ -196,6 +196,7 @@ impl Engine {
                 r.text,
                 path.unwrap_or_default()
             );
+            let idle = r.speaker_idle;
             self.barks.current = Some(Bark {
                 speaker,
                 name,
@@ -203,7 +204,7 @@ impl Engine {
                 voice,
                 ends_at: now + duration,
             });
-            self.talking_gesture(speaker);
+            self.line_gesture(speaker, idle);
             return true;
         }
         false

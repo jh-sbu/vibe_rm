@@ -686,6 +686,7 @@ impl Engine {
         let name = self.form_name(speaker);
         log::info!("{name} (scene): {} [{}]", r.text, path.unwrap_or_default());
         let now = self.scripts.real_time;
+        let idle = r.speaker_idle;
         self.scenes.running[i].actions[k].line = Some(SceneLine {
             speaker,
             name,
@@ -693,7 +694,7 @@ impl Engine {
             voice,
             ends_at: now + duration,
         });
-        self.talking_gesture(speaker);
+        self.line_gesture(speaker, idle);
     }
 
     /// Give the actor the action's packages; true once the one it runs is done.
