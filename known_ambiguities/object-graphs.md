@@ -104,7 +104,9 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
   another project/rig installs a fresh instance. Keeping the same project,
   rig and sex keeps its running state and bone map, including when unrelated
   armor or weapons change. The player's body rebuild still creates a fresh
-  auxiliary instance along with its main graph.
+  auxiliary instance along with its main graph when its rig/project changes;
+  equipment-only rebuilds now retain an unchanged main and auxiliary graph
+  (see [player-body.md](player-body.md)).
 
 ## Wearer graph lifecycle extension (2026-10-20)
 
@@ -119,8 +121,9 @@ Original-engine graph retention across outfit changes, multiple competing
 base-skeleton graphs, and initial state/event replay when attaching a new
 graph remain unresolved. Here a new graph starts at its authored start state,
 receives future events and shares current variables at its next update. Main
-actor graph state is preserved during NPC redressing. Player rebuilds retain
-their existing restart policy. This is implementation coverage, not a claim
+actor graph state is preserved during NPC redressing. Player equipment rebuilds
+also retain compatible graphs; changes of rig/project create new instances.
+This is implementation coverage, not a claim
 of original-engine lifecycle parity. Only the previously documented game-asset
 observations and repository code were used; no engine binaries were examined
 and no game assets were added.
