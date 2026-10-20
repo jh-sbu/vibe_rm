@@ -738,6 +738,7 @@ impl Engine {
             next: now + wait,
         });
         log::info!("{warner} finds the player trespassing in {cell}: warning level {level}");
+        self.send_trespass_event(warner, level);
         self.bark(warner, b"TRES");
         if level >= 2 {
             let owner = self.ref_owner(cell);

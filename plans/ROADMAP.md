@@ -819,7 +819,8 @@ game each piece unlocks.
   `IsScenePackageRunning`; `GetDistance` between interiors / worldspaces is
   far. Console `startscene`, `stopscene`, `scenes`, `startquest`, `stopquest`,
   `setstage`; vrm-tool `scenes`. Open questions: `known_ambiguities/scenes.md`
-- Story Manager: events run down the tree of event, branch and quest nodes
+- Story Manager (also pick lock `LOCK` and trespass `TRES` events, no vanilla node
+  listens): events run down the tree of event, branch and quest nodes
   (`SMEN` / `SMBN` / `SMQN`) under their type, stacked or random, node
   conditions on the event's data, quests started with reset hours, max running,
   num to run, do all before repeating and shared events, "warn if no child
@@ -1215,7 +1216,7 @@ game each piece unlocks.
      controllers inside sequences and sequence blending (placed rigid objects'
      named material sequences: see Done;
      `known_ambiguities/sequence-material-controllers.md`)
-2. **Story Manager** (core and fifteen events done; see Done)
+2. **Story Manager** (core and seventeen events done, `LOCK` and `TRES` among them; see Done)
    - Events waiting on their systems: crafting, NPCs'
      spell casts (combat suppression and concentration cadence need evidence;
      `known_ambiguities/story-cast-events.md`), new voice powers, bribe /

@@ -283,6 +283,7 @@ impl Engine {
                 self.increment_stat("Locks Picked", 1);
                 self.set_locked(lp.lock, false);
                 self.player_unlocked(lp.lock);
+                self.send_pick_lock_event(lp.lock);
                 self.menu = None;
                 let name = self.form_name(lp.then);
                 self.look_target = Some((lp.then, name));
