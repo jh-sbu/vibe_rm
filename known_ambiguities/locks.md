@@ -70,6 +70,32 @@ and location pages, CK wiki descriptions) and the game's data files.
 
 ## Gaps
 
+### Scripted owner locking
+
+`ObjectReference.Lock(abLock, abAsOwner)` now honors `abAsOwner`: unlocking a
+load door as owner makes its adjoining interior public, and locking makes it
+private. Trespass checks read this override before the authored Public Area
+flag; a private owned room no longer needs a scheduled sleep package to count
+as private. Ordinary calls and non-door references only change the lock.
+The overrides persist in an optional `CPUB` native-save section; older saves
+without it retain authored/schedule-based access.
+
+The public [Papyrus Index Lock documentation](https://papyrus.bellcube.dev/skyrimse/script/objectreference/function/lock/)
+reproduces the CK parameter description and the shipped script's documentation
+comment: owner-mode locking changes adjoining-cell access. The separate CK page
+returned HTTP 403. The local UESP index had no Lock/ObjectReference title match.
+No game assets or engine binaries were examined for this extension.
+
+Implementation choices still needing Skyrim SE observation: an exterior/interior
+pair targets the interior from either half; between two interiors it targets the
+destination cell. Non-teleport doors have no adjoining cell in the current data
+model, so only their lock changes. Interactions among several entrances to one
+cell, the exact relationship with Off Limits, and package-driven access changes
+after an explicit override remain unresolved. Existing lock creation and open-door
+closing behavior are separate gaps; this extension handles the owner argument.
+Synthetic tests validate native defaults, door/container discrimination, access
+changes, save restoration, old saves and malformed sections, not engine parity.
+
 0. **`XRNK`, the faction rank an owner asks.** Unconfirmed: an owned
    reference's (or its cell's) `XRNK` is read as the lowest rank in the
    owning faction that may use its things freely (xEdit names it the owner's

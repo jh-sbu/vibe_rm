@@ -62,6 +62,7 @@ pub struct Snapshot {
     pub blocked_activation: HashSet<FormId>,
     pub locked: HashMap<FormId, bool>,
     pub lock_levels: HashMap<FormId, u8>,
+    pub cell_public: HashMap<FormId, bool>,
     pub owners: HashMap<FormId, Option<FormId>>,
     pub faction_changes: HashMap<FormId, HashMap<FormId, i8>>,
     pub alerted: HashSet<FormId>,
@@ -488,6 +489,7 @@ impl Snapshot {
             bounties: e.crime.bounties.clone(),
             stolen_value: e.crime.stolen_value.clone(),
             restocked: e.restocks.stocked.clone(),
+            cell_public: e.scripts.cell_public.clone(),
             story: e.story.saved_state(),
             relationship_ranks: e.relationships.saved_ranks().clone(),
             vm: super::vm::VmSnapshot {
@@ -762,6 +764,13 @@ impl Snapshot {
             w.f64(*at);
         }
         file.add(b"BART", w.0);
+        let mut w = Writer::default();
+        w.len(self.cell_public.len());
+        for (cell, public) in sorted(&self.cell_public) {
+            w.form(cell);
+            w.bool(*public);
+        }
+        file.add(b"CPUB", w.0);
         let mut w = Writer::default();
         w.len(self.story.last_run.len());
         for (quest, at) in sorted(&self.story.last_run) {
@@ -1064,6 +1073,13 @@ impl Snapshot {
         }
         r.finish()?;
         // Added sections are optional so older native saves remain readable.
+        if let Some(data) = file.section(b"CPUB") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(5)? {
+                s.cell_public.insert(r.form()?, r.bool()?);
+            }
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"STOR") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(12)? {
@@ -1194,6 +1210,7 @@ impl Snapshot {
         e.crime.bounties = self.bounties;
         e.crime.stolen_value = self.stolen_value;
         e.restocks.stocked = self.restocked;
+        e.scripts.cell_public = self.cell_public;
         match self.spot {
             Some(Spot {
                 location: Location::Interior(cell),

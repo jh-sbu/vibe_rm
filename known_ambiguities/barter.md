@@ -16,6 +16,16 @@ last two bytes are unused, as UESP's FACT page has them: fences with 0 and
 
 ## Unconfirmed: choices made
 
+- **`GetAmountSoldStolen` remains research-gated.** The local UESP function
+  index lists condition 190 and the old console getter/modifier, but establishes
+  no Skyrim sales-counter semantics. A mod author's
+  [firsthand Skyrim LE report](https://forums.nexusmods.com/topic/9557203-le-help-with-a-script-to-get-the-values-of-stolen-items/)
+  says the getter stays zero after stolen-item sales, contrasting Oblivion's
+  working counter. This is a community report, not an SE verification; whether
+  Skyrim SE implements either command, and whether its condition behaves the
+  same way, remain unresolved. No Oblivion-style counter was inferred from the
+  legacy name. No engine binaries were inspected.
+
 - **What a merchant won't buy isn't listed** on the player's side (stolen
   goods unless the faction buys them, items without a keyword of the list, or
   with one when the list is inverted), rather than listed and refused.
