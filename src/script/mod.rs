@@ -104,6 +104,9 @@ pub struct ScriptState {
     pub inventory_filters: HashMap<ObjectId, HashSet<FormId>>,
     /// Events raised by natives, delivered after the current VM run.
     pub pending_events: Vec<(ObjectId, String, Vec<Value>)>,
+    /// References whose `GetOpenState` scripts wait on, answered once the
+    /// frame's scripts have run (`open_state_key`).
+    pub open_state_queries: Vec<FormId>,
     /// Quest fragments to run: (quest, stage).
     pub pending_stages: Vec<(FormId, u16)>,
     /// Quests started whose scripts are to be attached (`Engine::init_quest`).

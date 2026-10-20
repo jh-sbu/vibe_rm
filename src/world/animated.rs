@@ -51,6 +51,11 @@ impl OpenState {
     }
 }
 
+/// The `Vm::signal_with` key a `GetOpenState` on `r` waits for.
+pub(crate) fn open_state_key(r: FormId) -> u64 {
+    0x4f50_454e_0000_0000 | r.0 as u64
+}
+
 pub struct AnimatedObject {
     pub ref_id: FormId,
     pub transform: Mat4,

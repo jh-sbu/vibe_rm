@@ -3695,6 +3695,12 @@ impl Engine {
             vm = std::mem::take(&mut self.vm);
         }
         self.vm = vm;
+        // `GetOpenState` callers resume next frame with the state now.
+        for r in std::mem::take(&mut self.scripts.open_state_queries) {
+            let state = papyrus::Value::Int(self.open_state(r) as i32);
+            self.vm
+                .signal_with(crate::world::animated::open_state_key(r), state);
+        }
         if let Some(t) = self.pending_moveto.take()
             && let Some(p) = self.ref_position(t)
         {

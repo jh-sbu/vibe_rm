@@ -592,9 +592,23 @@ pub fn call(
         | ("objectreference", "setdestroyed")
         | ("objectreference", "setnoFavorallowed")
         | ("objectreference", "setplayerknows") => v(Value::Bool(true)),
-        ("objectreference", "getopenstate") => v(Value::Int(
-            me.map_or(crate::world::animated::OpenState::None, |r| e.open_state(r)) as i32,
-        )),
+        // Answered at the end of the frame, once the scripts it set going have
+        // run: the pillar puzzles' lever activates its gate and asks at once,
+        // and in the game sees it opening (it closes the gate again when a
+        // pillar is then turned wrong).
+        ("objectreference", "getopenstate") => {
+            let Some(r) = me else {
+                return v(Value::Int(0));
+            };
+            if !e.scripts.open_state_queries.contains(&r) {
+                e.scripts.open_state_queries.push(r);
+            }
+            NativeResult::WaitFor {
+                key: crate::world::animated::open_state_key(r),
+                timeout: 1.0,
+                value: Value::Int(e.open_state(r) as i32),
+            }
+        }
         ("objectreference", "addtomap") => {
             if let Some(r) = me {
                 e.add_to_map(r, args.first().is_some_and(|a| a.as_bool()));

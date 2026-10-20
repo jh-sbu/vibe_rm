@@ -58,16 +58,17 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
   anything else none. Unconfirmed: CommonLibSSE gives activators the
   open/close form too but not how the game decides their state. Kept in
   memory with the graphs, not in saves (neither are the graphs).
-- The pillar puzzles' lever (`defaultPillarPuzzleLever`) activates its gate
-  and asks the gate's `GetOpenState` at once; only opening or open sets its
+- `GetOpenState` answers at the end of the frame it is called in, once the
+  scripts it set going have run (the caller resumes the next frame). The
+  pillar puzzles' lever (`defaultPillarPuzzleLever`) activates its gate and
+  asks the gate's `GetOpenState` at once; only opening or open sets its
   `doorOpened`, which lets a pillar turned off its answer later close the
-  gate again. Here the gate's `OnActivate` runs on a later tick than the
-  lever's next instruction, so the lever sees it closed and the gate stays
-  open after a wrong turn. Unconfirmed: in the game `Activate`,
-  `GetOpenState` and the gate script's `Is3DLoaded` / `PlayAnimation` are
-  probably each held to a frame, which could give the same answer; a test
-  mod (solve, pull, turn a pillar away: does the gate close?) would settle
-  it.
+  gate again. In SSE (Bleak Falls Barrow, tested by hand) the gate does
+  close on such a turn, and solving again and pulling the lever reopens it,
+  so the game's answer comes after the gate's `OnActivate` has begun
+  opening it. Answering at once, the lever saw the gate closed (its
+  `OnActivate` runs a pass later). Unconfirmed: how long the game's wait
+  is, and whether other natives are held the same way.
 - `PlayAnimationAndWait` gives up after 10 s (`WAIT_LIMIT`) when its event
   doesn't come; the game's wait has no limit, but a graph event missing here
   would otherwise hang the script for good.
