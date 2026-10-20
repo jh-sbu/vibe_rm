@@ -41,6 +41,7 @@ pub mod archetype {
     pub const CALM: u32 = 6;
     pub const DEMORALIZE: u32 = 7;
     pub const FRENZY: u32 = 8;
+    pub const DISARM: u32 = 9;
     pub const INVISIBILITY: u32 = 11;
     pub const BOUND_WEAPON: u32 = 17;
     pub const SUMMON_CREATURE: u32 = 18;
@@ -78,7 +79,7 @@ pub mod archetype {
     /// Those whose magnitude is the highest level they affect (UESP's
     /// Illusion: "Target Level does not apply to Rally effects").
     pub fn level_capped(archetype: u32) -> bool {
-        matches!(archetype, CALM | DEMORALIZE | FRENZY | TURN_UNDEAD)
+        matches!(archetype, CALM | DEMORALIZE | FRENZY | TURN_UNDEAD | DISARM)
     }
 }
 
@@ -685,7 +686,7 @@ impl Engine {
                 base *= power;
             }
             let magnitude = self.effect_magnitude(&m, &mgef, base, caster, target);
-            // Calm, fear and frenzy reach only those up to their magnitude's
+            // Calm, fear, frenzy and disarm reach only those up to their magnitude's
             // level; one too strong for it is still struck by a hostile spell.
             if archetype::level_capped(mgef.archetype)
                 && self.actor_level(target) as f32 > magnitude
@@ -934,6 +935,9 @@ impl Engine {
             archetype::CURE_PARALYSIS => self.dispel(x.target, |e| {
                 e.id != id && e.effect_archetype == archetype::PARALYSIS
             }),
+            archetype::DISARM => {
+                self.disarm(x.target, x.caster);
+            }
             archetype::STAGGER => {
                 if x.target != PLAYER_REF
                     && !self.is_ethereal(x.target)

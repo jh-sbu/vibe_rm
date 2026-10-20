@@ -223,6 +223,17 @@ impl Engine {
         }
     }
 
+    /// A scroll the player cast is used up: one of them leaves the inventory,
+    /// and the hand puts the scroll away when it was the last. A scroll cut
+    /// short before the cast is not used (UESP's Skyrim:Scrolls).
+    fn use_up_scroll(&mut self, spell: FormId) {
+        if self.lo.tag_of(spell).is_none_or(|t| t.0 != *b"SCRL") {
+            return;
+        }
+        self.remove_item(PLAYER_REF, spell, 1, None);
+        self.unequip_if_gone(PLAYER_REF, spell);
+    }
+
     /// A hand's attack button went down: casting starts if it holds a spell
     /// (true), else it does what it does with a weapon (false).
     pub fn player_cast_press(&mut self, hand: usize) -> bool {
@@ -328,6 +339,7 @@ impl Engine {
             self.player_pay(h.spell, cost);
             self.count_spell_cast(PLAYER_REF, h.spell);
             self.cast_with(PLAYER_REF, h.spell, 1.0, h.dual);
+            self.use_up_scroll(h.spell);
         }
         true
     }
@@ -429,6 +441,10 @@ impl Engine {
     /// What a spell costs the player, dual cast or not (a staff's
     /// enchantment, in charge).
     fn player_spell_cost(&self, spell: FormId, dual: bool) -> f32 {
+        // A scroll costs no magicka (UESP's Skyrim:Scrolls): it is used up.
+        if self.lo.tag_of(spell).is_some_and(|t| t.0 == *b"SCRL") {
+            return 0.0;
+        }
         if self.player_staff_of(spell).is_some() {
             return self.staff_cost(PLAYER_REF, spell);
         }
@@ -515,6 +531,7 @@ impl Engine {
                     self.player_pay(f.spell, cost);
                     self.count_spell_cast(PLAYER_REF, f.spell);
                     self.cast_with(PLAYER_REF, f.spell, 1.0, f.dual);
+                    self.use_up_scroll(f.spell);
                 }
                 continue;
             }
@@ -1787,3 +1804,7 @@ mod story_cast_tests {
         assert!(matches!(args[2], papyrus::Value::None));
     }
 }
+
+#[cfg(test)]
+#[path = "casting_scroll_tests.rs"]
+mod scroll_tests;

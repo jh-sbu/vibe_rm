@@ -57,8 +57,8 @@ pub struct Word {
 pub struct Shouts {
     pub known: HashSet<FormId>,
     pub unlocked: HashSet<FormId>,
-    added: HashMap<FormId, Vec<FormId>>,
-    removed: HashMap<FormId, HashSet<FormId>>,
+    pub(crate) added: HashMap<FormId, Vec<FormId>>,
+    pub(crate) removed: HashMap<FormId, HashSet<FormId>>,
     /// Seconds before the player can shout again, and the rest's whole length.
     pub recovery: f32,
     pub recovery_total: f32,

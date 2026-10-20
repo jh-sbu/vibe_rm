@@ -26,8 +26,12 @@ use crate::engine::{Engine, PLAYER_REF};
 
 /// Entry points used here (CommonLibSSE `BGSEntryPoint::ENTRY_POINTS`).
 pub mod ep {
+    pub const CALCULATE_MY_CRITICAL_HIT_CHANCE: u8 = 1;
+    pub const CALCULATE_MY_CRITICAL_HIT_DAMAGE: u8 = 2;
+    pub const MOD_ENEMY_CRITICAL_HIT_CHANCE: u8 = 17;
     pub const MOD_SNEAK_ATTACK_MULT: u8 = 18;
     pub const MOD_RECOVER_ARROW_CHANCE: u8 = 21;
+    pub const MOD_SKILL_USE: u8 = 22;
     pub const MOD_SPELL_MAGNITUDE: u8 = 29;
     pub const MOD_INCOMING_SPELL_MAGNITUDE: u8 = 41;
     pub const MOD_POWER_ATTACK_STAMINA: u8 = 27;
@@ -289,6 +293,20 @@ pub struct Perks {
     pub tree: Option<u32>,
     cache: std::cell::RefCell<HashMap<FormId, Option<Arc<Perk>>>>,
     owned: std::cell::RefCell<HashMap<FormId, Arc<Vec<(FormId, u8)>>>>,
+}
+
+impl Perks {
+    /// Replace the perks added and removed (a loaded save's), dropping what
+    /// was worked out from the old ones.
+    pub fn replace(
+        &mut self,
+        added: HashMap<FormId, Vec<(FormId, u8)>>,
+        removed: HashMap<FormId, HashSet<FormId>>,
+    ) {
+        self.added = added;
+        self.removed = removed;
+        self.owned.borrow_mut().clear();
+    }
 }
 
 impl Engine {

@@ -435,8 +435,9 @@ impl Engine {
     /// or out of it when it is there already), potions, food and ingredients
     /// used, books read.
     pub fn use_listed_item(&mut self, row: &ListedItem, hand: Option<usize>) {
-        // A weapon by the hand asked for, the rest wherever they are.
-        let hand_of_weapon = hand.filter(|_| row.info.kind == ItemKind::Weapon);
+        // A weapon or scroll by the hand asked for, the rest wherever they are.
+        let hand_of_weapon =
+            hand.filter(|_| matches!(row.info.kind, ItemKind::Weapon | ItemKind::Scroll));
         let worn = self
             .inventories
             .get(&PLAYER_REF)
@@ -445,17 +446,19 @@ impl Engine {
                 None => i.is_equipped(row.item),
             });
         let result = match row.info.kind {
-            ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor if worn => match hand_of_weapon {
-                Some(h) => {
-                    let lo = &self.lo;
-                    if let Some(inv) = self.inventories.get_mut(&PLAYER_REF) {
-                        inv.release(lo, h);
+            ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor | ItemKind::Scroll if worn => {
+                match hand_of_weapon {
+                    Some(h) => {
+                        let lo = &self.lo;
+                        if let Some(inv) = self.inventories.get_mut(&PLAYER_REF) {
+                            inv.release(lo, h);
+                        }
+                        Ok(())
                     }
-                    Ok(())
+                    None => self.equip_item(PLAYER_REF, row.item, false),
                 }
-                None => self.equip_item(PLAYER_REF, row.item, false),
-            },
-            ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor => {
+            }
+            ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor | ItemKind::Scroll => {
                 self.equip_in(PLAYER_REF, row.item, hand)
             }
             ItemKind::Potion if self.is_poison(row.item) => self.offer_poison(row.item),

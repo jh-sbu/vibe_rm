@@ -291,6 +291,15 @@ Left out so far:
   `PKCU` to a vanilla template such as `TravelToRadius`, `PLDT` inputs). An
   exterior "in cell" (the grid square or not) needs travel: tier 4.
 
+- **Pick lock and trespass Story Manager events** (`story-manager.md`):
+  no vanilla node listens, so a Story Manager event node of our own (as
+  `autotest4`'s SMBN/SMQN) for `LOCK` and `TRES`, its quest's script
+  reporting `OnStoryPickLock` / `OnStoryTrespass` arguments. `LOCK` needs
+  the player to pick a lock (manual) unless `Lock(false)` / `Activate` by
+  script sends it too (that is itself worth reporting); `TRES` needs an
+  owned interior and a warner: what V1 holds per warning, and whether a
+  failed pick sends `LOCK`.
+
 ## Tier 3: long or statistical (minutes each)
 
 - **Multi-location sandboxing** (`package-trees.md`): an NPC with a
@@ -309,6 +318,12 @@ Left out so far:
   sound level to hearing distance (`CreateDetectionEvent`).
 - Melee reach standing still and the 1.3 margin (`melee-reach.md`).
 - Flee confidence statistics (`combat-fleeing.md`), 10-15 minutes.
+- Critical strikes (`critical-hits.md`): two actors with a test sword whose
+  `CRDT` percent mult is 0 and 1.0, a test perk setting the chance to 100,
+  fight (`StartCombat`) a tough target; compare the health lost per `OnHit`
+  (`GetActorValue` before and after) against the blow's damage: whether
+  the percent mult gates criticals, what a blocked or bare-handed critical
+  adds, and whether blocking stops it.
 - How often the weather changes, at a high TimeScale (`weather.md`).
 - Loose objects (`loose-objects.md`): `ApplyHavokImpulse` units and damping,
   drop position, corpses following the ragdoll.

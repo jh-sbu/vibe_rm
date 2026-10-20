@@ -14,6 +14,7 @@ mod created;
 mod crime;
 mod detection;
 mod dialogue;
+mod disarm;
 mod encumbrance;
 mod engine;
 mod ethereal;
@@ -47,6 +48,7 @@ mod relationships;
 #[cfg(feature = "remote-console")]
 mod remote;
 mod render;
+mod save;
 mod scene;
 mod script;
 mod shouts;

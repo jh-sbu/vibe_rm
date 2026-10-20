@@ -188,6 +188,11 @@ impl Engine {
         if !(av::FIRST_SKILL..=av::LAST_SKILL).contains(&skill) || base <= 0.0 {
             return;
         }
+        // Perks that speed a skill's advance (the Guardian Stones, Rested):
+        // "Mod Skill Use" multiplies the use's base XP.
+        self.advancing_skill.set(Some(skill));
+        let base = self.perk_entry_point(crate::perks::ep::MOD_SKILL_USE, PLAYER_REF, &[], base);
+        self.advancing_skill.set(None);
         let xp = self.skill_curve(skill).use_xp(base);
         log::debug!(
             "{} skill use: {base:.2} -> {xp:.1} XP",
@@ -598,5 +603,55 @@ mod tests {
             printf("%s Increased to %i", "Sneak", 16),
             "Sneak Increased to 16"
         );
+    }
+}
+
+#[cfg(test)]
+mod skill_use_tests {
+    use super::*;
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+
+    const STONE: FormId = FormId(0x800);
+
+    /// A perk multiplying skill use by 1.5 for One-Handed only.
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn mod_skill_use_applies_to_the_skills_its_condition_names() {
+        let dir = std::env::temp_dir().join(format!("vrm-skilluse-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut c = [0u8; 32];
+        c[4..8].copy_from_slice(&1.0f32.to_le_bytes());
+        c[8..10].copy_from_slice(&681u16.to_le_bytes());
+        c[12..16].copy_from_slice(&av::ONE_HANDED.to_le_bytes());
+        let records = [Node::top(
+            b"PERK",
+            vec![
+                RecordBuilder::new(b"PERK", STONE)
+                    .field(b"PRKE", &[2, 0, 0])
+                    .field(b"DATA", &[crate::perks::ep::MOD_SKILL_USE, 3, 1])
+                    .field(b"PRKC", &[0])
+                    .field(b"CTDA", &c)
+                    .field(b"EPFT", &[1])
+                    .f32(b"EPFD", 1.5)
+                    .field(b"PRKF", &[]),
+            ],
+        )];
+        std::fs::write(
+            dir.join("Skill.esp"),
+            write_plugin(0, &[], "test", "skill use", 0x900, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Skill.esp");
+        let xp = |e: &Engine, s: u32| e.skills.xp[(s - av::FIRST_SKILL) as usize];
+        e.use_skill(av::ONE_HANDED, 10.0);
+        let plain = xp(&e, av::ONE_HANDED);
+        assert!(plain > 0.0);
+        e.skills.xp = [0.0; SKILL_COUNT];
+        assert!(e.add_perk(PLAYER_REF, STONE));
+        e.use_skill(av::ONE_HANDED, 10.0);
+        assert!((xp(&e, av::ONE_HANDED) - plain * 1.5).abs() < 1e-3);
+        e.use_skill(av::BLOCK, 10.0);
+        assert!(xp(&e, av::BLOCK) > 0.0 && e.advancing_skill.get().is_none());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
