@@ -1490,13 +1490,15 @@ game each piece unlocks.
      light), the survival warmth rating
    - The HUD: notifications' display
      time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;
-     `known_ambiguities/messages.md`); controller rumble for camera shakes
+     research-gated: the movie's queue and fade timeline expose no duration
+     input; `known_ambiguities/messages.md`); controller rumble for camera shakes
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
      (crafting, dragon souls collected, horses stolen,
      Favorite Weapon)
    - The HUD's compass: the player's own marker (with the map), location
-     aliases as quest targets; the charge and
+     aliases as quest targets (research-gated: no direct examples found in
+     the inspected Bethesda plugins; `known_ambiguities/quest-targets.md`); the charge and
      survival meters, load door info, favor mode
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);

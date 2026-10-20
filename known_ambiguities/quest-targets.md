@@ -28,3 +28,53 @@ marker, quest markers off the compass held at its nearer edge).
   targets sharing a spot (or a door) get one marker.
 - **Enemies.** Loaded actors fighting the player (not fleeing, dying or
   dead) are marked with the Enemy frame, at any distance.
+
+## Research gate: direct location-alias targets
+
+The roadmap's proposal to support location aliases directly as objective
+targets is not yet established as Skyrim behavior. The local UESP
+[QUST layout, revision 3507775](https://en.uesp.net/w/index.php?oldid=3507775)
+describes `QSTA`'s target as an AliasID, and distinguishes reference aliases
+(`ALST`) from location aliases (`ALLS`); it does not document how a location
+alias would become a compass position. The
+[LCTN layout, revision 3507725](https://en.uesp.net/w/index.php?oldid=3507725)
+calls `MNAM` the World Location Marker Ref, but does not connect it to
+objective targets. Mapping a location alias to `MNAM` is therefore an
+inference. The existing `Engine::location_marker` fallback to a static
+reference or child's marker is likewise not evidence of quest behavior.
+
+An asset-only scan on 2026-10-20 found no direct location-alias targets in
+the following installed Bethesda plugins:
+
+| Plugin | QUST records | QSTA fields | ALLS fields | Records with a QSTA/ALLS ID match |
+| --- | ---: | ---: | ---: | ---: |
+| Skyrim.esm | 1811 | 1808 | 892 | 0 |
+| Update.esm | 84 | 382 | 100 | 0 |
+| Dawnguard.esm | 199 | 289 | 160 | 0 |
+| HearthFires.esm | 41 | 42 | 66 | 0 |
+| Dragonborn.esm | 256 | 264 | 137 | 0 |
+| _ResourcePack.esl | 4 | 0 | 0 | 0 |
+| ccBGSSSE001-Fish.esm | 33 | 122 | 4 | 0 |
+| ccBGSSSE025-AdvDSGS.esm | 17 | 34 | 10 | 0 |
+| ccBGSSSE037-Curios.esl | 1 | 0 | 0 | 0 |
+| ccQDRSSE001-SurvivalMode.esl | 9 | 0 | 0 | 0 |
+| **Total** | **2455** | **2941** | **1369** | **0** |
+
+Method: read plugin record headers (24 bytes), descend through `GRUP`
+headers, and inspect only `QUST` payloads. Decompress records with flag
+`0x00040000` using their zlib payload after its four-byte uncompressed-size
+prefix. Walk subrecords, honoring `XXXX` extended lengths; collect the
+first four bytes of every complete `QSTA` as a signed AliasID and of every
+complete `ALLS` as an unsigned alias ID, then intersect those ID sets within
+each quest record. Counts are physical records and fields per file,
+including overrides, not winning records in a merged load order. The four
+locally generated test plugins were excluded. No engine executable or
+library was inspected, and no asset data is included here.
+
+This absence is evidence only for the inspected records, not proof that
+the editor or runtime cannot support such targets, nor a test of inherited
+alias definitions across overrides. Until public documentation or a
+controlled game/editor asset test establishes the behavior, keep direct
+location-alias targets research-gated and do not invent a marker-selection
+or condition-subject rule. Reference aliases filled from a location and its
+location-ref types are a separate, already implemented mechanism.

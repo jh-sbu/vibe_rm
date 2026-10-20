@@ -45,6 +45,29 @@ animation requires public evidence or further asset work; no engine binary
 inspection was performed. No game assets or asset disassemblies are added by
 this change.
 
+Further asset inspection (2026-10-20) narrows this blocker: the `Messages`
+class has `MAX_SHOWN = 4` and `END_ANIM_FRAME = 80`. Its `Update` method
+attaches a `MessageText` clip, shifts one text string out of `MessageArray`
+into the clip's text field, and stores the clip in `ShownMessageArray`.
+The `MessageText` timeline labels `FadeIn` at frame 1 and `FadeOut` at
+frame 15. `Update` starts the oldest clip's `FadeOut` when no message is
+queued and it is not already animating; its spacing callback can also
+start that fade when all four slots are occupied. Clips reaching frame
+80 are removed. Thus this asset's queue and timeline, including the
+arrival of other messages, participate in expiry; this is not simply a
+missing duration argument on `ShowMessage`.
+
+These findings come from the existing local asset disassembly's
+`__Packages.Messages`, `MessageText`, and `HUDMovieBase.ShowMessage`
+sections (`spike/swf/out/hudmenu.dis`, produced by the documented
+`spike/swf` tooling). They establish the movie's behavior, not how Skyrim's
+native HUD code applies `TNAM`. Neither the public record schema nor this
+asset establishes that native-to-movie mechanism. Holding clips on a frame,
+rewriting queue entries, or adding a duration parameter would be a new
+compatibility policy rather than a verified implementation. The SWF
+display-time roadmap item remains research-gated; no engine binary was
+examined and no asset or disassembly is committed.
+
 ## Settled from the data
 
 - **Every passing log entry applies, not only the first.** Stages put an
