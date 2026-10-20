@@ -59,6 +59,19 @@ pub fn item_droppable(lo: &LoadOrder, form: FormId) -> bool {
     !weapon_restrictions(lo, form).0
 }
 
+/// Whether a weapon is a bound weapon (`DNAM` flags2 bit 13, "Bound Weapon" in
+/// xEdit's TES5 definitions): the Disarm shout leaves these in the hand.
+pub fn weapon_bound(lo: &LoadOrder, form: FormId) -> bool {
+    lo.get(form)
+        .filter(|r| r.tag().0 == *b"WEAP")
+        .and_then(|r| {
+            r.get(b"DNAM")
+                .and_then(|d| d.get(40..44))
+                .map(|d| d.to_vec())
+        })
+        .is_some_and(|d| u32::from_le_bytes(d[..4].try_into().unwrap()) & 0x2000 != 0)
+}
+
 /// Name, kind, value and weight of an inventory item; `None` for forms that aren't
 /// items (and lights that can't be carried).
 pub fn item_info(lo: &LoadOrder, form: FormId) -> Option<ItemInfo> {

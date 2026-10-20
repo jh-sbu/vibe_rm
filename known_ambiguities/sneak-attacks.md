@@ -34,3 +34,13 @@ and the perk descriptions.
 - **Perks**: the multiplier goes through the attacker's "Mod Sneak Attack
   Mult" entries (Backstab 6x, Assassin's Blade 15x with daggers, Deadly Aim
   3x): `known_ambiguities/perks.md`. Sneak skill gain: `known_ambiguities/skills.md`.
+
+## Backstabs (statistic)
+
+[UESP's Skyrim:Statistics](https://en.uesp.net/w/index.php?oldid=3569833)
+(revision 3569833) defines a backstab as "a sneak attack with a one-handed
+weapon on a target facing away from you", not requiring the Backstab perk.
+`is_backstab` (`src/ai/combat.rs`) counts the player's one-handed (sword,
+dagger, axe, mace) sneak attacks made from behind the half-plane across the
+target's chest. UESP gives no angle, and whether "one-handed" includes fists
+or a weapon in the left hand is unknown; the statistic only, no damage rule.

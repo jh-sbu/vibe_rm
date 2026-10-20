@@ -400,8 +400,9 @@ game each piece unlocks.
   doesn't detect does the weapon type's multiple of its damage before armor
   (`fCombatSneak1HSwordMult`... 3x one-handed, 2x two-handed and unarmed; 2x
   bows), with "Sneak attack for 3.0X damage!" for the player and `OnHit`'s
-  sneak flag set. A survivor that wasn't fighting its attacker searches for
-  it rather than fighting at once. Open questions:
+  sneak flag set; the player's "Sneak Attacks" and, with a one-handed weapon on
+  a target facing away, "Backstabs". A survivor that wasn't fighting its
+  attacker searches for it rather than fighting at once. Open questions:
   `known_ambiguities/sneak-attacks.md`
 - Critical strikes: the perks' "Calculate My Critical Hit Chance" (Bladesman,
   Deep Wounds, Critical Shot 10 / 15 / 20 %, the Critical Charges 100 % for a
@@ -563,7 +564,11 @@ game each piece unlocks.
   filling and flashing when Z comes too soon. The magic menu's Shouts (the
   words, those unlocked, the recharge, the dragon souls) and the favorites
   menu's; the shout stats. Console `teachword`, `unlockword`, `addshout`,
-  `equipshout`, `pcast voice`. Open questions: `known_ambiguities/shouts.md`
+  `equipshout`, `pcast voice`. Disarm (effect archetype 9, the shout and the
+  draugr's): the target's drawn weapon drops from its right hand, a
+  dual-wielder's left goes to the inventory, bound weapons stay, up to the
+  magnitude's level; the player's "Weapons Disarmed" statistic. Open
+  questions: `known_ambiguities/shouts.md`, `known_ambiguities/disarm.md`
 - Harvesting: plants (`FLOR`, `TREE` with produce) found by their
   non-collidable shapes, giving their produce with their own verb and sound,
   someone else's stolen; harvested models, growing back
@@ -1381,7 +1386,7 @@ game each piece unlocks.
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
      (crafting, dragon souls collected, horses stolen,
-     backstabs, disarms; Favorite Weapon)
+     Favorite Weapon)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets; the charge and
      survival meters, load door info, favor mode

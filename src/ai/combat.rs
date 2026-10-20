@@ -1927,6 +1927,9 @@ impl Engine {
                     );
                     self.scripts.notify(text);
                     self.increment_stat("Sneak Attacks", 1);
+                    if self.is_backstab(target, attacker, weapon) {
+                        self.increment_stat("Backstabs", 1);
+                    }
                 }
                 damage * mult
             }
@@ -2021,6 +2024,24 @@ impl Engine {
         {
             self.apply_item(ench, Some(attacker), target);
         }
+    }
+
+    /// A sneak attack with a one-handed weapon on a target facing away
+    /// (UESP's Skyrim:Statistics: a backstab "does not require the Backstab
+    /// perk"). Facing away: the attacker behind the half-plane across the
+    /// target's chest (our reading; no angle is given).
+    fn is_backstab(&self, target: FormId, attacker: FormId, weapon: Option<FormId>) -> bool {
+        let one_handed = weapon
+            .and_then(|w| self.lo.get(w))
+            .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
+            .is_some_and(|anim| (1..=4).contains(&anim));
+        let (Some(at), Some(from)) = (self.ref_position(target), self.ref_position(attacker))
+        else {
+            return false;
+        };
+        let heading = self.ref_rotation(target).z;
+        let facing = glam::Vec2::new(heading.sin(), heading.cos());
+        one_handed && facing.dot((from - at).truncate()) < 0.0
     }
 
     /// Whether a blow is a critical strike, and what it adds. The chance
