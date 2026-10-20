@@ -15,6 +15,24 @@ use crate::{Packfile, Result};
 pub type GenId = usize;
 pub type ModId = usize;
 
+// These integer inputs are evaluated as complete values. The runtime does not
+// retain bit selectors, so accepting a bit binding would silently replace the
+// entire enum / index / bitfield. Keep authored inputs until bit semantics are
+// supported. See known_ambiguities/integer-generator-bit-bindings.md.
+fn requires_whole_member_binding(member: &str) -> bool {
+    matches!(
+        member,
+        "flags"
+            | "selfTransitionMode"
+            | "eventMode"
+            | "mode"
+            | "startStateMode"
+            | "syncVariableIndex"
+            | "startStateId"
+            | "selectedGeneratorIndex"
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipMode {
     SinglePlay,
@@ -846,11 +864,7 @@ impl<'a> Reader<'a> {
                 let member = self.p.string(b)?;
                 // These inputs support whole-member bindings only. Do not
                 // replace the entire bitfield / enum with a single bit.
-                if matches!(
-                    member.as_str(),
-                    "flags" | "selfTransitionMode" | "eventMode"
-                ) && self.p.u8(b + 0x20) != u8::MAX
-                {
+                if requires_whole_member_binding(&member) && self.p.u8(b + 0x20) != u8::MAX {
                     return None;
                 }
                 Some(Binding {
@@ -870,10 +884,7 @@ impl<'a> Reader<'a> {
         (0..n as u32)
             .map(|i| data + i * 0x28)
             .filter(|&b| self.p.u8(b + 0x21) == 1 && self.p.string(b).is_some_and(|m| m == member))
-            .filter(|&b| {
-                !matches!(member, "selfTransitionMode" | "eventMode")
-                    || self.p.u8(b + 0x20) == u8::MAX
-            })
+            .filter(|&b| !requires_whole_member_binding(member) || self.p.u8(b + 0x20) == u8::MAX)
             .find_map(|b| {
                 self.character_properties
                     .get(usize::try_from(self.p.i32(b + 0x1C)).ok()?)
@@ -893,11 +904,7 @@ impl<'a> Reader<'a> {
             .filter(|&b| self.p.u8(b + 0x21) == 1)
             .filter_map(|b| {
                 let member = self.p.string(b)?;
-                if matches!(
-                    member.as_str(),
-                    "flags" | "selfTransitionMode" | "eventMode"
-                ) && self.p.u8(b + 0x20) != u8::MAX
-                {
+                if requires_whole_member_binding(&member) && self.p.u8(b + 0x20) != u8::MAX {
                     return None;
                 }
                 Some(PropertyBinding {
@@ -1774,6 +1781,118 @@ mod character_property_tests {
         assert_eq!(r.property_bindings[id].len(), 2);
         assert_eq!(r.property_bindings[id][0].property, "gain");
         assert_eq!(r.bindings[id].len(), 1);
+    }
+
+    #[test]
+    fn integer_generator_inputs_exclude_bit_bindings_on_all_reader_paths() {
+        for member in [
+            "mode",
+            "startStateMode",
+            "syncVariableIndex",
+            "startStateId",
+            "selectedGeneratorIndex",
+            // Previously guarded members also use the shared policy.
+            "flags",
+            "selfTransitionMode",
+            "eventMode",
+        ] {
+            for bit in [0, 1, 7, 15, 31, 254, 255] {
+                let mut p = fixture();
+                for (at, binding) in [(0x480, 0x380), (0x4E0, 0x3F8)] {
+                    p.data[at..at + 0x20].fill(0);
+                    p.data[at..at + member.len()].copy_from_slice(member.as_bytes());
+                    p.data[binding + 0x20] = bit;
+                }
+                let r = Reader {
+                    p: &p,
+                    classes: Default::default(),
+                    ids: Default::default(),
+                    generators: vec![],
+                    bindings: vec![],
+                    property_bindings: vec![],
+                    mod_ids: Default::default(),
+                    modifiers: vec![],
+                    modifier_bindings: vec![],
+                    modifier_property_bindings: vec![],
+                    character_properties: ["Enable", "Other", "Output", "Unused", "Bound"]
+                        .map(String::from)
+                        .to_vec(),
+                };
+                let variables = r.bindings_of(0x280);
+                let properties = r.property_bindings_of(0x280);
+                if bit == 255 {
+                    assert_eq!(variables.len(), 1, "{member}");
+                    assert_eq!(variables[0].member, member);
+                    assert_eq!(variables[0].variable, 2);
+                    assert_eq!(properties.len(), 2, "{member}");
+                    assert_eq!(properties[0].member, member);
+                    assert_eq!(properties[0].property, "bound");
+                    assert_eq!(
+                        r.character_property(0x280, member).as_deref(),
+                        Some("Bound")
+                    );
+                } else {
+                    assert!(variables.is_empty(), "{member} bit {bit}");
+                    assert_eq!(properties.len(), 1, "{member} bit {bit}");
+                    assert_eq!(properties[0].member, "enable");
+                    assert!(r.character_property(0x280, member).is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parsed_clip_bit_bindings_keep_authored_playback_in_the_runtime() {
+        use std::sync::Arc;
+
+        // The bit-bound value 0 previously replaced PingPong with SinglePlay.
+        // Test both variable and property input paths through parsing and update.
+        for kind in [0, 1] {
+            for bit in [0, 255] {
+                let mut p = fixture();
+                p.data[0x480..0x4A0].fill(0);
+                p.data[0x480..0x484].copy_from_slice(b"mode");
+                p.data[0x3A0] = bit;
+                p.data[0x3A1] = kind;
+                p.data[0x2F2] = 3; // PingPong.
+                word(&mut p.data, 0x2E4, 1.0f32.to_bits()); // playbackSpeed.
+                let mut r = Reader {
+                    p: &p,
+                    classes: [(0x280, "hkbClipGenerator")].into(),
+                    ids: Default::default(),
+                    generators: vec![],
+                    bindings: vec![],
+                    property_bindings: vec![],
+                    mod_ids: Default::default(),
+                    modifiers: vec![],
+                    modifier_bindings: vec![],
+                    modifier_property_bindings: vec![],
+                    character_properties: ["Enable", "Other", "Output", "Unused", "Bound"]
+                        .map(String::from)
+                        .to_vec(),
+                };
+                let id = r.generator(0x280);
+                let mut graph = BehaviorGraph::new("Bit input", Some(id), r.generators, vec![]);
+                for n in 0..5 {
+                    graph.add_variable(&format!("Input{n}"), VarType::Int, 0.0);
+                }
+                graph.bindings = r.bindings;
+                graph.property_bindings = r.property_bindings;
+                let shared = runtime::Shared::new(Arc::new(Project {
+                    graphs: vec![("graph".into(), graph)],
+                    character: Some(Character {
+                        scalar_properties: [("bound".into(), 0.0)].into(),
+                        ..Default::default()
+                    }),
+                }));
+                let mut instance = runtime::Instance::new(shared, 1);
+                instance.update(2.5, &mut |_: &str| Some(2.0));
+                let samples = instance.samples();
+                assert_eq!(samples.len(), 1);
+                let expected = if bit == 255 { 2.0 } else { 1.5 };
+                assert_eq!(samples[0].time, expected, "kind {kind}, bit {bit}");
+            }
+        }
     }
 
     #[test]
