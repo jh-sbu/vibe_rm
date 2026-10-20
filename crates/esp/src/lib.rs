@@ -7,6 +7,7 @@
 
 pub mod actor_value;
 pub mod auto_calc;
+pub mod destructible;
 mod form_id;
 mod load_order;
 pub mod navmesh;

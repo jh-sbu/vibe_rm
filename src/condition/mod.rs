@@ -736,6 +736,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .and_then(|s| e.lock_of(s))
                 .map_or(0.0, |l| l.level as f32),
         ), // GetLockLevel
+        470 => subject.map(|s| e.current_destruction_stage(s) as f32), // GetDestructionStage
         // GetItemCount; picking a furniture idle ahead of time (no subject), the
         // query says whether its user holds what the idle asks about.
         47 => match (subject, ctx.idle) {

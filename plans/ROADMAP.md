@@ -1276,6 +1276,12 @@ game each piece unlocks.
   (MODL) at night or always (`kPermAurora`), turning with the sun
   (`kAuroraFollowsSun`). Console `fw`,
   `sw`, `rwo`, `weather`. Open questions: `known_ambiguities/weather.md`
+- Destructible object definitions and initial stage queries: read base
+  `DEST`/`DSTD` health, flags, stage records, explosion/debris references and
+  optional replacement model paths; `ObjectReference.GetCurrentDestructionStage`
+  and CTDA `GetDestructionStage` (470) report each reference's untouched
+  stage as `-1`. Thresholds and runtime stage state choices:
+  `known_ambiguities/destruction.md`
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -1441,15 +1447,16 @@ game each piece unlocks.
      dropping their collision; prismatic and malleable constraints (none in the
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
-   - Destructible objects (`DEST`; nothing reads it yet): cobwebs blocking
-     dungeon paths, barricades, bee hives, trap oil pools and gas. Health and
-     stage per reference, from weapon blows (`strike` drops the damage now),
-     spells landing on objects and their areas (`spell_lands` reaches only
-     actors), explosions and self damage; the stage's model (`BSDamageStage`
-     children or a replacement model with its collision, freeing navmesh
-     obstacles), explosion and debris; `OnDestructionStageChanged`,
-     `DamageObject`, `ClearDestruction`, `GetCurrentDestructionStage`,
-     condition `GetDestructionStage`; stages in saves. Choices:
+   - Destructible object damage and lifecycle (`DEST` definitions and initial
+     `GetCurrentDestructionStage` / `GetDestructionStage` queries are done; see
+     Done): cobwebs blocking dungeon paths, barricades, bee hives, trap oil
+     pools and gas. Health and stage per reference, from weapon blows
+     (`strike` drops the damage now), spells landing on objects and their areas
+     (`spell_lands` reaches only actors), explosions and self damage; the
+     stage's model (`BSDamageStage` children or a replacement model with its
+     collision, freeing navmesh obstacles), explosion and debris;
+     `OnDestructionStageChanged`, `DamageObject`, `ClearDestruction`, and
+     stages in saves. Choices:
      `known_ambiguities/destruction.md`
    - Water (loaded types and `IsInDangerousWater`: see Done): swimming and
      `IsSwimming`, unloaded actors' contact, contact spells (`XNAM`);

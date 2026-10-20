@@ -394,6 +394,9 @@ pub fn call(
             Some(b) => v(e.object_value(b)),
             None => none(),
         },
+        ("objectreference", "getcurrentdestructionstage") => v(Value::Int(
+            me.map_or(-1, |f| e.current_destruction_stage(f)),
+        )),
         ("objectreference", "getpositionx") => v(Value::Float(
             me.and_then(|f| e.ref_position(f))
                 .map(|p| p.x)
