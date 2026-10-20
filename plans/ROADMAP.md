@@ -787,8 +787,12 @@ game each piece unlocks.
   the package's spell, holding a concentration spell for the cast time, with
   the cooldown between casts and a number of casts before the package is
   done; "hold when blocked" waits while something is in the way.
+  Activate packages (the sawmill workers' lever and log pile): the actor goes to
+  its target, uses it if it is furniture, and the package is done after "Number
+  to Activate" uses; its place is its target's.
   Open questions: `known_ambiguities/package-trees.md`,
-  `known_ambiguities/use-weapon.md`, `known_ambiguities/use-magic.md`
+  `known_ambiguities/use-weapon.md`, `known_ambiguities/use-magic.md`,
+  `known_ambiguities/activate.md`
 - Enable state: references follow their enable parent (`XESP`, or its opposite)
   unless scripts set them; enabling or disabling a parent shows or hides its
   children (cells, sounds, furniture, actors). Actors flagged "Starts Dead" are
@@ -1265,7 +1269,7 @@ game each piece unlocks.
      followed through travel, not only at refresh; packages for "from event"
      aliases, and package targets by object id / type and interrupt data
    - Remaining procedures: guard (restricted areas), dialogue,
-     activate / carry, flee, orbit packages; ambush triggers (sleepers'
+     carry, flee, the sawmills' lever and log-pile cycle (object graph events), orbit packages; ambush triggers (sleepers'
      reduced detection: see Detection);
      escorts' follower min / max distances and several followers, riding,
      the follower object list and `PreferPreferredPath?`; fleeing to doors, cover and allies (`fCombatFlee*`),

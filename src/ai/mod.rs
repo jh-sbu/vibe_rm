@@ -51,6 +51,9 @@ const MAX_SANDBOX_PATH: f32 = 6000.0;
 const MAX_TRAVEL_PATH: f32 = 30_000.0;
 /// How far from a sleep / sit location to look for a bed or chair.
 const FURNITURE_SEARCH: f32 = 768.0;
+/// Seconds an Activate package's actor stays in furniture with an idle that
+/// loops (no source).
+const ACTIVATE_USE: (f32, f32) = (3.0, 6.0);
 /// Standing actors facing someone turn once they are this far off (radians), and
 /// stop within the second.
 const FACE_TURN_START: f32 = 0.6;
@@ -85,6 +88,8 @@ pub struct Goal {
     pub practice: Option<practice::PracticeGoal>,
     /// UseMagic: the spell, its target and timing.
     pub magic: Option<magic_practice::MagicGoal>,
+    /// Activate: how many times to activate the target (0 for no limit).
+    pub activate: u32,
 }
 
 impl Goal {
@@ -110,6 +115,7 @@ impl Goal {
             sneak: false,
             practice: None,
             magic: None,
+            activate: 0,
         }
     }
 }
@@ -438,6 +444,8 @@ pub struct ActorRuntime {
     pub(crate) practice_weapon: Option<Option<FormId>>,
     /// Practising a spell (UseMagic).
     pub(crate) magic_practice: Option<magic_practice::MagicPractice>,
+    /// Times it has activated the target of the Activate package it runs.
+    activations: (Option<FormId>, u32),
     pub(crate) detect_in: f32,
     /// Hit frames raised this update (`combat::HIT_RIGHT` / `HIT_LEFT`).
     hit_frames: u8,
@@ -541,6 +549,7 @@ impl ActorRuntime {
             practice_aim: None,
             practice_weapon: None,
             magic_practice: None,
+            activations: (None, 0),
             loose: false,
             power_cost: 20.0,
             detect_in: stagger,
@@ -1195,6 +1204,13 @@ impl ActorRuntime {
     /// Back on the floor after using furniture.
     fn stand_up(&mut self, w: &mut World) {
         log::debug!("{} stood up at {:?}", self.ref_id, self.pos);
+        // Using what an Activate package names is activating it.
+        let used = self.seat.as_ref().map(|s| s.furniture);
+        if let Some(goal) = self.goal.filter(|g| g.behaviour == Behaviour::Activate)
+            && used.is_some_and(|f| Some(f) == goal.furniture)
+        {
+            self.activation_done(&goal);
+        }
         self.give_up_seat(w.furniture);
         if !self.carrying {
             self.objects_changed |= !self.objects.is_empty();
@@ -1241,6 +1257,31 @@ impl ActorRuntime {
         self.state = State::Idle(0.0);
     }
 
+    /// The Activate package's target was activated once more: after "Number to
+    /// Activate" of them it is done, and passed over while it still applies.
+    fn activation_done(&mut self, goal: &Goal) {
+        let package = self
+            .current
+            .and_then(|i| self.packages.get(i))
+            .map(|p| p.id);
+        if self.activations.0 != package {
+            self.activations = (package, 0);
+        }
+        self.activations.1 += 1;
+        log::debug!(
+            "{} activated {:?} ({} of {})",
+            self.ref_id,
+            goal.target,
+            self.activations.1,
+            goal.activate
+        );
+        if goal.activate > 0 && self.activations.1 >= goal.activate {
+            self.finished_package = package;
+            self.next_eval = 0.0;
+            self.activations = (None, 0);
+        }
+    }
+
     /// At a UseWeapon goal's location, out of combat.
     fn practising(&self) -> bool {
         self.combat.is_none()
@@ -1280,7 +1321,19 @@ impl ActorRuntime {
             self.state = State::Idle(uniform(w.rand, 5.0, 10.0));
             return;
         };
-        if self.seek_furniture(&goal, fresh, w) {
+        // Activating starts beside the target, not in it.
+        if self.seek_furniture(&goal, fresh && goal.behaviour != Behaviour::Activate, w) {
+            return;
+        }
+        // At what an Activate package names, that isn't furniture: activate it.
+        if goal.behaviour == Behaviour::Activate
+            && goal.furniture.is_none()
+            && let Some(target) = goal.target
+            && self.pos.truncate().distance(goal.centre.truncate()) <= goal.radius.max(96.0)
+        {
+            self.activated = Some(target);
+            self.activation_done(&goal);
+            self.state = State::Idle(uniform(w.rand, 2.0, 6.0));
             return;
         }
         // Heading back into the sandbox area from elsewhere counts as travel.
@@ -1340,6 +1393,7 @@ impl ActorRuntime {
             Behaviour::Travel
             | Behaviour::Sleep
             | Behaviour::Sit
+            | Behaviour::Activate
             | Behaviour::UseWeapon
             | Behaviour::UseMagic => {
                 let near = goal.radius.max(96.0);
@@ -1495,20 +1549,23 @@ impl ActorRuntime {
                 goal.radius.max(FURNITURE_SEARCH),
                 f32::INFINITY,
             ),
+            // Something to activate that isn't furniture is activated where it stands.
+            Behaviour::Activate if goal.furniture.is_none() => return false,
             // A Sit package's chair may be special furniture (a throne, a writing desk).
-            Behaviour::Sit => {
+            Behaviour::Sit | Behaviour::Activate => {
                 // A specific target can be anything usable; otherwise a chair or special seat.
                 let kinds = if goal.furniture.is_some() || goal.any_furniture {
                     vec![Use::Sit, Use::Special, Use::Sleep, Use::Lean, Use::Idle]
                 } else {
                     vec![Use::Sit, Use::Special]
                 };
-                (
-                    kinds,
-                    goal.centre,
-                    goal.radius.max(FURNITURE_SEARCH),
-                    f32::INFINITY,
-                )
+                // Activating is for a moment (a one-shot idle lasts its clip).
+                let secs = if goal.behaviour == Behaviour::Activate {
+                    uniform(w.rand, ACTIVATE_USE.0, ACTIVATE_USE.1)
+                } else {
+                    f32::INFINITY
+                };
+                (kinds, goal.centre, goal.radius.max(FURNITURE_SEARCH), secs)
             }
             Behaviour::Sandbox => {
                 let mut kinds = Vec::new();
@@ -3066,7 +3123,12 @@ impl Engine {
                     // Only Sit / Sleep packages target furniture; a patrol start or follow
                     // target can be an idle marker without being "the package's seat".
                     let furniture = target
-                        .filter(|_| matches!(behaviour, Behaviour::Sit | Behaviour::Sleep))
+                        .filter(|_| {
+                            matches!(
+                                behaviour,
+                                Behaviour::Sit | Behaviour::Sleep | Behaviour::Activate
+                            )
+                        })
                         .filter(|r| self.furniture.get(*r).is_some());
                     if let Some(f) = furniture {
                         creature_ways.extend(self.creature_furniture_ways(a, f));
@@ -3129,6 +3191,7 @@ impl Engine {
                     Goal {
                         practice,
                         magic,
+                        activate: p.activate,
                         any_furniture: matches!(
                             p.target,
                             Some(Target::ObjectType(package::OBJECT_TYPE_FURNITURE))

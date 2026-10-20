@@ -774,7 +774,8 @@ impl Engine {
             | Behaviour::Follow
             | Behaviour::Patrol
             | Behaviour::UseWeapon
-            | Behaviour::UseMagic => false,
+            | Behaviour::UseMagic
+            | Behaviour::Activate => false,
         }
     }
 
