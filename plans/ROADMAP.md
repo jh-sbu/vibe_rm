@@ -207,6 +207,9 @@ game each piece unlocks.
   `flags` inputs consistently across pose weights, synchronized timing and
   trigger masters. Integer, bit-binding and lifecycle limits:
   `known_ambiguities/blender-flags-properties.md`
+- Integer generator inputs exclude unsupported bit selectors before evaluating
+  complete enums and indices, preserving authored fallbacks and supported
+  whole-member bindings (`known_ambiguities/integer-generator-bit-bindings.md`).
 - Foot placement: the character's `hkbFootIkDriverInfo` (humanoids, horses, most creatures): rays through
   the static world under each ankle, the body dropped to the lowest foot's ground, two-bone
   IK raising the others within their knee limits, planted feet tilted with the slope;
