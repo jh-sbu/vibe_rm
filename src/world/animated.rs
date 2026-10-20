@@ -21,6 +21,36 @@ const OPEN_DISTANCE: f32 = 110.0;
 const CLEAR_DISTANCE: f32 = 160.0;
 const CLOSE_DELAY: f32 = 2.5;
 
+/// Papyrus `GetOpenState` / condition `GetOpenState` values (CommonLibSSE's
+/// `BGSOpenCloseForm::OPEN_STATE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenState {
+    None = 0,
+    Open = 1,
+    Opening = 2,
+    Closed = 3,
+    Closing = 4,
+}
+
+impl OpenState {
+    /// The state an object's graph is in after it takes (`sent`) or raises
+    /// event `ev`, if the event is one of opening or closing: `Open` / `Close`
+    /// start the movement, the graph raises `Opening` / `Closing` once it is
+    /// done (a portcullis's), `Opened` / `Closed` snap to the end.
+    fn after_event(ev: &str, sent: bool) -> Option<Self> {
+        let is = |s: &str| ev.eq_ignore_ascii_case(s);
+        Some(match sent {
+            true if is("Open") => Self::Opening,
+            true if is("Close") => Self::Closing,
+            true if is("Opened") => Self::Open,
+            true if is("Closed") => Self::Closed,
+            false if is("Opening") => Self::Open,
+            false if is("Closing") => Self::Closed,
+            _ => return None,
+        })
+    }
+}
+
 pub struct AnimatedObject {
     pub ref_id: FormId,
     pub transform: Mat4,
@@ -481,6 +511,21 @@ mod node_controller_tests {
         assert!((time - 0.00025).abs() < 1e-8);
         assert!(!done);
     }
+
+    #[test]
+    fn graph_open_close_events_give_open_states() {
+        use super::OpenState as S;
+        // A portcullis: `open` sent, `Opening` raised once up; `close`, `Closing`.
+        assert_eq!(S::after_event("open", true), Some(S::Opening));
+        assert_eq!(S::after_event("Opening", false), Some(S::Open));
+        assert_eq!(S::after_event("close", true), Some(S::Closing));
+        assert_eq!(S::after_event("Closing", false), Some(S::Closed));
+        assert_eq!(S::after_event("opened", true), Some(S::Open));
+        // Raised `Open` or sent `Opening` say nothing; nor do other events.
+        assert_eq!(S::after_event("Open", false), None);
+        assert_eq!(S::after_event("Opening", true), None);
+        assert_eq!(S::after_event("Trigger01", true), None);
+    }
 }
 
 impl Engine {
@@ -685,7 +730,41 @@ impl Engine {
             return false;
         };
         log::debug!("{r}: animation event {event}");
-        g.anim.send_event(event)
+        if !g.anim.send_event(event) {
+            return false;
+        }
+        if let Some(s) = OpenState::after_event(event, true) {
+            self.world_state.graph_open.insert(r, s);
+        }
+        true
+    }
+
+    /// Papyrus / condition `GetOpenState`: animated doors by their sequences
+    /// (or whether they were left open), objects with a graph by the opening
+    /// and closing events it took and raised; other doors, activators and
+    /// containers are closed, everything else has no open state.
+    pub fn open_state(&self, r: FormId) -> OpenState {
+        if let Some((k, i)) = self.find_animated(r) {
+            let obj = &self.cells[&k].animated[i];
+            if obj.door {
+                return match (obj.open, obj.playing.is_some()) {
+                    (true, true) => OpenState::Opening,
+                    (true, false) => OpenState::Open,
+                    (false, true) => OpenState::Closing,
+                    (false, false) => OpenState::Closed,
+                };
+            }
+        }
+        if let Some(&s) = self.world_state.graph_open.get(&r) {
+            return s;
+        }
+        match self.base_of(r).and_then(|b| self.lo.tag_of(b)) {
+            Some(t) if t.0 == *b"DOOR" && self.world_state.open_doors.contains(&r) => {
+                OpenState::Open
+            }
+            Some(t) if matches!(&t.0, b"DOOR" | b"ACTI" | b"CONT") => OpenState::Closed,
+            _ => OpenState::None,
+        }
     }
 
     /// Papyrus `PlayGamebryoAnimation(name)`: one of the model's keyframe
@@ -874,6 +953,11 @@ impl Engine {
             self.play_sound_at(&sound, at);
         }
         for (r, events) in raised {
+            for ev in &events {
+                if let Some(s) = OpenState::after_event(ev, false) {
+                    self.world_state.graph_open.insert(r, s);
+                }
+            }
             self.raise_anim_events(r, &events);
         }
     }

@@ -592,7 +592,9 @@ pub fn call(
         | ("objectreference", "setdestroyed")
         | ("objectreference", "setnoFavorallowed")
         | ("objectreference", "setplayerknows") => v(Value::Bool(true)),
-        ("objectreference", "getopenstate") => v(Value::Int(3)),
+        ("objectreference", "getopenstate") => v(Value::Int(
+            me.map_or(crate::world::animated::OpenState::None, |r| e.open_state(r)) as i32,
+        )),
         ("objectreference", "addtomap") => {
             if let Some(r) = me {
                 e.add_to_map(r, args.first().is_some_and(|a| a.as_bool()));

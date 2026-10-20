@@ -38,6 +38,10 @@ pub struct WorldState {
     /// Objects' behaviour graphs as their cells unloaded (a lever pulled, a
     /// portcullis raised, a rockfall come down), to run on from there.
     pub object_graphs: HashMap<FormId, crate::world::behavior::GraphAnim>,
+    /// Where objects' graphs stand opening and closing (`GetOpenState`), from
+    /// the `Open` / `Close` events sent them and the `Opening` / `Closing`
+    /// they raise; cleared with `object_graphs` when a save loads.
+    pub graph_open: HashMap<FormId, crate::world::animated::OpenState>,
     /// The player's learned ingredient effects: (ingredient, index in its list).
     pub learned_effects: std::collections::HashSet<(FormId, usize)>,
 }

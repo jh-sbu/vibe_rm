@@ -1153,7 +1153,11 @@ game each piece unlocks.
   moves (those with transform controllers) drawn apart and their collision carried;
   `PlayAnimation` / `PlayAnimationAndWait` / `Debug.SendAnimationEvent` send it events,
   `PlayGamebryoAnimation` plays keyframe sequences. A pressure plate goes `Down`, its
-  rigged rockfall `break`s and the rocks fall. Open questions: `known_ambiguities/object-graphs.md`
+  rigged rockfall `break`s and the rocks fall. Scripts get `OnCellLoad` once a
+  cell's scripts are all attached; `GetOpenState` (Papyrus and condition) follows
+  animated doors and graphs' `Open` / `Close` events. The rotating pillar
+  puzzles turn, solve and open their gates.
+  Open questions: `known_ambiguities/object-graphs.md`
 - Animation events for scripts: `RegisterForAnimationEvent` /
   `UnregisterForAnimationEvent` (forms, aliases, magic effects) send the events an
   actor's or object's graph raises as `OnAnimationEvent`; `PlayAnimationAndWait`

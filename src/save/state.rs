@@ -1103,6 +1103,7 @@ impl Snapshot {
         ws.item_charges = self.item_charges;
         ws.broken_joints = self.broken_joints;
         ws.object_graphs.clear();
+        ws.graph_open.clear();
         ws.learned_effects = self.learned_effects;
         e.created_refs.refs = self.created;
         e.created_refs.next = self.created_next;

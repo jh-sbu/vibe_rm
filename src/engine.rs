@@ -1026,9 +1026,11 @@ impl Engine {
         }
     }
 
-    /// Attach scripts for references in a newly loaded cell and send load events.
-    pub(crate) fn attach_cell_scripts(&mut self, refs: &[FormId]) {
+    /// Attach scripts for references in a newly loaded cell and send load
+    /// events. Returns the objects given scripts.
+    pub(crate) fn attach_cell_scripts(&mut self, refs: &[FormId]) -> Vec<papyrus::ObjectId> {
         let mut vm = std::mem::take(&mut self.vm);
+        let mut attached = Vec::new();
         for &r in refs {
             let (mut scripts, base) = match self.lo.get(r) {
                 Some(rec) => {
@@ -1102,6 +1104,19 @@ impl Engine {
                 vm.send_event(&mut host, obj, "OnLoad", vec![]);
                 vm.send_event(&mut host, obj, "OnCellAttach", vec![]);
             }
+            attached.push(obj);
+        }
+        self.vm = vm;
+        attached
+    }
+
+    /// `OnCellLoad` to a loaded cell's scripted objects, once all of them
+    /// have their scripts (a puzzle pillar's sets up with its lever's).
+    fn send_cell_load(&mut self, objs: &[papyrus::ObjectId]) {
+        let mut vm = std::mem::take(&mut self.vm);
+        let mut host = crate::script::EngineHost { engine: self };
+        for &obj in objs {
+            vm.send_event(&mut host, obj, "OnCellLoad", vec![]);
         }
         self.vm = vm;
     }
@@ -1836,8 +1851,9 @@ impl Engine {
         self.load_hazards(key, &refs);
         self.load_decals(key, &refs);
         self.load_activate_parents(&refs);
-        self.attach_cell_scripts(&refs);
-        self.attach_cell_scripts(&made_ids);
+        let mut attached = self.attach_cell_scripts(&refs);
+        attached.extend(self.attach_cell_scripts(&made_ids));
+        self.send_cell_load(&attached);
         self.start_cell_sounds(key, &refs);
         if contents.info.has_water
             && let Some(h) = contents.info.water_height
@@ -2087,8 +2103,9 @@ impl Engine {
         self.load_triggers(key, &refs);
         self.load_hazards(key, &refs);
         self.load_activate_parents(&refs);
-        self.attach_cell_scripts(&refs);
-        self.attach_cell_scripts(&made_ids);
+        let mut attached = self.attach_cell_scripts(&refs);
+        attached.extend(self.attach_cell_scripts(&made_ids));
+        self.send_cell_load(&attached);
         self.start_cell_sounds(key, &refs);
 
         // Landscape
