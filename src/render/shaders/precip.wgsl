@@ -25,6 +25,30 @@ struct Precip {
 @group(1) @binding(1) var t_particle: texture_2d<f32>;
 @group(1) @binding(2) var s: sampler;
 
+// The depth of everything seen from above (a top-down orthographic view, 0
+// at its eye, 1 at its far end `params.y` units away).
+struct Occlusion {
+    view_proj: mat4x4<f32>,
+    params: vec4<f32>,   // 1 when current, depth range, shelter bias (units)
+};
+@group(2) @binding(0) var<uniform> occ: Occlusion;
+@group(2) @binding(1) var t_occ: texture_depth_2d;
+
+// Whether something is over a point: it lies further from the top than the
+// highest surface there, by more than the bias.
+fn sheltered(pos: vec3<f32>) -> bool {
+    if (occ.params.x < 0.5) {
+        return false;
+    }
+    let clip = occ.view_proj * vec4<f32>(pos, 1.0);
+    let uv = vec2<f32>(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
+    if (uv.x < 0.0 || uv.y < 0.0 || uv.x >= 1.0 || uv.y >= 1.0) {
+        return false;
+    }
+    let top = textureLoad(t_occ, vec2<i32>(uv * vec2<f32>(textureDimensions(t_occ))), 0);
+    return clip.z - top > occ.params.z / occ.params.y;
+}
+
 struct VOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
@@ -100,7 +124,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
     o.clip = frame.view_proj * vec4<f32>(world, 1.0);
     o.world_pos = world;
     o.uv = uv;
-    o.alpha = edge * near;
+    o.alpha = edge * near * select(1.0, 0.0, sheltered(c));
     return o;
 }
 

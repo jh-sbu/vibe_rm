@@ -1155,7 +1155,9 @@ game each piece unlocks.
   SPGD) as particles in a box about the camera, falling at their gravity
   velocity, snow turning about its falling centre, both blown by the
   weather's wind (DATA direction and range); coming in from the
-  precipitation's begin fade in, going out by its end fade out. Sky statics
+  precipitation's begin fade in, going out by its end fade out. Rain and snow
+  kept off under roofs and canopies by a top-down depth map of the opaque scene about the
+  camera. Sky statics
   (the cloud meshes placed about the world, TNAM) shown only in the weathers
   listing them, fading with the transition, in the sky statics colour, the
   full LOD ones loaded with the worldspace however far. Auroras
@@ -1399,7 +1401,7 @@ game each piece unlocks.
    `known_ambiguities/particles.md`), distant LOD (BTR/BTO/trees),
    grass shadows and the grass cache, spells' impacts; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_ambiguities/weather.md`); weather's volumetric lighting, sun
-   glare and damage, rain and snow kept off under roofs, lightning bolts, wind
+   glare and damage, lightning bolts, wind
    moving trees, grass and clouds; grass's vertex lighting flag and bending
    round actors;
    `ENVMAP_LIGHT_FADE` (`sf2` bit 15); unscripted trigger volumes (acoustic
