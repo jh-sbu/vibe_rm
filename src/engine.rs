@@ -266,7 +266,8 @@ pub struct Engine {
     /// References made while playing (`PlaceAtMe`, created alias references).
     pub(crate) created_refs: crate::created::CreatedRefs,
     /// Quests' aliases as parsed.
-    pub(crate) alias_spec_cache: HashMap<FormId, std::sync::Arc<Vec<crate::aliases::AliasSpec>>>,
+    pub(crate) alias_spec_cache:
+        std::cell::RefCell<HashMap<FormId, std::sync::Arc<Vec<crate::aliases::AliasSpec>>>>,
     lod: Option<crate::world::lod::Lod>,
     pub nav: crate::ai::nav::NavWorld,
     pub furniture: crate::ai::furniture::FurnitureWorld,
@@ -452,7 +453,7 @@ impl Engine {
             enable_children: Default::default(),
             location_index: Default::default(),
             persistent_refs: Default::default(),
-            alias_spec_cache: HashMap::new(),
+            alias_spec_cache: Default::default(),
             created_refs: Default::default(),
             world_state: Default::default(),
             lod: None,

@@ -44,6 +44,10 @@ Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
   parameter is an alias id of the condition's quest; an empty alias matches
   nothing.
 - Stopping a quest empties its aliases.
+- Filled reference aliases' `ALFC` factions now contribute temporary actor
+  memberships through the shared faction queries. Clear/refill and quest stop
+  remove that contribution; script ranks and base membership remain separate.
+  Rank/conflict policies and source: [locks.md](locks.md#quest-alias-factions).
 - Created references (`ALCO` object, `ALCA` the alias to make it at, high bit
   set for "in" its inventory): 968 aliases, 570 of them NPCs, 293 "in". They get
   form ids from `FF000800` up. Items made in a container go to its inventory;

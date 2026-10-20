@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Quest-alias factions (`ALFC`) contribute temporary actor memberships while
+  filled in running quests: owned-door access, faction conditions and player
+  ownership checks see them; clear/refill, quest stop and saves retain the
+  right lifetime. Rank/conflict choices: `known_ambiguities/locks.md`
 - Scripted `ObjectReference.Lock` honors its "as owner" argument: door
   unlocking makes the adjoining interior public, locking makes it private;
   trespass checks and native saves retain that access state. Adjoining-cell
@@ -1471,7 +1475,7 @@ game each piece unlocks.
      `GetAmountSoldStolen` (research-gated: legacy counter behavior in SE
      unresolved; `known_ambiguities/barter.md`); NPCs' crimes (`GetCrime`,
      `GetActorCrimePlayerEnemy`), the unreported crime faction; dropped items' ownership;
-     locks' alias-given keys and factions, trespass for opening a lock
+     locks' alias-given keys (factions done: see Done), trespass for opening a lock
    - Combat, more: attackers forgetting a lost fleeing target
      (`fCombatDetectionFleeingLostRemoveTime`,
      `fCombatLowFleeingTargetHitPercent`); flee dialogue's distance rules
