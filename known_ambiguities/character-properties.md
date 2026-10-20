@@ -3,7 +3,7 @@
 Implemented in `crates/havok/src/behavior/{mod.rs,runtime.rs}` and
 `src/world/behavior.rs`: read-only scalar inputs to supported modifiers and
 generator members already handled by the runtime, scalar blender-child weights,
-transition-effect duration and self-transition mode, and bone-weight array inputs
+transition-effect duration, self-transition mode and event mode, and bone-weight array inputs
 on blender children and bone switches.
 
 ## Public and asset evidence
@@ -75,6 +75,8 @@ on blender children and bone switches.
 - Transition effects resolve scalar `duration` and `selfTransitionMode` inputs at
   transition commit (duration below; mode in
   [`transition-self-mode-properties.md`](transition-self-mode-properties.md));
+  `eventMode` inputs also resolve at commit, retaining the existing event-routing
+  approximation (see [`transition-event-mode-properties.md`](transition-event-mode-properties.md));
   other effect members remain unsupported.
   `BSCyclicBlendTransitionGenerator.fBlendParameter` properties now forward to
   its blender child (see below). Other generator members not listed above remain
