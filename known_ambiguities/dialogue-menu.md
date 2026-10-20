@@ -23,8 +23,10 @@ their own.
   `NotifyVoiceReady` (the game's voice may take longer to be ready). A line
   ending: `HideDialogueText`. The speaker done: `PopulateDialogueList` and
   `ShowDialogueList`. When the topics come without a line said since the last
-  click (no greeting, a topic with no lines), `NotifyVoiceReady` is sent
-  then, or the menu would take no clicks.
+  click or skip (no greeting, a topic with no lines, the last line skipped),
+  `NotifyVoiceReady` is sent then, or the menu would take no clicks: its
+  `SkipText`, like a topic click, clears `bAllowProgress`, and only
+  `NotifyVoiceReady` sets it again.
 - **New topics.** A topic is new (white) unless the line (`INFO`) it would
   get now has been said to the player before; heard ones are grey.
 - **`ShowDialogueList(newList, hideExit)`.** `newList` is true when the
@@ -38,3 +40,12 @@ their own.
 - **The mouse.** The menu acts on only every second `onMouseDown` it gets
   (`iMouseDownExecutionCount`), as if the game delivered two a press; Ruffle
   delivers one, so the count is reset before each press.
+- **A click while the list comes in.** The movie's `onItemSelect` clears
+  `bAllowProgress` on any click it lets through, even in `TRANSITIONING`
+  (the list sliding or fading in), where it calls nothing back. A click
+  then leaves the topics unclickable until the next `NotifyVoiceReady`,
+  which comes with the next line or list, so in practice only Tab or Esc
+  gets out. Whether the game sends `NotifyVoiceReady` again in that case,
+  or has the same lockup, isn't known. Left as is; if it shows up, sending
+  `NotifyVoiceReady` with every `ShowDialogueList` would fix it, at the cost
+  of a 750 ms wait before topics can be clicked after a line ends.
