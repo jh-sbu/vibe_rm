@@ -6,12 +6,17 @@ use super::model::{SkinVertex, Vertex};
 use super::{Camera, InstanceData, SkinInstanceData};
 
 pub const CASCADES: usize = 4;
+/// The depth targets the shadow pass fills: the cascades, then the
+/// precipitation occlusion map (see [`precipitation_map`]).
+pub const LAYERS: usize = CASCADES + 1;
+/// The occlusion map's place among them.
+pub const OCCLUSION: usize = CASCADES;
 pub const SIZE: u32 = 1024;
 pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// Where each cascade ends (view depth); the first starts at the near plane.
 pub const SPLITS: [f32; CASCADES] = [600.0, 1800.0, 5000.0, 12000.0];
-/// The smallest caster (bounding radius) each cascade draws.
-pub const MIN_CASTER: [f32; CASCADES] = [0.0, 0.0, 64.0, 160.0];
+/// The smallest caster (bounding radius) each cascade, and the occlusion map, draws.
+pub const MIN_CASTER: [f32; LAYERS] = [0.0, 0.0, 64.0, 160.0, 24.0];
 /// How far beyond a cascade's slice casters are looked for, towards the sun
 /// (mountains and trees between the slice and the sun).
 const CASTER_REACH: f32 = 12000.0;
@@ -92,8 +97,43 @@ pub fn cascades(camera: &Camera, aspect: f32, sun_dir: Vec3) -> [Cascade; CASCAD
     })
 }
 
+/// How far the precipitation occlusion map reaches past the box it serves
+/// before it is redrawn centred again.
+pub const OCCLUSION_MARGIN: f32 = 128.0;
+
+/// What the precipitation occlusion map sees: everything under a view down
+/// from above, centred on `centre`, reaching `radius` to each side. The same
+/// orthographic depth pass the sun's cascades use, looking down instead of
+/// along the light: a particle below the highest surface over it is under a
+/// roof (CommonLibSSE's `Precipitation::OcclusionMapData` holds a camera and
+/// its projection for such a map; its size and reach are not public).
+pub fn precipitation_map(centre: Vec3, radius: f32) -> Cascade {
+    let eye = centre + Vec3::Z * (radius + CASTER_REACH);
+    let view = glam::camera::rh::view::look_to_mat4(eye, -Vec3::Z, Vec3::Y);
+    let proj = glam::camera::rh::proj::directx::orthographic(
+        -radius,
+        radius,
+        -radius,
+        radius,
+        0.0,
+        2.0 * radius + CASTER_REACH,
+    );
+    Cascade {
+        view_proj: proj * view,
+        view,
+        radius,
+    }
+}
+
+/// The depth range of [`precipitation_map`]: what a depth of 1 is, in units
+/// from its eye.
+pub fn precipitation_range(radius: f32) -> f32 {
+    2.0 * radius + CASTER_REACH
+}
+
 pub struct ShadowMaps {
     pub array_view: wgpu::TextureView,
+    /// Each cascade's layer, then the occlusion map's own texture.
     pub layers: Vec<wgpu::TextureView>,
     pub sampler: wgpu::Sampler,
     pub bgl: wgpu::BindGroupLayout,
@@ -129,6 +169,20 @@ impl ShadowMaps {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
+        let occlusion = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("precipitation occlusion"),
+            size: wgpu::Extent3d {
+                width: SIZE,
+                height: SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
         let layers = (0..CASCADES as u32)
             .map(|i| {
                 texture.create_view(&wgpu::TextureViewDescriptor {
@@ -138,6 +192,7 @@ impl ShadowMaps {
                     ..Default::default()
                 })
             })
+            .chain([occlusion.create_view(&Default::default())])
             .collect();
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("shadow"),
@@ -173,7 +228,7 @@ impl ShadowMaps {
                 },
             ],
         });
-        let uniforms = (0..CASCADES)
+        let uniforms = (0..LAYERS)
             .map(|_| {
                 device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("shadow cascade"),
@@ -361,4 +416,31 @@ pub fn frame_data(
         c[CASCADES - 1].radius,
     );
     (mats, SPLITS, params.to_array())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn precipitation_map_depth_grows_downwards_and_covers_its_reach() {
+        let centre = Vec3::new(1000.0, -2000.0, 300.0);
+        let radius = 700.0;
+        let map = precipitation_map(centre, radius);
+        let at = |p: Vec3| map.view_proj.project_point3(p);
+        let roof = at(centre + Vec3::new(10.0, 20.0, 200.0));
+        let floor = at(centre + Vec3::new(10.0, 20.0, -100.0));
+        // A particle 300 units below the roof is that much deeper.
+        let range = precipitation_range(radius);
+        assert!((floor.z - roof.z - 300.0 / range).abs() < 1e-5);
+        assert!(roof.z > 0.0 && floor.z < 1.0);
+        // The same texel from above: x and y don't depend on height.
+        assert!((roof.x - floor.x).abs() < 1e-5 && (roof.y - floor.y).abs() < 1e-5);
+        // The edges of the reach are the edges of the map.
+        let edge = at(centre + Vec3::new(radius, 0.0, 0.0));
+        assert!((edge.x.abs() - 1.0).abs() < 1e-5);
+        // Things over the camera are casters; those beside it past the reach aren't.
+        assert!(map.sees(centre + Vec3::new(0.0, 0.0, 2000.0), 10.0));
+        assert!(!map.sees(centre + Vec3::new(radius * 2.0, 0.0, 0.0), 10.0));
+    }
 }

@@ -298,6 +298,27 @@ mod alpha_test_tests {
     }
 
     #[test]
+    fn precipitation_map_serves_a_camera_until_it_leaves_the_margin() {
+        let reach = 700.0;
+        let at = |p: Vec3, age| PrecipMap {
+            cascade: shadow::precipitation_map(p, reach + shadow::OCCLUSION_MARGIN),
+            centre: p,
+            age,
+        };
+        let start = Vec3::new(5.0, 6.0, 7.0);
+        let map = at(start, 0);
+        assert!(map.serves(start, reach));
+        let half = shadow::OCCLUSION_MARGIN * 0.5;
+        assert!(map.serves(start + Vec3::new(half - 1.0, -half + 1.0, 0.0), reach));
+        assert!(!map.serves(start + Vec3::new(half + 1.0, 0.0, 0.0), reach));
+        assert!(!map.serves(start + Vec3::new(0.0, 0.0, -half - 1.0), reach));
+        // It's redrawn now and then, and when the falling box grows or shrinks.
+        assert!(!at(start, PrecipMap::MAX_AGE).serves(start, reach));
+        assert!(!map.serves(start, reach + shadow::OCCLUSION_MARGIN));
+        assert!(!map.serves(start, reach * 0.5));
+    }
+
+    #[test]
     fn constant_material_keys_preserve_uv_colour_and_cutout_steps() {
         let mut base = <MaterialUniform as bytemuck::Zeroable>::zeroed();
         base.params[1] = 0.25;
@@ -946,6 +967,34 @@ impl Frustum {
     }
 }
 
+/// The top-down depth map that keeps rain and snow from falling under roofs,
+/// and where and when it was drawn.
+struct PrecipMap {
+    cascade: shadow::Cascade,
+    centre: Vec3,
+    /// Frames since it was drawn.
+    age: u32,
+}
+
+impl PrecipMap {
+    /// Frames before it's drawn again, whatever the camera does (what the
+    /// world loads and moves in it shows up by then).
+    const MAX_AGE: u32 = 120;
+
+    /// Whether a map drawn about `self.centre` to `radius` still serves a
+    /// camera at `camera` needing `reach` units about it: it recentres once
+    /// the camera has used up the margin (or the reach grew).
+    fn serves(&self, camera: Vec3, reach: f32) -> bool {
+        let moved = camera - self.centre;
+        let radius = reach + shadow::OCCLUSION_MARGIN;
+        self.age < Self::MAX_AGE
+            && self.cascade.radius >= reach + shadow::OCCLUSION_MARGIN * 0.5
+            && self.cascade.radius <= radius * 1.25
+            && moved.x.abs().max(moved.y.abs()) < shadow::OCCLUSION_MARGIN * 0.5
+            && moved.z.abs() < shadow::OCCLUSION_MARGIN * 0.5
+    }
+}
+
 pub struct Renderer {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -967,6 +1016,8 @@ pub struct Renderer {
     /// The cascades as last rendered (far ones are refreshed every few frames), and
     /// frames rendered with shadows.
     shadow_cascades: Option<[shadow::Cascade; shadow::CASCADES]>,
+    /// The precipitation occlusion map as last drawn, while rain or snow falls.
+    precip_map: Option<PrecipMap>,
     /// Sun shadows on (`VRM_NO_SHADOWS` turns them off; console `tsh` toggles).
     pub shadows_enabled: bool,
     shadow_frame: u64,
@@ -1219,7 +1270,12 @@ impl Renderer {
             &depth_view,
         );
         let water = water::WaterPipeline::new(&device, &frame_bgl, color_format);
-        let precip = precip::PrecipRenderer::new(&device, &frame_bgl, color_format);
+        let precip = precip::PrecipRenderer::new(
+            &device,
+            &frame_bgl,
+            color_format,
+            &shadows.layers[shadow::OCCLUSION],
+        );
         let shadow_instance_buf = Self::make_vbuf(
             &device,
             16384 * std::mem::size_of::<InstanceData>(),
@@ -1260,6 +1316,7 @@ impl Renderer {
             depth_bgl,
             shadows,
             shadow_cascades: None,
+            precip_map: None,
             shadows_enabled: std::env::var_os("VRM_NO_SHADOWS").is_none(),
             shadow_frame: 0,
             shadow_instance_buf,
@@ -1976,6 +2033,42 @@ impl Renderer {
             self.shadow_cascades = None;
         }
         let (shadow_vp, shadow_splits, shadow_params) = shadow::frame_data(&cascades, shadowed);
+        // Rain and snow stay off what has a roof over it: while any falls under
+        // the sky, a top-down depth map about the camera, redrawn as it moves
+        // off-centre and now and then.
+        let reach = if env.sky && std::env::var_os("VRM_NO_PRECIP_OCCLUSION").is_none() {
+            self.precip.reach()
+        } else {
+            0.0
+        };
+        let mut occlusion_fresh = false;
+        if reach > 0.0 {
+            match &mut self.precip_map {
+                Some(m) if m.serves(camera.position, reach) => m.age += 1,
+                map => {
+                    *map = Some(PrecipMap {
+                        cascade: shadow::precipitation_map(
+                            camera.position,
+                            reach + shadow::OCCLUSION_MARGIN,
+                        ),
+                        centre: camera.position,
+                        age: 0,
+                    });
+                    occlusion_fresh = true;
+                }
+            }
+        } else {
+            self.precip_map = None;
+        }
+        self.precip.set_occlusion(
+            &self.queue,
+            self.precip_map.as_ref().map(|m| {
+                (
+                    m.cascade.view_proj,
+                    shadow::precipitation_range(m.cascade.radius),
+                )
+            }),
+        );
         let fu = FrameUniform {
             view_proj: view_proj.to_cols_array_2d(),
             cam_pos: camera.position.extend(1.0).to_array(),
@@ -2275,8 +2368,19 @@ impl Renderer {
         }
 
         let mut enc = self.device.create_command_encoder(&Default::default());
-        if shadowed {
-            self.shadow_passes(&mut enc, scene, &cascades, update, &shadow_skin);
+        if shadowed || occlusion_fresh {
+            let layers = std::array::from_fn(|i| match (i, &self.precip_map) {
+                (shadow::OCCLUSION, Some(m)) => m.cascade,
+                (i, _) => cascades[i.min(shadow::CASCADES - 1)],
+            });
+            let update = std::array::from_fn(|i| {
+                if i == shadow::OCCLUSION {
+                    occlusion_fresh
+                } else {
+                    shadowed && update[i]
+                }
+            });
+            self.shadow_passes(&mut enc, scene, &layers, update, &shadow_skin);
         }
         // With image space effects the frame goes through the post pass.
         let pre_post = (!scene.post.is_neutral())
@@ -2509,8 +2613,8 @@ impl Renderer {
         &mut self,
         enc: &mut wgpu::CommandEncoder,
         scene: &Scene,
-        cascades: &[shadow::Cascade; shadow::CASCADES],
-        update: [bool; shadow::CASCADES],
+        cascades: &[shadow::Cascade; shadow::LAYERS],
+        update: [bool; shadow::LAYERS],
         skin: &[(&GpuSkinnedPart, u32, Vec3, f32)],
     ) {
         let mut all: Vec<InstanceData> = Vec::new();
@@ -2567,7 +2671,8 @@ impl Renderer {
                     }
                 }
             }
-            for (xf, model, _) in &attachments {
+            // Actors and what they carry don't keep the rain off.
+            for (xf, model, _) in attachments.iter().filter(|_| ci != shadow::OCCLUSION) {
                 if !c.sees(xf.transform_point3(model.bound_center), model.bound_radius) {
                     continue;
                 }
@@ -2677,7 +2782,7 @@ impl Renderer {
             }
             pass.set_pipeline(&sh.skinned_pipeline);
             pass.set_vertex_buffer(1, self.skin_instance_buf.slice(..));
-            for (part, i, centre, radius) in skin {
+            for (part, i, centre, radius) in skin.iter().filter(|_| ci != shadow::OCCLUSION) {
                 if !c.sees(*centre, *radius) {
                     continue;
                 }
