@@ -76,6 +76,8 @@ pub struct AliasSpec {
     pub flags: u32,
     pub fill: Fill,
     pub conditions: Vec<Condition>,
+    /// Temporary memberships of a filled reference alias (`ALFC`).
+    pub factions: Vec<FormId>,
 }
 
 /// What happens to a reference an alias created when its quest stops or starts over.
@@ -123,6 +125,7 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
                 flags: 0,
                 fill: Fill::Empty,
                 conditions: Vec::new(),
+                factions: Vec::new(),
             });
             (from_alias, ref_type, keyword, ext_quest, ext_alias) =
                 (None, FormId::NULL, FormId::NULL, None, 0);
@@ -133,6 +136,12 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
         match tag {
             b"ALID" => a.name = sr.zstring(),
             b"FNAM" if sr.data.len() >= 4 => a.flags = sr.u32(0),
+            b"ALFC" if !a.location && sr.data.len() >= 4 => {
+                let faction = form();
+                if !faction.is_null() && !a.factions.contains(&faction) {
+                    a.factions.push(faction);
+                }
+            }
             b"ALFR" => a.fill = Fill::Forced(form()),
             b"ALUA" => a.fill = Fill::Unique(form()),
             b"ALFL" => a.fill = Fill::Specific(form()),
@@ -207,12 +216,12 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
 
 impl Engine {
     /// A quest's aliases, parsed once.
-    pub fn alias_specs(&mut self, q: FormId) -> Arc<Vec<AliasSpec>> {
-        if let Some(s) = self.alias_spec_cache.get(&q) {
+    pub fn alias_specs(&self, q: FormId) -> Arc<Vec<AliasSpec>> {
+        if let Some(s) = self.alias_spec_cache.borrow().get(&q) {
             return s.clone();
         }
         let s = Arc::new(self.lo.get(q).map(|r| parse(&r)).unwrap_or_default());
-        self.alias_spec_cache.insert(q, s.clone());
+        self.alias_spec_cache.borrow_mut().insert(q, s.clone());
         s
     }
 
@@ -337,7 +346,7 @@ impl Engine {
             .iter()
             .filter(|(q, st)| **q != except && st.running)
         {
-            let Some(specs) = self.alias_spec_cache.get(q) else {
+            let Some(specs) = self.alias_spec_cache.borrow().get(q).cloned() else {
                 continue;
             };
             for a in specs.iter().filter(|a| a.has(flags::RESERVES)) {

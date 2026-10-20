@@ -70,6 +70,37 @@ and location pages, CK wiki descriptions) and the game's data files.
 
 ## Gaps
 
+### Quest-alias factions
+
+Filled reference aliases now contribute their `ALFC` factions to the actor's
+membership while the quest runs. Shared queries expose them to owned-door
+access, player ownership checks, `GetInFaction`, `GetFactionRank`, and other
+existing faction consumers. Clearing/refilling an alias or stopping its quest
+removes only that contribution; another filled alias can still supply it.
+The actor's base factions and scripted ranks are not rewritten. Existing quest
+and alias save state reconstructs these memberships after load; no separate
+membership state is saved. Alias-given inventory items/keys remain pending.
+
+The local [UESP QUST reference, revision 3507775](https://en.uesp.net/w/index.php?oldid=3507775)
+documents `ALFC` as repeated faction FormIDs on reference aliases, granted for
+the duration of the quest (lines 183 and 352–354). This is public file-format
+documentation, not an observed SE lifecycle test. Parsed FormIDs use the quest's
+load-order remapping. Null, truncated and duplicate faction entries are ignored;
+location aliases do not grant actor factions.
+
+Unresolved rank/conflict policies: `ALFC` encodes no rank in that documented
+schema. This implementation grants rank 0, preserves higher base ranks, and
+lets explicit script ranks (including removal at -1) take precedence. Alias-only
+factions are appended in FormID order for deterministic queries. Whether the
+original handles these conflicts, multiple alias-supplied vendor factions,
+completed-but-running quests or partially filled startup conditions identically
+needs public evidence or game-side observation. Queries follow current fills;
+they do not synthesize faction-change events or other activation callbacks.
+Synthetic tests exercise quest start/stop, native alias clear/refill, independent
+references, CTDA membership, door access, script ranks, player identity and save
+restoration. Only public documentation and invented records were used; no engine
+binary data or game assets were examined or added for this extension.
+
 ### Scripted owner locking
 
 `ObjectReference.Lock(abLock, abAsOwner)` now honors `abAsOwner`: unlocking a

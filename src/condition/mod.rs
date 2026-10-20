@@ -842,6 +842,35 @@ impl Engine {
             .templates_of(actor)
             .map(|t| t.factions(&self.lo))
             .unwrap_or_default();
+        // Alias memberships are temporary overlays, never edits to the NPC
+        // record or script ranks. Read current fills so clear/refill/stop and
+        // save restoration cannot leave stale memberships behind.
+        if let Some(reference) = self
+            .faction_actor_ref(actor)
+            .filter(|&r| self.is_actor_ref(r))
+        {
+            let mut factions = Vec::new();
+            for (&quest, state) in self.scripts.quests.iter().filter(|(_, s)| s.running) {
+                if !state.aliases.values().any(|&r| r == reference) {
+                    continue;
+                }
+                for alias in self
+                    .alias_specs(quest)
+                    .iter()
+                    .filter(|a| !a.location && state.aliases.get(&a.id) == Some(&reference))
+                {
+                    factions.extend_from_slice(&alias.factions);
+                }
+            }
+            factions.sort_unstable();
+            factions.dedup();
+            for faction in factions {
+                match out.iter_mut().find(|x| x.0 == faction) {
+                    Some(x) => x.1 = x.1.max(0),
+                    None => out.push((faction, 0)),
+                }
+            }
+        }
         if let Some(changes) = self.faction_changes_of(actor) {
             for (&faction, &rank) in changes {
                 match out.iter_mut().find(|x| x.0 == faction) {
@@ -859,14 +888,20 @@ impl Engine {
         if self.scripts.faction_changes.is_empty() {
             return None;
         }
-        let actor = match actor {
+        self.scripts
+            .faction_changes
+            .get(&self.faction_actor_ref(actor)?)
+    }
+
+    /// Use the same reference identity for script and alias faction overlays.
+    fn faction_actor_ref(&self, actor: FormId) -> Option<FormId> {
+        Some(match actor {
             FormId(0x7) => PLAYER_REF,
             a if self.lo.tag_of(a).is_some_and(|t| t.0 == *b"NPC_") => {
                 self.npc_refs_index().get(&a).copied()?
             }
             a => a,
-        };
-        self.scripts.faction_changes.get(&actor)
+        })
     }
 
     /// An actor's rank in a faction: -1 when it isn't in it.
