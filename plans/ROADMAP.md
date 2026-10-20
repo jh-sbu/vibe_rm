@@ -1402,6 +1402,16 @@ game each piece unlocks.
      dropping their collision; prismatic and malleable constraints (none in the
      vanilla meshes); ragdoll arms' odd resting poses with the turned limits;
      parts moved by graphs (trap blades) pushing bodies aside
+   - Destructible objects (`DEST`; nothing reads it yet): cobwebs blocking
+     dungeon paths, barricades, bee hives, trap oil pools and gas. Health and
+     stage per reference, from weapon blows (`strike` drops the damage now),
+     spells landing on objects and their areas (`spell_lands` reaches only
+     actors), explosions and self damage; the stage's model (`BSDamageStage`
+     children or a replacement model with its collision, freeing navmesh
+     obstacles), explosion and debris; `OnDestructionStageChanged`,
+     `DamageObject`, `ClearDestruction`, `GetCurrentDestructionStage`,
+     condition `GetDestructionStage`; stages in saves. Choices:
+     `known_ambiguities/destruction.md`
    - Water (loaded types and `IsInDangerousWater`: see Done): swimming and
      `IsSwimming`, unloaded actors' contact, contact spells (`XNAM`);
      `WATR` `DATA` is unused in SSE per xEdit, not damage per second.
