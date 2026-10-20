@@ -8,6 +8,7 @@ pub mod file;
 pub mod state;
 #[cfg(test)]
 mod tests;
+pub mod vm;
 
 use std::path::{Path, PathBuf};
 

@@ -16,8 +16,9 @@ fn lc(s: &str) -> Arc<str> {
     Arc::from(s.to_ascii_lowercase())
 }
 
+/// An operand: where a value comes from or goes (saves keep return slots).
 #[derive(Debug, Clone)]
-enum Arg {
+pub enum Arg {
     Lit(Value),
     Local(usize),
     Member(Arc<str>),
@@ -293,6 +294,43 @@ pub struct Vm {
     warned: HashSet<String>,
     /// Total instructions executed (for diagnostics).
     pub executed: u64,
+}
+
+/// One call of a thread as a save keeps it: the function by where it is
+/// defined, and the frame's place and values.
+#[derive(Debug, Clone)]
+pub struct SavedFrame {
+    /// Lower-cased defining class, the state it is in, and its name, as the
+    /// class files them.
+    pub class: Arc<str>,
+    pub state: Arc<str>,
+    pub func: Arc<str>,
+    pub pc: usize,
+    pub locals: Vec<Value>,
+    pub this: Option<(ObjectId, Arc<str>)>,
+    pub ret: Option<Arg>,
+}
+
+/// A suspended thread as a save keeps it.
+#[derive(Debug, Clone)]
+pub struct SavedThread {
+    pub frames: Vec<SavedFrame>,
+    /// Seconds until it runs, on the clock it waits on.
+    pub wake_in: f64,
+    pub menu_clock: bool,
+    /// Where the result of the call it waits in goes (a message box's button).
+    pub wait_dest: Option<Arg>,
+}
+
+/// What a save keeps of the VM: the scripts attached with their variables
+/// (properties included) and the threads waiting.
+#[derive(Debug, Clone, Default)]
+pub struct SavedVm {
+    /// (object, lower-cased script, variables by compiled name).
+    pub instances: Vec<(ObjectId, Arc<str>, Vec<(Arc<str>, Value)>)>,
+    /// The scripts on each object, in attach order.
+    pub attached: Vec<(ObjectId, Vec<Arc<str>>)>,
+    pub threads: Vec<SavedThread>,
 }
 
 const MAX_DEPTH: usize = 128;
@@ -678,6 +716,122 @@ impl Vm {
     /// Whether a thread waits for `key`.
     pub fn is_waiting_for(&self, key: u64) -> bool {
         self.threads.iter().any(|t| t.waiting_for == Some(key))
+    }
+
+    /// What a save keeps of the VM. A thread waiting for a signal is kept as a
+    /// timed wait (its timeout still counts), since whatever would have
+    /// signalled it isn't saved.
+    pub fn export(&self) -> SavedVm {
+        let mut out = SavedVm::default();
+        for ((obj, script), inst) in &self.instances {
+            let mut vars: Vec<_> = inst
+                .vars
+                .iter()
+                .map(|(n, v)| (n.clone(), v.clone()))
+                .collect();
+            vars.sort_by(|a, b| a.0.cmp(&b.0));
+            out.instances.push((*obj, script.clone(), vars));
+        }
+        out.attached = self.attached.iter().map(|(o, s)| (*o, s.clone())).collect();
+        for t in &self.threads {
+            let frames: Option<Vec<SavedFrame>> = t
+                .frames
+                .iter()
+                .map(|f| {
+                    let class = self.classes.get(&f.func.class)?.as_ref()?;
+                    // The keys the class files it under (lower case).
+                    let (state, name) = class.states.iter().find_map(|(state, funcs)| {
+                        funcs
+                            .iter()
+                            .find(|(_, g)| Arc::ptr_eq(g, &f.func))
+                            .map(|(name, _)| (state.clone(), name.clone()))
+                    })?;
+                    Some(SavedFrame {
+                        class: f.func.class.clone(),
+                        state,
+                        func: name,
+                        pc: f.pc,
+                        locals: f.locals.clone(),
+                        this: f.this.clone(),
+                        ret: f.ret.clone(),
+                    })
+                })
+                .collect();
+            let Some(frames) = frames else {
+                continue;
+            };
+            let now = if t.menu_clock {
+                self.menu_time
+            } else {
+                self.time
+            };
+            out.threads.push(SavedThread {
+                frames,
+                wake_in: (t.wake_at - now).max(0.0),
+                menu_clock: t.menu_clock,
+                wait_dest: t.wait_dest.clone(),
+            });
+        }
+        out
+    }
+
+    /// Replace the scripts attached and the threads running with a save's.
+    /// Classes load as needed; a thread whose function no longer resolves is
+    /// dropped. Returns how many threads that was.
+    pub fn import(&mut self, host: &mut dyn Host, saved: SavedVm) -> usize {
+        self.instances.clear();
+        self.attached.clear();
+        self.threads.clear();
+        for (obj, script, vars) in saved.instances {
+            let inst = Instance {
+                vars: vars.into_iter().collect(),
+            };
+            self.instances.insert((obj, script), inst);
+        }
+        self.attached = saved.attached.into_iter().collect();
+        let mut dropped = 0;
+        for t in saved.threads {
+            let mut frames = Vec::new();
+            for f in t.frames {
+                let func = self
+                    .class(host, &f.class)
+                    .and_then(|c| c.states.get(&f.state)?.get(&*f.func).cloned())
+                    .filter(|func| {
+                        f.pc <= func.code.len() && f.locals.len() == func.local_types.len()
+                    });
+                match func {
+                    Some(func) => frames.push(Frame {
+                        func,
+                        pc: f.pc,
+                        locals: f.locals,
+                        this: f.this,
+                        ret: f.ret,
+                    }),
+                    None => {
+                        self.warn_once(format!("saved call to {} can't be resumed", f.func));
+                        frames.clear();
+                        break;
+                    }
+                }
+            }
+            if frames.is_empty() {
+                dropped += 1;
+                continue;
+            }
+            let now = if t.menu_clock {
+                self.menu_time
+            } else {
+                self.time
+            };
+            self.threads.push(Thread {
+                frames,
+                wake_at: now + t.wake_in,
+                menu_clock: t.menu_clock,
+                waiting_for: None,
+                wait_dest: t.wait_dest,
+            });
+        }
+        dropped
     }
 
     pub fn thread_count(&self) -> usize {
@@ -1205,6 +1359,7 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn variables_start_at_their_type_default() {
@@ -1215,5 +1370,95 @@ mod tests {
         assert!(type_default("string") == Value::str(""));
         assert!(type_default("actor") == Value::None);
         assert!(type_default("int[]") == Value::None);
+    }
+
+    /// A host with `Utility.Wait` and the scripts under test.
+    struct Scripts(HashMap<String, Vec<u8>>);
+
+    impl Host for Scripts {
+        fn load_script(&mut self, name: &str) -> Option<Vec<u8>> {
+            self.0.get(&name.to_ascii_lowercase()).cloned()
+        }
+
+        fn call_native(
+            &mut self,
+            _class: &str,
+            func: &str,
+            _this: Option<&Value>,
+            args: &[Value],
+        ) -> NativeResult {
+            assert_eq!(func.to_ascii_lowercase(), "wait");
+            NativeResult::Wait(args[0].as_float())
+        }
+
+        fn is_native_type(&self, _obj: ObjectId, _class: &str) -> bool {
+            true
+        }
+    }
+
+    fn waiting_script() -> Scripts {
+        use crate::build::{FunctionBuilder, ScriptBuilder};
+        let mut s = ScriptBuilder::new("SaveTest", "Quest");
+        let count = s.variable("count", "Int", crate::build::Arg::None);
+        let mut f = FunctionBuilder::new("None");
+        f.assign(count.clone(), crate::build::Arg::Int(1));
+        f.call_static(
+            "Utility",
+            "Wait",
+            crate::build::discard(),
+            [crate::build::Arg::Float(10.0)],
+        );
+        f.assign(count, crate::build::Arg::Int(2));
+        f.ret(crate::build::Arg::None);
+        s.function("OnInit", f);
+        let utility = crate::build::native_class(
+            "Utility",
+            "",
+            &[("Wait", "None", &[("afSeconds", "Float")], true)],
+        )
+        .unwrap();
+        Scripts(HashMap::from([
+            (
+                "savetest".to_string(),
+                pex::write(&s.build().unwrap()).unwrap(),
+            ),
+            ("utility".to_string(), utility),
+        ]))
+    }
+
+    #[test]
+    fn a_saved_vm_resumes_its_waiting_threads_and_keeps_variables() {
+        let mut host = waiting_script();
+        let obj = ObjectId::Form(0x100);
+        let mut vm = Vm::new();
+        assert!(vm.attach(&mut host, obj, "SaveTest", &[]));
+        vm.send_event(&mut host, obj, "OnInit", vec![]);
+        vm.run(&mut host, 0.0, 1000);
+        assert_eq!(vm.get_var(obj, "count"), Some(Value::Int(1)));
+        assert_eq!(vm.thread_count(), 1);
+
+        // Three seconds in, it's saved: seven seconds of waiting are left.
+        vm.run(&mut host, 3.0, 1000);
+        let saved = vm.export();
+        assert_eq!(saved.threads.len(), 1);
+        assert_eq!(saved.threads[0].wake_in, 7.0);
+        assert_eq!(&*saved.threads[0].frames[0].func, "oninit");
+
+        // Loaded into a VM that never ran it, on a different clock.
+        let mut loaded = Vm::new();
+        loaded.time = 100.0;
+        assert_eq!(loaded.import(&mut host, saved), 0);
+        assert!(loaded.has_instance(obj, "savetest"));
+        assert_eq!(loaded.get_var(obj, "count"), Some(Value::Int(1)));
+        loaded.run(&mut host, 106.0, 1000);
+        assert_eq!(loaded.get_var(obj, "count"), Some(Value::Int(1)));
+        loaded.run(&mut host, 107.5, 1000);
+        assert_eq!(loaded.get_var(obj, "count"), Some(Value::Int(2)));
+        assert_eq!(loaded.thread_count(), 0);
+
+        // A thread whose function is gone is dropped, not resumed.
+        let mut broken = vm.export();
+        broken.threads[0].frames[0].func = "gone".into();
+        assert_eq!(Vm::new().import(&mut host, broken), 1);
     }
 }

@@ -70,6 +70,36 @@ fn engine(name: &str) -> (Fixture, Engine) {
         write_plugin(0, &[], "test", "synthetic saves", 0x900, &records),
     )
     .unwrap();
+    // A script that sets `count` to 1, waits ten seconds and sets it to 2.
+    std::fs::create_dir(f.0.join("scripts")).unwrap();
+    let mut script = papyrus::build::ScriptBuilder::new("VrmSaveTest", "Quest");
+    let count = script.variable("count", "Int", papyrus::build::Arg::None);
+    let mut on_init = papyrus::build::FunctionBuilder::new("None");
+    on_init.assign(count.clone(), papyrus::build::Arg::Int(1));
+    on_init.call_static(
+        "Utility",
+        "Wait",
+        papyrus::build::discard(),
+        [papyrus::build::Arg::Float(10.0)],
+    );
+    on_init.assign(count, papyrus::build::Arg::Int(2));
+    on_init.ret(papyrus::build::Arg::None);
+    script.function("OnInit", on_init);
+    std::fs::write(
+        f.0.join("scripts/VrmSaveTest.pex"),
+        papyrus::pex::write(&script.build().unwrap()).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        f.0.join("scripts/Utility.pex"),
+        papyrus::build::native_class(
+            "Utility",
+            "",
+            &[("Wait", "None", &[("afSeconds", "Float")], true)],
+        )
+        .unwrap(),
+    )
+    .unwrap();
     let e = crate::stats::action_tests::headless_engine(&f.0, "Save.esp");
     (f, e)
 }
@@ -99,6 +129,20 @@ fn play(e: &mut Engine) {
         ..Default::default()
     });
     e.scripts.stats.insert("Locks Picked".into(), 4);
+    let quest = papyrus::ObjectId::Form(QUEST.0);
+    e.scripts.initialized.insert(quest);
+    e.scripts.timers.push(crate::script::Timer {
+        at: 340.0,
+        game_time: false,
+        obj: quest,
+        script: "VrmSaveTest".into(),
+        event: "OnUpdate",
+        repeat: None,
+    });
+    e.scripts.sleep_listeners.push(quest);
+    e.scripts
+        .inventory_filters
+        .insert(quest, [SWORD].into_iter().collect());
     e.scripts.actor_values.insert(
         (PLAYER_REF, 7),
         crate::actor_values::Modifiers {
@@ -354,4 +398,50 @@ fn loading_goes_to_where_the_player_stood() {
         feet
     );
     assert!((b.camera.yaw - 1.5).abs() < 1e-4);
+}
+
+/// Run the engine's VM to `now`.
+fn run_vm(e: &mut Engine, now: f64, start: Option<papyrus::ObjectId>) {
+    let mut vm = std::mem::take(&mut e.vm);
+    {
+        let mut host = crate::script::EngineHost { engine: e };
+        if let Some(obj) = start {
+            assert!(vm.attach(&mut host, obj, "VrmSaveTest", &[]));
+            vm.send_event(&mut host, obj, "OnInit", vec![]);
+        }
+        vm.run(&mut host, now, 10_000);
+    }
+    e.vm = vm;
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_script_waiting_when_saved_finishes_after_loading() {
+    let (_a, mut a) = engine("a");
+    let quest = papyrus::ObjectId::Form(QUEST.0);
+    run_vm(&mut a, 0.0, Some(quest));
+    a.scripts.real_time = 3.0;
+    run_vm(&mut a, 3.0, None);
+    assert_eq!(a.vm.get_var(quest, "count"), Some(papyrus::Value::Int(1)));
+    let bytes = Snapshot::capture(&a).write().to_bytes();
+
+    let (_b, mut b) = engine("b");
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut b)
+        .unwrap();
+    assert_eq!(b.vm.thread_count(), 1);
+    assert_eq!(b.vm.get_var(quest, "count"), Some(papyrus::Value::Int(1)));
+    run_vm(&mut b, 9.0, None);
+    assert_eq!(b.vm.get_var(quest, "count"), Some(papyrus::Value::Int(1)));
+    run_vm(&mut b, 10.5, None);
+    assert_eq!(b.vm.get_var(quest, "count"), Some(papyrus::Value::Int(2)));
+    // The same script attached again (a cell loading) keeps what it had.
+    let mut vm = std::mem::take(&mut b.vm);
+    {
+        let mut host = crate::script::EngineHost { engine: &mut b };
+        assert!(vm.attach(&mut host, quest, "VrmSaveTest", &[]));
+    }
+    b.vm = vm;
+    assert_eq!(b.vm.get_var(quest, "count"), Some(papyrus::Value::Int(2)));
 }

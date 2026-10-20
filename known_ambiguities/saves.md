@@ -43,11 +43,24 @@ ingredient effects, explicit alerts); references made while playing; the
 player's health, stamina, skills, perks, spells, words of power and shouts,
 favorites, hotkeys; dialogue lines heard; bounties; merchants' restock times.
 
+The scripting side (`vm.rs`, sections `VM` and `VMAR`): the scripts attached
+to each object with their variables and properties (`Vm::attach` keeps an
+instance that exists, so cells loading after a load don't reset them),
+`OnInit` done, the threads suspended (their calls by defining class, state
+and function, the instruction they stopped at, locals and return slots), the
+`OnUpdate` timers, and the sleep, inventory filter and animation event
+registrations. Arrays are shared by identity in the VM, so they are saved
+once and referred to by index.
+
 ## Not saved yet (see `plans/ROADMAP.md`)
 
-- **The Papyrus VM**: script variables, properties, and threads waiting in
-  `Utility.Wait`. A load keeps the running VM as it is (it is not reset), so
-  a game loaded mid-quest isn't faithful until the VM is saved.
+- Threads waiting for something the engine tracks by a key (a message box's
+  button, an animation event) are kept as timed waits that finish when their
+  timeout runs out, with the default result: nothing saved would signal them.
+  A thread whose function no longer resolves (other scripts) is dropped with
+  a warning. Scripts on active magic effects are dropped with the effects.
+  Registrations other than these (key, LOS gain, tracked hits...) aren't
+  built in the engine yet.
 - Active magic effects (timed effects, summons, wards), the leveled spell
   rolls, scenes playing, the Story Manager's memory, relationships, AI and
   package progress, schedules, objects' behaviour graphs, weather and
