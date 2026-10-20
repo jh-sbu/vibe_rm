@@ -1725,14 +1725,20 @@ impl Engine {
             let (Some(ff), Some(tf)) = (factions_of(fighter), factions_of(target)) else {
                 continue;
             };
-            let need = match self.faction_reaction(&stats.factions, ff) {
-                Some(2) => 1,
-                Some(3) => 2,
-                _ => continue,
-            };
-            if stats.assistance < need
-                || matches!(self.faction_reaction(&stats.factions, tf), Some(2 | 3))
-            {
+            // A teammate takes the player's side whatever its factions and
+            // assistance say (`known_ambiguities/followers.md`).
+            let teammate = fighter == PLAYER_REF && self.is_player_teammate(helper);
+            if !teammate {
+                let need = match self.faction_reaction(&stats.factions, ff) {
+                    Some(2) => 1,
+                    Some(3) => 2,
+                    _ => continue,
+                };
+                if stats.assistance < need {
+                    continue;
+                }
+            }
+            if matches!(self.faction_reaction(&stats.factions, tf), Some(2 | 3)) {
                 continue;
             }
             if !self.detects(helper, fighter) && !self.detects(helper, target) {
@@ -1746,9 +1752,8 @@ impl Engine {
     }
 
     pub(crate) fn player_factions(&self) -> Vec<FormId> {
-        self.npc_factions(FormId(0x7))
+        self.member_factions(FormId(0x7))
             .into_iter()
-            .map(|(f, _)| f)
             .chain(std::iter::once(FormId(0xDB1)))
             .collect()
     }
@@ -3750,3 +3755,7 @@ mod bash_tests;
 #[cfg(test)]
 #[path = "combat_assault_tests.rs"]
 mod assault_tests;
+
+#[cfg(test)]
+#[path = "combat_follower_tests.rs"]
+mod follower_tests;

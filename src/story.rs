@@ -679,7 +679,8 @@ impl Engine {
     /// the attacker, L1 where, V1 whether it is a crime: the victim keeps the
     /// law and wasn't hostile). The player's crimes are reported.
     pub(crate) fn send_assault(&mut self, victim: FormId, attacker: FormId, crime: bool) {
-        if crime && attacker == crate::engine::PLAYER_REF {
+        // The player answers for their teammates' and summons' blows too.
+        if crime && self.responsible_for(attacker) == crate::engine::PLAYER_REF {
             self.player_assault(victim);
         }
         let mut e = StoryEvent::new(b"ASSU");
@@ -732,6 +733,23 @@ impl Engine {
         e.refs = [guard, PLAYER_REF];
         e.locs[0] = self.ref_current_location(PLAYER_REF).unwrap_or_default();
         e.values[0] = crime as f32;
+        self.send_story_event(e);
+    }
+
+    /// Someone finds the player trespassing and warns them (`TRES`: R1 the
+    /// warner, R2 the player, L1 where, V1 the warning level).
+    pub(crate) fn send_trespass_event(&mut self, warner: FormId, level: i32) {
+        let mut e = StoryEvent::new(b"TRES");
+        e.refs = [warner, PLAYER_REF];
+        e.locs[0] = self.ref_current_location(PLAYER_REF).unwrap_or_default();
+        e.values[0] = level as f32;
+        self.send_story_event(e);
+    }
+
+    /// The player picks a lock open (`LOCK`: R1 the player, R2 the lock).
+    pub(crate) fn send_pick_lock_event(&mut self, lock: FormId) {
+        let mut e = StoryEvent::new(b"LOCK");
+        e.refs = [PLAYER_REF, lock];
         self.send_story_event(e);
     }
 
@@ -805,5 +823,48 @@ mod tests {
         assert_eq!(e.member_form(*b"R2"), Some(FormId(0xff00_0001)));
         assert_eq!(e.member_form(*b"F1"), Some(FormId(0xf)));
         assert_eq!(e.member_value(*b"V1"), 4.0);
+    }
+
+    /// Quests under synthetic `LOCK` and `TRES` event nodes.
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn lock_and_trespass_events_start_their_quests_with_their_members() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-story-lock-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (lock_quest, tres_quest) = (FormId(0x810), FormId(0x811));
+        let mut records = Vec::new();
+        for (code, menu, node, quest) in [
+            (b"LOCK", 0x830u32, 0x831u32, lock_quest),
+            (b"TRES", 0x832, 0x833, tres_quest),
+        ] {
+            records.push(Node::top(
+                b"SMEN",
+                vec![RecordBuilder::new(b"SMEN", FormId(menu)).field(b"ENAM", code)],
+            ));
+            records.push(Node::top(
+                b"SMQN",
+                vec![
+                    RecordBuilder::new(b"SMQN", FormId(node))
+                        .u32(b"PNAM", menu)
+                        .u32(b"NNAM", quest.0),
+                ],
+            ));
+            records.push(Node::top(b"QUST", vec![RecordBuilder::new(b"QUST", quest)]));
+        }
+        std::fs::write(
+            dir.join("Lock.esp"),
+            write_plugin(0, &[], "test", "lock events", 0x900, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Lock.esp");
+        e.send_pick_lock_event(FormId(0x777));
+        let ev = e.scripts.quests[&lock_quest].event.clone().unwrap();
+        assert_eq!(ev.refs, [PLAYER_REF, FormId(0x777)]);
+        e.send_trespass_event(FormId(0x778), 1);
+        let ev = e.scripts.quests[&tres_quest].event.clone().unwrap();
+        assert_eq!(ev.refs, [FormId(0x778), PLAYER_REF]);
+        assert_eq!(ev.values[0], 1.0);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

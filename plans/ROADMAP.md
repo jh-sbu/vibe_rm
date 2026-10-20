@@ -318,8 +318,15 @@ game each piece unlocks.
   allied faction) or, for those who help friends too, a friend is fighting someone
   they aren't friendly with, as their AI data's assistance has it; the player
   fights whoever fights them, so attacking one of the townsfolk sets their
-  neighbours on the player. Negative faction ranks aren't membership. `cstats`
-  shows assistance. Open questions: `known_ambiguities/combat-assistance.md`
+  neighbours on the player. Negative faction ranks aren't membership. A
+  script's faction changes count in fights at once (`AddToFaction` of
+  `CurrentFollowerFaction`, an ally of the player's faction in the data, makes a
+  hired follower help the player as its assistance has it), and across cell
+  loads. `cstats` shows assistance. Player teammates (`SetPlayerTeammate`,
+  `IsPlayerTeammate`, `GetPlayerTeammate(Count)`) join the player's fights
+  whatever their factions, wear armor they are given, and the player answers
+  for their blows and their summons' as for their own (an assault on someone
+  who keeps the law; UESP Crime). Open questions: `known_ambiguities/combat-assistance.md`, `known_ambiguities/followers.md`
 - Bleedout: essential actors (and protected ones, except to the player) brought to zero
   health bleed out through the graph (`bleedOutStart` / `bleedOutStop`), dropped as
   targets, and get up after a while with a quarter of their health; the player can
@@ -775,8 +782,17 @@ game each piece unlocks.
   sometimes power attacks. Finite barrage counts (Never End off) and the
   attack time limit complete the package, which is then skipped while it
   still applies.
+  UseMagic practice (the College's casting at its targets, Colette's spells on
+  herself, Neloth's): at the package's place the actor draws its hands and casts
+  the package's spell, holding a concentration spell for the cast time, with
+  the cooldown between casts and a number of casts before the package is
+  done; "hold when blocked" waits while something is in the way.
+  Activate packages (the sawmill workers' lever and log pile): the actor goes to
+  its target, uses it if it is furniture, and the package is done after "Number
+  to Activate" uses; its place is its target's.
   Open questions: `known_ambiguities/package-trees.md`,
-  `known_ambiguities/use-weapon.md`
+  `known_ambiguities/use-weapon.md`, `known_ambiguities/use-magic.md`,
+  `known_ambiguities/activate.md`
 - Enable state: references follow their enable parent (`XESP`, or its opposite)
   unless scripts set them; enabling or disabling a parent shows or hides its
   children (cells, sounds, furniture, actors). Actors flagged "Starts Dead" are
@@ -805,7 +821,8 @@ game each piece unlocks.
   `IsScenePackageRunning`; `GetDistance` between interiors / worldspaces is
   far. Console `startscene`, `stopscene`, `scenes`, `startquest`, `stopquest`,
   `setstage`; vrm-tool `scenes`. Open questions: `known_ambiguities/scenes.md`
-- Story Manager: events run down the tree of event, branch and quest nodes
+- Story Manager (also pick lock `LOCK` and trespass `TRES` events, no vanilla node
+  listens): events run down the tree of event, branch and quest nodes
   (`SMEN` / `SMBN` / `SMQN`) under their type, stacked or random, node
   conditions on the event's data, quests started with reset hours, max running,
   num to run, do all before repeating and shared events, "warn if no child
@@ -877,7 +894,8 @@ game each piece unlocks.
   flag) near a reported crime run after the player calling on them to halt
   and stop them with the arrest dialogue (blocking branches, `GetAlarmed`):
   pay (on the spot, or let out at the jail), go to jail, or resist; walking
-  off is resisting. Factions' Arrest / Attack on Sight flags make guards
+  off is resisting; sheathing afterwards is yielding (the guards stop and
+  arrest again, once a fight). Factions' Arrest / Attack on Sight flags make guards
   attack at a bounty. Jail: the sentence by bounty, belongings and stolen
   goods taken, the jail outfit, served by sleeping in the cell bed.
   `SendPlayerToJail`, `SetPlayerResistingArrest`, `GetDaysInJail`,
@@ -1226,7 +1244,7 @@ game each piece unlocks.
      controllers inside sequences and sequence blending (placed rigid objects'
      named material sequences: see Done;
      `known_ambiguities/sequence-material-controllers.md`)
-2. **Story Manager** (core and fifteen events done; see Done)
+2. **Story Manager** (core and seventeen events done, `LOCK` and `TRES` among them; see Done)
    - Events waiting on their systems: crafting, NPCs'
      spell casts (combat suppression and concentration cadence need evidence;
      `known_ambiguities/story-cast-events.md`), new voice powers, bribe /
@@ -1277,8 +1295,8 @@ game each piece unlocks.
    - Alias fills: created actors cleaned up; "from alias" locations
      followed through travel, not only at refresh; packages for "from event"
      aliases, and package targets by object id / type and interrupt data
-   - Remaining procedures: guard (restricted areas), use magic, dialogue,
-     activate / carry, flee, orbit packages; ambush triggers (sleepers'
+   - Remaining procedures: guard (restricted areas), dialogue,
+     carry, flee, the sawmills' lever and log-pile cycle (object graph events), orbit packages; ambush triggers (sleepers'
      reduced detection: see Detection);
      escorts' follower min / max distances and several followers, riding,
      the follower object list and `PreferPreferredPath?`; fleeing to doors, cover and allies (`fCombatFlee*`),
@@ -1287,7 +1305,8 @@ game each piece unlocks.
      that can't reach their target backing away; force-greets' "moving into a
      new space", player keyword and riding checks, "Greet Using Preferred
      Path?", `ForceGreetWaitSitting` and alias trigger locations
-   - Followers helping the player (`CurrentFollowerFaction` relations);
+   - Followers: teammates' following through load doors, fast travel and
+     waiting, their other combat behaviour (`known_ambiguities/followers.md`);
      `AllyKilled` lines
    - Locks: sleepers warning the player before locking and putting them out;
      actors stepping round loose clutter instead of shoving it
@@ -1359,7 +1378,7 @@ game each piece unlocks.
      `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
      taper, area, addictions, the rest of potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target)
-   - Crime, more: arrests (yielding by sheathing, guards following through
+   - Crime, more: arrests (guards following through
      doors, opening the cell after five hits, The Chill, the follower wait
      marker, `GetArrestingActor`, the jail outfit); Cidhna Mine and the Orc
      strongholds (`DialogueCrimeOrcs`); bribes, persuasion and Thanes; the

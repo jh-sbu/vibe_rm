@@ -156,6 +156,17 @@ Left out so far:
   barrage and the share of power attacks among unforced swings (melee training
   packages with Always Power Attack off, e.g. `GuardSolitudeMeleeTrainingPackage`)
   come from the same event log.
+- **UseMagic counts and timing** (`use-magic.md`): a test NPC of ours given a
+  copy of a `UseMagic` package (a test mod writes the `PACK` from the template
+  `000504F5`) with a self-cast fire-and-forget spell, cast counts 3 and 3,
+  cooldown 5 and 5; its script logs `OnSpellCast` (registered for the NPC's
+  own events) and `GetCurrentPackage` with `Utility.GetCurrentRealTime` each
+  second. That settles whether the package ends after the last cast, how the
+  cooldown counts, and, with min 1 and max 4 across several NPCs, whether the
+  count is picked at random per run. The same with a concentration spell shows
+  what the cast time holds (the log of `OnSpellCast`/`OnMagicEffectApply`
+  intervals), and a 3-casts package with the target behind a placed wall
+  whether "Hold When Blocked" waits.
 - **NPC stats** (`actor-values.md`): `GetBaseActorValue` health of a
   non-auto-calc NPC with a health offset (a placed copy of Khayla: 155 or
   UESP's 50?); Sneak of a deer (15 + offset 70); a "PC level mult" copy of

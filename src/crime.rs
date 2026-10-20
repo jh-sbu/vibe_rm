@@ -627,6 +627,13 @@ impl Engine {
         self.commit_crime(CrimeType::Attack, Some(victim), None, 0);
     }
 
+    /// Whether the player (or a teammate of theirs) assaulted `victim` and the
+    /// kill of it would be murder.
+    #[cfg(test)]
+    pub(crate) fn assaulted_by_player(&self, victim: FormId) -> bool {
+        self.crime.assaulted.contains(&victim)
+    }
+
     /// The player killed an actor. It is murder when they had assaulted it
     /// (attacked it first, unprovoked). The kill event's crime status: 0 not
     /// murder (or the victim has no crime faction), 1 unreported, 2 reported.
@@ -731,6 +738,7 @@ impl Engine {
             next: now + wait,
         });
         log::info!("{warner} finds the player trespassing in {cell}: warning level {level}");
+        self.send_trespass_event(warner, level);
         self.bark(warner, b"TRES");
         if level >= 2 {
             let owner = self.ref_owner(cell);

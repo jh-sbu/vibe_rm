@@ -749,7 +749,8 @@ impl Engine {
             let Some(a) = self.actor_ref(actor).filter(|a| !a.dead) else {
                 continue;
             };
-            let channeling = a.combat.as_ref().is_some_and(|c| c.channel > 0.0);
+            let channeling = a.combat.as_ref().is_some_and(|c| c.channel > 0.0)
+                || a.magic_practice.is_some_and(|m| m.channelling());
             if channeling {
                 continue;
             }
@@ -767,7 +768,10 @@ impl Engine {
     /// hand).
     pub(crate) fn update_combat_spells(&mut self, dt: f32) {
         self.update_ward_threats(dt);
-        let fighters: Vec<(FormId, bool, bool, bool, bool)> = self
+        // The tuple's last member: the spell of a casting practice (UseMagic) at
+        // its place, out of combat, and whether the package dual casts it.
+        type Practice = Option<(FormId, bool)>;
+        let fighters: Vec<(FormId, bool, bool, bool, bool, Practice)> = self
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
@@ -790,10 +794,13 @@ impl Engine {
                     caster,
                     a.combat_spell.is_some_and(|s| s.self_target),
                     a.stats.staff_mult >= a.stats.magic_mult,
+                    (a.magic_practising() && !a.dead && a.bleeding.is_none())
+                        .then(|| a.goal.and_then(|g| g.magic).map(|m| (m.spell, m.dual)))
+                        .flatten(),
                 )
             })
             .collect();
-        for (actor, active, caster, continuing, staff_first) in fighters {
+        for (actor, active, caster, continuing, staff_first, practice) in fighters {
             let pick = if active {
                 let magicka = self.actor_value(actor, av::MAGICKA);
                 let spells = self.npc_spells(actor);
@@ -838,10 +845,11 @@ impl Engine {
                     spell.or(staff)
                 })
             } else {
-                None
+                practice.and_then(|(spell, _)| self.practice_spell(spell))
             };
             // Both hands free (no one-handed weapon or staff in the right),
-            // the caster may dual cast what its perks let it.
+            // the caster may dual cast what its perks let it (a package that
+            // dual casts, what it can).
             let one_handed = self.inventories.get(&actor).is_some_and(|i| {
                 let right = i.hand(&self.lo, false);
                 right.one_handed() || right == crate::world::inventory::HandType::Staff
@@ -849,11 +857,12 @@ impl Engine {
             let pick = pick.map(|s| CombatSpell {
                 dual: !s.staff
                     && !one_handed
-                    && self.perk_flag(
-                        crate::perks::ep::CAN_DUAL_CAST_SPELL,
-                        actor,
-                        &[Some(s.spell)],
-                    ),
+                    && (practice.is_some_and(|(_, dual)| dual)
+                        || self.perk_flag(
+                            crate::perks::ep::CAN_DUAL_CAST_SPELL,
+                            actor,
+                            &[Some(s.spell)],
+                        )),
                 ..s
             });
             if self.actor_ref(actor).is_none_or(|a| a.combat_spell == pick) {
@@ -977,12 +986,46 @@ impl Engine {
         out
     }
 
+    /// A spell a casting practice (UseMagic) casts: a spell on the caster
+    /// itself, or an aimed one or one at an actor, hostile or not, at the
+    /// target it is given. Others (touch, at a location) aren't cast.
+    pub(crate) fn practice_spell(&self, spell: FormId) -> Option<CombatSpell> {
+        let item = self.magic_item(spell)?;
+        if !matches!(item.cast_type, 1 | CONCENTRATION) {
+            return None;
+        }
+        if item.delivery == delivery::SELF {
+            let ward = item.cast_type == CONCENTRATION
+                && item.effects.iter().any(|ei| {
+                    self.magic_effect(ei.effect)
+                        .is_some_and(|m| m.archetype == archetype::ACCUMULATE_MAGNITUDE)
+                });
+            return Some(CombatSpell {
+                spell,
+                range: 0.0,
+                concentration: item.cast_type == CONCENTRATION,
+                self_target: true,
+                start: self.cast_start(&item),
+                charge: item.charge_time,
+                dual: false,
+                staff: false,
+                ward,
+            });
+        }
+        self.aimed_spell(&item)
+    }
+
     /// A hostile aimed or target actor spell (or staff enchantment) to
     /// fight with.
     fn offensive_spell(&self, item: &MagicItem) -> Option<CombatSpell> {
-        if !matches!(item.delivery, delivery::AIMED | delivery::TARGET_ACTOR)
-            || !self.item_hostile(item)
-        {
+        self.item_hostile(item)
+            .then(|| self.aimed_spell(item))
+            .flatten()
+    }
+
+    /// An aimed or target actor spell (or staff enchantment) to cast.
+    fn aimed_spell(&self, item: &MagicItem) -> Option<CombatSpell> {
+        if !matches!(item.delivery, delivery::AIMED | delivery::TARGET_ACTOR) {
             return None;
         }
         let range = if item.delivery == delivery::TARGET_ACTOR {
@@ -1040,13 +1083,34 @@ impl Engine {
     /// Casters' casts this frame go at their targets' bodies, paid in
     /// magicka (a landing's share of a second for concentration spells).
     pub(crate) fn npc_casts(&mut self) {
-        let mut casts: Vec<(FormId, CombatSpell, u32, FormId, Vec3, bool)> = Vec::new();
+        // (caster, spell, landings, target, eye, dual, practice aim, fighting)
+        let mut casts: Vec<(
+            FormId,
+            CombatSpell,
+            u32,
+            FormId,
+            Vec3,
+            bool,
+            Option<Vec3>,
+            bool,
+        )> = Vec::new();
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut() {
                 let Some(cast) = a.casts.take() else { continue };
-                if a.dead || a.bleeding.is_some() || a.combat.as_ref().is_none_or(|c| c.fleeing) {
+                // Fighting (not fleeing), or practising a spell out of combat.
+                let casting = match a.combat.as_ref() {
+                    Some(c) => !c.fleeing,
+                    None => a.magic_practising(),
+                };
+                if a.dead || a.bleeding.is_some() || !casting {
                     continue;
                 }
+                // A practice target may be a thing, not an actor.
+                let practice_aim = a
+                    .combat
+                    .is_none()
+                    .then(|| a.magic_practice.and_then(|m| m.aim))
+                    .flatten();
                 casts.push((
                     a.ref_id,
                     cast.spell,
@@ -1054,13 +1118,17 @@ impl Engine {
                     cast.target,
                     a.pos + Vec3::Z * 110.0 * a.scale,
                     cast.dual,
+                    practice_aim,
+                    a.combat.is_some(),
                 ));
             }
         }
         let dual_mult = gmst_f32(&self.lo, "fMagicDualCastingCostMult", 2.8);
-        for (actor, spell, n, target, eye, dual) in casts {
+        for (actor, spell, n, target, eye, dual, practice_aim, fighting) in casts {
             let aim = if spell.self_target {
                 Some(eye)
+            } else if practice_aim.is_some() {
+                practice_aim
             } else if target == PLAYER_REF {
                 Some(self.player.position)
             } else {
@@ -1076,7 +1144,8 @@ impl Engine {
             for _ in 0..n {
                 // Several landings can be queued by a long frame; do not spend
                 // another dose once an earlier one restored all its health.
-                if spell.self_target
+                if fighting
+                    && spell.self_target
                     && !spell.ward
                     && self.actor_value(actor, av::HEALTH) >= self.av_max(actor, av::HEALTH)
                 {
