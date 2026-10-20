@@ -1069,6 +1069,11 @@ game each piece unlocks.
   and the five-point attenuation curve its gain follows between them (the mixer's
   `Falloff`); 2D models (the menus', dialogue's) play unpositioned; dialogue lines fade by
   the default dialogue model. Open questions: `known_ambiguities/sound-output-models.md`
+- Dialogue responses' speaker idles: a response whose INFO names one (`SNAM`: pointing,
+  giving, saluting, reading...: 475 vanilla responses) gestures with it instead of the
+  random `ActionTalking` one, in conversations, scenes and barks; one the speaker's graph
+  won't take falls back to the random gesture. vrm-tool `info-idles` lists them. Open
+  questions: `known_ambiguities/dialogue-idles.md`
 - NIF float / colour `CONST_KEY` interpolation retains its source type and
   selects nearest endpoints for shader and alpha-test channels, named material
   sequences and particle float curves. Boolean keys retain their hold behavior.
@@ -1206,7 +1211,7 @@ game each piece unlocks.
      change-notification activation / completion / interruption timing
      (`known_ambiguities/state-machine-events.md`)
    - Engine variables and events still missing: combat, first person;
-     INFO speaker / listener idles; listeners' reactions
+     INFO listener idles (the speaker's are done, see Done); listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes, decals
    - Argonian and Khajiit tails (`BSBehaviorGraphExtraData`'s "controls base
      skeleton": done for NPCs, see Done): the player's own tail, tails after
