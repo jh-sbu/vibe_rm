@@ -11,6 +11,40 @@ pub struct SoundDesc {
     /// Linear volume from the static attenuation (dB) in BNAM, times the
     /// sound's category's ([`category_volume`]).
     pub volume: f32,
+    /// `BNAM`'s frequency shift (percent, signed), frequency variance
+    /// (percent) and dB variance: how each playing differs from the recording.
+    pub frequency_shift: f32,
+    pub frequency_variance: f32,
+    pub db_variance: f32,
+}
+
+/// A number in [0, 1) from the top bits of a random 64-bit one.
+pub fn unit(r: u64) -> f32 {
+    (r >> 40) as f32 / (1u64 << 24) as f32
+}
+
+/// What one playing of a descriptor changes in its recording: a gain and a
+/// playback rate (both 1 for none).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Variation {
+    pub gain: f32,
+    pub pitch: f32,
+}
+
+impl SoundDesc {
+    /// The variation for two random numbers in [0, 1): the playback rate is
+    /// 1 plus the frequency shift plus up to the variance either way
+    /// (percent), the gain up to the dB variance either way. Whether the
+    /// variances are one-sided, or measured so, isn't public.
+    pub fn variation(&self, roll: [f32; 2]) -> Variation {
+        let signed = |r: f32| r.clamp(0.0, 1.0) * 2.0 - 1.0;
+        Variation {
+            gain: 10f32.powf(signed(roll[1]) * self.db_variance / 20.0),
+            pitch: (1.0
+                + (self.frequency_shift + signed(roll[0]) * self.frequency_variance) / 100.0)
+                .max(0.1),
+        }
+    }
 }
 
 /// A sound category (SNCT): the broadest group a sound belongs to, itself in a
@@ -144,12 +178,18 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
         min_dist: 200.0,
         max_dist: 2000.0,
         volume: 1.0,
+        frequency_shift: 0.0,
+        frequency_variance: 0.0,
+        db_variance: 0.0,
     };
     if let Some(b) = rec.get(b"BNAM")
         && b.len() >= 6
     {
         let db = u16::from_le_bytes([b[4], b[5]]) as f32 / 100.0;
         desc.volume = 10f32.powf(-db / 20.0);
+        desc.frequency_shift = b[0] as i8 as f32;
+        desc.frequency_variance = b[1] as f32;
+        desc.db_variance = b[3] as f32;
     }
     // The category (GNAM) scales it, with the categories above it.
     if let Some(g) = rec.get(b"GNAM")
@@ -214,6 +254,44 @@ mod tests {
         assert_eq!(chain_volume(FormId(1), |id| cats.get(&id.0).copied()), 0.25);
     }
 
+    fn varying(shift: f32, variance: f32, db: f32) -> SoundDesc {
+        SoundDesc {
+            files: vec![],
+            looping: false,
+            min_dist: 0.0,
+            max_dist: 0.0,
+            volume: 1.0,
+            frequency_shift: shift,
+            frequency_variance: variance,
+            db_variance: db,
+        }
+    }
+
+    #[test]
+    fn variation_spans_the_variances_around_the_shift() {
+        let d = varying(10.0, 8.0, 6.0);
+        let low = d.variation([0.0, 0.0]);
+        let mid = d.variation([0.5, 0.5]);
+        let high = d.variation([1.0, 1.0]);
+        // Rate: +10% shift, plus or minus 8%.
+        assert!((low.pitch - 1.02).abs() < 1e-5);
+        assert!((mid.pitch - 1.10).abs() < 1e-5);
+        assert!((high.pitch - 1.18).abs() < 1e-5);
+        // Gain: up to 6 dB either way.
+        assert!((mid.gain - 1.0).abs() < 1e-5);
+        assert!((high.gain - 10f32.powf(6.0 / 20.0)).abs() < 1e-4);
+        assert!((low.gain - 10f32.powf(-6.0 / 20.0)).abs() < 1e-4);
+        // A descriptor with none plays as recorded; shifts can be negative.
+        assert_eq!(
+            varying(0.0, 0.0, 0.0).variation([0.3, 0.9]),
+            Variation {
+                gain: 1.0,
+                pitch: 1.0
+            }
+        );
+        assert!((varying(-10.0, 0.0, 0.0).variation([0.7, 0.7]).pitch - 0.9).abs() < 1e-5);
+    }
+
     #[test]
     fn category_floats_run_from_zero_to_one() {
         assert_eq!(category_float(0), 0.0);
@@ -240,7 +318,8 @@ mod tests {
             }
         };
         let sndr = |id: u32, category: u32, db_times_100: u16| {
-            let mut bnam = [0u8; 6];
+            // A shift of -5%, variance 3%, priority, dB variance 6.
+            let mut bnam = [(-5i8) as u8, 3, 128, 6, 0, 0];
             bnam[4..6].copy_from_slice(&db_times_100.to_le_bytes());
             RecordBuilder::new(b"SNDR", FormId(id))
                 .u32(b"GNAM", category)
@@ -274,6 +353,10 @@ mod tests {
         let want = 0.9 * 0.5 * 0.9;
         let d = descriptor(&lo, &vfs, FormId(0x810)).unwrap();
         assert!(near(d.volume, want), "{}", d.volume);
+        assert_eq!(
+            (d.frequency_shift, d.frequency_variance, d.db_variance),
+            (-5.0, 3.0, 6.0)
+        );
         // Static attenuation of 6 dB stacks on top.
         let d = descriptor(&lo, &vfs, FormId(0x811)).unwrap();
         assert!(

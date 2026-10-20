@@ -505,17 +505,29 @@ impl Engine {
             return;
         };
         let i = (self.rand() % desc.files.len() as u64) as usize;
+        let v = self.roll_variation(&desc);
         if let Some(a) = self.audio.as_mut() {
-            a.play(
+            a.play_pitched(
                 &self.vfs,
                 &desc.files[i],
-                desc.volume,
+                desc.volume * v.gain,
                 false,
+                v.pitch,
                 Some(at),
                 desc.min_dist,
                 desc.max_dist,
             );
         }
+    }
+
+    /// How this playing of `desc` differs from its recording (frequency and
+    /// dB variance).
+    pub(crate) fn roll_variation(
+        &mut self,
+        desc: &crate::world::sound::SoundDesc,
+    ) -> crate::world::sound::Variation {
+        let (a, b) = (self.rand(), self.rand());
+        desc.variation([crate::world::sound::unit(a), crate::world::sound::unit(b)])
     }
 
     /// Start looping sounds emitted by objects (sound markers, lights, activators, ...).
@@ -554,11 +566,18 @@ impl Engine {
                 continue;
             }
             let file = &desc.files[r.0 as usize % desc.files.len()];
-            if let Some(v) = audio.play(
+            // A reference's loop varies the same way each time it starts.
+            let h = (r.0 as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let v = desc.variation([
+                crate::world::sound::unit(h),
+                crate::world::sound::unit(h.rotate_left(29).wrapping_mul(0xBF58_476D_1CE4_E5B9)),
+            ]);
+            if let Some(v) = audio.play_pitched(
                 &self.vfs,
                 file,
-                desc.volume,
+                desc.volume * v.gain,
                 true,
+                v.pitch,
                 Some(rf.position),
                 desc.min_dist,
                 desc.max_dist,

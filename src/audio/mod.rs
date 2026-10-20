@@ -23,6 +23,8 @@ struct Voice {
     pos: f64,
     volume: f32,
     looping: bool,
+    /// Playback rate against the clip's own (1: as recorded).
+    pitch: f64,
     /// World position for 3D sounds.
     at: Option<Vec3>,
     min_dist: f32,
@@ -60,7 +62,7 @@ impl Mixer {
                 gl *= att * (1.0 - pan.max(0.0) * 0.6);
                 gr *= att * (1.0 + pan.min(0.0) * 0.6);
             }
-            let step = v.clip.rate as f64 / self.rate as f64;
+            let step = v.clip.rate as f64 / self.rate as f64 * v.pitch;
             let n = v.clip.frames();
             if n == 0 {
                 v.pos = f64::MAX;
@@ -96,6 +98,7 @@ enum Pending {
         id: VoiceId,
         volume: f32,
         looping: bool,
+        pitch: f32,
         at: Option<Vec3>,
         min_dist: f32,
         max_dist: f32,
@@ -233,6 +236,22 @@ impl Audio {
         min_dist: f32,
         max_dist: f32,
     ) -> Option<VoiceId> {
+        self.play_pitched(vfs, path, volume, looping, 1.0, at, min_dist, max_dist)
+    }
+
+    /// [`Audio::play`] at `pitch` times the recorded rate (higher is faster and shorter).
+    #[allow(clippy::too_many_arguments)]
+    pub fn play_pitched(
+        &mut self,
+        vfs: &vfs::Vfs,
+        path: &str,
+        volume: f32,
+        looping: bool,
+        pitch: f32,
+        at: Option<Vec3>,
+        min_dist: f32,
+        max_dist: f32,
+    ) -> Option<VoiceId> {
         let key = vfs::normalize_path(path);
         let id = VoiceId(self.next_id);
         self.next_id += 1;
@@ -240,6 +259,7 @@ impl Audio {
             id,
             volume,
             looping,
+            pitch,
             at,
             min_dist,
             max_dist,
@@ -266,6 +286,7 @@ impl Audio {
             id,
             volume,
             looping,
+            pitch,
             at,
             min_dist,
             max_dist,
@@ -281,6 +302,7 @@ impl Audio {
                 pos: 0.0,
                 volume,
                 looping,
+                pitch: pitch.max(0.01) as f64,
                 at,
                 min_dist,
                 max_dist,
@@ -360,5 +382,58 @@ impl Audio {
             }
             self.cache.insert(path, clip);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mixer(pitch: f64) -> Mixer {
+        let clip = Arc::new(Clip {
+            // A ramp the mix can be read against: frame i holds i / 1000.
+            samples: (0..100).flat_map(|i| [i as f32 / 1000.0; 2]).collect(),
+            rate: 1000,
+        });
+        Mixer {
+            voices: vec![Voice {
+                id: VoiceId(1),
+                clip,
+                pos: 0.0,
+                volume: 1.0,
+                looping: false,
+                pitch,
+                at: None,
+                min_dist: 0.0,
+                max_dist: 0.0,
+            }],
+            listener: Vec3::ZERO,
+            listener_right: Vec3::X,
+            rate: 1000,
+            master: 1.0,
+            cancelled: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn pitch_plays_a_clip_faster_and_shorter() {
+        let mut out = [0.0; 80];
+        let mut normal = mixer(1.0);
+        normal.mix(&mut out, 2);
+        // Left channel of frame f is the clip's frame f.
+        assert!((out[2 * 10] - 0.010).abs() < 1e-6);
+        assert_eq!(normal.voices.len(), 1);
+
+        let mut fast = mixer(2.0);
+        fast.mix(&mut out, 2);
+        assert!((out[2 * 10] - 0.020).abs() < 1e-6);
+        // 100 frames at twice the speed end after 50 of the 40 asked for.
+        assert_eq!(fast.voices.len(), 1);
+        fast.mix(&mut out, 2);
+        assert!(fast.voices.is_empty());
+
+        let mut slow = mixer(0.5);
+        slow.mix(&mut out, 2);
+        assert!((out[2 * 10] - 0.005).abs() < 1e-6);
     }
 }

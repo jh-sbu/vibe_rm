@@ -1063,6 +1063,10 @@ game each piece unlocks.
   `UNAM` defaults, up through the master category); music plays at the music
   category's volume and dialogue lines at the voice category's. Open questions:
   `known_ambiguities/audio-categories.md`
+- Sound descriptors' variance: each playing of a one-shot, a reference's loop, thunder
+  or a weather loop draws its playback rate (`BNAM` frequency shift and variance,
+  percent) and gain (dB variance) afresh; the mixer plays voices at a rate. vrm-tool
+  `sndr-stats` lists the values. Open questions: `known_ambiguities/sound-variation.md`
 - NIF float / colour `CONST_KEY` interpolation retains its source type and
   selects nearest endpoints for shader and alpha-test channels, named material
   sequences and particle float curves. Boolean keys retain their hold behavior.
