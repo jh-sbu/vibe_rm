@@ -13,6 +13,7 @@ const ENEMY: FormId = FormId(0x812);
 const SPRINT: FormId = FormId(0x813);
 const MGEF: FormId = FormId(0x820);
 const CRIT_SPELL: FormId = FormId(0x821);
+const BOW: FormId = FormId(0x802);
 const NPC: FormId = FormId(0x830);
 const ACTOR: FormId = FormId(0x831);
 
@@ -33,9 +34,9 @@ fn fixture() -> (Fixture, Engine) {
         Fixture(std::env::temp_dir().join(format!("vrm-critical-{}-{stamp}", std::process::id())));
     std::fs::create_dir(&f.0).unwrap();
     // xEdit's SSE `CRDT`: damage, unused, percent mult, flags, unused, effect.
-    let weapon = |id, crit: u16, effect: FormId, flags: u8| {
+    let weapon = |id, anim: u8, crit: u16, effect: FormId, flags: u8| {
         let mut dnam = [0; 100];
-        dnam[0] = 1;
+        dnam[0] = anim;
         let mut crdt = [0; 24];
         crdt[..2].copy_from_slice(&crit.to_le_bytes());
         crdt[4..8].copy_from_slice(&1.0f32.to_le_bytes());
@@ -74,8 +75,9 @@ fn fixture() -> (Fixture, Engine) {
         Node::top(
             b"WEAP",
             vec![
-                weapon(SWORD, 5, FormId::NULL, 0),
-                weapon(EFFECT_SWORD, 5, CRIT_SPELL, 0),
+                weapon(SWORD, 1, 5, FormId::NULL, 0),
+                weapon(EFFECT_SWORD, 1, 5, CRIT_SPELL, 0),
+                weapon(BOW, 7, 5, FormId::NULL, 0),
             ],
         ),
         Node::top(
@@ -229,4 +231,24 @@ fn sprinting_perk_conditions_and_critical_effects() {
             .iter()
             .any(|x| x.item == CRIT_SPELL && x.target == ACTOR)
     );
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn backstabs_are_one_handed_sneak_attacks_from_behind() {
+    let (_f, mut e) = fixture();
+    // The actor faces +Y (heading 0).
+    e.player.position = Vec3::new(0.0, 100.0, 0.0);
+    assert!(!e.is_backstab(ACTOR, PLAYER_REF, Some(SWORD))); // in front of it
+    e.player.position = Vec3::new(0.0, -100.0, 0.0);
+    assert!(e.is_backstab(ACTOR, PLAYER_REF, Some(SWORD)));
+    assert!(!e.is_backstab(ACTOR, PLAYER_REF, None)); // bare hands
+    assert!(!e.is_backstab(ACTOR, PLAYER_REF, Some(BOW)));
+
+    // Unseen behind it, a sword's sneak attack counts as both.
+    wield(&mut e, Some(SWORD));
+    e.player.sneaking = true;
+    strike(&mut e, 10.0);
+    assert_eq!(e.query_stat("Sneak Attacks"), 1);
+    assert_eq!(e.query_stat("Backstabs"), 1);
 }
