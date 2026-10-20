@@ -827,7 +827,15 @@ impl Engine {
         if let (Some(p), Some(audio)) = (&path, self.audio.as_mut())
             && self.vfs.exists(p)
         {
-            voice = audio.play(&self.vfs, p, 1.0, false, at, 400.0, 3000.0);
+            voice = audio.play(
+                &self.vfs,
+                p,
+                crate::world::sound::voice_volume(&self.lo),
+                false,
+                at,
+                400.0,
+                3000.0,
+            );
             duration = duration.max(1.0);
         }
         log::info!(

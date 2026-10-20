@@ -706,11 +706,12 @@ impl Engine {
             {
                 log::info!("music: {track}");
                 let vfs = &self.vfs;
+                let volume = crate::world::sound::music_volume(&self.lo);
                 self.music.voice = self
                     .audio
                     .as_mut()
                     .unwrap()
-                    .play(vfs, &track, 0.45, false, None, 0.0, 0.0);
+                    .play(vfs, &track, volume, false, None, 0.0, 0.0);
             }
             // Silence between tracks, like the original.
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;

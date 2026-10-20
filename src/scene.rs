@@ -672,7 +672,15 @@ impl Engine {
         if let (Some(p), Some(audio)) = (&path, self.audio.as_mut())
             && self.vfs.exists(p)
         {
-            voice = audio.play(&self.vfs, p, 1.0, false, at, 400.0, 3000.0);
+            voice = audio.play(
+                &self.vfs,
+                p,
+                crate::world::sound::voice_volume(&self.lo),
+                false,
+                at,
+                400.0,
+                3000.0,
+            );
         }
         let duration = (r.text.split_whitespace().count() as f64 * 0.32).max(2.0);
         let name = self.form_name(speaker);
