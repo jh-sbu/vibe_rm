@@ -121,6 +121,9 @@ game each piece unlocks.
   (`known_ambiguities/object-graphs.md`). The player's third-person body runs
   its worn tail graph too; NPC redressing adds, removes or replaces wearer
   graphs while preserving an unchanged selection's running state.
+  Player equipment rebuilds retain compatible body graphs and drawn/ready
+  weapon state, including draws and sheathes in progress; rigid equipment
+  uses the retained attachment state (`known_ambiguities/player-body.md`).
   The AI sends events (`moveStart`, furniture enter / exit, `IdleStop`...) and sets
   variables (`Speed`, `isInFurniture`, `IsNPC`, `weapAdj`...), follows the graph's root
   motion in furniture and takes anim objects and `IdleFurnitureExit` from its events;
@@ -1408,8 +1411,7 @@ game each piece unlocks.
      Critical Charge, basic attacks by direction and sprinting
      (`attackStartSprint`, the left hand's `...SprintLeftHand`: left out of
      the attack data with the mounted ones), `attackStop`; bashes landing at
-     the graph's `HitFrame` (bashes land at once now); re-equipping keeping the weapon
-     drawn (it rebuilds the body); footsteps from the graph's events (now the
+     the graph's `HitFrame` (bashes land at once now); footsteps from the graph's events (now the
      first-person stride), foot IK and head tracking; a ragdoll when they die;
      the camera stopping short of actors, a vanity camera; the head's morphs
      (`.tri`), tint layers (`TINI` / `TINC`), hair colour (`HCLF`) and

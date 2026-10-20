@@ -381,9 +381,9 @@ impl GraphAnim {
     /// instance when the new models still use the same project and rig.
     pub fn replace_aux(&mut self, aux: Option<GraphAnim>) {
         if let (Some(old), Some(new)) = (&self.aux, &aux)
-            && Arc::ptr_eq(&old.anim.project, &new.project)
-            && old.anim.skeleton_path == new.skeleton_path
-            && old.anim.female == new.female
+            && old
+                .anim
+                .matches(&new.project, &new.skeleton_path, new.female)
         {
             return;
         }
@@ -391,6 +391,11 @@ impl GraphAnim {
         if let Some(aux) = aux {
             self.attach_aux(aux);
         }
+    }
+
+    /// Whether this instance can still animate the same character and rig.
+    pub fn matches(&self, project: &Arc<ProjectRuntime>, rig: &str, female: bool) -> bool {
+        Arc::ptr_eq(&self.project, project) && self.skeleton_path == rig && self.female == female
     }
 
     fn source<'a>(

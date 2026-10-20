@@ -74,17 +74,18 @@ impl Engine {
     }
 
     /// Assemble the player's body from their record and what they wear,
-    /// keeping its facing.
+    /// keeping its facing and, for an unchanged rig/project, its animation.
     pub(crate) fn build_player_body(&mut self) {
-        // A new skeleton/graph cannot complete the old graph's bow draw.
-        if self.player_body.as_ref().is_some_and(|b| b.bow.drawing) {
+        let mut previous = self.player_body.take();
+        // Equipment changes cannot complete a shot with the old equipment.
+        if previous.as_ref().is_some_and(|b| b.bow.drawing) {
             self.player_attack_held = None;
         }
-        let heading = self
-            .player_body
-            .as_ref()
-            .map_or(self.camera.yaw, |b| b.heading);
-        self.player_body = None;
+        if let Some(body) = &mut previous {
+            body.cancel_equipment_attack(self.player_swing.is_some(), &self.vfs, &mut self.anims);
+        }
+        self.player_swing = None;
+        let heading = previous.as_ref().map_or(self.camera.yaw, |b| b.heading);
         self.scene.player = None;
         let inventory = self.inventory_mut(PLAYER_REF).clone();
         let Some(d) =
@@ -98,37 +99,21 @@ impl Engine {
         let Some(skel) = self.skeleton(&d.skeleton) else {
             return;
         };
-        let mut body = PlayerBody {
-            skeleton: skel.clone(),
-            graph: None,
-            scale: d.transform.x_axis.length(),
-            heading,
-            graph_heading: f32::NAN,
-            worn: (
-                inventory.equipped().to_vec(),
-                inventory.weapon_in(&self.lo, crate::world::inventory::LEFT),
-            ),
-            held: inventory.held_all(),
-            state: None,
-            sneak_state: None,
-            told: None,
-            told_at: 0,
-            airborne: None,
-            fell: false,
-            drawn: false,
-            weapon_out: false,
-            ready: false,
-            guard: false,
-            combat_events: PlayerCombatEvents::default(),
-            bow: PlayerBow::default(),
-            direction: None,
-        };
-        let mut pose = skel.model_space(&skel.bind_locals());
-        if let Some(project) = d
+        let project = d
             .behavior
             .as_deref()
-            .and_then(|p| self.graphs.project(&self.vfs, p))
-        {
+            .and_then(|p| self.graphs.project(&self.vfs, p));
+        let mut body = previous
+            .filter(|b| b.can_reuse(&skel, project.as_ref(), &d.skeleton, d.female))
+            .unwrap_or_else(|| PlayerBody::new(skel.clone(), heading));
+        body.scale = d.transform.x_axis.length();
+        body.worn = (
+            inventory.equipped().to_vec(),
+            inventory.weapon_in(&self.lo, crate::world::inventory::LEFT),
+        );
+        body.held = inventory.held_all();
+        let mut pose = skel.model_space(&skel.bind_locals());
+        if let Some(project) = project {
             let character = project
                 .shared
                 .project
@@ -139,11 +124,12 @@ impl Engine {
                 crate::world::movement::graph_movement_types(project.shared.variables(), character);
             body.state = default.map(|(_, v)| v);
             body.sneak_state = sneak.map(|(_, v)| v);
-            let mut g = GraphAnim::new(project, &d.skeleton, d.female, &skel, self.rng);
+            let mut g = body
+                .graph
+                .take()
+                .unwrap_or_else(|| GraphAnim::new(project, &d.skeleton, d.female, &skel, self.rng));
             g.label = "player".into();
-            if let Some(tail) = self.wearer_graph(&d, &skel) {
-                g.attach_aux(tail);
-            }
+            g.replace_aux(self.wearer_graph(&d, &skel));
             for (var, value) in [("IsNPC", 0.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)] {
                 g.set_variable(var, value);
             }
@@ -157,12 +143,16 @@ impl Engine {
             for (var, value) in crate::ai::combat::hand_graph_vars(&self.lo, &inventory, speeds) {
                 g.set_variable(var, value);
             }
-            pose = g.update(0.0, &self.vfs, &mut self.anims, &skel).pose;
             body.graph = Some(g);
+            // Consume notifications even at zero time (e.g. a draw committed
+            // just before the menu opened), keeping attachment/ready state in sync.
+            if let Some(frame) = body.sample(0.0, &self.vfs, &mut self.anims) {
+                pose = frame;
+            }
         }
         let (meshes, _, rigid) = self.actor_meshes(&d, &skel);
         self.rigid_models.insert(PLAYER_REF, rigid);
-        let (equipment, _) = self.rigid_equipment(PLAYER_REF, &skel, false);
+        let (equipment, _) = self.rigid_equipment(PLAYER_REF, &skel, body.weapon_out);
         log::info!(
             "player body: {} meshes, {} rigid, {}",
             meshes.len(),
@@ -328,6 +318,61 @@ impl Stance {
 const FALL_AFTER: f32 = 0.3;
 
 impl PlayerBody {
+    fn new(skeleton: Arc<Skeleton>, heading: f32) -> Self {
+        Self {
+            skeleton,
+            graph: None,
+            scale: 1.0,
+            heading,
+            graph_heading: f32::NAN,
+            worn: Default::default(),
+            held: [None; 3],
+            state: None,
+            sneak_state: None,
+            told: None,
+            told_at: 0,
+            airborne: None,
+            fell: false,
+            drawn: false,
+            weapon_out: false,
+            ready: false,
+            guard: false,
+            combat_events: PlayerCombatEvents::default(),
+            bow: PlayerBow::default(),
+            direction: None,
+        }
+    }
+
+    fn can_reuse(
+        &self,
+        skeleton: &Arc<Skeleton>,
+        project: Option<&Arc<crate::world::behavior::ProjectRuntime>>,
+        rig: &str,
+        female: bool,
+    ) -> bool {
+        Arc::ptr_eq(&self.skeleton, skeleton)
+            && match (&self.graph, project) {
+                (Some(g), Some(p)) => g.matches(p, rig, female),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+
+    fn cancel_equipment_attack(
+        &mut self,
+        swinging: bool,
+        vfs: &vfs::Vfs,
+        anims: &mut crate::world::animation::AnimationLibrary,
+    ) {
+        if (swinging || self.bow.drawing || self.bow.shot.is_some())
+            && let Some(g) = self.graph.as_mut()
+        {
+            Self::event(g, "attackStop", vfs, anims, &self.skeleton);
+        }
+        self.bow.cancel();
+        self.combat_events = PlayerCombatEvents::default();
+    }
+
     fn transform(&self, feet: Vec3) -> Mat4 {
         Mat4::from_scale_rotation_translation(
             Vec3::splat(self.scale),
@@ -468,7 +513,16 @@ impl PlayerBody {
             // Taken, these change it again: told once more, then ignored.
             self.told_at = g.changes();
         }
-        let frame = g.update(dt, vfs, anims, &self.skeleton);
+        self.sample(dt, vfs, anims)
+    }
+
+    fn sample(
+        &mut self,
+        dt: f32,
+        vfs: &vfs::Vfs,
+        anims: &mut crate::world::animation::AnimationLibrary,
+    ) -> Option<Vec<Mat4>> {
+        let frame = self.graph.as_mut()?.update(dt, vfs, anims, &self.skeleton);
         for r in &frame.raised {
             log::trace!(target: "player_events", "player raised {}{}", r.event, r.payload.as_deref().map(|p| format!(" ({p})")).unwrap_or_default());
             self.combat_events.record(&r.event, r.payload.as_deref());
@@ -900,6 +954,148 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn equipment_body() -> PlayerBody {
+        use havok::behavior::runtime::Shared;
+        use havok::behavior::{
+            BehaviorGraph, EventProperty, Generator, Project, State, Transition,
+        };
+        let state = |id, transitions, events: &[i32]| State {
+            id,
+            name: format!("s{id}"),
+            generator: None,
+            transitions,
+            enter_events: events
+                .iter()
+                .map(|&event| EventProperty {
+                    event,
+                    payload: None,
+                })
+                .collect(),
+            exit_events: vec![],
+        };
+        let graph = BehaviorGraph::new(
+            "Equipment",
+            Some(0),
+            vec![Generator::StateMachine {
+                name: "Root".into(),
+                start: 0,
+                start_variable: None,
+                start_mode: Default::default(),
+                sync_variable: None,
+                change_event: None,
+                states: vec![
+                    state(0, vec![Transition::new(0, 1, None)], &[6]),
+                    state(
+                        1,
+                        vec![Transition::new(1, 2, None), Transition::new(2, 3, None)],
+                        &[4],
+                    ),
+                    state(2, vec![Transition::new(2, 3, None)], &[5]),
+                    state(3, vec![Transition::new(3, 0, None)], &[]),
+                ],
+                wildcards: vec![],
+            }],
+            [
+                "WeapEquip",
+                "DrawDone",
+                "Unequip",
+                "SheathDone",
+                "weaponDraw",
+                "WeapEquip_Out",
+                "weaponSheathe",
+            ]
+            .map(String::from)
+            .to_vec(),
+        );
+        let project = Arc::new(crate::world::behavior::ProjectRuntime {
+            shared: Shared::new(Arc::new(Project {
+                graphs: vec![("synthetic".into(), graph)],
+                character: None,
+            })),
+            dir: "synthetic".into(),
+            name: "equipment".into(),
+            files: vec![],
+        });
+        let skel = Arc::new(Skeleton::default());
+        let mut body = PlayerBody::new(skel.clone(), 0.5);
+        body.graph = Some(GraphAnim::new(project, "rig", false, &skel, 1));
+        body
+    }
+
+    #[test]
+    fn equipment_refresh_preserves_draw_progress_and_consumes_zero_time_notifications() {
+        let vfs = vfs::Vfs::new("/tmp/vrm-synthetic-player-no-assets", &[]);
+        let mut anims = crate::world::animation::AnimationLibrary::default();
+        let mut body = equipment_body();
+        body.sample(0.0, &vfs, &mut anims);
+        let event =
+            |body: &mut PlayerBody, name, anims: &mut crate::world::animation::AnimationLibrary| {
+                PlayerBody::event(
+                    body.graph.as_mut().unwrap(),
+                    name,
+                    &vfs,
+                    anims,
+                    &body.skeleton,
+                )
+            };
+        assert!(event(&mut body, "WeapEquip", &mut anims));
+        body.drawn = true;
+        body.sample(0.0, &vfs, &mut anims);
+        assert!(body.weapon_out);
+        assert!(!body.ready);
+        assert!(body.can_reuse(
+            &body.skeleton,
+            Some(body.graph.as_ref().unwrap().project()),
+            "rig",
+            false
+        ));
+        body.sample(0.0, &vfs, &mut anims);
+        assert!(body.drawn && body.weapon_out && !body.ready);
+        assert!(event(&mut body, "DrawDone", &mut anims));
+        body.sample(0.0, &vfs, &mut anims);
+        assert!(body.drawn && body.weapon_out && body.ready);
+        assert!(event(&mut body, "Unequip", &mut anims));
+        body.drawn = false;
+        body.ready = false;
+        body.sample(0.0, &vfs, &mut anims);
+        assert!(body.weapon_out); // Mid-sheathe equipment stays in hand.
+        assert!(event(&mut body, "SheathDone", &mut anims));
+        body.sample(0.0, &vfs, &mut anims);
+        assert!(!body.drawn && !body.weapon_out && !body.ready);
+    }
+
+    #[test]
+    fn equipment_refresh_requires_the_same_rig_character_and_skeleton_and_cancels_shots() {
+        let vfs = vfs::Vfs::new("/tmp/vrm-synthetic-player-no-assets", &[]);
+        let mut anims = crate::world::animation::AnimationLibrary::default();
+        let mut body = equipment_body();
+        let project = body.graph.as_ref().unwrap().project().clone();
+        assert!(!body.can_reuse(&Arc::new(Skeleton::default()), Some(&project), "rig", false));
+        assert!(!body.can_reuse(&body.skeleton, Some(&project), "other", false));
+        assert!(!body.can_reuse(&body.skeleton, Some(&project), "rig", true));
+        assert!(!body.can_reuse(&body.skeleton, None, "rig", false));
+        let other = equipment_body();
+        assert!(!body.can_reuse(
+            &body.skeleton,
+            Some(other.graph.as_ref().unwrap().project()),
+            "rig",
+            false
+        ));
+        body.drawn = true;
+        body.weapon_out = true;
+        body.ready = true;
+        for pending in [false, true] {
+            body.bow.drawing = !pending;
+            body.bow.shot = pending.then_some((0.8, 0.0));
+            body.combat_events.arrow_release = true;
+            body.cancel_equipment_attack(false, &vfs, &mut anims);
+            assert!(!body.bow.drawing && body.bow.shot.is_none());
+            assert!(!body.combat_events.arrow_release);
+            assert_eq!(body.bow.update(true, true, 0.0), None);
+            assert!(body.drawn && body.weapon_out && body.ready);
+        }
+    }
 
     #[test]
     fn bow_requires_accepted_draw_and_release() {

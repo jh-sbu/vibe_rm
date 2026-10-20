@@ -41,6 +41,30 @@ variable names; the race's attack data (`ATKE`) for attack events.
 - **When the graph can swing.** Swings are sent only after `WeapEquip_Out`
   (the end of the draw): before it the graph takes `attackStart` and plays
   nothing. How the game gates attacks during the draw is unknown.
+- **Equipment changes and drawn state (2026-10-20).** Rebuilding the player's
+  meshes now retains the body and running graph when the cached skeleton,
+  project, rig path and sex still match. Draw intent, physical weapon placement,
+  draw readiness, blocking, locomotion and in-progress draw/sheath transitions
+  survive. Hand variables and rigid attachments refresh from the new inventory;
+  attachments use the retained `weapon_out` state. The same wearer graph also
+  survives, so changing unrelated armor does not restart the tail. A different
+  skeleton/project/rig/sex still creates a fresh, sheathed body.
+  This fixes a repository lifecycle bug identified by the roadmap; it does not
+  establish Skyrim's exact equipment-transition policy. The local UESP searches
+  for `equip weapon drawn` and `EquipItem` did not settle whether weapon-type
+  switches replay an equip transition, whether blocking survives, or when
+  attack/cast interruptions occur. Here bow draws/releases and pending melee
+  swings are cancelled on equipment rebuild; a retained graph is asked for
+  `attackStop` when needed. Cast policy is unchanged. Synthetic state-machine
+  tests cover draw/readiness/sheathing notifications at zero time, compatibility
+  gates, and shot cancellation without losing drawn state. No engine binaries
+  or new game assets were examined for this change.
+  VibeRM smoke tests using installed SE assets in WhiterunBanneredMare passed:
+  equipping iron armor one frame after `pdraw` kept `Actor.IsWeaponDrawn` true;
+  swapping an iron sword for an iron dagger while drawn kept it true and the
+  next attack reached `AttackRight_1HMDagger`; removing armor after sheathing
+  kept it false. These validate this implementation, not original Skyrim SE
+  behavior. Logs and screenshots stayed under `/tmp`, outside the repository.
 - **Power attack by movement.** The event is chosen from the race's attack
   names: `attackPowerStartInPlace` standing, `..._Sprint` sprinting, else
   `...Forward` / `Right` / `Backward` / `Left` by `Direction` (falling back to
@@ -73,7 +97,8 @@ variable names; the race's attack data (`ATKE`) for attack events.
 - **Interrupted or duplicate bow releases.** A missing `arrowRelease` cancels
   the pending shot after 1.5 seconds, without spending ammo or firing on a
   timer. Sheathing, body rebuilding (including equipment changes), death,
-  conversation and disabling fighting cancel it too; rejected graph events
+  conversation and disabling fighting cancel it too (including when the graph
+  is retained across an equipment rebuild); rejected graph events
   cannot queue a shot. Interrupted draws and refused releases ask the graph
   to lower the bow with `attackStop`, as for NPCs. Another draw waits until
   no `arrowRelease` has arrived for 0.4 seconds, so outgoing layered/blending
