@@ -70,6 +70,10 @@ pub struct Transition {
     pub self_mode_property: Option<String>,
     /// Where events go while the cross-fade plays (the effect's `eventMode`).
     pub event_mode: EventMode,
+    /// Variable bound to the effect's event mode, if any.
+    pub event_mode_variable: Option<usize>,
+    /// Read-only character property bound to the effect's event mode.
+    pub event_mode_property: Option<String>,
     /// Variable bound to the blend's duration, if any.
     pub blend_variable: Option<usize>,
     /// Read-only character property bound to the blend's duration, if any.
@@ -790,6 +794,15 @@ impl<'a> Reader<'a> {
                     event_mode: effect.map_or_else(Default::default, |e| {
                         EventMode::from_byte(self.p.u8(e + 0x49) as i8)
                     }),
+                    event_mode_variable: effect
+                        .and_then(|e| {
+                            self.bindings_of(e)
+                                .into_iter()
+                                .find(|b| b.member == "eventMode")
+                        })
+                        .map(|b| b.variable),
+                    event_mode_property: effect
+                        .and_then(|e| self.character_property(e, "eventMode")),
                     blend_variable: effect
                         .and_then(|e| {
                             self.bindings_of(e)
@@ -833,8 +846,10 @@ impl<'a> Reader<'a> {
                 let member = self.p.string(b)?;
                 // These inputs support whole-member bindings only. Do not
                 // replace the entire bitfield / enum with a single bit.
-                if matches!(member.as_str(), "flags" | "selfTransitionMode")
-                    && self.p.u8(b + 0x20) != u8::MAX
+                if matches!(
+                    member.as_str(),
+                    "flags" | "selfTransitionMode" | "eventMode"
+                ) && self.p.u8(b + 0x20) != u8::MAX
                 {
                     return None;
                 }
@@ -855,7 +870,10 @@ impl<'a> Reader<'a> {
         (0..n as u32)
             .map(|i| data + i * 0x28)
             .filter(|&b| self.p.u8(b + 0x21) == 1 && self.p.string(b).is_some_and(|m| m == member))
-            .filter(|&b| member != "selfTransitionMode" || self.p.u8(b + 0x20) == u8::MAX)
+            .filter(|&b| {
+                !matches!(member, "selfTransitionMode" | "eventMode")
+                    || self.p.u8(b + 0x20) == u8::MAX
+            })
             .find_map(|b| {
                 self.character_properties
                     .get(usize::try_from(self.p.i32(b + 0x1C)).ok()?)
@@ -875,8 +893,10 @@ impl<'a> Reader<'a> {
             .filter(|&b| self.p.u8(b + 0x21) == 1)
             .filter_map(|b| {
                 let member = self.p.string(b)?;
-                if matches!(member.as_str(), "flags" | "selfTransitionMode")
-                    && self.p.u8(b + 0x20) != u8::MAX
+                if matches!(
+                    member.as_str(),
+                    "flags" | "selfTransitionMode" | "eventMode"
+                ) && self.p.u8(b + 0x20) != u8::MAX
                 {
                     return None;
                 }
@@ -2072,6 +2092,44 @@ mod character_property_tests {
             assert_eq!(
                 t.self_mode_property.as_deref(),
                 (bit == 255).then_some("SelfMode")
+            );
+            assert!(t.blend_variable.is_none());
+            assert!(t.blend_property.is_none());
+        }
+    }
+
+    #[test]
+    fn transition_effects_retain_whole_event_mode_bindings() {
+        for bit in [255, 0] {
+            let mut p = fixture();
+            for (at, binding) in [(0x480, 0x380), (0x4E0, 0x3F8)] {
+                p.data[at..at + 0x20].fill(0);
+                p.data[at..at + 9].copy_from_slice(b"eventMode");
+                p.data[binding + 0x20] = bit;
+            }
+            p.data[0x2C9] = 1; // Authored PROCESS_ALL at effect + 0x49.
+            let r = Reader {
+                p: &p,
+                classes: [(0x280, "hkbBlendingTransitionEffect")].into(),
+                ids: Default::default(),
+                generators: vec![],
+                bindings: vec![],
+                property_bindings: vec![],
+                mod_ids: Default::default(),
+                modifiers: vec![],
+                modifier_bindings: vec![],
+                modifier_property_bindings: vec![],
+                character_properties: ["Other", "Unused", "Third", "Fourth", "EventModeInput"]
+                    .map(String::from)
+                    .to_vec(),
+            };
+            let transitions = r.transitions(Some(0x600));
+            let t = &transitions[0];
+            assert_eq!(t.event_mode, EventMode::ProcessAll);
+            assert_eq!(t.event_mode_variable, (bit == 255).then_some(2));
+            assert_eq!(
+                t.event_mode_property.as_deref(),
+                (bit == 255).then_some("EventModeInput")
             );
             assert!(t.blend_variable.is_none());
             assert!(t.blend_property.is_none());

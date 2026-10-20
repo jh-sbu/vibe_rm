@@ -175,6 +175,10 @@ game each piece unlocks.
   and scalar character-property inputs at commit, preserving existing
   continue/reset/blend behavior. Binding and lifecycle limits:
   `known_ambiguities/transition-self-mode-properties.md`
+- Transition effects resolve whole-member `eventMode` graph-variable and
+  scalar character-property inputs at commit, preserving existing event
+  routing. Ignore-to routing and lifecycle limits:
+  `known_ambiguities/transition-event-mode-properties.md`
 - Cyclic blend wrappers forward `fBlendParameter` character properties to their
   blender children, including cyclic weights and synchronized clip timing.
   Existing variable precedence and authored fallbacks remain; wrapper lifecycle
@@ -1247,8 +1251,8 @@ game each piece unlocks.
      (`known_ambiguities/selectors.md`)
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
      properties on remaining generator members, blender-child members beyond `weight`
-     and `boneWeights`, and transition-effect members beyond `duration` and
-     `selfTransitionMode`,
+     and `boneWeights`, and transition-effect members beyond `duration`,
+     `selfTransitionMode` and `eventMode`,
      runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`;
      `vrm-tool hkb-props` lists the bindings: the humanoid and dragon projects bind
      only two modifiers' `enable`);

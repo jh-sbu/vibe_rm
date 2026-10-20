@@ -1215,6 +1215,30 @@ impl Ctx<'_> {
             Some(3.0) => SelfTransitionMode::Blend,
             _ => t.self_mode,
         };
+        let event_mode_input = if let Some(v) = t.event_mode_variable {
+            self.shared.maps[gi]
+                .vars
+                .get(v)
+                .and_then(|&mapped| self.values.get(mapped))
+                .copied()
+        } else {
+            t.event_mode_property.as_ref().and_then(|property| {
+                self.shared
+                    .project
+                    .character
+                    .as_ref()?
+                    .scalar_properties
+                    .get(&property.to_ascii_lowercase())
+                    .copied()
+            })
+        };
+        let event_mode = match event_mode_input {
+            Some(0.0) => EventMode::Default,
+            Some(1.0) => EventMode::ProcessAll,
+            Some(2.0) => EventMode::IgnoreFromGenerator,
+            Some(3.0) => EventMode::IgnoreToGenerator,
+            _ => t.event_mode,
+        };
         // Into the state it is in: the effect says whether that restarts it.
         let again = t.to_nested.is_none() && old.is_some_and(|s| s.id == new.id);
         if again
@@ -1296,7 +1320,10 @@ impl Ctx<'_> {
             return;
         };
         *m = MachineState::new(id, child, sync_variable);
-        m.from_hears = from.is_some() && t.event_mode == EventMode::ProcessAll;
+        // Retain existing routing: IgnoreToGenerator is a valid enum, but its
+        // source-only delivery is unresolved and not implemented here. See
+        // known_ambiguities/transition-event-mode-properties.md.
+        m.from_hears = from.is_some() && event_mode == EventMode::ProcessAll;
         m.from = from;
         m.locked = locked;
         // Queue the notification after installing the destination: the event
@@ -5232,6 +5259,10 @@ mod tests {
     /// State 0 is a machine of its own (`I0` -> `I1` on `Go`); `Leave` blends
     /// out of it for a second into a clip.
     fn leaving(mode: EventMode) -> Instance {
+        instance(leaving_graph(mode))
+    }
+
+    fn leaving_graph(mode: EventMode) -> BehaviorGraph {
         let mut leave = Transition::new(0, 1, None);
         leave.blend = Some(1.0);
         leave.event_mode = mode;
@@ -5263,12 +5294,7 @@ mod tests {
             clip("I1", ClipMode::Looping, vec![]),
             clip("B", ClipMode::Looping, vec![]),
         ];
-        instance(BehaviorGraph::new(
-            "G",
-            Some(0),
-            gens,
-            vec!["Leave".into(), "Go".into()],
-        ))
+        BehaviorGraph::new("G", Some(0), gens, vec!["Leave".into(), "Go".into()])
     }
 
     #[test]
@@ -5288,6 +5314,110 @@ mod tests {
             // The blend over, the old state is gone for good.
             i.update(1.0, &mut durations);
             assert_eq!(playing(&i), [("B".into(), 1.0)]);
+        }
+    }
+
+    fn event_mode_property_graph() -> BehaviorGraph {
+        let mut g = leaving_graph(EventMode::ProcessAll);
+        let Generator::StateMachine { states, .. } = &mut g.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].event_mode_property = Some("EVENTMODE".into());
+        g
+    }
+
+    fn assert_leaving_hears(i: &mut Instance, heard: &str) {
+        i.update(0.25, &mut durations);
+        i.handle_event("Go", &mut durations);
+        let names: Vec<String> = playing(i).into_iter().map(|p| p.0).collect();
+        assert_eq!(names, [heard, "B"]);
+        i.update(1.0, &mut durations);
+        assert_eq!(playing(i), [("B".into(), 1.0)]);
+    }
+
+    #[test]
+    fn transition_event_mode_properties_resolve_per_character_and_stay_read_only() {
+        for (value, heard) in [(0.0, "I0"), (1.0, "I1"), (2.0, "I0"), (3.0, "I0")] {
+            let mut i = property_instance(event_mode_property_graph(), &[("eventmode", value)]);
+            assert!(i.handle_event("Leave", &mut durations));
+            assert_leaving_hears(&mut i, heard);
+            assert!(!i.set_variable("EventMode", 1.0));
+            assert_eq!(i.variable("EventMode"), None);
+            assert_eq!(
+                i.shared
+                    .project
+                    .character
+                    .as_ref()
+                    .unwrap()
+                    .scalar_properties["eventmode"],
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn unavailable_or_invalid_transition_event_modes_keep_authored_mode() {
+        let graph = event_mode_property_graph;
+        let mut non_scalar = property_instance(graph(), &[]);
+        Arc::get_mut(&mut Arc::get_mut(&mut non_scalar.shared).unwrap().project)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .bone_weights
+            .insert("eventmode".into(), vec![0.0]);
+        let mut instances = vec![
+            instance(graph()),
+            property_instance(graph(), &[]),
+            non_scalar,
+        ];
+        let mut invalid_variable = graph();
+        let Generator::StateMachine { states, .. } = &mut invalid_variable.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].event_mode_variable = Some(99);
+        instances.push(property_instance(invalid_variable, &[("eventmode", 0.0)]));
+        for value in [
+            -1.0,
+            0.5,
+            4.0,
+            256.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
+            instances.push(property_instance(graph(), &[("eventmode", value)]));
+        }
+        for mut i in instances {
+            assert!(i.handle_event("Leave", &mut durations));
+            assert_leaving_hears(&mut i, "I1");
+        }
+    }
+
+    #[test]
+    fn transition_event_mode_variables_win_at_pending_commit_and_remain_fixed() {
+        for (value, heard) in [(0.0, "I0"), (1.0, "I1"), (f32::NAN, "I1")] {
+            let mut g = event_mode_property_graph();
+            let variable = g.add_variable("Mode", VarType::Real, 0.0);
+            let Generator::StateMachine { states, .. } = &mut g.generators[0] else {
+                unreachable!()
+            };
+            let t = &mut states[0].transitions[0];
+            t.event_mode_variable = Some(variable);
+            t.initiate = Some(Interval {
+                enter_event: -1,
+                exit_event: -1,
+                enter_time: 1.0,
+                exit_time: 0.0,
+            });
+            let mut i = property_instance(g, &[("eventmode", 2.0)]);
+            assert!(i.handle_event("Leave", &mut durations));
+            assert_eq!(i.changes(), 0);
+            assert!(i.set_variable("Mode", value));
+            i.update(1.0, &mut durations);
+            assert_eq!(i.changes(), 1);
+            assert!(i.set_variable("Mode", if value == 0.0 { 1.0 } else { 0.0 }));
+            assert_leaving_hears(&mut i, heard);
         }
     }
 
