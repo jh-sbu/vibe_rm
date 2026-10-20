@@ -177,8 +177,11 @@ pub struct ValueInterpolator {
 pub struct ValueKeys {
     pub keys: Vec<(f32, Vec3)>,
     /// NIF KeyType: 1 linear, 2 quadratic, 3 TBC, 5 constant.
-    /// Quadratic / TBC retain the existing linear approximation.
+    /// TBC retains the existing linear approximation.
     pub interpolation: u32,
+    /// Quadratic tangents in serialized (forward/incoming, backward/outgoing)
+    /// order, one pair per key. Tangents are in normalized segment units.
+    pub tangents: Vec<(Vec3, Vec3)>,
 }
 
 impl Default for ValueKeys {
@@ -186,6 +189,7 @@ impl Default for ValueKeys {
         Self {
             keys: Vec::new(),
             interpolation: 1,
+            tangents: Vec::new(),
         }
     }
 }
@@ -194,6 +198,31 @@ impl ValueKeys {
     /// Sample float / colour keys. Boolean controllers sample their preceding
     /// key explicitly, rather than using float CONST_KEY midpoint selection.
     pub fn sample(&self, t: f32) -> Option<Vec3> {
+        if t.is_nan() {
+            return None;
+        }
+        if self.interpolation == 2 && self.tangents.len() == self.keys.len() {
+            let first = self.keys.first()?;
+            if t <= first.0 {
+                return Some(first.1);
+            }
+            let i = self.keys.partition_point(|key| key.0 <= t);
+            let (t0, a) = self.keys[i - 1];
+            return Some(match self.keys.get(i) {
+                Some(&(t1, b)) if t1 > t0 => {
+                    let u = (t - t0) / (t1 - t0);
+                    let u2 = u * u;
+                    let u3 = u2 * u;
+                    // Public OpenMW / NifSkope use the lower outgoing and
+                    // upper incoming tangent directly, without a time scale.
+                    a * (2.0 * u3 - 3.0 * u2 + 1.0)
+                        + b * (-2.0 * u3 + 3.0 * u2)
+                        + self.tangents[i - 1].1 * (u3 - 2.0 * u2 + u)
+                        + self.tangents[i].0 * (u3 - u2)
+                }
+                _ => a,
+            });
+        }
         lerp_keys(&self.keys, t, |a, b, f| {
             // Public NifSkope / OpenMW float and colour evaluators select
             // the nearest key for CONST_KEY (unlike boolean visibility).
@@ -261,16 +290,17 @@ pub(crate) fn value_interpolator(r: &mut Reader, point3: bool) -> Result<ValueIn
 
 /// `NiBoolData`: byte keys, as 0 / 1 in x.
 pub(crate) fn bool_keys(r: &mut Reader) -> Result<ValueKeys> {
-    let (keys, interpolation) =
+    let (keys, interpolation, tangents) =
         key_group_with_interpolation(r, |r| Ok(Vec3::new(r.u8()? as f32, 0.0, 0.0)))?;
     Ok(ValueKeys {
         keys,
         interpolation,
+        tangents,
     })
 }
 
 pub(crate) fn value_keys(r: &mut Reader, point3: bool) -> Result<ValueKeys> {
-    let (keys, interpolation) = if point3 {
+    let (keys, interpolation, tangents) = if point3 {
         key_group_with_interpolation(r, |r| r.vec3())?
     } else {
         key_group_with_interpolation(r, |r| Ok(Vec3::new(r.f32()?, 0.0, 0.0)))?
@@ -278,6 +308,7 @@ pub(crate) fn value_keys(r: &mut Reader, point3: bool) -> Result<ValueKeys> {
     Ok(ValueKeys {
         keys,
         interpolation,
+        tangents,
     })
 }
 
@@ -370,26 +401,26 @@ fn key_group<T>(
     r: &mut Reader,
     value: impl FnMut(&mut Reader) -> Result<T>,
 ) -> Result<Vec<(f32, T)>> {
-    key_group_with_interpolation(r, value).map(|(keys, _)| keys)
+    key_group_with_interpolation(r, value).map(|(keys, _, _)| keys)
 }
 
 fn key_group_with_interpolation<T>(
     r: &mut Reader,
     mut value: impl FnMut(&mut Reader) -> Result<T>,
-) -> Result<(Vec<(f32, T)>, u32)> {
+) -> Result<(Vec<(f32, T)>, u32, Vec<(T, T)>)> {
     let n = r.u32()?;
     if n == 0 {
-        return Ok((Vec::new(), 1));
+        return Ok((Vec::new(), 1, Vec::new()));
     }
     let interp = r.u32()?;
     let mut out = Vec::with_capacity(n.min(4096) as usize);
+    let mut tangents = Vec::new();
     for _ in 0..n {
         let t = r.f32()?;
         let v = value(r)?;
         match interp {
             2 => {
-                value(r)?;
-                value(r)?;
+                tangents.push((value(r)?, value(r)?));
             }
             3 => {
                 r.f32()?;
@@ -400,7 +431,7 @@ fn key_group_with_interpolation<T>(
         }
         out.push((t, v));
     }
-    Ok((out, interp))
+    Ok((out, interp, tangents))
 }
 
 pub(crate) fn transform_data(r: &mut Reader) -> Result<TransformData> {
@@ -506,7 +537,7 @@ mod tests {
             for component in 0..if point3 { 3 } else { 1 } {
                 bytes.extend_from_slice(&(value + component as f32).to_le_bytes());
             }
-            // Existing nonlinear approximation must still consume the payload.
+            // Nonlinear payloads must consume their extra fields.
             for _ in 0..match interpolation {
                 2 => {
                     if point3 {
@@ -560,13 +591,74 @@ mod tests {
     }
 
     #[test]
-    fn linear_and_nonlinear_approximations_still_blend() {
+    fn linear_and_tbc_approximation_still_blend() {
         for point3 in [false, true] {
-            for interpolation in [1, 2, 3] {
+            for interpolation in [1, 3] {
                 let keys = parsed_value_keys(point3, interpolation);
                 assert_eq!(keys.sample(3.0).unwrap().x, 2.0);
                 assert_eq!(keys.sample(5.0).unwrap().x, 6.0);
             }
+        }
+    }
+
+    #[test]
+    fn quadratic_zero_tangents_ease_and_hold_endpoints() {
+        for point3 in [false, true] {
+            let keys = parsed_value_keys(point3, 2);
+            assert_eq!(keys.sample(f32::NAN), None);
+            for (time, expected) in [
+                (-1.0, 0.0),
+                (2.0, 0.0),
+                (3.0, 1.25),
+                (5.0, 6.75),
+                (6.0, 8.0),
+                (10.0, 16.0),
+                (20.0, 16.0),
+            ] {
+                let value = keys.sample(time).unwrap();
+                assert_eq!(value.x, expected);
+                if point3 {
+                    assert_eq!(value.y, expected + 1.0);
+                    assert_eq!(value.z, expected + 2.0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn quadratic_parser_preserves_tangent_order_vectors_and_normalized_units() {
+        for point3 in [false, true] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&2u32.to_le_bytes());
+            bytes.extend_from_slice(&2u32.to_le_bytes());
+            // The unused endpoint tangents deliberately differ. Four-second
+            // spacing catches accidental multiplication by segment duration.
+            for (time, value, forward, backward) in [
+                (2.0f32, [0.0f32; 3], [99.0; 3], [8.0, 16.0, 24.0]),
+                (6.0, [8.0, 16.0, 24.0], [0.0, 8.0, 16.0], [-99.0; 3]),
+            ] {
+                bytes.extend_from_slice(&time.to_le_bytes());
+                for field in [value, forward, backward] {
+                    for component in &field[..if point3 { 3 } else { 1 }] {
+                        bytes.extend_from_slice(&component.to_le_bytes());
+                    }
+                }
+            }
+            let mut reader = crate::reader::Reader::new(&bytes);
+            let keys = super::value_keys(&mut reader, point3).unwrap();
+            assert_eq!(reader.remaining(), 0);
+            assert_eq!(keys.tangents[0].0.x, 99.0);
+            assert_eq!(keys.tangents[0].1.x, 8.0);
+            let value = keys.sample(3.0).unwrap();
+            assert_eq!(value.x, 2.375);
+            if point3 {
+                assert_eq!(value, glam::Vec3::new(2.375, 4.375, 6.375));
+            }
+            // Seeking backwards has no cursor state; each segment stays exact.
+            assert_eq!(keys.sample(6.0).unwrap().x, 8.0);
+            assert_eq!(keys.sample(3.0).unwrap().x, 2.375);
+            let mut truncated = crate::reader::Reader::new(&bytes[..bytes.len() - 1]);
+            assert!(super::value_keys(&mut truncated, point3).is_err());
         }
     }
 
@@ -586,6 +678,7 @@ mod tests {
         let keys = super::ValueKeys {
             keys: vec![(3.0, glam::Vec3::ONE)],
             interpolation: 5,
+            tangents: Vec::new(),
         };
         for time in [-10.0, 3.0, 20.0] {
             assert_eq!(keys.sample(time), Some(glam::Vec3::ONE));

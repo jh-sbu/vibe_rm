@@ -1133,6 +1133,11 @@ game each piece unlocks.
   sequences and particle float curves. Boolean keys retain their hold behavior.
   Midpoint ties and remaining interpolation limits:
   `known_ambiguities/value-key-interpolation.md`
+- Quadratic `NiFloatData` / `NiPosData` curves retain and evaluate their
+  tangents for standalone and named-sequence material / alpha-test channels
+  and particle float controllers. TBC and transform interpolation remain
+  separate work; evidence and limits:
+  `known_ambiguities/quadratic-value-interpolation.md`
 - Impacts: melee blows, bashes and arrows look up the impact (IPCT) their impact data
   set (weapon `INAM`, bash `BIDS`, the race's `NAM5` bare-handed) has for the material
   struck (the target race's `NAM4`, the blocking shield's or weapon's `BAMT`, the

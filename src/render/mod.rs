@@ -286,6 +286,7 @@ mod alpha_test_tests {
                 },
                 keys: nif::anim::ValueKeys {
                     interpolation: 1,
+                    tangents: Vec::new(),
                     keys: vec![(0.0, Vec3::ZERO), (2.0, Vec3::new(255.0, 0.0, 0.0))],
                 },
                 variable: 0,
@@ -355,6 +356,38 @@ mod alpha_test_tests {
         // Sequence time has already been mapped; frequency must not apply twice.
         assert_eq!(base.sequenced(&anim, "Atlas", 0.75).uv[0], 0.0);
         assert_eq!(base.sequenced(&anim, "Atlas", 1.0).uv[0], 0.5);
+    }
+
+    #[test]
+    fn quadratic_material_keys_reach_standalone_and_sequence_uniforms() {
+        let mut base = <MaterialUniform as bytemuck::Zeroable>::zeroed();
+        base.params[1] = 0.25;
+        let mut anim = animation(true);
+        let alpha = &mut anim.channels[0];
+        alpha.keys.interpolation = 2;
+        alpha.keys.tangents = vec![(Vec3::ZERO, Vec3::ZERO); 2];
+        let mut uv = alpha.clone();
+        uv.alpha_test = false;
+        uv.variable = 6;
+        uv.keys.keys = vec![(0.0, Vec3::ZERO), (2.0, Vec3::splat(0.5))];
+        let mut colour = uv.clone();
+        colour.color = true;
+        colour.variable = 0;
+        colour.keys.keys = vec![(0.0, Vec3::X), (2.0, Vec3::Y)];
+        anim.channels.extend([uv, colour]);
+        anim.sequences.push(model::MaterialSequence {
+            name: "Ease".into(),
+            channels: anim.channels.clone(),
+        });
+        // Clock 0.25 maps to key 0.5 (u=0.25), once per standalone clock.
+        for uniform in [
+            base.animated(&anim, 0.25, false),
+            base.sequenced(&anim, "Ease", 0.5),
+        ] {
+            assert_eq!(uniform.params[1], 0.15625);
+            assert_eq!(uniform.uv[0], 0.078125);
+            assert_eq!(&uniform.emissive[..3], &[0.84375, 0.15625, 0.0]);
+        }
     }
 
     #[test]

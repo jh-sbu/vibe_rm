@@ -76,7 +76,7 @@ assets or game-derived test fixtures are included.
   scopes with duplicate sequence names and simultaneous sequence ownership
   need separate handling. No claim is made that these runtime policies match
   the original engine's arbitration.
-- Negative frequency / backwards playback, nonlinear float or colour interpolation,
+- Negative frequency / backwards playback, TBC float or colour interpolation,
   initialization ordering and save / reload clock persistence remain separate
   work. Positive sequence frequency is now respected by transforms as well
   as material channels.
