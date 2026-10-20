@@ -68,13 +68,20 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   unequal values so this assumption stays visible. Mapping is unresolved.
   Public vanilla [`ObjectReference.psc`](https://github.com/ianpatt/skse64/blob/master/scripts/vanilla/ObjectReference.psc)
   declares the native but does not settle the mapping.
-- **Still absent from `DamageObject`.** It does not yet raise
-  `OnDestructionStageChanged`, emit explosions/debris, change the model,
-  collision, navmesh or flags (including disable/destroy), or persist to
-  saves. Bellcube's
-  [stage-changed event page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/event/ondestructionstagechanged/)
-  describes worsening-stage notification; event timing/arguments and all
-  side effects remain future work.
+- **`OnDestructionStageChanged` dispatch.** When a `DamageObject` call changes
+  stored stage, one event with old and new stage integers is queued after the
+  new state is stored, through the normal reference/effect/running-alias
+  dispatcher. Health-only hits and `ClearDestruction` queue none; clear does
+  not erase previously queued events. The public Bellcube
+  [event page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/event/ondestructionstagechanged/)
+  describes worsening-stage notifications and old/current arguments. Runtime
+  sends one old/final notification per call even when thresholds are skipped;
+  whether Skyrim sends one event per skipped stage is unknown. The unresolved
+  `DSTD.index` versus model-damage-stage mapping also applies to these values.
+- **Still absent from `DamageObject`.** It does not emit explosions/debris,
+  change the model, collision, navmesh or flags (including disable/destroy),
+  or persist to saves. The event only reports the runtime state change;
+  stage side effects remain future work.
 - **`ClearDestruction` state reset.** The Papyrus native clears this
   reference's stored health/stage entry regardless of load state; repeated
   calls are no-ops and do not queue `OnDestructionStageChanged` or other

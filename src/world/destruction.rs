@@ -111,7 +111,19 @@ impl Engine {
         };
         let current = self.world_state.destruction.get(&reference).copied();
         if let Some(next) = apply_damage(&data, current, damage) {
+            let old_stage = current.map_or(-1, |state| state.stage);
+            let stage_changed = next.stage != old_stage;
             self.world_state.destruction.insert(reference, next);
+            if stage_changed {
+                self.send_script_event(
+                    reference,
+                    "OnDestructionStageChanged",
+                    vec![
+                        papyrus::Value::Int(old_stage),
+                        papyrus::Value::Int(next.stage),
+                    ],
+                );
+            }
         }
     }
 
