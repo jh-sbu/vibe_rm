@@ -33,6 +33,9 @@ pub enum Behaviour {
     /// Go to the location and cast the package's spell at its target now and then
     /// (`Package::use_magic`): the College's casting practice.
     UseMagic,
+    /// Go to the target (a lever, a workbench, a log pile) and activate it: use it
+    /// if it is furniture (`Package::activate`).
+    Activate,
 }
 
 /// Which weapon a UseWeapon package wants (its "Weapon Type" input).
@@ -281,6 +284,8 @@ pub struct Package {
     pub greet: Option<ForceGreet>,
     pub use_weapon: Option<UseWeapon>,
     pub use_magic: Option<UseMagic>,
+    /// Activate packages: how many times ("Number to Activate"), 0 for none.
+    pub activate: u32,
     /// Sandbox at each of these in turn (`SandboxMultiLocation`: its repeating
     /// branch of travel, sandbox and wait), in order or picked at random.
     pub stops: Vec<Stop>,
@@ -297,6 +302,8 @@ fn behaviour_of(template: &str) -> Behaviour {
         Behaviour::Patrol
     } else if t.starts_with("useweapon") {
         Behaviour::UseWeapon
+    } else if t == "activate" || t.starts_with("activatespecial") {
+        Behaviour::Activate
     } else if t.starts_with("usemagic") {
         Behaviour::UseMagic
     } else if t.starts_with("forcegreet") {
@@ -691,6 +698,11 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
             dual: flag("dualcast").unwrap_or(false),
         }
     });
+    let activate = if behaviour == Behaviour::Activate {
+        int("numbertoactivate").unwrap_or(1)
+    } else {
+        0
+    };
     // The first location input is the package's main location (a force greeter's
     // wait location, where to use a weapon); likewise for targets.
     let location =
@@ -702,6 +714,14 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         });
     let target = inputs.iter().find_map(|(_, v)| match v {
         Input::Target(t) => Some(*t),
+        _ => None,
+    });
+    // An Activate package names only its target: that is where it is.
+    let location = location.or(match (behaviour, target) {
+        (Behaviour::Activate, Some(Target::Ref(r))) => Some(Location {
+            kind: LocationKind::NearReference(r),
+            radius: 0.0,
+        }),
         _ => None,
     });
     let (stops, random_stops) = match behaviour {
@@ -745,6 +765,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         greet,
         use_weapon,
         use_magic,
+        activate,
         stops,
         random_stops,
     })
@@ -902,6 +923,7 @@ fn behaviour_of_procedure(name: &str) -> Behaviour {
         "ForceGreet" => Behaviour::ForceGreet,
         "UseWeapon" => Behaviour::UseWeapon,
         "UseMagic" => Behaviour::UseMagic,
+        "Activate" => Behaviour::Activate,
         _ => Behaviour::Hold,
     }
 }
@@ -1317,6 +1339,55 @@ mod tests {
         assert_eq!(bare.spell, None);
         assert_eq!(bare.casts, (1, 1));
         assert!(!bare.hold_when_blocked && !bare.dual);
+        drop(lo);
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn an_activate_package_is_where_its_target_is() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let (template_id, package_id) = (FormId(0x800), FormId(0x801));
+        let template = RecordBuilder::new(b"PACK", template_id)
+            .zstring(b"EDID", "Activate")
+            .field(b"XNAM", &[])
+            .field(b"UNAM", &[0])
+            .zstring(b"BNAM", "Target")
+            .field(b"UNAM", &[2])
+            .zstring(b"BNAM", "Number to Activate");
+        let mut pkcu = 16u32.to_le_bytes().to_vec();
+        pkcu.extend_from_slice(&template_id.0.to_le_bytes());
+        let mut target = 0u32.to_le_bytes().to_vec();
+        target.extend_from_slice(&0x900u32.to_le_bytes());
+        let package = RecordBuilder::new(b"PACK", package_id)
+            .field(b"PKCU", &pkcu)
+            .zstring(b"ANAM", "SingleRef")
+            .field(b"PTDA", &target)
+            .field(b"UNAM", &[0])
+            .zstring(b"ANAM", "Int")
+            .field(b"CNAM", &3i32.to_le_bytes())
+            .field(b"UNAM", &[2]);
+        let bytes = write_plugin(
+            0,
+            &[],
+            "test",
+            "synthetic activation",
+            0x902,
+            &[Node::top(b"PACK", vec![template, package])],
+        );
+        let directory =
+            std::env::temp_dir().join(format!("vrm-activate-inputs-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("Activate.esp");
+        std::fs::write(&path, bytes).unwrap();
+        let lo = LoadOrder::load(&directory, &["Activate.esp".into()]).unwrap();
+        let p = parse(&lo, package_id).unwrap();
+        assert_eq!(p.behaviour, Behaviour::Activate);
+        assert_eq!(p.activate, 3);
+        assert!(matches!(
+            p.location.map(|l| l.kind),
+            Some(LocationKind::NearReference(r)) if r == FormId(0x900)
+        ));
         drop(lo);
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(directory).unwrap();
