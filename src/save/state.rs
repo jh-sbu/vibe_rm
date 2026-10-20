@@ -9,9 +9,9 @@
 //! references), `WRLD` (the world state kept across cell loads and the
 //! references made while playing), `PLYR` (health, skills, perks, spells,
 //! shouts, favorites, dialogue heard), `CRIM` (bounties) and `BART`
-//! (restocks). Not yet saved: the Papyrus VM (script variables, properties,
-//! waiting threads), active magic effects, scenes, the Story Manager, AI
-//! progress, objects' behaviour graphs; see `plans/ROADMAP.md`.
+//! (restocks), and `VM` / `VMAR` (`super::vm`: the Papyrus VM). Not yet saved:
+//! active magic effects, scenes, the Story Manager, AI progress, objects'
+//! behaviour graphs; see `plans/ROADMAP.md`.
 //!
 //! Form ids are saved as loaded (their top byte is the load-order index), so a
 //! save only loads with the same plugins in the same order: `HEAD` lists them
@@ -92,6 +92,7 @@ pub struct Snapshot {
     pub bounties: BTreeMap<FormId, crate::crime::Bounty>,
     pub stolen_value: BTreeMap<FormId, (i32, i32)>,
     pub restocked: HashMap<FormId, f64>,
+    pub vm: super::vm::VmSnapshot,
 }
 
 // ------------------------------------------------------------ write helpers
@@ -484,6 +485,18 @@ impl Snapshot {
             bounties: e.crime.bounties.clone(),
             stolen_value: e.crime.stolen_value.clone(),
             restocked: e.restocks.stocked.clone(),
+            vm: super::vm::VmSnapshot {
+                vm: e.vm.export(),
+                initialized: s.initialized.iter().copied().collect(),
+                timers: s.timers.clone(),
+                sleep_listeners: s.sleep_listeners.clone(),
+                inventory_filters: s
+                    .inventory_filters
+                    .iter()
+                    .map(|(o, items)| (*o, items.iter().copied().collect()))
+                    .collect(),
+                anim_registrations: e.anim_events.registered(),
+            },
         }
     }
 
@@ -744,6 +757,7 @@ impl Snapshot {
             w.f64(*at);
         }
         file.add(b"BART", w.0);
+        self.vm.write(&mut file);
         file
     }
 }
@@ -1011,6 +1025,7 @@ impl Snapshot {
             s.restocked.insert(chest, r.f64()?);
         }
         r.finish()?;
+        s.vm = super::vm::VmSnapshot::read(file)?;
         Ok(s)
     }
 
@@ -1051,8 +1066,32 @@ impl Snapshot {
         // What was queued or running before the load belongs to the old game.
         s.pending_stages.clear();
         s.pending_events.clear();
+        s.pending_quest_inits.clear();
+        s.initialized = self.vm.initialized.into_iter().collect();
+        s.timers = self.vm.timers;
+        s.sleep_listeners = self.vm.sleep_listeners;
+        s.inventory_filters = self
+            .vm
+            .inventory_filters
+            .into_iter()
+            .map(|(o, items)| (o, items.into_iter().collect()))
+            .collect();
+        e.anim_events.restore(self.vm.anim_registrations);
         s.visibility_dirty = true;
         s.alias_gen += 1;
+        // The scripts attached with their variables and the threads waiting,
+        // before cells load and attach their own (attaching keeps what is there).
+        let mut vm = std::mem::take(&mut e.vm);
+        vm.time = e.scripts.real_time;
+        vm.menu_time = e.scripts.wall_time;
+        let dropped = {
+            let mut host = crate::script::EngineHost { engine: e };
+            vm.import(&mut host, self.vm.vm)
+        };
+        e.vm = vm;
+        if dropped > 0 {
+            log::warn!("{dropped} saved script threads can't be resumed");
+        }
         e.inventories = self.inventories;
         let ws = &mut e.world_state;
         ws.alerted = self.alerted;

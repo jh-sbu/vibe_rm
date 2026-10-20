@@ -418,8 +418,11 @@ game each piece unlocks.
   loads, references made while playing, and the player's health, skills,
   perks, spells, shouts, favorites, dialogue heard, bounties and restocks;
   loading refuses damaged files and other plugin lists, then enters the
-  saved location. `Game.RequestSave` / `RequestAutoSave` (written on the next
-  update), console `save`, `load`, `saves`.
+  saved location. The Papyrus VM too: attached scripts with their variables
+  and properties, suspended threads (kept at the instruction they waited at),
+  `OnInit` done, update timers, and sleep, inventory filter and animation
+  event registrations. `Game.RequestSave` / `RequestAutoSave` (written on the
+  next update), console `save`, `load`, `saves`.
 - Skills and leveling: the player's skill uses earn XP by each skill's `AVSK`
   (use mult and offset), skills go up at `improve mult x level ^ fSkillUseCurve
   + offset` ("One-handed Increased to 21"), each level reached giving character
@@ -1423,8 +1426,8 @@ game each piece unlocks.
    decay, turbulence, drag's exact formula and animated objects, rotation axis,
    speed-to-aspect runtime fidelity, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
-9. **Saves** (the container and the engine's state are done: see Done):
-   the Papyrus VM's state (script variables, properties, waiting threads),
+9. **Saves** (the container, the engine's state and the Papyrus VM are done:
+   see Done): threads waiting on message boxes or animation events,
    active magic effects, scene state, the Story Manager and relationships,
    AI progress, objects' behaviour graphs, weather and detection; reading the
    original's `.ess` saves later; a save / load menu (the System page),
