@@ -43,6 +43,9 @@ pub struct MagicPractice {
     pub(crate) blocked: bool,
     /// Where the cast in progress aims, for the engine.
     pub(crate) aim: Option<Vec3>,
+    /// The package this is the practice of: each of several packages
+    /// (Onmund's four spells) starts afresh.
+    package: Option<FormId>,
 }
 
 /// Seconds a caster waits before trying again when it can't start a cast
@@ -92,6 +95,16 @@ impl ActorRuntime {
             return;
         };
         let mut m = self.magic_practice.unwrap_or_default();
+        if m.package != package {
+            if let Some(h) = m.cast {
+                self.release_hand(h.hand);
+            }
+            m = MagicPractice {
+                blocked: m.blocked,
+                package,
+                ..Default::default()
+            };
+        }
         let left = *m.left.get_or_insert_with(|| {
             goal.casts.0 + ((w.rand)() % u64::from(goal.casts.1 - goal.casts.0 + 1)) as u32
         });
@@ -243,7 +256,10 @@ impl ActorRuntime {
             log::debug!("{} finished its casting practice", self.ref_id);
             self.finished_package = package;
             self.next_eval = 0.0;
-            *m = MagicPractice::default();
+            *m = MagicPractice {
+                package: m.package,
+                ..Default::default()
+            };
         }
     }
 
@@ -487,6 +503,22 @@ mod tests {
             assert!(a.casts.is_none());
             g.hold_when_blocked = false;
             a.magic_practice_step(0.1, &g, w);
+            assert!(a.casts.is_some());
+        });
+    }
+
+    #[test]
+    fn another_package_starts_its_practice_afresh() {
+        with_world(Vec3::Y * 500.0, |w| {
+            let mut g = goal();
+            g.casts = (5, 5);
+            let mut a = caster(spell(false, false), g);
+            a.magic_practice_step(0.1, &g, w);
+            assert_eq!(a.magic_practice.unwrap().left, Some(4));
+            // Its package is another's now: its own count, no cooldown owed.
+            a.magic_practice.as_mut().unwrap().package = Some(FormId(0x77));
+            a.magic_practice_step(0.1, &g, w);
+            assert_eq!(a.magic_practice.unwrap().left, Some(4));
             assert!(a.casts.is_some());
         });
     }

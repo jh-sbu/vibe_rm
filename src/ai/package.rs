@@ -297,7 +297,7 @@ fn behaviour_of(template: &str) -> Behaviour {
         Behaviour::Patrol
     } else if t.starts_with("useweapon") {
         Behaviour::UseWeapon
-    } else if t == "usemagic" {
+    } else if t.starts_with("usemagic") {
         Behaviour::UseMagic
     } else if t.starts_with("forcegreet") {
         Behaviour::ForceGreet
