@@ -534,6 +534,109 @@ impl Physics {
         }
     }
 
+    /// Where an actor's capsule walking from `from` towards `to` (feet, in XY)
+    /// ends up, sliding along what it meets: the world's fixed and keyframed
+    /// collision above a step's height, not loose objects (it pushes those),
+    /// other actors (they step aside) or corpses. Already overlapping
+    /// something, it may move out of it but not further in. Keeps `to`'s height.
+    pub fn slide_actor(&self, capsule: ColliderHandle, from: Vec3, to: Vec3) -> Vec3 {
+        const STEP: f32 = 36.0;
+        const SKIN: f32 = 1.0;
+        let Some(cap) = self
+            .world
+            .colliders
+            .get(capsule)
+            .and_then(|c| c.shape().as_capsule())
+        else {
+            return to;
+        };
+        let (r, half) = (cap.radius, cap.half_height());
+        // The capsule above a step's height (the ground and stairs below are
+        // the navmesh's business), and thinner: the navmesh keeps actors off
+        // walls, so this only stops them where it runs on through something
+        // solid (a closed gate).
+        let step = STEP.min(half);
+        let shape = SharedShape::capsule_z(half - step * 0.5, r * 0.6);
+        let lift = half + r + step * 0.5;
+        let not_actor = |h: ColliderHandle, _: &Collider| !self.capsules.contains(&h);
+        let filter = QueryFilter::exclude_dynamic()
+            .exclude_sensors()
+            .groups(InteractionGroups::new(
+                Group::ALL,
+                Group::ALL ^ RAGDOLL_GROUP ^ ACTOR_GROUP,
+                InteractionTestMode::And,
+            ))
+            .predicate(&not_actor);
+        let qp = self.world.query_pipeline_with_filter(filter);
+        let options = rapier3d::parry::query::ShapeCastOptions {
+            max_time_of_impact: 1.0,
+            target_distance: SKIN,
+            stop_at_penetration: false,
+            compute_impact_geometry_on_penetration: true,
+        };
+        let mut at = from.with_z(from.z + lift);
+        let mut left = (to - from).with_z(0.0);
+        for _ in 0..3 {
+            if left.length_squared() < 1e-4 {
+                break;
+            }
+            let pose = Pose::from_translation(at);
+            let Some((_, hit)) = qp.cast_shape(&pose, left, &*shape.0, options) else {
+                at += left;
+                break;
+            };
+            let t = hit.time_of_impact.clamp(0.0, 1.0);
+            at += left * t;
+            left *= 1.0 - t;
+            // Slide along what it met (the part of the rest not into it).
+            let Some(n) = hit.normal1.with_z(0.0).try_normalize() else {
+                break;
+            };
+            left -= n * left.dot(n).min(0.0);
+        }
+        at.with_z(to.z)
+    }
+
+    /// Where each of the colliders is: none for one disabled or gone.
+    pub fn collider_poses(&self, hs: &[ColliderHandle]) -> Vec<Option<Pose>> {
+        hs.iter()
+            .map(|&h| {
+                let c = self.world.colliders.get(h)?;
+                c.is_enabled().then(|| *c.position())
+            })
+            .collect()
+    }
+
+    /// The bounds (min, max) of those of the colliders enabled.
+    pub fn colliders_bounds(&self, hs: &[ColliderHandle]) -> Option<(Vec3, Vec3)> {
+        hs.iter()
+            .filter_map(|&h| self.world.colliders.get(h))
+            .filter(|c| c.is_enabled())
+            .map(|c| {
+                let b = c.compute_aabb();
+                (b.mins, b.maxs)
+            })
+            .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)))
+    }
+
+    /// Whether `shape` at `pose` overlaps any of the (enabled) colliders.
+    pub fn colliders_intersect(
+        &self,
+        hs: &[ColliderHandle],
+        shape: &dyn Shape,
+        pose: &Pose,
+    ) -> bool {
+        let dispatcher = self.world.narrow_phase.query_dispatcher();
+        hs.iter()
+            .filter_map(|&h| self.world.colliders.get(h))
+            .filter(|c| c.is_enabled())
+            .any(|c| {
+                dispatcher
+                    .intersection_test(&pose.inv_mul(c.position()), shape, c.shape())
+                    .is_ok_and(|hit| hit.intersecting)
+            })
+    }
+
     /// Wake the sleeping loose objects a shape overlaps (an actor walking into
     /// them): the physics engine doesn't for colliders moved by hand.
     fn wake_touching(&mut self, pose: Pose, shape: &SharedShape) {
@@ -1141,6 +1244,70 @@ mod tests {
         // The player's capsule right on it.
         let touches = p.body_touches(h, Some(Vec3::new(0.0, 25.0, 0.0)), 2.0);
         assert!(touches.iter().any(|t| t.0.is_none()));
+    }
+
+    #[test]
+    fn actors_slide_along_solid_walls_but_not_steps() {
+        let mut p = floor();
+        // A wall across +Y at y = 100, and a step 20 high at y = 50.
+        p.world.insert_collider(
+            ColliderBuilder::cuboid(500.0, 5.0, 150.0)
+                .translation(Vec3::new(0.0, 100.0, 150.0))
+                .build(),
+            None,
+        );
+        p.world.insert_collider(
+            ColliderBuilder::cuboid(500.0, 10.0, 10.0)
+                .translation(Vec3::new(0.0, 50.0, 10.0))
+                .build(),
+            None,
+        );
+        let c = p.add_actor_capsule(Vec3::ZERO, 1.0, esp::FormId(0x1234));
+        p.step(1.0 / 60.0);
+        // Straight at the wall: stops short of it, over the step.
+        let at = p.slide_actor(c, Vec3::ZERO, Vec3::new(0.0, 150.0, 0.0));
+        assert!(at.y > 60.0 && at.y < 95.0, "{at:?}");
+        // At it slantwise: slides along it.
+        let at = p.slide_actor(c, Vec3::ZERO, Vec3::new(100.0, 150.0, 0.0));
+        assert!(at.y < 95.0 && at.x > 90.0, "{at:?}");
+        // Clear of it: on to where it was going.
+        let to = Vec3::new(40.0, 20.0, 0.0);
+        assert!(p.slide_actor(c, Vec3::ZERO, to).distance(to) < 0.01);
+    }
+
+    #[test]
+    fn mesh_colliders_overlap_slabs() {
+        let mut p = Physics::new();
+        // A wall of two triangles in the plane y = 0.
+        let v = vec![
+            Vec3::new(-50.0, 0.0, 0.0),
+            Vec3::new(50.0, 0.0, 0.0),
+            Vec3::new(50.0, 0.0, 200.0),
+            Vec3::new(-50.0, 0.0, 200.0),
+        ];
+        let h = p.world.insert_collider(
+            ColliderBuilder::trimesh(v, vec![[0, 1, 2], [0, 2, 3]])
+                .unwrap()
+                .build(),
+            None,
+        );
+        let slab = |y: f32| {
+            let pts: Vec<Vec3> = [16.0, 96.0]
+                .iter()
+                .flat_map(|&z| {
+                    [
+                        Vec3::new(0.0, y - 20.0, z),
+                        Vec3::new(20.0, y + 20.0, z),
+                        Vec3::new(-20.0, y + 20.0, z),
+                    ]
+                })
+                .collect();
+            SharedShape::convex_hull(&pts).unwrap()
+        };
+        assert!(p.colliders_intersect(&[h], &*slab(0.0).0, &Pose::IDENTITY));
+        assert!(!p.colliders_intersect(&[h], &*slab(100.0).0, &Pose::IDENTITY));
+        p.set_enabled(&[h], false);
+        assert!(!p.colliders_intersect(&[h], &*slab(0.0).0, &Pose::IDENTITY));
     }
 
     #[test]

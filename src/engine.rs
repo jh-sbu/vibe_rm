@@ -42,6 +42,8 @@ pub(crate) struct CellRuntime {
     pub(crate) hazards: Vec<crate::hazards::Hazard>,
     /// Loose objects (simulated bodies).
     pub(crate) loose: Vec<crate::loose::Loose>,
+    /// References that block the navmesh under them (`Obstacle`).
+    pub(crate) obstacles: Vec<crate::obstacles::Obstacle>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1006,6 +1008,9 @@ impl Engine {
                 None => Vec::new(),
             };
             rt.colliders.extend(tagged.iter().map(|(h, _)| *h));
+            rt.obstacles.extend(crate::obstacles::Obstacle::new(
+                &self.lo, o.ref_id, o.base, &tagged,
+            ));
             if !tagged.is_empty() && self.is_disabled(o.ref_id) {
                 self.physics.set_owner_enabled(o.ref_id, false);
             }
@@ -1769,6 +1774,7 @@ impl Engine {
                 }
             }
             self.nav.unload(&rt.navmeshes);
+            self.remove_nav_obstacles(&rt.obstacles);
             self.furniture.remove_cell(key);
             for a in &rt.actors {
                 self.put_torch_away_for_now(a);
@@ -2347,6 +2353,18 @@ impl Engine {
                 if hit.enabled { "" } else { ", disabled" },
             ));
         }
+        if let Some((n, z)) = self.nav.locate(p.extend(self.player.position.z)) {
+            out.push(format!(
+                "  navmesh {} triangle {} at z {z:.1}{}",
+                n.mesh,
+                n.tri,
+                if self.nav.is_blocked(n) {
+                    ", blocked by an obstacle"
+                } else {
+                    ""
+                }
+            ));
+        }
         let mut keys: Vec<_> = self.cells.keys().copied().collect();
         keys.sort_by_key(|k| format!("{k:?}"));
         for k in keys {
@@ -2499,6 +2517,7 @@ impl Engine {
         self.update_loose();
         self.update_traps();
         self.update_whereabouts(world_dt);
+        self.update_nav_obstacles();
         self.update_actors(world_dt);
         self.update_triggers(world_dt);
         self.update_hazards(world_dt);

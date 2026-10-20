@@ -36,6 +36,7 @@ mod loose;
 mod magic;
 mod map_markers;
 mod messages;
+mod obstacles;
 mod perks;
 mod physics;
 mod pickpocket;

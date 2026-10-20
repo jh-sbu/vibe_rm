@@ -15,6 +15,9 @@ pub mod record_flags {
     pub const PERSISTENT: u32 = 0x400;
     pub const INITIALLY_DISABLED: u32 = 0x800;
     pub const COMPRESSED: u32 = 0x0004_0000;
+    /// Base objects (`STAT`, `ACTI`, `MSTT`, `CONT`...): blocks the navmesh
+    /// under it ("Obstacle").
+    pub const OBSTACLE: u32 = 0x0200_0000;
 }
 
 #[derive(Debug, Clone, Copy)]

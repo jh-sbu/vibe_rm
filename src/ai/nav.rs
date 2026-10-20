@@ -2,7 +2,7 @@
 //! edge links between meshes, and funnel string pulling.
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use esp::FormId;
 use esp::navmesh::{NavMesh, NavTriangle};
@@ -135,6 +135,13 @@ pub struct Node {
 #[derive(Default)]
 pub struct NavWorld {
     meshes: HashMap<FormId, Mesh>,
+    /// Bumped whenever meshes load or unload (obstacles are found again).
+    generation: u64,
+    /// The triangles each obstacle (a reference whose base is flagged
+    /// `Obstacle`: a closed portcullis) stands on, and all of them: paths
+    /// don't cross those.
+    obstacles: HashMap<FormId, Vec<Node>>,
+    blocked: HashSet<Node>,
 }
 
 #[derive(PartialEq)]
@@ -157,6 +164,64 @@ impl PartialOrd for Open {
 impl NavWorld {
     pub fn clear(&mut self) {
         self.meshes.clear();
+        self.obstacles.clear();
+        self.blocked.clear();
+        self.generation += 1;
+    }
+
+    /// Changes whenever navmeshes load or unload.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// The triangles `owner` blocks now (none: it no longer does).
+    pub fn set_obstacle(&mut self, owner: FormId, nodes: Vec<Node>) {
+        if nodes.is_empty() {
+            if self.obstacles.remove(&owner).is_none() {
+                return;
+            }
+            log::debug!("obstacle {owner} blocks no navmesh triangles");
+        } else if self.obstacles.get(&owner) == Some(&nodes) {
+            return;
+        } else {
+            log::debug!("obstacle {owner} blocks {} navmesh triangles", nodes.len());
+            self.obstacles.insert(owner, nodes);
+        }
+        self.blocked = self.obstacles.values().flatten().copied().collect();
+    }
+
+    /// Whether an obstacle stands on the triangle.
+    pub fn is_blocked(&self, n: Node) -> bool {
+        self.blocked.contains(&n)
+    }
+
+    /// The triangles (and their corners) whose bounds overlap the box `min`..`max`.
+    pub fn triangles_in(&self, min: Vec3, max: Vec3) -> Vec<(Node, [Vec3; 3])> {
+        let mut out = Vec::new();
+        for (&id, m) in &self.meshes {
+            if max.x < m.min.x || max.y < m.min.y || min.x > m.max.x || min.y > m.max.y {
+                continue;
+            }
+            let (c0, r0) = m.bucket_of(min.truncate());
+            let (c1, r1) = m.bucket_of(max.truncate());
+            let mut seen = HashSet::new();
+            for r in r0..=r1 {
+                for c in c0..=c1 {
+                    for &t in &m.buckets[r * m.cols + c] {
+                        if !seen.insert(t) {
+                            continue;
+                        }
+                        let p = m.corners(t as usize);
+                        let lo = p[0].min(p[1]).min(p[2]);
+                        let hi = p[0].max(p[1]).max(p[2]);
+                        if lo.cmple(max).all() && hi.cmpge(min).all() {
+                            out.push((Node { mesh: id, tri: t }, p));
+                        }
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Load the navmeshes of a cell. Returns the ids that were added.
@@ -182,6 +247,7 @@ impl NavWorld {
                 added.push(id);
             }
         }
+        self.generation += 1;
         added
     }
 
@@ -189,6 +255,7 @@ impl NavWorld {
         for id in ids {
             self.meshes.remove(id);
         }
+        self.generation += 1;
     }
 
     /// The triangle under (or nearest to) `p`.
@@ -247,7 +314,8 @@ impl NavWorld {
         &self.meshes[&n.mesh]
     }
 
-    /// Neighbours of `n` with the shared edge (as two endpoints of `n`'s triangle).
+    /// Neighbours of `n` with the shared edge (as two endpoints of `n`'s
+    /// triangle), but those an obstacle blocks.
     fn neighbours(&self, n: Node, out: &mut Vec<(Node, Vec3, Vec3)>) {
         out.clear();
         let m = self.mesh(n);
@@ -280,6 +348,7 @@ impl NavWorld {
                 }
             }
         }
+        out.retain(|(nb, ..)| !self.blocked.contains(nb));
     }
 
     /// Find a path from `from` to `to`, returning waypoints (excluding the start).
@@ -435,7 +504,12 @@ impl NavWorld {
                 continue;
             }
             for (i, t) in m.tris.iter().enumerate() {
-                if t.flags & (NavTriangle::WATER | NavTriangle::DOOR) != 0 {
+                if t.flags & (NavTriangle::WATER | NavTriangle::DOOR) != 0
+                    || self.blocked.contains(&Node {
+                        mesh: id,
+                        tri: i as u16,
+                    })
+                {
                     continue;
                 }
                 let cen = m.centroid(i);
@@ -524,6 +598,77 @@ fn string_pull(from: Vec3, to: Vec3, portals: &[(Vec3, Vec3)]) -> Vec<Vec3> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A corridor 100 wide along +X, `n` squares long, two triangles each,
+    /// as one navmesh.
+    fn corridor(n: usize) -> NavWorld {
+        let mut vertices = Vec::new();
+        for i in 0..=n {
+            vertices.push([i as f32 * 100.0, 0.0, 0.0]);
+            vertices.push([i as f32 * 100.0, 100.0, 0.0]);
+        }
+        let mut corners: Vec<[u16; 3]> = Vec::new();
+        for i in 0..n as u16 {
+            let (a, b, c, d) = (2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3);
+            corners.push([a, c, b]);
+            corners.push([b, c, d]);
+        }
+        let triangles = corners
+            .iter()
+            .enumerate()
+            .map(|(t, v)| {
+                let edges = std::array::from_fn(|e| {
+                    let (p, q) = (v[e], v[(e + 1) % 3]);
+                    corners
+                        .iter()
+                        .enumerate()
+                        .find(|&(o, w)| o != t && w.contains(&p) && w.contains(&q))
+                        .map_or(-1, |(o, _)| o as i16)
+                });
+                NavTriangle {
+                    vertices: *v,
+                    edges,
+                    flags: 0,
+                    cover: 0,
+                }
+            })
+            .collect();
+        let mesh = NavMesh {
+            version: 12,
+            world: FormId::NULL,
+            cell: FormId(1),
+            grid: (0, 0),
+            vertices,
+            triangles,
+            edge_links: Vec::new(),
+            doors: Vec::new(),
+        };
+        let mut w = NavWorld::default();
+        w.meshes.insert(FormId(2), Mesh::new(mesh).unwrap());
+        w
+    }
+
+    #[test]
+    fn obstacles_block_paths_until_they_move() {
+        let mut w = corridor(6);
+        let (from, to) = (Vec3::new(50.0, 50.0, 0.0), Vec3::new(550.0, 50.0, 0.0));
+        assert!(w.find_path(from, to).is_some());
+        // A gate across the corridor at x = 300.
+        let gate: Vec<Node> = w
+            .triangles_in(Vec3::new(295.0, 0.0, -10.0), Vec3::new(305.0, 100.0, 10.0))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(!gate.is_empty());
+        w.set_obstacle(FormId(3), gate);
+        assert!(w.find_path(from, to).is_none());
+        let (path, reached) = w.path_towards(from, to).unwrap();
+        assert!(!reached);
+        assert!(path.last().unwrap().x <= 300.0, "{path:?}");
+        // Raised: the way is open again.
+        w.set_obstacle(FormId(3), Vec::new());
+        assert!(w.find_path(from, to).is_some());
+    }
 
     #[test]
     fn funnel_straight_corridor() {

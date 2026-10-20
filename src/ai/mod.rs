@@ -881,6 +881,33 @@ impl ActorRuntime {
         }
     }
 
+    /// Walking from `was` to where it is now, it slides along (or stops at)
+    /// solid collision the navmesh runs on through (a closed gate, as a
+    /// backstop to obstacles blocking the navmesh). Not getting into or out
+    /// of furniture, nor jumps a step can't make (moved by a script).
+    fn collide(&mut self, physics: &crate::physics::Physics, nav: &nav::NavWorld, was: Vec3) {
+        const MAX_STEP: f32 = 100.0;
+        let Some(capsule) = self.capsule else {
+            return;
+        };
+        let moved = (self.pos - was).truncate().length();
+        if moved < 0.01
+            || moved > MAX_STEP
+            || self.in_furniture()
+            || matches!(self.state, State::Approach(_))
+        {
+            return;
+        }
+        let lift = Vec3::Z * self.lift;
+        let to = self.pos + lift;
+        let p = physics.slide_actor(capsule, was + lift, to);
+        if p.truncate().distance(to.truncate()) > 0.01 {
+            log::trace!("{} slides to {p:?} rather than {to:?}", self.ref_id);
+            let z = nav.height_at(p.with_z(self.pos.z)).unwrap_or(self.pos.z);
+            self.pos = p.with_z(z);
+        }
+    }
+
     /// What it stands on, seen from above: its bound's footprint, the long
     /// way a segment (along its heading for a wolf or a horse) and the short
     /// way the radius about it.
@@ -3531,6 +3558,7 @@ impl Engine {
                     }
                     continue;
                 }
+                let was = a.pos;
                 if talking == Some(a.ref_id) {
                     // Seated actors talk from where they are.
                     if !a.in_furniture() {
@@ -3610,6 +3638,7 @@ impl Engine {
                         a.keep_clear(&bodies, &nav, dt, before);
                     }
                 }
+                a.collide(&self.physics, &nav, was);
                 // NPCs look at the player close by, and while talking to them.
                 let near = a.pos.distance(player) < HEAD_TRACK_DISTANCE;
                 a.look_at = (near || talking == Some(a.ref_id)).then_some(eye);
