@@ -411,6 +411,12 @@ pub fn call(
             }
             none()
         }
+        ("objectreference", "cleardestruction") => {
+            if let Some(reference) = me {
+                e.clear_destruction(reference);
+            }
+            none()
+        }
         ("objectreference", "getpositionx") => v(Value::Float(
             me.and_then(|f| e.ref_position(f))
                 .map(|p| p.x)

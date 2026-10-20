@@ -4,8 +4,9 @@ Destructible definitions and the initial per-reference stage query are
 implemented in `crates/esp/src/destructible.rs`,
 `src/world/destruction.rs`, `src/script/natives.rs` and
 `src/condition/mod.rs`. Scripted `DamageObject` health/stage progression is
-also implemented; weapon/spell damage, stage side effects, events, clearing
-and saves remain unimplemented. Sources: UESP's DEST field page
+and `ClearDestruction` runtime-state reset are implemented; weapon/spell
+damage, stage side effects, visual/effect clearing and saves remain
+unimplemented. Sources: UESP's DEST field page
 ([permanent rev 2334527](https://en.uesp.net/w/index.php?oldid=2334527)),
 [xEdit's TES5 definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas)
 (`wbDEST`, `EXPL`), CommonLibSSE's `BGSDestructibleObjectForm.h`, and the
@@ -70,10 +71,21 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
 - **Still absent from `DamageObject`.** It does not yet raise
   `OnDestructionStageChanged`, emit explosions/debris, change the model,
   collision, navmesh or flags (including disable/destroy), or persist to
-  saves. `ClearDestruction` is also not implemented. Bellcube's
+  saves. Bellcube's
   [stage-changed event page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/event/ondestructionstagechanged/)
   describes worsening-stage notification; event timing/arguments and all
   side effects remain future work.
+- **`ClearDestruction` state reset.** The Papyrus native clears this
+  reference's stored health/stage entry regardless of load state; repeated
+  calls are no-ops and do not queue `OnDestructionStageChanged` or other
+  events. Subsequent supported damage initializes state again at `DEST.health`
+  and stage `-1`. Bellcube's [ClearDestruction
+  page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/function/cleardestruction/)
+  says it clears destruction effects and must not fire the stage-changed
+  event, while its caveat reports effects do not seem to be reapplied by
+  later damage. Our reset is only the in-memory health/stage state: visual,
+  collision, flags and destruction effects are not represented or restored,
+  so effect fidelity and the later-damage behavior remain unresolved.
 - **Stage order.** In every vanilla record, `index` equals the stage's
   position and the health percentages descend. The last stage is usually
   at 0%.

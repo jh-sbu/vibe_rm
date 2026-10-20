@@ -114,4 +114,10 @@ impl Engine {
             self.world_state.destruction.insert(reference, next);
         }
     }
+
+    /// Papyrus `ObjectReference.ClearDestruction`. Clear the stored per-reference
+    /// health and stage without requiring the reference to be loaded.
+    pub fn clear_destruction(&mut self, reference: FormId) {
+        self.world_state.destruction.remove(&reference);
+    }
 }
