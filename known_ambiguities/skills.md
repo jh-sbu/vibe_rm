@@ -94,3 +94,22 @@ below (Skyrim.esm / Update.esm).
   skill XP already earned toward the next level (as `IncrementSkill`), and
   passes no time; refusals are notifications; the menu has no sounds (no
   sound descriptor is named for it).
+
+## Mod Skill Use (entry point 22)
+
+`use_skill` passes a use's base XP through the player's "Mod Skill Use"
+perks, whose owner conditions name the skill with `EPMagic_IsAdvanceSkill`
+(vanilla: the Guardian Stones' `doom*Perk` x1.2 for their skills,
+`RestedPerk` 1.05, `RestedWellPerk` 1.1, `RestedMarriagePerk` 1.15; they
+stack multiplicatively per
+[UESP's Skyrim:Leveling](https://en.uesp.net/w/index.php?oldid=3636185),
+revision 3636185). Unconfirmed: the multiplier is applied to the base XP,
+before the skill's use mult and offset (the name says "skill use"; it only
+differs from scaling the result for skills with a use offset). Training,
+books and `AdvanceSkill`-style direct XP are not scaled.
+Not built: granting these perks. The Guardian Stones need standing stone
+activation, and Rested / Well Rested come from sleeping (UESP's
+Skyrim:Sleeping, revision 3577062: 5% in any bed, 10% in an owned bed, 15%
+beside a spouse, for 8 game hours) through the `Rested` spells, whose
+effects apply their perk through the magic effect's "Perk to Apply" field
+(`DATA` 0x88), which the engine does not read yet.

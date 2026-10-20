@@ -411,6 +411,8 @@ game each piece unlocks.
   Critical Hit Damage" (x1.25, x1.5, x2) past armor, counts the player's
   "Critical Strikes" and sets `GetLastHitCritical`; `IsSprinting` is the
   player's. Open questions: `known_ambiguities/critical-hits.md`
+- Skill use perks: "Mod Skill Use" scales a skill use's XP for the skills
+  its `EPMagic_IsAdvanceSkill` conditions name (`known_ambiguities/skills.md`)
 - Scrolls (`known_ambiguities/scrolls.md`): used from the inventory or
   favorites into the hand asked for (or away again), cast like a spell with
   the scroll's charge time, free of magicka and skill, and used up by the
@@ -1336,7 +1338,9 @@ game each piece unlocks.
      including scene and quest-alias packages)
    - Sneak attacks (see Done): NPCs sneaking up on the player
    - Skills (see Done): the other skills' uses as their systems come (magic,
-     crafting, speech), rested bonuses
+     crafting, speech); granting the skill-use perks: sleeping's Rested
+     spells (UESP sources in `known_ambiguities/skills.md`), the magic
+     effect's "Perk to Apply", the Guardian Stones
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
