@@ -464,7 +464,11 @@ pub fn call(
         ("objectreference", "islocked") => v(Value::Bool(me.is_some_and(|f| e.is_locked(f)))),
         ("objectreference", "lock") => {
             if let Some(f) = me {
-                e.set_locked(f, args.first().map(|a| a.as_bool()).unwrap_or(true));
+                e.lock_reference(
+                    f,
+                    args.first().map(|a| a.as_bool()).unwrap_or(true),
+                    args.get(1).is_some_and(|a| a.as_bool()),
+                );
             }
             none()
         }

@@ -95,6 +95,8 @@ pub struct ScriptState {
     /// (`XLOC`); lock levels set by scripts.
     pub locked: HashMap<FormId, bool>,
     pub lock_levels: HashMap<FormId, u8>,
+    /// Cell public/private overrides from doors locked or unlocked as owner.
+    pub cell_public: HashMap<FormId, bool>,
     /// Actor values scripts changed, by actor and value index (`actor_values`), and
     /// by name the ones outside the known values.
     pub actor_values: HashMap<(FormId, u32), crate::actor_values::Modifiers>,

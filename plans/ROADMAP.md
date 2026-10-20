@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Scripted `ObjectReference.Lock` honors its "as owner" argument: door
+  unlocking makes the adjoining interior public, locking makes it private;
+  trespass checks and native saves retain that access state. Adjoining-cell
+  choices and remaining lock behavior: `known_ambiguities/locks.md`
 - BSA, plugins (load order, ESL, overrides, strings), NIF (render + collision blocks), DDS
 - Interior/exterior cells, landscape, water, weather/climate/sky, time of day
 - Havok collision shapes -> rapier3d; first-person character controller
@@ -1464,10 +1468,10 @@ game each piece unlocks.
      bounty collector; horse theft and werewolf crimes; children telling
      adults, `PICC` lines, hired thugs; trespassers chased out, "Warn To
      Leave", `sNoWaitTrespass` / `sNoSleepTrespass`, sleepers waking to warn;
-     `GetAmountSoldStolen`; NPCs' crimes (`GetCrime`,
+     `GetAmountSoldStolen` (research-gated: legacy counter behavior in SE
+     unresolved; `known_ambiguities/barter.md`); NPCs' crimes (`GetCrime`,
      `GetActorCrimePlayerEnemy`), the unreported crime faction; dropped items' ownership;
-     locks' alias-given keys and factions, `Lock`'s "as owner"
-     argument, trespass for opening a lock
+     locks' alias-given keys and factions, trespass for opening a lock
    - Combat, more: attackers forgetting a lost fleeing target
      (`fCombatDetectionFleeingLostRemoveTime`,
      `fCombatLowFleeingTargetHitPercent`); flee dialogue's distance rules

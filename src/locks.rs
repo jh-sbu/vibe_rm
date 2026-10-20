@@ -7,7 +7,42 @@ use crate::ai::schedule::Place;
 use crate::engine::{Engine, PLAYER_REF};
 use crate::world::records::{self, Lock};
 
+#[cfg(test)]
+#[path = "lock_tests.rs"]
+mod tests;
+
 impl Engine {
+    /// Papyrus Lock's owner mode also changes access to the adjoining interior.
+    pub fn lock_reference(&mut self, r: FormId, locked: bool, as_owner: bool) {
+        self.set_locked(r, locked);
+        if !as_owner
+            || !self
+                .base_of(r)
+                .is_some_and(|b| self.lo.tag_of(b).is_some_and(|t| t.0 == *b"DOOR"))
+        {
+            return;
+        }
+        let Some(partner) = self
+            .lo
+            .get(r)
+            .and_then(|rec| records::reference(&rec).teleport.map(|t| t.0))
+        else {
+            return;
+        };
+        // Exterior entrances target the far interior; the inside half targets
+        // that same interior when its partner is outdoors.
+        let interior = [partner, r].into_iter().find_map(|door| {
+            let cell = self.lo.cell_of_ref(door)?;
+            self.lo
+                .cell(cell)
+                .filter(|c| c.world.is_none())
+                .map(|_| cell)
+        });
+        if let Some(cell) = interior {
+            self.scripts.cell_public.insert(cell, !locked);
+        }
+    }
+
     /// A reference's own lock (`XLOC`), with any level a script set.
     pub fn lock_of(&self, r: FormId) -> Option<Lock> {
         let own = self.lo.get(r).and_then(|rec| records::reference(&rec).lock);

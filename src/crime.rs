@@ -665,7 +665,8 @@ impl Engine {
                 .enumerate()
                 .fold(0u32, |a, (i, b)| a | (*b as u32) << (8 * i))
         });
-        if data & CELL_PUBLIC != 0 {
+        let public_override = self.scripts.cell_public.get(&cell).copied();
+        if public_override.unwrap_or(data & CELL_PUBLIC != 0) {
             return false;
         }
         if rec.flags() & CELL_OFF_LIMITS != 0 {
@@ -673,7 +674,9 @@ impl Engine {
         }
         drop(rec);
         let owned = self.ref_owned_by_other(cell);
-        owned && self.crime.private_homes.values().any(|&c| c == cell)
+        owned
+            && (public_override == Some(false)
+                || self.crime.private_homes.values().any(|&c| c == cell))
     }
 
     /// The player trespassing: the one in the cell who detects them most (awake
