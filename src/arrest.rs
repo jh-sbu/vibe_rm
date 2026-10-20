@@ -13,6 +13,10 @@ use esp::FormId;
 use crate::crime::CrimeValues;
 use crate::engine::{Engine, PLAYER_REF};
 
+#[cfg(test)]
+#[path = "arrest_tests.rs"]
+mod action_tests;
+
 /// The bounty from which the guards of a faction flagged "Attack on Sight"
 /// attack instead of arresting. No public source gives it; UESP's crime
 /// table puts murder (1000) where guards stop asking.
@@ -256,23 +260,33 @@ impl Engine {
         if let Some(&(_, r, faction)) = reached.first()
             && self.conversation.is_none()
         {
-            match self.blocking_greeting(r) {
-                Some(greeting) => {
-                    log::info!(
-                        "{r} stops the player: {} {}",
-                        greeting.0.editor_id,
-                        greeting.1.id
-                    );
-                    self.crime.arrests.arresting = Some((r, faction));
-                    self.crimes_known(faction);
-                    self.open_conversation(r, Some(greeting));
-                }
-                None => {
-                    log::info!("{r} has no arrest dialogue; it gives up");
-                    self.calm_guard(r);
-                }
+            if !self.start_arrest_conversation(r, faction) {
+                log::info!("{r} has no arrest dialogue; it gives up");
+                self.calm_guard(r);
             }
         }
+    }
+
+    /// Make the prospective arrest visible to greeting conditions. Failed
+    /// selection or a reference that cannot speak must not leave an arrest.
+    pub(crate) fn start_arrest_conversation(&mut self, guard: FormId, faction: FormId) -> bool {
+        let previous = self.crime.arrests.arresting.replace((guard, faction));
+        if let Some(greeting) = self.blocking_greeting(guard)
+            && self.base_of(guard).is_some()
+        {
+            log::info!(
+                "{guard} stops the player: {} {}",
+                greeting.0.editor_id,
+                greeting.1.id
+            );
+            // Opening runs INFO fragments synchronously. They must see the
+            // crimes reported, and may themselves end this arrest.
+            self.crimes_known(faction);
+            self.open_conversation(guard, Some(greeting));
+            return true;
+        }
+        self.crime.arrests.arresting = previous;
+        false
     }
 
     /// Whether the guards of `faction` would take a yield: they arrest (a
