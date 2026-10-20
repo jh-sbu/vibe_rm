@@ -730,6 +730,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .map_or(0, |i| i.hand(&e.lo, c.p1 == 0) as i32) as f32,
         ),
         5 => b(subject.is_some_and(|s| e.is_locked(s))), // GetLocked
+        157 => Some(subject.map_or(0, |s| e.open_state(s) as i32) as f32), // GetOpenState
         65 => Some(
             subject
                 .and_then(|s| e.lock_of(s))

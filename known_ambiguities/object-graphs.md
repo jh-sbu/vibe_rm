@@ -40,7 +40,34 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
   when it loads again (a broken rig stays broken); time doesn't pass for them
   meanwhile. References' scripts stay attached across unloads too, keeping
   their variables and state (`OnInit` runs once; `OnLoad` / `OnCellAttach`
-  again).
+  again). `OnCellLoad` goes to every scripted reference of a cell each time it
+  loads, after all of them have their scripts (so a puzzle pillar's, which
+  counts itself into its lever's script, finds that script attached).
+  Unconfirmed: whether the game sends it again on a reload (the pillars guard
+  with a `doOnce`; `barredDoor`, `defaultEnableEncLinkedRef` and about 90
+  other vanilla scripts have the event) and how it orders it against
+  `OnLoad`.
+- `GetOpenState` (Papyrus and condition 157, CommonLibSSE's
+  `BGSOpenCloseForm::OPEN_STATE`: 0 none, 1 open, 2 opening, 3 closed, 4
+  closing): animated doors from their `Open` / `Close` sequences; objects
+  with a graph from its events, `Open` / `Close` taken putting them opening /
+  closing and the `Opening` / `Closing` they raise when done (the large
+  Nordic portcullis's graph: states `Closed` -> `Open` -> `Opened` and
+  back) open / closed, `Opened` / `Closed` sent snapping there; other doors,
+  activators and containers closed (a door the player left open, open),
+  anything else none. Unconfirmed: CommonLibSSE gives activators the
+  open/close form too but not how the game decides their state. Kept in
+  memory with the graphs, not in saves (neither are the graphs).
+- The pillar puzzles' lever (`defaultPillarPuzzleLever`) activates its gate
+  and asks the gate's `GetOpenState` at once; only opening or open sets its
+  `doorOpened`, which lets a pillar turned off its answer later close the
+  gate again. Here the gate's `OnActivate` runs on a later tick than the
+  lever's next instruction, so the lever sees it closed and the gate stays
+  open after a wrong turn. Unconfirmed: in the game `Activate`,
+  `GetOpenState` and the gate script's `Is3DLoaded` / `PlayAnimation` are
+  probably each held to a frame, which could give the same answer; a test
+  mod (solve, pull, turn a pillar away: does the gate close?) would settle
+  it.
 - `PlayAnimationAndWait` gives up after 10 s (`WAIT_LIMIT`) when its event
   doesn't come; the game's wait has no limit, but a graph event missing here
   would otherwise hang the script for good.
