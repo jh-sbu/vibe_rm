@@ -1152,7 +1152,7 @@ impl Engine {
     /// The graph a worn model poses the actor's own skeleton with
     /// (`BSBehaviorGraphExtraData` "controls base skeleton": a tail), if the
     /// skeleton has the bones it names.
-    fn wearer_graph(
+    pub(crate) fn wearer_graph(
         &mut self,
         d: &crate::world::actor::ActorDesc,
         skel: &crate::world::skeleton::Skeleton,

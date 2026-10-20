@@ -118,7 +118,9 @@ game each piece unlocks.
   NPCs' tails sway: a worn model whose `BSBehaviorGraphExtraData` controls the base
   skeleton (the tail's `TailProject`) runs its graph beside the actor's, hearing its
   events and sharing its variables by name, posing the `TailBone`s
-  (`known_ambiguities/object-graphs.md`).
+  (`known_ambiguities/object-graphs.md`). The player's third-person body runs
+  its worn tail graph too; NPC redressing adds, removes or replaces wearer
+  graphs while preserving an unchanged selection's running state.
   The AI sends events (`moveStart`, furniture enter / exit, `IdleStop`...) and sets
   variables (`Speed`, `isInFurniture`, `IsNPC`, `weapAdj`...), follows the graph's root
   motion in furniture and takes anim objects and `IdleFurnitureExit` from its events;
@@ -1298,9 +1300,6 @@ game each piece unlocks.
    - Engine variables and events still missing: combat, first person;
      INFO listener idles (the speaker's are done, see Done); listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes, decals
-   - Argonian and Khajiit tails (`BSBehaviorGraphExtraData`'s "controls base
-     skeleton": done for NPCs, see Done): the player's own tail, tails after
-     what an actor wears changes
    - Later / separate: standalone controllers on skinned geometry, particle systems, attachments,
      distant and loose objects; collision following standalone transforms,
      persistence and driver arbitration (`known_ambiguities/node-controllers.md`);

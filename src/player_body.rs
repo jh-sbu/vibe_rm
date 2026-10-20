@@ -141,6 +141,9 @@ impl Engine {
             body.sneak_state = sneak.map(|(_, v)| v);
             let mut g = GraphAnim::new(project, &d.skeleton, d.female, &skel, self.rng);
             g.label = "player".into();
+            if let Some(tail) = self.wearer_graph(&d, &skel) {
+                g.attach_aux(tail);
+            }
             for (var, value) in [("IsNPC", 0.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)] {
                 g.set_variable(var, value);
             }
