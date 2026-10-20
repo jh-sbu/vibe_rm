@@ -647,6 +647,25 @@ impl Inventory {
         }
     }
 
+    /// What is held in each hand and the voice, and whether the right hand's
+    /// item fills both (what saves keep, with `equipped`).
+    pub fn hands(&self) -> ([Option<FormId>; 3], bool) {
+        (self.held, self.both)
+    }
+
+    /// This inventory with the equipment a save recorded (`equipped`, `hands`).
+    pub fn with_equipment(
+        mut self,
+        worn: Vec<FormId>,
+        held: [Option<FormId>; 3],
+        both: bool,
+    ) -> Self {
+        self.worn = worn;
+        self.held = held;
+        self.both = both;
+        self
+    }
+
     /// What is worn and wielded: armor, ammunition, the items in hand.
     pub fn equipped(&self) -> &[FormId] {
         &self.worn

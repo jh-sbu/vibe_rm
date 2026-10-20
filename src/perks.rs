@@ -294,6 +294,20 @@ pub struct Perks {
     owned: std::cell::RefCell<HashMap<FormId, Arc<Vec<(FormId, u8)>>>>,
 }
 
+impl Perks {
+    /// Replace the perks added and removed (a loaded save's), dropping what
+    /// was worked out from the old ones.
+    pub fn replace(
+        &mut self,
+        added: HashMap<FormId, Vec<(FormId, u8)>>,
+        removed: HashMap<FormId, HashSet<FormId>>,
+    ) {
+        self.added = added;
+        self.removed = removed;
+        self.owned.borrow_mut().clear();
+    }
+}
+
 impl Engine {
     /// A perk as read (cached).
     pub fn perk(&self, id: FormId) -> Option<Arc<Perk>> {
