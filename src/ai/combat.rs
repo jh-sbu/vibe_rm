@@ -1725,14 +1725,20 @@ impl Engine {
             let (Some(ff), Some(tf)) = (factions_of(fighter), factions_of(target)) else {
                 continue;
             };
-            let need = match self.faction_reaction(&stats.factions, ff) {
-                Some(2) => 1,
-                Some(3) => 2,
-                _ => continue,
-            };
-            if stats.assistance < need
-                || matches!(self.faction_reaction(&stats.factions, tf), Some(2 | 3))
-            {
+            // A teammate takes the player's side whatever its factions and
+            // assistance say (`known_ambiguities/followers.md`).
+            let teammate = fighter == PLAYER_REF && self.is_player_teammate(helper);
+            if !teammate {
+                let need = match self.faction_reaction(&stats.factions, ff) {
+                    Some(2) => 1,
+                    Some(3) => 2,
+                    _ => continue,
+                };
+                if stats.assistance < need {
+                    continue;
+                }
+            }
+            if matches!(self.faction_reaction(&stats.factions, tf), Some(2 | 3)) {
                 continue;
             }
             if !self.detects(helper, fighter) && !self.detects(helper, target) {

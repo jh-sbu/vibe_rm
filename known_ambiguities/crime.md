@@ -162,8 +162,8 @@ locations name it.
 - Given items by a script's `AddItem` (`test-mod autotest2`), an NPC wielded
   each weapon it would pick at once (an iron sword, then a steel sword, then
   an iron greatsword), and wore no armor and no shield even 3.5 s later; a
-  teammate given a cuirass wore it. Here `AddItem` takes up weapons only
-  (there are no teammates yet).
+  teammate given a cuirass wore it. Here `AddItem` takes up weapons, and for a
+  teammate (`SetPlayerTeammate`) armor and shields as well.
 - An NPC given an item (placed in its pockets, or into a teammate's
   inventory) takes it up at once if it is better: armor when its armor
   rating with it (the inventory's rating, with its skills and perks) is

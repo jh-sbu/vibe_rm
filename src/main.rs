@@ -18,6 +18,7 @@ mod encumbrance;
 mod engine;
 mod ethereal;
 mod falling;
+mod followers;
 mod footsteps;
 mod gift;
 mod grab;

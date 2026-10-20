@@ -636,8 +636,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .iter()
                 .any(|&f| f == s || subj_base == Some(f))
         })), // IsInList
-        453 => b(false), // GetPlayerTeammate: no followers yet
-        448 => b(subject.is_some_and(|s| e.has_perk(s, p1))), // HasPerk
+        453 => b(subject.is_some_and(|s| e.is_player_teammate(s))), // GetPlayerTeammate
+        454 => Some(e.player_teammate_count() as f32),              // GetPlayerTeammateCount
+        448 => b(subject.is_some_and(|s| e.has_perk(s, p1))),       // HasPerk
         // IsWeaponSkillType: of a weapon (a perk's weapon tab), else the
         // subject's weapon.
         109 => b(subject
