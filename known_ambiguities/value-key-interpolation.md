@@ -32,7 +32,8 @@ converting their keys. Linear keys retain their previous interpolation.
   timestamp selection is retained; no new engine-parity claim is made.
 - Quadratic value curves now preserve and evaluate their tangents; see
   [quadratic-value-interpolation.md](quadratic-value-interpolation.md). TBC
-  sampling retains the existing linear approximation. Transform key groups
+  value curves derive Hermite tangents; source-order disagreement and limits:
+  [tbc-value-interpolation.md](tbc-value-interpolation.md). Transform key groups
   still discard interpolation metadata and are outside these changes.
 - This corrects sampling for material channels that already reach the
   renderer. It does not extend actor / effect sequence ownership, particle
