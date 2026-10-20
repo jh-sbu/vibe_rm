@@ -216,6 +216,7 @@ fn material_value_keys(nif: &Nif, interpolator: Ref, color: bool) -> Option<nif:
         {
             Some(nif::anim::ValueKeys {
                 interpolation: 1,
+                tangents: Vec::new(),
                 keys: vec![(0.0, i.value)],
             })
         }
@@ -269,6 +270,7 @@ fn alpha_test_anim(
             // Its default -FLT_MAX is an unset pose, not a test reference.
             _ if i.value.x.is_finite() && i.value.x > -1.0e30 => nif::anim::ValueKeys {
                 interpolation: 1,
+                tangents: Vec::new(),
                 keys: vec![(0.0, i.value)],
             },
             _ => continue,
@@ -353,6 +355,7 @@ mod alpha_test_tests {
         i.data = Ref(3);
         n.blocks.push(Block::ValueKeys(nif::anim::ValueKeys {
             interpolation: 1,
+            tangents: Vec::new(),
             keys: vec![(0.0, Vec3::ZERO), (2.0, Vec3::new(255.0, 0.0, 0.0))],
         }));
         let m = material(&n, Ref(-1), Ref(0));
@@ -425,6 +428,7 @@ mod alpha_test_tests {
             }),
             Block::ValueKeys(nif::anim::ValueKeys {
                 interpolation: 1,
+                tangents: Vec::new(),
                 keys: vec![(0.0, Vec3::ZERO), (2.0, Vec3::X)],
             }),
         ]);
@@ -524,6 +528,7 @@ mod alpha_test_tests {
             }),
             Block::ValueKeys(nif::anim::ValueKeys {
                 interpolation: 1,
+                tangents: Vec::new(),
                 keys: vec![(0.0, Vec3::ZERO), (2.0, Vec3::X * 255.0)],
             }),
         ]);
@@ -1914,6 +1919,7 @@ mod node_controller_tests {
             }),
             Block::ValueKeys(nif::anim::ValueKeys {
                 interpolation: 1,
+                tangents: Vec::new(),
                 keys: vec![(0.0, Vec3::X), (0.5, Vec3::ZERO)],
             }),
         ]);

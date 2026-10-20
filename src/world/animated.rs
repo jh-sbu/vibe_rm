@@ -293,6 +293,7 @@ mod node_controller_tests {
                         value: true,
                         keys: Some(ValueKeys {
                             interpolation: 1,
+                            tangents: Vec::new(),
                             keys: vec![(0.0, Vec3::ZERO), (1.0, Vec3::ONE)],
                         }),
                     },
@@ -399,6 +400,7 @@ mod node_controller_tests {
                 value: true,
                 keys: Some(ValueKeys {
                     interpolation: 1,
+                    tangents: Vec::new(),
                     keys: vec![(3.0, Vec3::ZERO), (4.0, Vec3::ONE)],
                 }),
             };

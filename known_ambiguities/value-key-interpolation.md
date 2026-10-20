@@ -30,9 +30,10 @@ converting their keys. Linear keys retain their previous interpolation.
 - Public implementations disagree at exact midpoints. Skyrim's tie policy
   and behavior for repeated timestamps remain unverified. Existing duplicate
   timestamp selection is retained; no new engine-parity claim is made.
-- Quadratic and TBC payloads still consume their tangent / TBC fields, but
+- Quadratic value curves now preserve and evaluate their tangents; see
+  [quadratic-value-interpolation.md](quadratic-value-interpolation.md). TBC
   sampling retains the existing linear approximation. Transform key groups
-  still discard interpolation metadata and are outside this change.
+  still discard interpolation metadata and are outside these changes.
 - This corrects sampling for material channels that already reach the
   renderer. It does not extend actor / effect sequence ownership, particle
   material animation, initialization ordering or blending.

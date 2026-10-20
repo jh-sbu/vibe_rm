@@ -17,9 +17,10 @@ use nif::{Block, Nif, Ref};
 use super::GpuMaterial;
 use super::model::{MaterialDesc, Vertex};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum CurveInterpolation {
     Linear,
+    Quadratic(nif::anim::ValueKeys),
     /// Float CONST_KEY selects the nearest endpoint.
     Nearest,
     /// Boolean keys hold their value until the next key.
@@ -50,13 +51,16 @@ impl Curve {
             return self.value;
         };
         let k = timing.key_time(t);
+        if let CurveInterpolation::Quadratic(keys) = &self.interpolation {
+            return keys.sample(k).map_or(self.value, |v| v.x);
+        }
         if k <= first.0 {
             return first.1;
         }
         let i = self.keys.partition_point(|key| key.0 <= k);
         let (t0, a) = self.keys[i - 1];
         match self.keys.get(i) {
-            Some(&(t1, b)) if t1 > t0 => match self.interpolation {
+            Some(&(t1, b)) if t1 > t0 => match &self.interpolation {
                 CurveInterpolation::Linear => a + (b - a) * (k - t0) / (t1 - t0),
                 CurveInterpolation::Nearest if (k - t0) / (t1 - t0) >= 0.5 => b,
                 _ => a,
@@ -74,7 +78,9 @@ fn curve(nif: &Nif, timing: nif::anim::Timing, interpolator: Ref, fallback: f32)
             let (keys, interpolation) = match nif.get(i.data) {
                 Some(Block::ValueKeys(k)) => (
                     k.keys.iter().map(|(t, v)| (*t, v.x)).collect(),
-                    if k.interpolation == 5 {
+                    if k.interpolation == 2 {
+                        CurveInterpolation::Quadratic(k.clone())
+                    } else if k.interpolation == 5 {
                         CurveInterpolation::Nearest
                     } else {
                         CurveInterpolation::Linear
@@ -1404,6 +1410,7 @@ mod tests {
                 Block::ValueKeys(nif::anim::ValueKeys {
                     keys: vec![(2.0, Vec3::ZERO), (6.0, Vec3::ONE)],
                     interpolation: 5,
+                    tangents: Vec::new(),
                 }),
             ],
             roots: Vec::new(),
@@ -1426,6 +1433,15 @@ mod tests {
         ] {
             assert_eq!(nearest.sample(clock), expected);
         }
+        let Block::ValueKeys(keys) = &mut nif.blocks[1] else {
+            unreachable!();
+        };
+        keys.interpolation = 2;
+        keys.tangents = vec![(Vec3::ZERO, Vec3::ZERO); 2];
+        let eased = curve(&nif, timing, Ref(0), -1.0);
+        assert_eq!(eased.sample(1.5), 0.15625);
+        assert_eq!(eased.sample(2.5), 0.84375);
+        assert_eq!(eased.sample(10.0), 1.0);
         nif.blocks[0] = Block::BoolInterpolator(nif::psys::BoolInterpolator {
             value: true,
             data: Ref(1),
@@ -1618,6 +1634,7 @@ mod tests {
             Block::ValueKeys(nif::anim::ValueKeys {
                 keys,
                 interpolation: 1,
+                tangents: Vec::new(),
             }),
         ]);
         sys.av.net.controller = Ref(index as i32);
