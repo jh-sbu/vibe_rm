@@ -1291,6 +1291,10 @@ impl Engine {
             let mut stats =
                 crate::ai::combat::CombatStats::of(self, d.ref_id, &d.templates, d.race);
             self.apply_actor_values(d.ref_id, &mut stats);
+            // Scripts' faction changes outlast the actor's loading.
+            if self.scripts.faction_changes.contains_key(&d.ref_id) {
+                stats.factions = self.member_factions(d.ref_id);
+            }
             rt.health = self.returning_health(d.ref_id, stats.max_health);
             rt.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.ref_id, d.inventory.weapon(&self.lo));

@@ -885,6 +885,29 @@ impl Engine {
             .entry(actor)
             .or_default()
             .insert(faction, rank);
+        self.refresh_combat_factions(actor);
+    }
+
+    /// The factions an actor belongs to now (rank 0 or more): its record's and
+    /// its templates', as scripts changed them.
+    pub fn member_factions(&self, actor: FormId) -> Vec<FormId> {
+        self.npc_factions(actor)
+            .into_iter()
+            .filter(|&(_, rank)| rank >= 0)
+            .map(|(f, _)| f)
+            .collect()
+    }
+
+    /// A loaded actor's fights go by the factions it belongs to now: a hired
+    /// follower (`CurrentFollowerFaction`, an ally of the player's faction) helps
+    /// the player's side as soon as a script puts it there.
+    fn refresh_combat_factions(&mut self, actor: FormId) {
+        let now = self.member_factions(actor);
+        if let Some(a) = self.actor_mut(actor)
+            && a.stats.factions != now
+        {
+            std::sync::Arc::make_mut(&mut a.stats).factions = now;
+        }
     }
 
     pub fn npc_voice_type(&self, npc: FormId) -> Option<FormId> {

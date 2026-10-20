@@ -1746,9 +1746,8 @@ impl Engine {
     }
 
     pub(crate) fn player_factions(&self) -> Vec<FormId> {
-        self.npc_factions(FormId(0x7))
+        self.member_factions(FormId(0x7))
             .into_iter()
-            .map(|(f, _)| f)
             .chain(std::iter::once(FormId(0xDB1)))
             .collect()
     }
@@ -3750,3 +3749,7 @@ mod bash_tests;
 #[cfg(test)]
 #[path = "combat_assault_tests.rs"]
 mod assault_tests;
+
+#[cfg(test)]
+#[path = "combat_follower_tests.rs"]
+mod follower_tests;
