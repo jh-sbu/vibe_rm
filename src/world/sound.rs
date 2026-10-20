@@ -2,12 +2,17 @@
 
 use esp::{FormId, LoadOrder};
 
+use crate::audio::Falloff;
+
 #[derive(Debug, Clone)]
 pub struct SoundDesc {
     pub files: Vec<String>,
     pub looping: bool,
-    pub min_dist: f32,
-    pub max_dist: f32,
+    /// How it fades with the distance (its output model's attenuation).
+    pub falloff: Falloff,
+    /// Heard from where it plays: its output model attenuates with distance
+    /// (the 2D ones, the menus' and the dialogue's, don't).
+    pub positional: bool,
     /// Linear volume from the static attenuation (dB) in BNAM, times the
     /// sound's category's ([`category_volume`]).
     pub volume: f32,
@@ -16,6 +21,50 @@ pub struct SoundDesc {
     pub frequency_shift: f32,
     pub frequency_variance: f32,
     pub db_variance: f32,
+}
+
+/// A sound output model (SOPM) as far as it's used: whether it attenuates with
+/// distance, and how.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OutputModel {
+    pub positional: bool,
+    pub falloff: Falloff,
+}
+
+/// An output model's `NAM1` (flags, bit 1 "Attenuates With Distance") and
+/// `ANAM` (unknown u8 x4, min and max distance, the five curve points in
+/// percent) fields (UESP's SOPM page). The 2D models have no `ANAM` and
+/// don't attenuate; one with an `ANAM` but no `NAM1` does.
+pub fn parse_output_model(nam1: Option<&[u8]>, anam: Option<&[u8]>) -> OutputModel {
+    let Some(a) = anam.filter(|a| a.len() >= 17) else {
+        return OutputModel {
+            positional: false,
+            falloff: Falloff::new(0.0, 0.0),
+        };
+    };
+    let f = |o: usize| f32::from_le_bytes(a[o..o + 4].try_into().unwrap());
+    OutputModel {
+        positional: nam1.is_none_or(|n| n.first().is_some_and(|f| f & 1 != 0)),
+        falloff: Falloff {
+            min: f(4),
+            max: f(8),
+            curve: std::array::from_fn(|i| a[12 + i] as f32 / 100.0),
+        },
+    }
+}
+
+fn output_model(lo: &LoadOrder, id: FormId) -> Option<OutputModel> {
+    let rec = lo.get(id).filter(|r| r.tag().0 == *b"SOPM")?;
+    Some(parse_output_model(rec.get(b"NAM1"), rec.get(b"ANAM")))
+}
+
+/// Dialogue lines have no sound descriptor either: they fade with the default
+/// dialogue output model's distances (`SOMDialogue3DDefault`: 70 to 3000
+/// units).
+pub fn voice_falloff(lo: &LoadOrder) -> Falloff {
+    lo.find_editor_id("SOMDialogue3DDefault")
+        .and_then(|m| output_model(lo, m))
+        .map_or(Falloff::new(400.0, 3000.0), |m| m.falloff)
 }
 
 /// A number in [0, 1) from the top bits of a random 64-bit one.
@@ -175,8 +224,8 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
     let mut desc = SoundDesc {
         files,
         looping,
-        min_dist: 200.0,
-        max_dist: 2000.0,
+        falloff: Falloff::new(200.0, 2000.0),
+        positional: true,
         volume: 1.0,
         frequency_shift: 0.0,
         frequency_variance: 0.0,
@@ -199,12 +248,13 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
         desc.volume *= category_volume(lo, c);
     }
     if let Some(o) = rec.get(b"ONAM")
-        && let Some(sopm) = lo.get(rec.fid(FormId(u32::from_le_bytes(o[0..4].try_into().ok()?))))
-        && let Some(a) = sopm.get(b"ANAM")
-        && a.len() >= 12
+        && let Some(m) = output_model(
+            lo,
+            rec.fid(FormId(u32::from_le_bytes(o[0..4].try_into().ok()?))),
+        )
     {
-        desc.min_dist = f32::from_le_bytes(a[4..8].try_into().unwrap());
-        desc.max_dist = f32::from_le_bytes(a[8..12].try_into().unwrap());
+        desc.falloff = m.falloff;
+        desc.positional = m.positional;
     }
     if desc.files.is_empty() {
         None
@@ -254,12 +304,39 @@ mod tests {
         assert_eq!(chain_volume(FormId(1), |id| cats.get(&id.0).copied()), 0.25);
     }
 
+    fn anam(min: f32, max: f32, curve: [u8; 5]) -> Vec<u8> {
+        let mut a = vec![0u8; 4];
+        a.extend(min.to_le_bytes());
+        a.extend(max.to_le_bytes());
+        a.extend(curve);
+        a.extend([0; 3]);
+        a
+    }
+
+    #[test]
+    fn output_models_give_their_curve_and_whether_they_attenuate() {
+        let a = anam(70.0, 3000.0, [100, 50, 20, 5, 0]);
+        let m = parse_output_model(Some(&[1, 0, 0, 30]), Some(&a));
+        assert!(m.positional);
+        assert_eq!(
+            (m.falloff.min, m.falloff.max, m.falloff.curve),
+            (70.0, 3000.0, [1.0, 0.5, 0.2, 0.05, 0.0])
+        );
+        // A model without the flag, or without an ANAM, is 2D; one with an ANAM
+        // and no NAM1 isn't.
+        assert!(!parse_output_model(Some(&[0, 0, 0, 30]), Some(&a)).positional);
+        assert!(!parse_output_model(Some(&[1, 0, 0, 30]), None).positional);
+        assert!(parse_output_model(None, Some(&a)).positional);
+        // Too short to hold the curve.
+        assert!(!parse_output_model(None, Some(&a[..12])).positional);
+    }
+
     fn varying(shift: f32, variance: f32, db: f32) -> SoundDesc {
         SoundDesc {
             files: vec![],
             looping: false,
-            min_dist: 0.0,
-            max_dist: 0.0,
+            falloff: Falloff::new(0.0, 0.0),
+            positional: true,
             volume: 1.0,
             frequency_shift: shift,
             frequency_variance: variance,

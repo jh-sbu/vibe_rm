@@ -513,9 +513,8 @@ impl Engine {
                 desc.volume * v.gain,
                 false,
                 v.pitch,
-                Some(at),
-                desc.min_dist,
-                desc.max_dist,
+                desc.positional.then_some(at),
+                desc.falloff,
             );
         }
     }
@@ -578,9 +577,8 @@ impl Engine {
                 desc.volume * v.gain,
                 true,
                 v.pitch,
-                Some(rf.position),
-                desc.min_dist,
-                desc.max_dist,
+                desc.positional.then_some(rf.position),
+                desc.falloff,
             ) {
                 voices.push((r, v));
             }

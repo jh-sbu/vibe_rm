@@ -17,6 +17,40 @@ const BUFFER_FRAMES: u32 = 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct VoiceId(u64);
 
+/// How a positioned sound fades with the distance from the listener: full
+/// (or the curve's first point) within `min`, nothing past `max` (the curve's
+/// last point), a piecewise linear curve between: the sound output model's
+/// five points, at 0, 25, 50, 75 and 100% of the way from `min` to `max`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Falloff {
+    pub min: f32,
+    pub max: f32,
+    /// The gain at each of the five points.
+    pub curve: [f32; 5],
+}
+
+impl Falloff {
+    /// The curve most output models in the base game have (100, 50, 20, 5, 0
+    /// percent): close to the square of the remaining distance.
+    pub const DEFAULT_CURVE: [f32; 5] = [1.0, 0.5, 0.2, 0.05, 0.0];
+
+    pub fn new(min: f32, max: f32) -> Self {
+        Falloff {
+            min,
+            max,
+            curve: Self::DEFAULT_CURVE,
+        }
+    }
+
+    /// The gain at `distance`.
+    pub fn gain(&self, distance: f32) -> f32 {
+        let x = ((distance - self.min) / (self.max - self.min).max(1.0)).clamp(0.0, 1.0) * 4.0;
+        let i = (x as usize).min(3);
+        let t = x - i as f32;
+        self.curve[i] + (self.curve[i + 1] - self.curve[i]) * t
+    }
+}
+
 struct Voice {
     id: VoiceId,
     clip: Arc<Clip>,
@@ -27,8 +61,7 @@ struct Voice {
     pitch: f64,
     /// World position for 3D sounds.
     at: Option<Vec3>,
-    min_dist: f32,
-    max_dist: f32,
+    falloff: Falloff,
 }
 
 struct Mixer {
@@ -50,14 +83,7 @@ impl Mixer {
         for v in &mut self.voices {
             let (mut gl, mut gr) = (v.volume, v.volume);
             if let Some(p) = v.at {
-                let d = p.distance(listener);
-                let att = if d <= v.min_dist {
-                    1.0
-                } else {
-                    (1.0 - (d - v.min_dist) / (v.max_dist - v.min_dist).max(1.0))
-                        .clamp(0.0, 1.0)
-                        .powi(2)
-                };
+                let att = v.falloff.gain(p.distance(listener));
                 let pan = ((p - listener).normalize_or_zero().dot(right)).clamp(-1.0, 1.0);
                 gl *= att * (1.0 - pan.max(0.0) * 0.6);
                 gr *= att * (1.0 + pan.min(0.0) * 0.6);
@@ -100,8 +126,7 @@ enum Pending {
         looping: bool,
         pitch: f32,
         at: Option<Vec3>,
-        min_dist: f32,
-        max_dist: f32,
+        falloff: Falloff,
     },
 }
 
@@ -236,10 +261,19 @@ impl Audio {
         min_dist: f32,
         max_dist: f32,
     ) -> Option<VoiceId> {
-        self.play_pitched(vfs, path, volume, looping, 1.0, at, min_dist, max_dist)
+        self.play_pitched(
+            vfs,
+            path,
+            volume,
+            looping,
+            1.0,
+            at,
+            Falloff::new(min_dist, max_dist),
+        )
     }
 
-    /// [`Audio::play`] at `pitch` times the recorded rate (higher is faster and shorter).
+    /// [`Audio::play`] at `pitch` times the recorded rate (higher is faster and
+    /// shorter), fading with distance by `falloff`.
     #[allow(clippy::too_many_arguments)]
     pub fn play_pitched(
         &mut self,
@@ -249,8 +283,7 @@ impl Audio {
         looping: bool,
         pitch: f32,
         at: Option<Vec3>,
-        min_dist: f32,
-        max_dist: f32,
+        falloff: Falloff,
     ) -> Option<VoiceId> {
         let key = vfs::normalize_path(path);
         let id = VoiceId(self.next_id);
@@ -261,8 +294,7 @@ impl Audio {
             looping,
             pitch,
             at,
-            min_dist,
-            max_dist,
+            falloff,
         };
         match self.cache.get(&key) {
             Some(Some(clip)) => {
@@ -288,8 +320,7 @@ impl Audio {
             looping,
             pitch,
             at,
-            min_dist,
-            max_dist,
+            falloff,
         } = p;
         if let Ok(mut m) = self.mixer.lock() {
             if let Some(i) = m.cancelled.iter().position(|&c| c == id) {
@@ -304,8 +335,7 @@ impl Audio {
                 looping,
                 pitch: pitch.max(0.01) as f64,
                 at,
-                min_dist,
-                max_dist,
+                falloff,
             });
         }
     }
@@ -404,8 +434,7 @@ mod tests {
                 looping: false,
                 pitch,
                 at: None,
-                min_dist: 0.0,
-                max_dist: 0.0,
+                falloff: Falloff::new(0.0, 0.0),
             }],
             listener: Vec3::ZERO,
             listener_right: Vec3::X,
@@ -413,6 +442,56 @@ mod tests {
             master: 1.0,
             cancelled: Vec::new(),
         }
+    }
+
+    #[test]
+    fn falloff_follows_its_curve_between_min_and_max() {
+        let near = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        let f = Falloff {
+            min: 100.0,
+            max: 500.0,
+            curve: [1.0, 0.5, 0.2, 0.05, 0.0],
+        };
+        // The points are at 0, 25, 50, 75 and 100% of the way.
+        for (d, g) in [
+            (0.0, 1.0),
+            (100.0, 1.0),
+            (200.0, 0.5),
+            (300.0, 0.2),
+            (400.0, 0.05),
+        ] {
+            assert!(near(f.gain(d), g), "{d}: {}", f.gain(d));
+        }
+        // Linear between them, and nothing after the last.
+        assert!(near(f.gain(150.0), 0.75));
+        assert!(near(f.gain(350.0), 0.125));
+        assert!(near(f.gain(500.0), 0.0) && near(f.gain(9000.0), 0.0));
+        // A curve may rise (the distant sounds that are loudest part way).
+        let hump = Falloff {
+            curve: [0.0, 0.5, 1.0, 0.5, 0.0],
+            ..f
+        };
+        assert!(near(hump.gain(300.0), 1.0) && near(hump.gain(100.0), 0.0));
+        // The default is near the old square of the remaining distance.
+        let d = Falloff::new(0.0, 1000.0);
+        for x in [0.25f32, 0.5, 0.75] {
+            assert!((d.gain(x * 1000.0) - (1.0 - x).powi(2)).abs() < 0.07);
+        }
+    }
+
+    #[test]
+    fn positioned_voices_fade_by_their_falloff() {
+        let mut m = mixer(1.0);
+        m.voices[0].at = Some(Vec3::new(0.0, 300.0, 0.0));
+        m.voices[0].falloff = Falloff {
+            min: 100.0,
+            max: 500.0,
+            curve: [1.0, 0.5, 0.2, 0.05, 0.0],
+        };
+        let mut out = [0.0; 80];
+        m.mix(&mut out, 2);
+        // Frame 10 holds 0.010; ahead of the listener (no pan), 20% of it.
+        assert!((out[2 * 10] - 0.002).abs() < 1e-6, "{}", out[20]);
     }
 
     #[test]
