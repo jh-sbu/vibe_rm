@@ -45,6 +45,58 @@ mod tests {
     }
 
     #[test]
+    fn responses_keep_their_speaker_and_listener_idles() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-info-idles-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let trdt = |number: u8| {
+            let mut t = [0u8; 24];
+            t[12] = number;
+            t
+        };
+        let info = RecordBuilder::new(b"INFO", FormId(0x800))
+            .field(b"TRDT", &trdt(1))
+            .zstring(b"NAM1", "Over here.")
+            .form(b"SNAM", FormId(0x810))
+            .form(b"LNAM", FormId(0x811))
+            .field(b"TRDT", &trdt(2))
+            .zstring(b"NAM1", "Quickly.")
+            .field(b"TRDT", &trdt(3))
+            .zstring(b"NAM1", "No idles.")
+            // The idle of the next response, not this one.
+            .form(b"SNAM", FormId(0));
+        std::fs::write(
+            dir.join("Info.esp"),
+            write_plugin(
+                0,
+                &[],
+                "test",
+                "synthetic",
+                0x820,
+                &[Node::top(b"INFO", vec![info])],
+            ),
+        )
+        .unwrap();
+        let lo = LoadOrder::load(&dir, &["Info.esp".to_string()]).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let i = super::info(&lo, FormId(0x800)).unwrap();
+        let idles: Vec<_> = i
+            .responses
+            .iter()
+            .map(|r| (r.number, r.speaker_idle, r.listener_idle))
+            .collect();
+        assert_eq!(
+            idles,
+            [
+                (1, Some(FormId(0x810)), Some(FormId(0x811))),
+                (2, None, None),
+                // A null idle is none.
+                (3, None, None),
+            ]
+        );
+    }
+
+    #[test]
     fn rumor_group_keeps_each_response_across_quests() {
         let group = response_group([
             candidate(1, 11, info_flags::RANDOM),
@@ -159,6 +211,9 @@ pub struct Response {
     /// 6 surprise, 7 puzzled) and strength (0..100).
     pub emotion: u32,
     pub emotion_value: u32,
+    /// The idles the speaker and the listener play with it (`SNAM`, `LNAM`).
+    pub speaker_idle: Option<FormId>,
+    pub listener_idle: Option<FormId>,
 }
 
 #[derive(Debug, Clone)]
@@ -299,7 +354,19 @@ pub fn info(lo: &LoadOrder, id: FormId) -> Option<Info> {
                     text: String::new(),
                     emotion: sr.u32(0),
                     emotion_value: sr.u32(4),
+                    speaker_idle: None,
+                    listener_idle: None,
                 });
+            }
+            b"SNAM" | b"LNAM" if sr.data.len() >= 4 => {
+                let idle = Some(r.fid(sr.form_id(0))).filter(|i| !i.is_null());
+                if let Some(c) = cur.as_mut() {
+                    if sr.tag.0 == *b"SNAM" {
+                        c.speaker_idle = idle;
+                    } else {
+                        c.listener_idle = idle;
+                    }
+                }
             }
             b"NAM1" => {
                 if let Some(c) = cur.as_mut() {
@@ -817,6 +884,7 @@ impl Engine {
         };
         let voice_type = c.voice_type;
         let npc_ref = c.npc_ref;
+        let idle = r.speaker_idle;
         let path = voice_path(&self.lo, voice_type, &topic, info_id, r.number);
         let at = self
             .ref_position(npc_ref)
@@ -827,7 +895,15 @@ impl Engine {
         if let (Some(p), Some(audio)) = (&path, self.audio.as_mut())
             && self.vfs.exists(p)
         {
-            voice = audio.play(&self.vfs, p, 1.0, false, at, 400.0, 3000.0);
+            voice = audio.play_pitched(
+                &self.vfs,
+                p,
+                crate::world::sound::voice_volume(&self.lo),
+                false,
+                1.0,
+                at,
+                crate::world::sound::voice_falloff(&self.lo),
+            );
             duration = duration.max(1.0);
         }
         log::info!(
@@ -848,7 +924,7 @@ impl Engine {
             });
         }
         // Gesture along with the line.
-        self.talking_gesture(npc_ref);
+        self.line_gesture(npc_ref, idle);
     }
 
     pub fn end_conversation(&mut self) {

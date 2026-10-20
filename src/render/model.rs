@@ -73,6 +73,10 @@ pub struct MaterialDesc {
     pub parallax: Vec2,
     /// A decal's alpha test leaves what passes it opaque (no alpha blending).
     pub hard_edge: bool,
+    /// An effect shader's soft falloff depth in world units, 0 for none: its
+    /// opacity fades to nothing where it meets the opaque scene behind it
+    /// (`sf1::SOFT_EFFECT`). See [`soft_depth`].
+    pub soft_depth: f32,
 }
 
 /// A material's animated values: shader float / colour and alpha-test
@@ -439,6 +443,46 @@ mod alpha_test_tests {
     }
 
     #[test]
+    fn soft_depth_needs_the_soft_effect_flag_and_a_positive_depth() {
+        assert_eq!(soft_depth(sf1::SOFT_EFFECT, 32.0), 32.0);
+        // The default 100 sits in thousands of shaders that don't use it.
+        assert_eq!(soft_depth(0, 100.0), 0.0);
+        assert_eq!(soft_depth(sf1::SOFT_EFFECT, 0.0), 0.0);
+        assert_eq!(soft_depth(sf1::SOFT_EFFECT, -4.0), 0.0);
+        assert_eq!(soft_depth(sf1::SOFT_EFFECT, f32::NAN), 0.0);
+    }
+
+    #[test]
+    fn effect_shaders_carry_their_soft_depth_into_the_material() {
+        let mut n = fixture(8, 127.5);
+        let effect = |flags1, depth| {
+            Block::EffectShader(Box::new(nif::EffectShader {
+                net: nif::ObjectNet {
+                    name: String::new(),
+                    extra_data: Vec::new(),
+                    controller: Ref(-1),
+                },
+                flags1,
+                flags2: 0,
+                uv_offset: Vec2::ZERO,
+                uv_scale: Vec2::ONE,
+                source_texture: String::new(),
+                clamp_mode: 3,
+                lighting_influence: 0,
+                falloff: Vec4::ONE,
+                emissive_color: Vec4::ONE,
+                emissive_multiple: 1.0,
+                soft_falloff_depth: depth,
+                greyscale_texture: String::new(),
+            }))
+        };
+        n.blocks
+            .extend([effect(sf1::SOFT_EFFECT, 48.0), effect(0, 48.0)]);
+        assert_eq!(material(&n, Ref(3), Ref(-1)).soft_depth, 48.0);
+        assert_eq!(material(&n, Ref(4), Ref(-1)).soft_depth, 0.0);
+    }
+
+    #[test]
     fn alpha_chain_merges_and_breaks_cycles() {
         let mut n = fixture(8, 127.5);
         let mut anim = material(&n, Ref(-1), Ref(0)).anim;
@@ -670,6 +714,7 @@ impl Default for MaterialDesc {
             grass: false,
             parallax: Vec2::ZERO,
             hard_edge: false,
+            soft_depth: 0.0,
         }
     }
 }
@@ -1997,6 +2042,7 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
             m.diffuse = tex(&s.source_texture);
             m.glow = tex(&s.greyscale_texture);
             m.falloff = s.falloff;
+            m.soft_depth = soft_depth(s.flags1, s.soft_falloff_depth);
             m.uv_offset = s.uv_offset;
             m.uv_scale = s.uv_scale;
             m.emissive = s.emissive_color.truncate().extend(s.emissive_multiple);
@@ -2018,6 +2064,21 @@ pub fn material(nif: &Nif, shader: Ref, alpha: Ref) -> MaterialDesc {
         }
     }
     m
+}
+
+/// An effect shader's soft falloff depth as it applies: the property holds a
+/// depth whether or not the shader's soft effect flag is set (thousands of
+/// the installed effect shaders carry a depth, mostly the default 100, without
+/// it), so the flag turns it on (`vrm-tool soft-effects`). The depths run from
+/// 1 to 2048 units. Unit and meaning are inference: the property is documented
+/// only by name (nif.xml, CommonLibSSE's `BSEffectShaderMaterial`), and soft
+/// particles conventionally fade over a distance in the world.
+pub fn soft_depth(flags1: u32, depth: f32) -> f32 {
+    if flags1 & sf1::SOFT_EFFECT != 0 && depth.is_finite() && depth > 0.0 {
+        depth
+    } else {
+        0.0
+    }
 }
 
 fn build_mesh(g: &Geometry, world: Mat4, material: MaterialDesc) -> Option<CpuMesh> {

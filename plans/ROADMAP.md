@@ -1052,6 +1052,30 @@ game each piece unlocks.
   normal maps, shininess specular, parallax with a height map, hard-edged cutouts).
   `VRM_NO_DECALS=1` turns them off; vrm-tool `decals` lists them. Open questions:
   `known_ambiguities/decals.md`
+- Soft effects: effect shaders with the soft effect flag (`SLSF1` bit 30) fade where
+  they meet the opaque scene, by their soft falloff depth in world units (fog cards,
+  steam, smoke and fire at the floor and walls; particles with such a shader too): the
+  opaque pass's depth is copied before the blended draws, and only in frames that have
+  such draws. `VRM_NO_SOFT_EFFECTS=1` turns it off; vrm-tool `soft-effects` lists the
+  flag and depths. Open questions: `known_ambiguities/soft-effects.md`
+- Sound categories: a sound descriptor's volume carries its category's (`GNAM` -> SNCT:
+  `VNAM` static volume multipliers and, for the Audio menu's four categories, their
+  `UNAM` defaults, up through the master category); music plays at the music
+  category's volume and dialogue lines at the voice category's. Open questions:
+  `known_ambiguities/audio-categories.md`
+- Sound descriptors' variance: each playing of a one-shot, a reference's loop, thunder
+  or a weather loop draws its playback rate (`BNAM` frequency shift and variance,
+  percent) and gain (dB variance) afresh; the mixer plays voices at a rate. vrm-tool
+  `sndr-stats` lists the values. Open questions: `known_ambiguities/sound-variation.md`
+- Sound output models (SOPM): a descriptor's `ONAM` gives its minimum and maximum distance
+  and the five-point attenuation curve its gain follows between them (the mixer's
+  `Falloff`); 2D models (the menus', dialogue's) play unpositioned; dialogue lines fade by
+  the default dialogue model. Open questions: `known_ambiguities/sound-output-models.md`
+- Dialogue responses' speaker idles: a response whose INFO names one (`SNAM`: pointing,
+  giving, saluting, reading...: 475 vanilla responses) gestures with it instead of the
+  random `ActionTalking` one, in conversations, scenes and barks; one the speaker's graph
+  won't take falls back to the random gesture. vrm-tool `info-idles` lists them. Open
+  questions: `known_ambiguities/dialogue-idles.md`
 - NIF float / colour `CONST_KEY` interpolation retains its source type and
   selects nearest endpoints for shader and alpha-test channels, named material
   sequences and particle float curves. Boolean keys retain their hold behavior.
@@ -1149,7 +1173,9 @@ game each piece unlocks.
   SPGD) as particles in a box about the camera, falling at their gravity
   velocity, snow turning about its falling centre, both blown by the
   weather's wind (DATA direction and range); coming in from the
-  precipitation's begin fade in, going out by its end fade out. Sky statics
+  precipitation's begin fade in, going out by its end fade out. Rain and snow
+  kept off under roofs and canopies by a top-down depth map of the opaque scene about the
+  camera. Sky statics
   (the cloud meshes placed about the world, TNAM) shown only in the weathers
   listing them, fading with the transition, in the sky statics colour, the
   full LOD ones loaded with the worldspace however far. Auroras
@@ -1187,7 +1213,7 @@ game each piece unlocks.
      change-notification activation / completion / interruption timing
      (`known_ambiguities/state-machine-events.md`)
    - Engine variables and events still missing: combat, first person;
-     INFO speaker / listener idles; listeners' reactions
+     INFO listener idles (the speaker's are done, see Done); listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes, decals
    - Argonian and Khajiit tails (`BSBehaviorGraphExtraData`'s "controls base
      skeleton": done for NPCs, see Done): the player's own tail, tails after
@@ -1383,7 +1409,9 @@ game each piece unlocks.
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);
      NPCs only use pre-baked heads
-7. **Audio**: lip sync
+7. **Audio**: lip sync; categories' mute when submerged and menu / dialogue ducking, the
+   Audio menu's sliders; output models' reverb send and speaker output (acoustic spaces),
+   sounds' priorities when voices run out
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), HDR: eye adaptation, bloom, tone mapping and the image
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
@@ -1391,10 +1419,9 @@ game each piece unlocks.
    remaining modifiers (animated colliders, skinned/deformed and animated mesh emission,
    strips, LOD; see
    `known_ambiguities/particles.md`), distant LOD (BTR/BTO/trees),
-   grass shadows and the grass cache, spells' impacts, soft effects (effect
-   shaders fading where they meet geometry: SLSF1 bit 30, soft falloff depth); eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
+   grass shadows and the grass cache, spells' impacts; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_ambiguities/weather.md`); weather's volumetric lighting, sun
-   glare and damage, rain and snow kept off under roofs, lightning bolts, wind
+   glare and damage, lightning bolts, wind
    moving trees, grass and clouds; grass's vertex lighting flag and bending
    round actors;
    `ENVMAP_LIGHT_FADE` (`sf2` bit 15); unscripted trigger volumes (acoustic

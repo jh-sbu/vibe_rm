@@ -257,13 +257,29 @@ impl Engine {
                 .iter()
                 .find(|e| e.0 == w && e.1 == snd)
                 .map(|e| e.2);
+            // Each loop starts at its own rate (its volume follows the weather's
+            // share of the transition, so none of the gain's variance).
+            let var = match playing {
+                Some(_) => None,
+                None => Some(self.roll_variation(&desc)),
+            };
             let audio = self.audio.as_mut().unwrap();
-            match playing {
-                Some(v) => audio.set_volume(v, volume),
-                None => {
-                    if let Some(v) =
-                        audio.play(&self.vfs, &desc.files[0], volume, true, None, 0.0, 0.0)
-                    {
+            match (playing, var) {
+                (Some(v), _) => audio.set_volume(v, volume),
+                (None, var) => {
+                    let var = var.unwrap_or(crate::world::sound::Variation {
+                        gain: 1.0,
+                        pitch: 1.0,
+                    });
+                    if let Some(v) = audio.play_pitched(
+                        &self.vfs,
+                        &desc.files[0],
+                        volume,
+                        true,
+                        var.pitch,
+                        None,
+                        crate::audio::Falloff::new(0.0, 0.0),
+                    ) {
                         log::debug!("weather sound {snd} looping: {}", desc.files[0]);
                         self.weather.loops.push((w, snd, v));
                     }
@@ -312,8 +328,17 @@ impl Engine {
         };
         let file = &desc.files[(self.rand() % desc.files.len() as u64) as usize];
         log::debug!("thunder: {file}");
+        let var = self.roll_variation(&desc);
         if let Some(a) = self.audio.as_mut() {
-            a.play(&self.vfs, file, desc.volume * weight, false, None, 0.0, 0.0);
+            a.play_pitched(
+                &self.vfs,
+                file,
+                desc.volume * weight * var.gain,
+                false,
+                var.pitch,
+                None,
+                crate::audio::Falloff::new(0.0, 0.0),
+            );
         }
     }
 
