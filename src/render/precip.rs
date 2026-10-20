@@ -3,12 +3,15 @@
 //! its index and the time (falling at the gravity velocity, wrapping round
 //! the box, snow turning about its falling centre), so the box follows the
 //! camera while the particles stay put in the world. The wind carries them
-//! all sideways together, and rain streaks along its slanted fall.
+//! all sideways together, and rain streaks along its slanted fall. Particles
+//! under a roof are left out: the renderer draws what lies above the camera
+//! into a top-down depth map (`shadow::precipitation_map`) and a particle
+//! below the highest surface over it isn't drawn.
 
 use std::sync::Arc;
 
 use bytemuck::Zeroable;
-use glam::{DVec2, Vec2, Vec3};
+use glam::{DVec2, Mat4, Vec2, Vec3};
 use wgpu::util::DeviceExt;
 
 use super::texture::GpuTexture;
@@ -39,6 +42,21 @@ struct PrecipUniform {
     wind: [f32; 4],
 }
 
+/// The occlusion map as the shader reads it.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct OcclusionUniform {
+    view_proj: [[f32; 4]; 4],
+    /// 1 when the map is current, its depth range in units, how far under a
+    /// surface a particle must be to be sheltered by it (units).
+    params: [f32; 4],
+}
+
+/// How far under the highest surface over it a particle must lie to be out
+/// of the rain (units): keeps drops at a roof's edge and on its own top out of
+/// it (made up).
+const SHELTER_BIAS: f32 = 12.0;
+
 /// One weather's precipitation, ready to draw.
 struct Layer {
     params: Precipitation,
@@ -57,6 +75,8 @@ pub struct PrecipRenderer {
     wind: Vec2,
     /// How far the wind has carried everything.
     drift: DVec2,
+    occlusion_buf: wgpu::Buffer,
+    occlusion_bg: wgpu::BindGroup,
 }
 
 impl PrecipRenderer {
@@ -64,6 +84,7 @@ impl PrecipRenderer {
         device: &wgpu::Device,
         frame_bgl: &wgpu::BindGroupLayout,
         color_format: wgpu::TextureFormat,
+        occlusion_map: &wgpu::TextureView,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("precipitation"),
@@ -100,9 +121,53 @@ impl PrecipRenderer {
                 },
             ],
         });
+        let occlusion_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("precipitation occlusion"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let occlusion_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("precipitation occlusion"),
+            contents: bytemuck::bytes_of(&OcclusionUniform::zeroed()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let occlusion_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("precipitation occlusion"),
+            layout: &occlusion_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: occlusion_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(occlusion_map),
+                },
+            ],
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("precipitation"),
-            bind_group_layouts: &[Some(frame_bgl), Some(&bgl)],
+            bind_group_layouts: &[Some(frame_bgl), Some(&bgl), Some(&occlusion_bgl)],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -146,7 +211,33 @@ impl PrecipRenderer {
             color: Vec3::ONE,
             wind: Vec2::ZERO,
             drift: DVec2::ZERO,
+            occlusion_buf,
+            occlusion_bg,
         }
+    }
+
+    /// Half the box of the widest layer falling: how far the occlusion map
+    /// has to reach round the camera (0 with nothing falling).
+    pub fn reach(&self) -> f32 {
+        self.layers
+            .iter()
+            .flatten()
+            .filter(|l| count(l) > 0)
+            .map(|l| l.params.box_size.max(1.0) * 0.5)
+            .fold(0.0, f32::max)
+    }
+
+    /// The occlusion map drawn from `view_proj`, `range` units deep, or none
+    /// (nothing is sheltered).
+    pub fn set_occlusion(&self, queue: &wgpu::Queue, map: Option<(Mat4, f32)>) {
+        let u = match map {
+            Some((view_proj, range)) => OcclusionUniform {
+                view_proj: view_proj.to_cols_array_2d(),
+                params: [1.0, range, SHELTER_BIAS, 0.0],
+            },
+            None => OcclusionUniform::zeroed(),
+        };
+        queue.write_buffer(&self.occlusion_buf, 0, bytemuck::bytes_of(&u));
     }
 
     /// The precipitation of the incoming weather (`slot` 0) or the outgoing
@@ -255,6 +346,7 @@ impl PrecipRenderer {
             queue.write_buffer(&l.ubuf, 0, bytemuck::bytes_of(&u));
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(1, &l.bind_group, &[]);
+            pass.set_bind_group(2, &self.occlusion_bg, &[]);
             pass.draw(0..6, 0..n);
         }
     }

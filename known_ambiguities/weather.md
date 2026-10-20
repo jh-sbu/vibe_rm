@@ -110,6 +110,23 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
     with an MNAM draws it, whatever its flags (`SovngardeClear`'s stardust).
   - Particles hang in a box the SPGD's size about the camera, faded out
     towards its edges.
+- **Rain and snow under roofs.** CommonLibSSE has a render target
+  `kPRECIPITATION_OCCLUSION_MAP` and `Precipitation::OcclusionMapData`
+  (a projection, a camera, a shader accumulator and a culling process):
+  the game draws a map of what is over the camera for precipitation to be
+  tested against. Its size, reach, projection and update rate aren't
+  public, and neither is what a sheltered particle does (hidden at once,
+  or faded). Here, while any precipitation falls under the sky, the
+  renderer draws the opaque static objects (alpha-tested ones through
+  their cutouts: leaves count), their attachments excluded, and the
+  landscape into a 1024 x 1024 orthographic depth map looking straight
+  down, reaching the widest falling box's half size plus 128 units about
+  the camera. It is redrawn when the camera moves 64 units from its centre
+  or every 120 frames. A particle more than 12 units (made up) below the
+  highest surface over it isn't drawn: so tree canopies and bridges keep
+  the rain off too, and actors don't (whether they do in the game isn't
+  known). Particles are tested whole, by their centres. The map holds no
+  water or effect geometry. `VRM_NO_PRECIP_OCCLUSION=1` turns it off.
 - **Lightning.** Each thunder roll flashes at once in the weather's DATA
   lightning colour (bytes 12..14, UESP; the storms' 219, 220, 238), at its
   share of the transition: a flicker, a dim gap and a fading second stroke

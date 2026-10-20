@@ -177,7 +177,15 @@ impl Engine {
             if let (Some(p), Some(audio)) = (&path, self.audio.as_mut())
                 && self.vfs.exists(p)
             {
-                voice = audio.play(&self.vfs, p, 1.0, false, at, 400.0, 3000.0);
+                voice = audio.play_pitched(
+                    &self.vfs,
+                    p,
+                    crate::world::sound::voice_volume(&self.lo),
+                    false,
+                    1.0,
+                    at,
+                    crate::world::sound::voice_falloff(&self.lo),
+                );
             }
             // Silent lines (and without audio) last a reading time.
             let duration = (r.text.split_whitespace().count() as f64 * 0.32).max(2.0);
@@ -188,6 +196,7 @@ impl Engine {
                 r.text,
                 path.unwrap_or_default()
             );
+            let idle = r.speaker_idle;
             self.barks.current = Some(Bark {
                 speaker,
                 name,
@@ -195,7 +204,7 @@ impl Engine {
                 voice,
                 ends_at: now + duration,
             });
-            self.talking_gesture(speaker);
+            self.line_gesture(speaker, idle);
             return true;
         }
         false

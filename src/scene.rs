@@ -672,12 +672,21 @@ impl Engine {
         if let (Some(p), Some(audio)) = (&path, self.audio.as_mut())
             && self.vfs.exists(p)
         {
-            voice = audio.play(&self.vfs, p, 1.0, false, at, 400.0, 3000.0);
+            voice = audio.play_pitched(
+                &self.vfs,
+                p,
+                crate::world::sound::voice_volume(&self.lo),
+                false,
+                1.0,
+                at,
+                crate::world::sound::voice_falloff(&self.lo),
+            );
         }
         let duration = (r.text.split_whitespace().count() as f64 * 0.32).max(2.0);
         let name = self.form_name(speaker);
         log::info!("{name} (scene): {} [{}]", r.text, path.unwrap_or_default());
         let now = self.scripts.real_time;
+        let idle = r.speaker_idle;
         self.scenes.running[i].actions[k].line = Some(SceneLine {
             speaker,
             name,
@@ -685,7 +694,7 @@ impl Engine {
             voice,
             ends_at: now + duration,
         });
-        self.talking_gesture(speaker);
+        self.line_gesture(speaker, idle);
     }
 
     /// Give the actor the action's packages; true once the one it runs is done.

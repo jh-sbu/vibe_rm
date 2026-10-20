@@ -358,6 +358,8 @@ Last in a run, or a run of their own:
 - Rendering: image space, particles, impacts, decals, environment maps,
   grass, foot IK.
 - Weather looks: rain, snow, lightning, clouds, sky statics, auroras; sounds.
+- Audio levels (`audio-categories.md`): the relative loudness of effects, footsteps,
+  voice and music at the Audio menu's defaults, heard against the engine's.
 - Menus and HUD: `swf-hud.md`, `journal.md`, `dialogue-menu.md`,
   `quest-targets.md`, `messages.md`, `tween-menu.md`, `favorites.md`,
   `magic-menu.md`.
