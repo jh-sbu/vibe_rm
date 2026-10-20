@@ -456,6 +456,111 @@ fn destruction_stage_events_report_old_and_final_indices_to_running_receivers() 
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn destruction_health_and_stage_save_restore_without_replaying_events() {
+    let (_dir, mut e) = fixture();
+    let this_a = e.object_value(REF_A);
+    let this_c = e.object_value(REF_C);
+    let cell = crate::render::CellKey::Interior(FormId(0x840));
+    e.cells.entry(cell).or_default().refs.extend([REF_A, REF_C]);
+
+    // Save both a damaged-but-untouched reference and one with an entered stage.
+    damage_object(&mut e, &this_a, 0.5);
+    damage_object(&mut e, &this_c, 2.0);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.5);
+    assert_eq!(e.world_state.destruction[&REF_A].stage, -1);
+    assert_eq!(e.world_state.destruction[&REF_C].health, 99.0);
+    assert_eq!(e.world_state.destruction[&REF_C].stage, 0);
+    assert!(!e.scripts.pending_events.is_empty());
+    let bytes = crate::save::state::Snapshot::capture(&e).write().to_bytes();
+    assert_eq!(
+        crate::save::state::Snapshot::capture(&e).write().to_bytes(),
+        bytes,
+        "destruction state is serialized deterministically"
+    );
+
+    // Destination data must be replaced, not merged, and saved transitions
+    // must not be replayed by the load operation.
+    e.world_state.destruction.insert(
+        REF_A,
+        DestructionState {
+            health: 1.0,
+            stage: 1,
+        },
+    );
+    e.world_state.destruction.insert(
+        REF_B,
+        DestructionState {
+            health: 10.0,
+            stage: 8,
+        },
+    );
+    crate::save::state::Snapshot::read(&crate::save::file::SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.5);
+    assert_eq!(e.world_state.destruction[&REF_A].stage, -1);
+    assert_eq!(e.world_state.destruction[&REF_C].health, 99.0);
+    assert_eq!(e.world_state.destruction[&REF_C].stage, 0);
+    assert!(!e.world_state.destruction.contains_key(&REF_B));
+    assert!(e.scripts.pending_events.is_empty());
+    assert_eq!(current_stage(&mut e, &this_a), -1);
+    assert_eq!(current_stage(&mut e, &this_c), 0);
+    let parsed = crate::condition::parse_all(&e.lo.get(QUEST).unwrap());
+    assert!(crate::condition::evaluate(
+        &e,
+        &parsed,
+        crate::condition::Context {
+            subject: Some(REF_A),
+            ..Default::default()
+        }
+    ));
+    assert!(!crate::condition::evaluate(
+        &e,
+        &parsed,
+        crate::condition::Context {
+            subject: Some(REF_C),
+            ..Default::default()
+        }
+    ));
+
+    // Cells unload during apply. Re-load this synthetic reference and confirm
+    // subsequent damage continues from the saved fractional health.
+    e.cells.entry(cell).or_default().refs.push(REF_A);
+    damage_object(&mut e, &this_a, 0.2);
+    assert!((e.world_state.destruction[&REF_A].health - 99.3).abs() < 1e-5);
+    assert_eq!(e.current_destruction_stage(REF_A), -1);
+
+    // A cleared entry is omitted from a fresh snapshot.
+    clear_destruction(&mut e, &this_c);
+    assert!(
+        !crate::save::state::Snapshot::capture(&e)
+            .destruction
+            .contains_key(&REF_C)
+    );
+
+    // A pre-DSTR snapshot loads as an empty destruction map and replaces stale
+    // destination state, rather than retaining the prior run's objects.
+    let mut legacy = crate::save::file::SaveFile::from_bytes(&bytes).unwrap();
+    legacy.sections.retain(|(tag, _)| tag != b"DSTR");
+    e.world_state.destruction.insert(
+        REF_A,
+        DestructionState {
+            health: 12.0,
+            stage: 2,
+        },
+    );
+    crate::save::state::Snapshot::read(&legacy)
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert!(e.world_state.destruction.is_empty());
+    assert_eq!(current_stage(&mut e, &this_a), -1);
+    assert!(e.scripts.pending_events.is_empty());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn cleardestruction_resets_one_reference_even_when_unloaded_without_events() {
     let (_dir, mut e) = fixture();
     let this_a = e.object_value(REF_A);

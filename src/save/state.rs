@@ -10,7 +10,8 @@
 //! references made while playing), `PLYR` (health, skills, perks, spells,
 //! shouts, favorites, dialogue heard), `CRIM` (bounties) and `BART`
 //! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
-//! and `VM` / `VMAR` (`super::vm`: the Papyrus VM). Not yet saved:
+//! `DSTR` (destructible health/stage), and `VM` / `VMAR` (`super::vm`: the
+//! Papyrus VM). Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
 //!
@@ -32,6 +33,7 @@ use crate::engine::{Engine, Location};
 use crate::script::QuestState;
 use crate::skills::Skills;
 use crate::story::StoryEvent;
+use crate::world::destruction::DestructionState;
 use crate::world::inventory::Inventory;
 use crate::world_state::{Moved, Wounds};
 
@@ -73,6 +75,7 @@ pub struct Snapshot {
     pub moved: HashMap<FormId, Moved>,
     pub item_charges: HashMap<FormId, Vec<f32>>,
     pub broken_joints: HashMap<FormId, Vec<usize>>,
+    pub destruction: HashMap<FormId, DestructionState>,
     pub learned_effects: HashSet<(FormId, usize)>,
     pub created: HashMap<FormId, Created>,
     pub created_next: u32,
@@ -468,6 +471,7 @@ impl Snapshot {
             moved: ws.moved.clone(),
             item_charges: ws.item_charges.clone(),
             broken_joints: ws.broken_joints.clone(),
+            destruction: ws.destruction.clone(),
             learned_effects: ws.learned_effects.clone(),
             created: e.created_refs.refs.clone(),
             created_next: e.created_refs.next,
@@ -698,6 +702,15 @@ impl Snapshot {
             w.i32(c.count);
         }
         file.add(b"WRLD", w.0);
+
+        let mut w = Writer::default();
+        w.len(self.destruction.len());
+        for (reference, state) in sorted(&self.destruction) {
+            w.form(reference);
+            w.f64(state.health);
+            w.i32(state.stage);
+        }
+        file.add(b"DSTR", w.0);
 
         let mut w = Writer::default();
         w.f32(self.health);
@@ -1109,6 +1122,27 @@ impl Snapshot {
             }
             r.finish()?;
         }
+        if let Some(data) = file.section(b"DSTR") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(16)? {
+                let reference = r.form()?;
+                let health = r.f64()?;
+                let stage = r.i32()?;
+                if reference.is_null()
+                    || !health.is_finite()
+                    || !(0.0..=u32::MAX as f64).contains(&health)
+                    || !(-1..=u8::MAX as i32).contains(&stage)
+                    || s.destruction
+                        .insert(reference, DestructionState { health, stage })
+                        .is_some()
+                {
+                    return Err(Corrupt(
+                        "invalid or duplicate destructible reference state".into(),
+                    ));
+                }
+            }
+            r.finish()?;
+        }
         s.vm = super::vm::VmSnapshot::read(file)?;
         Ok(s)
     }
@@ -1188,6 +1222,7 @@ impl Snapshot {
         ws.moved = self.moved;
         ws.item_charges = self.item_charges;
         ws.broken_joints = self.broken_joints;
+        ws.destruction = self.destruction;
         ws.object_graphs.clear();
         ws.graph_open.clear();
         ws.learned_effects = self.learned_effects;

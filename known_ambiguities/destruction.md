@@ -1,12 +1,11 @@
 # Destructible objects
 
-Destructible definitions and the initial per-reference stage query are
-implemented in `crates/esp/src/destructible.rs`,
-`src/world/destruction.rs`, `src/script/natives.rs` and
-`src/condition/mod.rs`. Scripted `DamageObject` health/stage progression is
-and `ClearDestruction` runtime-state reset are implemented; weapon/spell
-damage, stage side effects, visual/effect clearing and saves remain
-unimplemented. Sources: UESP's DEST field page
+Destructible definitions, queries, scripted damage and stage events are
+implemented in `crates/esp/src/destructible.rs`, `src/world/destruction.rs`,
+`src/script/natives.rs` and `src/condition/mod.rs`. `ClearDestruction` resets
+runtime state, and the engine's own save format persists it. Weapon/spell
+damage, stage side effects and visual/effect clearing remain unimplemented.
+This is not Skyrim `.ess` save support. Sources: UESP's DEST field page
 ([permanent rev 2334527](https://en.uesp.net/w/index.php?oldid=2334527)),
 [xEdit's TES5 definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas)
 (`wbDEST`, `EXPL`), CommonLibSSE's `BGSDestructibleObjectForm.h`, and the
@@ -79,9 +78,9 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   whether Skyrim sends one event per skipped stage is unknown. The unresolved
   `DSTD.index` versus model-damage-stage mapping also applies to these values.
 - **Still absent from `DamageObject`.** It does not emit explosions/debris,
-  change the model, collision, navmesh or flags (including disable/destroy),
-  or persist to saves. The event only reports the runtime state change;
-  stage side effects remain future work.
+  change the model, collision, navmesh or flags (including disable/destroy).
+  The event only reports the runtime state change; stage side effects remain
+  future work.
 - **`ClearDestruction` state reset.** The Papyrus native clears this
   reference's stored health/stage entry regardless of load state; repeated
   calls are no-ops and do not queue `OnDestructionStageChanged` or other
@@ -93,6 +92,15 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   later damage. Our reset is only the in-memory health/stage state: visual,
   collision, flags and destruction effects are not represented or restored,
   so effect fidelity and the later-damage behavior remain unresolved.
+- **Engine save persistence.** The engine-owned snapshot format has an optional
+  `DSTR` section containing sorted `(reference, health:f64, stage:i32)` tuples,
+  an independently designed engine-save schema. Missing `DSTR` in older
+  snapshots means an empty map; applying a snapshot replaces existing
+  destruction state and does not replay stage events. The reader rejects
+  null/duplicate references, non-finite or out-of-range health, stages outside
+  `-1..=255`, truncated entries and trailing bytes. This only covers this
+  engine's save format; Skyrim `.ess` destruction-state semantics are not
+  implemented or inferred.
 - **Stage order.** In every vanilla record, `index` equals the stage's
   position and the health percentages descend. The last stage is usually
   at 0%.

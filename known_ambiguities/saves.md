@@ -39,7 +39,8 @@ poisons and weapon charges; what scripts did to references (taken from,
 disabled, locked, owners, factions, blocked activation); the world state
 kept across cell loads (dead actors and their bodies, hurt actors, doors left
 open, moved references, charges of dropped weapons, broken joints, learned
-ingredient effects, explicit alerts); references made while playing; the
+ingredient effects, explicit alerts, destructible-object health and stage by
+reference); references made while playing; the
 player's health, stamina, skills, perks, spells, words of power and shouts,
 favorites, hotkeys; dialogue lines heard; bounties; merchants' restock times;
 the Story Manager's quest reset times, per-node do-all-before-repeating rounds,
@@ -50,6 +51,11 @@ older native saves load with empty story memory and no relationship overrides,
 replacing any memory in the destination engine. Authored story node caches
 rebuild from plugins; relationship overrides restore without change-rank events.
 The event currently being synchronously dispatched is transient and not saved.
+Destructible state is stored in optional `DSTR` as sorted reference, f64 health
+and i32 stage entries; older native saves without it load with no destruction
+state. Loading replaces existing state without replaying destruction events.
+This engine-owned representation does not establish how Skyrim's `.ess` saves
+store destructible references.
 
 The scripting side (`vm.rs`, sections `VM` and `VMAR`): the scripts attached
 to each object with their variables and properties (`Vm::attach` keeps an

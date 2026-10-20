@@ -6,10 +6,12 @@ use esp::group_type;
 use esp::writer::{Node, RecordBuilder, write_plugin};
 use glam::{Mat4, Vec3};
 
+use super::codec::Writer;
 use super::file::SaveFile;
 use super::state::{Snapshot, Spot};
 use crate::ai::schedule::Place;
 use crate::engine::{Engine, Location, PLAYER_REF};
+use crate::world::destruction::DestructionState;
 use crate::world::inventory::{Inventory, LEFT, RIGHT};
 use crate::world_state::{Moved, Wounds};
 
@@ -437,6 +439,104 @@ fn a_file_missing_a_section_is_refused() {
     file.sections.retain(|(t, _)| t != b"GLOB");
     let err = Snapshot::read(&file).err().unwrap();
     assert!(err.0.contains("GLOB"), "{err}");
+}
+
+fn destruction_payload(entries: &[(FormId, f64, i32)]) -> Vec<u8> {
+    let mut w = Writer::default();
+    w.len(entries.len());
+    for (reference, health, stage) in entries {
+        w.form(*reference);
+        w.f64(*health);
+        w.i32(*stage);
+    }
+    w.0
+}
+
+fn file_with_destruction_payload(payload: Vec<u8>) -> SaveFile {
+    let mut file = Snapshot::default().write();
+    let (_, data) = file
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"DSTR")
+        .expect("Snapshot::write emits DSTR");
+    *data = payload;
+    file
+}
+
+#[test]
+fn destructible_health_save_round_trip_is_stable_and_legacy_section_is_optional() {
+    let untouched_threshold = FormId(0xA10);
+    let destroyed = FormId(0xA11);
+    let mut a = Snapshot::default();
+    a.destruction.insert(
+        untouched_threshold,
+        DestructionState {
+            health: 99.5,
+            stage: -1,
+        },
+    );
+    a.destruction.insert(
+        destroyed,
+        DestructionState {
+            health: 0.0,
+            stage: 0,
+        },
+    );
+    let mut b = Snapshot::default();
+    b.destruction.insert(
+        destroyed,
+        DestructionState {
+            health: 0.0,
+            stage: 0,
+        },
+    );
+    b.destruction.insert(
+        untouched_threshold,
+        DestructionState {
+            health: 99.5,
+            stage: -1,
+        },
+    );
+    let bytes = a.write().to_bytes();
+    assert_eq!(
+        bytes,
+        b.write().to_bytes(),
+        "DSTR entries sort by reference"
+    );
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.destruction, a.destruction);
+
+    let mut old = Snapshot::default().write();
+    old.sections.retain(|(tag, _)| tag != b"DSTR");
+    assert!(Snapshot::read(&old).unwrap().destruction.is_empty());
+}
+
+#[test]
+fn malformed_destructible_health_sections_are_refused() {
+    let valid = destruction_payload(&[(FormId(0xA10), 50.0, 0)]);
+    let mut truncated = valid.clone();
+    truncated.pop();
+    let malformed = [
+        truncated,
+        destruction_payload(&[(FormId(0xA10), f64::NAN, 0)]),
+        destruction_payload(&[(FormId(0xA10), f64::INFINITY, 0)]),
+        destruction_payload(&[(FormId(0xA10), -1.0, 0)]),
+        destruction_payload(&[(FormId(0xA10), u32::MAX as f64 + 1.0, 0)]),
+        destruction_payload(&[(FormId(0xA10), 50.0, -2)]),
+        destruction_payload(&[(FormId(0xA10), 50.0, 256)]),
+        destruction_payload(&[(FormId::NULL, 50.0, 0)]),
+        destruction_payload(&[(FormId(0xA10), 50.0, 0), (FormId(0xA10), 40.0, 1)]),
+    ];
+    for payload in malformed {
+        assert!(
+            Snapshot::read(&file_with_destruction_payload(payload)).is_err(),
+            "malformed DSTR payload should be rejected"
+        );
+    }
+
+    let mut trailing = destruction_payload(&[]);
+    trailing.push(0);
+    assert!(Snapshot::read(&file_with_destruction_payload(trailing)).is_err());
 }
 
 #[test]

@@ -1288,7 +1288,10 @@ game each piece unlocks.
   runtime health/stage state without events, including when it is unloaded.
   `OnDestructionStageChanged` queues old/final stage integers when damage
   changes the stored stage, through the standard reference/effect/running
-  alias dispatcher; multi-stage skip timing is a documented policy choice:
+  alias dispatcher; multi-stage skip timing is a documented policy choice.
+  The engine's optional `DSTR` save section persists and replaces this runtime
+  health/stage map without replaying events; older snapshots without it load
+  empty. This does not implement Skyrim `.ess` destruction saves:
   `known_ambiguities/destruction.md`
 
 ## Next
@@ -1463,8 +1466,8 @@ game each piece unlocks.
      (`spell_lands` reaches only actors), explosions and self damage; the
      stage's model (`BSDamageStage` children or a replacement model with its
      collision, freeing navmesh obstacles), explosion and debris;
-     destruction visuals/effects and flags,
-     and stages in saves. `ClearDestruction` now resets runtime state (see
+     destruction visuals/effects and flags.
+     `ClearDestruction` now resets runtime state (see
      Done), but game effect restoration remains unresolved. Choices:
      `known_ambiguities/destruction.md`
    - Water (loaded types and `IsInDangerousWater`: see Done): swimming and
