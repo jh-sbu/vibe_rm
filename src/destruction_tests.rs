@@ -7,6 +7,7 @@ const BASE: FormId = FormId(0x800);
 const OTHER_BASE: FormId = FormId(0x801);
 const REF_A: FormId = FormId(0x810);
 const REF_B: FormId = FormId(0x811);
+const REF_C: FormId = FormId(0x812);
 const QUEST: FormId = FormId(0x820);
 
 struct Fixture(std::path::PathBuf);
@@ -57,7 +58,11 @@ fn fixture() -> (Fixture, Engine) {
         ),
         Node::top(
             b"REFR",
-            vec![reference(REF_A, BASE), reference(REF_B, OTHER_BASE)],
+            vec![
+                reference(REF_A, BASE),
+                reference(REF_B, OTHER_BASE),
+                reference(REF_C, BASE),
+            ],
         ),
         Node::top(b"EXPL", vec![RecordBuilder::new(b"EXPL", FormId(0x830))]),
         Node::top(b"DEBR", vec![RecordBuilder::new(b"DEBR", FormId(0x831))]),
@@ -102,6 +107,93 @@ fn current_stage(e: &mut Engine, this: &Value) -> i32 {
     }
 }
 
+fn damage_object(e: &mut Engine, this: &Value, damage: f32) {
+    assert!(matches!(
+        crate::script::natives::call(
+            e,
+            "objectreference",
+            "damageobject",
+            Some(this),
+            &[Value::Float(damage)],
+        ),
+        papyrus::NativeResult::Value(Value::None)
+    ));
+}
+
+fn stage(
+    index: u8,
+    health_percent: u8,
+    damage_stage: u8,
+    flags: u8,
+) -> esp::destructible::DestructionStage {
+    esp::destructible::DestructionStage {
+        health_percent,
+        index,
+        damage_stage,
+        flags,
+        self_damage_per_second: 0,
+        explosion: FormId::NULL,
+        debris: FormId::NULL,
+        debris_count: 0,
+        replacement_model: None,
+    }
+}
+
+#[test]
+fn scripted_damage_crosses_authored_indices_and_caps_one_hit_at_first_capped_stage() {
+    let data = esp::destructible::DestructibleData {
+        health: 100,
+        stage_count: 2,
+        vats_targetable: false,
+        // Deliberately distinct damage_stage values: Papyrus query state uses
+        // the authored index under the current documented policy.
+        stages: vec![stage(4, 90, 1, 0x01), stage(9, 0, 2, 0)],
+    };
+
+    assert_eq!(apply_damage(&data, None, f32::NAN), None);
+    assert_eq!(apply_damage(&data, None, 0.0), None);
+    assert_eq!(apply_damage(&data, None, -1.0), None);
+    assert_eq!(apply_damage(&data, None, f32::INFINITY), None);
+
+    let first = apply_damage(&data, None, 100.0).unwrap();
+    assert_eq!(
+        first,
+        DestructionState {
+            health: 90.0,
+            stage: 4
+        }
+    );
+    // One hit cannot pass the first CAP_DAMAGE stage.
+    let second = apply_damage(&data, Some(first), 90.0).unwrap();
+    assert_eq!(
+        second,
+        DestructionState {
+            health: 0.0,
+            stage: 9
+        }
+    );
+    assert_eq!(apply_damage(&data, Some(second), 10.0), None);
+}
+
+#[test]
+fn damage_cannot_heal_to_a_cap_threshold_or_reduce_health_below_zero() {
+    let data = esp::destructible::DestructibleData {
+        health: 100,
+        stage_count: 1,
+        vats_targetable: false,
+        stages: vec![stage(3, 90, 1, 0x01)],
+    };
+    let already_below = DestructionState {
+        health: 50.0,
+        stage: -1,
+    };
+    let hit = apply_damage(&data, Some(already_below), 10.0).unwrap();
+    assert_eq!(hit.health, 50.0);
+    assert_eq!(hit.stage, 3);
+    let lethal = apply_damage(&data, Some(hit), 100.0).unwrap();
+    assert_eq!(lethal.health, 0.0);
+}
+
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn destructible_definitions_and_initial_stage_queries_are_reference_scoped() {
@@ -133,7 +225,13 @@ fn destructible_definitions_and_initial_stage_queries_are_reference_scoped() {
     assert_eq!(e.current_destruction_stage(REF_B), -1);
 
     // The later damage path mutates one placed reference independently.
-    e.world_state.destruction_stages.insert(REF_A, 0);
+    e.world_state.destruction.insert(
+        REF_A,
+        crate::world::destruction::DestructionState {
+            health: 99.0,
+            stage: 0,
+        },
+    );
     assert_eq!(e.current_destruction_stage(REF_A), 0);
     assert_eq!(e.current_destruction_stage(REF_B), -1);
     assert_eq!(current_stage(&mut e, &this_b), -1);
@@ -153,6 +251,59 @@ fn destructible_definitions_and_initial_stage_queries_are_reference_scoped() {
         &parsed,
         crate::condition::Context {
             subject: Some(REF_A),
+            ..Default::default()
+        }
+    ));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn damageobject_is_loaded_reference_gated_and_keeps_health_per_reference() {
+    let (_dir, mut e) = fixture();
+    let this_a = e.object_value(REF_A);
+    let this_b = e.object_value(REF_B);
+    let this_c = e.object_value(REF_C);
+
+    // A valid but unloaded reference is untouched.
+    damage_object(&mut e, &this_a, 20.0);
+    assert_eq!(e.current_destruction_stage(REF_A), -1);
+    assert!(!e.world_state.destruction.contains_key(&REF_A));
+
+    e.cells
+        .entry(crate::render::CellKey::Interior(FormId(0x840)))
+        .or_default()
+        .refs
+        .extend([REF_A, REF_B, REF_C]);
+
+    damage_object(&mut e, &this_a, f32::NAN);
+    damage_object(&mut e, &this_a, -5.0);
+    assert!(!e.world_state.destruction.contains_key(&REF_A));
+
+    // First cap stage prevents this hit from entering stage 1.
+    damage_object(&mut e, &this_a, 100.0);
+    assert_eq!(e.current_destruction_stage(REF_A), 0);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
+    assert_eq!(e.current_destruction_stage(REF_C), -1);
+
+    // A loaded object without DEST is still a no-op.
+    damage_object(&mut e, &this_b, 10.0);
+    assert!(!e.world_state.destruction.contains_key(&REF_B));
+
+    damage_object(&mut e, &this_c, 2.0);
+    assert_eq!(e.current_destruction_stage(REF_C), 0);
+    // The synthetic base's first stage is a 99% cap, so the hit stops there.
+    assert_eq!(e.world_state.destruction[&REF_C].health, 99.0);
+    damage_object(&mut e, &this_c, 1.0);
+    assert_eq!(e.world_state.destruction[&REF_C].health, 98.0);
+    assert_eq!(current_stage(&mut e, &this_c), 0);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
+
+    let parsed = crate::condition::parse_all(&e.lo.get(QUEST).unwrap());
+    assert!(!crate::condition::evaluate(
+        &e,
+        &parsed,
+        crate::condition::Context {
+            subject: Some(REF_C),
             ..Default::default()
         }
     ));

@@ -35,9 +35,9 @@ pub struct WorldState {
     pub item_charges: HashMap<FormId, Vec<f32>>,
     /// Loose objects' breakable joints that broke (by index in the model).
     pub broken_joints: HashMap<FormId, Vec<usize>>,
-    /// Current destruction stage by reference. Missing entries are untouched
-    /// references and read as stage -1; damage writes explicit stage indices.
-    pub destruction_stages: HashMap<FormId, i32>,
+    /// Destructible objects' health and current stage, by reference. Missing
+    /// entries are untouched; damage initializes health from the base `DEST`.
+    pub destruction: HashMap<FormId, crate::world::destruction::DestructionState>,
     /// Objects' behaviour graphs as their cells unloaded (a lever pulled, a
     /// portcullis raised, a rockfall come down), to run on from there.
     pub object_graphs: HashMap<FormId, crate::world::behavior::GraphAnim>,

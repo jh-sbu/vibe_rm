@@ -405,6 +405,12 @@ pub fn call(
         ("objectreference", "getcurrentdestructionstage") => v(Value::Int(
             me.map_or(-1, |f| e.current_destruction_stage(f)),
         )),
+        ("objectreference", "damageobject") => {
+            if let Some(reference) = me {
+                e.damage_object(reference, arg(0).as_float());
+            }
+            none()
+        }
         ("objectreference", "getpositionx") => v(Value::Float(
             me.and_then(|f| e.ref_position(f))
                 .map(|p| p.x)
