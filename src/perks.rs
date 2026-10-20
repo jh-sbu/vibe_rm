@@ -31,6 +31,7 @@ pub mod ep {
     pub const MOD_ENEMY_CRITICAL_HIT_CHANCE: u8 = 17;
     pub const MOD_SNEAK_ATTACK_MULT: u8 = 18;
     pub const MOD_RECOVER_ARROW_CHANCE: u8 = 21;
+    pub const MOD_SKILL_USE: u8 = 22;
     pub const MOD_SPELL_MAGNITUDE: u8 = 29;
     pub const MOD_INCOMING_SPELL_MAGNITUDE: u8 = 41;
     pub const MOD_POWER_ATTACK_STAMINA: u8 = 27;

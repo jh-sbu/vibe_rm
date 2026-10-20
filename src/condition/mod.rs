@@ -653,6 +653,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         682 => b(subject.is_some_and(|s| e.worn_with_keyword(s, p1) > 0)), // WornHasKeyword
         722 => Some(subject.map_or(0, |s| e.worn_with_keyword(s, p1)) as f32), // WornApparelHasKeywordCount
         569 => b(subject.is_some_and(|s| e.is_blocking(s))),                   // IsBlocking
+        // EPMagic_IsAdvanceSkill: the skill a use is advancing.
+        681 => b(e.advancing_skill.get() == Some(c.p1)),
         // IsSprinting: only the player sprints so far (NPCs run).
         568 => b(subject == Some(crate::engine::PLAYER_REF) && e.player.sprinting),
         // GetLastHitCritical: the latest blow the subject took was a critical strike.

@@ -154,6 +154,9 @@ pub struct Engine {
     /// Saves scripts asked for (`Game.RequestSave`), written next update:
     /// name, and whether it is an autosave.
     pub(crate) save_requests: Vec<(String, bool)>,
+    /// The skill whose use is passing through "Mod Skill Use"
+    /// (`EPMagic_IsAdvanceSkill`).
+    pub(crate) advancing_skill: std::cell::Cell<Option<u32>>,
     /// Actors whose latest blow taken was a critical strike
     /// (`GetLastHitCritical`).
     pub(crate) critically_hit: std::collections::HashSet<FormId>,
@@ -417,6 +420,7 @@ impl Engine {
             player_attack_recovery: 0.0,
             striking: None,
             save_requests: Vec::new(),
+            advancing_skill: Default::default(),
             critically_hit: Default::default(),
             third_person: false,
             third_person_distance: crate::player_body::THIRD_PERSON_DEFAULT,
