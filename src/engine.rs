@@ -151,6 +151,15 @@ pub struct Engine {
     /// The attacker and what it strikes with while a blow lands
     /// (`Engine::weapon_of`).
     pub(crate) striking: Option<(FormId, Option<FormId>)>,
+    /// Saves scripts asked for (`Game.RequestSave`), written next update:
+    /// name, and whether it is an autosave.
+    pub(crate) save_requests: Vec<(String, bool)>,
+    /// The skill whose use is passing through "Mod Skill Use"
+    /// (`EPMagic_IsAdvanceSkill`).
+    pub(crate) advancing_skill: std::cell::Cell<Option<u32>>,
+    /// Actors whose latest blow taken was a critical strike
+    /// (`GetLastHitCritical`).
+    pub(crate) critically_hit: std::collections::HashSet<FormId>,
     /// Seen from behind the player rather than through their eyes.
     pub third_person: bool,
     /// How far behind the eye the third-person camera sits.
@@ -285,6 +294,8 @@ struct MusicState {
 pub const PLAYER_REF: FormId = FormId(0x14);
 /// Reference flag: drawn however far away (sky statics, dragon perches).
 const FULL_LOD: u32 = 0x10000;
+/// How far above the given feet `place_player` puts the capsule's bottom.
+pub(crate) const PLACEMENT_CLEARANCE: f32 = 2.0;
 /// The player's health (no leveling yet).
 pub const PLAYER_HEALTH: f32 = 100.0;
 /// Real seconds per game hour at the default timescale of 20.
@@ -408,6 +419,9 @@ impl Engine {
             player_swing: None,
             player_attack_recovery: 0.0,
             striking: None,
+            save_requests: Vec::new(),
+            advancing_skill: Default::default(),
+            critically_hit: Default::default(),
             third_person: false,
             third_person_distance: crate::player_body::THIRD_PERSON_DEFAULT,
             third_person_combat: 0.0,
@@ -833,7 +847,7 @@ impl Engine {
         }
     }
 
-    fn unload_all(&mut self) {
+    pub(crate) fn unload_all(&mut self) {
         if let Some(a) = self.audio.as_mut() {
             a.stop_all();
         }
@@ -882,8 +896,11 @@ impl Engine {
         self.player.crouch = sneaking as u8 as f32;
         // Settling onto the ground isn't a landing.
         self.footsteps.airborne = f32::NEG_INFINITY;
-        self.player.position =
-            feet + Vec3::Z * (self.physics.player_half_height + self.physics.player_radius + 2.0);
+        self.player.position = feet
+            + Vec3::Z
+                * (self.physics.player_half_height
+                    + self.physics.player_radius
+                    + PLACEMENT_CLEARANCE);
         self.camera.yaw = yaw;
         self.camera.pitch = 0.0;
         self.camera.position = self.player.eye();
@@ -2410,6 +2427,7 @@ impl Engine {
     /// Advance the simulation by `dt` seconds.
     pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
         self.scripts.wall_time += dt as f64;
+        self.flush_save_requests();
         // The gift menu went: its script carries on.
         if let Some(g) = &self.gift
             && self.menu != Some(crate::items::Menu::Gift(g.actor))

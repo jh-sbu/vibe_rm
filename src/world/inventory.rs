@@ -59,6 +59,19 @@ pub fn item_droppable(lo: &LoadOrder, form: FormId) -> bool {
     !weapon_restrictions(lo, form).0
 }
 
+/// Whether a weapon is a bound weapon (`DNAM` flags2 bit 13, "Bound Weapon" in
+/// xEdit's TES5 definitions): the Disarm shout leaves these in the hand.
+pub fn weapon_bound(lo: &LoadOrder, form: FormId) -> bool {
+    lo.get(form)
+        .filter(|r| r.tag().0 == *b"WEAP")
+        .and_then(|r| {
+            r.get(b"DNAM")
+                .and_then(|d| d.get(40..44))
+                .map(|d| d.to_vec())
+        })
+        .is_some_and(|d| u32::from_le_bytes(d[..4].try_into().unwrap()) & 0x2000 != 0)
+}
+
 /// Name, kind, value and weight of an inventory item; `None` for forms that aren't
 /// items (and lights that can't be carried).
 pub fn item_info(lo: &LoadOrder, form: FormId) -> Option<ItemInfo> {
@@ -632,6 +645,25 @@ impl Inventory {
             Some((_, _, c)) => *c += 1,
             None => self.souls.push((form, soul, 1)),
         }
+    }
+
+    /// What is held in each hand and the voice, and whether the right hand's
+    /// item fills both (what saves keep, with `equipped`).
+    pub fn hands(&self) -> ([Option<FormId>; 3], bool) {
+        (self.held, self.both)
+    }
+
+    /// This inventory with the equipment a save recorded (`equipped`, `hands`).
+    pub fn with_equipment(
+        mut self,
+        worn: Vec<FormId>,
+        held: [Option<FormId>; 3],
+        both: bool,
+    ) -> Self {
+        self.worn = worn;
+        self.held = held;
+        self.both = both;
+        self
     }
 
     /// What is worn and wielded: armor, ammunition, the items in hand.

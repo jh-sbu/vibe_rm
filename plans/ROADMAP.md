@@ -407,9 +407,35 @@ game each piece unlocks.
   doesn't detect does the weapon type's multiple of its damage before armor
   (`fCombatSneak1HSwordMult`... 3x one-handed, 2x two-handed and unarmed; 2x
   bows), with "Sneak attack for 3.0X damage!" for the player and `OnHit`'s
-  sneak flag set. A survivor that wasn't fighting its attacker searches for
-  it rather than fighting at once. Open questions:
+  sneak flag set; the player's "Sneak Attacks" and, with a one-handed weapon on
+  a target facing away, "Backstabs". A survivor that wasn't fighting its
+  attacker searches for it rather than fighting at once. Open questions:
   `known_ambiguities/sneak-attacks.md`
+- Critical strikes: the perks' "Calculate My Critical Hit Chance" (Bladesman,
+  Deep Wounds, Critical Shot 10 / 15 / 20 %, the Critical Charges 100 % for a
+  sprinting power attack) and "Mod Enemy Critical Hit Chance" give the chance;
+  a critical blow adds the weapon's `CRDT` damage through "Calculate My
+  Critical Hit Damage" (x1.25, x1.5, x2) past armor, counts the player's
+  "Critical Strikes" and sets `GetLastHitCritical`; `IsSprinting` is the
+  player's. Open questions: `known_ambiguities/critical-hits.md`
+- Skill use perks: "Mod Skill Use" scales a skill use's XP for the skills
+  its `EPMagic_IsAdvanceSkill` conditions name (`known_ambiguities/skills.md`)
+- Scrolls (`known_ambiguities/scrolls.md`): used from the inventory or
+  favorites into the hand asked for (or away again), cast like a spell with
+  the scroll's charge time, free of magicka and skill, and used up by the
+  cast (one cut short isn't); `GetEquippedSpell` leaves them out.
+- Saves (`src/save/`, `known_ambiguities/saves.md`): the engine's own format
+  (sections with CRCs, written through a temporary file) holding the clock,
+  globals, quests, statistics, actor value changes, inventories with their
+  equipment, script changes to references, the world state kept across cell
+  loads, references made while playing, and the player's health, skills,
+  perks, spells, shouts, favorites, dialogue heard, bounties and restocks;
+  loading refuses damaged files and other plugin lists, then enters the
+  saved location. The Papyrus VM too: attached scripts with their variables
+  and properties, suspended threads (kept at the instruction they waited at),
+  `OnInit` done, update timers, and sleep, inventory filter and animation
+  event registrations. `Game.RequestSave` / `RequestAutoSave` (written on the
+  next update), console `save`, `load`, `saves`.
 - Skills and leveling: the player's skill uses earn XP by each skill's `AVSK`
   (use mult and offset), skills go up at `improve mult x level ^ fSkillUseCurve
   + offset` ("One-handed Increased to 21"), each level reached giving character
@@ -563,7 +589,11 @@ game each piece unlocks.
   filling and flashing when Z comes too soon. The magic menu's Shouts (the
   words, those unlocked, the recharge, the dragon souls) and the favorites
   menu's; the shout stats. Console `teachword`, `unlockword`, `addshout`,
-  `equipshout`, `pcast voice`. Open questions: `known_ambiguities/shouts.md`
+  `equipshout`, `pcast voice`. Disarm (effect archetype 9, the shout and the
+  draugr's): the target's drawn weapon drops from its right hand, a
+  dual-wielder's left goes to the inventory, bound weapons stay, up to the
+  magnitude's level; the player's "Weapons Disarmed" statistic. Open
+  questions: `known_ambiguities/shouts.md`, `known_ambiguities/disarm.md`
 - Harvesting: plants (`FLOR`, `TREE` with produce) found by their
   non-collidable shapes, giving their produce with their own verb and sound,
   someone else's stolen; harvested models, growing back
@@ -1333,7 +1363,7 @@ game each piece unlocks.
    (`known_ambiguities/invisibility.md`); illusion spells chosen by NPCs; enchantment charges,
    NPCs poisoning their weapons; `known_ambiguities/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
-   waiting on casting, crafting, barter, critical hits, attack types;
+   waiting on casting, crafting, barter, attack types;
    `known_ambiguities/perks.md`), inventory (player's, armor from
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
@@ -1353,7 +1383,9 @@ game each piece unlocks.
      including scene and quest-alias packages)
    - Sneak attacks (see Done): NPCs sneaking up on the player
    - Skills (see Done): the other skills' uses as their systems come (magic,
-     crafting, speech), rested bonuses
+     crafting, speech); granting the skill-use perks: sleeping's Rested
+     spells (UESP sources in `known_ambiguities/skills.md`), the magic
+     effect's "Perk to Apply", the Guardian Stones
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
@@ -1395,7 +1427,7 @@ game each piece unlocks.
      sounds and flags
    - Encumbrance, more: fast travel refused over-encumbered (with the
      map), followers' "can't carry any more"
-   - Perks, more: staggers, bow zoom, key rewards; refunds and the Legendary reset; NPCs' skills advancing
+   - Perks, more: staggers, bow zoom, key rewards; NPCs' skills advancing
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; doors
      opened by actors remembered; looping sounds of enabled references checked
@@ -1412,14 +1444,15 @@ game each piece unlocks.
      rotating and zooming it), the quantity slider's use for more than dropping, rows grouped by captured soul with per-item
      selection and transfers (`known_ambiguities/inventory-cards.md`); alchemy
      teaching the effects two ingredients share (waits on crafting),
-     equipping scrolls and torches in a hand, the survival warmth rating
+     equipping torches in a hand (the player's body doesn't show a carried
+     light), the survival warmth rating
    - The HUD: notifications' display
      time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;
      `known_ambiguities/messages.md`); controller rumble for camera shakes
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
      (crafting, dragon souls collected, horses stolen,
-     critical strikes, backstabs, disarms; Favorite Weapon)
+     Favorite Weapon)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets; the charge and
      survival meters, load door info, favor mode
@@ -1448,11 +1481,13 @@ game each piece unlocks.
    decay, turbulence, drag's exact formula and animated objects, rotation axis,
    speed-to-aspect runtime fidelity, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
-9. **Saves**: an engine-native save format (reading .ess later), writing out
-   the scripts' state, inventories, `WorldState` and the weather, bounties,
-   perks, skill progress, restock times, scene state, heard dialogue lines,
-   graph state; `RequestSave` /
-   `RequestAutoSave`
+9. **Saves** (the container, the engine's state and the Papyrus VM are done:
+   see Done): threads waiting on message boxes or animation events,
+   active magic effects, scene state, the Story Manager and relationships,
+   AI progress, objects' behaviour graphs, weather and detection; reading the
+   original's `.ess` saves later; a save / load menu (the System page),
+   load orders that changed since the save, and the original's refusals to
+   save (combat, menus, scripted); numbered quicksaves
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
    - A new game separate from the developer launch, which drops the player at

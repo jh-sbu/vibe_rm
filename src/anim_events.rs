@@ -41,6 +41,30 @@ pub(crate) fn wait_key(sender: FormId, event: &str) -> u64 {
     h.finish()
 }
 
+impl AnimEvents {
+    /// The registrations (receiver, its script, sender, event), for saves.
+    pub(crate) fn registered(&self) -> Vec<(ObjectId, String, FormId, String)> {
+        self.registrations
+            .iter()
+            .map(|r| (r.receiver, r.script.clone(), r.sender, r.event.clone()))
+            .collect()
+    }
+
+    /// Replace the registrations with a save's, and drop the events waiting.
+    pub(crate) fn restore(&mut self, registered: Vec<(ObjectId, String, FormId, String)>) {
+        self.registrations = registered
+            .into_iter()
+            .map(|(receiver, script, sender, event)| Registration {
+                receiver,
+                script,
+                sender,
+                event,
+            })
+            .collect();
+        self.pending.clear();
+    }
+}
+
 impl Engine {
     /// Whether `r` runs a behaviour graph now (an actor's or an object's).
     pub(crate) fn has_behavior_graph(&self, r: FormId) -> bool {
