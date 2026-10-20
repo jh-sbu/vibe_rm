@@ -36,7 +36,8 @@ pub struct Created {
 #[derive(Default)]
 pub struct CreatedRefs {
     pub refs: HashMap<FormId, Created>,
-    next: u32,
+    /// The next form id (0: `FIRST`).
+    pub(crate) next: u32,
 }
 
 impl Engine {

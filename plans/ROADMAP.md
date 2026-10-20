@@ -412,6 +412,15 @@ game each piece unlocks.
   Critical Hit Damage" (x1.25, x1.5, x2) past armor, counts the player's
   "Critical Strikes" and sets `GetLastHitCritical`; `IsSprinting` is the
   player's. Open questions: `known_ambiguities/critical-hits.md`
+- Saves (`src/save/`, `known_ambiguities/saves.md`): the engine's own format
+  (sections with CRCs, written through a temporary file) holding the clock,
+  globals, quests, statistics, actor value changes, inventories with their
+  equipment, script changes to references, the world state kept across cell
+  loads, references made while playing, and the player's health, skills,
+  perks, spells, shouts, favorites, dialogue heard, bounties and restocks;
+  loading refuses damaged files and other plugin lists, then enters the
+  saved location. `Game.RequestSave` / `RequestAutoSave` (written on the next
+  update), console `save`, `load`, `saves`.
 - Skills and leveling: the player's skill uses earn XP by each skill's `AVSK`
   (use mult and offset), skills go up at `improve mult x level ^ fSkillUseCurve
   + offset` ("One-handed Increased to 21"), each level reached giving character
@@ -1416,11 +1425,13 @@ game each piece unlocks.
    decay, turbulence, drag's exact formula and animated objects, rotation axis,
    speed-to-aspect runtime fidelity, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
-9. **Saves**: an engine-native save format (reading .ess later), writing out
-   the scripts' state, inventories, `WorldState` and the weather, bounties,
-   perks, skill progress, restock times, scene state, heard dialogue lines,
-   graph state; `RequestSave` /
-   `RequestAutoSave`
+9. **Saves** (the container and the engine's state are done: see Done):
+   the Papyrus VM's state (script variables, properties, waiting threads),
+   active magic effects, scene state, the Story Manager and relationships,
+   AI progress, objects' behaviour graphs, weather and detection; reading the
+   original's `.ess` saves later; a save / load menu (the System page),
+   load orders that changed since the save, and the original's refusals to
+   save (combat, menus, scripted); numbered quicksaves
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
    - A new game separate from the developer launch, which drops the player at

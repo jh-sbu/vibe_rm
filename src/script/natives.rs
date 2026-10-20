@@ -96,6 +96,10 @@ pub fn call(
             none()
         }
         ("game", "querystat") => v(Value::Int(e.query_stat(&arg(0).to_string()))),
+        ("game", "requestsave") | ("game", "requestautosave") => {
+            e.request_save(func == "requestautosave");
+            v(Value::None)
+        }
         ("game", "getplayer") => v(e.object_value(crate::engine::PLAYER_REF)),
         ("game", "getform") => v(e.object_value(FormId(arg(0).as_int() as u32))),
         ("game", "getformfromfile") => {

@@ -1,0 +1,68 @@
+# Saves
+
+Implemented in `src/save/` (`file.rs` the container, `state.rs` what it holds,
+`codec.rs` the encoding), with `Game.RequestSave` / `RequestAutoSave` in
+`src/script/natives.rs` and the console's `save`, `load`, `saves`.
+
+This is the engine's *own* format (`.vrs`), chosen rather than the original
+game's `.ess`: the original format stores the original engine's internal
+structures (Papyrus VM stacks, process lists), which this engine doesn't have.
+Reading `.ess` saves (the `ess` crate parses them read-only, for test-mod
+results) stays a separate, later job. For orientation only, UESP's
+[Skyrim Mod:Save File Format](https://en.uesp.net/w/index.php?oldid=3067914)
+(revision 3067914) lists the original's sections.
+
+## Design
+
+- A magic, a format version, then tagged sections, each with a length and
+  CRC-32. Damaged, truncated or foreign files are refused, and a save is
+  fully read before any of the game is touched. Unknown sections are skipped,
+  so sections can be added without a version bump.
+- Written to a temporary file and renamed, so a crash keeps the old save.
+- Saves live in `$VRM_SAVES`, else `$XDG_DATA_HOME/vibe_rm/saves`, else
+  `~/.local/share/vibe_rm/saves`.
+- Form ids are saved as loaded (global ids, with the load-order index in the
+  top byte), so a save loads only with the same plugins in the same order;
+  `HEAD` lists them and another list is refused. (The original game maps ids
+  through a form id array; that is the likely route to loading across load
+  order changes.)
+- Loading unloads the cells, replaces the saved state, then enters the saved
+  location with the player on their feet where they stood. The old game's
+  pending stage and event queues are dropped.
+
+## What is saved
+
+The date and clock; globals; quests (stage, objectives, log, alias fills, the
+Story Manager event that started them); statistics; actor value changes made
+by scripts and effects; every inventory with what is equipped, owners, souls,
+poisons and weapon charges; what scripts did to references (taken from,
+disabled, locked, owners, factions, blocked activation); the world state
+kept across cell loads (dead actors and their bodies, hurt actors, doors left
+open, moved references, charges of dropped weapons, broken joints, learned
+ingredient effects, explicit alerts); references made while playing; the
+player's health, stamina, skills, perks, spells, words of power and shouts,
+favorites, hotkeys; dialogue lines heard; bounties; merchants' restock times.
+
+## Not saved yet (see `plans/ROADMAP.md`)
+
+- **The Papyrus VM**: script variables, properties, and threads waiting in
+  `Utility.Wait`. A load keeps the running VM as it is (it is not reset), so
+  a game loaded mid-quest isn't faithful until the VM is saved.
+- Active magic effects (timed effects, summons, wards), the leveled spell
+  rolls, scenes playing, the Story Manager's memory, relationships, AI and
+  package progress, schedules, objects' behaviour graphs, weather and
+  detection state, and the player's spells held ready (the equipped spells
+  are saved with the inventory's hands).
+
+## Unconfirmed choices
+
+- **`RequestSave` / `RequestAutoSave`** write `quicksave` and `autosave`. The
+  original names its saves with a counter; the Creation Kit wiki isn't
+  reachable here (`public-sources-access`). The save is made on the next
+  update, after the script returns, not inside the native call. A save is
+  refused while the player is dead ("You cannot save right now.",
+  `sCantSaveNow`); the original's other refusals (combat, menus, scripted
+  forbidding) aren't built. "Autosaving..." (`sAutoSaving`) is shown for the
+  autosave, which is our guess for when the game prints it.
+- Console `save` with no name writes `console`.
+- Save names: letters, digits, spaces, `-` and `_`, up to 64.

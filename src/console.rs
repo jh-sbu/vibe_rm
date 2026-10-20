@@ -800,6 +800,30 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 None => vec![format!("{r} has no behaviour graph")],
             }
         }
+        "save" | "savegame" => {
+            let name = if args.is_empty() { "console".to_string() } else { args.join(" ") };
+            match engine.save_game(&name) {
+                Ok(path) => vec![format!("saved {}", path.display())],
+                Err(e) => vec![format!("error: {e:#}")],
+            }
+        }
+        "load" | "loadgame" => {
+            if args.is_empty() {
+                return vec!["usage: load <save name> (saves lists them)".into()];
+            }
+            match engine.load_game(&args.join(" ")) {
+                Ok(()) => vec![format!("loaded {}", args.join(" "))],
+                Err(e) => vec![format!("error: {e:#}")],
+            }
+        }
+        "saves" => {
+            let found = crate::save::list_saves_in(&crate::save::save_dir());
+            if found.is_empty() {
+                vec!["no saves".into()]
+            } else {
+                found
+            }
+        }
         "coc" | "centeroncell" => {
             let Some(name) = args.first() else { return vec!["usage: coc <cell editor id>".into()] };
             match engine.resolve_form(name) {
