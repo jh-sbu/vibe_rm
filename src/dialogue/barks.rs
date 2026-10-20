@@ -100,6 +100,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| rt.actors.iter())
+            .filter(|a| !a.dead)
             .filter(|a| a.graph.as_ref().is_some_and(|g| g.project().humanoid()))
             .map(|a| (a.pos.distance(player), a.ref_id))
             .filter(|(d, _)| *d < CHATTER_DISTANCE)
@@ -142,6 +143,9 @@ impl Engine {
     /// Say a line from the first topic of `subtype` with an INFO for `speaker`.
     /// True if something was said.
     pub fn bark(&mut self, speaker: FormId, subtype: &[u8; 4]) -> bool {
+        if self.is_dead(speaker) {
+            return false;
+        }
         let Some(voice_type) = self.actor_voice_type(speaker) else {
             log::trace!("{speaker}: no voice type");
             return false;
