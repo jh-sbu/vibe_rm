@@ -1058,6 +1058,11 @@ game each piece unlocks.
   opaque pass's depth is copied before the blended draws, and only in frames that have
   such draws. `VRM_NO_SOFT_EFFECTS=1` turns it off; vrm-tool `soft-effects` lists the
   flag and depths. Open questions: `known_ambiguities/soft-effects.md`
+- Sound categories: a sound descriptor's volume carries its category's (`GNAM` -> SNCT:
+  `VNAM` static volume multipliers and, for the Audio menu's four categories, their
+  `UNAM` defaults, up through the master category); music plays at the music
+  category's volume and dialogue lines at the voice category's. Open questions:
+  `known_ambiguities/audio-categories.md`
 - NIF float / colour `CONST_KEY` interpolation retains its source type and
   selects nearest endpoints for shader and alpha-test channels, named material
   sequences and particle float curves. Boolean keys retain their hold behavior.
@@ -1391,7 +1396,8 @@ game each piece unlocks.
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);
      NPCs only use pre-baked heads
-7. **Audio**: lip sync
+7. **Audio**: lip sync; categories' mute when submerged and menu / dialogue ducking, the
+   Audio menu's sliders
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), HDR: eye adaptation, bloom, tone mapping and the image
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
