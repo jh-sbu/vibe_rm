@@ -24,6 +24,104 @@ use esp::FormId;
 use crate::condition::{self, Condition, Context};
 use crate::engine::{Engine, PLAYER_REF};
 
+/// Overlay live grants without caching them as permanent ownership. Resolving a
+/// grant only reads its records; it must not reevaluate effect conditions.
+fn with_effect_perks(
+    actor: FormId,
+    permanent: Arc<Vec<(FormId, u8)>>,
+    effects: &[crate::magic::ActiveEffect],
+    resolve: impl Fn(FormId) -> Option<FormId>,
+) -> Arc<Vec<(FormId, u8)>> {
+    if actor != PLAYER_REF {
+        return permanent;
+    }
+    let mut out = None;
+    for effect in effects
+        .iter()
+        .filter(|x| x.target == actor && x.active && !x.done)
+    {
+        let Some(perk) = resolve(effect.effect) else {
+            continue;
+        };
+        let perks = out.get_or_insert_with(|| (*permanent).clone());
+        if !perks.iter().any(|p| p.0 == perk) {
+            perks.push((perk, 1));
+        }
+    }
+    out.map(Arc::new).unwrap_or(permanent)
+}
+
+#[cfg(test)]
+mod effect_perk_sources_tests {
+    use super::*;
+
+    fn source(target: FormId) -> crate::magic::ActiveEffect {
+        crate::magic::ActiveEffect {
+            id: 1,
+            target,
+            caster: None,
+            item: FormId(1),
+            index: 0,
+            effect: FormId(2),
+            magnitude: 0.0,
+            duration: 20.0,
+            elapsed: 0.0,
+            active: true,
+            held: [0.0; 2],
+            scripted: false,
+            done: false,
+            quiet: false,
+            at: None,
+            summoned: None,
+            dual: false,
+            channelled: false,
+        }
+    }
+
+    #[test]
+    fn effect_perk_sources_suspend_resume_overlap_and_leave_permanent_ranks() {
+        let perk = FormId(3);
+        let npc = FormId(4);
+        let permanent = Arc::new(vec![(FormId(5), 2)]);
+        let mut effects = vec![source(PLAYER_REF), source(PLAYER_REF), source(npc)];
+        let query = |effects: &[crate::magic::ActiveEffect]| {
+            with_effect_perks(PLAYER_REF, permanent.clone(), effects, |_| Some(perk))
+        };
+        assert_eq!(*query(&effects), vec![(FormId(5), 2), (perk, 1)]);
+        effects[0].active = false;
+        assert_eq!(query(&effects).len(), 2); // second grant remains
+        effects[1].done = true;
+        let absent = query(&effects);
+        assert_eq!(*absent, *permanent);
+        assert!(Arc::ptr_eq(&absent, &permanent)); // no stale cached grant
+        effects[0].active = true;
+        assert_eq!(query(&effects).last(), Some(&(perk, 1))); // resumes
+        assert_eq!(*permanent, vec![(FormId(5), 2)]); // never mutated
+        let owned = Arc::new(vec![(perk, 3)]);
+        assert_eq!(
+            *with_effect_perks(PLAYER_REF, owned.clone(), &effects, |_| Some(perk)),
+            *owned
+        );
+        effects[0].done = true;
+        assert_eq!(
+            *with_effect_perks(PLAYER_REF, owned.clone(), &effects, |_| Some(perk)),
+            *owned
+        );
+        assert_eq!(
+            *with_effect_perks(npc, permanent.clone(), &effects, |_| panic!(
+                "NPC grants must not be resolved"
+            )),
+            *permanent
+        );
+        assert_eq!(
+            *with_effect_perks(PLAYER_REF, permanent.clone(), &[source(PLAYER_REF)], |_| {
+                None
+            }),
+            *permanent
+        );
+    }
+}
+
 /// Entry points used here (CommonLibSSE `BGSEntryPoint::ENTRY_POINTS`).
 pub mod ep {
     pub const CALCULATE_MY_CRITICAL_HIT_CHANCE: u8 = 1;
@@ -320,8 +418,21 @@ impl Engine {
         p
     }
 
-    /// An actor's perks and their ranks.
+    /// An actor's permanent perks plus the player's active magic-effect grants.
     pub fn actor_perks(&self, actor: FormId) -> Arc<Vec<(FormId, u8)>> {
+        with_effect_perks(
+            actor,
+            self.permanent_perks(actor),
+            &self.magic.effects,
+            |effect| {
+                let perk = self.magic_effect(effect)?.perk;
+                (!perk.is_null() && self.perk(perk).is_some()).then_some(perk)
+            },
+        )
+    }
+
+    /// Authored and explicitly added perks, independent of temporary effects.
+    pub(crate) fn permanent_perks(&self, actor: FormId) -> Arc<Vec<(FormId, u8)>> {
         if let Some(v) = self.perks.owned.borrow().get(&actor) {
             return v.clone();
         }
@@ -354,7 +465,7 @@ impl Engine {
         let Some(p) = self.perk(perk) else {
             return false;
         };
-        if self.has_perk(actor, perk) {
+        if self.permanent_perks(actor).iter().any(|p| p.0 == perk) {
             return true;
         }
         if let Some(r) = self.perks.removed.get_mut(&actor) {

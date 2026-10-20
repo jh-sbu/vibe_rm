@@ -107,9 +107,11 @@ revision 3636185). Unconfirmed: the multiplier is applied to the base XP,
 before the skill's use mult and offset (the name says "skill use"; it only
 differs from scaling the result for skills with a use offset). Training,
 books and `AdvanceSkill`-style direct XP are not scaled.
-Not built: granting these perks. The Guardian Stones need standing stone
-activation, and Rested / Well Rested come from sleeping (UESP's
+These perks can now be supplied by active magic effects' "Perk to Apply"
+field (`DATA` 0x88); source lifetime and unresolved cases are described in
+`known_ambiguities/effect-perks.md`. The Guardian Stones still need their
+standing stone activation path. Rested / Well Rested come from sleeping (UESP's
 Skyrim:Sleeping, revision 3577062: 5% in any bed, 10% in an owned bed, 15%
 beside a spouse, for 8 game hours) through the `Rested` spells, whose
-effects apply their perk through the magic effect's "Perk to Apply" field
-(`DATA` 0x88), which the engine does not read yet.
+effects supply their perks while active. This field support does not itself
+establish which rest spell a sleeping script selects.

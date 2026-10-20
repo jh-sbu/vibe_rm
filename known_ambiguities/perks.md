@@ -29,6 +29,10 @@ perks`).
 - **Owners**: the NPC record's `PRKR` (perk, rank), from the template giving
   the spell list (`template::SPELLS`); the player's from `NPC_ 00000007` (12
   perks: skill boosts, Allow Shouting, Well Fitted...).
+- **Temporary owners**: active player magic effects' `DATA` 0x88 perks join
+  `HasPerk` and entry-point evaluation without altering permanent ownership.
+  Duplicate grants contribute once; ability and quest sections are deferred.
+  Sources and lifecycle limits: `known_ambiguities/effect-perks.md`.
 - **The tree**: each node is `PNAM` perk, `FNAM`, `XNAM` / `YNAM` grid cell,
   `HNAM` / `VNAM` offsets, `SNAM` skill, `CNAM` children, ended by `INAM` (its
   index); the first node (no perk) is the root. Multi-rank perks are chains
