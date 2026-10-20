@@ -160,6 +160,10 @@ game each piece unlocks.
   state-machine start ID use the runtime's existing input paths, with graph
   variables taking precedence. Remaining inputs and lifecycle questions:
   `known_ambiguities/character-properties.md`
+- Timer modifiers resolve `alarmTimeSeconds` graph-variable and scalar
+  character-property inputs at the existing elapsed-time comparison, retaining
+  one alarm per activation. Sampling, invalid-input and lifecycle policies:
+  `known_ambiguities/timer-properties.md`
 - Blender-child `boneWeights` character properties resolve per character
   (arms, upper body and mounted-combat masks), preserving existing parent-mask
   composition and authored fallbacks. Remaining limits:

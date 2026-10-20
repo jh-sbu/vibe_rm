@@ -44,6 +44,9 @@ on blender children and bone switches.
   take precedence if a malformed asset binds both sources to one member.
   Properties stay outside `SetAnimationVariable*` and modifier-output writes;
   runtime property overrides and output-to-property semantics are unresolved.
+  Timer modifiers also resolve `alarmTimeSeconds` at their existing update-time
+  comparison; live deadline and lifecycle policies remain unverified in Skyrim
+  (see [timer-properties.md](timer-properties.md)).
 - Generator registrations retain type-1 bindings using the same graph-local
   property-name table and bindable-object layout as modifiers. The runtime
   resolves scalar properties for `playbackSpeed`, `startTime`,

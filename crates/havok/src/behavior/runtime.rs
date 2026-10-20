@@ -1642,7 +1642,13 @@ impl Ctx<'_> {
             (ModKind::List(list), _) => list.iter_mut().for_each(|c| self.advance_modifier(c, dt)),
             (ModKind::Timer { elapsed, fired }, Modifier::Timer { seconds, alarm }) => {
                 *elapsed += dt;
-                if !*fired && *elapsed >= *seconds {
+                // Read at the existing comparison so bindings can adjust an
+                // active timer without resetting its elapsed time or rearming it.
+                let seconds = self
+                    .modifier_bound(gi, m.m, "alarmTimeSeconds")
+                    .filter(|v| v.is_finite())
+                    .unwrap_or(*seconds);
+                if !*fired && *elapsed >= seconds {
                     *fired = true;
                     let alarm = alarm.clone();
                     self.raise(gi, alarm.event, alarm.payload);
@@ -2617,6 +2623,156 @@ mod tests {
         );
         i.update(0.0, &mut durations);
         i
+    }
+
+    fn timer_property_graph() -> BehaviorGraph {
+        let mut g = BehaviorGraph::new(
+            "Timer",
+            Some(0),
+            vec![
+                Generator::StateMachine {
+                    name: "Timer activation".into(),
+                    start: 0,
+                    start_variable: None,
+                    start_mode: StartMode::Default,
+                    sync_variable: None,
+                    change_event: None,
+                    states: vec![
+                        state(0, 1, vec![Transition::new(1, 1, None)]),
+                        state(1, 2, vec![Transition::new(0, 0, None)]),
+                    ],
+                    wildcards: vec![],
+                },
+                Generator::Wrap {
+                    name: "Timer wrapper".into(),
+                    class: "hkbModifierGenerator".into(),
+                    child: None,
+                    modifier: Some(0),
+                },
+                Generator::Other("Inactive".into()),
+            ],
+            vec!["On".into(), "Off".into(), "Alarm".into()],
+        );
+        g.modifiers = vec![
+            Modifier::EventDriven {
+                child: Some(1),
+                activate: 0,
+                deactivate: 1,
+                active_by_default: true,
+            },
+            Modifier::Timer {
+                seconds: 1.0,
+                alarm: EventProperty {
+                    event: 2,
+                    payload: Some("timer payload".into()),
+                },
+            },
+        ];
+        g.modifier_bindings = vec![vec![], vec![]];
+        g.modifier_property_bindings = vec![vec![], vec![property("alarmTimeSeconds", "DELAY")]];
+        g
+    }
+
+    #[test]
+    fn timer_properties_are_per_character_and_keep_event_payloads() {
+        for delay in [0.5, 2.0] {
+            let mut i = property_instance(timer_property_graph(), &[("delay", delay)]);
+            assert_eq!(i.variable("Delay"), None);
+            assert!(!i.set_variable("Delay", 0.0));
+            i.update(delay - 0.25, &mut durations);
+            assert!(i.take_raised().is_empty());
+            i.update(0.25, &mut durations);
+            assert_eq!(
+                i.take_raised(),
+                vec![Raised {
+                    event: "Alarm".into(),
+                    payload: Some("timer payload".into()),
+                }]
+            );
+            i.update(5.0, &mut durations);
+            assert!(i.take_raised().is_empty());
+            // A fresh activation rearms the timer and resets elapsed time.
+            i.handle_event("Off", &mut durations);
+            i.update(5.0, &mut durations);
+            assert!(i.take_raised().is_empty());
+            i.handle_event("On", &mut durations);
+            i.update(delay - 0.25, &mut durations);
+            assert!(i.take_raised().is_empty());
+            i.update(0.25, &mut durations);
+            assert_eq!(i.take_raised().len(), 1);
+        }
+    }
+
+    #[test]
+    fn timer_variables_override_properties_and_adjust_active_deadlines() {
+        let mut g = timer_property_graph();
+        let delay = g.add_variable("Deadline", VarType::Real, 3.0);
+        let enable = g.add_variable("Enabled", VarType::Bool, 1.0);
+        g.modifier_bindings[1] = vec![
+            Binding {
+                member: "alarmTimeSeconds".into(),
+                variable: delay,
+            },
+            Binding {
+                member: "enable".into(),
+                variable: enable,
+            },
+        ];
+        let mut i = property_instance(g, &[("delay", 0.25)]);
+        i.update(0.5, &mut durations);
+        assert!(i.take_raised().is_empty());
+        i.set_variable("Enabled", 0.0);
+        i.update(10.0, &mut durations);
+        assert!(i.take_raised().is_empty());
+        i.set_variable("Enabled", 1.0);
+        i.set_variable("Deadline", 2.0);
+        i.update(0.5, &mut durations);
+        assert!(i.take_raised().is_empty());
+        // Lowering the deadline past already elapsed time fires on the next
+        // comparison, without waiting for another full duration.
+        i.set_variable("Deadline", 0.75);
+        i.update(0.0, &mut durations);
+        assert_eq!(i.take_raised().len(), 1);
+        i.set_variable("Deadline", 0.0);
+        i.update(1.0, &mut durations);
+        assert!(i.take_raised().is_empty());
+        assert_eq!(i.variable("Deadline"), Some(0.0));
+    }
+
+    #[test]
+    fn unavailable_or_nonfinite_timer_inputs_keep_authored_deadlines() {
+        let mut cases = vec![
+            instance(timer_property_graph()),
+            property_instance(timer_property_graph(), &[]),
+            property_instance(timer_property_graph(), &[("delay", f32::NAN)]),
+            property_instance(timer_property_graph(), &[("delay", f32::INFINITY)]),
+            property_instance(timer_property_graph(), &[("delay", f32::NEG_INFINITY)]),
+        ];
+        let mut invalid_variable = timer_property_graph();
+        let delay = invalid_variable.add_variable("Deadline", VarType::Real, f32::NAN);
+        invalid_variable.modifier_bindings[1].push(Binding {
+            member: "alarmTimeSeconds".into(),
+            variable: delay,
+        });
+        // An invalid variable retains authored seconds rather than falling
+        // through to the duplicate, otherwise valid property.
+        cases.push(property_instance(invalid_variable, &[("delay", 0.25)]));
+        for mut i in cases {
+            i.update(0.5, &mut durations);
+            assert!(i.take_raised().is_empty());
+            i.update(0.5, &mut durations);
+            assert_eq!(i.take_raised().len(), 1);
+        }
+    }
+
+    #[test]
+    fn nonpositive_timer_properties_fire_once_at_the_first_update() {
+        for delay in [0.0, -1.0] {
+            let mut i = property_instance(timer_property_graph(), &[("delay", delay)]);
+            assert_eq!(i.take_raised().len(), 1);
+            i.update(1.0, &mut durations);
+            assert!(i.take_raised().is_empty());
+        }
     }
 
     fn mode_property_graph() -> BehaviorGraph {
