@@ -1,8 +1,11 @@
 # Destructible objects
 
-Not implemented yet: nothing reads `DEST` and objects have no health. These
-are the choices an implementation should make. Sources: UESP's DEST field
-page ([rev 2334527](https://en.uesp.net/w/index.php?oldid=2334527)),
+Destructible definitions and the initial per-reference stage query are
+implemented in `crates/esp/src/destructible.rs`,
+`src/world/destruction.rs`, `src/script/natives.rs` and
+`src/condition/mod.rs`. Health, damage, stage changes, visuals, events,
+clearing and saves remain unimplemented. Sources: UESP's DEST field page
+([permanent rev 2334527](https://en.uesp.net/w/index.php?oldid=2334527)),
 [xEdit's TES5 definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas)
 (`wbDEST`, `EXPL`), CommonLibSSE's `BGSDestructibleObjectForm.h`, and the
 vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
@@ -10,13 +13,31 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
 
 ## Settled
 
-- **Layout.** `DEST`: health (int32), stage count, VATS targetable, two
+- **Layout.** `DEST`: health (uint32), stage count, VATS targetable, two
   unknown bytes. Each stage: `DSTD` (health %, index, model damage stage
   0-8, flags, self damage per second, explosion `EXPL`, debris `DEBR`,
   debris count), then optionally a replacement model (`DMDL`, `DMDT`,
   `DMDS`), then `DSTF`. Stage flags: 0x01 cap damage, 0x02 disable, 0x04
   destroy, 0x08 ignore external damage. CommonLibSSE also names 0x10
   "becomes dynamic". No vanilla stage sets it.
+- **Implemented parser subset.** `DEST` health, VATS flag, all fixed `DSTD`
+  fields, referenced explosion/debris forms, and a stage's optional `DMDL`
+  path are retained. `DMDT`/`DMDS` texture replacement data is skipped. The
+  fixed field sizes and meanings follow UESP; CommonLibSSE's public header
+  corroborates the in-memory stage concepts but does not describe plugin byte
+  ordering. Invented records exercise stage boundaries and malformed lengths;
+  no game assets were added.
+- **Initial per-reference query.** A placed reference with no recorded
+  runtime stage reads as `-1`, independently of other references to the same
+  base. This follows the community [Skyrim Papyrus index's
+  `GetCurrentDestructionStage` page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/function/getcurrentdestructionstage/),
+  which says a completely undamaged object appears to have stage `-1`; the
+  [public vanilla `ObjectReference.psc`](https://github.com/ianpatt/skse64/blob/master/scripts/vanilla/ObjectReference.psc)
+  declares the native and describes it as the object's current stage. CTDA
+  function 470 is [UESP's `GetDestructionStage`](https://en.uesp.net/w/index.php?oldid=3566882).
+  The initial `-1` policy is public-source-supported, not verified in Skyrim
+  SE here. Stage threshold behavior, including authored 100% stages, remains
+  unresolved and is not used to compute the initial stage.
 - **Stage order.** In every vanilla record, `index` equals the stage's
   position and the health percentages descend. The last stage is usually
   at 0%.
@@ -55,11 +76,13 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   `ResourceObjectMine`, `CWFortNorPortcullis`) follow a stage that has a
   replacement with one that has none. Choice: the last replacement stays,
   as nothing says to go back to the base model.
-- **When a stage applies.** Choice: the object is in the last stage whose
-  health percentage is at or above its health as a percentage. So a 100%
-  stage (15 records, e.g. `TG02BeeHive`) applies from the start, and the
-  web's 99% stage from its first point of damage. Entering a stage plays
-  its explosion and spawns its debris, once.
+- **When a stage applies.** A prior candidate was the last stage whose health
+  percentage is at or above the object's current health percentage. That
+  would make a 100% stage (15 records, e.g. `TG02BeeHive`) active from the
+  start and the web's 99% stage active after its first point of damage. This
+  candidate conflicts with the public query note above that a completely
+  undamaged object appears to be stage `-1`; the stage-selection rule and
+  whether entering a stage runs its explosion/debris remain unresolved.
 - **Cap damage.** Choice: one hit can't carry the object past the stage it
   enters. Its health stops at the next stage's threshold, so the web
   always takes two blows. The alternative (health stops at the capping
