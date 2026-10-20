@@ -5,10 +5,13 @@ use papyrus::Value;
 
 const BASE: FormId = FormId(0x800);
 const OTHER_BASE: FormId = FormId(0x801);
+const SKIP_BASE: FormId = FormId(0x802);
 const REF_A: FormId = FormId(0x810);
 const REF_B: FormId = FormId(0x811);
 const REF_C: FormId = FormId(0x812);
+const REF_D: FormId = FormId(0x813);
 const QUEST: FormId = FormId(0x820);
+const STOPPED_QUEST: FormId = FormId(0x821);
 
 struct Fixture(std::path::PathBuf);
 impl Drop for Fixture {
@@ -41,6 +44,18 @@ fn fixture() -> (Fixture, Engine) {
     last.extend_from_slice(&0u32.to_le_bytes());
     last.extend_from_slice(&0u32.to_le_bytes());
 
+    let mut skip_dest = Vec::new();
+    skip_dest.extend_from_slice(&100u32.to_le_bytes());
+    skip_dest.extend_from_slice(&[3, 0, 0, 0]);
+    let mut skip_stages = Vec::new();
+    for (health, index, model_stage) in [(70, 5, 1), (40, 7, 2), (0, 9, 3)] {
+        skip_stages.extend_from_slice(&[health, index, model_stage, 0]);
+        skip_stages.extend_from_slice(&0u32.to_le_bytes());
+        skip_stages.extend_from_slice(&0u32.to_le_bytes());
+        skip_stages.extend_from_slice(&0u32.to_le_bytes());
+        skip_stages.extend_from_slice(&0u32.to_le_bytes());
+    }
+
     let reference = |id, base| RecordBuilder::new(b"REFR", id).form(b"NAME", base);
     let records = [
         Node::top(
@@ -54,6 +69,14 @@ fn fixture() -> (Fixture, Engine) {
                     .field(b"DSTD", &last)
                     .field(b"DSTF", &[]),
                 RecordBuilder::new(b"ACTI", OTHER_BASE),
+                RecordBuilder::new(b"ACTI", SKIP_BASE)
+                    .field(b"DEST", &skip_dest)
+                    .field(b"DSTD", &skip_stages[..20])
+                    .field(b"DSTF", &[])
+                    .field(b"DSTD", &skip_stages[20..40])
+                    .field(b"DSTF", &[])
+                    .field(b"DSTD", &skip_stages[40..])
+                    .field(b"DSTF", &[]),
             ],
         ),
         Node::top(
@@ -62,6 +85,7 @@ fn fixture() -> (Fixture, Engine) {
                 reference(REF_A, BASE),
                 reference(REF_B, OTHER_BASE),
                 reference(REF_C, BASE),
+                reference(REF_D, SKIP_BASE),
             ],
         ),
         Node::top(b"EXPL", vec![RecordBuilder::new(b"EXPL", FormId(0x830))]),
@@ -124,6 +148,41 @@ fn clear_destruction(e: &mut Engine, this: &Value) {
     assert!(matches!(
         crate::script::natives::call(e, "objectreference", "cleardestruction", Some(this), &[],),
         papyrus::NativeResult::Value(Value::None)
+    ));
+}
+
+fn stage_events_for(e: &Engine, receiver: papyrus::ObjectId) -> Vec<(String, Vec<Value>)> {
+    e.scripts
+        .pending_events
+        .iter()
+        .filter(|(obj, event, _)| *obj == receiver && event == "OnDestructionStageChanged")
+        .map(|(_, event, args)| (event.clone(), args.clone()))
+        .collect()
+}
+
+fn pending_event_summary(e: &Engine) -> Vec<(papyrus::ObjectId, String, Vec<i32>)> {
+    e.scripts
+        .pending_events
+        .iter()
+        .map(|(obj, event, args)| {
+            let ints = args
+                .iter()
+                .map(|arg| match arg {
+                    Value::Int(value) => *value,
+                    other => panic!("unexpected event argument: {other:?}"),
+                })
+                .collect();
+            (*obj, event.clone(), ints)
+        })
+        .collect()
+}
+
+fn assert_stage_event(events: &[(String, Vec<Value>)], old: i32, new: i32) {
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, "OnDestructionStageChanged");
+    assert!(matches!(
+        events[0].1.as_slice(),
+        [Value::Int(got_old), Value::Int(got_new)] if *got_old == old && *got_new == new
     ));
 }
 
@@ -318,6 +377,85 @@ fn damageobject_is_loaded_reference_gated_and_keeps_health_per_reference() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn destruction_stage_events_report_old_and_final_indices_to_running_receivers() {
+    use papyrus::ObjectId;
+
+    let (_dir, mut e) = fixture();
+    let this_a = e.object_value(REF_A);
+    let this_d = e.object_value(REF_D);
+    let cell = crate::render::CellKey::Interior(FormId(0x840));
+    e.cells.entry(cell).or_default().refs.extend([REF_A, REF_D]);
+
+    let mut running = crate::script::QuestState {
+        running: true,
+        ..Default::default()
+    };
+    running.aliases.insert(7, REF_A);
+    e.scripts.quests.insert(QUEST, running);
+    let mut stopped = crate::script::QuestState::default();
+    stopped.aliases.insert(8, REF_A);
+    e.scripts.quests.insert(STOPPED_QUEST, stopped);
+    assert!(e.scripts.pending_events.is_empty());
+
+    // Invalid and health-only hits do not emit stage events.
+    damage_object(&mut e, &this_a, f32::NAN);
+    damage_object(&mut e, &this_a, 0.5);
+    assert_eq!(e.current_destruction_stage(REF_A), -1);
+    assert!(e.scripts.pending_events.is_empty());
+
+    // Entering the authored cap stage queues one old/final notification only
+    // after the per-reference state is visible.
+    damage_object(&mut e, &this_a, 0.5);
+    assert_eq!(e.current_destruction_stage(REF_A), 0);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
+    assert_stage_event(&stage_events_for(&e, ObjectId::Form(REF_A.0)), -1, 0);
+    assert_stage_event(
+        &stage_events_for(
+            &e,
+            ObjectId::Alias {
+                quest: QUEST.0,
+                alias: 7,
+            },
+        ),
+        -1,
+        0,
+    );
+    assert!(
+        stage_events_for(
+            &e,
+            ObjectId::Alias {
+                quest: STOPPED_QUEST.0,
+                alias: 8
+            }
+        )
+        .is_empty()
+    );
+
+    // The next damaging hit enters stage 1; a repeat at zero health is silent.
+    damage_object(&mut e, &this_a, 99.0);
+    assert_eq!(e.current_destruction_stage(REF_A), 1);
+    assert_eq!(stage_events_for(&e, ObjectId::Form(REF_A.0)).len(), 2);
+    assert_stage_event(&stage_events_for(&e, ObjectId::Form(REF_A.0))[1..], 0, 1);
+    let queued_after_transition = e.scripts.pending_events.len();
+    damage_object(&mut e, &this_a, 1.0);
+    assert_eq!(e.scripts.pending_events.len(), queued_after_transition);
+
+    // A single hit skips the 70% stage and lands at 40%. The chosen policy
+    // sends one -1 -> final-index event, not an event for each skipped stage.
+    damage_object(&mut e, &this_d, 60.0);
+    assert_eq!(e.current_destruction_stage(REF_D), 7);
+    assert_eq!(e.world_state.destruction[&REF_D].health, 40.0);
+    assert_stage_event(&stage_events_for(&e, ObjectId::Form(REF_D.0)), -1, 7);
+
+    // Clear doesn't emit an event or erase any notifications already queued.
+    let queued_events = pending_event_summary(&e);
+    clear_destruction(&mut e, &this_a);
+    assert_eq!(pending_event_summary(&e), queued_events);
+    assert_eq!(e.current_destruction_stage(REF_A), -1);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn cleardestruction_resets_one_reference_even_when_unloaded_without_events() {
     let (_dir, mut e) = fixture();
     let this_a = e.object_value(REF_A);
@@ -331,17 +469,18 @@ fn cleardestruction_resets_one_reference_even_when_unloaded_without_events() {
     assert_eq!(e.current_destruction_stage(REF_C), 0);
     assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
     assert_eq!(e.world_state.destruction[&REF_C].health, 99.0);
+    let queued_events = pending_event_summary(&e);
+    assert_eq!(queued_events.len(), 2);
 
     // Clear is not gated on the loaded-reference list. It resets C while A
-    // retains its independent state and queues no Papyrus events.
+    // retains its independent state and does not add or remove queued events.
     e.cells.get_mut(&cell).unwrap().refs.retain(|r| *r != REF_C);
-    assert!(e.scripts.pending_events.is_empty());
     clear_destruction(&mut e, &this_c);
     assert!(!e.world_state.destruction.contains_key(&REF_C));
     assert_eq!(e.current_destruction_stage(REF_C), -1);
     assert_eq!(current_stage(&mut e, &this_c), -1);
     assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
-    assert!(e.scripts.pending_events.is_empty());
+    assert_eq!(pending_event_summary(&e), queued_events);
 
     // Repeated clears are idempotent. CTDA sees the pristine -1 stage again.
     clear_destruction(&mut e, &this_c);
@@ -354,7 +493,7 @@ fn cleardestruction_resets_one_reference_even_when_unloaded_without_events() {
             ..Default::default()
         }
     ));
-    assert!(e.scripts.pending_events.is_empty());
+    assert_eq!(pending_event_summary(&e), queued_events);
 
     // Future supported damage initializes from authored full health, then
     // meets the 99% cap. A stale pre-clear health value must not survive.
@@ -364,4 +503,9 @@ fn cleardestruction_resets_one_reference_even_when_unloaded_without_events() {
     assert_eq!(e.current_destruction_stage(REF_C), 0);
     assert_eq!(current_stage(&mut e, &this_c), 0);
     assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
+    assert_eq!(pending_event_summary(&e).len(), queued_events.len() + 1);
+    let events = stage_events_for(&e, papyrus::ObjectId::Form(REF_C.0));
+    assert_eq!(events.len(), 2);
+    assert_stage_event(&events[..1], -1, 0);
+    assert_stage_event(&events[1..], -1, 0);
 }

@@ -1283,7 +1283,10 @@ game each piece unlocks.
   and CTDA `GetDestructionStage` (470) report untouched references as `-1`.
   `DamageObject` mutates loaded references independently, with documented
   threshold and cap policy choices. `ClearDestruction` clears one reference's
-  runtime health/stage state without events, including when it is unloaded:
+  runtime health/stage state without events, including when it is unloaded.
+  `OnDestructionStageChanged` queues old/final stage integers when damage
+  changes the stored stage, through the standard reference/effect/running
+  alias dispatcher; multi-stage skip timing is a documented policy choice:
   `known_ambiguities/destruction.md`
 
 ## Next
@@ -1458,7 +1461,7 @@ game each piece unlocks.
      (`spell_lands` reaches only actors), explosions and self damage; the
      stage's model (`BSDamageStage` children or a replacement model with its
      collision, freeing navmesh obstacles), explosion and debris;
-     `OnDestructionStageChanged`, destruction visuals/effects and flags,
+     destruction visuals/effects and flags,
      and stages in saves. `ClearDestruction` now resets runtime state (see
      Done), but game effect restoration remains unresolved. Choices:
      `known_ambiguities/destruction.md`
