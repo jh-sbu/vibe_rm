@@ -429,6 +429,10 @@ game each piece unlocks.
   player's. Open questions: `known_ambiguities/critical-hits.md`
 - Skill use perks: "Mod Skill Use" scales a skill use's XP for the skills
   its `EPMagic_IsAdvanceSkill` conditions name (`known_ambiguities/skills.md`)
+- Active player magic effects supply their "Perk to Apply" (`MGEF DATA`
+  0x88) to perk checks and entry points, including skill-use bonuses, without
+  changing permanent ownership. Source overlap, temporary ability / quest
+  sections and lifecycle limits: `known_ambiguities/effect-perks.md`
 - Scrolls (`known_ambiguities/scrolls.md`): used from the inventory or
   favorites into the hand asked for (or away again), cast like a spell with
   the scroll's charge time, free of magicka and skill, and used up by the
@@ -1412,9 +1416,10 @@ game each piece unlocks.
      including scene and quest-alias packages)
    - Sneak attacks (see Done): NPCs sneaking up on the player
    - Skills (see Done): the other skills' uses as their systems come (magic,
-     crafting, speech); granting the skill-use perks: sleeping's Rested
-     spells (UESP sources in `known_ambiguities/skills.md`), the magic
-     effect's "Perk to Apply", the Guardian Stones
+     crafting, speech); Guardian Stone activation and verifying sleeping's
+     Rested spell selection (UESP sources in `known_ambiguities/skills.md`).
+     Active effects' "Perk to Apply" is supported (see Done); temporary perk
+     ability / quest sections remain unresolved (`known_ambiguities/effect-perks.md`)
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see

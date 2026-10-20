@@ -154,6 +154,8 @@ pub struct MagicEffect {
     pub impacts: FormId,
     /// Skill XP for a use is scaled by this.
     pub skill_usage_mult: f32,
+    /// Player-only perk held while this effect is active (`DATA` 0x88).
+    pub perk: FormId,
     /// Taper (`DATA` 0x1C weight, 0x34 curve, 0x38 duration): what lingers
     /// after the effect (fire's burn).
     pub taper: [f32; 3],
@@ -192,6 +194,9 @@ impl MagicEffect {
             projectile: fid(u(0x48)),
             impacts: fid(u(0x64)),
             skill_usage_mult: f(0x68),
+            perk: d.get(0x88..0x8C).map_or(FormId::NULL, |b| {
+                fid(u32::from_le_bytes(b.try_into().unwrap()))
+            }),
             taper: [f(0x1C), f(0x34), f(0x38)],
             keywords: rec
                 .get(b"KWDA")
@@ -475,7 +480,10 @@ impl Engine {
                 out.push(s);
             }
         }
-        for &(perk, _) in self.actor_perks(actor).iter() {
+        // Temporary effect perks supply entry points, not ability sections:
+        // otherwise an ability could keep its own granting effect alive.
+        // Unknown vanilla lifecycle cases: known_ambiguities/effect-perks.md.
+        for &(perk, _) in self.permanent_perks(actor).iter() {
             if let Some(p) = self.perk(perk) {
                 for en in &p.entries {
                     if let crate::perks::Section::Ability(s) = en.section
@@ -1692,6 +1700,10 @@ fn projectile_explodes(lo: &esp::LoadOrder, proj: FormId) -> bool {
         })
         .unwrap_or(false)
 }
+
+#[cfg(test)]
+#[path = "effect_perk_tests.rs"]
+mod effect_perk_tests;
 
 #[cfg(test)]
 mod taper_tests {
