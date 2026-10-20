@@ -19,6 +19,83 @@ pub mod info_flags {
 mod tests {
     use super::*;
 
+    #[test]
+    fn voice_paths_follow_the_quest_and_topic_length_rules() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+
+        let cases = [
+            // The Bleak Falls campfire scene has no topic editor ID.
+            ("MS13BleakFallsBarrowCampfireScene", "", "ms13bleakf_"),
+            // A long quest is preserved when the combined length fits.
+            ("DialogueGeneric", "", "dialoguegeneric_"),
+            ("LongQuestID", "ShortTopic", "longquestid_shorttopic"),
+            // Exactly 25 characters preserves both IDs; 26 applies the cuts.
+            (
+                "ABCDEFGHIJK",
+                "ABCDEFGHIJKLMN",
+                "abcdefghijk_abcdefghijklmn",
+            ),
+            (
+                "ABCDEFGHIJK",
+                "ABCDEFGHIJKLMNO",
+                "abcdefghij_abcdefghijklmno",
+            ),
+            // A short topic does not give a long quest more than 10 characters.
+            ("ABCDEFGHIJKLMNOPQRSTUVWX", "AB", "abcdefghij_ab"),
+            (
+                "Short",
+                "ABCDEFGHIJKLMNOPQRSTU",
+                "short_abcdefghijklmnopqrst",
+            ),
+            (
+                "ABCDEFGHIJ",
+                "ABCDEFGHIJKLMNOP",
+                "abcdefghij_abcdefghijklmno",
+            ),
+        ];
+        let dir = std::env::temp_dir().join(format!("vrm-voice-paths-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let quests = cases.iter().enumerate().map(|(i, (quest, _, _))| {
+            RecordBuilder::new(b"QUST", FormId(0x900 + i as u32)).zstring(b"EDID", quest)
+        });
+        std::fs::write(
+            dir.join("Voice.esp"),
+            write_plugin(
+                0,
+                &[],
+                "test",
+                "synthetic",
+                0xa00,
+                &[
+                    Node::top(b"QUST", quests.collect()),
+                    Node::top(
+                        b"VTYP",
+                        vec![
+                            RecordBuilder::new(b"VTYP", FormId(0x800))
+                                .zstring(b"EDID", "FemaleNord"),
+                        ],
+                    ),
+                    Node::top(b"INFO", vec![RecordBuilder::new(b"INFO", FormId(0x801))]),
+                ],
+            ),
+        )
+        .unwrap();
+        let lo = LoadOrder::load(&dir, &["Voice.esp".to_string()]).unwrap();
+        for (i, (quest, topic, expected)) in cases.iter().enumerate() {
+            let (mut t, _) = candidate(1, 2, 0);
+            t.quest = FormId(0x900 + i as u32);
+            t.editor_id = topic.to_string();
+            assert_eq!(
+                voice_path(&lo, FormId(0x800), &t, FormId(0x801), 2),
+                Some(format!(
+                    "sound/voice/voice.esp/femalenord/{expected}_00000801_2.fuz"
+                )),
+                "quest={quest}, topic={topic}",
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     fn candidate(topic_id: u32, info_id: u32, flags: u16) -> (Topic, Info) {
         (
             Topic {
@@ -488,17 +565,23 @@ pub fn voice_path(
         .get(topic.quest)
         .and_then(|q| q.editor_id())
         .unwrap_or_default();
-    // Quest and topic editor ids share a 25 character budget; the quest keeps at least 10.
+    // xEdit's Export dialogues.pas (InfoFileName): preserve both IDs up to a
+    // combined 25 characters. Above that, cut a long quest to 10 and topic to
+    // 15; a quest of at most 10 leaves the remaining budget to the topic.
+    // https://github.com/Sharlikran/xEdit/blob/master/Edit%20Scripts/Export%20dialogues.pas
+    let qlen = quest.chars().count();
     let tlen = topic.editor_id.chars().count();
-    let q: String = quest
-        .chars()
-        .take(25usize.saturating_sub(tlen).max(10))
-        .collect();
-    let t: String = topic
-        .editor_id
-        .chars()
-        .take(25 - q.chars().count())
-        .collect();
+    let (qlen, tlen) = if qlen + tlen > 25 {
+        if qlen > 10 {
+            (10, 15)
+        } else {
+            (qlen, 25 - qlen)
+        }
+    } else {
+        (qlen, tlen)
+    };
+    let q: String = quest.chars().take(qlen).collect();
+    let t: String = topic.editor_id.chars().take(tlen).collect();
     Some(
         format!(
             "sound/voice/{}/{}/{}_{}_{:08x}_{}.fuz",
