@@ -98,5 +98,29 @@ Implemented in `src/world/animated.rs` (running them), `src/world/loader.rs`
   and the events the actor's graph raises (`tailMTLocomotion`, `tailSprint`,
   `tailCombatIdle`... are among 39 `tail*` events in the character graphs; the
   aux graph's other triggers, `staggerStart` and the jumps, are events the AI
-  sends the actor's graph). It is set up when the actor spawns from the first
-  worn model with such a graph, and not again when it changes what it wears.
+  sends the actor's graph). It is set up from the first worn model with such
+  a graph, for NPCs and the player's third-person body. NPC equipment changes
+  reconcile that selection: removing the model removes the auxiliary graph;
+  another project/rig installs a fresh instance. Keeping the same project,
+  rig and sex keeps its running state and bone map, including when unrelated
+  armor or weapons change. The player's body rebuild still creates a fresh
+  auxiliary instance along with its main graph.
+
+## Wearer graph lifecycle extension (2026-10-20)
+
+The player and equipment-change paths reuse the asset-backed selection and
+bone overlay described above. No new engine behavior was inferred from binary
+code. The roadmap's missing paths were the player's body construction and
+NPC redressing, both of which already load the current worn models. Synthetic
+tests cover preserving a running clip and cached bone map for an unchanged
+selection, replacement on project/rig/sex changes, removal, and reattachment.
+
+Original-engine graph retention across outfit changes, multiple competing
+base-skeleton graphs, and initial state/event replay when attaching a new
+graph remain unresolved. Here a new graph starts at its authored start state,
+receives future events and shares current variables at its next update. Main
+actor graph state is preserved during NPC redressing. Player rebuilds retain
+their existing restart policy. This is implementation coverage, not a claim
+of original-engine lifecycle parity. Only the previously documented game-asset
+observations and repository code were used; no engine binaries were examined
+and no game assets were added.

@@ -377,6 +377,22 @@ impl GraphAnim {
         }));
     }
 
+    /// Reconcile a changed outfit with its wearer graph. Keep the running
+    /// instance when the new models still use the same project and rig.
+    pub fn replace_aux(&mut self, aux: Option<GraphAnim>) {
+        if let (Some(old), Some(new)) = (&self.aux, &aux)
+            && Arc::ptr_eq(&old.anim.project, &new.project)
+            && old.anim.skeleton_path == new.skeleton_path
+            && old.anim.female == new.female
+        {
+            return;
+        }
+        self.aux = None;
+        if let Some(aux) = aux {
+            self.attach_aux(aux);
+        }
+    }
+
     fn source<'a>(
         &'a mut self,
         vfs: &'a vfs::Vfs,
@@ -789,6 +805,70 @@ impl GraphAnim {
 mod pin_tests {
     use super::{ScriptPins, take_bones};
     use nif::Transform;
+
+    #[test]
+    fn outfit_changes_keep_replace_and_remove_wearer_graphs() {
+        use super::{GraphAnim, ProjectRuntime, Shared, Skeleton};
+        use havok::behavior::{BehaviorGraph, ClipMode, Generator, Project};
+        use std::sync::Arc;
+
+        let project = || {
+            let graph = BehaviorGraph::new(
+                "SyntheticTail",
+                Some(0),
+                vec![Generator::Clip {
+                    name: "Tail".into(),
+                    animation: "Tail".into(),
+                    mode: ClipMode::Looping,
+                    speed: 1.0,
+                    user_fraction: 0.0,
+                    triggers: vec![],
+                    crop_start: 0.0,
+                    crop_end: 0.0,
+                    start_time: 0.0,
+                }],
+                vec![],
+            );
+            Arc::new(ProjectRuntime {
+                shared: Shared::new(Arc::new(Project {
+                    graphs: vec![("synthetic".into(), graph)],
+                    character: None,
+                })),
+                dir: "synthetic".into(),
+                name: "tail".into(),
+                files: vec![],
+            })
+        };
+        let skel = Skeleton::default();
+        let first = project();
+        let graph = |p, rig, female| GraphAnim::new(p, rig, female, &skel, 1);
+        let mut body = graph(first.clone(), "body", false);
+        body.replace_aux(Some(graph(first.clone(), "tail", false)));
+        let aux = body.aux.as_mut().unwrap();
+        aux.anim.inst.update(0.75, &mut |_: &str| Some(2.0));
+        aux.bones = Some(vec![3]);
+        body.replace_aux(Some(graph(first.clone(), "tail", false)));
+        let aux = body.aux.as_ref().unwrap();
+        assert_eq!(aux.anim.inst.samples()[0].time, 0.75);
+        assert_eq!(aux.bones.as_deref(), Some([3].as_slice()));
+
+        // A different rig or character must discard the old bone map/state.
+        body.replace_aux(Some(graph(first.clone(), "other-rig", false)));
+        assert!(body.aux.as_ref().unwrap().bones.is_none());
+        body.aux.as_mut().unwrap().bones = Some(vec![4]);
+        body.replace_aux(Some(graph(first.clone(), "other-rig", true)));
+        assert!(body.aux.as_ref().unwrap().bones.is_none());
+        let second = project();
+        body.replace_aux(Some(graph(second.clone(), "other-rig", true)));
+        assert!(Arc::ptr_eq(
+            &body.aux.as_ref().unwrap().anim.project,
+            &second
+        ));
+        body.replace_aux(None);
+        assert!(body.aux.is_none());
+        body.replace_aux(Some(graph(first, "tail", false)));
+        assert!(body.aux.is_some());
+    }
 
     #[test]
     fn a_second_graph_replaces_only_its_own_bones() {

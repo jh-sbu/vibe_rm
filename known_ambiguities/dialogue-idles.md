@@ -29,3 +29,10 @@ idle, all of them IDLE records: 37 `Dragon_PerchRoar`, 32 `IdlePointClose`, 25
   game that names one (`IdleEatSoup`) is the only evidence, and a
   conversation's listener is the player, who has no idle to play. Who listens
   in a scene or a bark isn't tracked either.
+  A renewed local UESP search (2026-10-20) found the INFO field labels above
+  and [SCEN's head-tracking alias](https://en.uesp.net/w/index.php?oldid=3089103),
+  but no rule establishing that a scene action's head-tracking target is its
+  dialogue listener. Head tracking alone is insufficient evidence to route an
+  idle to that actor. Automatic listener choice, player listener support,
+  overlap/cleanup and reaction timing remain research gates; no engine binary
+  data was examined to resolve them.

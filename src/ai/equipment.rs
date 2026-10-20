@@ -447,6 +447,7 @@ impl Engine {
         let paths: Vec<String> = d.models.iter().map(|(m, _)| m.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let skel = self.cells[&key].actors[index].skeleton.clone();
+        let wearer = self.wearer_graph(&d, &skel);
         let (meshes, _, rigid) = self.actor_meshes(&d, &skel);
         log::debug!(
             "{actor} dressed again: {} meshes, wearing {worn:?}",
@@ -476,6 +477,9 @@ impl Engine {
         let speeds = self.weapon_speed_mults(actor);
         let lo = &self.lo;
         let a = &mut self.cells.get_mut(&key).unwrap().actors[index];
+        if let Some(graph) = &mut a.graph {
+            graph.replace_aux(wearer);
+        }
         a.worn = worn;
         a.footstep_set = footsteps;
         a.weapon_reach = reach;
