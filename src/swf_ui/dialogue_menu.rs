@@ -35,8 +35,9 @@ pub(super) struct DialogueMenu {
     listed: bool,
     /// The topic last clicked, to keep selected when the list comes back.
     clicked: Option<OptionId>,
-    /// Whether the menu was told a voice is ready since the last click: it
-    /// takes no clicks until it has been.
+    /// Whether the menu was told a voice is ready since the last click or
+    /// skip: it takes no clicks until it has been (`SkipText` clears its
+    /// `bAllowProgress`, as clicking a topic does).
     ready: bool,
 }
 
@@ -122,7 +123,8 @@ impl DialogueMenu {
         let new = topics != self.topics;
         self.menu
             .callback("ShowDialogueList", &[Value::Bool(new), Value::Bool(false)]);
-        // No line was said (a greeting or topic without one).
+        // No line was said since the last click or skip (a greeting or topic
+        // without one, or the last line skipped).
         if !self.ready {
             self.menu.callback("NotifyVoiceReady", &[]);
             self.ready = true;
@@ -148,7 +150,10 @@ impl DialogueMenu {
                     engine.choose_topic(i);
                 }
             }
-            "SkipText" => engine.skip_line(),
+            "SkipText" => {
+                self.ready = false;
+                engine.skip_line();
+            }
             "CloseMenu" => {
                 self.closing = true;
                 engine.end_conversation();
