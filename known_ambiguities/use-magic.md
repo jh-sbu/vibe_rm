@@ -21,6 +21,15 @@ pack-templates <data>` with `SHOW=UseMagic`, `pack-tree <data> <package>`).
   is a reference (type 0) or the actor itself (type 6); the spell is always a
   specific form (type 1).
 
+- J'zargo's package uses a second template, `UseMagicRepeat`, with the same
+  procedure; it is read the same.
+- Run on the game's data (`vibe_rm --cell WinterholdCollegeHallofTheElements
+  --hour 13`): Onmund walks to his duel marker and casts Flames, Frostbite,
+  Sparks and Turn Undead at the marker he is given, one package after another
+  (the packages choose by `GetRandomPercent` and a quest variable), and his
+  graph goes through its casting state; Colette casts Oakflesh and Detect Life
+  on herself. Casting visuals (flames, hand effects) are not drawn yet.
+
 ## Choices made without a source
 
 - **Cast time** is how long a concentration spell is held (Onmund's Flames:
@@ -44,6 +53,7 @@ pack-templates <data>` with `SHOW=UseMagic`, `pack-tree <data> <package>`).
   at-a-location spells aren't cast. A hostile spell cast at a practice target
   (not an actor) is aimed at its bounds centre; what the projectile does to a
   static target is the projectile's.
+- Each package (Onmund has four, picked by chance) counts its casts afresh.
 - The actor draws its hands (`WeapEquip`) at its place and puts them away
   when the package ends. A package's actor that is fighting does neither.
 - Concentration spells' magicka doesn't come back while they are held, as in a fight.
