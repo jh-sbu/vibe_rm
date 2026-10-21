@@ -184,7 +184,7 @@ fn marker_of(i: usize) -> Option<String> {
 /// `Where(Actor a, ObjectReference m)`: `a`'s position, heading, distance
 /// and height from `m` (when there is one), whether its 3D is loaded and its
 /// package.
-fn where_fn() -> FunctionBuilder {
+pub(super) fn where_fn() -> FunctionBuilder {
     let mut c = Code::new("String");
     let a = c.param("a", "Actor");
     let m = c.param("m", "ObjectReference");
@@ -412,7 +412,7 @@ fn scripts() -> Result<Vec<(String, Vec<u8>)>> {
 
 /// A package's location (`PLDT`): near a reference (type 0) or in a cell
 /// (type 1), and the radius.
-fn pldt(kind: u32, target: FormId, radius: u32) -> Vec<u8> {
+pub(super) fn pldt(kind: u32, target: FormId, radius: u32) -> Vec<u8> {
     [kind, target.0, radius]
         .iter()
         .flat_map(|v| v.to_le_bytes())
@@ -421,7 +421,53 @@ fn pldt(kind: u32, target: FormId, radius: u32) -> Vec<u8> {
 
 /// `PSDT` of a package that always applies: any month, day, date, hour and
 /// minute, no duration.
-const ALWAYS: [u8; 12] = [0xFF, 0xFF, 0, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0];
+pub(super) const ALWAYS: [u8; 12] = [0xFF, 0xFF, 0, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0];
+
+/// The top `CELL` group overriding interior `cell` as Skyrim.esm has it
+/// (our plugin isn't localized: its name written out as the trader's), with
+/// `refs` as its persistent references (the packages and scripts name them).
+pub(super) fn trader_cell(lo: &LoadOrder, cell: FormId, refs: Vec<RecordBuilder>) -> Result<Node> {
+    let rec = lo.get(cell).context("the trader's cell")?;
+    let mut record =
+        RecordBuilder::new(b"CELL", cell).flags(rec.flags() & !record_flags::COMPRESSED);
+    for s in rec.subrecords() {
+        match &s.tag.0 {
+            b"FULL" => {}
+            b"EDID" => {
+                record = record
+                    .field(b"EDID", s.data)
+                    .zstring(b"FULL", "Riverwood Trader")
+            }
+            tag => record = record.field(tag, s.data),
+        }
+    }
+    let label = cell.0.to_le_bytes();
+    let children = Node::Group {
+        label,
+        group_type: group_type::CELL_CHILDREN,
+        children: vec![Node::Group {
+            label,
+            group_type: group_type::CELL_PERSISTENT,
+            children: refs.into_iter().map(Node::Record).collect(),
+        }],
+    };
+    // Interior cells are grouped by the last two decimal digits of their
+    // object id: block, then sub-block.
+    let object_id = cell.0 & 0xFF_FFFF;
+    Ok(Node::Group {
+        label: *b"CELL",
+        group_type: group_type::TOP,
+        children: vec![Node::Group {
+            label: ((object_id % 10) as i32).to_le_bytes(),
+            group_type: group_type::INTERIOR_BLOCK,
+            children: vec![Node::Group {
+                label: ((object_id / 10 % 10) as i32).to_le_bytes(),
+                group_type: group_type::INTERIOR_SUB_BLOCK,
+                children: vec![Node::Record(record), children],
+            }],
+        }],
+    })
+}
 
 pub fn build(lo: &LoadOrder) -> Result<TestMod> {
     let v = Vanilla { lo };
@@ -509,23 +555,6 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         .record(),
     ];
 
-    // The trader as Skyrim.esm has it (our plugin isn't localized: its name
-    // written out), then our references in it, all persistent: the packages
-    // and the script name them.
-    let rec = lo.get(trader).context("the trader's cell")?;
-    let mut cell =
-        RecordBuilder::new(b"CELL", trader).flags(rec.flags() & !record_flags::COMPRESSED);
-    for s in rec.subrecords() {
-        match &s.tag.0 {
-            b"FULL" => {}
-            b"EDID" => {
-                cell = cell
-                    .field(b"EDID", s.data)
-                    .zstring(b"FULL", "Riverwood Trader")
-            }
-            tag => cell = cell.field(tag, s.data),
-        }
-    }
     let mut refs = vec![
         RecordBuilder::new(b"REFR", own(ENTRY))
             .flags(persistent)
@@ -556,32 +585,7 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
                 .field(b"DATA", &placement([x, y, UPSTAIRS], std::f32::consts::PI)),
         );
     }
-    let label = trader.0.to_le_bytes();
-    let children = Node::Group {
-        label,
-        group_type: group_type::CELL_CHILDREN,
-        children: vec![Node::Group {
-            label,
-            group_type: group_type::CELL_PERSISTENT,
-            children: refs.into_iter().map(Node::Record).collect(),
-        }],
-    };
-    // Interior cells are grouped by the last two decimal digits of their
-    // object id: block, then sub-block.
-    let object_id = trader.0 & 0xFF_FFFF;
-    let cells = Node::Group {
-        label: *b"CELL",
-        group_type: group_type::TOP,
-        children: vec![Node::Group {
-            label: ((object_id % 10) as i32).to_le_bytes(),
-            group_type: group_type::INTERIOR_BLOCK,
-            children: vec![Node::Group {
-                label: ((object_id / 10 % 10) as i32).to_le_bytes(),
-                group_type: group_type::INTERIOR_SUB_BLOCK,
-                children: vec![Node::Record(cell), children],
-            }],
-        }],
-    };
+    let cells = trader_cell(lo, trader, refs)?;
 
     // Top groups in the Creation Kit's order.
     let plugin = write_plugin(
