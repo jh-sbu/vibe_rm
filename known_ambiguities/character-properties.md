@@ -3,8 +3,9 @@
 Implemented in `crates/havok/src/behavior/{mod.rs,runtime.rs}` and
 `src/world/behavior.rs`: read-only scalar inputs to supported modifiers and
 generator members already handled by the runtime, scalar blender-child weights,
-transition-effect duration, self-transition mode and event mode, and bone-weight array inputs
-on blender children and bone switches.
+transition-effect duration, self-transition mode, event mode and the supported
+`blendCurve` subset, and bone-weight array inputs on blender children and bone
+switches.
 
 ## Public and asset evidence
 
@@ -80,7 +81,8 @@ on blender children and bone switches.
   [`transition-self-mode-properties.md`](transition-self-mode-properties.md));
   `eventMode` inputs also resolve at commit, retaining the existing event-routing
   approximation (see [`transition-event-mode-properties.md`](transition-event-mode-properties.md));
-  other effect members remain unsupported.
+  `blendCurve` inputs select the existing smoothstep or a linear cross-fade at
+  commit (details below); other effect members remain unsupported.
   `BSCyclicBlendTransitionGenerator.fBlendParameter` properties now forward to
   its blender child (see below). Other generator members not listed above remain
   retained but unevaluated, except clip start/end crop bindings, which resolve
@@ -216,6 +218,37 @@ this implementation's input path, not original-engine parity. Only the public
 community guide and game behavior assets were examined for this extension; no
 SDK source or engine binary data was examined, and no game assets or asset bytes
 were copied into the repository.
+
+## Transition-effect blend curves
+
+The runtime retains the authored `hkbBlendingTransitionEffect.blendCurve` enum
+and accepts whole-member graph-variable or scalar character-property inputs.
+The public community-authored [Skyrim Behavior Editor class](https://github.com/BrannigansLaw/Skyrim-Behavior-Editor-/blob/master/src/hkxclasses/behavior/hkbblendingtransitioneffect.cpp)
+lists `SMOOTH`, `LINEAR`, `LINEAR_TO_SMOOTH` and `SMOOTH_TO_LINEAR`; its reader
+and writer treat the member as an enum. A public community [Havok behavior
+layout](https://github.com/adamhynek/activeragdoll/blob/master/include/RE/havok_behavior.h)
+places `blendCurve` at effect offset `0x5B`. The shared binding guide above
+describes variable and character-property binding sets as inputs to object
+members. These sources establish the member name, enum names and serialized
+location; they do not document curve formulas or Skyrim's binding lifecycle.
+
+At transition commit, a whole-member variable takes precedence over a property,
+including when that variable is missing or invalid. Values `0` and `1` select
+the existing smoothstep curve and a linear curve, respectively. Invalid values,
+including bound values `2` and `3`, leave the authored curve selected. If an
+authored curve is one of those asymmetric modes, the current runtime maps it to
+its prior smoothstep behavior because the formulas are not established here.
+This is an implementation fallback, not a claim of Havok or Skyrim parity. The
+selected input is held for that cross-fade, matching the runtime's existing
+commit-time duration sampling. The public
+community sources reviewed did not establish original-engine sampling timing
+or prove a vanilla Skyrim character-property binding to `blendCurve`.
+
+Synthetic tests cover enum retention, whole-member binding filtering, distinct
+smooth and linear output, invalid/missing/non-scalar fallback, variable
+precedence over a duplicate property, and a variable changed while a transition
+is pending. They validate this runtime's supported subset, not engine parity.
+No engine binary data or game assets were inspected for this extension.
 
 ## Cyclic-wrapper blend-parameter properties
 

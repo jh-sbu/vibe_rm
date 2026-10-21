@@ -196,6 +196,11 @@ game each piece unlocks.
   scalar character-property inputs at commit, preserving existing event
   routing. Ignore-to routing and lifecycle limits:
   `known_ambiguities/transition-event-mode-properties.md`
+- Transition effects select the authored or whole-member graph-variable / scalar
+  character-property `blendCurve` at commit. Linear blending and the existing
+  smoothstep curve are supported; the two asymmetric enum modes retain the
+  prior smoothstep approximation pending formula evidence:
+  `known_ambiguities/character-properties.md`
 - Cyclic blend wrappers forward `fBlendParameter` character properties to their
   blender children, including cyclic weights and synchronized clip timing.
   Existing variable precedence and authored fallbacks remain; wrapper lifecycle
@@ -1308,7 +1313,7 @@ game each piece unlocks.
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
      properties on remaining generator members, blender-child members beyond `weight`
      and `boneWeights`, and transition-effect members beyond `duration`,
-     `selfTransitionMode` and `eventMode`,
+     `selfTransitionMode`, `eventMode` and the supported subset of `blendCurve`,
      runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`;
      `vrm-tool hkb-props` lists the bindings: the humanoid and dragon projects bind
      only two modifiers' `enable`);

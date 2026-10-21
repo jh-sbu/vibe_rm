@@ -371,6 +371,8 @@ struct MachineState {
     child: Option<Box<Node>>,
     /// The state being left: its node, seconds into the blend, blend length.
     from: Option<(Box<Node>, f32, f32)>,
+    /// Curve selected when the current cross-fade committed.
+    from_curve: BlendCurve,
     /// Seconds since the state was entered.
     elapsed: f32,
     /// Graph-local events seen in this state, with the order they last came in
@@ -392,6 +394,7 @@ impl MachineState {
             sync_variable,
             child,
             from: None,
+            from_curve: BlendCurve::Smooth,
             elapsed: 0.0,
             seen: Vec::new(),
             seq: 0,
@@ -1273,6 +1276,30 @@ impl Ctx<'_> {
         } else {
             blend
         };
+        // Blend-curve bindings are whole enum inputs. Variables take
+        // precedence over character properties; invalid or unsupported values
+        // retain the authored curve. The selection is sampled at commit and
+        // held for this cross-fade, like its duration.
+        let curve_input = if let Some(v) = t.blend_curve_variable {
+            self.shared.maps[gi]
+                .vars
+                .get(v)
+                .and_then(|&mapped| self.values.get(mapped))
+                .copied()
+        } else {
+            t.blend_curve_property.as_ref().and_then(|property| {
+                self.shared
+                    .project
+                    .character
+                    .as_ref()?
+                    .scalar_properties
+                    .get(&property.to_ascii_lowercase())
+                    .copied()
+            })
+        };
+        let blend_curve = curve_input
+            .and_then(BlendCurve::from_input)
+            .unwrap_or(t.blend_curve);
         let old_child = m.child.take();
         let old_from = m.from.take();
         let sync_variable = m.sync_variable;
@@ -1325,6 +1352,7 @@ impl Ctx<'_> {
         // known_ambiguities/transition-event-mode-properties.md.
         m.from_hears = from.is_some() && event_mode == EventMode::ProcessAll;
         m.from = from;
+        m.from_curve = blend_curve;
         m.locked = locked;
         // Queue the notification after installing the destination: the event
         // may itself trigger another transition (including in a parent graph).
@@ -1914,7 +1942,7 @@ impl Ctx<'_> {
                 let f = match &m.from {
                     Some((from, t, len)) => {
                         let x = (t / len).clamp(0.0, 1.0);
-                        let f = x * x * (3.0 - 2.0 * x);
+                        let f = m.from_curve.crossfade_weight(x);
                         self.collect(from, weight * (1.0 - f), mask, out);
                         f
                     }
@@ -3549,6 +3577,105 @@ mod tests {
             ],
             vec!["Switch".into()],
         )
+    }
+
+    fn blend_curve_property_graph() -> BehaviorGraph {
+        let mut graph = duration_property_graph();
+        let Generator::StateMachine { states, .. } = &mut graph.generators[0] else {
+            unreachable!()
+        };
+        let transition = &mut states[0].transitions[0];
+        transition.blend = Some(1.0);
+        transition.blend_curve = BlendCurve::Smooth;
+        transition.blend_curve_property = Some("CURVE".into());
+        graph
+    }
+
+    fn authored_linear_blend_curve_graph() -> BehaviorGraph {
+        let mut graph = blend_curve_property_graph();
+        let Generator::StateMachine { states, .. } = &mut graph.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].blend_curve = BlendCurve::Linear;
+        graph
+    }
+
+    #[test]
+    fn transition_blend_curve_properties_select_linear_or_smooth_at_commit() {
+        for (curve, old_weight, new_weight) in [(0.0, 0.84, 0.16), (1.0, 0.75, 0.25)] {
+            let mut i = property_instance(blend_curve_property_graph(), &[("curve", curve)]);
+            assert!(i.handle_event("Switch", &mut durations));
+            i.update(0.25, &mut durations);
+            assert_eq!(
+                playing(&i),
+                [("Old".into(), old_weight), ("New".into(), new_weight)]
+            );
+        }
+    }
+
+    #[test]
+    fn transition_blend_curve_variable_wins_and_is_sampled_when_pending_transition_commits() {
+        let mut graph = blend_curve_property_graph();
+        let variable = graph.add_variable("Curve", VarType::Int, 0.0);
+        let Generator::StateMachine { states, .. } = &mut graph.generators[0] else {
+            unreachable!()
+        };
+        let transition = &mut states[0].transitions[0];
+        transition.blend_curve_variable = Some(variable);
+        transition.initiate = Some(Interval {
+            enter_event: -1,
+            exit_event: -1,
+            enter_time: 0.5,
+            exit_time: 0.0,
+        });
+        let mut i = property_instance(graph, &[("curve", 1.0)]);
+        assert!(i.handle_event("Switch", &mut durations));
+        assert!(i.set_variable("Curve", 1.0));
+        i.update(0.5, &mut durations);
+        assert_eq!(i.active_states(), ["s1"]);
+        assert!(i.set_variable("Curve", 0.0));
+        i.update(0.25, &mut durations);
+        assert_eq!(playing(&i), [("Old".into(), 0.75), ("New".into(), 0.25)]);
+    }
+
+    #[test]
+    fn invalid_or_unavailable_transition_blend_curves_keep_authored_curve() {
+        let mut non_scalar = property_instance(authored_linear_blend_curve_graph(), &[]);
+        Arc::get_mut(&mut Arc::get_mut(&mut non_scalar.shared).unwrap().project)
+            .unwrap()
+            .character
+            .as_mut()
+            .unwrap()
+            .bone_weights
+            .insert("curve".into(), vec![1.0]);
+        let mut cases = vec![
+            (instance(authored_linear_blend_curve_graph()), 0.25),
+            (
+                property_instance(authored_linear_blend_curve_graph(), &[]),
+                0.25,
+            ),
+            (non_scalar, 0.25),
+        ];
+        for value in [-1.0, 0.5, 2.0, 3.0, 4.0, f32::NAN, f32::INFINITY] {
+            cases.push((
+                property_instance(authored_linear_blend_curve_graph(), &[("curve", value)]),
+                0.25,
+            ));
+        }
+        let mut invalid_variable = blend_curve_property_graph();
+        let Generator::StateMachine { states, .. } = &mut invalid_variable.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].blend_curve_variable = Some(99);
+        // An invalid variable binding still takes precedence over a valid
+        // duplicate property and therefore preserves the authored smooth curve.
+        cases.push((property_instance(invalid_variable, &[("curve", 1.0)]), 0.16));
+        for (mut i, expected) in cases {
+            assert!(i.handle_event("Switch", &mut durations));
+            i.update(0.25, &mut durations);
+            let old = if expected == 0.16 { 0.84 } else { 0.75 };
+            assert_eq!(playing(&i), [("Old".into(), old), ("New".into(), expected)]);
+        }
     }
 
     #[test]
