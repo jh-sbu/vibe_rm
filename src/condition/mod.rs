@@ -699,6 +699,11 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         289 => {
             b(subject.is_some_and(|s| e.combat_state(s) != crate::ai::combat::CombatState::None))
         } // IsInCombat
+        323 => Some(subject.map_or(0, |s| e.combat_state(s) as i32) as f32), // GetCombatState
+        513 => b(subject.is_some_and(|s| e.combat_target(s) == Some(p1))), // IsCombatTarget
+        673 => b(subject.is_some_and(|s| e.power_attacking(s))), // IsPowerAttacking
+        103 => b(subject.is_some_and(|s| e.shield_out(s))), // IsShieldOut
+        102 => b(subject.is_some_and(|s| e.torch_out(s))),  // IsTorchOut
         580 => b(subject.is_some_and(|s| e.is_bleeding_out(s))), // IsBleedingOut
         332 => b(subject.is_some_and(|s| e.is_in_dangerous_water(s))),
         // Nobody flies, swims or feeds yet.

@@ -215,6 +215,20 @@ impl Engine {
             .is_some_and(|a| a.drawn)
     }
 
+    /// Whether a shield is out (`IsShieldOut`): one in the left hand while the
+    /// weapons are drawn; sheathed, it is put away.
+    pub(crate) fn shield_out(&self, actor: FormId) -> bool {
+        self.equipped_shield(actor).is_some() && self.weapon_drawn(actor)
+    }
+
+    /// Whether a torch is out (`IsTorchOut`): held in the left hand, lit or not
+    /// (the carried light follows it outdoors after dark).
+    pub(crate) fn torch_out(&self, actor: FormId) -> bool {
+        self.inventories
+            .get(&actor)
+            .is_some_and(|i| i.hand(&self.lo, true) == HandType::Torch)
+    }
+
     /// Rebuild an actor's rigid equipment (and carried light) from what it has
     /// equipped.
     pub(crate) fn refresh_equipment(&mut self, key: CellKey, index: usize, actor: FormId) {

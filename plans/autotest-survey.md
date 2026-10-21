@@ -86,6 +86,13 @@ run (2026-10-13) settled all but three (`autotest5`'s module doc).
 
 ### Still to do
 
+- **Combat-state conditions** (`combat-conditions.md`): a quest's CTDA on
+  `GetCombatState`, `IsCombatTarget`, `IsPowerAttacking`, `IsShieldOut` and
+  `IsTorchOut` against NPCs in a fight (a swing with a power attack, a shield
+  drawn and sheathed, a torch in the left hand), logged by a script as the
+  fight runs. Verdict: partial; swings are brief, so the
+  log needs a quest that samples the conditions often during the fight.
+
 - **HasParentRelationship** (`relationships.md`): a quest condition on
   `HasParentRelationship` evaluated against NPC pairs linked by vanilla
   Parent / Child, in-law, grandparent and boss / employee RELA records, in
