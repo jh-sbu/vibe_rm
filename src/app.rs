@@ -293,6 +293,12 @@ pub fn run(opts: Options) -> Result<()> {
             {
                 log::info!("pick: {t:.0} {name}");
             }
+            // As a click there with the console open.
+            crate::console::pick(&mut engine, px * 2.0 - 1.0, 1.0 - py * 2.0, aspect);
+            log::info!(
+                "console pick: {:?}",
+                crate::console::selection_label(&engine)
+            );
         }
         if let Some(n) = opts.bench {
             let t = engine

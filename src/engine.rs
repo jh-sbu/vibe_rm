@@ -121,6 +121,9 @@ pub struct Engine {
     pub conversation: Option<crate::dialogue::Conversation>,
     /// The console is open (it pauses the game: `Engine::in_menu_mode`).
     pub console_open: bool,
+    /// The reference the console acts on: clicked with the console open, or
+    /// named with `prid` (`crate::console::pick`).
+    pub console_ref: Option<FormId>,
     /// Image space modifiers, screen fades and camera shakes.
     pub imagespace: crate::imagespace::ImageSpace,
     /// Actors the player has had a conversation with (`GetTalkedToPC`).
@@ -386,6 +389,7 @@ impl Engine {
             music: MusicState::default(),
             conversation: None,
             console_open: false,
+            console_ref: None,
             imagespace: Default::default(),
             menu: None,
             favorites: Vec::new(),

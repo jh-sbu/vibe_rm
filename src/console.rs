@@ -9,8 +9,16 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     let Some(cmd) = parts.next() else {
         return Vec::new();
     };
-    let args: Vec<&str> = parts.collect();
+    let mut args: Vec<&str> = parts.collect();
     let lower = cmd.to_ascii_lowercase();
+    // A command on a reference, given none, takes the selected one.
+    let selected = engine.console_ref.map(|r| r.to_string());
+    if args.is_empty()
+        && REF_COMMANDS.contains(&lower.as_str())
+        && let Some(r) = &selected
+    {
+        args.push(r);
+    }
     // `<ref>.command` (`player.additem f 100`) acts on that reference.
     if let Some((target, sub)) = lower
         .split_once('.')
@@ -27,7 +35,8 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         };
     }
     if ITEM_COMMANDS.contains(&lower.as_str()) {
-        return item_command(engine, crate::engine::PLAYER_REF, &lower, &args);
+        let r = engine.console_ref.unwrap_or(crate::engine::PLAYER_REF);
+        return item_command(engine, r, &lower, &args);
     }
     match lower.as_str() {
         "getgs" => {
@@ -46,6 +55,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             vec![format!("{name} = {}", value.unwrap_or_else(|| "(none)".into()))]
         }
         "help" => vec![
+            "click a reference (console open) / prid <ref>   select it: [ref.] commands and those on a <ref> act on it".into(),
             "getgs <name>          a game setting's value".into(),
             "coc <cell>            center on cell (editor id)".into(),
             "tcl                   toggle collision (noclip)".into(),
@@ -134,6 +144,11 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "legendary <skill>     reset a mastered skill to 15 and refund its perks".into(),
         ],
         "detect" => engine.describe_detection(),
+        "prid" => {
+            let Some(r) = args.first().and_then(|r| engine.resolve_form(r)) else { return vec!["usage: prid <ref>".into()] };
+            engine.console_ref = Some(r);
+            selection_label(engine).into_iter().collect()
+        }
         "skills" if args.first() == Some(&"open") => {
             // skills open [skill]: the skills menu, with that skill's perk tree.
             engine.perks.tree = args.get(1).and_then(|s| crate::skills::skill_index(s));
@@ -973,7 +988,69 @@ const ITEM_COMMANDS: [&str; 48] = [
     "restoreav",
 ];
 
-/// Inventory and actor value commands on a reference (the player when none is given).
+/// Commands whose first argument is a reference, which given no arguments act
+/// on the selected one.
+const REF_COMMANDS: &[&str] = &[
+    "kill",
+    "activate",
+    "lock",
+    "unlock",
+    "door",
+    "sv",
+    "showvars",
+    "templates",
+    "gstate",
+    "bones",
+    "cstats",
+    "crimefaction",
+    "pickpocket",
+];
+
+/// How far a click in the console reaches for a reference.
+const PICK_RANGE: f32 = 100_000.0;
+
+/// Select the reference under the pointer as the console's, as a click in the
+/// game's console does (nothing there, or the selected one again, clears
+/// it). `x`, `y` are the pointer in normalized device coordinates (-1..1, up
+/// positive) of a view `aspect` wide.
+pub fn pick(engine: &mut Engine, x: f32, y: f32, aspect: f32) {
+    let cam = engine.view_camera();
+    let inv = (cam.proj(aspect) * cam.view()).inverse();
+    // Reversed depth: 1 is the near plane.
+    let near = inv.project_point3(Vec3::new(x, y, 1.0));
+    let dir = (inv.project_point3(Vec3::new(x, y, 0.5)) - near).normalize_or_zero();
+    let hit = engine.physics.raycast(near, dir, PICK_RANGE);
+    let plant = engine
+        .physics
+        .pick_ray(near, dir, PICK_RANGE)
+        .filter(|p| !engine.is_disabled(p.1));
+    let clicked = match (hit, plant) {
+        (Some((d, _)), Some((pd, plant))) if pd < d => Some(plant),
+        (None, Some((_, plant))) => Some(plant),
+        (Some((_, owner)), _) => owner,
+        (None, None) => None,
+    };
+    engine.console_ref = clicked.filter(|&r| engine.console_ref != Some(r));
+}
+
+/// The selected reference, as the console shows it: its name, reference and
+/// base FormIDs.
+pub fn selection_label(engine: &Engine) -> Option<String> {
+    let r = engine.console_ref?;
+    let base = engine
+        .base_of(r)
+        .map_or_else(|| "?".into(), |b| b.to_string());
+    let ids = format!("RefID: ({r}) | BaseID: ({base})");
+    let name = engine.form_name(r);
+    Some(if name.is_empty() {
+        ids
+    } else {
+        format!("{name}  {ids}")
+    })
+}
+
+/// Inventory and actor value commands on a reference (the selected one, else
+/// the player, when none is given).
 fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -> Vec<String> {
     match cmd {
         "setcrimegold" => {

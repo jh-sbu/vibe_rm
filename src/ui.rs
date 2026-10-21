@@ -231,6 +231,8 @@ impl Ui {
         let mut commands: Vec<String> = Vec::new();
         let mut choice: Option<usize> = None;
         let mut skip = false;
+        let mut click = None;
+        let selected = crate::console::selection_label(engine);
         let out = ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx().clone();
             // The game's dialogue menu shows the conversation itself.
@@ -253,9 +255,24 @@ impl Ui {
                 self.message_box(&ctx, engine);
             }
             if self.console.open {
-                self.console_window(&ctx, &mut commands);
+                self.console_window(&ctx, &mut commands, selected.as_deref());
+                // A click on the world below selects what is there.
+                if !ctx.is_pointer_over_egui() {
+                    click = ctx.input(|i| {
+                        i.pointer
+                            .primary_clicked()
+                            .then(|| i.pointer.interact_pos())
+                            .flatten()
+                    });
+                }
             }
         });
+        if let Some(p) = click {
+            let rect = ctx.content_rect();
+            let x = (p.x - rect.left()) / rect.width() * 2.0 - 1.0;
+            let y = 1.0 - (p.y - rect.top()) / rect.height() * 2.0;
+            crate::console::pick(engine, x, y, rect.width() / rect.height());
+        }
         if let Some(i) = choice {
             engine.choose_topic(i);
         }
@@ -1269,8 +1286,27 @@ impl Ui {
         }
     }
 
-    fn console_window(&mut self, ctx: &egui::Context, commands: &mut Vec<String>) {
+    fn console_window(
+        &mut self,
+        ctx: &egui::Context,
+        commands: &mut Vec<String>,
+        selected: Option<&str>,
+    ) {
         let rect = ctx.content_rect();
+        // The selected reference, centred above the world (as the game's).
+        if let Some(label) = selected {
+            ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("console_ref"),
+            ))
+            .text(
+                Pos2::new(rect.center().x, rect.top() + rect.height() * 0.4 + 28.0),
+                egui::Align2::CENTER_TOP,
+                label,
+                egui::FontId::monospace(16.0),
+                Color32::from_gray(235),
+            );
+        }
         egui::Area::new(egui::Id::new("console"))
             .fixed_pos(Pos2::new(0.0, 0.0))
             .show(ctx, |ui| {
