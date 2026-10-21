@@ -12,9 +12,10 @@
 //! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
 //! `ADOR` (doors actors left open), `DSTR` (destructible health/stage), `WUSE`
 //! (Favorite Weapon usage), `WTHR` (the weather, its transition and override),
-//! `DETH` (killers and times of death), `COWN` (the owners of dropped stolen
-//! items), `ORIG` (world-created references' initial transforms), and `VM` /
-//! `VMAR` (`super::vm`: the Papyrus VM). Not yet saved:
+//! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
+//! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
+//! (world-created references' initial transforms), and `VM` / `VMAR`
+//! (`super::vm`: the Papyrus VM). Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
 //!
@@ -76,6 +77,7 @@ pub struct Snapshot {
     pub alerted: HashSet<FormId>,
     pub dead: HashMap<FormId, (Place, Vec3)>,
     pub deaths: HashMap<FormId, crate::world_state::Death>,
+    pub stealth_points: HashMap<FormId, (f32, f32)>,
     pub open_doors: HashSet<FormId>,
     pub actor_open_doors: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
@@ -478,6 +480,7 @@ impl Snapshot {
             alerted: ws.alerted.clone(),
             dead: ws.dead.clone(),
             deaths: ws.deaths.clone(),
+            stealth_points: e.detection.saved_stealth_points(),
             open_doors: ws.open_doors.clone(),
             actor_open_doors: ws.actor_open_doors.clone(),
             body_poses: ws.body_poses.clone(),
@@ -883,6 +886,16 @@ impl Snapshot {
             w.f64(death.at);
         }
         file.add(b"DETH", w.0);
+
+        // Stealth reservoirs are optional so older saves restore as empty.
+        let mut w = Writer::default();
+        w.len(self.stealth_points.len());
+        for (actor, (points, regen_wait)) in sorted(&self.stealth_points) {
+            w.form(actor);
+            w.f32(*points);
+            w.f32(*regen_wait);
+        }
+        file.add(b"STPT", w.0);
 
         // Dropped stolen items' owners, beside `WRLD`'s created references so
         // saves from before them still read.
@@ -1308,6 +1321,26 @@ impl Snapshot {
             }
             r.finish()?;
         }
+        if let Some(data) = file.section(b"STPT") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(12)? {
+                let actor = r.form()?;
+                let points = r.f32()?;
+                let regen_wait = r.f32()?;
+                if actor.is_null()
+                    || !points.is_finite()
+                    || !(0.0..=100.0).contains(&points)
+                    || !regen_wait.is_finite()
+                    || regen_wait < 0.0
+                    || s.stealth_points
+                        .insert(actor, (points, regen_wait))
+                        .is_some()
+                {
+                    return Err(Corrupt("invalid or duplicate stealth-point state".into()));
+                }
+            }
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"COWN") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(8)? {
@@ -1432,6 +1465,7 @@ impl Snapshot {
         ws.object_graphs.clear();
         ws.graph_open.clear();
         ws.learned_effects = self.learned_effects;
+        e.detection.restore_stealth_points(self.stealth_points);
         e.created_refs.refs = self.created;
         e.created_refs.next = self.created_next;
         e.player_health = self.health;

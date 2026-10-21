@@ -166,6 +166,27 @@ impl Default for Detection {
     }
 }
 
+impl Detection {
+    pub(crate) fn saved_stealth_points(&self) -> HashMap<FormId, (f32, f32)> {
+        self.stealth
+            .iter()
+            .map(|(&actor, state)| (actor, (state.points, state.regen_wait)))
+            .collect()
+    }
+
+    /// Replace persisted reservoirs and force the derived observations to be
+    /// recomputed on the next detection update.
+    pub(crate) fn restore_stealth_points(&mut self, saved: HashMap<FormId, (f32, f32)>) {
+        self.stealth = saved
+            .into_iter()
+            .map(|(actor, (points, regen_wait))| (actor, Stealth { points, regen_wait }))
+            .collect();
+        self.of_player.clear();
+        self.next_in = 0.0;
+        self.states_in = 0.0;
+    }
+}
+
 /// Someone's stealth points (100 hidden, 0 found), and seconds before they may
 /// refill after an enemy became alert to them.
 #[derive(Debug, Clone, Copy)]
@@ -993,6 +1014,121 @@ impl Engine {
         rows.sort_by(|a, b| b.0.total_cmp(&a.0));
         out.extend(rows.into_iter().map(|r| r.1));
         out
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    use esp::writer::write_plugin;
+
+    struct Fixture(std::path::PathBuf);
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn engine(label: &str) -> (Fixture, Engine) {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "vrm-stealth-save-{}-{label}-{stamp}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(
+            dir.join("Stealth.esp"),
+            write_plugin(0, &[], "test", "stealth save tests", 0x8ff, &[]),
+        )
+        .unwrap();
+        let engine = crate::stats::action_tests::headless_engine(&dir, "Stealth.esp");
+        (Fixture(dir), engine)
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic plugin only"]
+    fn production_save_load_continues_stealth_drain_and_regeneration_wait() {
+        const ACTOR: FormId = FormId(0x801);
+        let (_source_dir, mut source) = engine("source");
+        source.detection.stealth.insert(
+            PLAYER_REF,
+            Stealth {
+                points: 50.0,
+                regen_wait: 3.5,
+            },
+        );
+        source.detection.stealth.insert(
+            ACTOR,
+            Stealth {
+                points: 23.25,
+                regen_wait: 1.25,
+            },
+        );
+        let bytes = crate::save::state::Snapshot::capture(&source)
+            .write()
+            .to_bytes();
+
+        let (_target_dir, mut target) = engine("target");
+        target.detection.stealth.insert(
+            PLAYER_REF,
+            Stealth {
+                points: 4.0,
+                regen_wait: 99.0,
+            },
+        );
+        target.detection.stealth.insert(
+            FormId(0x802),
+            Stealth {
+                points: 12.0,
+                regen_wait: 0.0,
+            },
+        );
+        target.detection.of_player.insert(FormId(0x803), 45.0);
+        target.detection.next_in = 4.0;
+        target.detection.states_in = 2.0;
+        crate::save::state::Snapshot::read(
+            &crate::save::file::SaveFile::from_bytes(&bytes).unwrap(),
+        )
+        .unwrap()
+        .apply(&mut target)
+        .unwrap();
+
+        assert_eq!(
+            target.detection.saved_stealth_points(),
+            [(PLAYER_REF, (50.0, 3.5)), (ACTOR, (23.25, 1.25)),].into()
+        );
+        assert!(target.detection.of_player.is_empty());
+        assert_eq!(target.detection.next_in, 0.0);
+        assert_eq!(target.detection.states_in, 0.0);
+
+        // Continue the existing Stealth::step algorithm from the loaded
+        // reservoir; positive detection drains it and restarts the alert wait.
+        let mut drained = target.detection.stealth[&PLAYER_REF];
+        drained.step(Some(10.0), false, &target.detection_settings(), 0.5);
+        assert_eq!(drained.points, 35.0);
+        assert_eq!(drained.regen_wait, target.detection_settings().alert_wait);
+
+        // The production update path advances the saved delay without
+        // restoring points, then resumes regeneration once it expires.
+        target.update_detection(2.0);
+        assert_eq!(target.stealth_points(PLAYER_REF), 50.0);
+        assert_eq!(target.detection.stealth[&PLAYER_REF].regen_wait, 1.5);
+        target.update_detection(1.5);
+        assert_eq!(target.stealth_points(PLAYER_REF), 100.0);
+
+        // A legacy file without STPT replaces, rather than retaining, memory.
+        let mut legacy = crate::save::file::SaveFile::from_bytes(&bytes).unwrap();
+        legacy.sections.retain(|(tag, _)| tag != b"STPT");
+        crate::save::state::Snapshot::read(&legacy)
+            .unwrap()
+            .apply(&mut target)
+            .unwrap();
+        assert!(target.detection.stealth.is_empty());
+        assert!(target.detection.of_player.is_empty());
     }
 }
 

@@ -1107,6 +1107,72 @@ fn deaths_section_keeps_killers_and_times_and_is_optional() {
     assert!(Snapshot::read(&malformed.write()).is_err());
 }
 
+fn stealth_points_payload(entries: &[(FormId, f32, f32)]) -> Vec<u8> {
+    let mut w = Writer::default();
+    w.len(entries.len());
+    for (actor, points, regen_wait) in entries {
+        w.form(*actor);
+        w.f32(*points);
+        w.f32(*regen_wait);
+    }
+    w.0
+}
+
+#[test]
+fn stealth_point_section_is_sorted_optional_and_rejects_invalid_state() {
+    let mut s = Snapshot::default();
+    s.stealth_points.insert(FormId(0x8b1), (37.5, 4.0));
+    s.stealth_points.insert(PLAYER_REF, (62.25, 0.0));
+    let file = s.write();
+    let bytes = file.to_bytes();
+    assert_eq!(
+        s.write().to_bytes(),
+        bytes,
+        "stealth entries sort deterministically"
+    );
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.stealth_points, s.stealth_points);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    let mut old = file.clone();
+    old.sections.retain(|(tag, _)| tag != b"STPT");
+    assert!(Snapshot::read(&old).unwrap().stealth_points.is_empty());
+
+    let malformed = [
+        stealth_points_payload(&[(FormId(0x8b0), f32::NAN, 0.0)]),
+        stealth_points_payload(&[(FormId(0x8b0), 100.1, 0.0)]),
+        stealth_points_payload(&[(FormId(0x8b0), -0.1, 0.0)]),
+        stealth_points_payload(&[(FormId(0x8b0), 50.0, f32::NAN)]),
+        stealth_points_payload(&[(FormId(0x8b0), 50.0, f32::INFINITY)]),
+        stealth_points_payload(&[(FormId(0x8b0), 50.0, -0.1)]),
+        stealth_points_payload(&[(FormId::NULL, 50.0, 0.0)]),
+        stealth_points_payload(&[(FormId(0x8b0), 50.0, 0.0), (FormId(0x8b0), 40.0, 1.0)]),
+    ];
+    for payload in malformed {
+        let mut file = Snapshot::default().write();
+        file.sections.retain(|(tag, _)| tag != b"STPT");
+        file.add(b"STPT", payload);
+        assert!(Snapshot::read(&file).is_err());
+    }
+    for cut in 0..stealth_points_payload(&[(FormId(0x8b0), 50.0, 0.0)]).len() {
+        let mut file = Snapshot::default().write();
+        file.sections.retain(|(tag, _)| tag != b"STPT");
+        let mut payload = stealth_points_payload(&[(FormId(0x8b0), 50.0, 0.0)]);
+        payload.truncate(cut);
+        file.add(b"STPT", payload);
+        assert!(Snapshot::read(&file).is_err());
+    }
+    let mut trailing = Snapshot::default().write();
+    trailing
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"STPT")
+        .unwrap()
+        .1
+        .push(0);
+    assert!(Snapshot::read(&trailing).is_err());
+}
+
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic plugin only"]
 fn loading_clears_sleep_wait_and_owned_fade_transients() {

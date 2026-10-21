@@ -21,6 +21,10 @@ game each piece unlocks.
   Ordinary waiting and canceling the hour chooser do not fade. Chosen timing,
   script-fade composition, external-close and load policies:
   `known_ambiguities/sleep-wait.md`.
+- Detection stealth points and regeneration delays persist through optional
+  `STPT`; loading replaces the reservoir map and refreshes derived detection
+  observations. Search/combat state and AI progression remain separate work:
+  `known_ambiguities/detection.md` and `known_ambiguities/saves.md`.
 - Papyrus `Actor.GetKiller` returns the recorded killer for a dead actor, or
   `None` for a living actor or a death without known attribution. Death records
   remain durable through `DETH`; attribution limits and unsupported death-cause
