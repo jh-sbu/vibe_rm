@@ -320,6 +320,10 @@ pub struct SavedThread {
     pub menu_clock: bool,
     /// Where the result of the call it waits in goes (a message box's button).
     pub wait_dest: Option<Arg>,
+    /// Signal key for a wait whose host state is persisted by the caller.
+    /// Save codecs may keep this in an optional extension without changing
+    /// their existing thread section.
+    pub waiting_for: Option<u64>,
 }
 
 /// What a save keeps of the VM: the scripts attached with their variables
@@ -718,9 +722,9 @@ impl Vm {
         self.threads.iter().any(|t| t.waiting_for == Some(key))
     }
 
-    /// What a save keeps of the VM. A thread waiting for a signal is kept as a
-    /// timed wait (its timeout still counts), since whatever would have
-    /// signalled it isn't saved.
+    /// What a save keeps of the VM, including signal keys so the save host can
+    /// preserve waits whose external state it serializes. A codec that does
+    /// not support a signal source may still store it as a timed fallback.
     pub fn export(&self) -> SavedVm {
         let mut out = SavedVm::default();
         for ((obj, script), inst) in &self.instances {
@@ -770,6 +774,7 @@ impl Vm {
                 wake_in: (t.wake_at - now).max(0.0),
                 menu_clock: t.menu_clock,
                 wait_dest: t.wait_dest.clone(),
+                waiting_for: t.waiting_for,
             });
         }
         out
@@ -827,7 +832,7 @@ impl Vm {
                 frames,
                 wake_at: now + t.wake_in,
                 menu_clock: t.menu_clock,
-                waiting_for: None,
+                waiting_for: t.waiting_for,
                 wait_dest: t.wait_dest,
             });
         }

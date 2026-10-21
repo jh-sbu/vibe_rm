@@ -5,6 +5,11 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- `Message.Show` boxes and suspended scripts survive native saves through
+  optional `MBXW`, which leaves `VM` and `VMAR` layouts unchanged. Restored
+  filtered button indices wake the matching saved thread; other signal sources
+  keep the timed fallback. Legacy behavior and key limits:
+  `known_ambiguities/saves.md`.
 - Created-reference starting transforms: `GetStartingPos` and
   `GetStartingAngle` retain a world reference's creation position and rotation
   through movement and native saves. The optional `ORIG` section leaves `WRLD`
@@ -1710,12 +1715,16 @@ game each piece unlocks.
    speed-to-aspect runtime fidelity, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves** (the container, the engine's state and the Papyrus VM are done:
-   see Done): threads waiting on message boxes or animation events,
+   see Done): threads waiting on animation events,
    active magic effects, scene state,
    AI progress, objects' behaviour graphs, detection; reading the
    original's `.ess` saves later; a save / load menu (the System page),
    load orders that changed since the save, and the original's refusals to
    save (combat, menus, scripted)
+   - Confirmed continuity gaps: greater powers' last-use game days
+     (`Casting::powers_used`) and bodies whose souls were captured
+     (`Magic::souls_taken`) are not saved. Preserve these restrictions alongside
+     saved inventories and bodies so reloading does not reset them.
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
    - A new game separate from the developer launch, which drops the player at

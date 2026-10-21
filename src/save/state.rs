@@ -15,7 +15,8 @@
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
-//! (`super::vm`: the Papyrus VM). Not yet saved:
+//! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
+//! message-box VM waits). Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
 //!
@@ -525,6 +526,8 @@ impl Snapshot {
                     .map(|(o, items)| (*o, items.iter().copied().collect()))
                     .collect(),
                 anim_registrations: e.anim_events.registered(),
+                message_boxes: e.messages.boxes.clone(),
+                message_next_key: e.messages.next_key,
             },
         }
     }
@@ -1446,6 +1449,7 @@ impl Snapshot {
             vm.import(&mut host, self.vm.vm)
         };
         e.vm = vm;
+        e.restore_message_boxes(self.vm.message_boxes, self.vm.message_next_key);
         if dropped > 0 {
             log::warn!("{dropped} saved script threads can't be resumed");
         }

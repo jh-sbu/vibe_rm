@@ -31,6 +31,8 @@ const STORY_SECOND: FormId = FormId(0x861);
 const COOLDOWN: FormId = FormId(0x862);
 const RANK_EVENT: FormId = FormId(0x863);
 const LOCATION_EVENT: FormId = FormId(0x864);
+const MESSAGE_WAIT_A: FormId = FormId(0x8A0);
+const MESSAGE_WAIT_B: FormId = FormId(0x8A1);
 
 struct Fixture(std::path::PathBuf);
 
@@ -116,6 +118,23 @@ fn engine(name: &str) -> (Fixture, Engine) {
                 .map(|id| RecordBuilder::new(b"WTHR", id))
                 .collect(),
         ),
+        Node::top(
+            b"MESG",
+            vec![
+                RecordBuilder::new(b"MESG", MESSAGE_WAIT_A)
+                    .zstring(b"FULL", "First title")
+                    .zstring(b"DESC", "First question")
+                    .field(b"DNAM", &[1])
+                    .zstring(b"ITXT", "No")
+                    .zstring(b"ITXT", "Yes"),
+                RecordBuilder::new(b"MESG", MESSAGE_WAIT_B)
+                    .zstring(b"FULL", "Second title")
+                    .zstring(b"DESC", "Second question")
+                    .field(b"DNAM", &[1])
+                    .zstring(b"ITXT", "A")
+                    .zstring(b"ITXT", "B"),
+            ],
+        ),
         Node::top(b"ARMO", vec![RecordBuilder::new(b"ARMO", SHIELD)]),
         Node::top(b"SLGM", vec![RecordBuilder::new(b"SLGM", GEM)]),
         // An empty interior cell (object id 0x850: block 8, sub-block 2).
@@ -170,6 +189,25 @@ fn engine(name: &str) -> (Fixture, Engine) {
             &[("Wait", "None", &[("afSeconds", "Float")], true)],
         )
         .unwrap(),
+    )
+    .unwrap();
+    let mut message_script = papyrus::build::ScriptBuilder::new("VrmMessageWaitTest", "Message");
+    let result = message_script.variable("result", "Int", papyrus::build::Arg::None);
+    let done = message_script.variable("done", "Int", papyrus::build::Arg::None);
+    let mut on_init = papyrus::build::FunctionBuilder::new("None");
+    on_init.call_method(papyrus::build::id("self"), "Show", result, []);
+    on_init.assign(done, 1.into());
+    on_init.ret(papyrus::build::Arg::None);
+    message_script.function("OnInit", on_init);
+    std::fs::write(
+        f.0.join("scripts/VrmMessageWaitTest.pex"),
+        papyrus::pex::write(&message_script.build().unwrap()).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        f.0.join("scripts/Message.pex"),
+        papyrus::build::native_class("Message", "Form", &[("Show", "Int", &[], false)])
+            .unwrap(),
     )
     .unwrap();
     let e = crate::stats::action_tests::headless_engine(&f.0, "Save.esp");
@@ -811,6 +849,20 @@ fn run_vm(e: &mut Engine, now: f64, start: Option<papyrus::ObjectId>) {
     e.vm = vm;
 }
 
+fn run_message_vm(e: &mut Engine, now: f64, messages: &[FormId]) {
+    let mut vm = std::mem::take(&mut e.vm);
+    {
+        let mut host = crate::script::EngineHost { engine: e };
+        for message in messages {
+            let obj = papyrus::ObjectId::Form(message.0);
+            assert!(vm.attach(&mut host, obj, "VrmMessageWaitTest", &[]));
+            vm.send_event(&mut host, obj, "OnInit", vec![]);
+        }
+        vm.run(&mut host, now, 10_000);
+    }
+    e.vm = vm;
+}
+
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
 fn a_script_waiting_when_saved_finishes_after_loading() {
@@ -841,6 +893,82 @@ fn a_script_waiting_when_saved_finishes_after_loading() {
     }
     b.vm = vm;
     assert_eq!(b.vm.get_var(quest, "count"), Some(papyrus::Value::Int(2)));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records and PEX only"]
+fn message_show_waits_restore_and_answer_on_the_original_filtered_thread() {
+    use crate::messages::MessageBox;
+
+    let (_a, mut a) = engine("message-wait-a");
+    run_message_vm(&mut a, 0.0, &[MESSAGE_WAIT_A, MESSAGE_WAIT_B]);
+    assert_eq!(a.messages.boxes.len(), 2);
+    assert_eq!(a.messages.boxes[0].title, "First title");
+    assert_eq!(a.messages.boxes[1].title, "Second title");
+    assert_eq!(a.messages.next_key, 2);
+    assert_eq!(a.vm.thread_count(), 2);
+    assert_eq!(
+        a.vm.get_var(papyrus::ObjectId::Form(MESSAGE_WAIT_A.0), "done"),
+        Some(papyrus::Value::Int(0))
+    );
+    let bytes = Snapshot::capture(&a).write().to_bytes();
+
+    let (_b, mut b) = engine("message-wait-b");
+    b.messages.boxes.push_back(MessageBox {
+        title: "stale".into(),
+        text: "stale".into(),
+        buttons: vec![(0, "Okay".into())],
+        key: None,
+        action: None,
+    });
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut b)
+        .unwrap();
+    assert_eq!(
+        b.messages.boxes.len(),
+        2,
+        "saved boxes replace stale UI state"
+    );
+    assert_eq!(
+        b.messages.boxes[0].buttons,
+        vec![(0, "No".into()), (1, "Yes".into())]
+    );
+    assert_eq!(b.messages.next_key, 2);
+    run_vm(&mut b, 0.0, None);
+    assert_eq!(
+        b.vm.get_var(papyrus::ObjectId::Form(MESSAGE_WAIT_A.0), "done"),
+        Some(papyrus::Value::Int(0)),
+        "restored waits must not run until a button is answered"
+    );
+    assert_eq!(
+        b.vm.get_var(papyrus::ObjectId::Form(MESSAGE_WAIT_B.0), "done"),
+        Some(papyrus::Value::Int(0))
+    );
+
+    b.choose_message_button(1);
+    run_vm(&mut b, 0.0, None);
+    assert_eq!(
+        b.vm.get_var(papyrus::ObjectId::Form(MESSAGE_WAIT_A.0), "result"),
+        Some(papyrus::Value::Int(1))
+    );
+    assert_eq!(
+        b.vm.get_var(papyrus::ObjectId::Form(MESSAGE_WAIT_A.0), "done"),
+        Some(papyrus::Value::Int(1))
+    );
+    assert_eq!(
+        b.vm.get_var(papyrus::ObjectId::Form(MESSAGE_WAIT_B.0), "done"),
+        Some(papyrus::Value::Int(0)),
+        "the second filtered thread remains suspended"
+    );
+    b.choose_message_button(0);
+    run_vm(&mut b, 0.0, None);
+    assert_eq!(
+        b.vm.get_var(papyrus::ObjectId::Form(MESSAGE_WAIT_B.0), "done"),
+        Some(papyrus::Value::Int(1))
+    );
+    assert!(b.messages.boxes.is_empty());
+    assert_eq!(b.messages.next_key, 2);
 }
 
 /// Every runtime field is encoded without requiring a renderer or game assets.
