@@ -99,6 +99,14 @@ impl Engine {
         self.carried_weight(PLAYER_REF) > self.actor_value(PLAYER_REF, av::CARRY_WEIGHT)
     }
 
+    /// Whether `actor` can carry `added` more weight and stay within its
+    /// `CarryWeight` (a follower's comes from its race: Nord 300, dog 200).
+    /// UESP *Skyrim:Carry Weight*: followers "have their own limit that cannot
+    /// be exceeded".
+    pub fn can_carry_more(&self, actor: FormId, added: f32) -> bool {
+        self.carried_weight(actor) + added <= self.actor_value(actor, av::CARRY_WEIGHT)
+    }
+
     /// Over-encumbered, the player walks: running and sprinting are dropped
     /// from their input. Becoming so, they're told.
     pub(crate) fn encumber_player(&mut self, input: &mut MoveInput) {

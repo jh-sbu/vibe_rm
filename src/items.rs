@@ -358,6 +358,26 @@ impl Engine {
         if !crate::world::inventory::item_playable(&self.lo, item) {
             return 0;
         }
+        // A living teammate takes nothing that would put it over its carry
+        // weight: the whole transfer is refused, with the game's message
+        // (`sTeammateOverencumbered`). Dead ones are bodies, which hold any
+        // number of items (UESP *Skyrim:Carry Weight*, dead drops).
+        if from == PLAYER_REF && n > 0 && self.is_player_teammate(to) && !self.is_dead(to) {
+            let inv = self.inventory_mut(from);
+            let available = match stack {
+                None => inv.count(item),
+                Some(owner) => inv.count_owned(item, owner),
+            };
+            let weight = item_info(&self.lo, item).map_or(0.0, |i| i.weight);
+            if available > 0 && !self.can_carry_more(to, n.min(available) as f32 * weight) {
+                let name = self.actor_name(to).unwrap_or_default();
+                let msg = self
+                    .gmst_string("sTeammateOverencumbered")
+                    .unwrap_or_else(|| "can't carry any more.".into());
+                self.scripts.notify(format!("{name} {msg}"));
+                return 0;
+            }
+        }
         let mark = if to == PLAYER_REF {
             self.stolen_from(item, from, true)
         } else {

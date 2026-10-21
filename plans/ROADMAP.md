@@ -851,6 +851,9 @@ game each piece unlocks.
   `known_ambiguities/encumbrance.md`); worn armor slowing the player and
   loaded NPCs (package gaits, sneaking and combat chasing / fleeing), using
   the shared approximate GMST / perk policy (`fMoveEncumEffect*`, `fMoveWeightMax`)
+- Followers' carry limit: a teammate given a stack past its `CarryWeight` refuses
+  it whole with `sTeammateOverencumbered` (menus, gifts, fallback UI all go through
+  `transfer_item`; `known_ambiguities/followers.md`)
 - Falling damage: the player's falls past `fJumpFallHeightMin` hurt by
   UESP's formula (the `fJumpFall*` settings), the "Mod Falling Damage"
   perk entry point (Cushioned) applied; deep water spares them
@@ -1597,8 +1600,7 @@ game each piece unlocks.
      (`fCombatDialogueFleeDistanceMult`; timer scheduling: see Done);
      impacts' results (bounce, impale, stick); their hazards' models, lights,
      sounds and flags
-   - Encumbrance, more: fast travel refused over-encumbered (with the
-     map), followers' "can't carry any more"
+   - Encumbrance, more: fast travel refused over-encumbered (with the map)
    - Perks, more: staggers, bow zoom; NPCs' skills advancing
    - Combat conditions waiting on the attack phases: `GetAttackState` (the
      graph's draw, swing, hit, next attack, follow-through and bash; the engine
