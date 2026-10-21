@@ -54,6 +54,11 @@ The event currently being synchronously dispatched is transient and not saved.
 Destructible state is stored in optional `DSTR` as sorted reference, f64 health
 and i32 stage entries; older native saves without it load with no destruction
 state. Loading replaces existing state without replaying destruction events.
+Favorite Weapon counts and its current winner are stored in optional `WUSE`;
+older native saves without it load empty weapon usage, replacing any usage in
+the destination engine. Counts are sorted by weapon form and validated against
+the loaded plugin records before applying the save. This persists the engine's
+chosen attack/release metric, whose parity with Skyrim SE is unconfirmed.
 This engine-owned representation does not establish how Skyrim's `.ess` saves
 store destructible references.
 

@@ -1,19 +1,24 @@
-# Five roadmap implementation candidates
+# Five roadmap implementations
 
-1. **Numbered quicksaves** (`plans/ROADMAP.md`, Saves): keep each script-requested
-   quicksave as a distinct numbered native `.vrs` save while manual names and the
-   autosave slot retain their current behavior.
-2. **Detection blindness** (`plans/ROADMAP.md`, Detection): apply the observer's
-   Blindness actor value to the visual detection term.
-3. **Lockpicking key-reward perk**: check the existing perk/effect handling and
-   implement the missing reward when a lock is picked.
+1. **Numbered quicksaves** (Done; `plans/ROADMAP.md`, Saves): each script-requested
+   quicksave is a distinct numbered native `.vrs` save; manual names and the
+   autosave slot retain their existing behavior.
+2. **Detection blindness** (Done; `plans/ROADMAP.md`, Detection): the observer's
+   Blindness actor value scales the visual detection term.
+3. **Lockpicking key-reward perk** (Done): successful lockpicking evaluates the
+   key reward entry point and grants a key not already carried.
 4. **Egui fallback quantity selection** (Done): the SWF already handles
    quantities; the fallback now has the missing chooser for large stacks.
-5. **Journal Favorite Weapon statistic**: check `stats.rs` and the game's statistic
-   mapping, then add the missing favorite-weapon usage count.
+5. **Journal Favorite Weapon statistic** (Done): accepted player melee attacks
+   and actual bow releases contribute usage; native saves retain it.
 
 This list records the scope and outcome of the five independent roadmap items.
-Item 5 still needs a scope check before implementation.
+Each item was planned before implementation, implemented by a Luna 6 High
+subagent, then reviewed and validated by the parent. Only public sources and
+game assets were used; no engine binaries were examined or game assets committed.
+NPC fall damage was rejected during initial scoping because its existing
+documented blocker is the absence of airborne NPC motion and landing events;
+it is not counted among these five completed items.
 
 ## Item 3 plan
 
@@ -143,3 +148,28 @@ pickpocket take/place, stale-row, cancellation and ownership-specific drop
 cases. `cargo fmt --check` and `git diff --check` pass. The chooser's appearance
 and exact slider defaults are egui policies, not claims of original-menu
 parity.
+
+## Item 5 plan and outcome
+
+The implementation plan was written before coding in
+[`favorite-weapon-statistic.md`](favorite-weapon-statistic.md). Local UESP's
+[Statistics revision 3569833](https://en.uesp.net/w/index.php?oldid=3569833)
+describes the most-used melee weapon or bow, but leaves the usage event and
+tie rules unspecified. Accepted player melee attacks and actual bow releases
+now count by weapon base form; ties retain the incumbent. Hit notifications,
+bashes, unarmed attacks, staves and failed actions do not add uses. The journal
+shows the normal localized weapon name, independently of manual favorites.
+
+Optional native-save section `WUSE` retains sorted usage counts and the winner.
+Old saves replace this state with empty counts; malformed data is refused, and
+invalid weapon forms are rejected before mutating the engine. The chosen usage
+metric and ties remain implementation policies, recorded in
+`known_ambiguities/journal.md` and `known_ambiguities/saves.md`.
+
+Parent validation: both `stats::action_tests` passed with graphics access,
+including accepted/rejected attacks, bow release, save restoration and old-save
+replacement. Both pure weapon-usage tests passed. The broader engine suite
+passed 294 tests (67 ignored by default), `vrm-esp` passed 7, and all 24 native
+save tests passed with graphics access. All new GPU-dependent tests were run
+explicitly; synthetic tests establish implementation behavior, not Skyrim SE
+parity. All five items are complete within their documented scope.

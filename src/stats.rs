@@ -188,6 +188,67 @@ pub struct MagicUsage {
     shouts: Usage<FormId>,
 }
 
+/// Counts of player melee attacks and bow releases by weapon base form.
+#[derive(Default)]
+pub struct WeaponUsage {
+    usage: Usage<FormId>,
+}
+
+impl WeaponUsage {
+    /// Each eligible held weapon participates once in an accepted attack.
+    pub(crate) fn record(&mut self, weapon: FormId) {
+        self.usage.record(weapon);
+    }
+
+    /// Stable native-save representation.
+    pub(crate) fn saved(&self) -> (Vec<(FormId, u64)>, Option<FormId>) {
+        let mut counts: Vec<_> = self.usage.counts.iter().map(|(&id, &n)| (id, n)).collect();
+        counts.sort_by_key(|(id, _)| *id);
+        (counts, self.usage.favorite)
+    }
+
+    /// Restore counts after structural validation, retaining the persisted
+    /// incumbent on a tied maximum.
+    pub(crate) fn restore(
+        counts: Vec<(FormId, u64)>,
+        favorite: Option<FormId>,
+    ) -> anyhow::Result<Self> {
+        let mut usage = Usage::default();
+        let mut previous = None;
+        for (id, count) in counts {
+            anyhow::ensure!(id != FormId::NULL, "null favorite-weapon form");
+            anyhow::ensure!(count > 0, "zero favorite-weapon usage count");
+            anyhow::ensure!(
+                previous.is_none_or(|p| p < id),
+                "duplicate or unsorted favorite-weapon form"
+            );
+            previous = Some(id);
+            usage.counts.insert(id, count);
+        }
+        if usage.counts.is_empty() {
+            anyhow::ensure!(favorite.is_none(), "favorite weapon without usage counts");
+        } else {
+            let top = usage.counts.values().copied().max().unwrap();
+            anyhow::ensure!(
+                favorite.is_some_and(|id| usage.counts.get(&id) == Some(&top)),
+                "favorite weapon does not have the highest usage count"
+            );
+            usage.favorite = favorite;
+        }
+        Ok(Self { usage })
+    }
+
+    pub(crate) fn valid_form(lo: &esp::LoadOrder, id: FormId) -> bool {
+        let Some(rec) = lo.get(id).filter(|r| r.tag().0 == *b"WEAP") else {
+            return false;
+        };
+        let Some(kind) = rec.get(b"DNAM").and_then(|d| d.first()).copied() else {
+            return false;
+        };
+        (1..=6).contains(&kind) || crate::ai::archery::is_bow(lo, id)
+    }
+}
+
 #[derive(Default)]
 struct Usage<T> {
     counts: HashMap<T, u64>,
@@ -240,6 +301,14 @@ impl Engine {
 
     pub(crate) fn count_shout_use(&mut self, shout: FormId) {
         self.scripts.magic_usage.shouts.record(shout);
+    }
+
+    /// Record only actual Skyrim melee weapons and bows. This also keeps
+    /// staves, fists and malformed equipment out of the journal statistic.
+    pub(crate) fn count_weapon_use(&mut self, weapon: FormId) {
+        if WeaponUsage::valid_form(&self.lo, weapon) {
+            self.scripts.weapon_usage.record(weapon);
+        }
     }
 
     /// `Game.IncrementStat`.
@@ -325,6 +394,12 @@ impl Engine {
                     .shouts
                     .favorite
                     .and_then(|id| self.shout(id).map(|s| s.name.clone()))
+            } else if name.eq_ignore_ascii_case("Favorite Weapon") {
+                self.scripts
+                    .weapon_usage
+                    .usage
+                    .favorite
+                    .map(|id| self.form_name(id))
             } else {
                 None
             };
@@ -402,7 +477,8 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{Usage, ordinal};
+    use super::{Usage, WeaponUsage, ordinal};
+    use esp::FormId;
 
     #[test]
     fn usage_favorites_keep_the_incumbent_on_ties() {
@@ -417,6 +493,27 @@ mod tests {
         assert_eq!(usage.favorite, Some(1));
         usage.record(2);
         assert_eq!(usage.favorite, Some(2));
+    }
+
+    #[test]
+    fn weapon_usage_round_trips_stably_and_rejects_inconsistent_winners() {
+        let mut usage = WeaponUsage::default();
+        usage.record(FormId(2));
+        usage.record(FormId(1));
+        usage.record(FormId(1));
+        assert_eq!(
+            usage.saved(),
+            (vec![(FormId(1), 2), (FormId(2), 1)], Some(FormId(1)))
+        );
+        let restored =
+            WeaponUsage::restore(vec![(FormId(1), 2), (FormId(2), 2)], Some(FormId(1))).unwrap();
+        assert_eq!(restored.saved().1, Some(FormId(1)));
+        assert!(WeaponUsage::restore(vec![(FormId(1), 1)], Some(FormId(2))).is_err());
+        assert!(WeaponUsage::restore(vec![(FormId(1), 0)], Some(FormId(1))).is_err());
+        assert!(WeaponUsage::restore(vec![(FormId::NULL, 1)], Some(FormId::NULL)).is_err());
+        assert!(
+            WeaponUsage::restore(vec![(FormId(2), 1), (FormId(1), 1)], Some(FormId(2))).is_err()
+        );
     }
 
     #[test]

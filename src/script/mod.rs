@@ -138,6 +138,8 @@ pub struct ScriptState {
     pub stats: HashMap<String, i32>,
     /// Spell, school and shout usage for the journal's named statistics.
     pub magic_usage: crate::stats::MagicUsage,
+    /// Melee weapon attacks and bow releases for Favorite Weapon.
+    pub weapon_usage: crate::stats::WeaponUsage,
     /// The forms, aliases and effects registered for sleep
     /// (`RegisterForSleep`: `OnSleepStart`, `OnSleepStop`).
     pub sleep_listeners: Vec<ObjectId>,

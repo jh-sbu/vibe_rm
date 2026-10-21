@@ -25,6 +25,10 @@ game each piece unlocks.
   when moving, pickpocketing/placing, or dropping; it retains the selected
   source row and rechecks it on confirmation. The SWF menu already handles
   quantities: `known_ambiguities/inventory-cards.md`
+- The journal's Favorite Weapon follows accepted player melee attacks and
+  actual bow releases, retaining counts and its incumbent through native
+  saves. The usage metric and tie policy remain unverified in Skyrim SE:
+  `known_ambiguities/journal.md`
 - BSA, plugins (load order, ESL, overrides, strings), NIF (render + collision blocks), DDS
 - Interior/exterior cells, landscape, water, weather/climate/sky, time of day
 - Havok collision shapes -> rapier3d; first-person character controller
@@ -1568,8 +1572,7 @@ game each piece unlocks.
      input; `known_ambiguities/messages.md`); controller rumble for camera shakes
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
-     (crafting, dragon souls collected, horses stolen,
-     Favorite Weapon)
+     (crafting, dragon souls collected, horses stolen)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets (research-gated: no direct examples found in
      the inspected Bethesda plugins; `known_ambiguities/quest-targets.md`); the charge and

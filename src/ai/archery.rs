@@ -574,6 +574,7 @@ impl Engine {
             self.scripts.notify(text);
             return;
         };
+        self.count_weapon_use(bow);
         let power = (held / full).min(1.0);
         self.remove_item(PLAYER_REF, arrow.ammo, 1, None);
         let damage = (crate::ai::combat::weapon_damage(&self.lo, bow) + arrow.damage) * power;

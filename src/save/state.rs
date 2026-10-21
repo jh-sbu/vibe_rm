@@ -10,7 +10,8 @@
 //! references made while playing), `PLYR` (health, skills, perks, spells,
 //! shouts, favorites, dialogue heard), `CRIM` (bounties) and `BART`
 //! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
-//! `DSTR` (destructible health/stage), and `VM` / `VMAR` (`super::vm`: the
+//! `DSTR` (destructible health/stage), `WUSE` (Favorite Weapon usage), and
+//! `VM` / `VMAR` (`super::vm`: the
 //! Papyrus VM). Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
@@ -56,6 +57,8 @@ pub struct Snapshot {
     pub globals: HashMap<FormId, f32>,
     pub quests: HashMap<FormId, QuestState>,
     pub stats: HashMap<String, i32>,
+    pub weapon_usage: Vec<(FormId, u64)>,
+    pub favorite_weapon: Option<FormId>,
     pub actor_values: HashMap<(FormId, u32), Modifiers>,
     pub other_actor_values: HashMap<(FormId, String), f32>,
     pub inventories: HashMap<FormId, Inventory>,
@@ -430,6 +433,7 @@ impl Snapshot {
     pub fn capture(e: &Engine) -> Snapshot {
         let ws = &e.world_state;
         let s = &e.scripts;
+        let (weapon_usage, favorite_weapon) = s.weapon_usage.saved();
         Snapshot {
             plugins: e
                 .lo
@@ -453,6 +457,8 @@ impl Snapshot {
             globals: s.globals.clone(),
             quests: s.quests.clone(),
             stats: s.stats.clone(),
+            weapon_usage,
+            favorite_weapon,
             actor_values: s.actor_values.clone(),
             other_actor_values: s.other_actor_values.clone(),
             inventories: e.inventories.clone(),
@@ -559,6 +565,17 @@ impl Snapshot {
             w.i32(*n);
         }
         file.add(b"STAT", w.0);
+
+        let mut w = Writer::default();
+        let mut weapon_usage = self.weapon_usage.clone();
+        weapon_usage.sort_by_key(|(weapon, _)| *weapon);
+        w.len(weapon_usage.len());
+        for (weapon, count) in weapon_usage {
+            w.form(weapon);
+            w.u64(count);
+        }
+        w.opt_form(self.favorite_weapon);
+        file.add(b"WUSE", w.0);
 
         let mut w = Writer::default();
         w.len(self.actor_values.len());
@@ -874,6 +891,26 @@ impl Snapshot {
         }
         r.finish()?;
 
+        if let Some(data) = file.section(b"WUSE") {
+            let mut r = Reader::new(data);
+            let mut previous = None;
+            for _ in 0..r.count(12)? {
+                let weapon = r.form()?;
+                let count = r.u64()?;
+                if weapon.is_null() || count == 0 || previous.is_some_and(|p| p >= weapon) {
+                    return Err(Corrupt(
+                        "invalid, duplicate, or unsorted favorite-weapon usage".into(),
+                    ));
+                }
+                previous = Some(weapon);
+                s.weapon_usage.push((weapon, count));
+            }
+            s.favorite_weapon = r.opt_form()?;
+            r.finish()?;
+            crate::stats::WeaponUsage::restore(s.weapon_usage.clone(), s.favorite_weapon)
+                .map_err(|e| Corrupt(e.to_string()))?;
+        }
+
         let mut r = section(file, b"AVAL")?;
         for _ in 0..r.count(25)? {
             let (actor, index) = (r.form()?, r.u32()?);
@@ -1161,6 +1198,14 @@ impl Snapshot {
             self.plugins.len(),
             have.len()
         );
+        let weapon_usage =
+            crate::stats::WeaponUsage::restore(self.weapon_usage, self.favorite_weapon)?;
+        for (weapon, _) in weapon_usage.saved().0 {
+            anyhow::ensure!(
+                crate::stats::WeaponUsage::valid_form(&e.lo, weapon),
+                "save has invalid favorite-weapon form {weapon}"
+            );
+        }
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.unload_all();
@@ -1174,6 +1219,7 @@ impl Snapshot {
         s.globals = self.globals;
         s.quests = self.quests;
         s.stats = self.stats;
+        s.weapon_usage = weapon_usage;
         s.actor_values = self.actor_values;
         s.other_actor_values = self.other_actor_values;
         s.looted = self.looted;
