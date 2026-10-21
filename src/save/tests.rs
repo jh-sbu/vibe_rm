@@ -416,6 +416,107 @@ fn script_save_requests_are_written_on_the_next_update_and_deduplicated() {
 }
 
 #[test]
+fn quicksaves_choose_the_next_append_only_number() {
+    let dir = std::env::temp_dir().join(format!(
+        "vrm-quicksave-names-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("quicksave 1.vrs"), b"one").unwrap();
+    std::fs::write(dir.join("quicksave 4.vrs"), b"four").unwrap();
+    std::fs::write(dir.join("quicksave latest.vrs"), b"malformed").unwrap();
+    std::fs::write(dir.join("autosave.vrs"), b"auto").unwrap();
+    std::fs::write(dir.join("quicksave.vrs"), b"legacy").unwrap();
+    let unreadable_dir = dir.join("not-a-directory");
+    std::fs::write(&unreadable_dir, b"file").unwrap();
+
+    assert_eq!(super::next_quicksave_name_in(&dir).unwrap(), "quicksave 5");
+    assert!(super::next_quicksave_name_in(&unreadable_dir).is_err());
+
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn quicksave_number_overflow_is_reported() {
+    let dir = std::env::temp_dir().join(format!(
+        "vrm-quicksave-overflow-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("quicksave 18446744073709551615.vrs"), b"max").unwrap();
+
+    assert!(super::next_quicksave_name_in(&dir).is_err());
+
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn failed_quicksave_write_leaves_the_slot_available() {
+    let dir = std::env::temp_dir().join(format!(
+        "vrm-quicksave-failure-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let name = super::next_quicksave_name_in(&dir).unwrap();
+    let path = super::save_path_in(&dir, &name).unwrap();
+    std::fs::create_dir(path.with_extension("tmp")).unwrap();
+
+    assert!(super::write_save_bytes(&path, b"snapshot").is_err());
+    assert!(!path.exists());
+    assert_eq!(super::next_quicksave_name_in(&dir).unwrap(), name);
+
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn flushed_quicksaves_keep_snapshots_and_other_save_slots() {
+    let (fixture, mut engine) = engine("flush");
+    let dir = fixture.0.join("saves");
+    std::fs::create_dir(&dir).unwrap();
+    let read_day = |name: &str| {
+        let bytes = std::fs::read(super::save_path_in(&dir, name).unwrap()).unwrap();
+        Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+            .unwrap()
+            .day
+    };
+
+    engine.day = 11;
+    engine.request_save(false);
+    engine.flush_save_requests_in(&dir);
+    engine.day = 12;
+    engine.request_save(false);
+    engine.flush_save_requests_in(&dir);
+    assert_eq!(read_day("quicksave 1"), 11);
+    assert_eq!(read_day("quicksave 2"), 12);
+
+    engine.day = 20;
+    engine.save_game_to(&dir.join("manual.vrs")).unwrap();
+    engine.day = 21;
+    engine.request_save(true);
+    engine.flush_save_requests_in(&dir);
+    engine.day = 22;
+    engine.request_save(true);
+    engine.flush_save_requests_in(&dir);
+    assert_eq!(read_day("autosave"), 22);
+    assert_eq!(read_day("manual"), 20);
+    assert_eq!(read_day("quicksave 1"), 11);
+    assert_eq!(read_day("quicksave 2"), 12);
+}
+
+#[test]
 fn where_the_player_stood_survives_the_file() {
     let mut s = Snapshot::default();
     s.spot = Some(Spot {

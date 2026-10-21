@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Script-requested native quicksaves are append-only numbered `.vrs` files;
+  manual names and the replaceable autosave slot keep their existing policies.
+  This is a native history choice, not claimed Skyrim SE parity:
+  `known_ambiguities/saves.md`
 - Quest-alias factions (`ALFC`) contribute temporary actor memberships while
   filled in running quests: owned-door access, faction conditions and player
   ownership checks see them; clear/refill, quest stop and saves retain the
@@ -1593,7 +1597,7 @@ game each piece unlocks.
    AI progress, objects' behaviour graphs, weather and detection; reading the
    original's `.ess` saves later; a save / load menu (the System page),
    load orders that changed since the save, and the original's refusals to
-   save (combat, menus, scripted); numbered quicksaves
+   save (combat, menus, scripted)
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
    - A new game separate from the developer launch, which drops the player at

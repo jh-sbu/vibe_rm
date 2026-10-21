@@ -61,17 +61,63 @@ pub fn list_saves_in(dir: &Path) -> Vec<String> {
     found.into_iter().map(|(_, n)| n).collect()
 }
 
+/// The next append-only quicksave name in `dir`. Existing numbered quicksaves
+/// are retained, including gaps left by a failed or removed save.
+fn next_quicksave_name_in(dir: &Path) -> Result<String> {
+    let mut highest = 0u64;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok("quicksave 1".to_string());
+        }
+        Err(err) => return Err(err).with_context(|| format!("reading {}", dir.display())),
+    };
+    for entry in entries {
+        let entry = entry.with_context(|| format!("reading entries in {}", dir.display()))?;
+        let path = entry.path();
+        if path
+            .extension()
+            .is_none_or(|extension| extension != EXTENSION)
+        {
+            continue;
+        }
+        let Some(name) = path.file_stem().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Some(number) = name
+            .strip_prefix("quicksave ")
+            .and_then(|suffix| suffix.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        highest = highest.max(number);
+    }
+    let number = highest
+        .checked_add(1)
+        .context("quicksave number is exhausted")?;
+    let name = format!("quicksave {number}");
+    if save_path_in(dir, &name).is_none() {
+        bail!("quicksave number is outside the supported save name range");
+    }
+    Ok(name)
+}
+
+fn write_save_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, bytes).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))?;
+    Ok(())
+}
+
 impl Engine {
     /// Write the game to `path` (to a temporary file first, so a crash
     /// leaves the old save whole).
     pub fn save_game_to(&self, path: &Path) -> Result<()> {
         let bytes = Snapshot::capture(self).write().to_bytes();
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-        }
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, &bytes).with_context(|| format!("writing {}", tmp.display()))?;
-        std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))?;
+        write_save_bytes(path, &bytes)?;
         log::info!("saved {} ({} bytes)", path.display(), bytes.len());
         Ok(())
     }
@@ -102,7 +148,9 @@ impl Engine {
     }
 
     /// `Game.RequestSave` / `RequestAutoSave`: the game is written when the
-    /// script has finished running (next update), as `quicksave` or `autosave`.
+    /// script has finished running (next update). Native quicksaves are
+    /// append-only (`quicksave 1`, `quicksave 2`, ...); autosaves use their
+    /// single replaceable slot.
     pub fn request_save(&mut self, auto: bool) {
         let name = if auto { "autosave" } else { "quicksave" };
         if !self.save_requests.iter().any(|(n, _)| n == name) {
@@ -111,6 +159,10 @@ impl Engine {
     }
 
     pub(crate) fn flush_save_requests(&mut self) {
+        self.flush_save_requests_in(&save_dir());
+    }
+
+    fn flush_save_requests_in(&mut self, dir: &Path) {
         for (name, auto) in std::mem::take(&mut self.save_requests) {
             if self.player_dead() {
                 let msg = self.gmst_string("sCantSaveNow");
@@ -123,7 +175,22 @@ impl Engine {
                 self.scripts
                     .notify(msg.unwrap_or_else(|| "Autosaving...".into()));
             }
-            if let Err(err) = self.save_game(&name) {
+            let name = if auto {
+                name
+            } else {
+                match next_quicksave_name_in(dir) {
+                    Ok(name) => name,
+                    Err(err) => {
+                        log::warn!("choosing quicksave name: {err:#}");
+                        continue;
+                    }
+                }
+            };
+            let Some(path) = save_path_in(dir, &name) else {
+                log::warn!("saving {name}: invalid save name");
+                continue;
+            };
+            if let Err(err) = self.save_game_to(&path) {
                 log::warn!("saving {name}: {err:#}");
             }
         }
