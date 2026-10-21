@@ -17,6 +17,10 @@ game each piece unlocks.
   unlocking makes the adjoining interior public, locking makes it private;
   trespass checks and native saves retain that access state. Adjoining-cell
   choices and remaining lock behavior: `known_ambiguities/locks.md`
+- Lockpicking with Wax Key evaluates `Mod Lockpicking Key Reward Chance` on
+  the lock after a successful pick and awards its valid `KEYM` if the player
+  does not already carry it; its chance and first-pick limits:
+  `known_ambiguities/perks.md`
 - BSA, plugins (load order, ESL, overrides, strings), NIF (render + collision blocks), DDS
 - Interior/exterior cells, landscape, water, weather/climate/sky, time of day
 - Havok collision shapes -> rapier3d; first-person character controller
@@ -1535,7 +1539,7 @@ game each piece unlocks.
      sounds and flags
    - Encumbrance, more: fast travel refused over-encumbered (with the
      map), followers' "can't carry any more"
-   - Perks, more: staggers, bow zoom, key rewards; NPCs' skills advancing
+   - Perks, more: staggers, bow zoom; NPCs' skills advancing
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; doors
      opened by actors remembered; looping sounds of enabled references checked

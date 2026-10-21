@@ -153,6 +153,7 @@ pub mod ep {
     pub const MOD_INGREDIENTS_HARVESTED: u8 = 87;
     pub const SET_LOCKPICK_STARTING_ARC: u8 = 63;
     pub const MOD_LOCKPICKING_CRIME_CHANCE: u8 = 86;
+    pub const MOD_LOCKPICKING_KEY_REWARD_CHANCE: u8 = 90;
     pub const IGNORE_RUNNING_DURING_DETECTION: u8 = 15;
     pub const MOD_LOCKPICK_SWEET_SPOT: u8 = 59;
     pub const MAKE_LOCKPICKS_UNBREAKABLE: u8 = 65;

@@ -317,6 +317,7 @@ impl Engine {
                 self.use_skill(esp::actor_value::LOCKPICKING, xp);
                 self.increment_stat("Locks Picked", 1);
                 self.set_locked(lp.lock, false);
+                self.reward_lock_key(lp.lock);
                 self.player_unlocked(lp.lock);
                 self.send_pick_lock_event(lp.lock);
                 self.menu = None;
@@ -360,6 +361,34 @@ impl Engine {
             lp.turn = (lp.turn - dt * TURN_SPEED * 2.0).max(0.0);
         }
         self.lockpick = Some(lp);
+    }
+
+    /// Wax Key's entry point runs only after a lockpick opens its lock. The
+    /// entry point uses percentage points (the vanilla perk sets it to 100).
+    fn reward_lock_key(&mut self, lock: FormId) {
+        let Some(key) = self.lock_of(lock).and_then(|l| l.key) else {
+            return;
+        };
+        if self.lo.tag_of(key).map(|t| t.0) != Some(*b"KEYM")
+            || self.item_count(PLAYER_REF, key) > 0
+        {
+            return;
+        }
+        let chance = self.perk_entry_point(
+            crate::perks::ep::MOD_LOCKPICKING_KEY_REWARD_CHANCE,
+            PLAYER_REF,
+            &[Some(lock)],
+            0.0,
+        );
+        let chance = if chance.is_finite() {
+            chance.clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+        if chance <= 0.0 || (chance < 100.0 && (self.rand() % 10_000) as f32 >= chance * 100.0) {
+            return;
+        }
+        self.add_item(PLAYER_REF, key, 1);
     }
 
     /// A string game setting, from the localised strings.
