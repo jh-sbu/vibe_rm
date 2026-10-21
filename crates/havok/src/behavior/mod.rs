@@ -25,6 +25,7 @@ fn requires_whole_member_binding(member: &str) -> bool {
         "flags"
             | "selfTransitionMode"
             | "eventMode"
+            | "endMode"
             | "blendCurve"
             | "mode"
             | "startStateMode"
@@ -109,6 +110,12 @@ pub struct Transition {
     pub target_start_fraction_variable: Option<usize>,
     /// Read-only character property bound to the target start fraction.
     pub target_start_fraction_property: Option<String>,
+    /// Authored `hkbBlendingTransitionEffect::endMode`.
+    pub end_mode: TransitionEndMode,
+    /// Variable bound to the whole `endMode` enum, if any.
+    pub end_mode_variable: Option<usize>,
+    /// Read-only character property bound to the whole `endMode` enum.
+    pub end_mode_property: Option<String>,
     /// `hkbExpressionCondition` that must hold.
     pub condition: Option<String>,
     pub priority: i16,
@@ -211,6 +218,39 @@ impl EventMode {
             2 => EventMode::IgnoreFromGenerator,
             3 => EventMode::IgnoreToGenerator,
             _ => EventMode::Default,
+        }
+    }
+}
+
+/// `hkbBlendingTransitionEffect::EndMode`. Exact duration semantics remain
+/// runtime-inferred; the supported source cases are bounded in
+/// `known_ambiguities/character-properties.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TransitionEndMode {
+    #[default]
+    None,
+    UntilFromEnd,
+    CapAtFromEnd,
+}
+
+impl TransitionEndMode {
+    fn from_byte(value: u8) -> Self {
+        match value {
+            1 => Self::UntilFromEnd,
+            2 => Self::CapAtFromEnd,
+            _ => Self::None,
+        }
+    }
+
+    fn from_input(value: f32) -> Option<Self> {
+        if !value.is_finite() || value.fract() != 0.0 {
+            return None;
+        }
+        match value as i32 {
+            0 => Some(Self::None),
+            1 => Some(Self::UntilFromEnd),
+            2 => Some(Self::CapAtFromEnd),
+            _ => None,
         }
     }
 }
@@ -910,6 +950,17 @@ impl<'a> Reader<'a> {
                         .map(|b| b.variable),
                     target_start_fraction_property: effect
                         .and_then(|e| self.character_property(e, "toGeneratorStartTimeFraction")),
+                    end_mode: effect.map_or_else(TransitionEndMode::default, |e| {
+                        TransitionEndMode::from_byte(self.p.u8(e + 0x5A))
+                    }),
+                    end_mode_variable: effect
+                        .and_then(|e| {
+                            self.bindings_of(e)
+                                .into_iter()
+                                .find(|b| b.member == "endMode")
+                        })
+                        .map(|b| b.variable),
+                    end_mode_property: effect.and_then(|e| self.character_property(e, "endMode")),
                     condition: condition.and_then(|c| self.p.string(c + 0x10)),
                     priority: self.p.i16(t + 0x40),
                     trigger: (flags & FLAG_USE_TRIGGER_INTERVAL != 0).then(|| self.interval(t)),
@@ -2352,6 +2403,48 @@ mod character_property_tests {
             t.target_start_fraction_property.as_deref(),
             Some("StartFraction")
         );
+    }
+
+    #[test]
+    fn transition_effects_retain_end_modes_and_whole_member_inputs() {
+        for (value, expected) in [
+            (0, TransitionEndMode::None),
+            (1, TransitionEndMode::UntilFromEnd),
+            (2, TransitionEndMode::CapAtFromEnd),
+        ] {
+            for bit in [u8::MAX, 0] {
+                let mut p = fixture();
+                p.data[0x2DA] = value;
+                for (at, binding) in [(0x480, 0x380), (0x4E0, 0x3F8)] {
+                    p.data[at..at + 0x20].fill(0);
+                    let name = b"endMode";
+                    p.data[at..at + name.len()].copy_from_slice(name);
+                    p.data[binding + 0x20] = bit;
+                }
+                let r = Reader {
+                    p: &p,
+                    classes: [(0x280, "hkbBlendingTransitionEffect")].into(),
+                    ids: Default::default(),
+                    generators: vec![],
+                    bindings: vec![],
+                    property_bindings: vec![],
+                    mod_ids: Default::default(),
+                    modifiers: vec![],
+                    modifier_bindings: vec![],
+                    modifier_property_bindings: vec![],
+                    character_properties: ["Other", "Unused", "Third", "Fourth", "EndPolicy"]
+                        .map(String::from)
+                        .to_vec(),
+                };
+                let transition = &r.transitions(Some(0x600))[0];
+                assert_eq!(transition.end_mode, expected);
+                assert_eq!(transition.end_mode_variable, (bit == u8::MAX).then_some(2));
+                assert_eq!(
+                    transition.end_mode_property.as_deref(),
+                    (bit == u8::MAX).then_some("EndPolicy")
+                );
+            }
+        }
     }
 
     #[test]

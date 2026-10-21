@@ -83,8 +83,8 @@ on blender children and bone switches.
   approximation (see [`transition-event-mode-properties.md`](transition-event-mode-properties.md));
   `blendCurve` inputs select the existing smoothstep or a linear cross-fade at
   commit (details below); `toGeneratorStartTimeFraction` seeks supported
-  destination clips at commit (details below); other effect members remain
-  unsupported.
+  destination clips at commit and `endMode` adjusts duration for supported
+  source clips (details below); other effect members remain unsupported.
   `BSCyclicBlendTransitionGenerator.fBlendParameter` properties now forward to
   its blender child (see below). Other generator members not listed above remain
   retained but unevaluated, except clip start/end crop bindings, which resolve
@@ -288,6 +288,44 @@ fallback, cropped/reverse clips, zero preserving `startTime`, wrappers, user
 controlled and compound targets, and triggers before, at and after the seek.
 They verify this implementation only. No game assets or engine binary data were
 examined.
+
+## Transition-effect end modes
+
+The runtime retains the authored `hkbBlendingTransitionEffect.endMode` enum and
+whole-member variable/property binding names. The community-authored
+[Skyrim Behavior Editor class](https://github.com/BrannigansLaw/Skyrim-Behavior-Editor-/blob/master/src/hkxclasses/behavior/hkbblendingtransitioneffect.cpp)
+lists `END_MODE_NONE`, `END_MODE_TRANSITION_UNTIL_END_OF_FROM_GENERATOR` and
+`END_MODE_CAP_DURATION_AT_END_OF_FROM_GENERATOR`, in that order. A public
+community [Havok behavior layout](https://github.com/adamhynek/activeragdoll/blob/master/include/RE/havok_behavior.h)
+places the byte at effect offset `0x5A`. The editor UI labels `endMode` as not
+bindable, so variable/property support here is limited to retaining and
+evaluating whole-member raw bindings; the UI is not evidence that Skyrim assets
+author such bindings. The enum names describe policies, but the sources do not
+specify exact duration arithmetic or runtime timing.
+
+At transition commit, an integral whole-member variable takes precedence over a
+property; an invalid variable retains the authored enum and does not fall through
+to a duplicate property. Values `0`, `1` and `2` select none, until-source-end
+and cap-at-source-end. As an explicit implementation policy, for a direct
+single-play source clip (or a runtime-transparent wrapper around one), mode `1`
+sets cross-fade duration to its remaining wall-clock playback time and mode `2`
+uses the lesser of that time and the authored/bound cross-fade duration.
+Remaining time uses the activated cropped length, elapsed clip-local time, and
+the absolute resolved playback speed; reverse clips use the same elapsed-time
+axis. Already-complete clips therefore have zero remaining time. A non-finite
+or zero speed has no estimate and preserves the existing transition duration.
+This arithmetic is inferred from enum labels and runtime state, not confirmed
+Havok or Skyrim behavior.
+
+The calculation does not inspect compound generators, user-controlled,
+looping, or ping-pong source clips. Those cases preserve the existing duration.
+The community editor's binding UI marks `endMode` as unavailable, and no Skyrim
+runtime lifecycle or vanilla binding usage was established. Synthetic tests
+cover enum/layout and whole-member binding retention, both duration policies,
+crop/reverse/speed, completed and zero-speed sources, transparent wrappers,
+property input, variable precedence at pending commit, and invalid fallback.
+They verify only this implementation. No game assets, SDK source, or engine
+binary data were examined for this extension.
 
 ## Cyclic-wrapper blend-parameter properties
 

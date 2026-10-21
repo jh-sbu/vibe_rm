@@ -1271,10 +1271,43 @@ impl Ctx<'_> {
             })
             .or(t.blend)
             .unwrap_or(0.0);
+        // The community-authored enum names describe source-end policies, but
+        // do not specify their exact interaction with `duration`. For a direct
+        // single-play clip (or transparent wrapper), model "until end" as the
+        // source's remaining wall-clock time and "cap" as min(duration, remain).
+        // Other generators retain the existing duration.
+        let end_mode_input = if let Some(v) = t.end_mode_variable {
+            self.shared.maps[gi]
+                .vars
+                .get(v)
+                .and_then(|&mapped| self.values.get(mapped))
+                .copied()
+        } else {
+            t.end_mode_property.as_ref().and_then(|property| {
+                self.shared
+                    .project
+                    .character
+                    .as_ref()?
+                    .scalar_properties
+                    .get(&property.to_ascii_lowercase())
+                    .copied()
+            })
+        };
+        let end_mode = end_mode_input
+            .and_then(TransitionEndMode::from_input)
+            .unwrap_or(t.end_mode);
+        let source_remaining = m
+            .child
+            .as_deref()
+            .and_then(|from| self.single_play_clip_remaining(from));
         let blend = if again && self_mode == SelfTransitionMode::Reset {
             0.0
         } else {
-            blend
+            match (end_mode, source_remaining) {
+                (TransitionEndMode::UntilFromEnd, Some(remaining)) => remaining,
+                (TransitionEndMode::CapAtFromEnd, Some(remaining)) => blend.min(remaining),
+                _ => blend,
+            }
         };
         // Blend-curve bindings are whole enum inputs. Variables take
         // precedence over character properties; invalid or unsupported values
@@ -1423,6 +1456,40 @@ impl Ctx<'_> {
                 child: Some(child), ..
             } => Self::apply_transition_start_fraction(child, fraction),
             _ => false,
+        }
+    }
+
+    /// Remaining wall-clock time for a direct single-play clip through runtime
+    /// wrappers. Cropping is already reflected by `ClipState::length`; reverse
+    /// playback advances the same clip-local elapsed time. Speed is sampled at
+    /// transition commit just as `advance_clip` resolves its input while running.
+    fn single_play_clip_remaining(&self, node: &Node) -> Option<f32> {
+        match &node.kind {
+            Kind::Clip(clip)
+                if !clip.looping
+                    && !clip.user
+                    && !clip.ping_pong
+                    && clip.length.is_finite()
+                    && clip.t.is_finite() =>
+            {
+                let Generator::Clip { speed, .. } = &self.shared.graph(node.gi).generators[node.g]
+                else {
+                    return None;
+                };
+                let speed = self
+                    .bound(node.gi, node.g, "playbackSpeed")
+                    .unwrap_or(*speed)
+                    .abs();
+                if !speed.is_finite() || speed <= 0.0 {
+                    return None;
+                }
+                let remaining = (clip.length - clip.t).max(0.0) / speed;
+                remaining.is_finite().then_some(remaining)
+            }
+            Kind::Wrap {
+                child: Some(child), ..
+            } => self.single_play_clip_remaining(child),
+            _ => None,
         }
     }
 
@@ -3637,6 +3704,155 @@ mod tests {
             ],
             vec!["Switch".into()],
         )
+    }
+
+    fn end_mode_graph(mode: TransitionEndMode) -> BehaviorGraph {
+        let mut graph = duration_property_graph();
+        let Generator::StateMachine { states, .. } = &mut graph.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].end_mode = mode;
+        graph.generators[1] = clip("Old", ClipMode::SinglePlay, vec![]);
+        graph
+    }
+
+    fn active_blend_length(instance: &Instance) -> Option<f32> {
+        let Kind::Machine(machine) = &instance.root.as_ref()?.kind else {
+            return None;
+        };
+        machine.from.as_ref().map(|(_, _, length)| *length)
+    }
+
+    #[test]
+    fn transition_end_modes_use_crop_reverse_and_speed_aware_source_time() {
+        for (mode, authored_speed, crop_start, crop_end, source_elapsed, expected) in [
+            (TransitionEndMode::UntilFromEnd, 1.0, 0.0, 0.0, 0.1, 0.9),
+            (TransitionEndMode::CapAtFromEnd, 1.0, 0.0, 0.0, 0.1, 0.75),
+            (TransitionEndMode::CapAtFromEnd, 1.0, 0.0, 0.0, 0.5, 0.5),
+            // Cropped length is 0.7; reverse playback still advances clip-local
+            // elapsed time, and speed 2 turns the remaining 0.5 into 0.25 sec.
+            (TransitionEndMode::UntilFromEnd, -2.0, 0.2, 0.1, 0.1, 0.25),
+        ] {
+            let mut graph = end_mode_graph(mode);
+            let Generator::Clip {
+                speed,
+                crop_start: start,
+                crop_end: end,
+                ..
+            } = &mut graph.generators[1]
+            else {
+                unreachable!()
+            };
+            *speed = authored_speed;
+            *start = crop_start;
+            *end = crop_end;
+            let mut instance = instance(graph);
+            instance.update(source_elapsed, &mut durations);
+            assert!(instance.handle_event("Switch", &mut durations));
+            assert_eq!(active_blend_length(&instance), Some(expected));
+        }
+    }
+
+    #[test]
+    fn transition_end_modes_keep_authored_duration_when_source_end_is_unavailable() {
+        // A completed source has no remaining wall-clock duration, so the
+        // transition ends immediately.
+        let mut completed = instance(end_mode_graph(TransitionEndMode::UntilFromEnd));
+        completed.update(1.0, &mut durations);
+        assert!(completed.handle_event("Switch", &mut durations));
+        assert_eq!(active_blend_length(&completed), None);
+
+        // Zero playback speed has no finite end estimate; preserve the existing
+        // authored blend duration rather than divide by zero.
+        let mut graph = end_mode_graph(TransitionEndMode::UntilFromEnd);
+        let Generator::Clip { speed, .. } = &mut graph.generators[1] else {
+            unreachable!()
+        };
+        *speed = 0.0;
+        let mut stopped = instance(graph);
+        assert!(stopped.handle_event("Switch", &mut durations));
+        assert_eq!(active_blend_length(&stopped), Some(0.75));
+
+        for source_mode in [ClipMode::Looping, ClipMode::UserControlled] {
+            let mut graph = end_mode_graph(TransitionEndMode::UntilFromEnd);
+            graph.generators[1] = clip("Old", source_mode, vec![]);
+            let mut unsupported = instance(graph);
+            unsupported.update(0.1, &mut durations);
+            assert!(unsupported.handle_event("Switch", &mut durations));
+            assert_eq!(active_blend_length(&unsupported), Some(0.75));
+        }
+    }
+
+    #[test]
+    fn transition_end_mode_variable_is_sampled_at_pending_commit_and_wins() {
+        let mut graph = end_mode_graph(TransitionEndMode::None);
+        let variable = graph.add_variable("EndPolicy", VarType::Int, 2.0);
+        let Generator::StateMachine { states, .. } = &mut graph.generators[0] else {
+            unreachable!()
+        };
+        let transition = &mut states[0].transitions[0];
+        transition.end_mode_variable = Some(variable);
+        transition.end_mode_property = Some("ENDPOLICY".into());
+        transition.initiate = Some(Interval {
+            enter_event: -1,
+            exit_event: -1,
+            enter_time: 0.1,
+            exit_time: 0.0,
+        });
+        let mut instance = property_instance(graph, &[("endpolicy", 2.0)]);
+        assert!(instance.handle_event("Switch", &mut durations));
+        assert!(instance.set_variable("EndPolicy", 1.0));
+        instance.update(0.1, &mut durations);
+        assert_eq!(active_blend_length(&instance), Some(0.9));
+        assert!(instance.set_variable("EndPolicy", 2.0));
+        assert_eq!(active_blend_length(&instance), Some(0.9));
+    }
+
+    #[test]
+    fn transition_end_mode_property_and_invalid_variable_use_authored_policy() {
+        let mut property_graph = end_mode_graph(TransitionEndMode::None);
+        let Generator::StateMachine { states, .. } = &mut property_graph.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].end_mode_property = Some("ENDPOLICY".into());
+        let mut property = property_instance(property_graph, &[("endpolicy", 1.0)]);
+        property.update(0.1, &mut durations);
+        assert!(property.handle_event("Switch", &mut durations));
+        assert_eq!(active_blend_length(&property), Some(0.9));
+
+        // Invalid variable values do not fall through to a valid duplicate
+        // property; the authored cap mode therefore remains active.
+        let mut invalid_graph = end_mode_graph(TransitionEndMode::CapAtFromEnd);
+        let variable = invalid_graph.add_variable("EndPolicy", VarType::Real, 1.5);
+        let Generator::StateMachine { states, .. } = &mut invalid_graph.generators[0] else {
+            unreachable!()
+        };
+        let transition = &mut states[0].transitions[0];
+        transition.end_mode_variable = Some(variable);
+        transition.end_mode_property = Some("ENDPOLICY".into());
+        let mut invalid = property_instance(invalid_graph, &[("endpolicy", 1.0)]);
+        invalid.update(0.1, &mut durations);
+        assert!(invalid.handle_event("Switch", &mut durations));
+        assert_eq!(active_blend_length(&invalid), Some(0.75));
+    }
+
+    #[test]
+    fn transition_end_mode_reaches_source_clips_through_transparent_wrappers() {
+        let mut graph = end_mode_graph(TransitionEndMode::UntilFromEnd);
+        graph.generators.push(Generator::Wrap {
+            name: "OldWrapper".into(),
+            class: "BSiStateTaggingGenerator".into(),
+            child: Some(1),
+            modifier: None,
+        });
+        let Generator::StateMachine { states, .. } = &mut graph.generators[0] else {
+            unreachable!()
+        };
+        states[0].generator = Some(3);
+        let mut instance = instance(graph);
+        instance.update(0.1, &mut durations);
+        assert!(instance.handle_event("Switch", &mut durations));
+        assert_eq!(active_blend_length(&instance), Some(0.9));
     }
 
     fn target_start_fraction_graph() -> BehaviorGraph {
