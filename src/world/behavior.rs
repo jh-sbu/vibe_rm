@@ -826,6 +826,7 @@ mod pin_tests {
                     animation: "Tail".into(),
                     mode: ClipMode::Looping,
                     speed: 1.0,
+                    enforced_duration: 0.0,
                     user_fraction: 0.0,
                     triggers: vec![],
                     crop_start: 0.0,

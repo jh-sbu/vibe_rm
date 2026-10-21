@@ -228,6 +228,11 @@ game each piece unlocks.
   inputs at activation across single-play, looping, user-controlled and
   ping-pong paths, including synchronized loop detection. Invalid-input and
   lifecycle limits: `known_ambiguities/clip-mode-properties.md`
+- Clip generators resolve authored, graph-variable and character-property
+  `enforcedDuration` inputs through playback advancement, synchronized cycle
+  timing and transition source-end estimates. Positive duration retimes the
+  activated cropped length while preserving reverse direction; update sampling,
+  ping-pong and invalid-input policies: `known_ambiguities/clip-enforced-duration.md`
 - State machines resolve scalar character-property and graph-variable
   `startStateMode` / `syncVariableIndex` inputs at activation, preserving the
   existing default/sync/random paths and graph-local sync state. Lifecycle,
@@ -1320,7 +1325,8 @@ game each piece unlocks.
    - Chooser start states, selectors' own blends
      (`known_ambiguities/selectors.md`)
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
-     properties on remaining generator members, blender-child members beyond `weight`
+     properties on remaining generator members (clip `enforcedDuration` is supported),
+     blender-child members beyond `weight`
      and `boneWeights`, and transition-effect members beyond `duration`,
      `selfTransitionMode`, `eventMode`, the supported subset of `blendCurve`,
      compound-target behavior for `toGeneratorStartTimeFraction`, and source

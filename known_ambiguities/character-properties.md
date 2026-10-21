@@ -50,15 +50,16 @@ on blender children and bone switches.
   (see [timer-properties.md](timer-properties.md)).
 - Generator registrations retain type-1 bindings using the same graph-local
   property-name table and bindable-object layout as modifiers. The runtime
-  resolves scalar properties for `playbackSpeed`, `startTime`,
+  resolves scalar properties for `playbackSpeed`, `startTime`, `enforcedDuration`,
   `userControlledTimeFraction`, `selectedGeneratorIndex`, `blendParameter`,
   `minCyclicBlendParameter`, `maxCyclicBlendParameter`, whole-member blender
   `flags`, `mode`, `startStateId`,
   `startStateMode` and `syncVariableIndex` at their
-  existing input-read sites. Clip start/mode and state-machine
-  start are read on activation; speed, user-controlled time, selector index and
-  blend parameter follow their existing update/sample paths. Synchronized clips'
-  cycle lengths also use property-bound speed. Variable bindings take precedence.
+  existing input-read sites. Clip start/mode/crop and state-machine start are
+  read on activation; speed, enforced duration, user-controlled time, selector
+  index and blend parameter follow their existing update/sample paths. Synchronized clips'
+  cycle lengths also use property-bound speed and enforced duration. Variable
+  bindings take precedence.
   Missing names or excluded non-scalar values preserve the authored fallback.
   `currentStateId` output writes still target graph variables only: properties
   cannot become animation variables or be overwritten by a state transition.
@@ -71,6 +72,8 @@ on blender children and bone switches.
   activation-only policy are detailed in [`clip-mode-properties.md`](clip-mode-properties.md).
   State-machine mode/index inputs and their activation-only policy are detailed
   in [`state-machine-start-properties.md`](state-machine-start-properties.md).
+  Clip enforced-duration timing and its interaction with speed/crops are
+  detailed in [`clip-enforced-duration.md`](clip-enforced-duration.md).
   Blender flags' supported bits, shared pose/timing reads and bit-binding limits
   are detailed in [`blender-flags-properties.md`](blender-flags-properties.md).
 - Shared runtime caching includes the character-file identity. DefaultMale and
@@ -311,9 +314,11 @@ single-play source clip (or a runtime-transparent wrapper around one), mode `1`
 sets cross-fade duration to its remaining wall-clock playback time and mode `2`
 uses the lesser of that time and the authored/bound cross-fade duration.
 Remaining time uses the activated cropped length, elapsed clip-local time, and
-the absolute resolved playback speed; reverse clips use the same elapsed-time
-axis. Already-complete clips therefore have zero remaining time. A non-finite
-or zero speed has no estimate and preserves the existing transition duration.
+the absolute effective clip rate (including a positive `enforcedDuration`; see
+[`clip-enforced-duration.md`](clip-enforced-duration.md)); reverse clips use
+the same elapsed-time axis. Already-complete clips therefore have zero
+remaining time. A non-finite or zero effective rate has no estimate and
+preserves the existing transition duration.
 This arithmetic is inferred from enum labels and runtime state, not confirmed
 Havok or Skyrim behavior.
 
