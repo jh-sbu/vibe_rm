@@ -29,3 +29,24 @@ implementation policies and unresolved original-runtime behavior must be distinc
 If evidence cannot support an item, record its blocker in known_ambiguities and
 choose another implementable roadmap subitem; do not count a blocker as completed.
 Synthetic graphs verify our implementation, not Skyrim SE runtime parity.
+
+## Completion record
+
+All five bounded items are implemented and separately reviewed/committed:
+
+1. `blendCurve`: linear and prior smoothstep behavior only; asymmetric enum
+   formulas remain unresolved (`known_ambiguities/character-properties.md`).
+2. `toGeneratorStartTimeFraction`: direct clips and transparent wrappers only;
+   compound targets remain unresolved (`known_ambiguities/character-properties.md`).
+3. `endMode`: direct finite single-play source clips and transparent wrappers;
+   compound and looping-source timing remain unresolved
+   (`known_ambiguities/character-properties.md`).
+4. `enforcedDuration`: shared playback, sync-cycle and source-end rate policy;
+   Skyrim-specific timing semantics remain unverified
+   (`known_ambiguities/clip-enforced-duration.md`).
+5. `indexOfSyncMasterChild`: explicit and automatic trigger-master selection in
+   direct and nested synchronized blenders; event-routing policy is inferred
+   (`known_ambiguities/blender-sync-master.md`).
+
+Each item has focused synthetic parser/runtime regressions. These tests validate
+the repository's policy, not original-engine parity.

@@ -76,6 +76,8 @@ on blender children and bone switches.
   detailed in [`clip-enforced-duration.md`](clip-enforced-duration.md).
   Blender flags' supported bits, shared pose/timing reads and bit-binding limits
   are detailed in [`blender-flags-properties.md`](blender-flags-properties.md).
+  Blender sync-master index layout and trigger routing are detailed in
+  [`blender-sync-master.md`](blender-sync-master.md).
 - Shared runtime caching includes the character-file identity. DefaultMale and
   DefaultFemale can use the same root graph while retaining their own property
   values and character driver settings.
