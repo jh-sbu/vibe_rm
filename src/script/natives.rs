@@ -553,7 +553,7 @@ pub fn call(
             let wait = str_arg(args, 1);
             log::debug!("{r}: {event}, waiting for {wait}");
             NativeResult::WaitFor {
-                key: crate::anim_events::wait_key(r, &wait),
+                key: e.anim_events.wait_for(r, &wait),
                 timeout: crate::anim_events::WAIT_LIMIT,
                 value: Value::Bool(true),
             }

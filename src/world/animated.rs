@@ -80,6 +80,42 @@ pub struct AnimatedObject {
     pub graph: Option<ObjectGraph>,
 }
 
+#[cfg(test)]
+pub(crate) fn test_graph_object(
+    ref_id: FormId,
+    graph: crate::world::behavior::GraphAnim,
+) -> AnimatedObject {
+    AnimatedObject {
+        ref_id,
+        transform: Mat4::IDENTITY,
+        position: Vec3::ZERO,
+        anim: Arc::new(ModelAnim {
+            parts: Vec::new(),
+            sequences: Vec::new(),
+            controllers: Vec::new(),
+            start: 0.0,
+            graph: None,
+        }),
+        locals: Vec::new(),
+        instances: Vec::new(),
+        colliders: Vec::new(),
+        door: false,
+        open: false,
+        auto: false,
+        clear_for: 0.0,
+        playing: None,
+        age: 0.0,
+        graph: Some(ObjectGraph {
+            anim: graph,
+            skeleton: Arc::new(crate::world::skeleton::Skeleton::default()),
+            bones: Vec::new(),
+            colliders: Vec::new(),
+            moved: Vec::new(),
+            dt: 0.0,
+        }),
+    }
+}
+
 /// An object's running behaviour graph.
 pub struct ObjectGraph {
     anim: crate::world::behavior::GraphAnim,

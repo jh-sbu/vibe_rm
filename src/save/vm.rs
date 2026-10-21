@@ -27,6 +27,9 @@ pub struct VmSnapshot {
     pub anim_registrations: Vec<(ObjectId, String, FormId, String)>,
     pub message_boxes: VecDeque<crate::messages::MessageBox>,
     pub message_next_key: u64,
+    /// (runtime wait key, sender, canonical event). `ANMW` encodes these as
+    /// semantic descriptors tied to the filtered VM thread order.
+    pub animation_waits: Vec<(u64, FormId, String)>,
 }
 
 /// Arrays met while writing, by identity.
@@ -375,11 +378,37 @@ impl VmSnapshot {
                 }
             }
             m.len(waits.len());
-            for (thread, key) in waits {
-                m.u32(thread as u32);
-                m.u64(key);
+            for (thread, key) in &waits {
+                m.u32(*thread as u32);
+                m.u64(*key);
             }
             file.add(b"MBXW", m.0);
+        }
+
+        let message_threads: std::collections::HashSet<usize> =
+            waits.iter().map(|(thread, _)| *thread).collect();
+        let animation_waits: Vec<_> = threads
+            .iter()
+            .enumerate()
+            .filter(|(i, t)| !message_threads.contains(i) && t.waiting_for.is_some())
+            .filter_map(|(thread, t)| {
+                let key = t.waiting_for?;
+                let (_, sender, event) = self
+                    .animation_waits
+                    .iter()
+                    .find(|(wait_key, _, _)| *wait_key == key)?;
+                Some((thread, *sender, event))
+            })
+            .collect();
+        if !animation_waits.is_empty() {
+            let mut a = Writer::default();
+            a.len(animation_waits.len());
+            for (thread, sender, event) in animation_waits {
+                a.u32(thread as u32);
+                a.form(sender);
+                a.str(&event.to_ascii_lowercase());
+            }
+            file.add(b"ANMW", a.0);
         }
     }
 
@@ -405,6 +434,7 @@ impl VmSnapshot {
 
         let mut r = section(b"VM  ")?;
         let mut s = VmSnapshot::default();
+        let mut message_threads = std::collections::HashSet::new();
         for _ in 0..r.count(10)? {
             let obj = get_object(&mut r)?;
             let script: Arc<str> = Arc::from(r.str()?);
@@ -569,12 +599,41 @@ impl VmSnapshot {
                 {
                     return Err(Corrupt("invalid message-box thread link".into()));
                 }
+                message_threads.insert(thread);
                 s.vm.threads[thread].waiting_for = Some(key);
             }
             if linked_keys != box_keys {
                 return Err(Corrupt("message-box wait without a saved thread".into()));
             }
             s.message_next_key = next_key;
+            r.finish()?;
+        }
+        if let Some(mut r) = file.section(b"ANMW").map(Reader::new) {
+            use std::collections::HashSet;
+
+            let mut linked_threads = HashSet::new();
+            let mut descriptors: HashMap<u64, (FormId, String)> = HashMap::new();
+            for _ in 0..r.count(12)? {
+                let thread = r.u32()? as usize;
+                let sender = r.form()?;
+                let event = r.str()?.to_ascii_lowercase();
+                if thread >= s.vm.threads.len()
+                    || sender.is_null()
+                    || !linked_threads.insert(thread)
+                    || message_threads.contains(&thread)
+                {
+                    return Err(Corrupt("invalid animation-wait thread link".into()));
+                }
+                let key = crate::anim_events::wait_key(sender, &event);
+                if let Some((prior_sender, prior_event)) = descriptors.get(&key)
+                    && (*prior_sender != sender || *prior_event != event)
+                {
+                    return Err(Corrupt("animation wait-key collision".into()));
+                }
+                descriptors.insert(key, (sender, event.clone()));
+                s.vm.threads[thread].waiting_for = Some(key);
+                s.animation_waits.push((key, sender, event));
+            }
             r.finish()?;
         }
         Ok(s)
@@ -866,5 +925,96 @@ mod tests {
         let back = VmSnapshot::read(&file).unwrap();
         assert_eq!(back.vm.threads[0].waiting_for, None);
         assert_eq!(back.vm.threads[0].wake_in, 1.25);
+    }
+
+    #[test]
+    fn animation_waits_round_trip_on_the_filtered_thread_order() {
+        let (mut s, _) = sample();
+        let sender = FormId(0x44);
+        let key = crate::anim_events::wait_key(sender, "Done");
+        s.vm.threads[0].waiting_for = Some(key);
+        s.vm.threads.push(s.vm.threads[0].clone());
+        s.vm.threads.push({
+            let mut effect = s.vm.threads[0].clone();
+            effect.frames[0].this = Some((ObjectId::Effect(7), "effect".into()));
+            effect
+        });
+        s.animation_waits = vec![(key, sender, "done".into())];
+
+        let mut file = SaveFile::default();
+        s.write(&mut file);
+        assert!(file.section(b"ANMW").is_some());
+        let back = VmSnapshot::read(&SaveFile::from_bytes(&file.to_bytes()).unwrap()).unwrap();
+        assert_eq!(back.vm.threads.len(), 2, "effect-owned thread is filtered");
+        assert_eq!(back.vm.threads[0].waiting_for, Some(key));
+        assert_eq!(back.vm.threads[1].waiting_for, Some(key));
+        assert_eq!(back.animation_waits, vec![(key, sender, "done".into()); 2]);
+        let mut again = SaveFile::default();
+        back.write(&mut again);
+        assert_eq!(again.to_bytes(), file.to_bytes());
+
+        let mut legacy = file;
+        legacy.sections.retain(|(tag, _)| tag != b"ANMW");
+        let back = VmSnapshot::read(&legacy).unwrap();
+        assert!(back.animation_waits.is_empty());
+        assert_eq!(back.vm.threads.len(), 2);
+        assert!(back.vm.threads.iter().all(|t| t.waiting_for.is_none()));
+    }
+
+    #[test]
+    fn malformed_animation_wait_metadata_is_refused() {
+        let (mut s, _) = sample();
+        let sender = FormId(0x44);
+        let key = crate::anim_events::wait_key(sender, "done");
+        s.vm.threads[0].waiting_for = Some(key);
+        s.animation_waits = vec![(key, sender, "done".into())];
+        let mut valid = SaveFile::default();
+        s.write(&mut valid);
+
+        let mut bad_files = Vec::new();
+        let mut truncated = valid.clone();
+        truncated
+            .sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"ANMW")
+            .unwrap()
+            .1
+            .pop();
+        bad_files.push(truncated);
+        let mut trailing = valid.clone();
+        trailing
+            .sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"ANMW")
+            .unwrap()
+            .1
+            .push(0);
+        bad_files.push(trailing);
+        for (field_offset, value) in [(4, u32::MAX), (8, 0)] {
+            let mut bad = valid.clone();
+            let payload = &mut bad
+                .sections
+                .iter_mut()
+                .find(|(tag, _)| tag == b"ANMW")
+                .unwrap()
+                .1;
+            payload[field_offset..field_offset + 4].copy_from_slice(&value.to_le_bytes());
+            bad_files.push(bad);
+        }
+        let mut duplicate = valid.clone();
+        let payload = &mut duplicate
+            .sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"ANMW")
+            .unwrap()
+            .1;
+        let one_record = payload[4..].to_vec();
+        payload[0..4].copy_from_slice(&2u32.to_le_bytes());
+        payload.extend_from_slice(&one_record);
+        bad_files.push(duplicate);
+
+        for file in bad_files {
+            assert!(VmSnapshot::read(&file).is_err());
+        }
     }
 }
