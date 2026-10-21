@@ -470,6 +470,36 @@ impl Engine {
                 || self.casting.firing.iter().flatten().any(|f| !f.fired))
     }
 
+    /// The spell `actor` casts from a hand (`LEFT` or `RIGHT`) now: the
+    /// player's held spell or one let go and not yet fired, or an actor's
+    /// cast in combat. None for the voice (no hand's state) and when nothing
+    /// is cast.
+    pub(crate) fn hand_casting(&self, actor: FormId, hand: usize) -> Option<FormId> {
+        if actor == PLAYER_REF {
+            self.casting
+                .hands
+                .get(hand)?
+                .as_ref()
+                .map(|h| h.spell)
+                .or_else(|| {
+                    self.casting
+                        .firing
+                        .get(hand)?
+                        .as_ref()
+                        .filter(|f| !f.fired)
+                        .map(|f| f.spell)
+                })
+        } else {
+            self.actor_ref(actor)?
+                .combat
+                .as_ref()?
+                .hand_cast
+                .as_ref()
+                .filter(|h| h.hand == hand)
+                .map(|h| h.cast.spell.spell)
+        }
+    }
+
     /// Start a hand's cast in the body's graph: into the casting state (the
     /// graph ignores it there already), then the hand's kind of cast. False
     /// if the graph won't.
@@ -1808,3 +1838,7 @@ mod story_cast_tests {
 #[cfg(test)]
 #[path = "casting_scroll_tests.rs"]
 mod scroll_tests;
+
+#[cfg(test)]
+#[path = "casting_condition_tests.rs"]
+mod condition_tests;

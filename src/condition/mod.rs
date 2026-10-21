@@ -5,6 +5,7 @@ pub mod functions;
 use esp::{FormId, LoadedRecord};
 
 use crate::engine::{Engine, PLAYER_REF};
+use crate::spells::{LEFT, RIGHT, VOICE};
 
 #[derive(Debug, Clone)]
 pub struct Condition {
@@ -201,6 +202,18 @@ pub(crate) fn param_is_form(func: u16, n: u8) -> bool {
             | "ptVATSValueParam"
             | "ptWardState"
     )
+}
+
+/// The engine's hand (or voice) slot of a casting source (`ptCastingSource`):
+/// 0 the left hand, 1 the right, 2 the other (the voice), as CommonLibSSE's
+/// `CastingSource`. None for anything else.
+fn casting_hand(source: u32) -> Option<usize> {
+    match source {
+        0 => Some(LEFT),
+        1 => Some(RIGHT),
+        2 => Some(VOICE),
+        _ => None,
+    }
 }
 
 /// Who a condition is evaluated on.
@@ -684,17 +697,49 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // on its caster. Vanilla cost perks use this to select their tier.
         713 => b(subject.and_then(|s| e.spell_casting_perk(s)) == Some(p1)),
         632 => b(subject.is_some_and(|s| e.is_casting(s))), // IsCasting
+        // Casting sources (`ptCastingSource`): the hands' and the voice's
+        // spells. The voice has no casting state (powers are cast at once),
+        // so its casting type, delivery and spell are unsupported.
+        570 => {
+            // HasEquippedSpell: a spell (or power, shout) in the slot.
+            let slot = casting_hand(c.p1)?;
+            b(subject.is_some_and(|s| e.equipped_spell(s, slot).is_some()))
+        }
+        571 | 572 => {
+            let hand = casting_hand(c.p1).filter(|&h| h != VOICE)?;
+            let item = subject
+                .and_then(|s| e.hand_casting(s, hand))
+                .and_then(|spell| e.magic_item(spell));
+            // -1 when the hand casts nothing (as `GetFactionRank` does).
+            Some(item.map_or(-1.0, |m| {
+                (if c.func == 571 {
+                    m.cast_type
+                } else {
+                    m.delivery
+                }) as f32
+            })) // GetCurrentCastingType / GetCurrentDeliveryType
+        }
+        595 => {
+            let hand = casting_hand(c.p2).filter(|&h| h != VOICE)?;
+            b(subject.and_then(|s| e.hand_casting(s, hand)) == Some(p1)) // IsCurrentSpell
+        }
+        596 => {
+            let hand = casting_hand(c.p1).filter(|&h| h != VOICE)?;
+            b(subject
+                .and_then(|s| e.hand_casting(s, hand))
+                .is_some_and(|spell| e.spell_has_keyword(spell, FormId(c.p2)))) // SpellHasKeyword
+        }
         627 => b(subject.is_some_and(|s| e.is_dual_casting(s))), // IsDualCasting
         602 => b(subject.is_some_and(|s| e.ward_state(s) == c.p1 as i32)), // IsWardState
-        724 => b(ctx.dual_cast),                            // EffectWasDualCast
+        724 => b(ctx.dual_cast),                                 // EffectWasDualCast
         161 => b(subject.is_some_and(|s| e.runs_package(s, p1))), // GetIsCurrentPackage
         579 => b(subject.is_some_and(|s| e.equipped_shout(s) == Some(p1))), // GetEquippedShout
-        378 => b(subject.is_some_and(|s| e.has_shout(s, p1))), // HasShout
-        463 => b(e.grabbed_ref().is_some_and(|g| g == p1)), // IsPlayerGrabbedRef
-        286 => b(subject.is_some_and(|s| e.is_sneaking(s))), // IsSneaking
-        45 => b(subject.is_some_and(|s| e.detects(s, p1))), // GetDetected
-        91 => b(subject.is_some_and(|s| e.is_alerted(s))),  // GetIsAlerted
-        711 => Some(subject.map_or(0.0, |s| e.light_level(s))), // GetLightLevel
+        378 => b(subject.is_some_and(|s| e.has_shout(s, p1))),   // HasShout
+        463 => b(e.grabbed_ref().is_some_and(|g| g == p1)),      // IsPlayerGrabbedRef
+        286 => b(subject.is_some_and(|s| e.is_sneaking(s))),     // IsSneaking
+        45 => b(subject.is_some_and(|s| e.detects(s, p1))),      // GetDetected
+        91 => b(subject.is_some_and(|s| e.is_alerted(s))),       // GetIsAlerted
+        711 => Some(subject.map_or(0.0, |s| e.light_level(s))),  // GetLightLevel
         255 => b(subject.is_some_and(|s| e.offers_services_now(s))), // GetOffersServicesNow
         289 => {
             b(subject.is_some_and(|s| e.combat_state(s) != crate::ai::combat::CombatState::None))
@@ -702,8 +747,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         323 => Some(subject.map_or(0, |s| e.combat_state(s) as i32) as f32), // GetCombatState
         513 => b(subject.is_some_and(|s| e.combat_target(s) == Some(p1))), // IsCombatTarget
         673 => b(subject.is_some_and(|s| e.power_attacking(s))), // IsPowerAttacking
-        103 => b(subject.is_some_and(|s| e.shield_out(s))), // IsShieldOut
-        102 => b(subject.is_some_and(|s| e.torch_out(s))),  // IsTorchOut
+        103 => b(subject.is_some_and(|s| e.shield_out(s))),      // IsShieldOut
+        102 => b(subject.is_some_and(|s| e.torch_out(s))),       // IsTorchOut
         580 => b(subject.is_some_and(|s| e.is_bleeding_out(s))), // IsBleedingOut
         332 => b(subject.is_some_and(|s| e.is_in_dangerous_water(s))),
         // Nobody flies, swims or feeds yet.

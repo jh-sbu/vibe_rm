@@ -573,7 +573,9 @@ game each piece unlocks.
   food and ingredients used from the inventory; spell tomes teaching their
   spells. Conditions `HasMagicEffect`,
   `HasMagicEffectKeyword`, `HasSpell`, `IsSpellTarget`,
-  `EPMagic_SpellHasKeyword` / `SpellHasSkill`; Papyrus `AddSpell`,
+  `EPMagic_SpellHasKeyword` / `SpellHasSkill`; the hands' casting
+  (`HasEquippedSpell`, `GetCurrentCastingType` / `GetCurrentDeliveryType`,
+  `IsCurrentSpell`, `SpellHasKeyword`: `known_ambiguities/casting.md`); Papyrus `AddSpell`,
   `RemoveSpell`, `HasSpell`, `DispelSpell`, `DispelAllSpells`,
   `HasMagicEffect(WithKeyword)`, `DoCombatSpellApply`, `EquipItem` /
   `UnequipItem`, `Spell.Cast` / `RemoteCast`, `ActiveMagicEffect`'s getters,
@@ -1529,7 +1531,10 @@ game each piece unlocks.
      See `known_ambiguities/water.md` and
      `known_ambiguities/triggers.md` (lava is scripted triggers, fires
      are placed hazards: see Done)
-   - Magic, more: detect life, throwing with telekinesis; dropped soul gems'
+   - Magic, more: detect life, throwing with telekinesis; the voice's casting
+     conditions (source 2 of `GetCurrentCastingType`, `GetCurrentDeliveryType`,
+     `IsCurrentSpell`, `SpellHasKeyword`: powers are cast at once and shouts
+     have no casting state, so they stay unsupported); dropped soul gems'
      per-item souls (public reports describe emptying: see
      `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
      taper, area, addictions, the rest of potion and food flags; image-space modifiers
