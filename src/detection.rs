@@ -14,7 +14,8 @@
 //!            weight) * (fSneakRunningMult running), 0 standing still
 //! visual = (fDetectionSneakLightMod + light level) * fSneakLightMult
 //!          * (1 + fSneakLightMoveMult moving + fSneakLightRunMult running),
-//!          0 when the target can't be seen
+//!          * (100 - observer blindness) / 100 while the target sneaks and
+//!          the observer is out of combat; 0 when the target can't be seen
 //! observer skill = (fSneakPerceptionSkillMin + (Max - Min) * Sneak / 100)
 //!          * (1 + fSneakCombatMod when the target isn't its combat target)
 //! ```
@@ -35,7 +36,7 @@ use esp::actor_value as av;
 use esp::{FormId, LoadOrder};
 use glam::Vec3;
 
-use crate::ai::combat::{gmst_f32, gmst_i32};
+use crate::ai::combat::{CombatState, gmst_f32, gmst_i32};
 use crate::engine::{Engine, Location, PLAYER_REF};
 
 /// How often loaded actors' detection of the player is worked out (seconds).
@@ -50,6 +51,21 @@ const LIGHT_SCALE: f32 = 100.0;
 const LIGHT_MAX: f32 = 150.0;
 /// How far up to look for something shading a point from the sun.
 const SUN_RAY: f32 = 20000.0;
+
+/// The documented blindness AV percentage scales only the sight contribution.
+/// Invalid values default to 0 blindness; valid values are constrained to the
+/// documented percentage range.
+fn visual_blindness_multiplier(blindness: f32, target_sneaking: bool, state: CombatState) -> f32 {
+    if !target_sneaking || state != CombatState::None {
+        return 1.0;
+    }
+    let blindness = if blindness.is_finite() {
+        blindness.clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
+    (100.0 - blindness) / 100.0
+}
 
 /// The game settings detection is built from. Those Skyrim.esm doesn't carry
 /// default to the values UESP and the CK wiki give.
@@ -342,6 +358,16 @@ impl Engine {
             }
     }
 
+    /// The observer's current blindness affects only sight of a sneaking
+    /// target while they have no combat state.
+    fn blindness_visual_multiplier(&self, observer: FormId, target_sneaking: bool) -> f32 {
+        visual_blindness_multiplier(
+            self.actor_value(observer, av::BLINDNESS),
+            target_sneaking,
+            self.combat_state(observer),
+        )
+    }
+
     fn outdoors(&self) -> bool {
         matches!(self.location, Location::Exterior { .. })
     }
@@ -435,7 +461,8 @@ impl Engine {
         Some(self.detection_between(&o, &t)?.0)
     }
 
-    /// The detection value and whether `o` sees `t` (light aside).
+    /// The detection value and whether `o` has a geometric view of `t`
+    /// (blindness and light aside).
     fn detection_between(&self, o: &Observer, t: &Target) -> Option<(f32, bool)> {
         let s = self.detection_settings();
         let range = self.detection_range(&s);
@@ -475,6 +502,7 @@ impl Engine {
                     1.0
                 }
                 * self.perk_entry_point(ep::MOD_DETECTION_LIGHT, o.id, &about, 1.0)
+                * self.blindness_visual_multiplier(o.id, t.sneaking)
         } else {
             0.0
         };
@@ -946,5 +974,129 @@ impl Engine {
         rows.sort_by(|a, b| b.0.total_cmp(&a.0));
         out.extend(rows.into_iter().map(|r| r.1));
         out
+    }
+}
+
+#[cfg(test)]
+mod blindness_tests {
+    use super::*;
+
+    #[test]
+    fn blindness_scales_vision_only_in_the_documented_context() {
+        assert_eq!(
+            visual_blindness_multiplier(0.0, true, CombatState::None),
+            1.0
+        );
+        assert_eq!(
+            visual_blindness_multiplier(40.0, true, CombatState::None),
+            0.6
+        );
+        assert_eq!(
+            visual_blindness_multiplier(100.0, true, CombatState::None),
+            0.0
+        );
+
+        assert_eq!(
+            visual_blindness_multiplier(100.0, false, CombatState::None),
+            1.0
+        );
+        assert_eq!(
+            visual_blindness_multiplier(100.0, true, CombatState::Fighting),
+            1.0
+        );
+        assert_eq!(
+            visual_blindness_multiplier(100.0, true, CombatState::Searching),
+            1.0
+        );
+    }
+
+    #[test]
+    fn invalid_blindness_values_default_to_zero_and_finite_values_are_clamped() {
+        assert_eq!(
+            visual_blindness_multiplier(-10.0, true, CombatState::None),
+            1.0
+        );
+        assert_eq!(
+            visual_blindness_multiplier(120.0, true, CombatState::None),
+            0.0
+        );
+        assert_eq!(
+            visual_blindness_multiplier(f32::NAN, true, CombatState::None),
+            1.0
+        );
+        assert_eq!(
+            visual_blindness_multiplier(f32::INFINITY, true, CombatState::None),
+            1.0
+        );
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn blindness_changes_the_actual_visual_term_but_not_sound_or_visibility() {
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let fixture = Fixture(std::env::temp_dir().join(format!(
+            "vrm-detection-blindness-{}-{stamp}",
+            std::process::id()
+        )));
+        std::fs::create_dir(&fixture.0).unwrap();
+        let plugin = esp::writer::write_plugin(0, &[], "test", "blindness", 0x900, &[]);
+        std::fs::write(fixture.0.join("Blindness.esp"), plugin).unwrap();
+        let mut engine = crate::stats::action_tests::headless_engine(&fixture.0, "Blindness.esp");
+        let observer = Observer {
+            id: PLAYER_REF,
+            eye: Vec3::ZERO,
+            heading: 0.0,
+            sneak: engine.actor_value(PLAYER_REF, av::SNEAK),
+            sleeping: false,
+        };
+        let mut target = Target {
+            id: FormId(0x901),
+            at: Vec3::new(0.0, 200.0, 0.0),
+            sneaking: true,
+            moving: true,
+            running: false,
+            armor_weight: 0.0,
+            sneak: 0.0,
+            stealth: 0.0,
+            invisible: false,
+            muffle: 0.0,
+        };
+
+        engine.set_actor_value(PLAYER_REF, av::BLINDNESS, 0.0);
+        let (unimpaired, sees_unimpaired) = engine.detection_between(&observer, &target).unwrap();
+        engine.set_actor_value(PLAYER_REF, av::BLINDNESS, 50.0);
+        let (half_blind, sees_half_blind) = engine.detection_between(&observer, &target).unwrap();
+        engine.set_actor_value(PLAYER_REF, av::BLINDNESS, 100.0);
+        let (fully_blind, sees_fully_blind) = engine.detection_between(&observer, &target).unwrap();
+
+        assert!((half_blind - (unimpaired + fully_blind) * 0.5).abs() < 0.001);
+        assert!(unimpaired > half_blind && half_blind > fully_blind);
+        assert!(sees_unimpaired && sees_half_blind && sees_fully_blind);
+
+        // At maximum blindness, moving sound still contributes to the actual
+        // detection formula because stationary and moving share zero vision.
+        target.moving = false;
+        let (fully_blind_stationary, sees_stationary) =
+            engine.detection_between(&observer, &target).unwrap();
+        assert!(fully_blind > fully_blind_stationary);
+        assert!(sees_stationary);
+
+        target.moving = true;
+        engine.set_actor_value(PLAYER_REF, av::BLINDNESS, 0.0);
+        engine.set_actor_value(target.id, av::BLINDNESS, 100.0);
+        let (target_blind, sees_target_blind) =
+            engine.detection_between(&observer, &target).unwrap();
+        assert_eq!(target_blind, unimpaired);
+        assert_eq!(sees_target_blind, sees_unimpaired);
     }
 }
