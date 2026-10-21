@@ -117,6 +117,18 @@ its data isn't public; the choices below are what the movie's code allows.
   equal counts keep the incumbent until another overtakes it. School names
   use the translated `AVIF` name. These policies need in-game comparison;
   no engine binaries were examined to choose them.
+- **Favorite Weapon.** UESP's [Statistics page, revision 3569833](https://en.uesp.net/w/index.php?oldid=3569833), lines 158–159, says this
+  is the weapon most often used and limits it to melee weapons or bows. It does
+  not define the usage event, whether a hit is required, how dual wielding is
+  weighted, draw strength, or tie handling. This implementation counts once
+  per accepted player melee attack (misses included), once for each weapon in
+  an accepted two-weapon attack, and once when a player bow actually releases
+  an arrow after the hold and ammunition checks. Bashes, staves, fists,
+  crossbows, spells, canceled or too-short draws, missing ammunition, NPC
+  actions, and hit-frame/projectile callbacks are excluded. Ties retain the
+  current leader. The displayed value is the weapon form's normal localized
+  name. These event and tie policies are inferences and need comparison with
+  Skyrim SE gameplay.
 - **The System page**: the Creations entry is left out (`ShouldShowMod`
   false). With the game's menus, Esc no longer lets go of the mouse or
   quits: it opens the journal (egui's HUD keeps the old Esc).

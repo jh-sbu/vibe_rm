@@ -3246,13 +3246,25 @@ impl Engine {
             return;
         }
         log::debug!("player attacks: {event} ({side:?})");
+        let ignore = attack
+            .as_ref()
+            .is_some_and(|a| a.flags & ATK_IGNORE_WEAPON != 0);
+        if !ignore {
+            let used: Vec<_> = side
+                .hands()
+                .iter()
+                .filter_map(|&h| weapon(self, h))
+                .collect();
+            for id in used {
+                if !crate::ai::archery::is_bow(&self.lo, id) {
+                    self.count_weapon_use(id);
+                }
+            }
+        }
         if power {
             self.spend_stamina(PLAYER_REF, cost);
         }
         let stats = self.player_stats();
-        let ignore = attack
-            .as_ref()
-            .is_some_and(|a| a.flags & ATK_IGNORE_WEAPON != 0);
         let mut blows = [None; 2];
         for &h in side.hands() {
             let (damage, reach) = match weapon(self, h)

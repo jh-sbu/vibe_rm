@@ -15,6 +15,12 @@ const HEAL: FormId = FormId(0x812);
 const CHANNEL: FormId = FormId(0x813);
 const SHOUT: FormId = FormId(0x820);
 const WORD: FormId = FormId(0x830);
+const SWORD: FormId = FormId(0x840);
+const AXE: FormId = FormId(0x841);
+const STAFF: FormId = FormId(0x842);
+const BOW: FormId = FormId(0x843);
+const ARROW: FormId = FormId(0x844);
+const PROJECTILE: FormId = FormId(0x845);
 
 struct Fixture(std::path::PathBuf);
 
@@ -134,6 +140,45 @@ fn fixture() -> (Fixture, Engine) {
                     .zstring(b"FULL", "Translated Restoration"),
             ],
         ),
+        Node::top(
+            b"WEAP",
+            [
+                (SWORD, "Test Sword", 1),
+                (AXE, "Test Axe", 3),
+                (STAFF, "Test Staff", 8),
+                (BOW, "Test Bow", 7),
+            ]
+            .into_iter()
+            .map(|(id, name, kind)| {
+                let mut dnam = [0; 12];
+                dnam[0] = kind;
+                dnam[4..8].copy_from_slice(&1.0f32.to_le_bytes());
+                dnam[8..12].copy_from_slice(&1.0f32.to_le_bytes());
+                let mut data = [0; 12];
+                data[8..10].copy_from_slice(&8u16.to_le_bytes());
+                RecordBuilder::new(b"WEAP", id)
+                    .zstring(b"FULL", name)
+                    .field(b"DNAM", &dnam)
+                    .field(b"DATA", &data)
+            })
+            .collect(),
+        ),
+        Node::top(
+            b"AMMO",
+            vec![{
+                let mut data = [0; 12];
+                data[0..4].copy_from_slice(&PROJECTILE.0.to_le_bytes());
+                data[4..8].copy_from_slice(&4u32.to_le_bytes());
+                data[8..12].copy_from_slice(&2.0f32.to_le_bytes());
+                RecordBuilder::new(b"AMMO", ARROW)
+                    .zstring(b"FULL", "Test Arrow")
+                    .field(b"DATA", &data)
+            }],
+        ),
+        Node::top(
+            b"PROJ",
+            vec![RecordBuilder::new(b"PROJ", PROJECTILE).field(b"DATA", &[0; 16])],
+        ),
         Node::top(b"NPC_", vec![RecordBuilder::new(b"NPC_", FormId(0x898))]),
         Node::top(
             b"ACHR",
@@ -196,6 +241,24 @@ fn release_spell(e: &mut Engine, spell: FormId, held: f32) {
     assert!(e.player_cast_press(RIGHT));
     e.update_casting(held);
     assert!(e.player_cast_release(RIGHT));
+}
+
+fn carry_weapon(e: &mut Engine, weapon: FormId, count: i32) {
+    e.inventories
+        .entry(PLAYER_REF)
+        .or_default()
+        .add(weapon, count);
+    e.equip_in(PLAYER_REF, weapon, None).unwrap();
+}
+
+fn weapon_uses(e: &Engine, weapon: FormId) -> u64 {
+    e.scripts
+        .weapon_usage
+        .usage
+        .counts
+        .get(&weapon)
+        .copied()
+        .unwrap_or(0)
 }
 
 #[test]
@@ -319,4 +382,102 @@ fn magic_favorites_follow_actual_actions_without_duplicate_landings() {
         StatValue::Name("Test Shout".into())
     );
     assert_eq!(spell_uses(&e, FIRE), 2);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn favorite_weapon_tracks_accepted_attacks_and_actual_bow_releases() {
+    let (_fixture, mut e) = fixture();
+    assert_eq!(e.stat("Favorite Weapon"), StatValue::Name(String::new()));
+    assert_eq!(e.query_stat("Favorite Weapon"), 0);
+
+    carry_weapon(&mut e, SWORD, 1);
+    e.disabled_controls.fighting = true;
+    e.player_attack(crate::ai::combat::Side::Right, false);
+    assert_eq!(weapon_uses(&e, SWORD), 0);
+    e.disabled_controls.fighting = false;
+
+    e.player_attack(crate::ai::combat::Side::Right, false);
+    assert_eq!(weapon_uses(&e, SWORD), 1);
+    carry_weapon(&mut e, AXE, 1);
+    e.player_attack_recovery = 0.0;
+    e.player_attack(crate::ai::combat::Side::Right, false);
+    assert_eq!(weapon_uses(&e, AXE), 1);
+    assert_eq!(
+        e.stat("Favorite Weapon"),
+        StatValue::Name("Test Sword".into())
+    );
+    e.player_attack_recovery = 0.0;
+    e.player_attack(crate::ai::combat::Side::Right, false);
+    assert_eq!(weapon_uses(&e, AXE), 2);
+    assert_eq!(
+        e.stat("Favorite Weapon"),
+        StatValue::Name("Test Axe".into())
+    );
+
+    // Staff and bare hand actions are accepted combat actions, but not eligible
+    // weapon uses. Bashes use their separate action path.
+    carry_weapon(&mut e, STAFF, 1);
+    e.player_attack_recovery = 0.0;
+    e.player_attack(crate::ai::combat::Side::Right, false);
+    assert_eq!(weapon_uses(&e, STAFF), 0);
+    e.player_bash();
+    assert_eq!(weapon_uses(&e, STAFF), 0);
+    e.inventories.get_mut(&PLAYER_REF).unwrap().take_off(STAFF);
+    e.player_attack_recovery = 0.0;
+    e.player_attack(crate::ai::combat::Side::Right, false);
+    assert_eq!(e.scripts.weapon_usage.usage.counts.len(), 2);
+
+    carry_weapon(&mut e, BOW, 1);
+    e.inventories.get_mut(&PLAYER_REF).unwrap().add(ARROW, 1);
+    e.player_loose(0.1); // too short to nock
+    assert_eq!(weapon_uses(&e, BOW), 0);
+    e.player_loose(1.2);
+    assert_eq!(weapon_uses(&e, BOW), 1);
+    e.update_projectiles(0.1);
+    assert_eq!(weapon_uses(&e, BOW), 1); // projectile flight isn't another use
+    e.player_loose(1.2); // ammunition is gone
+    assert_eq!(weapon_uses(&e, BOW), 1);
+    assert_eq!(
+        e.stat("Favorite Weapon"),
+        StatValue::Name("Test Axe".into())
+    );
+
+    // Native saves preserve both counts and the incumbent through ties; an old
+    // save without WUSE replaces weapon usage with empty state.
+    let saved = crate::save::state::Snapshot::capture(&e).write();
+    e.scripts.weapon_usage.record(SWORD);
+    e.scripts.weapon_usage.record(SWORD);
+    assert_eq!(
+        e.stat("Favorite Weapon"),
+        StatValue::Name("Test Sword".into())
+    );
+    crate::save::state::Snapshot::read(&saved)
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert_eq!(weapon_uses(&e, SWORD), 1);
+    assert_eq!(weapon_uses(&e, AXE), 2);
+    assert_eq!(
+        e.stat("Favorite Weapon"),
+        StatValue::Name("Test Axe".into())
+    );
+
+    let mut old = saved;
+    old.sections.retain(|(tag, _)| tag != b"WUSE");
+    e.scripts.weapon_usage.record(SWORD);
+    crate::save::state::Snapshot::read(&old)
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert!(e.scripts.weapon_usage.usage.counts.is_empty());
+    assert_eq!(e.stat("Favorite Weapon"), StatValue::Name(String::new()));
+
+    e.day = 27;
+    let mut invalid = crate::save::state::Snapshot::capture(&e);
+    invalid.weapon_usage = vec![(FormId(0x898), 1)]; // an NPC base, not a WEAP
+    invalid.favorite_weapon = Some(FormId(0x898));
+    invalid.day = 99;
+    assert!(invalid.apply(&mut e).is_err());
+    assert_eq!(e.day, 27); // validation ran before state changed
 }

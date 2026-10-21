@@ -98,7 +98,13 @@ fn engine(name: &str) -> (Fixture, Engine) {
         ),
         Node::top(
             b"WEAP",
-            vec![RecordBuilder::new(b"WEAP", SWORD).field(b"DNAM", &[0; 100])],
+            vec![{
+                let mut dnam = [0; 100];
+                dnam[0] = 1;
+                RecordBuilder::new(b"WEAP", SWORD)
+                    .zstring(b"FULL", "Save Test Sword")
+                    .field(b"DNAM", &dnam)
+            }],
         ),
         Node::top(b"ARMO", vec![RecordBuilder::new(b"ARMO", SHIELD)]),
         Node::top(b"SLGM", vec![RecordBuilder::new(b"SLGM", GEM)]),
@@ -185,6 +191,8 @@ fn play(e: &mut Engine) {
         ..Default::default()
     });
     e.scripts.stats.insert("Locks Picked".into(), 4);
+    e.scripts.weapon_usage.record(SWORD);
+    e.scripts.weapon_usage.record(SWORD);
     let quest = papyrus::ObjectId::Form(QUEST.0);
     e.scripts.initialized.insert(quest);
     e.scripts.timers.push(crate::script::Timer {
@@ -353,6 +361,11 @@ fn a_saved_game_loads_into_another_engine_unchanged() {
     assert_eq!(q.aliases[&2], ACTOR);
     assert_eq!(q.event.as_ref().unwrap().code, *b"CLOC");
     assert_eq!(b.query_stat("Locks Picked"), 4);
+    assert_eq!(
+        b.stat("Favorite Weapon"),
+        crate::stats::StatValue::Name("Save Test Sword".into())
+    );
+    assert_eq!(b.query_stat("Favorite Weapon"), 0);
     let inv = &b.inventories[&PLAYER_REF];
     assert_eq!(inv.count(SWORD), 2);
     assert_eq!(inv.hands().0, [Some(SWORD), Some(SWORD), None]);
@@ -787,6 +800,46 @@ fn malformed_story_and_relationship_sections_are_refused() {
         let mut s = Snapshot::default();
         s.relationship_ranks.insert((a, b), rank);
         assert!(Snapshot::read(&s.write()).is_err());
+    }
+}
+
+#[test]
+fn favorite_weapon_usage_section_is_optional_deterministic_and_validated() {
+    let mut s = Snapshot::default();
+    s.weapon_usage = vec![(FormId(0x901), 2), (FormId(0x902), 1)];
+    s.favorite_weapon = Some(FormId(0x901));
+    let bytes = s.write().to_bytes();
+    let mut reversed = Snapshot::default();
+    reversed.weapon_usage = vec![(FormId(0x902), 1), (FormId(0x901), 2)];
+    reversed.favorite_weapon = Some(FormId(0x901));
+    assert_eq!(reversed.write().to_bytes(), bytes);
+    assert_eq!(
+        Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+            .unwrap()
+            .write()
+            .to_bytes(),
+        bytes
+    );
+
+    let mut old = s.write();
+    old.sections.retain(|(tag, _)| tag != b"WUSE");
+    let read = Snapshot::read(&old).unwrap();
+    assert!(read.weapon_usage.is_empty());
+    assert_eq!(read.favorite_weapon, None);
+
+    for (counts, favorite) in [
+        (vec![(FormId::NULL, 1)], Some(FormId::NULL)),
+        (vec![(FormId(0x901), 0)], Some(FormId(0x901))),
+        (
+            vec![(FormId(0x901), 1), (FormId(0x901), 1)],
+            Some(FormId(0x901)),
+        ),
+        (vec![(FormId(0x901), 1)], Some(FormId(0x902))),
+    ] {
+        let mut malformed = Snapshot::default();
+        malformed.weapon_usage = counts;
+        malformed.favorite_weapon = favorite;
+        assert!(Snapshot::read(&malformed.write()).is_err());
     }
 }
 
