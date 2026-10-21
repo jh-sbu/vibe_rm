@@ -1362,6 +1362,11 @@ impl Snapshot {
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.unload_all();
+        e.waiting = None;
+        if matches!(e.menu, Some(crate::items::Menu::SleepWait { .. })) {
+            e.menu = None;
+        }
+        e.clear_sleep_imagespace();
         e.story.restore(self.story);
         e.relationships.restore_ranks(self.relationship_ranks);
         e.day = self.day;

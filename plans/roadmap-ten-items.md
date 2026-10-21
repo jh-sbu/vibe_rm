@@ -39,12 +39,9 @@ tests, both ORIG codec tests, and capture/application into another Engine with
 system Vulkan. World creation paths retain distinct immutable origins; legacy
 saves keep origins unknown. Source and save-format limits are documented.
 
-## Remaining selection
+## Selection
 
-The next candidates are sleep
-screen fades, detection persistence, message-box waits across saves, animation
-event waits across saves, greater-power cooldown persistence, and spent-soul
-persistence. The first five are explicit roadmap subitems. The last two address
+Items 1–8 are bounded roadmap subitems. Items 9–10 address
 save-continuity gaps found while reading the roadmap's remaining magic/save work:
 their inventory and effects can survive a native save while the restriction's
 runtime memory currently does not. Each receives a concrete plan below before
@@ -116,6 +113,15 @@ menu close or save load. Use the existing image-space/post-processing path and
 menu-time updates. Test transition boundaries, hour/event timing, cancellation,
 interruption, waiting exclusion and independent script fades. Record chosen
 durations and original-game timing uncertainties as policies.
+
+Outcome: implemented and reviewed; all five sleep/fade regressions passed with
+system Vulkan, including actual Engine update and native-load paths. Formatting
+and diff checks passed. A sleep-owned black layer
+fades over 0.5 seconds before the first hour, holds while sleep advances, then
+fades back over 0.5 seconds. Menu time advances only this layer, leaving script
+image-space clocks paused. External menu close and native load clear transient
+wait/fade state; original-game timing and external-close event behavior are
+recorded in `known_ambiguities/sleep-wait.md`.
 
 ## 6. Detection stealth-point persistence
 

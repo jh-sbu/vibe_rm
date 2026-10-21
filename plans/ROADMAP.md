@@ -16,6 +16,11 @@ game each piece unlocks.
   travel. Moved/dead actors and unrelated runtime steering retain priority.
   The Travel threshold, linked/alias resolution and timing policies are
   documented in `known_ambiguities/unloaded-placement.md`.
+- Sleep fades: accepted sleep fades the world to black before advancing hours,
+  holds through sleeping, and fades back after completion or interruption.
+  Ordinary waiting and canceling the hour chooser do not fade. Chosen timing,
+  script-fade composition, external-close and load policies:
+  `known_ambiguities/sleep-wait.md`.
 - Papyrus `Actor.GetKiller` returns the recorded killer for a dead actor, or
   `None` for a living actor or a death without known attribution. Death records
   remain durable through `DETH`; attribution limits and unsupported death-cause
@@ -1649,7 +1654,7 @@ game each piece unlocks.
      reference exist: no public description or vanilla use yet)
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; looping sounds of enabled references checked
-     with an audio device; sleeping fading the screen out and in
+     with an audio device
 6. **UI**: inventory (categories, equipping, item details), map, quest
    targets on the map (on the compass: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the

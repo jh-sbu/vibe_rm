@@ -282,6 +282,24 @@ struct Shake {
 const DEFAULT_SHAKE_SECONDS: f32 = 1.0;
 /// A shake from a source fades out to nothing this far away (units).
 const SHAKE_RANGE: f32 = 4096.0;
+/// Sleep and wake take this long in the native renderer; original timing is
+/// not established by the available observations.
+pub(crate) const SLEEP_FADE_SECONDS: f32 = 0.5;
+
+#[derive(Debug, Clone, Copy)]
+struct SleepFade {
+    from: f32,
+    to: f32,
+    elapsed: f32,
+    duration: f32,
+}
+
+impl SleepFade {
+    fn amount(self) -> f32 {
+        let t = (self.elapsed / self.duration.max(1e-3)).clamp(0.0, 1.0);
+        self.from + (self.to - self.from) * t
+    }
+}
 
 #[derive(Default)]
 pub struct ImageSpace {
@@ -297,9 +315,87 @@ pub struct ImageSpace {
     /// The view turn the shake added last frame (yaw, pitch), taken back first.
     shake_turn: (f32, f32),
     shake_time: f32,
+    /// The global/script post effect before the sleep-owned black overlay.
+    post_base: PostEffect,
+    /// Independent from Game.FadeOutGame and driven by the active frame clock.
+    sleep_fade: Option<SleepFade>,
+}
+
+impl ImageSpace {
+    pub(crate) fn sleep_fade_amount(&self) -> f32 {
+        self.sleep_fade.map_or(0.0, SleepFade::amount)
+    }
+
+    pub(crate) fn sleep_fade_is_black(&self) -> bool {
+        self.sleep_fade_amount() >= 1.0
+    }
+
+    pub(crate) fn start_sleep_fade_out(&mut self) {
+        let from = self.sleep_fade_amount();
+        self.sleep_fade = Some(SleepFade {
+            from,
+            to: 1.0,
+            elapsed: 0.0,
+            duration: SLEEP_FADE_SECONDS * (1.0 - from),
+        });
+    }
+
+    pub(crate) fn start_sleep_fade_in(&mut self) {
+        let from = self.sleep_fade_amount();
+        if from <= 0.0 {
+            self.sleep_fade = None;
+        } else {
+            self.sleep_fade = Some(SleepFade {
+                from,
+                to: 0.0,
+                elapsed: 0.0,
+                duration: SLEEP_FADE_SECONDS * from,
+            });
+        }
+    }
+
+    pub(crate) fn clear_sleep_fade(&mut self) {
+        self.sleep_fade = None;
+    }
+
+    fn advance_sleep_fade(&mut self, dt: f32) {
+        if let Some(f) = &mut self.sleep_fade {
+            f.elapsed = (f.elapsed + dt.max(0.0)).min(f.duration);
+            if f.to == 0.0 && f.elapsed >= f.duration {
+                self.sleep_fade = None;
+            }
+        }
+    }
+
+    pub(crate) fn sleep_post(&self) -> PostEffect {
+        let mut fx = self.post_base;
+        let a = self.sleep_fade_amount();
+        if a > 0.0 {
+            // Place the owned black layer after every global/script effect.
+            let old = fx.fade[3].clamp(0.0, 1.0);
+            let combined = a + old * (1.0 - a);
+            if combined > 0.0 {
+                for channel in &mut fx.fade[..3] {
+                    *channel = *channel * old * (1.0 - a) / combined;
+                }
+            }
+            fx.fade[3] = combined;
+        }
+        fx
+    }
 }
 
 impl Engine {
+    pub(crate) fn update_sleep_imagespace(&mut self, dt: f32) {
+        self.imagespace.advance_sleep_fade(dt);
+        self.scene.post = self.imagespace.sleep_post();
+    }
+
+    pub(crate) fn clear_sleep_imagespace(&mut self) {
+        self.imagespace.clear_sleep_fade();
+        self.scene.post = self.imagespace.sleep_post();
+    }
+
     fn imad(&mut self, f: FormId) -> Option<Arc<Imad>> {
         if let Some(m) = self.imagespace.records.get(&f) {
             return m.clone();
@@ -509,7 +605,8 @@ impl Engine {
         }
         fx.tint = layer(&tint, [1.0, 1.0, 1.0, 0.0]);
         fx.fade = layer(&fades, [0.0; 4]);
-        self.scene.post = fx;
+        self.imagespace.post_base = fx;
+        self.update_sleep_imagespace(dt);
         self.update_shake(dt);
     }
 
@@ -654,5 +751,42 @@ mod tests {
         assert!((l[3] - 0.75).abs() < 1e-6);
         assert!((l[0] - 0.5 / 0.75).abs() < 1e-6);
         assert_eq!(layer(&[], [1.0, 1.0, 1.0, 0.0]), [1.0, 1.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn sleep_fade_layers_over_script_fade_without_advancing_it() {
+        let mut is = ImageSpace::default();
+        is.post_base.fade = [1.0, 1.0, 1.0, 0.4];
+        is.fade = Some(GameFade {
+            out: true,
+            color: [1.0; 3],
+            delay: 0.0,
+            duration: 2.0,
+            t: 0.75,
+        });
+
+        is.start_sleep_fade_out();
+        is.advance_sleep_fade(SLEEP_FADE_SECONDS * 0.5);
+        assert!((is.sleep_fade_amount() - 0.5).abs() < 1e-6);
+        assert_eq!(
+            is.fade.unwrap().t,
+            0.75,
+            "sleep must not tick GameFadeOutGame"
+        );
+        let half = is.sleep_post();
+        assert!((half.fade[3] - 0.7).abs() < 1e-6);
+        // 40% white script fade, then 50% black sleep overlay: 20% white.
+        assert!((half.fade[0] * half.fade[3] - 0.2).abs() < 1e-6);
+
+        is.advance_sleep_fade(SLEEP_FADE_SECONDS * 0.5);
+        assert!(is.sleep_fade_is_black());
+        assert_eq!(is.sleep_post().fade, [0.0, 0.0, 0.0, 1.0]);
+        is.start_sleep_fade_in();
+        is.advance_sleep_fade(SLEEP_FADE_SECONDS * 0.5);
+        assert!((is.sleep_fade_amount() - 0.5).abs() < 1e-6);
+        is.advance_sleep_fade(SLEEP_FADE_SECONDS * 0.5);
+        assert_eq!(is.sleep_fade_amount(), 0.0);
+        assert_eq!(is.sleep_post().fade, [1.0, 1.0, 1.0, 0.4]);
+        assert_eq!(is.fade.unwrap().t, 0.75);
     }
 }

@@ -2552,6 +2552,11 @@ impl Engine {
             self.update_menu_mode(dt);
             return;
         }
+        // If another path closed the sleep/wait menu, cancel the transient wait
+        // and let its sleep-owned fade return to the world view.
+        if self.waiting.is_some() {
+            self.update_waiting(0.0);
+        }
         if self.test_walk > 0 {
             self.test_walk -= 1;
             input = self.test_walk_input;
@@ -2670,7 +2675,21 @@ impl Engine {
     fn update_menu_mode(&mut self, dt: f32) {
         self.update_scripts(0.0);
         self.update_lockpick(dt);
-        self.update_waiting(dt);
+        if self.waiting.is_some()
+            && !matches!(self.menu, Some(crate::items::Menu::SleepWait { .. }))
+        {
+            self.update_waiting(0.0);
+        }
+        let sleep_was_black = self.imagespace.sleep_fade_is_black();
+        // Only this owned layer advances during menu time. Script IMAD and
+        // Game.FadeOutGame clocks remain paused with the world.
+        self.update_sleep_imagespace(dt);
+        let wait_dt = if self.waiting.is_some_and(|w| w.sleeping) && !sleep_was_black {
+            0.0
+        } else {
+            dt
+        };
+        self.update_waiting(wait_dt);
         if let Some(a) = self.audio.as_mut() {
             a.update();
         }

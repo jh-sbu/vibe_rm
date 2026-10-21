@@ -52,6 +52,18 @@ game's scripts (`PlayerSleepQuestScript` gives Rested from `OnSleepStop`,
 - **Sleep events.** Scripts registered with `RegisterForSleep` hear
   `OnSleepStart(now, now + hours / 24)` when sleeping starts and
   `OnSleepStop(false)` when it ends; waiting sends neither.
+- **Sleep screen fade policy.** Accepting a nonzero sleep duration starts a
+  sleep-owned black fade that takes 0.5 real seconds. The first hour does not
+  advance until the view is fully black; it stays black while hours pass, then
+  returns over 0.5 seconds after completion or an interruption. An externally
+  closed sleep menu cancels the remaining wait and fades back from its current
+  amount. The hours chooser's cancel and ordinary waiting do not fade. These
+  durations and the gate-before-first-hour timing are implementation choices;
+  no original-game timing observation establishes them. A menu-mode fade does
+  not advance script IMAD or `Game.FadeOutGame` clocks; the sleep black layer is
+  composed over their last rendered post effect. Save application drops the
+  transient wait and sleep fade. External menu close retains the existing event
+  behavior and does not synthesize `OnSleepStop`.
 - **Owners set by scripts** (`SetActorOwner`, `SetFactionOwner` on
   references and cells; none clears) override the data's for the player's
   checks (beds, trespass, locks, stealing prompts, the Story Manager's

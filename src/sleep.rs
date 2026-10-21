@@ -109,6 +109,7 @@ impl Engine {
             let now = self.game_days();
             let end = now + hours as f32 / 24.0;
             self.send_sleep_event("OnSleepStart", vec![Value::Float(now), Value::Float(end)]);
+            self.imagespace.start_sleep_fade_out();
         }
         self.waiting = Some(Waiting {
             sleeping,
@@ -125,6 +126,13 @@ impl Engine {
         };
         if !matches!(self.menu, Some(Menu::SleepWait { .. })) {
             self.waiting = None;
+            if w.sleeping {
+                self.imagespace.start_sleep_fade_in();
+            }
+            return;
+        }
+        if w.sleeping && !self.imagespace.sleep_fade_is_black() {
+            self.waiting = Some(w);
             return;
         }
         w.next -= dt;
@@ -140,10 +148,15 @@ impl Engine {
             self.waiting = Some(w);
             return;
         }
+        self.finish_waiting(w.sleeping, interrupted);
+    }
+
+    fn finish_waiting(&mut self, sleeping: bool, interrupted: bool) {
         self.waiting = None;
         self.menu = None;
-        if w.sleeping {
+        if sleeping {
             self.send_sleep_event("OnSleepStop", vec![Value::Bool(interrupted)]);
+            self.imagespace.start_sleep_fade_in();
         }
     }
 
@@ -213,5 +226,126 @@ impl Engine {
         if on {
             listeners.push(obj);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use esp::writer::write_plugin;
+
+    struct Fixture(std::path::PathBuf);
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn engine() -> (Fixture, Engine) {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("vrm-sleep-fade-{}-{stamp}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(
+            dir.join("Sleep.esp"),
+            write_plugin(0, &[], "test", "sleep fade tests", 0x800, &[]),
+        )
+        .unwrap();
+        let engine = crate::stats::action_tests::headless_engine(&dir, "Sleep.esp");
+        (Fixture(dir), engine)
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic plugin only"]
+    fn sleeping_fades_before_hours_and_returns_after_completion_or_close() {
+        let (_fixture, mut e) = engine();
+        let listener = ObjectId::Form(0x801);
+        e.register_for_sleep(listener, true);
+        e.menu = Some(Menu::SleepWait { sleeping: true });
+        e.start_waiting(1);
+        let hour = e.hour;
+        assert!(
+            e.scripts
+                .pending_events
+                .iter()
+                .any(|(obj, event, _)| { *obj == listener && event == "OnSleepStart" })
+        );
+
+        e.update(Default::default(), 0.25, 20.0);
+        assert_eq!(e.hour, hour, "sleep hours wait until the view is black");
+        assert!((e.imagespace.sleep_fade_amount() - 0.5).abs() < 1e-6);
+        e.update(Default::default(), 0.25, 20.0);
+        assert_eq!(e.hour, hour);
+        assert!(e.imagespace.sleep_fade_is_black());
+
+        e.update(Default::default(), 0.2, 20.0);
+        assert_eq!(e.hour, hour + 1.0);
+        assert!(e.menu.is_none());
+        assert!(e.scripts.pending_events.iter().any(|(obj, event, args)| {
+            *obj == listener && event == "OnSleepStop" && args == &[Value::Bool(false)]
+        }));
+        assert!(e.imagespace.sleep_fade_is_black());
+        e.update(Default::default(), 0.25, 20.0);
+        assert!((e.imagespace.sleep_fade_amount() - 0.5).abs() < 1e-6);
+        e.update(Default::default(), 0.25, 20.0);
+        assert_eq!(e.imagespace.sleep_fade_amount(), 0.0);
+
+        // Closing an active sleep menu through another path cancels the wait
+        // and fades from its current amount back to the world.
+        e.menu = Some(Menu::SleepWait { sleeping: true });
+        e.start_waiting(3);
+        e.update(Default::default(), 0.2, 20.0);
+        assert!(e.imagespace.sleep_fade_amount() > 0.0);
+        e.menu = None;
+        e.update(Default::default(), 0.1, 20.0);
+        assert!(e.waiting.is_none());
+        assert!(e.imagespace.sleep_fade_amount() < 1.0);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic plugin only"]
+    fn waiting_and_canceling_hours_do_not_fade_or_send_sleep_events() {
+        let (_fixture, mut e) = engine();
+        let listener = ObjectId::Form(0x801);
+        e.register_for_sleep(listener, true);
+        e.menu = Some(Menu::SleepWait { sleeping: true });
+        e.start_waiting(0);
+        assert!(e.menu.is_none());
+        assert!(e.waiting.is_none());
+        assert_eq!(e.imagespace.sleep_fade_amount(), 0.0);
+        assert!(e.scripts.pending_events.is_empty());
+
+        e.menu = Some(Menu::SleepWait { sleeping: false });
+        e.start_waiting(1);
+        let hour = e.hour;
+        e.update(Default::default(), 0.2, 20.0);
+        assert_eq!(e.hour, hour + 1.0);
+        assert_eq!(e.imagespace.sleep_fade_amount(), 0.0);
+        assert!(e.scripts.pending_events.is_empty());
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic plugin only"]
+    fn interrupted_sleep_sends_flag_and_begins_fade_in() {
+        let (_fixture, mut e) = engine();
+        let listener = ObjectId::Form(0x801);
+        e.register_for_sleep(listener, true);
+        e.menu = Some(Menu::SleepWait { sleeping: true });
+        e.start_waiting(2);
+        e.update_sleep_imagespace(crate::imagespace::SLEEP_FADE_SECONDS);
+        assert!(e.imagespace.sleep_fade_is_black());
+
+        e.finish_waiting(true, true);
+        assert!(e.waiting.is_none());
+        assert!(e.menu.is_none());
+        assert!(e.scripts.pending_events.iter().any(|(obj, event, args)| {
+            *obj == listener && event == "OnSleepStop" && args == &[Value::Bool(true)]
+        }));
+        e.update_sleep_imagespace(crate::imagespace::SLEEP_FADE_SECONDS * 0.5);
+        assert!((e.imagespace.sleep_fade_amount() - 0.5).abs() < 1e-6);
     }
 }
