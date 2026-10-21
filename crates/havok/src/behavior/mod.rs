@@ -25,6 +25,7 @@ fn requires_whole_member_binding(member: &str) -> bool {
         "flags"
             | "selfTransitionMode"
             | "eventMode"
+            | "blendCurve"
             | "mode"
             | "startStateMode"
             | "syncVariableIndex"
@@ -96,6 +97,12 @@ pub struct Transition {
     pub blend_variable: Option<usize>,
     /// Read-only character property bound to the blend's duration, if any.
     pub blend_property: Option<String>,
+    /// Cross-fade curve authored by `hkbBlendingTransitionEffect`.
+    pub blend_curve: BlendCurve,
+    /// Variable bound to the effect's `blendCurve`, if any.
+    pub blend_curve_variable: Option<usize>,
+    /// Read-only character property bound to the effect's `blendCurve`.
+    pub blend_curve_property: Option<String>,
     /// `hkbExpressionCondition` that must hold.
     pub condition: Option<String>,
     pub priority: i16,
@@ -105,6 +112,52 @@ pub struct Transition {
     /// When the transition may begin (`FLAG_USE_INITIATE_INTERVAL`); one triggered
     /// earlier waits for it.
     pub initiate: Option<Interval>,
+}
+
+/// `hkbBlendingTransitionEffect::BlendCurve` enum. The named asymmetric curves
+/// are retained, but the runtime only has evidence for linear and its existing
+/// smoothstep approximation; see `known_ambiguities/character-properties.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BlendCurve {
+    #[default]
+    Smooth,
+    Linear,
+    LinearToSmooth,
+    SmoothToLinear,
+}
+
+impl BlendCurve {
+    fn from_byte(value: u8) -> BlendCurve {
+        match value {
+            1 => BlendCurve::Linear,
+            2 => BlendCurve::LinearToSmooth,
+            3 => BlendCurve::SmoothToLinear,
+            _ => BlendCurve::Smooth,
+        }
+    }
+
+    fn from_input(value: f32) -> Option<BlendCurve> {
+        if !value.is_finite() || value.fract() != 0.0 {
+            return None;
+        }
+        match value as i32 {
+            0 => Some(BlendCurve::Smooth),
+            1 => Some(BlendCurve::Linear),
+            _ => None,
+        }
+    }
+
+    fn crossfade_weight(self, progress: f32) -> f32 {
+        match self {
+            BlendCurve::Linear => progress,
+            // This project's prior runtime used smoothstep for every curve.
+            // Keep that bounded behavior for the two curves whose formulas are
+            // not established by the public sources available to this project.
+            BlendCurve::Smooth | BlendCurve::LinearToSmooth | BlendCurve::SmoothToLinear => {
+                progress * progress * (3.0 - 2.0 * progress)
+            }
+        }
+    }
 }
 
 /// `hkbTransitionEffect::SelfTransitionMode`: a transition into the state the
@@ -829,6 +882,18 @@ impl<'a> Reader<'a> {
                         })
                         .map(|b| b.variable),
                     blend_property: effect.and_then(|e| self.character_property(e, "duration")),
+                    blend_curve: effect.map_or_else(BlendCurve::default, |e| {
+                        BlendCurve::from_byte(self.p.u8(e + 0x5B))
+                    }),
+                    blend_curve_variable: effect
+                        .and_then(|e| {
+                            self.bindings_of(e)
+                                .into_iter()
+                                .find(|b| b.member == "blendCurve")
+                        })
+                        .map(|b| b.variable),
+                    blend_curve_property: effect
+                        .and_then(|e| self.character_property(e, "blendCurve")),
                     condition: condition.and_then(|c| self.p.string(c + 0x10)),
                     priority: self.p.i16(t + 0x40),
                     trigger: (flags & FLAG_USE_TRIGGER_INTERVAL != 0).then(|| self.interval(t)),
@@ -2177,6 +2242,67 @@ mod character_property_tests {
         assert_eq!(t.blend, Some(0.75));
         assert_eq!(t.blend_property.as_deref(), Some("BlendDuration"));
         assert_eq!(t.blend_variable, Some(2));
+    }
+
+    #[test]
+    fn transition_effects_retain_authored_blend_curves_and_whole_member_inputs() {
+        for (value, expected) in [
+            (0, BlendCurve::Smooth),
+            (1, BlendCurve::Linear),
+            (2, BlendCurve::LinearToSmooth),
+            (3, BlendCurve::SmoothToLinear),
+        ] {
+            let mut p = fixture();
+            p.data[0x2DB] = value; // effect + 0x5B
+            let r = Reader {
+                p: &p,
+                classes: [(0x280, "hkbBlendingTransitionEffect")].into(),
+                ids: Default::default(),
+                generators: vec![],
+                bindings: vec![],
+                property_bindings: vec![],
+                mod_ids: Default::default(),
+                modifiers: vec![],
+                modifier_bindings: vec![],
+                modifier_property_bindings: vec![],
+                character_properties: ["Other", "Unused", "Third", "Fourth", "BlendCurve"]
+                    .map(String::from)
+                    .to_vec(),
+            };
+            assert_eq!(r.transitions(Some(0x600))[0].blend_curve, expected);
+        }
+
+        for bit in [u8::MAX, 0] {
+            let mut p = fixture();
+            for (at, binding) in [(0x480, 0x380), (0x4E0, 0x3F8)] {
+                p.data[at..at + 0x20].fill(0);
+                p.data[at..at + 10].copy_from_slice(b"blendCurve");
+                p.data[binding + 0x20] = bit;
+            }
+            p.data[0x2DB] = 1;
+            let r = Reader {
+                p: &p,
+                classes: [(0x280, "hkbBlendingTransitionEffect")].into(),
+                ids: Default::default(),
+                generators: vec![],
+                bindings: vec![],
+                property_bindings: vec![],
+                mod_ids: Default::default(),
+                modifiers: vec![],
+                modifier_bindings: vec![],
+                modifier_property_bindings: vec![],
+                character_properties: ["Other", "Unused", "Third", "Fourth", "CurveInput"]
+                    .map(String::from)
+                    .to_vec(),
+            };
+            let t = &r.transitions(Some(0x600))[0];
+            assert_eq!(t.blend_curve, BlendCurve::Linear);
+            assert_eq!(t.blend_curve_variable, (bit == u8::MAX).then_some(2));
+            assert_eq!(
+                t.blend_curve_property.as_deref(),
+                (bit == u8::MAX).then_some("CurveInput")
+            );
+        }
     }
 
     #[test]
