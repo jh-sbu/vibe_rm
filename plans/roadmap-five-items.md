@@ -7,13 +7,13 @@
    Blindness actor value to the visual detection term.
 3. **Lockpicking key-reward perk**: check the existing perk/effect handling and
    implement the missing reward when a lock is picked.
-4. **Container transfer quantity selection**: check the SWF callbacks and current
-   egui fallback, then implement a quantity choice where the engine UI lacks one.
+4. **Egui fallback quantity selection** (Done): the SWF already handles
+   quantities; the fallback now has the missing chooser for large stacks.
 5. **Journal Favorite Weapon statistic**: check `stats.rs` and the game's statistic
    mapping, then add the missing favorite-weapon usage count.
 
-This is a candidate list for independent roadmap work. Items 3–5 still need a
-scope check against current code before implementation.
+This list records the scope and outcome of the five independent roadmap items.
+Item 5 still needs a scope check before implementation.
 
 ## Item 3 plan
 
@@ -104,3 +104,42 @@ The parent ran `cargo test --bin vibe_rm locks::tests -- --include-ignored
 --nocapture` outside the sandbox with Vulkan: all 6 tests passed (3 new Wax Key
 tests and 3 existing lock tests). `cargo fmt --check` and `git diff --check`
 pass. Item 3 is complete within the documented first-pick/history limitation.
+
+## Item 4 plan
+
+The SWF container menu already supplies quantities: the permitted
+`containermenu.swf` inspection shows that stacks over five open its quantity
+menu, except weightless items taken through its auto-all path, and
+`src/swf_ui/item_menu.rs` already honors the callback amount. Implement the
+quantity chooser only in the egui fallback (`src/ui.rs`) for taking/storing,
+pickpocketing/placing, and dropping stacks over five. Keep Shift-all as an
+immediate shortcut. Save the parent menu plus exact source, destination, item,
+and ownership row in a pending action; while it is open, suppress the parent
+inventory controls. Escape, Tab, or Cancel clears only the pending action.
+Clear it if the displayed menu changes. On confirmation, find the same current
+row, cancel if it disappeared, and clamp the selected amount to its current
+positive count before calling existing transfer, drop, or pickpocket APIs. Show
+the pickpocket chance for the chosen amount. Test the production confirmation
+helper for exact ownership-row movement, clamping/stale rows, cancellation and
+the pickpocket count path using synthetic Engine records. Do not alter or copy
+game assets or SWF-derived code.
+
+## Item 4 outcome
+
+The permitted `containermenu.swf` inspection established a quantity-menu limit
+of five, with the movie already passing its chosen amount through the SWF item
+transfer bridge. The egui fallback now opens its own chooser for stacks over
+five when moving, pickpocketing/placing or dropping; Shift still takes all.
+Actions preserve the parent menu, source, destination, item and selected
+ownership row. Confirmation rechecks the row and caps the requested amount at
+the current count; missing rows cancel. Esc, Tab and Cancel leave the parent
+menu open, and external menu changes clear the pending chooser. Drop actions
+also remove only the selected ownership row.
+
+The parent ran `cargo test --bin vibe_rm ui::quantity_tests --
+--include-ignored --nocapture` outside the sandbox: all 6 tests passed,
+including actual `Ui::build` Escape/Tab handling and Engine-backed transfer,
+pickpocket take/place, stale-row, cancellation and ownership-specific drop
+cases. `cargo fmt --check` and `git diff --check` pass. The chooser's appearance
+and exact slider defaults are egui policies, not claims of original-menu
+parity.
