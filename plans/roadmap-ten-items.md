@@ -41,7 +41,7 @@ saves keep origins unknown. Source and save-format limits are documented.
 
 ## Remaining selection
 
-The next candidates are package placement headings, sleep
+The next candidates are sleep
 screen fades, detection persistence, message-box waits across saves, animation
 event waits across saves, greater-power cooldown persistence, and spent-soul
 persistence. The first five are explicit roadmap subitems. The last two address
@@ -95,6 +95,15 @@ unrelated package types. Keep ordinary movement turning behavior intact. Test
 target resolution, moved markers, angle convention and lifecycle exclusions
 through the production helper/placement path. Document the distinction between
 observed cases and extrapolation to alias/linked targets or waiting jumps.
+
+Outcome: implemented and reviewed. Parent validation passed all six heading
+regressions (including delayed initial evaluation) and all five schedule tests
+with system Vulkan. Formatting and diff checks passed. Sandbox headings are applied
+to scheduled spawn transforms; Travel heading turns are queued only for actors
+that crossed the observed stop-distance threshold and are applied gradually
+while idle. Runtime updates clear stale turns on combat, movement, package or
+facing changes. The threshold and additional linked/alias target forms are
+inferences recorded in `known_ambiguities/unloaded-placement.md`.
 
 ## 5. Sleep screen fades
 

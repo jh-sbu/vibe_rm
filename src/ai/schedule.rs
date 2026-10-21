@@ -39,6 +39,40 @@ pub fn same_space(a: Place, b: Place) -> bool {
     }
 }
 
+/// Heading to apply when an actor is placed by its scheduled package.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlacementHeading {
+    /// Sandbox about a reference starts facing that reference.
+    Set(f32),
+    /// Travel reaches a reference, then turns toward its heading while idle.
+    Turn(f32),
+}
+
+impl PlacementHeading {
+    /// Orient a spawned model for the immediate Sandbox placement case.
+    pub(crate) fn orient(self, transform: glam::Mat4) -> glam::Mat4 {
+        let Self::Set(heading) = self else {
+            return transform;
+        };
+        let (scale, _, pos) = transform.to_scale_rotation_translation();
+        glam::Mat4::from_scale_rotation_translation(
+            scale,
+            glam::Quat::from_rotation_z(-heading),
+            pos,
+        )
+    }
+}
+
+/// Only schedule-owned placement may consume a package heading; an explicit
+/// move or a body keeps its own orientation.
+pub(crate) fn heading_for_spawn(
+    heading: Option<PlacementHeading>,
+    dead: bool,
+    moved: bool,
+) -> Option<PlacementHeading> {
+    (!dead && !moved).then_some(heading).flatten()
+}
+
 #[derive(Default)]
 pub struct Whereabouts {
     /// Persistent actor references (built once).
@@ -62,6 +96,9 @@ pub struct Whereabouts {
     /// the refresh in progress.
     pub package: HashMap<FormId, Option<FormId>>,
     pending_packages: HashMap<FormId, Option<FormId>>,
+    /// The marker heading used when an actor in the current package is placed.
+    pub placement_heading: HashMap<FormId, PlacementHeading>,
+    pending_headings: HashMap<FormId, PlacementHeading>,
     /// The package whose start (and end) each actor's home doors last
     /// followed: a loaded actor's as its AI picks it, else the refresh's.
     pub lock_package: HashMap<FormId, Option<FormId>>,
@@ -91,6 +128,8 @@ impl Whereabouts {
     pub fn remove_actor(&mut self, r: FormId) {
         self.actors.retain(|&a| a != r);
         self.of.remove(&r);
+        self.placement_heading.remove(&r);
+        self.pending_headings.remove(&r);
         self.prev.remove(&r);
         for v in self.by_place.values_mut() {
             v.retain(|&a| a != r);
@@ -252,6 +291,51 @@ impl Engine {
         Some((self.place_of_ref(target, pos)?, pos))
     }
 
+    /// A package marker's authored heading, when that package's scheduled
+    /// placement has an observed heading rule (Sandbox or Travel).
+    fn package_placement_heading(
+        &self,
+        achr: FormId,
+        p: &Package,
+        from: Vec3,
+        target: Vec3,
+    ) -> Option<PlacementHeading> {
+        let location = p.location?;
+        let marker = match location.kind {
+            LocationKind::NearReference(r) => Some(r),
+            LocationKind::NearLinkedRef(kw) => self.linked_ref(achr, (!kw.is_null()).then_some(kw)),
+            LocationKind::NearAlias(alias) => p.quest.and_then(|q| self.alias_ref(q, alias)),
+            LocationKind::InLocAlias(alias) => {
+                let l = p.quest.and_then(|q| self.alias_ref(q, alias))?;
+                if self
+                    .editor_location(achr)
+                    .is_some_and(|e| self.location_within(e, l))
+                {
+                    return None;
+                }
+                self.location_marker(l)
+            }
+            _ => None,
+        }?;
+        let heading = self.ref_rotation(marker).z;
+        if !heading.is_finite() {
+            return None;
+        }
+        match p.behaviour {
+            Behaviour::Sandbox => Some(PlacementHeading::Set(heading)),
+            // Travel's observed turn belongs to actors actually travelling
+            // toward a marker while unloaded. Actors already within the stop
+            // distance keep their heading (autotest6's Travel128 case).
+            Behaviour::Travel
+                if from.truncate().distance(target.truncate())
+                    > (location.radius - TRAVEL_INSIDE).max(TRAVEL_SHORT) =>
+            {
+                Some(PlacementHeading::Turn(heading))
+            }
+            _ => None,
+        }
+    }
+
     /// Recompute where every persistent actor should be, all at once.
     pub fn refresh_whereabouts(&mut self) {
         self.whereabouts.cursor = 0;
@@ -285,7 +369,13 @@ impl Engine {
         let end = start.saturating_add(budget).min(actors.len());
         let mut pending = std::mem::take(&mut self.whereabouts.pending);
         let mut pending_packages = std::mem::take(&mut self.whereabouts.pending_packages);
+        let mut pending_headings = if start == 0 {
+            HashMap::new()
+        } else {
+            std::mem::take(&mut self.whereabouts.pending_headings)
+        };
         for &a in &actors[start..end] {
+            pending_headings.remove(&a);
             if self.is_disabled(a) {
                 continue;
             }
@@ -322,17 +412,22 @@ impl Engine {
                 .moved
                 .get(&a)
                 .map_or((editor_place, rf.position), |m| (m.place, m.pos));
-            let (place, pos) = match current.and_then(|p| Some((p, self.package_place(a, p)?))) {
-                Some((p, (place, target))) => {
-                    let radius = p.location.map_or(0.0, |l| l.radius);
-                    (
-                        place,
-                        unloaded_arrival(p.behaviour, radius, home, place, target),
-                    )
-                }
-                None => home,
-            };
+            let (place, pos, heading) =
+                match current.and_then(|p| Some((p, self.package_place(a, p)?))) {
+                    Some((p, (place, target))) => {
+                        let radius = p.location.map_or(0.0, |l| l.radius);
+                        (
+                            place,
+                            unloaded_arrival(p.behaviour, radius, home, place, target),
+                            self.package_placement_heading(a, p, home.1, target),
+                        )
+                    }
+                    None => (home.0, home.1, None),
+                };
             pending_packages.insert(a, current.map(|p| p.id));
+            if let Some(heading) = heading {
+                pending_headings.insert(a, heading);
+            }
             if log::log_enabled!(log::Level::Trace) {
                 log::trace!(
                     "{a} {:?}: editor {editor_place:?}, scheduled {place:?} {pos:?}",
@@ -347,6 +442,7 @@ impl Engine {
         if !done {
             self.whereabouts.pending = pending;
             self.whereabouts.pending_packages = pending_packages;
+            self.whereabouts.pending_headings = pending_headings;
             return false;
         }
         let mut by_place: HashMap<Place, Vec<FormId>> = HashMap::new();
@@ -365,6 +461,7 @@ impl Engine {
         self.whereabouts.by_place = by_place;
         self.whereabouts.cursor = 0;
         self.whereabouts.package = pending_packages;
+        self.whereabouts.placement_heading = pending_headings;
         // Loaded actors' doors follow their AI's own picks (`evaluate_packages`).
         let changed: Vec<_> = self
             .whereabouts
@@ -583,7 +680,7 @@ impl Engine {
             }
             if !spawn.is_empty() {
                 log::debug!("{} actors arriving in {key:?}", spawn.len());
-                self.spawn_actors(key, &spawn);
+                self.spawn_scheduled_actors(key, &spawn);
                 // Arrivals walk in rather than appearing already seated.
                 if let Some(rt) = self.cells.get_mut(&key) {
                     for a in rt
@@ -691,7 +788,7 @@ impl Engine {
             by_key.entry(key).or_default().push((r, Some(at)));
         }
         for (key, refs) in by_key {
-            self.spawn_actors(key, &refs);
+            self.spawn_scheduled_actors(key, &refs);
         }
         // Those whose place is a loaded cell turn up there.
         let loaded: Vec<CellKey> = self.cells.keys().copied().collect();
@@ -710,7 +807,7 @@ impl Engine {
                 .collect();
             if !arrivals.is_empty() {
                 log::debug!("{} actors turn up in {key:?}", arrivals.len());
-                self.spawn_actors(key, &arrivals);
+                self.spawn_scheduled_actors(key, &arrivals);
             }
         }
         // Their packages taken at once (the world doesn't run in the menu).
@@ -831,5 +928,158 @@ mod tests {
         // From another space: at the target.
         let away = unloaded_arrival(travel, 0.0, elsewhere, trader, Vec3::ZERO);
         assert_eq!(away, Vec3::ZERO);
+    }
+
+    #[test]
+    fn sandbox_spawn_heading_uses_clockwise_reference_transform() {
+        let transform = glam::Mat4::from_scale_rotation_translation(
+            Vec3::splat(1.5),
+            glam::Quat::IDENTITY,
+            Vec3::new(3.0, 4.0, 5.0),
+        );
+        let oriented = PlacementHeading::Set(std::f32::consts::FRAC_PI_2).orient(transform);
+        let (scale, rotation, position) = oriented.to_scale_rotation_translation();
+        let forward = rotation * Vec3::Y;
+        assert!((forward.x - 1.0).abs() < 1e-5);
+        assert!(forward.y.abs() < 1e-5);
+        assert!(scale.distance(Vec3::splat(1.5)) < 1e-5);
+        assert_eq!(position, Vec3::new(3.0, 4.0, 5.0));
+        assert_eq!(PlacementHeading::Turn(1.0).orient(transform), transform);
+    }
+
+    #[test]
+    fn only_unmoved_living_scheduled_references_consume_heading_directives() {
+        let heading = Some(PlacementHeading::Turn(1.0));
+        assert_eq!(heading_for_spawn(heading, false, false), heading);
+        assert_eq!(heading_for_spawn(heading, true, false), None);
+        assert_eq!(heading_for_spawn(heading, false, true), None);
+        assert_eq!(heading_for_spawn(None, false, false), None);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic plugin records only"]
+    fn package_heading_resolution_tracks_reference_link_alias_and_moved_marker() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+
+        const MARKER_BASE: FormId = FormId(0x800);
+        const MARKER: FormId = FormId(0x801);
+        const ACTOR_BASE: FormId = FormId(0x802);
+        const ACTOR: FormId = FormId(0x803);
+        const QUEST: FormId = FormId(0x804);
+        const ALIAS: u32 = 12;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "vrm-package-heading-{}-{stamp}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let mut data = [0; 24];
+        data[20..24].copy_from_slice(&0.7f32.to_le_bytes());
+        let records = [
+            Node::top(b"STAT", vec![RecordBuilder::new(b"STAT", MARKER_BASE)]),
+            Node::top(b"NPC_", vec![RecordBuilder::new(b"NPC_", ACTOR_BASE)]),
+            Node::top(
+                b"REFR",
+                vec![
+                    RecordBuilder::new(b"REFR", MARKER)
+                        .form(b"NAME", MARKER_BASE)
+                        .field(b"DATA", &data),
+                ],
+            ),
+            Node::top(
+                b"ACHR",
+                vec![
+                    RecordBuilder::new(b"ACHR", ACTOR)
+                        .form(b"NAME", ACTOR_BASE)
+                        .form(b"XLKR", MARKER),
+                ],
+            ),
+        ];
+        std::fs::write(
+            dir.join("Heading.esp"),
+            write_plugin(0, &[], "test", "package heading", 0x805, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Heading.esp");
+        let package = |behaviour, kind, radius| Package {
+            id: FormId(0x805),
+            editor_id: "HeadingTest".into(),
+            quest: Some(QUEST),
+            template: String::new(),
+            behaviour,
+            schedule: Default::default(),
+            conditions: Vec::new(),
+            location: Some(super::super::package::Location { kind, radius }),
+            target: None,
+            allow: Default::default(),
+            energy: 50.0,
+            point_radius: 0.0,
+            repeat: false,
+            start_nearest: false,
+            follow_radius: (0.0, 0.0),
+            escort_wait: 0.0,
+            escort_run: 0.0,
+            gait: super::super::package::Gait::Walk,
+            sneak: false,
+            lock_doors: false,
+            unlock_at_start: false,
+            unlock_on_change: false,
+            greet: None,
+            use_weapon: None,
+            use_magic: None,
+            activate: 0,
+            stops: Vec::new(),
+            random_stops: false,
+        };
+        let direct = package(Behaviour::Sandbox, LocationKind::NearReference(MARKER), 0.0);
+        assert_eq!(
+            e.package_placement_heading(ACTOR, &direct, Vec3::ZERO, Vec3::ZERO),
+            Some(PlacementHeading::Set(0.7))
+        );
+
+        e.world_state.moved.insert(
+            MARKER,
+            crate::world_state::Moved {
+                place: Place::Interior(FormId(0x806)),
+                pos: Vec3::new(10.0, 20.0, 30.0),
+                rot: Vec3::new(0.0, 0.0, -1.2),
+            },
+        );
+        let linked = package(
+            Behaviour::Travel,
+            LocationKind::NearLinkedRef(FormId::NULL),
+            0.0,
+        );
+        assert_eq!(
+            e.package_placement_heading(ACTOR, &linked, Vec3::ZERO, Vec3::new(1000.0, 0.0, 0.0)),
+            Some(PlacementHeading::Turn(-1.2))
+        );
+        e.force_alias_ref(QUEST, ALIAS, MARKER);
+        let alias = package(Behaviour::Travel, LocationKind::NearAlias(ALIAS), 0.0);
+        assert_eq!(
+            e.package_placement_heading(ACTOR, &alias, Vec3::ZERO, Vec3::new(1000.0, 0.0, 0.0)),
+            Some(PlacementHeading::Turn(-1.2))
+        );
+        let nearby = package(
+            Behaviour::Travel,
+            LocationKind::NearReference(MARKER),
+            128.0,
+        );
+        // The actor is 86 units from the marker, already inside Travel's 118
+        // unit stop distance, so it keeps its existing heading.
+        assert_eq!(
+            e.package_placement_heading(ACTOR, &nearby, Vec3::ZERO, Vec3::new(86.0, 0.0, 0.0)),
+            None
+        );
+        let other = package(Behaviour::Sit, LocationKind::NearReference(MARKER), 0.0);
+        assert_eq!(
+            e.package_placement_heading(ACTOR, &other, Vec3::ZERO, Vec3::new(1000.0, 0.0, 0.0)),
+            None
+        );
+        drop(e);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
