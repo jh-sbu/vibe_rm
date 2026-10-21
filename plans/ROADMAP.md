@@ -201,6 +201,12 @@ game each piece unlocks.
   smoothstep curve are supported; the two asymmetric enum modes retain the
   prior smoothstep approximation pending formula evidence:
   `known_ambiguities/character-properties.md`
+- Transition effects resolve authored, whole-member graph-variable and scalar
+  character-property `toGeneratorStartTimeFraction` inputs at commit. A positive
+  fraction seeks a destination clip through transparent wrappers with cropped
+  and reverse playback; zero preserves the clip's existing `startTime`. Compound
+  generator and exact Havok timing policies remain open:
+  `known_ambiguities/character-properties.md`
 - Cyclic blend wrappers forward `fBlendParameter` character properties to their
   blender children, including cyclic weights and synchronized clip timing.
   Existing variable precedence and authored fallbacks remain; wrapper lifecycle
@@ -1311,7 +1317,8 @@ game each piece unlocks.
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
      properties on remaining generator members, blender-child members beyond `weight`
      and `boneWeights`, and transition-effect members beyond `duration`,
-     `selfTransitionMode`, `eventMode` and the supported subset of `blendCurve`,
+     `selfTransitionMode`, `eventMode`, the supported subset of `blendCurve`,
+     and compound-target behavior for `toGeneratorStartTimeFraction`,
      runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`;
      `vrm-tool hkb-props` lists the bindings: the humanoid and dragon projects bind
      only two modifiers' `enable`);
