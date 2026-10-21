@@ -103,6 +103,12 @@ pub struct Transition {
     pub blend_curve_variable: Option<usize>,
     /// Read-only character property bound to the effect's `blendCurve`.
     pub blend_curve_property: Option<String>,
+    /// `hkbBlendingTransitionEffect::toGeneratorStartTimeFraction`.
+    pub target_start_fraction: f32,
+    /// Variable bound to the target start fraction, if any.
+    pub target_start_fraction_variable: Option<usize>,
+    /// Read-only character property bound to the target start fraction.
+    pub target_start_fraction_property: Option<String>,
     /// `hkbExpressionCondition` that must hold.
     pub condition: Option<String>,
     pub priority: i16,
@@ -894,6 +900,16 @@ impl<'a> Reader<'a> {
                         .map(|b| b.variable),
                     blend_curve_property: effect
                         .and_then(|e| self.character_property(e, "blendCurve")),
+                    target_start_fraction: effect.map_or(0.0, |e| self.p.f32(e + 0x54)),
+                    target_start_fraction_variable: effect
+                        .and_then(|e| {
+                            self.bindings_of(e)
+                                .into_iter()
+                                .find(|b| b.member == "toGeneratorStartTimeFraction")
+                        })
+                        .map(|b| b.variable),
+                    target_start_fraction_property: effect
+                        .and_then(|e| self.character_property(e, "toGeneratorStartTimeFraction")),
                     condition: condition.and_then(|c| self.p.string(c + 0x10)),
                     priority: self.p.i16(t + 0x40),
                     trigger: (flags & FLAG_USE_TRIGGER_INTERVAL != 0).then(|| self.interval(t)),
@@ -2303,6 +2319,39 @@ mod character_property_tests {
                 (bit == u8::MAX).then_some("CurveInput")
             );
         }
+    }
+
+    #[test]
+    fn transition_effects_retain_target_start_fraction_bindings() {
+        let mut p = fixture();
+        p.data[0x2D4..0x2D8].copy_from_slice(&0.375f32.to_bits().to_le_bytes());
+        for at in [0x480, 0x4E0] {
+            p.data[at..at + 0x20].fill(0);
+            let name = b"toGeneratorStartTimeFraction";
+            p.data[at..at + name.len()].copy_from_slice(name);
+        }
+        let r = Reader {
+            p: &p,
+            classes: [(0x280, "hkbBlendingTransitionEffect")].into(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            property_bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["Other", "Unused", "Third", "Fourth", "StartFraction"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let t = &r.transitions(Some(0x600))[0];
+        assert_eq!(t.target_start_fraction, 0.375);
+        assert_eq!(t.target_start_fraction_variable, Some(2));
+        assert_eq!(
+            t.target_start_fraction_property.as_deref(),
+            Some("StartFraction")
+        );
     }
 
     #[test]

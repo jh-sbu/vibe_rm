@@ -3,9 +3,9 @@
 Implemented in `crates/havok/src/behavior/{mod.rs,runtime.rs}` and
 `src/world/behavior.rs`: read-only scalar inputs to supported modifiers and
 generator members already handled by the runtime, scalar blender-child weights,
-transition-effect duration, self-transition mode, event mode and the supported
-`blendCurve` subset, and bone-weight array inputs on blender children and bone
-switches.
+transition-effect duration, self-transition mode, event mode, the supported
+`blendCurve` subset and destination start fraction, and bone-weight array inputs
+on blender children and bone switches.
 
 ## Public and asset evidence
 
@@ -82,7 +82,9 @@ switches.
   `eventMode` inputs also resolve at commit, retaining the existing event-routing
   approximation (see [`transition-event-mode-properties.md`](transition-event-mode-properties.md));
   `blendCurve` inputs select the existing smoothstep or a linear cross-fade at
-  commit (details below); other effect members remain unsupported.
+  commit (details below); `toGeneratorStartTimeFraction` seeks supported
+  destination clips at commit (details below); other effect members remain
+  unsupported.
   `BSCyclicBlendTransitionGenerator.fBlendParameter` properties now forward to
   its blender child (see below). Other generator members not listed above remain
   retained but unevaluated, except clip start/end crop bindings, which resolve
@@ -249,6 +251,43 @@ smooth and linear output, invalid/missing/non-scalar fallback, variable
 precedence over a duplicate property, and a variable changed while a transition
 is pending. They validate this runtime's supported subset, not engine parity.
 No engine binary data or game assets were inspected for this extension.
+
+## Transition target start fraction
+
+The runtime retains `hkbBlendingTransitionEffect.toGeneratorStartTimeFraction`
+as a scalar and reads its graph-variable or read-only character-property binding
+from the effect. The community-authored [Skyrim Behavior Editor class](https://github.com/BrannigansLaw/Skyrim-Behavior-Editor-/blob/master/src/hkxclasses/behavior/hkbblendingtransitioneffect.cpp)
+parses the member as a real value. Its [effect UI](https://github.com/BrannigansLaw/Skyrim-Behavior-Editor-/blob/master/src/ui/hkxclassesui/behaviorui/blendingtransitioneffectui.cpp)
+offers a real-valued variable/property binding for it. A public community
+[Havok behavior layout](https://github.com/adamhynek/activeragdoll/blob/master/include/RE/havok_behavior.h)
+places it at effect offset `0x54`. The community [Sage Havok Editor guide](https://github.com/lennart99v/SageHavokEditor/blob/master/docs/GUIDE.md)
+identifies it as the transition effect's target start fraction. These sources
+establish the scalar field, binding types, location and role name, but do not
+describe its exact playback-time formula or Skyrim runtime lifecycle.
+
+At transition commit, a whole-member variable takes precedence over a property,
+even when the variable is missing or non-finite; those cases fall back to the
+authored scalar. Finite values are clamped to `[0, 1]`. As a compatibility
+policy, zero leaves the destination clip's existing authored or bound
+`startTime` intact. A positive fraction positions a direct destination clip at
+that fraction of its cropped playable length. Reverse playback maps this
+playback-direction fraction through the existing reverse sample mapping.
+Seeking sets the clip's current and previous local times without re-activating
+generators or replaying earlier triggers. A trigger exactly at the seek point
+is considered already passed; triggers crossed after the seek still fire.
+
+The seek traverses wrappers represented as transparent by this runtime, but it
+does not enter state machines, selectors, blenders or bone switches. It also
+does not reposition user-controlled clips, whose next update follows their own
+fraction input. These boundaries and zero's preserve-`startTime` meaning are
+implementation policies; they are not confirmed Havok or Skyrim behavior.
+Sampling timing, out-of-range fraction policy, compound-generator behavior and
+any skipped-trigger policy in the original runtime remain unverified. Synthetic
+tests cover parser retention, pending-commit variable precedence, invalid
+fallback, cropped/reverse clips, zero preserving `startTime`, wrappers, user
+controlled and compound targets, and triggers before, at and after the seek.
+They verify this implementation only. No game assets or engine binary data were
+examined.
 
 ## Cyclic-wrapper blend-parameter properties
 

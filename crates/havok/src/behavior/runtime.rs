@@ -1300,6 +1300,37 @@ impl Ctx<'_> {
         let blend_curve = curve_input
             .and_then(BlendCurve::from_input)
             .unwrap_or(t.blend_curve);
+        // Preserve the authored clip startTime when the effect uses its default
+        // zero fraction. Invalid bound values fall back to the authored fraction;
+        // an invalid authored value safely behaves like zero.
+        let start_fraction_input = if let Some(v) = t.target_start_fraction_variable {
+            self.shared.maps[gi]
+                .vars
+                .get(v)
+                .and_then(|&mapped| self.values.get(mapped))
+                .copied()
+        } else {
+            t.target_start_fraction_property
+                .as_ref()
+                .and_then(|property| {
+                    self.shared
+                        .project
+                        .character
+                        .as_ref()?
+                        .scalar_properties
+                        .get(&property.to_ascii_lowercase())
+                        .copied()
+                })
+        };
+        let authored_start_fraction = if t.target_start_fraction.is_finite() {
+            t.target_start_fraction
+        } else {
+            0.0
+        };
+        let target_start_fraction = start_fraction_input
+            .filter(|fraction| fraction.is_finite())
+            .unwrap_or(authored_start_fraction)
+            .clamp(0.0, 1.0);
         let old_child = m.child.take();
         let old_from = m.from.take();
         let sync_variable = m.sync_variable;
@@ -1330,7 +1361,12 @@ impl Ctx<'_> {
         }
         let mut nested = t.to_nested;
         self.set_current_state(gi, sm, id);
-        let child = generator.map(|c| Box::new(self.activate(gi, c, &mut nested, 1)));
+        let mut child = generator.map(|c| Box::new(self.activate(gi, c, &mut nested, 1)));
+        if target_start_fraction > 0.0
+            && let Some(child) = child.as_deref_mut()
+        {
+            Self::apply_transition_start_fraction(child, target_start_fraction);
+        }
         if let Some((f, _, _)) = old_from {
             self.deactivate(*f);
         }
@@ -1363,6 +1399,30 @@ impl Ctx<'_> {
         }
         if let Some(v) = sync_variable {
             self.set_var(gi, v, id as f32);
+        }
+    }
+
+    /// Seek one directly reachable clip through wrappers represented as
+    /// transparent by this runtime. Compound selectors, blends, state machines
+    /// and bone switches need separate synchronization / trigger policies.
+    fn apply_transition_start_fraction(node: &mut Node, fraction: f32) -> bool {
+        match &mut node.kind {
+            Kind::Clip(clip) if !clip.user && clip.length.is_finite() && clip.length > 0.0 => {
+                let start = clip.length * fraction;
+                if !start.is_finite() {
+                    return false;
+                }
+                clip.t = start;
+                clip.prev = start;
+                // Treat time before the seek as already elapsed so the initial
+                // trigger sweep cannot fire events that the target skipped.
+                clip.started = true;
+                true
+            }
+            Kind::Wrap {
+                child: Some(child), ..
+            } => Self::apply_transition_start_fraction(child, fraction),
+            _ => false,
         }
     }
 
@@ -3577,6 +3637,282 @@ mod tests {
             ],
             vec!["Switch".into()],
         )
+    }
+
+    fn target_start_fraction_graph() -> BehaviorGraph {
+        let mut graph = duration_property_graph();
+        let Generator::StateMachine { states, .. } = &mut graph.generators[0] else {
+            unreachable!()
+        };
+        let transition = &mut states[0].transitions[0];
+        transition.target_start_fraction = 0.25;
+        transition.target_start_fraction_property = Some("STARTFRACTION".into());
+        graph
+    }
+
+    fn target_clip_mut(graph: &mut BehaviorGraph) -> &mut Generator {
+        &mut graph.generators[2]
+    }
+
+    #[test]
+    fn transition_target_start_fraction_is_crop_and_reverse_aware() {
+        for (speed, expected_time) in [(1.0, 0.35), (-1.0, 0.65)] {
+            let mut graph = target_start_fraction_graph();
+            let Generator::Clip {
+                speed: authored_speed,
+                crop_start,
+                crop_end,
+                start_time,
+                ..
+            } = target_clip_mut(&mut graph)
+            else {
+                unreachable!()
+            };
+            *authored_speed = speed;
+            *crop_start = 0.2;
+            *crop_end = 0.2;
+            *start_time = 0.4;
+            let mut i = property_instance(graph, &[("startfraction", 0.25)]);
+            assert!(i.handle_event("Switch", &mut durations));
+            i.update(0.25, &mut durations);
+            let target = i
+                .samples()
+                .into_iter()
+                .find(|sample| sample.animation.as_ref() == "New")
+                .unwrap();
+            assert!((target.prev_time - expected_time).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn zero_transition_target_start_fraction_preserves_authored_start_time() {
+        let mut graph = target_start_fraction_graph();
+        let Generator::Clip { start_time, .. } = target_clip_mut(&mut graph) else {
+            unreachable!()
+        };
+        *start_time = 0.4;
+        let mut i = property_instance(graph, &[("startfraction", 0.0)]);
+        assert!(i.handle_event("Switch", &mut durations));
+        i.update(0.25, &mut durations);
+        let target = i
+            .samples()
+            .into_iter()
+            .find(|sample| sample.animation.as_ref() == "New")
+            .unwrap();
+        assert_eq!(target.prev_time, 0.4);
+    }
+
+    #[test]
+    fn transition_target_start_fraction_variable_wins_at_pending_commit() {
+        let mut graph = target_start_fraction_graph();
+        let variable = graph.add_variable("StartFraction", VarType::Real, 0.5);
+        let Generator::StateMachine { states, .. } = &mut graph.generators[0] else {
+            unreachable!()
+        };
+        let transition = &mut states[0].transitions[0];
+        transition.target_start_fraction_variable = Some(variable);
+        transition.initiate = Some(Interval {
+            enter_event: -1,
+            exit_event: -1,
+            enter_time: 0.5,
+            exit_time: 0.0,
+        });
+        let mut i = property_instance(graph, &[("startfraction", 0.75)]);
+        assert!(i.handle_event("Switch", &mut durations));
+        assert!(i.set_variable("StartFraction", 0.25));
+        i.update(0.5, &mut durations);
+        assert!(i.set_variable("StartFraction", 0.75));
+        i.update(0.25, &mut durations);
+        let target_start = |instance: &Instance| {
+            instance
+                .samples()
+                .into_iter()
+                .find(|sample| sample.animation.as_ref() == "New")
+                .unwrap()
+                .prev_time
+        };
+        assert_eq!(target_start(&i), 0.25);
+    }
+
+    #[test]
+    fn invalid_transition_target_start_fraction_keeps_authored_fallback() {
+        let mut authored_nonfinite = target_start_fraction_graph();
+        let Generator::StateMachine { states, .. } = &mut authored_nonfinite.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].target_start_fraction = f32::NAN;
+
+        let mut invalid_variable = target_start_fraction_graph();
+        let Generator::StateMachine { states, .. } = &mut invalid_variable.generators[0] else {
+            unreachable!()
+        };
+        states[0].transitions[0].target_start_fraction_variable = Some(99);
+
+        let mut non_scalar_instance = property_instance(target_start_fraction_graph(), &[]);
+        Arc::get_mut(
+            &mut Arc::get_mut(&mut non_scalar_instance.shared)
+                .unwrap()
+                .project,
+        )
+        .unwrap()
+        .character
+        .as_mut()
+        .unwrap()
+        .bone_weights
+        .insert("startfraction".into(), vec![0.75]);
+        // Keep the fixture's character property absent while a same-named
+        // pointer property exists.
+        let cases = [
+            (target_start_fraction_graph(), vec![], 0.25),
+            (invalid_variable, vec![("startfraction", 0.75)], 0.25),
+            (authored_nonfinite, vec![], 0.0),
+        ];
+        for (graph, properties, expected) in cases {
+            let mut i = property_instance(graph, &properties);
+            assert!(i.handle_event("Switch", &mut durations));
+            i.update(0.25, &mut durations);
+            let target = i
+                .samples()
+                .into_iter()
+                .find(|sample| sample.animation.as_ref() == "New")
+                .unwrap();
+            assert_eq!(target.prev_time, expected);
+        }
+        assert!(non_scalar_instance.handle_event("Switch", &mut durations));
+        non_scalar_instance.update(0.25, &mut durations);
+        let target = non_scalar_instance
+            .samples()
+            .into_iter()
+            .find(|sample| sample.animation.as_ref() == "New")
+            .unwrap();
+        assert_eq!(target.prev_time, 0.25);
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut i =
+                property_instance(target_start_fraction_graph(), &[("startfraction", value)]);
+            assert!(i.handle_event("Switch", &mut durations));
+            i.update(0.25, &mut durations);
+            let target = i
+                .samples()
+                .into_iter()
+                .find(|sample| sample.animation.as_ref() == "New")
+                .unwrap();
+            assert_eq!(target.prev_time, 0.25);
+        }
+    }
+
+    #[test]
+    fn transition_target_start_fraction_skips_prior_triggers_and_supports_transparent_wrappers() {
+        let mut graph = target_start_fraction_graph();
+        let events = vec![
+            "Switch".into(),
+            "Before".into(),
+            "After".into(),
+            "AtStart".into(),
+        ];
+        let Generator::Clip { triggers, .. } = target_clip_mut(&mut graph) else {
+            unreachable!()
+        };
+        *triggers = vec![
+            Trigger {
+                time: 0.25,
+                from_end: false,
+                event: 1,
+                payload: None,
+            },
+            Trigger {
+                time: 0.7,
+                from_end: false,
+                event: 2,
+                payload: None,
+            },
+            Trigger {
+                time: 0.5,
+                from_end: false,
+                event: 3,
+                payload: None,
+            },
+        ];
+        graph.events = events;
+        graph.generators.push(Generator::Wrap {
+            name: "Tag".into(),
+            class: "BSiStateTaggingGenerator".into(),
+            child: Some(2),
+            modifier: None,
+        });
+        let Generator::StateMachine { states, .. } = &mut graph.generators[0] else {
+            unreachable!()
+        };
+        states[1].generator = Some(3);
+
+        let mut i = property_instance(graph, &[("startfraction", 0.5)]);
+        assert!(i.handle_event("Switch", &mut durations));
+        assert!(i.take_raised().is_empty());
+        i.update(0.25, &mut durations);
+        assert_eq!(
+            i.take_raised()
+                .iter()
+                .map(|e| e.event.as_str())
+                .collect::<Vec<_>>(),
+            ["After"]
+        );
+    }
+
+    #[test]
+    fn transition_target_start_fraction_does_not_seek_compound_or_user_controlled_targets() {
+        let mut compound = target_start_fraction_graph();
+        compound.generators.push(Generator::Blender {
+            name: "Compound".into(),
+            parameter: 0.0,
+            min_cyclic: 0.0,
+            max_cyclic: 0.0,
+            flags: 0,
+            children: vec![BlendChild {
+                generator: Some(2),
+                weight: 1.0,
+                weight_variable: None,
+                weight_property: None,
+                bone_weights: None,
+                bone_weights_property: None,
+            }],
+        });
+        let Generator::StateMachine { states, .. } = &mut compound.generators[0] else {
+            unreachable!()
+        };
+        states[1].generator = Some(3);
+        let mut i = property_instance(compound, &[("startfraction", 0.5)]);
+        assert!(i.handle_event("Switch", &mut durations));
+        i.update(0.25, &mut durations);
+        assert_eq!(
+            i.samples()
+                .into_iter()
+                .find(|sample| sample.animation.as_ref() == "New")
+                .unwrap()
+                .prev_time,
+            0.0
+        );
+
+        let mut user_controlled = target_start_fraction_graph();
+        let Generator::Clip {
+            mode,
+            user_fraction,
+            ..
+        } = target_clip_mut(&mut user_controlled)
+        else {
+            unreachable!()
+        };
+        *mode = ClipMode::UserControlled;
+        *user_fraction = 0.8;
+        let mut i = property_instance(user_controlled, &[("startfraction", 0.5)]);
+        assert!(i.handle_event("Switch", &mut durations));
+        i.update(0.25, &mut durations);
+        assert_eq!(
+            i.samples()
+                .into_iter()
+                .find(|sample| sample.animation.as_ref() == "New")
+                .unwrap()
+                .time,
+            0.8
+        );
     }
 
     fn blend_curve_property_graph() -> BehaviorGraph {
