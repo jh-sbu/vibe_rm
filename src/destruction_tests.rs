@@ -1,6 +1,7 @@
 //! Synthetic definitions and query-path tests; no game assets are used.
 use super::*;
 use esp::writer::{Node, RecordBuilder, write_plugin};
+use glam::Vec3;
 use papyrus::Value;
 
 const BASE: FormId = FormId(0x800);
@@ -33,7 +34,7 @@ fn fixture() -> (Fixture, Engine) {
     let mut dest = Vec::new();
     dest.extend_from_slice(&100u32.to_le_bytes());
     dest.extend_from_slice(&[2, 1, 0, 0]); // two stages, VATS targetable
-    let mut first = vec![99, 0, 1, 1]; // health%, index, damage stage, flags
+    let mut first = vec![99, 0, 1, 9]; // health%, index, damage stage, flags (cap, ignore external)
     first.extend_from_slice(&0u32.to_le_bytes());
     first.extend_from_slice(&0x830u32.to_le_bytes()); // explosion
     first.extend_from_slice(&0x831u32.to_le_bytes()); // debris
@@ -373,6 +374,35 @@ fn damageobject_is_loaded_reference_gated_and_keeps_health_per_reference() {
             ..Default::default()
         }
     ));
+}
+
+#[test]
+fn weapon_blows_damage_loaded_destructibles_until_the_stage_ignores_external_damage() {
+    let (_dir, mut e) = fixture();
+    let this_a = e.object_value(REF_A);
+
+    // An unloaded reference takes no blow.
+    e.strike(REF_A, crate::engine::PLAYER_REF, Vec3::ZERO, false, 100.0);
+    assert_eq!(e.current_destruction_stage(REF_A), -1);
+
+    e.cells
+        .entry(crate::render::CellKey::Interior(FormId(0x840)))
+        .or_default()
+        .refs
+        .extend([REF_A]);
+
+    // The first cap stage holds this blow at 99%, like a scripted hit.
+    e.strike(REF_A, crate::engine::PLAYER_REF, Vec3::ZERO, true, 100.0);
+    assert_eq!(e.current_destruction_stage(REF_A), 0);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
+
+    // Stage 0 flags Ignore External Damage: further blows do nothing.
+    e.strike(REF_A, crate::engine::PLAYER_REF, Vec3::ZERO, false, 50.0);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
+
+    // Scripted DamageObject still applies there.
+    damage_object(&mut e, &this_a, 1.0);
+    assert_eq!(e.world_state.destruction[&REF_A].health, 98.0);
 }
 
 #[test]

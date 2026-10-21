@@ -591,8 +591,8 @@ impl Engine {
         type Hit = (FormId, FormId, f32, Arrow, Vec3, Vec3, Option<FormId>);
         let mut hits: Vec<Hit> = Vec::new();
         let mut stuck: Vec<(FormId, Vec3, f32, Option<FormId>, Vec3)> = Vec::new();
-        // References struck (shooter, what, the arrow's velocity).
-        let mut struck: Vec<(FormId, FormId, Vec3)> = Vec::new();
+        // References struck (shooter, what, the arrow's velocity and damage).
+        let mut struck: Vec<(FormId, FormId, Vec3, f32)> = Vec::new();
         // Spells landing (caster, spell, the actor struck, where, flying).
         let mut landed: Vec<(FormId, FormId, Option<FormId>, Vec3, Vec3, bool)> = Vec::new();
         let player = self.player.position;
@@ -654,7 +654,7 @@ impl Engine {
                     let actor = owner.filter(|&o| is_actor(o));
                     landed.push((p.shooter, p.spell.unwrap(), actor, p.pos, dir, p.dual));
                     if let Some(o) = owner.filter(|_| actor.is_none()) {
-                        struck.push((p.shooter, o, p.vel));
+                        struck.push((p.shooter, o, p.vel, p.damage));
                     }
                     p.stuck = Some(0.0);
                 }
@@ -675,7 +675,7 @@ impl Engine {
                         }
                         None => {
                             if let Some(o) = owner {
-                                struck.push((p.shooter, o, p.vel));
+                                struck.push((p.shooter, o, p.vel, p.damage));
                             }
                             // A loose object is knocked away; the arrow falls.
                             if owner.is_some_and(|o| self.physics.is_dynamic_owner(o)) {
@@ -693,8 +693,8 @@ impl Engine {
                 p.stuck = Some(0.0);
             }
         }
-        for (shooter, what, vel) in struck {
-            self.strike(what, shooter, vel * ARROW_MASS, false);
+        for (shooter, what, vel, damage) in struck {
+            self.strike(what, shooter, vel * ARROW_MASS, false, damage);
         }
         for (caster, spell, target, at, dir, dual) in landed {
             self.spell_lands(caster, spell, target, at, dir, dual);

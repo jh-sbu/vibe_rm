@@ -3338,7 +3338,13 @@ impl Engine {
             // Anything else (a body, clutter, a wall): pushed if it moves.
             let push = if power { BLOW_PUSH * 2.0 } else { BLOW_PUSH };
             log::info!("player strikes {r}");
-            self.strike(r, PLAYER_REF, dir * push * crate::physics::METRE, power);
+            self.strike(
+                r,
+                PLAYER_REF,
+                dir * push * crate::physics::METRE,
+                power,
+                damage,
+            );
         }
         // Resolve the first strike's sneak test before restoring visibility.
         self.break_invisibility(PLAYER_REF);

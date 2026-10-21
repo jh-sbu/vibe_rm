@@ -389,10 +389,18 @@ impl Engine {
     }
 
     /// Something struck by `attacker`'s blow or projectile (none for a blow):
-    /// what moves of it is pushed by `impulse` (kg game units / s), and its
-    /// scripts hear of it (`OnHit`).
-    pub(crate) fn strike(&mut self, what: FormId, attacker: FormId, impulse: Vec3, power: bool) {
+    /// a destructible one loses `damage` health, what moves of it is pushed by
+    /// `impulse` (kg game units / s), and its scripts hear of it (`OnHit`).
+    pub(crate) fn strike(
+        &mut self,
+        what: FormId,
+        attacker: FormId,
+        impulse: Vec3,
+        power: bool,
+        damage: f32,
+    ) {
         self.disturb(what);
+        self.damage_object_by_blow(what, damage);
         self.physics.apply_impulse(what, impulse);
         self.send_hit_event(what, attacker, power, false, false, false);
     }

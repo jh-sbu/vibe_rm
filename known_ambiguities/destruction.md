@@ -145,16 +145,23 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   the documented untouched `-1`, but exact handling of 100% stages, overkill,
   and later stages after a cap has not been checked in Skyrim SE.
 - **How much a weapon hit does.** Choice: the blow's damage as it would be
-  to an actor before armor and blocking. Objects have no armor, and the
-  game's formula for objects isn't public.
+  to an actor before armor and blocking; arrows deal their projectile
+  damage. Power attacks add nothing beyond the power attack's own blow
+  damage, and bashes deal their bash damage. Objects have no armor, and the
+  game's formula for objects isn't public (UESP's DEST and DSTD pages and
+  the function index say nothing about it).
 - **Which spells damage objects, and by how much.** UESP's "burn through"
   shows fire works. Whether frost, shock and other hostile damage do too
   is unconfirmed. Choice: any hostile effect that damages health deals its
   magnitude to an object it lands on or whose area reaches it. Explosions
   deal their `EXPL` damage within their radius.
 - **Ignore external damage** (650 stages, mostly mine ores and the civil
-  war resource objects). Choice: weapons, spells and explosions do nothing.
-  Only `DamageObject` and the stage's self damage per second apply.
+  war resource objects; DSTD flag 0x08). Choice: while the reference is in
+  a stage with the flag set, weapon and arrow blows do nothing; the flag is
+  read from the current stage, not the one a hit would enter. Spells and
+  explosions are not yet applied, so only `DamageObject` and the stage's
+  self damage per second also reach these. Source: UESP DEST Field,
+  https://en.uesp.net/w/index.php?oldid=2334527 (flag name only).
 - **To settle in game** (`vrm-tool test-mod`): how many hits of what size
   the web takes with cap damage; whether frost or shock spells damage it;
   whether stage 1's model changes in the Bleak Falls web; and
