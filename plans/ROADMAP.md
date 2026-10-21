@@ -1348,6 +1348,11 @@ game each piece unlocks.
   damage as health (`strike` -> `damage_object_by_blow`), skipped while the
   current stage has Ignore External Damage (DSTD 0x08); power attacks add no
   extra damage to objects (unconfirmed, see `known_ambiguities/destruction.md`).
+- Positional conditions: `GetPos`, `GetAngle`, `GetStartingPos`, `GetStartingAngle`
+  (axis 'X'/'Y'/'Z'), `GetHeadingAngle`, `GetRelativeAngle`, `GetWithinDistance`
+  (package float inputs), `IsCloserToAThanB`, `GetLineOfSight` read the subject's
+  and references' current state; choices and gaps in
+  `known_ambiguities/condition-geometry.md`
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -1497,6 +1502,11 @@ game each piece unlocks.
      the camera stopping short of actors, a vanity camera; the head's morphs
      (`.tri`), tint layers (`TINI` / `TINC`), hair colour (`HCLF`) and
      texture sets (`HDPT` `TNAM`), with character creation
+   - Positional conditions: a null reference in `GetHeadingAngle`,
+     `GetRelativeAngle` and `GetLineOfSight` (vanilla combat idles pass one and
+     test the heading within ±45; probably the combat target, needs a source:
+     `known_ambiguities/condition-geometry.md`); `GetStartingPos` /
+     `GetStartingAngle` of created references (their spawn point isn't kept)
    - Player control from scripts: `SetPlayerAIDriven` (player package execution,
      including scene and quest-alias packages)
    - Sneak attacks (see Done): NPCs sneaking up on the player

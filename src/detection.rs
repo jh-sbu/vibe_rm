@@ -386,6 +386,25 @@ impl Engine {
         }
     }
 
+    /// Whether `from` has a clear line to `to` (`GetLineOfSight`): actors look
+    /// from their eyes, other references from their position. None when either
+    /// has no place in the world.
+    pub(crate) fn line_of_sight(&self, from: FormId, to: FormId) -> Option<bool> {
+        let a = self.sight_point(from)?;
+        let t = self.sight_point(to)?;
+        Some(self.clear_line(a, t, from, to))
+    }
+
+    fn sight_point(&self, r: FormId) -> Option<Vec3> {
+        if r == PLAYER_REF {
+            return Some(self.player.eye());
+        }
+        if let Some(a) = self.actor_ref(r) {
+            return Some(a.pos + Vec3::Z * EYE_HEIGHT * a.scale);
+        }
+        self.ref_position(r)
+    }
+
     /// The light level at a point (`GetLightLevel`, 0 to 150): the scene's
     /// ambient, its sun (or interior directional light) unless something shades
     /// the point outdoors, and the point lights reaching it with nothing in

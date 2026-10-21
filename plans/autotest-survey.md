@@ -407,3 +407,12 @@ Last in a run, or a run of their own:
 The console's `setcrimegold` default faction; condition-only rules
 (`GetCrimeGold` with no faction, `IsGuard`); NPC attack data (ATKD);
 ragdoll joint limits; region weather priority and global chances.
+
+## Pending (2026-10-21 pool run)
+
+- **Condition geometry** (`known_ambiguities/condition-geometry.md`): the sign and
+  wrap of `GetRelativeAngle` (a ref turned 90 degrees from the subject), the `<=`
+  of `GetWithinDistance`, `IsCloserToAThanB` on a tie, and whether `GetHeadingAngle`
+  reads 90 for a target to the subject's right. Verdict: manual. Papyrus cannot read
+  a CTDA result; the user would watch a gated quest stage or idle fire. Mark the
+  subject and target 90 degrees apart and 1 unit either side of the distance.

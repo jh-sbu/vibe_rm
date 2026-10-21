@@ -3,6 +3,7 @@
 pub mod functions;
 
 use esp::{FormId, LoadedRecord};
+use glam::Vec3;
 
 use crate::engine::{Engine, PLAYER_REF};
 use crate::spells::{LEFT, RIGHT, VOICE};
@@ -30,9 +31,10 @@ pub struct Condition {
     /// package data), and whether the first parameter is an input (flag 0x08).
     pub pack_input: Option<u8>,
     pub p1_input: bool,
-    /// GetNumericPackageData / GetWithinPackageLocation: the package input the
-    /// first parameter names, worked out when the package is parsed (`None`:
-    /// the input is missing or of the wrong kind, and the condition fails).
+    /// The package input a condition reads, worked out when the package is parsed:
+    /// GetNumericPackageData and GetWithinPackageLocation take it from their first
+    /// parameter, GetWithinDistance its distance from its second. `None`: the input
+    /// is missing or of the wrong kind, and the condition fails.
     pub package_data: Option<PackageData>,
     /// Parameters naming quest aliases ("use aliases", flag 0x02): the first
     /// parameter is an alias id of the condition's quest.
@@ -169,6 +171,9 @@ const GET_EVENT_DATA: u16 = 576;
 /// Their first parameter is a package input's index (see `Condition::package_data`).
 pub const GET_NUMERIC_PACKAGE_DATA: u16 = 612;
 pub const GET_WITHIN_PACKAGE_LOCATION: u16 = 325;
+/// Its second parameter is the package's distance input when the condition takes
+/// package inputs (see `Condition::package_data`).
+pub const GET_WITHIN_DISTANCE: u16 = 639;
 
 /// Whether parameter `n` of function `func` is a form reference (vs. an int/enum).
 pub(crate) fn param_is_form(func: u16, n: u8) -> bool {
@@ -541,17 +546,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .as_ref()
                 .is_some_and(|w| w.classification() == class))
         }
-        1 => {
-            // GetDistance: far beyond anything between different interiors or
-            // worldspaces.
-            let (pa, a) = e.current_place_of(subject?)?;
-            let (pb, t) = e.current_place_of(p1)?;
-            Some(if crate::ai::schedule::same_space(pa, pb) {
-                a.distance(t)
-            } else {
-                f32::MAX
-            })
-        }
+        1 => distance_between(e, subject?, p1), // GetDistance
         32 => b(subject.and_then(|s| e.lo.cell_of_ref(s)) == e.lo.cell_of_ref(p1)), // GetInSameCell
         566 => b(ctx
             .quest
@@ -821,6 +816,48 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         329 => b(subject.is_some_and(|s| e.is_fleeing(s))), // IsFleeing
         477 => Some(subject.map_or(0.0, |s| e.threat_ratio(s, p1))), // GetThreatRatio
         672 | 701 | 702 | 714 => b(false),
+        // Positions and angles of the subject, along an axis ('X', 'Y' or 'Z').
+        // Angles are in degrees, as scripts give them (`GetAngleZ` in Papyrus).
+        6 => axis_component(c.p1, e.ref_position(subject?)?), // GetPos
+        8 => axis_component(c.p1, e.ref_rotation(subject?)).map(f32::to_degrees), // GetAngle
+        // Where a placed reference was placed in the editor (created references
+        // keep no spawn point, so they are unsupported).
+        10 => axis_component(c.p1, starting_placement(e, subject?)?.position), // GetStartingPos
+        11 => axis_component(c.p1, starting_placement(e, subject?)?.rotation).map(f32::to_degrees), // GetStartingAngle
+        // The reference's bearing from the subject's facing, in [-180, 180).
+        // A null reference names nothing to face: unsupported.
+        99 => {
+            let (from, s) = (e.ref_position(subject?)?, subject?);
+            let to = e.ref_position(named(p1)?)?;
+            let bearing = (to.x - from.x).atan2(to.y - from.y);
+            let heading = (bearing - e.ref_rotation(s).z).to_degrees();
+            Some((heading + 180.0).rem_euclid(360.0) - 180.0)
+        } // GetHeadingAngle
+        // The reference's angle less the subject's along an axis, in [0, 360).
+        584 => {
+            let s = subject?;
+            let other = axis_component(c.p2, e.ref_rotation(named(p1)?))?;
+            let mine = axis_component(c.p2, e.ref_rotation(s))?;
+            Some((other - mine).to_degrees().rem_euclid(360.0))
+        } // GetRelativeAngle
+        // Within the distance the package's float input gives (its second
+        // parameter); outside packages, the parameter is the float itself.
+        639 => {
+            let distance = match (c.package_data, c.p1_input) {
+                (Some(PackageData::Number(d)), true) => d,
+                (None, false) => f32::from_bits(c.p2),
+                _ => return None,
+            };
+            b(distance_between(e, subject?, named(p1)?)? <= distance)
+        } // GetWithinDistance
+        577 => {
+            // Nearer to the first reference than to the second (ties: no).
+            let s = subject?;
+            let near = distance_between(e, s, named(p1)?)?;
+            let far = distance_between(e, s, named(FormId(c.p2))?)?;
+            b(near < far)
+        } // IsCloserToAThanB
+        27 => b(e.line_of_sight(subject?, named(p1)?)?), // GetLineOfSight
         _ => idle_function_value(e, c, ctx),
     }
 }
@@ -828,6 +865,39 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
 /// What alias `id` of the condition's quest holds.
 fn alias(e: &Engine, ctx: Context, id: u32) -> Option<FormId> {
     ctx.quest.and_then(|q| e.alias_ref(q, id))
+}
+
+/// A reference parameter that names one (a null form names nothing).
+fn named(r: FormId) -> Option<FormId> {
+    (!r.is_null()).then_some(r)
+}
+
+/// The component of a vector an axis parameter names: 'X', 'Y' or 'Z' (ASCII).
+fn axis_component(axis: u32, v: Vec3) -> Option<f32> {
+    match axis {
+        88 => Some(v.x),
+        89 => Some(v.y),
+        90 => Some(v.z),
+        _ => None,
+    }
+}
+
+/// A placed reference as the editor put it (its starting position and angles).
+fn starting_placement(e: &Engine, r: FormId) -> Option<crate::world::records::Reference> {
+    let rec = e.lo.get(r)?;
+    Some(crate::world::records::reference(&rec))
+}
+
+/// The distance between two references (`GetDistance`): far beyond anything
+/// between different interiors or worldspaces.
+fn distance_between(e: &Engine, from: FormId, to: FormId) -> Option<f32> {
+    let (pa, a) = e.current_place_of(from)?;
+    let (pb, t) = e.current_place_of(to)?;
+    Some(if crate::ai::schedule::same_space(pa, pb) {
+        a.distance(t)
+    } else {
+        f32::MAX
+    })
 }
 
 /// The location a condition's subject (else the player) is in: itself for a location.
@@ -1156,3 +1226,7 @@ impl Engine {
 pub fn subject_is_player(s: Option<FormId>) -> bool {
     s == Some(PLAYER_REF)
 }
+
+#[cfg(test)]
+#[path = "geometry_tests.rs"]
+mod geometry_tests;
