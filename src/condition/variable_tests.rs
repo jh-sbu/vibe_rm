@@ -1,6 +1,6 @@
-//! Script variable conditions (`GetScriptVariable`, which reads a reference's
-//! script variable named in CIS2) over synthetic references and Papyrus
-//! instances; no game assets.
+//! Script variable conditions (`GetScriptVariable` and `GetVMScriptVariable`,
+//! which read a reference's script variable named in CIS2) over synthetic
+//! references and Papyrus instances; no game assets.
 use super::*;
 use esp::writer::{Node, RecordBuilder, write_plugin};
 use papyrus::{ObjectId, SavedVm, Value};
@@ -10,6 +10,7 @@ const QUEST: FormId = FormId(0x851);
 
 const GET_SCRIPT_VARIABLE: u16 = 53;
 const GET_GRAPH_VARIABLE_FLOAT: u16 = 447;
+const GET_VM_SCRIPT_VARIABLE: u16 = 630;
 
 struct Fixture(std::path::PathBuf);
 impl Drop for Fixture {
@@ -116,6 +117,54 @@ fn get_script_variable_reads_the_named_variable_of_the_reference() {
     assert!(holds(
         &e,
         parsed(&e, GET_SCRIPT_VARIABLE, QUEST, Some("speed"), 0.0),
+        OBJ,
+    ));
+}
+
+#[test]
+fn get_vm_script_variable_reads_the_reference_named_not_the_subject() {
+    let (_dir, mut e) = fixture();
+    attach_vars(
+        &mut e,
+        OBJ,
+        "TriggerScript",
+        &[("::intrigger_var", Value::Bool(true))],
+    );
+    // A speaker (the subject) asking about a trigger, as vanilla dialogue does,
+    // naming the compiled variable as CIS2 spells it (the VM keeps names lowercase).
+    assert!(holds(
+        &e,
+        parsed(
+            &e,
+            GET_VM_SCRIPT_VARIABLE,
+            OBJ,
+            Some("::InTrigger_var"),
+            1.0
+        ),
+        QUEST,
+    ));
+    // The subject's own scripts don't answer for the reference.
+    assert!(holds(
+        &e,
+        parsed(
+            &e,
+            GET_VM_SCRIPT_VARIABLE,
+            QUEST,
+            Some("::InTrigger_var"),
+            0.0
+        ),
+        OBJ,
+    ));
+    // A null reference holds nothing: 0.
+    assert!(holds(
+        &e,
+        parsed(
+            &e,
+            GET_VM_SCRIPT_VARIABLE,
+            FormId::NULL,
+            Some("::InTrigger_var"),
+            0.0
+        ),
         OBJ,
     ));
 }

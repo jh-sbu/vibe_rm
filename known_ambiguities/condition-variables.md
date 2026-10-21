@@ -28,9 +28,10 @@ see ROADMAP Next (story manager).
   rather than the subject; a variable the reference's scripts lack reads 0; no CIS2
   name means the condition fails. Unconfirmed: the legacy function may read
   Oblivion-era script locals (SCRI / SCRV), which the engine doesn't keep, and vanilla
-  never calls it, so no record shows the answer. Whether it reads the subject or
-  parameter 1 is also unchecked (`GetDistance` treats parameter 1 as the reference;
-  630 uses the subject).
+  never calls it, so no record shows the answer. Parameter 1 follows 630, whose
+  141 vanilla uses all run on the subject (a speaker, an actor in a scene or
+  package) and name the script's holder in parameter 1 (e.g. Delphine's "Close the
+  door." asks `MQ106DelphineBedroomTrigger`).
 - 79 stays unsupported: its variable is a number, and nothing in the record, the
   quest's VMAD, or the public sources we checked says which Papyrus variable a number
   names (`setpqv` in Skyrim:Console takes the variable's name). A mapping from quest
