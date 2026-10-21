@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Combat-state conditions: `GetCombatState`, `IsCombatTarget` (the target the
+  actor fights or searches for, as `GetCombatTarget`), `IsPowerAttacking` (the
+  swing being made), `IsShieldOut` (shield held with weapons drawn), `IsTorchOut`
+  (torch in the left hand). Open questions: `known_ambiguities/combat-conditions.md`
 - Script-requested native quicksaves are append-only numbered `.vrs` files;
   manual names and the replaceable autosave slot keep their existing policies.
   This is a native history choice, not claimed Skyrim SE parity:
@@ -1553,6 +1557,11 @@ game each piece unlocks.
    - Encumbrance, more: fast travel refused over-encumbered (with the
      map), followers' "can't carry any more"
    - Perks, more: staggers, bow zoom; NPCs' skills advancing
+   - Combat conditions waiting on the attack phases: `GetAttackState` (the
+     graph's draw, swing, hit, next attack, follow-through and bash; the engine
+     has only the swing timer and whether a blow landed) and `GetShouldAttack`
+     (the attack-on-sight decision readable from `&Engine`). Open questions:
+     `known_ambiguities/combat-conditions.md`
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; doors
      opened by actors remembered; looping sounds of enabled references checked

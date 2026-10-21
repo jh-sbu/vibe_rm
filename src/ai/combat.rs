@@ -2868,6 +2868,22 @@ impl Engine {
         self.actor_ref(actor).and_then(|a| a.combat_state().1)
     }
 
+    /// Whether an actor is in the middle of a power attack (`IsPowerAttacking`):
+    /// the swing it is making is one. The player's is tracked only until its
+    /// blows land (`player_swing`).
+    pub(crate) fn power_attacking(&self, actor: FormId) -> bool {
+        if actor == PLAYER_REF {
+            return self.player_swing.as_ref().is_some_and(|s| s.power);
+        }
+        self.actor_ref(actor).is_some_and(|a| {
+            a.combat
+                .as_ref()
+                .filter(|c| c.swinging())
+                .and_then(|c| a.stats.attacks.get(c.attack?))
+                .is_some_and(|at| at.power())
+        })
+    }
+
     /// Tell actors' scripts of changes to their combat state
     /// (`OnCombatStateChanged`: target, state).
     pub(crate) fn report_combat_states(&mut self) {
@@ -3913,3 +3929,7 @@ mod follower_tests;
 #[cfg(test)]
 #[path = "combat_critical_tests.rs"]
 mod critical_tests;
+
+#[cfg(test)]
+#[path = "combat_condition_tests.rs"]
+mod condition_tests;
