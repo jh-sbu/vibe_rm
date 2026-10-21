@@ -142,9 +142,9 @@ impl Engine {
         }
     }
 
-    /// Health damage from a weapon, bash or arrow blow. Like `damage_object`,
-    /// but a stage with `Ignore External Damage` (DSTD flag 0x08) takes none
-    /// from blows: UESP's flag list, with the choice in
+    /// Health damage from a weapon, bash, arrow or spell hit. Like
+    /// `damage_object`, but a stage with `Ignore External Damage` (DSTD flag
+    /// 0x08) takes none from hits: UESP's flag list, with the choice in
     /// `known_ambiguities/destruction.md`.
     pub(crate) fn damage_object_by_blow(&mut self, reference: FormId, damage: f32) {
         let Some(data) = self.destructible_data(reference) else {

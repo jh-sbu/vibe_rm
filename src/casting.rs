@@ -173,6 +173,20 @@ fn needs_combat_healing(health: f32, max_health: f32, continuing: bool) -> bool 
     health > 0.0 && health < max_health * if continuing { 1.0 } else { 0.5 }
 }
 
+/// Whether an effect takes health from what it lands on, as a hostile
+/// Value Modifier on Health does to an actor (fire, frost and shock damage).
+/// Whether it does so to objects is `known_ambiguities/destruction.md`.
+fn damages_health(effect: &MagicEffect, item: &EffectItem) -> bool {
+    effect.has(flags::HOSTILE)
+        && effect.has(flags::DETRIMENTAL)
+        && item.magnitude > 0.0
+        && matches!(
+            effect.archetype,
+            archetype::VALUE_MODIFIER | archetype::DUAL_VALUE_MODIFIER
+        )
+        && effect.primary == Some(av::HEALTH)
+}
+
 /// Restore current Health, as opposed to fortifying its maximum or absorbing
 /// it from someone else. A dual value modifier can restore Health second.
 fn restores_health(effect: &MagicEffect, item: &EffectItem) -> bool {
@@ -1297,10 +1311,14 @@ impl Engine {
                 } else {
                     TARGET_RANGE
                 };
-                if let Some((t, Some(actor))) = self.spell_ray(eye, dir, reach, caster)
-                    && self.is_actor_ref(actor)
+                // A touch reaches destructible objects too; a target actor
+                // spell only actors.
+                if let Some((t, Some(hit))) = self.spell_ray(eye, dir, reach, caster)
+                    && (self.is_actor_ref(hit)
+                        || item.delivery == delivery::CONTACT
+                            && self.destructible_data(hit).is_some())
                 {
-                    self.spell_lands(caster, spell, Some(actor), eye + dir * t, dir, dual);
+                    self.spell_lands(caster, spell, Some(hit), eye + dir * t, dir, dual);
                 }
             }
             _ => {
@@ -1316,12 +1334,8 @@ impl Engine {
                         }
                     }
                     Some((proj, shot)) if reaches_at_once(&self.lo, proj) => {
-                        match self.spell_ray(eye, dir, shot.range, caster) {
-                            Some((t, owner)) => {
-                                let actor = owner.filter(|&o| self.is_actor_ref(o));
-                                self.spell_lands(caster, spell, actor, eye + dir * t, dir, dual);
-                            }
-                            None => {}
+                        if let Some((t, owner)) = self.spell_ray(eye, dir, shot.range, caster) {
+                            self.spell_lands(caster, spell, owner, eye + dir * t, dir, dual);
                         }
                     }
                     Some((_, shot)) => {
@@ -1330,8 +1344,7 @@ impl Engine {
                     }
                     None => {
                         if let Some((t, owner)) = self.spell_ray(eye, dir, LOCATION_RANGE, caster) {
-                            let actor = owner.filter(|&o| self.is_actor_ref(o));
-                            self.spell_lands(caster, spell, actor, eye + dir * t, dir, dual);
+                            self.spell_lands(caster, spell, owner, eye + dir * t, dir, dual);
                         }
                     }
                 }
@@ -1431,6 +1444,22 @@ impl Engine {
         })
     }
 
+    /// Health a spell's damaging effects in `mask` (bit `i` for its `i`th
+    /// effect; `u64::MAX` for all) deal to an object they reach. Objects have
+    /// no resistances, so the effects' magnitudes are taken as they are.
+    fn object_damage(&self, item: &MagicItem, mask: u64) -> f32 {
+        item.effects
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i >= 64 || mask & (1u64 << i) != 0)
+            .filter(|&(_, e)| {
+                self.magic_effect(e.effect)
+                    .is_some_and(|m| damages_health(&m, e))
+            })
+            .map(|(_, e)| e.magnitude)
+            .sum()
+    }
+
     /// The projectile a spell flies as: its first effect's that has one.
     pub(crate) fn item_projectile(&self, item: &MagicItem) -> Option<FormId> {
         item.effects.iter().find_map(|e| {
@@ -1440,9 +1469,10 @@ impl Engine {
         })
     }
 
-    /// A spell lands at `at` (flying along `dir`): on the actor struck, and on
-    /// every actor within its area; its impact there. `dual`: it was dual
-    /// cast.
+    /// A spell lands at `at` (flying along `dir`): on the reference struck, and
+    /// on every actor within its area; its impact there. An object struck or
+    /// in the area takes the health damage of the hostile effects, and nothing
+    /// else. `dual`: it was dual cast.
     pub(crate) fn spell_lands(
         &mut self,
         caster: FormId,
@@ -1455,6 +1485,8 @@ impl Engine {
         let Some(item) = self.magic_item(spell) else {
             return;
         };
+        let object = target.filter(|&t| !self.is_actor_ref(t));
+        let target = target.filter(|_| object.is_none());
         if target != Some(caster)
             && let Some(ipds) = item
                 .effects
@@ -1477,6 +1509,11 @@ impl Engine {
         // area that effect (bit `i` of the mask for the `i`th effect).
         let mut struck: Vec<(FormId, Option<u64>)> =
             target.map(|t| (t, None)).into_iter().collect();
+        // Objects damaged: the one struck takes all its effects' damage.
+        let mut damaged: Vec<(FormId, f32)> = object
+            .map(|o| (o, self.object_damage(&item, u64::MAX)))
+            .into_iter()
+            .collect();
         let radii: Vec<f32> = item
             .effects
             .iter()
@@ -1494,6 +1531,14 @@ impl Engine {
                         None => true,
                     }
             };
+            // The effects (bit `i` for the `i`th) a point `d` from the blast reaches.
+            let mask_at = |d: f32| {
+                radii
+                    .iter()
+                    .enumerate()
+                    .filter(|&(i, &r)| i < 64 && r > 0.0 && d <= r)
+                    .fold(0u64, |m, (i, _)| m | 1 << i)
+            };
             let near = self
                 .cells
                 .values()
@@ -1505,16 +1550,32 @@ impl Engine {
                 .chain(player)
                 .filter(|&(id, _)| target != Some(id))
                 .filter_map(|(id, mid)| {
-                    let d = mid.distance(at);
-                    let mask = radii
-                        .iter()
-                        .enumerate()
-                        .filter(|&(i, &r)| i < 64 && r > 0.0 && d <= r)
-                        .fold(0u64, |m, (i, _)| m | 1 << i);
+                    let mask = mask_at(mid.distance(at));
                     (mask != 0 && in_sight(mid, id)).then_some((id, mask))
                 })
                 .collect();
             struck.extend(reached.into_iter().map(|(id, mask)| (id, Some(mask))));
+            // Loaded destructible objects in the area, by their placed position.
+            let objects: Vec<(FormId, u64)> = self
+                .cells
+                .values()
+                .flat_map(|rt| &rt.refs)
+                .copied()
+                .filter(|&r| Some(r) != object && self.destructible_data(r).is_some())
+                .filter_map(|r| {
+                    let p = self.ref_position(r)?;
+                    let mask = mask_at(p.distance(at));
+                    (mask != 0 && in_sight(p, r)).then_some((r, mask))
+                })
+                .collect();
+            damaged.extend(
+                objects
+                    .into_iter()
+                    .map(|(r, mask)| (r, self.object_damage(&item, mask))),
+            );
+        }
+        for (reference, damage) in damaged {
+            self.damage_object_by_blow(reference, damage);
         }
         let hostile = self.item_hostile(&item);
         let share = if item.cast_type == CONCENTRATION {

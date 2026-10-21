@@ -153,13 +153,16 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
 - **Which spells damage objects, and by how much.** UESP's "burn through"
   shows fire works. Whether frost, shock and other hostile damage do too
   is unconfirmed. Choice: any hostile effect that damages health deals its
-  magnitude to an object it lands on or whose area reaches it. Explosions
-  deal their `EXPL` damage within their radius.
+  magnitude to an object it lands on or whose area reaches it. Its magnitude
+  is taken as authored, without resistances or dual-cast power, and a
+  stage's Ignore External Damage flag blocks it as it blocks blows. Touch
+  spells land on the object they touch. Explosions are not yet applied;
+  their `EXPL` damage within their radius is unbuilt.
 - **Ignore external damage** (650 stages, mostly mine ores and the civil
   war resource objects; DSTD flag 0x08). Choice: while the reference is in
-  a stage with the flag set, weapon and arrow blows do nothing; the flag is
-  read from the current stage, not the one a hit would enter. Spells and
-  explosions are not yet applied, so only `DamageObject` and the stage's
+  a stage with the flag set, weapon, arrow and spell hits do nothing; the
+  flag is read from the current stage, not the one a hit would enter.
+  Explosions are not yet applied, so only `DamageObject` and the stage's
   self damage per second also reach these. Source: UESP DEST Field,
   https://en.uesp.net/w/index.php?oldid=2334527 (flag name only).
 - **To settle in game** (`vrm-tool test-mod`): how many hits of what size

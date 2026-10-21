@@ -1,5 +1,8 @@
 //! Synthetic definitions and query-path tests; no game assets are used.
 use super::*;
+use crate::engine::PLAYER_REF;
+use crate::magic::{archetype, flags};
+use esp::actor_value as av;
 use esp::writer::{Node, RecordBuilder, write_plugin};
 use glam::Vec3;
 use papyrus::Value;
@@ -13,6 +16,11 @@ const REF_C: FormId = FormId(0x812);
 const REF_D: FormId = FormId(0x813);
 const QUEST: FormId = FormId(0x820);
 const STOPPED_QUEST: FormId = FormId(0x821);
+const FIRE_SPELL: FormId = FormId(0x850);
+const FIRE_EFFECT: FormId = FormId(0x851);
+const AREA_FIRE_SPELL: FormId = FormId(0x852);
+const SOOTHE_SPELL: FormId = FormId(0x854);
+const SOOTHE_EFFECT: FormId = FormId(0x855);
 
 struct Fixture(std::path::PathBuf);
 impl Drop for Fixture {
@@ -92,6 +100,22 @@ fn fixture() -> (Fixture, Engine) {
         Node::top(b"EXPL", vec![RecordBuilder::new(b"EXPL", FormId(0x830))]),
         Node::top(b"DEBR", vec![RecordBuilder::new(b"DEBR", FormId(0x831))]),
         Node::top(
+            b"MGEF",
+            vec![
+                RecordBuilder::new(b"MGEF", FIRE_EFFECT)
+                    .field(b"DATA", &health_effect(flags::HOSTILE | flags::DETRIMENTAL)),
+                RecordBuilder::new(b"MGEF", SOOTHE_EFFECT).field(b"DATA", &health_effect(0)),
+            ],
+        ),
+        Node::top(
+            b"SPEL",
+            vec![
+                spell(FIRE_SPELL, FIRE_EFFECT, 0),
+                spell(AREA_FIRE_SPELL, FIRE_EFFECT, 20),
+                spell(SOOTHE_SPELL, SOOTHE_EFFECT, 0),
+            ],
+        ),
+        Node::top(
             b"QUST",
             vec![RecordBuilder::new(b"QUST", QUEST).field(b"CTDA", &condition(-1.0))],
         ),
@@ -110,6 +134,25 @@ fn fixture() -> (Fixture, Engine) {
     .unwrap();
     let engine = crate::stats::action_tests::headless_engine(&dir.0, "Destruction.esp");
     (dir, engine)
+}
+
+/// A Value Modifier on Health with the given effect flags (`MGEF` `DATA`).
+fn health_effect(effect_flags: u32) -> [u8; 0x6c] {
+    let mut data = [0; 0x6c];
+    data[0..4].copy_from_slice(&effect_flags.to_le_bytes());
+    data[0x40..0x44].copy_from_slice(&archetype::VALUE_MODIFIER.to_le_bytes());
+    data[0x44..0x48].copy_from_slice(&av::HEALTH.to_le_bytes());
+    data
+}
+
+/// A spell of 12 magnitude from `effect`, reaching `area` feet.
+fn spell(id: FormId, effect: FormId, area: u32) -> RecordBuilder {
+    let mut efit = [0; 12];
+    efit[0..4].copy_from_slice(&12.0f32.to_le_bytes());
+    efit[4..8].copy_from_slice(&area.to_le_bytes());
+    RecordBuilder::new(b"SPEL", id)
+        .u32(b"EFID", effect.0)
+        .field(b"EFIT", &efit)
 }
 
 fn condition(value: f32) -> [u8; 32] {
@@ -403,6 +446,50 @@ fn weapon_blows_damage_loaded_destructibles_until_the_stage_ignores_external_dam
     // Scripted DamageObject still applies there.
     damage_object(&mut e, &this_a, 1.0);
     assert_eq!(e.world_state.destruction[&REF_A].health, 98.0);
+}
+
+/// Put a reference in a loaded cell, as `DamageObject` and blows require.
+fn load(e: &mut Engine, reference: FormId) {
+    e.cells
+        .entry(crate::render::CellKey::Interior(FormId(0x840)))
+        .or_default()
+        .refs
+        .push(reference);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn hostile_spells_damage_the_objects_they_land_on_and_in_their_area() {
+    let (_dir, mut e) = fixture();
+    let at = Vec3::new(100.0, 0.0, 0.0);
+    let health = |e: &Engine, r| e.world_state.destruction.get(&r).map(|s| s.health);
+
+    // An unloaded reference takes no spell damage.
+    e.moved_refs.insert(REF_D, at);
+    e.spell_lands(PLAYER_REF, FIRE_SPELL, Some(REF_D), at, Vec3::X, false);
+    assert_eq!(health(&e, REF_D), None);
+
+    load(&mut e, REF_D);
+    e.spell_lands(PLAYER_REF, FIRE_SPELL, Some(REF_D), at, Vec3::X, false);
+    assert_eq!(health(&e, REF_D), Some(88.0));
+
+    // A spell with no hostile health damage leaves it be.
+    e.spell_lands(PLAYER_REF, SOOTHE_SPELL, Some(REF_D), at, Vec3::X, false);
+    assert_eq!(health(&e, REF_D), Some(88.0));
+
+    // A blast takes the object at its middle, not one out of its reach.
+    e.moved_refs.insert(REF_C, at + Vec3::X * 5000.0);
+    load(&mut e, REF_C);
+    e.spell_lands(PLAYER_REF, AREA_FIRE_SPELL, None, at, Vec3::X, false);
+    assert_eq!(health(&e, REF_D), Some(76.0));
+    assert_eq!(health(&e, REF_C), None);
+
+    // Ignore External Damage: a spell hit does nothing in stage 0 either.
+    load(&mut e, REF_A);
+    e.strike(REF_A, crate::engine::PLAYER_REF, Vec3::ZERO, true, 100.0);
+    assert_eq!(health(&e, REF_A), Some(99.0));
+    e.spell_lands(PLAYER_REF, FIRE_SPELL, Some(REF_A), at, Vec3::X, false);
+    assert_eq!(health(&e, REF_A), Some(99.0));
 }
 
 #[test]
