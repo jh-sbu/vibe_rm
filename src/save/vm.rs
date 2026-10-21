@@ -5,7 +5,7 @@
 //! (`VMAR`) and referred to by index; `VM` holds the rest.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -25,6 +25,8 @@ pub struct VmSnapshot {
     pub sleep_listeners: Vec<ObjectId>,
     pub inventory_filters: Vec<(ObjectId, Vec<FormId>)>,
     pub anim_registrations: Vec<(ObjectId, String, FormId, String)>,
+    pub message_boxes: VecDeque<crate::messages::MessageBox>,
+    pub message_next_key: u64,
 }
 
 /// Arrays met while writing, by identity.
@@ -240,7 +242,7 @@ impl VmSnapshot {
             })
             .collect();
         w.len(threads.len());
-        for t in threads {
+        for t in &threads {
             w.len(t.frames.len());
             for f in &t.frames {
                 w.str(&f.class);
@@ -317,6 +319,68 @@ impl VmSnapshot {
         table.len(arrays.arrays.len());
         table.0.extend(contents.0);
         file.add(b"VMAR", table.0);
+
+        // Keep message-box host state and its VM signal keys out of VM / VMAR.
+        // Indices here are the exact thread order just written above.
+        let saved_boxes: Vec<_> = self
+            .message_boxes
+            .iter()
+            .filter(|b| {
+                b.key.is_none_or(|key| {
+                    self.message_boxes
+                        .iter()
+                        .filter(|other| other.key == Some(key))
+                        .count()
+                        == 1
+                        && threads
+                            .iter()
+                            .filter(|t| t.waiting_for == Some(key))
+                            .count()
+                            == 1
+                })
+            })
+            .collect();
+        let mut waits = Vec::new();
+        for (thread_index, t) in threads.iter().enumerate() {
+            if let Some(key) = t
+                .waiting_for
+                .filter(|key| saved_boxes.iter().any(|b| b.key == Some(*key)))
+            {
+                waits.push((thread_index, key));
+            }
+        }
+        if !saved_boxes.is_empty() || self.message_next_key != 0 {
+            let mut m = Writer::default();
+            m.u64(self.message_next_key);
+            m.len(saved_boxes.len());
+            for b in saved_boxes {
+                m.str(&b.title);
+                m.str(&b.text);
+                m.len(b.buttons.len());
+                for (index, label) in &b.buttons {
+                    m.i32(*index);
+                    m.str(label);
+                }
+                m.bool(b.key.is_some());
+                if let Some(key) = b.key {
+                    m.u64(key);
+                }
+                match b.action {
+                    None => m.u8(0),
+                    Some(crate::messages::BoxAction::Poison { weapon, poison }) => {
+                        m.u8(1);
+                        m.form(weapon);
+                        m.form(poison);
+                    }
+                }
+            }
+            m.len(waits.len());
+            for (thread, key) in waits {
+                m.u32(thread as u32);
+                m.u64(key);
+            }
+            file.add(b"MBXW", m.0);
+        }
     }
 
     pub fn read(file: &SaveFile) -> Result<VmSnapshot> {
@@ -389,6 +453,7 @@ impl VmSnapshot {
                 wake_in: r.f64()?,
                 menu_clock: r.bool()?,
                 wait_dest: get_opt_arg(&mut r, &arrays)?,
+                waiting_for: None,
             });
         }
         for _ in 0..r.count(5)? {
@@ -433,6 +498,85 @@ impl VmSnapshot {
                 .push((receiver, script, sender, r.str()?));
         }
         r.finish()?;
+        if let Some(mut r) = file.section(b"MBXW").map(Reader::new) {
+            use crate::messages::{MESSAGE_WAIT_MAX, MessageBox, is_message_wait_key};
+            use std::collections::HashSet;
+
+            let next_key = r.u64()?;
+            let mut box_keys = HashSet::new();
+            for _ in 0..r.count(13)? {
+                let title = r.str()?;
+                let text = r.str()?;
+                let mut buttons = Vec::new();
+                let mut button_indices = HashSet::new();
+                for _ in 0..r.count(5)? {
+                    let index = r.i32()?;
+                    if index < 0 || !button_indices.insert(index) {
+                        return Err(Corrupt("invalid message-box button index".into()));
+                    }
+                    buttons.push((index, r.str()?));
+                }
+                if buttons.is_empty() {
+                    return Err(Corrupt("message box without buttons".into()));
+                }
+                let key = if r.bool()? {
+                    let key = r.u64()?;
+                    if !is_message_wait_key(key)
+                        || (key & 0xffff_ffff) > next_key
+                        || !box_keys.insert(key)
+                    {
+                        return Err(Corrupt("invalid or duplicate message-box wait key".into()));
+                    }
+                    Some(key)
+                } else {
+                    None
+                };
+                let action = match r.u8()? {
+                    0 => None,
+                    1 => {
+                        let weapon = r.form()?;
+                        let poison = r.form()?;
+                        if weapon.is_null() || poison.is_null() {
+                            return Err(Corrupt("invalid native poison action".into()));
+                        }
+                        Some(crate::messages::BoxAction::Poison { weapon, poison })
+                    }
+                    n => return Err(Corrupt(format!("message-box action {n}"))),
+                };
+                if key.is_some() && action.is_some() {
+                    return Err(Corrupt("script message box has native action".into()));
+                }
+                s.message_boxes.push_back(MessageBox {
+                    title,
+                    text,
+                    buttons,
+                    key,
+                    action,
+                });
+            }
+            if next_key > MESSAGE_WAIT_MAX {
+                return Err(Corrupt("message-box wait-key counter out of range".into()));
+            }
+            let mut thread_indices = HashSet::new();
+            let mut linked_keys = HashSet::new();
+            for _ in 0..r.count(12)? {
+                let thread = r.u32()? as usize;
+                let key = r.u64()?;
+                if thread >= s.vm.threads.len()
+                    || !thread_indices.insert(thread)
+                    || !linked_keys.insert(key)
+                    || !box_keys.contains(&key)
+                {
+                    return Err(Corrupt("invalid message-box thread link".into()));
+                }
+                s.vm.threads[thread].waiting_for = Some(key);
+            }
+            if linked_keys != box_keys {
+                return Err(Corrupt("message-box wait without a saved thread".into()));
+            }
+            s.message_next_key = next_key;
+            r.finish()?;
+        }
         Ok(s)
     }
 }
@@ -485,6 +629,7 @@ mod tests {
             wake_in: 2.5,
             menu_clock: true,
             wait_dest: Some(Arg::Member("::x".into())),
+            waiting_for: None,
         });
         s.initialized = vec![quest, ObjectId::Form(0x10)];
         s.timers.push(Timer {
@@ -523,6 +668,7 @@ mod tests {
         };
         assert!(Rc::ptr_eq(a, c), "threads share it too");
         assert_eq!(thread.frames[0].pc, 4);
+        assert_eq!(thread.waiting_for, None);
         assert_eq!(thread.wake_in, 2.5);
         assert!(thread.menu_clock);
         assert!(matches!(thread.frames[0].ret, Some(Arg::Local(2))));
@@ -556,5 +702,169 @@ mod tests {
             }
         }
         assert!(VmSnapshot::read(&file).is_err());
+    }
+
+    #[test]
+    fn message_boxes_link_only_to_the_serialized_filtered_thread_order() {
+        use crate::messages::{BoxAction, MESSAGE_WAIT_PREFIX, MessageBox};
+        use std::collections::VecDeque;
+
+        let (mut s, _) = sample();
+        let mut waiting = s.vm.threads[0].clone();
+        waiting.waiting_for = Some(MESSAGE_WAIT_PREFIX | 1);
+        let mut effect = waiting.clone();
+        effect.frames[0].this = Some((ObjectId::Effect(3), "effect".into()));
+        effect.waiting_for = Some(MESSAGE_WAIT_PREFIX | 99);
+        s.vm.threads = vec![effect, waiting];
+        s.message_next_key = 2;
+        s.message_boxes = VecDeque::from([
+            MessageBox {
+                title: "title".into(),
+                text: "question".into(),
+                buttons: vec![(0, "No".into()), (2, "Yes".into())],
+                key: Some(MESSAGE_WAIT_PREFIX | 1),
+                action: None,
+            },
+            MessageBox {
+                title: String::new(),
+                text: "poison?".into(),
+                buttons: vec![(0, "Apply".into()), (1, "Keep".into())],
+                key: None,
+                action: Some(BoxAction::Poison {
+                    weapon: FormId(0x10),
+                    poison: FormId(0x11),
+                }),
+            },
+        ]);
+        let mut file = SaveFile::default();
+        s.write(&mut file);
+        let back = VmSnapshot::read(&SaveFile::from_bytes(&file.to_bytes()).unwrap()).unwrap();
+        assert_eq!(back.vm.threads.len(), 1, "effect-owned thread is filtered");
+        assert_eq!(
+            back.vm.threads[0].waiting_for,
+            Some(MESSAGE_WAIT_PREFIX | 1)
+        );
+        assert_eq!(back.message_next_key, 2);
+        assert_eq!(back.message_boxes.len(), 2);
+        assert_eq!(
+            back.message_boxes[0].buttons,
+            vec![(0, "No".into()), (2, "Yes".into())]
+        );
+        assert!(matches!(
+            back.message_boxes[1].action,
+            Some(BoxAction::Poison {
+                weapon: FormId(0x10),
+                poison: FormId(0x11)
+            })
+        ));
+        let mut again = SaveFile::default();
+        back.write(&mut again);
+        assert_eq!(again.to_bytes(), file.to_bytes());
+
+        let mut legacy = file;
+        legacy.sections.retain(|(tag, _)| tag != b"MBXW");
+        let back = VmSnapshot::read(&legacy).unwrap();
+        assert!(back.message_boxes.is_empty());
+        assert_eq!(back.vm.threads[0].waiting_for, None);
+    }
+
+    #[test]
+    fn malformed_message_box_wait_metadata_is_refused() {
+        use crate::messages::{MESSAGE_WAIT_PREFIX, MessageBox};
+
+        let (mut s, _) = sample();
+        s.vm.threads[0].waiting_for = Some(MESSAGE_WAIT_PREFIX | 1);
+        s.message_next_key = 1;
+        s.message_boxes.push_back(MessageBox {
+            title: String::new(),
+            text: "question".into(),
+            buttons: vec![(0, "Okay".into())],
+            key: Some(MESSAGE_WAIT_PREFIX | 1),
+            action: None,
+        });
+        let mut valid = SaveFile::default();
+        s.write(&mut valid);
+        let mut payloads = vec![];
+        let mut bad = valid.clone();
+        bad.sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"MBXW")
+            .unwrap()
+            .1[0..8]
+            .copy_from_slice(&u64::MAX.to_le_bytes());
+        payloads.push(bad);
+        let mut bad = valid.clone();
+        bad.sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"MBXW")
+            .unwrap()
+            .1
+            .extend([0]);
+        payloads.push(bad);
+        let mut bad = valid.clone();
+        let section = bad
+            .sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"MBXW")
+            .unwrap();
+        section.1.truncate(section.1.len() - 1);
+        payloads.push(bad);
+        let mut bad = valid.clone();
+        bad.sections.retain(|(tag, _)| tag != b"MBXW");
+        let mut orphan = SaveFile::default();
+        s.write(&mut orphan);
+        // Keep the box, but erase its thread link count and link payload.
+        let section = orphan
+            .sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"MBXW")
+            .unwrap();
+        section.1.truncate(section.1.len() - 16);
+        section.1.extend(0u32.to_le_bytes());
+        payloads.push(orphan);
+
+        let mut bad_index = valid.clone();
+        let payload = &mut bad_index
+            .sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"MBXW")
+            .unwrap()
+            .1;
+        let link_index = payload.len() - 12;
+        payload[link_index..link_index + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        payloads.push(bad_index);
+
+        let mut duplicate_link = valid.clone();
+        let payload = &mut duplicate_link
+            .sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"MBXW")
+            .unwrap()
+            .1;
+        let link_count = payload.len() - 16;
+        payload[link_count..link_count + 4].copy_from_slice(&2u32.to_le_bytes());
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload.extend_from_slice(&(MESSAGE_WAIT_PREFIX | 1).to_le_bytes());
+        payloads.push(duplicate_link);
+        for file in payloads {
+            assert!(VmSnapshot::read(&file).is_err());
+        }
+        assert!(
+            VmSnapshot::read(&bad).is_ok(),
+            "missing optional section is legacy fallback"
+        );
+    }
+
+    #[test]
+    fn unsupported_signal_waits_keep_the_existing_timed_fallback() {
+        let (mut s, _) = sample();
+        s.vm.threads[0].wake_in = 1.25;
+        s.vm.threads[0].waiting_for = Some(0x1234_5678);
+        let mut file = SaveFile::default();
+        s.write(&mut file);
+        assert!(file.section(b"MBXW").is_none());
+        let back = VmSnapshot::read(&file).unwrap();
+        assert_eq!(back.vm.threads[0].waiting_for, None);
+        assert_eq!(back.vm.threads[0].wake_in, 1.25);
     }
 }

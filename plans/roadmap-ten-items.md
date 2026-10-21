@@ -158,6 +158,15 @@ Test an actual suspended script answered after roundtrip, multiple boxes and
 keys, saved filtered indices, no premature resume, legacy behavior and malformed
 metadata rejection. Handle or explicitly exclude native action boxes coherently.
 
+Outcome: implemented and reviewed. Parent validation passed the actual two-script
+Message.Show save/load/answer regression, all five VM codec tests, and all four
+Papyrus crate tests. The integration fixture required its synthetic Message native
+declaration; that was corrected before validation passed. Optional `MBXW` stores
+message-box presentation/actions and links supported signal keys to the exact
+filtered `VM` thread order; `VM` / `VMAR` layouts remain unchanged. Generated
+`Message.Show` roundtrip coverage, legacy timed fallback, malformed-link checks,
+and key bounds are implemented. Animation-event waits remain item 8.
+
 ## 8. Animation-event waits across native saves
 
 Roadmap: Saves / threads waiting on animation events. Build on item 7's VM wait

@@ -81,6 +81,15 @@ and function, the instruction they stopped at, locals and return slots), the
 registrations. Arrays are shared by identity in the VM, so they are saved
 once and referred to by index.
 
+Message boxes and `Message.Show` signal waits use optional `MBXW`, leaving the
+`VM` / `VMAR` layouts unchanged. The queue retains titles, text, the currently
+filtered button indices and labels, native poison actions, and the bounded
+message-wait key allocator. A wait link names the exact filtered thread order
+written to `VM`; loading replaces any stale live queue and restores only boxes
+whose waiting thread imported. A legacy save without `MBXW` has no saved boxes,
+and signal waits use the existing timed fallback. Other signal sources remain
+outside this section until their host state is saved.
+
 The weather (optional `WTHR`): the current and outgoing weathers, how far the
 transition has come, whether an override holds, the weather it replaced, and
 the game hours until the next roll. Older native saves load with no weather,
@@ -89,9 +98,10 @@ saved: it is taken again from the place the save loads into.
 
 ## Not saved yet (see `plans/ROADMAP.md`)
 
-- Threads waiting for something the engine tracks by a key (a message box's
-  button, an animation event) are kept as timed waits that finish when their
-  timeout runs out, with the default result: nothing saved would signal them.
+- Threads waiting for supported saved message boxes resume when the restored
+  box is answered. Other signal waits (including animation-event waits) are
+  kept as timed waits that finish when their timeout runs out, with the default
+  result: their host state is not saved yet.
   A thread whose function no longer resolves (other scripts) is dropped with
   a warning. Scripts on active magic effects are dropped with the effects.
   Registrations other than these (key, LOS gain, tracked hits...) aren't

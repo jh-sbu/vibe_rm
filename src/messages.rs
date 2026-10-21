@@ -9,6 +9,13 @@ use papyrus::{NativeResult, Value};
 
 use crate::engine::{Engine, PLAYER_REF};
 
+pub(crate) const MESSAGE_WAIT_PREFIX: u64 = 0x4d45_5347_0000_0000;
+pub(crate) const MESSAGE_WAIT_MAX: u64 = u32::MAX as u64;
+
+pub(crate) fn is_message_wait_key(key: u64) -> bool {
+    key & 0xffff_ffff_0000_0000 == MESSAGE_WAIT_PREFIX && (key & 0xffff_ffff) != 0
+}
+
 /// A message box waiting for the player.
 #[derive(Debug, Clone)]
 pub struct MessageBox {
@@ -168,6 +175,14 @@ pub fn format_floats(text: &str, args: &[f32]) -> String {
 }
 
 impl Engine {
+    pub(crate) fn restore_message_boxes(&mut self, boxes: VecDeque<MessageBox>, next_key: u64) {
+        self.messages.boxes = boxes
+            .into_iter()
+            .filter(|b| b.key.is_none_or(|key| self.vm.is_waiting_for(key)))
+            .collect();
+        self.messages.next_key = next_key;
+    }
+
     /// Replace the tags of message or quest text: `<Alias=Name>` (and its
     /// `.ShortName` / pronoun forms) by what quest `quest`'s alias holds,
     /// `<Global=EditorId>` by the global's value, `[Control]` by the key it is
@@ -326,8 +341,17 @@ impl Engine {
         if shown.is_empty() {
             shown.push((0, self.gmst_string("sOk").unwrap_or_else(|| "Ok".into())));
         }
-        self.messages.next_key += 1;
-        let key = 0x4d45_5347_0000_0000 | self.messages.next_key;
+        let Some(next_key) = self
+            .messages
+            .next_key
+            .checked_add(1)
+            .filter(|n| *n <= MESSAGE_WAIT_MAX)
+        else {
+            log::warn!("Message.Show wait-key counter is exhausted");
+            return NativeResult::Value(Value::Int(0));
+        };
+        self.messages.next_key = next_key;
+        let key = MESSAGE_WAIT_PREFIX | next_key;
         log::info!(
             "message box {m}: {text:?} [{}]",
             shown
