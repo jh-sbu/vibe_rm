@@ -22,7 +22,9 @@
 //! (TNAM), fading with their share of the transition and drawn in the
 //! weather's sky statics colour. A weather's aurora (MODL) hangs in the sky
 //! about the camera at night (always with `PERM_AURORA`), turning with the
-//! sun with `AURORA_FOLLOWS_SUN`. Open questions: `known_ambiguities/weather.md`.
+//! sun with `AURORA_FOLLOWS_SUN`. A save keeps the weathers, the transition,
+//! the override and the roll timer (`SavedWeather`). Open questions:
+//! `known_ambiguities/weather.md`, `known_ambiguities/saves.md`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -56,6 +58,18 @@ const FLASH_SECONDS: f32 = 0.6;
 /// in Skyrim SE at timescale 20, 125 took 7.7 game minutes and 82 took 5.3
 /// (`test-mod autotest`), a sixteenth of a minute each within 4%.
 const MINUTES_PER_TRANS_DELTA: f32 = 1.0 / 16.0;
+
+/// The weather a save keeps: what `WeatherState` holds of the current game,
+/// minus the regional and cached parts that the place recomputes.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SavedWeather {
+    pub current: Option<FormId>,
+    pub outgoing: Option<FormId>,
+    pub pct: f32,
+    pub overridden: bool,
+    pub before_override: Option<FormId>,
+    pub next_roll: f32,
+}
 
 #[derive(Default)]
 pub struct WeatherState {
@@ -148,6 +162,41 @@ impl Engine {
 
     pub fn outgoing_weather(&self) -> Option<FormId> {
         self.weather.outgoing.as_ref().map(|w| w.id)
+    }
+
+    pub(crate) fn saved_weather(&self) -> SavedWeather {
+        let ws = &self.weather;
+        SavedWeather {
+            current: self.current_weather(),
+            outgoing: self.outgoing_weather(),
+            pct: ws.pct,
+            overridden: ws.overridden,
+            before_override: ws.before_override,
+            next_roll: ws.next_roll,
+        }
+    }
+
+    /// Put a save's weather back in place of the current one, before the
+    /// player's location is entered: `setup_weather` then takes the region
+    /// without changing the weather, so the restored weather holds until the
+    /// player moves to another region (or its roll comes up). The regional
+    /// list is cleared for the place the save is loaded into.
+    pub(crate) fn restore_weather(&mut self, saved: SavedWeather) {
+        let current = saved.current.and_then(|f| self.weather_record(f));
+        let outgoing = saved
+            .outgoing
+            .filter(|_| current.is_some())
+            .and_then(|f| self.weather_record(f));
+        let ws = &mut self.weather;
+        ws.pct = if outgoing.is_some() { saved.pct } else { 1.0 };
+        ws.current = current;
+        ws.outgoing = outgoing;
+        ws.overridden = saved.overridden;
+        ws.before_override = saved.before_override;
+        ws.next_roll = saved.next_roll;
+        ws.region_cell = None;
+        ws.region = None;
+        ws.list.clear();
     }
 
     /// Going outdoors into a worldspace: its climate, and the weather of the

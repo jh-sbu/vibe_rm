@@ -10,9 +10,9 @@
 //! references made while playing), `PLYR` (health, skills, perks, spells,
 //! shouts, favorites, dialogue heard), `CRIM` (bounties) and `BART`
 //! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
-//! `DSTR` (destructible health/stage), `WUSE` (Favorite Weapon usage), and
-//! `VM` / `VMAR` (`super::vm`: the
-//! Papyrus VM). Not yet saved:
+//! `DSTR` (destructible health/stage), `WUSE` (Favorite Weapon usage), `WTHR`
+//! (the weather, its transition and override), and `VM` / `VMAR`
+//! (`super::vm`: the Papyrus VM). Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
 //!
@@ -34,6 +34,7 @@ use crate::engine::{Engine, Location};
 use crate::script::QuestState;
 use crate::skills::Skills;
 use crate::story::StoryEvent;
+use crate::weather::SavedWeather;
 use crate::world::destruction::DestructionState;
 use crate::world::inventory::Inventory;
 use crate::world_state::{Moved, Wounds};
@@ -102,6 +103,7 @@ pub struct Snapshot {
     pub restocked: HashMap<FormId, f64>,
     pub(crate) story: crate::story::StoryState,
     pub relationship_ranks: HashMap<(FormId, FormId), i32>,
+    pub weather: SavedWeather,
     pub vm: super::vm::VmSnapshot,
 }
 
@@ -502,6 +504,7 @@ impl Snapshot {
             cell_public: e.scripts.cell_public.clone(),
             story: e.story.saved_state(),
             relationship_ranks: e.relationships.saved_ranks().clone(),
+            weather: e.saved_weather(),
             vm: super::vm::VmSnapshot {
                 vm: e.vm.export(),
                 initialized: s.initialized.iter().copied().collect(),
@@ -834,6 +837,16 @@ impl Snapshot {
             w.i32(*rank);
         }
         file.add(b"RELA", w.0);
+
+        let mut w = Writer::default();
+        let weather = self.weather;
+        w.opt_form(weather.current);
+        w.opt_form(weather.outgoing);
+        w.f32(weather.pct);
+        w.bool(weather.overridden);
+        w.opt_form(weather.before_override);
+        w.f32(weather.next_roll);
+        file.add(b"WTHR", w.0);
         self.vm.write(&mut file);
         file
     }
@@ -1180,6 +1193,25 @@ impl Snapshot {
             }
             r.finish()?;
         }
+        if let Some(data) = file.section(b"WTHR") {
+            let mut r = Reader::new(data);
+            let weather = SavedWeather {
+                current: r.opt_form()?,
+                outgoing: r.opt_form()?,
+                pct: r.f32()?,
+                overridden: r.bool()?,
+                before_override: r.opt_form()?,
+                next_roll: r.f32()?,
+            };
+            r.finish()?;
+            if !(0.0..=1.0).contains(&weather.pct)
+                || !weather.next_roll.is_finite()
+                || (weather.outgoing.is_some() && weather.current.is_none())
+            {
+                return Err(Corrupt("invalid weather transition or roll".into()));
+            }
+            s.weather = weather;
+        }
         s.vm = super::vm::VmSnapshot::read(file)?;
         Ok(s)
     }
@@ -1204,6 +1236,19 @@ impl Snapshot {
             anyhow::ensure!(
                 crate::stats::WeaponUsage::valid_form(&e.lo, weapon),
                 "save has invalid favorite-weapon form {weapon}"
+            );
+        }
+        for f in [
+            self.weather.current,
+            self.weather.outgoing,
+            self.weather.before_override,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            anyhow::ensure!(
+                e.lo.get(f).is_some_and(|r| r.tag().0 == *b"WTHR"),
+                "save has invalid weather form {f}"
             );
         }
         // Leave the old game's cells before the world state is replaced: their
@@ -1292,6 +1337,12 @@ impl Snapshot {
         e.crime.stolen_value = self.stolen_value;
         e.restocks.stocked = self.restocked;
         e.scripts.cell_public = self.cell_public;
+        // The saved weather replaces the launch's `--weather` (taken when the
+        // player first goes outdoors) and any the old game had.
+        if self.weather.current.is_some() {
+            e.forced_weather = None;
+        }
+        e.restore_weather(self.weather);
         match self.spot {
             Some(Spot {
                 location: Location::Interior(cell),
