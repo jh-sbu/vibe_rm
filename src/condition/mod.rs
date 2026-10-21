@@ -717,11 +717,14 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             )
         }
         630 => {
-            // GetVMScriptVariable(script, "::name_var") on the subject
+            // GetVMScriptVariable(reference, "::name_var"): the variable of a
+            // script on the reference named, not the subject (vanilla dialogue
+            // asks the speaker about triggers such as `MQ106DelphineBedroomTrigger`).
+            // A null reference holds no scripts.
             let name = c.string_p2.as_deref()?;
             Some(
-                subject
-                    .and_then(|s| e.vm.get_var(papyrus::ObjectId::Form(s.0), name))
+                named(p1)
+                    .and_then(|r| e.vm.get_var(papyrus::ObjectId::Form(r.0), name))
                     .map(|v| v.as_float())
                     .unwrap_or(0.0),
             )
