@@ -100,6 +100,10 @@ ObjectReference : Form
     Float GetPositionZ()
     None SetMotionType(Int aeMotionType, Bool abAllowActivate)
     Bool IsDisabled()
+    Float GetAngleZ()
+    Bool Is3DLoaded()
+    Cell GetParentCell()
+Cell : Form
 Actor : ObjectReference
     Int GetLevel()
     Float GetBaseActorValue(String asValueName)

@@ -1996,6 +1996,16 @@ pub(super) struct Npc {
 
 impl Npc {
     pub(super) fn record(self, race: FormId, class: FormId) -> RecordBuilder {
+        self.record_with_packages(race, class, &[])
+    }
+
+    /// The record, running `packages` (`PKID`, in order).
+    pub(super) fn record_with_packages(
+        self,
+        race: FormId,
+        class: FormId,
+        packages: &[FormId],
+    ) -> RecordBuilder {
         let (level, pc_mult, min, max) = self.level;
         let flags: u32 = if pc_mult { 0x80 } else { 0 } | if self.unique { 0x20 } else { 0 };
         // ACBS: flags, magicka and stamina offsets, level, calc min / max,
@@ -2045,8 +2055,12 @@ impl Npc {
         rec = rec
             .form(b"TPLT", self.template.0)
             .form(b"RNAM", race)
-            .field(b"AIDT", &aidt)
-            .form(b"CNAM", class);
+            .field(b"AIDT", &aidt);
+        // PKID where the Creation Kit writes them: after the AI data.
+        for &p in packages {
+            rec = rec.form(b"PKID", p);
+        }
+        rec = rec.form(b"CNAM", class);
         if let Some(name) = self.name {
             rec = rec.zstring(b"FULL", name);
         }
