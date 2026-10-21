@@ -11,7 +11,8 @@
 //! shouts, favorites, dialogue heard), `CRIM` (bounties) and `BART`
 //! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
 //! `DSTR` (destructible health/stage), `WUSE` (Favorite Weapon usage), `WTHR`
-//! (the weather, its transition and override), and `VM` / `VMAR`
+//! (the weather, its transition and override), `DETH` (killers and times of
+//! death), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM). Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
@@ -73,6 +74,7 @@ pub struct Snapshot {
     pub faction_changes: HashMap<FormId, HashMap<FormId, i8>>,
     pub alerted: HashSet<FormId>,
     pub dead: HashMap<FormId, (Place, Vec3)>,
+    pub deaths: HashMap<FormId, crate::world_state::Death>,
     pub open_doors: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     pub wounds: HashMap<FormId, Wounds>,
@@ -473,6 +475,7 @@ impl Snapshot {
             faction_changes: s.faction_changes.clone(),
             alerted: ws.alerted.clone(),
             dead: ws.dead.clone(),
+            deaths: ws.deaths.clone(),
             open_doors: ws.open_doors.clone(),
             body_poses: ws.body_poses.clone(),
             wounds: ws.wounds.clone(),
@@ -847,6 +850,15 @@ impl Snapshot {
         w.opt_form(weather.before_override);
         w.f32(weather.next_roll);
         file.add(b"WTHR", w.0);
+
+        let mut w = Writer::default();
+        w.len(self.deaths.len());
+        for (actor, death) in sorted(&self.deaths) {
+            w.form(actor);
+            w.opt_form(death.killer);
+            w.f64(death.at);
+        }
+        file.add(b"DETH", w.0);
         self.vm.write(&mut file);
         file
     }
@@ -1212,6 +1224,20 @@ impl Snapshot {
             }
             s.weather = weather;
         }
+        if let Some(data) = file.section(b"DETH") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(16)? {
+                let actor = r.form()?;
+                let death = crate::world_state::Death {
+                    killer: r.opt_form()?,
+                    at: r.f64()?,
+                };
+                if !death.at.is_finite() || s.deaths.insert(actor, death).is_some() {
+                    return Err(Corrupt("invalid or duplicate death".into()));
+                }
+            }
+            r.finish()?;
+        }
         s.vm = super::vm::VmSnapshot::read(file)?;
         Ok(s)
     }
@@ -1307,6 +1333,7 @@ impl Snapshot {
         let ws = &mut e.world_state;
         ws.alerted = self.alerted;
         ws.dead = self.dead;
+        ws.deaths = self.deaths;
         ws.open_doors = self.open_doors;
         ws.body_poses = self.body_poses;
         ws.wounds = self.wounds;

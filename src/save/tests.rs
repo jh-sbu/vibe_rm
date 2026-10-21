@@ -966,3 +966,42 @@ fn loading_preserves_story_selection_and_ranks_without_dispatching_events() {
     assert!(e.scripts.quests[&STORY_FIRST].running);
     assert!(e.send_story_event(StoryEvent::new(b"SCPT")));
 }
+
+#[test]
+fn deaths_section_keeps_killers_and_times_and_is_optional() {
+    use crate::world_state::Death;
+    let mut s = Snapshot::default();
+    s.deaths.insert(
+        FormId(0x8a0),
+        Death {
+            killer: Some(crate::engine::PLAYER_REF),
+            at: 1234.5,
+        },
+    );
+    s.deaths.insert(
+        FormId(0x8a1),
+        Death {
+            killer: None,
+            at: 7.25,
+        },
+    );
+    let bytes = s.write().to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.deaths, s.deaths);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    // Saves from before the section know only the bodies.
+    let mut old = s.write();
+    old.sections.retain(|(tag, _)| tag != b"DETH");
+    assert!(Snapshot::read(&old).unwrap().deaths.is_empty());
+
+    let mut malformed = Snapshot::default();
+    malformed.deaths.insert(
+        FormId(0x8a0),
+        Death {
+            killer: None,
+            at: f64::NAN,
+        },
+    );
+    assert!(Snapshot::read(&malformed.write()).is_err());
+}

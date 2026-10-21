@@ -430,3 +430,11 @@ ragdoll joint limits; region weather priority and global chances.
   Verdict: partial. A script can compare `Actor.IsInFaction` with the rank -1
   `RemoveFromFaction` case, but the condition's own result is only seen through a
   gated dialogue line or quest stage. Measure both in one test mod.
+
+- **Death conditions** (`known_ambiguities/death.md`): the unit of `GetTimeDead`
+  (hours, days or seconds) and the direction of `IsKiller`. Verdict: partial. A
+  test mod's perk or dialogue entry can gate on `GetTimeDead` for a killed actor
+  (a value window per unit: 1 game hour after the death, 1 day, 60 seconds), and a
+  Papyrus script can time the death with `Utility.GetCurrentGameTime` and read which
+  window fires; `IsKiller` can gate a line the player's killer alias speaks. Papyrus
+  can't read the condition's result itself, so only the gated outcome is observed.
