@@ -424,3 +424,9 @@ ragdoll joint limits; region weather priority and global chances.
   with a script set to a known value, and a Papyrus script on the player counts the
   perks it gets (`Actor.HasPerk`) under each setting. Papyrus cannot read the legacy
   answer when the variable is missing, so only the set-value cases are observable.
+
+- **Comparison conditions** (`known_ambiguities/comparison-conditions.md`): whether
+  `SameFaction` and `SameFactionAsPC` count a rank -1 member (a potential follower).
+  Verdict: partial. A script can compare `Actor.IsInFaction` with the rank -1
+  `RemoveFromFaction` case, but the condition's own result is only seen through a
+  gated dialogue line or quest stage. Measure both in one test mod.

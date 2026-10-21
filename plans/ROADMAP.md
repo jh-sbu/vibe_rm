@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Actor comparison and status conditions: `SameFaction`, `SameRace`, `SameSex` and
+  their player forms, `GetPCInFaction`, `GetIsClass` / `GetPCIsClass`, `GetGold`,
+  `GetStaminaPercentage`, `GetHealthPercentage`, `IsOverEncumbered` (the player),
+  `GetPCMiscStat`. Open questions: `known_ambiguities/comparison-conditions.md`
 - Reference-state conditions: `GetDestroyed` (a stage with the destroy flag reached),
   `GetIsObjectType` (the base's record type, by xEdit's form-type numbers),
   `IsWeaponInList` (the weapon in hand), `GetDefaultOpen` (the placed `ONAM`) and
@@ -1482,6 +1486,9 @@ game each piece unlocks.
      horse by physics constraints), passengers riding seated in them (`SetVehicle`)
    - Dragons: flying, circling, landing and perching; breath and shout attacks
      (with magic)
+   - NPC encumbrance: `IsOverEncumbered` covers the player only (`src/encumbrance.rs`);
+     whether NPCs over their carry weight are slowed or changed is unconfirmed, so
+     other actors fail it (`known_ambiguities/comparison-conditions.md`)
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
