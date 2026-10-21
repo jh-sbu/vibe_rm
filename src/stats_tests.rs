@@ -481,3 +481,28 @@ fn favorite_weapon_tracks_accepted_attacks_and_actual_bow_releases() {
     assert!(invalid.apply(&mut e).is_err());
     assert_eq!(e.day, 27); // validation ran before state changed
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn console_commands_act_on_the_selected_reference() {
+    let (_fixture, mut e) = fixture();
+    let npc = FormId(0x899);
+    let count = |e: &Engine, r: FormId| e.inventories.get(&r).map_or(0, |i| i.count(SWORD));
+    // Nothing selected: the player.
+    crate::console::execute(&mut e, "additem 00000840 1");
+    assert_eq!((count(&e, PLAYER_REF), count(&e, npc)), (1, 0));
+    assert_eq!(
+        crate::console::execute(&mut e, "prid 00000899"),
+        ["RefID: (00000899) | BaseID: (00000898)"]
+    );
+    crate::console::execute(&mut e, "additem 00000840 2");
+    assert_eq!((count(&e, PLAYER_REF), count(&e, npc)), (1, 2));
+    // A prefix still names its own reference.
+    crate::console::execute(&mut e, "player.additem 00000840 1");
+    assert_eq!(count(&e, PLAYER_REF), 2);
+    // A command on a named reference, given none, takes the selection.
+    assert_eq!(
+        crate::console::execute(&mut e, "templates"),
+        crate::console::execute(&mut e, "templates 00000899")
+    );
+}
