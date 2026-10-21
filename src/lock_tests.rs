@@ -18,6 +18,11 @@ const KEY: FormId = FormId(0x841);
 const WAX_KEY: FormId = FormId(0x842);
 const CONDITIONAL_WAX_KEY: FormId = FormId(0x843);
 const INVALID_KEY_LOCK: FormId = FormId(0x844);
+const KEY_QUEST: FormId = FormId(0x845);
+const FAILED_KEY_QUEST: FormId = FormId(0x846);
+const LOCATION: FormId = FormId(0x847);
+const STATIC_BASE: FormId = FormId(0x848);
+const STATIC_REF: FormId = FormId(0x849);
 
 struct Fixture(std::path::PathBuf);
 impl Drop for Fixture {
@@ -57,9 +62,15 @@ fn fixture() -> (Fixture, Engine) {
     xloc[4..8].copy_from_slice(&KEY.0.to_le_bytes());
     let mut invalid_xloc = [0; 12];
     invalid_xloc[4..8].copy_from_slice(&OWNER.0.to_le_bytes());
+    let cnto = |item: FormId, count: u32| {
+        let mut data = item.0.to_le_bytes().to_vec();
+        data.extend_from_slice(&count.to_le_bytes());
+        data
+    };
     let records = [
         Node::top(b"DOOR", vec![RecordBuilder::new(b"DOOR", FormId(0x830))]),
         Node::top(b"CONT", vec![RecordBuilder::new(b"CONT", FormId(0x831))]),
+        Node::top(b"STAT", vec![RecordBuilder::new(b"STAT", STATIC_BASE)]),
         Node::top(b"KEYM", vec![RecordBuilder::new(b"KEYM", KEY)]),
         Node::top(
             b"PERK",
@@ -86,6 +97,7 @@ fn fixture() -> (Fixture, Engine) {
                 RecordBuilder::new(b"ACHR", OTHER).form(b"NAME", OWNER),
             ],
         ),
+        Node::top(b"LCTN", vec![RecordBuilder::new(b"LCTN", LOCATION)]),
         Node::top(
             b"QUST",
             vec![
@@ -105,6 +117,32 @@ fn fixture() -> (Fixture, Engine) {
                     .u32(b"ALLS", 2)
                     .u32(b"FNAM", 2) // Optional, unfilled location alias.
                     .form(b"ALFC", FACTION)
+                    .field(b"ALED", &[]),
+                RecordBuilder::new(b"QUST", KEY_QUEST)
+                    .u32(b"ALST", 10)
+                    .form(b"ALFR", ACTOR)
+                    .field(b"CNTO", &cnto(KEY, 2))
+                    .field(b"CNTO", &[1, 2]) // Malformed entry is ignored.
+                    .field(b"CNTO", &cnto(FormId(0xDEAD), 1)) // Missing item form.
+                    .field(b"CNTO", &cnto(KEY, u32::MAX)) // Outside the supported count range.
+                    .field(b"ALED", &[])
+                    .u32(b"ALST", 11)
+                    .form(b"ALFR", OTHER)
+                    .field(b"CNTO", &cnto(KEY, 1))
+                    .field(b"ALED", &[])
+                    .u32(b"ALLS", 12)
+                    .u32(b"FNAM", 2)
+                    .form(b"ALFL", LOCATION)
+                    .field(b"CNTO", &cnto(KEY, 99)) // CNTO on a location alias is ignored.
+                    .field(b"ALED", &[]),
+                RecordBuilder::new(b"QUST", FAILED_KEY_QUEST)
+                    .u32(b"ALST", 20)
+                    .form(b"ALFR", ACTOR)
+                    .field(b"CNTO", &cnto(KEY, 3))
+                    .field(b"ALED", &[])
+                    .u32(b"ALST", 21)
+                    .form(b"ALFR", OTHER)
+                    .field(b"CNTO", &cnto(KEY, 4))
                     .field(b"ALED", &[]),
             ],
         ),
@@ -127,6 +165,7 @@ fn fixture() -> (Fixture, Engine) {
                         RecordBuilder::new(b"REFR", INVALID_KEY_LOCK)
                             .u32(b"NAME", 0x831)
                             .field(b"XLOC", &invalid_xloc),
+                        RecordBuilder::new(b"REFR", STATIC_REF).form(b"NAME", STATIC_BASE),
                     ],
                 ),
                 Node::Record(RecordBuilder::new(b"CELL", HALL).field(b"DATA", &[1, 0])),
@@ -432,4 +471,109 @@ fn alias_factions_grant_access_only_while_filled_and_running() {
     assert!(e.player_in_faction(FACTION, 0));
     e.set_faction_rank(PLAYER_REF, FACTION, -1);
     assert!(!e.player_in_faction(FACTION, 0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn alias_inventory_grants_keys_only_on_successful_new_fills_and_stays_permanent() {
+    let (_dir, mut e) = fixture();
+    let specs = e.alias_specs(KEY_QUEST);
+    assert_eq!(specs[0].inventory, [(KEY, 2), (FormId(0xDEAD), 1)]);
+    // Truncated data and a count outside the signed runtime range are ignored.
+    assert_eq!(specs[1].inventory, [(KEY, 1)]);
+    assert!(specs[2].location);
+    assert!(specs[2].inventory.is_empty()); // Location aliases cannot grant inventory.
+
+    // A later required alias fails, so earlier tentative grants are not applied.
+    e.set_disabled(OTHER, true);
+    let failed_quest = e.object_value(FAILED_KEY_QUEST);
+    crate::script::natives::call(&mut e, "quest", "start", Some(&failed_quest), &[]);
+    assert!(!e.scripts.quests[&FAILED_KEY_QUEST].running);
+    assert_eq!(e.item_count(ACTOR, KEY), 0);
+    assert_eq!(e.item_count(OTHER, KEY), 0);
+    e.set_disabled(OTHER, false);
+
+    // Without its alias key, the actor cannot pass this locked reference.
+    e.scripts.owners.insert(CHEST, Some(FormId(0x829)));
+    e.set_locked(CHEST, true);
+    assert!(!e.npc_may_open(ACTOR, CHEST));
+    let quest = e.object_value(KEY_QUEST);
+    crate::script::natives::call(&mut e, "quest", "start", Some(&quest), &[]);
+    assert!(e.scripts.quests[&KEY_QUEST].running);
+    assert_eq!(e.alias_ref(KEY_QUEST, 10), Some(ACTOR));
+    assert_eq!(e.alias_ref(KEY_QUEST, 11), Some(OTHER));
+    assert_eq!(e.item_count(ACTOR, KEY), 2);
+    assert_eq!(e.item_count(OTHER, KEY), 1);
+    assert!(e.npc_may_open(ACTOR, CHEST));
+
+    // Loading an already-filled alias restores inventory and bindings without
+    // replaying the grant.
+    let saved = crate::save::state::Snapshot::capture(&e).write();
+    e.remove_item(ACTOR, KEY, 2, None);
+    crate::save::state::Snapshot::read(&saved)
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert_eq!(e.item_count(ACTOR, KEY), 2);
+    assert_eq!(e.alias_ref(KEY_QUEST, 10), Some(ACTOR));
+
+    let alias = Value::Object(
+        papyrus::ObjectId::Alias {
+            quest: KEY_QUEST.0,
+            alias: 10,
+        },
+        "ReferenceAlias".into(),
+    );
+    let actor = e.object_value(ACTOR);
+    crate::script::natives::call(
+        &mut e,
+        "referencealias",
+        "forcerefto",
+        Some(&alias),
+        &[actor.clone()],
+    );
+    assert_eq!(e.item_count(ACTOR, KEY), 2); // Same-reference force is idempotent.
+    crate::script::natives::call(&mut e, "referencealias", "clear", Some(&alias), &[]);
+    assert_eq!(e.item_count(ACTOR, KEY), 2); // Leaving the alias does not revoke it.
+    crate::script::natives::call(
+        &mut e,
+        "referencealias",
+        "forcereftoifempty",
+        Some(&alias),
+        &[actor],
+    );
+    assert_eq!(e.item_count(ACTOR, KEY), 4); // A clear followed by a fill is new.
+
+    e.stop_quest(KEY_QUEST);
+    assert_eq!(e.item_count(ACTOR, KEY), 4);
+    assert_eq!(e.item_count(OTHER, KEY), 1);
+    crate::script::natives::call(&mut e, "quest", "start", Some(&quest), &[]);
+    assert_eq!(e.item_count(ACTOR, KEY), 6);
+    assert_eq!(e.item_count(OTHER, KEY), 2);
+
+    // Runtime inventory counts are signed. A grant must saturate at the
+    // representable ceiling rather than overflowing on repeated refills.
+    e.remove_item(ACTOR, KEY, 6, None);
+    e.inventory_mut(ACTOR).add(KEY, i32::MAX);
+    crate::script::natives::call(&mut e, "referencealias", "clear", Some(&alias), &[]);
+    let actor = e.object_value(ACTOR);
+    crate::script::natives::call(
+        &mut e,
+        "referencealias",
+        "forcerefto",
+        Some(&alias),
+        &[actor],
+    );
+    assert_eq!(e.item_count(ACTOR, KEY), i32::MAX);
+
+    // A static reference is not an inventory recipient even though it has a base.
+    let static_ref = e.object_value(STATIC_REF);
+    crate::script::natives::call(
+        &mut e,
+        "referencealias",
+        "forcerefto",
+        Some(&alias),
+        &[static_ref],
+    );
+    assert_eq!(e.item_count(STATIC_REF, KEY), 0);
 }

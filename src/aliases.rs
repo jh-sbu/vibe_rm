@@ -78,6 +78,9 @@ pub struct AliasSpec {
     pub conditions: Vec<Condition>,
     /// Temporary memberships of a filled reference alias (`ALFC`).
     pub factions: Vec<FormId>,
+    /// Inventory entries (`CNTO`) granted when a reference is newly placed in
+    /// this alias. The Creation Kit documentation says these grants are permanent.
+    pub inventory: Vec<(FormId, i32)>,
 }
 
 /// What happens to a reference an alias created when its quest stops or starts over.
@@ -126,6 +129,7 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
                 fill: Fill::Empty,
                 conditions: Vec::new(),
                 factions: Vec::new(),
+                inventory: Vec::new(),
             });
             (from_alias, ref_type, keyword, ext_quest, ext_alias) =
                 (None, FormId::NULL, FormId::NULL, None, 0);
@@ -140,6 +144,14 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
                 let faction = form();
                 if !faction.is_null() && !a.factions.contains(&faction) {
                     a.factions.push(faction);
+                }
+            }
+            b"CNTO" if !a.location && sr.data.len() >= 8 => {
+                let item = form();
+                let raw_count = sr.u32(4);
+                if !item.is_null() && raw_count > 0 && raw_count <= i32::MAX as u32 {
+                    let count = raw_count as i32;
+                    a.inventory.push((item, count));
                 }
             }
             b"ALFR" => a.fill = Fill::Forced(form()),
@@ -215,6 +227,59 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
 }
 
 impl Engine {
+    /// Apply an alias's authored inventory when a new reference is assigned.
+    /// Items stay with the reference when it leaves or is cleared from the alias.
+    fn grant_alias_inventory(&mut self, q: FormId, alias: u32, reference: FormId) {
+        // Actor and container references have inventories. Ignore invalid or
+        // non-inventory ForceRefTo targets rather than creating phantom state.
+        let inventory_target = reference == PLAYER_REF
+            || self
+                .lo
+                .tag_of(reference)
+                .is_some_and(|tag| tag.0 == *b"ACHR")
+            || self.created(reference).is_some_and(|created| created.actor)
+            || self
+                .base_of(reference)
+                .is_some_and(|base| self.lo.tag_of(base).is_some_and(|tag| tag.0 == *b"CONT"));
+        if !inventory_target {
+            return;
+        }
+        let inventory = self
+            .alias_specs(q)
+            .iter()
+            .find(|a| a.id == alias && !a.location)
+            .map(|a| a.inventory.clone())
+            .unwrap_or_default();
+        for (item, count) in inventory {
+            // Alias inventory supports direct carried items. Form lists and
+            // leveled lists need their own provenance/roll semantics and are
+            // intentionally left unsupported here.
+            if count <= 0 || crate::world::inventory::item_info(&self.lo, item).is_none() {
+                continue;
+            }
+            let held = self.inventory_mut(reference).count(item);
+            let granted = count.min(i32::MAX.saturating_sub(held));
+            if granted > 0 {
+                self.add_item(reference, item, granted);
+            }
+        }
+    }
+
+    /// Force a reference into an alias. Repeating the same assignment is
+    /// idempotent for CNTO; a changed or empty alias receives its grant once.
+    pub(crate) fn force_alias_ref(&mut self, q: FormId, alias: u32, reference: FormId) {
+        let previous = self.alias_ref(q, alias);
+        self.scripts.fill_seq += 1;
+        let seq = self.scripts.fill_seq;
+        let state = self.scripts.quests.entry(q).or_default();
+        state.aliases.insert(alias, reference);
+        state.filled_at.insert(alias, seq);
+        self.scripts.alias_gen += 1;
+        if previous != Some(reference) {
+            self.grant_alias_inventory(q, alias, reference);
+        }
+    }
+
     /// A quest's aliases, parsed once.
     pub fn alias_specs(&self, q: FormId) -> Arc<Vec<AliasSpec>> {
         if let Some(s) = self.alias_spec_cache.borrow().get(&q) {
@@ -517,7 +582,14 @@ impl Engine {
         self.clean_up_alias_creations(q);
         let specs = self.alias_specs(q);
         let reserved = self.reserved_refs(q);
+        let previous_aliases = self
+            .scripts
+            .quests
+            .get(&q)
+            .map(|state| state.aliases.clone())
+            .unwrap_or_default();
         self.scripts.quests.entry(q).or_default().aliases.clear();
+        let mut grants = Vec::new();
         let edid = self
             .lo
             .get(q)
@@ -538,6 +610,9 @@ impl Engine {
                     let st = self.scripts.quests.entry(q).or_default();
                     st.aliases.insert(a.id, r);
                     st.filled_at.insert(a.id, seq);
+                    if previous_aliases.get(&a.id) != Some(&r) && !a.location {
+                        grants.push((a.id, r));
+                    }
                 }
                 None if !a.has(flags::OPTIONAL) && a.fill != Fill::Empty => {
                     // Story Manager attempts fail all the time (the event's actors aren't the ones).
@@ -562,6 +637,9 @@ impl Engine {
                 }
                 None => {}
             }
+        }
+        for (alias, reference) in grants {
+            self.grant_alias_inventory(q, alias, reference);
         }
         true
     }

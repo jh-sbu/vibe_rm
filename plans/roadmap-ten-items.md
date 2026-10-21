@@ -41,10 +41,10 @@ saves keep origins unknown. Source and save-format limits are documented.
 
 ## Remaining selection
 
-The next candidates are alias-given keys, package placement headings, sleep
+The next candidates are package placement headings, sleep
 screen fades, detection persistence, message-box waits across saves, animation
 event waits across saves, greater-power cooldown persistence, and spent-soul
-persistence. The first six are explicit roadmap subitems. The last two address
+persistence. The first five are explicit roadmap subitems. The last two address
 save-continuity gaps found while reading the roadmap's remaining magic/save work:
 their inventory and effects can survive a native save while the restriction's
 runtime memory currently does not. Each receives a concrete plan below before
@@ -57,12 +57,14 @@ lifecycle using the local QUST reference (revision 3507775) and public CK
 documentation. Parse/remap reference-alias inventory entries and make authored
 keys available through normal inventory and lock access. Apply grants only after
 a successful fill; support forced refills/clears, quest stop/restart and native
-save restoration without duplicate grants. Track the contribution if removal is
-required by evidence, preserving unrelated inventory as far as the inventory
-model can represent it. Test malformed/location-alias entries, startup failure,
-independent aliases, key use, native clear/refill and save continuity. Document
-consumption, transfer and lifecycle uncertainties; do not count an unsupported
-lifecycle guess as full alias-inventory parity.
+save restoration without replaying grants. Public sources conflict on grant
+lifetime: UESP says duration-of-quest, while the public CK page mirror says
+permanent. Follow the more specific CK alias-tab description and document the
+uncertainty. Support direct inventory forms only; reject counts above the signed
+runtime limit and cap additions to prevent overflow. Test malformed/location-
+alias entries, startup failure, independent aliases, key use, native clear/refill
+and save continuity. Document unsupported list forms and same-reference
+ForceRefTo policy.
 
 Research refinement before implementation: the public CK documentation mirror at
 <https://tesck.ru/index.php/Вкладка_Quest_Alias> preserves the English Alias Data
@@ -72,6 +74,14 @@ the alias. This conflicts with UESP's duration wording. The CK original returned
 temporary inventory/provenance removal. Actual fill transitions grant; loading
 already filled aliases must not replay grants. Same-reference ForceRefTo and
 refill repetition need an explicit, tested policy if evidence does not settle it.
+
+Outcome: implemented and reviewed; all seven lock tests passed with system
+Vulkan, including the new alias-inventory native/lock/save regression.
+Direct valid items are granted
+through normal AddItem handling after successful fills; list forms remain outside
+scope. Same-reference ForceRefTo is idempotent, while clear/refill and quest
+restart are new fills. Synthetic regression coverage exercises failed startup,
+key access, save restoration, repeated grants and signed-count saturation.
 
 ## 4. Package placement headings
 
