@@ -547,7 +547,25 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .and_then(|s| e.weapon_of(s))
             .is_some_and(|w| e.formlist(p1).contains(&w))), // IsWeaponInList
         // Rank -1 (potential followers' `CurrentFollowerFaction`) isn't membership.
-        71 => b(subject.is_some_and(|s| e.npc_factions(s).iter().any(|&(f, r)| f == p1 && r >= 0))), // GetInFaction
+        71 => b(subject.is_some_and(|s| e.is_member(s, p1))), // GetInFaction
+        132 => b(e.is_member(PLAYER_REF, p1)),                // GetPCInFaction
+        42 => b(subject.is_some_and(|s| e.same_faction(s, p1))), // SameFaction
+        133 => b(subject.is_some_and(|s| e.same_faction(s, PLAYER_REF))), // SameFactionAsPC
+        43 => b(subject.is_some_and(|s| e.same_race(s, p1))), // SameRace
+        134 => b(subject.is_some_and(|s| e.same_race(s, PLAYER_REF))), // SameRaceAsPC
+        44 => b(subject.is_some_and(|s| e.same_sex(s, p1))),  // SameSex
+        135 => b(subject.is_some_and(|s| e.same_sex(s, PLAYER_REF))), // SameSexAsPC
+        68 => b(subject.and_then(|s| e.class_of(s)) == Some(p1)), // GetIsClass
+        129 => b(e.class_of(PLAYER_REF) == Some(p1)),         // GetPCIsClass
+        // Gold is the subject's inventory's, as `GetItemCount` reads it.
+        48 => Some(subject.map_or(0, |s| e.item_count(s, crate::crime::GOLD)) as f32), // GetGold
+        // Fractions of the most (`GetActorValuePercent`), stamina and health.
+        128 => Some(e.actor_value_fraction(subject?, esp::actor_value::STAMINA)), // GetStaminaPercentage
+        430 => Some(e.actor_value_fraction(subject?, esp::actor_value::HEALTH)), // GetHealthPercentage
+        // Only the player's carry weight is tracked (`player_overencumbered`).
+        734 => b(subject == Some(PLAYER_REF) && e.player_overencumbered()), // IsOverEncumbered
+        // Journal statistics by name (`CIS1`); a name it doesn't know counts 0.
+        312 => Some(e.query_stat(c.string_p1.as_deref()?) as f32), // GetPCMiscStat
         73 => Some(
             subject
                 .and_then(|s| {
@@ -561,7 +579,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         426 => b(subject
             .and_then(|s| e.actor_voice_type(s))
             .is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
-        560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))), // HasKeyword
+        560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))),   // HasKeyword
         // Undead: of an `ActorTypeUndead` race (the game caches its own
         // reading; see `known_ambiguities/magic.md`).
         715 => b(subject.is_some_and(|s| e.has_keyword(s, FormId(0x13796)))), // IsUndead
@@ -1095,6 +1113,47 @@ impl Engine {
         Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))))
     }
 
+    /// The actor's class (`CNAM` of its NPC, through its templates).
+    pub fn class_of(&self, actor: FormId) -> Option<FormId> {
+        self.templates_of(actor)?
+            .form(&self.lo, crate::world::template::STATS, b"CNAM")
+    }
+
+    /// Whether an actor is in a faction: rank -1 (a potential follower's) isn't membership.
+    pub fn is_member(&self, actor: FormId, faction: FormId) -> bool {
+        self.npc_factions(actor)
+            .iter()
+            .any(|&(f, r)| f == faction && r >= 0)
+    }
+
+    /// Whether two actors are members of a common faction (`SameFaction`), rank -1
+    /// not counting on either side, as `GetInFaction` doesn't count it.
+    pub fn same_faction(&self, a: FormId, b: FormId) -> bool {
+        let mine: Vec<FormId> = self
+            .npc_factions(a)
+            .into_iter()
+            .filter(|&(_, r)| r >= 0)
+            .map(|(f, _)| f)
+            .collect();
+        self.npc_factions(b)
+            .iter()
+            .any(|&(f, r)| r >= 0 && mine.contains(&f))
+    }
+
+    /// Whether two actors are of the same race (their bases' `RNAM`).
+    pub fn same_race(&self, a: FormId, b: FormId) -> bool {
+        self.race_of(a)
+            .zip(self.race_of(b))
+            .is_some_and(|(x, y)| x == y)
+    }
+
+    /// Whether two actors are of the same sex (their bases' `ACBS`).
+    pub fn same_sex(&self, a: FormId, b: FormId) -> bool {
+        self.base_of(a)
+            .zip(self.base_of(b))
+            .is_some_and(|(x, y)| self.npc_is_female(x) == self.npc_is_female(y))
+    }
+
     /// Factions and ranks of an actor (a reference, or an NPC record), from its
     /// templates when they give them.
     pub fn npc_factions(&self, actor: FormId) -> Vec<(FormId, i8)> {
@@ -1377,3 +1436,7 @@ mod reference_tests;
 #[cfg(test)]
 #[path = "variable_tests.rs"]
 mod variable_tests;
+
+#[cfg(test)]
+#[path = "compare_tests.rs"]
+mod compare_tests;
