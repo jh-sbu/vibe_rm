@@ -33,13 +33,11 @@ Implemented in `src/condition/mod.rs` on the engine's state: `GetCombatState`
 - `IsTorchOut` is a torch held in the left hand, drawn or not. The engine has
   no separate lit state, so a torch counts whether or not it is lit.
 
-## Not implemented
+## Unsettled, so left unsupported
 
-- `GetAttackState` (574): the game's graph phases (draw, swing, hit, next attack,
-  follow-through, bash). The engine tracks only the swing timer and whether a
-  blow landed. Vanilla idles also compare it against values 7 to 12, which no
-  source documents (`ROADMAP.md` Next, game logic).
-- `GetShouldAttack` (66): the engine's attack-on-sight decision (`hostile_to`)
-  needs `&mut` for its faction cache. The Grand Healing talk (`Skyrim
-  talk:Grand Healing`, oldid 1330973) says it checks hostility without
-  `IsHostileTo`, which doesn't settle its exact rule.
+- `GetAttackState` (574): vanilla idles compare it against values 7 to 12,
+  which no source documents (the graph phases it reports are in `ROADMAP.md`
+  Next, game logic).
+- `GetShouldAttack` (66): the Grand Healing talk (`Skyrim talk:Grand Healing`,
+  oldid 1330973) says it checks hostility without `IsHostileTo`, which doesn't
+  settle its exact rule.

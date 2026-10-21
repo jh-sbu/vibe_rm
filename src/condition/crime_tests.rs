@@ -9,7 +9,6 @@ const OTHER_FACTION: FormId = FormId(0x841);
 const NPC: FormId = FormId(0x850);
 const BYSTANDER: FormId = FormId(0x851);
 
-const GET_CRIME_GOLD: u16 = 459;
 const GET_CRIME_GOLD_VIOLENT: u16 = 375;
 const GET_INFAMY: u16 = 533;
 const GET_INFAMY_VIOLENT: u16 = 534;

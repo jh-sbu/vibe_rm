@@ -1518,7 +1518,8 @@ game each piece unlocks.
    guards; fences; see Done)
    - Death conditions: `GetCauseofDeath` (the cause's values are unknown,
      `known_ambiguities/death.md`) and `GetKillingBlowLimb` (the killing blow's
-     hit limb isn't kept)
+     hit limb isn't kept); Papyrus `Actor.GetKiller` (CommonLibSSE `myKiller`)
+     from the same death record
    - The player's body (see Done): first-person arms and weapons (the
      `_1stperson` skeleton, `1stperson*` models, its own graph); casting,
      Critical Charge, basic attacks by direction and sprinting
