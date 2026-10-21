@@ -314,6 +314,32 @@ pub fn grid_of(p: Vec2) -> (i32, i32) {
     )
 }
 
+/// Two actors' capsules apart (their radii, at scale 1).
+const ACTORS_APART: f32 = 40.0;
+
+/// `spot`, stepped out of the way of actors standing at `taken` (on the same
+/// floor): as Skyrim SE separates actors placed on top of each other
+/// (autotest6), though by how much it does isn't known.
+fn clear_of(nav: &crate::ai::nav::NavWorld, spot: Vec3, taken: &[Vec3]) -> Vec3 {
+    let mut s = spot;
+    for _ in 0..4 {
+        let Some(o) = taken.iter().find(|o| {
+            (o.z - s.z).abs() < 100.0 && o.truncate().distance(s.truncate()) < ACTORS_APART
+        }) else {
+            break;
+        };
+        let away = (s - *o).truncate().try_normalize().unwrap_or(glam::Vec2::X);
+        let to = o.truncate() + away * ACTORS_APART;
+        let next = nav.floor_below(to.extend(s.z));
+        // Not onto another floor.
+        if (next.z - s.z).abs() > 50.0 {
+            break;
+        }
+        s = next;
+    }
+    s
+}
+
 impl Engine {
     pub fn new(
         lo: LoadOrder,
@@ -1253,6 +1279,12 @@ impl Engine {
             .get(&key)
             .map(|rt| rt.navmeshes.clone())
             .unwrap_or_default();
+        // Where actors already stand, those placed here included.
+        let mut taken: Vec<Vec3> = self
+            .cells
+            .get(&key)
+            .map(|rt| rt.actors.iter().map(|a| a.pos).collect())
+            .unwrap_or_default();
         for &(r, at) in refs {
             let is_actor = self.lo.tag_of(r).map_or_else(
                 || self.created(r).is_some_and(|c| c.actor),
@@ -1288,10 +1320,13 @@ impl Engine {
                     } else if p.is_nan() {
                         self.nav.random_point_in(&cell_meshes, &mut rand)
                     } else {
-                        // Spread out actors sent to the same marker.
-                        self.nav.random_point(p, 96.0, &mut rand).or(Some(p))
+                        // Where its package had it, fallen onto the floor
+                        // beneath (autotest6: not spread out), out of the way
+                        // of any already there.
+                        Some(clear_of(&self.nav, self.nav.floor_below(p), &taken))
                     };
                     let Some(spot) = spot else { continue };
+                    taken.push(spot);
                     d.transform.w_axis = spot.extend(1.0);
                 }
                 descs.push((d, editor_pos));
@@ -3841,5 +3876,28 @@ pub fn interior_environment(l: &Lighting) -> Environment {
         fog_power: if l.fog_power > 0.0 { l.fog_power } else { 1.0 },
         fog_max: if l.fog_max > 0.0 { l.fog_max } else { 1.0 },
         clear_color: l.fog_far_color,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actors_placed_on_top_of_others_step_out_of_their_way() {
+        // No navmesh: spots stay at their height.
+        let nav = crate::ai::nav::NavWorld::default();
+        let a = Vec3::new(0.0, 0.0, 0.0);
+        let b = clear_of(&nav, Vec3::new(5.0, 0.0, 0.0), &[a]);
+        assert!((b.distance(a) - ACTORS_APART).abs() < 0.01, "{b}");
+        // Clear of both: out of one, then the other.
+        let c = clear_of(&nav, a, &[a, b]);
+        assert!(
+            c.distance(a) >= ACTORS_APART - 0.01 && c.distance(b) >= ACTORS_APART - 0.01,
+            "{c}"
+        );
+        // Others upstairs are no obstacle.
+        let up = clear_of(&nav, a, &[Vec3::new(0.0, 0.0, 240.0)]);
+        assert_eq!(up, a);
     }
 }

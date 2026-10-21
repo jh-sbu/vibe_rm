@@ -310,6 +310,34 @@ impl NavWorld {
         self.locate(p).map(|(_, z)| z)
     }
 
+    /// Where an actor put at `p` comes to stand: the highest navmesh at or
+    /// below it (a step above counts), as one placed in the air falls onto the
+    /// floor beneath, not the one above. Off the navmesh, its nearest height;
+    /// failing that, `p`.
+    pub fn floor_below(&self, p: Vec3) -> Vec3 {
+        const STEP: f32 = 32.0;
+        let q = p.truncate();
+        let mut best: Option<f32> = None;
+        for m in self.meshes.values() {
+            if q.x < m.min.x || q.y < m.min.y || q.x > m.max.x || q.y > m.max.y {
+                continue;
+            }
+            let (c, r) = m.bucket_of(q);
+            for &t in &m.buckets[r * m.cols + c] {
+                if let Some(z) = m.height_in(t as usize, q)
+                    && z <= p.z + STEP
+                    && best.is_none_or(|b| z > b)
+                {
+                    best = Some(z);
+                }
+            }
+        }
+        match best.or_else(|| self.height_at(p)) {
+            Some(z) => q.extend(z),
+            None => p,
+        }
+    }
+
     fn mesh(&self, n: Node) -> &Mesh {
         &self.meshes[&n.mesh]
     }
@@ -602,10 +630,17 @@ mod tests {
     /// A corridor 100 wide along +X, `n` squares long, two triangles each,
     /// as one navmesh.
     fn corridor(n: usize) -> NavWorld {
+        let mut w = NavWorld::default();
+        w.meshes.insert(FormId(2), corridor_mesh(n, 0.0));
+        w
+    }
+
+    /// [`corridor`]'s mesh at height `z`.
+    fn corridor_mesh(n: usize, z: f32) -> Mesh {
         let mut vertices = Vec::new();
         for i in 0..=n {
-            vertices.push([i as f32 * 100.0, 0.0, 0.0]);
-            vertices.push([i as f32 * 100.0, 100.0, 0.0]);
+            vertices.push([i as f32 * 100.0, 0.0, z]);
+            vertices.push([i as f32 * 100.0, 100.0, z]);
         }
         let mut corners: Vec<[u16; 3]> = Vec::new();
         for i in 0..n as u16 {
@@ -643,9 +678,23 @@ mod tests {
             edge_links: Vec::new(),
             doors: Vec::new(),
         };
-        let mut w = NavWorld::default();
-        w.meshes.insert(FormId(2), Mesh::new(mesh).unwrap());
-        w
+        Mesh::new(mesh).unwrap()
+    }
+
+    #[test]
+    fn placed_actors_fall_onto_the_floor_beneath() {
+        // A ground floor and an upper floor 240 above it.
+        let mut w = corridor(4);
+        w.meshes.insert(FormId(3), corridor_mesh(4, 240.0));
+        let at = |z: f32| w.floor_below(Vec3::new(150.0, 50.0, z)).z;
+        assert_eq!(at(25.0), 0.0, "in the air below the upper floor");
+        assert_eq!(at(-10.0), 0.0, "a little under the ground");
+        assert_eq!(at(260.0), 240.0, "over the upper floor");
+        assert_eq!(at(250.0), 240.0);
+        assert_eq!(at(215.0), 240.0, "within a step below it");
+        // Off the navmesh: as it is.
+        let off = Vec3::new(150.0, 500.0, 30.0);
+        assert_eq!(w.floor_below(off), off);
     }
 
     #[test]

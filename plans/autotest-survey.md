@@ -23,6 +23,12 @@ script). Settled items move out of this list as their tests report.
   are the next autotest's.
 - **Tiers 3 and 4**: not started.
 - **Manual only** and **not settleable**: unchanged; no autotest planned.
+- **Placement as a package's cell loads** (2026-10-21, outside the tiers):
+  `autotest6` run once: the game moves unloaded actors along their package
+  before the cell loads (Travel 40 short on a straight line), then drops
+  them onto the floor beneath. Its open ends (starting inside the radius,
+  the whole-cell sandbox) are in `known_ambiguities/unloaded-placement.md`
+  for a follow-up.
 
 ## Tier 1: cheap, record types test mods already write, no travel (done)
 

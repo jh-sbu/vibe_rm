@@ -123,7 +123,11 @@ game each piece unlocks.
   (schedule + conditions), sandbox / travel behaviour, idle/walk cross-fade,
   persistent NPC whereabouts with leaving / arriving through load doors;
   multi-location sandboxes moving between their stops (the tree's repeating
-  branch; `known_ambiguities/package-trees.md`)
+  branch; `known_ambiguities/package-trees.md`); actors appear where their
+  package took them while unloaded, as `test-mod autotest6` found (Travel 40
+  units short on the straight line, Sandbox on its centre), fallen onto the
+  floor beneath rather than scattered across floors
+  (`known_ambiguities/unloaded-placement.md`)
 - AI furniture: chairs, benches, stools, beds, bedrolls and wall-lean markers from NIF
   furniture markers; ownership; reservations; sit / sleep packages and sandbox
   "Allow ..." inputs; enter / exit clips placed by root motion from the behaviour
@@ -1465,6 +1469,9 @@ game each piece unlocks.
      continuity; control for instrumentation such as quest aliases changing
      persistence. Use the observations to establish transition and catch-up rules
      before treating the current approximations as compatibility requirements.
+   - Headings at placement: actors put on a Sandbox package's reference take
+     its heading, and Travel actors turn to their marker's after loading
+     (`test-mod autotest6`); spawned actors keep their editor heading
    - Alias fills: created actors cleaned up; "from alias" locations
      followed through travel, not only at refresh; packages for "from event"
      aliases, and package targets by object id / type and interrupt data

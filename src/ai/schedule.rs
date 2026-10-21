@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use esp::FormId;
 use glam::Vec3;
 
-use super::package::{LocationKind, Package};
+use super::package::{Behaviour, LocationKind, Package};
 use crate::engine::{Engine, Location};
 use crate::render::CellKey;
 
@@ -16,6 +16,10 @@ const REFRESH_INTERVAL: f32 = 20.0;
 const REFRESH_BUDGET: usize = 250;
 /// Actors farther than this from the player may appear / vanish without walking through a door.
 const UNSEEN_DISTANCE: f32 = 2500.0;
+
+/// How far short of a Travel package's target an unloaded actor stops (in
+/// XY), coming straight at it (autotest6).
+const TRAVEL_SHORT: f32 = 40.0;
 
 /// A cell an actor can be in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -89,6 +93,38 @@ impl Whereabouts {
         for v in self.by_place.values_mut() {
             v.retain(|&a| a != r);
         }
+    }
+}
+
+/// Where a package (its behaviour and location radius) has an unloaded actor
+/// by the time it loads, coming from `home` (where it was: its editor place,
+/// or where scripts moved it) to `target` in `place`, as Skyrim SE has it
+/// (autotest6): Travel goes in a straight line, its height too, and stops 40
+/// units short in XY (where home is nearer, it stays; inside the package's
+/// radius, it is at the target); a sandbox about a reference is at that
+/// reference; one about a whole cell (no target position) stays at home when
+/// home is in it. Coming from another space, at the target (unobserved).
+fn unloaded_arrival(
+    behaviour: Behaviour,
+    radius: f32,
+    home: (Place, Vec3),
+    place: Place,
+    target: Vec3,
+) -> Vec3 {
+    if target.is_nan() {
+        return if home.0 == place { home.1 } else { target };
+    }
+    if behaviour != Behaviour::Travel || !same_space(home.0, place) {
+        return target;
+    }
+    let off = home.1 - target;
+    let flat = off.truncate().length();
+    if flat <= radius {
+        target
+    } else if flat > TRAVEL_SHORT {
+        target + off * (TRAVEL_SHORT / flat)
+    } else {
+        home.1
     }
 }
 
@@ -281,9 +317,16 @@ impl Engine {
                 .moved
                 .get(&a)
                 .map_or((editor_place, rf.position), |m| (m.place, m.pos));
-            let (place, pos) = current
-                .and_then(|p| self.package_place(a, p))
-                .unwrap_or(home);
+            let (place, pos) = match current.and_then(|p| Some((p, self.package_place(a, p)?))) {
+                Some((p, (place, target))) => {
+                    let radius = p.location.map_or(0.0, |l| l.radius);
+                    (
+                        place,
+                        unloaded_arrival(p.behaviour, radius, home, place, target),
+                    )
+                }
+                None => home,
+            };
             pending_packages.insert(a, current.map(|p| p.id));
             if log::log_enabled!(log::Level::Trace) {
                 log::trace!(
@@ -721,5 +764,61 @@ mod tests {
         assert!(w.crossed_slot(8.0));
         // Midnight, and a day on.
         assert!(w.crossed_slot(24.0 * 3.0 + 0.1));
+    }
+
+    /// autotest6's readings in the Riverwood Trader: actors upstairs in the
+    /// editor, packages sending them to markers on the ground floor.
+    #[test]
+    fn unloaded_actors_are_where_their_packages_took_them() {
+        let trader = Place::Interior(FormId(0x133C9));
+        let at = |b, radius, from: [f32; 3], to: [f32; 2]| {
+            let home = (trader, Vec3::from(from));
+            unloaded_arrival(b, radius, home, trader, Vec3::new(to[0], to[1], 0.0))
+        };
+        let near = |a: Vec3, b: [f32; 3]| a.distance(Vec3::from(b)) < 0.1;
+        // Travel: 40 short on the straight line, whatever the radius below it.
+        let t0 = at(
+            Behaviour::Travel,
+            0.0,
+            [-500.0, -13.0, 240.0],
+            [-276.0, -333.0],
+        );
+        assert!(near(t0, [-298.938, -300.231, 24.577]), "{t0}");
+        let t32 = at(
+            Behaviour::Travel,
+            32.0,
+            [-436.0, -13.0, 240.0],
+            [-148.0, -333.0],
+        );
+        assert!(near(t32, [-174.759, -303.268, 22.299]), "{t32}");
+        // Starting inside the radius: on the target.
+        let t128 = at(
+            Behaviour::Travel,
+            128.0,
+            [-372.0, -13.0, 240.0],
+            [-404.0, -93.0],
+        );
+        assert!(near(t128, [-404.0, -93.0, 0.0]), "{t128}");
+        // Sandbox: on its centre.
+        let s = at(
+            Behaviour::Sandbox,
+            200.0,
+            [-308.0, -13.0, 240.0],
+            [-340.0, -237.0],
+        );
+        assert!(near(s, [-340.0, -237.0, 0.0]), "{s}");
+        // Already within 40: where it was.
+        let close = at(Behaviour::Travel, 0.0, [32.0, -124.0, 0.0], [25.0, -131.0]);
+        assert!(near(close, [32.0, -124.0, 0.0]), "{close}");
+        // A whole cell: home when home is in it, else anywhere (NaN).
+        let home = (trader, Vec3::new(-244.0, -13.0, 240.0));
+        let cell = unloaded_arrival(Behaviour::Sandbox, 0.0, home, trader, Vec3::NAN);
+        assert_eq!(cell, home.1);
+        let elsewhere = (Place::Interior(FormId(1)), home.1);
+        let cell = unloaded_arrival(Behaviour::Sandbox, 0.0, elsewhere, trader, Vec3::NAN);
+        assert!(cell.is_nan());
+        // From another space: at the target.
+        let away = unloaded_arrival(Behaviour::Travel, 0.0, elsewhere, trader, Vec3::ZERO);
+        assert_eq!(away, Vec3::ZERO);
     }
 }
