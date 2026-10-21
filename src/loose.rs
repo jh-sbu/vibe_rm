@@ -20,6 +20,9 @@ const LOST_DEPTH: f32 = 4096.0;
 /// height (game units; no source).
 const DROP_AHEAD: f32 = 50.0;
 const DROP_HEIGHT: f32 = 70.0;
+/// Apart, side by side, the references of one drop from different owners
+/// (game units; no source).
+const DROP_SPREAD: f32 = 16.0;
 
 /// Steps after loading during which loose objects are held where they were
 /// placed: the physics engine wakes bodies as their colliders go in and it
@@ -330,18 +333,37 @@ impl Engine {
         }
         self.unequip_if_gone(holder, item);
         let ahead = Vec3::new(heading.sin(), heading.cos(), 0.0);
+        let side = Vec3::new(ahead.y, -ahead.x, 0.0);
         let at = feet + ahead * DROP_AHEAD + Vec3::Z * DROP_HEIGHT;
-        let r = self.create_object_at(item, place, at, Vec3::new(0.0, 0.0, heading), n);
-        if !removed.charges.is_empty() {
-            self.world_state.item_charges.insert(r, removed.charges);
-        }
-        log::info!("{holder} drops {n} {item} as {r}");
         let from = self.object_value(holder);
-        self.send_script_event(r, "OnContainerChanged", vec![papyrus::Value::None, from]);
-        if holder == crate::engine::PLAYER_REF {
-            self.send_player_remove_item(item, r, 4);
+        // One reference per owner, so what the player stole stays stolen
+        // (UESP *Skyrim:Crime*: stolen items "tracked separately when dropped").
+        // Which copy had which charge isn't kept, so the charges are shared out
+        // in order.
+        let mut charges = removed.charges.into_iter();
+        let mut first = None;
+        for (i, (owner, k)) in removed.parts.into_iter().enumerate() {
+            let spot = at + side * (i as f32 * DROP_SPREAD);
+            let r = self.create_object_at(item, place, spot, Vec3::new(0.0, 0.0, heading), k);
+            if let Some(c) = self.created_refs.refs.get_mut(&r) {
+                c.owner = owner;
+            }
+            let mine: Vec<f32> = charges.by_ref().take(k as usize).collect();
+            if !mine.is_empty() {
+                self.world_state.item_charges.insert(r, mine);
+            }
+            log::info!("{holder} drops {k} {item} (owner {owner:?}) as {r}");
+            self.send_script_event(
+                r,
+                "OnContainerChanged",
+                vec![papyrus::Value::None, from.clone()],
+            );
+            if holder == crate::engine::PLAYER_REF {
+                self.send_player_remove_item(item, r, 4);
+            }
+            first.get_or_insert(r);
         }
-        Some(r)
+        first
     }
 
     /// Console `loose [n]`: the loose objects nearest the player.
@@ -430,6 +452,71 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::{Location, PLAYER_REF};
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+
+    const ITEM: FormId = FormId(0x800);
+    const OWNER: FormId = FormId(0x801);
+    const ACTOR: FormId = FormId(0x802);
+    const HOUSE: FormId = FormId(0x803);
+    const WORLD_ITEM: FormId = FormId(0x804);
+
+    /// An interior owned by `OWNER`, holding one placed `ITEM` (which is theirs
+    /// too), and an actor of `OWNER` to name it in the inventory.
+    fn house() -> (std::path::PathBuf, Engine) {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("vrm-loose-{}-{stamp}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let cell = RecordBuilder::new(b"CELL", HOUSE)
+            .field(b"DATA", &[0x21, 0])
+            .form(b"XOWN", OWNER);
+        let placed = RecordBuilder::new(b"REFR", WORLD_ITEM).form(b"NAME", ITEM);
+        let records = [
+            Node::top(
+                b"MISC",
+                vec![
+                    RecordBuilder::new(b"MISC", ITEM)
+                        .zstring(b"FULL", "Loose Test Item")
+                        .field(
+                            b"DATA",
+                            &[&100i32.to_le_bytes()[..], &1.0f32.to_le_bytes()].concat(),
+                        ),
+                ],
+            ),
+            Node::top(b"NPC_", vec![RecordBuilder::new(b"NPC_", OWNER)]),
+            Node::top(
+                b"ACHR",
+                vec![RecordBuilder::new(b"ACHR", ACTOR).form(b"NAME", OWNER)],
+            ),
+            Node::Group {
+                label: *b"CELL",
+                group_type: 0,
+                children: vec![
+                    Node::Record(cell),
+                    Node::Group {
+                        label: HOUSE.0.to_le_bytes(),
+                        group_type: esp::group_type::CELL_CHILDREN,
+                        children: vec![Node::Group {
+                            label: HOUSE.0.to_le_bytes(),
+                            group_type: esp::group_type::CELL_TEMPORARY,
+                            children: vec![Node::Record(placed)],
+                        }],
+                    },
+                ],
+            },
+        ];
+        std::fs::write(
+            dir.join("Loose.esp"),
+            write_plugin(0, &[], "test", "loose items", 0x900, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Loose.esp");
+        e.location = Location::Interior(HOUSE);
+        (dir, e)
+    }
 
     #[test]
     fn euler_round_trip() {
@@ -437,5 +524,79 @@ mod tests {
         let q = crate::world::records::rotation_from_euler(rot);
         let back = crate::world::records::rotation_from_euler(euler_of(q));
         assert!(q.angle_between(back) < 1e-4);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn a_dropped_stolen_item_stays_stolen_when_picked_up_again() {
+        let (dir, mut e) = house();
+        e.inventory_mut(PLAYER_REF).add_owned(ITEM, Some(OWNER), 2);
+        let r = e.drop_item(PLAYER_REF, ITEM, 2).unwrap();
+        assert_eq!(e.created(r).unwrap().owner, Some(OWNER));
+        assert_eq!(e.ref_owner(r), Some(OWNER));
+        assert_eq!(e.item_count(PLAYER_REF, ITEM), 0);
+
+        assert!(e.take_item(r));
+        assert_eq!(
+            e.inventory_mut(PLAYER_REF).count_owned(ITEM, Some(OWNER)),
+            2
+        );
+        assert_eq!(e.inventory_mut(PLAYER_REF).count_owned(ITEM, None), 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn a_dropped_own_item_is_not_theft_even_in_the_owners_house() {
+        let (dir, mut e) = house();
+        e.add_item(PLAYER_REF, ITEM, 2);
+        let r = e.drop_item(PLAYER_REF, ITEM, 2).unwrap();
+        assert_eq!(e.created(r).unwrap().owner, None);
+        // The house's owner doesn't reach a reference the player made.
+        assert_eq!(e.ref_owner(r), None);
+        assert!(e.take_item(r));
+        assert_eq!(e.inventory_mut(PLAYER_REF).count_owned(ITEM, None), 2);
+        assert_eq!(
+            e.inventory_mut(PLAYER_REF).count_owned(ITEM, Some(OWNER)),
+            0
+        );
+
+        // What was placed there is the owner's: taking it is theft.
+        assert!(e.take_item(WORLD_ITEM));
+        assert_eq!(
+            e.inventory_mut(PLAYER_REF).count_owned(ITEM, Some(OWNER)),
+            1
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn dropping_a_mixed_stack_makes_one_reference_per_owner() {
+        let (dir, mut e) = house();
+        e.add_item(PLAYER_REF, ITEM, 1);
+        e.inventory_mut(PLAYER_REF).add_owned(ITEM, Some(OWNER), 2);
+        let first = e.drop_item(PLAYER_REF, ITEM, 3).unwrap();
+        assert_eq!(e.created(first).unwrap().count, 1);
+        assert_eq!(e.created(first).unwrap().owner, None);
+        let stolen: Vec<FormId> = e
+            .created_refs
+            .refs
+            .iter()
+            .filter(|(_, c)| c.owner == Some(OWNER))
+            .map(|(&id, _)| id)
+            .collect();
+        assert_eq!(stolen.len(), 1);
+        assert_eq!(e.created(stolen[0]).unwrap().count, 2);
+        assert_eq!(e.item_count(PLAYER_REF, ITEM), 0);
+
+        assert!(e.take_item(first));
+        assert!(e.take_item(stolen[0]));
+        assert_eq!(
+            e.inventory_mut(PLAYER_REF).count_owned(ITEM, Some(OWNER)),
+            2
+        );
+        assert_eq!(e.inventory_mut(PLAYER_REF).count_owned(ITEM, None), 1);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

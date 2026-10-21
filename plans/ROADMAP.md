@@ -997,7 +997,9 @@ game each piece unlocks.
   `GetInSharedCrimeFaction`. Stolen goods stay marked as their owners' (red in
   the menus, the red "Steal" / "Steal from" prompts) and are confiscated into
   the faction's stolen goods chest on paying; `GetStolenItemValue(NoCrime)`.
-  Picking a lock someone else owns is a crime when seen. An owned reference's
+  Dropping stolen goods keeps their owner on the reference (one per owner of
+  a mixed stack), so picking them up stays theft; what the player dropped
+  unowned is theirs, even in an owner's house. Picking a lock someone else owns is a crime when seen. An owned reference's
   required faction rank (`XRNK`, on it or its cell) counts: a member below it
   is as good as outside for stealing, locks, beds and cells. Scripts put actors in
   and out of factions (`AddToFaction`, `RemoveFromFaction`,
@@ -1589,7 +1591,7 @@ game each piece unlocks.
      adults, `PICC` lines, hired thugs; trespassers chased out, "Warn To
      Leave", `sNoWaitTrespass` / `sNoSleepTrespass`, sleepers waking to warn;
      `GetAmountSoldStolen` (research-gated: legacy counter behavior in SE
-     unresolved; `known_ambiguities/barter.md`); the unreported crime faction; dropped items' ownership;
+     unresolved; `known_ambiguities/barter.md`); the unreported crime faction;
      locks' alias-given keys (factions done: see Done), trespass for opening a lock
      - Crime conditions waiting on state the engine lacks (`known_ambiguities/crime.md`):
        `GetCrime` and `GetActorCrimePlayerEnemy` (NPCs' crimes by type, and the
