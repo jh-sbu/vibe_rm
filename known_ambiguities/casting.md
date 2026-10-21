@@ -219,3 +219,28 @@ hands' casting events.
   so, and with the caster's `Impact` perk (both conditions run on the
   caster); dual cast, its magnitude (0.25 on Firebolt) gets the 2.2 too, as
   any effect without the duration flag.
+- **Casting-source conditions** (`HasEquippedSpell`, `GetCurrentCastingType`,
+  `GetCurrentDeliveryType`, `IsCurrentSpell`, `SpellHasKeyword`;
+  `crate::condition`, `crate::casting::hand_casting`). The source is 0 left
+  hand, 1 right, 2 the voice (CommonLibSSE's `CastingSource`; vanilla IDLE
+  conditions agree: `570(0)` on the centurion's left-hand attack, `571(1)` on
+  the wisp's right-hand ones). Casting and delivery values are the record's
+  `SPIT` (CommonLibSSE's `CastingType` and `Delivery`). UESP's Function
+  Indices (rev. 3566882, https://en.uesp.net/w/index.php?oldid=3566882)
+  gives the names only. Unconfirmed choices: a hand casting nothing reads
+  -1 (as `GetFactionRank` does; vanilla compares these only with 1 and 2);
+  a dual cast is the left hand's, the right reads nothing (the graph casts
+  it on the left state machine); a spell let go but not yet fired still
+  counts as cast; `HasEquippedSpell` counts spells, powers, shouts and
+  scrolls in a slot, not a staff's enchantment (the staff is a weapon).
+  The voice has no casting state (powers are cast at once, shouts are not
+  tracked), so those four functions are unsupported for it (ROADMAP Next).
+- **`SpellHasKeyword`** is the spell's own `KWDA` or any effect's
+  keywords. The flames spells (`SPEL` 0x12FCD) have no `KWDA` of their own;
+  their effect `FireDamageConcAimed` (0x13CA9) carries `MagicDamageFire`,
+  which the vanilla dialogue `WICommentMagicFlamesHello` checks with
+  `596(0, MagicDamageFire)` on the left hand's cast. Whether the game
+  matches effects' keywords as well, or only the spell's own, isn't
+  published (`SPEL`: https://en.uesp.net/w/index.php?oldid=2309037).
+- **Scroll casting type**: a scroll reads its record's `SPIT` cast type;
+  CommonLibSSE's `ScrollItem::GetCastingType` returns fire and forget.

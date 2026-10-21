@@ -242,6 +242,8 @@ pub struct MagicItem {
     pub charge_time: f32,
     /// How far a target actor spell reaches (`SPIT` range).
     pub range: f32,
+    /// The item's own keywords (`KWDA`).
+    pub keywords: Vec<FormId>,
     pub effects: Vec<EffectItem>,
 }
 
@@ -300,6 +302,14 @@ impl MagicItem {
             }
             _ => return None,
         }
+        m.keywords = rec
+            .get(b"KWDA")
+            .map(|k| {
+                k.chunks_exact(4)
+                    .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+                    .collect()
+            })
+            .unwrap_or_default();
         // Each EFID starts an effect; the EFIT and conditions after it are its.
         for s in rec.subrecords() {
             match &s.tag.0 {
@@ -1500,6 +1510,19 @@ impl Engine {
             .effects
             .iter()
             .any(|x| x.target == actor && !x.done && x.item == item)
+    }
+
+    /// `SpellHasKeyword`: the spell's own keywords, or its effects'. (The
+    /// flames spells carry none of their own; their effects carry
+    /// `MagicDamageFire`, which the vanilla dialogue checks for.)
+    pub fn spell_has_keyword(&self, spell: FormId, kw: FormId) -> bool {
+        self.magic_item(spell).is_some_and(|m| {
+            m.keywords.contains(&kw)
+                || m.effects.iter().any(|x| {
+                    self.magic_effect(x.effect)
+                        .is_some_and(|f| f.keywords.contains(&kw))
+                })
+        })
     }
 
     /// `HasMagicEffectWithKeyword`.
