@@ -593,7 +593,7 @@ impl Engine {
         let mut stuck: Vec<(FormId, Vec3, f32, Option<FormId>, Vec3)> = Vec::new();
         // References struck (shooter, what, the arrow's velocity and damage).
         let mut struck: Vec<(FormId, FormId, Vec3, f32)> = Vec::new();
-        // Spells landing (caster, spell, the actor struck, where, flying).
+        // Spells landing (caster, spell, the reference struck, where, flying).
         let mut landed: Vec<(FormId, FormId, Option<FormId>, Vec3, Vec3, bool)> = Vec::new();
         let player = self.player.position;
         let (pr, ph) = (self.physics.player_radius, self.physics.player_half_height);
@@ -651,9 +651,8 @@ impl Engine {
                 }
                 (Some((t, owner)), _) if p.spell.is_some() => {
                     p.pos = start + dir * t;
-                    let actor = owner.filter(|&o| is_actor(o));
-                    landed.push((p.shooter, p.spell.unwrap(), actor, p.pos, dir, p.dual));
-                    if let Some(o) = owner.filter(|_| actor.is_none()) {
+                    landed.push((p.shooter, p.spell.unwrap(), owner, p.pos, dir, p.dual));
+                    if let Some(o) = owner.filter(|&o| !is_actor(o)) {
                         struck.push((p.shooter, o, p.vel, p.damage));
                     }
                     p.stuck = Some(0.0);

@@ -1356,6 +1356,10 @@ game each piece unlocks.
   (package float inputs), `IsCloserToAThanB`, `GetLineOfSight` read the subject's
   and references' current state; choices and gaps in
   `known_ambiguities/condition-geometry.md`
+- Hostile spells that damage health take their magnitude off destructible
+  references they land on (touch on destructibles, projectile, beam and location spells) or
+  whose area reaches them (`spell_lands` -> `damage_object_by_blow`), under the
+  same Ignore External Damage gate; explosions are not done.
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -1532,8 +1536,8 @@ game each piece unlocks.
    - Destructible object damage and lifecycle (`DEST` definitions, initial
      stage queries and scripted `DamageObject` health/stage progression are
      done; see Done): cobwebs blocking dungeon paths, barricades, bee hives,
-     trap oil pools and gas. Spells landing on objects and their areas
-     (`spell_lands` reaches only actors), explosions and self damage; the
+     trap oil pools and gas. Explosions (`EXPL` damage within their radius)
+     and self damage; the
      stage's model (`BSDamageStage` children or a replacement model with its
      collision, freeing navmesh obstacles), explosion and debris;
      destruction visuals/effects and flags.
