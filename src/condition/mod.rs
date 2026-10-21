@@ -609,12 +609,16 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         61 => b(subject.is_some_and(|s| e.is_alarmed(s))), // GetAlarmed
         499 => Some(e.crime.arrests.days_in_jail as f32), // GetDaysInJail
         657 => b(subject.is_some_and(|s| e.crime.arrests.arresting.is_some_and(|a| a.0 == s))), // GetArrestingActor
-        459 | 375 | 376 => {
-            // GetCrimeGold (Violent / Nonviolent): the player's with the faction
-            // given, else the subject's crime faction; the player's own, all.
+        459 | 375 | 376 | 533 | 534 | 535 => {
+            // GetCrimeGold (Violent / Nonviolent) and GetInfamy (all / Violent /
+            // Nonviolent): the player's with the faction given, else the
+            // subject's crime faction; the player's own, all.
             let pick = |b: crate::crime::Bounty| match c.func {
                 375 => b.violent,
                 376 => b.nonviolent,
+                533 => b.infamy_violent + b.infamy_nonviolent,
+                534 => b.infamy_violent,
+                535 => b.infamy_nonviolent,
                 _ => b.total(),
             };
             let faction = Some(p1)
@@ -1440,3 +1444,7 @@ mod variable_tests;
 #[cfg(test)]
 #[path = "compare_tests.rs"]
 mod compare_tests;
+
+#[cfg(test)]
+#[path = "crime_tests.rs"]
+mod crime_tests;

@@ -32,9 +32,10 @@ locations name it.
   `NonViolent`, `ModCrimeGold(amount, violent)`, `SetCrimeGold` (non-violent),
   `SetCrimeGoldViolent`, `GetInfamy*`, `PlayerPayCrimeGold(removeStolen,
   goToJail)`, `CanPayCrimeGold`; `Actor.Get` / `SetCrimeFaction`.
-- Conditions: `GetCrimeGold`, `GetCrimeGoldViolent`, `GetCrimeGoldNonviolent`
-  (the faction, else the subject's crime faction), `GetIsCrimeFaction`,
-  `CanPayCrimeGold`, `GetInSharedCrimeFaction`.
+- Conditions: `GetCrimeGold`, `GetCrimeGoldViolent`, `GetCrimeGoldNonviolent`,
+  `GetInfamy`, `GetInfamyViolent`, `GetInfamyNonViolent` (the faction, else
+  the subject's crime faction), `GetIsCrimeFaction`, `CanPayCrimeGold`,
+  `GetInSharedCrimeFaction`.
 - Stolen items (UESP Crime): marked stolen for good; confiscated into the
   jail's evidence chest (the faction's `STOL`) on paying or going to jail.
   The prompts are `sSteal` / `sStealFrom` (red). The player keeps a value
@@ -189,7 +190,24 @@ locations name it.
   members only when they are the victim.
 - Assault: the player's first blow on someone calm who keeps the law (see the
   Story Manager's `ASSU`). Murder: the player killing someone they assaulted.
-- `GetCrimeGold` with no faction on the player sums every faction.
+- `GetCrimeGold` and `GetInfamy*` with no faction on the player sum every
+  faction; with no faction on anyone else, they are 0. Infamy is the sum of
+  the rises (`mod_crime_gold`), so paying off a bounty leaves it. Not checked
+  against the game.
+- Unsupported, failing whatever they are compared with: `GetCrime` (122),
+  `GetActorCrimePlayerEnemy` (458), `IsPCAMurderer` (176), `GetPCExpelled`
+  (193), `GetPCFactionMurder` (195), `GetPCEnemyofFaction` (197),
+  `GetPCFactionAttack` (199). Unconfirmed: what sets each flag and when, and
+  whether a murder flag is kept beyond the Murders stat. Sources checked:
+  the function index and raw function data of the Skyrim Mod wiki
+  (signatures only, no meanings), the Skyrim Console page (names only), and
+  CommonLibSSE `TESFaction` (`kPlayerIsExpelled` 1 << 2, `kPlayerIsEnemy` 1 << 3
+  in the faction's `DATA`, with no setter rules) and `GameStateData::murder`
+  (an `int8`, no rules). The only use of `IsPCAMurderer` the wiki gives is an
+  Oblivion-era user talk page (User talk:Lord valarian, revision 243527): the
+  flag "can't be changed" by script and the modder read the murder statistic
+  (misc stat 32) instead; the note implies that sleeping clears it. That is
+  Oblivion, not Skyrim. The vanilla records use none of these (`vrm-tool ctda-uses`).
 - `PlayerPayCrimeGold` takes what gold the player has towards the bounty and
   clears it, enough or not: in the game (`test-mod autotest2`) a bounty of
   500 paid with 100 gold left no gold and no bounty, with 1100 left 600 and

@@ -988,7 +988,7 @@ game each piece unlocks.
   murder and the rank between them. Papyrus `Faction.GetCrimeGold`,
   `ModCrimeGold`, `SetCrimeGold(Violent)`, `PlayerPayCrimeGold`, infamy,
   `Actor.Get` / `SetCrimeFaction`; conditions `GetCrimeGold(Violent /
-  Nonviolent)`, `GetIsCrimeFaction`, `CanPayCrimeGold`,
+  Nonviolent)`, `GetInfamy(Violent / NonViolent)`, `GetIsCrimeFaction`, `CanPayCrimeGold`,
   `GetInSharedCrimeFaction`. Stolen goods stay marked as their owners' (red in
   the menus, the red "Steal" / "Steal from" prompts) and are confiscated into
   the faction's stolen goods chest on paying; `GetStolenItemValue(NoCrime)`.
@@ -1581,9 +1581,14 @@ game each piece unlocks.
      adults, `PICC` lines, hired thugs; trespassers chased out, "Warn To
      Leave", `sNoWaitTrespass` / `sNoSleepTrespass`, sleepers waking to warn;
      `GetAmountSoldStolen` (research-gated: legacy counter behavior in SE
-     unresolved; `known_ambiguities/barter.md`); NPCs' crimes (`GetCrime`,
-     `GetActorCrimePlayerEnemy`), the unreported crime faction; dropped items' ownership;
+     unresolved; `known_ambiguities/barter.md`); the unreported crime faction; dropped items' ownership;
      locks' alias-given keys (factions done: see Done), trespass for opening a lock
+     - Crime conditions waiting on state the engine lacks (`known_ambiguities/crime.md`):
+       `GetCrime` and `GetActorCrimePlayerEnemy` (NPCs' crimes by type, and the
+       faction's player-enemy flag, which nothing sets); the player's faction flags
+       `GetPCExpelled`, `GetPCFactionMurder`, `GetPCFactionAttack` and
+       `GetPCEnemyofFaction`, with what sets them; `IsPCAMurderer` (a murder flag
+       kept past the Murders stat)
    - Combat, more: attackers forgetting a lost fleeing target
      (`fCombatDetectionFleeingLostRemoveTime`,
      `fCombatLowFleeingTargetHitPercent`); flee dialogue's distance rules
