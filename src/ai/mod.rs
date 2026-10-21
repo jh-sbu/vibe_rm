@@ -239,6 +239,7 @@ impl Clips<'_> {
             exit,
             idle_loops: last.mode != ClipMode::SinglePlay && !played.loop_once,
             instant_exit: None,
+            puts_down: false,
         })
     }
 }
@@ -467,6 +468,10 @@ pub struct ActorRuntime {
     /// Carrying a load away from furniture (firewood from a wood pile): its anim
     /// objects stay in hand until the graph puts them away.
     pub(crate) carrying: bool,
+    /// The last arm offset (`OffsetWoodStart`) the graph raised in the furniture
+    /// that no machine took: the arms' offset machines sit outside its furniture
+    /// state.
+    untaken_offset: Option<String>,
     /// Patrol progress: (route start, index of the point heading for).
     patrol: Option<(FormId, usize)>,
     /// Force greet: going up to the player; seconds until it checks again whether
@@ -582,6 +587,7 @@ impl ActorRuntime {
             face: None,
             out_of_furniture: false,
             carrying: false,
+            untaken_offset: None,
             patrol: None,
             greeting: false,
             greet_check: stagger,
@@ -998,6 +1004,7 @@ impl ActorRuntime {
         let Some(seat) = self.seat.clone() else {
             return;
         };
+        self.put_load_away(&seat.clips, &mut w.clips);
         if !self.graph_event(&seat.clips.event, &mut w.clips) {
             log::debug!(
                 "{}: the graph won't take {} for {}",
@@ -1017,16 +1024,21 @@ impl ActorRuntime {
             seat.clips.enter_time()
         );
         self.out_of_furniture = false;
+        self.untaken_offset = None;
         self.state = State::Enter(seat.clips.enter_time());
-        // Bringing a load: the arms leave their carrying pose for the put-down,
-        // whose clip puts the anim objects away (other furniture: standing up).
-        if std::mem::take(&mut self.carrying)
-            && let Some(g) = &mut self.graph
-        {
-            g.send_event("OffsetStop");
-        }
         if !seat.furniture.is_null() {
             self.activated = Some(seat.furniture);
+        }
+    }
+
+    /// Before using furniture: a load brought to it is put away first, while the
+    /// arms' offset machines (outside the furniture state) still hear
+    /// `OffsetStop`. A put-down's clip puts it away itself.
+    fn put_load_away(&mut self, clips: &furniture::UseClips, lib: &mut Clips) {
+        if std::mem::take(&mut self.carrying) && !clips.puts_down {
+            self.graph_event("OffsetStop", lib);
+            self.objects_changed |= !self.objects.is_empty();
+            self.objects.clear();
         }
     }
 
@@ -1204,20 +1216,26 @@ impl ActorRuntime {
                 self.leave = false;
                 // A one-shot gesture (no loop to hold) has already ended by itself;
                 // some (picking up firewood) hold their last pose in the graph's
-                // furniture state, so the graph goes back to its default state and
-                // plays the instant exit the idle tree gives: carrying the load
-                // away from a wood pile (`OffsetCarryLogStart`).
+                // furniture state, so the graph goes back to its default state.
+                // The arms then take the offset the one-shot raised for carrying
+                // its load away (`OffsetWoodStart`), which their machines couldn't
+                // hear in the furniture state; else the instant exit the idle tree
+                // gives.
                 if let Some(seat) = self.seat.clone().filter(|s| !s.clips.idle_loops) {
                     self.graph_event("IdleForceDefaultState", &mut w.clips);
-                    if let Some(exit) = seat
+                    let offset = self.untaken_offset.take();
+                    let instant = seat
                         .clips
                         .instant_exit
-                        .as_deref()
-                        .filter(|e| *e != "IdleForceDefaultState")
+                        .clone()
+                        .filter(|e| e != "IdleForceDefaultState");
+                    if let Some(exit) = offset
+                        .into_iter()
+                        .chain(instant)
+                        .find(|e| self.graph_event(e, &mut w.clips))
                     {
                         log::debug!("{} leaves {} with {exit}", self.ref_id, seat.furniture);
-                        self.carrying =
-                            self.graph_event(exit, &mut w.clips) && !self.objects.is_empty();
+                        self.carrying = !self.objects.is_empty();
                     }
                     self.stand_up(w);
                 } else {
@@ -1735,6 +1753,7 @@ impl ActorRuntime {
             };
             if fresh {
                 // Start out in it: play the way in at once, out of sight.
+                self.put_load_away(&seat.clips, &mut w.clips);
                 if !self.graph_event(&seat.clips.event, &mut w.clips) {
                     continue;
                 }
@@ -1751,8 +1770,10 @@ impl ActorRuntime {
                 }
                 // Keep the objects drawn or put away while skipping the entry.
                 // Sounds, footsteps and other transient events stay skipped.
+                self.untaken_offset = None;
                 for r in raised {
                     self.anim_object_event(&r.event.to_ascii_lowercase(), r.payload.as_deref());
+                    self.note_untaken(&r);
                 }
                 w.furniture.reserve(fid, mi, self.ref_id);
                 self.seat = Some(seat);
@@ -2000,7 +2021,11 @@ impl ActorRuntime {
             self.pos += furniture::to_world(t * self.scale, self.heading);
             self.heading -= yaw;
         }
+        let in_furniture = self.in_furniture();
         for r in frame.raised {
+            if in_furniture {
+                self.note_untaken(&r);
+            }
             self.graph_events.push(r.event.clone());
             let e = r.event.to_ascii_lowercase();
             if self.combat.is_some()
@@ -2040,6 +2065,12 @@ impl ActorRuntime {
             }
         }
         frame.pose
+    }
+
+    fn note_untaken(&mut self, r: &havok::behavior::runtime::Raised) {
+        if !r.taken && r.event.starts_with("Offset") {
+            self.untaken_offset = Some(r.event.clone());
+        }
     }
 
     /// Apply persistent object state, including during furniture entry fast-forward.

@@ -157,6 +157,9 @@ pub struct UseClips {
     pub idle_loops: bool,
     /// The event that leaves at once after a one-shot (see [`Way::instant_exit`]).
     pub instant_exit: Option<String>,
+    /// The way for users holding its item (a wood pile's put-down): its clip puts
+    /// the load carried away.
+    pub puts_down: bool,
 }
 
 impl UseClips {
@@ -530,6 +533,7 @@ pub fn ways_to_use(
                 skeleton,
             )?;
             use_clips.instant_exit = w.instant_exit.clone();
+            use_clips.puts_down = w.holding.is_some_and(|(_, held)| held);
             Some((w.entry, use_clips))
         })
         .collect();

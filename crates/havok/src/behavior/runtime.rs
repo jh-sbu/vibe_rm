@@ -59,11 +59,16 @@ pub struct Sample {
 pub struct Raised {
     pub event: String,
     pub payload: Option<String>,
+    /// Some state machine changed state on it. An event no active machine
+    /// listens for goes untaken (an arm offset raised while in furniture).
+    pub taken: bool,
 }
 
 #[derive(Debug, Clone)]
 struct Event {
     id: usize,
+    /// Index in `raised` of the event the graph raised itself.
+    raised: Option<usize>,
 }
 
 /// Graph-local -> project-wide indices.
@@ -632,8 +637,12 @@ impl Ctx<'_> {
         self.raised.push(Raised {
             event: self.shared.event_names[id].clone(),
             payload,
+            taken: false,
         });
-        self.queue.push_back(Event { id });
+        self.queue.push_back(Event {
+            id,
+            raised: Some(self.raised.len() - 1),
+        });
     }
 
     fn rand(&mut self) -> u64 {
@@ -1909,8 +1918,12 @@ impl Ctx<'_> {
                                 self.raised.push(Raised {
                                     event: self.shared.event_names[id].clone(),
                                     payload: None,
+                                    taken: false,
                                 });
-                                self.queue.push_back(Event { id });
+                                self.queue.push_back(Event {
+                                    id,
+                                    raised: Some(self.raised.len() - 1),
+                                });
                             }
                             was_true[i] = now;
                         }
@@ -2331,7 +2344,7 @@ impl Instance {
     pub fn send_event(&mut self, name: &str) -> bool {
         match self.shared.event_id(name) {
             Some(id) => {
-                self.queue.push_back(Event { id });
+                self.queue.push_back(Event { id, raised: None });
                 true
             }
             None => false,
@@ -2349,7 +2362,7 @@ impl Instance {
         };
         let accepted = {
             let mut ctx = self.ctx(clips);
-            let r = ctx.handle(&mut root, &Event { id });
+            let r = ctx.handle(&mut root, &Event { id, raised: None });
             ctx.drain(&mut root);
             r
         };
@@ -2707,7 +2720,11 @@ impl Ctx<'_> {
             let Some(ev) = self.queue.pop_front() else {
                 return;
             };
-            self.handle(root, &ev);
+            if self.handle(root, &ev)
+                && let Some(r) = ev.raised.and_then(|i| self.raised.get_mut(i))
+            {
+                r.taken = true;
+            }
         }
         self.queue.clear();
     }
@@ -2926,6 +2943,7 @@ mod tests {
                 vec![Raised {
                     event: "Alarm".into(),
                     payload: Some("timer payload".into()),
+                    taken: false,
                 }]
             );
             i.update(5.0, &mut durations);
@@ -6164,16 +6182,19 @@ mod tests {
         let mut i = instance(g);
         assert!(i.handle_event("Sit", &mut durations));
         assert_eq!(playing(&i), [("Loop".into(), 1.0)]);
+        // The destination's listener takes the first; nothing is left for the second.
         assert_eq!(
             i.take_raised(),
             vec![
                 Raised {
                     event: "Changed".into(),
-                    payload: Some("authored payload".into())
+                    payload: Some("authored payload".into()),
+                    taken: true,
                 },
                 Raised {
                     event: "Changed".into(),
-                    payload: Some("authored payload".into())
+                    payload: Some("authored payload".into()),
+                    taken: false,
                 },
             ]
         );
@@ -6244,7 +6265,8 @@ mod tests {
             i.take_raised(),
             vec![Raised {
                 event: "Changed".into(),
-                payload: None
+                payload: None,
+                taken: false,
             }]
         );
         i.update(1.1, &mut durations); // The clip-end trigger commits another transition.
@@ -6751,7 +6773,8 @@ mod tests {
             i.take_raised(),
             [Raised {
                 event: "Draw".into(),
-                payload: Some("Tankard".into())
+                payload: Some("Tankard".into()),
+                taken: false,
             }]
         );
         // Its end trigger moves on to the loop.
