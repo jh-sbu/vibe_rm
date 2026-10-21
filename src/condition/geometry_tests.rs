@@ -11,6 +11,7 @@ const B: FormId = FormId(0x811);
 const C: FormId = FormId(0x812);
 const QUEST: FormId = FormId(0x820);
 const CELL: FormId = FormId(0x830);
+const CREATED_BASE: FormId = FormId(0x840);
 
 const GET_POS: u16 = 6;
 const GET_ANGLE: u16 = 8;
@@ -49,6 +50,7 @@ fn fixture() -> (Fixture, Engine) {
         Fixture(std::env::temp_dir().join(format!("vrm-geometry-{}-{stamp}", std::process::id())));
     std::fs::create_dir(&dir.0).unwrap();
     let records = [
+        Node::top(b"MISC", vec![RecordBuilder::new(b"MISC", CREATED_BASE)]),
         Node::top(
             b"REFR",
             vec![
@@ -144,6 +146,58 @@ fn starting_position_and_angle_are_the_editor_placement() {
     move_to(&mut e, C, [1.0, 2.0, 3.0], [0.0; 3]);
     assert!(!holds(&e, C, GET_STARTING_POS, X, 0, 1.0));
     assert!(!holds(&e, C, GET_STARTING_ANGLE, Z, 0, 0.0));
+}
+
+#[test]
+fn starting_transform_of_world_created_refs_is_immutable_and_per_reference() {
+    let (_dir, mut e) = fixture();
+    move_to(
+        &mut e,
+        A,
+        [12.0, 34.0, 56.0],
+        [0.1, 0.2, std::f32::consts::FRAC_PI_2],
+    );
+    let first = e.create_ref(CREATED_BASE, A, false).unwrap();
+
+    move_to(
+        &mut e,
+        B,
+        [-3.0, 8.0, 13.0],
+        [0.0, 0.0, std::f32::consts::PI],
+    );
+    let second = e.create_ref(CREATED_BASE, B, false).unwrap();
+    assert_ne!(first, second);
+
+    assert!(holds(&e, first, GET_STARTING_POS, X, 0, 12.0));
+    assert!(holds(&e, first, GET_STARTING_POS, Y, 0, 34.0));
+    assert!(holds(&e, first, GET_STARTING_ANGLE, Z, 0, 90.0));
+    assert!(holds(&e, second, GET_STARTING_POS, X, 0, -3.0));
+    assert!(holds(&e, second, GET_STARTING_ANGLE, Z, 0, 180.0));
+
+    move_to(
+        &mut e,
+        first,
+        [1000.0, 2000.0, 3000.0],
+        [0.0, 0.0, std::f32::consts::PI],
+    );
+    assert!(holds(&e, first, GET_POS, X, 0, 1000.0));
+    assert!(holds(&e, first, GET_ANGLE, Z, 0, 180.0));
+    assert!(holds(&e, first, GET_STARTING_POS, X, 0, 12.0));
+    assert!(holds(&e, first, GET_STARTING_ANGLE, Z, 0, 90.0));
+
+    let dropped = e.create_object_at(
+        CREATED_BASE,
+        Place::Interior(CELL),
+        Vec3::new(70.0, 80.0, 90.0),
+        Vec3::new(0.0, 0.0, std::f32::consts::FRAC_PI_2),
+        1,
+    );
+    assert!(holds(&e, dropped, GET_STARTING_POS, Z, 0, 90.0));
+    assert!(holds(&e, dropped, GET_STARTING_ANGLE, Z, 0, 90.0));
+
+    let inside = e.create_ref(CREATED_BASE, A, true).unwrap();
+    assert!(!holds(&e, inside, GET_STARTING_POS, X, 0, 0.0));
+    assert!(!holds(&e, inside, GET_STARTING_ANGLE, Z, 0, 0.0));
 }
 
 #[test]

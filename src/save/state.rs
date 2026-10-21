@@ -13,7 +13,8 @@
 //! `ADOR` (doors actors left open), `DSTR` (destructible health/stage), `WUSE`
 //! (Favorite Weapon usage), `WTHR` (the weather, its transition and override),
 //! `DETH` (killers and times of death), `COWN` (the owners of dropped stolen
-//! items), and `VM` / `VMAR` (`super::vm`: the Papyrus VM). Not yet saved:
+//! items), `ORIG` (world-created references' initial transforms), and `VM` /
+//! `VMAR` (`super::vm`: the Papyrus VM). Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
 //!
@@ -728,6 +729,23 @@ impl Snapshot {
         }
         file.add(b"WRLD", w.0);
 
+        // Created references' initial world transforms were added after WRLD's
+        // layout shipped; keep them in an optional section for older readers.
+        let origins: Vec<_> = sorted(&self.created)
+            .into_iter()
+            .filter_map(|(id, c)| Some((id, c.origin?)))
+            .collect();
+        if !origins.is_empty() {
+            let mut w = Writer::default();
+            w.len(origins.len());
+            for (id, origin) in origins {
+                w.form(id);
+                w.vec3(origin.position);
+                w.vec3(origin.rotation);
+            }
+            file.add(b"ORIG", w.0);
+        }
+
         let mut w = Writer::default();
         put_forms(&mut w, &self.actor_open_doors);
         file.add(b"ADOR", w.0);
@@ -1093,6 +1111,7 @@ impl Snapshot {
                     base,
                     position,
                     rotation,
+                    origin: None,
                     place,
                     container: r.opt_form()?,
                     location: r.opt_form()?,
@@ -1103,6 +1122,30 @@ impl Snapshot {
             );
         }
         r.finish()?;
+
+        if let Some(data) = file.section(b"ORIG") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(28)? {
+                let id = r.form()?;
+                let origin = crate::created::Origin {
+                    position: r.vec3()?,
+                    rotation: r.vec3()?,
+                };
+                let Some(created) = s.created.get_mut(&id) else {
+                    return Err(Corrupt(format!(
+                        "origin for unknown created reference {id}"
+                    )));
+                };
+                if created.origin.is_some()
+                    || !origin.position.is_finite()
+                    || !origin.rotation.is_finite()
+                {
+                    return Err(Corrupt(format!("invalid or duplicate origin for {id}")));
+                }
+                created.origin = Some(origin);
+            }
+            r.finish()?;
+        }
 
         let mut r = section(file, b"PLYR")?;
         s.health = r.f32()?;

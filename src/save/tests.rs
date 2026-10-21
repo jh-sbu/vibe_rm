@@ -298,6 +298,10 @@ fn play(e: &mut Engine) {
             base: SWORD,
             position: Vec3::new(9.0, 8.0, 7.0),
             rotation: Vec3::ZERO,
+            origin: Some(crate::created::Origin {
+                position: Vec3::new(7.0, 8.0, 9.0),
+                rotation: Vec3::new(0.2, 0.3, 0.4),
+            }),
             place: Some(Place::Interior(CELL)),
             container: None,
             location: Some(FormId(0x90D)),
@@ -403,6 +407,10 @@ fn a_saved_game_loads_into_another_engine_unchanged() {
     assert_eq!(
         b.created_refs.refs[&FormId(0xFF00_0800)].owner,
         Some(FormId(0x91A))
+    );
+    assert_eq!(
+        b.created_refs.refs[&FormId(0xFF00_0800)].origin,
+        a.created_refs.refs[&FormId(0xFF00_0800)].origin
     );
 }
 
@@ -676,6 +684,92 @@ fn malformed_destructible_health_sections_are_refused() {
     let mut trailing = destruction_payload(&[]);
     trailing.push(0);
     assert!(Snapshot::read(&file_with_destruction_payload(trailing)).is_err());
+}
+
+fn origin_payload(entries: &[(FormId, Vec3, Vec3)]) -> Vec<u8> {
+    let mut w = Writer::default();
+    w.len(entries.len());
+    for (id, position, rotation) in entries {
+        w.form(*id);
+        w.vec3(*position);
+        w.vec3(*rotation);
+    }
+    w.0
+}
+
+#[test]
+fn created_reference_origins_round_trip_in_an_optional_section() {
+    let id = FormId(0xFF00_0800);
+    let origin = crate::created::Origin {
+        position: Vec3::new(1.0, 2.0, 3.0),
+        rotation: Vec3::new(0.1, 0.2, 0.3),
+    };
+    let mut s = Snapshot::default();
+    s.created.insert(
+        id,
+        crate::created::Created {
+            base: SWORD,
+            position: Vec3::new(10.0, 20.0, 30.0),
+            rotation: Vec3::new(1.0, 2.0, 3.0),
+            origin: Some(origin),
+            place: Some(Place::Interior(CELL)),
+            container: None,
+            location: None,
+            actor: false,
+            count: 1,
+            owner: None,
+        },
+    );
+
+    let file = s.write();
+    assert!(file.section(b"ORIG").is_some());
+    // Current WRLD data retains its existing layout and current transform.
+    let back = Snapshot::read(&file).unwrap();
+    let restored = &back.created[&id];
+    assert_eq!(restored.position, Vec3::new(10.0, 20.0, 30.0));
+    assert_eq!(restored.rotation, Vec3::new(1.0, 2.0, 3.0));
+    assert_eq!(restored.origin, Some(origin));
+
+    // Older saves have no ORIG section: the created reference still loads,
+    // but its original transform remains unknown instead of being guessed.
+    let mut old = file;
+    old.sections.retain(|(tag, _)| tag != b"ORIG");
+    let old = Snapshot::read(&old).unwrap();
+    assert_eq!(old.created[&id].position, restored.position);
+    assert_eq!(old.created[&id].origin, None);
+}
+
+#[test]
+fn malformed_created_reference_origin_sections_are_refused() {
+    let id = FormId(0xFF00_0800);
+    let mut s = Snapshot::default();
+    s.created.insert(
+        id,
+        crate::created::Created {
+            base: SWORD,
+            position: Vec3::ZERO,
+            rotation: Vec3::ZERO,
+            origin: None,
+            place: Some(Place::Interior(CELL)),
+            container: None,
+            location: None,
+            actor: false,
+            count: 1,
+            owner: None,
+        },
+    );
+    let valid = s.write();
+
+    for payload in [
+        vec![1, 0, 0, 0, 0], // one entry, cut short
+        origin_payload(&[(id, Vec3::ZERO, Vec3::ZERO), (id, Vec3::ONE, Vec3::ONE)]),
+        origin_payload(&[(FormId(0xDEAD), Vec3::ZERO, Vec3::ZERO)]),
+        origin_payload(&[(id, Vec3::splat(f32::NAN), Vec3::ZERO)]),
+    ] {
+        let mut file = valid.clone();
+        file.add(b"ORIG", payload);
+        assert!(Snapshot::read(&file).is_err());
+    }
 }
 
 #[test]

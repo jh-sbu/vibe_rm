@@ -577,6 +577,7 @@ mod tests {
             base: FormId(0x1),
             position: Vec3::ZERO,
             rotation: Vec3::ZERO,
+            origin: None,
             place: None,
             container,
             location: None,

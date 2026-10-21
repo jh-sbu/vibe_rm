@@ -5,6 +5,12 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Created-reference starting transforms: `GetStartingPos` and
+  `GetStartingAngle` retain a world reference's creation position and rotation
+  through movement and native saves. The optional `ORIG` section leaves `WRLD`
+  unchanged; older saves and inventory-created references have unknown origins.
+  Skyrim SE semantics for created references remain unverified:
+  `known_ambiguities/condition-geometry.md`.
 - Papyrus `Actor.GetKiller` returns the recorded killer for a dead actor, or
   `None` for a living actor or a death without known attribution. Death records
   remain durable through `DETH`; attribution limits and unsupported death-cause
@@ -1375,9 +1381,10 @@ game each piece unlocks.
 - `GetScriptVariable` reads a reference's Papyrus variable named in `CIS2`
   (`known_ambiguities/condition-variables.md`)
 - Positional conditions: `GetPos`, `GetAngle`, `GetStartingPos`, `GetStartingAngle`
-  (axis 'X'/'Y'/'Z'), `GetHeadingAngle`, `GetRelativeAngle`, `GetWithinDistance`
-  (package float inputs), `IsCloserToAThanB`, `GetLineOfSight` read the subject's
-  and references' current state; choices and gaps in
+  (axis 'X'/'Y'/'Z'; starting transforms use editor placement or the saved
+  origin of a reference created in the world), `GetHeadingAngle`,
+  `GetRelativeAngle`, `GetWithinDistance` (package float inputs),
+  `IsCloserToAThanB`, `GetLineOfSight`; choices and gaps in
   `known_ambiguities/condition-geometry.md`
 - Hostile spells that damage health take their magnitude off destructible
   references they land on (touch on destructibles, projectile, beam and location spells) or
@@ -1547,8 +1554,7 @@ game each piece unlocks.
    - Positional conditions: a null reference in `GetHeadingAngle`,
      `GetRelativeAngle` and `GetLineOfSight` (vanilla combat idles pass one and
      test the heading within ±45; probably the combat target, needs a source:
-     `known_ambiguities/condition-geometry.md`); `GetStartingPos` /
-     `GetStartingAngle` of created references (their spawn point isn't kept)
+     `known_ambiguities/condition-geometry.md`)
    - `GetQuestVariable` (79): its variable is a number in the CTDA with no CIS2 name
      (vanilla uses it 29 times); waits on a number-to-variable mapping
      (`known_ambiguities/condition-variables.md`)
