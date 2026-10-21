@@ -22,6 +22,10 @@ pub struct Created {
     pub base: FormId,
     pub position: Vec3,
     pub rotation: Vec3,
+    /// Where a world reference began: captured once at creation and kept
+    /// separate from its current transform. References created in containers
+    /// have no world origin.
+    pub origin: Option<Origin>,
     /// Where it was made (none inside a container).
     pub place: Option<Place>,
     /// The container it was made in.
@@ -35,6 +39,12 @@ pub struct Created {
     /// came from. Stays with the reference until it is picked up (see
     /// `Engine::take_item`); none for anything the player owns.
     pub owner: Option<FormId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Origin {
+    pub position: Vec3,
+    pub rotation: Vec3,
 }
 
 #[derive(Default)]
@@ -127,6 +137,7 @@ impl Engine {
                 base: item,
                 position: Vec3::ZERO,
                 rotation: Vec3::ZERO,
+                origin: None,
                 place: None,
                 container: Some(at),
                 location,
@@ -139,16 +150,14 @@ impl Engine {
             return Some(id);
         }
         let (place, position) = self.current_place_of(at)?;
-        let rotation = self
-            .reference_of(at)
-            .map(|r| r.rotation)
-            .unwrap_or_default();
+        let rotation = self.ref_rotation(at);
         self.created_refs.refs.insert(
             id,
             Created {
                 base,
                 position,
                 rotation,
+                origin: Some(Origin { position, rotation }),
                 place: Some(place),
                 container: None,
                 location,
@@ -185,6 +194,7 @@ impl Engine {
             base,
             position,
             rotation,
+            origin: Some(Origin { position, rotation }),
             place: Some(place),
             container: None,
             location: None,

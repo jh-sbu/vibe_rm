@@ -60,7 +60,11 @@ the destination engine. Counts are sorted by weapon form and validated against
 the loaded plugin records before applying the save. This persists the engine's
 chosen attack/release metric, whose parity with Skyrim SE is unconfirmed.
 This engine-owned representation does not establish how Skyrim's `.ess` saves
-store destructible references.
+store destructible references. The origin of each created reference made in
+the world is stored in optional `ORIG` as its creation position and rotation;
+the existing `WRLD` layout remains unchanged. Older native saves retain the
+created reference's other data but have no recoverable starting transform, so
+`GetStartingPos` / `GetStartingAngle` fail for those references.
 
 The scripting side (`vm.rs`, sections `VM` and `VMAR`): the scripts attached
 to each object with their variables and properties (`Vm::attach` keeps an

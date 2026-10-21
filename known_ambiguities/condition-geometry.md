@@ -19,9 +19,26 @@ in `src/detection.rs`; tests in `src/condition/geometry_tests.rs`.
   the subject's yaw, wrapped into [-180, 180). CommonLibSSE-NG
   `TESObjectREFR::GetHeadingAngle` (`src/RE/T/TESObjectREFR.cpp`) computes it as
   `atan2(dx, dy) - angleZ` with the wrap; this is the reading used.
-- `GetStartingPos` and `GetStartingAngle` are the editor placement (the record's
-  `DATA`), not the current one. Created references keep no spawn point, so they
-  are unsupported.
+- `GetStartingPos` and `GetStartingAngle` on placed references read the editor
+  placement (the record's `DATA`), not the current one. For references created
+  in the world during play, the implementation captures their actual position
+  and rotation at creation, retains that origin through movement, and saves it
+  in the optional `ORIG` section. Inventory-created references have no world
+  origin and remain unsupported.
+
+## Created-reference source limits
+
+The local UESP [Skyrim Mod function index, revision 3566882](https://en.uesp.net/w/index.php?oldid=3566882)
+lists CTDA functions 10 and 11 as `GetStartingPos` and `GetStartingAngle`.
+UESP's [raw function data, revision 3411473](https://en.uesp.net/w/index.php?oldid=3411473)
+gives `Ref.GetStartingPos(Axis)` and `Ref.GetStartingAngle(Axis)` signatures.
+Neither page defines what those functions return for a reference created in
+play, nor what older saves should do when no original transform was stored.
+Capturing the transform at the moment a world reference is created is therefore
+an explicit implementation inference, not verified Skyrim SE parity. On old
+saves without `ORIG`, this implementation leaves the created reference's
+starting transform unknown and the condition fails rather than using its current
+transform. The `ORIG` extension does not change the existing `WRLD` layout.
 
 ## Unconfirmed choices
 

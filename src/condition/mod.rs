@@ -999,8 +999,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Angles are in degrees, as scripts give them (`GetAngleZ` in Papyrus).
         6 => axis_component(c.p1, e.ref_position(subject?)?), // GetPos
         8 => axis_component(c.p1, e.ref_rotation(subject?)).map(f32::to_degrees), // GetAngle
-        // Where a placed reference was placed in the editor (created references
-        // keep no spawn point, so they are unsupported).
+        // Where a placed reference was placed in the editor, or a created
+        // reference began in the world.
         10 => axis_component(c.p1, starting_placement(e, subject?)?.position), // GetStartingPos
         11 => axis_component(c.p1, starting_placement(e, subject?)?.rotation).map(f32::to_degrees), // GetStartingAngle
         // The reference's bearing from the subject's facing, in [-180, 180).
@@ -1061,8 +1061,15 @@ fn axis_component(axis: u32, v: Vec3) -> Option<f32> {
     }
 }
 
-/// A placed reference as the editor put it (its starting position and angles).
+/// A reference's original transform: plugin placement for placed references,
+/// or its saved origin for ones made during play.
 fn starting_placement(e: &Engine, r: FormId) -> Option<crate::world::records::Reference> {
+    if let Some(mut reference) = e.created_reference(r) {
+        let origin = e.created(r)?.origin?;
+        reference.position = origin.position;
+        reference.rotation = origin.rotation;
+        return Some(reference);
+    }
     let rec = e.lo.get(r)?;
     Some(crate::world::records::reference(&rec))
 }
