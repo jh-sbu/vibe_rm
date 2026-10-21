@@ -95,6 +95,21 @@ impl Engine {
             .unwrap_or(-1)
     }
 
+    /// Whether a reference has entered a stage that destroys it: `DSTD` flag
+    /// 0x04, "Destroy Object" (UESP's DEST field). Any stage up to the current
+    /// one counts, since damage carries on through later stages; see
+    /// `known_ambiguities/destruction.md`.
+    pub fn is_destroyed(&self, reference: FormId) -> bool {
+        let Some(data) = self.destructible_data(reference) else {
+            return false;
+        };
+        let stage = self.current_destruction_stage(reference);
+        data.stages
+            .iter()
+            .position(|s| s.index as i32 == stage)
+            .is_some_and(|at| data.stages[..=at].iter().any(|s| s.flags & 0x04 != 0))
+    }
+
     /// Papyrus `ObjectReference.DamageObject`. Only references present in a
     /// loaded cell's reference list are processed, matching the public CK
     /// caveat that this native may not work on unloaded objects.

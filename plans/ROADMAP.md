@@ -5,6 +5,11 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Reference-state conditions: `GetDestroyed` (a stage with the destroy flag reached),
+  `GetIsObjectType` (the base's record type, by xEdit's form-type numbers),
+  `IsWeaponInList` (the weapon in hand), `GetDefaultOpen` (the placed `ONAM`) and
+  `IsUnlockedDoor` (a door not locked now). Open questions:
+  `known_ambiguities/reference-conditions.md`
 - Combat-state conditions: `GetCombatState`, `IsCombatTarget` (the target the
   actor fights or searches for, as `GetCombatTarget`), `IsPowerAttacking` (the
   swing being made), `IsShieldOut` (shield held with weapons drawn), `IsTorchOut`
@@ -1579,6 +1584,12 @@ game each piece unlocks.
      has only the swing timer and whether a blow landed) and `GetShouldAttack`
      (the attack-on-sight decision readable from `&Engine`). Open questions:
      `known_ambiguities/combat-conditions.md`
+   - Reference conditions waiting on state the engine lacks: `GetInContainer` (which
+     container a reference is in: inventories hold counts of base forms, taken
+     references are only disabled, and a created reference keeps the container it
+     was made in), `GetLockIsBroken` (a broken lock: picks break, but no lock keeps
+     that state, and no public source describes it), `Exists` (what makes a
+     reference exist: no public description or vanilla use yet)
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; doors
      opened by actors remembered; looping sounds of enabled references checked
