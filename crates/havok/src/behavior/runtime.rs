@@ -536,6 +536,43 @@ impl Ctx<'_> {
             })
     }
 
+    /// Resolve the clip's current playback-rate magnitude from its speed and
+    /// enforced duration. A positive duration determines the magnitude needed
+    /// to traverse the activated cropped length in that many seconds; the
+    /// `ClipState` keeps the direction selected when it activated.
+    /// User-controlled and ping-pong timing keep the existing speed path.
+    fn effective_clip_speed(&self, gi: usize, g: GenId, length: f32, enforce: bool) -> f32 {
+        let Generator::Clip {
+            speed,
+            enforced_duration,
+            ..
+        } = &self.shared.graph(gi).generators[g]
+        else {
+            return 0.0;
+        };
+        let playback_speed = self.bound(gi, g, "playbackSpeed").unwrap_or(*speed);
+        if !enforce || !length.is_finite() || length <= 0.0 || !playback_speed.is_finite() {
+            return playback_speed.abs();
+        }
+        let authored_duration = if enforced_duration.is_finite() {
+            *enforced_duration
+        } else {
+            0.0
+        };
+        let duration = self
+            .bound(gi, g, "enforcedDuration")
+            .filter(|value| value.is_finite())
+            .unwrap_or(authored_duration);
+        if duration <= 0.0 {
+            return playback_speed.abs();
+        }
+        let magnitude = length / duration;
+        if !magnitude.is_finite() || magnitude <= 0.0 {
+            return playback_speed.abs();
+        }
+        magnitude
+    }
+
     /// Share the same flags between pose weighting and synchronized timing.
     /// Reject invalid integer inputs before casting; a bound variable still
     /// takes precedence over a duplicate property even when it is invalid.
@@ -1472,14 +1509,7 @@ impl Ctx<'_> {
                     && clip.length.is_finite()
                     && clip.t.is_finite() =>
             {
-                let Generator::Clip { speed, .. } = &self.shared.graph(node.gi).generators[node.g]
-                else {
-                    return None;
-                };
-                let speed = self
-                    .bound(node.gi, node.g, "playbackSpeed")
-                    .unwrap_or(*speed)
-                    .abs();
+                let speed = self.effective_clip_speed(node.gi, node.g, clip.length, true);
                 if !speed.is_finite() || speed <= 0.0 {
                     return None;
                 }
@@ -1626,15 +1656,10 @@ impl Ctx<'_> {
 
     fn advance_clip(&mut self, gi: usize, g: GenId, c: &mut ClipState, dt: f32) {
         let graph = self.shared.graph(gi);
-        let Generator::Clip {
-            speed,
-            user_fraction,
-            ..
-        } = &graph.generators[g]
-        else {
+        let Generator::Clip { user_fraction, .. } = &graph.generators[g] else {
             return;
         };
-        let speed = self.bound(gi, g, "playbackSpeed").unwrap_or(*speed).abs();
+        let speed = self.effective_clip_speed(gi, g, c.length, !c.user && !c.ping_pong);
         let first = !c.started;
         c.started = true;
         c.prev = c.t;
@@ -1759,15 +1784,17 @@ impl Ctx<'_> {
     fn cycle_length(&self, node: &Node) -> f32 {
         match &node.kind {
             Kind::Clip(c) => {
-                let Generator::Clip { speed, .. } = &self.shared.graph(node.gi).generators[node.g]
-                else {
-                    return c.length;
-                };
-                let speed = self
-                    .bound(node.gi, node.g, "playbackSpeed")
-                    .unwrap_or(*speed)
-                    .abs();
-                if speed > 1e-3 { c.length / speed } else { 0.0 }
+                let speed =
+                    self.effective_clip_speed(node.gi, node.g, c.length, !c.user && !c.ping_pong);
+                if speed.is_finite() && speed > 0.0 {
+                    // Do not apply the legacy small-speed cutoff here: a
+                    // positive enforcedDuration can intentionally create a
+                    // long cycle with a rate below 1e-3.
+                    let cycle = c.length / speed;
+                    if cycle.is_finite() { cycle } else { 0.0 }
+                } else {
+                    0.0
+                }
             }
             Kind::Wrap { child: Some(c), .. } | Kind::Select { child: Some(c), .. } => {
                 self.cycle_length(c)
@@ -2640,6 +2667,7 @@ mod tests {
             animation: name.into(),
             mode,
             speed: 1.0,
+            enforced_duration: 0.0,
             user_fraction: 0.0,
             triggers,
             crop_start: 0.0,
@@ -3307,6 +3335,190 @@ mod tests {
         assert_eq!(time(&i), 1.5);
         i.update(3.0, &mut durations);
         assert_eq!(time(&i), 1.5);
+    }
+
+    #[test]
+    fn clip_enforced_duration_completes_the_cropped_clip_and_keeps_reverse_start_time() {
+        let mut g = BehaviorGraph::new(
+            "Enforced",
+            Some(0),
+            vec![clip("Old", ClipMode::SinglePlay, vec![])],
+            vec![],
+        );
+        let Generator::Clip {
+            enforced_duration, ..
+        } = &mut g.generators[0]
+        else {
+            unreachable!()
+        };
+        *enforced_duration = 0.5;
+        let mut i = instance(g);
+        i.update(0.5, &mut durations);
+        assert_eq!(time(&i), 1.0);
+
+        let mut g = BehaviorGraph::new(
+            "CroppedReverseEnforced",
+            Some(0),
+            vec![clip("Old", ClipMode::SinglePlay, vec![])],
+            vec![],
+        );
+        let Generator::Clip {
+            speed,
+            enforced_duration,
+            crop_start,
+            crop_end,
+            start_time,
+            ..
+        } = &mut g.generators[0]
+        else {
+            unreachable!()
+        };
+        *speed = -5.0;
+        *enforced_duration = 0.35;
+        *crop_start = 0.2;
+        *crop_end = 0.1;
+        *start_time = 0.1;
+        let mut i = instance(g);
+        i.update(0.1, &mut durations);
+        // Cropped length 0.7 / enforced time 0.35 = rate 2. Reverse sample
+        // time is offset + length - (startTime + elapsed local time).
+        assert!((time(&i) - 0.6).abs() < 1e-6);
+        assert!((i.samples()[0].prev_time - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clip_enforced_duration_bindings_use_precedence_and_finite_authored_fallbacks() {
+        let mut g = BehaviorGraph::new(
+            "EnforcedBindings",
+            Some(0),
+            vec![clip("Old", ClipMode::SinglePlay, vec![])],
+            vec![],
+        );
+        let Generator::Clip {
+            enforced_duration, ..
+        } = &mut g.generators[0]
+        else {
+            unreachable!()
+        };
+        *enforced_duration = 0.75;
+        g.property_bindings[0] = vec![property("enforcedDuration", "Duration")];
+        let variable = g.add_variable("DurationInput", VarType::Real, 0.25);
+        g.bindings[0] = vec![Binding {
+            member: "enforcedDuration".into(),
+            variable,
+        }];
+        let mut i = property_instance(g, &[("duration", 0.5)]);
+        i.update(0.125, &mut durations);
+        assert!((time(&i) - 0.5).abs() < 1e-6); // Variable wins over property.
+        assert!(i.set_variable("DurationInput", f32::NAN));
+        i.update(0.125, &mut durations);
+        assert!(
+            (i.samples()[0].time - (2.0 / 3.0)).abs() < 1e-6,
+            "time after invalid variable: {}",
+            i.samples()[0].time
+        ); // Invalid variable uses authored .75.
+
+        let mut property_graph = BehaviorGraph::new(
+            "EnforcedProperty",
+            Some(0),
+            vec![clip("Old", ClipMode::SinglePlay, vec![])],
+            vec![],
+        );
+        property_graph.property_bindings[0] = vec![property("enforcedDuration", "Duration")];
+        let mut property = property_instance(property_graph, &[("duration", 0.25)]);
+        property.update(0.125, &mut durations);
+        assert_eq!(time(&property), 0.5);
+
+        let mut invalid_authored = BehaviorGraph::new(
+            "InvalidEnforced",
+            Some(0),
+            vec![clip("Old", ClipMode::SinglePlay, vec![])],
+            vec![],
+        );
+        let Generator::Clip {
+            enforced_duration, ..
+        } = &mut invalid_authored.generators[0]
+        else {
+            unreachable!()
+        };
+        *enforced_duration = f32::NAN;
+        let mut fallback = instance(invalid_authored);
+        fallback.update(0.25, &mut durations);
+        assert_eq!(time(&fallback), 0.25); // Nonfinite authored duration disables override.
+    }
+
+    #[test]
+    fn clip_enforced_duration_is_shared_by_synchronized_cycle_timing() {
+        let mut blend = masked_blend(
+            "Sync",
+            vec![masked_child(1, None, None), masked_child(2, None, None)],
+        );
+        if let Generator::Blender { flags, .. } = &mut blend {
+            *flags = BLEND_SYNC;
+        }
+        let mut enforced = clip("Old", ClipMode::Looping, vec![]);
+        let Generator::Clip {
+            enforced_duration, ..
+        } = &mut enforced
+        else {
+            unreachable!()
+        };
+        *enforced_duration = 2.0;
+        let g = BehaviorGraph::new(
+            "EnforcedSync",
+            Some(0),
+            vec![blend, enforced, clip("Enter", ClipMode::Looping, vec![])],
+            vec![],
+        );
+        let mut i = instance(g);
+        i.update(0.75, &mut durations);
+        let samples = i.samples();
+        assert!((samples[0].time - 0.5).abs() < 1e-6);
+        assert!((samples[1].time - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clip_enforced_duration_keeps_user_controlled_and_ping_pong_timing() {
+        for mode in [ClipMode::UserControlled, ClipMode::PingPong] {
+            let mut g = BehaviorGraph::new(
+                "UnsupportedEnforcedMode",
+                Some(0),
+                vec![clip("Loop", mode, vec![])],
+                vec![],
+            );
+            let Generator::Clip {
+                enforced_duration, ..
+            } = &mut g.generators[0]
+            else {
+                unreachable!()
+            };
+            *enforced_duration = 0.25;
+            let mut i = instance(g);
+            i.update(0.25, &mut durations);
+            let expected = if mode == ClipMode::UserControlled {
+                0.0
+            } else {
+                0.25
+            };
+            assert!((time(&i) - expected).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn enforced_duration_rate_is_shared_with_transition_end_modes() {
+        let mut graph = end_mode_graph(TransitionEndMode::UntilFromEnd);
+        let Generator::Clip {
+            enforced_duration, ..
+        } = &mut graph.generators[1]
+        else {
+            unreachable!()
+        };
+        *enforced_duration = 0.5;
+        let mut i = instance(graph);
+        i.update(0.1, &mut durations);
+        assert!(i.handle_event("Switch", &mut durations));
+        // Effective speed 2 means 0.8 clip-local seconds remain / 2 = 0.4 s.
+        assert_eq!(active_blend_length(&i), Some(0.4));
     }
 
     #[test]

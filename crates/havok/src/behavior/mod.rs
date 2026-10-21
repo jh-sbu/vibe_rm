@@ -363,6 +363,8 @@ pub enum Generator {
         animation: String,
         mode: ClipMode,
         speed: f32,
+        /// Target playback time in seconds; zero leaves `speed` in control.
+        enforced_duration: f32,
         /// `userControlledTimeFraction`, for [`ClipMode::UserControlled`].
         user_fraction: f32,
         triggers: Vec<Trigger>,
@@ -1270,6 +1272,7 @@ impl<'a> Reader<'a> {
                     _ => ClipMode::Other,
                 },
                 speed: p.f32(o + 0x64),
+                enforced_duration: p.f32(o + 0x68),
                 user_fraction: p.f32(o + 0x6C),
                 triggers: self.triggers(p.ptr(o + 0x50)),
                 crop_start: p.f32(o + 0x58),
@@ -2065,6 +2068,44 @@ mod character_property_tests {
         assert_eq!(r.generator(0x280), id);
         assert_eq!(r.property_bindings.len(), 1);
         assert_eq!(r.bindings.len(), 1);
+    }
+
+    #[test]
+    fn clip_generators_retain_enforced_duration_and_bindings() {
+        let mut p = fixture();
+        p.data[0x2E8..0x2EC].copy_from_slice(&0.375f32.to_bits().to_le_bytes());
+        for at in [0x480, 0x4E0] {
+            p.data[at..at + 0x20].fill(0);
+            let name = b"enforcedDuration";
+            p.data[at..at + name.len()].copy_from_slice(name);
+        }
+        let mut r = Reader {
+            p: &p,
+            classes: [(0x280, "hkbClipGenerator")].into(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            property_bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["Enable", "Unused", "Output", "Other", "ForcedTime"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let id = r.generator(0x280);
+        let Generator::Clip {
+            enforced_duration, ..
+        } = &r.generators[id]
+        else {
+            panic!("expected clip generator");
+        };
+        assert_eq!(*enforced_duration, 0.375);
+        assert_eq!(r.property_bindings[id][0].member, "enforcedDuration");
+        assert_eq!(r.property_bindings[id][0].property, "forcedtime");
+        assert_eq!(r.bindings[id][0].member, "enforcedDuration");
+        assert_eq!(r.bindings[id][0].variable, 2);
     }
 
     #[test]

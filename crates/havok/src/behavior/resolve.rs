@@ -321,6 +321,7 @@ mod tests {
             animation: format!("Animations\\{name}.hkx"),
             mode,
             speed: 1.0,
+            enforced_duration: 0.0,
             user_fraction: 0.0,
             triggers,
             crop_start: 0.0,
