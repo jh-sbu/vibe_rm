@@ -425,26 +425,30 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
     indices.into_iter().zip(values).collect()
 }
 
-/// Work out the package input a GetNumericPackageData or
-/// GetWithinPackageLocation condition reads (by `UNAM` index). Numbers:
+/// Work out the package input a GetNumericPackageData, GetWithinPackageLocation
+/// or GetWithinDistance (its distance) condition reads (by `UNAM` index). Numbers:
 /// booleans are 0 or 1; integers and floats share the condition function's
 /// floating-point result. Missing, malformed and other kinds of input leave it
 /// `None`, so the condition fails rather than silently making
 /// `GetNumericPackageData == 0` pass.
 fn package_data(c: &mut Condition, input: impl Fn(u8) -> Option<Input>) {
     use condition::PackageData;
-    let input = || u8::try_from(c.p1).ok().and_then(&input);
+    let index = |p: u32| u8::try_from(p).ok().and_then(&input);
+    let number = |value: Input| match value {
+        Input::Bool(value) => Some(PackageData::Number(u8::from(value) as f32)),
+        Input::Int(value) => Some(PackageData::Number(value as f32)),
+        Input::Float(value) if value.is_finite() => Some(PackageData::Number(value)),
+        _ => None,
+    };
     c.package_data = match c.func {
-        condition::GET_NUMERIC_PACKAGE_DATA => input().and_then(|value| match value {
-            Input::Bool(value) => Some(PackageData::Number(u8::from(value) as f32)),
-            Input::Int(value) => Some(PackageData::Number(value as f32)),
-            Input::Float(value) if value.is_finite() => Some(PackageData::Number(value)),
-            _ => None,
-        }),
-        condition::GET_WITHIN_PACKAGE_LOCATION => input().and_then(|value| match value {
+        condition::GET_NUMERIC_PACKAGE_DATA => index(c.p1).and_then(number),
+        condition::GET_WITHIN_PACKAGE_LOCATION => index(c.p1).and_then(|value| match value {
             Input::Location(l) => Some(PackageData::Location(l)),
             _ => None,
         }),
+        // The distance is the float input the second parameter names, when the
+        // condition reads package inputs (its first parameter's flag).
+        condition::GET_WITHIN_DISTANCE if c.p1_input => index(c.p2).and_then(number),
         _ => return,
     };
 }
