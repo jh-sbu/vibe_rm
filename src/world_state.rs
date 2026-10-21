@@ -21,6 +21,9 @@ pub struct WorldState {
     pub alerted: std::collections::HashSet<FormId>,
     /// Dead actors and where their bodies lie.
     pub dead: HashMap<FormId, (Place, Vec3)>,
+    /// Actors killed in play (`kill_actor_by`): who dealt the killing blow and
+    /// when (saved in `DETH`; older saves load without them).
+    pub deaths: HashMap<FormId, Death>,
     /// Animated doors the player left open.
     pub open_doors: std::collections::HashSet<FormId>,
     /// Dead actors' ragdoll bodies as they lay (world transforms).
@@ -47,6 +50,14 @@ pub struct WorldState {
     pub graph_open: HashMap<FormId, crate::world::animated::OpenState>,
     /// The player's learned ingredient effects: (ingredient, index in its list).
     pub learned_effects: std::collections::HashSet<(FormId, usize)>,
+}
+
+/// How an actor died in play: the killer (none when no one is known to have
+/// dealt the blow), and the game hour (`Engine::game_hours_total`) it died.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Death {
+    pub killer: Option<FormId>,
+    pub at: f64,
 }
 
 /// Where a moved reference is now.

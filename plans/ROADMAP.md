@@ -471,7 +471,9 @@ game each piece unlocks.
   questions: `known_ambiguities/archery-ammunition.md`
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
-  `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`
+  `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`;
+  `GetTimeDead`, `IsKiller`, `IsKillerObject` over the killer and time of deaths in play
+  (`WorldState::deaths`, saved in `DETH`)
 - Combat state for scripts: fighting, or searching for a target it lost
   (`GetCombatState`; the player is in combat while anyone fights them). Papyrus
   `StartCombat`, `StopCombat` (searchers give up too), `IsInCombat`,
@@ -1513,6 +1515,9 @@ game each piece unlocks.
    inventory, ammo / quivers; torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
+   - Death conditions: `GetCauseofDeath` (the cause's values are unknown,
+     `known_ambiguities/death.md`) and `GetKillingBlowLimb` (the killing blow's
+     hit limb isn't kept)
    - The player's body (see Done): first-person arms and weapons (the
      `_1stperson` skeleton, `1stperson*` models, its own graph); casting,
      Critical Charge, basic attacks by direction and sprinting

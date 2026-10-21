@@ -3372,6 +3372,10 @@ impl Engine {
         let rank = killer.map_or(0, |k| self.relationship_rank(actor, k));
         let killed = self.kill_actor_quietly(actor);
         if killed {
+            let at = self.game_hours_total();
+            self.world_state
+                .deaths
+                .insert(actor, crate::world_state::Death { killer, at });
             let k = killer.map_or(papyrus::Value::None, |k| self.object_value(k));
             self.send_script_event(actor, "OnDying", vec![k.clone()]);
             self.send_script_event(actor, "OnDeath", vec![k]);
@@ -3505,6 +3509,11 @@ impl Engine {
             self.end_combat(f);
         }
         true
+    }
+
+    /// How an actor died in play, if it did (none for those placed dead).
+    pub fn death(&self, actor: FormId) -> Option<crate::world_state::Death> {
+        self.world_state.deaths.get(&actor).copied()
     }
 
     /// Dead, whether loaded or not.

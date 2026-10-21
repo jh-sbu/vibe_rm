@@ -594,7 +594,22 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         } // GetInWorldspace
         46 => b(subject.is_some_and(|s| e.is_dead(s))),                 // GetDead
         84 => Some(0.0),                                                // GetDeadCount
-        80 => Some(e.actor_level(subject?) as f32),                     // GetLevel
+        // Game hours since the subject died in play (no value for the living, or
+        // for those dead before the game: unsupported). Unit unconfirmed
+        // (`known_ambiguities/death.md`).
+        361 => subject
+            .and_then(|s| e.death(s))
+            .map(|d| (e.game_hours_total() - d.at) as f32), // GetTimeDead
+        // The subject killed the actor named (the victim).
+        408 => b(subject.is_some_and(|s| e.death(p1).is_some_and(|d| d.killer == Some(s)))), // IsKiller
+        // The subject killed one of the actors (or their bases) the list names.
+        409 => b(subject.is_some_and(|s| {
+            let list = e.formlist(p1);
+            e.world_state.deaths.iter().any(|(&v, d)| {
+                d.killer == Some(s) && list.iter().any(|&f| f == v || e.base_of(v) == Some(f))
+            })
+        })), // IsKillerObject
+        80 => Some(e.actor_level(subject?) as f32), // GetLevel
         // Actor values (`actor_values`).
         14 => Some(e.actor_value(subject?, c.p1)), // GetActorValue
         277 => Some(e.av_base(subject?, c.p1)),    // GetBaseActorValue
@@ -1448,3 +1463,7 @@ mod compare_tests;
 #[cfg(test)]
 #[path = "crime_tests.rs"]
 mod crime_tests;
+
+#[cfg(test)]
+#[path = "death_tests.rs"]
+mod death_tests;
