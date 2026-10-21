@@ -314,12 +314,13 @@ pub fn grid_of(p: Vec2) -> (i32, i32) {
     )
 }
 
-/// Two actors' capsules apart (their radii, at scale 1).
-const ACTORS_APART: f32 = 40.0;
+/// How far apart Skyrim SE sets actors that came to rest on top of each
+/// other as they load (38.25 in autotest6 and autotest7).
+const ACTORS_APART: f32 = 38.25;
 
 /// `spot`, stepped out of the way of actors standing at `taken` (on the same
-/// floor): as Skyrim SE separates actors placed on top of each other
-/// (autotest6), though by how much it does isn't known.
+/// floor), as Skyrim SE separates actors placed on top of each other
+/// (autotest6, autotest7: which of them moves, and which way, isn't known).
 fn clear_of(nav: &crate::ai::nav::NavWorld, spot: Vec3, taken: &[Vec3]) -> Vec3 {
     let mut s = spot;
     for _ in 0..4 {

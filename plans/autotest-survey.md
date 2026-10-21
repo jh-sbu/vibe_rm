@@ -27,8 +27,10 @@ script). Settled items move out of this list as their tests report.
   `autotest6` run once: the game moves unloaded actors along their package
   before the cell loads (Travel 40 short on a straight line), then drops
   them onto the floor beneath. Its open ends (starting inside the radius,
-  the whole-cell sandbox) are in `known_ambiguities/unloaded-placement.md`
-  for a follow-up.
+  the whole-cell sandbox) went to `autotest7`, run once: the stop is 10
+  inside a wider radius, actors already near stay, Sit stops 80 short of
+  its chair, overlapping actors are set 38.25 apart. What's still open is
+  in `known_ambiguities/unloaded-placement.md`.
 
 ## Tier 1: cheap, record types test mods already write, no travel (done)
 

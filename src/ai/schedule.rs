@@ -18,8 +18,10 @@ const REFRESH_BUDGET: usize = 250;
 const UNSEEN_DISTANCE: f32 = 2500.0;
 
 /// How far short of a Travel package's target an unloaded actor stops (in
-/// XY), coming straight at it (autotest6).
+/// XY), coming straight at it, at the least; with a wider radius, 10 inside
+/// it (autotest6, autotest7).
 const TRAVEL_SHORT: f32 = 40.0;
+const TRAVEL_INSIDE: f32 = 10.0;
 
 /// A cell an actor can be in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -99,11 +101,13 @@ impl Whereabouts {
 /// Where a package (its behaviour and location radius) has an unloaded actor
 /// by the time it loads, coming from `home` (where it was: its editor place,
 /// or where scripts moved it) to `target` in `place`, as Skyrim SE has it
-/// (autotest6): Travel goes in a straight line, its height too, and stops 40
-/// units short in XY (where home is nearer, it stays; inside the package's
-/// radius, it is at the target); a sandbox about a reference is at that
-/// reference; one about a whole cell (no target position) stays at home when
-/// home is in it. Coming from another space, at the target (unobserved).
+/// (autotest6, autotest7): Travel goes in a straight line, its height too,
+/// and stops 40 units short in XY, or 10 inside a wider radius. One already
+/// that near in XY stays where it is when it is that near in 3D too, else
+/// is at the target (one upstairs over its marker). A sandbox about a
+/// reference is at that reference; one about a whole cell (no target
+/// position) stays at home when home is in it. Coming from another space,
+/// at the target (unobserved).
 fn unloaded_arrival(
     behaviour: Behaviour,
     radius: f32,
@@ -117,12 +121,13 @@ fn unloaded_arrival(
     if behaviour != Behaviour::Travel || !same_space(home.0, place) {
         return target;
     }
+    let stop = (radius - TRAVEL_INSIDE).max(TRAVEL_SHORT);
     let off = home.1 - target;
     let flat = off.truncate().length();
-    if flat <= radius {
+    if flat > stop {
+        target + off * (stop / flat)
+    } else if off.length() > stop {
         target
-    } else if flat > TRAVEL_SHORT {
-        target + off * (TRAVEL_SHORT / flat)
     } else {
         home.1
     }
@@ -766,50 +771,56 @@ mod tests {
         assert!(w.crossed_slot(24.0 * 3.0 + 0.1));
     }
 
-    /// autotest6's readings in the Riverwood Trader: actors upstairs in the
-    /// editor, packages sending them to markers on the ground floor.
+    /// autotest6's and autotest7's readings in the Riverwood Trader: actors
+    /// upstairs or on the ground floor in the editor, packages sending them to
+    /// markers on the ground floor.
     #[test]
     fn unloaded_actors_are_where_their_packages_took_them() {
         let trader = Place::Interior(FormId(0x133C9));
-        let at = |b, radius, from: [f32; 3], to: [f32; 2]| {
+        let at = |b, radius, from: [f32; 3], to: [f32; 3]| {
             let home = (trader, Vec3::from(from));
-            unloaded_arrival(b, radius, home, trader, Vec3::new(to[0], to[1], 0.0))
+            unloaded_arrival(b, radius, home, trader, Vec3::from(to))
         };
         let near = |a: Vec3, b: [f32; 3]| a.distance(Vec3::from(b)) < 0.1;
-        // Travel: 40 short on the straight line, whatever the radius below it.
-        let t0 = at(
-            Behaviour::Travel,
-            0.0,
-            [-500.0, -13.0, 240.0],
-            [-276.0, -333.0],
-        );
+        let travel = Behaviour::Travel;
+        // 40 short on the straight line, the radius below that.
+        let t0 = at(travel, 0.0, [-500.0, -13.0, 240.0], [-276.0, -333.0, 0.0]);
         assert!(near(t0, [-298.938, -300.231, 24.577]), "{t0}");
-        let t32 = at(
-            Behaviour::Travel,
-            32.0,
-            [-436.0, -13.0, 240.0],
-            [-148.0, -333.0],
-        );
+        let t32 = at(travel, 32.0, [-436.0, -13.0, 240.0], [-148.0, -333.0, 0.0]);
         assert!(near(t32, [-174.759, -303.268, 22.299]), "{t32}");
-        // Starting inside the radius: on the target.
-        let t128 = at(
-            Behaviour::Travel,
-            128.0,
-            [-372.0, -13.0, 240.0],
-            [-404.0, -93.0],
+        let b = at(travel, 0.0, [-388.0, 13.0, 240.0], [-388.0, -317.0, 0.0]);
+        assert!(near(b, [-388.0, -277.0, 29.091]), "{b}");
+        // 10 inside a wider radius.
+        let out = at(travel, 128.0, [-364.0, -333.0, 0.0], [-564.0, -333.0, 11.0]);
+        assert!(near(out, [-446.0, -333.0, 4.51]), "{out}");
+        // Already that near: where it was.
+        for (radius, from, to) in [
+            (0.0, [-475.0, -397.0, 0.0], [-500.0, -397.0, 0.0]),
+            (32.0, [-406.0, -429.0, 0.0], [-436.0, -429.0, 0.0]),
+            (0.0, [32.0, -124.0, 0.0], [25.0, -131.0, 0.0]),
+        ] {
+            let stays = at(travel, radius, from, to);
+            assert!(near(stays, from), "{stays}");
+        }
+        // That near in XY but upstairs over it: at the target (autotest7
+        // found Xy300Up near it only as it loaded).
+        let up = at(travel, 128.0, [-372.0, -13.0, 240.0], [-404.0, -93.0, 0.0]);
+        assert!(near(up, [-404.0, -93.0, 0.0]), "{up}");
+        let up = at(
+            travel,
+            300.0,
+            [-340.0, -143.0, 240.0],
+            [-276.0, -333.0, 0.0],
         );
-        assert!(near(t128, [-404.0, -93.0, 0.0]), "{t128}");
+        assert!(near(up, [-276.0, -333.0, 0.0]), "{up}");
         // Sandbox: on its centre.
         let s = at(
             Behaviour::Sandbox,
             200.0,
             [-308.0, -13.0, 240.0],
-            [-340.0, -237.0],
+            [-340.0, -237.0, 0.0],
         );
         assert!(near(s, [-340.0, -237.0, 0.0]), "{s}");
-        // Already within 40: where it was.
-        let close = at(Behaviour::Travel, 0.0, [32.0, -124.0, 0.0], [25.0, -131.0]);
-        assert!(near(close, [32.0, -124.0, 0.0]), "{close}");
         // A whole cell: home when home is in it, else anywhere (NaN).
         let home = (trader, Vec3::new(-244.0, -13.0, 240.0));
         let cell = unloaded_arrival(Behaviour::Sandbox, 0.0, home, trader, Vec3::NAN);
@@ -818,7 +829,7 @@ mod tests {
         let cell = unloaded_arrival(Behaviour::Sandbox, 0.0, elsewhere, trader, Vec3::NAN);
         assert!(cell.is_nan());
         // From another space: at the target.
-        let away = unloaded_arrival(Behaviour::Travel, 0.0, elsewhere, trader, Vec3::ZERO);
+        let away = unloaded_arrival(travel, 0.0, elsewhere, trader, Vec3::ZERO);
         assert_eq!(away, Vec3::ZERO);
     }
 }
