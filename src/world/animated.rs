@@ -816,6 +816,12 @@ impl Engine {
         Some(&mut self.cells.get_mut(&key)?.animated[i].graph.as_mut()?.anim)
     }
 
+    /// The behaviour graph object `r` runs, if any (read-only).
+    pub(crate) fn object_graph(&self, r: FormId) -> Option<&crate::world::behavior::GraphAnim> {
+        let (key, i) = self.find_animated(r)?;
+        Some(&self.cells.get(&key)?.animated[i].graph.as_ref()?.anim)
+    }
+
     /// Whether `r` is an object running a behaviour graph.
     pub(crate) fn object_has_graph(&self, r: FormId) -> bool {
         self.find_animated(r)
