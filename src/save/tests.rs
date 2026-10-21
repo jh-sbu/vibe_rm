@@ -1106,3 +1106,24 @@ fn deaths_section_keeps_killers_and_times_and_is_optional() {
     );
     assert!(Snapshot::read(&malformed.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic plugin only"]
+fn loading_clears_sleep_wait_and_owned_fade_transients() {
+    let (_fixture, mut e) = engine("sleep-transients");
+    let saved = Snapshot::capture(&e);
+    e.menu = Some(crate::items::Menu::SleepWait { sleeping: true });
+    e.start_waiting(4);
+    e.update(Default::default(), 0.25, 20.0);
+    assert!(e.waiting.is_some());
+    assert!(e.imagespace.sleep_fade_amount() > 0.0);
+
+    saved.apply(&mut e).unwrap();
+    assert!(e.waiting.is_none());
+    assert_ne!(
+        e.menu,
+        Some(crate::items::Menu::SleepWait { sleeping: true })
+    );
+    assert_eq!(e.imagespace.sleep_fade_amount(), 0.0);
+    assert_eq!(e.scene.post.fade[3], 0.0);
+}
