@@ -689,6 +689,17 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                     .unwrap_or(0.0),
             )
         }
+        // GetScriptVariable(reference, "name"): the reference's script variable, read
+        // like GetVMScriptVariable's; the name comes in CIS2 (see `parse_all_before`).
+        // Vanilla data never calls it (`known_ambiguities/condition-variables.md`).
+        53 => {
+            let name = c.string_p2.as_deref()?;
+            Some(
+                e.vm.get_var(papyrus::ObjectId::Form(p1.0), name)
+                    .map(|v| v.as_float())
+                    .unwrap_or(0.0),
+            )
+        }
         249 => b(e
             .conversation
             .as_ref()
@@ -1362,3 +1373,7 @@ mod geometry_tests;
 #[cfg(test)]
 #[path = "reference_tests.rs"]
 mod reference_tests;
+
+#[cfg(test)]
+#[path = "variable_tests.rs"]
+mod variable_tests;

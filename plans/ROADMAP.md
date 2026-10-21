@@ -283,8 +283,8 @@ game each piece unlocks.
   (open questions: `known_ambiguities/foot-ik.md`)
 - Talking gestures: each line of dialogue picks from the `ActionTalking` tree (hands on hips,
   hand gestures, angry / happy / expressive idles) by the line's emotion (`TRDT`) and the
-  speaker's graph variables (`GetGraphVariableInt` / `Float` now read the actor's graph);
-  `IsTalking`, `GetDialogueEmotion(Value)`, `GetMovementSpeed`
+  speaker's graph variables (`GetGraphVariableInt` / `Float` read the reference's graph,
+  an object's or an actor's); `IsTalking`, `GetDialogueEmotion(Value)`, `GetMovementSpeed`
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
@@ -1353,6 +1353,8 @@ game each piece unlocks.
   damage as health (`strike` -> `damage_object_by_blow`), skipped while the
   current stage has Ignore External Damage (DSTD 0x08); power attacks add no
   extra damage to objects (unconfirmed, see `known_ambiguities/destruction.md`).
+- `GetScriptVariable` reads a reference's Papyrus variable named in `CIS2`
+  (`known_ambiguities/condition-variables.md`)
 - Positional conditions: `GetPos`, `GetAngle`, `GetStartingPos`, `GetStartingAngle`
   (axis 'X'/'Y'/'Z'), `GetHeadingAngle`, `GetRelativeAngle`, `GetWithinDistance`
   (package float inputs), `IsCloserToAThanB`, `GetLineOfSight` read the subject's
@@ -1516,6 +1518,9 @@ game each piece unlocks.
      test the heading within ±45; probably the combat target, needs a source:
      `known_ambiguities/condition-geometry.md`); `GetStartingPos` /
      `GetStartingAngle` of created references (their spawn point isn't kept)
+   - `GetQuestVariable` (79): its variable is a number in the CTDA with no CIS2 name
+     (vanilla uses it 29 times); waits on a number-to-variable mapping
+     (`known_ambiguities/condition-variables.md`)
    - Player control from scripts: `SetPlayerAIDriven` (player package execution,
      including scene and quest-alias packages)
    - Sneak attacks (see Done): NPCs sneaking up on the player

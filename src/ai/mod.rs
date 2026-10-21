@@ -2581,10 +2581,13 @@ impl Engine {
         out
     }
 
-    /// Active states of a loaded actor's behaviour graph, outermost first.
-    /// A behaviour graph variable of a loaded actor (0 for one its graph lacks);
-    /// `None` when it has no graph.
+    /// A behaviour graph variable of a loaded reference, an object's graph first as
+    /// Papyrus `GetAnimationVariable*` reads it (0 for one its graph lacks); `None`
+    /// when it runs no graph.
     pub fn graph_variable(&self, r: FormId, name: &str) -> Option<f32> {
+        if self.object_has_graph(r) {
+            return Some(self.object_graph(r)?.variable(name).unwrap_or(0.0));
+        }
         let key = self.actor_cells.get(&r)?;
         let a = self.cells.get(key)?.actors.iter().find(|a| a.ref_id == r)?;
         Some(a.graph.as_ref()?.variable(name).unwrap_or(0.0))

@@ -416,3 +416,11 @@ ragdoll joint limits; region weather priority and global chances.
   reads 90 for a target to the subject's right. Verdict: manual. Papyrus cannot read
   a CTDA result; the user would watch a gated quest stage or idle fire. Mark the
   subject and target 90 degrees apart and 1 unit either side of the distance.
+
+- **Script variable condition** (`known_ambiguities/condition-variables.md`): whether
+  `GetScriptVariable(reference, name)` reads the reference's Papyrus variable and
+  which reference (parameter 1 or the subject). Verdict: autotest (partial). The test
+  mod could author a perk whose entry condition is `GetScriptVariable` on a reference
+  with a script set to a known value, and a Papyrus script on the player counts the
+  perks it gets (`Actor.HasPerk`) under each setting. Papyrus cannot read the legacy
+  answer when the variable is missing, so only the set-value cases are observable.
