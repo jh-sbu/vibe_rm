@@ -70,7 +70,7 @@ and location pages, CK wiki descriptions) and the game's data files.
 
 ## Gaps
 
-### Quest-alias factions
+### Quest-alias factions and inventory
 
 Filled reference aliases now contribute their `ALFC` factions to the actor's
 membership while the quest runs. Shared queries expose them to owned-door
@@ -79,7 +79,8 @@ existing faction consumers. Clearing/refilling an alias or stopping its quest
 removes only that contribution; another filled alias can still supply it.
 The actor's base factions and scripted ranks are not rewritten. Existing quest
 and alias save state reconstructs these memberships after load; no separate
-membership state is saved. Alias-given inventory items/keys remain pending.
+membership state is saved. Direct alias inventory items/keys are also supported;
+form-list and leveled-list grants remain pending.
 
 The local [UESP QUST reference, revision 3507775](https://en.uesp.net/w/index.php?oldid=3507775)
 documents `ALFC` as repeated faction FormIDs on reference aliases, granted for
@@ -100,6 +101,34 @@ Synthetic tests exercise quest start/stop, native alias clear/refill, independen
 references, CTDA membership, door access, script ranks, player identity and save
 restoration. Only public documentation and invented records were used; no engine
 binary data or game assets were examined or added for this extension.
+
+Reference-alias `CNTO` entries are granted to the reference's normal inventory
+after a successful quest fill or a new `ForceRefTo` assignment. The grant stays
+with the reference after `Clear`, reassignment, quest stop, or quest restart; the
+same-reference `ForceRefTo` is treated as no new placement and is idempotent.
+Clearing and filling again is a new placement, so its permanent grant is added
+again. Failed startup applies no grants, and native load restores the saved
+inventory and alias state without replaying them. Location aliases, invalid
+item forms, and targets other than actors, the player, or containers are
+ignored. The runtime currently grants direct inventory items; form lists and
+leveled lists are outside this implementation. Counts above `i32::MAX` are
+rejected because authored counts are unsigned but runtime counts are signed.
+Before granting, the count is capped at the remaining `i32` capacity for that
+item, preventing unchecked inventory addition from overflowing. This
+representation bound is not a documented Creation Kit limit.
+
+The local [UESP QUST reference, revision 3507775](https://en.uesp.net/w/index.php?oldid=3507775)
+says alias inventory is added for the duration of the quest (lines 328–340).
+The public [Creation Kit Quest Alias page mirror](https://tesck.ru/index.php/Вкладка_Quest_Alias)
+preserves English wording that the inventory grant is permanent and is not
+removed when a reference leaves the alias (Alias Data, Inventory; mirror of the
+CK page whose original returned HTTP 403). These sources conflict. The
+implementation follows the more specific CK alias-tab description, while
+removal/transfer edge cases and whether the original re-grants after a clear and
+refill remain unverified in Skyrim SE. The tested same-reference force policy is
+an implementation choice. Synthetic tests cover startup failure, key use,
+malformed and oversized counts, location aliases, failed item lookup, forced
+fills, clear/refill, stop/restart, save restoration, and count saturation.
 
 ### Scripted owner locking
 

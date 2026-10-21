@@ -36,6 +36,11 @@ game each piece unlocks.
   filled in running quests: owned-door access, faction conditions and player
   ownership checks see them; clear/refill, quest stop and saves retain the
   right lifetime. Rank/conflict choices: `known_ambiguities/locks.md`
+- Quest-alias inventory (`CNTO`) grants direct items to actors, the player, or
+  containers on successful new fills. Grants stay with the reference through
+  alias clears, quest stop/restart and native saves; signed-count overflow is
+  bounded. Form-list and leveled-list entries remain unsupported; source
+  conflict and same-reference policy: `known_ambiguities/locks.md`
 - Scripted `ObjectReference.Lock` honors its "as owner" argument: door
   unlocking makes the adjoining interior public, locking makes it private;
   trespass checks and native saves retain that access state. Adjoining-cell
@@ -1614,7 +1619,7 @@ game each piece unlocks.
      Leave", `sNoWaitTrespass` / `sNoSleepTrespass`, sleepers waking to warn;
      `GetAmountSoldStolen` (research-gated: legacy counter behavior in SE
      unresolved; `known_ambiguities/barter.md`); the unreported crime faction;
-     locks' alias-given keys (factions done: see Done), trespass for opening a lock
+     trespass for opening a lock
      - Crime conditions waiting on state the engine lacks (`known_ambiguities/crime.md`):
        `GetCrime` and `GetActorCrimePlayerEnemy` (NPCs' crimes by type, and the
        faction's player-enemy flag, which nothing sets); the player's faction flags
