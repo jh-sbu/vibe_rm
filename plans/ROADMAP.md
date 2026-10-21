@@ -11,6 +11,11 @@ game each piece unlocks.
   unchanged; older saves and inventory-created references have unknown origins.
   Skyrim SE semantics for created references remain unverified:
   `known_ambiguities/condition-geometry.md`.
+- Package placement headings: scheduled Sandbox actors take a reference's
+  heading at placement; Travel actors turn toward their marker after unloaded
+  travel. Moved/dead actors and unrelated runtime steering retain priority.
+  The Travel threshold, linked/alias resolution and timing policies are
+  documented in `known_ambiguities/unloaded-placement.md`.
 - Papyrus `Actor.GetKiller` returns the recorded killer for a dead actor, or
   `None` for a living actor or a death without known attribution. Death records
   remain durable through `DETH`; attribution limits and unsupported death-cause
@@ -1486,9 +1491,6 @@ game each piece unlocks.
      continuity; control for instrumentation such as quest aliases changing
      persistence. Use the observations to establish transition and catch-up rules
      before treating the current approximations as compatibility requirements.
-   - Headings at placement: actors put on a Sandbox package's reference take
-     its heading, and Travel actors turn to their marker's after loading
-     (`test-mod autotest6`); spawned actors keep their editor heading
    - Whole-cell sandboxers as their cell loads: the game has them at
      something to use anywhere in the cell (`test-mod autotest7`); ours start
      where they stood

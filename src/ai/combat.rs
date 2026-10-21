@@ -1561,6 +1561,7 @@ impl Engine {
         };
         a.end_search();
         a.interrupt(&mut self.furniture);
+        a.turn_after_arrival = None;
         a.combat = Some(super::threat::new_combat(&self.lo, target, &a.stats, rolls));
         a.strength_in = 0.0;
         self.combat_group_strengths.remove(actor);

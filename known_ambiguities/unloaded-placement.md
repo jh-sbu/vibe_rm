@@ -62,3 +62,32 @@ markers on the ground floor, the trader unloaded.
   actors on their package's target, now without spreading them; whether the
   game moves loaded actors there by the same rule as unloaded ones isn't
   observed.
+
+## Package marker headings
+
+The recorded autotest6/7 cases establish two heading rules: an unloaded actor
+placed by a Sandbox-near-reference package appears at the reference with that
+reference's heading, while a Travel actor that actually travelled toward a
+marker turns toward the marker's heading after the cell loads. In autotest6,
+five Travel actors stopped short and changed heading; a Travel actor 86 units
+from a marker with radius 128 was already inside the observed 118-unit stop
+distance, appeared at the marker, and kept its previous heading.
+
+The runtime applies the Sandbox heading at scheduled placement and turns a
+Travel actor gradually at its normal idle turn rate when its unloaded travel
+was longer than `max(radius - 10, 40)`. Applying the measured stop-distance
+formula as the Travel-heading threshold is an inference from these cases, not
+an independently observed rule. Heading targets resolve direct references,
+linked references, quest aliases and location aliases using the same marker
+resolution as package placement; only direct-reference Sandbox and direct
+marker Travel outcomes are recorded in autotest6/7. The additional target
+forms, radians/clockwise conversion and gradual turn rate are implementation
+policies, covered by synthetic tests rather than claimed as original-game
+observations.
+
+Only scheduled placement consumes this heading directive. Explicitly moved
+references and dead actors keep their current heading; ordinary creation
+spawns do not consume a pending schedule directive. A pending Travel turn is
+discarded by combat, a script halt/move, a package change, conversation or
+scene-facing overrides, and any update where the current goal is no longer
+Travel. These cancellations preserve the runtime's existing steering priority.

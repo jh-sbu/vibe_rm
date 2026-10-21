@@ -288,6 +288,7 @@ impl Engine {
         match (here, there) {
             (Some(h), Some(t)) if h == t => {
                 if let Some(a) = self.actor_mut(r) {
+                    a.turn_after_arrival = None;
                     a.pos = pos;
                     a.heading = rot.z;
                     a.halt(0.5);

@@ -92,6 +92,15 @@ pub struct Goal {
     pub activate: u32,
 }
 
+/// Keep a scheduled arrival turn only after package evaluation confirms a
+/// Travel goal. Before the first evaluation, `None` means "not chosen yet";
+/// at the evaluation boundary, `None` means there is no applicable package.
+fn arrival_turn_after_package_eval(turn: Option<f32>, goal: Option<Goal>) -> Option<f32> {
+    goal.is_some_and(|goal| goal.behaviour == Behaviour::Travel)
+        .then_some(turn)
+        .flatten()
+}
+
 impl Goal {
     pub fn travel(to: Vec3) -> Goal {
         Goal {
@@ -381,6 +390,8 @@ pub struct ActorRuntime {
     /// Whom to face while standing (an escort waiting, a follower in range), and
     /// whether it is turning to them.
     face: Option<(FormId, bool)>,
+    /// Travel marker heading to face after scheduled placement.
+    pub(crate) turn_after_arrival: Option<f32>,
     /// The weapon is in hand (between the graph's `weaponDraw` and `weaponSheathe`),
     /// and whether that changed this frame.
     pub(crate) weapon_out: bool,
@@ -585,6 +596,7 @@ impl ActorRuntime {
             stop: StopProgress::default(),
             hurry: false,
             face: None,
+            turn_after_arrival: None,
             out_of_furniture: false,
             carrying: false,
             untaken_offset: None,
@@ -765,6 +777,7 @@ impl ActorRuntime {
         if self.in_furniture() {
             return;
         }
+        self.turn_after_arrival = None;
         self.state = State::Idle(idle);
         self.speed = 0.0;
     }
@@ -772,6 +785,7 @@ impl ActorRuntime {
     /// The package changed: get up (if in furniture) or stop, then plan anew.
     pub fn interrupt(&mut self, furniture: &mut FurnitureWorld) {
         self.face = None;
+        self.turn_after_arrival = None;
         if self.in_furniture() {
             self.leave = true;
         } else {
@@ -1001,6 +1015,7 @@ impl ActorRuntime {
 
     /// At the start of the seat's enter animation: have the graph play it.
     fn begin_enter(&mut self, w: &mut World) {
+        self.turn_after_arrival = None;
         let Some(seat) = self.seat.clone() else {
             return;
         };
@@ -1080,9 +1095,43 @@ impl ActorRuntime {
             self.magic_practice_step(dt, &goal, w);
             return false;
         }
+        let idle_turn_rate = self.turn_rate();
         match &mut self.state {
             State::Idle(t) => {
                 self.speed = 0.0;
+                if self.face.is_some() {
+                    // A live conversation / escort-facing request takes priority.
+                    self.turn_after_arrival = None;
+                }
+                if self.turn_after_arrival.is_some()
+                    && self
+                        .goal
+                        .is_some_and(|goal| goal.behaviour != Behaviour::Travel)
+                {
+                    self.turn_after_arrival = None;
+                }
+                // Initial package evaluation may be delayed by the spawn
+                // stagger. Hold this actor idle until evaluation selects
+                // Travel or clears the pending target.
+                if self.turn_after_arrival.is_some() && self.goal.is_none() {
+                    return false;
+                }
+                if let Some(heading) = self.turn_after_arrival.filter(|_| {
+                    self.goal
+                        .is_some_and(|goal| goal.behaviour == Behaviour::Travel)
+                }) {
+                    let dir = Vec3::new(heading.sin(), heading.cos(), 0.0);
+                    let delta = angle_to(self.heading, dir);
+                    let step = delta.clamp(-idle_turn_rate * dt, idle_turn_rate * dt);
+                    let remaining = delta - step;
+                    self.heading += step;
+                    if remaining.abs() <= FACE_TURN_STOP {
+                        self.heading = heading;
+                        self.turn_after_arrival = None;
+                    }
+                    *t -= dt;
+                    return false;
+                }
                 *t -= dt;
                 if *t > 0.0 {
                     self.face_target(w, dt);
@@ -3364,6 +3413,7 @@ impl Engine {
                 let first = a.current.is_none();
                 a.current = pick;
                 a.goal = goal;
+                a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
                 a.stop = stop;
                 if !first {
                     a.interrupt(&mut self.furniture);
@@ -3373,6 +3423,7 @@ impl Engine {
                 // what it is doing.
                 let changed = a.goal.map(|g| g.behaviour) != goal.map(|g| g.behaviour);
                 a.goal = goal;
+                a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
                 if changed {
                     a.interrupt(&mut self.furniture);
                 }
@@ -3604,6 +3655,7 @@ impl Engine {
                     self.ai_enabled && a.combat.is_none() && !a.is_walking() && !a.in_furniture()
                 }) {
                     // Saying a scene line to someone: stand and face them.
+                    a.turn_after_arrival = None;
                     a.halt(1.0);
                     a.turn_towards((at - a.pos).truncate().extend(0.0).normalize_or_zero(), dt);
                 } else if !self.ai_enabled || a.bleeding.is_some() {

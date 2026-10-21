@@ -106,6 +106,70 @@ fn armor_slows_actual_package_steps_and_combat_chases() {
 }
 
 #[test]
+fn scheduled_travel_heading_turns_at_movement_rate_and_cancels_on_halt() {
+    let mut a = actor();
+    let target = std::f32::consts::FRAC_PI_2;
+    a.turn_after_arrival = Some(target);
+    with_world(|w| {
+        a.step(0.1, w);
+        assert!((a.heading - 0.4).abs() < 1e-5);
+        assert!(a.turn_after_arrival.is_some());
+        a.step(0.3, w);
+        assert!((a.heading - target).abs() < 1e-5);
+        assert!(a.turn_after_arrival.is_none());
+
+        a.turn_after_arrival = Some(0.0);
+        a.halt(1.0);
+        assert!(a.turn_after_arrival.is_none());
+
+        a.turn_after_arrival = Some(0.0);
+        a.goal.as_mut().unwrap().behaviour = Behaviour::Sandbox;
+        a.state = State::Idle(1.0);
+        a.step(0.1, w);
+        assert!(a.turn_after_arrival.is_none());
+
+        a.goal.as_mut().unwrap().behaviour = Behaviour::Travel;
+        a.turn_after_arrival = Some(0.0);
+        a.face = Some((FormId(4), false));
+        a.step(0.1, w);
+        assert!(a.turn_after_arrival.is_none());
+        a.face = None;
+        a.turn_after_arrival = Some(0.0);
+        a.interrupt(&mut FurnitureWorld::default());
+        assert!(a.turn_after_arrival.is_none());
+    });
+}
+
+#[test]
+fn arrival_heading_waits_for_initial_package_evaluation() {
+    let mut a = actor();
+    let target = std::f32::consts::FRAC_PI_2;
+    a.goal = None;
+    a.current = None;
+    a.next_eval = 0.5;
+    a.turn_after_arrival = Some(target);
+    with_world(|w| {
+        // A newly spawned actor may spend its stagger with no goal yet. It
+        // must neither turn early nor discard the schedule's pending heading.
+        a.step(0.1, w);
+        assert_eq!(a.heading, 0.0);
+        assert_eq!(a.turn_after_arrival, Some(target));
+
+        // This is the same reconciliation used when evaluate_packages adopts
+        // the first applicable package (which does not interrupt the actor).
+        a.goal = Some(Goal::travel(Vec3::Y * 1000.0));
+        a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, a.goal);
+        a.step(0.1, w);
+        assert!((a.heading - 0.4).abs() < 1e-5);
+        assert!(a.turn_after_arrival.is_some());
+
+        // At an actual evaluation with no applicable package, the target is
+        // discarded instead of surviving indefinitely while goal-less.
+        assert_eq!(arrival_turn_after_package_eval(Some(target), None), None);
+    });
+}
+
+#[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
 fn equipped_armor_draw_state_and_perks_refresh_npc_movement() {
     use crate::world::inventory::Inventory;

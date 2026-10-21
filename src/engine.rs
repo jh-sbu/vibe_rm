@@ -1274,6 +1274,31 @@ impl Engine {
     /// Spawn actors (ACHR references) into a loaded cell, optionally away from their
     /// editor location (NaN: anywhere on the cell's navmesh).
     pub(crate) fn spawn_actors(&mut self, key: CellKey, refs: &[(FormId, Option<Vec3>)]) {
+        self.spawn_actors_with_headings(key, refs, &std::collections::HashMap::new());
+    }
+
+    /// Spawn actors where their schedule has them, applying the package marker
+    /// heading policy computed with the same package/location resolution.
+    pub(crate) fn spawn_scheduled_actors(&mut self, key: CellKey, refs: &[(FormId, Option<Vec3>)]) {
+        let headings: std::collections::HashMap<_, _> = refs
+            .iter()
+            .filter_map(|(r, _)| {
+                self.whereabouts
+                    .placement_heading
+                    .get(r)
+                    .copied()
+                    .map(|heading| (*r, heading))
+            })
+            .collect();
+        self.spawn_actors_with_headings(key, refs, &headings);
+    }
+
+    fn spawn_actors_with_headings(
+        &mut self,
+        key: CellKey,
+        refs: &[(FormId, Option<Vec3>)],
+        headings: &std::collections::HashMap<FormId, crate::ai::schedule::PlacementHeading>,
+    ) {
         let mut descs = Vec::new();
         let cell_meshes = self
             .cells
@@ -1305,6 +1330,16 @@ impl Engine {
                 self.inventories.get(&r),
             ) {
                 let editor_pos = d.transform.w_axis.truncate();
+                // Explicitly moved references and bodies retain their own
+                // transform. Ordinary (unscheduled) spawns never pass a policy.
+                let placement_heading = crate::ai::schedule::heading_for_spawn(
+                    headings.get(&r).copied(),
+                    self.world_state.dead.contains_key(&r),
+                    self.world_state.moved.contains_key(&r),
+                );
+                if let Some(heading) = placement_heading {
+                    d.transform = heading.orient(d.transform);
+                }
                 if let Some(p) = at {
                     let mut rng = self.rand() | 1;
                     let mut rand = move || {
@@ -1330,7 +1365,7 @@ impl Engine {
                     taken.push(spot);
                     d.transform.w_axis = spot.extend(1.0);
                 }
-                descs.push((d, editor_pos));
+                descs.push((d, editor_pos, placement_heading));
             }
         }
         if descs.is_empty() {
@@ -1338,12 +1373,12 @@ impl Engine {
         }
         let paths: Vec<String> = descs
             .iter()
-            .flat_map(|(d, _)| d.models.iter().map(|(m, _)| m.clone()))
+            .flat_map(|(d, _, _)| d.models.iter().map(|(m, _)| m.clone()))
             .collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let mut actors = Vec::new();
         let mut runtimes = Vec::new();
-        for (ai, (d, editor_pos)) in descs.iter().enumerate() {
+        for (ai, (d, editor_pos, placement_heading)) in descs.iter().enumerate() {
             let Some(skel) = self.skeleton(&d.skeleton) else {
                 continue;
             };
@@ -1380,6 +1415,9 @@ impl Engine {
                 start * 0.3,
             );
             rt.alias_gen = self.scripts.alias_gen;
+            if let Some(crate::ai::schedule::PlacementHeading::Turn(heading)) = placement_heading {
+                rt.turn_after_arrival = Some(*heading);
+            }
             rt.editor_pos = *editor_pos;
             rt.skeleton_path = d.skeleton.clone();
             rt.female = d.female;
@@ -1532,7 +1570,7 @@ impl Engine {
         for a in &runtimes {
             self.actor_cells.insert(a.ref_id, key);
         }
-        for (d, _) in descs {
+        for (d, _, _) in descs {
             self.inventories.entry(d.ref_id).or_insert(d.inventory);
         }
         let runtimes_ids: Vec<FormId> = runtimes.iter().map(|a| a.ref_id).collect();
@@ -1893,7 +1931,7 @@ impl Engine {
         self.load_navmeshes(key, cell_id);
         self.load_furniture(key, &refs);
         let actors = self.actors_for_cell(key, &refs);
-        self.spawn_actors(key, &actors);
+        self.spawn_scheduled_actors(key, &actors);
         self.load_triggers(key, &refs);
         self.load_hazards(key, &refs);
         self.load_decals(key, &refs);
@@ -2146,7 +2184,7 @@ impl Engine {
         }
         self.load_furniture(key, &refs);
         let actors = self.actors_for_cell(key, &refs);
-        self.spawn_actors(key, &actors);
+        self.spawn_scheduled_actors(key, &actors);
         self.load_triggers(key, &refs);
         self.load_hazards(key, &refs);
         self.load_activate_parents(&refs);
