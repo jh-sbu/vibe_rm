@@ -2,8 +2,10 @@
 //! recorded in play, on generated records only. `GetCauseofDeath` and
 //! `GetKillingBlowLimb` stay unsupported.
 use super::*;
+use crate::ai::schedule::Place;
 use crate::world_state::Death;
 use esp::writer::{Node, RecordBuilder, write_plugin};
+use glam::Vec3;
 
 /// The base both victims and the killer are made from.
 const BASE: FormId = FormId(0x850);
@@ -91,6 +93,9 @@ fn holds(e: &Engine, subject: FormId, func: u16, p1: u32, value: f32) -> bool {
 
 /// `VICTIM` died at game hour 10, killed by `KILLER`.
 fn kill_victim(e: &mut Engine) {
+    e.world_state
+        .dead
+        .insert(VICTIM, (Place::Interior(FormId(0x857)), Vec3::ZERO));
     e.world_state.deaths.insert(
         VICTIM,
         Death {
@@ -98,6 +103,47 @@ fn kill_victim(e: &mut Engine) {
             at: 10.0,
         },
     );
+}
+
+fn get_killer(e: &mut Engine, actor: FormId) -> papyrus::Value {
+    use papyrus::{ObjectId, Value};
+    let this = Value::Object(ObjectId::Form(actor.0), "Actor".into());
+    match crate::script::natives::call(e, "actor", "getkiller", Some(&this), &[]) {
+        papyrus::NativeResult::Value(value) => value,
+        _ => panic!("GetKiller did not return a Papyrus value"),
+    }
+}
+
+#[test]
+fn actor_get_killer_returns_the_recorded_killer_only_while_dead() {
+    let (_dir, mut e) = fixture();
+    kill_victim(&mut e);
+
+    let expected = e.object_value(KILLER);
+    assert_eq!(get_killer(&mut e, VICTIM), expected);
+
+    // A death without known attribution and a placed-dead actor both return None.
+    e.world_state
+        .dead
+        .insert(OTHER_VICTIM, (Place::Interior(FormId(0x857)), Vec3::ZERO));
+    e.world_state.deaths.insert(
+        OTHER_VICTIM,
+        Death {
+            killer: None,
+            at: 12.0,
+        },
+    );
+    assert_eq!(get_killer(&mut e, OTHER_VICTIM), papyrus::Value::None);
+    e.world_state
+        .dead
+        .insert(KILLER, (Place::Interior(FormId(0x857)), Vec3::ZERO));
+    assert_eq!(get_killer(&mut e, KILLER), papyrus::Value::None);
+
+    // A living actor has no killer, including after a retained death record
+    // becomes stale on resurrection.
+    e.world_state.dead.remove(&VICTIM);
+    assert_eq!(get_killer(&mut e, VICTIM), papyrus::Value::None);
+    assert_eq!(get_killer(&mut e, KILLER), papyrus::Value::None);
 }
 
 #[test]

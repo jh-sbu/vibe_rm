@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Papyrus `Actor.GetKiller` returns the recorded killer for a dead actor, or
+  `None` for a living actor or a death without known attribution. Death records
+  remain durable through `DETH`; attribution limits and unsupported death-cause
+  and killing-limb queries: `known_ambiguities/death.md`.
 - Actor comparison and status conditions: `SameFaction`, `SameRace`, `SameSex` and
   their player forms, `GetPCInFaction`, `GetIsClass` / `GetPCIsClass`, `GetGold`,
   `GetStaminaPercentage`, `GetHealthPercentage`, `IsOverEncumbered` (the player),
@@ -1529,8 +1533,7 @@ game each piece unlocks.
    guards; fences; see Done)
    - Death conditions: `GetCauseofDeath` (the cause's values are unknown,
      `known_ambiguities/death.md`) and `GetKillingBlowLimb` (the killing blow's
-     hit limb isn't kept); Papyrus `Actor.GetKiller` (CommonLibSSE `myKiller`)
-     from the same death record
+     hit limb isn't kept)
    - The player's body (see Done): first-person arms and weapons (the
      `_1stperson` skeleton, `1stperson*` models, its own graph); casting,
      Critical Charge, basic attacks by direction and sprinting

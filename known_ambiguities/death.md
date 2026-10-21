@@ -3,7 +3,17 @@
 Implemented in `src/condition/mod.rs` (`GetTimeDead`, `IsKiller`,
 `IsKillerObject`) over `WorldState::deaths` (`src/world_state.rs`), which
 `Engine::kill_actor_by` fills with the killer and the game hour of each death
-in play. Tests: `src/condition/death_tests.rs`.
+in play. Papyrus `Actor.GetKiller` exposes that attribution through the native
+dispatcher. Tests: `src/condition/death_tests.rs`.
+
+The local UESP index was searched first (`GetKiller`, all namespaces); it has
+no matching page. The public [Papyrus Index entry for Actor.GetKiller](https://papyrus.bellcube.dev/skyrimse/script/actor/function/getkiller/)
+reproduces the CK Wiki contract: return the actor that killed this actor, or
+`None` if this actor is alive. It also relays a CK Wiki caveat that the player
+may be returned when a follower, and possibly a summoned actor, delivers the
+kill. This project returns the killer already recorded by
+`Engine::kill_actor_by`; follower and summon attribution differences remain
+unverified in Skyrim SE.
 
 ## What is known
 
@@ -38,6 +48,10 @@ in play. Tests: `src/condition/death_tests.rs`.
   checked (no UESP page, no cause enum in CommonLibSSE).
 - `GetKillingBlowLimb`: unsupported; the body part of the killing blow isn't kept
   (the hit's limb values are not recorded and their numbering is unconfirmed).
+- `Actor.GetKiller`: implemented from the durable death record. Placed-dead
+  actors and deaths from saves predating `DETH` have no recorded killer. Whether
+  the game substitutes the player for a follower or summon as the CK Wiki note
+  says remains unverified here.
 - Deaths are saved (`DETH`); saves from before it load without them. Placed-dead actors (killed quietly on
   cell load, `kill_actor_quietly`) get no record, so they have no death time or
   killer.
