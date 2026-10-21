@@ -6,6 +6,144 @@ use esp::FormId;
 
 use crate::engine::Engine;
 
+#[derive(Debug, Clone, Copy)]
+struct PendingQuantity {
+    menu: crate::items::Menu,
+    source: FormId,
+    destination: Option<FormId>,
+    item: FormId,
+    owner: Option<FormId>,
+    available: i32,
+    amount: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuantityResult {
+    Moved(i32),
+    PickpocketAttempt(bool),
+    Stale,
+}
+
+#[derive(Default)]
+struct QuantitySelection {
+    pending: Option<PendingQuantity>,
+}
+
+impl QuantitySelection {
+    fn open(&mut self, pending: PendingQuantity) {
+        self.pending = Some(pending);
+    }
+
+    fn cancel(&mut self) {
+        self.pending = None;
+    }
+
+    fn confirm(&mut self, engine: &mut Engine, menu: Option<crate::items::Menu>) -> QuantityResult {
+        let Some(pending) = self.pending.take() else {
+            return QuantityResult::Stale;
+        };
+        apply_quantity(engine, menu, pending)
+    }
+}
+
+fn apply_quantity(
+    engine: &mut Engine,
+    menu: Option<crate::items::Menu>,
+    pending: PendingQuantity,
+) -> QuantityResult {
+    use crate::engine::PLAYER_REF;
+    use crate::items::Menu;
+
+    if menu != Some(pending.menu) || pending.amount <= 0 {
+        return QuantityResult::Stale;
+    }
+    let Some(row) = engine
+        .listed_inventory(pending.source)
+        .into_iter()
+        .find(|row| row.item == pending.item && row.owner == pending.owner && row.count > 0)
+    else {
+        return QuantityResult::Stale;
+    };
+    let count = pending.amount.min(row.count);
+    if count <= 0 {
+        return QuantityResult::Stale;
+    }
+
+    if let Menu::Pickpocket(victim) = pending.menu {
+        if pending.source == victim {
+            if !engine.can_pickpocket_item(victim, pending.item) {
+                return QuantityResult::Stale;
+            }
+            return QuantityResult::PickpocketAttempt(engine.try_pickpocket(
+                victim,
+                pending.item,
+                count,
+                Some(pending.owner),
+            ));
+        }
+        if pending.source == PLAYER_REF && pending.destination == Some(victim) {
+            return QuantityResult::PickpocketAttempt(engine.try_place_in_pocket(
+                victim,
+                pending.item,
+                count,
+                Some(pending.owner),
+            ));
+        }
+    }
+
+    if let Some(destination) = pending.destination {
+        let moved = engine.transfer_item(
+            pending.source,
+            destination,
+            pending.item,
+            count,
+            Some(pending.owner),
+        );
+        if moved > 0 && pending.source == PLAYER_REF {
+            engine.unequip_if_gone(PLAYER_REF, pending.item);
+        }
+        QuantityResult::Moved(moved)
+    } else if pending.source == PLAYER_REF {
+        let dropped =
+            engine.drop_item_from_stack(PLAYER_REF, pending.item, count, Some(pending.owner));
+        if dropped.is_some() {
+            engine.unequip_if_gone(PLAYER_REF, pending.item);
+        }
+        QuantityResult::Moved(dropped.map_or(0, |_| count))
+    } else {
+        QuantityResult::Stale
+    }
+}
+
+enum QuantityChoice {
+    Immediate(i32),
+    Choose(PendingQuantity),
+}
+
+fn choose_quantity(
+    menu: crate::items::Menu,
+    source: FormId,
+    destination: Option<FormId>,
+    item: FormId,
+    owner: Option<FormId>,
+    count: i32,
+    all: bool,
+) -> QuantityChoice {
+    if !all && count > 5 {
+        QuantityChoice::Choose(PendingQuantity {
+            menu,
+            source,
+            destination,
+            item,
+            owner,
+            available: count,
+            amount: 1,
+        })
+    } else {
+        QuantityChoice::Immediate(if all { count } else { 1 })
+    }
+}
+
 pub struct Console {
     pub open: bool,
     pub input: String,
@@ -38,6 +176,7 @@ pub struct Ui {
     pub fps: u32,
     /// The item menu was shown last frame (the key that opened it doesn't close it).
     menu_shown: bool,
+    quantity: QuantitySelection,
     /// The quest the journal shows (`FormId::NULL`: the miscellaneous ones).
     journal_selected: Option<FormId>,
 }
@@ -59,6 +198,7 @@ impl Ui {
             swf_hud: false,
             fps: 0,
             menu_shown: false,
+            quantity: QuantitySelection::default(),
             journal_selected: None,
         }
     }
@@ -70,6 +210,23 @@ impl Ui {
 
     /// Build this frame's UI.
     pub fn build(&mut self, raw: egui::RawInput, engine: &mut Engine) -> egui::FullOutput {
+        let inventory_visible = engine.menu.is_some_and(|menu| {
+            matches!(
+                menu,
+                crate::items::Menu::Inventory
+                    | crate::items::Menu::Container(_)
+                    | crate::items::Menu::Pickpocket(_)
+            ) && !(self.swf_hud && crate::swf_ui::SwfUi::shows(menu))
+        });
+        if !inventory_visible
+            || self
+                .quantity
+                .pending
+                .as_ref()
+                .is_some_and(|pending| Some(pending.menu) != engine.menu)
+        {
+            self.quantity.cancel();
+        }
         let ctx = self.ctx.clone();
         let mut commands: Vec<String> = Vec::new();
         let mut choice: Option<usize> = None;
@@ -610,19 +767,30 @@ impl Ui {
         }
     }
 
-    /// The inventory, or a container beside it: click an item to move one (shift:
-    /// all); right-click one of the player's own to drop it.
+    /// The inventory, or a container beside it: click to move one, or open a
+    /// quantity chooser for large stacks (shift: all); right-click to drop.
     fn item_menu(&mut self, ctx: &egui::Context, engine: &mut Engine) {
         use crate::engine::PLAYER_REF;
         use crate::items::Menu;
         let Some(menu) = engine.menu else { return };
+        if self.quantity.pending.is_some() {
+            if self
+                .quantity
+                .pending
+                .is_some_and(|pending| pending.menu == menu)
+            {
+                self.quantity_dialog(ctx, engine, menu);
+                return;
+            }
+            self.quantity.cancel();
+        }
         let mut moves: Vec<(FormId, FormId, FormId, i32, Option<FormId>)> = Vec::new();
         let mut close = self.menu_shown
             && ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Tab));
         let all = ctx.input(|i| i.modifiers.shift);
         let rect = ctx.content_rect();
         let mut reading: Option<FormId> = None;
-        let mut drops: Vec<(FormId, i32)> = Vec::new();
+        let mut drops: Vec<(FormId, i32, Option<FormId>)> = Vec::new();
         // Picking a pocket: what isn't worn or wielded (but for perks), each
         // with its chance.
         let victim = match menu {
@@ -633,9 +801,11 @@ impl Ui {
                     engine: &mut Engine,
                     owner: FormId,
                     to: Option<FormId>,
+                    menu: Menu,
                     moves: &mut Vec<(FormId, FormId, FormId, i32, Option<FormId>)>,
                     read: &mut Option<FormId>,
-                    drops: &mut Vec<(FormId, i32)>| {
+                    drops: &mut Vec<(FormId, i32, Option<FormId>)>,
+                    quantity: &mut QuantitySelection| {
             let mut items = engine.listed_inventory(owner);
             if Some(owner) == victim {
                 items.retain(|x| engine.can_pickpocket_item(owner, x.item));
@@ -684,15 +854,35 @@ impl Ui {
                                 }
                                 let r = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
                                 match to {
-                                    Some(to) if r.clicked() => moves.push((
-                                        owner,
-                                        to,
-                                        *f,
-                                        if all { *n } else { 1 },
-                                        row.owner,
-                                    )),
+                                    Some(to) if r.clicked() => {
+                                        match choose_quantity(
+                                            menu,
+                                            owner,
+                                            Some(to),
+                                            *f,
+                                            row.owner,
+                                            *n,
+                                            all,
+                                        ) {
+                                            QuantityChoice::Immediate(n) => {
+                                                moves.push((owner, to, *f, n, row.owner))
+                                            }
+                                            QuantityChoice::Choose(pending) => {
+                                                quantity.open(pending)
+                                            }
+                                        }
+                                    }
                                     None if r.secondary_clicked() => {
-                                        drops.push((*f, if all { *n } else { 1 }))
+                                        match choose_quantity(
+                                            menu, owner, None, *f, row.owner, *n, all,
+                                        ) {
+                                            QuantityChoice::Immediate(n) => {
+                                                drops.push((*f, n, row.owner))
+                                            }
+                                            QuantityChoice::Choose(pending) => {
+                                                quantity.open(pending)
+                                            }
+                                        }
                                     }
                                     // Books in one's own inventory are read; potions,
                                     // food and ingredients used.
@@ -849,11 +1039,16 @@ impl Ui {
                     engine,
                     PLAYER_REF,
                     container,
+                    menu,
                     &mut moves,
                     &mut reading,
                     &mut drops,
+                    &mut self.quantity,
                 )
             });
+        if self.quantity.pending.is_some() {
+            return;
+        }
         if let Some(c) = container {
             let name = engine
                 .base_of(c)
@@ -874,19 +1069,26 @@ impl Ui {
                     engine,
                     c,
                     Some(PLAYER_REF),
+                    menu,
                     &mut moves,
                     &mut reading,
                     &mut drops,
+                    &mut self.quantity,
                 );
-                ui.horizontal(|ui| {
-                    if victim.is_none() && ui.button("Take all").clicked() {
-                        for row in engine.listed_inventory(c) {
-                            moves.push((c, PLAYER_REF, row.item, row.count, row.owner));
+                if self.quantity.pending.is_none() {
+                    ui.horizontal(|ui| {
+                        if victim.is_none() && ui.button("Take all").clicked() {
+                            for row in engine.listed_inventory(c) {
+                                moves.push((c, PLAYER_REF, row.item, row.count, row.owner));
+                            }
                         }
-                    }
-                    close |= ui.button("Close").clicked();
-                });
+                        close |= ui.button("Close").clicked();
+                    });
+                }
             });
+        }
+        if self.quantity.pending.is_some() {
+            return;
         }
         for (from, to, item, n, stack) in moves {
             if let Some(v) = victim {
@@ -900,10 +1102,13 @@ impl Ui {
                 }
                 continue;
             }
-            engine.transfer_item(from, to, item, n, Some(stack));
+            let moved = engine.transfer_item(from, to, item, n, Some(stack));
+            if moved > 0 && from == PLAYER_REF {
+                engine.unequip_if_gone(PLAYER_REF, item);
+            }
         }
-        for (item, n) in drops {
-            engine.drop_item(PLAYER_REF, item, n);
+        for (item, n, owner) in drops {
+            engine.drop_item_from_stack(PLAYER_REF, item, n, Some(owner));
         }
         if close {
             engine.menu = None;
@@ -918,6 +1123,71 @@ impl Ui {
                 reference: None,
             });
             engine.read_book(book);
+        }
+    }
+
+    fn quantity_dialog(
+        &mut self,
+        ctx: &egui::Context,
+        engine: &mut Engine,
+        menu: crate::items::Menu,
+    ) {
+        use crate::items::Menu;
+
+        let Some(snapshot) = self.quantity.pending else {
+            return;
+        };
+        let current = engine
+            .listed_inventory(snapshot.source)
+            .into_iter()
+            .find(|row| row.item == snapshot.item && row.owner == snapshot.owner);
+        let available = current.as_ref().map(|row| row.count).unwrap_or(0);
+        let item_name = current
+            .as_ref()
+            .map(|row| row.info.name.as_str())
+            .unwrap_or("item");
+        let mut confirm = false;
+        let mut cancel =
+            ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Tab));
+        egui::Window::new("Choose quantity")
+            .id(egui::Id::new("inventory-quantity-picker"))
+            .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                if available <= 0 {
+                    ui.label(format!("{item_name} is no longer available."));
+                } else if let Some(pending) = self.quantity.pending.as_mut() {
+                    pending.available = available;
+                    pending.amount = pending.amount.clamp(1, available);
+                    ui.label(format!("{item_name}: {available} available"));
+                    ui.add(egui::Slider::new(&mut pending.amount, 1..=available).text("Amount"));
+                    if let Menu::Pickpocket(victim) = menu {
+                        ui.label(format!(
+                            "Chance: {:.0}%",
+                            engine.pickpocket_chance(victim, pending.item, pending.amount)
+                        ));
+                    }
+                    let label = match (menu, pending.destination) {
+                        (Menu::Pickpocket(victim), _) if pending.source == victim => "Attempt",
+                        (Menu::Pickpocket(_), _) => "Place",
+                        (_, None) => "Drop",
+                        (_, Some(to)) if to == crate::engine::PLAYER_REF => "Take",
+                        _ => "Store",
+                    };
+                    ui.horizontal(|ui| {
+                        confirm = ui.button(label).clicked();
+                        cancel |= ui.button("Cancel").clicked();
+                    });
+                }
+                if available <= 0 {
+                    cancel |= ui.button("Cancel").clicked();
+                }
+            });
+        if cancel {
+            self.quantity.cancel();
+        } else if confirm {
+            let _ = self.quantity.confirm(engine, Some(menu));
         }
     }
 
@@ -1096,6 +1366,10 @@ impl Ui {
         output.textures_delta.clear();
     }
 }
+
+#[cfg(test)]
+#[path = "ui_quantity_tests.rs"]
+mod quantity_tests;
 
 fn ui_hint(ctx: &egui::Context) {
     egui::Area::new(egui::Id::new("lockpick_hint"))

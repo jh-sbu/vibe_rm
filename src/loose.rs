@@ -303,6 +303,17 @@ impl Engine {
     /// falling. Papyrus `DropObject`, the console's `drop`, the inventory's
     /// right click.
     pub fn drop_item(&mut self, holder: FormId, item: FormId, count: i32) -> Option<FormId> {
+        self.drop_item_from_stack(holder, item, count, None)
+    }
+
+    /// As [`drop_item`], taking only the selected ownership row when supplied.
+    pub fn drop_item_from_stack(
+        &mut self,
+        holder: FormId,
+        item: FormId,
+        count: i32,
+        stack: Option<Option<FormId>>,
+    ) -> Option<FormId> {
         if !crate::world::inventory::item_droppable(&self.lo, item) {
             return None;
         }
@@ -312,11 +323,12 @@ impl Engine {
         } else {
             self.ref_rotation(holder).z
         };
-        let removed = self.remove_stack_with_extras(holder, item, count.max(1), None, None, None);
+        let removed = self.remove_stack_with_extras(holder, item, count.max(1), stack, None, None);
         let n: i32 = removed.parts.iter().map(|(_, n)| n).sum();
         if n <= 0 {
             return None;
         }
+        self.unequip_if_gone(holder, item);
         let ahead = Vec3::new(heading.sin(), heading.cos(), 0.0);
         let at = feet + ahead * DROP_AHEAD + Vec3::Z * DROP_HEIGHT;
         let r = self.create_object_at(item, place, at, Vec3::new(0.0, 0.0, heading), n);

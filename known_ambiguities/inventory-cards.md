@@ -114,3 +114,24 @@ ingredient learns effects by the entry point `kModInitialIngredientEffectsLearne
   unbuilt (crafting). Whether anything else teaches effects (some quest
   rewards, books) was not found in the data.
 - Learned effects are kept in memory with the world state, not yet in saves.
+
+## Quantity selection in the egui fallback
+
+The installed `spike/swf/data/interface/containermenu.swf` was inspected with
+the permitted `swfspike dis` and `fold.py` tooling; output stayed in `/tmp` and
+no asset or derived SWF code was added. Its `InventoryDefines` sets
+`QUANTITY_MENU_COUNT_LIMIT` to 5. `StartItemTransfer` opens the movie's amount
+slider above that limit, except that taking weightless items transfers all;
+`onQuantityMenuSelect` passes the chosen amount through `ItemTransfer`. The
+existing `src/swf_ui/item_menu.rs` honors that amount. This is asset behavior,
+not a controlled comparison against a running Skyrim SE.
+
+The egui fallback uses a modal chooser for stacks over five when moving,
+pickpocketing or placing, and dropping. Shift still transfers or drops all.
+The chooser keeps the source, destination, item and ownership row; its
+confirmation re-reads that exact row, cancels if it is gone, and caps the
+selected amount at what remains. Esc, Tab and Cancel dismiss only the chooser;
+changing or closing the parent menu clears it. Pickpocket chance is refreshed
+for the chosen amount. Unlike the SWF's weightless-taking shortcut, egui also
+offers a chooser for those stacks. The original menu's modal appearance,
+default slider position and exact keyboard focus behavior are not established.

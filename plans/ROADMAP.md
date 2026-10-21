@@ -21,6 +21,10 @@ game each piece unlocks.
   the lock after a successful pick and awards its valid `KEYM` if the player
   does not already carry it; its chance and first-pick limits:
   `known_ambiguities/perks.md`
+- The egui inventory fallback offers a quantity chooser for stacks over five
+  when moving, pickpocketing/placing, or dropping; it retains the selected
+  source row and rechecks it on confirmation. The SWF menu already handles
+  quantities: `known_ambiguities/inventory-cards.md`
 - BSA, plugins (load order, ESL, overrides, strings), NIF (render + collision blocks), DDS
 - Interior/exterior cells, landscape, water, weather/climate/sky, time of day
 - Havok collision shapes -> rapier3d; first-person character controller
@@ -1555,7 +1559,7 @@ game each piece unlocks.
      favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
-     rotating and zooming it), the quantity slider's use for more than dropping, rows grouped by captured soul with per-item
+     rotating and zooming it), rows grouped by captured soul with per-item
      selection and transfers (`known_ambiguities/inventory-cards.md`); alchemy
      teaching the effects two ingredients share (waits on crafting),
      equipping torches in a hand (the player's body doesn't show a carried
