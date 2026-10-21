@@ -1,7 +1,8 @@
 //! What happens to references stays when their cells unload and load again (in
 //! memory; what saves will write out): dead actors stay dead, lying where they
 //! fell, in the pose they lay in; the hurt come back as hurt as they left, less
-//! what they would have healed meanwhile; doors the player opened stay open;
+//! what they would have healed meanwhile; doors the player opened stay open, and
+//! so do doors actors left open when their cell unloaded (they close once clear);
 //! objects' behaviour graphs carry on in the state they were left in.
 //! Taken items, locks, enable state and inventories are kept elsewhere
 //! (`ScriptState`, `Engine::inventories`).
@@ -26,6 +27,9 @@ pub struct WorldState {
     pub deaths: HashMap<FormId, Death>,
     /// Animated doors the player left open.
     pub open_doors: std::collections::HashSet<FormId>,
+    /// Animated doors an actor opened and was still holding open when its cell
+    /// unloaded: they load open and close again once nobody is near.
+    pub actor_open_doors: std::collections::HashSet<FormId>,
     /// Dead actors' ragdoll bodies as they lay (world transforms).
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     /// Hurt actors that unloaded.
@@ -58,6 +62,21 @@ pub struct WorldState {
 pub struct Death {
     pub killer: Option<FormId>,
     pub at: f64,
+}
+
+impl WorldState {
+    /// Whether an animated door was left open: `Some(false)` for one the
+    /// player opened (it stays open), `Some(true)` for one an actor opened
+    /// (it closes again once clear), `None` for a closed door.
+    pub fn door_left_open(&self, door: FormId) -> Option<bool> {
+        if self.open_doors.contains(&door) {
+            Some(false)
+        } else if self.actor_open_doors.contains(&door) {
+            Some(true)
+        } else {
+            None
+        }
+    }
 }
 
 /// Where a moved reference is now.

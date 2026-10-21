@@ -446,3 +446,11 @@ ragdoll joint limits; region weather priority and global chances.
   `SetActorOwner`), drop it, pick it up, and then offer it to a merchant that refuses
   stolen goods; the merchant's refusal is seen through the sell menu's message or a
   gated line. Measure the same item before and after the drop and pickup.
+
+- **Doors actors leave open** (`known_ambiguities/world-state.md`): whether an
+  NPC-opened door that is still open when its cell unloads reloads open, and
+  whether an NPC-opened door closes by itself with nobody near. Verdict: partial.
+  A test mod could place an NPC whose package walks through a door and stops in
+  the doorway, have the player leave the cell, and check `GetOpenState` on the
+  door from a script on return. The timing (160 units, 2.5 seconds) and the
+  reload result are what it would measure; the walk itself is manual.
