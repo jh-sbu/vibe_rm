@@ -14,6 +14,10 @@ const ACTOR: FormId = FormId(0x822);
 const OTHER: FormId = FormId(0x823);
 const BASE_FACTION: FormId = FormId(0x824);
 const QUEST: FormId = FormId(0x840);
+const KEY: FormId = FormId(0x841);
+const WAX_KEY: FormId = FormId(0x842);
+const CONDITIONAL_WAX_KEY: FormId = FormId(0x843);
+const INVALID_KEY_LOCK: FormId = FormId(0x844);
 
 struct Fixture(std::path::PathBuf);
 impl Drop for Fixture {
@@ -49,9 +53,21 @@ fn fixture() -> (Fixture, Engine) {
             children: refs.into_iter().map(Node::Record).collect(),
         }],
     };
+    let mut xloc = [0; 12];
+    xloc[4..8].copy_from_slice(&KEY.0.to_le_bytes());
+    let mut invalid_xloc = [0; 12];
+    invalid_xloc[4..8].copy_from_slice(&OWNER.0.to_le_bytes());
     let records = [
         Node::top(b"DOOR", vec![RecordBuilder::new(b"DOOR", FormId(0x830))]),
         Node::top(b"CONT", vec![RecordBuilder::new(b"CONT", FormId(0x831))]),
+        Node::top(b"KEYM", vec![RecordBuilder::new(b"KEYM", KEY)]),
+        Node::top(
+            b"PERK",
+            vec![
+                wax_key_perk(WAX_KEY, false),
+                wax_key_perk(CONDITIONAL_WAX_KEY, true),
+            ],
+        ),
         Node::top(
             b"NPC_",
             vec![RecordBuilder::new(b"NPC_", OWNER).field(b"SNAM", &snam)],
@@ -105,7 +121,12 @@ fn fixture() -> (Fixture, Engine) {
                     ROOM,
                     vec![
                         door(PARTNER, DOOR.0),
-                        RecordBuilder::new(b"REFR", CHEST).u32(b"NAME", 0x831),
+                        RecordBuilder::new(b"REFR", CHEST)
+                            .u32(b"NAME", 0x831)
+                            .field(b"XLOC", &xloc),
+                        RecordBuilder::new(b"REFR", INVALID_KEY_LOCK)
+                            .u32(b"NAME", 0x831)
+                            .field(b"XLOC", &invalid_xloc),
                     ],
                 ),
                 Node::Record(RecordBuilder::new(b"CELL", HALL).field(b"DATA", &[1, 0])),
@@ -120,6 +141,136 @@ fn fixture() -> (Fixture, Engine) {
     .unwrap();
     let engine = crate::stats::action_tests::headless_engine(&dir.0, "Locks.esp");
     (dir, engine)
+}
+
+fn wax_key_perk(id: FormId, require_unlocked: bool) -> RecordBuilder {
+    let mut perk = RecordBuilder::new(b"PERK", id)
+        .field(b"DATA", &[0, 0, 1, 1, 0])
+        .field(b"PRKE", &[2, 0, 0])
+        .field(b"DATA", &[90, 1, 2])
+        .field(b"PRKC", &[1]);
+    if require_unlocked {
+        let mut ctda = [0; 32];
+        ctda[4..8].copy_from_slice(&(0.0f32).to_le_bytes());
+        ctda[8..10].copy_from_slice(&5u16.to_le_bytes()); // GetLocked
+        perk = perk.field(b"CTDA", &ctda);
+    }
+    perk.field(b"EPFT", &[1])
+        .field(b"EPFD", &100.0f32.to_le_bytes())
+        .field(b"PRKF", &[])
+}
+
+fn finish_pick(e: &mut Engine, lock: FormId) {
+    e.lockpick = Some(Lockpick {
+        lock,
+        then: lock,
+        level: 0,
+        centre: 0.0,
+        sweet: 30.0,
+        partial: 10.0,
+        durability: 2.0,
+        strain: 0.0,
+        pick: 0.0,
+        turn: 0.99,
+        turning: true,
+        hold: 1.0,
+    });
+    e.menu = Some(crate::items::Menu::Lockpick);
+    e.update_lockpick(0.01);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn wax_key_rewards_only_after_success_and_respects_entry_point_conditions() {
+    let (_dir, mut e) = fixture();
+    e.add_perk(PLAYER_REF, WAX_KEY);
+    finish_pick(&mut e, CHEST);
+    assert!(!e.is_locked(CHEST));
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 1);
+
+    // Picking the same lock again cannot duplicate a key already carried.
+    e.set_locked(CHEST, true);
+    finish_pick(&mut e, CHEST);
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 1);
+
+    // An entry-point condition on tab 1 sees the lock and is evaluated after
+    // the successful transition has unlocked it.
+    e.set_locked(CHEST, true);
+    e.remove_perk(PLAYER_REF, WAX_KEY);
+    e.remove_item(PLAYER_REF, KEY, 1, None);
+    e.add_perk(PLAYER_REF, CONDITIONAL_WAX_KEY);
+    e.reward_lock_key(CHEST); // Condition fails while the lock remains locked.
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 0);
+    finish_pick(&mut e, CHEST);
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 1);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn wax_key_does_not_reward_without_perk_or_without_a_key() {
+    let (_dir, mut e) = fixture();
+    finish_pick(&mut e, CHEST);
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 0);
+
+    e.add_perk(PLAYER_REF, WAX_KEY);
+    finish_pick(&mut e, DOOR); // This reference has no XLOC key.
+    finish_pick(&mut e, INVALID_KEY_LOCK); // XLOC points to an NPC, not a KEYM.
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 0);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn wax_key_does_not_reward_failed_cancelled_key_or_script_unlocks() {
+    let (_dir, mut e) = fixture();
+    e.add_perk(PLAYER_REF, WAX_KEY);
+
+    // A cancelled menu discards the active attempt without opening the lock.
+    e.lockpick = Some(Lockpick {
+        lock: CHEST,
+        then: CHEST,
+        level: 0,
+        centre: 0.0,
+        sweet: 30.0,
+        partial: 10.0,
+        durability: 1.0,
+        strain: 0.0,
+        pick: 0.0,
+        turn: 0.0,
+        turning: false,
+        hold: 0.0,
+    });
+    e.menu = None;
+    e.update_lockpick(1.0);
+    assert!(e.is_locked(CHEST));
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 0);
+
+    // A failed pick reaches the edge of its partial zone, then breaks.
+    e.lockpick = Some(Lockpick {
+        lock: CHEST,
+        then: CHEST,
+        level: 0,
+        centre: 0.0,
+        sweet: 0.0,
+        partial: 0.0,
+        durability: 0.01,
+        strain: 0.0,
+        pick: 90.0,
+        turn: 0.0,
+        turning: true,
+        hold: 1.0,
+    });
+    e.menu = Some(crate::items::Menu::Lockpick);
+    e.update_lockpick(0.1);
+    assert!(e.is_locked(CHEST));
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 0);
+
+    // Neither opening with the key nor script unlocking runs the reward hook.
+    e.add_item(PLAYER_REF, KEY, 1);
+    assert!(e.player_unlock(CHEST, CHEST));
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 1);
+    e.set_locked(CHEST, true);
+    e.set_locked(CHEST, false);
+    assert_eq!(e.item_count(PLAYER_REF, KEY), 1);
 }
 
 fn lock(e: &mut Engine, r: FormId, args: &[Value]) {

@@ -15,6 +15,22 @@
 This is a candidate list for independent roadmap work. Items 3–5 still need a
 scope check against current code before implementation.
 
+## Item 3 plan
+
+Implement the Wax Key `Mod Lockpicking Key Reward Chance` (entry point 90) at
+the successful completion of the player's lockpick, using the lock reference
+as the entry-point context. Award the reference's valid `KEYM` once, only when
+the player does not already carry it, through the normal inventory mutation
+path so item events fire. Keep ordinary key use, script unlocks, cancelled
+attempts, and failed attempts outside this reward path. Test these cases with
+the synthetic lock Engine fixture, including a conditionally configured perk
+entry. The installed `Skyrim.esm` record `WaxKey` sets entry point 90 (function
+1, two tabs) to `100.0`; with the community enum name
+`kModLockpickingKeyRewardChance`, use a 0–100 chance and seed evaluation at
+0. Do not simulate a first-ever pick if there is no durable key/lock history
+to support it. Record any unresolved relock/dropped-key differences from the
+game's "first time" wording.
+
 ## Item 1 outcome
 
 Implemented and documented as native history behavior. Local UESP GMST defaults
@@ -70,3 +86,21 @@ all 3 tests passed, including the actual `detection_between` integration test.
 The sandbox's fallback graphics adapter cannot construct the terrain pipeline;
 the external Vulkan adapter can. Modified Rust files were formatted;
 `git diff --check` passes.
+
+## Item 3 outcome
+
+The successful lockpick path evaluates entry point 90 after changing the lock
+to unlocked. A positive result awards one `KEYM` through the regular inventory
+mutation path, provided the key is not already carried. Missing/invalid keys,
+failed or cancelled attempts, ordinary key use and script unlocks do not call
+the reward hook. Local UESP describes the Wax Key reward and its “first time”
+wording; installed `Skyrim.esm` confirms the vanilla entry point is Set 100. The
+0–100 percent interpretation, roll resolution for custom fractional values,
+and post-unlock condition timing are implementation policies. Since native
+state has no history of dropped keys or past picks, repeats after a dropped key
+or relock can award again; this limit is recorded in `known_ambiguities/perks.md`.
+
+The parent ran `cargo test --bin vibe_rm locks::tests -- --include-ignored
+--nocapture` outside the sandbox with Vulkan: all 6 tests passed (3 new Wax Key
+tests and 3 existing lock tests). `cargo fmt --check` and `git diff --check`
+pass. Item 3 is complete within the documented first-pick/history limitation.

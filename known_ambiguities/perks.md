@@ -47,6 +47,23 @@ perks`).
   Skyrim:Pickpocket formula: Light Fingers is a flat term in the sum, and
   Cutpurse's +50 "will still max out at 90%"); Keymaster sets 100, so keys
   come out at the cap.
+- **Wax Key** uses entry point 90 (`Mod Lockpicking Key Reward Chance`). UESP
+  [Skyrim:Lockpicking, revision 3575827](https://en.uesp.net/w/index.php?oldid=3575827)
+  describes copying the picked lock's key if it has one, and [Skyrim:Keys,
+  revision 3602234](https://en.uesp.net/w/index.php?oldid=3602234) says the
+  automatic reward is for the first pick after taking the perk. The installed
+  `Skyrim.esm` `WaxKey` record sets entry point 90 to 100 with function 1 (Set)
+  and two condition tabs. The implementation treats the value as percent,
+  starts the calculation at 0, evaluates with the player and lock reference,
+  and adds one valid `KEYM` only after the lock successfully opens and only if
+  the player does not currently carry it. Conditions therefore see the lock
+  as unlocked. A non-vanilla fractional chance is rolled in hundredths of a
+  percent; values are clamped to 0–100 and non-finite values act as zero. This
+  chance-unit and roll policy is inferred from the entry-point name and the
+  vanilla 100 value. The runtime does not track a historical first pick: if
+  the key is dropped, or a lock is relocked after its key is taken, a later
+  successful pick can award another copy. Whether Skyrim SE suppresses these
+  repeat rewards remains unverified.
 
 ## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
 
