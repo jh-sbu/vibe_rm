@@ -930,7 +930,8 @@ game each piece unlocks.
   them or their enable parent in place shows them, actors included; dead actors
   stay dead, their bodies where and as they lay (`IsDead` / `GetDead` unloaded
   too); actors that leave hurt come back as hurt, less what they'd have healed;
-  doors the player opened stay open; references scripts move (`MoveTo`,
+  doors the player opened stay open, and doors actors left open at unloading
+  (`ADOR` in saves) stay open until they close; references scripts move (`MoveTo`,
   `SetPosition`, `SetAngle`, `MoveToMyEditorLocation`, `GetAngleX/Y/Z`) move
   with their collision and lights, between cells too, and stay moved. Console
   `[ref.]enable` / `disable`, `[ref.]moveto`. Open questions:
@@ -1621,8 +1622,7 @@ game each piece unlocks.
      that state, and no public source describes it), `Exists` (what makes a
      reference exist: no public description or vanilla use yet)
    - World state: moved references appearing at once when moved out of an
-     unloaded cell and following their new cell between loaded ones; doors
-     opened by actors remembered; looping sounds of enabled references checked
+     unloaded cell and following their new cell between loaded ones; looping sounds of enabled references checked
      with an audio device; sleeping fading the screen out and in
 6. **UI**: inventory (categories, equipping, item details), map, quest
    targets on the map (on the compass: see Done)

@@ -10,10 +10,10 @@
 //! references made while playing), `PLYR` (health, skills, perks, spells,
 //! shouts, favorites, dialogue heard), `CRIM` (bounties) and `BART`
 //! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
-//! `DSTR` (destructible health/stage), `WUSE` (Favorite Weapon usage), `WTHR`
-//! (the weather, its transition and override), `DETH` (killers and times of
-//! death), `COWN` (the owners of dropped stolen items), and `VM` / `VMAR`
-//! (`super::vm`: the Papyrus VM). Not yet saved:
+//! `ADOR` (doors actors left open), `DSTR` (destructible health/stage), `WUSE`
+//! (Favorite Weapon usage), `WTHR` (the weather, its transition and override),
+//! `DETH` (killers and times of death), `COWN` (the owners of dropped stolen
+//! items), and `VM` / `VMAR` (`super::vm`: the Papyrus VM). Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
 //!
@@ -76,6 +76,7 @@ pub struct Snapshot {
     pub dead: HashMap<FormId, (Place, Vec3)>,
     pub deaths: HashMap<FormId, crate::world_state::Death>,
     pub open_doors: HashSet<FormId>,
+    pub actor_open_doors: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     pub wounds: HashMap<FormId, Wounds>,
     pub moved: HashMap<FormId, Moved>,
@@ -477,6 +478,7 @@ impl Snapshot {
             dead: ws.dead.clone(),
             deaths: ws.deaths.clone(),
             open_doors: ws.open_doors.clone(),
+            actor_open_doors: ws.actor_open_doors.clone(),
             body_poses: ws.body_poses.clone(),
             wounds: ws.wounds.clone(),
             moved: ws.moved.clone(),
@@ -725,6 +727,10 @@ impl Snapshot {
             w.i32(c.count);
         }
         file.add(b"WRLD", w.0);
+
+        let mut w = Writer::default();
+        put_forms(&mut w, &self.actor_open_doors);
+        file.add(b"ADOR", w.0);
 
         let mut w = Writer::default();
         w.len(self.destruction.len());
@@ -1199,6 +1205,12 @@ impl Snapshot {
             }
             r.finish()?;
         }
+        // Optional: saves from before actors' open doors had none.
+        if let Some(data) = file.section(b"ADOR") {
+            let mut r = Reader::new(data);
+            s.actor_open_doors = get_forms(&mut r)?;
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"DSTR") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(16)? {
@@ -1362,6 +1374,7 @@ impl Snapshot {
         ws.dead = self.dead;
         ws.deaths = self.deaths;
         ws.open_doors = self.open_doors;
+        ws.actor_open_doors = self.actor_open_doors;
         ws.body_poses = self.body_poses;
         ws.wounds = self.wounds;
         ws.moved = self.moved;

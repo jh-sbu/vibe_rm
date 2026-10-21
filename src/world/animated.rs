@@ -585,12 +585,15 @@ impl Engine {
         // Machinery and the like loop their idle animation.
         if !door {
             obj.play("Idle");
-        } else if self.world_state.open_doors.contains(&ref_id) && obj.play("Open") {
+        } else if let Some(auto) = self.world_state.door_left_open(ref_id)
+            && obj.play("Open")
+        {
             // Left open: at the end of its opening (posed on the first update).
             if let Some((si, t)) = &mut obj.playing {
                 *t = obj.anim.sequences[*si].stop;
             }
             obj.open = true;
+            obj.auto = auto;
         }
         Some(obj)
     }
@@ -622,11 +625,18 @@ impl Engine {
         }
         obj.open = open;
         obj.auto = auto && open;
-        // Doors the player opens stay open across loads (actors' close behind them).
+        // Doors the player opens stay open across loads; doors actors open stay
+        // open too while they are open at unloading, and close behind them once
+        // clear (`update_animated`).
+        let ws = &mut self.world_state;
         if open && !auto {
-            self.world_state.open_doors.insert(door);
-        } else if !open {
-            self.world_state.open_doors.remove(&door);
+            ws.open_doors.insert(door);
+            ws.actor_open_doors.remove(&door);
+        } else if open {
+            ws.actor_open_doors.insert(door);
+        } else {
+            ws.open_doors.remove(&door);
+            ws.actor_open_doors.remove(&door);
         }
         obj.clear_for = 0.0;
         let colliders = obj.colliders.clone();
@@ -973,5 +983,94 @@ impl Engine {
             }
             self.raise_anim_events(r, &events);
         }
+    }
+}
+
+#[cfg(test)]
+mod door_tests {
+    use super::*;
+    use crate::render::model;
+    use crate::world::loader::ModelAnim;
+
+    const DOOR: FormId = FormId(0x810);
+    const ACTOR_DOOR: FormId = FormId(0x811);
+    const CELL: FormId = FormId(0x850);
+
+    /// A door with its own Open and Close sequences and no parts.
+    fn door(id: FormId) -> AnimatedObject {
+        let sequence = |name: &str| model::Sequence {
+            name: name.into(),
+            cycle: 2,
+            start: 0.0,
+            stop: 1.0,
+            frequency: 1.0,
+            channels: Vec::new(),
+        };
+        AnimatedObject {
+            ref_id: id,
+            transform: Mat4::IDENTITY,
+            position: Vec3::ZERO,
+            anim: Arc::new(ModelAnim {
+                parts: Vec::new(),
+                sequences: vec![sequence("Open"), sequence("Close")],
+                controllers: Vec::new(),
+                start: 0.0,
+                graph: None,
+            }),
+            locals: Vec::new(),
+            instances: Vec::new(),
+            colliders: Vec::new(),
+            door: true,
+            open: false,
+            auto: false,
+            clear_for: 0.0,
+            playing: None,
+            age: 0.0,
+            graph: None,
+        }
+    }
+
+    struct Dir(std::path::PathBuf);
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn doors_actors_leave_open_are_remembered_until_they_close() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            Dir(std::env::temp_dir().join(format!("vrm-doors-{}-{stamp}", std::process::id())));
+        std::fs::create_dir(&dir.0).unwrap();
+        let records: Vec<esp::writer::Node> = Vec::new();
+        std::fs::write(
+            dir.0.join("Doors.esp"),
+            esp::writer::write_plugin(0, &[], "test", "synthetic doors", 0x900, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir.0, "Doors.esp");
+        let rt = e.cells.entry(CellKey::Interior(CELL)).or_default();
+        rt.animated.push(door(DOOR));
+        rt.animated.push(door(ACTOR_DOOR));
+
+        // The player's door stays remembered as open until the player shuts it.
+        assert!(e.toggle_door(DOOR, false));
+        assert_eq!(e.world_state.door_left_open(DOOR), Some(false));
+        assert!(e.toggle_door(DOOR, false));
+        assert_eq!(e.world_state.door_left_open(DOOR), None);
+
+        // An actor's door is remembered while open, so it reloads open and
+        // closes once clear; shutting it (the auto close) forgets it.
+        assert!(e.toggle_door(ACTOR_DOOR, true));
+        assert_eq!(e.world_state.door_left_open(ACTOR_DOOR), Some(true));
+        assert_eq!(e.open_state(ACTOR_DOOR), OpenState::Opening);
+        assert!(e.toggle_door(ACTOR_DOOR, false));
+        assert_eq!(e.world_state.door_left_open(ACTOR_DOOR), None);
+        assert_eq!(e.open_state(ACTOR_DOOR), OpenState::Closing);
     }
 }

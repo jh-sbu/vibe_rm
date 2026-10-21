@@ -267,6 +267,7 @@ fn play(e: &mut Engine) {
         ),
     );
     ws.open_doors.insert(FormId(0x908));
+    ws.actor_open_doors.insert(FormId(0x9A0));
     ws.body_poses.insert(
         ACTOR,
         vec![Mat4::from_translation(Vec3::new(5.0, 6.0, 7.0))],
@@ -396,6 +397,7 @@ fn a_saved_game_loads_into_another_engine_unchanged() {
     assert_eq!(b.hotkeys[2], Some(SWORD));
     assert_eq!(b.crime.bounties[&FormId(0x912)].total(), 40);
     assert!(b.world_state.dead.contains_key(&ACTOR));
+    assert!(b.world_state.actor_open_doors.contains(&FormId(0x9A0)));
     assert_eq!(b.created_refs.refs.len(), 1);
     assert_eq!(b.created_refs.next, 0xFF00_0801);
     assert_eq!(

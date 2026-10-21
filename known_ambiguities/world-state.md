@@ -35,3 +35,17 @@ only: nothing is written to disk until saves exist.
 - Whether the game's unloaded regeneration follows these timing rules,
   including waiting / sleeping, is unconfirmed; fast-travel recovery remains
   to be established.
+
+- Doors actors open (walking up to an animated door, `update_animated`) close
+  again by themselves: once nobody walking or the player is within 160 units for
+  2.5 seconds (`CLEAR_DISTANCE`, `CLOSE_DELAY`, chosen by hand; no public source
+  gives the game's values). Whether the game also closes a door an NPC left open
+  while its cell is unloaded, and whether it reloads open, is unconfirmed. We keep
+  such a door open across unloading (`ADOR` in saves) and let it close once clear
+  after loading. UESP's DOOR page (revision 2574204,
+  https://en.uesp.net/w/index.php?oldid=2574204) lists the `FNAM` flags, including
+  "Automatic Door" (0x02) and "Minimal Use" (0x08), with no behaviour; CommonLibSSE's
+  `TESObjectDOOR.h` names the same bits. The engine reads no door flags, so every
+  animated door opens and closes this way, whatever its "Automatic" bit. Whether
+  that bit gates the auto-open (and "Minimal Use" the activation prompt) is
+  unconfirmed.
