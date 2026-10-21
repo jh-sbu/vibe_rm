@@ -137,6 +137,13 @@ path. Search/combat execution and AI progression remain separate roadmap work;
 describe this bounded subset explicitly. This is native continuity, not an
 assertion about Skyrim's original save payload.
 
+Outcome: implemented and reviewed; the codec regression and production
+capture/read/apply continuation test passed with system Vulkan. Formatting and
+diff checks passed. Optional `STPT` replaces
+player/actor reservoirs and regeneration delays; loading clears stale detection
+observations and schedules a fresh update. Codec limits, legacy absence and the
+bounded search/combat/AI exclusion are documented in `known_ambiguities/`.
+
 ## 7. Message-box waits across native saves
 
 Roadmap: Saves / threads waiting on message boxes. Extend VM snapshot support to

@@ -137,6 +137,14 @@ stealth points.
 
 ## Open questions
 
+- **Native save continuity.** Optional `.vrs` section `STPT` saves each retained
+  player's or actor's current stealth points and regeneration delay, then
+  restores them by replacement and invalidates the derived player-observation
+  cache for a fresh detection update. This is a bounded engine continuity
+  policy, not evidence about Skyrim's `.ess` payload. Searches, combat targets,
+  Normal/Alert/Combat/Lost state transitions, elapsed AI execution and observer
+  values are not saved; their load-time lifecycle remains open.
+
 - **Weapons are silent, by decision.** Swinging a weapon (all but daggers)
   should make action sound through the weapon's detection sound level
   (`WEAP` `DNAM`) and `iSoundLevelLoud` / `Normal` / `Silent` / `VeryLoud`.

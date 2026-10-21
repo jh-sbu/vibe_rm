@@ -65,6 +65,12 @@ the world is stored in optional `ORIG` as its creation position and rotation;
 the existing `WRLD` layout remains unchanged. Older native saves retain the
 created reference's other data but have no recoverable starting transform, so
 `GetStartingPos` / `GetStartingAngle` fail for those references.
+Player and actor stealth-point reservoirs, with their remaining regeneration
+delay, are stored in optional `STPT`. Loading replaces the entire reservoir map;
+an older save without the section clears it. Loading also drops cached
+observer-to-player detection values and schedules an immediate fresh observation.
+This persists the engine's reservoir values only: searches, combat targets,
+detection state transitions and AI execution remain outside save state.
 
 The scripting side (`vm.rs`, sections `VM` and `VMAR`): the scripts attached
 to each object with their variables and properties (`Vm::attach` keeps an
@@ -91,8 +97,9 @@ saved: it is taken again from the place the save loads into.
   Registrations other than these (key, LOS gain, tracked hits...) aren't
   built in the engine yet.
 - Active magic effects (timed effects, summons, wards), the leveled spell
-  rolls, scenes playing, AI and
-  package progress, schedules, objects' behaviour graphs, detection state,
+  rolls, scenes playing, AI package progress and schedules, objects' behaviour
+  graphs, and search/combat detection state and AI execution (stealth reservoirs
+  alone are saved),
   and the player's spells held ready (the equipped spells
   are saved with the inventory's hands).
 
