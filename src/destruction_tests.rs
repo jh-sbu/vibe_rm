@@ -644,3 +644,50 @@ fn cleardestruction_resets_one_reference_even_when_unloaded_without_events() {
     assert_stage_event(&events[..1], -1, 0);
     assert_stage_event(&events[1..], -1, 0);
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_destroyed_follows_the_destroy_stage_of_the_reference() {
+    let (_dir, mut e) = fixture();
+    // GetDestroyed (203), CTDA `== 1`, read from the quest's condition.
+    let parsed = crate::condition::parse(&e.lo.get(QUEST).unwrap(), &{
+        let mut data = [0; 32];
+        data[4..8].copy_from_slice(&1.0f32.to_le_bytes());
+        data[8..10].copy_from_slice(&203u16.to_le_bytes());
+        data
+    })
+    .unwrap();
+    let destroyed = |e: &Engine, subject| {
+        crate::condition::evaluate(
+            e,
+            std::slice::from_ref(&parsed),
+            crate::condition::Context {
+                subject: Some(subject),
+                ..Default::default()
+            },
+        )
+    };
+    assert!(!destroyed(&e, REF_A));
+    // Stage 0 (health 99%, flags: cap, ignore external) doesn't destroy.
+    e.world_state.destruction.insert(
+        REF_A,
+        crate::world::destruction::DestructionState {
+            health: 99.0,
+            stage: 0,
+        },
+    );
+    assert!(!destroyed(&e, REF_A));
+    // Stage 1 (health 0%, flags: disable, destroy) does.
+    e.world_state.destruction.insert(
+        REF_A,
+        crate::world::destruction::DestructionState {
+            health: 0.0,
+            stage: 1,
+        },
+    );
+    assert!(destroyed(&e, REF_A));
+    // Another reference to the same base has its own state.
+    assert!(!destroyed(&e, REF_C));
+    // No destructible definition, no destruction.
+    assert!(!destroyed(&e, REF_B));
+}

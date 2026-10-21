@@ -373,6 +373,116 @@ fn b(x: bool) -> Option<f32> {
     Some(if x { 1.0 } else { 0.0 })
 }
 
+/// The record type a `ptFormType` parameter names (xEdit's `wbFormTypeEnum`, not
+/// CommonLibSSE's FormType: vanilla passes 1 for armor, 6 light, 12 weapon and 13
+/// actor). None for values the enum doesn't list.
+fn form_type_tag(value: u32) -> Option<&'static [u8; 4]> {
+    Some(match value {
+        0 => b"ACTI",
+        1 => b"ARMO",
+        2 => b"BOOK",
+        3 => b"CONT",
+        4 => b"DOOR",
+        5 => b"INGR",
+        6 => b"LIGH",
+        7 => b"MISC",
+        8 => b"STAT",
+        9 => b"GRAS",
+        10 => b"TREE",
+        12 => b"WEAP",
+        13 => b"NPC_",
+        14 => b"LVLN",
+        15 => b"SPEL",
+        16 => b"ENCH",
+        17 => b"ALCH",
+        18 => b"LVLI",
+        19 => b"KEYM",
+        20 => b"AMMO",
+        21 => b"FLOR",
+        22 => b"FURN",
+        23 => b"SOUM",
+        24 => b"LTEX",
+        25 => b"CSTY",
+        26 => b"LSCR",
+        27 => b"LVSP",
+        28 => b"ANIO",
+        29 => b"WATR",
+        30 => b"IDLM",
+        31 => b"EFSH",
+        32 => b"PROJ",
+        33 => b"TACT",
+        34 => b"EXPL",
+        35 => b"TXST",
+        36 => b"DEBR",
+        37 => b"MICN",
+        38 => b"FLST",
+        39 => b"PERK",
+        40 => b"BPTD",
+        41 => b"ADDN",
+        42 => b"MSTT",
+        43 => b"CAMS",
+        44 => b"IPCT",
+        45 => b"IPDS",
+        46 => b"QUST",
+        47 => b"PACK",
+        48 => b"VTYP",
+        49 => b"CLAS",
+        50 => b"RACE",
+        51 => b"EYES",
+        52 => b"HDPT",
+        53 => b"FACT",
+        54 => b"NOTE",
+        55 => b"WTHR",
+        56 => b"CLMT",
+        57 => b"ARMA",
+        58 => b"GLOB",
+        59 => b"IMGS",
+        60 => b"IMAD",
+        61 => b"ECZN",
+        62 => b"MESG",
+        63 => b"COBJ",
+        64 => b"ASPC",
+        65 => b"RGDL",
+        66 => b"SCPT",
+        67 => b"MGEF",
+        68 => b"MUSC",
+        69 => b"SCOL",
+        70 => b"KYWD",
+        71 => b"LCTN",
+        72 => b"LCRT",
+        73 => b"FSTP",
+        74 => b"FSTS",
+        75 => b"MATT",
+        76 => b"AACT",
+        77 => b"MUST",
+        78 => b"WOOP",
+        79 => b"SHOU",
+        80 => b"RELA",
+        81 => b"EQUP",
+        82 => b"ASTP",
+        83 => b"OTFT",
+        84 => b"ARTO",
+        85 => b"MATO",
+        87 => b"LGTM",
+        88 => b"SPGD",
+        89 => b"RFCT",
+        90 => b"APPA",
+        91 => b"MOVT",
+        92 => b"HAZD",
+        93 => b"SMEN",
+        94 => b"SNDR",
+        95 => b"DUAL",
+        96 => b"SNCT",
+        97 => b"SLGM",
+        98 => b"SOPM",
+        99 => b"COLL",
+        100 => b"SCRL",
+        101 => b"CLFM",
+        102 => b"RVRB",
+        _ => return None,
+    })
+}
+
 /// Value of a condition function; `None` means "unsupported" (the condition fails).
 fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Context) -> Option<f32> {
     let p1 = match c.p1_ref {
@@ -428,6 +538,14 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         131 => b(e.npc_is_female(FormId(0x7)) as u32 == c.p1),               // GetPCIsSex
         69 => b(subj_base.and_then(|n| e.npc_race(n)) == Some(p1)),          // GetIsRace
         130 => b(e.npc_race(FormId(0x7)) == Some(p1)),                       // GetPCIsRace
+        // The base object's record type, as the condition's `ptFormType` numbers it.
+        432 => b(subj_base
+            .and_then(|n| e.lo.tag_of(n))
+            .is_some_and(|t| form_type_tag(c.p1) == Some(&t.0))), // GetIsObjectType
+        // The subject's weapon in hand is one the form list names.
+        398 => b(subject
+            .and_then(|s| e.weapon_of(s))
+            .is_some_and(|w| e.formlist(p1).contains(&w))), // IsWeaponInList
         // Rank -1 (potential followers' `CurrentFollowerFaction`) isn't membership.
         71 => b(subject.is_some_and(|s| e.npc_factions(s).iter().any(|&(f, r)| f == p1 && r >= 0))), // GetInFaction
         73 => Some(
@@ -781,7 +899,17 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .and_then(|s| e.lock_of(s))
                 .map_or(0.0, |l| l.level as f32),
         ), // GetLockLevel
+        // A door not locked now (`is_locked`); anything else isn't a door.
+        718 => b(subj_base
+            .and_then(|n| e.lo.tag_of(n))
+            .is_some_and(|t| t.0 == *b"DOOR")
+            && subject.is_some_and(|s| !e.is_locked(s))), // IsUnlockedDoor
+        // Placed open by default: the reference carries `ONAM` (UESP REFR).
+        215 => {
+            b(subject.is_some_and(|s| e.lo.get(s).is_some_and(|rec| rec.get(b"ONAM").is_some())))
+        } // GetDefaultOpen
         470 => subject.map(|s| e.current_destruction_stage(s) as f32), // GetDestructionStage
+        203 => b(subject.is_some_and(|s| e.is_destroyed(s))),          // GetDestroyed
         // GetItemCount; picking a furniture idle ahead of time (no subject), the
         // query says whether its user holds what the idle asks about.
         47 => match (subject, ctx.idle) {
@@ -1230,3 +1358,7 @@ pub fn subject_is_player(s: Option<FormId>) -> bool {
 #[cfg(test)]
 #[path = "geometry_tests.rs"]
 mod geometry_tests;
+
+#[cfg(test)]
+#[path = "reference_tests.rs"]
+mod reference_tests;
