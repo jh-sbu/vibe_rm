@@ -202,7 +202,13 @@ not a health threshold. It is compared with a *threat ratio*:
     [Ordinator author's Skyrim SE documentation](https://www.nexusmods.com/skyrimspecialedition/mods/1137?tab=docs)
     lists `fCombatDetectionFleeingLostRemoveTime` changing from 30 to 45, and the
     public [Skyrim-era settings list](https://pastebin.com/pKz1u9Fg) lists it as
-    30 and `fCombatLowFleeingTargetHitPercent` as 0.25. Those establish names and
+    30 and `fCombatLowFleeingTargetHitPercent` as 0.25. The
+    [Skyrim:Sneak talk archive](https://en.uesp.net/w/index.php?oldid=2224198)
+    tabulates the removal timer at 30 beside its siblings
+    (`fCombatDetectionLostRemoveTime` 30, `...LostRemoveDistance` 4096,
+    `...LostRemoveDistanceTime` 60, `...LostTimeLimit` 10,
+    `fCombatDetectionLowPriorityDistance` 2048), without explanation; neither
+    setting is in the base plugins. Those establish names and
     reported defaults, not a removal algorithm. They do not resolve whether
     "fleeing" in the removal timer refers to the observer, the target, or a
     combat group's state; when the timer starts or resets; how renewed detection
