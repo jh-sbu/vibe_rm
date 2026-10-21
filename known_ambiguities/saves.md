@@ -84,13 +84,24 @@ once and referred to by index.
 ## Unconfirmed choices
 
 - **`RequestSave` / `RequestAutoSave`** write `quicksave` and `autosave`. The
-  original names its saves with a counter; the Creation Kit wiki isn't
-  reachable here (`public-sources-access`). The save is made on the next
-  update, after the script returns, not inside the native call. A save is
-  refused while the player is dead ("You cannot save right now.",
-  `sCantSaveNow`); the original's other refusals (combat, menus, scripted
-  forbidding) aren't built. "Autosaving..." (`sAutoSaving`) is shown for the
-  autosave, which is our guess for when the game prints it.
+  local UESP [GMST defaults page](https://en.uesp.net/w/index.php?oldid=3098585)
+  (revision 3098585) gives `sMenuDisplayQuicksaveName` the display text
+  "Quicksave". Bethesda's [Kinect support article](https://help.bethesda.net/app/answers/detail/a_id/16611/~/why-am-i-unable-to-create-more-than-one-quick-save-for-the-elder-scrolls-v:)
+  says that interface has one quicksave slot. Neither source establishes the
+  exact filename/counter behavior of `Game.RequestSave` in Skyrim SE. This
+  engine therefore uses an explicit **native history policy**: each
+  flushed `RequestSave` writes the next unused `quicksave N.vrs`, starting at 1,
+  preserving earlier numbered files. It finds the next number from existing
+  files, so gaps are retained and failed writes do not consume a number.
+  `RequestAutoSave` continues to replace `autosave.vrs`; manual save names keep
+  their existing replace-in-place behavior. Repeated requests of the same type
+  in one pending update remain deduplicated. This is an engine policy, not a
+  claim of Skyrim SE parity. The save is made on the next update, after the
+  script returns, not inside the native call. A save is refused while the
+  player is dead ("You cannot save right now.", `sCantSaveNow`); the original's
+  other refusals (combat, menus, scripted forbidding) aren't built.
+  "Autosaving..." (`sAutoSaving`) is shown for the autosave, which is our guess
+  for when the game prints it.
 - Console `save` with no name writes `console`.
 - Save names: letters, digits, spaces, `-` and `_`, up to 64.
 
