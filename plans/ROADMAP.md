@@ -1334,6 +1334,10 @@ game each piece unlocks.
   health/stage map without replaying events; older snapshots without it load
   empty. This does not implement Skyrim `.ess` destruction saves:
   `known_ambiguities/destruction.md`
+- Weapon, bash and arrow blows on loaded destructible references take their
+  damage as health (`strike` -> `damage_object_by_blow`), skipped while the
+  current stage has Ignore External Damage (DSTD 0x08); power attacks add no
+  extra damage to objects (unconfirmed, see `known_ambiguities/destruction.md`).
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
@@ -1505,8 +1509,7 @@ game each piece unlocks.
    - Destructible object damage and lifecycle (`DEST` definitions, initial
      stage queries and scripted `DamageObject` health/stage progression are
      done; see Done): cobwebs blocking dungeon paths, barricades, bee hives,
-     trap oil pools and gas. Health and stage from weapon blows (`strike`
-     drops the damage now), spells landing on objects and their areas
+     trap oil pools and gas. Spells landing on objects and their areas
      (`spell_lands` reaches only actors), explosions and self damage; the
      stage's model (`BSDamageStage` children or a replacement model with its
      collision, freeing navmesh obstacles), explosion and debris;

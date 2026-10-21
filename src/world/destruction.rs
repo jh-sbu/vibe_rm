@@ -127,6 +127,29 @@ impl Engine {
         }
     }
 
+    /// Health damage from a weapon, bash or arrow blow. Like `damage_object`,
+    /// but a stage with `Ignore External Damage` (DSTD flag 0x08) takes none
+    /// from blows: UESP's flag list, with the choice in
+    /// `known_ambiguities/destruction.md`.
+    pub(crate) fn damage_object_by_blow(&mut self, reference: FormId, damage: f32) {
+        let Some(data) = self.destructible_data(reference) else {
+            return;
+        };
+        let stage = self
+            .world_state
+            .destruction
+            .get(&reference)
+            .map_or(-1, |state| state.stage);
+        if data
+            .stages
+            .iter()
+            .any(|s| s.index as i32 == stage && s.flags & 0x08 != 0)
+        {
+            return;
+        }
+        self.damage_object(reference, damage);
+    }
+
     /// Papyrus `ObjectReference.ClearDestruction`. Clear the stored per-reference
     /// health and stage without requiring the reference to be loaded.
     pub fn clear_destruction(&mut self, reference: FormId) {
