@@ -207,6 +207,11 @@ game each piece unlocks.
   and reverse playback; zero preserves the clip's existing `startTime`. Compound
   generator and exact Havok timing policies remain open:
   `known_ambiguities/character-properties.md`
+- Transition effects resolve authored and whole-member `endMode` inputs at
+  commit. Direct single-play source clips and transparent wrappers support
+  remaining-time and duration-cap policies using crop, direction and speed;
+  compound, looping and zero-speed source timing remain open:
+  `known_ambiguities/character-properties.md`
 - Cyclic blend wrappers forward `fBlendParameter` character properties to their
   blender children, including cyclic weights and synchronized clip timing.
   Existing variable precedence and authored fallbacks remain; wrapper lifecycle
@@ -1320,7 +1325,8 @@ game each piece unlocks.
      properties on remaining generator members, blender-child members beyond `weight`
      and `boneWeights`, and transition-effect members beyond `duration`,
      `selfTransitionMode`, `eventMode`, the supported subset of `blendCurve`,
-     and compound-target behavior for `toGeneratorStartTimeFraction`,
+     compound-target behavior for `toGeneratorStartTimeFraction`, and source
+     end-time behavior beyond direct single-play clips and transparent wrappers,
      runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`;
      `vrm-tool hkb-props` lists the bindings: the humanoid and dragon projects bind
      only two modifiers' `enable`);
