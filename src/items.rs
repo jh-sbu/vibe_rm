@@ -146,7 +146,12 @@ impl Engine {
             .or_else(|| self.created(r).map(|c| c.count))
             .unwrap_or(1)
             .max(1);
-        let stolen = self.stolen_from(base, r, false);
+        // A dropped stolen item stays stolen: its theft was judged when the
+        // player took it, so it isn't judged again where it lies.
+        let stolen = self
+            .created(r)
+            .and_then(|c| c.owner)
+            .or_else(|| self.stolen_from(base, r, false));
         self.inventory_mut(PLAYER_REF)
             .add_owned(base, stolen, count);
         if let Some(charges) = self.world_state.item_charges.remove(&r) {
@@ -213,12 +218,15 @@ impl Engine {
     }
 
     /// Who owns a reference (or cell): as a script set it
-    /// (`SetActorOwner` / `SetFactionOwner`), else its `XOWN`, else its
-    /// cell's.
+    /// (`SetActorOwner` / `SetFactionOwner`), else what a dropped stolen item
+    /// was stolen from, else its `XOWN`, else its cell's.
     pub(crate) fn ref_owner(&self, r: FormId) -> Option<FormId> {
         match self.scripts.owners.get(&r) {
             Some(owner) => *owner,
-            None => crate::ai::furniture::owner_of(&self.lo, r),
+            None => self
+                .created(r)
+                .and_then(|c| c.owner)
+                .or_else(|| crate::ai::furniture::owner_of(&self.lo, r)),
         }
     }
 

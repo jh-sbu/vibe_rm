@@ -302,6 +302,7 @@ fn play(e: &mut Engine) {
             location: Some(FormId(0x90D)),
             actor: false,
             count: 3,
+            owner: Some(FormId(0x91A)),
         },
     );
     e.created_refs.next = 0xFF00_0801;
@@ -397,6 +398,10 @@ fn a_saved_game_loads_into_another_engine_unchanged() {
     assert!(b.world_state.dead.contains_key(&ACTOR));
     assert_eq!(b.created_refs.refs.len(), 1);
     assert_eq!(b.created_refs.next, 0xFF00_0801);
+    assert_eq!(
+        b.created_refs.refs[&FormId(0xFF00_0800)].owner,
+        Some(FormId(0x91A))
+    );
 }
 
 #[test]

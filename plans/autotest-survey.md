@@ -438,3 +438,11 @@ ragdoll joint limits; region weather priority and global chances.
   Papyrus script can time the death with `Utility.GetCurrentGameTime` and read which
   window fires; `IsKiller` can gate a line the player's killer alias speaks. Papyrus
   can't read the condition's result itself, so only the gated outcome is observed.
+
+- **Dropped stolen goods** (`known_ambiguities/crime.md`, "Dropping"): whether a
+  dropped stolen item stays stolen (the talk-page report says it can lose the tag).
+  Verdict: partial. A script can give the player a stolen item (`AddItem` cannot mark
+  it, so a theft is needed: a container the player takes from, with the owner set by
+  `SetActorOwner`), drop it, pick it up, and then offer it to a merchant that refuses
+  stolen goods; the merchant's refusal is seen through the sell menu's message or a
+  gated line. Measure the same item before and after the drop and pickup.

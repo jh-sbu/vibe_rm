@@ -31,6 +31,10 @@ pub struct Created {
     pub actor: bool,
     /// How many items it stands for (as a placed reference's `XCNT`).
     pub count: i32,
+    /// Whose it is, when it was dropped stolen: the owner of the stack it
+    /// came from. Stays with the reference until it is picked up (see
+    /// `Engine::take_item`); none for anything the player owns.
+    pub owner: Option<FormId>,
 }
 
 #[derive(Default)]
@@ -128,6 +132,7 @@ impl Engine {
                 location,
                 actor,
                 count: 1,
+                owner: None,
             };
             self.created_refs.refs.insert(id, c);
             log::debug!("created {id} ({base}) in {at}");
@@ -149,6 +154,7 @@ impl Engine {
                 location,
                 actor,
                 count: 1,
+                owner: None,
             },
         );
         log::debug!("created {id} ({base}) at {at} {place:?} {position:?}");
@@ -184,6 +190,7 @@ impl Engine {
             location: None,
             actor: false,
             count: count.max(1),
+            owner: None,
         };
         self.created_refs.refs.insert(id, c);
         self.created_refs.refs.get_mut(&id).unwrap().location = self.ref_current_location(id);

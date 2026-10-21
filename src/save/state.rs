@@ -12,7 +12,7 @@
 //! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
 //! `DSTR` (destructible health/stage), `WUSE` (Favorite Weapon usage), `WTHR`
 //! (the weather, its transition and override), `DETH` (killers and times of
-//! death), and `VM` / `VMAR`
+//! death), `COWN` (the owners of dropped stolen items), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM). Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
@@ -859,6 +859,20 @@ impl Snapshot {
             w.f64(death.at);
         }
         file.add(b"DETH", w.0);
+
+        // Dropped stolen items' owners, beside `WRLD`'s created references so
+        // saves from before them still read.
+        let mut w = Writer::default();
+        let owned: Vec<_> = sorted(&self.created)
+            .into_iter()
+            .filter_map(|(id, c)| Some((id, c.owner?)))
+            .collect();
+        w.len(owned.len());
+        for (id, owner) in owned {
+            w.form(id);
+            w.form(owner);
+        }
+        file.add(b"COWN", w.0);
         self.vm.write(&mut file);
         file
     }
@@ -1078,6 +1092,7 @@ impl Snapshot {
                     location: r.opt_form()?,
                     actor: r.bool()?,
                     count: r.i32()?,
+                    owner: None,
                 },
             );
         }
@@ -1234,6 +1249,18 @@ impl Snapshot {
                 };
                 if !death.at.is_finite() || s.deaths.insert(actor, death).is_some() {
                     return Err(Corrupt("invalid or duplicate death".into()));
+                }
+            }
+            r.finish()?;
+        }
+        if let Some(data) = file.section(b"COWN") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(8)? {
+                let id = r.form()?;
+                let owner = r.form()?;
+                match s.created.get_mut(&id) {
+                    Some(c) if c.owner.is_none() && !owner.is_null() => c.owner = Some(owner),
+                    _ => return Err(Corrupt("invalid dropped item owner".into())),
                 }
             }
             r.finish()?;

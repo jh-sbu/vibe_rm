@@ -582,6 +582,7 @@ mod tests {
             location: None,
             actor,
             count: 1,
+            owner: None,
         }
     }
 

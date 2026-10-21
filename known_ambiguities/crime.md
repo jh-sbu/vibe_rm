@@ -218,6 +218,23 @@ locations name it.
   judges the theft by the container's owner, so a stolen item in the player's
   own chest isn't stolen again. Removing items by script takes those
   belonging to nobody first.
+- Dropping (`drop_item_from_stack`). UESP *Skyrim:Crime*, "Stolen Items"
+  (https://en.uesp.net/w/index.php?oldid=3639929): "each item considered stolen
+  is tracked separately when dropped", and for items whose tag a fence or
+  reverse-pickpocket cleared, "the stolen status will return if the item is
+  dropped". Choices: a dropped stack becomes one reference per owner, each
+  keeping its owner (`Created::owner`, saved in an optional
+  `COWN` section beside `WRLD`); picking it up stays theft, decided when
+  it was taken, not judged again where it lies (a faction's favor cap rising
+  later doesn't clear it). Dropping unowned goods leaves them the player's:
+  the created reference has no cell owner, so picking them up in an owner's
+  house is not theft, while a placed item there is. Unconfirmed: a 2012
+  talk-page report (Skyrim talk:Crime/Archive 1, oldid=2224062) says stolen
+  items "will always lose the stolen tag if dropped" in public places, and
+  that it is random for truly stolen ones; unsourced, Xbox 360, not
+  reproduced, and it conflicts with the article above. Also unchecked: which
+  copies of a mixed stack carry the charges of a weapon (shared out in
+  order), and the spacing of the references (`DROP_SPREAD`).
 - Paying with "remove stolen" takes every stolen item, whoever it was stolen
   from, and forgets the stolen value with that faction. The value stolen
   counts against the owner's crime faction (or the owning faction).
