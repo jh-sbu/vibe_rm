@@ -16,7 +16,8 @@
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
-//! message-box VM waits). Not yet saved:
+//! message-box VM waits), and `ANMW` (semantic animation-event VM waits).
+//! Not yet saved:
 //! active magic effects, scenes, AI progress, objects'
 //! behaviour graphs; see `plans/ROADMAP.md`.
 //!
@@ -528,6 +529,7 @@ impl Snapshot {
                 anim_registrations: e.anim_events.registered(),
                 message_boxes: e.messages.boxes.clone(),
                 message_next_key: e.messages.next_key,
+                animation_waits: e.anim_events.waiting(),
             },
         }
     }
@@ -1436,7 +1438,6 @@ impl Snapshot {
             .into_iter()
             .map(|(o, items)| (o, items.into_iter().collect()))
             .collect();
-        e.anim_events.restore(self.vm.anim_registrations);
         s.visibility_dirty = true;
         s.alias_gen += 1;
         // The scripts attached with their variables and the threads waiting,
@@ -1450,6 +1451,15 @@ impl Snapshot {
         };
         e.vm = vm;
         e.restore_message_boxes(self.vm.message_boxes, self.vm.message_next_key);
+        let animation_waits = self
+            .vm
+            .animation_waits
+            .iter()
+            .filter(|(key, _, _)| e.vm.is_waiting_for(*key))
+            .map(|(_, sender, event)| (*sender, event.clone()))
+            .collect();
+        e.anim_events
+            .restore(self.vm.anim_registrations, animation_waits);
         if dropped > 0 {
             log::warn!("{dropped} saved script threads can't be resumed");
         }

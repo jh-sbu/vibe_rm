@@ -181,6 +181,16 @@ Object/actor graph execution state remains separate roadmap work: a resumed
 wait can hear a subsequent matching event, but this item must not claim that
 loading resumes its animation pose or graph timeline.
 
+Outcome: implemented and reviewed. Parent validation passed the generated-script
+integration test with system Vulkan and all seven VM codec tests, including
+repeated save/load retention and legacy fallback. Optional `ANMW` links semantic sender/event
+identities to the filtered saved-thread order and recomputes the signal key on
+load. Synthetic PEX and graph integration coverage verifies multiple waiters,
+wrong sender/event filtering, case-insensitive delivery, timeout fallback and
+repeated save/load retention. Legacy files without `ANMW` retain the timed
+fallback; malformed metadata is rejected. Behavior graph pose, timeline and
+events raised before load remain outside this item.
+
 ## 9. Greater-power cooldown persistence
 
 Save-continuity blocker found during roadmap Game logic / magic and Saves review:

@@ -90,6 +90,14 @@ whose waiting thread imported. A legacy save without `MBXW` has no saved boxes,
 and signal waits use the existing timed fallback. Other signal sources remain
 outside this section until their host state is saved.
 
+`PlayAnimationAndWait` event waits use optional `ANMW`, linking saved VM threads
+to the sender reference and case-insensitive event name. Loading recomputes the
+runtime signal key and replaces stale wait descriptors; legacy saves without
+`ANMW` keep the existing timed fallback. This resumes a wait for a subsequent
+matching event, but does not save or restore the sender's behavior graph pose,
+timeline, or already-raised events. Persisting those graph states remains
+separate work.
+
 The weather (optional `WTHR`): the current and outgoing weathers, how far the
 transition has come, whether an override holds, the weather it replaced, and
 the game hours until the next roll. Older native saves load with no weather,
@@ -98,10 +106,8 @@ saved: it is taken again from the place the save loads into.
 
 ## Not saved yet (see `plans/ROADMAP.md`)
 
-- Threads waiting for supported saved message boxes resume when the restored
-  box is answered. Other signal waits (including animation-event waits) are
-  kept as timed waits that finish when their timeout runs out, with the default
-  result: their host state is not saved yet.
+- Other signal waits are kept as timed waits that finish when their timeout
+  runs out, with the default result: their host state is not saved yet.
   A thread whose function no longer resolves (other scripts) is dropped with
   a warning. Scripts on active magic effects are dropped with the effects.
   Registrations other than these (key, LOS gain, tracked hits...) aren't

@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- `PlayAnimationAndWait` threads survive native saves through optional `ANMW`;
+  restored waits remap sender/event identities to current runtime keys and
+  resume on later matching events. Graph poses and timelines remain unsaved:
+  `known_ambiguities/saves.md`.
 - `Message.Show` boxes and suspended scripts survive native saves through
   optional `MBXW`, which leaves `VM` and `VMAR` layouts unchanged. Restored
   filtered button indices wake the matching saved thread; other signal sources
@@ -1715,8 +1719,7 @@ game each piece unlocks.
    speed-to-aspect runtime fidelity, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves** (the container, the engine's state and the Papyrus VM are done:
-   see Done): threads waiting on animation events,
-   active magic effects, scene state,
+   see Done): active magic effects, scene state,
    AI progress, objects' behaviour graphs, detection; reading the
    original's `.ess` saves later; a save / load menu (the System page),
    load orders that changed since the save, and the original's refusals to

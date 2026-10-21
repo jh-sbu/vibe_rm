@@ -33,6 +33,7 @@ const RANK_EVENT: FormId = FormId(0x863);
 const LOCATION_EVENT: FormId = FormId(0x864);
 const MESSAGE_WAIT_A: FormId = FormId(0x8A0);
 const MESSAGE_WAIT_B: FormId = FormId(0x8A1);
+const ANIMATION_WAIT_OBJECT: FormId = FormId(0x8A2);
 
 struct Fixture(std::path::PathBuf);
 
@@ -206,8 +207,45 @@ fn engine(name: &str) -> (Fixture, Engine) {
     .unwrap();
     std::fs::write(
         f.0.join("scripts/Message.pex"),
-        papyrus::build::native_class("Message", "Form", &[("Show", "Int", &[], false)])
-            .unwrap(),
+        papyrus::build::native_class("Message", "Form", &[("Show", "Int", &[], false)]).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        f.0.join("scripts/ObjectReference.pex"),
+        papyrus::build::native_class(
+            "ObjectReference",
+            "Form",
+            &[(
+                "PlayAnimationAndWait",
+                "Bool",
+                &[("asEventName", "String"), ("asWaitForEvent", "String")],
+                false,
+            )],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut animation_script =
+        papyrus::build::ScriptBuilder::new("VrmAnimationWaitTest", "ObjectReference");
+    let started = animation_script.variable("started", "Bool", papyrus::build::Arg::None);
+    let done = animation_script.variable("done", "Bool", papyrus::build::Arg::None);
+    let mut on_init = papyrus::build::FunctionBuilder::new("None");
+    on_init.assign(started, true.into());
+    on_init.call_method(
+        papyrus::build::id("self"),
+        "PlayAnimationAndWait",
+        papyrus::build::discard(),
+        [
+            papyrus::build::string("Start"),
+            papyrus::build::string("Done"),
+        ],
+    );
+    on_init.assign(done, true.into());
+    on_init.ret(papyrus::build::Arg::None);
+    animation_script.function("OnInit", on_init);
+    std::fs::write(
+        f.0.join("scripts/VrmAnimationWaitTest.pex"),
+        papyrus::pex::write(&animation_script.build().unwrap()).unwrap(),
     )
     .unwrap();
     let e = crate::stats::action_tests::headless_engine(&f.0, "Save.esp");
@@ -863,6 +901,62 @@ fn run_message_vm(e: &mut Engine, now: f64, messages: &[FormId]) {
     e.vm = vm;
 }
 
+fn install_animation_wait_graph(e: &mut Engine, sender: FormId) {
+    use crate::world::behavior::{GraphAnim, ProjectRuntime};
+    use havok::behavior::runtime::Shared;
+    use havok::behavior::{BehaviorGraph, ClipMode, Generator, Project};
+    use std::sync::Arc;
+
+    let graph = BehaviorGraph::new(
+        "SyntheticWait",
+        Some(0),
+        vec![Generator::Clip {
+            name: "Start".into(),
+            animation: "Start".into(),
+            mode: ClipMode::Looping,
+            speed: 1.0,
+            enforced_duration: 0.0,
+            user_fraction: 0.0,
+            triggers: vec![],
+            crop_start: 0.0,
+            crop_end: 0.0,
+            start_time: 0.0,
+        }],
+        vec!["Start".into(), "Done".into()],
+    );
+    let project = Arc::new(ProjectRuntime {
+        shared: Shared::new(Arc::new(Project {
+            graphs: vec![("SyntheticWait".into(), graph)],
+            character: None,
+        })),
+        dir: "synthetic".into(),
+        name: "wait".into(),
+        files: vec![],
+    });
+    let skeleton = Arc::new(crate::world::skeleton::Skeleton::default());
+    let graph = GraphAnim::new(project, "synthetic", false, &skeleton, 1);
+    let cell = crate::render::CellKey::Interior(CELL);
+    e.cells
+        .entry(cell)
+        .or_default()
+        .animated
+        .push(crate::world::animated::test_graph_object(sender, graph));
+}
+
+fn run_animation_wait_vm(e: &mut Engine, now: f64, start_count: usize) {
+    let mut vm = std::mem::take(&mut e.vm);
+    {
+        let mut host = crate::script::EngineHost { engine: e };
+        let obj = papyrus::ObjectId::Form(ANIMATION_WAIT_OBJECT.0);
+        assert!(vm.attach(&mut host, obj, "VrmAnimationWaitTest", &[]));
+        for _ in 0..start_count {
+            assert!(vm.send_event(&mut host, obj, "OnInit", vec![]) > 0);
+        }
+        vm.run(&mut host, now, 10_000);
+    }
+    e.vm = vm;
+}
+
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
 fn a_script_waiting_when_saved_finishes_after_loading() {
@@ -969,6 +1063,89 @@ fn message_show_waits_restore_and_answer_on_the_original_filtered_thread() {
     );
     assert!(b.messages.boxes.is_empty());
     assert_eq!(b.messages.next_key, 2);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic graph and PEX only"]
+fn animation_event_waits_restore_semantically_and_resume_on_matching_event() {
+    let (_a, mut a) = engine("animation-wait-a");
+    install_animation_wait_graph(&mut a, ANIMATION_WAIT_OBJECT);
+    run_animation_wait_vm(&mut a, 0.0, 2);
+    let object = papyrus::ObjectId::Form(ANIMATION_WAIT_OBJECT.0);
+    assert_eq!(a.vm.thread_count(), 2);
+    assert_eq!(
+        a.vm.get_var(object, "started"),
+        Some(papyrus::Value::Bool(true))
+    );
+    assert_eq!(
+        a.vm.get_var(object, "done"),
+        Some(papyrus::Value::Bool(false))
+    );
+    assert_eq!(a.anim_events.waiting().len(), 1);
+
+    let bytes = Snapshot::capture(&a).write().to_bytes();
+    let (_b, mut b) = engine("animation-wait-b");
+    install_animation_wait_graph(&mut b, ANIMATION_WAIT_OBJECT);
+    b.anim_events.wait_for(FormId(0x8A3), "Stale");
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut b)
+        .unwrap();
+    assert!(
+        b.anim_events
+            .waiting()
+            .iter()
+            .all(|(_, sender, _)| *sender == ANIMATION_WAIT_OBJECT)
+    );
+    assert_eq!(b.vm.thread_count(), 2);
+
+    // A second roundtrip must retain semantic metadata after importing the VM.
+    let bytes = Snapshot::capture(&b).write().to_bytes();
+    let (_c, mut c) = engine("animation-wait-c");
+    install_animation_wait_graph(&mut c, ANIMATION_WAIT_OBJECT);
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut c)
+        .unwrap();
+    assert_eq!(c.anim_events.waiting().len(), 1);
+    assert_eq!(c.vm.thread_count(), 2);
+    run_vm(&mut c, 0.0, None);
+    assert_eq!(
+        c.vm.get_var(object, "done"),
+        Some(papyrus::Value::Bool(false))
+    );
+
+    c.raise_anim_events(FormId(0x8A3), &["Done".into()]);
+    c.raise_anim_events(ANIMATION_WAIT_OBJECT, &["Wrong".into()]);
+    run_vm(&mut c, 0.0, None);
+    assert_eq!(c.vm.thread_count(), 2);
+    assert_eq!(
+        c.vm.get_var(object, "done"),
+        Some(papyrus::Value::Bool(false))
+    );
+
+    c.raise_anim_events(ANIMATION_WAIT_OBJECT, &["dOnE".into()]);
+    run_vm(&mut c, 0.0, None);
+    assert_eq!(c.vm.thread_count(), 0);
+    assert_eq!(
+        c.vm.get_var(object, "done"),
+        Some(papyrus::Value::Bool(true))
+    );
+    assert!(c.anim_events.waiting().is_empty());
+
+    // The existing timed fallback remains the result when the event never comes.
+    let (_d, mut d) = engine("animation-wait-timeout");
+    install_animation_wait_graph(&mut d, ANIMATION_WAIT_OBJECT);
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut d)
+        .unwrap();
+    run_vm(&mut d, 10.5, None);
+    assert_eq!(d.vm.thread_count(), 0);
+    assert_eq!(
+        d.vm.get_var(object, "done"),
+        Some(papyrus::Value::Bool(true))
+    );
 }
 
 /// Every runtime field is encoded without requiring a renderer or game assets.

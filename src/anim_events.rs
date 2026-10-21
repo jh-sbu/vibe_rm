@@ -3,6 +3,7 @@
 //! registering script as `OnAnimationEvent`, and `PlayAnimationAndWait` waits
 //! for its event from the graph.
 
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use esp::FormId;
@@ -25,9 +26,19 @@ struct Registration {
     event: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AnimationWait {
+    pub sender: FormId,
+    /// Canonical lower-case event name.
+    pub event: String,
+}
+
 #[derive(Default)]
 pub(crate) struct AnimEvents {
     registrations: Vec<Registration>,
+    /// Runtime signal key -> semantic wait identity. The key itself is not
+    /// persisted because DefaultHasher stability across runs is not promised.
+    waits: HashMap<u64, AnimationWait>,
     /// `OnAnimationEvent`s to deliver: the receiving script and its arguments.
     pub(crate) pending: Vec<(ObjectId, String, Vec<Value>)>,
 }
@@ -42,6 +53,25 @@ pub(crate) fn wait_key(sender: FormId, event: &str) -> u64 {
 }
 
 impl AnimEvents {
+    pub(crate) fn wait_for(&mut self, sender: FormId, event: &str) -> u64 {
+        let event = event.to_ascii_lowercase();
+        let key = wait_key(sender, &event);
+        self.waits
+            .entry(key)
+            .or_insert(AnimationWait { sender, event });
+        key
+    }
+
+    pub(crate) fn waiting(&self) -> Vec<(u64, FormId, String)> {
+        let mut waits: Vec<_> = self
+            .waits
+            .iter()
+            .map(|(key, wait)| (*key, wait.sender, wait.event.clone()))
+            .collect();
+        waits.sort();
+        waits
+    }
+
     /// The registrations (receiver, its script, sender, event), for saves.
     pub(crate) fn registered(&self) -> Vec<(ObjectId, String, FormId, String)> {
         self.registrations
@@ -51,7 +81,11 @@ impl AnimEvents {
     }
 
     /// Replace the registrations with a save's, and drop the events waiting.
-    pub(crate) fn restore(&mut self, registered: Vec<(ObjectId, String, FormId, String)>) {
+    pub(crate) fn restore(
+        &mut self,
+        registered: Vec<(ObjectId, String, FormId, String)>,
+        waits: Vec<(FormId, String)>,
+    ) {
         self.registrations = registered
             .into_iter()
             .map(|(receiver, script, sender, event)| Registration {
@@ -59,6 +93,13 @@ impl AnimEvents {
                 script,
                 sender,
                 event,
+            })
+            .collect();
+        self.waits = waits
+            .into_iter()
+            .map(|(sender, event)| {
+                let event = event.to_ascii_lowercase();
+                (wait_key(sender, &event), AnimationWait { sender, event })
             })
             .collect();
         self.pending.clear();
@@ -148,7 +189,9 @@ impl Engine {
     /// for them and go to the scripts registered for them.
     pub(crate) fn raise_anim_events(&mut self, sender: FormId, events: &[String]) {
         for ev in events {
-            if self.vm.signal(wait_key(sender, ev)) > 0 {
+            let key = wait_key(sender, ev);
+            if self.vm.signal(key) > 0 {
+                self.anim_events.waits.remove(&key);
                 log::debug!("{sender}: {ev} ends a PlayAnimationAndWait");
             }
             let to: Vec<(ObjectId, String)> = self
