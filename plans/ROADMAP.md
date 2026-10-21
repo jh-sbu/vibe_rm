@@ -508,8 +508,10 @@ game each piece unlocks.
   saved location. The Papyrus VM too: attached scripts with their variables
   and properties, suspended threads (kept at the instruction they waited at),
   `OnInit` done, update timers, and sleep, inventory filter and animation
-  event registrations. `Game.RequestSave` / `RequestAutoSave` (written on the
-  next update), console `save`, `load`, `saves`.
+  event registrations. The weather (current and outgoing, the transition,
+  override and roll timer; optional `WTHR`). `Game.RequestSave` /
+  `RequestAutoSave` (written on the next update), console `save`, `load`,
+  `saves`.
 - Saves retain Story Manager cooldowns, do-all-before-repeating rounds,
   social deadlines, location and body-discovery memory, and changed
   relationship ranks. Optional `STOR` / `RELA` sections preserve older native
@@ -1624,7 +1626,7 @@ game each piece unlocks.
 9. **Saves** (the container, the engine's state and the Papyrus VM are done:
    see Done): threads waiting on message boxes or animation events,
    active magic effects, scene state,
-   AI progress, objects' behaviour graphs, weather and detection; reading the
+   AI progress, objects' behaviour graphs, detection; reading the
    original's `.ess` saves later; a save / load menu (the System page),
    load orders that changed since the save, and the original's refusals to
    save (combat, menus, scripted)

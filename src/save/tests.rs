@@ -11,6 +11,7 @@ use super::file::SaveFile;
 use super::state::{Snapshot, Spot};
 use crate::ai::schedule::Place;
 use crate::engine::{Engine, Location, PLAYER_REF};
+use crate::weather::SavedWeather;
 use crate::world::destruction::DestructionState;
 use crate::world::inventory::{Inventory, LEFT, RIGHT};
 use crate::world_state::{Moved, Wounds};
@@ -18,6 +19,8 @@ use crate::world_state::{Moved, Wounds};
 const SWORD: FormId = FormId(0x800);
 const SHIELD: FormId = FormId(0x801);
 const GEM: FormId = FormId(0x802);
+const WEATHER: FormId = FormId(0x890);
+const WEATHER_OTHER: FormId = FormId(0x891);
 const GLOBAL: FormId = FormId(0x810);
 const QUEST: FormId = FormId(0x820);
 const PERK: FormId = FormId(0x830);
@@ -106,6 +109,13 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     .field(b"DNAM", &dnam)
             }],
         ),
+        Node::top(
+            b"WTHR",
+            [WEATHER, WEATHER_OTHER]
+                .into_iter()
+                .map(|id| RecordBuilder::new(b"WTHR", id))
+                .collect(),
+        ),
         Node::top(b"ARMO", vec![RecordBuilder::new(b"ARMO", SHIELD)]),
         Node::top(b"SLGM", vec![RecordBuilder::new(b"SLGM", GEM)]),
         // An empty interior cell (object id 0x850: block 8, sub-block 2).
@@ -193,6 +203,8 @@ fn play(e: &mut Engine) {
     e.scripts.stats.insert("Locks Picked".into(), 4);
     e.scripts.weapon_usage.record(SWORD);
     e.scripts.weapon_usage.record(SWORD);
+    e.set_weather(WEATHER, false, false);
+    e.force_weather(WEATHER_OTHER, true);
     let quest = papyrus::ObjectId::Form(QUEST.0);
     e.scripts.initialized.insert(quest);
     e.scripts.timers.push(crate::script::Timer {
@@ -366,6 +378,12 @@ fn a_saved_game_loads_into_another_engine_unchanged() {
         crate::stats::StatValue::Name("Save Test Sword".into())
     );
     assert_eq!(b.query_stat("Favorite Weapon"), 0);
+    // The forced weather is on, overriding; releasing it brings back the one
+    // it replaced.
+    assert_eq!(b.current_weather(), Some(WEATHER_OTHER));
+    assert!(b.weather.overridden);
+    b.release_weather_override();
+    assert_eq!(b.current_weather(), Some(WEATHER));
     let inv = &b.inventories[&PLAYER_REF];
     assert_eq!(inv.count(SWORD), 2);
     assert_eq!(inv.hands().0, [Some(SWORD), Some(SWORD), None]);
@@ -839,6 +857,54 @@ fn favorite_weapon_usage_section_is_optional_deterministic_and_validated() {
         let mut malformed = Snapshot::default();
         malformed.weapon_usage = counts;
         malformed.favorite_weapon = favorite;
+        assert!(Snapshot::read(&malformed.write()).is_err());
+    }
+}
+
+#[test]
+fn weather_section_is_optional_and_validated() {
+    let mut s = Snapshot::default();
+    s.weather = SavedWeather {
+        current: Some(WEATHER),
+        outgoing: Some(WEATHER_OTHER),
+        pct: 0.25,
+        overridden: true,
+        before_override: Some(FormId(0x892)),
+        next_roll: 3.5,
+    };
+    let bytes = s.write().to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.weather, s.weather);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    // Saves from before the section keep no weather: the place picks one.
+    let mut old = s.write();
+    old.sections.retain(|(tag, _)| tag != b"WTHR");
+    assert_eq!(
+        Snapshot::read(&old).unwrap().weather,
+        SavedWeather::default()
+    );
+
+    for weather in [
+        SavedWeather {
+            pct: 1.5,
+            ..s.weather
+        },
+        SavedWeather {
+            pct: f32::NAN,
+            ..s.weather
+        },
+        SavedWeather {
+            next_roll: f32::INFINITY,
+            ..s.weather
+        },
+        SavedWeather {
+            current: None,
+            ..s.weather
+        },
+    ] {
+        let mut malformed = Snapshot::default();
+        malformed.weather = weather;
         assert!(Snapshot::read(&malformed.write()).is_err());
     }
 }

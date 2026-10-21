@@ -71,6 +71,12 @@ and function, the instruction they stopped at, locals and return slots), the
 registrations. Arrays are shared by identity in the VM, so they are saved
 once and referred to by index.
 
+The weather (optional `WTHR`): the current and outgoing weathers, how far the
+transition has come, whether an override holds, the weather it replaced, and
+the game hours until the next roll. Older native saves load with no weather,
+so the place picks one as it does for a new game. The regional list isn't
+saved: it is taken again from the place the save loads into.
+
 ## Not saved yet (see `plans/ROADMAP.md`)
 
 - Threads waiting for something the engine tracks by a key (a message box's
@@ -82,8 +88,8 @@ once and referred to by index.
   built in the engine yet.
 - Active magic effects (timed effects, summons, wards), the leveled spell
   rolls, scenes playing, AI and
-  package progress, schedules, objects' behaviour graphs, weather and
-  detection state, and the player's spells held ready (the equipped spells
+  package progress, schedules, objects' behaviour graphs, detection state,
+  and the player's spells held ready (the equipped spells
   are saved with the inventory's hands).
 
 ## Unconfirmed choices
@@ -107,6 +113,17 @@ once and referred to by index.
   other refusals (combat, menus, scripted forbidding) aren't built.
   "Autosaving..." (`sAutoSaving`) is shown for the autosave, which is our guess
   for when the game prints it.
+- **Weather on load.** The local UESP
+  [Save File Format / Weather page](https://en.uesp.net/w/index.php?oldid=2309091)
+  (revision 2309091) lists the original's weather section: climate, weather,
+  the previous weather (only during a transition), a regional weather, the
+  current time, the weather's beginning time, the transition fraction, and
+  some unnamed fields. It doesn't say whether the game re-rolls a loaded
+  place's regional weather, nor what the unnamed fields are. Here the saved
+  weather holds on load, whatever the place's region: the place takes its
+  region without a change, and a region change or the saved roll timer
+  brings a new weather as usual. Whether Skyrim SE does the same is
+  unverified.
 - Console `save` with no name writes `console`.
 - Save names: letters, digits, spaces, `-` and `_`, up to 64.
 
