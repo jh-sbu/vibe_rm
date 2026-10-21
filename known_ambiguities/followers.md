@@ -26,6 +26,14 @@ Implemented in `src/followers.rs` (the flag, who answers for a blow), with
   Assault): "Attacks by followers, summoned, commanded, or reanimated allies
   also count as assault", and "if you ask a follower to commit a witnessed crime
   you will be held responsible".
+- Carry limit (UESP *Skyrim:Carry Weight*, oldid=3630670, "Circumventing":
+  "Followers and Spouses ... have their own limit that cannot be exceeded",
+  about 290 units; *Skyrim:Followers* has no figure). The limit is the
+  follower's `CarryWeight`, from its race (`DATA` offset 48: Nord 300, dog 200
+  in the game's data), the same number the player's is.
+- The refusal is the game's GMST `sTeammateOverencumbered` = "can't carry any
+  more." (`vrm-tool gmst`; UESP *Skyrim Mod:Mod File Format/GMST/Defaults*
+  lists it). Its lowercase start suggests the follower's name comes first.
 - Followers help by faction: `CurrentFollowerFaction` is an ally of the
   player's factions in the data (see `combat-assistance.md`).
 
@@ -45,6 +53,21 @@ Implemented in `src/followers.rs` (the flag, who answers for a blow), with
 - A teammate given armor or a shield by `AddItem` wears it when it is better,
   as for weapons (`test-mod autotest2` saw a teammate wear a cuirass).
 - `canDoFavor` is kept but nothing asks for it yet.
+- **A teammate takes no more than its carry weight**: `Engine::transfer_item`,
+  which the item menus, the fallback UI, gifts and pickpocket placing share,
+  refuses a stack from the player when the teammate's carried weight plus the
+  stack's would exceed its `CarryWeight` (equal fits, as for the player's
+  "over" test). The refusal is the whole stack, so a quantity that doesn't
+  fit moves nothing; the notice is "<name> can't carry any more.". A
+  teammate already over its limit refuses even weightless stacks. Dead
+  teammates are bodies and take anything (UESP's dead drops). Unconfirmed:
+  UESP's Carry Weight page says that when a fortified follower's original
+  limit is exceeded "only one item or stack of items can be added", which may
+  mean the game checks only the weight before a transfer, so one stack can
+  cross the limit. Taking a fitting part of a stack (partial move) is not
+  described anywhere. Manual test: give a Nord follower 300 of weight in a
+  chest, then a stack that crosses 300 and one that fits; compare the notice and
+  the counts.
 
 ## Not done
 

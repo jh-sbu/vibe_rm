@@ -370,3 +370,88 @@ fn escape_and_tab_cancel_the_picker_without_closing_or_mutating_its_parent_menu(
         assert_eq!(e.item_count(CHEST, ITEM), 0);
     }
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn teammate_refuses_a_transfer_that_would_exceed_its_carry_weight() {
+    let (_dir, mut e) = fixture();
+    let player = crate::engine::PLAYER_REF;
+    e.set_player_teammate(ACTOR, true, false);
+    e.set_actor_value(ACTOR, esp::actor_value::CARRY_WEIGHT, 10.0);
+    e.add_item(player, ITEM, 20);
+
+    // A stack that doesn't fit is refused whole, with the game's message.
+    assert_eq!(e.transfer_item(player, ACTOR, ITEM, 11, None), 0);
+    assert_eq!(e.item_count(ACTOR, ITEM), 0);
+    assert_eq!(e.item_count(player, ITEM), 20);
+    let said = e.scripts.notifications.last().map(|n| n.text.clone());
+    assert!(
+        said.is_some_and(|t| t.ends_with("can't carry any more.")),
+        "refusal notice missing"
+    );
+
+    // Exactly the limit fits; then nothing more does.
+    assert_eq!(e.transfer_item(player, ACTOR, ITEM, 10, None), 10);
+    assert_eq!(e.item_count(ACTOR, ITEM), 10);
+    assert_eq!(e.transfer_item(player, ACTOR, ITEM, 1, None), 0);
+    assert_eq!(e.item_count(ACTOR, ITEM), 10);
+
+    // Taking from a full teammate is not limited, and neither is a container.
+    assert_eq!(e.transfer_item(ACTOR, player, ITEM, 4, None), 4);
+    assert_eq!(e.transfer_item(player, CHEST, ITEM, 14, None), 14);
+    assert_eq!(e.item_count(CHEST, ITEM), 14);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn teammate_quantity_picker_moves_only_amounts_that_fit_whole() {
+    let (_dir, mut e) = fixture();
+    let player = crate::engine::PLAYER_REF;
+    e.set_player_teammate(ACTOR, true, false);
+    e.set_actor_value(ACTOR, esp::actor_value::CARRY_WEIGHT, 10.0);
+    e.add_item(player, ITEM, 20);
+    e.menu = Some(crate::items::Menu::Container(ACTOR));
+
+    let mut selection = QuantitySelection::default();
+    // Four fit, leaving six of the ten.
+    selection.open(pending(
+        crate::items::Menu::Container(ACTOR),
+        player,
+        Some(ACTOR),
+        None,
+        4,
+    ));
+    assert_eq!(
+        selection.confirm(&mut e, Some(crate::items::Menu::Container(ACTOR))),
+        QuantityResult::Moved(4)
+    );
+    // Seven would take the teammate over the ten: nothing moves.
+    selection.open(pending(
+        crate::items::Menu::Container(ACTOR),
+        player,
+        Some(ACTOR),
+        None,
+        7,
+    ));
+    assert_eq!(
+        selection.confirm(&mut e, Some(crate::items::Menu::Container(ACTOR))),
+        QuantityResult::Moved(0)
+    );
+    assert_eq!(e.item_count(ACTOR, ITEM), 4);
+    assert_eq!(e.item_count(player, ITEM), 16);
+
+    // Six fit exactly.
+    selection.open(pending(
+        crate::items::Menu::Container(ACTOR),
+        player,
+        Some(ACTOR),
+        None,
+        6,
+    ));
+    assert_eq!(
+        selection.confirm(&mut e, Some(crate::items::Menu::Container(ACTOR))),
+        QuantityResult::Moved(6)
+    );
+    assert_eq!(e.item_count(ACTOR, ITEM), 10);
+    assert_eq!(e.item_count(player, ITEM), 10);
+}
