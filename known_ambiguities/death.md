@@ -38,8 +38,6 @@ in play. Tests: `src/condition/death_tests.rs`.
   checked (no UESP page, no cause enum in CommonLibSSE).
 - `GetKillingBlowLimb`: unsupported; the body part of the killing blow isn't kept
   (the hit's limb values are not recorded and their numbering is unconfirmed).
-- Papyrus `Actor.GetKiller` (CommonLibSSE `Actor::GetKiller`, `myKiller`) is not
-  implemented; the killer is recorded only for deaths in play.
 - Deaths are saved (`DETH`); saves from before it load without them. Placed-dead actors (killed quietly on
   cell load, `kill_actor_quietly`) get no record, so they have no death time or
   killer.
