@@ -19,8 +19,10 @@ stealth points.
   `fSneakSoundLosMult` (0.3) without line of sight.
 - Visual: 0 if the target can't be seen; `(fDetectionSneakLightMod + light
   level) * fSneakLightMult`, times `1 + moving * fSneakLightMoveMult + running
-  * fSneakLightRunMult` (0.01, 0.2 in the game), `(100 - blindness) / 100` and
-  `fSneakStealthboyMult` when invisible.
+  * fSneakLightRunMult` (0.01, 0.2 in the game). While the target sneaks and
+  the observer is out of combat, multiply this by the observer's Blindness
+  actor-value factor `(100 - blindness) / 100`. `fSneakStealthboyMult` when
+  invisible.
 - Observer skill: `fSneakPerceptionSkillMin + (Max - Min) * Sneak / 100`,
   times `1 + alert * fSneakAlertMod + sleeping * fSneakSleepBonus +
   not combat target * fSneakCombatMod` (-0.4 in the game).
@@ -51,6 +53,26 @@ stealth points.
 
 ## Choices made without a source
 
+- **Blindness edges:** UESP's [Skyrim:Sneak](https://en.uesp.net/w/index.php?oldid=3575824)
+  (revision 3575824) gives the detection formula and separates visual and sound
+  terms. Its [Actor Value Indices](https://en.uesp.net/w/index.php?oldid=3596002)
+  (revision 3596002) lists Blindness as actor value 84, a percentage that
+  affects spotting a sneaking target out of combat, default 0. The public
+  [CK Detection category](https://ck.uesp.net/wiki/Category:Detection) gives the
+  visual multiplier `(100 - blindness) / 100`. The engine reads the observer's
+  live actor value and scales only vision; it clamps finite values to 0–100
+  and treats non-finite values as 0 blindness. It applies the value only while
+  the target is sneaking and the observer's `CombatState` is `None`; `Searching`
+  and `Fighting` both bypass it. Mapping the source's “out of combat” to that
+  engine state and the invalid-value handling are implementation choices, not
+  verified Skyrim SE behavior. The console's `sees` flag remains geometric
+  visibility (line of sight, view cone, awake, not invisible), independent of
+  blindness. At 100 blindness visual contribution is zero, but sound and the
+  observer-skill term remain, so this value alone does not guarantee that the
+  total detection is zero. The AV index summarizes its maximum as allowing
+  detection only through sound; this implementation follows the explicit CK
+  factor, which scales vision only, and retains the separate observer-skill
+  term. That outcome has not been verified against Skyrim SE.
 - **Target skill**: the target's Sneak times `fSneakSkillMult` while
   sneaking, 0 otherwise. The sources name a "target skill factor" without
   saying how it is made; `fSneakSkillMult` is used for it by its name.

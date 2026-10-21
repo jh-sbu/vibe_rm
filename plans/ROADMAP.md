@@ -1029,8 +1029,10 @@ game each piece unlocks.
   its exterior multiplier, distance attenuation; sound from movement, worn
   armor weight and running, muffled out of sight; sight within a view cone
   with a clear line, by the light level where the target stands: ambient,
-  unshaded sun and point lights; the observer's Sneak against the sneaking
-  target's). Sleepers see nothing. The player's stealth points drain and refill
+  unshaded sun and point lights. The observer's Blindness actor value reduces
+  only vision while the target sneaks and the observer is out of combat; the
+  observer's Sneak contributes against a sneaking target. Sleepers see nothing.
+  The player's stealth points drain and refill
   with the most any enemy detects them by; enemies attack once they are gone
   or past `iCombatStealthPointDetectionThreshold`. Combat noticing enemies,
   joining fights, crime witnesses and force greets' "player must be detected"
@@ -1374,7 +1376,7 @@ game each piece unlocks.
    - Secret relationship behavior (`known_ambiguities/relationships.md`)
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
-   - Quiet Casting, Shadow Warrior (with casting); blindness, and spells
+   - Quiet Casting, Shadow Warrior (with casting); spells
      and shouts as action sounds (the formula's slots for them are in
      `crate::detection`)
    - Weapon and impact sounds (action sounds, detection events): need the

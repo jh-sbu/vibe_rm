@@ -210,6 +210,9 @@ pub const INVISIBILITY: u32 = 54;
 pub const WARD_POWER: u32 = 63;
 pub const RIGHT_ITEM_CHARGE: u32 = 64;
 pub const LEFT_ITEM_CHARGE: u32 = 82;
+/// Percent by which an actor's vision is impaired while noticing a sneaking
+/// target outside combat.
+pub const BLINDNESS: u32 = 84;
 pub const MOVEMENT_NOISE_MULT: u32 = 92;
 pub const SHOUT_RECOVERY_MULT: u32 = 86;
 pub const DRAGON_SOULS: u32 = 133;
