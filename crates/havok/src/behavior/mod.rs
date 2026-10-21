@@ -32,6 +32,7 @@ fn requires_whole_member_binding(member: &str) -> bool {
             | "syncVariableIndex"
             | "startStateId"
             | "selectedGeneratorIndex"
+            | "indexOfSyncMasterChild"
     )
 }
 
@@ -394,6 +395,8 @@ pub enum Generator {
         parameter: f32,
         min_cyclic: f32,
         max_cyclic: f32,
+        /// Authored `indexOfSyncMasterChild`; -1 selects a runtime-chosen child.
+        sync_master_child: i16,
         flags: u16,
         children: Vec<BlendChild>,
     },
@@ -1333,6 +1336,9 @@ impl<'a> Reader<'a> {
                     parameter: p.f32(o + 0x4C),
                     min_cyclic: p.f32(o + 0x50),
                     max_cyclic: p.f32(o + 0x54),
+                    // Community editor source identifies the integer member;
+                    // installed behavior assets corroborate its signed i16 slot.
+                    sync_master_child: p.i16(o + 0x58),
                     flags: p.u16(o + 0x5A),
                     children,
                 }
@@ -2252,6 +2258,71 @@ mod character_property_tests {
             assert_eq!(r.property_bindings[id].len(), 2);
             assert_eq!(r.bindings[id].len(), 1);
         }
+    }
+
+    #[test]
+    fn blenders_retain_sync_master_index_and_whole_member_bindings() {
+        let mut p = fixture();
+        for at in [0x480, 0x4E0] {
+            p.data[at..at + 0x20].fill(0);
+            p.data[at..at + "indexOfSyncMasterChild".len()]
+                .copy_from_slice(b"indexOfSyncMasterChild");
+        }
+        p.data[0x2D8..0x2DA].copy_from_slice(&1i16.to_le_bytes());
+        p.data[0x2DA..0x2DC].copy_from_slice(&BLEND_SYNC.to_le_bytes());
+        let mut r = Reader {
+            p: &p,
+            classes: [(0x280, "hkbBlenderGenerator")].into(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            property_bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["Unused", "Other", "Third", "Fourth", "Bound"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let id = r.generator(0x280);
+        let Generator::Blender {
+            sync_master_child, ..
+        } = &r.generators[id]
+        else {
+            panic!("expected blender");
+        };
+        assert_eq!(*sync_master_child, 1);
+        assert_eq!(r.bindings[id][0].member, "indexOfSyncMasterChild");
+        assert_eq!(r.bindings[id][0].variable, 2);
+        assert_eq!(r.property_bindings[id][0].member, "indexOfSyncMasterChild");
+        assert_eq!(r.property_bindings[id][0].property, "bound");
+
+        // Bit-selecting one part of this integer must not replace the index.
+        p.data[0x380 + 0x20] = 0;
+        p.data[0x380 + 3 * 0x28 + 0x20] = 0;
+        let mut r = Reader {
+            p: &p,
+            classes: [(0x280, "hkbBlenderGenerator")].into(),
+            ids: Default::default(),
+            generators: vec![],
+            bindings: vec![],
+            property_bindings: vec![],
+            mod_ids: Default::default(),
+            modifiers: vec![],
+            modifier_bindings: vec![],
+            modifier_property_bindings: vec![],
+            character_properties: ["Unused", "Other", "Third", "Fourth", "Bound"]
+                .map(String::from)
+                .to_vec(),
+        };
+        let id = r.generator(0x280);
+        assert!(r.bindings[id].is_empty());
+        assert!(
+            r.property_bindings[id]
+                .iter()
+                .all(|binding| binding.member != "indexOfSyncMasterChild")
+        );
     }
 
     #[test]

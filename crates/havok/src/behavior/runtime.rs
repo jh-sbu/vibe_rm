@@ -1560,6 +1560,8 @@ impl Ctx<'_> {
                 if self.blend_flags(gi, g, *flags) & BLEND_SYNC != 0 {
                     // Synchronised cyclic children share a phase; the cycle length is
                     // the weighted mix of theirs.
+                    // Keep the existing weighted cycle-duration policy; the
+                    // additive-aware weights are used only to choose triggers.
                     let weights = self.blend_weights(gi, g, &[]);
                     let lengths: Vec<f32> = children
                         .iter()
@@ -1577,13 +1579,9 @@ impl Ctx<'_> {
                             phase.min(1.0)
                         };
                         let p = *phase;
-                        // The heaviest child raises the blend's triggers (as Havok's
-                        // sync master), the others just follow its phase.
-                        let master = weights
-                            .iter()
-                            .enumerate()
-                            .max_by(|a, b| a.1.total_cmp(b.1))
-                            .map(|(i, _)| i);
+                        // The selected sync master raises triggers; other children
+                        // follow phase without swallowing events when absent/disabled.
+                        let master = self.sync_master_child(gi, g, children);
                         for (i, c) in children.iter_mut().enumerate() {
                             if let Some(c) = c {
                                 self.set_phase(c, p, wrapped, Some(i) == master);
@@ -1751,12 +1749,7 @@ impl Ctx<'_> {
                 phase: own,
             } => {
                 *own = phase;
-                let weights = self.blend_weights(gi, g, &[]);
-                let master = weights
-                    .iter()
-                    .enumerate()
-                    .max_by(|a, b| a.1.total_cmp(b.1))
-                    .map(|(i, _)| i);
+                let master = self.sync_master_child(gi, g, children);
                 for (i, c) in children.iter_mut().enumerate() {
                     if let Some(c) = c {
                         self.set_phase(c, phase, wrapped, fire && Some(i) == master);
@@ -2062,6 +2055,69 @@ impl Ctx<'_> {
             }
         }
         w
+    }
+
+    /// Select the trigger-producing child for synchronized playback. An authored
+    /// index is honored only when its child is active, non-additive, and has a
+    /// positive resolved weight. Invalid or unusable selections fall back to the
+    /// heaviest eligible child; if every active child is additive, retain one as
+    /// a last-resort trigger source rather than suppressing all events.
+    fn sync_master_child(&self, gi: usize, g: GenId, active: &[Option<Node>]) -> Option<usize> {
+        let Generator::Blender {
+            sync_master_child,
+            children,
+            ..
+        } = &self.shared.graph(gi).generators[g]
+        else {
+            return None;
+        };
+        let authored = (*sync_master_child >= 0).then_some(*sync_master_child as usize);
+        let bound = self
+            .bound(gi, g, "indexOfSyncMasterChild")
+            .filter(|value| value.is_finite() && value.fract() == 0.0)
+            .map(|value| value as i64);
+        // -1 is the explicit automatic-selection sentinel. Invalid bindings
+        // (fractional/nonfinite or other negative indices) retain authored data.
+        let resolved = match bound {
+            Some(-1) => None,
+            Some(index) if index >= 0 => usize::try_from(index).ok(),
+            Some(_) => authored,
+            None => authored,
+        };
+        let additive: Vec<bool> = active
+            .iter()
+            .map(|child| child.as_ref().is_some_and(is_additive))
+            .collect();
+        let weights = self.blend_weights(gi, g, &additive);
+        let active_weighted = |index: usize| {
+            children
+                .get(index)
+                .is_some_and(|child| child.generator.is_some())
+                && active.get(index).is_some_and(Option::is_some)
+                && weights
+                    .get(index)
+                    .is_some_and(|weight| weight.is_finite() && *weight > 0.0)
+        };
+        let eligible =
+            |index: usize| active_weighted(index) && !additive.get(index).copied().unwrap_or(false);
+        resolved
+            .filter(|&index| eligible(index))
+            .or_else(|| {
+                weights
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| eligible(*index))
+                    .max_by(|a, b| a.1.total_cmp(b.1))
+                    .map(|(index, _)| index)
+            })
+            .or_else(|| {
+                weights
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| active_weighted(*index))
+                    .max_by(|a, b| a.1.total_cmp(b.1))
+                    .map(|(index, _)| index)
+            })
     }
 
     // ---------------------------------------------------------------- output
@@ -4293,6 +4349,7 @@ mod tests {
             parameter: 0.0,
             min_cyclic: 0.0,
             max_cyclic: 0.0,
+            sync_master_child: -1,
             flags: 0,
             children: vec![BlendChild {
                 generator: Some(2),
@@ -4530,6 +4587,7 @@ mod tests {
                     parameter: 0.0,
                     min_cyclic: 0.0,
                     max_cyclic: 1.0,
+                    sync_master_child: -1,
                     flags: BLEND_PARAMETRIC | BLEND_SYNC,
                     children: vec![
                         BlendChild {
@@ -4582,6 +4640,7 @@ mod tests {
                     parameter: 0.125,
                     min_cyclic: 0.0,
                     max_cyclic: 1.0,
+                    sync_master_child: -1,
                     flags: BLEND_PARAMETRIC | BLEND_CYCLIC | BLEND_SYNC,
                     children: vec![
                         BlendChild {
@@ -4943,6 +5002,7 @@ mod tests {
             parameter: 0.0,
             min_cyclic: 0.0,
             max_cyclic: 1.0,
+            sync_master_child: -1,
             flags: 0,
             children,
         }
@@ -4977,6 +5037,7 @@ mod tests {
                     parameter: 1.0,
                     min_cyclic: 0.0,
                     max_cyclic: 4.0,
+                    sync_master_child: -1,
                     flags,
                     children: vec![first, second],
                 },
@@ -5091,6 +5152,216 @@ mod tests {
         assert_eq!(i.samples()[0].time, 0.25);
         assert_eq!(i.samples()[1].time, 0.5);
         assert!(i.samples().iter().all(|s| s.wrapped));
+    }
+
+    #[test]
+    fn sync_master_index_bindings_override_authored_and_invalid_values_fall_back() {
+        for (variable_value, property_value, expected) in [
+            (Some(1.0), 0.0, "Second"), // Variable overrides the property.
+            (Some(0.0), 1.0, "First"),
+            (Some(f32::NAN), 1.0, "First"), // Invalid variable keeps authored index.
+            (Some(0.5), 0.0, "First"),      // Fractional variable keeps authored index.
+            (Some(99.0), 0.0, "Second"),    // Out of range uses automatic selection.
+            (Some(-1.0), 0.0, "Second"),    // -1 explicitly requests automatic choice.
+            (None, 0.0, "First"),           // Property overrides authored index.
+        ] {
+            let mut g = flags_property_graph(0);
+            if let Generator::Blender {
+                sync_master_child, ..
+            } = &mut g.generators[0]
+            {
+                *sync_master_child = 0;
+            }
+            g.property_bindings[0].push(property("indexOfSyncMasterChild", "Master"));
+            if let Some(value) = variable_value {
+                let index = g.add_variable("MasterIndex", VarType::Int, value);
+                g.bindings[0].push(Binding {
+                    member: "indexOfSyncMasterChild".into(),
+                    variable: index,
+                });
+            }
+            let mut i = property_instance(
+                g,
+                &[
+                    ("blendflags", BLEND_SYNC as f32),
+                    ("master", property_value),
+                ],
+            );
+            i.update(0.45, &mut durations);
+            assert_eq!(
+                i.take_raised()
+                    .iter()
+                    .map(|event| event.event.as_str())
+                    .collect::<Vec<_>>(),
+                [expected]
+            );
+        }
+    }
+
+    #[test]
+    fn sync_master_variable_changes_trigger_source_while_playing() {
+        let mut g = flags_property_graph(BLEND_SYNC);
+        let variable = g.add_variable("MasterIndex", VarType::Int, 0.0);
+        g.bindings[0].push(Binding {
+            member: "indexOfSyncMasterChild".into(),
+            variable,
+        });
+        let Generator::Clip { triggers, .. } = &mut g.generators[2] else {
+            unreachable!();
+        };
+        triggers[0].time = 0.8;
+        let mut i = instance(g);
+        i.update(0.4, &mut durations);
+        assert_eq!(
+            i.take_raised()
+                .iter()
+                .map(|event| event.event.as_str())
+                .collect::<Vec<_>>(),
+            ["First"]
+        );
+        assert!(i.set_variable("MasterIndex", 1.0));
+        i.update(0.4, &mut durations);
+        assert_eq!(
+            i.take_raised()
+                .iter()
+                .map(|event| event.event.as_str())
+                .collect::<Vec<_>>(),
+            ["Second"]
+        );
+    }
+
+    #[test]
+    fn sync_master_selection_is_shared_by_nested_blends_and_ignores_additive_or_absent_children() {
+        let a = clip(
+            "A",
+            ClipMode::Looping,
+            vec![Trigger {
+                time: 0.2,
+                from_end: false,
+                event: 0,
+                payload: None,
+            }],
+        );
+        let b = clip(
+            "B",
+            ClipMode::Looping,
+            vec![Trigger {
+                time: 0.4,
+                from_end: false,
+                event: 1,
+                payload: None,
+            }],
+        );
+        let c = clip(
+            "C",
+            ClipMode::Looping,
+            vec![Trigger {
+                time: 0.1,
+                from_end: false,
+                event: 2,
+                payload: None,
+            }],
+        );
+        // An absent explicit child must fall back rather than swallowing events.
+        let mut direct = flags_property_graph(BLEND_SYNC);
+        let Generator::Blender {
+            children,
+            sync_master_child,
+            ..
+        } = &mut direct.generators[0]
+        else {
+            unreachable!();
+        };
+        *sync_master_child = 99;
+        children[0].generator = None;
+        direct.generators[1] = a.clone();
+        direct.generators[2] = b.clone();
+        let mut i = instance(direct);
+        i.update(0.45, &mut durations);
+        assert_eq!(
+            i.take_raised()
+                .iter()
+                .map(|event| event.event.as_str())
+                .collect::<Vec<_>>(),
+            ["Second"]
+        );
+
+        struct AdditiveClips;
+        impl ClipSource for AdditiveClips {
+            fn duration(&mut self, animation: &str) -> Option<f32> {
+                durations(animation)
+            }
+            fn additive(&mut self, animation: &str) -> bool {
+                animation == "Loop"
+            }
+        }
+        let mut additive = flags_property_graph(BLEND_SYNC);
+        if let Generator::Blender {
+            sync_master_child, ..
+        } = &mut additive.generators[0]
+        {
+            *sync_master_child = 1;
+        }
+        let mut i = Instance::new(
+            Shared::new(Arc::new(Project {
+                graphs: vec![("g".into(), additive)],
+                character: None,
+            })),
+            1,
+        );
+        i.update(0.45, &mut AdditiveClips);
+        assert_eq!(
+            i.take_raised()
+                .iter()
+                .map(|event| event.event.as_str())
+                .collect::<Vec<_>>(),
+            ["First"]
+        );
+
+        let mut inner = masked_blend(
+            "Inner",
+            vec![masked_child(2, None, None), masked_child(3, None, None)],
+        );
+        if let Generator::Blender {
+            sync_master_child, ..
+        } = &mut inner
+        {
+            *sync_master_child = 1;
+        }
+        let mut outer = masked_blend(
+            "Outer",
+            vec![masked_child(1, None, None), masked_child(4, None, None)],
+        );
+        if let Generator::Blender {
+            flags,
+            sync_master_child,
+            ..
+        } = &mut outer
+        {
+            *flags = BLEND_SYNC;
+            *sync_master_child = 0;
+        }
+        let g = BehaviorGraph::new(
+            "NestedSync",
+            Some(0),
+            vec![outer, inner, a, b, c],
+            vec!["First".into(), "Second".into(), "Outer".into()],
+        );
+        let mut i = instance(g);
+        i.update(0.45, &mut durations);
+        assert_eq!(
+            i.take_raised()
+                .iter()
+                .map(|event| event.event.as_str())
+                .collect::<Vec<_>>(),
+            ["Second"]
+        );
+
+        // Trigger-master selection is only used for synchronized playback.
+        let unsynced = flags_property_graph(0);
+        let mut i = instance(unsynced);
+        i.update(0.45, &mut durations);
+        assert_eq!(i.take_raised().len(), 2);
     }
 
     #[test]
@@ -6541,6 +6812,7 @@ mod tests {
                 parameter: 0.0,
                 min_cyclic: 0.0,
                 max_cyclic: 1.0,
+                sync_master_child: -1,
                 flags: BLEND_PARAMETRIC,
                 children: vec![child(1, 0.0), child(2, 1.0), child(3, 2.0)],
             },

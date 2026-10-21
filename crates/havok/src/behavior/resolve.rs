@@ -407,6 +407,7 @@ mod tests {
             parameter: 0.0,
             min_cyclic: 0.0,
             max_cyclic: 1.0,
+            sync_master_child: -1,
             flags: 0,
             children: vec![BlendChild {
                 generator: Some(1),

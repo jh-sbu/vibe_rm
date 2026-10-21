@@ -241,6 +241,10 @@ game each piece unlocks.
   `flags` inputs consistently across pose weights, synchronized timing and
   trigger masters. Integer, bit-binding and lifecycle limits:
   `known_ambiguities/blender-flags-properties.md`
+- Synchronized blenders retain the signed `indexOfSyncMasterChild` input and
+  use authored, variable or property selection for trigger routing in direct
+  and nested blends. Automatic fallback and runtime-parity limits:
+  `known_ambiguities/blender-sync-master.md`
 - Integer generator inputs exclude unsupported bit selectors before evaluating
   complete enums and indices, preserving authored fallbacks and supported
   whole-member bindings (`known_ambiguities/integer-generator-bit-bindings.md`).
@@ -1327,9 +1331,9 @@ game each piece unlocks.
    - Chooser start states, selectors' own blends
      (`known_ambiguities/selectors.md`)
    - NPCs strafing (`Direction`: see the player's body), sprinting; character
-     properties on remaining generator members (clip `enforcedDuration` is supported),
-     blender-child members beyond `weight`
-     and `boneWeights`, and transition-effect members beyond `duration`,
+     properties on remaining generator members (clip `enforcedDuration` and
+     blender `indexOfSyncMasterChild` are supported), blender-child members
+     beyond `weight` and `boneWeights`, and transition-effect members beyond `duration`,
      `selfTransitionMode`, `eventMode`, the supported subset of `blendCurve`,
      compound-target behavior for `toGeneratorStartTimeFraction`, and source
      end-time behavior beyond direct single-play clips and transparent wrappers,
