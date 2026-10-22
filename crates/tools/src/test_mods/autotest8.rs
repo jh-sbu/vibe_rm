@@ -182,19 +182,19 @@ fn aliases() -> Vec<(u32, &'static str, usize)> {
         .collect()
 }
 
-/// `Get(Int n)`: our actor with object id `n`, None when the game has no
-/// such reference.
-fn get_fn() -> FunctionBuilder {
+/// `Get(Int n)`: our actor with object id `n` in `plugin`, None when the
+/// game has no such reference.
+pub(super) fn get_fn(plugin: &str) -> FunctionBuilder {
     let mut c = Code::new("Actor");
     let n = c.param("n", "Int");
-    let f = c.global("Game", "GetFormFromFile", [n, string(PLUGIN)]);
+    let f = c.global("Game", "GetFormFromFile", [n, string(plugin)]);
     let a = c.temp("Actor");
     c.cast(a.clone(), f);
     c.finish(a)
 }
 
 /// Whether `a` is None.
-fn is_none(c: &mut Code, a: Arg) -> Arg {
+pub(super) fn is_none(c: &mut Code, a: Arg) -> Arg {
     let none = c.temp("Actor");
     c.cast(none.clone(), Arg::None);
     c.calc(op::CMP_EQ, "Bool", a, none)
@@ -202,7 +202,7 @@ fn is_none(c: &mut Code, a: Arg) -> Arg {
 
 /// `Line(Int n, ObjectReference m)`: `Where` our actor `n` is (from marker
 /// `m`), or that the game has none.
-fn line_fn() -> FunctionBuilder {
+pub(super) fn line_fn() -> FunctionBuilder {
     let mut c = Code::new("String");
     let n = c.param("n", "Int");
     let m = c.param("m", "ObjectReference");
@@ -217,7 +217,7 @@ fn line_fn() -> FunctionBuilder {
 }
 
 /// `Loaded(Int n)`: whether our actor `n` is there with its 3D loaded.
-fn loaded_fn() -> FunctionBuilder {
+pub(super) fn loaded_fn() -> FunctionBuilder {
     let mut c = Code::new("Bool");
     let n = c.param("n", "Int");
     let a = c.own("Get", "Actor", [n]);
@@ -378,7 +378,7 @@ fn scripts() -> Result<Vec<(String, Vec<u8>)>> {
         .function("OnUpdate", on_update("autotest8", "a minute", TESTS))
         .function("Num", num())
         .function("Where", where_fn())
-        .function("Get", get_fn())
+        .function("Get", get_fn(PLUGIN))
         .function("Line", line_fn())
         .function("Loaded", loaded_fn())
         .function("TestUnloaded", test_unloaded())

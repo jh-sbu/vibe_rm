@@ -15,6 +15,10 @@ markers on the ground floor, the trader unloaded.
 - The game moves them before the cell loads, along their way at a speed
   (two actors had both gone 112.13 units when first read), within seconds
   of the save loading.
+- Every actor reference moves so, flagged persistent or not, near the
+  player or far (`test-mod autotest8` and `autotest9`, 2026-10-22: the
+  Riverwood Trader, Whiterun, Winterhold, an exterior west of Solitude and
+  Darkwater Pass's worldspace, interiors and exteriors alike).
 - Travel: on the straight line from where the actor stood to the target,
   height included, stopping 40 units short in XY with radius 0 or 32, and
   10 inside the radius with 128 (118 short). An actor already that near in
@@ -62,16 +66,19 @@ markers on the ground floor, the trader unloaded.
   actors on their package's target, now without spreading them; whether the
   game moves loaded actors there by the same rule as unloaded ones isn't
   observed.
-- **30 or 40 short.** `test-mod autotest8` found two Travel actors with
-  radius 0, sharing no marker, stopped 30 short in XY where three others
-  stopped 40 (autotest7's StackedA was 30 too). Their lines were shorter
-  (226 and 299 against 368 to 431), but what sets the distance isn't
-  known; the engine uses 40.
-- **How far away.** autotest8 found actor references moved while unloaded
-  whether flagged persistent or not, so the engine schedules every one.
-  That was one interior beside the player (outdoors in Riverwood); whether
-  the game also moves non-persistent actors far from the player (another
-  hold, a dungeon) isn't observed.
+- **In a new game.** autotest9 run in a new game (`coc Riverwood` from the
+  main menu) found every actor exactly on its marker while unloaded (0
+  off, height 0, by the first reading 10 s in), where the same plugin
+  added to a save had them stopped 40 or 50 short on their lines. Whether
+  a new game puts actors on their package's target at once, rather than
+  moving them as later, isn't known beyond that; the engine moves them
+  the same way in both.
+- **30, 40 or 50 short.** Most Travel actors with radius 0 stop 40 short
+  in XY, but not all: `test-mod autotest8` had two of five at 30 (and
+  autotest7's StackedA was 30), `autotest9` six of eighteen at 50 and none
+  at 30, sharing no marker. Nothing in the line's length, direction or
+  place, or the actor's persistence, sorts them; always a multiple of 10,
+  and the mix differed between runs. The engine uses 40.
 
 ## Package marker headings
 
