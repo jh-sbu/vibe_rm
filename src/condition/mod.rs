@@ -841,6 +841,18 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         561 => b(subject.is_some_and(|s| e.ref_types(s).contains(&p1))),               // HasRefType
         563 => b(subject_location(e, subject)
             .is_some_and(|l| !e.location_refs_of_type(l, p1).is_empty())), // LocationHasRefType
+        // The references of a ref type in a location (or inside it), the living
+        // and the dead ones; the alias forms ask about the location alias's.
+        591 | 592 => Some(e.location_population(p1, FormId(c.p2), c.func == 592) as f32), // GetRefTypeDeadCount / GetRefTypeAliveCount
+        600 | 601 => Some(match alias(e, ctx, c.p1) {
+            Some(l) => e.location_population(l, FormId(c.p2), c.func == 601),
+            None => 0,
+        } as f32), // GetLocAliasRefTypeDeadCount / GetLocAliasRefTypeAliveCount
+        608 => Some(
+            alias(e, ctx, c.p1)
+                .and_then(|l| e.location_keyword_data.get(&(l, FormId(c.p2))).copied())
+                .unwrap_or(0.0),
+        ), // GetKeywordDataForAlias
         503 => b(true), // GetAllowWorldInteractions
         641 => b(subj_base.is_some_and(|n| {
             e.lo.get(n)
