@@ -795,11 +795,17 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         567 => b(editor_location(e, subject)
             .zip(alias(e, ctx, c.p1))
             .is_some_and(|(l, a)| e.location_within(l, a))), // GetIsEditorLocAlias
-        181 | 604 => {
-            // HasSameEditorLocAsRefAlias / IsInSameCurrentLocAsRefAlias (alias, keyword):
-            // both locations, or their parents with the keyword, are the same.
-            let other = alias(e, ctx, c.p1);
-            let (mine, theirs) = if c.func == 181 {
+        180 | 181 | 603 | 604 => {
+            // HasSameEditorLocAsRef / IsInSameCurrentLocAsRef (a reference, keyword)
+            // and their Alias forms: both locations, or their parents with the
+            // keyword, are the same.
+            let other = if matches!(c.func, 180 | 603) {
+                named(p1)
+            } else {
+                alias(e, ctx, c.p1)
+            };
+            let editor = c.func < 200;
+            let (mine, theirs) = if editor {
                 (
                     editor_location(e, subject),
                     other.and_then(|r| e.editor_location(r)),
@@ -814,6 +820,19 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             let up = |l: Option<FormId>| l.and_then(|l| e.location_with_keyword(l, kw));
             b(up(mine).is_some_and(|m| up(theirs) == Some(m)))
         }
+        // The subject is in a location (or inside one) a form list names.
+        444 => b(subject_location(e, subject)
+            .is_some_and(|l| e.formlist(p1).iter().any(|&t| e.location_within(l, t)))), // GetInCurrentLocFormList
+        // Some loaded cell lies in the location (or inside it).
+        625 => b(e
+            .loaded_locations()
+            .into_iter()
+            .any(|l| e.location_within(l, p1))), // IsLocationLoaded
+        626 => b(alias(e, ctx, c.p1).is_some_and(|t| {
+            e.loaded_locations()
+                .into_iter()
+                .any(|l| e.location_within(l, t))
+        })), // IsLocAliasLoaded
         605 => b(alias(e, ctx, c.p1) == Some(FormId(c.p2))), // LocAliasIsLocation
         610 => b(alias(e, ctx, c.p1).is_some_and(|l| e.has_keyword(l, FormId(c.p2)))), // LocAliasHasKeyword
         561 => b(subject.is_some_and(|s| e.ref_types(s).contains(&p1))),               // HasRefType

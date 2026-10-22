@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Location conditions: the reference forms of `HasSameEditorLocAsRef` and
+  `IsInSameCurrentLocAsRef`, `GetInCurrentLocFormList`, `IsLocationLoaded`
+  and `IsLocAliasLoaded`. Choices: `known_ambiguities/status-conditions.md`
 - `IsPCSleeping` and `IsPC1stPerson` read the sleep menu's hours and the
   camera. Choices: `known_ambiguities/status-conditions.md`
 - `GetXPForNextLevel` gives the player's next level-up cost.
