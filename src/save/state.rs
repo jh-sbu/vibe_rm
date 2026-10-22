@@ -20,6 +20,7 @@
 //! `SRSQ` (ordered pending scene restarts),
 //! `SFGT` (scene force-greet completion markers),
 //! `RLSP` (rolled leveled spell-list results),
+//! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
@@ -131,6 +132,7 @@ pub struct Snapshot {
     pub scene_restarts: Vec<FormId>,
     pub scene_force_greeted: Vec<FormId>,
     pub rolled_spells: Vec<crate::magic::SavedRolledSpell>,
+    pub ward_states: HashMap<FormId, (i32, f32)>,
     pub vm: super::vm::VmSnapshot,
 }
 
@@ -545,6 +547,7 @@ impl Snapshot {
             scene_restarts: e.saved_scene_restarts(),
             scene_force_greeted: e.saved_scene_force_greeted(),
             rolled_spells: e.saved_rolled_spells(),
+            ward_states: e.magic.ward_states.clone(),
             vm: super::vm::VmSnapshot {
                 vm: e.vm.export(),
                 initialized: s.initialized.iter().copied().collect(),
@@ -1088,6 +1091,17 @@ impl Snapshot {
             }
             file.add(b"RLSP", w.0);
         }
+
+        if !self.ward_states.is_empty() {
+            let mut w = Writer::default();
+            w.len(self.ward_states.len());
+            for (actor, (state, remaining)) in sorted(&self.ward_states) {
+                w.form(actor);
+                w.i32(*state);
+                w.f32(*remaining);
+            }
+            file.add(b"WSTA", w.0);
+        }
         self.vm.write(&mut file);
         file
     }
@@ -1495,6 +1509,37 @@ impl Snapshot {
                     list,
                     spells,
                 });
+            }
+            r.finish()?;
+        }
+        if file
+            .sections
+            .iter()
+            .filter(|(tag, _)| tag == b"WSTA")
+            .count()
+            > 1
+        {
+            return Err(Corrupt("duplicate WSTA section".into()));
+        }
+        if let Some(data) = file.section(b"WSTA") {
+            let mut r = Reader::new(data);
+            let mut previous = None;
+            for _ in 0..r.count(12)? {
+                let actor = r.form()?;
+                let state = r.i32()?;
+                let remaining = r.f32()?;
+                if actor.is_null()
+                    || !matches!(state, 1 | 2)
+                    || !remaining.is_finite()
+                    || remaining <= 0.0
+                    || previous.is_some_and(|previous| previous >= actor)
+                {
+                    return Err(Corrupt(
+                        "invalid, duplicate or unsorted ward-hit state".into(),
+                    ));
+                }
+                previous = Some(actor);
+                s.ward_states.insert(actor, (state, remaining));
             }
             r.finish()?;
         }
@@ -1949,6 +1994,15 @@ impl Snapshot {
             &self.scene_force_greeted,
         )?;
         e.validate_saved_rolled_spells(&self.rolled_spells)?;
+        anyhow::ensure!(
+            self.ward_states.iter().all(|(actor, (state, remaining))| {
+                !actor.is_null()
+                    && matches!(state, 1 | 2)
+                    && remaining.is_finite()
+                    && *remaining > 0.0
+            }),
+            "save has invalid ward-hit state"
+        );
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.discard_conversation_for_load();
@@ -2020,6 +2074,7 @@ impl Snapshot {
         e.casting.restore_power_uses(self.power_uses);
         e.magic.souls_taken = self.spent_souls;
         e.restore_rolled_spells(self.rolled_spells);
+        e.magic.ward_states = self.ward_states;
         let ws = &mut e.world_state;
         ws.alerted = self.alerted;
         ws.dead = self.dead;

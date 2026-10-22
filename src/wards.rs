@@ -584,4 +584,45 @@ mod tests {
         assert_eq!(e.actor_value(PLAYER_REF, av::WARD_POWER), 0.0);
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn a_real_ward_hit_state_and_remaining_hold_survive_save_load() {
+        let (dir, mut source) = ward_engine(25.0);
+        raise_ward(&mut source, 1.0);
+        assert!(source.actor_value(PLAYER_REF, av::WARD_POWER) > 25.0);
+        assert!(!source.apply_cast(FIRE, SOMEONE, PLAYER_REF, None, false));
+        assert_eq!(source.ward_state(PLAYER_REF), ABSORBED);
+        source.update_wards(0.25);
+        assert!((source.magic.ward_states[&PLAYER_REF].1 - 0.75).abs() < 0.001);
+
+        let bytes = crate::save::state::Snapshot::capture(&source)
+            .write()
+            .to_bytes();
+        let mut loaded = crate::stats::action_tests::headless_engine(&dir, "Wards.esp");
+        loaded.magic.ward_states.insert(PLAYER_REF, (BROKEN, 0.1));
+        crate::save::state::Snapshot::read(
+            &crate::save::file::SaveFile::from_bytes(&bytes).unwrap(),
+        )
+        .unwrap()
+        .apply(&mut loaded)
+        .unwrap();
+
+        assert_eq!(loaded.ward_state(PLAYER_REF), ABSORBED);
+        assert!((loaded.magic.ward_states[&PLAYER_REF].1 - 0.75).abs() < 0.001);
+        loaded.update_wards(0.5);
+        assert_eq!(loaded.ward_state(PLAYER_REF), ABSORBED);
+        loaded.update_wards(0.26);
+        assert_eq!(loaded.ward_state(PLAYER_REF), 0);
+
+        loaded.magic.ward_states.insert(PLAYER_REF, (BROKEN, 0.5));
+        let mut legacy = crate::save::file::SaveFile::from_bytes(&bytes).unwrap();
+        legacy.sections.retain(|(tag, _)| tag != b"WSTA");
+        crate::save::state::Snapshot::read(&legacy)
+            .unwrap()
+            .apply(&mut loaded)
+            .unwrap();
+        assert_eq!(loaded.ward_state(PLAYER_REF), 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

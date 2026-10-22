@@ -128,7 +128,7 @@ saved: it is taken again from the place the save loads into.
   a warning. Scripts on active magic effects are dropped with the effects.
   Registrations other than these (key, LOS gain, tracked hits...) aren't
   built in the engine yet.
-- Active magic effects (timed effects, summons, wards), live player
+- Active magic effects (timed effects, summons and ward spells), live player
   conversations, actor
   procedure/animation progress, AI package progress
   and schedules, objects' behaviour
@@ -136,6 +136,10 @@ saved: it is taken again from the place the save loads into.
   alone are saved),
   and the player's spells held ready (the equipped spells
   are saved with the inventory's hands).
+- Ward-hit outcome and remaining `IsWardState` time are preserved separately
+  in optional `WSTA`; this does not resume an active ward spell or its graph
+  animation. The one-second hold is a native runtime policy, not a Skyrim SE
+  save-format claim (`known_ambiguities/wards.md`).
 
 ## Unconfirmed choices
 

@@ -658,8 +658,10 @@ game each piece unlocks.
   `Dispel` and updates. Console `effects`, `addspell`, `removespell`, `cast`,
   `dispelallspells`; vrm-tool `magic`. Native saves retain per-actor leveled
   spell-list rolls, including empty results, in optional `RLSP`; older saves
-  clear the roll cache. Open questions: `known_ambiguities/magic.md`,
-  `known_ambiguities/npc-templates.md`
+  clear the roll cache. Optional `WSTA` preserves ward-hit `IsWardState`
+  outcomes and their remaining native hold time, but not active ward effects.
+  Open questions: `known_ambiguities/magic.md`,
+  `known_ambiguities/npc-templates.md`, `known_ambiguities/wards.md`
 - Timed invisibility ends on resolved combat melee/bashes (including misses),
   arrow release, actual spell delivery and player activation, including scripts'
   `Activate(player)`. Charging and invisibility renewal preserve it; companion
