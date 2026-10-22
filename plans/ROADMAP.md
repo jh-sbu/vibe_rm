@@ -5,6 +5,8 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- `GetKeywordItemCount` totals the carried items with a keyword.
+  Choices: `known_ambiguities/status-conditions.md`
 - `GetIsPlayableRace` reads the subject's race's Playable flag.
   Choices: `known_ambiguities/status-conditions.md`
 - Platform conditions: `IsWin32` holds, `IsXBox`, `IsPS3` and `IsGoreDisabled`

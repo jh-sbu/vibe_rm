@@ -580,6 +580,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .and_then(|s| e.actor_voice_type(s))
             .is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))),   // HasKeyword
+        465 => Some(subject.map_or(0, |s| e.keyword_item_count(s, p1)) as f32), // GetKeywordItemCount
         // The subject's race (templates' `RNAM`, as `SameRace` reads it) is a
         // playable one.
         254 => b(subject
@@ -1178,6 +1179,22 @@ impl Engine {
         self.npc_factions(b)
             .iter()
             .any(|&(f, r)| r >= 0 && mine.contains(&f))
+    }
+
+    /// How many items with the keyword a reference carries (its starting
+    /// inventory until it has changed, as `item_count` reads it).
+    pub fn keyword_item_count(&self, r: FormId, keyword: FormId) -> i32 {
+        let held = self
+            .inventories
+            .get(&r)
+            .cloned()
+            .or_else(|| self.starting_inventory(r))
+            .unwrap_or_default();
+        held.items
+            .iter()
+            .filter(|&&(item, n)| n > 0 && self.has_keyword(item, keyword))
+            .map(|&(_, n)| n)
+            .sum()
     }
 
     /// Whether two actors are of the same race (their bases' `RNAM`).
