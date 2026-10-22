@@ -180,3 +180,25 @@ supported and share their code.
   of the player's worldspace. An unloaded interior never counts.
 - A null reference parameter in `HasSameEditorLocAsRef` or
   `IsInSameCurrentLocAsRef` names nothing and fails.
+
+## GetFactionCombatReaction
+
+`GetFactionCombatReaction` (410, two factions) is the group combat reaction the
+first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
+
+### What is known
+
+- UESP Skyrim Mod:Mod File Format/Raw Function Data (oldid 3411473) gives
+  `Ref.GetFactionCombatReaction(Faction, Faction)`. The reaction values are the
+  `FACT` `XNAM` "Group Combat Reaction" field that the combat code already
+  reads (`faction_reaction`).
+
+### Unconfirmed choices
+
+- Only the first faction's `XNAM` list is read; the answer need not be mutual.
+  The AI's own faction test takes the strongest reaction between two lists of
+  factions in both directions of membership, which this does not.
+- A faction towards itself is an ally (2), as the AI treats shared membership;
+  a pair with no entry is neutral (0).
+- `GetFactionRelation` (449, an actor) stays unsupported: nothing public says
+  what it returns.

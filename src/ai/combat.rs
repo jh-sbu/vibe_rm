@@ -1533,6 +1533,25 @@ impl Engine {
         best
     }
 
+    /// How one faction regards another in combat (`XNAM` group combat reaction
+    /// on the first: 0 neutral, 1 enemy, 2 ally, 3 friend); a faction is its own
+    /// ally and anything unlisted is neutral. The first's list alone counts, so
+    /// the answer need not be mutual.
+    pub(crate) fn faction_combat_reaction(&self, from: FormId, to: FormId) -> u32 {
+        if from == to {
+            return 2;
+        }
+        let Some(rec) = self.lo.get(from) else {
+            return 0;
+        };
+        rec.subrecords()
+            .filter(|s| s.tag.0 == *b"XNAM" && s.data.len() >= 12)
+            .filter(|s| rec.fid(s.form_id(0)) == to)
+            .map(|s| u32::from_le_bytes(s.data[8..12].try_into().unwrap()))
+            .next()
+            .unwrap_or(0)
+    }
+
     /// Start (or switch) an actor's fight with `target`: weapons out.
     pub fn start_combat(&mut self, actor: FormId, target: FormId) -> bool {
         if actor == target {

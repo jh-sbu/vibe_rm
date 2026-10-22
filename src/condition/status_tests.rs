@@ -39,6 +39,9 @@ const INN: FormId = FormId(0x871);
 const FORT: FormId = FormId(0x872);
 const HOLD_KEYWORD: FormId = FormId(0x873);
 const LIST_OF_INNS: FormId = FormId(0x874);
+const WOLVES: FormId = FormId(0x880);
+const HUNTERS: FormId = FormId(0x881);
+const BEARS: FormId = FormId(0x882);
 
 struct Fixture(std::path::PathBuf);
 
@@ -76,6 +79,13 @@ fn fixture() -> (Fixture, Engine) {
     };
     let actor = |id, base| RecordBuilder::new(b"ACHR", id).form(b"NAME", base);
     // An interior cell with its (temporary) references.
+    // `XNAM`: the other faction, a modifier and the group combat reaction.
+    let xnam = |other: FormId, reaction: u32| {
+        let mut d = other.0.to_le_bytes().to_vec();
+        d.extend_from_slice(&0i32.to_le_bytes());
+        d.extend_from_slice(&reaction.to_le_bytes());
+        d
+    };
     let locations = [(CELL_A, INN), (CELL_B, FORT)];
     let cell = |id: FormId, owner: Option<FormId>, refs: Vec<RecordBuilder>| {
         let mut record = RecordBuilder::new(b"CELL", id).field(b"DATA", &[1, 0]);
@@ -152,7 +162,18 @@ fn fixture() -> (Fixture, Engine) {
             b"FLST",
             vec![RecordBuilder::new(b"FLST", LIST_OF_INNS).form(b"LNAM", INN)],
         ),
-        Node::top(b"FACT", vec![RecordBuilder::new(b"FACT", GUILD)]),
+        Node::top(
+            b"FACT",
+            vec![
+                RecordBuilder::new(b"FACT", GUILD),
+                // Wolves hate hunters and befriend bears; hunters list nothing.
+                RecordBuilder::new(b"FACT", WOLVES)
+                    .field(b"XNAM", &xnam(HUNTERS, 1))
+                    .field(b"XNAM", &xnam(BEARS, 3)),
+                RecordBuilder::new(b"FACT", HUNTERS),
+                RecordBuilder::new(b"FACT", BEARS),
+            ],
+        ),
         Node::top(b"MISC", vec![RecordBuilder::new(b"MISC", CRATE)]),
         Node::top(
             b"RACE",
@@ -426,4 +447,19 @@ fn location_form_lists_and_loaded_locations() {
     assert!(is(&e, PLAIN_REF, 625, INN.0, 1.0));
     assert!(is(&e, PLAIN_REF, 625, HOLD.0, 1.0));
     assert!(is(&e, PLAIN_REF, 625, FORT.0, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_faction_combat_reaction_reads_the_first_factions_list() {
+    let (_f, e) = fixture();
+    let reaction =
+        |from: FormId, to: FormId, want: f32| is2(&e, PLAYER_REF, 410, from.0, to.0, want);
+    assert!(reaction(WOLVES, HUNTERS, 1.0));
+    assert!(reaction(WOLVES, BEARS, 3.0));
+    // Not mutual unless the other lists the first, and unlisted is neutral.
+    assert!(reaction(HUNTERS, WOLVES, 0.0));
+    assert!(reaction(WOLVES, GUILD, 0.0));
+    // A faction is its own ally.
+    assert!(reaction(HUNTERS, HUNTERS, 2.0));
 }
