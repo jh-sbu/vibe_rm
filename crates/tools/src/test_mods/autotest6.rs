@@ -427,6 +427,18 @@ pub(super) const ALWAYS: [u8; 12] = [0xFF, 0xFF, 0, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0
 /// (our plugin isn't localized: its name written out as the trader's), with
 /// `refs` as its persistent references (the packages and scripts name them).
 pub(super) fn trader_cell(lo: &LoadOrder, cell: FormId, refs: Vec<RecordBuilder>) -> Result<Node> {
+    trader_cell_with(lo, cell, refs, Vec::new())
+}
+
+/// [`trader_cell`], with `temporary` references too (in the cell's
+/// temporary group, as the Creation Kit writes those not flagged
+/// persistent).
+pub(super) fn trader_cell_with(
+    lo: &LoadOrder,
+    cell: FormId,
+    persistent: Vec<RecordBuilder>,
+    temporary: Vec<RecordBuilder>,
+) -> Result<Node> {
     let rec = lo.get(cell).context("the trader's cell")?;
     let mut record =
         RecordBuilder::new(b"CELL", cell).flags(rec.flags() & !record_flags::COMPRESSED);
@@ -442,14 +454,22 @@ pub(super) fn trader_cell(lo: &LoadOrder, cell: FormId, refs: Vec<RecordBuilder>
         }
     }
     let label = cell.0.to_le_bytes();
+    let mut groups = vec![Node::Group {
+        label,
+        group_type: group_type::CELL_PERSISTENT,
+        children: persistent.into_iter().map(Node::Record).collect(),
+    }];
+    if !temporary.is_empty() {
+        groups.push(Node::Group {
+            label,
+            group_type: group_type::CELL_TEMPORARY,
+            children: temporary.into_iter().map(Node::Record).collect(),
+        });
+    }
     let children = Node::Group {
         label,
         group_type: group_type::CELL_CHILDREN,
-        children: vec![Node::Group {
-            label,
-            group_type: group_type::CELL_PERSISTENT,
-            children: refs.into_iter().map(Node::Record).collect(),
-        }],
+        children: groups,
     };
     // Interior cells are grouped by the last two decimal digits of their
     // object id: block, then sub-block.

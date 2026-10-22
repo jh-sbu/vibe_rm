@@ -1,4 +1,4 @@
-//! Where persistent actors are: package-driven placement across cells, and
+//! Where actors are: package-driven placement across cells, and
 //! actors leaving / arriving through load doors while the player watches.
 
 use std::collections::HashMap;
@@ -75,14 +75,14 @@ pub(crate) fn heading_for_spawn(
 
 #[derive(Default)]
 pub struct Whereabouts {
-    /// Persistent actor references (built once).
+    /// Actor references (built once).
     actors: Vec<FormId>,
     /// By the NPC records giving the AI packages and the default package list.
     packages: HashMap<(FormId, FormId), std::sync::Arc<Vec<Package>>>,
     /// By actor and NPC record: the NPC records its AI packages and default
     /// package list come from.
     sources: HashMap<(FormId, FormId), (FormId, FormId)>,
-    /// Scheduled place and position for each persistent actor.
+    /// Scheduled place and position for each actor.
     pub of: HashMap<FormId, (Place, Vec3)>,
     /// `of` before the last refresh.
     prev: HashMap<FormId, (Place, Vec3)>,
@@ -92,7 +92,7 @@ pub struct Whereabouts {
     /// Incremental refresh in progress: next actor index and results so far.
     cursor: usize,
     pending: HashMap<FormId, (Place, Vec3)>,
-    /// The package each persistent actor is running (as of the last refresh), and
+    /// The package each actor is running (as of the last refresh), and
     /// the refresh in progress.
     pub package: HashMap<FormId, Option<FormId>>,
     pending_packages: HashMap<FormId, Option<FormId>>,
@@ -114,7 +114,7 @@ impl Whereabouts {
         self.slot.replace(slot).is_some_and(|s| s != slot)
     }
 
-    /// A created actor: one of the persistent actors from now on, at `place`
+    /// A created actor: one of the scheduled actors from now on, at `place`
     /// until the next refresh says otherwise.
     pub fn add_actor(&mut self, r: FormId, place: Place, pos: Vec3) {
         if self.built && !self.actors.contains(&r) {
@@ -247,7 +247,7 @@ impl Engine {
         p
     }
 
-    /// The current package of a persistent actor (index into `packages`).
+    /// The current package of a scheduled actor (index into `packages`).
     fn current_package(&self, achr: FormId, packages: &[Package]) -> Option<usize> {
         packages.iter().position(|p| {
             let ctx = crate::condition::Context {
@@ -336,7 +336,7 @@ impl Engine {
         }
     }
 
-    /// Recompute where every persistent actor should be, all at once.
+    /// Recompute where every actor should be, all at once.
     pub fn refresh_whereabouts(&mut self) {
         self.whereabouts.cursor = 0;
         while !self.refresh_whereabouts_step(usize::MAX) {}
@@ -346,14 +346,9 @@ impl Engine {
     /// and the new table took effect.
     fn refresh_whereabouts_step(&mut self, budget: usize) -> bool {
         if !self.whereabouts.built {
-            let mut actors = Vec::new();
-            for &id in self.lo.ids_of_type(b"ACHR") {
-                if let Some(rec) = self.lo.get(id)
-                    && rec.flags() & esp::record_flags::PERSISTENT != 0
-                {
-                    actors.push(id);
-                }
-            }
+            // Every actor reference, flagged persistent or not: the game
+            // moves both alike while their cell is unloaded (autotest8).
+            let mut actors = self.lo.ids_of_type(b"ACHR").to_vec();
             actors.extend(
                 self.created_refs
                     .refs
@@ -725,7 +720,7 @@ impl Engine {
                 }
                 let pick = self.current_package(a.ref_id, &a.packages);
                 let scheduled = self.whereabouts.of.get(&a.ref_id).copied();
-                // Its place: the schedule's for the persistent, else the
+                // Its place: the schedule's for actors it has, else the
                 // package's when it names one.
                 let place = match scheduled {
                     Some((p, _)) => p,
