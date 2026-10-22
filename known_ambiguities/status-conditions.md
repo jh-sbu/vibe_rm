@@ -373,3 +373,26 @@ No source or vanilla use gives these a Skyrim meaning: `GetIsCreatureType`
 ("Water condition used for drinking animation"; nothing says what makes an
 object one).
 
+
+## Gait and unconsciousness
+
+`IsRunning` (287) and `GetUnconscious` (242), in `src/condition/mod.rs`
+(`function_value`). Engine helper: `actor_running` (`src/ai/mod.rs`). Test in
+`src/condition/status_tests.rs`.
+
+### What is known
+
+- UESP Skyrim:Console (oldid 3628513) lists both names; only
+  `GetUnconscious` has a description: "Returns 1 if is unconscious". The raw
+  function data (oldid 3411473) gives `IsRunning()` with no parameters.
+
+### Unconfirmed choices
+
+- `IsRunning` is true for the player while moving with the run toggle on
+  (sprinting included), and for a loaded NPC moving faster than the midpoint
+  of its movement type's walk and run speeds, the rule footsteps use. Whether
+  the game reads the graph's speed or the movement input is not documented.
+- `GetUnconscious` is true while the actor is bleeding out. Skyrim's
+  unconscious state (the old Oblivion flag, also used by knock-out) has no
+  public description beyond the one line, and no other source of it exists
+  here. Nothing in vanilla's conditions calls either function.

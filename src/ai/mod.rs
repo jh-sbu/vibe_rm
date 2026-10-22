@@ -2686,6 +2686,18 @@ impl Engine {
         )
     }
 
+    /// Whether a loaded NPC is moving at its running gait (`IsRunning`).
+    pub fn actor_running(&self, r: FormId) -> bool {
+        use crate::world::footsteps::Gait;
+        let Some(key) = self.actor_cells.get(&r) else {
+            return false;
+        };
+        self.cells
+            .get(key)
+            .and_then(|c| c.actors.iter().find(|a| a.ref_id == r))
+            .is_some_and(|a| a.speed() > 1.0 && a.gait() == Gait::Run)
+    }
+
     /// Gesture along with a line of dialogue: an idle from the `ActionTalking`
     /// tree for the speaker's graph (hands on hips, expressive or angry gestures,
     /// by the line's emotion and the pose the speaker is in).
