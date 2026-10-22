@@ -580,6 +580,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .and_then(|s| e.actor_voice_type(s))
             .is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))),   // HasKeyword
+        530 => Some(e.xp_for_next_level()),                        // GetXPForNextLevel
         // Ownership (`ref_owner`: a script's, else the record's, else the cell's):
         // the subject's owner is the one named (none named: the player).
         278 => b(subject.is_some_and(|s| e.owned_by(e.ref_owner(s), p1))), // IsOwner

@@ -115,3 +115,22 @@ casting-source parameter).
   base record, or through a faction it is a member of (rank 0 or better). For
   the player only interior cells are known; an exterior cell counts as not
   owned.
+
+## GetXPForNextLevel
+
+`GetXPForNextLevel` (530) is the character XP the player's next level up costs,
+`fXPLevelUpBase + fXPLevelUpMult * level` for the level they will be at.
+
+### What is known
+
+- UESP Skyrim:Leveling (oldid 3636185) gives the level-up cost formula and the
+  game settings; the function name is listed on Skyrim:Console (oldid 3628513)
+  without a description.
+
+### Unconfirmed choices
+
+- The result is the whole cost, not the XP still missing (`cost - level_xp`).
+  The name reads either way; the whole cost matches `level_progress`'s
+  denominator. Level ups waiting count towards the level used, as the engine's
+  own meter does.
+- The subject is ignored; only the player levels.

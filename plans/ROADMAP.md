@@ -5,6 +5,8 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- `GetXPForNextLevel` gives the player's next level-up cost.
+  Choices: `known_ambiguities/status-conditions.md`
 - Ownership conditions: `IsOwner`, `IsCellOwner` and `IsInMyOwnedCell` read
   owners the way theft and trespass do (scripts' owners included). Which
   party the Skyrim forms ask about: `known_ambiguities/status-conditions.md`

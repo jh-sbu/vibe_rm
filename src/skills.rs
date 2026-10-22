@@ -244,12 +244,17 @@ impl Engine {
 
     /// How far the player is to the next level, 0 to 1.
     pub fn level_progress(&self) -> f32 {
-        let need = level_up_xp(
+        (self.skills.level_xp / self.xp_for_next_level()).clamp(0.0, 1.0)
+    }
+
+    /// The character XP the next level up takes in all (not what is left):
+    /// for the level the player will be at, counting level ups waiting.
+    pub fn xp_for_next_level(&self) -> f32 {
+        level_up_xp(
             gmst_f32(&self.lo, "fXPLevelUpBase", 75.0),
             gmst_f32(&self.lo, "fXPLevelUpMult", 25.0),
             self.skills.level + self.skills.pending as u16,
-        );
-        (self.skills.level_xp / need).clamp(0.0, 1.0)
+        )
     }
 
     /// Character XP: a level up becomes available each time there are enough
@@ -257,11 +262,7 @@ impl Engine {
     pub fn add_level_xp(&mut self, xp: f32) {
         self.skills.level_xp += xp;
         loop {
-            let need = level_up_xp(
-                gmst_f32(&self.lo, "fXPLevelUpBase", 75.0),
-                gmst_f32(&self.lo, "fXPLevelUpMult", 25.0),
-                self.skills.level + self.skills.pending as u16,
-            );
+            let need = self.xp_for_next_level();
             if self.skills.level_xp < need {
                 return;
             }
