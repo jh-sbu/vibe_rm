@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Successfully soul-trapped body identities survive native saves through
+  optional `SOUL`; failed captures remain retryable, and legacy saves clear the
+  spent set. Original `.ess` and resurrection behavior remain unverified:
+  `known_ambiguities/soul-trap.md` and `known_ambiguities/saves.md`.
 - Greater Power cooldowns survive native saves through optional `PWCD`;
   cooldowns restore by replacement, including clearing on legacy saves.
   The existing 24-game-hour policy and the original `.ess` uncertainty are
@@ -1728,9 +1732,6 @@ game each piece unlocks.
    original's `.ess` saves later; a save / load menu (the System page),
    load orders that changed since the save, and the original's refusals to
    save (combat, menus, scripted)
-   - Confirmed continuity gap: bodies whose souls were captured
-     (`Magic::souls_taken`) are not saved. Preserve this restriction alongside
-     saved inventories and bodies so reloading does not reset it.
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
    - A new game separate from the developer launch, which drops the player at

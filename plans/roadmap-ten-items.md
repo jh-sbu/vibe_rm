@@ -225,3 +225,37 @@ save/load, failed capture followed by success, independent victims, old-save
 replacement, deterministic encoding and malformed entries. Do not change soul
 gem inventory/drop policies. Cite public Soul Trap/Soul Gem documentation and
 record resurrection/reset and original-save payload behavior as unresolved.
+
+Outcome: implemented and reviewed. Parent validation passed both the codec and
+actual-capture save/load regressions with system Vulkan. Optional `SOUL` stores
+sorted, non-null body
+form ids and loading replaces the spent set; no actor-presence check discards
+historical identities. The production regression calls `trap_soul` for failed
+then successful capture, distinct victims, a repeated capture after load with a
+new empty gem, and legacy replacement. Codec coverage verifies deterministic
+roundtrip, legacy clearing, null/duplicate ids, truncation and trailing bytes.
+UESP revisions 3603025 and 3576308 document capture prerequisites and gem
+capacity; they do not establish original `.ess` persistence or resurrection
+reset behavior.
+
+## Completion record
+
+All ten scoped items were planned before implementation, implemented by the
+same Luna 6 High subagent, reviewed and tested by the parent, and committed
+independently. Items 9 and 10 addressed newly discovered save-continuity gaps,
+which were explicitly added to the roadmap before their implementation.
+
+Final parent validation passed:
+
+- Default engine suite: 337 passed, 106 ignored, zero failures.
+- Complete native-save suite with ignored integration tests enabled: 41 passed.
+- Every newly added GPU-dependent regression was also run explicitly during
+  its item's review with system Vulkan.
+- Papyrus crate: 4 passed; Havok baseline: 125 passed.
+- Workspace formatting and whitespace checks passed.
+
+Research used public documentation and existing recorded game observations;
+new tests use synthetic plugins, scripts and graphs. No engine binary data or
+leaked material was examined, and no game assets were added. Source conflicts,
+chosen native policies and remaining Skyrim SE uncertainties are recorded in
+the per-item `known_ambiguities/` notes linked above.

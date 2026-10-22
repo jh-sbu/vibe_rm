@@ -1,12 +1,22 @@
 # Soul trap
 
-Implemented in `src/soul_trap.rs`. Sources: UESP's Skyrim:Soul Trap and
-Skyrim:Soul Gem (sizes by level, black souls for people, the smallest
-gem that can hold it), the game's settings (`i<Size>SoulActorLevel` 4, 16,
+Implemented in `src/soul_trap.rs`. Public sources: UESP's
+[Skyrim:Soul Trap (effect), revision 3603025](https://en.uesp.net/w/index.php?oldid=3603025)
+(a successful trap requires a suitable empty gem and a failed capture leaves no
+partial soul) and [Skyrim:Soul Gems, revision 3576308](https://en.uesp.net/w/index.php?oldid=3576308)
+(gem soul and capacity data), alongside the game's settings
+(`i<Size>SoulActorLevel` 4, 16,
 28, 38; `sSoulCaptured`, `sSoulGemTooSmall`), the soul gem records (`SOUL`,
 `SLCP`, `NAM0` the filled form, record flag 0x20000 on the black ones),
 `magicSoulTrapFXScript` (calls `Caster.TrapSoul(Victim)` as the effect
 finishes on a body, then plays the visuals if it returned true).
+
+The engine records only successful victim forms in `Magic.souls_taken`; a
+failed capture can be retried, and a successful capture cannot be repeated from
+that body. Optional native `SOUL` saves this set by replacement. This keeps the
+engine's current one-capture-per-body rule through reloads; it is not evidence
+about how Skyrim SE records spent bodies in `.ess` saves or whether resurrection
+resets that identity.
 
 ## Choices made without a source
 
