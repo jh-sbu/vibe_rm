@@ -2,6 +2,7 @@
 //! only. Engine owns a renderer, so these need a headless GPU adapter.
 
 use super::*;
+use crate::world::inventory::Inventory;
 use esp::writer::{Node, RecordBuilder, write_plugin};
 
 pub(super) const SWORD_REF: FormId = FormId(0x814);
@@ -11,6 +12,11 @@ const HUMAN: FormId = FormId(0x832);
 const BEAST: FormId = FormId(0x833);
 const HUMAN_REF: FormId = FormId(0x834);
 const BEAST_REF: FormId = FormId(0x835);
+const KEYWORD: FormId = FormId(0x840);
+const OTHER_KEYWORD: FormId = FormId(0x841);
+const TAGGED_A: FormId = FormId(0x842);
+const TAGGED_B: FormId = FormId(0x843);
+const UNTAGGED: FormId = FormId(0x844);
 
 struct Fixture(std::path::PathBuf);
 
@@ -53,6 +59,21 @@ fn fixture() -> (Fixture, Engine) {
             b"ACHR",
             vec![actor(HUMAN_REF, HUMAN), actor(BEAST_REF, BEAST)],
         ),
+        Node::top(
+            b"KYWD",
+            vec![
+                RecordBuilder::new(b"KYWD", KEYWORD),
+                RecordBuilder::new(b"KYWD", OTHER_KEYWORD),
+            ],
+        ),
+        Node::top(
+            b"MISC",
+            vec![
+                RecordBuilder::new(b"MISC", TAGGED_A).form(b"KWDA", KEYWORD),
+                RecordBuilder::new(b"MISC", TAGGED_B).form(b"KWDA", KEYWORD),
+                RecordBuilder::new(b"MISC", UNTAGGED).form(b"KWDA", OTHER_KEYWORD),
+            ],
+        ),
         Node::top(b"REFR", vec![RecordBuilder::new(b"REFR", SWORD_REF)]),
     ];
     std::fs::write(
@@ -67,7 +88,12 @@ fn fixture() -> (Fixture, Engine) {
         ),
     )
     .unwrap();
-    let e = crate::stats::action_tests::headless_engine(&f.0, "Status.esp");
+    let mut e = crate::stats::action_tests::headless_engine(&f.0, "Status.esp");
+    let mut bag = Inventory::default();
+    bag.add(TAGGED_A, 2);
+    bag.add(TAGGED_B, 3);
+    bag.add(UNTAGGED, 7);
+    e.inventories.insert(HUMAN_REF, bag);
     (f, e)
 }
 
@@ -112,4 +138,20 @@ fn get_is_playable_race_reads_the_races_playable_flag() {
     assert!(!is(&e, BEAST_REF, 254, 0, 1.0));
     // Nothing to ask about: no race, not playable.
     assert!(!is(&e, SWORD_REF, 254, 0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_keyword_item_count_totals_the_carried_items_with_the_keyword() {
+    let (_f, mut e) = fixture();
+    assert!(is(&e, HUMAN_REF, 465, KEYWORD.0, 5.0));
+    assert!(is(&e, HUMAN_REF, 465, OTHER_KEYWORD.0, 7.0));
+    // A stack taken away stops counting; a keyword nothing has is zero.
+    e.inventories
+        .get_mut(&HUMAN_REF)
+        .unwrap()
+        .remove_split(TAGGED_A, 2, None);
+    assert!(is(&e, HUMAN_REF, 465, KEYWORD.0, 3.0));
+    assert!(is(&e, HUMAN_REF, 465, 0x845, 0.0));
+    assert!(is(&e, BEAST_REF, 465, KEYWORD.0, 0.0));
 }

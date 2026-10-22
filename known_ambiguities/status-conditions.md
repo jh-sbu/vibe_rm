@@ -37,3 +37,22 @@ flag 0x1 ("Playable" in xEdit's `wbRACE`).
   the base record's own `RNAM` as `GetIsRace` does. They differ only for
   template-inheriting NPCs.
 - A subject with no race (not an actor) fails the condition.
+
+## GetKeywordItemCount
+
+`GetKeywordItemCount` (465) totals the counts of every carried item whose base
+record lists the keyword (`KWDA`).
+
+### What is known
+
+- UESP Skyrim Mod:Mod File Format/Raw Function Data (oldid 3411473) gives
+  `Ref.GetKeywordItemCount(Keyword)`; its result is not described.
+
+### Unconfirmed choices
+
+- It counts stacks, not stack kinds: two keyworded swords and three keyworded
+  arrows are 5. The name and `GetItemCount` suggest this, nothing confirms it.
+- Equipped items are carried items and count; so do items in a reference's
+  starting inventory before it changes, as `GetItemCount` reads them.
+- Whether a keyword list, rather than one keyword, is accepted is unknown; the
+  parameter is a single keyword.

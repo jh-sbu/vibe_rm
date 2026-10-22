@@ -3239,7 +3239,10 @@ impl Engine {
 
     /// What a reference holds before anything changed it: a container's
     /// contents, an actor's items and outfit.
-    fn starting_inventory(&self, r: FormId) -> Option<crate::world::inventory::Inventory> {
+    pub(crate) fn starting_inventory(
+        &self,
+        r: FormId,
+    ) -> Option<crate::world::inventory::Inventory> {
         let actor = r != PLAYER_REF
             && self.lo.tag_of(r).map_or_else(
                 || self.created(r).is_some_and(|c| c.actor),
