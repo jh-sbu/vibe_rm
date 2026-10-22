@@ -34,6 +34,8 @@ const LOCATION_EVENT: FormId = FormId(0x864);
 const MESSAGE_WAIT_A: FormId = FormId(0x8A0);
 const MESSAGE_WAIT_B: FormId = FormId(0x8A1);
 const ANIMATION_WAIT_OBJECT: FormId = FormId(0x8A2);
+const TIMER_SCENE: FormId = FormId(0x8B0);
+const TIMER_SCENE_QUEST: FormId = FormId(0x8B1);
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
@@ -79,10 +81,30 @@ fn engine(name: &str) -> (Fixture, Engine) {
                 COOLDOWN,
                 RANK_EVENT,
                 LOCATION_EVENT,
+                TIMER_SCENE_QUEST,
             ]
             .into_iter()
             .map(|id| RecordBuilder::new(b"QUST", id))
             .collect(),
+        ),
+        Node::top(
+            b"SCEN",
+            vec![
+                RecordBuilder::new(b"SCEN", TIMER_SCENE)
+                    .field(b"HNAM", &[])
+                    .zstring(b"NAM0", "Timer phase")
+                    .field(b"NEXT", &[])
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .field(b"ANAM", &2u16.to_le_bytes())
+                    .zstring(b"NAM0", "Wait")
+                    .u32(b"INAM", 7)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .field(b"SNAM", &5.0f32.to_le_bytes())
+                    .field(b"ANAM", &[])
+                    .u32(b"PNAM", TIMER_SCENE_QUEST.0),
+            ],
         ),
         Node::top(
             b"SPEL",
@@ -1358,6 +1380,80 @@ fn story_and_relationship_sections_are_deterministic_and_optional() {
     let read = Snapshot::read(&old).unwrap();
     assert_eq!(read.story, Default::default());
     assert!(read.relationship_ranks.is_empty());
+}
+
+#[test]
+fn timer_scene_section_round_trips_and_legacy_absence_clears() {
+    let mut s = Snapshot::default();
+    s.scenes.push(crate::scene::SavedScene {
+        scene: FormId(0x8B0),
+        phase: 2,
+        timers: vec![
+            crate::scene::SavedSceneTimer {
+                action: 3,
+                elapsed: Some(7.25),
+            },
+            crate::scene::SavedSceneTimer {
+                action: 9,
+                elapsed: None,
+            },
+        ],
+    });
+    let valid = s.write();
+    let bytes = valid.to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.scenes, s.scenes);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    let mut legacy = valid.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"SCNE");
+    assert!(Snapshot::read(&legacy).unwrap().scenes.is_empty());
+
+    let mut duplicate = valid.clone();
+    duplicate.add(b"SCNE", vec![]);
+    assert!(Snapshot::read(&duplicate).is_err());
+
+    let mut malformed = s;
+    malformed.scenes[0].timers[0].elapsed = Some(f64::NAN);
+    assert!(Snapshot::read(&malformed.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
+fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
+    let (_fixture, mut e) = engine("scene-continuity");
+    e.scripts
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .running = true;
+    e.scripts.real_time = 10.0;
+    assert!(e.start_scene(TIMER_SCENE, false));
+    e.update_scenes();
+
+    e.scripts.real_time = 13.0;
+    let file = Snapshot::capture(&e).write();
+    assert_eq!(Snapshot::read(&file).unwrap().scenes[0].phase, 0);
+    Snapshot::read(&file).unwrap().apply(&mut e).unwrap();
+    assert!(e.is_scene_playing(TIMER_SCENE));
+
+    e.scripts.real_time = 14.9;
+    e.update_scenes();
+    assert!(e.is_scene_playing(TIMER_SCENE), "timer restarted on load");
+    e.scripts.real_time = 15.1;
+    e.update_scenes();
+    assert!(!e.is_scene_playing(TIMER_SCENE));
+
+    e.scripts.real_time = 20.0;
+    assert!(e.start_scene(TIMER_SCENE, false));
+    e.update_scenes();
+    let mut legacy = Snapshot::capture(&e).write();
+    legacy.sections.retain(|(tag, _)| tag != b"SCNE");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(
+        !e.is_scene_playing(TIMER_SCENE),
+        "legacy load kept a stale run"
+    );
 }
 
 #[test]

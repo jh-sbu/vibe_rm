@@ -95,6 +95,24 @@ pub struct SceneRun {
     actions: Vec<ActionRun>,
 }
 
+/// The part of a running timer-only scene needed to continue its current phase.
+/// This is a native `.vrs` policy; it does not describe the original `.ess`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SavedScene {
+    pub scene: FormId,
+    pub phase: u32,
+    pub timers: Vec<SavedSceneTimer>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SavedSceneTimer {
+    pub action: u32,
+    /// `Some` means running, and stores its elapsed active time. `None` means
+    /// the action already completed while the phase's completion conditions
+    /// were still false.
+    pub elapsed: Option<f64>,
+}
+
 impl SceneRun {
     /// The actors filling the scene's aliases.
     fn actors<'a>(
@@ -107,6 +125,87 @@ impl SceneRun {
             .iter()
             .filter_map(move |a| Some((e.alias_ref(self.def.scene.quest, a.alias)?, a)))
     }
+}
+
+fn save_timer_phase(run: &SceneRun, now: f64) -> Option<SavedScene> {
+    let phase = run.phase?;
+    if run.stopping
+        || run
+            .def
+            .scene
+            .actions
+            .iter()
+            .any(|a| !matches!(a.kind, ActionKind::Timer { .. }))
+    {
+        return None;
+    }
+    if run
+        .def
+        .scene
+        .actions
+        .iter()
+        .zip(&run.actions)
+        .any(|(action, state)| {
+            action.start_phase as usize <= phase
+                && action.end_phase as usize >= phase
+                && matches!(state.state, State::Waiting | State::Stopped)
+        })
+    {
+        return None;
+    }
+    let mut timers: Vec<_> = run
+        .def
+        .scene
+        .actions
+        .iter()
+        .zip(&run.actions)
+        .filter(|(a, _)| a.start_phase as usize <= phase && a.end_phase as usize >= phase)
+        .map(|(a, action)| SavedSceneTimer {
+            action: a.index,
+            elapsed: match action.state {
+                State::Running => Some((now - action.started_at).max(0.0)),
+                State::Done => None,
+                State::Waiting | State::Stopped => Some(0.0),
+            },
+        })
+        .collect();
+    timers.sort_by_key(|timer| timer.action);
+    Some(SavedScene {
+        scene: run.scene,
+        phase: phase as u32,
+        timers,
+    })
+}
+
+fn restore_timer_actions(
+    scene: &esp::scene::Scene,
+    phase: usize,
+    timers: &[SavedSceneTimer],
+    now: f64,
+) -> Vec<ActionRun> {
+    let timer_states: HashMap<u32, Option<f64>> = timers
+        .iter()
+        .map(|timer| (timer.action, timer.elapsed))
+        .collect();
+    scene
+        .actions
+        .iter()
+        .map(|action| {
+            let mut run = ActionRun::new();
+            if (action.end_phase as usize) < phase {
+                run.state = State::Done;
+            } else if (action.start_phase as usize) <= phase {
+                run.state = match timer_states.get(&action.index).copied().flatten() {
+                    Some(elapsed) => {
+                        run.started_at = now - elapsed;
+                        State::Running
+                    }
+                    None => State::Done,
+                };
+            }
+            run
+        })
+        .collect()
 }
 
 #[derive(Default)]
@@ -134,6 +233,129 @@ fn conditions(rec: &esp::LoadedRecord<'_>, raw: &[esp::scene::RawCondition]) -> 
 }
 
 impl Engine {
+    /// Save active phases made entirely of timers. Other scene actions need
+    /// their own continuation formats before they can be claimed as restored.
+    pub(crate) fn saved_timer_scenes(&self) -> Vec<SavedScene> {
+        let now = self.scripts.real_time;
+        let mut saved = Vec::new();
+        for run in &self.scenes.running {
+            if let Some(scene) = save_timer_phase(run, now) {
+                saved.push(scene);
+            }
+        }
+        saved
+    }
+
+    /// Check saved scene references against loaded definitions before a load
+    /// mutates the current game.
+    pub(crate) fn validate_saved_scenes(&mut self, saved: &[SavedScene]) -> anyhow::Result<()> {
+        let mut seen = HashSet::new();
+        for state in saved {
+            anyhow::ensure!(
+                !state.scene.is_null() && seen.insert(state.scene),
+                "save has invalid or duplicate scene {}",
+                state.scene
+            );
+            let def = self
+                .scene_def(state.scene)
+                .ok_or_else(|| anyhow::anyhow!("save has missing scene {}", state.scene))?;
+            let phase = state.phase as usize;
+            anyhow::ensure!(
+                phase < def.scene.phases.len(),
+                "save has invalid phase for scene {}",
+                state.scene
+            );
+            anyhow::ensure!(
+                def.scene
+                    .actions
+                    .iter()
+                    .all(|a| matches!(a.kind, ActionKind::Timer { .. })),
+                "save contains unsupported scene {}",
+                state.scene
+            );
+            anyhow::ensure!(
+                def.scene.actions.iter().all(|a| match a.kind {
+                    ActionKind::Timer { seconds } => seconds.is_finite() && seconds >= 0.0,
+                    _ => false,
+                }),
+                "scene {} has invalid timer definitions",
+                state.scene
+            );
+            let mut previous_action = None;
+            let mut expected: Vec<_> = def
+                .scene
+                .actions
+                .iter()
+                .filter(|a| a.start_phase as usize <= phase && a.end_phase as usize >= phase)
+                .map(|a| a.index)
+                .collect();
+            expected.sort_unstable();
+            anyhow::ensure!(
+                expected.windows(2).all(|pair| pair[0] < pair[1]),
+                "scene {} has duplicate timer action ids",
+                state.scene
+            );
+            anyhow::ensure!(
+                state.timers.len() == expected.len(),
+                "save has incomplete timer phase for scene {}",
+                state.scene
+            );
+            for (timer, expected_index) in state.timers.iter().zip(expected) {
+                anyhow::ensure!(
+                    timer.action == expected_index
+                        && previous_action.is_none_or(|p| p < timer.action)
+                        && timer
+                            .elapsed
+                            .is_none_or(|elapsed| elapsed.is_finite() && elapsed >= 0.0),
+                    "save has invalid timer action for scene {}",
+                    state.scene
+                );
+                previous_action = Some(timer.action);
+            }
+        }
+        Ok(())
+    }
+
+    /// Replace scene runs without running fragments or carrying old audio and
+    /// package ownership into the loaded game.
+    pub(crate) fn restore_timer_scenes(&mut self, saved: Vec<SavedScene>) {
+        for run in &mut self.scenes.running {
+            for action in &mut run.actions {
+                if let Some(line) = action.line.take()
+                    && let (Some(voice), Some(audio)) = (line.voice, &self.audio)
+                {
+                    audio.stop(voice);
+                }
+            }
+        }
+        self.scenes.running.clear();
+        self.scenes.packages.clear();
+        self.scenes.force_greeted.clear();
+        self.scenes.restart.clear();
+        let now = self.scripts.real_time;
+        for state in saved {
+            let Some(def) = self.scene_def(state.scene) else {
+                continue;
+            };
+            let phase = state.phase as usize;
+            let mut actions = restore_timer_actions(&def.scene, phase, &state.timers, now);
+            for (action, run) in def.scene.actions.iter().zip(&mut actions) {
+                run.actor = (action.actor >= 0)
+                    .then(|| self.alias_ref(def.scene.quest, action.actor as u32))
+                    .flatten();
+            }
+            self.scenes.running.push(SceneRun {
+                scene: state.scene,
+                def,
+                phase: Some(phase),
+                begun: true,
+                stopping: false,
+                paused: false,
+                actions,
+            });
+        }
+    }
+
     pub fn scene_def(&mut self, id: FormId) -> Option<Arc<SceneDef>> {
         if let Some(d) = self.scenes.defs.get(&id) {
             return d.clone();
@@ -906,5 +1128,65 @@ impl Engine {
                 )
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod save_tests {
+    use super::*;
+
+    #[test]
+    fn timer_phase_keeps_its_phase_elapsed_time_and_completed_actions() {
+        let action = |index, phase| esp::scene::Action {
+            kind: ActionKind::Timer { seconds: 20.0 },
+            name: String::new(),
+            actor: -1,
+            index,
+            flags: 0,
+            start_phase: phase,
+            end_phase: phase,
+        };
+        let def = Arc::new(SceneDef {
+            scene: esp::scene::Scene {
+                id: FormId(0x801),
+                phases: vec![Default::default(), Default::default(), Default::default()],
+                actions: vec![action(1, 0), action(4, 1), action(8, 2)],
+                ..Default::default()
+            },
+            start: vec![vec![], vec![], vec![]],
+            completion: vec![vec![], vec![], vec![]],
+            conditions: vec![],
+            vmad: Default::default(),
+        });
+        let previous = ActionRun {
+            state: State::Done,
+            ..ActionRun::new()
+        };
+        let current = ActionRun {
+            state: State::Running,
+            started_at: 12.5,
+            ..ActionRun::new()
+        };
+        let run = SceneRun {
+            scene: def.scene.id,
+            def: def.clone(),
+            phase: Some(1),
+            begun: true,
+            stopping: false,
+            paused: false,
+            actions: vec![previous, current, ActionRun::new()],
+        };
+
+        let saved = save_timer_phase(&run, 18.0).unwrap();
+        assert_eq!(saved.phase, 1);
+        assert_eq!(saved.timers.len(), 1);
+        assert_eq!(saved.timers[0].action, 4);
+        assert_eq!(saved.timers[0].elapsed, Some(5.5));
+
+        let resumed = restore_timer_actions(&def.scene, 1, &saved.timers, 100.0);
+        assert_eq!(resumed[0].state, State::Done);
+        assert_eq!(resumed[1].state, State::Running);
+        assert_eq!(resumed[1].started_at, 94.5);
+        assert_eq!(resumed[2].state, State::Waiting);
     }
 }

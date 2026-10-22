@@ -28,6 +28,10 @@ game each piece unlocks.
   unchanged; older saves and inventory-created references have unknown origins.
   Skyrim SE semantics for created references remain unverified:
   `known_ambiguities/condition-geometry.md`.
+- Timer-only scene phases retain their phase and elapsed timer time in optional
+  `SCNE`; loading replaces old runs, and legacy saves clear them. Non-timer
+  scene continuation and original `.ess` compatibility remain open:
+  `known_ambiguities/scenes.md` and `known_ambiguities/saves.md`.
 - Package placement headings: scheduled Sandbox actors take a reference's
   heading at placement; Travel actors turn toward their marker after unloaded
   travel. Moved/dead actors and unrelated runtime steering retain priority.
