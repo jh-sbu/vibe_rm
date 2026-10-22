@@ -477,9 +477,11 @@ impl Engine {
     }
 
     /// Lock and unlock homes as actors' packages change (actor, old, new):
-    /// unlocking when a package that unlocks doors starts or one that unlocks
-    /// them on change ends, then locking as sleepers who lock their doors turn
-    /// in (so a household stays locked while any of it sleeps).
+    /// unlocking when a package that unlocks doors starts, or one that unlocks
+    /// them on change or locks them ends (Arcadia's shop, locked while her
+    /// sleep package runs; `test-mod autotest11`), then locking as sleepers
+    /// who lock their doors turn in. A household stays locked while any of it
+    /// is in a package that locks them.
     pub(crate) fn package_door_locks(
         &mut self,
         changed: Vec<(FormId, Option<FormId>, Option<FormId>)>,
@@ -496,8 +498,8 @@ impl Engine {
             let packages = self.actor_packages(achr, npc);
             let find = |id: Option<FormId>| id.and_then(|id| packages.iter().find(|p| p.id == id));
             let (old, new) = (find(old), find(new));
-            let opens =
-                old.is_some_and(|p| p.unlock_on_change) || new.is_some_and(|p| p.unlock_at_start);
+            let opens = old.is_some_and(|p| p.unlock_on_change || p.lock_doors)
+                || new.is_some_and(|p| p.unlock_at_start);
             let shuts = new.is_some_and(|p| p.lock_doors);
             // Its home is private while it runs a package that locks doors.
             let home = if shuts {
@@ -525,12 +527,44 @@ impl Engine {
                 unlock.extend(doors);
             }
         }
-        for d in unlock {
-            self.set_locked(d, false);
+        if !unlock.is_empty() {
+            let held = self.doors_held_locked();
+            for d in unlock {
+                if !held.contains(&self.lock_holder(d)) {
+                    self.set_locked(d, false);
+                }
+            }
         }
         for d in lock {
             self.set_locked(d, true);
         }
+    }
+
+    /// The locks (their holders) of the homes of actors now in a package that
+    /// locks doors, as their doors last followed them.
+    fn doors_held_locked(&mut self) -> std::collections::HashSet<FormId> {
+        let sleepers: Vec<(FormId, FormId)> = self
+            .whereabouts
+            .lock_package
+            .iter()
+            .filter_map(|(&a, &p)| Some((a, p?)))
+            .collect();
+        let mut held = std::collections::HashSet::new();
+        for (achr, package) in sleepers {
+            let Some(npc) = self.lo.get(achr).map(|rec| records::reference(&rec).base) else {
+                continue;
+            };
+            if self
+                .actor_packages(achr, npc)
+                .iter()
+                .any(|p| p.id == package && p.lock_doors)
+            {
+                for d in self.home_doors(achr, npc) {
+                    held.insert(self.lock_holder(d));
+                }
+            }
+        }
+        held
     }
 }
 

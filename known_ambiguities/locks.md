@@ -52,9 +52,14 @@ and location pages, CK wiki descriptions) and the game's data files.
 - A loaded actor's home doors follow its package as its AI switches to it;
   other persistent actors' follow each whereabouts refresh (every 20 s), which
   compares their packages with the last ones their doors followed. When a
-  package with 0x40 starts or one with 0x80 ends, the actor's home doors
-  unlock; when a sleep package with "Lock Doors?" starts, they lock (locks
-  applied after unlocks). The two evaluations can pick differently (the
+  package with 0x40 starts, or one with 0x80 or "Lock Doors?" ends, the
+  actor's home doors unlock, unless another actor whose home they are is in
+  a package that locks them; when a sleep package with "Lock Doors?" starts,
+  they lock (locks applied after unlocks). That a lock-doors package's end
+  opens the home is settled (`test-mod autotest11`: Arcadia's shop, she
+  unloaded in it, was locked exactly while her sleep package ran, changing
+  as her package switched, whether the clock ran past 0:00 / 8:00 or
+  jumped). The two evaluations can pick differently (the
   refresh doesn't see loaded state); each actor's doors follow only one of
   them at a time, so they don't flip between them, but loading or unloading
   can fire a change. The refresh is also due at each half hour of game time,
@@ -179,13 +184,20 @@ changes, save restoration, old saves and malformed sections, not engine parity.
 2. **Which doors a package locks.** "Home" is a guess: the sleep location's cell.
    The game may use ownership (`XOWN` on doors and cells), the location
    (`LCTN`), or the package's own location.
-   **When they unlock** is open too: only 50 of Skyrim.esm's 5961 packages
-   carry `PKDT` 0x40 / 0x80, none of Belethor's or Arcadia's, so here their
-   shops never reopen once locked (or as placed, `XLOC`), though UESP has
-   Belethor opening at 8am. Whether a lock-doors sleep package's end unlocks
-   them, the day package's start, or the owner's current package at any
-   moment: `test-mod autotest11` samples three shops' doors across their
-   owners' package changes and clock jumps.
+   **When the owner is away or the player inside**, the game departs from
+   "locked while the lock-doors package runs" (`test-mod autotest11`,
+   Belethor, 2026-10-22), and the engine doesn't follow it:
+   - Belethor out in the city when the test began (sleep package, doors
+     locked) and through the night: his doors stayed locked all day, through
+     his sleep's end, his sell package and his being moved into the shop
+     (UESP *Belethor* notes the shop often not reopening as a bug). Perhaps
+     a package only locks the home with its owner there and only unlocks
+     what it locked, or unlocking waits on the owner reaching its location.
+   - The player inside (sneaking, unseen): his doors unlocked about 13 game
+     minutes after 8:00 (he got out of bed; when his package switched isn't
+     known), and his sleep at 0:00 and at a jump to 3:00 didn't lock them
+     again. Perhaps sleepers don't lock a home with the player in it
+     (the Sleep templates' "Warn Before Locking?").
 3. **Leaving from inside.** That one can always leave an interior through a
    locked pair is inferred from where the data puts locks and from play
    reports. (That the pair shares one lock is settled: Sven and Hilde's
