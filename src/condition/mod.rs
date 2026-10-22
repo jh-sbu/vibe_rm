@@ -171,6 +171,7 @@ const GET_EVENT_DATA: u16 = 576;
 /// Their first parameter is a package input's index (see `Condition::package_data`).
 pub const GET_NUMERIC_PACKAGE_DATA: u16 = 612;
 pub const GET_WITHIN_PACKAGE_LOCATION: u16 = 325;
+pub const IS_NULL_PACKAGE_DATA: u16 = 611;
 /// Its second parameter is the package's distance input when the condition takes
 /// package inputs (see `Condition::package_data`).
 pub const GET_WITHIN_DISTANCE: u16 = 639;
@@ -853,6 +854,32 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .and_then(|l| e.location_keyword_data.get(&(l, FormId(c.p2))).copied())
                 .unwrap_or(0.0),
         ), // GetKeywordDataForAlias
+        // The player's cell lies in the region (its `XCLR`).
+        117 => b(e
+            .player_cell()
+            .is_some_and(|c| e.cell_regions(c).contains(&p1))), // IsPlayerInRegion
+        445 => b(subject.and_then(|s| e.encounter_zone_of(s)) == Some(p1)), // GetInZone
+        // Menu mode: a menu that pauses the game is open. Other menu numbers
+        // (Oblivion's) name no Skyrim menu here, so they are unsupported.
+        36 => (c.p1 == 0).then(|| e.in_menu_mode() as u32 as f32), // MenuMode
+        // The controls the two parameters select (movement, fighting) are all
+        // disabled; none selected asks whether any control is.
+        98 => {
+            let d = e.disabled_controls;
+            b(match (c.p1 != 0, c.p2 != 0) {
+                (false, false) => d.any(),
+                (m, f) => (!m || d.movement) && (!f || d.fighting),
+            })
+        } // GetPlayerControlsDisabled
+        // Game time moves when the world runs, and while waiting or sleeping.
+        265 => b(!e.in_menu_mode() || e.waiting.is_some()), // IsTimePassing
+        716 => Some(e.scripts.wall_time as f32 / 3600.0),   // GetRealHoursPassed
+        12 => Some(e.frame_seconds),                        // GetSecondsPassed
+        // A package input (`package_data`: 1 when unset).
+        611 => match c.package_data {
+            Some(PackageData::Number(v)) => Some(v),
+            _ => None,
+        }, // IsNullPackageData
         503 => b(true), // GetAllowWorldInteractions
         641 => b(subj_base.is_some_and(|n| {
             e.lo.get(n)
@@ -1459,16 +1486,50 @@ impl Engine {
             .unwrap_or(false)
     }
 
-    /// Location (LCTN) of the current cell.
-    pub fn current_location(&self) -> Option<FormId> {
-        let cell = match self.location {
+    /// The cell the player is in (an exterior's: the loaded grid's centre).
+    pub fn player_cell(&self) -> Option<FormId> {
+        match self.location {
             crate::engine::Location::Interior(c) => Some(c),
             crate::engine::Location::Exterior { world, center } => self
                 .lo
                 .world(world)
                 .and_then(|w| w.cells.get(&center).copied()),
             _ => None,
-        }?;
+        }
+    }
+
+    /// The cell a reference is in: the player's, a loaded actor's, else a
+    /// placed reference's.
+    pub fn ref_cell(&self, r: FormId) -> Option<FormId> {
+        if r == PLAYER_REF {
+            return self.player_cell();
+        }
+        match (self.actor_cells.get(&r), self.location) {
+            (Some(&crate::render::CellKey::Interior(c)), _) => Some(c),
+            (
+                Some(&crate::render::CellKey::Exterior(x, y)),
+                crate::engine::Location::Exterior { world, .. },
+            ) => self
+                .lo
+                .world(world)
+                .and_then(|w| w.cells.get(&(x, y)).copied()),
+            _ => self.lo.cell_of_ref(r),
+        }
+    }
+
+    /// A reference's encounter zone: its own (`XEZN`), else its cell's.
+    pub fn encounter_zone_of(&self, r: FormId) -> Option<FormId> {
+        let zone = |r: FormId| {
+            let rec = self.lo.get(r)?;
+            let d = rec.get(b"XEZN").filter(|d| d.len() >= 4)?;
+            Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+        };
+        zone(r).or_else(|| zone(self.ref_cell(r)?))
+    }
+
+    /// Location (LCTN) of the current cell.
+    pub fn current_location(&self) -> Option<FormId> {
+        let cell = self.player_cell()?;
         let rec = self.lo.get(cell)?;
         let d = rec.get(b"XLCN")?;
         Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))))

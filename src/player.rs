@@ -58,6 +58,11 @@ pub struct DisabledControls {
 }
 
 impl DisabledControls {
+    /// Whether scripts have disabled any control.
+    pub fn any(&self) -> bool {
+        *self != Self::default()
+    }
+
     /// Apply the selected controls, preserving flags whose argument is false.
     /// Only the camera flag is scoped by Papyrus's `aiDisablePOVType`.
     pub fn apply(&mut self, disable: bool, selected: [bool; 8], pov_type: i32) {

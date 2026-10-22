@@ -391,6 +391,20 @@ impl Engine {
         }
     }
 
+    /// The regions a cell lies in (`XCLR`).
+    pub fn cell_regions(&self, cell: FormId) -> Vec<FormId> {
+        self.lo
+            .get(cell)
+            .and_then(|rec| {
+                rec.get(b"XCLR").map(|d| {
+                    d.chunks_exact(4)
+                        .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
+    }
+
     /// The player's cell's regional weathers. When `change` and the current
     /// weather isn't one of them, one of them comes in.
     fn update_region(&mut self, world: FormId, grid: (i32, i32), change: bool) {
@@ -405,17 +419,7 @@ impl Engine {
             return;
         }
         self.weather.region_cell = Some(cell);
-        let regions: Vec<FormId> = self
-            .lo
-            .get(cell)
-            .and_then(|rec| {
-                rec.get(b"XCLR").map(|d| {
-                    d.chunks_exact(4)
-                        .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
-                        .collect()
-                })
-            })
-            .unwrap_or_default();
+        let regions = self.cell_regions(cell);
         let mut best: Option<(u8, FormId, Vec<(FormId, u32, FormId)>)> = None;
         for r in regions {
             let Some(rec) = self.lo.get(r) else { continue };

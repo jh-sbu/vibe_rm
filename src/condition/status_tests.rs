@@ -45,6 +45,10 @@ const BEARS: FormId = FormId(0x882);
 const BOSS: FormId = FormId(0x890);
 const GUARD_TYPE: FormId = FormId(0x891);
 const QUEST: FormId = FormId(0x892);
+const REGION: FormId = FormId(0x8A0);
+const OTHER_REGION: FormId = FormId(0x8A1);
+const ZONE: FormId = FormId(0x8A2);
+const OWN_ZONE: FormId = FormId(0x8A3);
 
 struct Fixture(std::path::PathBuf);
 
@@ -105,6 +109,12 @@ fn fixture() -> (Fixture, Engine) {
         if let Some(owner) = owner {
             record = record.form(b"XOWN", owner);
         }
+        if id == CELL_A {
+            record = record.form(b"XCLR", REGION);
+        }
+        if id == CELL_B {
+            record = record.form(b"XEZN", ZONE);
+        }
         [
             Node::Record(record),
             Node::Group {
@@ -127,7 +137,9 @@ fn fixture() -> (Fixture, Engine) {
         Some(HUMAN),
         vec![
             placed(PLAIN_REF, CRATE),
-            placed(GUILD_REF, CRATE).form(b"XOWN", GUILD),
+            placed(GUILD_REF, CRATE)
+                .form(b"XOWN", GUILD)
+                .form(b"XEZN", OWN_ZONE),
             RecordBuilder::new(b"ACHR", HUMAN_IN_A).form(b"NAME", HUMAN),
             RecordBuilder::new(b"ACHR", BEAST_IN_A).form(b"NAME", BEAST),
         ],
@@ -536,4 +548,80 @@ fn location_alias_forms_read_the_aliased_location() {
     assert!(is_in_quest(&e, 608, 3, OTHER_KEYWORD.0, 0.0));
     // An empty alias holds no location, so nothing is in it.
     assert!(is_in_quest(&e, 601, 4, BOSS.0, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn is_player_in_region_reads_the_players_cells_regions() {
+    let (_f, mut e) = fixture();
+    // Nowhere in particular: in no region.
+    assert!(is(&e, PLAYER_REF, 117, REGION.0, 0.0));
+    e.enter_interior(CELL_A, None).unwrap();
+    assert!(is(&e, PLAYER_REF, 117, REGION.0, 1.0));
+    assert!(is(&e, PLAYER_REF, 117, OTHER_REGION.0, 0.0));
+    // It is the player's cell, whoever is asked.
+    assert!(is(&e, HUMAN_IN_B, 117, REGION.0, 1.0));
+    e.enter_interior(CELL_B, None).unwrap();
+    assert!(is(&e, PLAYER_REF, 117, REGION.0, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_in_zone_reads_the_references_zone_else_its_cells() {
+    let (_f, mut e) = fixture();
+    // A reference's own zone beats its cell's; cell B's other occupants and
+    // references use the cell's, and cell A's own none.
+    assert!(is(&e, GUILD_REF, 445, OWN_ZONE.0, 1.0));
+    assert!(is(&e, GUILD_REF, 445, ZONE.0, 0.0));
+    assert!(is(&e, FREE_REF, 445, ZONE.0, 1.0));
+    assert!(is(&e, HUMAN_IN_B, 445, ZONE.0, 1.0));
+    assert!(is(&e, PLAIN_REF, 445, ZONE.0, 0.0));
+    // The player's is the cell they are in.
+    e.enter_interior(CELL_B, None).unwrap();
+    assert!(is(&e, PLAYER_REF, 445, ZONE.0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn menu_mode_and_time_passing_follow_the_pausing_menus() {
+    let (_f, mut e) = fixture();
+    assert!(is(&e, PLAYER_REF, 36, 0, 0.0)); // MenuMode
+    assert!(is(&e, PLAYER_REF, 265, 0, 1.0)); // IsTimePassing
+    e.menu = Some(crate::items::Menu::SleepWait { sleeping: false });
+    assert!(is(&e, PLAYER_REF, 36, 0, 1.0));
+    assert!(is(&e, PLAYER_REF, 265, 0, 0.0));
+    // Waiting passes the time from inside the menu.
+    e.start_waiting(1);
+    assert!(is(&e, PLAYER_REF, 265, 0, 1.0));
+    // A menu number is unsupported: it fails whatever it is compared with.
+    assert!(!is(&e, PLAYER_REF, 36, 1002, 1.0));
+    assert!(!is(&e, PLAYER_REF, 36, 1002, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_player_controls_disabled_asks_about_the_selected_controls() {
+    let (_f, mut e) = fixture();
+    let asks =
+        |e: &Engine, movement, fighting, want| is2(e, PLAYER_REF, 98, movement, fighting, want);
+    assert!(asks(&e, 0, 0, 0.0));
+    assert!(asks(&e, 1, 0, 0.0));
+    e.disabled_controls.movement = true;
+    assert!(asks(&e, 0, 0, 1.0));
+    assert!(asks(&e, 1, 0, 1.0));
+    assert!(asks(&e, 0, 1, 0.0));
+    // Both selected: both must be disabled.
+    assert!(asks(&e, 1, 1, 0.0));
+    e.disabled_controls.fighting = true;
+    assert!(asks(&e, 1, 1, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn real_time_conditions_follow_the_clock() {
+    let (_f, mut e) = fixture();
+    e.scripts.wall_time = 5400.0;
+    assert!(is(&e, PLAYER_REF, 716, 0, 1.5)); // GetRealHoursPassed
+    e.frame_seconds = 0.25;
+    assert!(is(&e, PLAYER_REF, 12, 0, 0.25)); // GetSecondsPassed
 }

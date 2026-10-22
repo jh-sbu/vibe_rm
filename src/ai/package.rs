@@ -442,6 +442,10 @@ fn package_data(c: &mut Condition, input: impl Fn(u8) -> Option<Input>) {
     };
     c.package_data = match c.func {
         condition::GET_NUMERIC_PACKAGE_DATA => index(c.p1).and_then(number),
+        // Unset: no such input, or one holding nothing the package can use.
+        condition::IS_NULL_PACKAGE_DATA => Some(PackageData::Number(u8::from(
+            index(c.p1).is_none_or(|v| matches!(v, Input::Other)),
+        ) as f32)),
         condition::GET_WITHIN_PACKAGE_LOCATION => index(c.p1).and_then(|value| match value {
             Input::Location(l) => Some(PackageData::Location(l)),
             _ => None,
