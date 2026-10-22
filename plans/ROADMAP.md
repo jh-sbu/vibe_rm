@@ -164,6 +164,10 @@ game each piece unlocks.
   markers come onto the map and are discovered as the player nears them,
   with the banner, the discovery music and Locations Discovered; `AddToMap`,
   `EnableFastTravel`, `IsMapMarkerVisible`; `known_ambiguities/map-markers.md`),
+  the map (`map.swf`: M or the tween menu's Map; the worldspace's `MNAM` map data
+  and the world map's camera over its distant LOD, panned, zoomed and tilted,
+  with the markers on it, the player's and hovering names them;
+  `known_ambiguities/map-view.md`),
   the tracked quests' targets (`QSTA`; the load door the way to one starts
   at when it is elsewhere) and the enemies fighting the player
   (`known_ambiguities/quest-targets.md`),
@@ -1748,25 +1752,21 @@ game each piece unlocks.
    targets on the map (on the compass: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
      item menus, the journal, the gift, magic, favorites and tween menus
-     done: see Done): the tween
-     menu's Map (with the map); waiting's rest: getting into the bed first; the gamepad's d-pad
+     done: see Done): waiting's rest: getting into the bed first; the gamepad's d-pad
      favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike)
-   - The map (`map.swf`; markers, discovery and travel permission are in
-     `src/map_markers.rs`, distant BTR/BTO blocks in `src/world/lod.rs`), in
-     order: the worldspace's map data (`WRLD` `MNAM`: usable size, cell
-     bounds, camera limits); the world map view, a top-down camera over the
-     worldspace drawing only LOD, panned, zoomed and tilted within those
-     limits, with the map's clouds, lighting and fog (research-gated);
-     `map.swf` hosted like the other menus, given each marker on the map
-     projected to the screen with its `TNAM` icon, discovered state and
-     travel permission, the player's marker, and the camera's input; the
-     local map for interiors and nearby cells; fast travel: picking a marker,
-     the confirmation, refusals (over-encumbered, enemies near, guards
-     pursuing, disabled by script), moving to the marker's destination, time passing with
-     distance, and followers coming along; then quest targets and custom
-     markers on the map, the journal's Show on Map and the tween menu's Map.
-     A first usable map stops after the `map.swf` step
+   - The map's rest (the world map and `map.swf` are done: see Done; markers, discovery
+     and travel permission are in `src/map_markers.rs`, the view in
+     `src/map_view.rs`), in order: the map's clouds, lighting, sea and fog
+     (research-gated); the local map for interiors and nearby cells
+     (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: picking a
+     marker (`MarkerClick` is logged), the confirmation, refusals
+     (over-encumbered, enemies near, guards pursuing, disabled by script),
+     moving to the marker's destination, time passing with distance, and
+     followers coming along; then quest targets and custom markers on the
+     map, the journal's Show on Map; markers of child worldspaces on their
+     parent's map; distant LOD around the loaded cells on by default (the
+     blocks are now placed right: `VRM_LOD=1`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), rows grouped by captured soul with per-item
      selection and transfers (`known_ambiguities/inventory-cards.md`); alchemy

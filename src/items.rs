@@ -44,6 +44,8 @@ pub enum Menu {
     SleepWait { sleeping: bool },
     /// A trainer's training menu.
     Training(FormId),
+    /// The world map.
+    Map,
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,

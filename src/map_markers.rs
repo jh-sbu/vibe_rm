@@ -121,7 +121,7 @@ fn read_markers(e: &Engine) -> Vec<MapMarker> {
 }
 
 impl Engine {
-    fn map_marker_list(&self) -> &[MapMarker] {
+    pub(crate) fn map_marker_list(&self) -> &[MapMarker] {
         self.map_markers.all.get_or_init(|| read_markers(self))
     }
 

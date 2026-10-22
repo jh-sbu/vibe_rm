@@ -252,6 +252,11 @@ pub struct Engine {
     pub messages: crate::messages::Messages,
     /// Map markers on the map and discovered (`crate::map_markers`).
     pub map_markers: crate::map_markers::MapMarkers,
+    /// The world map, while it is open.
+    pub map_view: Option<crate::map_view::MapView>,
+    /// The view the next opening of the map starts from (console `map`):
+    /// the position looked at, zoom and pitch.
+    pub map_start: Option<(glam::Vec2, f32, f32)>,
     /// Where the tracked quests' objectives point (`crate::quest_targets`).
     pub quest_targets: crate::quest_targets::QuestTargets,
     /// Plants harvested (`crate::harvest`).
@@ -434,6 +439,8 @@ impl Engine {
             magic: Default::default(),
             messages: Default::default(),
             map_markers: Default::default(),
+            map_view: None,
+            map_start: None,
             quest_targets: Default::default(),
             harvests: Default::default(),
             restocks: Default::default(),
@@ -812,69 +819,7 @@ impl Engine {
                 want = vec![(v[0], v[1], v[2])];
             }
         }
-        let want_set: HashSet<(i32, i32, i32)> = want.iter().copied().collect();
-        // Load missing blocks, nearest (finest) first, a few per frame.
-        let mut missing: Vec<(i32, i32, i32)> = want
-            .iter()
-            .copied()
-            .filter(|k| !lod.is_loaded(*k))
-            .collect();
-        missing.sort_by_key(|k| k.0);
-        let mut loaded_any = false;
-        for (level, x, y) in missing.into_iter().take(4) {
-            let (btr, bto) = lod.paths(level, x, y);
-            let mut models = Vec::new();
-            if std::env::var_os("VRM_NO_BTR").is_none()
-                && let Some(m) = crate::world::lod::load_block(&self.vfs, &btr, level, x, y, true)
-            {
-                models.push(m);
-            }
-            if lod.has(level, x, y, true)
-                && std::env::var_os("VRM_NO_BTO").is_none()
-                && let Some(m) = crate::world::lod::load_block(&self.vfs, &bto, level, x, y, false)
-            {
-                models.push(m);
-            }
-            let mut tex = HashSet::new();
-            for m in &models {
-                for mesh in &m.meshes {
-                    for t in [&mesh.material.diffuse, &mesh.material.normal]
-                        .into_iter()
-                        .flatten()
-                    {
-                        if !self.renderer.textures.contains(t) {
-                            tex.insert(t.clone());
-                        }
-                    }
-                }
-            }
-            loader::load_textures(&mut self.renderer, &self.vfs, tex.into_iter().collect());
-            for m in &models {
-                log::debug!(
-                    "lod block {level}.{x}.{y}: {} meshes, bound center {:?} r {}",
-                    m.meshes.len(),
-                    m.bound_center,
-                    m.bound_radius
-                );
-            }
-            let instances = models
-                .into_iter()
-                .filter(|m| !m.meshes.is_empty())
-                .map(|m| {
-                    crate::world::lod::instance(std::sync::Arc::new(self.renderer.upload_model(&m)))
-                })
-                .collect();
-            lod.insert((level, x, y), instances);
-            loaded_any = true;
-        }
-        // Drop blocks no longer wanted once everything wanted is present.
-        if !loaded_any {
-            for k in lod.loaded_keys() {
-                if !want_set.contains(&k) {
-                    lod.remove(k);
-                }
-            }
-        }
+        crate::world::lod::stream(&self.vfs, &mut self.renderer, lod, &want, 4);
         if lod.dirty {
             lod.dirty = false;
             self.scene.lod = lod
@@ -2024,7 +1969,7 @@ impl Engine {
             .world_field(world, b"EDID", 0x2)
             .map(|(d, _)| esp::decode_zstring(&d))
             .unwrap_or_default();
-        // Distant LOD is experimental (block transforms still wrong); opt in with VRM_LOD=1.
+        // Distant LOD around the loaded cells is opt-in (VRM_LOD=1); the map has its own.
         self.lod = if std::env::var_os("VRM_LOD").is_some() {
             Some(crate::world::lod::Lod::new(&self.vfs, &lod_world)).filter(|l| !l.is_empty())
         } else {
