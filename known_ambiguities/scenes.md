@@ -128,3 +128,11 @@ without running goodbye, INFO-end or arrest-completion side effects. If a save
 was taken mid-greet, its start-time completion marker is retained, so the greet
 is treated as accepted/completed after loading rather than continued from its
 current line. This is a native policy, not verified Skyrim SE save behavior.
+
+Before applying a native snapshot, scene records and their action references are
+checked against the loaded plugin definitions, including phase/action bounds,
+dialogue topics and child INFO membership, plus consistency between the optional
+scene adjuncts. Restored action clocks must produce finite, nonnegative start
+times, and dialogue/repeat deadlines must remain finite. Rejected scene data is
+validated before the live game is unloaded. These checks guard this runtime's
+snapshot format; they do not document Skyrim's `.ess` validation behavior.

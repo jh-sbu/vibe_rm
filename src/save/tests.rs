@@ -49,6 +49,8 @@ const LOOP_DIALOGUE_SCENE: FormId = FormId(0x8BA);
 const RESTART_SCENE_A: FormId = FormId(0x8BB);
 const RESTART_SCENE_B: FormId = FormId(0x8BC);
 const FORCE_GREET_TEMPLATE: FormId = FormId(0x8BD);
+const HEADTRACK_SCENE: FormId = FormId(0x8BE);
+const TWO_PHASE_TIMER_SCENE: FormId = FormId(0x8BF);
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
@@ -214,6 +216,48 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     .field(b"DMIN", &5.0f32.to_le_bytes())
                     .field(b"DMAX", &5.0f32.to_le_bytes())
                     .form(b"DATA", SCENE_TOPIC)
+                    .field(b"ANAM", &[])
+                    .u32(b"PNAM", TIMER_SCENE_QUEST.0),
+                RecordBuilder::new(b"SCEN", HEADTRACK_SCENE)
+                    .field(b"HNAM", &[])
+                    .zstring(b"NAM0", "Headtracking phase")
+                    .field(b"NEXT", &[])
+                    .field(b"CTDA", &scene_never_done)
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .field(b"ANAM", &0u16.to_le_bytes())
+                    .zstring(b"NAM0", "Headtrack only")
+                    .u32(b"ALID", SCENE_ACTION_ALIAS)
+                    .u32(b"INAM", 21)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .form(b"DATA", FormId::NULL)
+                    .field(b"ANAM", &[])
+                    .u32(b"PNAM", TIMER_SCENE_QUEST.0),
+                RecordBuilder::new(b"SCEN", TWO_PHASE_TIMER_SCENE)
+                    .field(b"HNAM", &[])
+                    .zstring(b"NAM0", "First phase")
+                    .field(b"NEXT", &[])
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .field(b"HNAM", &[])
+                    .zstring(b"NAM0", "Second phase")
+                    .field(b"NEXT", &[])
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .field(b"ANAM", &2u16.to_le_bytes())
+                    .zstring(b"NAM0", "First timer")
+                    .u32(b"INAM", 23)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .field(b"SNAM", &1.0f32.to_le_bytes())
+                    .field(b"ANAM", &[])
+                    .field(b"ANAM", &2u16.to_le_bytes())
+                    .zstring(b"NAM0", "Second timer")
+                    .u32(b"INAM", 24)
+                    .u32(b"SNAM", 1)
+                    .u32(b"ENAM", 1)
+                    .field(b"SNAM", &100.0f32.to_le_bytes())
                     .field(b"ANAM", &[])
                     .u32(b"PNAM", TIMER_SCENE_QUEST.0),
                 RecordBuilder::new(b"SCEN", RESTART_SCENE_A)
@@ -1878,7 +1922,12 @@ fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     );
     assert_eq!(saved.scene_lifecycle[0].actions[1].elapsed, Some(3.0));
     let mut item1_format = file.clone();
-    item1_format.sections.retain(|(tag, _)| tag != b"SCLF");
+    item1_format.sections.retain(|(tag, _)| {
+        !matches!(
+            tag,
+            b"SCLF" | b"SCAB" | b"SDLG" | b"SLRP" | b"SRSQ" | b"SFGT"
+        )
+    });
     Snapshot::read(&item1_format)
         .unwrap()
         .apply(&mut e)
@@ -1915,8 +1964,12 @@ fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     assert!(e.start_scene(TIMER_SCENE, false));
     e.update_scenes();
     let mut legacy = Snapshot::capture(&e).write();
-    legacy.sections.retain(|(tag, _)| tag != b"SCNE");
-    legacy.sections.retain(|(tag, _)| tag != b"SCLF");
+    legacy.sections.retain(|(tag, _)| {
+        !matches!(
+            tag,
+            b"SCNE" | b"SCLF" | b"SCAB" | b"SDLG" | b"SLRP" | b"SRSQ" | b"SFGT"
+        )
+    });
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(
         !e.is_scene_playing(TIMER_SCENE),
@@ -2207,6 +2260,13 @@ fn looping_scene_dialogue_load_preserves_repeat_deadline_across_roundtrips() {
     assert_eq!(Snapshot::capture(&e).scene_repeats, saved.scene_repeats);
 
     let bytes = saved.write().to_bytes();
+    let mut overflowing_deadline = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    overflowing_deadline.real_time = f64::MAX;
+    overflowing_deadline.scene_repeats[0].remaining = f64::MAX;
+    assert!(overflowing_deadline.apply(&mut e).is_err());
+    assert!(e.is_scene_playing(LOOP_DIALOGUE_SCENE));
+    assert_eq!(Snapshot::capture(&e).scene_repeats, saved.scene_repeats);
+
     let loaded = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
     loaded.apply(&mut e).unwrap();
     attach_scene_test_actor(&mut e);
@@ -2383,6 +2443,162 @@ fn scene_force_greet_load_discards_conversation_and_preserves_completion() {
     assert!(e.is_scene_action_complete(PACKAGE_SCENE, 13));
     e.update_force_greets(0.0);
     assert!(e.conversation.is_none());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
+fn invalid_scene_snapshots_are_rejected_before_live_state_changes() {
+    let (_fixture, mut e) = engine("scene-validation-transaction");
+    e.scripts
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .running = true;
+    e.force_alias_ref(TIMER_SCENE_QUEST, SCENE_ACTION_ALIAS, SCENE_ACTOR);
+    attach_scene_test_actor(&mut e);
+    e.scripts.real_time = 10.0;
+    assert!(e.start_scene(PACKAGE_SCENE, false));
+    e.update_scenes();
+    ready_scene_force_greet_actor(&mut e);
+    e.update_force_greets(0.0);
+    assert!(e.conversation.is_some());
+
+    let bytes = Snapshot::capture(&e).write().to_bytes();
+    e.scripts.real_time = 77.0;
+    e.scripts.quests.get_mut(&TIMER_SCENE_QUEST).unwrap().stage = 42;
+    let before_vm = format!("{:?}", e.vm.export());
+    let before_lifecycle = Snapshot::capture(&e).scene_lifecycle;
+    let before_bindings = Snapshot::capture(&e).scene_bindings;
+    let before_markers = e.scenes.force_greeted.clone();
+
+    let corruptions: Vec<(&str, Box<dyn Fn(&mut Snapshot)>)> = vec![
+        ("non-finite clock", Box::new(|s| s.real_time = f64::NAN)),
+        (
+            "phase outside definition",
+            Box::new(|s| s.scene_lifecycle[0].phase = Some(u32::MAX)),
+        ),
+        (
+            "unknown action id",
+            Box::new(|s| s.scene_lifecycle[0].actions[0].action = u32::MAX),
+        ),
+        (
+            "duplicate package owner",
+            Box::new(|s| {
+                let binding = s
+                    .scene_bindings
+                    .iter_mut()
+                    .find(|binding| binding.action == 14)
+                    .unwrap();
+                binding.actor = Some(SCENE_ACTOR);
+                binding.package_active = true;
+                binding.elapsed = Some(0.0);
+            }),
+        ),
+        (
+            "invalid package start time",
+            Box::new(|s| {
+                s.scene_bindings
+                    .iter_mut()
+                    .find(|binding| binding.action == 13)
+                    .unwrap()
+                    .elapsed = Some(f64::MAX);
+            }),
+        ),
+    ];
+
+    for (label, corrupt) in corruptions {
+        let mut snapshot = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+        corrupt(&mut snapshot);
+        assert!(snapshot.apply(&mut e).is_err(), "accepted {label}");
+        assert_eq!(e.scripts.real_time, 77.0, "changed clock for {label}");
+        assert_eq!(
+            e.scripts.quests[&TIMER_SCENE_QUEST].stage, 42,
+            "changed quest for {label}"
+        );
+        assert_eq!(
+            format!("{:?}", e.vm.export()),
+            before_vm,
+            "changed VM for {label}"
+        );
+        assert_eq!(
+            Snapshot::capture(&e).scene_lifecycle,
+            before_lifecycle,
+            "changed scenes for {label}"
+        );
+        assert_eq!(
+            Snapshot::capture(&e).scene_bindings,
+            before_bindings,
+            "changed bindings for {label}"
+        );
+        assert_eq!(
+            e.scenes.force_greeted, before_markers,
+            "changed markers for {label}"
+        );
+        assert!(e.conversation.is_some(), "cleared conversation for {label}");
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
+fn null_topic_headtracking_scene_remains_loadable() {
+    let (_fixture, mut e) = engine("scene-null-topic-validation");
+    e.scripts
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .running = true;
+    e.force_alias_ref(TIMER_SCENE_QUEST, SCENE_ACTION_ALIAS, SCENE_ACTOR);
+    attach_scene_test_actor(&mut e);
+    assert!(e.start_scene(HEADTRACK_SCENE, false));
+    e.update_scenes();
+    assert!(e.is_scene_playing(HEADTRACK_SCENE));
+    assert!(e.is_scene_action_complete(HEADTRACK_SCENE, 21));
+
+    let saved = Snapshot::capture(&e);
+    assert_eq!(saved.scene_lifecycle[0].phase, Some(0));
+    saved.apply(&mut e).unwrap();
+    e.update_scenes();
+    assert!(e.is_scene_playing(HEADTRACK_SCENE));
+    assert!(e.is_scene_action_complete(HEADTRACK_SCENE, 21));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
+fn legacy_timer_scene_resave_accepts_past_phase_done_actions() {
+    let (_fixture, mut e) = engine("scene-legacy-phase-resave");
+    e.scripts
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .running = true;
+    e.scripts.real_time = 10.0;
+    assert!(e.start_scene(TWO_PHASE_TIMER_SCENE, false));
+    e.update_scenes();
+    e.scripts.real_time = 12.0;
+    e.update_scenes();
+    assert_eq!(Snapshot::capture(&e).scene_lifecycle[0].phase, Some(1));
+
+    let mut legacy = Snapshot::capture(&e).write();
+    legacy.sections.retain(|(tag, _)| {
+        !matches!(
+            tag,
+            b"SCLF" | b"SCAB" | b"SDLG" | b"SLRP" | b"SRSQ" | b"SFGT"
+        )
+    });
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    let resaved = Snapshot::capture(&e);
+    assert_eq!(resaved.scene_lifecycle[0].phase, Some(1));
+    assert_eq!(
+        resaved.scene_lifecycle[0].actions[0].state,
+        crate::scene::SavedActionState::Done
+    );
+    let bytes = resaved.write().to_bytes();
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert!(e.is_scene_playing(TWO_PHASE_TIMER_SCENE));
+    assert!(e.is_scene_action_complete(TWO_PHASE_TIMER_SCENE, 23));
 }
 
 #[test]

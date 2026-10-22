@@ -1834,6 +1834,14 @@ impl Snapshot {
             self.plugins.len(),
             have.len()
         );
+        anyhow::ensure!(
+            self.real_time.is_finite() && self.real_time >= 0.0,
+            "save has invalid real-time clock"
+        );
+        anyhow::ensure!(
+            self.wall_time.is_finite() && self.wall_time >= 0.0,
+            "save has invalid wall-time clock"
+        );
         let weapon_usage =
             crate::stats::WeaponUsage::restore(self.weapon_usage, self.favorite_weapon)?;
         for (weapon, _) in weapon_usage.saved().0 {
@@ -1871,6 +1879,7 @@ impl Snapshot {
             );
         }
         e.validate_saved_scenes(
+            self.real_time,
             &self.scenes,
             &self.scene_lifecycle,
             &self.scene_bindings,

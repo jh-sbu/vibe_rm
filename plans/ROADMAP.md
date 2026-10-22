@@ -1013,7 +1013,9 @@ game each piece unlocks.
   action bindings, selected dialogue responses and already chosen looping
   dialogue waits, pending restarts and scene force-greet completion markers in
   optional adjunct sections; live player conversations, audio playback and
-  package procedure progress are not resumed. Open questions:
+  package procedure progress are not resumed. Scene snapshot references are
+  checked against loaded plugin definitions before applying; invalid data leaves
+  the live game intact. Open questions:
   `known_ambiguities/scenes.md`
 - Story Manager (also pick lock `LOCK` and trespass `TRES` events, no vanilla node
   listens): events run down the tree of event, branch and quest nodes
