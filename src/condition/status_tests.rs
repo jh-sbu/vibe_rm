@@ -22,6 +22,18 @@ const GREATSWORD: FormId = FormId(0x851);
 const BOUND_SWORD: FormId = FormId(0x852);
 const BOUND_BATTLEAXE: FormId = FormId(0x853);
 const BOW: FormId = FormId(0x854);
+const GUILD: FormId = FormId(0x860);
+const CELL_A: FormId = FormId(0x861);
+const CELL_B: FormId = FormId(0x862);
+const CELL_C: FormId = FormId(0x863);
+const PLAIN_REF: FormId = FormId(0x864);
+const GUILD_REF: FormId = FormId(0x865);
+const FREE_REF: FormId = FormId(0x866);
+const HUMAN_IN_A: FormId = FormId(0x867);
+const BEAST_IN_A: FormId = FormId(0x868);
+const HUMAN_IN_B: FormId = FormId(0x869);
+const HUMAN_IN_C: FormId = FormId(0x86A);
+const CRATE: FormId = FormId(0x86B);
 
 struct Fixture(std::path::PathBuf);
 
@@ -58,14 +70,78 @@ fn fixture() -> (Fixture, Engine) {
         RecordBuilder::new(b"WEAP", id).field(b"DNAM", &dnam)
     };
     let actor = |id, base| RecordBuilder::new(b"ACHR", id).form(b"NAME", base);
+    // An interior cell with its (temporary) references.
+    let cell = |id: FormId, owner: Option<FormId>, refs: Vec<RecordBuilder>| {
+        let mut record = RecordBuilder::new(b"CELL", id).field(b"DATA", &[1, 0]);
+        if let Some(owner) = owner {
+            record = record.form(b"XOWN", owner);
+        }
+        [
+            Node::Record(record),
+            Node::Group {
+                label: id.0.to_le_bytes(),
+                group_type: esp::group_type::CELL_CHILDREN,
+                children: vec![Node::Group {
+                    label: id.0.to_le_bytes(),
+                    group_type: esp::group_type::CELL_TEMPORARY,
+                    children: refs.into_iter().map(Node::Record).collect(),
+                }],
+            },
+        ]
+    };
+    let placed = |id, base| RecordBuilder::new(b"REFR", id).form(b"NAME", base);
+    let mut snam = [0u8; 8];
+    snam[..4].copy_from_slice(&GUILD.0.to_le_bytes());
+    let mut cells = Vec::new();
+    cells.extend(cell(
+        CELL_A,
+        Some(HUMAN),
+        vec![
+            placed(PLAIN_REF, CRATE),
+            placed(GUILD_REF, CRATE).form(b"XOWN", GUILD),
+            RecordBuilder::new(b"ACHR", HUMAN_IN_A).form(b"NAME", HUMAN),
+            RecordBuilder::new(b"ACHR", BEAST_IN_A).form(b"NAME", BEAST),
+        ],
+    ));
+    cells.extend(cell(
+        CELL_B,
+        None,
+        vec![
+            placed(FREE_REF, CRATE),
+            RecordBuilder::new(b"ACHR", HUMAN_IN_B).form(b"NAME", HUMAN),
+        ],
+    ));
+    cells.extend(cell(
+        CELL_C,
+        Some(GUILD),
+        vec![RecordBuilder::new(b"ACHR", HUMAN_IN_C).form(b"NAME", HUMAN)],
+    ));
     let records = [
+        Node::Group {
+            label: *b"CELL",
+            group_type: esp::group_type::TOP,
+            children: vec![Node::Group {
+                label: 8i32.to_le_bytes(),
+                group_type: esp::group_type::INTERIOR_BLOCK,
+                children: vec![Node::Group {
+                    label: 2i32.to_le_bytes(),
+                    group_type: esp::group_type::INTERIOR_SUB_BLOCK,
+                    children: cells,
+                }],
+            }],
+        },
+        Node::top(b"FACT", vec![RecordBuilder::new(b"FACT", GUILD)]),
+        Node::top(b"MISC", vec![RecordBuilder::new(b"MISC", CRATE)]),
         Node::top(
             b"RACE",
             vec![race(PLAYABLE_RACE, 0x1), race(CREATURE_RACE, 0)],
         ),
         Node::top(
             b"NPC_",
-            vec![npc(HUMAN, PLAYABLE_RACE), npc(BEAST, CREATURE_RACE)],
+            vec![
+                npc(HUMAN, PLAYABLE_RACE).field(b"SNAM", &snam),
+                npc(BEAST, CREATURE_RACE),
+            ],
         ),
         Node::top(
             b"ACHR",
@@ -121,7 +197,13 @@ fn fixture() -> (Fixture, Engine) {
 
 /// `func(param) == value` as a CTDA record's bytes.
 fn ctda(func: u16, param: u32, value: f32) -> [u8; 32] {
+    ctda2(func, param, 0, value)
+}
+
+/// As `ctda`, with a second parameter.
+fn ctda2(func: u16, param: u32, second: u32, value: f32) -> [u8; 32] {
     let mut d = [0; 32];
+    d[16..20].copy_from_slice(&second.to_le_bytes());
     d[4..8].copy_from_slice(&value.to_le_bytes());
     d[8..10].copy_from_slice(&func.to_le_bytes());
     d[12..16].copy_from_slice(&param.to_le_bytes());
@@ -130,8 +212,13 @@ fn ctda(func: u16, param: u32, value: f32) -> [u8; 32] {
 
 /// Whether `func(param) == value` holds for `subject`.
 fn is(e: &Engine, subject: FormId, func: u16, param: u32, value: f32) -> bool {
+    is2(e, subject, func, param, 0, value)
+}
+
+/// As `is`, with a second parameter.
+fn is2(e: &Engine, subject: FormId, func: u16, param: u32, second: u32, value: f32) -> bool {
     let rec = e.lo.get(SWORD_REF).unwrap();
-    let c = crate::condition::parse(&rec, &ctda(func, param, value)).unwrap();
+    let c = crate::condition::parse(&rec, &ctda2(func, param, second, value)).unwrap();
     crate::condition::evaluate(
         e,
         &[c],
@@ -214,4 +301,42 @@ fn bound_weapons_are_found_in_the_hand_the_source_names() {
     assert!(is(&e, HUMAN_REF, 706, 0, 0.0));
     assert!(is(&e, HUMAN_REF, 706, 2, 0.0));
     assert!(is(&e, BEAST_REF, 706, 1, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn is_owner_asks_who_owns_the_reference() {
+    let (_f, mut e) = fixture();
+    // Owned through its cell, then by its own record, which wins.
+    assert!(is(&e, PLAIN_REF, 278, HUMAN.0, 1.0));
+    assert!(!is(&e, PLAIN_REF, 278, GUILD.0, 1.0));
+    assert!(is(&e, GUILD_REF, 278, GUILD.0, 1.0));
+    assert!(!is(&e, GUILD_REF, 278, HUMAN.0, 1.0));
+    // Unowned, and no owner named means the player.
+    assert!(!is(&e, FREE_REF, 278, HUMAN.0, 1.0));
+    assert!(!is(&e, FREE_REF, 278, 0, 1.0));
+    e.scripts.owners.insert(FREE_REF, Some(FormId(0x7)));
+    assert!(is(&e, FREE_REF, 278, 0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn is_cell_owner_asks_who_owns_the_cell() {
+    let (_f, e) = fixture();
+    assert!(is2(&e, HUMAN_REF, 280, CELL_A.0, HUMAN.0, 1.0));
+    assert!(!is2(&e, HUMAN_REF, 280, CELL_A.0, GUILD.0, 1.0));
+    assert!(is2(&e, HUMAN_REF, 280, CELL_C.0, GUILD.0, 1.0));
+    assert!(!is2(&e, HUMAN_REF, 280, CELL_B.0, HUMAN.0, 1.0));
+    assert!(!is2(&e, HUMAN_REF, 280, CELL_B.0, 0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn is_in_my_owned_cell_follows_the_actor_or_its_faction() {
+    let (_f, e) = fixture();
+    assert!(is(&e, HUMAN_IN_A, 146, 0, 1.0));
+    assert!(!is(&e, BEAST_IN_A, 146, 0, 1.0));
+    assert!(!is(&e, HUMAN_IN_B, 146, 0, 1.0));
+    // A cell the faction owns is its members'.
+    assert!(is(&e, HUMAN_IN_C, 146, 0, 1.0));
 }

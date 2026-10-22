@@ -81,3 +81,37 @@ casting-source parameter).
 - `HasBoundWeaponEquipped` fails for the voice source and for any value other
   than 0-2. The hand is the engine's held slot, so a bound weapon the Bound
   archetype is still conjuring counts once it is in the hand.
+
+## IsOwner, IsCellOwner and IsInMyOwnedCell
+
+`IsOwner` (278, an owner), `IsCellOwner` (280, a cell and an owner) and
+`IsInMyOwnedCell` (146).
+
+### What is known
+
+- UESP Skyrim Mod:Mod File Format/Raw Function Data (oldid 3411473) gives
+  `Ref.IsOwner(Owner(optional))`, `Ref.IsCellOwner(Cell, Owner(optional))` and
+  `Ref.IsInMyOwnedCell()`; the console list (Skyrim:Console, oldid 3628513)
+  describes `IsOwner` and `IsCellOwner` as "get the ownership of the ref". The
+  matching setters (`SetOwnership`, `SetCellOwnership`) take the same optional
+  owner.
+- An owner is the `XOWN` of the reference, else of its cell (`ref_owner`,
+  shared with theft and trespass), or what a script's `SetActorOwner` /
+  `SetFactionOwner` set.
+
+### Unconfirmed choices
+
+- The Oblivion and Morrowind forms of these functions ask whether the *calling
+  actor* owns the thing; the Skyrim description reads as a question about the
+  reference's own owner. This follows the Skyrim text: `IsOwner(x)` is true when
+  the subject reference's owner is `x`; `IsCellOwner(cell, x)` when the cell's
+  owner is `x`. Vanilla data has not been surveyed for which reading it
+  assumes.
+- An omitted owner names the player (the optional argument of the setters
+  means "the player"): the player's base `0x7` or the player faction.
+- Owner comparison is exact: an NPC owner is not matched by a reference of
+  that NPC, and a faction owner is not matched by a member.
+- `IsInMyOwnedCell` is the actor owning the cell it stands in, directly, by
+  base record, or through a faction it is a member of (rank 0 or better). For
+  the player only interior cells are known; an exterior cell counts as not
+  owned.

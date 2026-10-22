@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Ownership conditions: `IsOwner`, `IsCellOwner` and `IsInMyOwnedCell` read
+  owners the way theft and trespass do (scripts' owners included). Which
+  party the Skyrim forms ask about: `known_ambiguities/status-conditions.md`
 - `HasTwoHandedWeaponEquipped` and `HasBoundWeaponEquipped` read the weapons
   in the actor's hands. Choices: `known_ambiguities/status-conditions.md`
 - `GetKeywordItemCount` totals the carried items with a keyword.
