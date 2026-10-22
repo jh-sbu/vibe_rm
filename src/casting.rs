@@ -159,6 +159,18 @@ pub struct Casting {
     npc_spells: HashMap<FormId, std::sync::Arc<NpcSpells>>,
 }
 
+impl Casting {
+    /// Greater Power cooldowns for native saves. Known-spell state is
+    /// separate: removing a spell from the player's list does not erase it.
+    pub(crate) fn power_uses(&self) -> &HashMap<FormId, f32> {
+        &self.powers_used
+    }
+
+    pub(crate) fn restore_power_uses(&mut self, uses: HashMap<FormId, f32>) {
+        self.powers_used = uses;
+    }
+}
+
 #[derive(Debug, Default)]
 struct NpcSpells {
     known: Vec<FormId>,

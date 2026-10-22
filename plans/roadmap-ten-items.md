@@ -202,6 +202,18 @@ availability afterward, independent powers, old-save clearing and malformed
 values/duplicates. Establish the public rule through local UESP first, and
 document original-save-format uncertainty separately from native policy.
 
+Outcome: implemented and reviewed. Parent validation passed both the codec and
+actual-use save/load/expiry regressions with system Vulkan. Formatting and diff
+checks passed. Optional `PWCD` stores sorted Greater Power
+form ids and last-use game days; load replaces the map and legacy saves clear
+it. The production regression exercises actual `player_use_power` calls before
+and after load, the 24-game-hour expiry boundary, independent Greater Powers,
+the unrestricted Lesser Power path, and legacy replacement. Malformed,
+duplicate, truncated, trailing and unsorted entries are rejected. UESP revision
+3595900 documents once per game day; retaining the engine's existing rolling
+24-hour rule is a native policy, and original `.ess` cooldown persistence
+remains unverified.
+
 ## 10. Spent-soul persistence
 
 Save-continuity blocker found during roadmap magic / soul trap and Saves review:

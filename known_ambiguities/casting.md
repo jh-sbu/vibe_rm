@@ -117,8 +117,11 @@ hands' casting events.
   quarter of it each landing (a second's worth a second). UESP says the
   base cost decides; whether it is the cost before or after the record's
   auto-calculation isn't clear.
-- **Greater powers** come back a game day after they were used (a day of
-  game time, not the next day); lesser powers whenever.
+- **Greater powers**: UESP says each can be used once per game day
+  ([Skyrim:Powers, revision 3595900](https://en.uesp.net/w/index.php?oldid=3595900),
+  line 7); lesser powers are not under that limit. This engine's existing
+  implementation measures a full 24 game hours from use, rather than resetting
+  at midnight. The public wording does not settle that timing distinction.
 - **Who casts in combat**: an actor whose combat style's magic multiplier
   is above its melee one (or equal to it, holding no weapon: a flame
   atronach's are both 1), with a hostile aimed or target actor spell it has

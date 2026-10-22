@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Greater Power cooldowns survive native saves through optional `PWCD`;
+  cooldowns restore by replacement, including clearing on legacy saves.
+  The existing 24-game-hour policy and the original `.ess` uncertainty are
+  documented in `known_ambiguities/casting.md` and `known_ambiguities/saves.md`.
 - `PlayAnimationAndWait` threads survive native saves through optional `ANMW`;
   restored waits remap sender/event identities to current runtime keys and
   resume on later matching events. Graph poses and timelines remain unsaved:
@@ -1724,10 +1728,9 @@ game each piece unlocks.
    original's `.ess` saves later; a save / load menu (the System page),
    load orders that changed since the save, and the original's refusals to
    save (combat, menus, scripted)
-   - Confirmed continuity gaps: greater powers' last-use game days
-     (`Casting::powers_used`) and bodies whose souls were captured
-     (`Magic::souls_taken`) are not saved. Preserve these restrictions alongside
-     saved inventories and bodies so reloading does not reset them.
+   - Confirmed continuity gap: bodies whose souls were captured
+     (`Magic::souls_taken`) are not saved. Preserve this restriction alongside
+     saved inventories and bodies so reloading does not reset it.
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
    - A new game separate from the developer launch, which drops the player at

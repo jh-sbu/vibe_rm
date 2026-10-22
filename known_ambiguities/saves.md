@@ -72,6 +72,15 @@ observer-to-player detection values and schedules an immediate fresh observation
 This persists the engine's reservoir values only: searches, combat targets,
 detection state transitions and AI execution remain outside save state.
 
+Greater Powers' last-use game days are stored by spell form in optional `PWCD`.
+Loading replaces the cooldown map; legacy native saves without `PWCD` clear it.
+The section retains the existing engine policy of a full 24 game hours between
+uses. UESP documents a once-per-game-day limit ([Skyrim:Powers, revision
+3595900](https://en.uesp.net/w/index.php?oldid=3595900)); it does not establish
+how the original `.ess` payload stores cooldown state or whether Skyrim resets
+at midnight. Cooldowns remain attached to loaded Greater Power records even if
+the player no longer knows or equips them.
+
 The scripting side (`vm.rs`, sections `VM` and `VMAR`): the scripts attached
 to each object with their variables and properties (`Vm::attach` keeps an
 instance that exists, so cells loading after a load don't reset them),

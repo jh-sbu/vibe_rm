@@ -11,7 +11,8 @@
 //! shouts, favorites, dialogue heard), `CRIM` (bounties) and `BART`
 //! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
 //! `ADOR` (doors actors left open), `DSTR` (destructible health/stage), `WUSE`
-//! (Favorite Weapon usage), `WTHR` (the weather, its transition and override),
+//! (Favorite Weapon usage), `PWCD` (Greater Power cooldowns), `WTHR`
+//! (the weather, its transition and override),
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
@@ -64,6 +65,7 @@ pub struct Snapshot {
     pub quests: HashMap<FormId, QuestState>,
     pub stats: HashMap<String, i32>,
     pub weapon_usage: Vec<(FormId, u64)>,
+    pub power_uses: HashMap<FormId, f32>,
     pub favorite_weapon: Option<FormId>,
     pub actor_values: HashMap<(FormId, u32), Modifiers>,
     pub other_actor_values: HashMap<(FormId, String), f32>,
@@ -468,6 +470,7 @@ impl Snapshot {
             quests: s.quests.clone(),
             stats: s.stats.clone(),
             weapon_usage,
+            power_uses: e.casting.power_uses().clone(),
             favorite_weapon,
             actor_values: s.actor_values.clone(),
             other_actor_values: s.other_actor_values.clone(),
@@ -593,6 +596,14 @@ impl Snapshot {
         }
         w.opt_form(self.favorite_weapon);
         file.add(b"WUSE", w.0);
+
+        let mut w = Writer::default();
+        w.len(self.power_uses.len());
+        for (power, last_used) in sorted(&self.power_uses) {
+            w.form(power);
+            w.f32(*last_used);
+        }
+        file.add(b"PWCD", w.0);
 
         let mut w = Writer::default();
         w.len(self.actor_values.len());
@@ -992,6 +1003,27 @@ impl Snapshot {
                 .map_err(|e| Corrupt(e.to_string()))?;
         }
 
+        if let Some(data) = file.section(b"PWCD") {
+            let mut r = Reader::new(data);
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let power = r.form()?;
+                let last_used = r.f32()?;
+                if power.is_null()
+                    || !last_used.is_finite()
+                    || last_used < 0.0
+                    || previous.is_some_and(|p| p >= power)
+                {
+                    return Err(Corrupt(
+                        "invalid, duplicate, or unsorted power cooldown".into(),
+                    ));
+                }
+                previous = Some(power);
+                s.power_uses.insert(power, last_used);
+            }
+            r.finish()?;
+        }
+
         let mut r = section(file, b"AVAL")?;
         for _ in 0..r.count(25)? {
             let (actor, index) = (r.form()?, r.u32()?);
@@ -1384,6 +1416,17 @@ impl Snapshot {
                 "save has invalid favorite-weapon form {weapon}"
             );
         }
+        for (power, last_used) in &self.power_uses {
+            anyhow::ensure!(
+                !power.is_null()
+                    && last_used.is_finite()
+                    && *last_used >= 0.0
+                    && e.lo.get(*power).is_some_and(|r| r.tag().0 == *b"SPEL")
+                    && e.magic_item(*power)
+                        .is_some_and(|item| { item.spell_type == crate::magic::spell_type::POWER }),
+                "save has invalid Greater Power cooldown for {power}"
+            );
+        }
         for f in [
             self.weather.current,
             self.weather.outgoing,
@@ -1464,6 +1507,7 @@ impl Snapshot {
             log::warn!("{dropped} saved script threads can't be resumed");
         }
         e.inventories = self.inventories;
+        e.casting.restore_power_uses(self.power_uses);
         let ws = &mut e.world_state;
         ws.alerted = self.alerted;
         ws.dead = self.dead;

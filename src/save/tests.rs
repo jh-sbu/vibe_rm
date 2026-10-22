@@ -34,6 +34,9 @@ const LOCATION_EVENT: FormId = FormId(0x864);
 const MESSAGE_WAIT_A: FormId = FormId(0x8A0);
 const MESSAGE_WAIT_B: FormId = FormId(0x8A1);
 const ANIMATION_WAIT_OBJECT: FormId = FormId(0x8A2);
+const GREATER_POWER_A: FormId = FormId(0x8A4);
+const GREATER_POWER_B: FormId = FormId(0x8A5);
+const LESSER_POWER: FormId = FormId(0x8A6);
 
 struct Fixture(std::path::PathBuf);
 
@@ -52,6 +55,14 @@ fn engine(name: &str) -> (Fixture, Engine) {
         std::env::temp_dir().join(format!("vrm-save-{name}-{}-{stamp}", std::process::id())),
     );
     std::fs::create_dir(&f.0).unwrap();
+    let spell_record = |id: FormId, spell_type: u32, name: &str| {
+        let mut spit = [0; 36];
+        spit[8..12].copy_from_slice(&spell_type.to_le_bytes());
+        spit[16..20].copy_from_slice(&1u32.to_le_bytes()); // fire and forget
+        RecordBuilder::new(b"SPEL", id)
+            .zstring(b"FULL", name)
+            .field(b"SPIT", &spit)
+    };
     let records = [
         Node::top(
             b"NPC_",
@@ -72,6 +83,26 @@ fn engine(name: &str) -> (Fixture, Engine) {
             .into_iter()
             .map(|id| RecordBuilder::new(b"QUST", id))
             .collect(),
+        ),
+        Node::top(
+            b"SPEL",
+            vec![
+                spell_record(
+                    GREATER_POWER_A,
+                    crate::magic::spell_type::POWER,
+                    "Greater A",
+                ),
+                spell_record(
+                    GREATER_POWER_B,
+                    crate::magic::spell_type::POWER,
+                    "Greater B",
+                ),
+                spell_record(
+                    LESSER_POWER,
+                    crate::magic::spell_type::LESSER_POWER,
+                    "Lesser",
+                ),
+            ],
         ),
         Node::top(
             b"SMEN",
@@ -250,6 +281,11 @@ fn engine(name: &str) -> (Fixture, Engine) {
     .unwrap();
     let e = crate::stats::action_tests::headless_engine(&f.0, "Save.esp");
     (f, e)
+}
+
+fn use_power(e: &mut Engine, power: FormId) {
+    e.equip_spell(PLAYER_REF, power, crate::world::inventory::VOICE);
+    e.player_use_power();
 }
 
 /// Change a bit of everything saves keep.
@@ -1148,6 +1184,92 @@ fn animation_event_waits_restore_semantically_and_resume_on_matching_event() {
     );
 }
 
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn greater_power_cooldowns_survive_load_and_expire_after_a_game_day() {
+    let (_a, mut a) = engine("power-cooldown-a");
+    a.day = 5;
+    a.hour = 6.0;
+    use_power(&mut a, GREATER_POWER_A);
+    use_power(&mut a, LESSER_POWER);
+    let saved = Snapshot::capture(&a);
+    assert_eq!(saved.power_uses.len(), 1);
+    assert!(saved.power_uses.contains_key(&GREATER_POWER_A));
+    assert!(!saved.power_uses.contains_key(&LESSER_POWER));
+    let bytes = saved.write().to_bytes();
+
+    let (_b, mut b) = engine("power-cooldown-b");
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut b)
+        .unwrap();
+    b.scripts.notifications.clear();
+    use_power(&mut b, GREATER_POWER_B);
+    assert!(
+        b.scripts.notifications.is_empty(),
+        "an unused power is independent"
+    );
+    use_power(&mut b, GREATER_POWER_A);
+    use_power(&mut b, GREATER_POWER_B);
+    assert_eq!(
+        b.scripts.notifications.len(),
+        2,
+        "both daily powers are blocked"
+    );
+    use_power(&mut b, LESSER_POWER);
+    use_power(&mut b, LESSER_POWER);
+    assert_eq!(
+        b.scripts.notifications.len(),
+        2,
+        "lesser powers have no daily cooldown"
+    );
+    assert!(!b.casting.power_uses().contains_key(&LESSER_POWER));
+
+    b.day = 6;
+    b.hour = 6.0;
+    use_power(&mut b, GREATER_POWER_A);
+    assert_eq!(
+        b.scripts.notifications.len(),
+        2,
+        "the cooldown expires at 24 hours"
+    );
+    use_power(&mut b, GREATER_POWER_A);
+    assert_eq!(
+        b.scripts.notifications.len(),
+        3,
+        "use starts a new daily cooldown"
+    );
+
+    let mut legacy = SaveFile::from_bytes(&bytes).unwrap();
+    legacy.sections.retain(|(tag, _)| tag != b"PWCD");
+    let (_c, mut c) = engine("power-cooldown-legacy");
+    c.day = 5;
+    c.hour = 6.0;
+    use_power(&mut c, GREATER_POWER_A);
+    c.scripts.notifications.clear();
+    Snapshot::read(&legacy).unwrap().apply(&mut c).unwrap();
+    c.scripts.notifications.clear();
+    use_power(&mut c, GREATER_POWER_A);
+    assert!(
+        c.scripts.notifications.is_empty(),
+        "legacy save absence replaces stale destination cooldowns"
+    );
+
+    let mut bad = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    bad.power_uses.clear();
+    bad.power_uses.insert(SWORD, 5.0);
+    let (_d, mut d) = engine("power-cooldown-invalid-form");
+    d.day = 99;
+    assert!(
+        bad.apply(&mut d).is_err(),
+        "a non-power record cannot own a cooldown"
+    );
+    assert_eq!(
+        d.day, 99,
+        "validation rejects the save before mutating the engine"
+    );
+}
+
 /// Every runtime field is encoded without requiring a renderer or game assets.
 #[test]
 fn story_and_relationship_sections_are_deterministic_and_optional() {
@@ -1182,6 +1304,84 @@ fn story_and_relationship_sections_are_deterministic_and_optional() {
     let read = Snapshot::read(&old).unwrap();
     assert_eq!(read.story, Default::default());
     assert!(read.relationship_ranks.is_empty());
+}
+
+#[test]
+fn greater_power_cooldown_section_round_trips_and_rejects_bad_entries() {
+    let mut s = Snapshot::default();
+    s.power_uses.insert(GREATER_POWER_A, 17.25);
+    s.power_uses.insert(GREATER_POWER_B, 22.0);
+    let valid = s.write();
+    let bytes = valid.to_bytes();
+    let back = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(back.power_uses, s.power_uses);
+    assert_eq!(back.write().to_bytes(), bytes);
+
+    let mut legacy = valid.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"PWCD");
+    assert!(Snapshot::read(&legacy).unwrap().power_uses.is_empty());
+
+    let mut malformed = Vec::new();
+    let mut duplicate = valid.clone();
+    let payload = &mut duplicate
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"PWCD")
+        .unwrap()
+        .1;
+    let first = payload[4..12].to_vec();
+    payload[0..4].copy_from_slice(&3u32.to_le_bytes());
+    payload.extend_from_slice(&first);
+    malformed.push(duplicate);
+
+    let mut truncated = valid.clone();
+    truncated
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"PWCD")
+        .unwrap()
+        .1
+        .pop();
+    malformed.push(truncated);
+    let mut trailing = valid.clone();
+    trailing
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"PWCD")
+        .unwrap()
+        .1
+        .push(0);
+    malformed.push(trailing);
+    let mut unsorted = valid.clone();
+    let payload = &mut unsorted
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"PWCD")
+        .unwrap()
+        .1;
+    let first = payload[4..12].to_vec();
+    let second = payload[12..20].to_vec();
+    payload[4..12].copy_from_slice(&second);
+    payload[12..20].copy_from_slice(&first);
+    malformed.push(unsorted);
+    for (offset, value) in [(0, 0u32), (8, f32::NAN.to_bits()), (8, (-1.0f32).to_bits())] {
+        let mut bad = valid.clone();
+        let payload = &mut bad
+            .sections
+            .iter_mut()
+            .find(|(tag, _)| tag == b"PWCD")
+            .unwrap()
+            .1;
+        if offset == 0 {
+            payload[4..8].copy_from_slice(&value.to_le_bytes());
+        } else {
+            payload[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        malformed.push(bad);
+    }
+    for file in malformed {
+        assert!(Snapshot::read(&file).is_err());
+    }
 }
 
 #[test]
