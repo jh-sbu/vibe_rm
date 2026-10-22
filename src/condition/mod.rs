@@ -580,6 +580,20 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .and_then(|s| e.actor_voice_type(s))
             .is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))),   // HasKeyword
+        // Ownership (`ref_owner`: a script's, else the record's, else the cell's):
+        // the subject's owner is the one named (none named: the player).
+        278 => b(subject.is_some_and(|s| e.owned_by(e.ref_owner(s), p1))), // IsOwner
+        // The cell's owner is the second parameter's (none named: the player).
+        280 => b(e.owned_by(e.ref_owner(p1), FormId(c.p2))), // IsCellOwner
+        // The subject stands in a cell it owns.
+        146 => b(subject.is_some_and(|s| {
+            let cell = match (s, e.location) {
+                (PLAYER_REF, crate::engine::Location::Interior(c)) => Some(c),
+                (PLAYER_REF, _) => None,
+                _ => e.lo.cell_of_ref(s),
+            };
+            cell.is_some_and(|c| e.is_owner_of(s, e.ref_owner(c)))
+        })), // IsInMyOwnedCell
         // A greatsword, battleaxe or warhammer in the right hand (the animation
         // types that take both hands); bows and staves are not counted.
         636 => b(subject
@@ -1192,6 +1206,26 @@ impl Engine {
         self.npc_factions(b)
             .iter()
             .any(|&(f, r)| r >= 0 && mine.contains(&f))
+    }
+
+    /// Whether an `owner` (an NPC or faction, `None` unowned) is the one named:
+    /// null names the player, whose faction counts as theirs too.
+    fn owned_by(&self, owner: Option<FormId>, named: FormId) -> bool {
+        let Some(owner) = owner else { return false };
+        if named.is_null() {
+            owner == FormId(0x7) || owner == FormId(0xDB1)
+        } else {
+            owner == named
+        }
+    }
+
+    /// Whether `who` is the owner, or in the faction that is.
+    fn is_owner_of(&self, who: FormId, owner: Option<FormId>) -> bool {
+        let Some(owner) = owner else { return false };
+        owner == who
+            || self.base_of(who) == Some(owner)
+            || (self.lo.tag_of(owner).is_some_and(|t| t.0 == *b"FACT")
+                && self.is_member(who, owner))
     }
 
     /// How many items with the keyword a reference carries (its starting
