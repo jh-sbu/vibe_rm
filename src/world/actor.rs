@@ -1,7 +1,7 @@
 //! Assembling actors (NPC_ + RACE + ARMO/ARMA + FaceGen) into renderable parts.
 
 use esp::{FormId, LoadOrder, LoadedRecord};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 
 use super::records::{self, mesh_path, texture_path};
 use super::template::Sources;
@@ -53,6 +53,9 @@ pub struct ActorDesc {
     pub footsteps: Option<FormId>,
     /// Where it takes each part of its definition from (templates).
     pub templates: super::template::Sources,
+    /// Its skin tone (`QNAM`), the colour skin-tint shapes take in place of
+    /// their model's own; none when it gives none.
+    pub skin_tone: Option<Vec3>,
 }
 
 fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
@@ -270,6 +273,7 @@ struct NpcTraits {
     skin: FormId,
     outfit: FormId,
     height: f32,
+    skin_tone: Option<Vec3>,
 }
 
 /// The effective traits of an NPC, from the records its templates give each part.
@@ -310,6 +314,16 @@ fn npc_traits(lo: &LoadOrder, src: &Sources) -> Option<NpcTraits> {
             .get(b"NAM6")
             .map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap()))
             .unwrap_or(1.0),
+        // All zero in templated NPCs (their template gives it) and Dremora:
+        // taken as none.
+        skin_tone: traits
+            .get(b"QNAM")
+            .filter(|d| d.len() >= 12)
+            .map(|d| {
+                let c = |i: usize| f32::from_le_bytes(d[i..i + 4].try_into().unwrap());
+                Vec3::new(c(0), c(4), c(8))
+            })
+            .filter(|c| *c != Vec3::ZERO),
     })
 }
 
@@ -635,6 +649,7 @@ pub fn describe_player(
         race: traits.race,
         footsteps: footstep_set(lo, inventory.equipped(), skin, traits.race),
         templates,
+        skin_tone: traits.skin_tone,
     })
 }
 
@@ -774,5 +789,6 @@ pub fn describe_reference(
         race: traits.race,
         footsteps,
         templates,
+        skin_tone: traits.skin_tone,
     })
 }

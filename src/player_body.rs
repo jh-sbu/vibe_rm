@@ -173,6 +173,7 @@ impl Engine {
             lights: [0xFFFF; 8],
             radius: 120.0,
             shadow_only: !self.third_person,
+            skin_tone: d.skin_tone,
         });
         self.player_body = Some(body);
     }

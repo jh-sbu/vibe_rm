@@ -118,6 +118,8 @@ pub struct GrassBatch {
 struct SkinInstanceData {
     palette_base: u32,
     lights: [u32; 4],
+    /// The actor's skin tone and 1 ([`ActorInstance::skin_tone`]), or 0s.
+    skin_tone: [f32; 4],
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -733,6 +735,8 @@ pub struct ActorInstance {
     pub radius: f32,
     /// Cast a shadow but aren't drawn (the player's body seen from inside it).
     pub shadow_only: bool,
+    /// The colour its skin-tint shapes take in place of their model's own.
+    pub skin_tone: Option<Vec3>,
 }
 
 impl ActorInstance {
@@ -1522,7 +1526,8 @@ impl Renderer {
             0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Float32x2, 5 => Float32x4,
             11 => Uint32x4, 12 => Float32x4
         ];
-        let skin_inst_attrs = wgpu::vertex_attr_array![13 => Uint32, 14 => Uint32x4];
+        let skin_inst_attrs =
+            wgpu::vertex_attr_array![13 => Uint32, 14 => Uint32x4, 15 => Float32x4];
         let grass_attrs = wgpu::vertex_attr_array![6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4];
         let static_buffers = [
             Some(wgpu::VertexBufferLayout {
@@ -2285,6 +2290,9 @@ impl Renderer {
                 skin_inst.push(SkinInstanceData {
                     palette_base: base,
                     lights: pack_lights(actor.lights),
+                    skin_tone: actor
+                        .skin_tone
+                        .map_or([0.0; 4], |c| c.extend(1.0).to_array()),
                 });
                 let i = skin_inst.len() as u32 - 1;
                 if visible {
