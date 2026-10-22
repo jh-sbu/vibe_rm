@@ -17,6 +17,11 @@ const OTHER_KEYWORD: FormId = FormId(0x841);
 const TAGGED_A: FormId = FormId(0x842);
 const TAGGED_B: FormId = FormId(0x843);
 const UNTAGGED: FormId = FormId(0x844);
+const SWORD: FormId = FormId(0x850);
+const GREATSWORD: FormId = FormId(0x851);
+const BOUND_SWORD: FormId = FormId(0x852);
+const BOUND_BATTLEAXE: FormId = FormId(0x853);
+const BOW: FormId = FormId(0x854);
 
 struct Fixture(std::path::PathBuf);
 
@@ -45,6 +50,13 @@ fn fixture() -> (Fixture, Engine) {
             .field(b"ACBS", &[0; 24])
             .form(b"RNAM", race)
     };
+    // `DNAM`: the animation type, and the bound weapon flag among flags2.
+    let weapon = |id, anim: u8, bound: bool| {
+        let mut dnam = [0u8; 100];
+        dnam[0] = anim;
+        dnam[40..44].copy_from_slice(&(if bound { 0x2000u32 } else { 0 }).to_le_bytes());
+        RecordBuilder::new(b"WEAP", id).field(b"DNAM", &dnam)
+    };
     let actor = |id, base| RecordBuilder::new(b"ACHR", id).form(b"NAME", base);
     let records = [
         Node::top(
@@ -72,6 +84,16 @@ fn fixture() -> (Fixture, Engine) {
                 RecordBuilder::new(b"MISC", TAGGED_A).form(b"KWDA", KEYWORD),
                 RecordBuilder::new(b"MISC", TAGGED_B).form(b"KWDA", KEYWORD),
                 RecordBuilder::new(b"MISC", UNTAGGED).form(b"KWDA", OTHER_KEYWORD),
+            ],
+        ),
+        Node::top(
+            b"WEAP",
+            vec![
+                weapon(SWORD, 1, false),
+                weapon(GREATSWORD, 5, false),
+                weapon(BOUND_SWORD, 1, true),
+                weapon(BOUND_BATTLEAXE, 6, true),
+                weapon(BOW, 7, false),
             ],
         ),
         Node::top(b"REFR", vec![RecordBuilder::new(b"REFR", SWORD_REF)]),
@@ -154,4 +176,42 @@ fn get_keyword_item_count_totals_the_carried_items_with_the_keyword() {
     assert!(is(&e, HUMAN_REF, 465, KEYWORD.0, 3.0));
     assert!(is(&e, HUMAN_REF, 465, 0x845, 0.0));
     assert!(is(&e, BEAST_REF, 465, KEYWORD.0, 0.0));
+}
+
+/// `actor` holds `item` in `hand`.
+fn hold(e: &mut Engine, actor: FormId, item: FormId, hands: &[usize]) {
+    let lo = &e.lo;
+    let inv = e.inventories.entry(actor).or_default();
+    inv.add(item, 1);
+    inv.hold(lo, item, hands);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn two_handed_weapons_are_the_two_handed_animation_types() {
+    use crate::spells::RIGHT;
+    let (_f, mut e) = fixture();
+    assert!(is(&e, HUMAN_REF, 636, 0, 0.0));
+    hold(&mut e, HUMAN_REF, SWORD, &[RIGHT]);
+    assert!(is(&e, HUMAN_REF, 636, 0, 0.0));
+    hold(&mut e, HUMAN_REF, BOUND_BATTLEAXE, &[RIGHT]);
+    assert!(is(&e, HUMAN_REF, 636, 0, 1.0));
+    hold(&mut e, HUMAN_REF, GREATSWORD, &[RIGHT]);
+    assert!(is(&e, HUMAN_REF, 636, 0, 1.0));
+    hold(&mut e, HUMAN_REF, BOW, &[RIGHT]);
+    assert!(is(&e, HUMAN_REF, 636, 0, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn bound_weapons_are_found_in_the_hand_the_source_names() {
+    use crate::spells::{LEFT, RIGHT};
+    let (_f, mut e) = fixture();
+    hold(&mut e, HUMAN_REF, BOUND_SWORD, &[RIGHT]);
+    hold(&mut e, HUMAN_REF, SWORD, &[LEFT]);
+    // Sources: 0 the left hand, 1 the right, 2 the voice.
+    assert!(is(&e, HUMAN_REF, 706, 1, 1.0));
+    assert!(is(&e, HUMAN_REF, 706, 0, 0.0));
+    assert!(is(&e, HUMAN_REF, 706, 2, 0.0));
+    assert!(is(&e, BEAST_REF, 706, 1, 0.0));
 }

@@ -5,6 +5,8 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- `HasTwoHandedWeaponEquipped` and `HasBoundWeaponEquipped` read the weapons
+  in the actor's hands. Choices: `known_ambiguities/status-conditions.md`
 - `GetKeywordItemCount` totals the carried items with a keyword.
   Choices: `known_ambiguities/status-conditions.md`
 - `GetIsPlayableRace` reads the subject's race's Playable flag.

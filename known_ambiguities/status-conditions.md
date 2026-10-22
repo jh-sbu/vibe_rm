@@ -56,3 +56,28 @@ record lists the keyword (`KWDA`).
   starting inventory before it changes, as `GetItemCount` reads them.
 - Whether a keyword list, rather than one keyword, is accepted is unknown; the
   parameter is a single keyword.
+
+## HasTwoHandedWeaponEquipped and HasBoundWeaponEquipped
+
+`HasTwoHandedWeaponEquipped` (636) and `HasBoundWeaponEquipped` (706, one
+casting-source parameter).
+
+### What is known
+
+- UESP Skyrim:Console (oldid 3628513) lists both without descriptions; the
+  raw function data (oldid 3411473) gives `Ref.HasTwoHandedWeaponEquipped()`.
+- The parameter of `HasBoundWeaponEquipped` is xEdit's `ptCastingSource`
+  (0 left hand, 1 right hand, 2 voice, as CommonLibSSE's `CastingSource`).
+- Bound weapons are `WEAP` `DNAM` flags2 bit 0x2000 (xEdit's "Bound Weapon").
+
+### Unconfirmed choices
+
+- "Two-handed" is a weapon in the right hand whose animation type is
+  greatsword or battleaxe / warhammer (5, 6). Whether bows, crossbows or
+  staves count is unknown; they are left out because they are not melee
+  two-handers and the animation types are named separately.
+- A two-handed weapon is the right-hand item (`weapon_in_hand`, where the
+  game places it), whether drawn or sheathed: "equipped" is not "drawn".
+- `HasBoundWeaponEquipped` fails for the voice source and for any value other
+  than 0-2. The hand is the engine's held slot, so a bound weapon the Bound
+  archetype is still conjuring counts once it is in the hand.
