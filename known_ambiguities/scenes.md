@@ -95,8 +95,15 @@ runs; saves without these sections clear them. This policy does not establish
 original `.ess` scene layouts or Skyrim SE save/load behavior.
 
 Timer action actor aliases are reconstructed from quest aliases; explicit
-saved actor identities and scene package ownership remain for later work.
-Running dialogue and package actions retain only their lifecycle state here;
-their selected INFO, subtitle, package procedure and other internal progress
-are separate work. Force-greet state and pending scene repeats are also not
-retained yet.
+action actor identities are stored in the optional `SCAB` adjunct, including
+an explicitly empty binding so an alias fill after saving cannot retarget an
+already-bound action. Active package ownership is restored by re-expanding the
+authored package records and is installed before the saved cell attaches actors;
+the package structs themselves are not serialized. The ownership elapsed clock
+is retained, including while a completed package action waits for a phase's
+completion condition. Actor procedure, animation, and movement progress remain
+separate and may be reconstructed by the runtime. Legacy saves without `SCAB`
+continue to resolve actors from current quest aliases. Running dialogue actions
+retain only their lifecycle state here; selected INFO, subtitle, response queue,
+and loop deadline are separate work. Force-greet state and pending scene repeats
+are also not retained yet.

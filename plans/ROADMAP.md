@@ -29,14 +29,17 @@ game each piece unlocks.
   Skyrim SE semantics for created references remain unverified:
   `known_ambiguities/condition-geometry.md`.
 - Timer-only scene phases retain their phase and elapsed timer time in optional
-  `SCNE`; loading replaces old runs, and legacy saves clear them. Non-timer
-  scene continuation and original `.ess` compatibility remain open:
+  `SCNE`; loading replaces old runs, and legacy saves clear them. `SCLF` keeps
+  lifecycle state for all scenes and `SCAB` keeps explicit action actor bindings
+  and reconstructible package ownership. Dialogue continuation, actor procedure
+  progress and original `.ess` compatibility remain open:
   `known_ambiguities/scenes.md` and `known_ambiguities/saves.md`.
 - Scene lifecycle state survives native saves in optional `SCLF`: begun,
   stopping, paused and action waiting/running/done/stopped state are restored,
-  while running timer actions keep elapsed time even in mixed scenes. Dialogue
-  and package internals remain separate work:
-  `known_ambiguities/scenes.md`.
+  while running timer actions keep elapsed time even in mixed scenes. `SCAB`
+  retains bound actors, including empty bindings, and rebuilds owned packages
+  from plugin definitions before cell actors attach. Dialogue and actor
+  procedure progress remain separate work: `known_ambiguities/scenes.md`.
 - Package placement headings: scheduled Sandbox actors take a reference's
   heading at placement; Travel actors turn toward their marker after unloaded
   travel. Moved/dead actors and unrelated runtime steering retain priority.

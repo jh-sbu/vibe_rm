@@ -36,6 +36,9 @@ const MESSAGE_WAIT_B: FormId = FormId(0x8A1);
 const ANIMATION_WAIT_OBJECT: FormId = FormId(0x8A2);
 const TIMER_SCENE: FormId = FormId(0x8B0);
 const TIMER_SCENE_QUEST: FormId = FormId(0x8B1);
+const PACKAGE_SCENE: FormId = FormId(0x8B2);
+const SCENE_PACKAGE: FormId = FormId(0x8B3);
+const SCENE_ACTION_ALIAS: u32 = 5;
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
@@ -65,6 +68,11 @@ fn engine(name: &str) -> (Fixture, Engine) {
             .zstring(b"FULL", name)
             .field(b"SPIT", &spit)
     };
+    let mut scene_never_done = [0; 24];
+    scene_never_done[4..8].copy_from_slice(&1.0f32.to_bits().to_le_bytes());
+    scene_never_done[8..10].copy_from_slice(&59u16.to_le_bytes()); // GetStageDone
+    scene_never_done[12..16].copy_from_slice(&TIMER_SCENE_QUEST.0.to_le_bytes());
+    scene_never_done[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
     let records = [
         Node::top(
             b"NPC_",
@@ -111,7 +119,35 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     .field(b"SNAM", &5.0f32.to_le_bytes())
                     .field(b"ANAM", &[])
                     .u32(b"PNAM", TIMER_SCENE_QUEST.0),
+                RecordBuilder::new(b"SCEN", PACKAGE_SCENE)
+                    .field(b"HNAM", &[])
+                    .zstring(b"NAM0", "Package phase")
+                    .field(b"NEXT", &[])
+                    .field(b"CTDA", &scene_never_done)
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .field(b"ANAM", &1u16.to_le_bytes())
+                    .zstring(b"NAM0", "Run package")
+                    .u32(b"ALID", SCENE_ACTION_ALIAS)
+                    .u32(b"INAM", 13)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .u32(b"PNAM", SCENE_PACKAGE.0)
+                    .field(b"ANAM", &[])
+                    .field(b"ANAM", &1u16.to_le_bytes())
+                    .zstring(b"NAM0", "Optional package actor")
+                    .u32(b"ALID", SCENE_ACTION_ALIAS + 1)
+                    .u32(b"INAM", 14)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .u32(b"PNAM", SCENE_PACKAGE.0)
+                    .field(b"ANAM", &[])
+                    .u32(b"PNAM", TIMER_SCENE_QUEST.0),
             ],
+        ),
+        Node::top(
+            b"PACK",
+            vec![RecordBuilder::new(b"PACK", SCENE_PACKAGE).zstring(b"EDID", "ScenePackage")],
         ),
         Node::top(
             b"SPEL",
@@ -1474,6 +1510,59 @@ fn scene_lifecycle_section_round_trips_and_rejects_bad_state_codes() {
 }
 
 #[test]
+fn scene_binding_section_round_trips_and_clears_legacy_bindings() {
+    let mut s = Snapshot::default();
+    s.scene_bindings.extend([
+        crate::scene::SavedSceneBinding {
+            scene: TIMER_SCENE,
+            action: 9,
+            actor: Some(FormId(7)),
+            package_active: false,
+            elapsed: None,
+        },
+        crate::scene::SavedSceneBinding {
+            scene: PACKAGE_SCENE,
+            action: 13,
+            actor: Some(ACTOR),
+            package_active: true,
+            elapsed: Some(2.5),
+        },
+        crate::scene::SavedSceneBinding {
+            scene: PACKAGE_SCENE,
+            action: 14,
+            actor: None,
+            package_active: false,
+            elapsed: None,
+        },
+    ]);
+    let file = s.write();
+    let bytes = file.to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.scene_bindings, s.scene_bindings);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"SCAB");
+    assert!(Snapshot::read(&legacy).unwrap().scene_bindings.is_empty());
+
+    let mut duplicate = file.clone();
+    duplicate.add(b"SCAB", vec![]);
+    assert!(Snapshot::read(&duplicate).is_err());
+
+    let mut malformed = Snapshot::default().write();
+    let mut w = Writer::default();
+    w.len(1);
+    w.form(PACKAGE_SCENE);
+    w.u32(13);
+    w.bool(true);
+    w.form(FormId::NULL);
+    w.bool(false);
+    w.bool(false);
+    malformed.add(b"SCAB", w.0);
+    assert!(Snapshot::read(&malformed).is_err());
+}
+
+#[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
 fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     let (_fixture, mut e) = engine("scene-continuity");
@@ -1548,6 +1637,164 @@ fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
         !e.is_scene_playing(TIMER_SCENE),
         "legacy load kept a stale run"
     );
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
+fn package_scene_load_restores_bindings_and_owned_packages_without_restarting() {
+    let (_fixture, mut e) = engine("scene-package-continuity");
+    e.scripts
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .running = true;
+    e.force_alias_ref(TIMER_SCENE_QUEST, SCENE_ACTION_ALIAS, ACTOR);
+    e.scripts.real_time = 10.0;
+    assert!(e.start_scene(PACKAGE_SCENE, false));
+    let before_dispatch = Snapshot::capture(&e);
+    assert!(!before_dispatch.scene_lifecycle[0].begun);
+    assert_eq!(before_dispatch.scene_lifecycle[0].phase, None);
+    let before_dispatch =
+        Snapshot::read(&SaveFile::from_bytes(&before_dispatch.write().to_bytes()).unwrap())
+            .unwrap();
+    before_dispatch.apply(&mut e).unwrap();
+    assert!(
+        e.scenes.packages.is_empty(),
+        "package was assigned before dispatch"
+    );
+
+    // Entering the scene's first phase dispatches the package action.
+    e.update_scenes();
+    let ownership = e.scenes.packages.get(&ACTOR).expect("scene owns package");
+    assert_eq!((ownership.0, ownership.1), (PACKAGE_SCENE, 13));
+    assert!(
+        ownership
+            .2
+            .iter()
+            .any(|package| package.id == SCENE_PACKAGE)
+    );
+    e.scripts.real_time = 10.5;
+
+    let mut saved = Snapshot::capture(&e);
+    let active = saved
+        .scene_bindings
+        .iter()
+        .find(|binding| binding.action == 13)
+        .unwrap();
+    assert_eq!(active.actor, Some(ACTOR));
+    assert!(active.package_active);
+    assert_eq!(active.elapsed, Some(0.5));
+    let empty = saved
+        .scene_bindings
+        .iter()
+        .find(|binding| binding.action == 14)
+        .unwrap();
+    assert_eq!(empty.actor, None);
+    assert!(!empty.package_active);
+
+    // Alias 5 now points elsewhere; action 13 must retain its captured actor.
+    // Alias 6 is filled after save; action 14 must retain its captured None.
+    saved
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .aliases
+        .insert(SCENE_ACTION_ALIAS, FormId(7));
+    saved
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .aliases
+        .insert(SCENE_ACTION_ALIAS + 1, FormId(7));
+    let file = SaveFile::from_bytes(&saved.write().to_bytes()).unwrap();
+    let loaded = Snapshot::read(&file).unwrap();
+    e.scenes.packages.clear();
+    loaded.apply(&mut e).unwrap();
+    assert_eq!(
+        e.alias_ref(TIMER_SCENE_QUEST, SCENE_ACTION_ALIAS),
+        Some(FormId(7))
+    );
+    assert_eq!(
+        e.alias_ref(TIMER_SCENE_QUEST, SCENE_ACTION_ALIAS + 1),
+        Some(FormId(7))
+    );
+    let ownership = e.scenes.packages.get(&ACTOR).expect("saved owner restored");
+    assert_eq!((ownership.0, ownership.1), (PACKAGE_SCENE, 13));
+    assert!(
+        ownership
+            .2
+            .iter()
+            .any(|package| package.id == SCENE_PACKAGE)
+    );
+    assert!(e.scenes.packages.get(&FormId(7)).is_none());
+
+    let restored = Snapshot::capture(&e);
+    assert_eq!(restored.scene_lifecycle[0].phase, Some(0));
+    assert!(restored.scene_lifecycle[0].begun);
+    assert_eq!(
+        restored
+            .scene_bindings
+            .iter()
+            .find(|binding| binding.action == 13)
+            .unwrap()
+            .elapsed,
+        Some(0.5),
+        "restoring ownership must not reset the package action clock"
+    );
+    assert_eq!(
+        restored
+            .scene_bindings
+            .iter()
+            .find(|binding| binding.action == 14)
+            .unwrap()
+            .actor,
+        None,
+        "a saved empty actor binding must not re-resolve a later alias fill"
+    );
+
+    e.update_scenes();
+    assert_eq!(
+        e.scenes
+            .packages
+            .get(&ACTOR)
+            .map(|(scene, action, _)| (*scene, *action)),
+        Some((PACKAGE_SCENE, 13))
+    );
+    assert_eq!(
+        Snapshot::capture(&e)
+            .scene_bindings
+            .iter()
+            .find(|binding| binding.action == 13)
+            .unwrap()
+            .elapsed,
+        Some(0.5),
+        "the resumed update must keep package ownership's elapsed time"
+    );
+
+    // Package actions can be Done while a separate completion condition keeps
+    // the phase alive; ownership must last until the phase actually ends.
+    let mut completed = Snapshot::read(&file).unwrap();
+    completed.scene_lifecycle[0]
+        .actions
+        .iter_mut()
+        .find(|action| action.action == 13)
+        .unwrap()
+        .state = crate::scene::SavedActionState::Done;
+    completed.apply(&mut e).unwrap();
+    assert!(e.is_scene_playing(PACKAGE_SCENE));
+    assert_eq!(
+        e.scenes
+            .packages
+            .get(&ACTOR)
+            .map(|(scene, action, _)| (*scene, *action)),
+        Some((PACKAGE_SCENE, 13))
+    );
+    e.update_scenes();
+    assert!(
+        e.is_scene_playing(PACKAGE_SCENE),
+        "unsatisfied phase completion condition must keep the scene and package alive"
+    );
+    assert!(e.scenes.packages.contains_key(&ACTOR));
 }
 
 #[test]
