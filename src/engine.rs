@@ -1507,6 +1507,7 @@ impl Engine {
                 lights: [0xFFFF; 8],
                 radius: 120.0,
                 shadow_only: false,
+                skin_tone: d.skin_tone,
             });
             self.rigid_models.insert(d.ref_id, rigid);
             runtimes.push(rt);

@@ -153,6 +153,8 @@ game each piece unlocks.
 - Havok collision shapes -> rapier3d; first-person character controller
 - Exterior cell streaming, load doors
 - Actors: skinning, GPU skinning, NPC assembly (race, outfit, FaceGen); Havok clip playback.
+  NPCs' skin tone (`QNAM`) colours their bodies to match their FaceGen heads
+  (`known_ambiguities/skin-tone.md`).
   NPCs wear what their inventory has equipped: dressed again when it
   changes (scripts' `EquipItem`, the console's `equipitem`, a body stripped)
   and as they were when their cell loads again; an NPC's inventory is its

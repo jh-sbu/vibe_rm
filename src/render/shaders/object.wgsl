@@ -126,6 +126,8 @@ struct VOut {
     @location(11) fog: f32,
     // Opacity before the alpha test (grass fading with distance).
     @location(12) fade: f32,
+    // An actor's skin tone for skin-tint shapes (alpha 1), else 0.
+    @location(13) @interpolate(flat) skin_tone: vec4<f32>,
 };
 
 // A billboard's axes in the world.
@@ -274,6 +276,7 @@ struct SkinIn {
     @location(12) weights: vec4<f32>,
     @location(13) palette_base: u32,
     @location(14) light_idx: vec4<u32>,
+    @location(15) skin_tone: vec4<f32>,
 };
 
 @vertex
@@ -299,6 +302,7 @@ fn vs_skinned(v: SkinIn) -> VOut {
     o.tint = vec4<f32>(1.0);
     o.fog = 1.0;
     o.fade = 1.0;
+    o.skin_tone = v.skin_tone;
     return o;
 }
 
@@ -375,7 +379,10 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         albedo *= in.color.rgb;
     }
     let shader_type = mat.flags.w;
-    if (shader_type == 5u || shader_type == 6u) {
+    if (shader_type == 5u && in.skin_tone.a > 0.5) {
+        // An overlay, as the FaceGen tint mask (whose skin is this colour) on the head.
+        albedo = clamp(albedo * in.skin_tone.rgb * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
+    } else if (shader_type == 5u || shader_type == 6u) {
         albedo *= mat.tint.rgb;
     }
     if (shader_type == 4u && mat.params.w > 1.5) {
