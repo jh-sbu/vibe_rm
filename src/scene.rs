@@ -170,6 +170,14 @@ pub struct SavedSceneDialogue {
     pub remaining: f64,
 }
 
+/// Time remaining before an already selected looping scene dialogue repeat.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SavedSceneRepeat {
+    pub scene: FormId,
+    pub action: u32,
+    pub remaining: f64,
+}
+
 impl SceneRun {
     /// The actors filling the scene's aliases.
     fn actors<'a>(
@@ -455,6 +463,32 @@ impl Engine {
         dialogue
     }
 
+    pub(crate) fn saved_scene_repeats(&self) -> Vec<SavedSceneRepeat> {
+        let now = self.scripts.real_time;
+        let mut repeats = Vec::new();
+        for run in &self.scenes.running {
+            for (definition, action) in run.def.scene.actions.iter().zip(&run.actions) {
+                if action.state != State::Running
+                    || action.line.is_some()
+                    || action.info.is_some()
+                    || !matches!(definition.kind, ActionKind::Dialogue { .. })
+                    || definition.flags & action_flags::LOOPING == 0
+                {
+                    continue;
+                }
+                if let Some(deadline) = action.next_loop {
+                    repeats.push(SavedSceneRepeat {
+                        scene: run.scene,
+                        action: definition.index,
+                        remaining: (deadline - now).max(0.0),
+                    });
+                }
+            }
+        }
+        repeats.sort_by_key(|saved| (saved.scene, saved.action));
+        repeats
+    }
+
     /// Check saved scene references against loaded definitions before a load
     /// mutates the current game.
     pub(crate) fn validate_saved_scenes(
@@ -463,6 +497,7 @@ impl Engine {
         lifecycle: &[SavedSceneLifecycle],
         bindings: &[SavedSceneBinding],
         dialogue: &[SavedSceneDialogue],
+        repeats: &[SavedSceneRepeat],
     ) -> anyhow::Result<()> {
         let mut seen = HashSet::new();
         for state in saved {
@@ -800,6 +835,70 @@ impl Engine {
                 state.info
             );
         }
+        let mut previous_repeat = None;
+        for state in repeats {
+            let key = (state.scene, state.action);
+            anyhow::ensure!(
+                !state.scene.is_null()
+                    && state.remaining.is_finite()
+                    && state.remaining >= 0.0
+                    && previous_repeat.is_none_or(|previous| previous < key),
+                "save has invalid, duplicate or unsorted scene repeat deadline"
+            );
+            previous_repeat = Some(key);
+            anyhow::ensure!(
+                !dialogue
+                    .iter()
+                    .any(|line| { line.scene == state.scene && line.action == state.action }),
+                "save has both an active line and repeat deadline for scene {} action {}",
+                state.scene,
+                state.action
+            );
+            let Some(scene_state) = lifecycle.iter().find(|scene| scene.scene == state.scene)
+            else {
+                anyhow::bail!("save has repeat deadline for absent scene {}", state.scene);
+            };
+            anyhow::ensure!(
+                scene_state.actions.iter().any(|action| {
+                    action.action == state.action && action.state == SavedActionState::Running
+                }),
+                "save has repeat deadline for a non-running scene action {}:{}",
+                state.scene,
+                state.action
+            );
+            let def = self
+                .scene_def(state.scene)
+                .ok_or_else(|| anyhow::anyhow!("save has missing scene {}", state.scene))?;
+            let Some(action) = def
+                .scene
+                .actions
+                .iter()
+                .find(|action| action.index == state.action)
+            else {
+                anyhow::bail!(
+                    "save has repeat deadline for missing scene action {}:{}",
+                    state.scene,
+                    state.action
+                );
+            };
+            anyhow::ensure!(
+                matches!(action.kind, ActionKind::Dialogue { .. })
+                    && action.flags & action_flags::LOOPING != 0,
+                "save has repeat deadline for non-looping dialogue {}:{}",
+                state.scene,
+                state.action
+            );
+            anyhow::ensure!(
+                bindings.iter().any(|binding| {
+                    binding.scene == state.scene
+                        && binding.action == state.action
+                        && binding.actor.is_some()
+                }),
+                "save has no actor binding for looping dialogue {}:{}",
+                state.scene,
+                state.action
+            );
+        }
         Ok(())
     }
 
@@ -811,6 +910,7 @@ impl Engine {
         lifecycle: Vec<SavedSceneLifecycle>,
         bindings: Vec<SavedSceneBinding>,
         dialogue: Vec<SavedSceneDialogue>,
+        repeats: Vec<SavedSceneRepeat>,
     ) {
         for run in &mut self.scenes.running {
             for action in &mut run.actions {
@@ -859,6 +959,16 @@ impl Engine {
                     .insert(saved.action, saved);
             }
             dialogue_by_scene
+        };
+        let repeat_by_scene: HashMap<FormId, HashMap<u32, SavedSceneRepeat>> = {
+            let mut repeat_by_scene = HashMap::new();
+            for saved in repeats {
+                repeat_by_scene
+                    .entry(saved.scene)
+                    .or_insert_with(HashMap::new)
+                    .insert(saved.action, saved);
+            }
+            repeat_by_scene
         };
         for scene in scene_ids {
             let Some(def) = self.scene_def(scene) else {
@@ -947,6 +1057,12 @@ impl Engine {
                         ends_at: now + saved.remaining,
                         response_index: saved.current_response as usize,
                     });
+                }
+                if let Some(saved) = repeat_by_scene
+                    .get(&scene)
+                    .and_then(|saved| saved.get(&action.index))
+                {
+                    run.next_loop = Some(now + saved.remaining);
                 }
             }
             let (begun, stopping, paused) = saved_lifecycle.map_or((true, false, false), |state| {

@@ -45,6 +45,7 @@ const SCENE_TOPIC: FormId = FormId(0x8B6);
 const SCENE_INFO: FormId = FormId(0x8B7);
 const OTHER_TOPIC: FormId = FormId(0x8B8);
 const OTHER_INFO: FormId = FormId(0x8B9);
+const LOOP_DIALOGUE_SCENE: FormId = FormId(0x8BA);
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
@@ -179,6 +180,25 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     .u32(b"INAM", 17)
                     .u32(b"SNAM", 0)
                     .u32(b"ENAM", 0)
+                    .form(b"DATA", SCENE_TOPIC)
+                    .field(b"ANAM", &[])
+                    .u32(b"PNAM", TIMER_SCENE_QUEST.0),
+                RecordBuilder::new(b"SCEN", LOOP_DIALOGUE_SCENE)
+                    .field(b"HNAM", &[])
+                    .zstring(b"NAM0", "Looping dialogue phase")
+                    .field(b"NEXT", &[])
+                    .field(b"CTDA", &scene_never_done)
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .field(b"ANAM", &0u16.to_le_bytes())
+                    .zstring(b"NAM0", "Repeat line")
+                    .u32(b"ALID", SCENE_ACTION_ALIAS)
+                    .u32(b"INAM", 18)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .u32(b"FNAM", 1 << 16)
+                    .field(b"DMIN", &5.0f32.to_le_bytes())
+                    .field(b"DMAX", &5.0f32.to_le_bytes())
                     .form(b"DATA", SCENE_TOPIC)
                     .field(b"ANAM", &[])
                     .u32(b"PNAM", TIMER_SCENE_QUEST.0),
@@ -1682,6 +1702,44 @@ fn scene_dialogue_section_round_trips_positions_and_rejects_bad_suffixes() {
 }
 
 #[test]
+fn scene_repeat_section_round_trips_deadlines_and_rejects_invalid_entries() {
+    let mut s = Snapshot::default();
+    s.scene_repeats.push(crate::scene::SavedSceneRepeat {
+        scene: LOOP_DIALOGUE_SCENE,
+        action: 18,
+        remaining: 4.25,
+    });
+    let file = s.write();
+    let bytes = file.to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.scene_repeats, s.scene_repeats);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    s.scene_repeats[0].remaining = 0.0;
+    let zero_deadline =
+        Snapshot::read(&SaveFile::from_bytes(&s.write().to_bytes()).unwrap()).unwrap();
+    assert_eq!(zero_deadline.scene_repeats[0].remaining, 0.0);
+
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"SLRP");
+    assert!(Snapshot::read(&legacy).unwrap().scene_repeats.is_empty());
+
+    let mut duplicate = file.clone();
+    duplicate.add(b"SLRP", vec![]);
+    assert!(Snapshot::read(&duplicate).is_err());
+
+    let mut malformed = file;
+    let payload = &mut malformed
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"SLRP")
+        .unwrap()
+        .1;
+    payload[12..20].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(Snapshot::read(&malformed).is_err());
+}
+
+#[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
 fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     let (_fixture, mut e) = engine("scene-continuity");
@@ -1974,6 +2032,108 @@ fn dialogue_scene_load_resumes_selected_info_and_remaining_response_suffix() {
     e.update_scenes();
     assert!(!e.is_scene_playing(DIALOGUE_SCENE));
     assert!(Snapshot::capture(&e).scene_dialogue.is_empty());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
+fn looping_scene_dialogue_load_preserves_repeat_deadline_across_roundtrips() {
+    let (_fixture, mut e) = engine("scene-repeat-continuity");
+    e.scripts
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .running = true;
+    e.force_alias_ref(TIMER_SCENE_QUEST, SCENE_ACTION_ALIAS, SCENE_ACTOR);
+    attach_scene_test_actor(&mut e);
+    e.scripts.real_time = 20.0;
+    assert!(e.start_scene(LOOP_DIALOGUE_SCENE, false));
+    e.update_scenes();
+    assert_eq!(Snapshot::capture(&e).scene_dialogue.len(), 1);
+
+    // Finish both responses; the loop's fixed five-second wait is then selected.
+    e.scripts.real_time = 22.5;
+    e.update_scenes();
+    assert_eq!(Snapshot::capture(&e).scene_dialogue[0].current_response, 1);
+    e.scripts.real_time = 24.6;
+    e.update_scenes();
+    let saved = Snapshot::capture(&e);
+    assert!(saved.scene_dialogue.is_empty());
+    assert_eq!(saved.scene_repeats.len(), 1);
+    assert_eq!(saved.scene_repeats[0].scene, LOOP_DIALOGUE_SCENE);
+    assert_eq!(saved.scene_repeats[0].action, 18);
+    assert_eq!(saved.scene_repeats[0].remaining, 5.0);
+
+    let mut non_looping =
+        Snapshot::read(&SaveFile::from_bytes(&saved.write().to_bytes()).unwrap()).unwrap();
+    non_looping
+        .scene_lifecycle
+        .push(crate::scene::SavedSceneLifecycle {
+            scene: DIALOGUE_SCENE,
+            phase: Some(0),
+            begun: true,
+            stopping: false,
+            paused: false,
+            actions: vec![crate::scene::SavedSceneAction {
+                action: 17,
+                state: crate::scene::SavedActionState::Running,
+                elapsed: None,
+            }],
+        });
+    non_looping.scene_lifecycle.sort_by_key(|scene| scene.scene);
+    non_looping
+        .scene_bindings
+        .push(crate::scene::SavedSceneBinding {
+            scene: DIALOGUE_SCENE,
+            action: 17,
+            actor: Some(SCENE_ACTOR),
+            package_active: false,
+            elapsed: None,
+        });
+    non_looping
+        .scene_bindings
+        .sort_by_key(|binding| (binding.scene, binding.action));
+    non_looping.scene_repeats[0].scene = DIALOGUE_SCENE;
+    non_looping.scene_repeats[0].action = 17;
+    assert!(non_looping.apply(&mut e).is_err());
+    assert!(e.is_scene_playing(LOOP_DIALOGUE_SCENE));
+    assert_eq!(Snapshot::capture(&e).scene_repeats, saved.scene_repeats);
+
+    let bytes = saved.write().to_bytes();
+    let loaded = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    loaded.apply(&mut e).unwrap();
+    attach_scene_test_actor(&mut e);
+    e.scripts.real_time = 26.6;
+    e.update_scenes();
+    let saved_again = Snapshot::capture(&e);
+    assert!((saved_again.scene_repeats[0].remaining - 3.0).abs() < 0.0001);
+
+    // A second load must retain the original deadline rather than choose a new
+    // random interval or immediately begin the next INFO.
+    let bytes = saved_again.write().to_bytes();
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    attach_scene_test_actor(&mut e);
+    e.scripts.real_time = 29.5;
+    e.update_scenes();
+    assert!(Snapshot::capture(&e).scene_dialogue.is_empty());
+    assert!((Snapshot::capture(&e).scene_repeats[0].remaining - 0.1).abs() < 0.0001);
+
+    // A due deadline is saved as zero and becomes eligible on the next update.
+    e.scripts.real_time = 30.0;
+    let zero_deadline = Snapshot::capture(&e);
+    assert_eq!(zero_deadline.scene_repeats[0].remaining, 0.0);
+    Snapshot::read(&SaveFile::from_bytes(&zero_deadline.write().to_bytes()).unwrap())
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    attach_scene_test_actor(&mut e);
+    e.update_scenes();
+    let resumed = Snapshot::capture(&e);
+    assert_eq!(resumed.scene_repeats.len(), 0);
+    assert_eq!(resumed.scene_dialogue.len(), 1);
+    assert_eq!(resumed.scene_dialogue[0].current_response, 0);
 }
 
 #[test]
