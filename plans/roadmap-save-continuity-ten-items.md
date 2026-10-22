@@ -123,3 +123,18 @@ production Engine integration drives a two-response looping action to its
 between-line wait, roundtrips it twice, checks the same deadline before it is
 due, then reloads a zero-remaining deadline and verifies the next update begins
 the next line. The host-Vulkan production regression passed.
+
+## Item 6 outcome
+
+Added optional `SRSQ` storage for the exact pending scene-restart vector. It
+preserves order and duplicates, clears on legacy saves, validates referenced
+repeating scenes before mutation, and restores the queue without starting scenes
+or running fragments during apply. The next ordinary scene update starts queued
+scenes through the existing conditions and alias checks.
+
+Validation: `cargo test scene_restart_section` passes the codec,
+ordering, duplicate-entry, legacy-clear and malformed-null checks. The
+production Engine integration covers queue creation by `end_scene`, rejection
+of an invalid reference before mutation, no start during apply, and starting
+both queued scenes on the next update; the host-Vulkan production regression
+passed.

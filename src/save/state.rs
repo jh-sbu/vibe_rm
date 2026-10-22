@@ -17,6 +17,7 @@
 //! `SCLF` (scene lifecycle flags and action states), `SCAB` (scene actor and
 //! package ownership bindings), `SDLG` (selected scene dialogue responses),
 //! `SLRP` (looping scene dialogue deadlines),
+//! `SRSQ` (ordered pending scene restarts),
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
@@ -125,6 +126,7 @@ pub struct Snapshot {
     pub scene_bindings: Vec<crate::scene::SavedSceneBinding>,
     pub scene_dialogue: Vec<crate::scene::SavedSceneDialogue>,
     pub scene_repeats: Vec<crate::scene::SavedSceneRepeat>,
+    pub scene_restarts: Vec<FormId>,
     pub vm: super::vm::VmSnapshot,
 }
 
@@ -536,6 +538,7 @@ impl Snapshot {
             scene_bindings: e.saved_scene_bindings(),
             scene_dialogue: e.saved_scene_dialogue(),
             scene_repeats: e.saved_scene_repeats(),
+            scene_restarts: e.saved_scene_restarts(),
             vm: super::vm::VmSnapshot {
                 vm: e.vm.export(),
                 initialized: s.initialized.iter().copied().collect(),
@@ -1045,6 +1048,14 @@ impl Snapshot {
             }
             file.add(b"SLRP", w.0);
         }
+        if !self.scene_restarts.is_empty() {
+            let mut w = Writer::default();
+            w.len(self.scene_restarts.len());
+            for &scene in &self.scene_restarts {
+                w.form(scene);
+            }
+            file.add(b"SRSQ", w.0);
+        }
         self.vm.write(&mut file);
         file
     }
@@ -1367,6 +1378,26 @@ impl Snapshot {
                 }
                 previous = Some(key);
                 s.scene_repeats.push(saved);
+            }
+            r.finish()?;
+        }
+        if file
+            .sections
+            .iter()
+            .filter(|(tag, _)| tag == b"SRSQ")
+            .count()
+            > 1
+        {
+            return Err(Corrupt("duplicate SRSQ section".into()));
+        }
+        if let Some(data) = file.section(b"SRSQ") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(4)? {
+                let scene = r.form()?;
+                if scene.is_null() {
+                    return Err(Corrupt("null pending scene restart".into()));
+                }
+                s.scene_restarts.push(scene);
             }
             r.finish()?;
         }
@@ -1808,6 +1839,7 @@ impl Snapshot {
             &self.scene_bindings,
             &self.scene_dialogue,
             &self.scene_repeats,
+            &self.scene_restarts,
         )?;
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
@@ -1926,6 +1958,7 @@ impl Snapshot {
             self.scene_bindings,
             self.scene_dialogue,
             self.scene_repeats,
+            self.scene_restarts,
         );
         match self.spot {
             Some(Spot {
