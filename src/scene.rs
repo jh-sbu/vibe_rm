@@ -489,6 +489,10 @@ impl Engine {
         repeats
     }
 
+    pub(crate) fn saved_scene_restarts(&self) -> Vec<FormId> {
+        self.scenes.restart.clone()
+    }
+
     /// Check saved scene references against loaded definitions before a load
     /// mutates the current game.
     pub(crate) fn validate_saved_scenes(
@@ -498,6 +502,7 @@ impl Engine {
         bindings: &[SavedSceneBinding],
         dialogue: &[SavedSceneDialogue],
         repeats: &[SavedSceneRepeat],
+        restarts: &[FormId],
     ) -> anyhow::Result<()> {
         let mut seen = HashSet::new();
         for state in saved {
@@ -899,6 +904,16 @@ impl Engine {
                 state.action
             );
         }
+        for &scene in restarts {
+            anyhow::ensure!(!scene.is_null(), "save has a null pending scene restart");
+            let def = self
+                .scene_def(scene)
+                .ok_or_else(|| anyhow::anyhow!("save has missing pending scene {scene}"))?;
+            anyhow::ensure!(
+                def.scene.flags & flags::REPEAT_CONDITIONS_WHILE_TRUE != 0,
+                "save has pending restart for non-repeating scene {scene}"
+            );
+        }
         Ok(())
     }
 
@@ -911,6 +926,7 @@ impl Engine {
         bindings: Vec<SavedSceneBinding>,
         dialogue: Vec<SavedSceneDialogue>,
         repeats: Vec<SavedSceneRepeat>,
+        restarts: Vec<FormId>,
     ) {
         for run in &mut self.scenes.running {
             for action in &mut run.actions {
@@ -924,7 +940,7 @@ impl Engine {
         self.scenes.running.clear();
         self.scenes.packages.clear();
         self.scenes.force_greeted.clear();
-        self.scenes.restart.clear();
+        self.scenes.restart = restarts;
         let now = self.scripts.real_time;
         let mut scene_ids: Vec<_> = lifecycle.iter().map(|state| state.scene).collect();
         for state in &saved {

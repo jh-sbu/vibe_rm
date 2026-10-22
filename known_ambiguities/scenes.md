@@ -117,4 +117,8 @@ don't contain this continuation and may select a new INFO. The optional `SLRP`
 section retains a looping dialogue action's already chosen remaining wait
 between lines, including a zero-remaining deadline; it does not reroll the
 interval during loading. It applies only to a running looping action between
-INFO lines. Force-greet state and pending scene restarts are still not retained.
+INFO lines. The optional `SRSQ` section preserves the pending scene-restart
+queue as an ordered list, including repeated entries. Applying it only restores
+the queue; the next normal scene update attempts each start with the usual
+quest, alias and condition checks. Legacy saves clear this queue. Force-greet
+state is still not retained.

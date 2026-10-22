@@ -46,6 +46,8 @@ const SCENE_INFO: FormId = FormId(0x8B7);
 const OTHER_TOPIC: FormId = FormId(0x8B8);
 const OTHER_INFO: FormId = FormId(0x8B9);
 const LOOP_DIALOGUE_SCENE: FormId = FormId(0x8BA);
+const RESTART_SCENE_A: FormId = FormId(0x8BB);
+const RESTART_SCENE_B: FormId = FormId(0x8BC);
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
@@ -200,6 +202,36 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     .field(b"DMIN", &5.0f32.to_le_bytes())
                     .field(b"DMAX", &5.0f32.to_le_bytes())
                     .form(b"DATA", SCENE_TOPIC)
+                    .field(b"ANAM", &[])
+                    .u32(b"PNAM", TIMER_SCENE_QUEST.0),
+                RecordBuilder::new(b"SCEN", RESTART_SCENE_A)
+                    .u32(b"FNAM", 0x8)
+                    .field(b"HNAM", &[])
+                    .zstring(b"NAM0", "Restart A")
+                    .field(b"NEXT", &[])
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .field(b"ANAM", &2u16.to_le_bytes())
+                    .zstring(b"NAM0", "Short timer A")
+                    .u32(b"INAM", 19)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .field(b"SNAM", &1.0f32.to_le_bytes())
+                    .field(b"ANAM", &[])
+                    .u32(b"PNAM", TIMER_SCENE_QUEST.0),
+                RecordBuilder::new(b"SCEN", RESTART_SCENE_B)
+                    .u32(b"FNAM", 0x8)
+                    .field(b"HNAM", &[])
+                    .zstring(b"NAM0", "Restart B")
+                    .field(b"NEXT", &[])
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .field(b"ANAM", &2u16.to_le_bytes())
+                    .zstring(b"NAM0", "Short timer B")
+                    .u32(b"INAM", 20)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .field(b"SNAM", &1.0f32.to_le_bytes())
                     .field(b"ANAM", &[])
                     .u32(b"PNAM", TIMER_SCENE_QUEST.0),
             ],
@@ -1740,6 +1772,32 @@ fn scene_repeat_section_round_trips_deadlines_and_rejects_invalid_entries() {
 }
 
 #[test]
+fn scene_restart_section_preserves_queue_order_duplicates_and_legacy_clearing() {
+    let mut s = Snapshot::default();
+    s.scene_restarts = vec![RESTART_SCENE_B, RESTART_SCENE_A, RESTART_SCENE_B];
+    let file = s.write();
+    let bytes = file.to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.scene_restarts, s.scene_restarts);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"SRSQ");
+    assert!(Snapshot::read(&legacy).unwrap().scene_restarts.is_empty());
+
+    let mut duplicate = file.clone();
+    duplicate.add(b"SRSQ", vec![]);
+    assert!(Snapshot::read(&duplicate).is_err());
+
+    let mut malformed = Snapshot::default().write();
+    let mut w = Writer::default();
+    w.len(1);
+    w.form(FormId::NULL);
+    malformed.add(b"SRSQ", w.0);
+    assert!(Snapshot::read(&malformed).is_err());
+}
+
+#[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
 fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     let (_fixture, mut e) = engine("scene-continuity");
@@ -2134,6 +2192,61 @@ fn looping_scene_dialogue_load_preserves_repeat_deadline_across_roundtrips() {
     assert_eq!(resumed.scene_repeats.len(), 0);
     assert_eq!(resumed.scene_dialogue.len(), 1);
     assert_eq!(resumed.scene_dialogue[0].current_response, 0);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
+fn pending_scene_restarts_load_in_order_and_start_on_next_update() {
+    let (_fixture, mut e) = engine("scene-restart-queue");
+    e.scripts
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .running = true;
+    e.scripts.real_time = 20.0;
+    assert!(e.start_scene(RESTART_SCENE_A, false));
+    assert!(e.start_scene(RESTART_SCENE_B, false));
+    e.update_scenes();
+    e.scripts.real_time = 21.1;
+    e.update_scenes();
+
+    let saved = Snapshot::capture(&e);
+    assert_eq!(saved.scene_restarts, vec![RESTART_SCENE_A, RESTART_SCENE_B]);
+    assert!(!e.is_scene_playing(RESTART_SCENE_A));
+    assert!(!e.is_scene_playing(RESTART_SCENE_B));
+
+    let mut invalid =
+        Snapshot::read(&SaveFile::from_bytes(&saved.write().to_bytes()).unwrap()).unwrap();
+    invalid.scene_restarts[0] = FormId(0x8BD);
+    assert!(invalid.apply(&mut e).is_err());
+    assert_eq!(Snapshot::capture(&e).scene_restarts, saved.scene_restarts);
+    assert!(!e.is_scene_playing(RESTART_SCENE_A));
+
+    let save_bytes = saved.write().to_bytes();
+    Snapshot::read(&SaveFile::from_bytes(&save_bytes).unwrap())
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert_eq!(Snapshot::capture(&e).scene_restarts, saved.scene_restarts);
+    assert!(!e.is_scene_playing(RESTART_SCENE_A));
+    assert!(!e.is_scene_playing(RESTART_SCENE_B));
+
+    let mut legacy_file = SaveFile::from_bytes(&save_bytes).unwrap();
+    legacy_file.sections.retain(|(tag, _)| tag != b"SRSQ");
+    Snapshot::read(&legacy_file).unwrap().apply(&mut e).unwrap();
+    assert!(Snapshot::capture(&e).scene_restarts.is_empty());
+    assert!(!e.is_scene_playing(RESTART_SCENE_A));
+    Snapshot::read(&SaveFile::from_bytes(&save_bytes).unwrap())
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+
+    // Loading only restores the pending queue. The normal scene update consumes
+    // it, starts both scenes in order, and leaves their one-second timers live.
+    e.update_scenes();
+    assert!(e.is_scene_playing(RESTART_SCENE_A));
+    assert!(e.is_scene_playing(RESTART_SCENE_B));
+    assert!(Snapshot::capture(&e).scene_restarts.is_empty());
 }
 
 #[test]
