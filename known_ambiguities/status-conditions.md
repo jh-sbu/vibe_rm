@@ -232,3 +232,64 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
 - An empty location alias counts 0 of either, and its keyword data reads 0.
 - `GetKeywordDataForAlias` reads the data `SetKeywordData` stored for the
   aliased location, as `GetKeywordDataForLocation` does.
+
+## Player, clock and package-input conditions
+
+`IsPlayerInRegion` (117), `GetInZone` (445), `MenuMode` (36),
+`GetPlayerControlsDisabled` (98), `IsTimePassing` (265), `GetRealHoursPassed`
+(716), `GetSecondsPassed` (12) and `IsNullPackageData` (611). Tests in
+`src/condition/status_tests.rs` and `src/ai/package_data_tests.rs`.
+
+### What is known
+
+- UESP Skyrim Mod:Mod File Format/Raw Function Data (oldid 3411473) gives the
+  signatures: `IsPlayerInRegion(Region)`, `Ref.GetInZone(EncounterZone)`,
+  `MenuMode(Integer (Optional))`, `GetPlayerControlsDisabled` with eight
+  optional integers, `IsTimePassing()`, `GetRealHoursPassed()`,
+  `GetSecondsPassed()`, `Ref.IsNullPackageData(PackageData (Possibly Null))`.
+  UESP Skyrim:Console (oldid 3628513) lists the controls as "movement,
+  fighting, pov, looking, sneaking, menu, ..." (0/1 each) and describes none
+  of the others.
+- Vanilla uses (`vrm-tool ctda-uses`): `IsPlayerInRegion` 42 times, all in
+  the survival mode's `Survival_RegionInfoSpell` (the region's weather name
+  against 1 or 0); `IsNullPackageData` twice, in `PatrolAndHunt`, on the
+  package input `HorseMarker` (once against 0, once against 1). The rest are
+  never used.
+- `GetRealHoursPassed` is the Papyrus `Game.GetRealHoursPassed`, which the
+  engine already answers from its real-time clock.
+
+### Unconfirmed choices
+
+- The player's regions are their cell's `XCLR`, the cell being the loaded
+  grid's centre for an exterior, as weather reads them (`cell_regions`).
+  Regions a cell lies in only through a region's own area data are not
+  considered. An interior with no `XCLR` is in none.
+- `GetInZone` reads the subject's own `XEZN`, else its cell's. Locations and
+  the zone's own location / owner data are not consulted.
+- `MenuMode` with no parameter (0) is true while a menu that pauses the game
+  is open (the engine's `in_menu_mode`, so dialogue is not menu mode). A
+  parameter naming an Oblivion menu type is unsupported: no source maps those
+  numbers to Skyrim's menus, and nothing in vanilla calls it.
+- `GetPlayerControlsDisabled` has only two parameters in the condition table:
+  movement and fighting. Selected controls must all be disabled; with none
+  selected it asks whether any control is. Whether the game ands or ors the
+  selection, and what no selection means, is not documented.
+- `IsTimePassing` is true while the world runs, and while waiting or
+  sleeping (the clock advances from inside the menu). The game may treat
+  other states (a scene's camera, the dialogue menu) as time not passing.
+- `GetSecondsPassed` is the real seconds of the latest update. The Oblivion
+  function measured the time since a script last ran; what a condition sees
+  is unknown.
+- `IsNullPackageData` is 1 when the package has no input of that index, or
+  an input with nothing set (a reference or location that couldn't be read);
+  a bool, number, or any readable value is not null. Whether an input naming
+  a null reference counts as null is unknown.
+
+### Left unsupported
+
+- `GetCurrentAIPackage` (110) and `GetCurrentAIProcedure` (143): no source
+  gives the numbers they return. The one vanilla use (`CheckCorpse`) compares
+  the procedure against 6, which names no procedure we can find.
+- `IsWaiting` (111): UESP lists the name only, and no source says which state
+  it reports.
+

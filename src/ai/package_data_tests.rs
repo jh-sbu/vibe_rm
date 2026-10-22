@@ -381,3 +381,22 @@ fn package_data_conditions_decide_alone_only_when_every_one_is_numeric_package_d
     world.func = 0;
     assert_eq!(condition::evaluate_package_data(&[world]), None);
 }
+
+#[test]
+fn null_package_data_is_an_input_with_nothing_set() {
+    let fixture = Fixture::new();
+    let mut record = RecordBuilder::new(b"PACK", FormId(0x800));
+    // A bool, a reference left empty, and an input the package lacks.
+    for index in [1, 2, 5] {
+        record = record.field(
+            b"CTDA",
+            &package_condition(condition::IS_NULL_PACKAGE_DATA, index, 0.0, 0),
+        );
+    }
+    record = input(record, 1, "Bool", &[0]);
+    record = input(record, 2, "SingleRef", &[]);
+    let lo = fixture.load(vec![record]);
+    let p = parse(&lo, id(0x800)).unwrap();
+    let nulls: Vec<_> = p.conditions.iter().map(number).collect();
+    assert_eq!(nulls, [Some(0.0), Some(1.0), Some(1.0)]);
+}

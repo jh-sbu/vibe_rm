@@ -225,6 +225,8 @@ pub struct Engine {
     pub(crate) location_keyword_data: HashMap<(FormId, FormId), f32>,
     /// Locations cleared (`crate::locations`).
     pub(crate) cleared_locations: std::collections::HashSet<FormId>,
+    /// Real seconds the latest update covered (`GetSecondsPassed`).
+    pub frame_seconds: f32,
     /// The inventory or container menu, while open.
     pub menu: Option<crate::items::Menu>,
     /// The player's favorite items (the inventory's Favorites).
@@ -418,6 +420,7 @@ impl Engine {
             console_open: false,
             console_ref: None,
             imagespace: Default::default(),
+            frame_seconds: 0.0,
             menu: None,
             favorites: Vec::new(),
             hotkeys: [None; 8],
@@ -2541,6 +2544,7 @@ impl Engine {
     /// Advance the simulation by `dt` seconds.
     pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
         self.scripts.wall_time += dt as f64;
+        self.frame_seconds = dt;
         self.flush_save_requests();
         // The gift menu went: its script carries on.
         if let Some(g) = &self.gift
