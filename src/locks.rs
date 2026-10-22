@@ -43,8 +43,38 @@ impl Engine {
         }
     }
 
-    /// A reference's own lock (`XLOC`), with any level a script set.
+    /// The reference whose lock `r` has: a load door and the one on the far
+    /// side share one (Sven and Hilde's outside door, with no lock of its own,
+    /// reports the inside one's state and follows `Lock` on either side;
+    /// `test-mod autotest`), held by the side with `XLOC` (the lower form id
+    /// when both or neither have one); anything else its own.
+    pub fn lock_holder(&self, r: FormId) -> FormId {
+        let Some(partner) = self
+            .lo
+            .get(r)
+            .and_then(|rec| records::reference(&rec).teleport.map(|t| t.0))
+        else {
+            return r;
+        };
+        let has_lock = |d: FormId| self.lo.get(d).is_some_and(|rec| rec.get(b"XLOC").is_some());
+        match (has_lock(r), has_lock(partner)) {
+            (true, false) => r,
+            (false, true) => partner,
+            _ => r.min(partner),
+        }
+    }
+
+    /// Set the level of `r`'s lock (its pair's, for a load door), as
+    /// `SetLockLevel` does.
+    pub fn set_lock_level(&mut self, r: FormId, level: u8) {
+        let holder = self.lock_holder(r);
+        self.scripts.lock_levels.insert(holder, level);
+    }
+
+    /// A reference's lock (`XLOC`; a load door pair's, on either side), with
+    /// any level a script set.
     pub fn lock_of(&self, r: FormId) -> Option<Lock> {
+        let r = self.lock_holder(r);
         let own = self.lo.get(r).and_then(|rec| records::reference(&rec).lock);
         match self.scripts.lock_levels.get(&r) {
             Some(&level) => Some(Lock {
@@ -59,9 +89,11 @@ impl Engine {
         }
     }
 
-    /// Whether a door or container is locked now: as scripts, packages or a key
-    /// left it, else as placed (a reference with a lock starts out locked).
+    /// Whether a door or container is locked now (a load door pair together):
+    /// as scripts, packages or a key left it, else as placed (a reference with
+    /// a lock starts out locked).
     pub fn is_locked(&self, r: FormId) -> bool {
+        let r = self.lock_holder(r);
         match self.scripts.locked.get(&r) {
             Some(&l) => l,
             None => self.lo.get(r).is_some_and(|rec| rec.get(b"XLOC").is_some()),
@@ -69,6 +101,7 @@ impl Engine {
     }
 
     pub fn set_locked(&mut self, r: FormId, locked: bool) {
+        let r = self.lock_holder(r);
         if self.is_locked(r) != locked {
             log::info!("{r} {}", if locked { "locked" } else { "unlocked" });
         }
@@ -95,7 +128,7 @@ impl Engine {
         if outside(partner) && !outside(door) {
             return None;
         }
-        [door, partner].into_iter().find(|&r| self.is_locked(r))
+        self.is_locked(door).then(|| self.lock_holder(door))
     }
 
     /// Whether an actor gets past a locked door or container: with its key, or when

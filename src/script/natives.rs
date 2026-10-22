@@ -500,9 +500,7 @@ pub fn call(
         )),
         ("objectreference", "setlocklevel") => {
             if let Some(f) = me {
-                e.scripts
-                    .lock_levels
-                    .insert(f, arg(0).as_int().clamp(0, 255) as u8);
+                e.set_lock_level(f, arg(0).as_int().clamp(0, 255) as u8);
             }
             none()
         }

@@ -23,6 +23,9 @@ const FAILED_KEY_QUEST: FormId = FormId(0x846);
 const LOCATION: FormId = FormId(0x847);
 const STATIC_BASE: FormId = FormId(0x848);
 const STATIC_REF: FormId = FormId(0x849);
+/// A load door pair locked (adept) on the inside only, as shops' are.
+const SHOP_IN: FormId = FormId(0x850);
+const SHOP_OUT: FormId = FormId(0x851);
 
 struct Fixture(std::path::PathBuf);
 impl Drop for Fixture {
@@ -60,6 +63,8 @@ fn fixture() -> (Fixture, Engine) {
     };
     let mut xloc = [0; 12];
     xloc[4..8].copy_from_slice(&KEY.0.to_le_bytes());
+    let mut adept = [0; 12];
+    adept[0] = 50;
     let mut invalid_xloc = [0; 12];
     invalid_xloc[4..8].copy_from_slice(&OWNER.0.to_le_bytes());
     let cnto = |item: FormId, count: u32| {
@@ -159,6 +164,7 @@ fn fixture() -> (Fixture, Engine) {
                     ROOM,
                     vec![
                         door(PARTNER, DOOR.0),
+                        door(SHOP_IN, SHOP_OUT.0).field(b"XLOC", &adept),
                         RecordBuilder::new(b"REFR", CHEST)
                             .u32(b"NAME", 0x831)
                             .field(b"XLOC", &xloc),
@@ -169,7 +175,7 @@ fn fixture() -> (Fixture, Engine) {
                     ],
                 ),
                 Node::Record(RecordBuilder::new(b"CELL", HALL).field(b"DATA", &[1, 0])),
-                cell(HALL, vec![door(DOOR, PARTNER.0)]),
+                cell(HALL, vec![door(DOOR, PARTNER.0), door(SHOP_OUT, SHOP_IN.0)]),
             ],
         },
     ];
@@ -576,4 +582,36 @@ fn alias_inventory_grants_keys_only_on_successful_new_fills_and_stays_permanent(
         &[static_ref],
     );
     assert_eq!(e.item_count(STATIC_REF, KEY), 0);
+}
+
+#[test]
+fn a_load_door_pair_shares_one_lock() {
+    let (_dir, mut e) = fixture();
+    // The outside door has no lock of its own and reports the inside one's.
+    assert!(e.is_locked(SHOP_IN) && e.is_locked(SHOP_OUT));
+    assert_eq!(e.lock_of(SHOP_OUT).map(|l| l.level), Some(50));
+    assert_eq!(
+        e.door_lock_for_player(SHOP_OUT, Some(SHOP_IN)),
+        Some(SHOP_IN)
+    );
+
+    // The console unlocking the outside door (the one clicked) opens the pair.
+    crate::console::execute(&mut e, &format!("unlock {SHOP_OUT}"));
+    assert!(!e.is_locked(SHOP_IN) && !e.is_locked(SHOP_OUT));
+    assert_eq!(e.door_lock_for_player(SHOP_OUT, Some(SHOP_IN)), None);
+
+    // Locking either side locks both, at the pair's level.
+    lock(&mut e, SHOP_IN, &[Value::Bool(true)]);
+    assert!(e.is_locked(SHOP_OUT));
+    assert_eq!(
+        e.door_lock_for_player(SHOP_OUT, Some(SHOP_IN)),
+        Some(SHOP_IN)
+    );
+    e.set_lock_level(SHOP_OUT, 75);
+    assert_eq!(e.lock_of(SHOP_IN).map(|l| l.level), Some(75));
+
+    // A pair with no lock authored shares one too.
+    assert!(!e.is_locked(DOOR) && !e.is_locked(PARTNER));
+    e.set_locked(DOOR, true);
+    assert!(e.is_locked(PARTNER));
 }
