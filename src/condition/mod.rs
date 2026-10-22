@@ -580,6 +580,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .and_then(|s| e.actor_voice_type(s))
             .is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))),   // HasKeyword
+        // How the first faction regards the second in combat (0 neutral, 1 enemy,
+        // 2 ally, 3 friend).
+        410 => Some(e.faction_combat_reaction(p1, FormId(c.p2)) as f32), // GetFactionCombatReaction
         // The player's state: hours passing in bed, and the first-person camera.
         175 => b(e.waiting.is_some_and(|w| w.sleeping)), // IsPCSleeping
         391 => b(!e.third_person),                       // IsPC1stPerson

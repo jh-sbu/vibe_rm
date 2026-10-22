@@ -5,6 +5,8 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- `GetFactionCombatReaction` reads a faction's group combat reaction towards
+  another. Choices: `known_ambiguities/status-conditions.md`
 - A null reference in `GetHeadingAngle`, `GetRelativeAngle` and
   `GetLineOfSight` names the subject's combat target. This is inferred from
   vanilla combat idles' use: `known_ambiguities/condition-geometry.md`
