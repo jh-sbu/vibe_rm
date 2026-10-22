@@ -56,6 +56,9 @@ pub struct ActorDesc {
     /// Its skin tone (`QNAM`), the colour skin-tint shapes take in place of
     /// their model's own; none when it gives none.
     pub skin_tone: Option<Vec3>,
+    /// Its weight (`NAM7`, 0..100) over 100: how far from its thin models
+    /// (`_0`) toward its heavy ones (`_1`) it's drawn.
+    pub weight: f32,
 }
 
 fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
@@ -274,6 +277,7 @@ struct NpcTraits {
     outfit: FormId,
     height: f32,
     skin_tone: Option<Vec3>,
+    weight: f32,
 }
 
 /// The effective traits of an NPC, from the records its templates give each part.
@@ -324,6 +328,12 @@ fn npc_traits(lo: &LoadOrder, src: &Sources) -> Option<NpcTraits> {
                 Vec3::new(c(0), c(4), c(8))
             })
             .filter(|c| *c != Vec3::ZERO),
+        // Its FaceGen head is made for this weight.
+        weight: traits
+            .get(b"NAM7")
+            .filter(|d| d.len() >= 4)
+            .map_or(50.0, |d| f32::from_le_bytes(d[0..4].try_into().unwrap()))
+            / 100.0,
     })
 }
 
@@ -650,6 +660,7 @@ pub fn describe_player(
         footsteps: footstep_set(lo, inventory.equipped(), skin, traits.race),
         templates,
         skin_tone: traits.skin_tone,
+        weight: traits.weight,
     })
 }
 
@@ -790,5 +801,6 @@ pub fn describe_reference(
         footsteps,
         templates,
         skin_tone: traits.skin_tone,
+        weight: traits.weight,
     })
 }

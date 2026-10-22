@@ -133,12 +133,7 @@ impl Engine {
             for (var, value) in [("IsNPC", 0.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)] {
                 g.set_variable(var, value);
             }
-            let weight = self.lo.get(PLAYER_NPC).and_then(|r| {
-                r.get(b"NAM7")
-                    .filter(|b| b.len() >= 4)
-                    .map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap()))
-            });
-            g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
+            g.set_variable("weapAdj", d.weight);
             let speeds = self.weapon_speed_mults(PLAYER_REF);
             for (var, value) in crate::ai::combat::hand_graph_vars(&self.lo, &inventory, speeds) {
                 g.set_variable(var, value);
@@ -174,6 +169,7 @@ impl Engine {
             radius: 120.0,
             shadow_only: !self.third_person,
             skin_tone: d.skin_tone,
+            weight: d.weight,
         });
         self.player_body = Some(body);
     }

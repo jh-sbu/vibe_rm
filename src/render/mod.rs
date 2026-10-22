@@ -120,6 +120,8 @@ struct SkinInstanceData {
     lights: [u32; 4],
     /// The actor's skin tone and 1 ([`ActorInstance::skin_tone`]), or 0s.
     skin_tone: [f32; 4],
+    /// How far toward its thin models it's drawn: 1 - [`ActorInstance::weight`].
+    thin: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -737,6 +739,9 @@ pub struct ActorInstance {
     pub shadow_only: bool,
     /// The colour its skin-tint shapes take in place of their model's own.
     pub skin_tone: Option<Vec3>,
+    /// Its weight (`NAM7` / 100): 0 draws its models' thin (`_0`) shapes, 1
+    /// their heavy (`_1`) ones, those without a thin one always as they are.
+    pub weight: f32,
 }
 
 impl ActorInstance {
@@ -1524,10 +1529,11 @@ impl Renderer {
         ];
         let skin_attrs = wgpu::vertex_attr_array![
             0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Float32x2, 5 => Float32x4,
-            11 => Uint32x4, 12 => Float32x4
+            11 => Uint32x4, 12 => Float32x4, 6 => Float32x3, 7 => Float32x3
         ];
-        let skin_inst_attrs =
-            wgpu::vertex_attr_array![13 => Uint32, 14 => Uint32x4, 15 => Float32x4];
+        let skin_inst_attrs = wgpu::vertex_attr_array![
+            13 => Uint32, 14 => Uint32x4, 15 => Float32x4, 10 => Float32
+        ];
         let grass_attrs = wgpu::vertex_attr_array![6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4];
         let static_buffers = [
             Some(wgpu::VertexBufferLayout {
@@ -2293,6 +2299,7 @@ impl Renderer {
                     skin_tone: actor
                         .skin_tone
                         .map_or([0.0; 4], |c| c.extend(1.0).to_array()),
+                    thin: 1.0 - actor.weight.clamp(0.0, 1.0),
                 });
                 let i = skin_inst.len() as u32 - 1;
                 if visible {

@@ -299,8 +299,24 @@ impl ShadowMaps {
                 offset: 88,
                 shader_location: 12,
             },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x3,
+                offset: 104,
+                shader_location: 6,
+            },
         ];
-        let skin_inst_attrs = wgpu::vertex_attr_array![13 => Uint32];
+        let skin_inst_attrs = [
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Uint32,
+                offset: 0,
+                shader_location: 13,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32,
+                offset: 36,
+                shader_location: 10,
+            },
+        ];
         let pipeline = |label: &str,
                         layout: &wgpu::PipelineLayout,
                         entry: &str,

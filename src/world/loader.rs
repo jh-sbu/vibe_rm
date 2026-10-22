@@ -237,6 +237,25 @@ impl ModelCache {
                                 }),
                             };
                             let mut m = m;
+                            // Bodies and what's worn on them: the thin model beside
+                            // the heavy one, which actors blend by their weight.
+                            if variant.is_none()
+                                && !m.skinned.is_empty()
+                                && let Some(stem) = file
+                                    .len()
+                                    .checked_sub(6)
+                                    .filter(|&i| file[i..].eq_ignore_ascii_case("_1.nif"))
+                                    .map(|i| &file[..i])
+                                && let Some(thin) = vfs
+                                    .read(&format!("{stem}_0.nif"))
+                                    .and_then(|d| nif::Nif::parse(&d).ok())
+                            {
+                                let paired = model::morph_thin(&mut m, &model::convert(&thin));
+                                log::trace!(
+                                    "{p}: {paired} of {} shapes blend with its _0 model",
+                                    m.skinned.len()
+                                );
+                            }
                             if !m.addons.is_empty() {
                                 attach_addons(&mut m, &addons, vfs, &mut HashMap::new());
                             }
