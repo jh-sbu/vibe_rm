@@ -340,3 +340,16 @@ fn is_in_my_owned_cell_follows_the_actor_or_its_faction() {
     // A cell the faction owns is its members'.
     assert!(is(&e, HUMAN_IN_C, 146, 0, 1.0));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_xp_for_next_level_is_the_levels_whole_cost() {
+    let (_f, mut e) = fixture();
+    // fXPLevelUpBase 75 and fXPLevelUpMult 25 at level 5.
+    e.skills.level = 5;
+    e.skills.level_xp = 40.0;
+    assert!(is(&e, PLAYER_REF, 530, 0, 200.0));
+    // A level up waiting makes the next one cost for the level after it.
+    e.skills.pending = 1;
+    assert!(is(&e, PLAYER_REF, 530, 0, 225.0));
+}
