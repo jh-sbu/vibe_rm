@@ -1754,6 +1754,21 @@ game each piece unlocks.
      menu's Map (with the map); waiting's rest: getting into the bed first; the gamepad's d-pad
      favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike)
+   - The map (`map.swf`; markers, discovery and travel permission are in
+     `src/map_markers.rs`, distant BTR/BTO blocks in `src/world/lod.rs`), in
+     order: the worldspace's map data (`WRLD` `MNAM`: usable size, cell
+     bounds, camera limits); the world map view, a top-down camera over the
+     worldspace drawing only LOD, panned, zoomed and tilted within those
+     limits, with the map's clouds, lighting and fog (research-gated);
+     `map.swf` hosted like the other menus, given each marker on the map
+     projected to the screen with its `TNAM` icon, discovered state and
+     travel permission, the player's marker, and the camera's input; the
+     local map for interiors and nearby cells; fast travel: picking a marker,
+     the confirmation, refusals (over-encumbered, enemies near, guards
+     pursuing, disabled by script), moving to the marker's destination, time passing with
+     distance, and followers coming along; then quest targets and custom
+     markers on the map, the journal's Show on Map and the tween menu's Map.
+     A first usable map stops after the `map.swf` step
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), rows grouped by captured soul with per-item
      selection and transfers (`known_ambiguities/inventory-cards.md`); alchemy
