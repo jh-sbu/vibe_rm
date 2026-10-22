@@ -20,3 +20,20 @@ Implemented in `src/condition/mod.rs` (`function_value`); tests in
   console wiki's description of the function, not observed.
 - `IsGoreDisabled` has no description on UESP. Nothing here sets a gore
   setting, so it is always false (gore shown).
+
+## GetIsPlayableRace
+
+`GetIsPlayableRace` (254) is true when the subject's race has the `RACE` `DATA`
+flag 0x1 ("Playable" in xEdit's `wbRACE`).
+
+### What is known
+
+- UESP Skyrim Mod:Mod File Format/Raw Function Data (oldid 3411473) gives
+  `Ref.GetIsPlayableRace()`; no page describes its result.
+
+### Unconfirmed choices
+
+- The race is the one templates give (`race_of`, as `SameRace` reads it), not
+  the base record's own `RNAM` as `GetIsRace` does. They differ only for
+  template-inheriting NPCs.
+- A subject with no race (not an actor) fails the condition.

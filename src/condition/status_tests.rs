@@ -5,6 +5,12 @@ use super::*;
 use esp::writer::{Node, RecordBuilder, write_plugin};
 
 pub(super) const SWORD_REF: FormId = FormId(0x814);
+const PLAYABLE_RACE: FormId = FormId(0x830);
+const CREATURE_RACE: FormId = FormId(0x831);
+const HUMAN: FormId = FormId(0x832);
+const BEAST: FormId = FormId(0x833);
+const HUMAN_REF: FormId = FormId(0x834);
+const BEAST_REF: FormId = FormId(0x835);
 
 struct Fixture(std::path::PathBuf);
 
@@ -23,10 +29,32 @@ fn fixture() -> (Fixture, Engine) {
         std::env::temp_dir().join(format!("vrm-status-cond-{}-{stamp}", std::process::id())),
     );
     std::fs::create_dir(&f.0).unwrap();
-    let records = [Node::top(
-        b"REFR",
-        vec![RecordBuilder::new(b"REFR", SWORD_REF)],
-    )];
+    let race = |id, flags: u32| {
+        let mut data = [0u8; 36];
+        data[32..36].copy_from_slice(&flags.to_le_bytes());
+        RecordBuilder::new(b"RACE", id).field(b"DATA", &data)
+    };
+    let npc = |id, race| {
+        RecordBuilder::new(b"NPC_", id)
+            .field(b"ACBS", &[0; 24])
+            .form(b"RNAM", race)
+    };
+    let actor = |id, base| RecordBuilder::new(b"ACHR", id).form(b"NAME", base);
+    let records = [
+        Node::top(
+            b"RACE",
+            vec![race(PLAYABLE_RACE, 0x1), race(CREATURE_RACE, 0)],
+        ),
+        Node::top(
+            b"NPC_",
+            vec![npc(HUMAN, PLAYABLE_RACE), npc(BEAST, CREATURE_RACE)],
+        ),
+        Node::top(
+            b"ACHR",
+            vec![actor(HUMAN_REF, HUMAN), actor(BEAST_REF, BEAST)],
+        ),
+        Node::top(b"REFR", vec![RecordBuilder::new(b"REFR", SWORD_REF)]),
+    ];
     std::fs::write(
         f.0.join("Status.esp"),
         write_plugin(
@@ -74,4 +102,14 @@ fn the_platform_is_a_pc_with_gore() {
     assert!(is(&e, PLAYER_REF, 309, 0, 0.0)); // IsXBox
     assert!(is(&e, PLAYER_REF, 520, 0, 0.0)); // IsPS3
     assert!(is(&e, PLAYER_REF, 547, 0, 0.0)); // IsGoreDisabled
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_is_playable_race_reads_the_races_playable_flag() {
+    let (_f, e) = fixture();
+    assert!(is(&e, HUMAN_REF, 254, 0, 1.0));
+    assert!(!is(&e, BEAST_REF, 254, 0, 1.0));
+    // Nothing to ask about: no race, not playable.
+    assert!(!is(&e, SWORD_REF, 254, 0, 1.0));
 }

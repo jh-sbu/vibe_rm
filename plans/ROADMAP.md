@@ -5,6 +5,8 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- `GetIsPlayableRace` reads the subject's race's Playable flag.
+  Choices: `known_ambiguities/status-conditions.md`
 - Platform conditions: `IsWin32` holds, `IsXBox`, `IsPS3` and `IsGoreDisabled`
   fail. Choices: `known_ambiguities/status-conditions.md`
 - Successfully soul-trapped body identities survive native saves through
