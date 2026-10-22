@@ -14,6 +14,7 @@
 //! (Favorite Weapon usage), `PWCD` (Greater Power cooldowns), `SOUL`
 //! (bodies already soul-trapped), `WTHR`
 //! (the weather, its transition and override), `SCNE` (timer-only scene phases),
+//! `SCLF` (scene lifecycle flags and action states),
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
@@ -117,6 +118,7 @@ pub struct Snapshot {
     pub relationship_ranks: HashMap<(FormId, FormId), i32>,
     pub weather: SavedWeather,
     pub scenes: Vec<crate::scene::SavedScene>,
+    pub scene_lifecycle: Vec<crate::scene::SavedSceneLifecycle>,
     pub vm: super::vm::VmSnapshot,
 }
 
@@ -524,6 +526,7 @@ impl Snapshot {
             relationship_ranks: e.relationships.saved_ranks().clone(),
             weather: e.saved_weather(),
             scenes: e.saved_timer_scenes(),
+            scene_lifecycle: e.saved_scene_lifecycles(),
             vm: super::vm::VmSnapshot {
                 vm: e.vm.export(),
                 initialized: s.initialized.iter().copied().collect(),
@@ -953,6 +956,35 @@ impl Snapshot {
             }
             file.add(b"SCNE", w.0);
         }
+        if !self.scene_lifecycle.is_empty() {
+            let mut w = Writer::default();
+            w.len(self.scene_lifecycle.len());
+            for scene in &self.scene_lifecycle {
+                w.form(scene.scene);
+                w.bool(scene.phase.is_some());
+                if let Some(phase) = scene.phase {
+                    w.u32(phase);
+                }
+                w.bool(scene.begun);
+                w.bool(scene.stopping);
+                w.bool(scene.paused);
+                w.len(scene.actions.len());
+                for action in &scene.actions {
+                    w.u32(action.action);
+                    w.u8(match action.state {
+                        crate::scene::SavedActionState::Waiting => 0,
+                        crate::scene::SavedActionState::Running => 1,
+                        crate::scene::SavedActionState::Done => 2,
+                        crate::scene::SavedActionState::Stopped => 3,
+                    });
+                    w.bool(action.elapsed.is_some());
+                    if let Some(elapsed) = action.elapsed {
+                        w.f64(elapsed);
+                    }
+                }
+            }
+            file.add(b"SCLF", w.0);
+        }
         self.vm.write(&mut file);
         file
     }
@@ -1088,6 +1120,60 @@ impl Snapshot {
                     scene,
                     phase,
                     timers,
+                });
+            }
+            r.finish()?;
+        }
+        if file
+            .sections
+            .iter()
+            .filter(|(tag, _)| tag == b"SCLF")
+            .count()
+            > 1
+        {
+            return Err(Corrupt("duplicate SCLF section".into()));
+        }
+        if let Some(data) = file.section(b"SCLF") {
+            let mut r = Reader::new(data);
+            let mut seen_scenes = HashSet::new();
+            for _ in 0..r.count(12)? {
+                let scene = r.form()?;
+                if scene.is_null() || !seen_scenes.insert(scene) {
+                    return Err(Corrupt("invalid or duplicate scene lifecycle".into()));
+                }
+                let phase = if r.bool()? { Some(r.u32()?) } else { None };
+                let begun = r.bool()?;
+                let stopping = r.bool()?;
+                let paused = r.bool()?;
+                let mut actions = Vec::new();
+                let mut previous_action = None;
+                for _ in 0..r.count(6)? {
+                    let action = r.u32()?;
+                    let state = match r.u8()? {
+                        0 => crate::scene::SavedActionState::Waiting,
+                        1 => crate::scene::SavedActionState::Running,
+                        2 => crate::scene::SavedActionState::Done,
+                        3 => crate::scene::SavedActionState::Stopped,
+                        n => return Err(Corrupt(format!("scene action state {n}"))),
+                    };
+                    let elapsed = if r.bool()? { Some(r.f64()?) } else { None };
+                    if previous_action.is_some_and(|previous| previous >= action) {
+                        return Err(Corrupt("duplicate or unsorted scene action".into()));
+                    }
+                    previous_action = Some(action);
+                    actions.push(crate::scene::SavedSceneAction {
+                        action,
+                        state,
+                        elapsed,
+                    });
+                }
+                s.scene_lifecycle.push(crate::scene::SavedSceneLifecycle {
+                    scene,
+                    phase,
+                    begun,
+                    stopping,
+                    paused,
+                    actions,
                 });
             }
             r.finish()?;
@@ -1524,7 +1610,7 @@ impl Snapshot {
                 "save has invalid weather form {f}"
             );
         }
-        e.validate_saved_scenes(&self.scenes)?;
+        e.validate_saved_scenes(&self.scenes, &self.scene_lifecycle)?;
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.unload_all();
@@ -1636,7 +1722,7 @@ impl Snapshot {
             e.forced_weather = None;
         }
         e.restore_weather(self.weather);
-        e.restore_timer_scenes(self.scenes);
+        e.restore_scenes(self.scenes, self.scene_lifecycle);
         match self.spot {
             Some(Spot {
                 location: Location::Interior(cell),

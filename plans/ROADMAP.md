@@ -32,6 +32,11 @@ game each piece unlocks.
   `SCNE`; loading replaces old runs, and legacy saves clear them. Non-timer
   scene continuation and original `.ess` compatibility remain open:
   `known_ambiguities/scenes.md` and `known_ambiguities/saves.md`.
+- Scene lifecycle state survives native saves in optional `SCLF`: begun,
+  stopping, paused and action waiting/running/done/stopped state are restored,
+  while running timer actions keep elapsed time even in mixed scenes. Dialogue
+  and package internals remain separate work:
+  `known_ambiguities/scenes.md`.
 - Package placement headings: scheduled Sandbox actors take a reference's
   heading at placement; Travel actors turn toward their marker after unloaded
   travel. Moved/dead actors and unrelated runtime steering retain priority.
