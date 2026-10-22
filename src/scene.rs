@@ -493,6 +493,40 @@ impl Engine {
         self.scenes.restart.clone()
     }
 
+    pub(crate) fn saved_scene_force_greeted(&self) -> Vec<FormId> {
+        let mut actors: Vec<_> = self
+            .scenes
+            .force_greeted
+            .iter()
+            .filter(|&&actor| self.scene_owns_force_greet_package(actor))
+            .copied()
+            .collect();
+        actors.sort_unstable();
+        actors
+    }
+
+    pub(crate) fn scene_owns_force_greet_package(&self, actor: FormId) -> bool {
+        let Some((scene, action, packages)) = self.scenes.packages.get(&actor) else {
+            return false;
+        };
+        packages
+            .iter()
+            .any(|package| package.behaviour == Behaviour::ForceGreet)
+            && self
+                .scenes
+                .running
+                .iter()
+                .find(|run| run.scene == *scene)
+                .and_then(|run| {
+                    run.def
+                        .scene
+                        .actions
+                        .iter()
+                        .find(|candidate| candidate.index == *action)
+                })
+                .is_some_and(|action| matches!(action.kind, ActionKind::Package { .. }))
+    }
+
     /// Check saved scene references against loaded definitions before a load
     /// mutates the current game.
     pub(crate) fn validate_saved_scenes(
@@ -503,6 +537,7 @@ impl Engine {
         dialogue: &[SavedSceneDialogue],
         repeats: &[SavedSceneRepeat],
         restarts: &[FormId],
+        force_greeted: &[FormId],
     ) -> anyhow::Result<()> {
         let mut seen = HashSet::new();
         for state in saved {
@@ -914,6 +949,41 @@ impl Engine {
                 "save has pending restart for non-repeating scene {scene}"
             );
         }
+        let mut previous_greeted = None;
+        for &actor in force_greeted {
+            anyhow::ensure!(
+                !actor.is_null() && previous_greeted.is_none_or(|previous| previous < actor),
+                "save has invalid, duplicate or unsorted scene force-greet marker"
+            );
+            previous_greeted = Some(actor);
+            let force_greet_owner = bindings
+                .iter()
+                .filter(|binding| binding.actor == Some(actor) && binding.package_active)
+                .any(|binding| {
+                    self.scene_def(binding.scene).is_some_and(|scene| {
+                        scene
+                            .scene
+                            .actions
+                            .iter()
+                            .find(|action| action.index == binding.action)
+                            .is_some_and(|action| {
+                                if let ActionKind::Package { packages } = &action.kind {
+                                    packages.iter().any(|&package| {
+                                        package::expand(&self.lo, package).iter().any(|package| {
+                                            package.behaviour == Behaviour::ForceGreet
+                                        })
+                                    })
+                                } else {
+                                    false
+                                }
+                            })
+                    })
+                });
+            anyhow::ensure!(
+                force_greet_owner,
+                "save has force-greet marker without active scene force-greet ownership for {actor}"
+            );
+        }
         Ok(())
     }
 
@@ -927,6 +997,7 @@ impl Engine {
         dialogue: Vec<SavedSceneDialogue>,
         repeats: Vec<SavedSceneRepeat>,
         restarts: Vec<FormId>,
+        force_greeted: Vec<FormId>,
     ) {
         for run in &mut self.scenes.running {
             for action in &mut run.actions {
@@ -939,7 +1010,7 @@ impl Engine {
         }
         self.scenes.running.clear();
         self.scenes.packages.clear();
-        self.scenes.force_greeted.clear();
+        self.scenes.force_greeted = force_greeted.into_iter().collect();
         self.scenes.restart = restarts;
         let now = self.scripts.real_time;
         let mut scene_ids: Vec<_> = lifecycle.iter().map(|state| state.scene).collect();
