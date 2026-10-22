@@ -120,5 +120,11 @@ interval during loading. It applies only to a running looping action between
 INFO lines. The optional `SRSQ` section preserves the pending scene-restart
 queue as an ordered list, including repeated entries. Applying it only restores
 the queue; the next normal scene update attempts each start with the usual
-quest, alias and condition checks. Legacy saves clear this queue. Force-greet
-state is still not retained.
+quest, alias and condition checks. Legacy saves clear this queue. The optional
+`SFGT` section retains a greeted actor marker only while a scene-owned force-greet
+package is active, so the package can complete after load without reopening the
+greet. The conversation itself is not saved: a load discards any live conversation
+without running goodbye, INFO-end or arrest-completion side effects. If a save
+was taken mid-greet, its start-time completion marker is retained, so the greet
+is treated as accepted/completed after loading rather than continued from its
+current line. This is a native policy, not verified Skyrim SE save behavior.

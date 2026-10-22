@@ -109,6 +109,7 @@ impl Engine {
             || self.menu.is_some()
             || self.player_dead()
             || !self.ai_enabled
+            || (self.scenes.force_greeted.contains(&r) && self.scene_owns_force_greet_package(r))
         {
             return None;
         }

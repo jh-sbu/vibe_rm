@@ -138,3 +138,19 @@ production Engine integration covers queue creation by `end_scene`, rejection
 of an invalid reference before mutation, no start during apply, and starting
 both queued scenes on the next update; the host-Vulkan production regression
 passed.
+
+## Item 7 implementation (review pending)
+
+Added optional `SFGT` state for scene-owned actors whose force-greet package has
+already accepted a greeting. Loading discards any live player conversation,
+stopping its voice and clearing gestures without running goodbye, INFO-end or
+arrest-completion behavior; the conversation itself is not resumed. A marker
+inserted when a greet begins is retained, so a mid-greet save treats the greet
+as accepted/completed after load. Force-greet evaluation checks that marker for
+an active scene-owned ForceGreet package to avoid reopening the interaction.
+
+Validation so far: `cargo test scene_force_greet_section` passed (1 passed).
+The production Engine integration covers invalid marker rejection before
+mutation, in-progress conversation discard, legacy marker clearing, package
+completion after load and no repeat greet after another roundtrip. The focused
+codec check and parent host-Vulkan production regression passed.

@@ -1031,6 +1031,20 @@ impl Engine {
         self.arrest_conversation_ended(c.npc_ref, goodbye);
     }
 
+    /// Drop a transient conversation while applying a save. Conversations are
+    /// not part of the snapshot, so don't run goodbye or arrest side effects.
+    pub(crate) fn discard_conversation_for_load(&mut self) {
+        let Some(conversation) = self.conversation.take() else {
+            return;
+        };
+        if let (Some(line), Some(audio)) = (&conversation.current, &self.audio)
+            && let Some(voice) = line.voice
+        {
+            audio.stop(voice);
+        }
+        self.end_talking_gestures(conversation.npc_ref);
+    }
+
     /// Advance the conversation (called every frame).
     pub fn update_conversation(&mut self) {
         let now = self.scripts.real_time;

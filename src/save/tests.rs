@@ -48,6 +48,7 @@ const OTHER_INFO: FormId = FormId(0x8B9);
 const LOOP_DIALOGUE_SCENE: FormId = FormId(0x8BA);
 const RESTART_SCENE_A: FormId = FormId(0x8BB);
 const RESTART_SCENE_B: FormId = FormId(0x8BC);
+const FORCE_GREET_TEMPLATE: FormId = FormId(0x8BD);
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
@@ -72,6 +73,17 @@ fn attach_scene_test_actor(e: &mut Engine) {
     );
     e.cells.entry(cell).or_default().actors.push(actor);
     e.actor_cells.insert(SCENE_ACTOR, cell);
+}
+
+fn ready_scene_force_greet_actor(e: &mut Engine) {
+    let packages = e.scenes.packages[&SCENE_ACTOR].2.clone();
+    let actor = e.actor_mut(SCENE_ACTOR).unwrap();
+    actor.packages = packages;
+    actor.current = Some(0);
+    let mut goal = crate::ai::Goal::travel(Vec3::ZERO);
+    goal.behaviour = crate::ai::package::Behaviour::ForceGreet;
+    actor.goal = Some(goal);
+    actor.greeting = true;
 }
 
 fn engine(name: &str) -> (Fixture, Engine) {
@@ -243,7 +255,8 @@ fn engine(name: &str) -> (Fixture, Engine) {
                 Node::Record(
                     RecordBuilder::new(b"DIAL", SCENE_TOPIC)
                         .zstring(b"FULL", "Scene topic")
-                        .form(b"QNAM", TIMER_SCENE_QUEST),
+                        .form(b"QNAM", TIMER_SCENE_QUEST)
+                        .field(b"SNAM", b"HELO"),
                 ),
                 Node::Group {
                     label: SCENE_TOPIC.0.to_le_bytes(),
@@ -278,10 +291,16 @@ fn engine(name: &str) -> (Fixture, Engine) {
                 },
             ],
         },
-        Node::top(
-            b"PACK",
-            vec![RecordBuilder::new(b"PACK", SCENE_PACKAGE).zstring(b"EDID", "ScenePackage")],
-        ),
+        Node::top(b"PACK", {
+            let mut pkcu = [0; 8];
+            pkcu[4..8].copy_from_slice(&FORCE_GREET_TEMPLATE.0.to_le_bytes());
+            vec![
+                RecordBuilder::new(b"PACK", SCENE_PACKAGE)
+                    .zstring(b"EDID", "ScenePackage")
+                    .field(b"PKCU", &pkcu),
+                RecordBuilder::new(b"PACK", FORCE_GREET_TEMPLATE).zstring(b"EDID", "ForceGreet"),
+            ]
+        }),
         Node::top(
             b"SPEL",
             vec![
@@ -1798,6 +1817,37 @@ fn scene_restart_section_preserves_queue_order_duplicates_and_legacy_clearing() 
 }
 
 #[test]
+fn scene_force_greet_section_round_trips_and_rejects_bad_markers() {
+    let mut s = Snapshot::default();
+    s.scene_force_greeted.push(SCENE_ACTOR);
+    let file = s.write();
+    let bytes = file.to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.scene_force_greeted, s.scene_force_greeted);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"SFGT");
+    assert!(
+        Snapshot::read(&legacy)
+            .unwrap()
+            .scene_force_greeted
+            .is_empty()
+    );
+
+    let mut duplicate = file.clone();
+    duplicate.add(b"SFGT", vec![]);
+    assert!(Snapshot::read(&duplicate).is_err());
+
+    let mut malformed = Snapshot::default().write();
+    let mut w = Writer::default();
+    w.len(1);
+    w.form(FormId::NULL);
+    malformed.add(b"SFGT", w.0);
+    assert!(Snapshot::read(&malformed).is_err());
+}
+
+#[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
 fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     let (_fixture, mut e) = engine("scene-continuity");
@@ -2247,6 +2297,92 @@ fn pending_scene_restarts_load_in_order_and_start_on_next_update() {
     assert!(e.is_scene_playing(RESTART_SCENE_A));
     assert!(e.is_scene_playing(RESTART_SCENE_B));
     assert!(Snapshot::capture(&e).scene_restarts.is_empty());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
+fn scene_force_greet_load_discards_conversation_and_preserves_completion() {
+    let (_fixture, mut e) = engine("scene-force-greet-continuity");
+    e.scripts
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .running = true;
+    e.force_alias_ref(TIMER_SCENE_QUEST, SCENE_ACTION_ALIAS, SCENE_ACTOR);
+    attach_scene_test_actor(&mut e);
+    e.scripts.real_time = 10.0;
+    assert!(e.start_scene(PACKAGE_SCENE, false));
+    e.update_scenes();
+    ready_scene_force_greet_actor(&mut e);
+    assert!(e.scene_owns_force_greet_package(SCENE_ACTOR));
+
+    // A force-greet marker is set when the scene-owned greet conversation
+    // starts. The conversation itself is intentionally not in the save.
+    e.update_force_greets(0.0);
+    assert!(e.scenes.force_greeted.contains(&SCENE_ACTOR));
+    assert!(e.conversation.is_some());
+    let saved = Snapshot::capture(&e);
+    assert_eq!(saved.scene_force_greeted, vec![SCENE_ACTOR]);
+    let save_bytes = saved.write().to_bytes();
+
+    let mut bad_marker = Snapshot::read(&SaveFile::from_bytes(&save_bytes).unwrap()).unwrap();
+    bad_marker.scene_force_greeted[0] = ACTOR;
+    assert!(bad_marker.apply(&mut e).is_err());
+    assert!(
+        e.conversation.is_some(),
+        "rejected load cleared live dialogue"
+    );
+    assert!(e.scenes.force_greeted.contains(&SCENE_ACTOR));
+
+    Snapshot::read(&SaveFile::from_bytes(&save_bytes).unwrap())
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert!(e.conversation.is_none(), "transient dialogue was resumed");
+    assert!(e.scenes.force_greeted.contains(&SCENE_ACTOR));
+
+    // Missing marker data replaces stale completion state on legacy loads.
+    let mut legacy = SaveFile::from_bytes(&save_bytes).unwrap();
+    legacy.sections.retain(|(tag, _)| tag != b"SFGT");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.scenes.force_greeted.is_empty());
+    Snapshot::read(&SaveFile::from_bytes(&save_bytes).unwrap())
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert!(e.conversation.is_none());
+    assert!(e.scenes.force_greeted.contains(&SCENE_ACTOR));
+
+    attach_scene_test_actor(&mut e);
+    ready_scene_force_greet_actor(&mut e);
+    e.update_scenes();
+    assert!(e.is_scene_action_complete(PACKAGE_SCENE, 13));
+    assert!(e.is_scene_playing(PACKAGE_SCENE));
+    assert!(e.conversation.is_none());
+
+    // The marker prevents a fresh ForceGreet package evaluation from reopening
+    // the greeting after loading an in-progress conversation as completed.
+    e.update_force_greets(0.0);
+    assert!(e.conversation.is_none());
+    assert!(e.scenes.force_greeted.contains(&SCENE_ACTOR));
+
+    let completed = Snapshot::capture(&e);
+    assert_eq!(
+        completed.scene_lifecycle[0]
+            .actions
+            .iter()
+            .find(|action| action.action == 13)
+            .unwrap()
+            .state,
+        crate::scene::SavedActionState::Done
+    );
+    completed.apply(&mut e).unwrap();
+    attach_scene_test_actor(&mut e);
+    ready_scene_force_greet_actor(&mut e);
+    e.update_scenes();
+    assert!(e.is_scene_action_complete(PACKAGE_SCENE, 13));
+    e.update_force_greets(0.0);
+    assert!(e.conversation.is_none());
 }
 
 #[test]

@@ -1013,8 +1013,9 @@ game each piece unlocks.
   far. Console `startscene`, `stopscene`, `scenes`, `startquest`, `stopquest`,
   `setstage`; vrm-tool `scenes`. Native saves preserve running scene lifecycle,
   action bindings, selected dialogue responses and already chosen looping
-  dialogue waits in optional adjunct sections; audio playback and package
-  procedure progress are reconstructed. Open questions:
+  dialogue waits, pending restarts and scene force-greet completion markers in
+  optional adjunct sections; live player conversations, audio playback and
+  package procedure progress are not resumed. Open questions:
   `known_ambiguities/scenes.md`
 - Story Manager (also pick lock `LOCK` and trespass `TRES` events, no vanilla node
   listens): events run down the tree of event, branch and quest nodes
