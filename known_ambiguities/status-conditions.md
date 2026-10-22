@@ -293,3 +293,83 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
 - `IsWaiting` (111): UESP lists the name only, and no source says which state
   it reports.
 
+## Record-data and legacy conditions
+
+`GetScale` (24), `GetIsCreature` (64), `GetFactionRelation` (449),
+`GetFactionRankDifference` (60), `GetWeaponAnimType` (108), `IsCarryable` (487),
+`GetTargetHeight` (720), `GetActivatorHeight` (680), `GetClothingValue` (41),
+`GetDisease` (39), `IsActorUsingATorch` (306), `GetInCellParam` (230) and
+`GetCannibal` (227). Tests in `src/condition/status_tests.rs`.
+
+### What is known
+
+- UESP Skyrim:Console (oldid 3628513) and Skyrim talk:Console/Archive 1
+  (oldid 2308857) list the names; only `GetTargetHeight` has a description:
+  "Get the delta on z between two references". The raw function data (oldid
+  3411473) gives the signatures, including `GetFactionRankDifference(Faction,
+  Actor)`, `GetInCellParam(Cell, ObjectReferenceID)` and
+  `GetFactionRelation(Actor)`.
+- Vanilla uses (`vrm-tool ctda-uses`):
+  - `GetWeaponAnimType` compares against the weapon records' animation types:
+    5 and 6 (two-handers) and 1 and 2 in dialogue, 7 (bows) and 12 (the
+    crossbow reload idles) in attack-release idles. The values are the
+    `WEAP` `DNAM` animation type byte.
+  - `GetFactionRelation` is compared with 1 (`!= 1`), `< 2` and `<= 1`,
+    with the player as the actor or a null actor, so its result is numbered
+    like the group combat reaction (1 enemy, 2 ally).
+  - `GetTargetHeight(null)` is within +-20 or +-35 in the killmove idles, so
+    its sign matters little there. `GetActivatorHeight` is `<= 40` for the
+    low pick-up idles and `>= 41` for the standing ones.
+  - `IsCarryable` is asked of the target in pick-up idles (`== 1`).
+  - `GetDisease` against 1 on the player (Windhelm's hellos, an ambient quest).
+  - `GetClothingValue` is `>= 12` (Delphine in MQ201) and `>= 1000` (a
+    surgeon's greeting, DLC1).
+  - `GetCannibal` is 1 in the cannibal feeding idle.
+- `ActorTypeCreature` is the keyword 0x13795 (checked in Skyrim.esm).
+
+### Unconfirmed choices
+
+- `GetScale` is a loaded actor's scale, else a placed reference's `XSCL`
+  (1 with none).
+- `GetIsCreature` is a race with `ActorTypeCreature`. Oblivion's function
+  asked for a creature record; Skyrim has none.
+- `GetFactionRelation` is the strongest reaction (3 friend, 2 ally, 1 enemy,
+  0 neutral) of any member faction of the subject towards any of the actor's,
+  as combat's hostility reads them; a shared faction is an ally. Ranks below 0
+  are not membership. A null actor is taken to be the player (the dialogue
+  uses), where the geometry conditions take the combat target.
+- `GetFactionRankDifference` is the subject's rank less the actor's, -1 for
+  a non-member, so two non-members differ by 0.
+- `GetWeaponAnimType` is the animation type of the weapon in the right hand,
+  else the left, 0 with none. A spell in hand is not a type here (the idles
+  compare it against numbers we can't map to magic).
+- `IsCarryable` is an item kind (`ALCH`, `AMMO`, `APPA`, `ARMO`, `BOOK`,
+  `INGR`, `KEYM`, `MISC`, `NOTE`, `SCRL`, `SLGM`, `WEAP`) or a light with the
+  "can be carried" flag (`DATA` 0x2). Whether the game also refuses some
+  of these (quest items, items too heavy) is unknown.
+- `GetTargetHeight` is the other reference's z less the subject's; the sign
+  is a guess. A null reference is the subject's combat target.
+- `GetActivatorHeight` is the z of the context's target (the idle's, or the
+  activated reference) less the subject's, in world units. Nothing here picks
+  those pick-up idles yet, so no condition context supplies the target.
+- `GetClothingValue` is the sum of the base values of worn armor records of
+  the clothing type (`BOD2` armor type 2). Oblivion's function may have
+  returned something other than gold value; the thresholds above (12, 1000)
+  don't settle it.
+- `GetDisease` is true while any disease spell (type Disease) has an effect on
+  the subject, whatever its source.
+- `IsActorUsingATorch` is `IsTorchOut`'s test (a torch in the left hand).
+- `GetInCellParam(cell, reference)` is true when the reference named in the
+  second parameter is in the cell; whether the game asks about the subject
+  instead is unknown, and no vanilla record uses it.
+- `GetCannibal` is false: nobody eats corpses yet (as `GetVampireFeed`).
+
+### Left unsupported
+
+No source or vanilla use gives these a Skyrim meaning: `GetIsCreatureType`
+(Oblivion's creature types have no Skyrim record field), `GetIsAlignment`,
+`GetIsClassDefault`, `GetClassDefaultMatch`, `GetPersuasionNumber`,
+`GetTotalPersuasionNumber`, `CanHaveFlames`, `HasFlames` and `IsWaterObject`
+("Water condition used for drinking animation"; nothing says what makes an
+object one).
+

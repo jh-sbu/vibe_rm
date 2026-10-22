@@ -1570,6 +1570,18 @@ impl Engine {
             .any(|x| x.target == actor && x.active && !x.done && x.effect == effect)
     }
 
+    /// A disease's effect is on the actor.
+    pub fn has_disease(&self, actor: FormId) -> bool {
+        self.magic.effects.iter().any(|x| {
+            x.target == actor
+                && x.active
+                && !x.done
+                && self
+                    .magic_item(x.item)
+                    .is_some_and(|m| m.spell_type == spell_type::DISEASE)
+        })
+    }
+
     /// `IsSpellTarget`: an effect of `item` is on the actor.
     pub fn is_spell_target(&self, actor: FormId, item: FormId) -> bool {
         self.magic
