@@ -11,7 +11,8 @@
 //! shouts, favorites, dialogue heard), `CRIM` (bounties) and `BART`
 //! (restocks), `STOR` (Story Manager memory), `RELA` (relationship overrides),
 //! `ADOR` (doors actors left open), `DSTR` (destructible health/stage), `WUSE`
-//! (Favorite Weapon usage), `PWCD` (Greater Power cooldowns), `WTHR`
+//! (Favorite Weapon usage), `PWCD` (Greater Power cooldowns), `SOUL`
+//! (bodies already soul-trapped), `WTHR`
 //! (the weather, its transition and override),
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
@@ -66,6 +67,7 @@ pub struct Snapshot {
     pub stats: HashMap<String, i32>,
     pub weapon_usage: Vec<(FormId, u64)>,
     pub power_uses: HashMap<FormId, f32>,
+    pub spent_souls: HashSet<FormId>,
     pub favorite_weapon: Option<FormId>,
     pub actor_values: HashMap<(FormId, u32), Modifiers>,
     pub other_actor_values: HashMap<(FormId, String), f32>,
@@ -471,6 +473,7 @@ impl Snapshot {
             stats: s.stats.clone(),
             weapon_usage,
             power_uses: e.casting.power_uses().clone(),
+            spent_souls: e.magic.souls_taken.clone(),
             favorite_weapon,
             actor_values: s.actor_values.clone(),
             other_actor_values: s.other_actor_values.clone(),
@@ -604,6 +607,10 @@ impl Snapshot {
             w.f32(*last_used);
         }
         file.add(b"PWCD", w.0);
+
+        let mut w = Writer::default();
+        put_forms(&mut w, &self.spent_souls);
+        file.add(b"SOUL", w.0);
 
         let mut w = Writer::default();
         w.len(self.actor_values.len());
@@ -1024,6 +1031,17 @@ impl Snapshot {
             r.finish()?;
         }
 
+        if let Some(data) = file.section(b"SOUL") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(4)? {
+                let body = r.form()?;
+                if body.is_null() || !s.spent_souls.insert(body) {
+                    return Err(Corrupt("null or duplicate spent-soul body".into()));
+                }
+            }
+            r.finish()?;
+        }
+
         let mut r = section(file, b"AVAL")?;
         for _ in 0..r.count(25)? {
             let (actor, index) = (r.form()?, r.u32()?);
@@ -1427,6 +1445,10 @@ impl Snapshot {
                 "save has invalid Greater Power cooldown for {power}"
             );
         }
+        anyhow::ensure!(
+            self.spent_souls.iter().all(|body| !body.is_null()),
+            "save has a null spent-soul body"
+        );
         for f in [
             self.weather.current,
             self.weather.outgoing,
@@ -1508,6 +1530,7 @@ impl Snapshot {
         }
         e.inventories = self.inventories;
         e.casting.restore_power_uses(self.power_uses);
+        e.magic.souls_taken = self.spent_souls;
         let ws = &mut e.world_state;
         ws.alerted = self.alerted;
         ws.dead = self.dead;

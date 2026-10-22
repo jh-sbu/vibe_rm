@@ -168,7 +168,14 @@ fn engine(name: &str) -> (Fixture, Engine) {
             ],
         ),
         Node::top(b"ARMO", vec![RecordBuilder::new(b"ARMO", SHIELD)]),
-        Node::top(b"SLGM", vec![RecordBuilder::new(b"SLGM", GEM)]),
+        Node::top(
+            b"SLGM",
+            vec![
+                RecordBuilder::new(b"SLGM", GEM)
+                    .field(b"SOUL", &[0])
+                    .field(b"SLCP", &[1]),
+            ],
+        ),
         // An empty interior cell (object id 0x850: block 8, sub-block 2).
         Node::Group {
             label: *b"CELL",
@@ -1270,6 +1277,53 @@ fn greater_power_cooldowns_survive_load_and_expire_after_a_game_day() {
     );
 }
 
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn spent_souls_restore_across_load_and_legacy_saves_clear_them() {
+    let (_a, mut a) = engine("spent-soul-a");
+    a.world_state
+        .dead
+        .insert(ACTOR, (Place::Interior(CELL), Vec3::ZERO));
+    a.world_state
+        .dead
+        .insert(FormId(7), (Place::Interior(CELL), Vec3::ONE));
+    assert!(
+        !a.trap_soul(PLAYER_REF, FormId(7)),
+        "failed capture with no gem is retryable"
+    );
+    a.inventory_mut(PLAYER_REF).add(GEM, 4);
+    assert!(a.trap_soul(PLAYER_REF, ACTOR));
+    assert!(a.trap_soul(PLAYER_REF, FormId(7)));
+    assert_eq!(a.magic.souls_taken, [ACTOR, FormId(7)].into());
+    let bytes = Snapshot::capture(&a).write().to_bytes();
+
+    let (_b, mut b) = engine("spent-soul-b");
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut b)
+        .unwrap();
+    b.inventory_mut(PLAYER_REF).add(GEM, 1);
+    let gems = b.inventory_mut(PLAYER_REF).count(GEM);
+    assert!(
+        !b.trap_soul(PLAYER_REF, ACTOR),
+        "a spent body remains spent"
+    );
+    assert_eq!(b.inventory_mut(PLAYER_REF).count(GEM), gems);
+    assert!(!b.trap_soul(PLAYER_REF, FormId(7)));
+    assert!(b.magic.souls_taken.contains(&FormId(7)));
+
+    let mut legacy = SaveFile::from_bytes(&bytes).unwrap();
+    legacy.sections.retain(|(tag, _)| tag != b"SOUL");
+    let (_c, mut c) = engine("spent-soul-legacy");
+    c.magic.souls_taken.insert(ACTOR);
+    Snapshot::read(&legacy).unwrap().apply(&mut c).unwrap();
+    assert!(
+        c.magic.souls_taken.is_empty(),
+        "legacy absence replaces stale state"
+    );
+    assert!(c.trap_soul(PLAYER_REF, ACTOR));
+}
+
 /// Every runtime field is encoded without requiring a renderer or game assets.
 #[test]
 fn story_and_relationship_sections_are_deterministic_and_optional() {
@@ -1379,6 +1433,63 @@ fn greater_power_cooldown_section_round_trips_and_rejects_bad_entries() {
         }
         malformed.push(bad);
     }
+    for file in malformed {
+        assert!(Snapshot::read(&file).is_err());
+    }
+}
+
+#[test]
+fn spent_soul_section_is_deterministic_and_rejects_bad_entries() {
+    let mut s = Snapshot::default();
+    s.spent_souls.extend([ACTOR, FormId(7)]);
+    let valid = s.write();
+    let bytes = valid.to_bytes();
+    let back = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(back.spent_souls, s.spent_souls);
+    assert_eq!(back.write().to_bytes(), bytes);
+
+    let mut legacy = valid.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"SOUL");
+    assert!(Snapshot::read(&legacy).unwrap().spent_souls.is_empty());
+
+    let mut malformed = Vec::new();
+    let mut null = valid.clone();
+    null.sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"SOUL")
+        .unwrap()
+        .1[4..8]
+        .copy_from_slice(&0u32.to_le_bytes());
+    malformed.push(null);
+    let mut duplicate = valid.clone();
+    let payload = &mut duplicate
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"SOUL")
+        .unwrap()
+        .1;
+    let first = payload[4..8].to_vec();
+    payload[0..4].copy_from_slice(&3u32.to_le_bytes());
+    payload.extend_from_slice(&first);
+    malformed.push(duplicate);
+    let mut truncated = valid.clone();
+    truncated
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"SOUL")
+        .unwrap()
+        .1
+        .pop();
+    malformed.push(truncated);
+    let mut trailing = valid;
+    trailing
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"SOUL")
+        .unwrap()
+        .1
+        .push(0);
+    malformed.push(trailing);
     for file in malformed {
         assert!(Snapshot::read(&file).is_err());
     }

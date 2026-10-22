@@ -81,6 +81,13 @@ how the original `.ess` payload stores cooldown state or whether Skyrim resets
 at midnight. Cooldowns remain attached to loaded Greater Power records even if
 the player no longer knows or equips them.
 
+Bodies whose souls were successfully captured are stored by non-null reference
+form in optional `SOUL`. Loading replaces the spent-body set; legacy saves clear
+it. Entries are retained even when the actor is no longer loaded or present in
+the current world state, so its identity remains spent. Failed captures are not
+added. This preserves the engine's current one-capture-per-body rule; original
+`.ess` persistence and whether resurrection resets a body remain unverified.
+
 The scripting side (`vm.rs`, sections `VM` and `VMAR`): the scripts attached
 to each object with their variables and properties (`Vm::attach` keeps an
 instance that exists, so cells loading after a load don't reset them),
