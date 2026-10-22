@@ -39,6 +39,12 @@ const TIMER_SCENE_QUEST: FormId = FormId(0x8B1);
 const PACKAGE_SCENE: FormId = FormId(0x8B2);
 const SCENE_PACKAGE: FormId = FormId(0x8B3);
 const SCENE_ACTION_ALIAS: u32 = 5;
+const DIALOGUE_SCENE: FormId = FormId(0x8B4);
+const SCENE_ACTOR: FormId = FormId(0x8B5);
+const SCENE_TOPIC: FormId = FormId(0x8B6);
+const SCENE_INFO: FormId = FormId(0x8B7);
+const OTHER_TOPIC: FormId = FormId(0x8B8);
+const OTHER_INFO: FormId = FormId(0x8B9);
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
@@ -49,6 +55,20 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+fn attach_scene_test_actor(e: &mut Engine) {
+    let cell = crate::render::CellKey::Interior(CELL);
+    let actor = crate::ai::ActorRuntime::new(
+        SCENE_ACTOR,
+        ACTOR,
+        std::sync::Arc::new(crate::world::skeleton::Skeleton::default()),
+        Mat4::IDENTITY,
+        Vec::new(),
+        0.0,
+    );
+    e.cells.entry(cell).or_default().actors.push(actor);
+    e.actor_cells.insert(SCENE_ACTOR, cell);
 }
 
 fn engine(name: &str) -> (Fixture, Engine) {
@@ -80,6 +100,10 @@ fn engine(name: &str) -> (Fixture, Engine) {
                 RecordBuilder::new(b"NPC_", ACTOR),
                 RecordBuilder::new(b"NPC_", FormId(7)),
             ],
+        ),
+        Node::top(
+            b"ACHR",
+            vec![RecordBuilder::new(b"ACHR", SCENE_ACTOR).form(b"NAME", ACTOR)],
         ),
         Node::top(
             b"QUST",
@@ -143,8 +167,65 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     .u32(b"PNAM", SCENE_PACKAGE.0)
                     .field(b"ANAM", &[])
                     .u32(b"PNAM", TIMER_SCENE_QUEST.0),
+                RecordBuilder::new(b"SCEN", DIALOGUE_SCENE)
+                    .field(b"HNAM", &[])
+                    .zstring(b"NAM0", "Dialogue phase")
+                    .field(b"NEXT", &[])
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .field(b"ANAM", &0u16.to_le_bytes())
+                    .zstring(b"NAM0", "Speak")
+                    .u32(b"ALID", SCENE_ACTION_ALIAS)
+                    .u32(b"INAM", 17)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .form(b"DATA", SCENE_TOPIC)
+                    .field(b"ANAM", &[])
+                    .u32(b"PNAM", TIMER_SCENE_QUEST.0),
             ],
         ),
+        Node::Group {
+            label: *b"DIAL",
+            group_type: 0,
+            children: vec![
+                Node::Record(
+                    RecordBuilder::new(b"DIAL", SCENE_TOPIC)
+                        .zstring(b"FULL", "Scene topic")
+                        .form(b"QNAM", TIMER_SCENE_QUEST),
+                ),
+                Node::Group {
+                    label: SCENE_TOPIC.0.to_le_bytes(),
+                    group_type: 7,
+                    children: vec![Node::Record({
+                        let mut current = [0; 24];
+                        current[12] = 3;
+                        let mut queued = [0; 24];
+                        queued[12] = 3; // Duplicate response numbers are deliberate.
+                        RecordBuilder::new(b"INFO", SCENE_INFO)
+                            .field(b"TRDT", &current)
+                            .zstring(b"NAM1", "The saved line.")
+                            .field(b"TRDT", &queued)
+                            .zstring(b"NAM1", "The queued line.")
+                    })],
+                },
+                Node::Record(
+                    RecordBuilder::new(b"DIAL", OTHER_TOPIC)
+                        .zstring(b"FULL", "Other topic")
+                        .form(b"QNAM", TIMER_SCENE_QUEST),
+                ),
+                Node::Group {
+                    label: OTHER_TOPIC.0.to_le_bytes(),
+                    group_type: 7,
+                    children: vec![Node::Record({
+                        let mut response = [0; 24];
+                        response[12] = 3;
+                        RecordBuilder::new(b"INFO", OTHER_INFO)
+                            .field(b"TRDT", &response)
+                            .zstring(b"NAM1", "Wrong topic line.")
+                    })],
+                },
+            ],
+        },
         Node::top(
             b"PACK",
             vec![RecordBuilder::new(b"PACK", SCENE_PACKAGE).zstring(b"EDID", "ScenePackage")],
@@ -1563,6 +1644,44 @@ fn scene_binding_section_round_trips_and_clears_legacy_bindings() {
 }
 
 #[test]
+fn scene_dialogue_section_round_trips_positions_and_rejects_bad_suffixes() {
+    let mut s = Snapshot::default();
+    s.scene_dialogue.push(crate::scene::SavedSceneDialogue {
+        scene: DIALOGUE_SCENE,
+        action: 17,
+        topic: SCENE_TOPIC,
+        info: SCENE_INFO,
+        current_response: 3,
+        queued_responses: vec![4, 5],
+        remaining: 1.25,
+    });
+    let file = s.write();
+    let bytes = file.to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.scene_dialogue, s.scene_dialogue);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"SDLG");
+    assert!(Snapshot::read(&legacy).unwrap().scene_dialogue.is_empty());
+
+    let mut duplicate = file.clone();
+    duplicate.add(b"SDLG", vec![]);
+    assert!(Snapshot::read(&duplicate).is_err());
+
+    let mut malformed = file;
+    let payload = &mut malformed
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"SDLG")
+        .unwrap()
+        .1;
+    // The second queued position must follow the first contiguously.
+    payload[32..36].copy_from_slice(&9u32.to_le_bytes());
+    assert!(Snapshot::read(&malformed).is_err());
+}
+
+#[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
 fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     let (_fixture, mut e) = engine("scene-continuity");
@@ -1795,6 +1914,66 @@ fn package_scene_load_restores_bindings_and_owned_packages_without_restarting() 
         "unsatisfied phase completion condition must keep the scene and package alive"
     );
     assert!(e.scenes.packages.contains_key(&ACTOR));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic dialogue records only"]
+fn dialogue_scene_load_resumes_selected_info_and_remaining_response_suffix() {
+    let (_fixture, mut e) = engine("scene-dialogue-continuity");
+    e.scripts
+        .quests
+        .entry(TIMER_SCENE_QUEST)
+        .or_default()
+        .running = true;
+    e.force_alias_ref(TIMER_SCENE_QUEST, SCENE_ACTION_ALIAS, SCENE_ACTOR);
+    attach_scene_test_actor(&mut e);
+    e.scripts.real_time = 10.0;
+    assert!(e.start_scene(DIALOGUE_SCENE, false));
+    e.update_scenes();
+
+    let mut saved = Snapshot::capture(&e);
+    assert_eq!(saved.scene_dialogue.len(), 1);
+    assert_eq!(saved.scene_dialogue[0].scene, DIALOGUE_SCENE);
+    assert_eq!(saved.scene_dialogue[0].action, 17);
+    assert_eq!(saved.scene_dialogue[0].topic, SCENE_TOPIC);
+    assert_eq!(saved.scene_dialogue[0].info, SCENE_INFO);
+    assert_eq!(saved.scene_dialogue[0].current_response, 0);
+    assert_eq!(saved.scene_dialogue[0].queued_responses, vec![1]);
+    assert_eq!(saved.scene_dialogue[0].remaining, 2.0);
+    e.scripts.real_time = 10.5;
+    saved = Snapshot::capture(&e);
+    assert_eq!(saved.scene_dialogue[0].remaining, 1.5);
+    let bytes = saved.write().to_bytes();
+    let file = SaveFile::from_bytes(&bytes).unwrap();
+
+    // This INFO exists but belongs to another topic. Rejection occurs before
+    // the live scene is unloaded or replaced.
+    let mut wrong_topic = Snapshot::read(&file).unwrap();
+    wrong_topic.scene_dialogue[0].info = OTHER_INFO;
+    assert!(wrong_topic.apply(&mut e).is_err());
+    assert!(e.is_scene_playing(DIALOGUE_SCENE));
+    assert_eq!(Snapshot::capture(&e).scene_dialogue, saved.scene_dialogue);
+
+    let loaded = Snapshot::read(&file).unwrap();
+    loaded.apply(&mut e).unwrap();
+    assert_eq!(Snapshot::capture(&e).scene_dialogue, saved.scene_dialogue);
+    attach_scene_test_actor(&mut e);
+
+    e.scripts.real_time = 11.5;
+    e.update_scenes();
+    assert_eq!(Snapshot::capture(&e).scene_dialogue[0].remaining, 0.5);
+    e.scripts.real_time = 12.1;
+    e.update_scenes();
+    let next = Snapshot::capture(&e).scene_dialogue;
+    assert_eq!(next.len(), 1);
+    assert_eq!(next[0].current_response, 1);
+    assert!(next[0].queued_responses.is_empty());
+    assert_eq!(next[0].remaining, 2.0);
+
+    e.scripts.real_time = 14.2;
+    e.update_scenes();
+    assert!(!e.is_scene_playing(DIALOGUE_SCENE));
+    assert!(Snapshot::capture(&e).scene_dialogue.is_empty());
 }
 
 #[test]

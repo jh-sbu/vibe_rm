@@ -93,3 +93,19 @@ passed (1 passed). The host-Vulkan Engine regression passed; it covers
 pre-dispatch saves, explicit/empty actor bindings, package restoration, elapsed
 ownership time, a completed package action waiting for its phase condition, and
 update without scene phase replay.
+
+## Item 4 outcome
+
+Added an optional `SDLG` adjunct for the selected topic and INFO, current
+response position, remaining response positions, and remaining subtitle
+deadline. Restoring the INFO does not replay its begin fragment, and does not
+resume or replay its voice handle. A restored line advances through the saved
+response suffix and executes the INFO end fragment through the normal finish
+path. Legacy saves without `SDLG` retain their existing scene behavior; full
+looping-dialogue deadline persistence remains item 5.
+
+Validation: `cargo test scene_dialogue_section` passed (1 passed), and the
+production Engine integration regression passed with host Vulkan. It covers
+roundtrip continuation to the next response, duplicate response-number handling
+by position, and rejecting an INFO belonging to a different topic before
+snapshot mutation.

@@ -103,7 +103,16 @@ the package structs themselves are not serialized. The ownership elapsed clock
 is retained, including while a completed package action waits for a phase's
 completion condition. Actor procedure, animation, and movement progress remain
 separate and may be reconstructed by the runtime. Legacy saves without `SCAB`
-continue to resolve actors from current quest aliases. Running dialogue actions
-retain only their lifecycle state here; selected INFO, subtitle, response queue,
-and loop deadline are separate work. Force-greet state and pending scene repeats
-are also not retained yet.
+continue to resolve actors from current quest aliases. The optional `SDLG`
+section retains a speaking action's selected topic and INFO, the current
+response's position and remaining suffix by response position, plus its
+remaining subtitle deadline. Response numbers are not used as identities
+because they need not be unique. Loading rebuilds the INFO from plugin records
+and does not rerun its begin fragment. The active audio handle isn't restored
+or replayed; the saved relative time is restored against the new runtime clock,
+and a saved zero-remaining deadline advances on the next update. Voice playback
+position and duration are not preserved, while a remaining queued response
+starts normally. Saves without `SDLG`
+don't contain this continuation and may select a new INFO. Looping dialogue's
+between-line repeat deadline is separate work. Force-greet state and pending
+scene repeats are also not retained yet.

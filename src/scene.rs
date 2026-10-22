@@ -56,6 +56,7 @@ pub struct SceneLine {
     pub text: String,
     voice: Option<crate::audio::VoiceId>,
     ends_at: f64,
+    response_index: usize,
 }
 
 struct ActionRun {
@@ -66,6 +67,7 @@ struct ActionRun {
     /// a looping action speaks again.
     line: Option<SceneLine>,
     queue: Vec<Response>,
+    queue_positions: Vec<usize>,
     info: Option<(Topic, Info)>,
     next_loop: Option<f64>,
 }
@@ -78,6 +80,7 @@ impl ActionRun {
             started_at: 0.0,
             line: None,
             queue: Vec::new(),
+            queue_positions: Vec::new(),
             info: None,
             next_loop: None,
         }
@@ -153,6 +156,18 @@ pub struct SavedSceneBinding {
     pub package_active: bool,
     /// Elapsed time since a package action acquired ownership.
     pub elapsed: Option<f64>,
+}
+
+/// A currently spoken scene INFO response and the exact remaining suffix.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SavedSceneDialogue {
+    pub scene: FormId,
+    pub action: u32,
+    pub topic: FormId,
+    pub info: FormId,
+    pub current_response: u32,
+    pub queued_responses: Vec<u32>,
+    pub remaining: f64,
 }
 
 impl SceneRun {
@@ -408,6 +423,38 @@ impl Engine {
         bindings
     }
 
+    pub(crate) fn saved_scene_dialogue(&self) -> Vec<SavedSceneDialogue> {
+        let now = self.scripts.real_time;
+        let mut dialogue = Vec::new();
+        for run in &self.scenes.running {
+            for (definition, action) in run.def.scene.actions.iter().zip(&run.actions) {
+                let (Some(line), Some((topic, info))) = (&action.line, &action.info) else {
+                    continue;
+                };
+                if action.state != State::Running
+                    || !matches!(definition.kind, ActionKind::Dialogue { .. })
+                {
+                    continue;
+                }
+                dialogue.push(SavedSceneDialogue {
+                    scene: run.scene,
+                    action: definition.index,
+                    topic: topic.id,
+                    info: info.id,
+                    current_response: line.response_index as u32,
+                    queued_responses: action
+                        .queue_positions
+                        .iter()
+                        .map(|&position| position as u32)
+                        .collect(),
+                    remaining: (line.ends_at - now).max(0.0),
+                });
+            }
+        }
+        dialogue.sort_by_key(|saved| (saved.scene, saved.action));
+        dialogue
+    }
+
     /// Check saved scene references against loaded definitions before a load
     /// mutates the current game.
     pub(crate) fn validate_saved_scenes(
@@ -415,6 +462,7 @@ impl Engine {
         saved: &[SavedScene],
         lifecycle: &[SavedSceneLifecycle],
         bindings: &[SavedSceneBinding],
+        dialogue: &[SavedSceneDialogue],
     ) -> anyhow::Result<()> {
         let mut seen = HashSet::new();
         for state in saved {
@@ -655,6 +703,103 @@ impl Engine {
                 );
             }
         }
+        let mut previous_dialogue = None;
+        for state in dialogue {
+            let key = (state.scene, state.action);
+            anyhow::ensure!(
+                !state.scene.is_null()
+                    && !state.topic.is_null()
+                    && !state.info.is_null()
+                    && state.remaining.is_finite()
+                    && state.remaining >= 0.0
+                    && previous_dialogue.is_none_or(|previous| previous < key),
+                "save has invalid, duplicate or unsorted scene dialogue"
+            );
+            previous_dialogue = Some(key);
+            let Some(scene_state) = lifecycle.iter().find(|scene| scene.scene == state.scene)
+            else {
+                anyhow::bail!("save has dialogue for absent scene {}", state.scene);
+            };
+            let Some(action_state) = scene_state
+                .actions
+                .iter()
+                .find(|action| action.action == state.action)
+            else {
+                anyhow::bail!(
+                    "save has dialogue for missing scene action {}:{}",
+                    state.scene,
+                    state.action
+                );
+            };
+            anyhow::ensure!(
+                action_state.state == SavedActionState::Running,
+                "save has dialogue for a non-running scene action {}:{}",
+                state.scene,
+                state.action
+            );
+            let def = self
+                .scene_def(state.scene)
+                .ok_or_else(|| anyhow::anyhow!("save has missing scene {}", state.scene))?;
+            let Some(action) = def
+                .scene
+                .actions
+                .iter()
+                .find(|action| action.index == state.action)
+            else {
+                anyhow::bail!(
+                    "save has missing scene action {}:{}",
+                    state.scene,
+                    state.action
+                );
+            };
+            let ActionKind::Dialogue { topic, .. } = action.kind else {
+                anyhow::bail!(
+                    "save has dialogue state for non-dialogue action {}",
+                    state.action
+                );
+            };
+            anyhow::ensure!(
+                topic == state.topic,
+                "save scene dialogue topic does not match action {}:{}",
+                state.scene,
+                state.action
+            );
+            let saved_speaker = bindings
+                .iter()
+                .find(|binding| binding.scene == state.scene && binding.action == state.action)
+                .and_then(|binding| binding.actor);
+            anyhow::ensure!(
+                saved_speaker.is_some(),
+                "save has no actor binding for scene dialogue {}:{}",
+                state.scene,
+                state.action
+            );
+            let topic = crate::dialogue::topic(&self.lo, state.topic).ok_or_else(|| {
+                anyhow::anyhow!("save has missing dialogue topic {}", state.topic)
+            })?;
+            anyhow::ensure!(
+                self.lo.topic_infos(topic.id).contains(&state.info),
+                "save INFO {} is not a child of topic {}",
+                state.info,
+                state.topic
+            );
+            let info = crate::dialogue::info(&self.lo, state.info)
+                .ok_or_else(|| anyhow::anyhow!("save has missing INFO {}", state.info))?;
+            let current = state.current_response as usize;
+            anyhow::ensure!(
+                current < info.responses.len(),
+                "save has invalid current response for INFO {}",
+                state.info
+            );
+            let expected: Vec<_> = (current + 1..info.responses.len())
+                .map(|position| position as u32)
+                .collect();
+            anyhow::ensure!(
+                state.queued_responses == expected,
+                "save has invalid response suffix for INFO {}",
+                state.info
+            );
+        }
         Ok(())
     }
 
@@ -665,6 +810,7 @@ impl Engine {
         saved: Vec<SavedScene>,
         lifecycle: Vec<SavedSceneLifecycle>,
         bindings: Vec<SavedSceneBinding>,
+        dialogue: Vec<SavedSceneDialogue>,
     ) {
         for run in &mut self.scenes.running {
             for action in &mut run.actions {
@@ -703,6 +849,16 @@ impl Engine {
                     .insert(binding.action, binding);
             }
             actors
+        };
+        let dialogue_by_scene: HashMap<FormId, HashMap<u32, SavedSceneDialogue>> = {
+            let mut dialogue_by_scene = HashMap::new();
+            for saved in dialogue {
+                dialogue_by_scene
+                    .entry(saved.scene)
+                    .or_insert_with(HashMap::new)
+                    .insert(saved.action, saved);
+            }
+            dialogue_by_scene
         };
         for scene in scene_ids {
             let Some(def) = self.scene_def(scene) else {
@@ -761,6 +917,36 @@ impl Engine {
                         .packages
                         .insert(actor, (scene, action.index, expanded));
                     run.started_at = binding.elapsed.map_or(now, |elapsed| now - elapsed);
+                }
+                if let Some(saved) = dialogue_by_scene
+                    .get(&scene)
+                    .and_then(|saved| saved.get(&action.index))
+                    && let (Some(speaker), Some(topic), Some(info)) = (
+                        run.actor,
+                        crate::dialogue::topic(&self.lo, saved.topic),
+                        crate::dialogue::info(&self.lo, saved.info),
+                    )
+                    && let Some(response) = info.responses.get(saved.current_response as usize)
+                {
+                    run.queue_positions = saved
+                        .queued_responses
+                        .iter()
+                        .map(|&position| position as usize)
+                        .collect();
+                    run.queue = run
+                        .queue_positions
+                        .iter()
+                        .filter_map(|&position| info.responses.get(position).cloned())
+                        .collect();
+                    run.info = Some((topic, info.clone()));
+                    run.line = Some(SceneLine {
+                        speaker,
+                        name: self.form_name(speaker),
+                        text: response.text.clone(),
+                        voice: None,
+                        ends_at: now + saved.remaining,
+                        response_index: saved.current_response as usize,
+                    });
                 }
             }
             let (begun, stopping, paused) = saved_lifecycle.map_or((true, false, false), |state| {
@@ -1293,6 +1479,7 @@ impl Engine {
         self.run_info_fragment(&info, true, speaker);
         let ar = &mut self.scenes.running[i].actions[k];
         ar.queue = info.responses.clone();
+        ar.queue_positions = (0..info.responses.len()).collect();
         ar.info = Some((t, info));
         ar.next_loop = None;
         if ar.queue.is_empty() {
@@ -1305,6 +1492,7 @@ impl Engine {
     /// Say the next response of the action's INFO.
     fn next_scene_line(&mut self, i: usize, k: usize, speaker: FormId) {
         let ar = &mut self.scenes.running[i].actions[k];
+        let response_index = ar.queue_positions.remove(0);
         let r = ar.queue.remove(0);
         let Some((topic, info)) = ar.info.clone() else {
             return;
@@ -1337,6 +1525,7 @@ impl Engine {
             text: r.text,
             voice,
             ends_at: now + duration,
+            response_index,
         });
         self.line_gesture(speaker, idle);
     }

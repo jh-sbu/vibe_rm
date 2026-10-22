@@ -15,15 +15,16 @@
 //! (bodies already soul-trapped), `WTHR`
 //! (the weather, its transition and override), `SCNE` (timer-only scene phases),
 //! `SCLF` (scene lifecycle flags and action states), `SCAB` (scene actor and
-//! package ownership bindings),
+//! package ownership bindings), `SDLG` (selected scene dialogue responses),
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
 //! message-box VM waits), and `ANMW` (semantic animation-event VM waits).
 //! Not yet saved:
-//! active magic effects, scene dialogue internals, actor procedure progress,
-//! AI progress, objects' behaviour graphs; see `plans/ROADMAP.md`.
+//! active magic effects, looping scene-dialogue repeat deadlines, actor
+//! procedure progress, AI progress, objects' behaviour graphs; see
+//! `plans/ROADMAP.md`.
 //!
 //! Form ids are saved as loaded (their top byte is the load-order index), so a
 //! save only loads with the same plugins in the same order: `HEAD` lists them
@@ -121,6 +122,7 @@ pub struct Snapshot {
     pub scenes: Vec<crate::scene::SavedScene>,
     pub scene_lifecycle: Vec<crate::scene::SavedSceneLifecycle>,
     pub scene_bindings: Vec<crate::scene::SavedSceneBinding>,
+    pub scene_dialogue: Vec<crate::scene::SavedSceneDialogue>,
     pub vm: super::vm::VmSnapshot,
 }
 
@@ -530,6 +532,7 @@ impl Snapshot {
             scenes: e.saved_timer_scenes(),
             scene_lifecycle: e.saved_scene_lifecycles(),
             scene_bindings: e.saved_scene_bindings(),
+            scene_dialogue: e.saved_scene_dialogue(),
             vm: super::vm::VmSnapshot {
                 vm: e.vm.export(),
                 initialized: s.initialized.iter().copied().collect(),
@@ -1008,6 +1011,25 @@ impl Snapshot {
             }
             file.add(b"SCAB", w.0);
         }
+        if !self.scene_dialogue.is_empty() {
+            let mut dialogue = self.scene_dialogue.clone();
+            dialogue.sort_by_key(|saved| (saved.scene, saved.action));
+            let mut w = Writer::default();
+            w.len(dialogue.len());
+            for saved in dialogue {
+                w.form(saved.scene);
+                w.u32(saved.action);
+                w.form(saved.topic);
+                w.form(saved.info);
+                w.u32(saved.current_response);
+                w.len(saved.queued_responses.len());
+                for response in saved.queued_responses {
+                    w.u32(response);
+                }
+                w.f64(saved.remaining);
+            }
+            file.add(b"SDLG", w.0);
+        }
         self.vm.write(&mut file);
         file
     }
@@ -1243,6 +1265,60 @@ impl Snapshot {
                 }
                 previous = Some(key);
                 s.scene_bindings.push(binding);
+            }
+            r.finish()?;
+        }
+        if file
+            .sections
+            .iter()
+            .filter(|(tag, _)| tag == b"SDLG")
+            .count()
+            > 1
+        {
+            return Err(Corrupt("duplicate SDLG section".into()));
+        }
+        if let Some(data) = file.section(b"SDLG") {
+            let mut r = Reader::new(data);
+            let mut previous = None;
+            for _ in 0..r.count(32)? {
+                let scene = r.form()?;
+                let action = r.u32()?;
+                let topic = r.form()?;
+                let info = r.form()?;
+                let current_response = r.u32()?;
+                let mut queued_responses = Vec::new();
+                let mut last = Some(current_response);
+                for _ in 0..r.count(4)? {
+                    let response = r.u32()?;
+                    if last.and_then(|last| last.checked_add(1)) != Some(response) {
+                        return Err(Corrupt("invalid scene response suffix".into()));
+                    }
+                    last = Some(response);
+                    queued_responses.push(response);
+                }
+                let remaining = r.f64()?;
+                let key = (scene, action);
+                if scene.is_null()
+                    || topic.is_null()
+                    || info.is_null()
+                    || !remaining.is_finite()
+                    || remaining < 0.0
+                    || previous.is_some_and(|previous| previous >= key)
+                {
+                    return Err(Corrupt(
+                        "invalid, duplicate or unsorted scene dialogue".into(),
+                    ));
+                }
+                previous = Some(key);
+                s.scene_dialogue.push(crate::scene::SavedSceneDialogue {
+                    scene,
+                    action,
+                    topic,
+                    info,
+                    current_response,
+                    queued_responses,
+                    remaining,
+                });
             }
             r.finish()?;
         }
@@ -1678,7 +1754,12 @@ impl Snapshot {
                 "save has invalid weather form {f}"
             );
         }
-        e.validate_saved_scenes(&self.scenes, &self.scene_lifecycle, &self.scene_bindings)?;
+        e.validate_saved_scenes(
+            &self.scenes,
+            &self.scene_lifecycle,
+            &self.scene_bindings,
+            &self.scene_dialogue,
+        )?;
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.unload_all();
@@ -1790,7 +1871,12 @@ impl Snapshot {
             e.forced_weather = None;
         }
         e.restore_weather(self.weather);
-        e.restore_scenes(self.scenes, self.scene_lifecycle, self.scene_bindings);
+        e.restore_scenes(
+            self.scenes,
+            self.scene_lifecycle,
+            self.scene_bindings,
+            self.scene_dialogue,
+        );
         match self.spot {
             Some(Spot {
                 location: Location::Interior(cell),
