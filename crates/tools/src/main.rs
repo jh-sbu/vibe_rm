@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 #[allow(dead_code)]
 mod functions;
 mod saves;
+mod seams;
 mod test_mods;
 
 /// A behaviour project named by its directory (humanoids: `behaviors/0_master.hkx`)
@@ -872,6 +873,20 @@ fn main() -> Result<()> {
                         used
                     );
                 }
+            }
+        }
+        Some(cmd @ ("nif-bind" | "neck-seam")) => {
+            // nif-bind <data dir> <skeleton nif> <nif> [shape]: skinned shapes'
+            // vertices at the skeleton's bind. neck-seam <data dir> <skeleton nif>
+            // <head nif> <body _1 nif> [npc weight]: the gap between a FaceGen
+            // head's neck and a body blended at each weight.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            if cmd == "nif-bind" {
+                seams::nif_bind(&v, &args[2..])?;
+            } else {
+                seams::neck_seam(&v, &args[2..])?;
             }
         }
         Some("nif-raw") => {
