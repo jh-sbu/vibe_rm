@@ -214,7 +214,7 @@ fn heading_angle_is_the_bearing_from_the_subjects_facing() {
     move_to(&mut e, B, [0.0, -100.0, 0.0], [0.0; 3]);
     move_to(&mut e, C, [0.0; 3], [0.0; 3]);
     assert!(holds(&e, C, GET_HEADING_ANGLE, B.0, 0, -180.0));
-    // A null reference names nothing to face.
+    // A null reference names nothing to face without a combat target.
     assert!(!holds(&e, C, GET_HEADING_ANGLE, 0, 0, 0.0));
 }
 

@@ -43,12 +43,13 @@ transform. The `ORIG` extension does not change the existing `WRLD` layout.
 ## Unconfirmed choices
 
 - A null reference (`0`) in `GetHeadingAngle`, `GetRelativeAngle` and
-  `GetLineOfSight` is unsupported (the condition fails). Vanilla combat idles
-  (`GiantCombatIdleStagger`, `KillMoveFrontSideRoot`...) pass null and test
-  `GetHeadingAngle` between -45 and 45, which suggests the null names the
-  subject's combat target. No public source says so, and the idle context
-  carries no target, so nothing is substituted and those conditions fail
-  (ROADMAP Next, condition positions).
+  `GetLineOfSight` names the subject's combat target (`combat_target`: the
+  one it fights, or searches for after losing them), and fails for a subject
+  with none. Vanilla combat idles (`GiantCombatIdleStagger`,
+  `KillMoveFrontSideRoot`...) pass null and test `GetHeadingAngle` between
+  -45 and 45, which suggests the null is the combat target. No public source
+  says so; the substitution is inference, and the idle's own context carries
+  no target, so an idle chosen before combat starts still fails.
 - `GetRelativeAngle` returns the reference's angle less the subject's, in
   [0, 360). Vanilla kill moves test `>= 90` and `<= 270`, symmetric about 180,
   so the sign does not matter there; the wrap does. No source gives the formula.

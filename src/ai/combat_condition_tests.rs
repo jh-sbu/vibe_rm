@@ -190,3 +190,22 @@ fn shield_is_out_only_drawn_and_torch_only_in_the_left_hand() {
     actor_mut(&mut e).drawn = false;
     assert!(holds(&e, ACTOR, IS_TORCH_OUT, 0, 1.0));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_null_reference_in_positional_conditions_is_the_combat_target() {
+    const GET_LINE_OF_SIGHT: u16 = 27;
+    const GET_HEADING_ANGLE: u16 = 99;
+    let (_f, mut e) = fixture();
+    actor_mut(&mut e).pos = Vec3::ZERO;
+    let z = e.physics.player_half_height + e.physics.player_radius;
+    e.player.position = Vec3::new(100.0, 0.0, z);
+    // Nobody fought: the null names nothing.
+    assert!(!holds(&e, ACTOR, GET_HEADING_ANGLE, 0, 90.0));
+    assert!(!holds(&e, ACTOR, GET_LINE_OF_SIGHT, 0, 1.0));
+    // Fighting the player, to the east of an actor facing north.
+    actor_mut(&mut e).combat = Some(Combat::new(PLAYER_REF));
+    assert!(holds(&e, ACTOR, GET_HEADING_ANGLE, 0, 90.0));
+    assert!(holds(&e, ACTOR, GET_HEADING_ANGLE, PLAYER_REF.0, 90.0));
+    assert!(holds(&e, ACTOR, GET_LINE_OF_SIGHT, 0, 1.0));
+}
