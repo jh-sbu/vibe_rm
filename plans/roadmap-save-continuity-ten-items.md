@@ -139,7 +139,7 @@ of an invalid reference before mutation, no start during apply, and starting
 both queued scenes on the next update; the host-Vulkan production regression
 passed.
 
-## Item 7 implementation (review pending)
+## Item 7 outcome
 
 Added optional `SFGT` state for scene-owned actors whose force-greet package has
 already accepted a greeting. Loading discards any live player conversation,
@@ -149,8 +149,26 @@ inserted when a greet begins is retained, so a mid-greet save treats the greet
 as accepted/completed after load. Force-greet evaluation checks that marker for
 an active scene-owned ForceGreet package to avoid reopening the interaction.
 
-Validation so far: `cargo test scene_force_greet_section` passed (1 passed).
+Validation: `cargo test scene_force_greet_section` passed (1 passed).
 The production Engine integration covers invalid marker rejection before
 mutation, in-progress conversation discard, legacy marker clearing, package
 completion after load and no repeat greet after another roundtrip. The focused
 codec check and parent host-Vulkan production regression passed.
+
+## Item 8 outcome
+
+Snapshot application now checks finite nonnegative clocks and validates every
+referenced scene definition, action/phase bounds, lifecycle flags and action
+states against the plugin records before unloading the live game. It checks
+timer/package start-time reconstruction, dialogue/repeat deadline overflow,
+duplicate package owners, timer/lifecycle cross-section consistency and saved
+dialogue topic/INFO membership. Optional adjunct absence remains accepted for
+legacy files; in particular, a legacy SCNE phase may contain an earlier action
+restored as `Done`. Null-topic dialogue actions remain valid for headtracking.
+
+Added production regressions for table-driven transactional rejection, null-topic
+headtracking loads, an overflowing repeat deadline and legacy SCNE load/resave
+across phases. `cargo test scene_` passed 7 runnable codec tests; the parent
+host-Vulkan save suite passed all 45 tests, including the production Engine
+regressions. The parent full host-Vulkan Engine suite passed 346 tests (115
+ignored). Rustfmt and `git diff --check` passed.

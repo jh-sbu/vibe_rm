@@ -348,6 +348,51 @@ fn conditions(rec: &esp::LoadedRecord<'_>, raw: &[esp::scene::RawCondition]) -> 
         .collect()
 }
 
+fn validate_scene_definition(lo: &esp::LoadOrder, def: &SceneDef) -> anyhow::Result<()> {
+    let phase_count = def.scene.phases.len();
+    let mut action_ids = HashSet::new();
+    for action in &def.scene.actions {
+        anyhow::ensure!(
+            action_ids.insert(action.index),
+            "scene {} has duplicate action id {}",
+            def.scene.id,
+            action.index
+        );
+        anyhow::ensure!(
+            (action.start_phase as usize) <= action.end_phase as usize
+                && (action.end_phase as usize) < phase_count,
+            "scene {} action {} has invalid phase bounds",
+            def.scene.id,
+            action.index
+        );
+        match &action.kind {
+            ActionKind::Timer { seconds } => anyhow::ensure!(
+                seconds.is_finite() && *seconds >= 0.0,
+                "scene {} has invalid timer definition",
+                def.scene.id
+            ),
+            ActionKind::Dialogue { topic, .. } if !topic.is_null() => anyhow::ensure!(
+                crate::dialogue::topic(lo, *topic).is_some(),
+                "scene {} action {} has missing dialogue topic {}",
+                def.scene.id,
+                action.index,
+                topic
+            ),
+            ActionKind::Dialogue { .. } => {}
+            ActionKind::Package { packages } => anyhow::ensure!(
+                packages.iter().all(|package| {
+                    lo.get(*package)
+                        .is_some_and(|record| record.tag().0 == *b"PACK")
+                }),
+                "scene {} action {} has missing package definition",
+                def.scene.id,
+                action.index
+            ),
+        }
+    }
+    Ok(())
+}
+
 impl Engine {
     /// Save active phases made entirely of timers. Other scene actions need
     /// their own continuation formats before they can be claimed as restored.
@@ -531,6 +576,7 @@ impl Engine {
     /// mutates the current game.
     pub(crate) fn validate_saved_scenes(
         &mut self,
+        real_time: f64,
         saved: &[SavedScene],
         lifecycle: &[SavedSceneLifecycle],
         bindings: &[SavedSceneBinding],
@@ -539,6 +585,18 @@ impl Engine {
         restarts: &[FormId],
         force_greeted: &[FormId],
     ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            real_time.is_finite() && real_time >= 0.0,
+            "save has invalid scene clock"
+        );
+        let valid_elapsed = |elapsed: f64| {
+            let started_at = real_time - elapsed;
+            elapsed.is_finite() && elapsed >= 0.0 && started_at.is_finite() && started_at >= 0.0
+        };
+        let valid_remaining = |remaining: f64| {
+            let deadline = real_time + remaining;
+            remaining.is_finite() && remaining >= 0.0 && deadline.is_finite()
+        };
         let mut seen = HashSet::new();
         for state in saved {
             anyhow::ensure!(
@@ -549,6 +607,7 @@ impl Engine {
             let def = self
                 .scene_def(state.scene)
                 .ok_or_else(|| anyhow::anyhow!("save has missing scene {}", state.scene))?;
+            validate_scene_definition(&self.lo, &def)?;
             let phase = state.phase as usize;
             anyhow::ensure!(
                 phase < def.scene.phases.len(),
@@ -564,10 +623,10 @@ impl Engine {
                 state.scene
             );
             anyhow::ensure!(
-                def.scene.actions.iter().all(|a| match a.kind {
-                    ActionKind::Timer { seconds } => seconds.is_finite() && seconds >= 0.0,
-                    _ => false,
-                }),
+                def.scene
+                    .actions
+                    .iter()
+                    .all(|a| matches!(a.kind, ActionKind::Timer { .. })),
                 "scene {} has invalid timer definitions",
                 state.scene
             );
@@ -594,9 +653,7 @@ impl Engine {
                 anyhow::ensure!(
                     timer.action == expected_index
                         && previous_action.is_none_or(|p| p < timer.action)
-                        && timer
-                            .elapsed
-                            .is_none_or(|elapsed| elapsed.is_finite() && elapsed >= 0.0),
+                        && timer.elapsed.is_none_or(valid_elapsed),
                     "save has invalid timer action for scene {}",
                     state.scene
                 );
@@ -614,10 +671,21 @@ impl Engine {
             let def = self
                 .scene_def(state.scene)
                 .ok_or_else(|| anyhow::anyhow!("save has missing scene {}", state.scene))?;
+            validate_scene_definition(&self.lo, &def)?;
             let phase = state.phase.map(|phase| phase as usize);
             anyhow::ensure!(
                 phase.is_none_or(|phase| phase < def.scene.phases.len()),
                 "save has invalid lifecycle phase for scene {}",
+                state.scene
+            );
+            anyhow::ensure!(
+                state.phase.is_some() == state.begun
+                    && (state.phase.is_some()
+                        || state
+                            .actions
+                            .iter()
+                            .all(|action| action.state == SavedActionState::Waiting)),
+                "save has inconsistent lifecycle flags for scene {}",
                 state.scene
             );
             let mut expected: Vec<_> = def
@@ -683,9 +751,9 @@ impl Engine {
                     .find(|definition| definition.index == action.action)
                     .expect("action ids were validated against the scene definition");
                 let timer_elapsed_valid = match (action.state, &definition.kind) {
-                    (SavedActionState::Running, ActionKind::Timer { .. }) => action
-                        .elapsed
-                        .is_some_and(|elapsed| elapsed.is_finite() && elapsed >= 0.0),
+                    (SavedActionState::Running, ActionKind::Timer { .. }) => {
+                        action.elapsed.is_some_and(valid_elapsed)
+                    }
                     _ => action.elapsed.is_none(),
                 };
                 anyhow::ensure!(
@@ -694,9 +762,46 @@ impl Engine {
                     state.scene,
                     action.action
                 );
+                if let Some(phase) = phase {
+                    let expected_state = if (definition.end_phase as usize) < phase {
+                        // Legacy SCNE-only restoration synthesizes Done for
+                        // actions before the saved phase; native lifecycle
+                        // snapshots retain Stopped after the normal halt path.
+                        if matches!(
+                            action.state,
+                            SavedActionState::Done | SavedActionState::Stopped
+                        ) {
+                            None
+                        } else {
+                            Some(SavedActionState::Stopped)
+                        }
+                    } else if (definition.start_phase as usize) > phase {
+                        Some(SavedActionState::Waiting)
+                    } else {
+                        None
+                    };
+                    anyhow::ensure!(
+                        expected_state.is_none_or(|expected| action.state == expected),
+                        "save has action state inconsistent with phase for scene {} action {}",
+                        state.scene,
+                        action.action
+                    );
+                }
+            }
+        }
+        if !lifecycle.is_empty() {
+            for timer_scene in saved {
+                anyhow::ensure!(
+                    lifecycle
+                        .iter()
+                        .any(|state| state.scene == timer_scene.scene),
+                    "timer state has no lifecycle for scene {}",
+                    timer_scene.scene
+                );
             }
         }
         let mut previous_binding = None;
+        let mut package_owners = HashSet::new();
         for binding in bindings {
             let key = (binding.scene, binding.action);
             anyhow::ensure!(
@@ -745,15 +850,20 @@ impl Engine {
                         action_state.state,
                         SavedActionState::Running | SavedActionState::Done
                     )
-                    && binding
-                        .elapsed
-                        .is_some_and(|elapsed| elapsed.is_finite() && elapsed >= 0.0)
+                    && binding.elapsed.is_some_and(valid_elapsed)
                     && binding.actor.is_some())
                     || (!binding.package_active && binding.elapsed.is_none()),
                 "save has invalid package ownership for scene {} action {}",
                 binding.scene,
                 binding.action
             );
+            if binding.package_active {
+                let actor = binding.actor.expect("package ownership requires actor");
+                anyhow::ensure!(
+                    package_owners.insert(actor),
+                    "save has multiple package owners for actor {actor}"
+                );
+            }
         }
         if !bindings.is_empty() {
             for state in lifecycle {
@@ -785,8 +895,7 @@ impl Engine {
                 !state.scene.is_null()
                     && !state.topic.is_null()
                     && !state.info.is_null()
-                    && state.remaining.is_finite()
-                    && state.remaining >= 0.0
+                    && valid_remaining(state.remaining)
                     && previous_dialogue.is_none_or(|previous| previous < key),
                 "save has invalid, duplicate or unsorted scene dialogue"
             );
@@ -880,8 +989,7 @@ impl Engine {
             let key = (state.scene, state.action);
             anyhow::ensure!(
                 !state.scene.is_null()
-                    && state.remaining.is_finite()
-                    && state.remaining >= 0.0
+                    && valid_remaining(state.remaining)
                     && previous_repeat.is_none_or(|previous| previous < key),
                 "save has invalid, duplicate or unsorted scene repeat deadline"
             );
@@ -944,6 +1052,7 @@ impl Engine {
             let def = self
                 .scene_def(scene)
                 .ok_or_else(|| anyhow::anyhow!("save has missing pending scene {scene}"))?;
+            validate_scene_definition(&self.lo, &def)?;
             anyhow::ensure!(
                 def.scene.flags & flags::REPEAT_CONDITIONS_WHILE_TRUE != 0,
                 "save has pending restart for non-repeating scene {scene}"
