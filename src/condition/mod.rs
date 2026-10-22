@@ -580,6 +580,19 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .and_then(|s| e.actor_voice_type(s))
             .is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))),   // HasKeyword
+        // A greatsword, battleaxe or warhammer in the right hand (the animation
+        // types that take both hands); bows and staves are not counted.
+        636 => b(subject
+            .and_then(|s| e.weapon_in_hand(s, RIGHT))
+            .and_then(|w| e.lo.get(w))
+            .is_some_and(|w| matches!(crate::world::inventory::weapon_anim_type(&w), 5 | 6))), // HasTwoHandedWeaponEquipped
+        // A bound weapon in the hand the casting source names (the voice has none).
+        706 => b(subject.is_some_and(|s| {
+            casting_hand(c.p1)
+                .filter(|&h| h != VOICE)
+                .and_then(|h| e.weapon_in_hand(s, h))
+                .is_some_and(|w| crate::world::inventory::weapon_bound(&e.lo, w))
+        })), // HasBoundWeaponEquipped
         465 => Some(subject.map_or(0, |s| e.keyword_item_count(s, p1)) as f32), // GetKeywordItemCount
         // The subject's race (templates' `RNAM`, as `SameRace` reads it) is a
         // playable one.
