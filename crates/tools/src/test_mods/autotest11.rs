@@ -75,7 +75,7 @@ const QUEST: u32 = 0x800;
 const NEXT_OBJECT_ID: u32 = 0x801;
 const SCRIPT: &str = "VrmAutoTest11Script";
 /// `GameHour` in Skyrim.esm.
-const GAME_HOUR: u32 = 0x38;
+pub(super) const GAME_HOUR: u32 = 0x38;
 
 /// A shop: its label, the inside and outside halves of its front door, its
 /// owner's reference (Skyrim.esm object ids).
@@ -124,7 +124,7 @@ const TESTS: &[(&str, &str)] = &[
 ];
 
 /// Skyrim.esm's form `object_id`, cast to `class`.
-fn vanilla(c: &mut Code, object_id: u32, class: &str) -> Arg {
+pub(super) fn vanilla(c: &mut Code, object_id: u32, class: &str) -> Arg {
     let f = c.global(
         "Game",
         "GetFormFromFile",
@@ -135,18 +135,18 @@ fn vanilla(c: &mut Code, object_id: u32, class: &str) -> Arg {
     t
 }
 
-fn hour(c: &mut Code) -> Arg {
+pub(super) fn hour(c: &mut Code) -> Arg {
     let g = vanilla(c, GAME_HOUR, "GlobalVariable");
     c.method("GlobalVariable", g, "GetValue", [])
 }
 
-fn set_hour(c: &mut Code, h: f32) {
+pub(super) fn set_hour(c: &mut Code, h: f32) {
     let g = vanilla(c, GAME_HOUR, "GlobalVariable");
     c.method("GlobalVariable", g, "SetValue", [h.into()]);
 }
 
 /// `L` locked, `-` not.
-fn flag(c: &mut Code, r: &Arg, locked: Arg) {
+pub(super) fn flag(c: &mut Code, r: &Arg, locked: Arg) {
     let (open, next) = (c.label(), c.label());
     c.jmpf(locked, open);
     line(c, r, "L");

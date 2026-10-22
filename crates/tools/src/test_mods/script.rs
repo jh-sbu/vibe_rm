@@ -151,6 +151,7 @@ Actor : ObjectReference
     Bool HasPerk(Perk akPerk)
     None EvaluatePackage()
     Package GetCurrentPackage()
+    Bool IsDetectedBy(Actor akOther)
     Bool IsDead()
     Bool IsInCombat()
 Weather : Form

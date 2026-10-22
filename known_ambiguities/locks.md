@@ -198,6 +198,13 @@ changes, save restoration, old saves and malformed sections, not engine parity.
      known), and his sleep at 0:00 and at a jump to 3:00 didn't lock them
      again. Perhaps sleepers don't lock a home with the player in it
      (the Sleep templates' "Warn Before Locking?").
+     He also said "You need to leave" and the like while the sneak eye
+     showed the player undetected, with no bounty; whether those voiced
+     warnings are what "Warn Before Locking?" drives isn't known.
+   `test-mod autotest12` tests both on Arcadia: sent to Riverwood as her
+   sleep starts, then home, then waking to a lock the script made; and the
+   player inside her shop through 0:00 (sneaking, then in plain view),
+   then moved out, with her detection of the player and the bounty.
 3. **Leaving from inside.** That one can always leave an interior through a
    locked pair is inferred from where the data puts locks and from play
    reports. (That the pair shares one lock is settled: Sven and Hilde's
