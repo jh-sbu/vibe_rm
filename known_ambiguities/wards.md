@@ -95,6 +95,18 @@ when the game raises them; here:
   `ActionWardHit` idle for the actor's graph; `staggerStart` ones at
   magnitude 0.5.
 
+## Native save policy
+
+Optional `WSTA` data preserves each actor's last ward-hit outcome (absorbed 1
+or broken 2) and the remaining duration of the native runtime's one-second
+`IsWardState` hold. A load replaces this map; a legacy save clears it. This
+does not preserve the active ward spell/effect, its accumulated power, or graph
+animation progress. UESP documents ward depletion, regeneration and stagger
+when a ward breaks, but does not document this timer or save persistence
+([Skyrim:Ward, revision 3473630](https://en.uesp.net/w/index.php?oldid=3473630));
+the one-second hold and its persistence here are native runtime policy, not a
+claim about Skyrim SE save compatibility.
+
 ## Still open
 
 - NPCs warding against arrows or blows, or against a spell already in

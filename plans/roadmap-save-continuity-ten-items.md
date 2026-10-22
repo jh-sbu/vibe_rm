@@ -168,7 +168,7 @@ restored as `Done`. Null-topic dialogue actions remain valid for headtracking.
 
 Added production regressions for table-driven transactional rejection, null-topic
 headtracking loads, an overflowing repeat deadline and legacy SCNE load/resave
-across phases. `cargo test scene_` passed 7 runnable codec tests; the parent
+across phases. `cargo test scene_` passed 7 runnable codec tests; the agent's
 host-Vulkan save suite passed all 45 tests, including the production Engine
 regressions. The parent full host-Vulkan Engine suite passed 346 tests (115
 ignored). Rustfmt and `git diff --check` passed.
@@ -190,3 +190,34 @@ failures. The parent host-Vulkan Engine regression passed; it changes actor
 level and a chance global across load and verifies that saved results (including
 an empty result) remain stable, while a legacy load clears the cache and rolls
 again. Rustfmt and `git diff --check` passed.
+
+## Item 10 outcome
+
+Added optional deterministic `WSTA` records for each actor's ward-hit outcome
+(absorbed or broken) and remaining `IsWardState` hold time. Loading replaces the
+map, and a legacy save clears it. The section validates actor ids, supported
+states, positive finite remaining time, ordering, duplicates, bounds and
+trailing bytes. It does not save or resume active ward effects, ward charge or
+graph animation. The local UESP Ward page documents depletion, regeneration and
+stagger on break, but not save persistence or this timer; the one-second hold
+and its native save policy are explicitly not claims about Skyrim SE saves.
+
+The codec regression passed deterministic encoding, replacement-format round
+trip, legacy clearing, malformed state, duplicate section, truncation and
+trailing-byte checks. The production regression caused an actual ward hit via
+the combat magic path, saved and loaded it into another Engine, checked the
+remaining timer, then expired it through `update_wards`; it passed on host
+Vulkan. Parent final checks passed the full Engine suite (348 passed, 117
+ignored) and complete `save::` suite (60 passed), with changed-project-file
+rustfmt and `git diff --check` clean. `cargo fmt --all --check` still reports a
+pre-existing formatting difference in `vendor/ruffle/core/src/avm1/globals/mouse.rs`,
+which was left untouched.
+
+## Batch completion
+
+All ten planned items were implemented by Luna 6 High, reviewed by the parent,
+and committed independently. Research used only local UESP material and public
+references; tests use generated synthetic records. No engine binaries, leaked
+or SDK material, or game assets were inspected or committed. Native `.vrs`
+policies and unresolved Skyrim compatibility questions remain documented in
+`known_ambiguities/`.

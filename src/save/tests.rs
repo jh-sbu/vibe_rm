@@ -2118,6 +2118,77 @@ fn rolled_spell_section_is_deterministic_and_preserves_empty_ordered_results() {
 }
 
 #[test]
+fn ward_hit_section_is_deterministic_bounded_and_legacy_clearing() {
+    let actor_a = FormId(0x20);
+    let actor_b = FormId(0x10);
+    let mut a = Snapshot::default();
+    a.ward_states.insert(actor_a, (2, 0.25));
+    a.ward_states.insert(actor_b, (1, 0.75));
+    let bytes = a.write().to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.ward_states, a.ward_states);
+    assert_eq!(
+        read.write().to_bytes(),
+        bytes,
+        "keys encode in sorted order"
+    );
+
+    let mut legacy = SaveFile::from_bytes(&bytes).unwrap();
+    legacy.sections.retain(|(tag, _)| tag != b"WSTA");
+    assert!(Snapshot::read(&legacy).unwrap().ward_states.is_empty());
+
+    let mut duplicate_section = SaveFile::from_bytes(&bytes).unwrap();
+    duplicate_section.add(b"WSTA", vec![]);
+    assert!(Snapshot::read(&duplicate_section).is_err());
+
+    let mut unsorted = Writer::default();
+    unsorted.len(2);
+    for actor in [actor_a, actor_b] {
+        unsorted.form(actor);
+        unsorted.i32(1);
+        unsorted.f32(0.5);
+    }
+    let mut malformed = Snapshot::default().write();
+    malformed.add(b"WSTA", unsorted.0);
+    assert!(Snapshot::read(&malformed).is_err());
+
+    for (actor, state, remaining) in [
+        (FormId::NULL, 1, 0.5),
+        (actor_b, 0, 0.5),
+        (actor_b, 3, 0.5),
+        (actor_b, 1, 0.0),
+        (actor_b, 2, f32::NAN),
+    ] {
+        let mut w = Writer::default();
+        w.len(1);
+        w.form(actor);
+        w.i32(state);
+        w.f32(remaining);
+        let mut malformed = Snapshot::default().write();
+        malformed.add(b"WSTA", w.0);
+        assert!(Snapshot::read(&malformed).is_err());
+    }
+
+    let mut truncated = Snapshot::default().write();
+    let mut w = Writer::default();
+    w.len(1);
+    w.form(actor_b);
+    w.i32(1);
+    truncated.add(b"WSTA", w.0);
+    assert!(Snapshot::read(&truncated).is_err());
+
+    let mut trailing = Snapshot::default().write();
+    let mut w = Writer::default();
+    w.len(1);
+    w.form(actor_b);
+    w.i32(1);
+    w.f32(0.5);
+    w.u8(0);
+    trailing.add(b"WSTA", w.0);
+    assert!(Snapshot::read(&trailing).is_err());
+}
+
+#[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
 fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     let (_fixture, mut e) = engine("scene-continuity");
