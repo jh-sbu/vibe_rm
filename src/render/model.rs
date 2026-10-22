@@ -743,6 +743,10 @@ pub struct SkinVertex {
     pub color: [f32; 4],
     pub bones: [u32; 4],
     pub weights: [f32; 4],
+    /// The thin (`_0`) model's position and normal less these, for actors
+    /// blended by their weight ([`morph_thin`]); zero without one.
+    pub thin_position: [f32; 3],
+    pub thin_normal: [f32; 3],
 }
 
 /// A skinned shape: vertices in skin space, bound to named bones.
@@ -2308,6 +2312,8 @@ fn build_skinned(
             color: g.colors.get(i).copied().unwrap_or(Vec4::ONE).to_array(),
             bones: bones[i],
             weights: w,
+            thin_position: [0.0; 3],
+            thin_normal: [0.0; 3],
         });
     }
     Some(CpuSkinnedMesh {
@@ -2318,4 +2324,29 @@ fn build_skinned(
         skin_to_bone,
         name: name.to_owned(),
     })
+}
+
+/// Give a heavy (`_1`) model's skinned shapes their thin (`_0`) model's
+/// offsets, pairing shapes by name and order where their vertex counts
+/// match: an actor of weight w is drawn at `_0` + (`_1` - `_0`) × w.
+/// Returns how many shapes were paired.
+pub fn morph_thin(heavy: &mut CpuModel, thin: &CpuModel) -> usize {
+    let mut used = vec![false; thin.skinned.len()];
+    let mut paired = 0;
+    for h in &mut heavy.skinned {
+        let Some(ti) = (0..thin.skinned.len()).find(|&i| {
+            !used[i]
+                && thin.skinned[i].name == h.name
+                && thin.skinned[i].vertices.len() == h.vertices.len()
+        }) else {
+            continue;
+        };
+        used[ti] = true;
+        paired += 1;
+        for (v, t) in h.vertices.iter_mut().zip(&thin.skinned[ti].vertices) {
+            v.thin_position = (Vec3::from(t.position) - Vec3::from(v.position)).to_array();
+            v.thin_normal = (Vec3::from(t.normal) - Vec3::from(v.normal)).to_array();
+        }
+    }
+    paired
 }

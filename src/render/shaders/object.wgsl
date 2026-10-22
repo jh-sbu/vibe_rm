@@ -277,6 +277,10 @@ struct SkinIn {
     @location(13) palette_base: u32,
     @location(14) light_idx: vec4<u32>,
     @location(15) skin_tone: vec4<f32>,
+    // The thin model's position and normal less these, and how far toward it.
+    @location(6) thin_pos: vec3<f32>,
+    @location(7) thin_normal: vec3<f32>,
+    @location(10) thin: f32,
 };
 
 @vertex
@@ -286,11 +290,12 @@ fn vs_skinned(v: SkinIn) -> VOut {
           + palette[b + v.bones.y] * v.weights.y
           + palette[b + v.bones.z] * v.weights.z
           + palette[b + v.bones.w] * v.weights.w;
-    let world = m * vec4<f32>(v.pos, 1.0);
+    let pos = v.pos + v.thin_pos * v.thin;
+    let world = m * vec4<f32>(pos, 1.0);
     var o: VOut;
     o.clip = frame.view_proj * world;
     o.world_pos = world.xyz;
-    o.normal = (m * vec4<f32>(v.normal, 0.0)).xyz;
+    o.normal = (m * vec4<f32>(v.normal + v.thin_normal * v.thin, 0.0)).xyz;
     o.tangent = (m * vec4<f32>(v.tangent, 0.0)).xyz;
     o.bitangent = (m * vec4<f32>(v.bitangent, 0.0)).xyz;
     o.uv = v.uv * mat.uv.zw + mat.uv.xy;

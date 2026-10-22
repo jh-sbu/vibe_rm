@@ -1444,13 +1444,8 @@ impl Engine {
                     {
                         g.set_variable(var, value);
                     }
-                    // NPC weight (0..100) picks between skinny and muscular body poses.
-                    let weight = self.lo.get(d.npc).and_then(|r| {
-                        r.get(b"NAM7")
-                            .filter(|b| b.len() >= 4)
-                            .map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap()))
-                    });
-                    g.set_variable("weapAdj", weight.unwrap_or(50.0) / 100.0);
+                    // NPC weight picks between skinny and muscular body poses.
+                    g.set_variable("weapAdj", d.weight);
                     // What the hands hold (sheathed): the graph picks equip / unequip
                     // and weapon-drawn behaviours by it, and its attacks' speeds.
                     let speeds = self.weapon_speed_mults(d.ref_id);
@@ -1508,6 +1503,7 @@ impl Engine {
                 radius: 120.0,
                 shadow_only: false,
                 skin_tone: d.skin_tone,
+                weight: d.weight,
             });
             self.rigid_models.insert(d.ref_id, rigid);
             runtimes.push(rt);

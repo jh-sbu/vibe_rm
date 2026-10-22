@@ -50,6 +50,8 @@ struct SkinIn {
     @location(11) bones: vec4<u32>,
     @location(12) weights: vec4<f32>,
     @location(13) palette_base: u32,
+    @location(6) thin_pos: vec3<f32>,
+    @location(10) thin: f32,
 };
 
 @vertex
@@ -60,7 +62,7 @@ fn vs_skinned(v: SkinIn) -> VOut {
           + palette[b + v.bones.z] * v.weights.z
           + palette[b + v.bones.w] * v.weights.w;
     var o: VOut;
-    o.clip = sh.view_proj * (m * vec4<f32>(v.pos, 1.0));
+    o.clip = sh.view_proj * (m * vec4<f32>(v.pos + v.thin_pos * v.thin, 1.0));
     o.uv = v.uv * mat.uv.zw + mat.uv.xy;
     return o;
 }
