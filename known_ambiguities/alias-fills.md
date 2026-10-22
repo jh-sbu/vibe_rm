@@ -93,18 +93,27 @@ empty. Forced to such a reference: filled.
   first placed of two in the game; here the first persistent one in load
   order, else the first loaded), and whether it searches anything beyond
   persistent references when "In loaded area" isn't set.
-- Which unique actors a unique-actor alias can take. In `test-mod
-  autotest8` and `autotest9` only the actor whose location lists it among
-  its unique actors (`ACUN`, its reference's `XLCN` that location) filled.
-  One flagged persistent but unlisted stayed empty, as did an unlisted one
-  when a quest started with it loaded, both with the plugin added to a save
-  and in a new game (autotest9 run twice). Vanilla has about 600
-  unique-actor aliases whose actor no location lists (Brynjolf's,
-  persistent and without `XLCN`, in the Thieves Guild quests; Tolfdir's);
-  whether those fill in the game isn't observed. The engine fills a
-  unique-actor alias with the NPC's placed reference, listed or not. A test
-  quest with unique-actor aliases for vanilla actors of each kind
-  (listed, persistent unlisted, unlisted with `XLCN`) would settle it.
+- Which unique actors a unique-actor alias can take. `test-mod
+  autotest10` (2026-10-22, a new game and a save alike): every vanilla
+  unique actor whose reference was in memory filled, listed by a location
+  or not (Brynjolf, Nils), as the engine fills them; two Helgen soldiers,
+  not persistent and initially disabled, weren't in memory and stayed
+  empty though the aliases allowed disabled ones (the engine would fill
+  them). But in `autotest8` and `autotest9` (a save and a new game) test
+  actors of ours, in memory, filled only when their location listed them
+  (`ACUN`, `XLCN`): one flagged persistent but unlisted stayed empty, as
+  did an unlisted one with a quest started while it was loaded. Their NPCs
+  and references being in an `.esp` rather than a master is the one
+  difference the tests leave; a test plugin flagged as a master would
+  tell. The engine fills any unique actor's placed reference.
+- Which plugins' location lists count. Skyrim.esm lists unique actors as
+  `LCUN` (persistent references `LCPR`); Dawnguard and later overrides as
+  `ACUN` (`ACPR`), with fewer: `RiverwoodLocation` has 15 in Skyrim.esm
+  (Delphine, Orgnar, Faendal) and 7 in its Dawnguard override, the winner.
+  The engine (`src/locations.rs`) reads only the winning record; whether
+  the game merges the plugins' lists isn't known (autotest10's actors
+  listed only in Skyrim.esm filled, but so did the never listed, so the
+  aliases don't tell).
 - Location aliases don't reserve locations; location keyword data is only
   what scripts set (`SetKeywordData`); cleared locations:
   `known_ambiguities/cleared.md`.
