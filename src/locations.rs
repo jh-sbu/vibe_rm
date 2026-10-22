@@ -191,6 +191,21 @@ impl Engine {
         self.editor_location(r)
     }
 
+    /// The locations of the cells that are loaded now (an exterior cell's
+    /// when the player is in its worldspace).
+    pub fn loaded_locations(&self) -> Vec<FormId> {
+        self.cells
+            .keys()
+            .filter_map(|key| match (*key, self.location) {
+                (CellKey::Interior(c), _) => self.cell_location(c),
+                (CellKey::Exterior(x, y), crate::engine::Location::Exterior { world, .. }) => {
+                    self.grid_location(world, (x, y))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The location ref types of a reference.
     pub fn ref_types(&self, r: FormId) -> Vec<FormId> {
         let mut out = self

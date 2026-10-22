@@ -154,3 +154,29 @@ casting-source parameter).
 - `IsPC1stPerson` is the opposite of the third-person camera. The original's
   other camera states (vanity, free, horse, dragon, furniture) are not
   modelled, so none of them are "first person".
+
+## Location comparisons and loaded locations
+
+`HasSameEditorLocAsRef` (180) and `IsInSameCurrentLocAsRef` (603) (a reference
+and a keyword), `GetInCurrentLocFormList` (444), `IsLocationLoaded` (625) and
+`IsLocAliasLoaded` (626). The alias forms of the first two were already
+supported and share their code.
+
+### What is known
+
+- UESP Skyrim:Console (oldid 3628513) lists all of these without descriptions;
+  the raw function data (oldid 3411473) gives the parameters.
+- The reference forms use the same comparison as the alias forms: the two
+  locations are equal, or their parents carrying the keyword are.
+
+### Unconfirmed choices
+
+- `GetInCurrentLocFormList` is true when the subject's current location is, or
+  lies inside, any location on the list. Whether a list entry's parents count
+  the other way round is unknown.
+- `IsLocationLoaded` is true when any loaded cell's location is, or lies inside,
+  the location. The original may mean the location's marker or its persistent
+  data being in memory rather than a cell; the exterior cells counted are those
+  of the player's worldspace. An unloaded interior never counts.
+- A null reference parameter in `HasSameEditorLocAsRef` or
+  `IsInSameCurrentLocAsRef` names nothing and fails.

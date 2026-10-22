@@ -34,6 +34,11 @@ const BEAST_IN_A: FormId = FormId(0x868);
 const HUMAN_IN_B: FormId = FormId(0x869);
 const HUMAN_IN_C: FormId = FormId(0x86A);
 const CRATE: FormId = FormId(0x86B);
+const HOLD: FormId = FormId(0x870);
+const INN: FormId = FormId(0x871);
+const FORT: FormId = FormId(0x872);
+const HOLD_KEYWORD: FormId = FormId(0x873);
+const LIST_OF_INNS: FormId = FormId(0x874);
 
 struct Fixture(std::path::PathBuf);
 
@@ -71,8 +76,12 @@ fn fixture() -> (Fixture, Engine) {
     };
     let actor = |id, base| RecordBuilder::new(b"ACHR", id).form(b"NAME", base);
     // An interior cell with its (temporary) references.
+    let locations = [(CELL_A, INN), (CELL_B, FORT)];
     let cell = |id: FormId, owner: Option<FormId>, refs: Vec<RecordBuilder>| {
         let mut record = RecordBuilder::new(b"CELL", id).field(b"DATA", &[1, 0]);
+        if let Some(&(_, location)) = locations.iter().find(|&&(c, _)| c == id) {
+            record = record.form(b"XLCN", location);
+        }
         if let Some(owner) = owner {
             record = record.form(b"XOWN", owner);
         }
@@ -130,6 +139,19 @@ fn fixture() -> (Fixture, Engine) {
                 }],
             }],
         },
+        // Hold > inn, and hold > fort; the hold has the keyword.
+        Node::top(
+            b"LCTN",
+            vec![
+                RecordBuilder::new(b"LCTN", HOLD).form(b"KWDA", HOLD_KEYWORD),
+                RecordBuilder::new(b"LCTN", INN).form(b"PNAM", HOLD),
+                RecordBuilder::new(b"LCTN", FORT).form(b"PNAM", HOLD),
+            ],
+        ),
+        Node::top(
+            b"FLST",
+            vec![RecordBuilder::new(b"FLST", LIST_OF_INNS).form(b"LNAM", INN)],
+        ),
         Node::top(b"FACT", vec![RecordBuilder::new(b"FACT", GUILD)]),
         Node::top(b"MISC", vec![RecordBuilder::new(b"MISC", CRATE)]),
         Node::top(
@@ -152,6 +174,7 @@ fn fixture() -> (Fixture, Engine) {
             vec![
                 RecordBuilder::new(b"KYWD", KEYWORD),
                 RecordBuilder::new(b"KYWD", OTHER_KEYWORD),
+                RecordBuilder::new(b"KYWD", HOLD_KEYWORD),
             ],
         ),
         Node::top(
@@ -376,4 +399,31 @@ fn is_pc_1st_person_follows_the_camera() {
     assert!(is(&e, PLAYER_REF, 391, 0, 1.0));
     e.third_person = true;
     assert!(is(&e, PLAYER_REF, 391, 0, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn same_location_as_a_reference_compares_the_parents_with_the_keyword() {
+    let (_f, e) = fixture();
+    // An inn and a fort are different places, in the same hold.
+    assert!(is2(&e, PLAIN_REF, 180, FREE_REF.0, HOLD_KEYWORD.0, 1.0));
+    assert!(is2(&e, PLAIN_REF, 603, FREE_REF.0, HOLD_KEYWORD.0, 1.0));
+    assert!(!is2(&e, PLAIN_REF, 180, FREE_REF.0, OTHER_KEYWORD.0, 1.0));
+    assert!(!is2(&e, PLAIN_REF, 603, 0, HOLD_KEYWORD.0, 1.0));
+    // The actors in the inn share it with a crate there.
+    assert!(is2(&e, PLAIN_REF, 603, HUMAN_IN_A.0, HOLD_KEYWORD.0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn location_form_lists_and_loaded_locations() {
+    let (_f, mut e) = fixture();
+    assert!(is(&e, PLAIN_REF, 444, LIST_OF_INNS.0, 1.0));
+    assert!(!is(&e, FREE_REF, 444, LIST_OF_INNS.0, 1.0));
+    // Nothing is loaded until a cell is.
+    assert!(is(&e, PLAIN_REF, 625, HOLD.0, 0.0));
+    e.enter_interior(CELL_A, None).unwrap();
+    assert!(is(&e, PLAIN_REF, 625, INN.0, 1.0));
+    assert!(is(&e, PLAIN_REF, 625, HOLD.0, 1.0));
+    assert!(is(&e, PLAIN_REF, 625, FORT.0, 0.0));
 }
