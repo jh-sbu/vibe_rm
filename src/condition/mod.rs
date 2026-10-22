@@ -917,6 +917,35 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         39 => b(subject.is_some_and(|s| e.has_disease(s))),            // GetDisease
         306 => b(subject.is_some_and(|s| e.torch_out(s))),             // IsActorUsingATorch
         230 => b(e.ref_cell(FormId(c.p2)) == Some(p1)),                // GetInCellParam
+        // Combat: the combat group the subject fights in (its side of the fight,
+        // the player included while it is fought) and its targets.
+        709 => Some(
+            subject
+                .and_then(|s| e.combat_group(s))
+                .map_or(0, |g| g.0.len()) as f32,
+        ), // GetCombatGroupMemberCount
+        416 => Some(
+            subject
+                .and_then(|s| e.combat_group(s))
+                .map_or(0, |g| g.1.len()) as f32,
+        ), // GetGroupTargetCount
+        // The only one of its side still fighting.
+        674 => b(subject
+            .and_then(|s| e.combat_group(s))
+            .is_some_and(|g| g.0.len() == 1)), // IsLastHostileActor
+        707 => b(subject
+            .and_then(|s| e.combat_target(s))
+            .is_some_and(|t| e.has_keyword(t, p1))), // GetCombatTargetHasKeyword
+        // Lethal intent: the actor (null: the subject's combat target, else the
+        // context's) is one it can kill.
+        678 => {
+            let s = subject?;
+            let victim = named(p1).or_else(|| e.combat_target(s)).or(ctx.target)?;
+            b(!e.spared_by(victim, s))
+        } // ShouldAttackKill
+        705 => b(subject.is_some_and(|s| e.should_help(s, p1))), // GetShouldHelp
+        476 => b(subject.is_some_and(|s| e.is_protected(s))),    // IsProtected
+        118 => b(subject.is_some_and(|s| e.aggro_radius_violated(s))), // GetActorAggroRadiusViolated
         503 => b(true),                                                // GetAllowWorldInteractions
         641 => b(subj_base.is_some_and(|n| {
             e.lo.get(n)
@@ -1521,6 +1550,54 @@ impl Engine {
                 })
             })
             .unwrap_or(false)
+    }
+
+    /// Protected (`ACBS` 0x800): a loaded actor's flag, else its base's.
+    pub fn is_protected(&self, actor: FormId) -> bool {
+        match self.actor_ref(actor) {
+            Some(a) => a.stats.protected,
+            None => self
+                .base_of(actor)
+                .and_then(|n| self.lo.get(n))
+                .and_then(|r| {
+                    r.get(b"ACBS")
+                        .filter(|d| d.len() >= 4)
+                        .map(|d| d[1] & 0x08 != 0)
+                })
+                .unwrap_or(false),
+        }
+    }
+
+    /// Whether `attacker` can't kill `victim`: essential actors, and protected
+    /// ones but to the player, bleed out instead.
+    pub fn spared_by(&self, victim: FormId, attacker: FormId) -> bool {
+        self.is_essential(victim) || (self.is_protected(victim) && attacker != PLAYER_REF)
+    }
+
+    /// Whether `helper` would come to `other`'s aid: it helps allies (assistance
+    /// 1) and friends (2), and a teammate the player.
+    pub fn should_help(&self, helper: FormId, other: FormId) -> bool {
+        if other == PLAYER_REF && self.is_player_teammate(helper) {
+            return true;
+        }
+        let Some(a) = self.actor_ref(helper) else {
+            return false;
+        };
+        match self.faction_relation(helper, other) {
+            2 => a.stats.assistance >= 1,
+            3 => a.stats.assistance >= 2,
+            _ => false,
+        }
+    }
+
+    /// The player is inside the actor's attack aggro radius.
+    pub fn aggro_radius_violated(&self, actor: FormId) -> bool {
+        self.actor_ref(actor).is_some_and(|a| {
+            !a.dead
+                && a.stats
+                    .aggro_attack
+                    .is_some_and(|r| a.pos.distance(self.player.position) < r)
+        })
     }
 
     /// A reference's scale: a loaded actor's, else a placed reference's.
