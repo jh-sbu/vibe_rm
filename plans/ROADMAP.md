@@ -5,6 +5,12 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Record-data conditions: `GetScale`, `GetIsCreature`, `GetFactionRelation`,
+  `GetFactionRankDifference`, `GetWeaponAnimType`, `IsCarryable`,
+  `GetTargetHeight`, `GetActivatorHeight`, `GetClothingValue`, `GetDisease`,
+  `IsActorUsingATorch`, `GetInCellParam` and `GetCannibal`. Oblivion leftovers
+  with no Skyrim meaning stay unsupported. Choices:
+  `known_ambiguities/status-conditions.md`
 - Player, clock and package-input conditions: `IsPlayerInRegion`, `GetInZone`,
   `MenuMode`, `GetPlayerControlsDisabled`, `IsTimePassing`,
   `GetRealHoursPassed`, `GetSecondsPassed` and `IsNullPackageData`.

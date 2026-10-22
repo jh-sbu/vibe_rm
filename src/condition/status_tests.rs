@@ -49,6 +49,16 @@ const REGION: FormId = FormId(0x8A0);
 const OTHER_REGION: FormId = FormId(0x8A1);
 const ZONE: FormId = FormId(0x8A2);
 const OWN_ZONE: FormId = FormId(0x8A3);
+const TORCH: FormId = FormId(0x8B0);
+const LAMP: FormId = FormId(0x8B1);
+const TORCH_REF: FormId = FormId(0x8B2);
+const LAMP_REF: FormId = FormId(0x8B3);
+const SHIRT: FormId = FormId(0x8B4);
+const ROBE: FormId = FormId(0x8B5);
+const MAIL: FormId = FormId(0x8B6);
+const PLAGUE: FormId = FormId(0x8B7);
+const PLAGUE_EFFECT: FormId = FormId(0x8B8);
+const HIGH_REF: FormId = FormId(0x8B9);
 
 struct Fixture(std::path::PathBuf);
 
@@ -100,6 +110,47 @@ fn fixture() -> (Fixture, Engine) {
             .flat_map(u32::to_le_bytes)
             .collect::<Vec<u8>>()
     };
+    // `DATA` of a placed reference: its position, then its rotation.
+    let position = |x: f32, y: f32, z: f32| {
+        [x, y, z, 0.0, 0.0, 0.0]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<u8>>()
+    };
+    // A light's `DATA`: flags at 12 (0x2: can be carried).
+    let light = |id, flags: u32| {
+        let mut data = [0u8; 48];
+        data[12..16].copy_from_slice(&flags.to_le_bytes());
+        RecordBuilder::new(b"LIGH", id).field(b"DATA", &data)
+    };
+    // Worn armor: its slots and type in `BOD2`, its value in `DATA`.
+    let armor = |id, kind: u32, value: i32| {
+        let mut bod2 = [0u8; 8];
+        bod2[4..8].copy_from_slice(&kind.to_le_bytes());
+        let mut data = value.to_le_bytes().to_vec();
+        data.extend_from_slice(&1.0f32.to_le_bytes());
+        RecordBuilder::new(b"ARMO", id)
+            .field(b"BOD2", &bod2)
+            .field(b"DATA", &data)
+    };
+    // A disease: a constant value-modifying effect.
+    let plague = {
+        let mut mgef = [0; 0x6c];
+        mgef[0x10..0x14].copy_from_slice(&u32::MAX.to_le_bytes());
+        mgef[0x40..0x44].copy_from_slice(&crate::magic::archetype::VALUE_MODIFIER.to_le_bytes());
+        mgef[0x44..0x48].copy_from_slice(&esp::actor_value::SNEAK.to_le_bytes());
+        let mut spit = [0; 36];
+        spit[8..12].copy_from_slice(&1u32.to_le_bytes());
+        let mut efit = [0; 12];
+        efit[0..4].copy_from_slice(&5.0f32.to_le_bytes());
+        (
+            RecordBuilder::new(b"MGEF", PLAGUE_EFFECT).field(b"DATA", &mgef),
+            RecordBuilder::new(b"SPEL", PLAGUE)
+                .field(b"SPIT", &spit)
+                .u32(b"EFID", PLAGUE_EFFECT.0)
+                .field(b"EFIT", &efit),
+        )
+    };
     let locations = [(CELL_A, INN), (CELL_B, FORT)];
     let cell = |id: FormId, owner: Option<FormId>, refs: Vec<RecordBuilder>| {
         let mut record = RecordBuilder::new(b"CELL", id).field(b"DATA", &[1, 0]);
@@ -136,7 +187,7 @@ fn fixture() -> (Fixture, Engine) {
         CELL_A,
         Some(HUMAN),
         vec![
-            placed(PLAIN_REF, CRATE),
+            placed(PLAIN_REF, CRATE).field(b"XSCL", &1.5f32.to_le_bytes()),
             placed(GUILD_REF, CRATE)
                 .form(b"XOWN", GUILD)
                 .form(b"XEZN", OWN_ZONE),
@@ -149,13 +200,19 @@ fn fixture() -> (Fixture, Engine) {
         None,
         vec![
             placed(FREE_REF, CRATE),
+            // Fifty units above the origin.
+            placed(HIGH_REF, CRATE).field(b"DATA", &position(0.0, 0.0, 50.0)),
             RecordBuilder::new(b"ACHR", HUMAN_IN_B).form(b"NAME", HUMAN),
         ],
     ));
     cells.extend(cell(
         CELL_C,
         Some(GUILD),
-        vec![RecordBuilder::new(b"ACHR", HUMAN_IN_C).form(b"NAME", HUMAN)],
+        vec![
+            RecordBuilder::new(b"ACHR", HUMAN_IN_C).form(b"NAME", HUMAN),
+            placed(TORCH_REF, TORCH),
+            placed(LAMP_REF, LAMP),
+        ],
     ));
     let records = [
         Node::Group {
@@ -204,7 +261,11 @@ fn fixture() -> (Fixture, Engine) {
         Node::top(b"MISC", vec![RecordBuilder::new(b"MISC", CRATE)]),
         Node::top(
             b"RACE",
-            vec![race(PLAYABLE_RACE, 0x1), race(CREATURE_RACE, 0)],
+            vec![
+                race(PLAYABLE_RACE, 0x1),
+                // `ActorTypeCreature`.
+                race(CREATURE_RACE, 0).form(b"KWDA", FormId(0x13795)),
+            ],
         ),
         Node::top(
             b"NPC_",
@@ -243,6 +304,13 @@ fn fixture() -> (Fixture, Engine) {
                 weapon(BOW, 7, false),
             ],
         ),
+        Node::top(b"LIGH", vec![light(TORCH, 0xB), light(LAMP, 0x9)]),
+        Node::top(
+            b"ARMO",
+            vec![armor(SHIRT, 2, 25), armor(ROBE, 2, 40), armor(MAIL, 1, 500)],
+        ),
+        Node::top(b"MGEF", vec![plague.0]),
+        Node::top(b"SPEL", vec![plague.1]),
         Node::top(b"REFR", vec![RecordBuilder::new(b"REFR", SWORD_REF)]),
     ];
     std::fs::write(
@@ -624,4 +692,136 @@ fn real_time_conditions_follow_the_clock() {
     assert!(is(&e, PLAYER_REF, 716, 0, 1.5)); // GetRealHoursPassed
     e.frame_seconds = 0.25;
     assert!(is(&e, PLAYER_REF, 12, 0, 0.25)); // GetSecondsPassed
+}
+
+/// As `is`, in a context that names the idle's (or activation's) target.
+fn is_towards(e: &Engine, subject: FormId, target: FormId, func: u16, value: f32) -> bool {
+    let rec = e.lo.get(SWORD_REF).unwrap();
+    let c = crate::condition::parse(&rec, &ctda(func, 0, value)).unwrap();
+    crate::condition::evaluate(
+        e,
+        &[c],
+        crate::condition::Context {
+            subject: Some(subject),
+            target: Some(target),
+            ..Default::default()
+        },
+    )
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn creatures_and_scale_come_from_the_race_and_the_reference() {
+    let (_f, e) = fixture();
+    assert!(is(&e, BEAST_REF, 64, 0, 1.0)); // GetIsCreature
+    assert!(is(&e, HUMAN_REF, 64, 0, 0.0));
+    // A placed reference's scale; an unscaled one is 1.
+    assert!(is(&e, PLAIN_REF, 24, 0, 1.5)); // GetScale
+    assert!(is(&e, FREE_REF, 24, 0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn faction_relation_is_the_strongest_reaction_between_the_actors_factions() {
+    let (_f, mut e) = fixture();
+    // The wolf (BEAST_IN_A) and a bear (BEAST_REF) have no factions of their own.
+    e.set_faction_rank(BEAST_IN_A, WOLVES, 4);
+    e.set_faction_rank(BEAST_REF, BEARS, 0);
+    let relation = |e: &Engine, from: FormId, to: u32, want: f32| is(e, from, 449, to, want);
+    // Wolves hate hunters (the guild's humans are not) and befriend bears; a
+    // bear that is also a wolf is a friend still, the strongest of its factions.
+    e.set_faction_rank(HUMAN_IN_B, HUNTERS, 0);
+    assert!(relation(&e, BEAST_IN_A, HUMAN_IN_B.0, 1.0));
+    assert!(relation(&e, BEAST_IN_A, HUMAN_IN_C.0, 0.0));
+    assert!(relation(&e, BEAST_IN_A, BEAST_REF.0, 3.0));
+    e.set_faction_rank(BEAST_REF, WOLVES, 1);
+    assert!(relation(&e, BEAST_IN_A, BEAST_REF.0, 3.0));
+    // Hunters list nothing, so they are neutral to wolves.
+    assert!(relation(&e, HUMAN_IN_B, BEAST_IN_A.0, 0.0));
+    // No actor: the player, who is in no faction here.
+    assert!(relation(&e, BEAST_IN_A, 0, 0.0));
+    // The difference in ranks, with -1 for a non-member.
+    let difference = |a: FormId, b: FormId, want: f32| is2(&e, a, 60, WOLVES.0, b.0, want);
+    assert!(difference(BEAST_IN_A, BEAST_REF, 3.0));
+    assert!(difference(BEAST_IN_A, HUMAN_IN_C, 5.0));
+    assert!(difference(HUMAN_IN_C, BEAST_IN_A, -5.0));
+    assert!(difference(HUMAN_IN_C, HUMAN_IN_B, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn weapon_anim_type_follows_the_weapon_in_hand() {
+    use crate::spells::{LEFT, RIGHT};
+    let (_f, mut e) = fixture();
+    assert!(is(&e, HUMAN_REF, 108, 0, 0.0)); // hand to hand
+    hold(&mut e, HUMAN_REF, BOW, &[RIGHT]);
+    assert!(is(&e, HUMAN_REF, 108, 0, 7.0));
+    hold(&mut e, HUMAN_REF, GREATSWORD, &[RIGHT]);
+    assert!(is(&e, HUMAN_REF, 108, 0, 5.0));
+    // Only a left-hand weapon is still the animation type.
+    hold(&mut e, BEAST_REF, SWORD, &[LEFT]);
+    assert!(is(&e, BEAST_REF, 108, 0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn carryable_objects_are_items_and_carried_lights() {
+    let (_f, e) = fixture();
+    assert!(is(&e, PLAIN_REF, 487, 0, 1.0)); // a crate
+    assert!(is(&e, TORCH_REF, 487, 0, 1.0));
+    assert!(!is(&e, LAMP_REF, 487, 0, 1.0));
+    assert!(!is(&e, HUMAN_IN_A, 487, 0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn heights_are_the_other_references_less_the_subjects() {
+    let (_f, e) = fixture();
+    // 720 asks about the reference named; 680 about the idle's target.
+    assert!(is(&e, PLAIN_REF, 720, HIGH_REF.0, 50.0));
+    assert!(is(&e, HIGH_REF, 720, PLAIN_REF.0, -50.0));
+    assert!(is_towards(&e, PLAIN_REF, HIGH_REF, 680, 50.0));
+    // With no target there is nothing to measure.
+    assert!(!is(&e, PLAIN_REF, 680, 0, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn clothing_value_totals_the_worn_clothes_only() {
+    let (_f, mut e) = fixture();
+    assert!(is(&e, HUMAN_REF, 41, 0, 0.0)); // GetClothingValue
+    let inv = e.inventories.entry(HUMAN_REF).or_default();
+    for item in [SHIRT, ROBE, MAIL] {
+        inv.add(item, 1);
+        inv.wear(item);
+    }
+    assert!(is(&e, HUMAN_REF, 41, 0, 65.0));
+    // Carried but not worn doesn't count.
+    e.inventories.get_mut(&HUMAN_REF).unwrap().take_off(ROBE);
+    assert!(is(&e, HUMAN_REF, 41, 0, 25.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_disease_is_a_disease_effect_on_the_subject() {
+    let (_f, mut e) = fixture();
+    assert!(is(&e, PLAYER_REF, 39, 0, 0.0)); // GetDisease
+    e.apply_item(PLAGUE, None, PLAYER_REF);
+    assert!(is(&e, PLAYER_REF, 39, 0, 1.0));
+    assert!(is(&e, HUMAN_REF, 39, 0, 0.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn cell_parameter_torch_and_cannibal_conditions() {
+    use crate::spells::LEFT;
+    let (_f, mut e) = fixture();
+    // GetInCellParam(cell, reference).
+    assert!(is2(&e, PLAIN_REF, 230, CELL_A.0, HUMAN_IN_A.0, 1.0));
+    assert!(is2(&e, PLAIN_REF, 230, CELL_B.0, HUMAN_IN_A.0, 0.0));
+    // IsActorUsingATorch: a torch in the hand; nobody eats corpses yet.
+    assert!(is(&e, HUMAN_REF, 306, 0, 0.0));
+    hold(&mut e, HUMAN_REF, TORCH, &[LEFT]);
+    assert!(is(&e, HUMAN_REF, 306, 0, 1.0));
+    assert!(is(&e, HUMAN_REF, 227, 0, 0.0)); // GetCannibal
 }

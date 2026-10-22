@@ -880,7 +880,44 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             Some(PackageData::Number(v)) => Some(v),
             _ => None,
         }, // IsNullPackageData
-        503 => b(true), // GetAllowWorldInteractions
+        // The subject's scale: a loaded actor's, else a placed reference's.
+        24 => Some(e.ref_scale(subject?)), // GetScale
+        // Creatures are the actors whose race carries `ActorTypeCreature`.
+        64 => b(subject.is_some_and(|s| e.has_keyword(s, FormId(0x13795)))), // GetIsCreature
+        // How the subject's factions regard the actor's in combat (0 neutral, 1
+        // enemy, 2 ally, 3 friend); no actor means the player.
+        449 => {
+            Some(e.faction_relation(subject?, if p1.is_null() { PLAYER_REF } else { p1 }) as f32)
+        } // GetFactionRelation
+        // The subject's rank in the faction less the actor's (-1: not a member).
+        60 => Some((e.faction_rank(subject?, p1) - e.faction_rank(FormId(c.p2), p1)) as f32), // GetFactionRankDifference
+        // The animation type of the weapon in the right hand, else the left; 0
+        // (hand to hand) with none.
+        108 => Some(
+            subject
+                .and_then(|s| {
+                    e.weapon_in_hand(s, RIGHT)
+                        .or_else(|| e.weapon_in_hand(s, LEFT))
+                })
+                .and_then(|w| e.lo.get(w))
+                .map_or(0, |w| crate::world::inventory::weapon_anim_type(&w)) as f32,
+        ), // GetWeaponAnimType
+        // The subject's base object is one that can be picked up.
+        487 => b(subj_base.is_some_and(|n| e.is_carryable(n))), // IsCarryable
+        // Heights between references: the reference's less the subject's
+        // (null: the subject's combat target; the activated one for 680).
+        720 => {
+            let s = subject?;
+            let t = reference_or_target(e, s, p1)?;
+            Some(e.ref_position(t)?.z - e.ref_position(s)?.z)
+        } // GetTargetHeight
+        680 => Some(e.ref_position(ctx.target?)?.z - e.ref_position(subject?)?.z), // GetActivatorHeight
+        // The base value of the clothes worn; a disease from any source on the subject.
+        41 => Some(subject.map_or(0, |s| e.clothing_value(s)) as f32), // GetClothingValue
+        39 => b(subject.is_some_and(|s| e.has_disease(s))),            // GetDisease
+        306 => b(subject.is_some_and(|s| e.torch_out(s))),             // IsActorUsingATorch
+        230 => b(e.ref_cell(FormId(c.p2)) == Some(p1)),                // GetInCellParam
+        503 => b(true),                                                // GetAllowWorldInteractions
         641 => b(subj_base.is_some_and(|n| {
             e.lo.get(n)
                 .and_then(|r| r.get(b"ACBS").map(|d| d[0] & 0x20 != 0))
@@ -1013,8 +1050,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         102 => b(subject.is_some_and(|s| e.torch_out(s))),       // IsTorchOut
         580 => b(subject.is_some_and(|s| e.is_bleeding_out(s))), // IsBleedingOut
         332 => b(subject.is_some_and(|s| e.is_in_dangerous_water(s))),
-        // Nobody flies, swims or feeds yet.
-        101 | 185 | 226 => b(false),
+        // Nobody flies, swims, feeds or eats corpses yet.
+        101 | 185 | 226 | 227 => b(false),
         // Behaviour graph variables of the subject's graph (the idle-picking
         // fallback below answers for actors without one).
         675 | 447 if subject.is_some_and(|s| e.graph_variable(s, "").is_some()) => {
@@ -1484,6 +1521,80 @@ impl Engine {
                 })
             })
             .unwrap_or(false)
+    }
+
+    /// A reference's scale: a loaded actor's, else a placed reference's.
+    pub fn ref_scale(&self, r: FormId) -> f32 {
+        if let Some(a) = self.actor_ref(r) {
+            return a.scale;
+        }
+        self.lo
+            .get(r)
+            .map_or(1.0, |rec| crate::world::records::reference(&rec).scale)
+    }
+
+    /// How an actor's factions regard another's in combat: the strongest of the
+    /// members' reactions (3 friend, 2 ally, 1 enemy, 0 neutral).
+    pub fn faction_relation(&self, a: FormId, b: FormId) -> u32 {
+        let members = |x| -> Vec<FormId> {
+            self.npc_factions(x)
+                .into_iter()
+                .filter(|&(_, r)| r >= 0)
+                .map(|(f, _)| f)
+                .collect()
+        };
+        let theirs = members(b);
+        members(a)
+            .into_iter()
+            .flat_map(|f| theirs.iter().map(move |&g| (f, g)))
+            .map(|(f, g)| self.faction_combat_reaction(f, g))
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Whether an object can be picked up: a carried kind of item (lights
+    /// only with the "can be carried" flag).
+    pub fn is_carryable(&self, base: FormId) -> bool {
+        let Some(tag) = self.lo.tag_of(base) else {
+            return false;
+        };
+        match &tag.0 {
+            b"ALCH" | b"AMMO" | b"APPA" | b"ARMO" | b"BOOK" | b"INGR" | b"KEYM" | b"MISC"
+            | b"NOTE" | b"SCRL" | b"SLGM" | b"WEAP" => true,
+            b"LIGH" => self
+                .lo
+                .get(base)
+                .and_then(|r| {
+                    r.get(b"DATA")
+                        .filter(|d| d.len() >= 16)
+                        .map(|d| d[12] & 0x2 != 0)
+                })
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+
+    /// The summed base value of the clothing (not armor) an actor wears.
+    pub fn clothing_value(&self, actor: FormId) -> i32 {
+        let Some(inv) = self.inventories.get(&actor) else {
+            return 0;
+        };
+        inv.equipped()
+            .iter()
+            .filter_map(|&f| self.lo.get(f))
+            .filter(|r| r.tag().0 == *b"ARMO")
+            // `BOD2`: the slots, then the armor type (0 light, 1 heavy, 2 clothing).
+            .filter(|r| {
+                r.get(b"BOD2").is_some_and(|d| {
+                    d.len() >= 8 && u32::from_le_bytes(d[4..8].try_into().unwrap()) == 2
+                })
+            })
+            .filter_map(|r| {
+                r.get(b"DATA")
+                    .filter(|d| d.len() >= 4)
+                    .map(|d| i32::from_le_bytes(d[0..4].try_into().unwrap()))
+            })
+            .sum()
     }
 
     /// The cell the player is in (an exterior's: the loaded grid's centre).
