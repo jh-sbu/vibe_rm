@@ -141,6 +141,20 @@ pub struct SavedSceneAction {
     pub elapsed: Option<f64>,
 }
 
+/// The actor a scene action had already bound when the snapshot was taken.
+/// Stored separately so existing lifecycle and timer sections stay unchanged.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SavedSceneBinding {
+    pub scene: FormId,
+    pub action: u32,
+    /// `None` is a saved empty binding, not a request to re-resolve the alias.
+    pub actor: Option<FormId>,
+    /// Whether the runtime had installed this package action's ownership.
+    pub package_active: bool,
+    /// Elapsed time since a package action acquired ownership.
+    pub elapsed: Option<f64>,
+}
+
 impl SceneRun {
     /// The actors filling the scene's aliases.
     fn actors<'a>(
@@ -358,12 +372,49 @@ impl Engine {
             .collect()
     }
 
+    pub(crate) fn saved_scene_bindings(&self) -> Vec<SavedSceneBinding> {
+        let now = self.scripts.real_time;
+        let mut bindings: Vec<_> = self
+            .scenes
+            .running
+            .iter()
+            .flat_map(|run| {
+                run.def
+                    .scene
+                    .actions
+                    .iter()
+                    .zip(&run.actions)
+                    .map(|(definition, action)| {
+                        let package_active = matches!(definition.kind, ActionKind::Package { .. })
+                            && action.actor.is_some_and(|actor| {
+                                self.scenes
+                                    .packages
+                                    .get(&actor)
+                                    .is_some_and(|(scene, index, _)| {
+                                        (*scene, *index) == (run.scene, definition.index)
+                                    })
+                            });
+                        SavedSceneBinding {
+                            scene: run.scene,
+                            action: definition.index,
+                            actor: action.actor,
+                            package_active,
+                            elapsed: package_active.then(|| (now - action.started_at).max(0.0)),
+                        }
+                    })
+            })
+            .collect();
+        bindings.sort_by_key(|binding| (binding.scene, binding.action));
+        bindings
+    }
+
     /// Check saved scene references against loaded definitions before a load
     /// mutates the current game.
     pub(crate) fn validate_saved_scenes(
         &mut self,
         saved: &[SavedScene],
         lifecycle: &[SavedSceneLifecycle],
+        bindings: &[SavedSceneBinding],
     ) -> anyhow::Result<()> {
         let mut seen = HashSet::new();
         for state in saved {
@@ -522,6 +573,88 @@ impl Engine {
                 );
             }
         }
+        let mut previous_binding = None;
+        for binding in bindings {
+            let key = (binding.scene, binding.action);
+            anyhow::ensure!(
+                !binding.scene.is_null()
+                    && binding.actor.is_none_or(|actor| !actor.is_null())
+                    && previous_binding.is_none_or(|previous| previous < key),
+                "save has invalid, duplicate or unsorted scene actor binding"
+            );
+            previous_binding = Some(key);
+            let def = self
+                .scene_def(binding.scene)
+                .ok_or_else(|| anyhow::anyhow!("save has missing scene {}", binding.scene))?;
+            let Some(saved_lifecycle) = lifecycle.iter().find(|state| state.scene == binding.scene)
+            else {
+                anyhow::bail!("save has actor binding for absent scene {}", binding.scene);
+            };
+            anyhow::ensure!(
+                saved_lifecycle
+                    .actions
+                    .iter()
+                    .any(|action| action.action == binding.action),
+                "save has actor binding for absent scene {}",
+                binding.scene
+            );
+            let Some(definition) = def
+                .scene
+                .actions
+                .iter()
+                .find(|action| action.index == binding.action)
+            else {
+                anyhow::bail!(
+                    "save has actor binding for missing scene action {}:{}",
+                    binding.scene,
+                    binding.action
+                );
+            };
+            let action_state = saved_lifecycle
+                .actions
+                .iter()
+                .find(|action| action.action == binding.action)
+                .expect("binding action validated against lifecycle");
+            anyhow::ensure!(
+                (binding.package_active
+                    && matches!(definition.kind, ActionKind::Package { .. })
+                    && matches!(
+                        action_state.state,
+                        SavedActionState::Running | SavedActionState::Done
+                    )
+                    && binding
+                        .elapsed
+                        .is_some_and(|elapsed| elapsed.is_finite() && elapsed >= 0.0)
+                    && binding.actor.is_some())
+                    || (!binding.package_active && binding.elapsed.is_none()),
+                "save has invalid package ownership for scene {} action {}",
+                binding.scene,
+                binding.action
+            );
+        }
+        if !bindings.is_empty() {
+            for state in lifecycle {
+                let mut expected: Vec<_> = self
+                    .scene_def(state.scene)
+                    .expect("lifecycle scene definition validated")
+                    .scene
+                    .actions
+                    .iter()
+                    .map(|action| action.index)
+                    .collect();
+                expected.sort_unstable();
+                let actual: Vec<_> = bindings
+                    .iter()
+                    .filter(|binding| binding.scene == state.scene)
+                    .map(|binding| binding.action)
+                    .collect();
+                anyhow::ensure!(
+                    actual == expected,
+                    "save has incomplete actor bindings for scene {}",
+                    state.scene
+                );
+            }
+        }
         Ok(())
     }
 
@@ -531,6 +664,7 @@ impl Engine {
         &mut self,
         saved: Vec<SavedScene>,
         lifecycle: Vec<SavedSceneLifecycle>,
+        bindings: Vec<SavedSceneBinding>,
     ) {
         for run in &mut self.scenes.running {
             for action in &mut run.actions {
@@ -560,6 +694,16 @@ impl Engine {
             .into_iter()
             .map(|state| (state.scene, state))
             .collect();
+        let actors_by_scene: HashMap<FormId, HashMap<u32, SavedSceneBinding>> = {
+            let mut actors = HashMap::new();
+            for binding in bindings {
+                actors
+                    .entry(binding.scene)
+                    .or_insert_with(HashMap::new)
+                    .insert(binding.action, binding);
+            }
+            actors
+        };
         for scene in scene_ids {
             let Some(def) = self.scene_def(scene) else {
                 continue;
@@ -589,9 +733,35 @@ impl Engine {
                 )
             };
             for (action, run) in def.scene.actions.iter().zip(&mut actions) {
-                run.actor = (action.actor >= 0)
-                    .then(|| self.alias_ref(def.scene.quest, action.actor as u32))
-                    .flatten();
+                let binding = actors_by_scene
+                    .get(&scene)
+                    .and_then(|actors| actors.get(&action.index));
+                run.actor = binding.map_or_else(
+                    || {
+                        (action.actor >= 0)
+                            .then(|| self.alias_ref(def.scene.quest, action.actor as u32))
+                            .flatten()
+                    },
+                    |binding| binding.actor,
+                );
+                if let Some(binding) = binding
+                    && binding.package_active
+                    && let (ActionKind::Package { packages }, Some(actor)) =
+                        (&action.kind, binding.actor)
+                {
+                    let expanded = packages
+                        .iter()
+                        .flat_map(|&package| package::expand(&self.lo, package))
+                        .map(|mut package| {
+                            package.quest = package.quest.or(Some(def.scene.quest));
+                            package
+                        })
+                        .collect();
+                    self.scenes
+                        .packages
+                        .insert(actor, (scene, action.index, expanded));
+                    run.started_at = binding.elapsed.map_or(now, |elapsed| now - elapsed);
+                }
             }
             let (begun, stopping, paused) = saved_lifecycle.map_or((true, false, false), |state| {
                 (state.begun, state.stopping, state.paused)

@@ -42,7 +42,7 @@ The Luna 6 High implementation agent must stop after each item for parent review
 make requested fixes, and commit only after the parent approves that concrete
 item. Record outcomes and validation below as work proceeds.
 
-## Item 1 outcome (parent review pending)
+## Item 1 outcome
 
 Implemented optional `SCNE` snapshots for active scenes whose actions are all
 timers. The snapshot keeps the current phase and, for each timer active in that
@@ -78,3 +78,18 @@ regression covers the pre-first-update state, completed timer action, elapsed
 timer resumption, a stopping scene and legacy stale-run clearing; its Vulkan
 run passed. Parent's full host-Vulkan engine suite passed (341 passed, 107
 ignored).
+
+## Item 3 outcome
+
+Added optional `SCAB` records for every action's bound actor, including a saved
+empty binding. The adjunct also records whether a package action had installed
+scene ownership and the elapsed ownership clock. On load, package ownership is
+rebuilt from authored plugin definitions before the saved cell attaches actors;
+no Rust `Package` data is serialized. Package procedure/animation progress stays
+outside this step, and saves without `SCAB` retain alias-based legacy behavior.
+
+Validation: `cargo check` passed, and `cargo test scene_binding_section`
+passed (1 passed). The host-Vulkan Engine regression passed; it covers
+pre-dispatch saves, explicit/empty actor bindings, package restoration, elapsed
+ownership time, a completed package action waiting for its phase condition, and
+update without scene phase replay.

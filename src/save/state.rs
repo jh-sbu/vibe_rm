@@ -14,15 +14,16 @@
 //! (Favorite Weapon usage), `PWCD` (Greater Power cooldowns), `SOUL`
 //! (bodies already soul-trapped), `WTHR`
 //! (the weather, its transition and override), `SCNE` (timer-only scene phases),
-//! `SCLF` (scene lifecycle flags and action states),
+//! `SCLF` (scene lifecycle flags and action states), `SCAB` (scene actor and
+//! package ownership bindings),
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
 //! message-box VM waits), and `ANMW` (semantic animation-event VM waits).
 //! Not yet saved:
-//! active magic effects, non-timer scene continuation, AI progress, objects'
-//! behaviour graphs; see `plans/ROADMAP.md`.
+//! active magic effects, scene dialogue internals, actor procedure progress,
+//! AI progress, objects' behaviour graphs; see `plans/ROADMAP.md`.
 //!
 //! Form ids are saved as loaded (their top byte is the load-order index), so a
 //! save only loads with the same plugins in the same order: `HEAD` lists them
@@ -119,6 +120,7 @@ pub struct Snapshot {
     pub weather: SavedWeather,
     pub scenes: Vec<crate::scene::SavedScene>,
     pub scene_lifecycle: Vec<crate::scene::SavedSceneLifecycle>,
+    pub scene_bindings: Vec<crate::scene::SavedSceneBinding>,
     pub vm: super::vm::VmSnapshot,
 }
 
@@ -527,6 +529,7 @@ impl Snapshot {
             weather: e.saved_weather(),
             scenes: e.saved_timer_scenes(),
             scene_lifecycle: e.saved_scene_lifecycles(),
+            scene_bindings: e.saved_scene_bindings(),
             vm: super::vm::VmSnapshot {
                 vm: e.vm.export(),
                 initialized: s.initialized.iter().copied().collect(),
@@ -985,6 +988,26 @@ impl Snapshot {
             }
             file.add(b"SCLF", w.0);
         }
+        if !self.scene_bindings.is_empty() {
+            let mut bindings = self.scene_bindings.clone();
+            bindings.sort_by_key(|binding| (binding.scene, binding.action));
+            let mut w = Writer::default();
+            w.len(bindings.len());
+            for binding in bindings {
+                w.form(binding.scene);
+                w.u32(binding.action);
+                w.bool(binding.actor.is_some());
+                if let Some(actor) = binding.actor {
+                    w.form(actor);
+                }
+                w.bool(binding.package_active);
+                w.bool(binding.elapsed.is_some());
+                if let Some(elapsed) = binding.elapsed {
+                    w.f64(elapsed);
+                }
+            }
+            file.add(b"SCAB", w.0);
+        }
         self.vm.write(&mut file);
         file
     }
@@ -1175,6 +1198,51 @@ impl Snapshot {
                     paused,
                     actions,
                 });
+            }
+            r.finish()?;
+        }
+        if file
+            .sections
+            .iter()
+            .filter(|(tag, _)| tag == b"SCAB")
+            .count()
+            > 1
+        {
+            return Err(Corrupt("duplicate SCAB section".into()));
+        }
+        if let Some(data) = file.section(b"SCAB") {
+            let mut r = Reader::new(data);
+            let mut previous = None;
+            for _ in 0..r.count(11)? {
+                let scene = r.form()?;
+                let action = r.u32()?;
+                let actor = if r.bool()? { Some(r.form()?) } else { None };
+                let package_active = r.bool()?;
+                let elapsed = if r.bool()? { Some(r.f64()?) } else { None };
+                let binding = crate::scene::SavedSceneBinding {
+                    scene,
+                    action,
+                    actor,
+                    package_active,
+                    elapsed,
+                };
+                let key = (binding.scene, binding.action);
+                if binding.scene.is_null()
+                    || binding.actor.is_some_and(FormId::is_null)
+                    || (binding.package_active
+                        && (!binding.actor.is_some() || binding.elapsed.is_none()))
+                    || (!binding.package_active && binding.elapsed.is_some())
+                    || binding
+                        .elapsed
+                        .is_some_and(|elapsed| !elapsed.is_finite() || elapsed < 0.0)
+                    || previous.is_some_and(|previous| previous >= key)
+                {
+                    return Err(Corrupt(
+                        "invalid, duplicate or unsorted scene binding".into(),
+                    ));
+                }
+                previous = Some(key);
+                s.scene_bindings.push(binding);
             }
             r.finish()?;
         }
@@ -1610,7 +1678,7 @@ impl Snapshot {
                 "save has invalid weather form {f}"
             );
         }
-        e.validate_saved_scenes(&self.scenes, &self.scene_lifecycle)?;
+        e.validate_saved_scenes(&self.scenes, &self.scene_lifecycle, &self.scene_bindings)?;
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.unload_all();
@@ -1722,7 +1790,7 @@ impl Snapshot {
             e.forced_weather = None;
         }
         e.restore_weather(self.weather);
-        e.restore_scenes(self.scenes, self.scene_lifecycle);
+        e.restore_scenes(self.scenes, self.scene_lifecycle, self.scene_bindings);
         match self.spot {
             Some(Spot {
                 location: Location::Interior(cell),
