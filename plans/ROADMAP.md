@@ -5,6 +5,12 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Combat group conditions: `GetCombatGroupMemberCount`, `GetGroupTargetCount`,
+  `IsLastHostileActor`, `GetCombatTargetHasKeyword`, `ShouldAttackKill`,
+  `GetShouldHelp`, `IsProtected` and `GetActorAggroRadiusViolated`.
+  `GetShouldAttack`, `GetGroupMemberCount`, `IsIgnoringCombat` and
+  `GetActorsInHigh` stay unsupported. Choices:
+  `known_ambiguities/combat-conditions.md`
 - Record-data conditions: `GetScale`, `GetIsCreature`, `GetFactionRelation`,
   `GetFactionRankDifference`, `GetWeaponAnimType`, `IsCarryable`,
   `GetTargetHeight`, `GetActivatorHeight`, `GetClothingValue`, `GetDisease`,

@@ -166,14 +166,12 @@ struct Fighter {
     strength: f32,
 }
 
-/// The threat ratio of `actor`'s side against its enemies: everyone fighting
-/// its target (or whoever fights its side) with it, everyone fighting its side
-/// against it. `own`: its own strength, counted even while it flees (what it
-/// would bring if it turned back).
-fn group_threat_ratio(actor: FormId, own: f32, fighters: &[Fighter]) -> f32 {
-    let Some(me) = fighters.iter().find(|f| f.id == actor) else {
-        return f32::INFINITY;
-    };
+/// The two sides of `actor`'s fight: its allies (itself included) and its
+/// enemies. Everyone fighting its target (or whoever fights its side) is on its
+/// side, everyone fighting its side against it on the other. `None` when it
+/// isn't fighting.
+fn combat_sides(actor: FormId, fighters: &[Fighter]) -> Option<(Vec<FormId>, Vec<FormId>)> {
+    let me = fighters.iter().find(|f| f.id == actor)?;
     let mut allies = vec![actor];
     let mut enemies: Vec<FormId> = me.target.into_iter().collect();
     // Who fights an enemy, or is fought by one, is an ally, and the other way
@@ -203,6 +201,16 @@ fn group_threat_ratio(actor: FormId, own: f32, fighters: &[Fighter]) -> f32 {
             break;
         }
     }
+    Some((allies, enemies))
+}
+
+/// The threat ratio of `actor`'s side against its enemies (see `combat_sides`).
+/// `own`: its own strength, counted even while it flees (what it would bring if
+/// it turned back).
+fn group_threat_ratio(actor: FormId, own: f32, fighters: &[Fighter]) -> f32 {
+    let Some((allies, enemies)) = combat_sides(actor, fighters) else {
+        return f32::INFINITY;
+    };
     let strength = |ids: &[FormId]| -> f32 {
         ids.iter()
             .filter_map(|id| fighters.iter().find(|f| f.id == *id))
@@ -218,6 +226,42 @@ fn group_threat_ratio(actor: FormId, own: f32, fighters: &[Fighter]) -> f32 {
 }
 
 impl Engine {
+    /// Everyone fighting, and the player while anyone fights them.
+    fn fighters(&self) -> Vec<Fighter> {
+        let mut fighters: Vec<Fighter> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.bleeding.is_none())
+            .filter_map(|a| {
+                let c = a.combat.as_ref()?;
+                Some(Fighter {
+                    id: a.ref_id,
+                    target: Some(c.target),
+                    strength: if c.fleeing {
+                        0.0
+                    } else {
+                        self.combat_group_strengths.strength(a.ref_id)
+                    },
+                })
+            })
+            .collect();
+        if fighters.iter().any(|f| f.target == Some(PLAYER_REF)) && !self.player_dead() {
+            fighters.push(Fighter {
+                id: PLAYER_REF,
+                target: None,
+                strength: self.combat_group_strengths.strength(PLAYER_REF),
+            });
+        }
+        fighters
+    }
+
+    /// The members of the combat group `actor` fights in (itself included) and
+    /// the group's targets, none when it isn't fighting.
+    pub fn combat_group(&self, actor: FormId) -> Option<(Vec<FormId>, Vec<FormId>)> {
+        combat_sides(actor, &self.fighters())
+    }
+
     /// Combat strength: damage a second times health, the health counted for what
     /// armor takes off each blow (`health / (1 - reduction)`).
     fn combat_strength(&self, actor: FormId) -> f32 {
@@ -347,32 +391,7 @@ impl Engine {
             self.update_flee_dialogue(dt);
             return;
         }
-        // Everyone fighting, and the player while anyone fights them.
-        let mut fighters: Vec<Fighter> = self
-            .cells
-            .values()
-            .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.bleeding.is_none())
-            .filter_map(|a| {
-                let c = a.combat.as_ref()?;
-                Some(Fighter {
-                    id: a.ref_id,
-                    target: Some(c.target),
-                    strength: if c.fleeing {
-                        0.0
-                    } else {
-                        self.combat_group_strengths.strength(a.ref_id)
-                    },
-                })
-            })
-            .collect();
-        if fighters.iter().any(|f| f.target == Some(PLAYER_REF)) && !self.player_dead() {
-            fighters.push(Fighter {
-                id: PLAYER_REF,
-                target: None,
-                strength: self.combat_group_strengths.strength(PLAYER_REF),
-            });
-        }
+        let fighters = self.fighters();
         for r in checks {
             let own = self.actor_ref(r).map_or(0.0, |a| a.strength);
             let ratio = group_threat_ratio(r, own, &fighters);
