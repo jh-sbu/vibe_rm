@@ -51,6 +51,17 @@ const RESTART_SCENE_B: FormId = FormId(0x8BC);
 const FORCE_GREET_TEMPLATE: FormId = FormId(0x8BD);
 const HEADTRACK_SCENE: FormId = FormId(0x8BE);
 const TWO_PHASE_TIMER_SCENE: FormId = FormId(0x8BF);
+const ROLLED_SPELL_ACTOR: FormId = FormId(0x8C0);
+const ROLLED_SPELL_LIST: FormId = FormId(0x8C1);
+const EMPTY_ROLL_ACTOR: FormId = FormId(0x8C2);
+const EMPTY_ROLL_LIST: FormId = FormId(0x8C3);
+const ROLL_CHANCE_GLOBAL: FormId = FormId(0x8C4);
+const SPELL_AT_LEVEL_1: FormId = FormId(0x8C5);
+const SPELL_AT_LEVEL_10: FormId = FormId(0x8C6);
+const EMPTY_LIST_SPELL: FormId = FormId(0x8C7);
+const DUPLICATE_ROLL_ACTOR: FormId = FormId(0x8C8);
+const DUPLICATE_ROLL_LIST: FormId = FormId(0x8C9);
+const DUPLICATE_ROLL_SPELL: FormId = FormId(0x8CA);
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
@@ -110,12 +121,60 @@ fn engine(name: &str) -> (Fixture, Engine) {
     scene_never_done[8..10].copy_from_slice(&59u16.to_le_bytes()); // GetStageDone
     scene_never_done[12..16].copy_from_slice(&TIMER_SCENE_QUEST.0.to_le_bytes());
     scene_never_done[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
+    let mut leveled_acbs = [0; 14];
+    leveled_acbs[0..4].copy_from_slice(&0x80u32.to_le_bytes()); // PC level multiplier
+    leveled_acbs[8..10].copy_from_slice(&1000u16.to_le_bytes());
+    leveled_acbs[10..12].copy_from_slice(&1u16.to_le_bytes());
+    leveled_acbs[12..14].copy_from_slice(&60u16.to_le_bytes());
+    let lvlo = |level: u16, spell: FormId| {
+        let mut data = [0; 12];
+        data[0..2].copy_from_slice(&level.to_le_bytes());
+        data[4..8].copy_from_slice(&spell.0.to_le_bytes());
+        data[8..10].copy_from_slice(&1u16.to_le_bytes());
+        data
+    };
     let records = [
         Node::top(
             b"NPC_",
             vec![
                 RecordBuilder::new(b"NPC_", ACTOR),
                 RecordBuilder::new(b"NPC_", FormId(7)),
+                RecordBuilder::new(b"NPC_", ROLLED_SPELL_ACTOR)
+                    .field(b"ACBS", &leveled_acbs)
+                    .u32(b"SPLO", ROLLED_SPELL_LIST.0),
+                RecordBuilder::new(b"NPC_", EMPTY_ROLL_ACTOR)
+                    .field(b"ACBS", &leveled_acbs)
+                    .u32(b"SPLO", EMPTY_ROLL_LIST.0),
+                RecordBuilder::new(b"NPC_", DUPLICATE_ROLL_ACTOR)
+                    .field(b"ACBS", &leveled_acbs)
+                    .u32(b"SPLO", DUPLICATE_ROLL_LIST.0),
+            ],
+        ),
+        Node::top(
+            b"LVSP",
+            vec![
+                RecordBuilder::new(b"LVSP", ROLLED_SPELL_LIST)
+                    .field(b"LVLD", &[0])
+                    .field(b"LVLF", &[0])
+                    .field(b"LVLO", &lvlo(1, SPELL_AT_LEVEL_1))
+                    .field(b"LVLO", &lvlo(10, SPELL_AT_LEVEL_10)),
+                RecordBuilder::new(b"LVSP", EMPTY_ROLL_LIST)
+                    .field(b"LVLD", &[0])
+                    .field(b"LVLF", &[0])
+                    .form(b"LVLG", ROLL_CHANCE_GLOBAL)
+                    .field(b"LVLO", &lvlo(1, EMPTY_LIST_SPELL)),
+                RecordBuilder::new(b"LVSP", DUPLICATE_ROLL_LIST)
+                    .field(b"LVLD", &[0])
+                    .field(b"LVLF", &[0x04])
+                    .field(b"LVLO", &lvlo(1, DUPLICATE_ROLL_SPELL))
+                    .field(b"LVLO", &lvlo(1, DUPLICATE_ROLL_SPELL)),
+            ],
+        ),
+        Node::top(
+            b"GLOB",
+            vec![
+                RecordBuilder::new(b"GLOB", ROLL_CHANCE_GLOBAL)
+                    .field(b"FLTV", &100.0f32.to_le_bytes()),
             ],
         ),
         Node::top(
@@ -791,6 +850,90 @@ fn a_saved_game_loads_into_another_engine_unchanged() {
     assert_eq!(
         b.created_refs.refs[&FormId(0xFF00_0800)].origin,
         a.created_refs.refs[&FormId(0xFF00_0800)].origin
+    );
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic leveled spell records only"]
+fn rolled_leveled_spells_survive_level_and_global_changes_after_load() {
+    let (_a_fixture, mut a) = engine("rolled-spells-a");
+    a.skills.level = 1;
+    a.scripts.globals.insert(ROLL_CHANCE_GLOBAL, 100.0);
+    assert_eq!(a.actor_spells(ROLLED_SPELL_ACTOR), vec![SPELL_AT_LEVEL_1]);
+    assert!(a.actor_spells(EMPTY_ROLL_ACTOR).is_empty());
+    assert_eq!(
+        a.actor_spells(DUPLICATE_ROLL_ACTOR),
+        vec![DUPLICATE_ROLL_SPELL]
+    );
+    let saved = Snapshot::capture(&a);
+    assert_eq!(saved.rolled_spells.len(), 3);
+    assert_eq!(
+        saved
+            .rolled_spells
+            .iter()
+            .find(|entry| entry.actor == EMPTY_ROLL_ACTOR)
+            .unwrap()
+            .spells,
+        Vec::<FormId>::new()
+    );
+    assert_eq!(
+        saved
+            .rolled_spells
+            .iter()
+            .find(|entry| entry.actor == DUPLICATE_ROLL_ACTOR)
+            .unwrap()
+            .spells,
+        vec![DUPLICATE_ROLL_SPELL, DUPLICATE_ROLL_SPELL],
+        "the cache stores the raw resolver result before actor-spell deduplication"
+    );
+    let bytes = saved.write().to_bytes();
+
+    let (_b_fixture, mut b) = engine("rolled-spells-b");
+    b.skills.level = 15;
+    b.scripts.globals.insert(ROLL_CHANCE_GLOBAL, 0.0);
+    assert_eq!(b.actor_spells(ROLLED_SPELL_ACTOR), vec![SPELL_AT_LEVEL_10]);
+    assert_eq!(b.actor_spells(EMPTY_ROLL_ACTOR), vec![EMPTY_LIST_SPELL]);
+
+    let mut wrong_list = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    wrong_list.rolled_spells[0].list = SWORD;
+    assert!(wrong_list.apply(&mut b).is_err());
+    assert_eq!(b.actor_spells(ROLLED_SPELL_ACTOR), vec![SPELL_AT_LEVEL_10]);
+    assert_eq!(b.actor_spells(EMPTY_ROLL_ACTOR), vec![EMPTY_LIST_SPELL]);
+
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut b)
+        .unwrap();
+    b.skills.level = 15;
+    b.scripts.globals.insert(ROLL_CHANCE_GLOBAL, 0.0);
+    assert_eq!(
+        b.actor_spells(ROLLED_SPELL_ACTOR),
+        vec![SPELL_AT_LEVEL_1],
+        "the saved roll is retained instead of using the new actor level"
+    );
+    assert!(
+        b.actor_spells(EMPTY_ROLL_ACTOR).is_empty(),
+        "a saved empty roll is not rerolled after the chance global changes"
+    );
+    assert_eq!(
+        b.actor_spells(DUPLICATE_ROLL_ACTOR),
+        vec![DUPLICATE_ROLL_SPELL]
+    );
+
+    let mut legacy = SaveFile::from_bytes(&bytes).unwrap();
+    legacy.sections.retain(|(tag, _)| tag != b"RLSP");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    b.skills.level = 15;
+    b.scripts.globals.insert(ROLL_CHANCE_GLOBAL, 0.0);
+    assert_eq!(
+        b.actor_spells(ROLLED_SPELL_ACTOR),
+        vec![SPELL_AT_LEVEL_10],
+        "legacy loads clear the old roll and use the current level"
+    );
+    assert_eq!(
+        b.actor_spells(EMPTY_ROLL_ACTOR),
+        vec![EMPTY_LIST_SPELL],
+        "legacy loads clear saved empty results too"
     );
 }
 
@@ -1889,6 +2032,89 @@ fn scene_force_greet_section_round_trips_and_rejects_bad_markers() {
     w.form(FormId::NULL);
     malformed.add(b"SFGT", w.0);
     assert!(Snapshot::read(&malformed).is_err());
+}
+
+#[test]
+fn rolled_spell_section_is_deterministic_and_preserves_empty_ordered_results() {
+    use crate::magic::SavedRolledSpell;
+
+    let first = SavedRolledSpell {
+        actor: FormId(0x20),
+        list: FormId(0x40),
+        spells: vec![FormId(0x90), FormId(0x90), FormId(0x91)],
+    };
+    let empty = SavedRolledSpell {
+        actor: FormId(0x10),
+        list: FormId(0x30),
+        spells: vec![],
+    };
+    let mut a = Snapshot::default();
+    a.rolled_spells = vec![first.clone(), empty.clone()];
+    let mut b = Snapshot::default();
+    b.rolled_spells = vec![empty.clone(), first.clone()];
+    let bytes = a.write().to_bytes();
+    assert_eq!(
+        b.write().to_bytes(),
+        bytes,
+        "record map order is deterministic"
+    );
+
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(
+        read.rolled_spells,
+        vec![empty.clone(), first.clone()],
+        "empty result, order and duplicates survive"
+    );
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    let mut legacy = SaveFile::from_bytes(&bytes).unwrap();
+    legacy.sections.retain(|(tag, _)| tag != b"RLSP");
+    assert!(Snapshot::read(&legacy).unwrap().rolled_spells.is_empty());
+
+    let mut duplicate = Snapshot::default();
+    duplicate.rolled_spells = vec![first.clone(), first.clone()];
+    assert!(Snapshot::read(&SaveFile::from_bytes(&duplicate.write().to_bytes()).unwrap()).is_err());
+
+    for malformed_entry in [
+        SavedRolledSpell {
+            actor: FormId::NULL,
+            list: FormId(0x30),
+            spells: vec![],
+        },
+        SavedRolledSpell {
+            actor: FormId(0x10),
+            list: FormId::NULL,
+            spells: vec![],
+        },
+        SavedRolledSpell {
+            actor: FormId(0x10),
+            list: FormId(0x30),
+            spells: vec![FormId::NULL],
+        },
+    ] {
+        let mut malformed = Snapshot::default();
+        malformed.rolled_spells.push(malformed_entry);
+        assert!(
+            Snapshot::read(&SaveFile::from_bytes(&malformed.write().to_bytes()).unwrap()).is_err()
+        );
+    }
+
+    let mut duplicate_section = SaveFile::from_bytes(&bytes).unwrap();
+    duplicate_section.add(b"RLSP", vec![]);
+    assert!(Snapshot::read(&duplicate_section).is_err());
+
+    let mut oversized = Snapshot::default().write();
+    oversized.add(b"RLSP", u32::MAX.to_le_bytes().to_vec());
+    assert!(Snapshot::read(&oversized).is_err());
+
+    let mut truncated = Snapshot::default().write();
+    let mut w = Writer::default();
+    w.len(1);
+    w.form(FormId(0x10));
+    w.form(FormId(0x30));
+    w.len(u32::MAX as usize);
+    truncated.add(b"RLSP", w.0);
+    assert!(Snapshot::read(&truncated).is_err());
 }
 
 #[test]

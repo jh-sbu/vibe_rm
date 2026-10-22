@@ -399,6 +399,14 @@ pub struct ActiveEffect {
 #[derive(Debug, Default)]
 struct RolledSpells(std::cell::RefCell<HashMap<(FormId, FormId), Vec<FormId>>>);
 
+/// One leveled spell-list result retained in an optional native save section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SavedRolledSpell {
+    pub actor: FormId,
+    pub list: FormId,
+    pub spells: Vec<FormId>,
+}
+
 impl RolledSpells {
     /// What `list` gave `actor`, rolling it with `roll` the first time only.
     fn get_or_roll(
@@ -413,6 +421,30 @@ impl RolledSpells {
         let v = roll();
         self.0.borrow_mut().insert((actor, list), v.clone());
         v
+    }
+
+    fn save(&self) -> Vec<SavedRolledSpell> {
+        let mut saved: Vec<_> = self
+            .0
+            .borrow()
+            .iter()
+            .map(|(&(actor, list), spells)| SavedRolledSpell {
+                actor,
+                list,
+                spells: spells.clone(),
+            })
+            .collect();
+        saved.sort_by_key(|entry| (entry.actor, entry.list));
+        saved
+    }
+
+    fn restore(&mut self, saved: Vec<SavedRolledSpell>) {
+        self.0 = std::cell::RefCell::new(
+            saved
+                .into_iter()
+                .map(|entry| ((entry.actor, entry.list), entry.spells))
+                .collect(),
+        );
     }
 }
 
@@ -444,6 +476,40 @@ pub struct Magic {
 }
 
 impl Engine {
+    pub(crate) fn saved_rolled_spells(&self) -> Vec<SavedRolledSpell> {
+        self.magic.rolled.save()
+    }
+
+    pub(crate) fn validate_saved_rolled_spells(
+        &self,
+        saved: &[SavedRolledSpell],
+    ) -> anyhow::Result<()> {
+        let mut previous = None;
+        for entry in saved {
+            let key = (entry.actor, entry.list);
+            anyhow::ensure!(
+                !entry.actor.is_null()
+                    && !entry.list.is_null()
+                    && entry.spells.iter().all(|spell| !spell.is_null())
+                    && previous.is_none_or(|previous| previous < key),
+                "save has invalid, duplicate or unsorted rolled spell-list result"
+            );
+            anyhow::ensure!(
+                self.lo
+                    .tag_of(entry.list)
+                    .is_some_and(|tag| tag.0 == *b"LVSP"),
+                "save has non-leveled spell-list key {}",
+                entry.list
+            );
+            previous = Some(key);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn restore_rolled_spells(&mut self, saved: Vec<SavedRolledSpell>) {
+        self.magic.rolled.restore(saved);
+    }
+
     pub fn magic_effect(&self, id: FormId) -> Option<Arc<MagicEffect>> {
         if let Some(m) = self.magic.effect_cache.borrow().get(&id) {
             return m.clone();

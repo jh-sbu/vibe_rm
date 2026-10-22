@@ -128,8 +128,8 @@ saved: it is taken again from the place the save loads into.
   a warning. Scripts on active magic effects are dropped with the effects.
   Registrations other than these (key, LOS gain, tracked hits...) aren't
   built in the engine yet.
-- Active magic effects (timed effects, summons, wards), the leveled spell
-  rolls, live player conversations, actor
+- Active magic effects (timed effects, summons, wards), live player
+  conversations, actor
   procedure/animation progress, AI package progress
   and schedules, objects' behaviour
   graphs, and search/combat detection state and AI execution (stealth reservoirs
