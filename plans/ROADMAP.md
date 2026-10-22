@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- A null reference in `GetHeadingAngle`, `GetRelativeAngle` and
+  `GetLineOfSight` names the subject's combat target. This is inferred from
+  vanilla combat idles' use: `known_ambiguities/condition-geometry.md`
 - Location conditions: the reference forms of `HasSameEditorLocAsRef` and
   `IsInSameCurrentLocAsRef`, `GetInCurrentLocFormList`, `IsLocationLoaded`
   and `IsLocAliasLoaded`. Choices: `known_ambiguities/status-conditions.md`
@@ -1626,10 +1629,6 @@ game each piece unlocks.
      the camera stopping short of actors, a vanity camera; the head's morphs
      (`.tri`), tint layers (`TINI` / `TINC`), hair colour (`HCLF`) and
      texture sets (`HDPT` `TNAM`), with character creation
-   - Positional conditions: a null reference in `GetHeadingAngle`,
-     `GetRelativeAngle` and `GetLineOfSight` (vanilla combat idles pass one and
-     test the heading within ±45; probably the combat target, needs a source:
-     `known_ambiguities/condition-geometry.md`)
    - `GetQuestVariable` (79): its variable is a number in the CTDA with no CIS2 name
      (vanilla uses it 29 times); waits on a number-to-variable mapping
      (`known_ambiguities/condition-variables.md`)

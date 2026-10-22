@@ -1066,10 +1066,11 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         10 => axis_component(c.p1, starting_placement(e, subject?)?.position), // GetStartingPos
         11 => axis_component(c.p1, starting_placement(e, subject?)?.rotation).map(f32::to_degrees), // GetStartingAngle
         // The reference's bearing from the subject's facing, in [-180, 180).
-        // A null reference names nothing to face: unsupported.
+        // A null reference names the subject's combat target, or nothing to face
+        // without one (`known_ambiguities/condition-geometry.md`).
         99 => {
             let (from, s) = (e.ref_position(subject?)?, subject?);
-            let to = e.ref_position(named(p1)?)?;
+            let to = e.ref_position(reference_or_target(e, s, p1)?)?;
             let bearing = (to.x - from.x).atan2(to.y - from.y);
             let heading = (bearing - e.ref_rotation(s).z).to_degrees();
             Some((heading + 180.0).rem_euclid(360.0) - 180.0)
@@ -1077,7 +1078,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // The reference's angle less the subject's along an axis, in [0, 360).
         584 => {
             let s = subject?;
-            let other = axis_component(c.p2, e.ref_rotation(named(p1)?))?;
+            let other = axis_component(c.p2, e.ref_rotation(reference_or_target(e, s, p1)?))?;
             let mine = axis_component(c.p2, e.ref_rotation(s))?;
             Some((other - mine).to_degrees().rem_euclid(360.0))
         } // GetRelativeAngle
@@ -1098,7 +1099,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             let far = distance_between(e, s, named(FormId(c.p2))?)?;
             b(near < far)
         } // IsCloserToAThanB
-        27 => b(e.line_of_sight(subject?, named(p1)?)?), // GetLineOfSight
+        27 => b(e.line_of_sight(subject?, reference_or_target(e, subject?, p1)?)?), // GetLineOfSight
         _ => idle_function_value(e, c, ctx),
     }
 }
@@ -1111,6 +1112,12 @@ fn alias(e: &Engine, ctx: Context, id: u32) -> Option<FormId> {
 /// A reference parameter that names one (a null form names nothing).
 fn named(r: FormId) -> Option<FormId> {
     (!r.is_null()).then_some(r)
+}
+
+/// A reference parameter, or where it is null the subject's combat target (the
+/// vanilla combat idles pass null and ask about the one being fought).
+fn reference_or_target(e: &Engine, subject: FormId, r: FormId) -> Option<FormId> {
+    named(r).or_else(|| e.combat_target(subject))
 }
 
 /// The component of a vector an axis parameter names: 'X', 'Y' or 'Z' (ASCII).
