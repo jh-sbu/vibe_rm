@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- `IsRunning` follows the player's run toggle and NPCs' running gait;
+  `GetUnconscious` reads bleeding out. Choices:
+  `known_ambiguities/status-conditions.md`
 - Combat group conditions: `GetCombatGroupMemberCount`, `GetGroupTargetCount`,
   `IsLastHostileActor`, `GetCombatTargetHasKeyword`, `ShouldAttackKill`,
   `GetShouldHelp`, `IsProtected` and `GetActorAggroRadiusViolated`.

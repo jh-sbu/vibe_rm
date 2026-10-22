@@ -1161,6 +1161,17 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         25 | 704 if ctx.idle.is_none() => b(subject
             .and_then(|s| e.actor_speed(s))
             .is_some_and(|v| v > 1.0)),
+        // IsRunning: moving at the running gait (the player's run toggle, held
+        // down, or an NPC nearer its run speed than its walk).
+        287 => b(subject.is_some_and(|s| {
+            if s == PLAYER_REF {
+                e.player.moving && e.player.running
+            } else {
+                e.actor_running(s)
+            }
+        })),
+        // GetUnconscious: bleeding out (`known_ambiguities/death.md`).
+        242 => b(subject.is_some_and(|s| e.is_bleeding_out(s))),
         // Nor flees, attacks, staggers, recoils or is ridden.
         329 => b(subject.is_some_and(|s| e.is_fleeing(s))), // IsFleeing
         477 => Some(subject.map_or(0.0, |s| e.threat_ratio(s, p1))), // GetThreatRatio
