@@ -353,3 +353,27 @@ fn get_xp_for_next_level_is_the_levels_whole_cost() {
     e.skills.pending = 1;
     assert!(is(&e, PLAYER_REF, 530, 0, 225.0));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn is_pc_sleeping_follows_the_hours_passing_in_bed() {
+    let (_f, mut e) = fixture();
+    assert!(is(&e, PLAYER_REF, 175, 0, 0.0));
+    // Waiting is not sleeping.
+    e.menu = Some(crate::items::Menu::SleepWait { sleeping: false });
+    e.start_waiting(1);
+    assert!(is(&e, PLAYER_REF, 175, 0, 0.0));
+    e.menu = Some(crate::items::Menu::SleepWait { sleeping: true });
+    e.start_waiting(1);
+    assert!(is(&e, PLAYER_REF, 175, 0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn is_pc_1st_person_follows_the_camera() {
+    let (_f, mut e) = fixture();
+    e.third_person = false;
+    assert!(is(&e, PLAYER_REF, 391, 0, 1.0));
+    e.third_person = true;
+    assert!(is(&e, PLAYER_REF, 391, 0, 0.0));
+}

@@ -134,3 +134,23 @@ casting-source parameter).
   denominator. Level ups waiting count towards the level used, as the engine's
   own meter does.
 - The subject is ignored; only the player levels.
+
+## IsPCSleeping and IsPC1stPerson
+
+`IsPCSleeping` (175) and `IsPC1stPerson` (391), both about the player.
+
+### What is known
+
+- UESP Skyrim:Console (oldid 3628513) describes `IsPC1stPerson` as "Is the
+  player playing in 1st person mode"; `IsPCSleeping` has no description.
+
+### Unconfirmed choices
+
+- `IsPCSleeping` holds from the moment the sleep menu's hours start passing
+  (the same moment `OnSleepStart` is sent) until the menu closes. Choosing
+  hours while only waiting is not sleeping. Whether the original also counts
+  the bed's enter and exit animations, or the menu being open before OK, is
+  unknown.
+- `IsPC1stPerson` is the opposite of the third-person camera. The original's
+  other camera states (vanity, free, horse, dragon, furniture) are not
+  modelled, so none of them are "first person".
