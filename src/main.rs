@@ -35,6 +35,7 @@ mod locks;
 mod loose;
 mod magic;
 mod map_markers;
+mod map_view;
 mod messages;
 mod obstacles;
 mod perks;

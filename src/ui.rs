@@ -933,6 +933,7 @@ impl Ui {
             | Menu::Magic
             | Menu::Favorites
             | Menu::Tween
+            | Menu::Map
             | Menu::SleepWait { .. } => {
                 engine.menu = None;
                 return;

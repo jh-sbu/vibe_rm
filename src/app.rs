@@ -237,11 +237,13 @@ pub fn run(opts: Options) -> Result<()> {
                         engine.camera.position - (engine.player.eye() - engine.player.position);
                 }
                 if opts.burst.is_some_and(|n| n > 0 && i % n == 0) {
-                    let pixels = engine.renderer.render_to_image(
+                    let (scene, camera) = crate::map_view::frame_parts(
+                        &engine.map_view,
+                        engine.menu,
                         &engine.scene,
-                        &engine.view_camera(),
-                        |_, _| {},
+                        engine.view_camera(),
                     );
+                    let pixels = engine.renderer.render_to_image(scene, &camera, |_, _| {});
                     let stem = path.with_extension("");
                     write_png(
                         &format!("{}_{i:05}.png", stem.display()),
@@ -372,18 +374,21 @@ pub fn run(opts: Options) -> Result<()> {
         out.textures_delta = deltas;
         let size = [opts.width, opts.height];
         let hud_visible = crate::swf_ui::SwfUi::visible(&engine);
-        let pixels =
-            engine
-                .renderer
-                .render_to_image(&engine.scene, &engine.view_camera(), |r, view| {
-                    if let Some(swf) = &mut swf {
-                        swf.draw(view, hud_visible);
-                    }
-                    ui.paint(&r.device, &r.queue, view, out, size);
-                    if let Some(swf) = &mut swf {
-                        swf.draw_cursor(view, true);
-                    }
-                });
+        let (scene, camera) = crate::map_view::frame_parts(
+            &engine.map_view,
+            engine.menu,
+            &engine.scene,
+            engine.view_camera(),
+        );
+        let pixels = engine.renderer.render_to_image(scene, &camera, |r, view| {
+            if let Some(swf) = &mut swf {
+                swf.draw(view, hud_visible);
+            }
+            ui.paint(&r.device, &r.queue, view, out, size);
+            if let Some(swf) = &mut swf {
+                swf.draw_cursor(view, true);
+            }
+        });
         log::info!("render stats: {:?}", engine.renderer.stats);
         write_png(
             &path.display().to_string(),
@@ -755,6 +760,15 @@ impl ApplicationHandler for App {
                             {
                                 s.engine.menu = Some(crate::items::Menu::Inventory);
                             }
+                            // Quick Map (the control map's).
+                            if code == KeyCode::KeyM
+                                && !event.repeat
+                                && !s.engine.disabled_controls.menu
+                                && s.engine.menu.is_none()
+                                && s.swf.is_some()
+                            {
+                                s.engine.menu = Some(crate::items::Menu::Map);
+                            }
                             if code == KeyCode::KeyJ
                                 && !event.repeat
                                 && !s.engine.disabled_controls.journal
@@ -967,9 +981,13 @@ impl ApplicationHandler for App {
                     _ => return,
                 };
                 let view = frame.texture.create_view(&Default::default());
-                s.engine
-                    .renderer
-                    .render(&s.engine.scene, &s.engine.view_camera(), &view);
+                let (scene, camera) = crate::map_view::frame_parts(
+                    &s.engine.map_view,
+                    s.engine.menu,
+                    &s.engine.scene,
+                    s.engine.view_camera(),
+                );
+                s.engine.renderer.render(scene, &camera, &view);
                 if let Some(swf) = &mut s.swf {
                     swf.draw(&view, crate::swf_ui::SwfUi::visible(&s.engine));
                 }

@@ -60,7 +60,7 @@ impl TweenMenu {
                         1 => Some(Shown::Skills),
                         2 => Some(Shown::Magic),
                         3 => Some(Shown::Inventory),
-                        // The map isn't built.
+                        4 => Some(Shown::Map),
                         _ => None,
                     },
                     _ => None,

@@ -39,6 +39,11 @@ fn visible_rect<'gc>(
         ("y", bounds.y_min.to_pixels()),
         ("width", bounds.width().to_pixels()),
         ("height", bounds.height().to_pixels()),
+        // As `flash.geom.Rectangle`'s edges, which map.swf reads.
+        ("left", bounds.x_min.to_pixels()),
+        ("top", bounds.y_min.to_pixels()),
+        ("right", bounds.x_max.to_pixels()),
+        ("bottom", bounds.y_max.to_pixels()),
     ] {
         out.set(
             AvmString::new_utf8(activation.gc(), name),

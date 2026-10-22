@@ -20,6 +20,7 @@ mod favorites_menu;
 mod item_menu;
 mod journal_menu;
 mod magic_menu;
+mod map_menu;
 mod sleep_wait_menu;
 mod training_menu;
 mod tween_menu;
@@ -67,6 +68,8 @@ pub struct SwfUi {
     sleep_wait: Option<sleep_wait_menu::SleepWaitMenu>,
     /// The training menu, while open.
     training: Option<training_menu::TrainingMenu>,
+    /// The map, while open.
+    map: Option<map_menu::MapMenu>,
     /// The dialogue menu, while a conversation is on (and fading out after).
     dialogue: Option<dialogue_menu::DialogueMenu>,
     /// Whether the engine has a menu up (over a conversation, hiding it).
@@ -132,6 +135,7 @@ impl SwfUi {
             tween: None,
             sleep_wait: None,
             training: None,
+            map: None,
             dialogue: None,
             menu_up: false,
             journal: None,
@@ -175,6 +179,9 @@ impl SwfUi {
         if let Some(training) = &mut self.training {
             training.menu.resize(width, height);
         }
+        if let Some(map) = &mut self.map {
+            map.menu.resize(width, height);
+        }
         if let Some(dialogue) = &mut self.dialogue {
             dialogue.menu.resize(width, height);
         }
@@ -196,6 +203,7 @@ impl SwfUi {
         self.tween_menu(engine, dt);
         self.sleep_wait_menu(engine, dt);
         self.training_menu(engine, dt);
+        self.map_menu(engine, dt);
         self.dialogue_menu(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
@@ -373,6 +381,46 @@ impl SwfUi {
         }
     }
 
+    /// Opens the map when the engine's menu is it, closes it when it goes,
+    /// and keeps its camera and markers.
+    fn map_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        if engine.menu != Some(crate::items::Menu::Map) {
+            if self.map.take().is_some() {
+                engine.close_map_view();
+            }
+            return;
+        }
+        if self.map.is_none() {
+            let buttons = self.buttons.clone();
+            let opened = engine
+                .open_map_view()
+                .ok_or_else(|| anyhow::anyhow!("no world map here"))
+                .and_then(|_| map_menu::MapMenu::open(&self.ui, self.size, engine, buttons));
+            match opened {
+                Ok(m) => self.map = Some(m),
+                Err(e) => {
+                    log::error!("map: {e:#}");
+                    engine.close_map_view();
+                    engine.menu = None;
+                    return;
+                }
+            }
+        }
+        let Some(map) = &mut self.map else { return };
+        if std::mem::take(&mut map.close) {
+            engine.menu = None;
+            return;
+        }
+        let pointer = self.pointer.position();
+        map.update(engine, dt.as_secs_f32(), pointer, self.size);
+        map.menu.advance(dt);
+        for call in map.menu.take_calls() {
+            if !map.answer(engine, &call) {
+                answer(&map.menu, engine, &call);
+            }
+        }
+    }
+
     /// Opens the sleep / wait menu when the engine's menu is it, closes it
     /// when it goes, and keeps its clock.
     fn sleep_wait_menu(&mut self, engine: &mut Engine, dt: Duration) {
@@ -530,6 +578,7 @@ impl SwfUi {
                     | crate::items::Menu::Tween
                     | crate::items::Menu::SleepWait { .. }
                     | crate::items::Menu::Training(_)
+                    | crate::items::Menu::Map
             )
     }
 
@@ -543,6 +592,7 @@ impl SwfUi {
             || self.tween.is_some()
             || self.sleep_wait.is_some()
             || self.training.is_some()
+            || self.map.is_some()
             || self.dialogue.as_ref().is_some_and(|d| !d.closing)
     }
 
@@ -558,6 +608,34 @@ impl SwfUi {
         }
         if !self.wants_input() {
             return false;
+        }
+        // The map's camera: its keys and the wheel are its own; the mouse
+        // is the movie's too.
+        if self.message_box.shown.is_none()
+            && let Some(map) = &mut self.map
+        {
+            match event {
+                WindowEvent::KeyboardInput { event, .. }
+                    if let PhysicalKey::Code(code) = event.physical_key
+                        && code != KeyCode::Backquote
+                        && map.key(code, event.state == ElementState::Pressed) =>
+                {
+                    return true;
+                }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    map.wheel(match delta {
+                        MouseScrollDelta::LineDelta(_, y) => *y,
+                        MouseScrollDelta::PixelDelta(p) => p.y as f32 / 40.0,
+                    });
+                    return true;
+                }
+                WindowEvent::MouseInput {
+                    state,
+                    button: winit::event::MouseButton::Left,
+                    ..
+                } => map.button(*state == ElementState::Pressed, self.pointer.position()),
+                _ => {}
+            }
         }
         // The journal's own keys, unless a message box is over it.
         if let WindowEvent::KeyboardInput { event, .. } = event
@@ -704,6 +782,8 @@ impl SwfUi {
             &sleep_wait.menu
         } else if let Some(training) = &self.training {
             &training.menu
+        } else if let Some(map) = &self.map {
+            &map.menu
         } else if let Some(dialogue) = &self.dialogue {
             &dialogue.menu
         } else {
@@ -940,6 +1020,10 @@ impl SwfUi {
         if let Some(sleep_wait) = &mut self.sleep_wait {
             sleep_wait.menu.render();
             menus.push(&sleep_wait.menu);
+        }
+        if let Some(map) = &mut self.map {
+            map.menu.render();
+            menus.push(&map.menu);
         }
         // Under the menus a conversation opens (bartering, training), which
         // hide it.

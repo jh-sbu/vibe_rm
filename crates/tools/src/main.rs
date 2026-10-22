@@ -4698,6 +4698,89 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("world-maps") => {
+            // world-maps <data dir>: each worldspace's map data (`MNAM`, `ONAM`),
+            // flags (`DATA`) and what it takes from its parent (`PNAM`).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            for &id in lo.ids_of_type(b"WRLD") {
+                let Some(r) = lo.get(id) else { continue };
+                let u16_of = |t: &[u8; 4]| {
+                    r.get(t)
+                        .filter(|d| d.len() >= 2)
+                        .map(|d| u16::from_le_bytes([d[0], d[1]]))
+                };
+                println!(
+                    "{id} {} data={:?} pnam={:?} parent={}",
+                    r.editor_id().unwrap_or_default(),
+                    r.get(b"DATA").and_then(|d| d.first()),
+                    u16_of(b"PNAM"),
+                    r.get(b"WNAM")
+                        .filter(|d| d.len() >= 4)
+                        .map(|d| r
+                            .fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap())))
+                            .to_string())
+                        .unwrap_or_default(),
+                );
+                if let Some(m) = r
+                    .get(b"MNAM")
+                    .and_then(esp::worldspace::WorldMapData::parse)
+                {
+                    println!("    map {m:?}");
+                }
+                if let Some(o) = r
+                    .get(b"ONAM")
+                    .and_then(esp::worldspace::WorldMapOffset::parse)
+                {
+                    println!("    offset {o:?}");
+                }
+            }
+        }
+        Some("map-markers") => {
+            // map-markers <data dir>: every map marker reference (`XMRK`): its
+            // worldspace, type (`TNAM`), flags (`FNAM`), name and position.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let mut lo = esp::LoadOrder::load(data, &names)?;
+            let vfs = vfs::Vfs::new(data, &names);
+            lo.load_strings("english", |p| vfs.read(p));
+            for &r in lo.ids_of_type(b"REFR") {
+                let Some(rec) = lo.get(r) else { continue };
+                if rec.get(b"XMRK").is_none() {
+                    continue;
+                }
+                let world = lo
+                    .cell_of_ref(r)
+                    .and_then(|c| lo.cell(c))
+                    .and_then(|c| c.world)
+                    .and_then(|w| lo.get(w))
+                    .and_then(|w| w.editor_id())
+                    .unwrap_or_else(|| "(interior)".into());
+                println!(
+                    "{r} {world} type {} flags {} {:?} {}",
+                    rec.get(b"TNAM")
+                        .and_then(|d| d.first())
+                        .copied()
+                        .unwrap_or(0),
+                    rec.get(b"FNAM")
+                        .and_then(|d| d.first())
+                        .copied()
+                        .unwrap_or(0),
+                    rec.get(b"FULL")
+                        .map(|d| lo.lstring(&rec, d))
+                        .unwrap_or_default(),
+                    rec.get(b"DATA")
+                        .filter(|d| d.len() >= 8)
+                        .map(|d| format!(
+                            "{:.0},{:.0}",
+                            f32::from_le_bytes(d[0..4].try_into().unwrap()),
+                            f32::from_le_bytes(d[4..8].try_into().unwrap())
+                        ))
+                        .unwrap_or_default(),
+                );
+            }
+        }
         Some("item-users") => {
             // item-users <data dir> <form id | editor id>: the NPCs, containers,
             // outfits and leveled lists naming an item (`CNTO`, `INAM`, `LVLO`),

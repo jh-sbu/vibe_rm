@@ -345,6 +345,15 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             engine.menu = Some(crate::items::Menu::Tween);
             vec![]
         }
+        "map" => {
+            // map [x y zoom pitch]: opens it looking at a place (zoom 0 to 1).
+            let n: Vec<f32> = args.iter().filter_map(|a| a.parse().ok()).collect();
+            if let [x, y, zoom, pitch] = n[..] {
+                engine.map_start = Some((glam::Vec2::new(x, y), zoom, pitch));
+            }
+            engine.menu = Some(crate::items::Menu::Map);
+            vec![]
+        }
         "wait" => {
             engine.request_sleep_wait(None);
             vec![]
