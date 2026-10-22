@@ -52,10 +52,7 @@ letterbox offsets and positions outside the movie's nominal stage.
   cursor visibility; gamepad support remains a separate roadmap item.
 
 Three synthetic tests cover initial/updated positions, permission and menu
-gates, leaving/re-entering, focus loss, and non-finite positions. The opt-in
-`installed_cursor_movie_positions_survive_resize` test uses locally supplied
-Interface assets and a GPU to check the actual clip's position and rendered
-texture at 1280x720 (including outside its 4:3 stage), 1920x1080, 720x1280 and
-640x480. It requires `VRM_CURSOR_DATA` and `--include-ignored`; no game assets
-are embedded in the tests. These checks validate this implementation's
+gates, leaving/re-entering, focus loss, and non-finite positions. The actual
+clip's position and rendered texture at other viewport sizes are unchecked by
+tests. These checks validate this implementation's
 coordinates and lifecycle policy, not the original game's exact appearance.
