@@ -113,6 +113,34 @@ pub struct SavedSceneTimer {
     pub elapsed: Option<f64>,
 }
 
+/// Scene lifecycle state stored separately so the original `SCNE` payload
+/// remains readable and unchanged.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SavedSceneLifecycle {
+    pub scene: FormId,
+    pub phase: Option<u32>,
+    pub begun: bool,
+    pub stopping: bool,
+    pub paused: bool,
+    pub actions: Vec<SavedSceneAction>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SavedActionState {
+    Waiting,
+    Running,
+    Done,
+    Stopped,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SavedSceneAction {
+    pub action: u32,
+    pub state: SavedActionState,
+    /// Running timer actions retain elapsed action time even in a mixed scene.
+    pub elapsed: Option<f64>,
+}
+
 impl SceneRun {
     /// The actors filling the scene's aliases.
     fn actors<'a>(
@@ -208,6 +236,57 @@ fn restore_timer_actions(
         .collect()
 }
 
+fn saved_action_state(state: State) -> SavedActionState {
+    match state {
+        State::Waiting => SavedActionState::Waiting,
+        State::Running => SavedActionState::Running,
+        State::Done => SavedActionState::Done,
+        State::Stopped => SavedActionState::Stopped,
+    }
+}
+
+fn action_state(state: SavedActionState) -> State {
+    match state {
+        SavedActionState::Waiting => State::Waiting,
+        SavedActionState::Running => State::Running,
+        SavedActionState::Done => State::Done,
+        SavedActionState::Stopped => State::Stopped,
+    }
+}
+
+fn restore_lifecycle_actions(
+    scene: &esp::scene::Scene,
+    saved: &[SavedSceneAction],
+    timers: &[SavedSceneTimer],
+    now: f64,
+) -> Vec<ActionRun> {
+    let states: HashMap<_, _> = saved
+        .iter()
+        .map(|action| (action.action, action_state(action.state)))
+        .collect();
+    let mut elapsed: HashMap<_, _> = timers
+        .iter()
+        .filter_map(|timer| timer.elapsed.map(|elapsed| (timer.action, elapsed)))
+        .collect();
+    elapsed.extend(
+        saved
+            .iter()
+            .filter_map(|action| action.elapsed.map(|elapsed| (action.action, elapsed))),
+    );
+    scene
+        .actions
+        .iter()
+        .map(|action| {
+            let mut run = ActionRun::new();
+            run.state = states[&action.index];
+            if run.state == State::Running {
+                run.started_at = now - elapsed.get(&action.index).copied().unwrap_or(0.0);
+            }
+            run
+        })
+        .collect()
+}
+
 #[derive(Default)]
 pub struct Scenes {
     defs: HashMap<FormId, Option<Arc<SceneDef>>>,
@@ -246,9 +325,46 @@ impl Engine {
         saved
     }
 
+    pub(crate) fn saved_scene_lifecycles(&self) -> Vec<SavedSceneLifecycle> {
+        let now = self.scripts.real_time;
+        self.scenes
+            .running
+            .iter()
+            .map(|run| {
+                let mut actions: Vec<_> = run
+                    .def
+                    .scene
+                    .actions
+                    .iter()
+                    .zip(&run.actions)
+                    .map(|(def, action)| SavedSceneAction {
+                        action: def.index,
+                        state: saved_action_state(action.state),
+                        elapsed: (action.state == State::Running
+                            && matches!(def.kind, ActionKind::Timer { .. }))
+                        .then(|| (now - action.started_at).max(0.0)),
+                    })
+                    .collect();
+                actions.sort_by_key(|action| action.action);
+                SavedSceneLifecycle {
+                    scene: run.scene,
+                    phase: run.phase.map(|phase| phase as u32),
+                    begun: run.begun,
+                    stopping: run.stopping,
+                    paused: run.paused,
+                    actions,
+                }
+            })
+            .collect()
+    }
+
     /// Check saved scene references against loaded definitions before a load
     /// mutates the current game.
-    pub(crate) fn validate_saved_scenes(&mut self, saved: &[SavedScene]) -> anyhow::Result<()> {
+    pub(crate) fn validate_saved_scenes(
+        &mut self,
+        saved: &[SavedScene],
+        lifecycle: &[SavedSceneLifecycle],
+    ) -> anyhow::Result<()> {
         let mut seen = HashSet::new();
         for state in saved {
             anyhow::ensure!(
@@ -313,12 +429,109 @@ impl Engine {
                 previous_action = Some(timer.action);
             }
         }
+
+        let mut lifecycle_scenes = HashSet::new();
+        for state in lifecycle {
+            anyhow::ensure!(
+                !state.scene.is_null() && lifecycle_scenes.insert(state.scene),
+                "save has invalid or duplicate scene lifecycle {}",
+                state.scene
+            );
+            let def = self
+                .scene_def(state.scene)
+                .ok_or_else(|| anyhow::anyhow!("save has missing scene {}", state.scene))?;
+            let phase = state.phase.map(|phase| phase as usize);
+            anyhow::ensure!(
+                phase.is_none_or(|phase| phase < def.scene.phases.len()),
+                "save has invalid lifecycle phase for scene {}",
+                state.scene
+            );
+            let mut expected: Vec<_> = def
+                .scene
+                .actions
+                .iter()
+                .map(|action| action.index)
+                .collect();
+            expected.sort_unstable();
+            anyhow::ensure!(
+                expected.windows(2).all(|pair| pair[0] < pair[1]),
+                "scene {} has duplicate action ids",
+                state.scene
+            );
+            anyhow::ensure!(
+                state.actions.len() == expected.len()
+                    && state
+                        .actions
+                        .iter()
+                        .zip(expected)
+                        .all(|(action, expected)| action.action == expected),
+                "save has incomplete action lifecycle for scene {}",
+                state.scene
+            );
+            if let Some(timer_scene) = saved.iter().find(|scene| scene.scene == state.scene) {
+                anyhow::ensure!(
+                    state.phase == Some(timer_scene.phase),
+                    "scene phase disagrees between save sections for {}",
+                    state.scene
+                );
+                for timer in &timer_scene.timers {
+                    let Some(action) = state
+                        .actions
+                        .iter()
+                        .find(|action| action.action == timer.action)
+                    else {
+                        anyhow::bail!("save has missing timer lifecycle in scene {}", state.scene);
+                    };
+                    let expected = if timer.elapsed.is_some() {
+                        SavedActionState::Running
+                    } else {
+                        SavedActionState::Done
+                    };
+                    anyhow::ensure!(
+                        action.state == expected,
+                        "timer state disagrees between save sections for scene {} action {}",
+                        state.scene,
+                        timer.action
+                    );
+                    anyhow::ensure!(
+                        action.elapsed == timer.elapsed,
+                        "timer elapsed time disagrees between save sections for scene {} action {}",
+                        state.scene,
+                        timer.action
+                    );
+                }
+            }
+            for action in &state.actions {
+                let definition = def
+                    .scene
+                    .actions
+                    .iter()
+                    .find(|definition| definition.index == action.action)
+                    .expect("action ids were validated against the scene definition");
+                let timer_elapsed_valid = match (action.state, &definition.kind) {
+                    (SavedActionState::Running, ActionKind::Timer { .. }) => action
+                        .elapsed
+                        .is_some_and(|elapsed| elapsed.is_finite() && elapsed >= 0.0),
+                    _ => action.elapsed.is_none(),
+                };
+                anyhow::ensure!(
+                    timer_elapsed_valid,
+                    "save has invalid action elapsed time for scene {} action {}",
+                    state.scene,
+                    action.action
+                );
+            }
+        }
         Ok(())
     }
 
     /// Replace scene runs without running fragments or carrying old audio and
     /// package ownership into the loaded game.
-    pub(crate) fn restore_timer_scenes(&mut self, saved: Vec<SavedScene>) {
+    pub(crate) fn restore_scenes(
+        &mut self,
+        saved: Vec<SavedScene>,
+        lifecycle: Vec<SavedSceneLifecycle>,
+    ) {
         for run in &mut self.scenes.running {
             for action in &mut run.actions {
                 if let Some(line) = action.line.take()
@@ -333,24 +546,63 @@ impl Engine {
         self.scenes.force_greeted.clear();
         self.scenes.restart.clear();
         let now = self.scripts.real_time;
-        for state in saved {
-            let Some(def) = self.scene_def(state.scene) else {
+        let mut scene_ids: Vec<_> = lifecycle.iter().map(|state| state.scene).collect();
+        for state in &saved {
+            if !scene_ids.contains(&state.scene) {
+                scene_ids.push(state.scene);
+            }
+        }
+        let timer_by_scene: HashMap<_, _> = saved
+            .into_iter()
+            .map(|state| (state.scene, state))
+            .collect();
+        let lifecycle_by_scene: HashMap<_, _> = lifecycle
+            .into_iter()
+            .map(|state| (state.scene, state))
+            .collect();
+        for scene in scene_ids {
+            let Some(def) = self.scene_def(scene) else {
                 continue;
             };
-            let phase = state.phase as usize;
-            let mut actions = restore_timer_actions(&def.scene, phase, &state.timers, now);
+            let timer = timer_by_scene.get(&scene);
+            let saved_lifecycle = lifecycle_by_scene.get(&scene);
+            let phase = saved_lifecycle
+                .and_then(|state| state.phase)
+                .or_else(|| timer.map(|state| state.phase));
+            let mut actions = if let Some(state) = saved_lifecycle {
+                restore_lifecycle_actions(
+                    &def.scene,
+                    &state.actions,
+                    &timer
+                        .map(|state| state.timers.as_slice())
+                        .unwrap_or_default(),
+                    now,
+                )
+            } else {
+                restore_timer_actions(
+                    &def.scene,
+                    phase.map(|phase| phase as usize).unwrap_or(0),
+                    &timer
+                        .map(|state| state.timers.as_slice())
+                        .unwrap_or_default(),
+                    now,
+                )
+            };
             for (action, run) in def.scene.actions.iter().zip(&mut actions) {
                 run.actor = (action.actor >= 0)
                     .then(|| self.alias_ref(def.scene.quest, action.actor as u32))
                     .flatten();
             }
+            let (begun, stopping, paused) = saved_lifecycle.map_or((true, false, false), |state| {
+                (state.begun, state.stopping, state.paused)
+            });
             self.scenes.running.push(SceneRun {
-                scene: state.scene,
+                scene,
                 def,
-                phase: Some(phase),
-                begun: true,
-                stopping: false,
-                paused: false,
+                phase: phase.map(|phase| phase as usize),
+                begun,
+                stopping,
+                paused,
                 actions,
             });
         }
@@ -1188,5 +1440,73 @@ mod save_tests {
         assert_eq!(resumed[1].state, State::Running);
         assert_eq!(resumed[1].started_at, 94.5);
         assert_eq!(resumed[2].state, State::Waiting);
+    }
+
+    #[test]
+    fn saved_action_lifecycle_restores_done_stopped_and_running_states() {
+        let action = |index, kind| esp::scene::Action {
+            kind,
+            name: String::new(),
+            actor: -1,
+            index,
+            flags: 0,
+            start_phase: 0,
+            end_phase: 0,
+        };
+        let scene = esp::scene::Scene {
+            actions: vec![
+                action(2, ActionKind::Timer { seconds: 20.0 }),
+                action(4, ActionKind::Package { packages: vec![] }),
+                action(
+                    6,
+                    ActionKind::Dialogue {
+                        topic: FormId::NULL,
+                        headtrack: None,
+                        loop_min: 0.0,
+                        loop_max: 0.0,
+                        emotion: 0,
+                        emotion_value: 0,
+                    },
+                ),
+                action(8, ActionKind::Timer { seconds: 20.0 }),
+            ],
+            ..Default::default()
+        };
+        let saved = [
+            SavedSceneAction {
+                action: 2,
+                state: SavedActionState::Running,
+                elapsed: Some(4.5),
+            },
+            SavedSceneAction {
+                action: 4,
+                state: SavedActionState::Done,
+                elapsed: None,
+            },
+            SavedSceneAction {
+                action: 6,
+                state: SavedActionState::Stopped,
+                elapsed: None,
+            },
+            SavedSceneAction {
+                action: 8,
+                state: SavedActionState::Waiting,
+                elapsed: None,
+            },
+        ];
+        let resumed = restore_lifecycle_actions(
+            &scene,
+            &saved,
+            &[SavedSceneTimer {
+                action: 2,
+                elapsed: Some(4.5),
+            }],
+            100.0,
+        );
+        assert_eq!(resumed[0].state, State::Running);
+        assert_eq!(resumed[0].started_at, 95.5);
+        assert_eq!(resumed[1].state, State::Done);
+        assert_eq!(resumed[2].state, State::Stopped);
+        assert_eq!(resumed[3].state, State::Waiting);
     }
 }

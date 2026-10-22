@@ -101,6 +101,13 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     .u32(b"INAM", 7)
                     .u32(b"SNAM", 0)
                     .u32(b"ENAM", 0)
+                    .field(b"SNAM", &1.0f32.to_le_bytes())
+                    .field(b"ANAM", &[])
+                    .field(b"ANAM", &2u16.to_le_bytes())
+                    .zstring(b"NAM0", "Long wait")
+                    .u32(b"INAM", 9)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
                     .field(b"SNAM", &5.0f32.to_le_bytes())
                     .field(b"ANAM", &[])
                     .u32(b"PNAM", TIMER_SCENE_QUEST.0),
@@ -1419,6 +1426,54 @@ fn timer_scene_section_round_trips_and_legacy_absence_clears() {
 }
 
 #[test]
+fn scene_lifecycle_section_round_trips_and_rejects_bad_state_codes() {
+    let mut s = Snapshot::default();
+    s.scene_lifecycle.push(crate::scene::SavedSceneLifecycle {
+        scene: FormId(0x8B0),
+        phase: Some(2),
+        begun: true,
+        stopping: false,
+        paused: true,
+        actions: vec![
+            crate::scene::SavedSceneAction {
+                action: 3,
+                state: crate::scene::SavedActionState::Done,
+                elapsed: None,
+            },
+            crate::scene::SavedSceneAction {
+                action: 9,
+                state: crate::scene::SavedActionState::Running,
+                elapsed: Some(7.25),
+            },
+        ],
+    });
+    let valid = s.write();
+    let bytes = valid.to_bytes();
+    let read = Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap()).unwrap();
+    assert_eq!(read.scene_lifecycle, s.scene_lifecycle);
+    assert_eq!(read.write().to_bytes(), bytes);
+
+    let mut legacy = valid.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"SCLF");
+    assert!(Snapshot::read(&legacy).unwrap().scene_lifecycle.is_empty());
+
+    let mut malformed = Snapshot::default().write();
+    let mut w = Writer::default();
+    w.len(1);
+    w.form(FormId(0x8B0));
+    w.bool(false);
+    w.bool(true);
+    w.bool(false);
+    w.bool(false);
+    w.len(1);
+    w.u32(3);
+    w.u8(9);
+    w.bool(false);
+    malformed.add(b"SCLF", w.0);
+    assert!(Snapshot::read(&malformed).is_err());
+}
+
+#[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic scene records only"]
 fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     let (_fixture, mut e) = engine("scene-continuity");
@@ -1429,13 +1484,35 @@ fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
         .running = true;
     e.scripts.real_time = 10.0;
     assert!(e.start_scene(TIMER_SCENE, false));
+    let before_first_update = Snapshot::capture(&e).write();
+    let before_first_update = Snapshot::read(&before_first_update).unwrap();
+    assert_eq!(before_first_update.scene_lifecycle[0].phase, None);
+    assert!(!before_first_update.scene_lifecycle[0].begun);
+    before_first_update.apply(&mut e).unwrap();
     e.update_scenes();
 
     e.scripts.real_time = 13.0;
+    e.update_scenes();
     let file = Snapshot::capture(&e).write();
-    assert_eq!(Snapshot::read(&file).unwrap().scenes[0].phase, 0);
+    let saved = Snapshot::read(&file).unwrap();
+    assert_eq!(saved.scenes[0].phase, 0);
+    assert!(saved.scene_lifecycle[0].begun);
+    assert_eq!(saved.scene_lifecycle[0].phase, Some(0));
+    assert_eq!(
+        saved.scene_lifecycle[0].actions[0].state,
+        crate::scene::SavedActionState::Done
+    );
+    assert_eq!(saved.scene_lifecycle[0].actions[1].elapsed, Some(3.0));
+    let mut item1_format = file.clone();
+    item1_format.sections.retain(|(tag, _)| tag != b"SCLF");
+    Snapshot::read(&item1_format)
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert!(e.is_scene_action_complete(TIMER_SCENE, 7));
     Snapshot::read(&file).unwrap().apply(&mut e).unwrap();
     assert!(e.is_scene_playing(TIMER_SCENE));
+    assert!(e.is_scene_action_complete(TIMER_SCENE, 7));
 
     e.scripts.real_time = 14.9;
     e.update_scenes();
@@ -1447,8 +1524,25 @@ fn timer_scene_load_resumes_elapsed_time_and_replaces_legacy_runs() {
     e.scripts.real_time = 20.0;
     assert!(e.start_scene(TIMER_SCENE, false));
     e.update_scenes();
+    e.stop_scene(TIMER_SCENE);
+    let legacy = Snapshot::capture(&e).write();
+    let stopped = Snapshot::read(&legacy).unwrap();
+    assert!(stopped.scene_lifecycle[0].stopping);
+    stopped.apply(&mut e).unwrap();
+    assert_eq!(e.describe_scenes().len(), 1);
+    e.update_scenes();
+    assert!(
+        e.describe_scenes().is_empty(),
+        "stopping scene resumed after load"
+    );
+
+    // An absent lifecycle section still clears any stale run.
+    e.scripts.real_time = 30.0;
+    assert!(e.start_scene(TIMER_SCENE, false));
+    e.update_scenes();
     let mut legacy = Snapshot::capture(&e).write();
     legacy.sections.retain(|(tag, _)| tag != b"SCNE");
+    legacy.sections.retain(|(tag, _)| tag != b"SCLF");
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(
         !e.is_scene_playing(TIMER_SCENE),

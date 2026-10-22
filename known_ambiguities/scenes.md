@@ -85,16 +85,18 @@ records); `vrm-tool scenes <data> [scene]` dumps one scene or counts over all
 ## Native save policy and remaining continuity
 
 The optional `SCNE` section in native `.vrs` saves retains the current phase and
-elapsed time of active scenes whose actions are all timers. Restoring such a
-scene treats it as already begun and resumes its timer actions at the saved
-elapsed time, including timers already complete while phase completion
-conditions remain false. Loading replaces existing scene runs; an older save
-without `SCNE` clears them. This policy does not establish original `.ess`
-scene layouts or Skyrim SE save/load behavior.
+elapsed time for timer-only scenes. `SCLF` is an adjunct that leaves the `SCNE`
+layout unchanged and retains begun, stopping and paused flags, phase and each
+action's waiting/running/done/stopped state for all running scenes. Running
+timer actions also keep elapsed time in `SCLF`, including timers in mixed
+scenes. Completed actions remain complete, and a begun scene resumes without
+replaying its begin or phase-start fragment. Loading replaces existing scene
+runs; saves without these sections clear them. This policy does not establish
+original `.ess` scene layouts or Skyrim SE save/load behavior.
 
-This first step does not retain non-timer action progress, scene lifecycle
-states, packages, dialogue, force-greet state or pending scene repeats. Timer
-action actor aliases are reconstructed from the quest aliases; explicit saved
-actor identities and scene package ownership remain for later work. Scenes with
-any non-timer action are omitted as a whole. Their current runtime state is
-still lost on load; later save-continuity work addresses those parts separately.
+Timer action actor aliases are reconstructed from quest aliases; explicit
+saved actor identities and scene package ownership remain for later work.
+Running dialogue and package actions retain only their lifecycle state here;
+their selected INFO, subtitle, package procedure and other internal progress
+are separate work. Force-greet state and pending scene repeats are also not
+retained yet.

@@ -60,3 +60,21 @@ round-trip, deterministic output, legacy clearing, duplicate-section rejection
 and non-finite timer rejection. `cargo test timer_` passed (4 passed),
 `cargo test --no-run` compiled the synthetic Engine integration regression, and
 the parent ran the production save/load regression with Vulkan (1 passed).
+
+## Item 2 outcome
+
+Added optional `SCLF` lifecycle data alongside the unchanged `SCNE` payload.
+It retains begun/stopping/paused flags and each action's waiting/running/done/
+stopped state for all running scenes. Timer elapsed time is also recorded in
+`SCLF` for running timer actions in mixed scenes. Restore keeps the saved scene
+phase and lifecycle, so begun/phase-start fragments do not replay and completed
+actions remain complete. Running dialogue and package internals remain outside
+this item's scope.
+
+Validation: `cargo check` passed. `cargo test scene_lifecycle_section` and
+`cargo test saved_action_lifecycle` each passed (1 passed); `cargo test timer_`
+passed (4 passed, one GPU integration test ignored). The production integration
+regression covers the pre-first-update state, completed timer action, elapsed
+timer resumption, a stopping scene and legacy stale-run clearing; its Vulkan
+run passed. Parent's full host-Vulkan engine suite passed (341 passed, 107
+ignored).
