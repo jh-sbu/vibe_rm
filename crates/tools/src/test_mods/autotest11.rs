@@ -36,6 +36,28 @@
 //! clock only moves forward. A second run inside Belethor's shop (him
 //! loaded) tells whether that matters. It takes about 5 minutes; leave the
 //! game alone. The plugin name doesn't matter.
+//!
+//! Run in Skyrim SE (2026-10-22) twice, from 6:52 outside the shops in the
+//! Plains District and from 7:16 inside Belethor's shop, sneaking unseen:
+//!
+//! - **Arcadia** (unloaded, in her shop throughout): locked exactly while
+//!   her sleep package (`DefaultSleepEditorLoc24x8`) ran. Unlocked within
+//!   1:40 game minutes of 8:00 as `WhiterunArcadiaStorePackage` took over,
+//!   and at the jump to 12:00; locked as the sleep package started at 0:00
+//!   (inside run; outside, her evening package still ran at 0:15) and at
+//!   the jump to 3:00. Not at 20:00 (`DefaultSandboxHomeowner`). Each
+//!   change came as her package switched, the clock running or jumped.
+//! - **Lucan** stayed on `MS13LucanValeriusTraderServices` (unlocks at
+//!   start) throughout, his doors unlocked: no change to read.
+//! - **Belethor**, outside run: in the city at the start (sleep package,
+//!   doors locked) and through the night; his doors stayed locked all day,
+//!   through his sell package and his being moved into the shop at 12:00.
+//!   Inside run: locked at the start (asleep), unlocked at 8:13, then not
+//!   locked again by his sleep at 0:00 or at the jump to 3:00.
+//!
+//! So a lock-doors package's end opens the home (the engine now unlocks it
+//! then); Belethor's runs leave open what an owner away from home or the
+//! player inside changes (`known_ambiguities/locks.md`).
 
 use anyhow::{Context, Result, ensure};
 use esp::writer::{AttachedScript, Node, write_plugin};
