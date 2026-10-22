@@ -5,6 +5,8 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Platform conditions: `IsWin32` holds, `IsXBox`, `IsPS3` and `IsGoreDisabled`
+  fail. Choices: `known_ambiguities/status-conditions.md`
 - Successfully soul-trapped body identities survive native saves through
   optional `SOUL`; failed captures remain retryable, and legacy saves clear the
   spent set. Original `.ess` and resurrection behavior remain unverified:

@@ -976,6 +976,12 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             Some(subject.map_or(0.0, |s| e.sit_sleep_state(s, c.func == 49)))
         }
         237 => b(false), // GetIsGhost
+        // The platform: a PC build (UESP Skyrim:Console, oldid 3628513, "Returns
+        // true if the game is running on a Windows environment"). Gore is never
+        // disabled (`known_ambiguities/status-conditions.md`).
+        521 => b(true),        // IsWin32
+        309 | 520 => b(false), // IsXBox, IsPS3
+        547 => b(false),       // IsGoreDisabled
         353 => b(subject.is_some_and(|s| {
             s == PLAYER_REF
                 || e.created(s).is_some_and(|c| c.actor)
@@ -1453,6 +1459,10 @@ impl Engine {
 pub fn subject_is_player(s: Option<FormId>) -> bool {
     s == Some(PLAYER_REF)
 }
+
+#[cfg(test)]
+#[path = "status_tests.rs"]
+mod status_tests;
 
 #[cfg(test)]
 #[path = "geometry_tests.rs"]
