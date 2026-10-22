@@ -580,6 +580,11 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .and_then(|s| e.actor_voice_type(s))
             .is_some_and(|v| v == p1 || e.formlist(p1).contains(&v))), // GetIsVoiceType
         560 => b(subject.is_some_and(|s| e.has_keyword(s, p1))),   // HasKeyword
+        // The subject's race (templates' `RNAM`, as `SameRace` reads it) is a
+        // playable one.
+        254 => b(subject
+            .and_then(|s| e.race_of(s))
+            .is_some_and(|r| e.race_is_playable(r))), // GetIsPlayableRace
         // Undead: of an `ActorTypeUndead` race (the game caches its own
         // reading; see `known_ambiguities/magic.md`).
         715 => b(subject.is_some_and(|s| e.has_keyword(s, FormId(0x13796)))), // IsUndead
@@ -1325,12 +1330,21 @@ impl Engine {
     }
 
     pub fn race_is_child(&self, race: FormId) -> bool {
-        // RACE DATA flags bit 0x4 = child.
+        self.race_flag(race, 0x4)
+    }
+
+    /// Whether a race is playable (`DATA` flag 0x1).
+    pub fn race_is_playable(&self, race: FormId) -> bool {
+        self.race_flag(race, 0x1)
+    }
+
+    /// A race's `DATA` flag bits (xEdit's `wbRACE`: 0x1 playable, 0x4 child).
+    fn race_flag(&self, race: FormId, mask: u32) -> bool {
         self.lo
             .get(race)
             .and_then(|r| {
                 r.get(b"DATA").map(|d| {
-                    d.len() >= 36 && u32::from_le_bytes(d[32..36].try_into().unwrap()) & 0x4 != 0
+                    d.len() >= 36 && u32::from_le_bytes(d[32..36].try_into().unwrap()) & mask != 0
                 })
             })
             .unwrap_or(false)
