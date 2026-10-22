@@ -39,8 +39,10 @@ and location pages, CK wiki descriptions) and the game's data files.
 - A reference with `XLOC` starts locked. Scripts (`Lock`, `SetLockLevel`), keys and
   packages change that; `IsLocked`, `GetLockLevel`, conditions `GetLocked` /
   `GetLockLevel` read it.
-- A load door pair shares its lock, but the player can always leave an interior
-  into the open.
+- A load door pair shares one lock, held by the side with `XLOC` (the lower
+  form id when both or neither have one): either side reports it and `Lock`,
+  `SetLockLevel`, keys, packages and the console's `lock` / `unlock` change it
+  for both. The player can always leave an interior into the open.
 - The player opens a locked door or container with its key in the inventory (it
   stays unlocked). Without it, a lock that doesn't need the key is picked, if the
   player has lockpicks: the sweet spot is placed at random, the lock turns towards
