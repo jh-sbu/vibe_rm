@@ -42,6 +42,9 @@ const LIST_OF_INNS: FormId = FormId(0x874);
 const WOLVES: FormId = FormId(0x880);
 const HUNTERS: FormId = FormId(0x881);
 const BEARS: FormId = FormId(0x882);
+const BOSS: FormId = FormId(0x890);
+const GUARD_TYPE: FormId = FormId(0x891);
+const QUEST: FormId = FormId(0x892);
 
 struct Fixture(std::path::PathBuf);
 
@@ -85,6 +88,13 @@ fn fixture() -> (Fixture, Engine) {
         d.extend_from_slice(&0i32.to_le_bytes());
         d.extend_from_slice(&reaction.to_le_bytes());
         d
+    };
+    // `ACSR`: static references with their ref types (and a grid cell each).
+    let acsr = |refs: &[(FormId, FormId)]| {
+        refs.iter()
+            .flat_map(|&(ty, r)| [ty.0, r.0, 0, 0])
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<u8>>()
     };
     let locations = [(CELL_A, INN), (CELL_B, FORT)];
     let cell = |id: FormId, owner: Option<FormId>, refs: Vec<RecordBuilder>| {
@@ -154,8 +164,13 @@ fn fixture() -> (Fixture, Engine) {
             b"LCTN",
             vec![
                 RecordBuilder::new(b"LCTN", HOLD).form(b"KWDA", HOLD_KEYWORD),
-                RecordBuilder::new(b"LCTN", INN).form(b"PNAM", HOLD),
-                RecordBuilder::new(b"LCTN", FORT).form(b"PNAM", HOLD),
+                // The inn's two actors are bosses; the fort's is a guard.
+                RecordBuilder::new(b"LCTN", INN)
+                    .form(b"PNAM", HOLD)
+                    .field(b"ACSR", &acsr(&[(BOSS, HUMAN_IN_A), (BOSS, BEAST_IN_A)])),
+                RecordBuilder::new(b"LCTN", FORT)
+                    .form(b"PNAM", HOLD)
+                    .field(b"ACSR", &acsr(&[(GUARD_TYPE, HUMAN_IN_B)])),
             ],
         ),
         Node::top(
@@ -462,4 +477,63 @@ fn get_faction_combat_reaction_reads_the_first_factions_list() {
     assert!(reaction(WOLVES, GUILD, 0.0));
     // A faction is its own ally.
     assert!(reaction(HUNTERS, HUNTERS, 2.0));
+}
+
+/// Whether `func(param, second) == value` holds for the player, in a quest's
+/// context (so its aliases resolve).
+fn is_in_quest(e: &Engine, func: u16, param: u32, second: u32, value: f32) -> bool {
+    let rec = e.lo.get(SWORD_REF).unwrap();
+    let c = crate::condition::parse(&rec, &ctda2(func, param, second, value)).unwrap();
+    crate::condition::evaluate(
+        e,
+        &[c],
+        crate::condition::Context {
+            subject: Some(PLAYER_REF),
+            quest: Some(QUEST),
+            ..Default::default()
+        },
+    )
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn ref_type_counts_split_a_locations_living_and_dead() {
+    let (_f, mut e) = fixture();
+    // 591 dead, 592 alive: the inn's two bosses, then its parent's (none in the
+    // hold itself, and the fort's guard isn't a boss).
+    assert!(is2(&e, PLAYER_REF, 592, INN.0, BOSS.0, 2.0));
+    assert!(is2(&e, PLAYER_REF, 591, INN.0, BOSS.0, 0.0));
+    assert!(is2(&e, PLAYER_REF, 592, FORT.0, BOSS.0, 0.0));
+    // The hold counts what is inside it.
+    assert!(is2(&e, PLAYER_REF, 592, HOLD.0, BOSS.0, 2.0));
+    assert!(is2(&e, PLAYER_REF, 592, HOLD.0, GUARD_TYPE.0, 1.0));
+    // A killed one moves over, loaded or not.
+    let place = crate::ai::schedule::Place::Interior(CELL_A);
+    e.world_state
+        .dead
+        .insert(HUMAN_IN_A, (place, glam::Vec3::ZERO));
+    assert!(is2(&e, PLAYER_REF, 592, INN.0, BOSS.0, 1.0));
+    assert!(is2(&e, PLAYER_REF, 591, INN.0, BOSS.0, 1.0));
+    assert!(is2(&e, PLAYER_REF, 591, HOLD.0, BOSS.0, 1.0));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn location_alias_forms_read_the_aliased_location() {
+    let (_f, mut e) = fixture();
+    // 601 alive, 600 dead, 608 keyword data: through alias 3, which holds the inn.
+    assert!(!is_in_quest(&e, 601, 3, BOSS.0, 2.0));
+    e.scripts
+        .quests
+        .entry(QUEST)
+        .or_default()
+        .aliases
+        .insert(3, INN);
+    assert!(is_in_quest(&e, 601, 3, BOSS.0, 2.0));
+    assert!(is_in_quest(&e, 600, 3, BOSS.0, 0.0));
+    e.location_keyword_data.insert((INN, KEYWORD), 7.0);
+    assert!(is_in_quest(&e, 608, 3, KEYWORD.0, 7.0));
+    assert!(is_in_quest(&e, 608, 3, OTHER_KEYWORD.0, 0.0));
+    // An empty alias holds no location, so nothing is in it.
+    assert!(is_in_quest(&e, 601, 4, BOSS.0, 0.0));
 }

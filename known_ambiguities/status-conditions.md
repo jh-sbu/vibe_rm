@@ -202,3 +202,33 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
   a pair with no entry is neutral (0).
 - `GetFactionRelation` (449, an actor) stays unsupported: nothing public says
   what it returns.
+
+## Location ref-type counts and alias keyword data
+
+`GetRefTypeAliveCount` (592), `GetRefTypeDeadCount` (591),
+`GetLocAliasRefTypeAliveCount` (601), `GetLocAliasRefTypeDeadCount` (600) and
+`GetKeywordDataForAlias` (608). Helper: `location_population`
+(`src/locations.rs`); tests in `src/condition/status_tests.rs`.
+
+### What is known
+
+- UESP Skyrim Mod:Mod File Format/Raw Function Data (oldid 3411473) gives
+  `Location.GetRefTypeAliveCount(LocationRefType)`, `GetRefTypeDeadCount`, the
+  `GetLocAlias…` forms taking a location alias, and
+  `LocAlias.GetKeywordDataForAlias(Keyword)`; no page describes the results.
+- Vanilla uses: 601 appears 81 times, all in quest conditions
+  (`vrm-tool ctda-uses`); 592 five times in dialogue; 591, 600 and 608 never.
+
+### Unconfirmed choices
+
+- The population is the references the location lists with that ref type
+  (`LCTN` `ACSR` / `LCSR`, and references' own `XLRT`), those of its child
+  locations included, as `LocationHasRefType` reads them. Whether the game
+  counts child locations is unknown.
+- A reference is dead when `is_dead` says so: killed in play, loaded dead, or
+  recorded dead. Actors placed dead in the plugin and never loaded count as
+  alive. Disabled references count as alive. References that aren't actors
+  (a static with a ref type) count as alive.
+- An empty location alias counts 0 of either, and its keyword data reads 0.
+- `GetKeywordDataForAlias` reads the data `SetKeywordData` stored for the
+  aliased location, as `GetKeywordDataForLocation` does.

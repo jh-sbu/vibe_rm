@@ -249,6 +249,15 @@ impl Engine {
         out
     }
 
+    /// How many references of ref type `ty` in location `l` (or inside it) are
+    /// alive, or dead.
+    pub fn location_population(&self, l: FormId, ty: FormId, alive: bool) -> usize {
+        self.location_refs_of_type(l, ty)
+            .into_iter()
+            .filter(|&r| self.is_dead(r) != alive)
+            .count()
+    }
+
     /// The first of `l` and its parents with keyword `kw` (`l` itself for none).
     pub fn location_with_keyword(&self, mut l: FormId, kw: FormId) -> Option<FormId> {
         if kw.is_null() {

@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Location population conditions: `GetRefTypeAliveCount`, `GetRefTypeDeadCount`
+  and their location-alias forms count a location's references of a ref type,
+  and `GetKeywordDataForAlias` reads an aliased location's keyword data.
+  Choices: `known_ambiguities/status-conditions.md`
 - `GetFactionCombatReaction` reads a faction's group combat reaction towards
   another. Choices: `known_ambiguities/status-conditions.md`
 - A null reference in `GetHeadingAngle`, `GetRelativeAngle` and
