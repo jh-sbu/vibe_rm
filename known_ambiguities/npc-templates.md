@@ -62,6 +62,8 @@ Remaining questions and limits:
   real second. An NPC loaded between syncs can wait until the next one. Exact
   engine timing relative to loading and script events is not established by
   these sources; this change does not alter that cadence.
+- When Skyrim rolls a leveled spell list (on load, reset, first use, or another
+  time), and whether reset rolls anew, remain unconfirmed.
 
 ## Leveled spell lists
 
@@ -89,11 +91,13 @@ that a copied actor's leveled spell list yields nothing):
   leveled NPCs and items. Only two vanilla lists have entries above level 1
   (`LSpellWEConjurerRighHand` 1 / 10 / 20 / 35, `DLC2MiraakLSpells` up to
   60), so the choice touches little.
-- The pick is seeded by the actor's form id, and rolled the first time the
-  actor's spells are asked for (a fight, `HasSpell`...), at its level then,
-  and kept for the session (not in saves, but the seed gives it again unless
-  the level has moved a threshold). Unconfirmed: when the game rolls (on
-  load, on reset, once) and whether a reset rolls anew.
+- The native runtime uses the actor's form id as the seed and rolls the list
+  the first time its spells are asked for (a fight, `HasSpell`...), at its level
+  and globals then, keeping the result for the session. Optional `RLSP` save
+  data retains that result per
+  actor and list, including an empty result, so a changed level or global after
+  loading does not reroll it. Older saves without the section clear the cache.
+  This is a native `.vrs` policy, not evidence of Skyrim SE save behavior.
 - `HasSpell` on the list's own form id is false (the actor has the rolled
   spells, not the list).
 - The copied-actor report above (nothing given) isn't followed: vanilla

@@ -172,3 +172,21 @@ across phases. `cargo test scene_` passed 7 runnable codec tests; the parent
 host-Vulkan save suite passed all 45 tests, including the production Engine
 regressions. The parent full host-Vulkan Engine suite passed 346 tests (115
 ignored). Rustfmt and `git diff --check` passed.
+
+## Item 9 outcome
+
+Added optional deterministic `RLSP` records for the raw result cached by each
+actor and leveled spell list. Empty results, order and duplicates are retained;
+loading replaces the whole cache, while saves without the section clear it.
+Validation checks nonnull keys/results, sorted unique keys, and that each list
+key resolves to an `LVSP` record, without rejecting valid runtime results that
+contain duplicate or otherwise unresolved terminal form ids. This is a native
+save policy, not a claim about Skyrim SE save behavior.
+
+Updated the NPC template and save ambiguity notes and the magic roadmap. The
+local codec test passed, including deterministic encoding, empty and duplicate
+results, legacy clearing, duplicate/null keys, duplicate sections and bounds
+failures. The parent host-Vulkan Engine regression passed; it changes actor
+level and a chance global across load and verifies that saved results (including
+an empty result) remain stable, while a legacy load clears the cache and rolls
+again. Rustfmt and `git diff --check` passed.

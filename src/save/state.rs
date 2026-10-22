@@ -19,6 +19,7 @@
 //! `SLRP` (looping scene dialogue deadlines),
 //! `SRSQ` (ordered pending scene restarts),
 //! `SFGT` (scene force-greet completion markers),
+//! `RLSP` (rolled leveled spell-list results),
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
@@ -129,6 +130,7 @@ pub struct Snapshot {
     pub scene_repeats: Vec<crate::scene::SavedSceneRepeat>,
     pub scene_restarts: Vec<FormId>,
     pub scene_force_greeted: Vec<FormId>,
+    pub rolled_spells: Vec<crate::magic::SavedRolledSpell>,
     pub vm: super::vm::VmSnapshot,
 }
 
@@ -542,6 +544,7 @@ impl Snapshot {
             scene_repeats: e.saved_scene_repeats(),
             scene_restarts: e.saved_scene_restarts(),
             scene_force_greeted: e.saved_scene_force_greeted(),
+            rolled_spells: e.saved_rolled_spells(),
             vm: super::vm::VmSnapshot {
                 vm: e.vm.export(),
                 initialized: s.initialized.iter().copied().collect(),
@@ -1069,6 +1072,22 @@ impl Snapshot {
             }
             file.add(b"SFGT", w.0);
         }
+
+        if !self.rolled_spells.is_empty() {
+            let mut results = self.rolled_spells.clone();
+            results.sort_by_key(|entry| (entry.actor, entry.list));
+            let mut w = Writer::default();
+            w.len(results.len());
+            for entry in results {
+                w.form(entry.actor);
+                w.form(entry.list);
+                w.len(entry.spells.len());
+                for spell in entry.spells {
+                    w.form(spell);
+                }
+            }
+            file.add(b"RLSP", w.0);
+        }
         self.vm.write(&mut file);
         file
     }
@@ -1435,6 +1454,47 @@ impl Snapshot {
                 }
                 previous = Some(actor);
                 s.scene_force_greeted.push(actor);
+            }
+            r.finish()?;
+        }
+        if file
+            .sections
+            .iter()
+            .filter(|(tag, _)| tag == b"RLSP")
+            .count()
+            > 1
+        {
+            return Err(Corrupt("duplicate RLSP section".into()));
+        }
+        if let Some(data) = file.section(b"RLSP") {
+            let mut r = Reader::new(data);
+            let mut previous = None;
+            for _ in 0..r.count(12)? {
+                let actor = r.form()?;
+                let list = r.form()?;
+                let key = (actor, list);
+                if actor.is_null()
+                    || list.is_null()
+                    || previous.is_some_and(|previous| previous >= key)
+                {
+                    return Err(Corrupt(
+                        "invalid, duplicate or unsorted rolled spell-list key".into(),
+                    ));
+                }
+                previous = Some(key);
+                let mut spells = Vec::new();
+                for _ in 0..r.count(4)? {
+                    let spell = r.form()?;
+                    if spell.is_null() {
+                        return Err(Corrupt("null spell in rolled spell-list result".into()));
+                    }
+                    spells.push(spell);
+                }
+                s.rolled_spells.push(crate::magic::SavedRolledSpell {
+                    actor,
+                    list,
+                    spells,
+                });
             }
             r.finish()?;
         }
@@ -1888,6 +1948,7 @@ impl Snapshot {
             &self.scene_restarts,
             &self.scene_force_greeted,
         )?;
+        e.validate_saved_rolled_spells(&self.rolled_spells)?;
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.discard_conversation_for_load();
@@ -1958,6 +2019,7 @@ impl Snapshot {
         e.inventories = self.inventories;
         e.casting.restore_power_uses(self.power_uses);
         e.magic.souls_taken = self.spent_souls;
+        e.restore_rolled_spells(self.rolled_spells);
         let ws = &mut e.world_state;
         ws.alerted = self.alerted;
         ws.dead = self.dead;
