@@ -81,3 +81,20 @@ records); `vrm-tool scenes <data> [scene]` dumps one scene or counts over all
   packages" (scene packages already run ahead of all others).
 - Whether looping dialogue repeats the same INFO or picks again (picked again
   here).
+
+## Native save policy and remaining continuity
+
+The optional `SCNE` section in native `.vrs` saves retains the current phase and
+elapsed time of active scenes whose actions are all timers. Restoring such a
+scene treats it as already begun and resumes its timer actions at the saved
+elapsed time, including timers already complete while phase completion
+conditions remain false. Loading replaces existing scene runs; an older save
+without `SCNE` clears them. This policy does not establish original `.ess`
+scene layouts or Skyrim SE save/load behavior.
+
+This first step does not retain non-timer action progress, scene lifecycle
+states, packages, dialogue, force-greet state or pending scene repeats. Timer
+action actor aliases are reconstructed from the quest aliases; explicit saved
+actor identities and scene package ownership remain for later work. Scenes with
+any non-timer action are omitted as a whole. Their current runtime state is
+still lost on load; later save-continuity work addresses those parts separately.

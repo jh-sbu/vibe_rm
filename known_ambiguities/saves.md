@@ -129,7 +129,7 @@ saved: it is taken again from the place the save loads into.
   Registrations other than these (key, LOS gain, tracked hits...) aren't
   built in the engine yet.
 - Active magic effects (timed effects, summons, wards), the leveled spell
-  rolls, scenes playing, AI package progress and schedules, objects' behaviour
+  rolls, non-timer scene continuation (timer-only scene phases use `SCNE`), AI package progress and schedules, objects' behaviour
   graphs, and search/combat detection state and AI execution (stealth reservoirs
   alone are saved),
   and the player's spells held ready (the equipped spells
