@@ -1009,7 +1009,11 @@ game each piece unlocks.
   `IsSceneActionComplete`, `IsScenePlaying`, `IsInScene`,
   `IsScenePackageRunning`; `GetDistance` between interiors / worldspaces is
   far. Console `startscene`, `stopscene`, `scenes`, `startquest`, `stopquest`,
-  `setstage`; vrm-tool `scenes`. Open questions: `known_ambiguities/scenes.md`
+  `setstage`; vrm-tool `scenes`. Native saves preserve running scene lifecycle,
+  action bindings, selected dialogue responses and already chosen looping
+  dialogue waits in optional adjunct sections; audio playback and package
+  procedure progress are reconstructed. Open questions:
+  `known_ambiguities/scenes.md`
 - Story Manager (also pick lock `LOCK` and trespass `TRES` events, no vanilla node
   listens): events run down the tree of event, branch and quest nodes
   (`SMEN` / `SMBN` / `SMQN`) under their type, stacked or random, node

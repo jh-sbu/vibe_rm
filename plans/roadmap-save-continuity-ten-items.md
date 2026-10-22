@@ -109,3 +109,17 @@ production Engine integration regression passed with host Vulkan. It covers
 roundtrip continuation to the next response, duplicate response-number handling
 by position, and rejecting an INFO belonging to a different topic before
 snapshot mutation.
+
+## Item 5 outcome
+
+Added optional `SLRP` deadlines for looping dialogue actions between INFO
+lines. The saved relative wait is restored against the loaded runtime clock;
+loading and repeated save/load do not choose a new interval. Zero remaining is
+valid and allows the next normal scene update to select an INFO. Validation
+requires a running looping dialogue action with no active saved response.
+
+Validation: `cargo test scene_repeat_section` passed (1 passed). The
+production Engine integration drives a two-response looping action to its
+between-line wait, roundtrips it twice, checks the same deadline before it is
+due, then reloads a zero-remaining deadline and verifies the next update begins
+the next line. The host-Vulkan production regression passed.

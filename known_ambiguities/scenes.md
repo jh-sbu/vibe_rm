@@ -113,6 +113,8 @@ or replayed; the saved relative time is restored against the new runtime clock,
 and a saved zero-remaining deadline advances on the next update. Voice playback
 position and duration are not preserved, while a remaining queued response
 starts normally. Saves without `SDLG`
-don't contain this continuation and may select a new INFO. Looping dialogue's
-between-line repeat deadline is separate work. Force-greet state and pending
-scene repeats are also not retained yet.
+don't contain this continuation and may select a new INFO. The optional `SLRP`
+section retains a looping dialogue action's already chosen remaining wait
+between lines, including a zero-remaining deadline; it does not reroll the
+interval during loading. It applies only to a running looping action between
+INFO lines. Force-greet state and pending scene restarts are still not retained.

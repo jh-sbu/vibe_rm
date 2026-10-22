@@ -16,13 +16,14 @@
 //! (the weather, its transition and override), `SCNE` (timer-only scene phases),
 //! `SCLF` (scene lifecycle flags and action states), `SCAB` (scene actor and
 //! package ownership bindings), `SDLG` (selected scene dialogue responses),
+//! `SLRP` (looping scene dialogue deadlines),
 //! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
 //! message-box VM waits), and `ANMW` (semantic animation-event VM waits).
 //! Not yet saved:
-//! active magic effects, looping scene-dialogue repeat deadlines, actor
+//! active magic effects, actor
 //! procedure progress, AI progress, objects' behaviour graphs; see
 //! `plans/ROADMAP.md`.
 //!
@@ -123,6 +124,7 @@ pub struct Snapshot {
     pub scene_lifecycle: Vec<crate::scene::SavedSceneLifecycle>,
     pub scene_bindings: Vec<crate::scene::SavedSceneBinding>,
     pub scene_dialogue: Vec<crate::scene::SavedSceneDialogue>,
+    pub scene_repeats: Vec<crate::scene::SavedSceneRepeat>,
     pub vm: super::vm::VmSnapshot,
 }
 
@@ -533,6 +535,7 @@ impl Snapshot {
             scene_lifecycle: e.saved_scene_lifecycles(),
             scene_bindings: e.saved_scene_bindings(),
             scene_dialogue: e.saved_scene_dialogue(),
+            scene_repeats: e.saved_scene_repeats(),
             vm: super::vm::VmSnapshot {
                 vm: e.vm.export(),
                 initialized: s.initialized.iter().copied().collect(),
@@ -1030,6 +1033,18 @@ impl Snapshot {
             }
             file.add(b"SDLG", w.0);
         }
+        if !self.scene_repeats.is_empty() {
+            let mut repeats = self.scene_repeats.clone();
+            repeats.sort_by_key(|saved| (saved.scene, saved.action));
+            let mut w = Writer::default();
+            w.len(repeats.len());
+            for saved in repeats {
+                w.form(saved.scene);
+                w.u32(saved.action);
+                w.f64(saved.remaining);
+            }
+            file.add(b"SLRP", w.0);
+        }
         self.vm.write(&mut file);
         file
     }
@@ -1319,6 +1334,39 @@ impl Snapshot {
                     queued_responses,
                     remaining,
                 });
+            }
+            r.finish()?;
+        }
+        if file
+            .sections
+            .iter()
+            .filter(|(tag, _)| tag == b"SLRP")
+            .count()
+            > 1
+        {
+            return Err(Corrupt("duplicate SLRP section".into()));
+        }
+        if let Some(data) = file.section(b"SLRP") {
+            let mut r = Reader::new(data);
+            let mut previous = None;
+            for _ in 0..r.count(16)? {
+                let saved = crate::scene::SavedSceneRepeat {
+                    scene: r.form()?,
+                    action: r.u32()?,
+                    remaining: r.f64()?,
+                };
+                let key = (saved.scene, saved.action);
+                if saved.scene.is_null()
+                    || !saved.remaining.is_finite()
+                    || saved.remaining < 0.0
+                    || previous.is_some_and(|previous| previous >= key)
+                {
+                    return Err(Corrupt(
+                        "invalid, duplicate or unsorted scene repeat deadline".into(),
+                    ));
+                }
+                previous = Some(key);
+                s.scene_repeats.push(saved);
             }
             r.finish()?;
         }
@@ -1759,6 +1807,7 @@ impl Snapshot {
             &self.scene_lifecycle,
             &self.scene_bindings,
             &self.scene_dialogue,
+            &self.scene_repeats,
         )?;
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
@@ -1876,6 +1925,7 @@ impl Snapshot {
             self.scene_lifecycle,
             self.scene_bindings,
             self.scene_dialogue,
+            self.scene_repeats,
         );
         match self.spot {
             Some(Spot {
