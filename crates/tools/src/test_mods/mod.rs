@@ -15,6 +15,7 @@ use anyhow::{Result, bail};
 use esp::{FormId, LoadOrder};
 
 mod autotest;
+mod autotest10;
 mod autotest2;
 mod autotest3;
 mod autotest4;
@@ -43,6 +44,7 @@ pub const NAMES: &[&str] = &[
     "autotest7",
     "autotest8",
     "autotest9",
+    "autotest10",
     "dualcast",
     "pex",
     "taper",
@@ -73,6 +75,7 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
         "autotest7" => autotest7::build(lo),
         "autotest8" => autotest8::build(lo),
         "autotest9" => autotest9::build(lo),
+        "autotest10" => autotest10::build(lo),
         "dualcast" => dualcast::build(lo),
         "pex" => pex::build(),
         "taper" => taper::build(lo),
