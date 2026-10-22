@@ -62,6 +62,16 @@ markers on the ground floor, the trader unloaded.
   actors on their package's target, now without spreading them; whether the
   game moves loaded actors there by the same rule as unloaded ones isn't
   observed.
+- **30 or 40 short.** `test-mod autotest8` found two Travel actors with
+  radius 0, sharing no marker, stopped 30 short in XY where three others
+  stopped 40 (autotest7's StackedA was 30 too). Their lines were shorter
+  (226 and 299 against 368 to 431), but what sets the distance isn't
+  known; the engine uses 40.
+- **How far away.** autotest8 found actor references moved while unloaded
+  whether flagged persistent or not, so the engine schedules every one.
+  That was one interior beside the player (outdoors in Riverwood); whether
+  the game also moves non-persistent actors far from the player (another
+  hold, a dungeon) isn't observed.
 
 ## Package marker headings
 

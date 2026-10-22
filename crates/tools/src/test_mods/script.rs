@@ -164,6 +164,7 @@ Weather : Form
     global Weather FindWeather(Int auiType)
 Game
     global Actor GetPlayer()
+    global Form GetFormFromFile(Int aiFormID, String asFilename)
     global None DisablePlayerControls(Bool abMovement, Bool abFighting, Bool abCamSwitch, Bool abLooking, Bool abSneaking, Bool abMenu, Bool abActivate, Bool abJournalTabs, Int aiDisablePOVType)
     global None EnablePlayerControls(Bool abMovement, Bool abFighting, Bool abCamSwitch, Bool abLooking, Bool abSneaking, Bool abMenu, Bool abActivate, Bool abJournalTabs, Int aiDisablePOVType)
     global Bool IsMovementControlsEnabled()
@@ -776,6 +777,13 @@ pub(super) mod dry_run {
                 "placeactoratme" | "placeatme" => {
                     self.placed += 1;
                     Value::Object(ObjectId::Form(0xFF00_0800 + self.placed), "Actor".into())
+                }
+                // Our plugin's form, as the first after Skyrim.esm.
+                "getformfromfile" => {
+                    let Some(Value::Int(id)) = args.first() else {
+                        panic!("GetFormFromFile({args:?})")
+                    };
+                    Value::Object(ObjectId::Form(0x0100_0000 | *id as u32), "Form".into())
                 }
                 "getcurrentrealtime" => Value::Float(self.now as f32),
                 "getcurrentgametime" => Value::Float((self.now / 72.0 / 60.0) as f32),

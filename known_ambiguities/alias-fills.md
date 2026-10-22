@@ -73,6 +73,11 @@ Optional aliases of a quest of ours, started by script:
 - Matching (in the loaded area) two NPCs placed 500 then 200 units from the
   player: the first placed without "Closest", the nearer with it.
 
+`test-mod autotest8` (2026-10-22), optional aliases of a start-game-enabled
+quest added to a save: unique to an NPC whose one reference isn't flagged
+persistent (in an unloaded interior, in memory and moving by its package):
+empty. Forced to such a reference: filled.
+
 ## Open questions
 
 - Clean-up (unconfirmed): no public source we could reach (CommonLibSSE's alias flags, the
@@ -88,6 +93,11 @@ Optional aliases of a quest of ours, started by script:
   first placed of two in the game; here the first persistent one in load
   order, else the first loaded), and whether it searches anything beyond
   persistent references when "In loaded area" isn't set.
+- Unique actors whose reference isn't flagged persistent: the engine fills
+  them (Suvaris Atheron's `DialogueWindhelm` alias, which `WindhelmBullyScene`
+  needs), but autotest8's stayed empty. Vanilla ones like Suvaris are in
+  their location's unique actors (`ACUN`) and their quests start with a new
+  game; which of those makes the difference (if either) isn't known.
 - Location aliases don't reserve locations; location keyword data is only
   what scripts set (`SetKeywordData`); cleared locations:
   `known_ambiguities/cleared.md`.
