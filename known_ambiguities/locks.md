@@ -179,6 +179,13 @@ changes, save restoration, old saves and malformed sections, not engine parity.
 2. **Which doors a package locks.** "Home" is a guess: the sleep location's cell.
    The game may use ownership (`XOWN` on doors and cells), the location
    (`LCTN`), or the package's own location.
+   **When they unlock** is open too: only 50 of Skyrim.esm's 5961 packages
+   carry `PKDT` 0x40 / 0x80, none of Belethor's or Arcadia's, so here their
+   shops never reopen once locked (or as placed, `XLOC`), though UESP has
+   Belethor opening at 8am. Whether a lock-doors sleep package's end unlocks
+   them, the day package's start, or the owner's current package at any
+   moment: `test-mod autotest11` samples three shops' doors across their
+   owners' package changes and clock jumps.
 3. **Leaving from inside.** That one can always leave an interior through a
    locked pair is inferred from where the data puts locks and from play
    reports. (That the pair shares one lock is settled: Sven and Hilde's
