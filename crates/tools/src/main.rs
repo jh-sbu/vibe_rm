@@ -842,7 +842,7 @@ fn main() -> Result<()> {
         Some("nif-tree") => {
             // nif-tree <data dir> <vfs path>: the scene graph with each object's
             // world position and its heading in degrees (clockwise from +Y about
-            // +Z); shapes also give their vertices' world centre and texture.
+            // +Z); shapes also give their vertices' world centre, bounds and texture.
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let v = vfs::Vfs::new(data, &names);
@@ -873,12 +873,18 @@ fn main() -> Result<()> {
                         let ps = &t.geometry.positions;
                         let mid = ps.iter().copied().sum::<glam::Vec3>() / ps.len().max(1) as f32;
                         let c = world.transform_point3(mid);
+                        let (mut lo, mut hi) =
+                            (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN));
+                        for p in ps {
+                            let w = world.transform_point3(*p);
+                            (lo, hi) = (lo.min(w), hi.max(w));
+                        }
                         let tex = match n.get(t.shader) {
                             Some(nif::Block::EffectShader(s)) => s.source_texture.as_str(),
                             _ => "",
                         };
                         println!(
-                            "{pad}[{}] centre {c:.1} heading {:.1} {tex}{hidden}",
+                            "{pad}[{}] centre {c:.1} heading {:.1} bounds {lo:.1}..{hi:.1} {tex}{hidden}",
                             av.net.name,
                             heading(c)
                         );

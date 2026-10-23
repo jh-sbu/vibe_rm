@@ -151,7 +151,7 @@ impl GraphPart {
 }
 
 impl AnimatedObject {
-    fn play(&mut self, name: &str) -> bool {
+    pub(crate) fn play(&mut self, name: &str) -> bool {
         let Some(i) = self
             .anim
             .sequences
@@ -166,7 +166,7 @@ impl AnimatedObject {
 
     /// Advance a sequence and the object's own controllers. A graph, if any,
     /// overwrites these transforms afterward (visibility still applies).
-    fn update(&mut self, dt: f32, clock: f32, instances: &mut [Instance]) {
+    pub(crate) fn update(&mut self, dt: f32, clock: f32, instances: &mut [Instance]) {
         self.age += dt;
         let mut completed = false;
         let sequence_sample = self.playing.as_mut().map(|(si, phase)| {

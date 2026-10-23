@@ -188,6 +188,7 @@ impl SwfUi {
         }
         if let Some(stats) = &mut self.stats {
             stats.menu.resize(width, height);
+            stats.size = (width, height);
             if let Some(level_up) = &mut stats.level_up {
                 level_up.resize(width, height);
             }

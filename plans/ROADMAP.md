@@ -270,9 +270,11 @@ game each piece unlocks.
   (`statsmenu.swf` on K or the tween menu's Skills: the ring of skills in the
   order of the game's skydome (`INTPerkSkydome.nif`), the camera turning to
   each skill's constellation image, each skill's progress and description,
-  the player's card and meters, a skill's perks over its constellation
-  picked with the arrows or mouse and
-  taken for a perk point, Legendary behind its two confirmations, and
+  the player's card and meters, a skill's perks as the game's stars and
+  lines (`INTPerkStars01.nif`, `INTPerkLine01.nif`, played through their
+  behaviours' states: locked, unlocked, taken, picked) over its
+  constellation, their labels where the stars show, picked with the arrows
+  or mouse and taken for a perk point, Legendary behind its two confirmations, and
   `levelupmenu.swf` choosing health, magicka or stamina for each level up;
   `known_ambiguities/skills-menu.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
@@ -1815,17 +1817,14 @@ game each piece unlocks.
      done: see Done): waiting's rest: getting into the bed first; the gamepad's d-pad
      favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike)
-   - The skills menu's rest (done: see Done): the perk trees as the game's 3D
-     constellations (stars at the perks that light when taken, the lines
-     between them, `INTPerkStars01.nif` / `INTPerkLine01.nif` and their
-     `.hkx` behaviours; the perk labels where the stars project, in place of
-     the flat layout), the skydome's sequences (`CameraIntro` / `CameraOutro`
-     moving `CameraPosition` with the movie's `MoveCamera` alpha, `Idle`'s
-     drift and gas fades), the camera moving in on a skill's constellation in
-     place of the narrower field of view, the constellation images' fades
-     (`StatsMenu` keeps an effect shader and a resting / entering / exiting
-     state for each of the 18 trees; what changes and when needs evidence),
-     the gamepad
+   - The skills menu's rest (done: see Done): the skydome's sequences
+     (`CameraIntro` / `CameraOutro` moving `CameraPosition` with the movie's
+     `MoveCamera` alpha, `Idle`'s drift and gas fades), the camera moving in
+     on a skill's constellation in place of the narrower field of view, the
+     constellation images' fades (`StatsMenu` keeps an effect shader and a
+     resting / entering / exiting state for each of the 18 trees; what
+     changes and when needs evidence) and the perk lines' (`FadeOut` /
+     `FadeIn`), the gamepad
    - The map's rest (the world map and `map.swf` are done: see Done; markers, discovery
      and travel permission are in `src/map_markers.rs`, the view in
      `src/map_view.rs`), in order: the map's clouds, lighting, sea and fog
