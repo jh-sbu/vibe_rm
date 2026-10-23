@@ -66,6 +66,24 @@ and location pages, CK wiki descriptions) and the game's data files.
   so unloaded actors' doors follow their packages as they start (packages
   start on the hour or half hour; unconfirmed: whether the game evaluates
   unloaded actors at their start times or at some coarser cadence).
+- A lock-doors package with "Warn Before Locking?" that starts with the
+  player in the home doesn't lock it, nor make it private, until it ends:
+  instead its owner, while in the cell, awake and not fighting, says a
+  TimeToGo (`TITG`) line every 10 s whether it detects the player or not,
+  and the player can't wait or sleep there ("You cannot wait while being
+  asked to leave"). Settled by `test-mod autotest12` in Skyrim SE
+  (2026-10-22), the player in Arcadia's Cauldron as her sleep
+  (`DefaultSleepEditorLoc24x8`, warn and lock set) began at 0:00, sneaking
+  unseen (`IsDetectedBy` False throughout) and in plain view (True): both
+  runs alike, her door unlocked to 1:05, no bounty, and from 0:01 she
+  moved towards the player (as seen in game; her distance settled at
+  about 490 units sneaking, 800 seen, then barely changed) saying "You
+  need to leave" and "You need to leave, now", her `TITG` lines, until the
+  player was moved out, her package the sleep one throughout; the door was still
+  unlocked 18 game minutes after that. Waiting: UESP *Highmoon Hall*
+  ([rev 3540475](https://en.uesp.net/w/index.php?oldid=3540475)): with
+  both set, "you will receive notifications that you cannot do so when
+  being told to leave, even though the hall is marked … a public area".
 - Animated (non-load) doors open for walkers who get past their lock: with the
   key, or owning it (the door's `XOWN`, else its cell's: the actor or one of its
   factions). So cages, cells and gates in dungeons and prisons, and the player's
@@ -184,27 +202,27 @@ changes, save restoration, old saves and malformed sections, not engine parity.
 2. **Which doors a package locks.** "Home" is a guess: the sleep location's cell.
    The game may use ownership (`XOWN` on doors and cells), the location
    (`LCTN`), or the package's own location.
-   **When the owner is away or the player inside**, the game departs from
-   "locked while the lock-doors package runs" (`test-mod autotest11`,
-   Belethor, 2026-10-22), and the engine doesn't follow it:
-   - Belethor out in the city when the test began (sleep package, doors
-     locked) and through the night: his doors stayed locked all day, through
-     his sleep's end, his sell package and his being moved into the shop
-     (UESP *Belethor* notes the shop often not reopening as a bug). Perhaps
-     a package only locks the home with its owner there and only unlocks
-     what it locked, or unlocking waits on the owner reaching its location.
-   - The player inside (sneaking, unseen): his doors unlocked about 13 game
-     minutes after 8:00 (he got out of bed; when his package switched isn't
-     known), and his sleep at 0:00 and at a jump to 3:00 didn't lock them
-     again. Perhaps sleepers don't lock a home with the player in it
-     (the Sleep templates' "Warn Before Locking?").
-     He also said "You need to leave" and the like while the sneak eye
-     showed the player undetected, with no bounty; whether those voiced
-     warnings are what "Warn Before Locking?" drives isn't known.
-   `test-mod autotest12` tests both on Arcadia: sent to Riverwood as her
-   sleep starts, then home, then waking to a lock the script made; and the
-   player inside her shop through 0:00 (sneaking, then in plain view),
-   then moved out, with her detection of the player and the bounty.
+   **The owner away.** Arcadia sent to Riverwood (`test-mod autotest12`,
+   2026-10-22, the player in the Bannered Mare): her door, unlocked by the
+   script at 23:57, was locked by the first sample a second later, her
+   package still `DefaultSandboxHomeowner` (no lock-doors input), and
+   stayed locked through her sleep away and moved home, unlocking within
+   1:40 game minutes of her store package starting at 8:00. So locking
+   doesn't wait on the owner being home; what locked it three minutes
+   early isn't known (the clock jumped from 23:01 to 23:57 just before, and
+   she was moved by `MoveTo` between the jump and the sample; the engine
+   locks at the package's start). Belethor, out in the city all night
+   (`test-mod autotest11`), stayed locked all day, through his sell package
+   and his being moved into the shop at 12:00 (UESP *Belethor* notes the
+   shop often not reopening as a bug); Arcadia, moved home before 8:00,
+   didn't, so perhaps unlocking waits on the owner being home as its
+   package ends. The engine unlocks wherever the owner is.
+   **Not modelled while asked to leave:** the owner coming to the player
+   and staying up (Arcadia stayed near the player in her sleep package);
+   the engine's goes to bed, and its lines stop once it sleeps. Whether the
+   home locks later in the night if the player stays out, or warns again if
+   they come back, isn't known (the engine leaves it unlocked and warns
+   again).
 3. **Leaving from inside.** That one can always leave an interior through a
    locked pair is inferred from where the data puts locks and from play
    reports. (That the pair shares one lock is settled: Sven and Hilde's

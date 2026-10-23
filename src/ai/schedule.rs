@@ -1020,6 +1020,7 @@ mod tests {
             gait: super::super::package::Gait::Walk,
             sneak: false,
             lock_doors: false,
+            warn_before_locking: false,
             unlock_at_start: false,
             unlock_on_change: false,
             greet: None,

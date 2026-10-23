@@ -692,6 +692,7 @@ impl Engine {
         }
         st.step(most, fighting, &s, step);
         self.update_trespass();
+        self.update_time_to_go();
     }
 
     /// Whether anyone is fighting `r` (not fleeing from it).

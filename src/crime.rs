@@ -159,6 +159,12 @@ pub struct Crimes {
     /// Actors running a package that locks doors, and their homes: private
     /// while they do (see `trespassing`).
     pub private_homes: HashMap<FormId, FormId>,
+    /// Actors whose package that locks doors, warning first, started with the
+    /// player in their home: they ask the player to leave (the TimeToGo
+    /// topic) instead of locking it, until the package ends.
+    pub warned_homes: HashMap<FormId, FormId>,
+    /// When the next TimeToGo line may be said (real time).
+    pub time_to_go_next: f64,
     /// The player trespassing where someone has seen them.
     pub trespass: Option<Trespass>,
     /// Those who caught the player picking their pocket (they won't let them
@@ -201,6 +207,9 @@ pub struct Trespass {
 /// Interior cell flags: Public Area (`DATA`), Off Limits (record header).
 const CELL_PUBLIC: u32 = 0x20;
 const CELL_OFF_LIMITS: u32 = 0x20000;
+/// Seconds between an owner's TimeToGo lines: Arcadia repeated hers
+/// throughout (`test-mod autotest12`); how often wasn't measured.
+const TIME_TO_GO_INTERVAL: f64 = 10.0;
 
 impl Engine {
     /// The faction an actor reports crimes to and is protected by: its own
@@ -751,6 +760,52 @@ impl Engine {
                 .and_then(|o| self.npc_refs_index().get(&o).copied());
             self.commit_crime(CrimeType::Trespass, victim, faction, 0);
         }
+    }
+
+    /// Whether the player is in a home whose owner asks them to leave instead
+    /// of locking it: no waiting or sleeping there (UESP *Highmoon Hall*, rev
+    /// 3540475: "You cannot wait while being asked to leave", even with no one
+    /// speaking).
+    pub fn asked_to_leave(&self) -> bool {
+        let crate::engine::Location::Interior(cell) = self.location else {
+            return false;
+        };
+        self.crime.warned_homes.values().any(|&c| c == cell)
+    }
+
+    /// The owners asking the player to leave their home say a TimeToGo line
+    /// every [`TIME_TO_GO_INTERVAL`], whether they detect the player or not
+    /// (Arcadia, the player sneaking unseen; `test-mod autotest12`).
+    pub(crate) fn update_time_to_go(&mut self) {
+        let crate::engine::Location::Interior(cell) = self.location else {
+            return;
+        };
+        let now = self.scripts.real_time;
+        if now < self.crime.time_to_go_next || self.player_dead() {
+            return;
+        }
+        let in_cell = |r: FormId| {
+            self.actor_cells
+                .get(&r)
+                .is_some_and(|k| *k == crate::render::CellKey::Interior(cell))
+        };
+        let speaker = self
+            .crime
+            .warned_homes
+            .iter()
+            .filter(|&(&r, &c)| {
+                c == cell
+                    && in_cell(r)
+                    && self
+                        .actor_ref(r)
+                        .is_some_and(|a| !a.dead && a.combat.is_none())
+                    && self.sit_sleep_state(r, true) != 3.0
+            })
+            .map(|(&r, _)| r)
+            .min();
+        let Some(speaker) = speaker else { return };
+        self.crime.time_to_go_next = now + TIME_TO_GO_INTERVAL;
+        self.bark(speaker, b"TITG");
     }
 
     /// The player's trespass warning level (`GetTrespassWarningLevel`).

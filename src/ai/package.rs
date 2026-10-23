@@ -276,6 +276,9 @@ pub struct Package {
     pub sneak: bool,
     /// The sleeper locks its home's doors ("Lock Doors?" input).
     pub lock_doors: bool,
+    /// "Warn Before Locking?": starting with the player in the home, it asks
+    /// them to leave instead of locking it (`test-mod autotest12`).
+    pub warn_before_locking: bool,
     /// `PKDT`: unlock the home's doors as the package starts / once it gives way
     /// to another.
     pub unlock_at_start: bool,
@@ -768,6 +771,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         gait,
         sneak,
         lock_doors: flag("lockdoors").unwrap_or(false),
+        warn_before_locking: flag("warnbeforelocking").unwrap_or(false),
         unlock_at_start: pkdt_flags & PKDT_UNLOCK_AT_START != 0,
         unlock_on_change: pkdt_flags & PKDT_UNLOCK_ON_CHANGE != 0,
         greet,
