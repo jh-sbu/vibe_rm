@@ -95,6 +95,42 @@ fn travel_time(distance: f32, speed_mult: f32, time_scale: f32) -> Option<(f32, 
 }
 
 impl Engine {
+    /// The map's marker click: preflight, then the shared native message box.
+    pub fn request_map_travel(&mut self, marker: FormId) {
+        if self.messages.boxes.iter().any(|b| {
+            matches!(
+                b.action,
+                Some(crate::messages::BoxAction::FastTravel { .. })
+            )
+        }) {
+            return;
+        }
+        let refusal = self
+            .fast_travel_refusal()
+            .or_else(|| self.map_travel_destination(marker).err());
+        if let Some(reason) = refusal {
+            let text = reason.message(self);
+            self.scripts.notify(text);
+            return;
+        }
+        let name = self
+            .map_marker_list()
+            .iter()
+            .find(|m| m.r == marker)
+            .map(|m| m.name.clone())
+            .unwrap_or_default();
+        let prompt = self
+            .gmst_string("sConfirmFastTravel")
+            .unwrap_or_else(|| "Fast travel to %s?".into());
+        let yes = self.gmst_string("sYes").unwrap_or_else(|| "Yes".into());
+        let no = self.gmst_string("sNo").unwrap_or_else(|| "No".into());
+        self.ask(
+            prompt.replace("%s", &name),
+            vec![yes, no],
+            crate::messages::BoxAction::FastTravel { marker },
+        );
+    }
+
     /// Revalidate a map request and load its destination using the normal
     /// placement, weather, streaming and party hooks.
     pub fn travel_to_map_marker(&mut self, marker: FormId) -> Result<(), Refusal> {
@@ -523,6 +559,55 @@ mod tests {
         assert!(e.travel_to_map_marker(FormId(0x933)).is_err());
         assert_eq!(e.player.position, before);
         assert_eq!(e.hour, 23.999);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn fast_travel_confirmation_cancels_revalidates_and_survives_save() {
+        use crate::engine::Location;
+        use crate::messages::BoxAction;
+        use esp::FormId;
+        let dir = destination_fixture("confirmation");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Travel.esp");
+        e.location = Location::Exterior {
+            world: FormId(0x900),
+            center: (0, 0),
+        };
+        e.player.grounded = true;
+        e.menu = Some(crate::items::Menu::Map);
+        let before = e.player.position;
+        e.request_map_travel(FormId(0x930));
+        e.request_map_travel(FormId(0x930));
+        assert_eq!(e.messages.boxes.len(), 1);
+        assert!(e.messages.boxes[0].text.contains("Synthetic destination"));
+        e.choose_message_button(1);
+        assert_eq!(e.player.position, before);
+        assert_eq!(e.menu, Some(crate::items::Menu::Map));
+        e.request_map_travel(FormId(0x930));
+        let file = crate::save::state::Snapshot::capture(&e).write();
+        let s = crate::save::state::Snapshot::read(&file).unwrap();
+        assert!(matches!(
+            s.vm.message_boxes[0].action,
+            Some(BoxAction::FastTravel {
+                marker: FormId(0x930)
+            })
+        ));
+        e.fast_travel_disabled = true;
+        e.choose_message_button(0);
+        assert_eq!(e.player.position, before);
+        assert!(e.messages.boxes.is_empty());
+        e.fast_travel_disabled = false;
+        e.request_map_travel(FormId(0x930));
+        e.choose_message_button(0);
+        assert_eq!(
+            e.location,
+            Location::Exterior {
+                world: FormId(0x900),
+                center: (1, 1)
+            }
+        );
+        assert_eq!(e.menu, None);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

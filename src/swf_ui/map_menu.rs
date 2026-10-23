@@ -239,12 +239,12 @@ impl MapMenu {
             "ClickCallback" => self.click = true,
             "MarkerClick" => {
                 if let Some(Value::Number(i)) = call.args.first()
-                    && let Some(row) = engine
+                    && let Some(marker) = engine
                         .map_view
                         .as_ref()
-                        .and_then(|v| v.rows.get(*i as usize))
+                        .and_then(|v| crate::map_view::row_destination(&v.rows, *i))
                 {
-                    log::info!("map: clicked {} (type {})", row.name, row.kind);
+                    engine.request_map_travel(marker);
                 }
             }
             "OpenJournalCallback" => engine.menu = Some(Shown::Journal),

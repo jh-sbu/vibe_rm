@@ -61,3 +61,11 @@ fast-travel tests passed, including distance/speed inputs, malformed bounds,
 midnight rollover, away wounds, unchanged Papyrus clocks, no wait/sleep stats
 and transactional date-overflow refusal. Cross-space time and exact SE timing
 remain explicitly unresolved.
+
+## 7 completed
+
+Map rows carry stable destination FormIDs and validate movie indices. Clicks
+preflight and open a shared Yes/No box; cancellation preserves the map and
+acceptance rechecks live state. MBXW kind 2 preserves pending confirmation.
+Eight fast-travel regressions and the invalid/fractional/overlay callback-index
+test passed; the original map SWF was not exercised.

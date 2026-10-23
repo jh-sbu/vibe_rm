@@ -65,8 +65,8 @@ https://en.uesp.net/w/index.php?oldid=3192583); the movie's ActionScript
   left as it is: the movie's icons replace it as they change state.
 - **Input:** WASD and the arrows pan, Q and E (or the wheel) zoom, Page Up and
   Page Down tilt, dragging with the left button pans, a click on a marker
-  without dragging sends `MarkerClick` (which only logs: fast travel isn't
-  built), Esc, Tab or M close it (straight back to the world, not to the tween
+  without dragging sends `MarkerClick` (a travel confirmation, then eligibility and
+  destination revalidation; `known_ambiguities/fast-travel.md`), Esc, Tab or M close it (straight back to the world, not to the tween
   menu), "Journal" opens the journal, "Current Location" re-centres on the
   player. The bottom bar's "Local Map" does nothing yet. M opens it as the
   control map's Quick Map; the tween menu's Map does too.

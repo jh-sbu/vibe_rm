@@ -370,6 +370,10 @@ impl VmSnapshot {
                 }
                 match b.action {
                     None => m.u8(0),
+                    Some(crate::messages::BoxAction::FastTravel { marker }) => {
+                        m.u8(2);
+                        m.form(marker);
+                    }
                     Some(crate::messages::BoxAction::Poison { weapon, poison }) => {
                         m.u8(1);
                         m.form(weapon);
@@ -570,6 +574,13 @@ impl VmSnapshot {
                             return Err(Corrupt("invalid native poison action".into()));
                         }
                         Some(crate::messages::BoxAction::Poison { weapon, poison })
+                    }
+                    2 => {
+                        let marker = r.form()?;
+                        if marker.is_null() {
+                            return Err(Corrupt("invalid fast-travel action".into()));
+                        }
+                        Some(crate::messages::BoxAction::FastTravel { marker })
                     }
                     n => return Err(Corrupt(format!("message-box action {n}"))),
                 };

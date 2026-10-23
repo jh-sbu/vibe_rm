@@ -29,6 +29,8 @@ const BLOCKS_PER_FRAME: usize = 8;
 /// A marker on the map, in the order `map.swf` was told them.
 #[derive(Debug, Clone)]
 pub struct MapRow {
+    /// Stable destination identity; overlays and the player have none.
+    pub marker: Option<FormId>,
     pub name: String,
     /// `TNAM`, the movie's icon type.
     pub kind: u8,
@@ -38,6 +40,15 @@ pub struct MapRow {
     pub pos: Vec2,
     /// The player's marker turns with them: degrees clockwise from north.
     pub rotation: f32,
+}
+
+/// Movie callback indices are untrusted floating-point values. Never truncate a
+/// fractional or negative index into another row.
+pub(crate) fn row_destination(rows: &[MapRow], index: f64) -> Option<FormId> {
+    if !index.is_finite() || index < 0.0 || index.fract() != 0.0 {
+        return None;
+    }
+    rows.get(index as usize)?.marker
 }
 
 pub struct MapView {
@@ -269,6 +280,7 @@ impl Engine {
         let mut rows: Vec<MapRow> = markers
             .iter()
             .map(|m| MapRow {
+                marker: Some(m.r),
                 name: m.name.clone(),
                 kind: m.kind,
                 undiscovered: !self.can_fast_travel_to(m.r),
@@ -278,6 +290,7 @@ impl Engine {
             .collect();
         if let Some((pos, rotation)) = self.map_view.as_ref().and_then(|v| v.player) {
             rows.push(MapRow {
+                marker: None,
                 name: String::new(),
                 kind: PLAYER_ICON,
                 undiscovered: false,
@@ -362,6 +375,32 @@ mod tests {
     }
 
     #[test]
+    fn map_callback_indices_keep_stable_destination_identity() {
+        let rows = vec![
+            MapRow {
+                marker: Some(FormId(0x900)),
+                name: "A".into(),
+                kind: 1,
+                undiscovered: false,
+                pos: Vec2::ZERO,
+                rotation: 0.0,
+            },
+            MapRow {
+                marker: None,
+                name: "Player".into(),
+                kind: PLAYER_ICON,
+                undiscovered: false,
+                pos: Vec2::ZERO,
+                rotation: 0.0,
+            },
+        ];
+        assert_eq!(row_destination(&rows, 0.0), Some(FormId(0x900)));
+        for index in [-1.0, 0.5, 1.0, 2.0, f64::NAN, f64::INFINITY, f64::MAX] {
+            assert_eq!(row_destination(&rows, index), None);
+        }
+    }
+
+    #[test]
     fn the_centre_is_the_middle_of_the_screen() {
         for pitch in [50.0, 89.0] {
             let v = view(pitch);
@@ -400,6 +439,7 @@ mod tests {
         let mut v = view(89.0);
         v.rows = vec![
             MapRow {
+                marker: Some(FormId(0x900)),
                 name: "A".into(),
                 kind: 1,
                 undiscovered: false,
@@ -407,6 +447,7 @@ mod tests {
                 rotation: 0.0,
             },
             MapRow {
+                marker: None,
                 name: String::new(),
                 kind: PLAYER_ICON,
                 undiscovered: false,

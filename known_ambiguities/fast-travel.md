@@ -92,3 +92,15 @@ delay, mortality, schedule and weather parity remain unverified, including
 large-step cloak effects. Corrupt inputs, date overflow, more than 720 game
 hours or 129600 simulated seconds are rejected before changing state. Exact
 native time/arrival ordering, pauses and loading failures remain open.
+
+## Map confirmation
+
+Map rows retain FormIDs independently of labels and icon types. A finite integer
+MarkerClick index selects only a destination row. Preflight failures notify;
+accepted clicks ask a shared Yes/No message box. No and unsupported button indices
+leave the map open, and Yes rechecks all eligibility and landing state. Repeated
+callbacks cannot queue multiple pending travel questions. MBXW action kind 2
+retains the marker across native saves, with normal revalidation after load.
+UI/confirmation text keys use fallbacks; exact SE modal timing and autosaves are
+not claimed. The game movie was not exercised in this batch; callback handling
+and the shared Engine/message path are covered with synthetic data.
