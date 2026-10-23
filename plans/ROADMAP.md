@@ -266,7 +266,14 @@ game each piece unlocks.
   leave); the dialogue menu (`dialoguemenu.swf`: the speaker's name, their
   lines, the topics sliding in, topics already heard greyed, the clicked
   topic kept above while the answer is said, a click or E skipping a line,
-  Tab or Esc leaving; `known_ambiguities/dialogue-menu.md`);
+  Tab or Esc leaving; `known_ambiguities/dialogue-menu.md`); the skills menu
+  (`statsmenu.swf` on K or the tween menu's Skills: the ring of skills turning
+  under the game's star sky (`INTStatMenuStars.nif`), each skill's progress and
+  description, the player's card and meters, a skill's perks over the game's
+  nebula skydome (`INTPerkSkydome.nif`) picked with the arrows or mouse and
+  taken for a perk point, Legendary behind its two confirmations, and
+  `levelupmenu.swf` choosing health, magicka or stamina for each level up;
+  `known_ambiguities/skills-menu.md`);
   egui console and debug text (`--egui-hud` for egui's HUD); audio
   (WAV/xWMA/FUZ), music, ambient sounds, voice
 - The menus' cursor (`cursormenu.swf`): follows the pointer through viewport
@@ -690,7 +697,7 @@ game each piece unlocks.
 - Skills and leveling: the player's skill uses earn XP by each skill's `AVSK`
   (use mult and offset), skills go up at `improve mult x level ^ fSkillUseCurve
   + offset` ("One-handed Increased to 21"), each level reached giving character
-  XP toward level ups ("Level up available."), taken in a skills menu (K) or
+  XP toward level ups ("Level up available."), taken in the skills menu (K) or
   the console: +10 health, magicka or stamina (stamina +5 carry weight), a perk
   point, all three restored. Uses: landed blows and shots (one-handed,
   two-handed, archery by base damage), sneak attacks, blocking, the armor worn
@@ -1805,6 +1812,12 @@ game each piece unlocks.
      done: see Done): waiting's rest: getting into the bed first; the gamepad's d-pad
      favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike)
+   - The skills menu's rest (done: see Done): the perk trees as the game's 3D
+     constellations (stars at the perks that light when taken, the lines
+     between them, `INTPerkStars01.nif` / `INTPerkLine01.nif` and their
+     animations, the skydome's camera moves and per-skill constellation images,
+     `MoveCamera`), each ring skill's own constellation, the ring turning only
+     the constellations, the gamepad
    - The map's rest (the world map and `map.swf` are done: see Done; markers, discovery
      and travel permission are in `src/map_markers.rs`, the view in
      `src/map_view.rs`), in order: the map's clouds, lighting, sea and fog

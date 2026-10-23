@@ -379,6 +379,11 @@ impl VmSnapshot {
                         m.form(weapon);
                         m.form(poison);
                     }
+                    Some(crate::messages::BoxAction::Legendary { skill, second }) => {
+                        m.u8(3);
+                        m.u32(skill);
+                        m.bool(second);
+                    }
                 }
             }
             m.len(waits.len());
@@ -581,6 +586,18 @@ impl VmSnapshot {
                             return Err(Corrupt("invalid fast-travel action".into()));
                         }
                         Some(crate::messages::BoxAction::FastTravel { marker })
+                    }
+                    3 => {
+                        let skill = r.u32()?;
+                        if !(esp::actor_value::FIRST_SKILL..=esp::actor_value::LAST_SKILL)
+                            .contains(&skill)
+                        {
+                            return Err(Corrupt("invalid legendary action".into()));
+                        }
+                        Some(crate::messages::BoxAction::Legendary {
+                            skill,
+                            second: r.bool()?,
+                        })
                     }
                     n => return Err(Corrupt(format!("message-box action {n}"))),
                 };

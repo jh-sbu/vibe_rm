@@ -61,6 +61,7 @@ mod soul_trap;
 mod spells;
 mod staffs;
 mod stats;
+mod stats_view;
 mod story;
 mod swf_ui;
 mod training;

@@ -22,6 +22,7 @@ mod journal_menu;
 mod magic_menu;
 mod map_menu;
 mod sleep_wait_menu;
+mod stats_menu;
 mod training_menu;
 mod tween_menu;
 
@@ -68,6 +69,10 @@ pub struct SwfUi {
     sleep_wait: Option<sleep_wait_menu::SleepWaitMenu>,
     /// The training menu, while open.
     training: Option<training_menu::TrainingMenu>,
+    /// The skills menu, while open.
+    stats: Option<stats_menu::StatsMenu>,
+    /// A click or wheel turn in the skills menu, for its next update.
+    stats_act: Option<stats_menu::Act>,
     /// The map, while open.
     map: Option<map_menu::MapMenu>,
     /// The dialogue menu, while a conversation is on (and fading out after).
@@ -135,6 +140,8 @@ impl SwfUi {
             tween: None,
             sleep_wait: None,
             training: None,
+            stats: None,
+            stats_act: None,
             map: None,
             dialogue: None,
             menu_up: false,
@@ -179,6 +186,12 @@ impl SwfUi {
         if let Some(training) = &mut self.training {
             training.menu.resize(width, height);
         }
+        if let Some(stats) = &mut self.stats {
+            stats.menu.resize(width, height);
+            if let Some(level_up) = &mut stats.level_up {
+                level_up.resize(width, height);
+            }
+        }
         if let Some(map) = &mut self.map {
             map.menu.resize(width, height);
         }
@@ -203,6 +216,7 @@ impl SwfUi {
         self.tween_menu(engine, dt);
         self.sleep_wait_menu(engine, dt);
         self.training_menu(engine, dt);
+        self.stats_menu(engine, dt);
         self.map_menu(engine, dt);
         self.dialogue_menu(engine, dt);
         self.message_box.update(engine);
@@ -486,6 +500,50 @@ impl SwfUi {
         training.update(engine);
     }
 
+    /// Opens the skills menu when the engine's menu is it, closes it when it
+    /// goes, and keeps it up to date.
+    fn stats_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        if engine.menu != Some(crate::items::Menu::Skills) {
+            if self.stats.take().is_some() {
+                engine.close_stats_view();
+            }
+            return;
+        }
+        if self.stats.is_none() {
+            let buttons = self.buttons.clone();
+            if engine.open_stats_view().is_none() {
+                log::warn!("skills menu: no star models; drawing it over the world");
+            }
+            match stats_menu::StatsMenu::open(&self.ui, self.size, engine, buttons) {
+                Ok(m) => self.stats = Some(m),
+                Err(e) => {
+                    log::error!("skills menu: {e:#}");
+                    engine.close_stats_view();
+                    engine.menu = None;
+                    return;
+                }
+            }
+        }
+        if let Some(act) = self.stats_act.take()
+            && let Some(stats) = &mut self.stats
+        {
+            stats.act(act);
+        }
+        let Some(stats) = &mut self.stats else {
+            return;
+        };
+        stats.update(engine, dt.as_secs_f32());
+        stats.menu.advance(dt);
+        for call in stats.menu.take_calls() {
+            if !stats.answer(engine, &call) {
+                answer(&stats.menu, engine, &call);
+            }
+        }
+        if let Some(level_up) = &mut stats.level_up {
+            level_up.advance(dt);
+        }
+    }
+
     /// Opens the dialogue menu when a conversation starts, fades it out when
     /// it ends, and answers its calls.
     fn dialogue_menu(&mut self, engine: &mut Engine, dt: Duration) {
@@ -578,6 +636,7 @@ impl SwfUi {
                     | crate::items::Menu::Tween
                     | crate::items::Menu::SleepWait { .. }
                     | crate::items::Menu::Training(_)
+                    | crate::items::Menu::Skills
                     | crate::items::Menu::Map
             )
     }
@@ -592,6 +651,7 @@ impl SwfUi {
             || self.tween.is_some()
             || self.sleep_wait.is_some()
             || self.training.is_some()
+            || self.stats.is_some()
             || self.map.is_some()
             || self.dialogue.as_ref().is_some_and(|d| !d.closing)
     }
@@ -656,6 +716,7 @@ impl SwfUi {
                 && (self.tween.is_some()
                     || self.sleep_wait.is_some()
                     || self.training.is_some()
+                    || self.stats.is_some()
                     || self.dialogue.is_some()));
         let closing = self.items.as_ref().is_some_and(|i| i.closing)
             || self.magic.as_ref().is_some_and(|m| m.closing)
@@ -691,6 +752,35 @@ impl SwfUi {
                 }
             }
             _ => {}
+        }
+        // The skills menu takes the mouse itself (the game keeps its own
+        // selection), unless its level up popup or a message box is up.
+        if self.message_box.shown.is_none()
+            && self.stats.as_ref().is_some_and(|s| s.level_up.is_none())
+        {
+            match event {
+                WindowEvent::MouseInput {
+                    state: ElementState::Pressed,
+                    button: winit::event::MouseButton::Left,
+                    ..
+                } => {
+                    let (x, y) = self.pointer.position();
+                    self.stats_act = Some(stats_menu::Act::Click(
+                        x as f32 / self.size.0 as f32,
+                        y as f32 / self.size.1 as f32,
+                    ));
+                    return true;
+                }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let y = match delta {
+                        MouseScrollDelta::LineDelta(_, y) => *y,
+                        MouseScrollDelta::PixelDelta(p) => p.y as f32,
+                    };
+                    self.stats_act = Some(stats_menu::Act::Wheel(y));
+                    return true;
+                }
+                _ => {}
+            }
         }
         let menu = self.top();
         let (x, y) = self.pointer.position();
@@ -782,6 +872,8 @@ impl SwfUi {
             &sleep_wait.menu
         } else if let Some(training) = &self.training {
             &training.menu
+        } else if let Some(stats) = &self.stats {
+            stats.top()
         } else if let Some(map) = &self.map {
             &map.menu
         } else if let Some(dialogue) = &self.dialogue {
@@ -819,6 +911,12 @@ impl SwfUi {
             && self.training.is_none()
         {
             return dialogue.key(code);
+        }
+        // The skills menu: the ring's and trees' keys.
+        if self.message_box.shown.is_none()
+            && let Some(stats) = &mut self.stats
+        {
+            return stats.key(code);
         }
         // The training menu: its buttons' keys.
         if self.message_box.shown.is_none()
@@ -1036,6 +1134,18 @@ impl SwfUi {
         if let Some(training) = &mut self.training {
             training.menu.render();
             menus.push(&training.menu);
+        }
+        if let Some(stats) = &mut self.stats {
+            stats.menu.render();
+            if let Some(level_up) = &mut stats.level_up {
+                level_up.render();
+            }
+        }
+        if let Some(stats) = &self.stats {
+            menus.push(&stats.menu);
+            if let Some(level_up) = &stats.level_up {
+                menus.push(level_up);
+            }
         }
         if self.message_box.shown.is_some() {
             self.message_box.menu.render();

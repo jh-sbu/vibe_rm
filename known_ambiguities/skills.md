@@ -22,8 +22,8 @@ below (Skyrim.esm / Update.esm).
   `fSneakAttackSkillUsageMelee` (30); a lock picked,
   `fSkillUsageLockPick<VeryEasy..VeryHard>` (2, 3, 5, 8, 13); a broken pick
   `fSkillUsageLockPickBroken`; sneaking hidden, `fSkillUsageSneakPerSecond`.
-- **Level ups** wait until the player takes them in the skills menu (K here; the
-  game opens the skills from the Tab menu) or with the console `levelup`.
+- **Level ups** wait until the player takes them in the skills menu (K here, or Skills in the Tab
+  menu; `skills-menu.md`) or with the console `levelup`.
   Perk points buy perks from the skills' perk trees (`known_ambiguities/perks.md`).
 - **Skill books** teach once per book form (`DATA` flag 1, skill at offset 4).
   The game clears the flag on the book's base, so another copy doesn't teach;

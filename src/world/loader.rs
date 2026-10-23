@@ -162,6 +162,8 @@ impl ModelCache {
                 let mut start = 0.0;
                 // `path#blade` / `path#scb`: a weapon without / only its scabbard;
                 // `path#rigid`: skinned shapes posed at rest (sky models);
+                // `path#without=a|b`: without the shapes so named (menu models
+                // whose art isn't installed);
                 // `path#grass`: drawn as grass ([`crate::world::grass`]);
                 // `path#effect`: an effect's, its nodes' controllers kept
                 // ([`model::convert_effect`]); `path#world`: placed objects'
@@ -213,6 +215,13 @@ impl ModelCache {
                                         }
                                     }
                                     model::convert(&n)
+                                }
+                                Some(v) if v.starts_with("without=") => {
+                                    let hidden: Vec<&str> =
+                                        v["without=".len()..].split('|').collect();
+                                    model::convert_filtered(&n, &|name| {
+                                        !hidden.iter().any(|h| h.eq_ignore_ascii_case(name))
+                                    })
                                 }
                                 Some("scb") => model::convert_filtered(&n, &|name| {
                                     name.to_ascii_lowercase().starts_with("scb")

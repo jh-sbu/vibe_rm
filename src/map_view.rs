@@ -196,13 +196,14 @@ impl MapView {
 /// too).
 pub fn frame_parts<'a>(
     map: &'a Option<MapView>,
+    stats: &'a Option<crate::stats_view::StatsView>,
     menu: Option<crate::items::Menu>,
     scene: &'a Scene,
     camera: Camera,
 ) -> (&'a Scene, Camera) {
     match map {
         Some(v) if menu == Some(crate::items::Menu::Map) => (&v.scene, v.camera()),
-        _ => (scene, camera),
+        _ => crate::stats_view::frame_parts(stats, menu, scene, camera),
     }
 }
 

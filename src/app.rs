@@ -239,6 +239,7 @@ pub fn run(opts: Options) -> Result<()> {
                 if opts.burst.is_some_and(|n| n > 0 && i % n == 0) {
                     let (scene, camera) = crate::map_view::frame_parts(
                         &engine.map_view,
+                        &engine.stats_view,
                         engine.menu,
                         &engine.scene,
                         engine.view_camera(),
@@ -376,6 +377,7 @@ pub fn run(opts: Options) -> Result<()> {
         let hud_visible = crate::swf_ui::SwfUi::visible(&engine);
         let (scene, camera) = crate::map_view::frame_parts(
             &engine.map_view,
+            &engine.stats_view,
             engine.menu,
             &engine.scene,
             engine.view_camera(),
@@ -983,6 +985,7 @@ impl ApplicationHandler for App {
                 let view = frame.texture.create_view(&Default::default());
                 let (scene, camera) = crate::map_view::frame_parts(
                     &s.engine.map_view,
+                    &s.engine.stats_view,
                     s.engine.menu,
                     &s.engine.scene,
                     s.engine.view_camera(),
