@@ -51,3 +51,15 @@ exact message-key coverage and priority remain unverified.
 Mounted exceptions, dragon riding and Survival Mode are not implemented because
 the runtime lacks those systems. Script gate state does not claim to report all
 transient player eligibility. Invalid/unknown location never permits departure.
+
+## Arrival references
+
+The CK [Game.FastTravel documentation mirror](https://papyrus.bellcube.dev/skyrimse/script/game/function/fasttravel/)
+says linked fast-travel points on map markers are honored. The map destination
+resolver uses the unkeyed XLKR link (keyworded links do not redirect arrival),
+otherwise the marker itself, with its current position and heading. Exactly
+which links Skyrim prioritizes if multiple unkeyed links exist is unverified;
+the existing first-matching-link reader is used. Broken, disabled, deleted,
+nonfinite or unplaced targets fail before any cells unload. No link chains are
+followed. Interior linked destinations are accepted; native edge cases and
+ragdoll behavior remain unverified.
