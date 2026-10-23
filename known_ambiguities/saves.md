@@ -226,8 +226,10 @@ No game assets or engine binaries were inspected for these additions.
 
 - `PKCT` retains the existing caught-pickpocket gate by victim identity.
   UESP [Pickpocket, revision 3581319](https://en.uesp.net/w/index.php?oldid=3581319)
-  discusses detection and retry restrictions; the precise SE reset lifetime and
-  save encoding remain unverified. This does not add a new retry timer.
+  documents a two-day retry restriction while away, with guard, Harmony and
+  cell-transition exceptions. The current native caught-victim set has no retry
+  timer; persisting it does not implement those resets. Their exact timing and
+  the original save encoding need verification. Retry resets remain on the roadmap.
 
 - `ASLT` stores both existing assault-memory sets. It preserves the current
   classification inputs without generating assault/murder events on load.
@@ -270,7 +272,8 @@ No game assets or engine binaries were inspected for these additions.
 
 - `JMEM` retains the native miscellaneous-objective visibility toggle and
   sequence allocators. Legacy loads show miscellaneous objectives and recover
-  allocator minima from saved quest entries/alias fills. This fixes native
+  allocator minima from saved quest entries/alias fills. Capture uses those same
+  minima, keeping native save/load/save stable even after legacy imports. This fixes native
   ordering continuity; exact SE journal persistence and ordering remain
   unverified (`known_ambiguities/journal.md`).
 
@@ -279,3 +282,9 @@ No game assets or engine binaries were inspected for these additions.
   counting and tie policy, whose SE parity remains unverified (journal.md).
   Raw nonnull form identities survive independently of whether a spell/shout
   is currently known; schools are restricted to the five existing magic skills.
+
+- `CAMR` retains perspective and third-person zoom within the current runtime
+  bounds. Legacy saves choose first person and the native default distance.
+  Combat interpolation starts fresh; cinematic, test and transient collision
+  camera offsets are not saved. SE camera persistence and restoration ordering
+  remain unverified; this is a native user-view continuity policy.

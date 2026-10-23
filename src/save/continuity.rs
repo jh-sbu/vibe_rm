@@ -24,6 +24,7 @@ pub(crate) struct Continuity {
     pub magicka_wait: f32,
     pub journal_memory: Option<(bool, u64, u64)>,
     pub magic_usage: crate::stats::SavedMagicUsage,
+    pub camera: Option<(bool, f32)>,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -62,8 +63,28 @@ fn sorted<K: Ord + Copy, V>(map: &HashMap<K, V>) -> Vec<(K, &V)> {
     entries.sort_by_key(|(k, _)| *k);
     entries
 }
+/// Per-quest sequence values can come from older saves or test setups whose
+/// allocator was not retained. Capture and restore use the same canonical floor.
+fn sequence_floors(e: &Engine) -> (u64, u64) {
+    (
+        e.scripts
+            .quests
+            .values()
+            .map(|q| q.journal_seq)
+            .max()
+            .unwrap_or(0),
+        e.scripts
+            .quests
+            .values()
+            .flat_map(|q| q.filled_at.values())
+            .copied()
+            .max()
+            .unwrap_or(0),
+    )
+}
 impl Continuity {
     pub fn capture(e: &Engine) -> Self {
+        let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
             cleared_locations: e.cleared_locations.clone(),
             location_keyword_data: e.location_keyword_data.clone(),
@@ -80,14 +101,21 @@ impl Continuity {
             magicka_wait: e.casting.saved_regen_wait(),
             journal_memory: Some((
                 e.scripts.misc_objectives_hidden,
-                e.scripts.journal_seq,
-                e.scripts.fill_seq,
+                e.scripts.journal_seq.max(journal_floor),
+                e.scripts.fill_seq.max(fill_floor),
             )),
             magic_usage: e.scripts.magic_usage.saved(),
+            camera: Some((e.third_person, e.third_person_distance)),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        if let Some((third, distance)) = self.camera {
+            let mut w = Writer::default();
+            w.bool(third);
+            w.f32(distance);
+            file.add(b"CAMR", w.0);
+        }
         let mut w = Writer::default();
         for history in [
             &self.magic_usage.spells,
@@ -321,10 +349,21 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"CAMR")? {
+            s.camera = Some((r.bool()?, r.f32()?));
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        if self.camera.is_some_and(|(_, distance)| {
+            !distance.is_finite()
+                || !(crate::player_body::THIRD_PERSON_MIN..=crate::player_body::THIRD_PERSON_MAX)
+                    .contains(&distance)
+        }) {
+            return Err(Corrupt("invalid saved camera distance".into()));
+        }
         crate::stats::MagicUsage::restore(&self.magic_usage)
             .map_err(|err| Corrupt(err.to_string()))?;
         if self
@@ -385,26 +424,18 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        let (third, distance) = self
+            .camera
+            .unwrap_or((false, crate::player_body::THIRD_PERSON_DEFAULT));
+        e.set_third_person(third);
+        e.third_person_distance = distance;
+        e.third_person_combat = 0.0;
         let (hidden, journal, fills) = self.journal_memory.unwrap_or_default();
         e.scripts.misc_objectives_hidden = hidden;
         // Older saves contain per-quest sequences but omitted their allocators.
-        e.scripts.journal_seq = journal.max(
-            e.scripts
-                .quests
-                .values()
-                .map(|q| q.journal_seq)
-                .max()
-                .unwrap_or(0),
-        );
-        e.scripts.fill_seq = fills.max(
-            e.scripts
-                .quests
-                .values()
-                .flat_map(|q| q.filled_at.values())
-                .copied()
-                .max()
-                .unwrap_or(0),
-        );
+        let (journal_floor, fill_floor) = sequence_floors(e);
+        e.scripts.journal_seq = journal.max(journal_floor);
+        e.scripts.fill_seq = fills.max(fill_floor);
         e.casting.restore_regen_wait(self.magicka_wait);
         e.player_stamina_wait = self.stamina_wait;
         e.shouts

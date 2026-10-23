@@ -829,8 +829,17 @@ fn a_saved_game_loads_into_another_engine_unchanged() {
         .unwrap()
         .apply(&mut b)
         .unwrap();
-    // Everything captured again is byte for byte the same file.
-    assert_eq!(Snapshot::capture(&b).write().to_bytes(), bytes);
+    // Report the specific section if byte-stable recapture ever regresses.
+    let recaptured = Snapshot::capture(&b).write();
+    for (tag, payload) in &saved.sections {
+        assert_eq!(
+            recaptured.section(tag),
+            Some(payload.as_slice()),
+            "section {:?}",
+            std::str::from_utf8(tag)
+        );
+    }
+    assert_eq!(recaptured.to_bytes(), bytes);
 
     assert_eq!((b.day, b.hour), (12, 17.5));
     assert_eq!(b.scripts.globals[&GLOBAL], 3.5);
@@ -4050,4 +4059,203 @@ fn continuity_magic_usage_runtime() {
         e.scripts.magic_usage.saved(),
         crate::stats::SavedMagicUsage::default()
     );
+}
+
+#[test]
+fn continuity_camera_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.camera = Some((true, 350.0));
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.camera, Some((true, 350.0)));
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"CAMR");
+    for distance in [f32::NAN, f32::INFINITY, 0.0, 601.0] {
+        s.continuity.camera = Some((true, distance));
+        assert!(Snapshot::read(&s.write()).is_err());
+    }
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_camera_runtime() {
+    let (_fixture, mut e) = engine("continuity-camera");
+    e.set_third_person(true);
+    e.zoom_third_person(150.0);
+    let saved = Snapshot::capture(&e).write();
+    e.set_third_person(false);
+    e.third_person_distance = 200.0;
+    e.third_person_combat = 1.0;
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert!(e.third_person);
+    assert_eq!(e.third_person_distance, 350.0);
+    assert_eq!(e.third_person_combat, 0.0);
+    e.zoom_third_person(500.0);
+    assert_eq!(
+        e.third_person_distance,
+        crate::player_body::THIRD_PERSON_MAX
+    );
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"CAMR");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(!e.third_person);
+    assert_eq!(
+        e.third_person_distance,
+        crate::player_body::THIRD_PERSON_DEFAULT
+    );
+}
+
+#[test]
+fn continuity_collection_keys_are_strict_and_counts_are_bounded() {
+    let mut s = Snapshot::default();
+    s.continuity.harvested.extend([(ACTOR, 1.0), (CELL, 2.0)]);
+    s.continuity.cleared_locations.extend([ACTOR, CELL]);
+    s.continuity
+        .location_keyword_data
+        .extend([((ACTOR, GLOBAL), 1.0), ((CELL, GLOBAL), 2.0)]);
+    s.continuity
+        .crime_factions
+        .extend([(ACTOR, None), (CELL, Some(GLOBAL))]);
+    s.continuity.pickpocket_caught.extend([ACTOR, CELL]);
+    s.continuity.assaulted.extend([ACTOR, CELL]);
+    s.continuity.last_crime.extend([
+        (ACTOR, crate::crime::CrimeType::Steal),
+        (CELL, crate::crime::CrimeType::Murder),
+    ]);
+    let file = s.write();
+    for (tag, stride) in [
+        (b"HRVT", 12),
+        (b"CLRD", 4),
+        (b"LKWD", 12),
+        (b"CRFC", 8),
+        (b"PKCT", 4),
+        (b"ASLT", 4),
+        (b"LCRM", 5),
+    ] {
+        for mode in 0..3 {
+            let mut broken = file.clone();
+            let bytes = &mut broken
+                .sections
+                .iter_mut()
+                .find(|(t, _)| t == tag)
+                .unwrap()
+                .1;
+            match mode {
+                0 => {
+                    // A repeated key must not silently overwrite the first.
+                    let key = bytes[4..8].to_vec();
+                    bytes[4 + stride..8 + stride].copy_from_slice(&key);
+                }
+                1 => {
+                    // Descending keys cannot bypass canonical ordering.
+                    let first = bytes[4..8].to_vec();
+                    let second = bytes[4 + stride..8 + stride].to_vec();
+                    bytes[4..8].copy_from_slice(&second);
+                    bytes[4 + stride..8 + stride].copy_from_slice(&first);
+                }
+                _ => bytes[..4].copy_from_slice(&u32::MAX.to_le_bytes()),
+            }
+            assert!(
+                Snapshot::read(&broken).is_err(),
+                "accepted {tag:?} mode {mode}"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_invalid_snapshots_leave_the_live_game_intact() {
+    let (_fixture, mut e) = engine("continuity-transaction");
+    attach_scene_test_actor(&mut e);
+    e.scripts.real_time = 10.0;
+    let file = Snapshot::capture(&e).write();
+    e.scripts.real_time = 20.0;
+    e.scripts.globals.insert(GLOBAL, 42.0);
+    type Damage = fn(&mut super::continuity::Continuity);
+    let cases: &[Damage] = &[
+        |c| {
+            c.harvested.insert(ACTOR, f64::NAN);
+        },
+        |c| {
+            c.cleared_locations.insert(FormId::NULL);
+        },
+        |c| {
+            c.location_keyword_data.insert((CELL, GLOBAL), f32::NAN);
+        },
+        |c| {
+            c.crime_factions.insert(ACTOR, Some(FormId::NULL));
+        },
+        |c| {
+            c.pickpocket_caught.insert(FormId::NULL);
+        },
+        |c| {
+            c.assaulted.insert(FormId::NULL);
+        },
+        |c| {
+            c.player_assailants.insert(FormId::NULL);
+        },
+        |c| {
+            c.unreported.push(crate::crime::Unreported {
+                faction: GLOBAL,
+                gold: -1,
+                violent: true,
+                witnesses: vec![ACTOR],
+            });
+        },
+        |c| {
+            c.last_crime
+                .insert(FormId::NULL, crate::crime::CrimeType::Steal);
+        },
+        |c| {
+            c.controls = 0x200;
+        },
+        |c| {
+            c.voice_recovery = (2.0, 1.0);
+        },
+        |c| {
+            c.stamina_wait = -1.0;
+        },
+        |c| {
+            c.magicka_wait = f32::INFINITY;
+        },
+        |c| {
+            c.journal_memory = Some((false, u64::MAX, 0));
+        },
+        |c| {
+            c.magic_usage.spells.favorite = Some(ACTOR.0);
+        },
+        |c| {
+            c.camera = Some((true, 0.0));
+        },
+    ];
+    for damage in cases {
+        let mut snapshot = Snapshot::read(&file).unwrap();
+        damage(&mut snapshot.continuity);
+        assert!(snapshot.apply(&mut e).is_err());
+        assert_eq!(e.scripts.real_time, 20.0);
+        assert_eq!(e.scripts.globals.get(&GLOBAL), Some(&42.0));
+        assert!(
+            e.actor_ref(SCENE_ACTOR).is_some(),
+            "invalid save unloaded actors"
+        );
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_load_discards_cast_buttons_from_the_previous_session() {
+    let (_fixture, mut e) = engine("continuity-cast-input");
+    e.equip_spell(PLAYER_REF, USAGE_SPELL_A, RIGHT);
+    let file = Snapshot::capture(&e).write();
+    for legacy in [false, true] {
+        assert!(e.player_cast_press(RIGHT));
+        e.update_casting(0.25);
+        let mut saved = file.clone();
+        if legacy {
+            saved.sections.retain(|(t, _)| t != b"MREG");
+        }
+        Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+        assert!(!e.player_cast_release(RIGHT));
+        assert!(e.scripts.magic_usage.saved().spells.counts.is_empty());
+    }
 }

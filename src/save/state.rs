@@ -26,6 +26,9 @@
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
 //! message-box VM waits), and `ANMW` (semantic animation-event VM waits).
+//! Additional optional native continuity sections live in `super::continuity`:
+//! harvests, locations, crime memory, controls, voice/regeneration timers,
+//! journal ordering, magic usage histories and camera preferences.
 //! Not yet saved:
 //! active magic effects, actor
 //! procedure progress, AI progress, objects' behaviour graphs; see
