@@ -191,19 +191,14 @@ impl MapView {
     }
 }
 
-/// What a frame draws: the world and the player's view, or the world map's
-/// own scene and camera while it is up (by parts: the renderer is borrowed
-/// too).
-pub fn frame_parts<'a>(
-    map: &'a Option<MapView>,
-    stats: &'a Option<crate::stats_view::StatsView>,
+/// The world map's own scene and camera while it is up.
+pub fn frame_parts(
+    map: &Option<MapView>,
     menu: Option<crate::items::Menu>,
-    scene: &'a Scene,
-    camera: Camera,
-) -> (&'a Scene, Camera) {
+) -> Option<(&Scene, Camera)> {
     match map {
-        Some(v) if menu == Some(crate::items::Menu::Map) => (&v.scene, v.camera()),
-        _ => crate::stats_view::frame_parts(stats, menu, scene, camera),
+        Some(v) if menu == Some(crate::items::Menu::Map) => Some((&v.scene, v.camera())),
+        _ => None,
     }
 }
 
