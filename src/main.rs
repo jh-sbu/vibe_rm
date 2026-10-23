@@ -19,6 +19,7 @@ mod encumbrance;
 mod engine;
 mod ethereal;
 mod falling;
+mod fast_travel;
 mod followers;
 mod footsteps;
 mod gift;

@@ -182,6 +182,8 @@ pub struct Engine {
     pub(crate) grab: crate::grab::Grab,
     /// Player controls scripts have disabled.
     pub disabled_controls: crate::player::DisabledControls,
+    /// Script gate, independent of the current place and transient refusals.
+    pub fast_travel_disabled: bool,
     /// Requested by Game.SetHudCartMode; movement disabling overrides it temporarily.
     pub hud_cart_mode: bool,
     /// The journal opens on the tab it was closed on (Esc), not on the
@@ -474,6 +476,7 @@ impl Engine {
             traps: Default::default(),
             anim_events: Default::default(),
             disabled_controls: Default::default(),
+            fast_travel_disabled: false,
             hud_cart_mode: false,
             journal_last_tab: false,
             quit_requested: false,
