@@ -28,3 +28,5 @@ Completed items follow. Final validation is recorded at the end.
 8. Ordered delayed parent activations and absolute deadlines (`ACTQ`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
 
 9. Gameplay and condition random streams resume their exact sequences (`RNGS`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
+
+10. Last-hit critical condition memory; validation keeps malformed clocks visible (`LHCR`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
