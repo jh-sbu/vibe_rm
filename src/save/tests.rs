@@ -3907,3 +3907,45 @@ fn continuity_magicka_runtime() {
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert_eq!(e.casting.saved_regen_wait(), 0.0);
 }
+
+#[test]
+fn continuity_journal_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.journal_memory = Some((true, 15, 25));
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.journal_memory, Some((true, 15, 25)));
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"JMEM");
+    s.continuity.journal_memory = Some((false, u64::MAX, 0));
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_journal_runtime() {
+    let (_fixture, mut e) = engine("continuity-journal");
+    e.scripts.misc_objectives_hidden = true;
+    e.scripts.journal_seq = 15;
+    e.scripts.fill_seq = 25;
+    e.scripts.quests.entry(QUEST).or_default().journal_seq = 10;
+    e.scripts
+        .quests
+        .get_mut(&QUEST)
+        .unwrap()
+        .filled_at
+        .insert(0, 20);
+    let saved = Snapshot::capture(&e).write();
+    e.scripts.misc_objectives_hidden = false;
+    e.scripts.journal_seq = 100;
+    e.scripts.fill_seq = 200;
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert!(e.scripts.misc_objectives_hidden);
+    assert_eq!(e.scripts.journal_seq, 15);
+    assert_eq!(e.scripts.fill_seq, 25);
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"JMEM");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(!e.scripts.misc_objectives_hidden);
+    assert_eq!(e.scripts.journal_seq, 10);
+    assert_eq!(e.scripts.fill_seq, 20);
+}

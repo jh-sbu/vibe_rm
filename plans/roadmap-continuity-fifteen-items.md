@@ -99,3 +99,10 @@ regeneration and normal regeneration after expiry. Both tests passed.
 MREG retains the player's remaining magicka regeneration delay. Load
 discards old cast inputs, pending releases, HUD blinks and NPC spell caches.
 The runtime test verifies delayed regeneration and expiry. Both tests passed.
+
+## 13 completed
+
+JMEM retains miscellaneous-objective tracking and journal/alias ordering
+allocators. Restores take at least the maxima already present in saved quests,
+including legacy files, preventing new updates from sorting behind old ones.
+Payload and host-Vulkan tests passed.
