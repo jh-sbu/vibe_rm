@@ -288,3 +288,28 @@ No game assets or engine binaries were inspected for these additions.
   Combat interpolation starts fresh; cinematic, test and transient collision
   camera offsets are not saved. SE camera persistence and restoration ordering
   remain unverified; this is a native user-view continuity policy.
+
+## Further native continuity policies (2026-10)
+
+Roadmap batch: `plans/roadmap-durable-fifteen-items.md`. Public references read
+through the local UESP index:
+[Crime, revision 3639929](https://en.uesp.net/w/index.php?oldid=3639929)
+describes warnings, arrest resistance, yielding, jail sentences and escape's
+restored bounty. [REFR, revision 2354868](https://en.uesp.net/w/index.php?oldid=2354868)
+documents placed-reference data. Neither establishes save encoding or precise
+save/load lifetime for these states. The following are native continuity choices,
+not assertions about `.ess` or SE lifecycle behavior. No executable/library data
+was examined; no game assets were included.
+
+Crime progression and deadlines replace the prior session's memory. Pending
+arrest conversations do not resume dialogue; guards can approach again. Legacy
+files clear these categories. Package-owned home maps are retained as native
+memory, subject to normal package refresh; exact SE package refresh ordering is
+unverified. Delayed activations retain absolute native real-time deadlines and
+queue order; loading does not send the events early. Random streams resume their
+saved sequence, with fixed nonzero legacy seeds. Critical-hit memory retains the
+last-hit condition. Sneak stance and attack recovery resume; held input and
+animation phases do not. Map camera preference resumes independently of an open
+menu. Image modifiers retain order, clocks, strength and cross-fades; script screen
+fades retain their clocks and color. Sleep overlays and camera shakes are transient.
+SE behavior for each of these transitions remains unverified by a controlled test.

@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub trespass: Option<crate::crime::Trespass>,
     pub cleared_locations: std::collections::HashSet<FormId>,
     pub location_keyword_data: HashMap<(FormId, FormId), f32>,
     pub crime_factions: HashMap<FormId, Option<FormId>>,
@@ -86,6 +87,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            trespass: e.crime.trespass,
             cleared_locations: e.cleared_locations.clone(),
             location_keyword_data: e.location_keyword_data.clone(),
             crime_factions: e.crime.crime_factions.clone(),
@@ -110,6 +112,14 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.bool(self.trespass.is_some());
+        if let Some(t) = self.trespass {
+            w.form(t.cell);
+            w.i32(t.level);
+            w.f64(t.next);
+        }
+        file.add(b"TRSP", w.0);
         if let Some((third, distance)) = self.camera {
             let mut w = Writer::default();
             w.bool(third);
@@ -221,6 +231,16 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"TRSP")? {
+            if r.bool()? {
+                s.trespass = Some(crate::crime::Trespass {
+                    cell: r.form()?,
+                    level: r.i32()?,
+                    next: r.f64()?,
+                });
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"HRVT")? {
             let mut previous = None;
             for _ in 0..r.count(12)? {
@@ -357,6 +377,13 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        if let Some(t) = self.trespass {
+            nonnull(t.cell)?;
+            time(t.next)?;
+            if !(0..=2).contains(&t.level) {
+                return Err(Corrupt("invalid trespass level".into()));
+            }
+        }
         if self.camera.is_some_and(|(_, distance)| {
             !distance.is_finite()
                 || !(crate::player_body::THIRD_PERSON_MIN..=crate::player_body::THIRD_PERSON_MAX)
@@ -424,6 +451,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.trespass = self.trespass;
         let (third, distance) = self
             .camera
             .unwrap_or((false, crate::player_body::THIRD_PERSON_DEFAULT));
