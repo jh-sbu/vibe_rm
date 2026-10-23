@@ -71,6 +71,16 @@ pub struct Shouts {
     by_word: std::cell::OnceCell<HashMap<FormId, FormId>>,
 }
 
+impl Shouts {
+    pub(crate) fn restore_recovery(&mut self, remaining: f32, total: f32) {
+        self.recovery = remaining;
+        self.recovery_total = total;
+        // Physical key state and HUD flashes belong to the previous session.
+        self.held = None;
+        self.meter_flashes = 0;
+    }
+}
+
 impl Engine {
     /// A shout record, read once.
     pub fn shout(&self, id: FormId) -> Option<Arc<Shout>> {
