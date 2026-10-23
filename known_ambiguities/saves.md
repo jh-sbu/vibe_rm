@@ -193,3 +193,19 @@ the global script travel gate. Legacy files reset this runtime memory; see
 
 Optional `TEAM` retains teammate and canDoFavor flags by replacement. Legacy
 files clear membership; see `known_ambiguities/followers.md`.
+
+## Additional native continuity adjuncts
+
+These optional sections retain existing VibeRM state; they do not establish
+Skyrim SE's save representation, exact lifecycle or reset rules. Reading an
+adjunct rejects duplicate sections, trailing data, invalid values and malformed
+collection keys before live state changes. Loading replaces destination memory;
+legacy saves clear the corresponding memory unless a different default is stated.
+No game assets or engine binaries were inspected for these additions.
+
+- `HRVT` retains harvested-reference identities and their game-hour timestamps.
+  Existing regrowth checks run against the restored clock; load does not grant
+  produce or replay sounds. UESP [Respawning, revision 3558013](https://en.uesp.net/w/index.php?oldid=3558013)
+  describes reset schedules, including the default 240 hours, but does not settle
+  individual plant save payloads or validate our harvest-time-based regrowth
+  approximation (cell re-entry/reset behavior is separate work).

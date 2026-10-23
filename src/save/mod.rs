@@ -4,6 +4,7 @@
 //! `known_ambiguities/saves.md`.
 
 pub mod codec;
+mod continuity;
 pub mod file;
 pub mod state;
 #[cfg(test)]
