@@ -209,3 +209,7 @@ No game assets or engine binaries were inspected for these additions.
   describes reset schedules, including the default 240 hours, but does not settle
   individual plant save payloads or validate our harvest-time-based regrowth
   approximation (cell re-entry/reset behavior is separate work).
+
+- `CLRD` retains cleared location identities without calling `SetCleared` during
+  load. Original save encoding and reset lifetime remain unverified. The existing
+  clear/statistic policy is unchanged; see `known_ambiguities/cleared.md`.

@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub cleared_locations: std::collections::HashSet<FormId>,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -50,10 +51,19 @@ fn sorted<K: Ord + Copy, V>(map: &HashMap<K, V>) -> Vec<(K, &V)> {
 impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         Self {
+            cleared_locations: e.cleared_locations.clone(),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        let mut ids: Vec<_> = self.cleared_locations.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"CLRD", w.0);
         let mut w = Writer::default();
         w.len(self.harvested.len());
         for (plant, at) in sorted(&self.harvested) {
@@ -73,10 +83,22 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"CLRD")? {
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                s.cleared_locations.insert(id);
+            }
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for &id in &self.cleared_locations {
+            nonnull(id)?;
+        }
         for (&plant, &at) in &self.harvested {
             nonnull(plant)?;
             time(at)?;
@@ -84,6 +106,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.cleared_locations = self.cleared_locations;
         e.harvests.harvested = self.harvested;
     }
 }

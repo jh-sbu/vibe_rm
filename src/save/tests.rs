@@ -3478,3 +3478,35 @@ fn continuity_harvest_runtime() {
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(!e.is_harvested(ACTOR));
 }
+
+#[test]
+fn continuity_cleared_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.cleared_locations.extend([ACTOR, CELL]);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.cleared_locations,
+        s.continuity.cleared_locations
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"CLRD");
+    s.continuity.cleared_locations.insert(FormId::NULL);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_cleared_runtime() {
+    let (_fixture, mut e) = engine("continuity-cleared");
+    e.cleared_locations.insert(ACTOR);
+    let saved = Snapshot::capture(&e).write();
+    e.cleared_locations.clear();
+    e.cleared_locations.insert(CELL);
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert!(e.is_cleared(ACTOR));
+    assert!(!e.is_cleared(CELL));
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"CLRD");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(!e.is_cleared(ACTOR));
+}

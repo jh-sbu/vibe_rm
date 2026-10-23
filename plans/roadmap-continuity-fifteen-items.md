@@ -32,3 +32,9 @@ memory. Payload validation and production capture/read/apply tests passed;
 the runtime test verifies regrowth after elapsed game days and legacy clearing.
 Host Vulkan was required because the sandbox terrain pipeline exceeds its
 texture-binding limit. Shared adjunct infrastructure preserves existing layouts.
+
+## 2 completed
+
+CLRD restores cleared locations before cell attachment without replaying
+clearing banners, music or statistics. Payload and production runtime regressions
+cover exact replacement and legacy clearing.
