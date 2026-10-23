@@ -273,3 +273,9 @@ No game assets or engine binaries were inspected for these additions.
   allocator minima from saved quest entries/alias fills. This fixes native
   ordering continuity; exact SE journal persistence and ordering remain
   unverified (`known_ambiguities/journal.md`).
+
+- `MUSE` retains existing spell/school/shout usage metrics and tied incumbents.
+  Missing sections clear all three histories. This preserves VibeRM's existing
+  counting and tie policy, whose SE parity remains unverified (journal.md).
+  Raw nonnull form identities survive independently of whether a spell/shout
+  is currently known; schools are restricted to the five existing magic skills.

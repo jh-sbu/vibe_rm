@@ -188,6 +188,78 @@ pub struct MagicUsage {
     shouts: Usage<FormId>,
 }
 
+/// Stable native-save counts and incumbent. Keys are raw FormIDs for spell/
+/// shout histories and actor-value indices for school history.
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SavedUsage {
+    pub counts: Vec<(u32, u64)>,
+    pub favorite: Option<u32>,
+}
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SavedMagicUsage {
+    pub spells: SavedUsage,
+    pub schools: SavedUsage,
+    pub shouts: SavedUsage,
+}
+impl MagicUsage {
+    pub(crate) fn saved(&self) -> SavedMagicUsage {
+        SavedMagicUsage {
+            spells: self.spells.saved_with(|id| id.0),
+            schools: self.schools.saved_with(|id| id),
+            shouts: self.shouts.saved_with(|id| id.0),
+        }
+    }
+    pub(crate) fn restore(saved: &SavedMagicUsage) -> anyhow::Result<Self> {
+        Ok(Self {
+            spells: Usage::restore_with(&saved.spells, |id| id != 0, FormId)?,
+            schools: Usage::restore_with(
+                &saved.schools,
+                |id| crate::spells::SCHOOLS.contains(&id),
+                |id| id,
+            )?,
+            shouts: Usage::restore_with(&saved.shouts, |id| id != 0, FormId)?,
+        })
+    }
+}
+impl<T: Copy + Eq + Hash> Usage<T> {
+    fn saved_with(&self, raw: impl Fn(T) -> u32) -> SavedUsage {
+        let mut counts: Vec<_> = self.counts.iter().map(|(&id, &n)| (raw(id), n)).collect();
+        counts.sort_by_key(|(id, _)| *id);
+        SavedUsage {
+            counts,
+            favorite: self.favorite.map(raw),
+        }
+    }
+    fn restore_with(
+        saved: &SavedUsage,
+        valid: impl Fn(u32) -> bool,
+        key: impl Fn(u32) -> T,
+    ) -> anyhow::Result<Self> {
+        let mut counts = HashMap::new();
+        let mut previous = None;
+        for &(id, count) in &saved.counts {
+            anyhow::ensure!(valid(id) && count > 0, "invalid magic usage key/count");
+            anyhow::ensure!(
+                previous.is_none_or(|p| p < id),
+                "duplicate or unsorted magic usage key"
+            );
+            previous = Some(id);
+            counts.insert(key(id), count);
+        }
+        let favorite = saved.favorite.map(&key);
+        if counts.is_empty() {
+            anyhow::ensure!(favorite.is_none(), "magic favorite without counts");
+        } else {
+            let top = counts.values().copied().max().unwrap();
+            anyhow::ensure!(
+                favorite.is_some_and(|id| counts.get(&id) == Some(&top)),
+                "magic favorite is not a maximum"
+            );
+        }
+        Ok(Self { counts, favorite })
+    }
+}
+
 /// Counts of player melee attacks and bow releases by weapon base form.
 #[derive(Default)]
 pub struct WeaponUsage {

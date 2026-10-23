@@ -2098,6 +2098,7 @@ impl Snapshot {
             "save has invalid ward-hit state"
         );
         self.continuity.validate()?;
+        let magic_usage = crate::stats::MagicUsage::restore(&self.continuity.magic_usage)?;
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.discard_conversation_for_load();
@@ -2117,6 +2118,7 @@ impl Snapshot {
         s.globals = self.globals;
         s.quests = self.quests;
         s.stats = self.stats;
+        s.magic_usage = magic_usage;
         s.weapon_usage = weapon_usage;
         s.actor_values = self.actor_values;
         s.other_actor_values = self.other_actor_values;

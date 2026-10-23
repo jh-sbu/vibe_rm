@@ -23,6 +23,7 @@ pub(crate) struct Continuity {
     pub stamina_wait: f32,
     pub magicka_wait: f32,
     pub journal_memory: Option<(bool, u64, u64)>,
+    pub magic_usage: crate::stats::SavedMagicUsage,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -82,10 +83,25 @@ impl Continuity {
                 e.scripts.journal_seq,
                 e.scripts.fill_seq,
             )),
+            magic_usage: e.scripts.magic_usage.saved(),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        for history in [
+            &self.magic_usage.spells,
+            &self.magic_usage.schools,
+            &self.magic_usage.shouts,
+        ] {
+            w.len(history.counts.len());
+            for &(id, count) in &history.counts {
+                w.u32(id);
+                w.u64(count);
+            }
+            w.u32(history.favorite.unwrap_or(0));
+        }
+        file.add(b"MUSE", w.0);
         if let Some((hidden, journal, fills)) = self.journal_memory {
             let mut w = Writer::default();
             w.bool(hidden);
@@ -291,10 +307,26 @@ impl Continuity {
             s.journal_memory = Some((r.bool()?, r.u64()?, r.u64()?));
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"MUSE")? {
+            for history in [
+                &mut s.magic_usage.spells,
+                &mut s.magic_usage.schools,
+                &mut s.magic_usage.shouts,
+            ] {
+                for _ in 0..r.count(12)? {
+                    history.counts.push((r.u32()?, r.u64()?));
+                }
+                let favorite = r.u32()?;
+                history.favorite = (favorite != 0).then_some(favorite);
+            }
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        crate::stats::MagicUsage::restore(&self.magic_usage)
+            .map_err(|err| Corrupt(err.to_string()))?;
         if self
             .journal_memory
             .is_some_and(|(_, journal, fills)| journal == u64::MAX || fills == u64::MAX)
