@@ -244,3 +244,8 @@ No game assets or engine binaries were inspected for these additions.
   replaying an arrest or report. The native enum uses the already documented
   public crime types; SE save persistence and competing-report priority remain
   unverified. See `known_ambiguities/crime.md`.
+
+- `CTRL` retains script-disabled controls and cart HUD mode. Both POV lock owners
+  are saved independently, so enabling one does not release the other. Legacy
+  loads enable controls and clear cart mode. Exact SE persistence/reset behavior
+  is unverified; existing public control research is in player-controls.md.

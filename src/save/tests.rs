@@ -3750,3 +3750,41 @@ fn continuity_last_crime_runtime() {
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(e.crime.last_crime.is_empty());
 }
+
+#[test]
+fn continuity_controls_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.controls = 0x1ff;
+    s.continuity.cart_mode = true;
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.controls, 0x1ff);
+    assert!(restored.continuity.cart_mode);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"CTRL");
+    s.continuity.controls = 0x200;
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_controls_runtime() {
+    let (_fixture, mut e) = engine("continuity-controls");
+    e.disabled_controls.apply(true, [true; 8], 0);
+    e.disabled_controls.apply(true, [true; 8], 1);
+    e.hud_cart_mode = true;
+    let saved = Snapshot::capture(&e).write();
+    e.disabled_controls = Default::default();
+    e.hud_cart_mode = false;
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.disabled_controls.saved_bits(), 0x1ff);
+    assert!(e.hud_cart_mode);
+    e.disabled_controls.apply(false, [true; 8], 0);
+    assert!(e.disabled_controls.camera_switch_disabled());
+    e.disabled_controls.apply(false, [true; 8], 1);
+    assert!(!e.disabled_controls.any());
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"CTRL");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(!e.disabled_controls.any());
+    assert!(!e.hud_cart_mode);
+}

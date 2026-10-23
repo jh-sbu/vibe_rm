@@ -75,3 +75,9 @@ Payload, runtime and legacy tests passed with host Vulkan.
 LCRM retains each faction's last reported crime for arrest Story Manager
 inputs. Decoding rejects unknown crime discriminants. Payload and host-Vulkan
 replacement/legacy tests passed.
+
+## 9 completed
+
+CTRL restores all script control gates, independent regular/beast camera
+locks and cart HUD mode before cell attachment. The runtime regression releases
+each POV owner separately after load. Payload and host-Vulkan tests passed.
