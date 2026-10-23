@@ -56,3 +56,9 @@ regressions passed.
 PKCT retains identities of victims who caught a pickpocket attempt, so load
 does not erase the current retry gate. Strict payload and host-Vulkan exact
 replacement/legacy tests passed.
+
+## 6 completed
+
+ASLT retains player assault victims (used for murder attribution) and
+assailants whose continuing hits should not recount assault. Payload and
+host-Vulkan capture/apply/legacy tests passed.

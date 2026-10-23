@@ -13,6 +13,8 @@ pub(crate) struct Continuity {
     pub location_keyword_data: HashMap<(FormId, FormId), f32>,
     pub crime_factions: HashMap<FormId, Option<FormId>>,
     pub pickpocket_caught: std::collections::HashSet<FormId>,
+    pub assaulted: std::collections::HashSet<FormId>,
+    pub player_assailants: std::collections::HashSet<FormId>,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -58,10 +60,22 @@ impl Continuity {
             location_keyword_data: e.location_keyword_data.clone(),
             crime_factions: e.crime.crime_factions.clone(),
             pickpocket_caught: e.crime.pickpocket_caught.clone(),
+            assaulted: e.crime.assaulted.clone(),
+            player_assailants: e.crime.player_assailants.clone(),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        for set in [&self.assaulted, &self.player_assailants] {
+            let mut ids: Vec<_> = set.iter().copied().collect();
+            ids.sort();
+            w.len(ids.len());
+            for id in ids {
+                w.form(id);
+            }
+        }
+        file.add(b"ASLT", w.0);
         let mut w = Writer::default();
         let mut ids: Vec<_> = self.pickpocket_caught.iter().copied().collect();
         ids.sort();
@@ -148,10 +162,24 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"ASLT")? {
+            for set in [&mut s.assaulted, &mut s.player_assailants] {
+                let mut previous = None;
+                for _ in 0..r.count(4)? {
+                    let id = r.form()?;
+                    ordered(&mut previous, id)?;
+                    set.insert(id);
+                }
+            }
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for &id in self.assaulted.iter().chain(&self.player_assailants) {
+            nonnull(id)?;
+        }
         for &id in &self.pickpocket_caught {
             nonnull(id)?;
         }
@@ -178,6 +206,8 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.assaulted = self.assaulted;
+        e.crime.player_assailants = self.player_assailants;
         e.crime.pickpocket_caught = self.pickpocket_caught;
         e.crime.crime_factions = self.crime_factions;
         e.location_keyword_data = self.location_keyword_data;

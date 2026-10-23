@@ -149,7 +149,7 @@ pub struct Crimes {
     /// Crime factions scripts gave actors (`SetCrimeFaction`; `None` clears it).
     pub crime_factions: HashMap<FormId, Option<FormId>>,
     /// Actors the player assaulted (a crime): killing them is murder.
-    assaulted: HashSet<FormId>,
+    pub(crate) assaulted: HashSet<FormId>,
     /// Actors whose blow or spell on the player was an assault: the next
     /// ones aren't, until they stop fighting (see `assault_on_player`).
     pub player_assailants: HashSet<FormId>,
