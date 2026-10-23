@@ -3510,3 +3510,41 @@ fn continuity_cleared_runtime() {
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(!e.is_cleared(ACTOR));
 }
+
+#[test]
+fn continuity_location_keyword_payload() {
+    let mut s = Snapshot::default();
+    s.continuity
+        .location_keyword_data
+        .insert((CELL, GLOBAL), -3.25);
+    s.continuity
+        .location_keyword_data
+        .insert((ACTOR, GLOBAL), 0.0);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.location_keyword_data,
+        s.continuity.location_keyword_data
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"LKWD");
+    s.continuity
+        .location_keyword_data
+        .insert((CELL, GLOBAL), f32::INFINITY);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_location_keyword_runtime() {
+    let (_fixture, mut e) = engine("continuity-location_keyword");
+    e.location_keyword_data.insert((CELL, GLOBAL), -3.25);
+    let saved = Snapshot::capture(&e).write();
+    e.location_keyword_data.insert((ACTOR, GLOBAL), 99.0);
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.location_keyword_data.get(&(CELL, GLOBAL)), Some(&-3.25));
+    assert_eq!(e.location_keyword_data.len(), 1);
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"LKWD");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.location_keyword_data.is_empty());
+}

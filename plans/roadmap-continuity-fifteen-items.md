@@ -38,3 +38,9 @@ texture-binding limit. Shared adjunct infrastructure preserves existing layouts.
 CLRD restores cleared locations before cell attachment without replaying
 clearing banners, music or statistics. Payload and production runtime regressions
 cover exact replacement and legacy clearing.
+
+## 3 completed
+
+LKWD retains signed finite location keyword data, including explicit zero.
+Sorted pair keys and strict payload decoding preserve deterministic saves.
+Payload and host-Vulkan replacement/legacy regressions passed.
