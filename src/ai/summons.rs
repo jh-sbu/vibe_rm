@@ -83,8 +83,8 @@ impl Engine {
         self.delete_created(r);
     }
 
-    /// The player's summons with them now, about to leave through a load
-    /// door (or be moved) with them.
+    /// Live summons and loaded teammates actively following the player,
+    /// about to move through a load door or travel with them.
     pub(crate) fn player_party(&self) -> Vec<FormId> {
         let mut out: Vec<FormId> = self
             .magic
@@ -93,11 +93,27 @@ impl Engine {
             .filter(|&(&r, &c)| c == PLAYER_REF && self.actor_ref(r).is_some_and(|a| !a.dead))
             .map(|(&r, _)| r)
             .collect();
+        out.extend(
+            self.cells
+                .values()
+                .flat_map(|rt| &rt.actors)
+                .filter(|a| {
+                    !a.dead && !self.is_disabled(a.ref_id) && self.is_player_teammate(a.ref_id)
+                })
+                .filter(|a| {
+                    a.goal.is_some_and(|g| {
+                        g.behaviour == super::package::Behaviour::Follow
+                            && g.target == Some(PLAYER_REF)
+                    })
+                })
+                .map(|a| a.ref_id),
+        );
         out.sort();
+        out.dedup();
         out
     }
 
-    /// The player arrived (through a load door, or moved): their summons
+    /// The player arrived (through a load door, or moved): their party
     /// come too, behind them.
     pub(crate) fn party_arrives(&mut self, party: Vec<FormId>, yaw: f32) {
         let feet = self.player.position

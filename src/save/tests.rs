@@ -3380,3 +3380,40 @@ fn map_travel_section_roundtrip_legacy_and_malformed() {
     s.map_denied.insert(FormId(0x901));
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+fn teammate_section_rejects_invalid_ids_duplicates_and_trailing_bytes() {
+    let mut s = Snapshot::default();
+    s.teammates.insert(FormId(0x900), false);
+    let file = s.write();
+    assert_eq!(Snapshot::read(&file).unwrap().teammates, s.teammates);
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"TEAM");
+    assert!(Snapshot::read(&legacy).unwrap().teammates.is_empty());
+    let mut duplicate = file.clone();
+    duplicate.add(b"TEAM", vec![]);
+    assert!(Snapshot::read(&duplicate).is_err());
+    for actor in [FormId::NULL, PLAYER_REF, FormId(7)] {
+        let mut w = Writer::default();
+        w.len(1);
+        w.form(actor);
+        w.bool(true);
+        let mut bad = legacy.clone();
+        bad.add(b"TEAM", w.0);
+        assert!(Snapshot::read(&bad).is_err());
+    }
+    let mut w = Writer::default();
+    w.len(2);
+    for _ in 0..2 {
+        w.form(FormId(0x900));
+        w.bool(true);
+    }
+    let mut bad = legacy.clone();
+    bad.add(b"TEAM", w.0);
+    assert!(Snapshot::read(&bad).is_err());
+    let mut payload = file.section(b"TEAM").unwrap().to_vec();
+    payload.push(0);
+    let mut bad = legacy;
+    bad.add(b"TEAM", payload);
+    assert!(Snapshot::read(&bad).is_err());
+}

@@ -71,7 +71,22 @@ Implemented in `src/followers.rs` (the flag, who answers for a blow), with
 
 ## Not done
 
-- Teammates in fast travel, waiting, sleeping and load doors (the engine moves the
-  player's summons through load doors; teammates are not moved), dismissal
+- Teammates while waiting/sleeping and followers already unloaded, dismissal
   by death, the follower packages' follow distances (`escort.md`), and the
   favor menu.
+
+## Travel and load-door continuity
+
+Local UESP [Followers revision 3646982](https://en.uesp.net/w/index.php?oldid=3646982),
+Notes, describes fast travel and zone changes bringing stuck followers back.
+The shared party hooks now include living loaded teammates whose active goal
+is Follow targeting the player. Waiting, dismissed/nonteammate and dead actors
+are excluded; summons retain their existing inclusion and duplicates are removed.
+The normal move path retains destination placement in WRLD. Exact attachment,
+combat and disabled-actor behavior is not verified in SE. Unloaded followers,
+escorts, nonteammate quest followers and waiting catch-up remain separate work.
+
+Optional native TEAM retains teammate/canDoFavor flags by replacement; old saves
+clear them rather than keeping stale membership. Original `.ess` representation
+is not established. Tests use synthetic actor runtimes and no visual assets;
+spawn/animation attachment is not claimed to have been visually validated.
