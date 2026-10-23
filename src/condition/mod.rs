@@ -262,6 +262,11 @@ pub fn evaluate(e: &Engine, conds: &[Condition], ctx: Context) -> bool {
     combine(conds, |c| eval_one(e, c, ctx))
 }
 
+/// One condition alone, its OR / AND link ignored.
+pub fn evaluate_one(e: &Engine, c: &Condition, ctx: Context) -> bool {
+    eval_one(e, c, ctx)
+}
+
 /// Conditions the package alone decides (GetNumericPackageData against a
 /// number, its input worked out with `package_data`): whether they pass.
 /// `None` when any needs the world.

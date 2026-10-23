@@ -292,6 +292,18 @@ impl Menu {
             });
     }
 
+    /// Viewport pixels as stage pixels, through the movie's actual stage
+    /// transform (including scaling and letterbox offsets).
+    pub fn stage_point(&self, x: f64, y: f64) -> (f64, f64) {
+        self.player
+            .lock()
+            .unwrap()
+            .mutate_with_update_context(|context| {
+                let point = context.stage.inverse_view_matrix() * swf::Point::from_pixels(x, y);
+                (point.x.to_pixels(), point.y.to_pixels())
+            })
+    }
+
     /// A variable's value; objects come back as null.
     pub fn get(&self, path: &str) -> Value {
         self.player.lock().unwrap().get_avm1_variable(path)

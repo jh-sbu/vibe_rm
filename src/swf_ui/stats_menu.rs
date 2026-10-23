@@ -12,11 +12,14 @@
 //! movie's only calls are `MoveCamera` (the game's 3D camera) and
 //! `SetFadedIn`. Choices: `known_ambiguities/skills-menu.md`.
 
+use std::sync::Arc;
+
 use esp::FormId;
 use esp::actor_value as av;
 use ui_swf::{GameCall, Menu, UiSwf, Value};
 use winit::keyboard::KeyCode;
 
+use crate::condition::{self, Condition, Context};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::perks::TreeNode;
 
@@ -57,11 +60,26 @@ const TURN_SPEED: f32 = 520.0;
 const FPS: f32 = 24.0;
 /// The root timeline's frame the fade out ends on (`FadedOut`).
 const FADED_OUT: f64 = 16.0;
-/// Where perk trees sit on the screen, as fractions of its width and height
-/// (left, top, right, bottom), when the 3D constellations don't place them.
-const TREE_AREA: [f32; 4] = [0.1, 0.2, 0.9, 0.6];
-/// How near a click must be to a perk to pick it, screen heights.
-const REACH: f32 = 0.06;
+/// The movie's stage, pixels: the perk labels' fractions are of it
+/// (`UpdatePerkText` lerps them to 1280 and 720).
+const STAGE: (f32, f32) = (1280.0, 720.0);
+/// Where perk trees sit, as fractions of the stage (left, top, right,
+/// bottom), when the 3D constellations don't place them. The top is below
+/// the 175 pixels above which level up mode hides a label
+/// (`MaxPerkNameHeightLevelMode`; 115, `MaxPerkNameHeight`, otherwise).
+const TREE_AREA: [f32; 4] = [0.08, 0.27, 0.92, 0.66];
+/// A perk label's text box at full scale, stage pixels: its middle above the
+/// label's point and its height (the `PerkName` clip's `PerkNameClipInstance`
+/// sits at y -97.55, its `NameText` 47.85 high and centred on the point).
+const LABEL_RISE: f32 = 73.6;
+const LABEL_HEIGHT: f32 = 47.85;
+/// A perk label's width a character at full scale, stage pixels (measured
+/// on the movie's font).
+const LABEL_CHAR: f32 = 10.0;
+/// Space kept between labels, stage pixels.
+const LABEL_GAP: f32 = 12.0;
+/// How far outside a label's text a click still picks it, stage pixels.
+const LABEL_REACH: f32 = 8.0;
 
 /// What the player did, for the next update (the keys have no engine).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,8 +91,8 @@ pub(super) enum Act {
     Accept,
     Back,
     Legendary,
-    /// A click, as fractions of the screen.
-    Click(f32, f32),
+    /// A click, at window pixels.
+    Click(f64, f64),
     Wheel(f32),
 }
 
@@ -107,6 +125,8 @@ pub(super) struct StatsMenu {
     angle: f32,
     /// A level was taken here, so the menu is the game's level up mode.
     leveled: bool,
+    /// Presses that reached the level up popup since the last update.
+    presses: u32,
     acts: Vec<Act>,
     shown: Shown,
     /// Seconds towards the next frame of the labels' fade.
@@ -140,12 +160,91 @@ fn setting(engine: &Engine, name: &str, english: &str) -> String {
         .unwrap_or_else(|| english.to_string())
 }
 
+/// A perk label's scale at a height on the stage (`UpdatePerkText`: `y *
+/// 165 + 10` percent).
+fn label_scale(y: f32) -> f32 {
+    y * 1.65 + 0.1
+}
+
+/// A perk label's text box, stage pixels: its middle and half sizes, for a
+/// label of `chars` characters at the stage fractions `(x, y)`.
+fn label_box((x, y): (f32, f32), chars: usize) -> (f32, f32, f32, f32) {
+    let s = label_scale(y);
+    (
+        x * STAGE.0,
+        y * STAGE.1 - LABEL_RISE * s,
+        chars as f32 * LABEL_CHAR * s / 2.0,
+        LABEL_HEIGHT * s / 2.0,
+    )
+}
+
+/// Moves the labels at `points` (stage fractions) apart until their text
+/// boxes don't overlap, each the shorter way, kept in `TREE_AREA`.
+fn spread(points: &mut [(f32, f32)], chars: &[usize]) {
+    let [left, top, right, bottom] = TREE_AREA;
+    for _ in 0..64 {
+        let mut moved = false;
+        for i in 0..points.len() {
+            for j in i + 1..points.len() {
+                let (xi, yi, wi, hi) = label_box(points[i], chars[i]);
+                let (xj, yj, wj, hj) = label_box(points[j], chars[j]);
+                let over_x = wi + wj + LABEL_GAP - (xi - xj).abs();
+                let over_y = hi + hj - (yi - yj).abs();
+                if over_x <= 0.0 || over_y <= 0.0 {
+                    continue;
+                }
+                moved = true;
+                // The one first in the tree goes left (or up) on a tie.
+                if over_x <= over_y {
+                    let d = over_x / 2.0 / STAGE.0 * if xi <= xj { 1.0 } else { -1.0 };
+                    points[i].0 = (points[i].0 - d).clamp(left, right);
+                    points[j].0 = (points[j].0 + d).clamp(left, right);
+                } else {
+                    let d = over_y / 2.0 / STAGE.1 * if yi <= yj { 1.0 } else { -1.0 };
+                    points[i].1 = (points[i].1 - d).clamp(top, bottom);
+                    points[j].1 = (points[j].1 + d).clamp(top, bottom);
+                }
+            }
+        }
+        if !moved {
+            return;
+        }
+    }
+}
+
+/// What a condition asks of the player, for the card: a skill level
+/// (`GetActorValue` / `GetBaseActorValue` of a skill at least a value) as
+/// "Alteration 30", or a perk (`HasPerk`) by name.
+fn requirement(engine: &Engine, c: &Condition) -> Option<String> {
+    match c.func {
+        // GetActorValue, GetBaseActorValue
+        14 | 277 if (av::FIRST_SKILL..=av::LAST_SKILL).contains(&c.p1) => {
+            let value = if c.use_global {
+                engine.global_value(c.global)
+            } else {
+                c.value
+            };
+            let least = match c.op {
+                3 => value.ceil(),
+                2 => value.floor() + 1.0,
+                _ => return None,
+            };
+            Some(format!("{} {}", engine.skill_name(c.p1), least as i32))
+        }
+        // HasPerk == 1
+        448 if (c.op == 0 && c.value == 1.0) || (c.op == 1 && c.value == 0.0) => {
+            engine.perk(FormId(c.p1)).map(|p| p.name.clone())
+        }
+        _ => None,
+    }
+}
+
 impl StatsMenu {
     pub fn open(
         ui: &UiSwf,
         size: (u32, u32),
         engine: &mut Engine,
-        buttons: std::sync::Arc<Buttons>,
+        buttons: Arc<Buttons>,
     ) -> anyhow::Result<Self> {
         let menu = ui.open("statsmenu.swf", size)?;
         menu.set_responder(move |call, _| super::respond(&buttons, call));
@@ -171,6 +270,7 @@ impl StatsMenu {
             selected,
             angle: selected as f32 * SKILL_ANGLE,
             leveled: false,
+            presses: 0,
             acts: Vec::new(),
             shown: Shown::default(),
             fade: 0.0,
@@ -193,13 +293,28 @@ impl StatsMenu {
         }
     }
 
+    /// A press (Accept or a click) on its way to the level up popup: each
+    /// takes at most one level.
+    pub fn popup_press(&mut self) {
+        if self.level_up.is_some() {
+            self.presses += 1;
+        }
+    }
+
     /// The menu's own keys: the ring turns with the arrows (and A / D),
     /// Accept (E, Enter) opens a skill's perks or takes a perk, Tab and Esc
-    /// go back or leave, Ready Weapon (R) makes the skill legendary. True for
-    /// keys it took.
+    /// go back or leave, Space makes the ring's skill legendary (the key the
+    /// movie's Legendary hint shows; the control map has no event for it).
+    /// True for keys it took.
     pub fn key(&mut self, code: KeyCode) -> bool {
         if self.level_up.is_some() {
             // The popup's own buttons take them (Esc waits on its answer).
+            if matches!(
+                code,
+                KeyCode::KeyE | KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space
+            ) {
+                self.popup_press();
+            }
             return code == KeyCode::Escape || code == KeyCode::Tab;
         }
         let act = match code {
@@ -207,9 +322,9 @@ impl StatsMenu {
             KeyCode::ArrowRight | KeyCode::KeyD => Act::Right,
             KeyCode::ArrowUp | KeyCode::KeyW => Act::Up,
             KeyCode::ArrowDown | KeyCode::KeyS => Act::Down,
-            KeyCode::KeyE | KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space => Act::Accept,
+            KeyCode::KeyE | KeyCode::Enter | KeyCode::NumpadEnter => Act::Accept,
             KeyCode::Escape | KeyCode::Tab | KeyCode::KeyK => Act::Back,
-            KeyCode::KeyR => Act::Legendary,
+            KeyCode::Space => Act::Legendary,
             _ => return false,
         };
         self.act(act);
@@ -221,7 +336,7 @@ impl StatsMenu {
         RING[self.selected]
     }
 
-    /// Where a tree's nodes sit on the screen, as fractions of it: the grid
+    /// Where a tree's nodes sit on the stage, as fractions of it: the grid
     /// fitted to `TREE_AREA`, its y growing up.
     fn tree_points(nodes: &[TreeNode]) -> Vec<(f32, f32)> {
         let (mut x0, mut x1, mut y0, mut y1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
@@ -240,6 +355,44 @@ impl StatsMenu {
             .iter()
             .map(|n| (fit(n.x, x0, x1, left, right), fit(n.y, y0, y1, bottom, top)))
             .collect()
+    }
+
+    /// The longest label a node can have, characters: its name, with "n/n"
+    /// when it has ranks.
+    fn label_chars(engine: &Engine, node: &TreeNode) -> usize {
+        let name = engine.perk(node.perk).map_or(0, |p| p.name.chars().count());
+        let ranks = engine.perk_ranks(node.perk).len();
+        if ranks > 1 {
+            name + format!(" {ranks}/{ranks}").len()
+        } else {
+            name
+        }
+    }
+
+    /// Where a tree's labels sit: the grid fitted to the stage, then moved
+    /// apart where their text would overlap. Also each label's length.
+    fn layout(engine: &Engine, nodes: &[TreeNode]) -> (Vec<(f32, f32)>, Vec<usize>) {
+        let mut points = Self::tree_points(nodes);
+        let chars: Vec<usize> = nodes.iter().map(|n| Self::label_chars(engine, n)).collect();
+        spread(&mut points, &chars);
+        (points, chars)
+    }
+
+    /// The label whose text a click at `(x, y)` (stage fractions) is on or
+    /// next to; the nearest when several are.
+    fn label_at(points: &[(f32, f32)], chars: &[usize], x: f32, y: f32) -> Option<usize> {
+        let (x, y) = (x * STAGE.0, y * STAGE.1);
+        points
+            .iter()
+            .zip(chars)
+            .enumerate()
+            .filter_map(|(i, (&p, &n))| {
+                let (cx, cy, hw, hh) = label_box(p, n);
+                let (dx, dy) = ((x - cx).abs(), (y - cy).abs());
+                (dx <= hw + LABEL_REACH && dy <= hh + LABEL_REACH).then_some((i, dx * dx + dy * dy))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i)
     }
 
     /// The node `dx`, `dy` (screen directions) from `from`: the nearest within
@@ -261,13 +414,21 @@ impl StatsMenu {
             .map(|(i, _)| i)
     }
 
+    /// A click at window pixels as fractions of the movie's stage (letterbox
+    /// and scale taken out).
+    fn stage_fraction(&self, x: f64, y: f64) -> (f32, f32) {
+        let (sx, sy) = self.menu.stage_point(x, y);
+        (sx as f32 / STAGE.0, sy as f32 / STAGE.1)
+    }
+
     /// What the player did, then the movie's state.
     pub fn update(&mut self, engine: &mut Engine, dt: f32) {
         // A level up: the popup's buttons call back with the attribute.
         if let Some(popup) = &self.level_up {
-            // One press can reach the button twice (the key and the press it
-            // makes): a level a batch.
-            let mut taken = false;
+            // One press reaches the focused button twice (CLIK's
+            // `handleInput` and the player's own press of the focused clip):
+            // a level a press.
+            let mut presses = std::mem::take(&mut self.presses);
             for call in popup.take_calls() {
                 let attribute = match call.name.as_str() {
                     "addHealth" => av::HEALTH,
@@ -278,17 +439,16 @@ impl StatsMenu {
                         continue;
                     }
                 };
-                if !taken && engine.take_level_up(attribute) {
+                if presses > 0 && engine.take_level_up(attribute) {
+                    presses -= 1;
                     self.leveled = true;
-                    taken = true;
-                    let at = engine.camera.position;
-                    engine.play_sound_at("UILevelUpSD", at);
                 }
             }
             if engine.skills.pending == 0 {
                 self.level_up = None;
             }
         }
+        self.presses = 0;
         let acts = std::mem::take(&mut self.acts);
         for act in acts {
             self.apply(engine, act);
@@ -326,7 +486,8 @@ impl StatsMenu {
                 );
             }
             (Mode::Ring, Act::Accept) => self.enter(engine),
-            (Mode::Ring, Act::Click(x, _)) => {
+            (Mode::Ring, Act::Click(x, y)) => {
+                let (x, _) = self.stage_fraction(x, y);
                 if (0.4..0.6).contains(&x) {
                     self.enter(engine);
                 } else {
@@ -344,6 +505,19 @@ impl StatsMenu {
                             "UISkillsForwardSD"
                         },
                     );
+                }
+            }
+            (Mode::Ring, Act::Legendary) => {
+                // The movie shows the Legendary hint on the ring, for a skill
+                // at 100 (`SetPerkCount`).
+                let skill = self.skill();
+                if crate::skills::can_make_legendary(skill, engine.av_base(PLAYER_REF, skill)) {
+                    let text = setting(
+                        engine,
+                        "sLegendaryResetConfirm",
+                        "Making a skill Legendary will set it to 15 and return its perks. Are you sure? ",
+                    );
+                    engine.ask_legendary(skill, text, false);
                 }
             }
             (Mode::Ring, Act::Back) => self.close(),
@@ -364,7 +538,7 @@ impl StatsMenu {
         if nodes.is_empty() {
             return;
         }
-        let points = Self::tree_points(&nodes);
+        let (points, chars) = Self::layout(engine, &nodes);
         let at = node.and_then(|n| nodes.iter().position(|t| t.index == n));
         let pick = |this: &mut Self, i: usize| {
             this.mode = Mode::Perks {
@@ -410,17 +584,8 @@ impl StatsMenu {
                 }
             }
             Act::Click(x, y) => {
-                let aspect = 16.0 / 9.0;
-                let near = points
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &(px, py))| {
-                        let (dx, dy) = ((px - x) * aspect, py - y);
-                        (i, (dx * dx + dy * dy).sqrt())
-                    })
-                    .filter(|&(_, d)| d < REACH)
-                    .min_by(|a, b| a.1.total_cmp(&b.1));
-                if let Some((i, _)) = near {
+                let (x, y) = self.stage_fraction(x, y);
+                if let Some(i) = Self::label_at(&points, &chars, x, y) {
                     if at == Some(i) {
                         self.perks_act(engine, skill, node, Act::Accept);
                     } else {
@@ -429,17 +594,7 @@ impl StatsMenu {
                     }
                 }
             }
-            Act::Legendary => {
-                if crate::skills::can_make_legendary(skill, engine.av_base(PLAYER_REF, skill)) {
-                    let text = setting(
-                        engine,
-                        "sLegendaryResetConfirm",
-                        "Making a skill Legendary will set it to 15 and return its perks. Are you sure? ",
-                    );
-                    engine.ask_legendary(skill, text, false);
-                }
-            }
-            Act::Wheel(_) | Act::Back => {}
+            Act::Legendary | Act::Wheel(_) | Act::Back => {}
         }
     }
 
@@ -581,11 +736,10 @@ impl StatsMenu {
             shown.skills = flat;
         }
         // The perk points and mode.
-        let points = Some((!leveled, engine.skills.perk_points));
-        if points != shown.points {
-            let (stats, n) = points.unwrap();
-            m.callback("SetStatsMode", &[Value::Bool(stats), num(n as f32)]);
-            shown.points = points;
+        let points = engine.skills.perk_points;
+        if shown.points != Some((!leveled, points)) {
+            m.callback("SetStatsMode", &[Value::Bool(!leveled), num(points as f32)]);
+            shown.points = Some((!leveled, points));
         }
         // The card and, in a tree, the labels.
         match mode {
@@ -613,6 +767,15 @@ impl StatsMenu {
                             num(card[4].parse().unwrap_or(0.0)),
                         ],
                     );
+                    // The ring's card doesn't redo the hint over the ring:
+                    // Legendary for a skill at 100 (`SetPerkCount` only
+                    // leaves that hint up, `ShowLegendaryButtonHint` puts it
+                    // up), else the perks to spend.
+                    if crate::skills::can_make_legendary(skill, level as f32) {
+                        m.callback("ShowLegendaryButtonHint", &[]);
+                    } else {
+                        m.callback("SetPerkCount", &[num(points as f32)]);
+                    }
                     shown.card = card;
                 }
             }
@@ -624,7 +787,7 @@ impl StatsMenu {
     /// picked.
     fn perks_card(&mut self, engine: &mut Engine, skill: u32, node: Option<u32>) {
         let nodes = engine.perk_tree(skill);
-        let points = Self::tree_points(&nodes);
+        let (points, _) = Self::layout(engine, &nodes);
         let selected = node.and_then(|n| nodes.iter().position(|t| t.index == n));
         let mut labels = Vec::new();
         let mut list = Vec::new();
@@ -668,6 +831,8 @@ impl StatsMenu {
         }
         let level = engine.av_base(PLAYER_REF, skill).round() as i32;
         let legendary = engine.skills.legendary[(skill - av::FIRST_SKILL) as usize];
+        // The movie shows no name on a perk's card (`SetDescriptionCard`
+        // empties it in perk mode): the picked label is the name.
         let card = match selected {
             Some(i) => {
                 let n = &nodes[i];
@@ -675,22 +840,17 @@ impl StatsMenu {
                 let ranks = engine.perk_ranks(n.perk);
                 // The next rank's text, or the last's once all are taken.
                 let showing = next.map_or(*ranks.last().unwrap(), |x| x.0);
-                let perk = engine.perk(showing);
-                let name = engine
-                    .perk(n.perk)
-                    .map(|p| p.name.clone())
-                    .unwrap_or_default();
-                let desc = perk
-                    .as_ref()
+                let desc = engine
+                    .perk(showing)
                     .map(|p| p.description.clone())
                     .unwrap_or_default();
                 let needs = match next {
-                    Some((p, false)) => self.requirements(engine, p),
+                    Some((p, false)) => Self::requirements(engine, p),
                     _ => String::new(),
                 };
-                vec![name, desc, needs]
+                vec![desc, needs]
             }
-            None => vec![String::new(), String::new(), String::new()],
+            None => vec![String::new(), String::new()],
         };
         let key = vec![
             "perks".into(),
@@ -704,10 +864,10 @@ impl StatsMenu {
                 "SetDescriptionCard",
                 &[
                     Value::Bool(true),
-                    text(&card[0]),
+                    text(""),
                     num(0.0),
+                    text(&card[0]),
                     text(&card[1]),
-                    text(&card[2]),
                     num(level as f32),
                     text(&engine.skill_name(skill)),
                     num(legendary as f32),
@@ -718,30 +878,34 @@ impl StatsMenu {
     }
 
     /// What a perk asks that the player lacks, from its conditions: skill
-    /// levels and perks, as "Requires Alteration 30".
-    fn requirements(&self, engine: &Engine, perk: FormId) -> String {
+    /// levels and perks, as "Requires Alteration 30, Novice Alteration". A
+    /// condition's OR flag joins it to the next (the game's (a OR b) AND (c
+    /// OR d)): a group met is left out, one not met is listed joined by "or".
+    fn requirements(engine: &Engine, perk: FormId) -> String {
         let Some(p) = engine.perk(perk) else {
             return String::new();
         };
-        let mut parts = Vec::new();
-        for c in &p.conditions {
-            match c.func {
-                // GetActorValue, GetBaseActorValue
-                14 | 277 if (av::FIRST_SKILL..=av::LAST_SKILL).contains(&c.p1) => {
-                    parts.push(format!("{} {}", engine.skill_name(c.p1), c.value as i32));
-                }
-                // HasPerk
-                448 => {
-                    let wanted = FormId(c.p1);
-                    if !engine.has_perk(PLAYER_REF, wanted)
-                        && let Some(q) = engine.perk(wanted)
-                    {
-                        parts.push(q.name.clone());
-                    }
-                }
-                _ => {}
-            }
-        }
+        let ctx = Context {
+            subject: Some(PLAYER_REF),
+            ..Default::default()
+        };
+        let parts: Vec<String> = p
+            .conditions
+            .split_inclusive(|c| !c.or)
+            .filter(|group| {
+                !group
+                    .iter()
+                    .any(|c| condition::evaluate_one(engine, c, ctx))
+            })
+            .map(|group| {
+                group
+                    .iter()
+                    .filter_map(|c| requirement(engine, c))
+                    .collect::<Vec<_>>()
+                    .join(" or ")
+            })
+            .filter(|s| !s.is_empty())
+            .collect();
         if parts.is_empty() {
             return String::new();
         }
@@ -815,6 +979,49 @@ mod tests {
             |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).abs() < 1e-5 && (a.1 - b.1).abs() < 1e-5;
         assert!(near(points[0], (left, bottom)));
         assert!(near(points[1], (right, top)));
+    }
+
+    #[test]
+    fn level_up_mode_shows_the_top_of_a_tree() {
+        // `UpdatePerkText` hides a label whose point is above 175 of the
+        // stage's 720 pixels in level up mode.
+        assert!(TREE_AREA[1] * STAGE.1 > 175.0);
+    }
+
+    #[test]
+    fn overlapping_labels_move_apart_within_the_area() {
+        let mut points = vec![(0.5, 0.5), (0.52, 0.5), (0.5, 0.51)];
+        let chars = [20, 24, 12];
+        spread(&mut points, &chars);
+        let [left, top, right, bottom] = TREE_AREA;
+        for &(x, y) in &points {
+            assert!((left..=right).contains(&x) && (top..=bottom).contains(&y));
+        }
+        for i in 0..points.len() {
+            for j in i + 1..points.len() {
+                let (xi, yi, wi, hi) = label_box(points[i], chars[i]);
+                let (xj, yj, wj, hj) = label_box(points[j], chars[j]);
+                assert!(
+                    (xi - xj).abs() >= wi + wj + LABEL_GAP - 0.5
+                        || (yi - yj).abs() >= hi + hj - 0.5,
+                    "labels {i} and {j} overlap"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_click_on_a_label_text_picks_it() {
+        // The text sits above its label's point.
+        let points = [(0.3, 0.6), (0.7, 0.6)];
+        let chars = [10, 10];
+        let (cx, cy, _, _) = label_box(points[1], chars[1]);
+        assert_eq!(
+            StatsMenu::label_at(&points, &chars, cx / STAGE.0, cy / STAGE.1),
+            Some(1)
+        );
+        // The point itself is below the text, out of reach.
+        assert_eq!(StatsMenu::label_at(&points, &chars, 0.7, 0.6), None);
     }
 
     #[test]

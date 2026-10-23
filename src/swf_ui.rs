@@ -756,6 +756,17 @@ impl SwfUi {
         // The skills menu takes the mouse itself (the game keeps its own
         // selection), unless its level up popup or a message box is up.
         if self.message_box.shown.is_none()
+            && let Some(stats) = &mut self.stats
+            && stats.level_up.is_some()
+            && let WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: winit::event::MouseButton::Left,
+                ..
+            } = event
+        {
+            stats.popup_press();
+        }
+        if self.message_box.shown.is_none()
             && self.stats.as_ref().is_some_and(|s| s.level_up.is_none())
         {
             match event {
@@ -765,10 +776,7 @@ impl SwfUi {
                     ..
                 } => {
                     let (x, y) = self.pointer.position();
-                    self.stats_act = Some(stats_menu::Act::Click(
-                        x as f32 / self.size.0 as f32,
-                        y as f32 / self.size.1 as f32,
-                    ));
+                    self.stats_act = Some(stats_menu::Act::Click(x, y));
                     return true;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -1044,6 +1052,16 @@ impl SwfUi {
         self.pointer.moved(x, y);
         if !self.wants_input() {
             return;
+        }
+        // The skills menu takes the click itself, unless its popup is up.
+        if self.message_box.shown.is_none()
+            && let Some(stats) = &mut self.stats
+        {
+            if stats.level_up.is_none() {
+                self.stats_act = Some(stats_menu::Act::Click(x, y));
+                return;
+            }
+            stats.popup_press();
         }
         let menu = self.top();
         if let Some(dialogue) = &self.dialogue

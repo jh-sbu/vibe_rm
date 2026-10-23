@@ -16,7 +16,7 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 use crate::Options;
 use crate::engine::Engine;
 use crate::player::MoveInput;
-use crate::render::Renderer;
+use crate::render::{Camera, Renderer, Scene};
 
 fn init_data(opts: &Options) -> Result<(LoadOrder, vfs::Vfs)> {
     let data_dir = match &opts.data_dir {
@@ -237,7 +237,7 @@ pub fn run(opts: Options) -> Result<()> {
                         engine.camera.position - (engine.player.eye() - engine.player.position);
                 }
                 if opts.burst.is_some_and(|n| n > 0 && i % n == 0) {
-                    let (scene, camera) = crate::map_view::frame_parts(
+                    let (scene, camera) = frame_parts(
                         &engine.map_view,
                         &engine.stats_view,
                         engine.menu,
@@ -375,7 +375,7 @@ pub fn run(opts: Options) -> Result<()> {
         out.textures_delta = deltas;
         let size = [opts.width, opts.height];
         let hud_visible = crate::swf_ui::SwfUi::visible(&engine);
-        let (scene, camera) = crate::map_view::frame_parts(
+        let (scene, camera) = frame_parts(
             &engine.map_view,
             &engine.stats_view,
             engine.menu,
@@ -409,6 +409,21 @@ pub fn run(opts: Options) -> Result<()> {
     };
     event_loop.run_app(&mut app)?;
     Ok(())
+}
+
+/// What a frame draws: the world and the player's view, or the scene and
+/// camera of a menu that has its own (the world map, the skills menu's sky),
+/// by parts: the renderer is borrowed too.
+fn frame_parts<'a>(
+    map: &'a Option<crate::map_view::MapView>,
+    stats: &'a Option<crate::stats_view::StatsView>,
+    menu: Option<crate::items::Menu>,
+    scene: &'a Scene,
+    camera: Camera,
+) -> (&'a Scene, Camera) {
+    crate::map_view::frame_parts(map, menu)
+        .or_else(|| crate::stats_view::frame_parts(stats, menu))
+        .unwrap_or((scene, camera))
 }
 
 /// The game's own menus over the frame, unless `--egui-hud` or they can't be
@@ -983,7 +998,7 @@ impl ApplicationHandler for App {
                     _ => return,
                 };
                 let view = frame.texture.create_view(&Default::default());
-                let (scene, camera) = crate::map_view::frame_parts(
+                let (scene, camera) = frame_parts(
                     &s.engine.map_view,
                     &s.engine.stats_view,
                     s.engine.menu,
