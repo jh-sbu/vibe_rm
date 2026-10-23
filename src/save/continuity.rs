@@ -16,6 +16,7 @@ pub(crate) struct Continuity {
     pub assaulted: std::collections::HashSet<FormId>,
     pub player_assailants: std::collections::HashSet<FormId>,
     pub unreported: Vec<crate::crime::Unreported>,
+    pub last_crime: HashMap<FormId, crate::crime::CrimeType>,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -64,10 +65,18 @@ impl Continuity {
             assaulted: e.crime.assaulted.clone(),
             player_assailants: e.crime.player_assailants.clone(),
             unreported: e.crime.unreported.clone(),
+            last_crime: e.crime.last_crime.clone(),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.len(self.last_crime.len());
+        for (faction, kind) in sorted(&self.last_crime) {
+            w.form(faction);
+            w.u8(*kind as u8);
+        }
+        file.add(b"LCRM", w.0);
         let mut w = Writer::default();
         w.len(self.unreported.len());
         for crime in &self.unreported {
@@ -204,10 +213,33 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"LCRM")? {
+            use crate::crime::CrimeType::*;
+            let mut previous = None;
+            for _ in 0..r.count(5)? {
+                let faction = r.form()?;
+                ordered(&mut previous, faction)?;
+                let kind = match r.u8()? {
+                    0 => Steal,
+                    1 => Pickpocket,
+                    2 => Trespass,
+                    3 => Attack,
+                    4 => Murder,
+                    5 => Escape,
+                    6 => Werewolf,
+                    _ => return Err(Corrupt("invalid saved crime type".into())),
+                };
+                s.last_crime.insert(faction, kind);
+            }
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for &faction in self.last_crime.keys() {
+            nonnull(faction)?;
+        }
         for crime in &self.unreported {
             nonnull(crime.faction)?;
             if crime.gold <= 0 || crime.witnesses.is_empty() {
@@ -246,6 +278,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.last_crime = self.last_crime;
         e.crime.unreported = self.unreported;
         e.crime.assaulted = self.assaulted;
         e.crime.player_assailants = self.player_assailants;

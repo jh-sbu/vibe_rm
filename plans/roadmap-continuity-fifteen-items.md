@@ -69,3 +69,9 @@ UWIT preserves pending crime order, bounty amount, violence and witness
 identities. The runtime regression restores a pending report and kills its last
 witness through the existing loaded-actor update, withdrawing its saved bounty.
 Payload, runtime and legacy tests passed with host Vulkan.
+
+## 8 completed
+
+LCRM retains each faction's last reported crime for arrest Story Manager
+inputs. Decoding rejects unknown crime discriminants. Payload and host-Vulkan
+replacement/legacy tests passed.

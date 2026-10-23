@@ -239,3 +239,8 @@ No game assets or engine binaries were inspected for these additions.
   describes witnesses and bounty consequences. The current native policy treats
   an unloaded witness as having reached guards; this adjunct does not resolve
   that approximation or SE save timing. Reports are not advanced during apply.
+
+- `LCRM` preserves the existing last-crime input for later arrests without
+  replaying an arrest or report. The native enum uses the already documented
+  public crime types; SE save persistence and competing-report priority remain
+  unverified. See `known_ambiguities/crime.md`.
