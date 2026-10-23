@@ -2,7 +2,7 @@
 
 Implemented in `src/perks.rs`, with the hooks in `src/ai/combat.rs`,
 `src/detection.rs`, `src/locks.rs` and `src/pickpocket.rs`, and the perk trees in
-the skills menu (`src/ui.rs`). Sources: CommonLibSSE's `BGSPerk`,
+the skills menu (`src/swf_ui/stats_menu.rs`). Sources: CommonLibSSE's `BGSPerk`,
 `BGSPerkEntry`, `BGSEntryPoint` and `BGSEntryPointPerkEntry` headers (entry
 point and function numbers), `BGSSkillPerkTreeNode` (the `AVIF` tree fields),
 UESP's PERK record format and skill pages, the records themselves (`vrm-tool

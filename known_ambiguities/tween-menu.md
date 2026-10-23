@@ -17,13 +17,13 @@ magic menus' `ShowTweenMenu` / `CloseTweenMenu`.
 - **The bottom bar** is the journal's: the date, the level (with a level up
   waiting counted in) and the progress to the next. A level up waiting turns
   Skills into Level Up.
-- **Choosing.** Skills opens the skills view (egui's, with the perk trees),
+- **Choosing.** Skills opens the skills menu (`known_ambiguities/skills-menu.md`),
   Magic the magic menu, Items the inventory. The tween menu goes away while
   they are up.
 - **Coming back.** The inventory's and magic menu's `ShowTweenMenu` (Left on
   the categories, clicking outside, Right in the magic menu) fade them out
   and open the tween menu again; their `CloseTweenMenu` (Tab) goes back to
-  the world. The skills view goes straight back to the world.
+  the world. The skills menu goes straight back to the world.
 - **Closing.** Tab (the movie's own) and Esc fold it away
   (`StartCloseMenuAnim`), then `CloseMenu`.
 - **Sounds.** None: the game plays its own for opening, closing and

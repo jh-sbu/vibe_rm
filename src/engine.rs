@@ -256,6 +256,7 @@ pub struct Engine {
     pub map_markers: crate::map_markers::MapMarkers,
     /// The world map, while it is open.
     pub map_view: Option<crate::map_view::MapView>,
+    pub stats_view: Option<crate::stats_view::StatsView>,
     /// The view the next opening of the map starts from (console `map`):
     /// the position looked at, zoom and pitch.
     pub map_start: Option<(glam::Vec2, f32, f32)>,
@@ -442,6 +443,7 @@ impl Engine {
             messages: Default::default(),
             map_markers: Default::default(),
             map_view: None,
+            stats_view: None,
             map_start: None,
             quest_targets: Default::default(),
             harvests: Default::default(),

@@ -38,6 +38,9 @@ pub enum BoxAction {
     Poison { weapon: FormId, poison: FormId },
     /// A selected map marker; all travel checks run again on acceptance.
     FastTravel { marker: FormId },
+    /// Making a skill Legendary, asked twice (`sLegendaryResetConfirm`, then
+    /// `sLegendaryResetSecondConfirm`).
+    Legendary { skill: u32, second: bool },
 }
 
 /// A help message (`ShowAsHelpMessage`): shown for `duration` seconds every
@@ -406,6 +409,13 @@ impl Engine {
         });
     }
 
+    /// The skills menu's question before a skill goes Legendary.
+    pub fn ask_legendary(&mut self, skill: u32, text: String, second: bool) {
+        let yes = self.gmst_string("sYes").unwrap_or_else(|| "Yes".into());
+        let no = self.gmst_string("sNo").unwrap_or_else(|| "No".into());
+        self.ask(text, vec![yes, no], BoxAction::Legendary { skill, second });
+    }
+
     /// The player pressed button `index` (as `Show` returns it) of the message
     /// box in front: it closes and its script carries on with the index.
     pub fn choose_message_button(&mut self, index: i32) {
@@ -425,6 +435,18 @@ impl Engine {
             }
             Some(BoxAction::Poison { weapon, poison }) if index == 0 => {
                 self.apply_poison(PLAYER_REF, weapon, poison)
+            }
+            Some(BoxAction::Legendary { skill, second }) if index == 0 => {
+                if second {
+                    self.make_skill_legendary(skill);
+                } else {
+                    let text = self
+                        .gmst_string("sLegendaryResetSecondConfirm")
+                        .unwrap_or_else(|| {
+                            "Are you sure you want to make this skill Legendary?".into()
+                        });
+                    self.ask_legendary(skill, text, true);
+                }
             }
             _ => {}
         }
