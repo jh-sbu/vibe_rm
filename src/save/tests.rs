@@ -4637,3 +4637,33 @@ fn durable_attack_recovery_invalid() {
     s.continuity.attack_recovery = f32::INFINITY;
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_map_camera() {
+    let (_fixture, mut e) = engine("durable-map_camera");
+    e.map_start = Some((glam::Vec2::new(100.0, -200.0), 0.4, 60.0));
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"MCAM");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.map_start = None;
+    e.menu = Some(crate::items::Menu::Map);
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(
+        e.map_start,
+        Some((glam::Vec2::new(100.0, -200.0), 0.4, 60.0))
+    );
+    assert!(e.map_view.is_none());
+    assert!(e.menu.is_none());
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"MCAM");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.map_start.is_none());
+}
+#[test]
+fn durable_map_camera_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.map_camera = Some((glam::Vec2::ZERO, f32::NAN, 60.0));
+    assert!(Snapshot::read(&s.write()).is_err());
+}
