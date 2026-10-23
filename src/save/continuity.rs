@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub attack_recovery: f32,
     pub sneaking: bool,
     pub critical_hits: std::collections::HashSet<FormId>,
     pub random_streams: Option<(u64, u64)>,
@@ -97,6 +98,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            attack_recovery: e.player_attack_recovery.max(0.0),
             sneaking: e.player.sneaking,
             critical_hits: e.critically_hit.clone(),
             random_streams: Some((e.rng, e.cond_rng.get())),
@@ -139,6 +141,9 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.f32(self.attack_recovery);
+        file.add(b"ATRC", w.0);
         let mut w = Writer::default();
         w.bool(self.sneaking);
         file.add(b"SNEK", w.0);
@@ -336,6 +341,10 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"ATRC")? {
+            s.attack_recovery = r.f32()?;
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"SNEK")? {
             s.sneaking = r.bool()?;
             r.finish()?;
@@ -571,6 +580,7 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        time(self.attack_recovery as f64)?;
         for &id in &self.critical_hits {
             nonnull(id)?;
         }
@@ -697,6 +707,12 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.player_attack_recovery = self.attack_recovery;
+        e.player_swing = None;
+        e.player_attack_held = None;
+        e.player_blocking = false;
+        // Graph attack phases are not saved; don't finish the old game's swing.
+        e.player_body = None;
         e.player.sneaking = self.sneaking;
         e.player.crouch = self.sneaking as u8 as f32;
         e.player.moving = false;

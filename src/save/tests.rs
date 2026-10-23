@@ -4610,3 +4610,30 @@ fn durable_sneak_stance_invalid() {
     file.add(b"SNEK", vec![2]);
     assert!(Snapshot::read(&file).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_attack_recovery() {
+    let (_fixture, mut e) = engine("durable-attack_recovery");
+    e.player_attack_recovery = 0.35;
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"ATRC");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.player_attack_recovery = 99.0;
+    e.player_blocking = true;
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(e.player_attack_recovery, 0.35);
+    assert!(!e.player_blocking);
+    assert!(e.player_swing.is_none());
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"ATRC");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.player_attack_recovery, 0.0);
+}
+#[test]
+fn durable_attack_recovery_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.attack_recovery = f32::INFINITY;
+    assert!(Snapshot::read(&s.write()).is_err());
+}
