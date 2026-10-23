@@ -4320,3 +4320,31 @@ fn durable_private_homes_invalid() {
     s.continuity.private_homes.insert(ACTOR, FormId::NULL);
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_home_warnings() {
+    let (_fixture, mut e) = engine("durable-home_warnings");
+    e.crime.warned_homes.insert(ACTOR, CELL);
+    e.crime.time_to_go_next = 17.0;
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"HWAR");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.crime.warned_homes.clear();
+    e.crime.time_to_go_next = 99.0;
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(e.crime.warned_homes.get(&ACTOR), Some(&CELL));
+    assert_eq!(e.crime.time_to_go_next, 17.0);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"HWAR");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.warned_homes.is_empty());
+    assert_eq!(e.crime.time_to_go_next, 0.0);
+}
+#[test]
+fn durable_home_warnings_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.home_warnings.1 = f64::INFINITY;
+    assert!(Snapshot::read(&s.write()).is_err());
+}
