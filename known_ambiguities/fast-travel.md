@@ -63,3 +63,11 @@ the existing first-matching-link reader is used. Broken, disabled, deleted,
 nonfinite or unplaced targets fail before any cells unload. No link chains are
 followed. Interior linked destinations are accepted; native edge cases and
 ragdoll behavior remain unverified.
+
+## Relocation
+
+Accepted map travel uses the existing exterior/interior loaders, including feet
+clearance, ground correction, heading, weather setup, streaming and party hooks.
+All known refusals and destination validation happen before unloading. The map
+closes only on successful arrival. A loading-screen presentation, autosave timing
+and the distinct scripted Game.FastTravel native remain separate work.

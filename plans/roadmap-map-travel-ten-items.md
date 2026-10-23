@@ -45,3 +45,10 @@ transform, with a self-marker fallback. Reject unavailable markers and broken,
 disabled, deleted, nonfinite or unplaced landing points. Four fast-travel tests
 passed on host Vulkan, including generated world/cell/marker records, linked
 heading, keyworded-link isolation, denial and malformed destination cases.
+
+## 5 completed
+
+Added the validated map-travel relocation entry point through both normal
+loaders. Five fast-travel tests passed on host Vulkan. The new integration
+checks refusal without movement, exterior grid/feet/heading, then an interior
+linked arrival with its own feet/heading. UI and elapsed time follow next.
