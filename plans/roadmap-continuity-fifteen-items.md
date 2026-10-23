@@ -44,3 +44,9 @@ cover exact replacement and legacy clearing.
 LKWD retains signed finite location keyword data, including explicit zero.
 Sorted pair keys and strict payload decoding preserve deterministic saves.
 Payload and host-Vulkan replacement/legacy regressions passed.
+
+## 4 completed
+
+CRFC preserves actor crime-faction overrides, distinguishing an explicit
+removal from absence. Payload and host-Vulkan API lookup/replacement/legacy
+regressions passed.

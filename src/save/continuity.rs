@@ -11,6 +11,7 @@ use std::collections::HashMap;
 pub(crate) struct Continuity {
     pub cleared_locations: std::collections::HashSet<FormId>,
     pub location_keyword_data: HashMap<(FormId, FormId), f32>,
+    pub crime_factions: HashMap<FormId, Option<FormId>>,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -54,10 +55,18 @@ impl Continuity {
         Self {
             cleared_locations: e.cleared_locations.clone(),
             location_keyword_data: e.location_keyword_data.clone(),
+            crime_factions: e.crime.crime_factions.clone(),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.len(self.crime_factions.len());
+        for (actor, faction) in sorted(&self.crime_factions) {
+            w.form(actor);
+            w.opt_form(*faction);
+        }
+        file.add(b"CRFC", w.0);
         let mut w = Writer::default();
         w.len(self.location_keyword_data.len());
         for ((location, keyword), value) in sorted(&self.location_keyword_data) {
@@ -111,10 +120,25 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"CRFC")? {
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.crime_factions.insert(actor, r.opt_form()?);
+            }
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for (&actor, &faction) in &self.crime_factions {
+            nonnull(actor)?;
+            if let Some(faction) = faction {
+                nonnull(faction)?;
+            }
+        }
         for (&(location, keyword), &value) in &self.location_keyword_data {
             nonnull(location)?;
             nonnull(keyword)?;
@@ -132,6 +156,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.crime_factions = self.crime_factions;
         e.location_keyword_data = self.location_keyword_data;
         e.cleared_locations = self.cleared_locations;
         e.harvests.harvested = self.harvested;
