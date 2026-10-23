@@ -1,93 +1,62 @@
-//! The skills menu's sky: the game's own star models (`Interface/
-//! INTStatMenuStars.nif`, the starfields and constellations the ring of skills
-//! turns under) drawn as the scene behind `statsmenu.swf`. The menu draws its
-//! own scene, as the map does; the loaded cells aren't in it. Choices:
-//! `known_ambiguities/skills-menu.md`.
+//! The skills menu's sky: the game's skydome (`Interface/INTPerkSkydome.nif`)
+//! drawn as the scene behind `statsmenu.swf`, the ring of skills and a skill's
+//! perks alike. Its eighteen constellation images (`cImage00` to `cImage17`)
+//! and the `Point00` to `Point17` nodes stand around its origin 20 degrees
+//! apart, clockwise from +Y seen from above: the ring's skills, in the ring's
+//! order. The camera stands at the origin and faces the selected skill's. The
+//! menu draws its own scene, as the map does; the loaded cells aren't in it.
+//! Choices: `known_ambiguities/skills-menu.md`.
 
 use glam::{Mat4, Vec3, Vec4};
 
 use crate::engine::Engine;
 use crate::render::{Camera, Environment, Instance, Scene};
 
-/// The ring screen's stars.
-///
-/// Its mage, thief and warrior constellations' planes (`const01:0`,
-/// `const05:0`, `const09:0`) name textures (`INTmageConst`, `INTtheifConst`,
-/// `INTwarConst`) that the installed archives don't have, so they are left
-/// out.
-const STARS: &str = "meshes/interface/intstatmenustars.nif#without=const01:0|const05:0|const09:0";
-/// The sky of a skill's perks.
 const DOME: &str = "meshes/interface/intperkskydome.nif";
-/// Where the model's `CameraPosition` node puts the camera.
-const CAMERA_AT: Vec3 = Vec3::new(0.0, -198.345, -123.842);
+/// The camera's vertical field of view on the ring and in a skill's perks
+/// (closer in on the skill's constellation), degrees.
+const RING_FOV: f32 = 60.0;
+const PERKS_FOV: f32 = 40.0;
+/// How far a skill's perks look up, degrees: to the middle of the
+/// constellation images, which stand about 15 units over the origin at a
+/// radius of about 90.
+const PERKS_PITCH: f32 = 9.5;
 
 pub struct StatsView {
-    /// The ring's sky, if its model loaded.
-    stars: Option<Scene>,
-    /// The skydome a skill's perks sit in, drawn instead while a tree is
-    /// open, if its model loaded.
-    dome: Option<Scene>,
+    scene: Scene,
     in_perks: bool,
-    /// The ring's turn the stars were last turned to, degrees.
+    /// The ring's turn, degrees: the heading the camera faces.
     angle: f32,
 }
 
 impl StatsView {
-    /// Whether the sky drawn is the dome: a tree is open and the dome
-    /// loaded, or the stars didn't.
-    fn shows_dome(&self) -> bool {
-        self.dome.is_some() && (self.in_perks || self.stars.is_none())
-    }
-
     /// The scene to draw.
     pub fn scene(&self) -> &Scene {
-        let scene = if self.shows_dome() {
-            &self.dome
-        } else {
-            &self.stars
-        };
-        scene.as_ref().expect("a stats view has a sky")
+        &self.scene
     }
 
-    /// Whether a skill's tree is open (its sky) rather than the ring.
+    /// Whether a skill's tree is open rather than the ring.
     pub fn set_perks(&mut self, open: bool) {
         self.in_perks = open;
     }
 
     pub fn camera(&self) -> Camera {
-        if self.shows_dome() {
-            return Camera {
-                position: Vec3::ZERO,
-                yaw: 0.0,
-                pitch: 0.0,
-                fov_y: 60f32.to_radians(),
-            };
-        }
+        let (fov, pitch) = if self.in_perks {
+            (PERKS_FOV, PERKS_PITCH)
+        } else {
+            (RING_FOV, 0.0)
+        };
         Camera {
-            position: CAMERA_AT,
-            yaw: 0.0,
-            // The model's `CameraPosition` node is tilted up 30 degrees.
-            pitch: 30f32.to_radians(),
-            fov_y: 60f32.to_radians(),
+            position: Vec3::ZERO,
+            yaw: self.angle.to_radians(),
+            pitch: pitch.to_radians(),
+            fov_y: fov.to_radians(),
         }
     }
 
-    /// Turns the constellations to the ring's angle.
+    /// Faces the skill at the ring's angle (20 degrees a skill).
     pub fn set_angle(&mut self, angle: f32) {
-        if angle == self.angle {
-            return;
-        }
         self.angle = angle;
-        let Some(stars) = &mut self.stars else {
-            return;
-        };
-        let turn = Mat4::from_rotation_z(-angle.to_radians());
-        for inst in &mut stars.sky {
-            let mut turned = Instance::new(inst.model.clone(), turn);
-            turned.sky = true;
-            turned.tint = inst.tint;
-            *inst = turned;
-        }
     }
 }
 
@@ -103,16 +72,15 @@ pub fn frame_parts(
 }
 
 impl Engine {
-    /// A sky model as the only thing in a scene. None when it can't be
-    /// loaded.
-    fn sky_scene(&mut self, path: &str) -> Option<Scene> {
-        let path = path.to_string();
+    /// Builds the skills menu's sky. None when the skydome can't be loaded.
+    pub fn open_stats_view(&mut self) -> Option<()> {
+        let path = DOME.to_string();
         self.models
             .load_all(&mut self.renderer, &self.vfs, std::slice::from_ref(&path));
         let mut sky = Instance::new(self.models.get(&path)?, Mat4::IDENTITY);
         sky.sky = true;
         sky.tint = Vec4::ONE;
-        Some(Scene {
+        let scene = Scene {
             env: Environment {
                 sun_color: Vec3::ZERO,
                 ambient: Vec3::ONE,
@@ -123,20 +91,9 @@ impl Engine {
             },
             sky: vec![sky],
             ..Default::default()
-        })
-    }
-
-    /// Builds the skills menu's sky: either model alone stands in for both.
-    /// None when neither can be loaded.
-    pub fn open_stats_view(&mut self) -> Option<()> {
-        let stars = self.sky_scene(STARS);
-        let dome = self.sky_scene(DOME);
-        if stars.is_none() && dome.is_none() {
-            return None;
-        }
+        };
         self.stats_view = Some(StatsView {
-            stars,
-            dome,
+            scene,
             in_perks: false,
             angle: 0.0,
         });

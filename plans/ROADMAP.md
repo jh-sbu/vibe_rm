@@ -267,10 +267,11 @@ game each piece unlocks.
   lines, the topics sliding in, topics already heard greyed, the clicked
   topic kept above while the answer is said, a click or E skipping a line,
   Tab or Esc leaving; `known_ambiguities/dialogue-menu.md`); the skills menu
-  (`statsmenu.swf` on K or the tween menu's Skills: the ring of skills turning
-  under the game's star sky (`INTStatMenuStars.nif`), each skill's progress and
-  description, the player's card and meters, a skill's perks over the game's
-  nebula skydome (`INTPerkSkydome.nif`) picked with the arrows or mouse and
+  (`statsmenu.swf` on K or the tween menu's Skills: the ring of skills in the
+  order of the game's skydome (`INTPerkSkydome.nif`), the camera turning to
+  each skill's constellation image, each skill's progress and description,
+  the player's card and meters, a skill's perks over its constellation
+  picked with the arrows or mouse and
   taken for a perk point, Legendary behind its two confirmations, and
   `levelupmenu.swf` choosing health, magicka or stamina for each level up;
   `known_ambiguities/skills-menu.md`);
@@ -1817,9 +1818,14 @@ game each piece unlocks.
    - The skills menu's rest (done: see Done): the perk trees as the game's 3D
      constellations (stars at the perks that light when taken, the lines
      between them, `INTPerkStars01.nif` / `INTPerkLine01.nif` and their
-     animations, the skydome's camera moves and per-skill constellation images,
-     `MoveCamera`), each ring skill's own constellation, the ring turning only
-     the constellations, the gamepad
+     `.hkx` behaviours; the perk labels where the stars project, in place of
+     the flat layout), the skydome's sequences (`CameraIntro` / `CameraOutro`
+     moving `CameraPosition` with the movie's `MoveCamera` alpha, `Idle`'s
+     drift and gas fades), the camera moving in on a skill's constellation in
+     place of the narrower field of view, the constellation images' fades
+     (`StatsMenu` keeps an effect shader and a resting / entering / exiting
+     state for each of the 18 trees; what changes and when needs evidence),
+     the gamepad
    - The map's rest (the world map and `map.swf` are done: see Done; markers, discovery
      and travel permission are in `src/map_markers.rs`, the view in
      `src/map_view.rs`), in order: the map's clouds, lighting, sea and fog
