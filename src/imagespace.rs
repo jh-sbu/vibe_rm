@@ -247,13 +247,13 @@ impl Active {
 }
 
 /// `Game.FadeOutGame`: fading to (or from) black or white.
-#[derive(Debug, Clone, Copy)]
-struct GameFade {
-    out: bool,
-    color: [f32; 3],
-    delay: f32,
-    duration: f32,
-    t: f32,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct GameFade {
+    pub(crate) out: bool,
+    pub(crate) color: [f32; 3],
+    pub(crate) delay: f32,
+    pub(crate) duration: f32,
+    pub(crate) t: f32,
 }
 
 impl GameFade {
@@ -310,7 +310,7 @@ pub struct ImageSpace {
     /// The base image space this frame.
     pub base: Imgs,
     pub(crate) active: Vec<Active>,
-    fade: Option<GameFade>,
+    pub(crate) fade: Option<GameFade>,
     shakes: Vec<Shake>,
     /// The view turn the shake added last frame (yaw, pitch), taken back first.
     shake_turn: (f32, f32),
@@ -322,6 +322,10 @@ pub struct ImageSpace {
 }
 
 impl ImageSpace {
+    pub(crate) fn unshaken_yaw(&self, yaw: f32) -> f32 {
+        yaw - self.shake_turn.0
+    }
+
     pub(crate) fn sleep_fade_amount(&self) -> f32 {
         self.sleep_fade.map_or(0.0, SleepFade::amount)
     }
@@ -386,6 +390,14 @@ impl ImageSpace {
 }
 
 impl Engine {
+    pub(crate) fn clear_image_shakes_for_load(&mut self) {
+        self.camera.yaw -= self.imagespace.shake_turn.0;
+        self.camera.pitch -= self.imagespace.shake_turn.1;
+        self.imagespace.shakes.clear();
+        self.imagespace.shake_turn = (0.0, 0.0);
+        self.imagespace.shake_time = 0.0;
+    }
+
     pub(crate) fn update_sleep_imagespace(&mut self, dt: f32) {
         self.imagespace.advance_sleep_fade(dt);
         self.scene.post = self.imagespace.sleep_post();

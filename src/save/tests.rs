@@ -4669,6 +4669,15 @@ fn durable_map_camera() {
     legacy.sections.retain(|(tag, _)| tag != b"MCAM");
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(e.map_start.is_none());
+    // Console start preferences are clamped by map opening; capture uses the
+    // same bounds even if a save is requested before the map opens.
+    e.map_start = Some((glam::Vec2::ZERO, -2.0, 100.0));
+    let captured = Snapshot::capture(&e);
+    assert_eq!(
+        captured.continuity.map_camera,
+        Some((glam::Vec2::ZERO, 0.0, 89.0))
+    );
+    assert!(Snapshot::read(&captured.write()).is_ok());
 }
 #[test]
 fn durable_map_camera_invalid() {
@@ -4721,4 +4730,189 @@ fn durable_image_modifiers_invalid() {
             cross_fade: false,
         });
     assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_script_fade() {
+    let (_fixture, mut e) = engine("durable-script_fade");
+    e.fade_out_game(true, false, 0.5, 2.0);
+    e.update_imagespace(1.0);
+    let expected = e.imagespace.fade;
+    let expected_post = e.scene.post.fade;
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"GFAD");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.fade_out_game(false, true, 0.0, 10.0);
+    e.shake_camera(None, 1.0, 100.0);
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(e.imagespace.fade, expected);
+    e.update_imagespace(0.0);
+    assert_eq!(e.scene.post.fade, expected_post);
+    e.update_imagespace(2.0);
+    assert_eq!(e.scene.post.fade, [1.0; 4]);
+    e.fade_out_game(false, true, 0.0, 1.0);
+    e.update_imagespace(1.0);
+    assert!(e.imagespace.fade.is_none());
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"GFAD");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.imagespace.fade.is_none());
+    e.update_imagespace(0.0);
+    assert_eq!(e.scene.post.fade[3], 0.0);
+}
+#[test]
+fn durable_script_fade_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.script_fade = Some(crate::imagespace::GameFade {
+        out: true,
+        color: [0.0; 3],
+        delay: 0.0,
+        duration: -1.0,
+        t: 0.0,
+    });
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+fn durable_collections_reject_reordered_duplicate_and_inflated_keys() {
+    let mut s = Snapshot::default();
+    for id in [ACTOR, CELL] {
+        s.continuity.private_homes.insert(id, QUEST);
+        s.continuity.home_warnings.0.insert(id, QUEST);
+        s.continuity.pursuits.insert(
+            id,
+            crate::arrest::Pursuit {
+                faction: QUEST,
+                bark_in: 1.0,
+            },
+        );
+        s.continuity.resistance.0.insert(id);
+        s.continuity.critical_hits.insert(id);
+    }
+    let file = s.write();
+    for (tag, offset, stride) in [
+        (b"PHOM", 4, 8),
+        (b"HWAR", 12, 8),
+        (b"GPRS", 4, 12),
+        (b"ARRY", 9, 4),
+        (b"LHCR", 4, 4),
+    ] {
+        let payload = file.section(tag).unwrap();
+        for mode in 0..3 {
+            let mut bytes = payload.to_vec();
+            if mode == 0 {
+                let key = bytes[offset..offset + 4].to_vec();
+                bytes[offset + stride..offset + stride + 4].copy_from_slice(&key);
+            } else if mode == 1 {
+                let first = bytes[offset..offset + stride].to_vec();
+                let second = bytes[offset + stride..offset + 2 * stride].to_vec();
+                bytes[offset..offset + stride].copy_from_slice(&second);
+                bytes[offset + stride..offset + 2 * stride].copy_from_slice(&first);
+            } else {
+                bytes[offset - 4..offset].copy_from_slice(&u32::MAX.to_le_bytes());
+            }
+            let mut bad = file.clone();
+            bad.sections.retain(|(t, _)| t != tag);
+            bad.add(tag, bytes);
+            assert!(
+                Snapshot::read(&bad).is_err(),
+                "accepted {tag:?} mode {mode}"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_invalid_apply_is_transactional() {
+    let (_fixture, mut e) = engine("durable-transactional");
+    e.player_health = 123.0;
+    e.rng = 12345;
+    e.crime.arrests.days_in_jail = 17;
+    e.player.sneaking = true;
+    for case in 0..14 {
+        let mut s = Snapshot::capture(&e);
+        match case {
+            0 => {
+                s.continuity.trespass = Some(crate::crime::Trespass {
+                    cell: CELL,
+                    level: -1,
+                    next: 0.0,
+                })
+            }
+            1 => {
+                s.continuity.private_homes.insert(FormId::NULL, CELL);
+            }
+            2 => s.continuity.home_warnings.1 = f64::NAN,
+            3 => {
+                s.continuity.pursuits.insert(
+                    ACTOR,
+                    crate::arrest::Pursuit {
+                        faction: QUEST,
+                        bark_in: -1.0,
+                    },
+                );
+            }
+            4 => s.continuity.resistance.2 = f32::NAN,
+            5 => s.continuity.sentence.1 = Some(FormId::NULL),
+            6 => s.continuity.jail_days = -1,
+            7 => s.continuity.activations.push((0.0, ACTOR, FormId::NULL)),
+            8 => s.continuity.random_streams = Some((0, 0)),
+            9 => {
+                s.continuity.critical_hits.insert(FormId::NULL);
+            }
+            10 => s.continuity.attack_recovery = -1.0,
+            11 => s.continuity.map_camera = Some((glam::Vec2::ZERO, 2.0, 60.0)),
+            12 => s
+                .continuity
+                .image_modifiers
+                .push(crate::imagespace::Active {
+                    imad: FormId::NULL,
+                    t: 0.0,
+                    strength: 1.0,
+                    fade_in: 0.0,
+                    fade_out: None,
+                    cross_fade: false,
+                }),
+            13 => {
+                s.continuity.script_fade = Some(crate::imagespace::GameFade {
+                    out: true,
+                    color: [0.5; 3],
+                    delay: 0.0,
+                    duration: 1.0,
+                    t: 0.0,
+                })
+            }
+            _ => unreachable!(),
+        }
+        assert!(s.apply(&mut e).is_err(), "accepted invalid case {case}");
+        assert_eq!(e.player_health, 123.0);
+        assert_eq!(e.rng, 12345);
+        assert_eq!(e.crime.arrests.days_in_jail, 17);
+        assert!(e.player.sneaking);
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_cell_attachment_preserves_stance_and_random_continuation() {
+    let (_fixture, mut e) = engine("durable-cell-attachment");
+    e.player.sneaking = true;
+    e.rng = 12345;
+    e.cond_rng.set(789);
+    let mut s = Snapshot::capture(&e);
+    s.spot = Some(Spot {
+        location: Location::Interior(CELL),
+        feet: Vec3::ZERO,
+        yaw: 0.0,
+    });
+    let expected = (e.rand(), e.peek_rand());
+    e.player.sneaking = false;
+    s.apply(&mut e).unwrap();
+    assert_eq!(e.location, Location::Interior(CELL));
+    assert!(e.player.sneaking);
+    assert_eq!(e.player.crouch, 1.0);
+    assert_eq!((e.rand(), e.peek_rand()), expected);
 }
