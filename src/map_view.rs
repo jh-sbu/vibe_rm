@@ -311,6 +311,7 @@ impl Engine {
         let Some(view) = &self.map_view else { return };
         let world = view.world;
         let mut rows = self.map_rows_for_world(world);
+        rows.extend(self.map_quest_rows(world));
         if let Some((pos, rotation)) = self.map_view.as_ref().and_then(|v| v.player) {
             rows.push(MapRow {
                 marker: None,
@@ -452,6 +453,21 @@ mod tests {
                         .flat_map(f32::to_le_bytes)
                         .collect::<Vec<_>>(),
                 );
+            let mut refs = vec![Node::Record(marker)];
+            if w == FormId(0x800) {
+                refs.push(Node::Record(
+                    R::new(b"REFR", FormId(0xC00))
+                        .u32(b"NAME", 0x880)
+                        .field(
+                            b"DATA",
+                            &[30.0, 40.0, 0.0, 0.0, 0.0, 0.0]
+                                .into_iter()
+                                .flat_map(f32::to_le_bytes)
+                                .collect::<Vec<_>>(),
+                        )
+                        .field(b"XTEL", &0xC01u32.to_le_bytes()),
+                ));
+            }
             children.push(Node::Record(r));
             children.push(Node::Group {
                 label: w.0.to_le_bytes(),
@@ -464,13 +480,59 @@ mod tests {
                         children: vec![Node::Group {
                             label: c.0.to_le_bytes(),
                             group_type: g::CELL_PERSISTENT,
-                            children: vec![Node::Record(marker)],
+                            children: refs,
                         }],
                     },
                 ],
             });
         }
+        let mut false_condition = [0u8; 32];
+        false_condition[4..8].copy_from_slice(&1.0f32.to_le_bytes());
+        false_condition[8..10].copy_from_slice(&72u16.to_le_bytes());
+        false_condition[12..16].copy_from_slice(&0xDEADu32.to_le_bytes());
+        let quests = (0..4)
+            .map(|i| {
+                let r = R::new(b"QUST", FormId(0xB00 + i))
+                    .zstring(b"FULL", &format!("Synthetic quest {i}"))
+                    .field(b"QOBJ", &10u16.to_le_bytes())
+                    .field(b"QSTA", &[0; 8]);
+                if i == 2 {
+                    r.field(b"CTDA", &false_condition)
+                } else {
+                    r
+                }
+            })
+            .collect();
         let nodes = vec![
+            Node::top(b"QUST", quests),
+            Node::Group {
+                label: *b"CELL",
+                group_type: g::TOP,
+                children: vec![
+                    Node::Record(R::new(b"CELL", FormId(0xD00)).field(b"DATA", &[1, 0])),
+                    Node::Group {
+                        label: 0xD00u32.to_le_bytes(),
+                        group_type: g::CELL_CHILDREN,
+                        children: vec![Node::Group {
+                            label: 0xD00u32.to_le_bytes(),
+                            group_type: g::CELL_TEMPORARY,
+                            children: vec![
+                                Node::Record(
+                                    R::new(b"REFR", FormId(0xC01))
+                                        .u32(b"NAME", 0x880)
+                                        .field(b"DATA", &[0; 24])
+                                        .field(b"XTEL", &0xC00u32.to_le_bytes()),
+                                ),
+                                Node::Record(
+                                    R::new(b"REFR", FormId(0xC02))
+                                        .u32(b"NAME", 0x880)
+                                        .field(b"DATA", &[0; 24]),
+                                ),
+                            ],
+                        }],
+                    },
+                ],
+            },
             Node::top(b"STAT", vec![R::new(b"STAT", FormId(0x880))]),
             Node::Group {
                 label: *b"WRLD",
@@ -480,7 +542,7 @@ mod tests {
         ];
         std::fs::write(
             dir.join("Map.esp"),
-            write_plugin(0, &[], "test", "synthetic hierarchy", 0xB00, &nodes),
+            write_plugin(0, &[], "test", "synthetic hierarchy", 0xE00, &nodes),
         )
         .unwrap();
         dir
@@ -545,6 +607,62 @@ mod tests {
                 .iter()
                 .any(|r| r.marker == Some(FormId(0x902)))
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn map_quest_overlays_share_compass_filters_and_have_no_travel_identity() {
+        let dir = hierarchy_fixture("quests");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Map.esp");
+        for (q, target) in [
+            (0xB00, 0x901),
+            (0xB01, 0xC02),
+            (0xB02, 0x902),
+            (0xB03, 0x901),
+        ] {
+            let st = e.scripts.quests.entry(FormId(q)).or_default();
+            st.running = true;
+            st.active = true;
+            st.objectives_displayed.insert(10);
+            st.aliases.insert(0, FormId(target));
+        }
+        e.location = Location::Exterior {
+            world: FormId(0x800),
+            center: (0, 0),
+        };
+        let rows = e.map_quest_rows(FormId(0x800));
+        assert_eq!(rows.len(), 2); // duplicate target and false condition are excluded
+        let direct = rows.iter().find(|r| r.kind == 62).unwrap();
+        assert_eq!(direct.pos, Vec2::new(120.0, 240.0));
+        assert_eq!(direct.name, "Synthetic quest 0");
+        let door = rows.iter().find(|r| r.kind == 61).unwrap();
+        assert_eq!(door.pos, Vec2::new(30.0, 40.0));
+        for i in 0..rows.len() {
+            assert_eq!(row_destination(&rows, i as f64), None);
+        }
+        e.update_quest_targets(1.0);
+        assert_eq!(e.quest_targets.spots.len(), 1);
+        assert!(e.quest_targets.spots[0].door);
+        assert_eq!(e.quest_targets.spots[0].pos.truncate(), door.pos);
+        for id in [0xB00, 0xB03] {
+            e.scripts
+                .quests
+                .get_mut(&FormId(id))
+                .unwrap()
+                .objectives_completed
+                .insert(10);
+        }
+        assert_eq!(e.map_quest_rows(FormId(0x800)).len(), 1);
+        e.scripts.disabled.insert(FormId(0xC02), true);
+        assert!(e.map_quest_rows(FormId(0x800)).is_empty());
+        e.scripts.disabled.clear();
+        e.scripts.quests.get_mut(&FormId(0xB01)).unwrap().active = false;
+        assert!(e.map_quest_rows(FormId(0x800)).is_empty());
+        let st = e.scripts.quests.get_mut(&FormId(0xB01)).unwrap();
+        st.active = true;
+        st.failed = true;
+        assert!(e.map_quest_rows(FormId(0x800)).is_empty());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

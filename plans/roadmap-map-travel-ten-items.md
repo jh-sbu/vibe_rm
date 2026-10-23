@@ -87,3 +87,32 @@ parent-map resolver with composed ONAM transforms. Stable destination IDs remain
 physical references. Two regressions passed: nested/identity transforms, malformed
 and cyclic data, foreign maps, child-row permissions and disabled markers.
 Projection semantics and missing-field policy remain documented in map-view.md.
+
+## 10 completed
+
+World-map overlays share the compass's active quest/objective/alias/condition
+selection, project exterior targets onto inherited maps and route other-space
+targets to an entrance. Overlays keep quest labels but carry no travel identity.
+The synthetic integration covers a child-world target, interior door routing,
+false conditions, duplicate targets, completed objectives, inactive/failed quests,
+disabled targets and shared compass behavior. All 13 map-filtered tests passed.
+Final review also removed the save-refusal string from the dead-player travel
+message, leaving a travel-specific localized lookup and fallback.
+
+## Final validation and limits
+
+- Workspace tests: 541 passed, 161 ignored, no failures.
+- Full save suite including synthetic Engine integrations: 62 passed.
+- Travel-filtered suite including the new Engine integrations: 12 passed.
+- Map-filtered suite including parent projection and quest overlays: 13 passed.
+- Changed Rust files pass rustfmt; the complete batch passes git diff --check.
+
+Host Vulkan was required for Engine tests because the sandbox adapter's texture
+binding limit cannot create the existing terrain pipeline. Tests generated all
+records; no game assets, engine executable/library data, leaked documents or SDK
+material were read or committed. Public sources are linked in known_ambiguities,
+with local UESP permanent revision links. Exact travel time and cross-space time,
+unloaded followers, mounted/Survival restrictions, visual SWF/actor attachment,
+autosaves, presentation and map quest routing details remain explicitly open.
+All ten items are independently committed, with this file recording the scope
+and validation of each.
