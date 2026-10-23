@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub map_camera: Option<(glam::Vec2, f32, f32)>,
     pub attack_recovery: f32,
     pub sneaking: bool,
     pub critical_hits: std::collections::HashSet<FormId>,
@@ -98,6 +99,11 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            map_camera: e
+                .map_view
+                .as_ref()
+                .map(|v| (v.center, v.zoom, v.pitch))
+                .or(e.map_start),
             attack_recovery: e.player_attack_recovery.max(0.0),
             sneaking: e.player.sneaking,
             critical_hits: e.critically_hit.clone(),
@@ -141,6 +147,15 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.bool(self.map_camera.is_some());
+        if let Some((at, zoom, pitch)) = self.map_camera {
+            w.f32(at.x);
+            w.f32(at.y);
+            w.f32(zoom);
+            w.f32(pitch);
+        }
+        file.add(b"MCAM", w.0);
         let mut w = Writer::default();
         w.f32(self.attack_recovery);
         file.add(b"ATRC", w.0);
@@ -341,6 +356,12 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"MCAM")? {
+            if r.bool()? {
+                s.map_camera = Some((glam::Vec2::new(r.f32()?, r.f32()?), r.f32()?, r.f32()?));
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"ATRC")? {
             s.attack_recovery = r.f32()?;
             r.finish()?;
@@ -580,6 +601,14 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        if let Some((at, zoom, pitch)) = self.map_camera {
+            if !at.is_finite()
+                || !(0.0..=1.0).contains(&zoom)
+                || !(crate::map_view::MIN_PITCH..=crate::map_view::MAX_PITCH).contains(&pitch)
+            {
+                return Err(Corrupt("invalid map camera".into()));
+            }
+        }
         time(self.attack_recovery as f64)?;
         for &id in &self.critical_hits {
             nonnull(id)?;
@@ -707,6 +736,11 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.map_start = self.map_camera;
+        e.close_map_view();
+        if e.menu == Some(crate::items::Menu::Map) {
+            e.menu = None;
+        }
         e.player_attack_recovery = self.attack_recovery;
         e.player_swing = None;
         e.player_attack_held = None;

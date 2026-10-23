@@ -20,8 +20,8 @@ pub const PLAYER_ICON: u8 = 66;
 /// The lowest the map's camera tilts, and the highest (nearly straight down:
 /// exactly down has no up),
 /// degrees above the horizon.
-const MIN_PITCH: f32 = 25.0;
-const MAX_PITCH: f32 = 89.0;
+pub(crate) const MIN_PITCH: f32 = 25.0;
+pub(crate) const MAX_PITCH: f32 = 89.0;
 /// Blocks the map loads a frame.
 const BLOCKS_PER_FRAME: usize = 8;
 

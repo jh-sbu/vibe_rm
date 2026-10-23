@@ -34,3 +34,5 @@ Completed items follow. Final validation is recorded at the end.
 11. Player sneak toggle, with crouch settled and stale locomotion flags cleared (`SNEK`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
 
 12. Player attack cooldown, discarding unsaved swing/input/graph phases (`ATRC`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
+
+13. Map camera preference, including the open map view at capture (`MCAM`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
