@@ -233,3 +233,9 @@ No game assets or engine binaries were inspected for these additions.
   classification inputs without generating assault/murder events on load.
   Combat resumption and the original SE clearing lifetime remain separate,
   unresolved work; no inference about `.ess` structures is made.
+
+- `UWIT` preserves existing pending reports, ordered witness lists and amounts.
+  UESP [Crime, revision 3639929](https://en.uesp.net/w/index.php?oldid=3639929)
+  describes witnesses and bounty consequences. The current native policy treats
+  an unloaded witness as having reached guards; this adjunct does not resolve
+  that approximation or SE save timing. Reports are not advanced during apply.

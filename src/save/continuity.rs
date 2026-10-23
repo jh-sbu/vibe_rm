@@ -15,6 +15,7 @@ pub(crate) struct Continuity {
     pub pickpocket_caught: std::collections::HashSet<FormId>,
     pub assaulted: std::collections::HashSet<FormId>,
     pub player_assailants: std::collections::HashSet<FormId>,
+    pub unreported: Vec<crate::crime::Unreported>,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -62,10 +63,23 @@ impl Continuity {
             pickpocket_caught: e.crime.pickpocket_caught.clone(),
             assaulted: e.crime.assaulted.clone(),
             player_assailants: e.crime.player_assailants.clone(),
+            unreported: e.crime.unreported.clone(),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.len(self.unreported.len());
+        for crime in &self.unreported {
+            w.form(crime.faction);
+            w.i32(crime.gold);
+            w.bool(crime.violent);
+            w.len(crime.witnesses.len());
+            for &witness in &crime.witnesses {
+                w.form(witness);
+            }
+        }
+        file.add(b"UWIT", w.0);
         let mut w = Writer::default();
         for set in [&self.assaulted, &self.player_assailants] {
             let mut ids: Vec<_> = set.iter().copied().collect();
@@ -173,10 +187,36 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"UWIT")? {
+            for _ in 0..r.count(13)? {
+                let faction = r.form()?;
+                let gold = r.i32()?;
+                let violent = r.bool()?;
+                let witnesses = (0..r.count(4)?)
+                    .map(|_| r.form())
+                    .collect::<Result<Vec<_>>>()?;
+                s.unreported.push(crate::crime::Unreported {
+                    faction,
+                    gold,
+                    violent,
+                    witnesses,
+                });
+            }
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for crime in &self.unreported {
+            nonnull(crime.faction)?;
+            if crime.gold <= 0 || crime.witnesses.is_empty() {
+                return Err(Corrupt("invalid unreported crime".into()));
+            }
+            for &witness in &crime.witnesses {
+                nonnull(witness)?;
+            }
+        }
         for &id in self.assaulted.iter().chain(&self.player_assailants) {
             nonnull(id)?;
         }
@@ -206,6 +246,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.unreported = self.unreported;
         e.crime.assaulted = self.assaulted;
         e.crime.player_assailants = self.player_assailants;
         e.crime.pickpocket_caught = self.pickpocket_caught;
