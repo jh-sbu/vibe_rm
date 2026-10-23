@@ -228,3 +228,8 @@ No game assets or engine binaries were inspected for these additions.
   UESP [Pickpocket, revision 3581319](https://en.uesp.net/w/index.php?oldid=3581319)
   discusses detection and retry restrictions; the precise SE reset lifetime and
   save encoding remain unverified. This does not add a new retry timer.
+
+- `ASLT` stores both existing assault-memory sets. It preserves the current
+  classification inputs without generating assault/murder events on load.
+  Combat resumption and the original SE clearing lifetime remain separate,
+  unresolved work; no inference about `.ess` structures is made.

@@ -3615,3 +3615,40 @@ fn continuity_pickpocket_runtime() {
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(e.crime.pickpocket_caught.is_empty());
 }
+
+#[test]
+fn continuity_assault_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.assaulted.extend([ACTOR, CELL]);
+    s.continuity.player_assailants.insert(GLOBAL);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.assaulted, s.continuity.assaulted);
+    assert_eq!(
+        restored.continuity.player_assailants,
+        s.continuity.player_assailants
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"ASLT");
+    s.continuity.player_assailants.insert(FormId::NULL);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_assault_runtime() {
+    let (_fixture, mut e) = engine("continuity-assault");
+    e.crime.assaulted.insert(ACTOR);
+    e.crime.player_assailants.insert(CELL);
+    let saved = Snapshot::capture(&e).write();
+    e.crime.assaulted.clear();
+    e.crime.player_assailants.insert(GLOBAL);
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert!(e.assaulted_by_player(ACTOR));
+    assert_eq!(e.crime.player_assailants.len(), 1);
+    assert!(e.crime.player_assailants.contains(&CELL));
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"ASLT");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(!e.assaulted_by_player(ACTOR));
+    assert!(e.crime.player_assailants.is_empty());
+}
