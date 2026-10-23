@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub home_warnings: (HashMap<FormId, FormId>, f64),
     pub private_homes: HashMap<FormId, FormId>,
     pub trespass: Option<crate::crime::Trespass>,
     pub cleared_locations: std::collections::HashSet<FormId>,
@@ -88,6 +89,10 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            home_warnings: (
+                e.crime.warned_homes.clone(),
+                e.crime.time_to_go_next.max(0.0),
+            ),
             private_homes: e.crime.private_homes.clone(),
             trespass: e.crime.trespass,
             cleared_locations: e.cleared_locations.clone(),
@@ -114,6 +119,14 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.f64(self.home_warnings.1);
+        w.len(self.home_warnings.0.len());
+        for (actor, cell) in sorted(&self.home_warnings.0) {
+            w.form(actor);
+            w.form(*cell);
+        }
+        file.add(b"HWAR", w.0);
         let mut w = Writer::default();
         w.len(self.private_homes.len());
         for (actor, cell) in sorted(&self.private_homes) {
@@ -240,6 +253,16 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"HWAR")? {
+            s.home_warnings.1 = r.f64()?;
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.home_warnings.0.insert(actor, r.form()?);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"PHOM")? {
             let mut previous = None;
             for _ in 0..r.count(8)? {
@@ -395,6 +418,11 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        time(self.home_warnings.1)?;
+        for (&actor, &cell) in &self.home_warnings.0 {
+            nonnull(actor)?;
+            nonnull(cell)?;
+        }
         for (&actor, &cell) in &self.private_homes {
             nonnull(actor)?;
             nonnull(cell)?;
@@ -473,6 +501,8 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.warned_homes = self.home_warnings.0;
+        e.crime.time_to_go_next = self.home_warnings.1;
         e.crime.private_homes = self.private_homes;
         e.crime.trespass = self.trespass;
         let (third, distance) = self
