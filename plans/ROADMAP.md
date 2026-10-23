@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Accepted map-travel requests use normal exterior/interior loading and
+  linked arrival transforms, closing the map after arrival. Native presentation
+  limits: `known_ambiguities/fast-travel.md`.
 - Fast-travel landing points resolve a marker's unkeyed linked reference
   with its current position and heading; invalid points fail before loading.
   Link selection limits: `known_ambiguities/fast-travel.md`.

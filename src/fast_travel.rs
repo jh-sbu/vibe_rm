@@ -76,6 +76,30 @@ pub struct Destination {
 }
 
 impl Engine {
+    /// Revalidate a map request and load its destination using the normal
+    /// placement, weather, streaming and party hooks.
+    pub fn travel_to_map_marker(&mut self, marker: FormId) -> Result<(), Refusal> {
+        if let Some(reason) = self.fast_travel_refusal() {
+            return Err(reason);
+        }
+        let destination = self.map_travel_destination(marker)?;
+        let result = match destination.place {
+            Place::Exterior(world, _) => {
+                self.enter_exterior(world, destination.pos, destination.yaw)
+            }
+            Place::Interior(cell) => {
+                self.enter_interior(cell, Some((destination.pos, destination.yaw)))
+            }
+        };
+        if let Err(err) = result {
+            log::warn!("fast travel to {marker} failed: {err:#}");
+            return Err(Refusal::InvalidDestination);
+        }
+        self.menu = None;
+        self.close_map_view();
+        Ok(())
+    }
+
     /// A map marker lands at its unkeyed linked reference, or at itself.
     /// Broken links fail rather than silently using an unintended spawn point.
     pub fn map_travel_destination(&self, marker: FormId) -> Result<Destination, Refusal> {
@@ -322,6 +346,50 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn fast_travel_relocates_and_rejects_before_unloading() {
+        use crate::engine::Location;
+        use esp::FormId;
+        use glam::Vec3;
+        let dir = destination_fixture("relocation");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Travel.esp");
+        e.location = Location::Exterior {
+            world: FormId(0x900),
+            center: (0, 0),
+        };
+        e.player.grounded = true;
+        let before = e.player.position;
+        assert_eq!(
+            e.travel_to_map_marker(FormId(0x934)),
+            Err(super::Refusal::InvalidDestination)
+        );
+        assert_eq!(e.player.position, before);
+        assert_eq!(
+            e.location,
+            Location::Exterior {
+                world: FormId(0x900),
+                center: (0, 0)
+            }
+        );
+        e.travel_to_map_marker(FormId(0x930)).unwrap();
+        assert_eq!(
+            e.location,
+            Location::Exterior {
+                world: FormId(0x900),
+                center: (1, 1)
+            }
+        );
+        assert!((e.player_feet() - Vec3::new(6000.0, 7000.0, 82.0)).length() < 0.001);
+        assert_eq!(e.camera.yaw, 1.25);
+        e.player.grounded = true;
+        e.travel_to_map_marker(FormId(0x936)).unwrap();
+        assert_eq!(e.location, Location::Interior(FormId(0x940)));
+        assert!((e.player_feet() - Vec3::new(100.0, 200.0, 32.0)).length() < 0.001);
+        assert_eq!(e.camera.yaw, 2.0);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     fn destination_fixture(label: &str) -> std::path::PathBuf {
         use esp::writer::{Node, RecordBuilder as R, write_plugin};
         use esp::{FormId, group_type as g};
@@ -354,6 +422,7 @@ mod tests {
             marker(0x930).field(b"XLKR", &link(0, 0x931)),
             reference(0x931, 6000.0, 7000.0, 80.0, 1.25),
             marker(0x932).field(b"XLKR", &link(0x920, 0x931)),
+            marker(0x936).field(b"XLKR", &link(0, 0x937)),
             marker(0x933),
             marker(0x934).field(b"XLKR", &link(0, 0xDEAD)),
             reference(0x935, f32::NAN, 0.0, 0.0, 0.0)
@@ -361,6 +430,22 @@ mod tests {
                 .field(b"FNAM", &[3]),
         ];
         let nodes = vec![
+            Node::Group {
+                label: *b"CELL",
+                group_type: g::TOP,
+                children: vec![
+                    Node::Record(R::new(b"CELL", FormId(0x940)).field(b"DATA", &[1, 0])),
+                    Node::Group {
+                        label: 0x940u32.to_le_bytes(),
+                        group_type: g::CELL_CHILDREN,
+                        children: vec![Node::Group {
+                            label: 0x940u32.to_le_bytes(),
+                            group_type: g::CELL_TEMPORARY,
+                            children: vec![Node::Record(reference(0x937, 100.0, 200.0, 30.0, 2.0))],
+                        }],
+                    },
+                ],
+            },
             Node::top(b"STAT", vec![R::new(b"STAT", FormId(0x920))]),
             Node::Group {
                 label: *b"WRLD",
