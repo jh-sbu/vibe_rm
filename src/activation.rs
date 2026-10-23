@@ -16,7 +16,14 @@ pub(crate) struct Activation {
     /// Parent -> its children and their delays (seconds), from loaded cells.
     children: HashMap<FormId, Vec<(FormId, f32)>>,
     /// Activations waiting out their delay: when (real time), what, by whom.
-    pending: Vec<(f64, FormId, FormId)>,
+    pub(crate) pending: Vec<(f64, FormId, FormId)>,
+}
+
+impl Activation {
+    pub(crate) fn restore_pending(&mut self, pending: Vec<(f64, FormId, FormId)>) {
+        self.children.clear(); // Rebuilt as destination cells attach.
+        self.pending = pending;
+    }
 }
 
 /// A reference's activate parents (`XAPR`: parent, delay; repeated).
