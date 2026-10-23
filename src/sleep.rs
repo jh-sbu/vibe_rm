@@ -63,7 +63,7 @@ impl Engine {
         if !self.crime.arrests.alarmed.is_empty() {
             return Some(("WhileAlarm", "You cannot %s while guards are pursuing you."));
         }
-        if self.trespass_warning_level() > 0 {
+        if self.trespass_warning_level() > 0 || self.asked_to_leave() {
             return Some(("WarnToLeave", "You cannot %s while being asked to leave."));
         }
         if self.trespassing() {

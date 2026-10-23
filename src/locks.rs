@@ -500,13 +500,28 @@ impl Engine {
             let (old, new) = (find(old), find(new));
             let opens = old.is_some_and(|p| p.unlock_on_change || p.lock_doors)
                 || new.is_some_and(|p| p.unlock_at_start);
-            let shuts = new.is_some_and(|p| p.lock_doors);
+            let mut shuts = new.is_some_and(|p| p.lock_doors);
             // Its home is private while it runs a package that locks doors.
-            let home = if shuts {
+            let mut home = if shuts {
                 self.home_cell(achr, npc)
             } else {
                 None
             };
+            // One that warns first, starting with the player inside, asks them
+            // to leave and leaves the home open, not private, for the night:
+            // Arcadia, the player in her shop as her sleep started, sneaking
+            // unseen or in plain view, said "You need to leave" for an hour
+            // with no lock or bounty, nor a lock once they were out
+            // (`test-mod autotest12`).
+            self.crime.warned_homes.remove(&achr);
+            if let Some(c) = home.filter(|&c| {
+                new.is_some_and(|p| p.warn_before_locking)
+                    && self.location == crate::engine::Location::Interior(c)
+            }) {
+                log::debug!("{achr} asks the player to leave {c} instead of locking it");
+                self.crime.warned_homes.insert(achr, c);
+                (shuts, home) = (false, None);
+            }
             match home {
                 Some(c) => self.crime.private_homes.insert(achr, c),
                 None => self.crime.private_homes.remove(&achr),
@@ -541,12 +556,14 @@ impl Engine {
     }
 
     /// The locks (their holders) of the homes of actors now in a package that
-    /// locks doors, as their doors last followed them.
+    /// locks doors, as their doors last followed them (not those asking the
+    /// player to leave instead).
     fn doors_held_locked(&mut self) -> std::collections::HashSet<FormId> {
         let sleepers: Vec<(FormId, FormId)> = self
             .whereabouts
             .lock_package
             .iter()
+            .filter(|(a, _)| !self.crime.warned_homes.contains_key(*a))
             .filter_map(|(&a, &p)| Some((a, p?)))
             .collect();
         let mut held = std::collections::HashSet::new();

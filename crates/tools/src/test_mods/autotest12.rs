@@ -43,6 +43,27 @@
 //! Run from a save you can throw away; it takes about 4 minutes each, and
 //! leave the game alone (note the hour in the notification when she speaks).
 //! The plugin name doesn't matter.
+//!
+//! Run in Skyrim SE (2026-10-22) three times: away from the Bannered Mare
+//! from 23:01, and inside from 10:33 sneaking unseen, then in plain view:
+//!
+//! - **Away**: the door, unlocked at 23:57, was locked by the first sample
+//!   (her package still `DefaultSandboxHomeowner`, she just moved to
+//!   Riverwood) and stayed locked through her sleep and her being moved
+//!   home; it opened within 1:40 game minutes of her store package
+//!   starting at 8:00. The script's own lock wasn't needed, so that
+//!   question stays open.
+//! - **Inside**, both runs alike: never locked, 23:57 to 1:05 and 18 game
+//!   minutes after the player was moved out; no bounty. From 0:01 she
+//!   said "You need to leave" and "You need to leave, now" (her TimeToGo
+//!   lines) until the player left, though `IsDetectedBy` read False
+//!   throughout sneaking (True in plain view); her package stayed the sleep
+//!   one (with "Warn Before Locking?").
+//!
+//! So a lock-doors package that warns first doesn't lock a home with the
+//! player in it as it starts, and asks them to leave (the engine now does
+//! that); locking doesn't need the owner home; the early lock stays open
+//! (`known_ambiguities/locks.md`).
 
 use anyhow::{Context, Result, ensure};
 use esp::writer::{AttachedScript, Node, write_plugin};

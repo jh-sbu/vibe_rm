@@ -1244,7 +1244,9 @@ game each piece unlocks.
   "Lock Doors?" lock the sleeper's home doors, packages unlocking doors at start /
   on change (`PKDT`) open them, so shops close at night (unloaded actors' as
   their packages start: the schedule is looked at each half hour of game
-  time). Papyrus `Lock`,
+  time); a lock-doors package's end opens them too. One that warns before
+  locking, starting with the player inside, leaves the home open and its
+  owner says TimeToGo lines (no waiting or sleeping there). Papyrus `Lock`,
   `IsLocked`, `GetLockLevel`, `SetLockLevel`; conditions `GetLocked`,
   `GetLockLevel`; console `lock` / `unlock`, `picklock`; vrm-tool `locks`. NPCs
   open locked animated doors only with the key or owning them (cages and cells
@@ -1616,7 +1618,8 @@ game each piece unlocks.
    - Followers: teammates' following through load doors, fast travel and
      waiting, their other combat behaviour (`known_ambiguities/followers.md`);
      `AllyKilled` lines
-   - Locks: sleepers warning the player before locking and putting them out;
+   - Locks: sleepers asking the player to leave coming to them and staying up
+     (their lines done: see Done);
      actors stepping round loose clutter instead of shoving it
    - Off-screen travel between worldspaces; paths round locked animated doors
    - Package trees: branches of `Sequence` / `Simultaneous` roots (multi-location
