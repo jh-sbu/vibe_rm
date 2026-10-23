@@ -19,6 +19,7 @@ pub(crate) struct Continuity {
     pub last_crime: HashMap<FormId, crate::crime::CrimeType>,
     pub controls: u16,
     pub cart_mode: bool,
+    pub voice_recovery: (f32, f32),
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -70,10 +71,15 @@ impl Continuity {
             last_crime: e.crime.last_crime.clone(),
             controls: e.disabled_controls.saved_bits(),
             cart_mode: e.hud_cart_mode,
+            voice_recovery: (e.shouts.recovery, e.shouts.recovery_total),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.f32(self.voice_recovery.0);
+        w.f32(self.voice_recovery.1);
+        file.add(b"VREC", w.0);
         let mut w = Writer::default();
         w.u16(self.controls);
         w.bool(self.cart_mode);
@@ -246,10 +252,20 @@ impl Continuity {
             s.cart_mode = r.bool()?;
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"VREC")? {
+            s.voice_recovery = (r.f32()?, r.f32()?);
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        let (remaining, total) = self.voice_recovery;
+        time(remaining as f64)?;
+        time(total as f64)?;
+        if remaining > total {
+            return Err(Corrupt("voice recovery exceeds total".into()));
+        }
         if self.controls & !0x1ff != 0 {
             return Err(Corrupt("unknown disabled-control bits".into()));
         }
@@ -294,6 +310,8 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.shouts
+            .restore_recovery(self.voice_recovery.0, self.voice_recovery.1);
         e.disabled_controls = crate::player::DisabledControls::from_saved_bits(self.controls);
         e.hud_cart_mode = self.cart_mode;
         e.crime.last_crime = self.last_crime;

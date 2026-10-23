@@ -81,3 +81,9 @@ replacement/legacy tests passed.
 CTRL restores all script control gates, independent regular/beast camera
 locks and cart HUD mode before cell attachment. The runtime regression releases
 each POV owner separately after load. Payload and host-Vulkan tests passed.
+
+## 10 completed
+
+VREC restores remaining voice recovery and its HUD denominator, clearing
+held voice input and old meter flashes. The runtime test checks the restored
+meter and expiry through update_shouts. Payload and host-Vulkan tests passed.

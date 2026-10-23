@@ -3788,3 +3788,41 @@ fn continuity_controls_runtime() {
     assert!(!e.disabled_controls.any());
     assert!(!e.hud_cart_mode);
 }
+
+#[test]
+fn continuity_voice_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.voice_recovery = (12.5, 30.0);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.voice_recovery, (12.5, 30.0));
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"VREC");
+    s.continuity.voice_recovery = (31.0, 30.0);
+    assert!(Snapshot::read(&s.write()).is_err());
+    s.continuity.voice_recovery = (f32::NAN, 30.0);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_voice_runtime() {
+    let (_fixture, mut e) = engine("continuity-voice");
+    e.shouts.recovery = 15.0;
+    e.shouts.recovery_total = 60.0;
+    let saved = Snapshot::capture(&e).write();
+    e.shouts.recovery = 1.0;
+    e.shouts.recovery_total = 1.0;
+    e.shouts.meter_flashes = 10;
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.shout_meter_percent(), 75.0);
+    assert_eq!(e.shouts.meter_flashes, 0);
+    e.update_shouts(5.0);
+    assert_eq!(e.shouts.recovery, 10.0);
+    e.update_shouts(10.0);
+    assert_eq!(e.shout_meter_percent(), 100.0);
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"VREC");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.shouts.recovery, 0.0);
+    assert_eq!(e.shout_meter_percent(), 100.0);
+}

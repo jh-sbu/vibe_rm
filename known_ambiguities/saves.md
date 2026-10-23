@@ -249,3 +249,9 @@ No game assets or engine binaries were inspected for these additions.
   are saved independently, so enabling one does not release the other. Legacy
   loads enable controls and clear cart mode. Exact SE persistence/reset behavior
   is unverified; existing public control research is in player-controls.md.
+
+- `VREC` retains shout cooldown seconds and the meter's original duration;
+  old key holds and flashes are discarded. Legacy saves restore a ready voice.
+  UESP [Dragon Shouts, revision 3279131](https://en.uesp.net/w/index.php?oldid=3279131)
+  documents cooldown and its compass meter, not native save/reset semantics.
+  Real-world time spent outside the runtime does not consume this countdown.
