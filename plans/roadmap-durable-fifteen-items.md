@@ -26,3 +26,5 @@ Completed items follow. Final validation is recorded at the end.
 7. Accumulated jail days read by GetDaysInJail (`JDYS`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
 
 8. Ordered delayed parent activations and absolute deadlines (`ACTQ`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
+
+9. Gameplay and condition random streams resume their exact sequences (`RNGS`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.

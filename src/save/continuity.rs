@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub random_streams: Option<(u64, u64)>,
     pub activations: Vec<(f64, FormId, FormId)>,
     pub jail_days: i32,
     pub sentence: (Option<crate::arrest::Sentence>, Option<FormId>),
@@ -94,6 +95,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            random_streams: Some((e.rng, e.cond_rng.get())),
             activations: e.activation.pending.clone(),
             jail_days: e.crime.arrests.days_in_jail,
             sentence: (e.crime.arrests.jailed, e.crime.arrests.pending),
@@ -133,6 +135,12 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        if let Some((rng, cond)) = self.random_streams {
+            let mut w = Writer::default();
+            w.u64(rng);
+            w.u64(cond);
+            file.add(b"RNGS", w.0);
+        }
         let mut w = Writer::default();
         w.len(self.activations.len());
         for &(at, child, parent) in &self.activations {
@@ -313,6 +321,10 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"RNGS")? {
+            s.random_streams = Some((r.u64()?, r.u64()?));
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"ACTQ")? {
             for _ in 0..r.count(16)? {
                 s.activations.push((r.f64()?, r.form()?, r.form()?));
@@ -531,6 +543,9 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        if self.random_streams.is_some_and(|(rng, _)| rng == 0) {
+            return Err(Corrupt("zero random generator state".into()));
+        }
         for &(at, child, parent) in &self.activations {
             time(at)?;
             nonnull(child)?;
@@ -651,6 +666,9 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        let (rng, cond) = self.random_streams.unwrap_or((1, 0x9E37_79B9_7F4A_7C15));
+        e.rng = rng;
+        e.cond_rng.set(cond);
         e.activation.restore_pending(self.activations);
         e.crime.arrests.days_in_jail = self.jail_days;
         e.crime.arrests.jailed = self.sentence.0;
