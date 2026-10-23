@@ -71,3 +71,24 @@ clearance, ground correction, heading, weather setup, streaming and party hooks.
 All known refusals and destination validation happen before unloading. The map
 closes only on successful arrival. A loading-screen presentation, autosave timing
 and the distinct scripted Game.FastTravel native remain separate work.
+
+## Elapsed time and catch-up (native approximation)
+
+UESP Transport establishes increasing time with distance, but not a formula.
+Public estimates disagree on units and admit error, e.g. the author's
+[2020 calculation report](https://forums.nexusmods.com/topic/8429953-fast-travel-time-calc/).
+No exact SE formula has been verified. This runtime uses horizontal straight-line
+distance to the resolved arrival point, divided by its existing 80-unit walking
+speed and fFastTravelSpeedMult (default 1); TimeScale (default 20) converts this
+to game hours. Armor, roads and horses do not change it. Unrelated-worldspace and
+interior-linked arrivals currently pass zero time: no meaningful coordinate
+conversion is established. Parent-map projection is separate work.
+
+Catch-up advances clock/weather, magic, ordinary regeneration, away wounds and
+schedules before relocation. Bounded batches of at most 180 simulated real
+seconds follow the existing wait approximation. Papyrus real/menu clocks and
+wait/sleep statistics/events are untouched. Active effect/cadence, regeneration
+delay, mortality, schedule and weather parity remain unverified, including
+large-step cloak effects. Corrupt inputs, date overflow, more than 720 game
+hours or 129600 simulated seconds are rejected before changing state. Exact
+native time/arrival ordering, pauses and loading failures remain open.

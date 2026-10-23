@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Same-world map travel advances game time with distance and configured
+  speed/TimeScale, catching up weather, effects, regeneration and schedules.
+  This is a native approximation; cross-space timing and exact SE formula:
+  `known_ambiguities/fast-travel.md`.
 - Accepted map-travel requests use normal exterior/interior loading and
   linked arrival transforms, closing the map after arrival. Native presentation
   limits: `known_ambiguities/fast-travel.md`.

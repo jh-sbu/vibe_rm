@@ -52,3 +52,12 @@ Added the validated map-travel relocation entry point through both normal
 loaders. Five fast-travel tests passed on host Vulkan. The new integration
 checks refusal without movement, exterior grid/feet/heading, then an interior
 linked arrival with its own feet/heading. UI and elapsed time follow next.
+
+## 6 completed
+
+Added a documented native straight-line walking-time approximation using
+fFastTravelSpeedMult and TimeScale, with bounded subsystem catch-up. Seven
+fast-travel tests passed, including distance/speed inputs, malformed bounds,
+midnight rollover, away wounds, unchanged Papyrus clocks, no wait/sleep stats
+and transactional date-overflow refusal. Cross-space time and exact SE timing
+remain explicitly unresolved.
