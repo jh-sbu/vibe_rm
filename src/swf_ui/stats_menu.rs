@@ -708,6 +708,9 @@ impl StatsMenu {
         if let Some(view) = &mut engine.stats_view {
             view.set_angle(self.angle);
             view.set_perks(matches!(self.mode, Mode::Perks { .. }));
+            if self.closing {
+                view.set_closing();
+            }
             view.update(dt);
         }
     }

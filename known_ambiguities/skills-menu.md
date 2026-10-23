@@ -14,7 +14,8 @@ camera's sequences; an effect shader and a state for each of the 18 trees)
 and `BGSSkillPerkTreeNode` (the tree nodes' grid cells and offsets); the
 skydome in `Skyrim - Meshes1.bsa` (`Interface/INTPerkSkydome.nif`: its
 constellation images `cImage00` to `cImage17` from
-`INTConstellationImages.dds`, its `Point00` to `Point17` nodes; `vrm-tool
+`INTConstellationImages.dds`, its `Point00` to `Point17` nodes, its
+`CameraIntro`, `CameraOutro` and `Idle` sequences; `vrm-tool
 nif-tree` prints where they stand and their bounds); the star and line models
 (`Interface/INTPerkStars01.nif`, `INTPerkLine01.nif`) and their behaviour
 graphs in `Skyrim - Animations.bsa` (`InterfaceBehaviors/Behaviors/
@@ -88,6 +89,29 @@ context binds only `Rotate`, to the right stick).
   `BeamEnd`, under a billboard turning about one axis (mode 1). The
   skydome's constellation images are about 24 by 42 units at a radius of
   92: the game must scale the stars down or bring the camera close.
+- **The skydome's sequences** (`vrm-tool nif-dump`): `CameraIntro` and
+  `CameraOutro` (0.633 s each, clamped) and `Idle` (118.67 s, looping),
+  each keying the same blocks. `CameraIntro` raises `CameraPosition` from
+  (0, 0, -3000) to the origin (0.14), easing out (keys every 1/30 s);
+  `CameraOutro` lowers it from -157 to -3000, easing in. Both hold the star
+  layers at `Idle`'s first pose and the gases' V offset at 0. `Idle` turns
+  `StarsBackground` about z from -6.2 to -1.3 degrees and back,
+  `StarsNear01` from 0 to -5.1 and back, `StarsNear05` from 7.5 to 12.9 and
+  back (the turn at 57.3 s), scrolls the five gases' V offset (shader
+  variable 8) from 0 to 5, and holds `CameraPosition` at -3000. The node's
+  rotation is a Gamebryo camera's (looking down its x): it faces +Y (image 0)
+  with +Z up. From 3000 below, horizontal, only the outer star tiles show;
+  the nebula panoramas come into view in the last few hundred units.
+- **The movie's camera hooks.** `StatsMenu.StartCameraAnimation` (static;
+  nothing in the movie calls it) calls `MoveCamera(0)`, then every 41 ms
+  `UpdateCamera` calls `MoveCamera(alpha)` with
+  `CameraMovementInstance.CameraPositionAlpha._alpha / 100` while that
+  clip's frame is below 100. The clip plays its 100 frames on its own and
+  loops (it has no stop), the alpha rising evenly from 0 to about 99
+  (measured in Ruffle). `UpdateCamera` computes the frame plus 8, capped at
+  100, but never uses it: no `gotoAndStop` follows. The root timeline's
+  `FadeOut` runs frames 2 to 16 (0.625 s at 24 fps, about `CameraOutro`'s
+  length); `FadeIn` (frame 17) calls `SetFadedIn`.
 - The level up popup is three buttons with the attribute names baked in;
   its calls are `addHealth`, `addMagicka` and `addStamina`, each followed by
   `PlaySound("UIMenuOK")`. Accept reaches the focused button twice: CLIK's
@@ -102,10 +126,28 @@ context binds only `Rotate`, to the right stick).
   skill's image (60 degrees of view, level), turning with the ring. In a
   tree it narrows to 40 degrees and looks up 9.5 degrees, to the images'
   middle. The game's camera is its own (`skillsLookAt`, `starCameraOffset`,
-  `starLookAt`): the skydome's `CameraPosition` node only gives the
-  sequences' path from 3000 units below up to the origin, and `Idle` holds
-  it below, where the whole ring would span about 3.5 degrees. The images
-  are drawn as the model has them, all alike.
+  `starLookAt`); the images are drawn as the model has them, all alike.
+- **The skydome's sequences**: `CameraIntro` plays as the menu opens, then
+  `Idle` loops; `CameraOutro` plays when the movie starts its fade out, and
+  the menu closes when the fade ends (15 frames, 0.625 s: the outro's last
+  8 ms may not show). The camera follows `CameraPosition` only while the
+  intro or outro plays: `Idle` keys it at 3000 units below, which, followed,
+  would drop the camera out of the sky the moment the intro ends. During
+  the rise it keeps the ring's heading rather than the node's (which faces
+  image 0, the menu's opening skill anyway). The dome is moved rather than
+  the camera, since it is drawn as sky about the camera. Opening straight
+  into a tree (`skills open <skill>`) plays the intro too. The outro starts
+  at 157 units below, not at the origin, so the sky jumps by that much as
+  it begins; whether the game starts it elsewhere, or blends, is unknown.
+  The rise looked right in screenshots (a dark star field below the
+  nebulae, rising into them) but hasn't been compared with Skyrim SE.
+- **`MoveCamera` isn't used** and `StatsMenu.StartCameraAnimation` is never
+  invoked: when the game calls it, and what the alpha it reports drives (the
+  intro's progress, a blend between `CameraPosition` and the game's camera,
+  or the move between the ring and a tree), is unknown. Read literally, the
+  ramp lasts up to 4.1 s and starts wherever the looping clip is; the
+  intended 8 frames a tick would make it about 0.5 s, close to the
+  sequences' 0.63 s.
 
 - **The level up popup** opens over the skills menu whenever a level up is
   waiting, again for each level up, and the menu then shows the level up
@@ -175,3 +217,28 @@ context binds only `Rotate`, to the right stick).
   `UISkillsTransitionUp` opening a tree, `UISkillsFocusSD` between perks,
   `UISkillsPerkSelectASD` taking one, `UIMenuCancelSD` going back: chosen
   from their names alone.
+
+## Unexplained assets and fields (leads)
+
+- `Interface/INTSkillsToPerkTransitionEffect.nif`: a particle cloud
+  (`PCloud03`) with `FadeIn` (3.33 s, clamped), `Loop` (26.6 s) and
+  `FadeOut` (3.3 s) sequences, and a `TestCameraAttach` shape about 730
+  units across. Its name says it plays between the ring and a tree;
+  `StatsMenu` has no named slot for it and nothing says where it stands or
+  when each sequence plays. Not shown.
+- `DLC01/Interface/INTVampirePerkSkydome.nif`: the skydome's stars with the
+  werewolf's sky (`WolfSky01` to `06`, the `Moon`) towards +Y and the
+  vampire lord's (`VampSky1` to `04`) towards -Y. UESP's Vampire Lord page
+  (https://en.uesp.net/w/index.php?oldid=3576137, Skill Perks) and
+  Lycanthropy page (https://en.uesp.net/w/index.php?oldid=3637628, Skill
+  Perks) have the character menu showing the beast's tree in beast form.
+  CommonLibSSE names a `StatsMenuBaseInstance.BeastSkillHolder` the SE
+  `statsmenu.swf` doesn't have, and a `numSelectableTrees`; how the menu
+  shows a beast tree (one tree, no ring?) is unknown. Waits on the beast
+  forms.
+- CommonLibSSE's `horizontalVelocity` and `horizontalAcceleration` suggest
+  the ring turns with acceleration; ours turns at a steady 520 degrees a
+  second. Its `zoomed` and `scrolling` flags, and the 18 trees' effect
+  shaders with resting / entering / exiting states, say there is more to
+  entering a tree than the camera's narrower view; what each changes is
+  unknown.
