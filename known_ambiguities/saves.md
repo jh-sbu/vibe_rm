@@ -186,3 +186,7 @@ saved: it is taken again from the place the save loads into.
   examined. With old saves lacking `STOR`, the first update establishes the
   location baseline and body discoveries can happen again; that lost memory
   cannot be recovered from those saves.
+
+Optional `MAPS` retains map discovery and explicit travel grants/denials plus
+the global script travel gate. Legacy files reset this runtime memory; see
+`known_ambiguities/fast-travel.md`.

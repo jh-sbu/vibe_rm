@@ -21,3 +21,17 @@ The global gate starts enabled and is distinct from temporary eligibility checks
 Only script MoveTo / SetPosition of the player reset it; moving another reference
 or changing the player's angle does not. Exact timing relative to deferred
 player movement is unverified: this runtime reenables on accepting the native.
+
+## Marker permissions and native saves
+
+[ObjectReference.EnableFastTravel](https://papyrus.bellcube.dev/skyrimse/script/objectreference/function/enablefasttravel/)
+documents explicit disabling even for an otherwise accessible map marker, with
+an undiscovered-location error. This runtime keeps denial separately from actual
+discovery: it changes the icon/permission without erasing the discovery statistic
+or announcing rediscovery. AddToMap(true) and EnableFastTravel(true) clear denial.
+Exact icon/discovery interactions in SE remain unverified.
+
+Optional native `MAPS` saves the script gate, shown/discovered markers, explicit
+travel grants and denials. Loading replaces these sets. Legacy saves clear them
+and enable the global gate; plugin flags still apply. This is our continuity
+format, not the original `.ess` representation.

@@ -21,3 +21,11 @@ Progress and validation are recorded below as each item completes.
 Implemented global script control, default-true enable and player MoveTo /
 SetPosition reset. The production native-dispatch regression passed with host
 Vulkan. The sandbox adapter cannot create the existing terrain pipeline.
+
+## 2 completed
+
+Explicit marker denial overrides authored travel flags and discovery without
+recounting discovery. Optional MAPS replaces global gate and marker memory on
+load; legacy files reset runtime memory. Four travel-filtered tests passed,
+including production native/save and marker permission checks and malformed
+MAPS payloads. Deterministic encoding and old-save behavior are covered.

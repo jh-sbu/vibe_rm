@@ -3347,3 +3347,36 @@ fn loading_clears_sleep_wait_and_owned_fade_transients() {
     assert_eq!(e.imagespace.sleep_fade_amount(), 0.0);
     assert_eq!(e.scene.post.fade[3], 0.0);
 }
+
+#[test]
+fn map_travel_section_roundtrip_legacy_and_malformed() {
+    let mut s = Snapshot {
+        fast_travel_disabled: true,
+        ..Default::default()
+    };
+    s.map_shown.extend([FormId(0x901), FormId(0x900)]);
+    s.map_discovered.insert(FormId(0x900));
+    s.map_travel.insert(FormId(0x901));
+    s.map_denied.insert(FormId(0x900));
+    let file = s.write();
+    let read = Snapshot::read(&file).unwrap();
+    assert!(read.fast_travel_disabled);
+    assert_eq!(read.map_discovered, s.map_discovered);
+    assert_eq!(read.map_denied, s.map_denied);
+    assert_eq!(read.write().section(b"MAPS"), file.section(b"MAPS"));
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"MAPS");
+    let read = Snapshot::read(&legacy).unwrap();
+    assert!(!read.fast_travel_disabled);
+    assert!(read.map_shown.is_empty());
+    let mut duplicate = file.clone();
+    duplicate.add(b"MAPS", vec![]);
+    assert!(Snapshot::read(&duplicate).is_err());
+    for data in [vec![2], vec![0, 255, 255, 255, 255], vec![0; 18]] {
+        let mut bad = legacy.clone();
+        bad.add(b"MAPS", data);
+        assert!(Snapshot::read(&bad).is_err());
+    }
+    s.map_denied.insert(FormId(0x901));
+    assert!(Snapshot::read(&s.write()).is_err());
+}
