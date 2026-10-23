@@ -754,7 +754,8 @@ fn main() -> Result<()> {
             }
         }
         Some("nif-dump") => {
-            // nif-dump <data dir> <vfs path>
+            // nif-dump <data dir> <vfs path> [--full]: each block, cut to 600
+            // characters unless --full.
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let v = vfs::Vfs::new(data, &names);
@@ -830,8 +831,67 @@ fn main() -> Result<()> {
                     }
                     other => format!("{other:?}"),
                 };
-                let s: String = s.chars().take(600).collect();
+                let full = args.get(3).is_some_and(|a| a == "--full");
+                let s: String = s
+                    .chars()
+                    .take(if full { usize::MAX } else { 600 })
+                    .collect();
                 println!("[{i}] {}: {s}", n.block_type_name(i));
+            }
+        }
+        Some("nif-tree") => {
+            // nif-tree <data dir> <vfs path>: the scene graph with each object's
+            // world position and its heading in degrees (clockwise from +Y about
+            // +Z); shapes also give their vertices' world centre and texture.
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let n = nif::Nif::parse(&v.read(&args[2]).context("not found")?)?;
+            fn heading(p: glam::Vec3) -> f32 {
+                p.x.atan2(p.y).to_degrees()
+            }
+            fn walk(n: &nif::Nif, r: nif::Ref, parent: glam::Mat4, depth: usize) {
+                let Some(b) = n.get(r) else { return };
+                let Some(av) = b.av() else { return };
+                let world = parent * av.transform.to_mat4();
+                let at = world.w_axis.truncate();
+                let pad = "  ".repeat(depth);
+                let hidden = if av.hidden() { " hidden" } else { "" };
+                match b {
+                    nif::Block::Node(node) => {
+                        println!(
+                            "{pad}{} {:?} {at:.1} heading {:.1}{hidden}",
+                            av.net.name,
+                            node.kind,
+                            heading(at)
+                        );
+                        for &c in &node.children {
+                            walk(n, c, world, depth + 1);
+                        }
+                    }
+                    nif::Block::TriShape(t) => {
+                        let ps = &t.geometry.positions;
+                        let mid = ps.iter().copied().sum::<glam::Vec3>() / ps.len().max(1) as f32;
+                        let c = world.transform_point3(mid);
+                        let tex = match n.get(t.shader) {
+                            Some(nif::Block::EffectShader(s)) => s.source_texture.as_str(),
+                            _ => "",
+                        };
+                        println!(
+                            "{pad}[{}] centre {c:.1} heading {:.1} {tex}{hidden}",
+                            av.net.name,
+                            heading(c)
+                        );
+                    }
+                    _ => println!(
+                        "{pad}<{}> {}",
+                        n.block_type_name(r.index().unwrap()),
+                        av.net.name
+                    ),
+                }
+            }
+            for &r in &n.roots {
+                walk(&n, nif::Ref(r as i32), glam::Mat4::IDENTITY, 0);
             }
         }
         Some("nif-skin") => {

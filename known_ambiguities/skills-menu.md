@@ -8,9 +8,13 @@ Sources: the movies' ActionScript (`StatsMenu`, `AnimatedSkillText`,
 `ShowLegendaryButtonHint` callbacks, the static `StatsMenu.SkillStatsA` and
 `PerkNamesA`, `UpdatePerkText`, the `MoveCamera` / `SetFadedIn` calls, the
 level up popup's `addHealth` / `addMagicka` / `addStamina`); CommonLibSSE's
-`StatsMenu` and `BGSSkillPerkTreeNode` (the tree nodes' grid cells and
-offsets); the star models in `Skyrim - Meshes1.bsa`
-(`Interface/INTStatMenuStars.nif`, `INTPerkSkydome.nif`); the game settings
+`StatsMenu` (its three models: `skydomeNode`, `starsNode`, `linesNode`; the
+camera's sequences; an effect shader and a state for each of the 18 trees)
+and `BGSSkillPerkTreeNode` (the tree nodes' grid cells and offsets); the
+skydome in `Skyrim - Meshes1.bsa` (`Interface/INTPerkSkydome.nif`: its
+constellation images `cImage00` to `cImage17` from
+`INTConstellationImages.dds`, its `Point00` to `Point17` nodes; `vrm-tool
+nif-tree` prints where they stand); the game settings
 `sLegendaryResetConfirm`, `sLegendaryResetSecondConfirm`,
 `sRequirementsText`; `Interface/Controls/PC/controlmap.txt` (its Stats
 context binds only `Rotate`, to the right stick).
@@ -20,10 +24,25 @@ context binds only `Rotate`, to the right stick).
 - The movie only draws; the game keeps the selection and input. The ring is
   18 skills, 20 degrees each (`SKILL_ANGLE`); `SetDirection(angle)` turns it
   and the skill at `angle / 20` is the centre one.
-- The ring's order is the movie's constants: Alteration, Conjuration,
-  Destruction, Illusion (`MYSTICISM`), Restoration, Enchanting; Light Armor,
-  Pickpocket, Lockpicking, Sneak, Alchemy, Speech; One-handed, Two-handed,
-  Archery, Block, Smithing, Heavy Armor.
+- The movie lays the skills out left to right in `SkillStatsA`'s order,
+  which the game fills. Its constants (`ALTERATION` 0 to `HEAVY_ARMOR` 17)
+  are declared but never read, so they don't give the ring's order.
+- **The sky is the skydome, on the ring too.** `StatsMenu` keeps only the
+  skydome, the perk stars and the perk lines (no slot for
+  `INTStatMenuStars.nif`, a model of twelve constellations, three of whose
+  textures aren't shipped). The skydome's 18 constellation images and 18
+  `Point` nodes stand around its origin 20 degrees apart (image *n* at *n*
+  times 20 degrees clockwise from +Y, seen from above), the ring's 18 skills
+  at `SKILL_ANGLE`.
+- **The ring's order** is the skydome's pictures, image 0 up, left to right:
+  Enchanting (a runed sword), Smithing (an anvil), Heavy Armor (a helmet),
+  Block (a shield), Two-handed, One-handed (a sword in a fist), Archery (a
+  bow), Light Armor (linked rings), Sneak (a snake), Lockpicking (picks),
+  Pickpocket (a hand taking a coin), Speech (two faces), Alchemy, Illusion,
+  Conjuration (a gate), Destruction (flames), Restoration (a bird),
+  Alteration. Read from the pictures' art, then checked in Skyrim SE
+  (2026-10-23): each skill shows its picture, and Enchanting sits between
+  Alteration on its left and Smithing on its right.
 - Each skill is five values in `SkillStatsA`: level, name, progress percent,
   level colour, legendary count. The description card takes the skill's
   `AVIF` `DESC`.
@@ -51,6 +70,17 @@ context binds only `Rotate`, to the right stick).
   press of the focused clip (Ruffle patch 8).
 
 ## Unconfirmed: choices made
+
+- **The menu opens on image 0** (Enchanting), which the camera faces at
+  rest.
+- **The camera** stands at the skydome's origin and faces the selected
+  skill's image (60 degrees of view, level), turning with the ring. In a
+  tree it narrows to 40 degrees and looks up 9.5 degrees, to the images'
+  middle. The game's camera is its own (`skillsLookAt`, `starCameraOffset`,
+  `starLookAt`): the skydome's `CameraPosition` node only gives the
+  sequences' path from 3000 units below up to the origin, and `Idle` holds
+  it below, where the whole ring would span about 3.5 degrees. The images
+  are drawn as the model has them, all alike.
 
 - **The level up popup** opens over the skills menu whenever a level up is
   waiting, again for each level up, and the menu then shows the level up
@@ -90,22 +120,9 @@ context binds only `Rotate`, to the right stick).
   27% and 66% down (the top below level up mode's 175 pixels), then labels
   whose text would overlap pushed apart the shorter way, their widths
   estimated at 10 pixels a character at full scale (measured on the movie's
-  font) for the longest label a node can have. The game
-  projects its 3D constellations, so the labels' places and the lines
-  between them differ; there are no stars drawn at the perks or lines
-  between them (`INTPerkStars01.nif`, `INTPerkLine01.nif` have their own
-  animations that aren't played). Arrows pick the nearest node in that
-  direction within a slightly wider than quarter turn.
-- **The sky**: the ring shows `INTStatMenuStars.nif` seen from its
-  `CameraPosition` node (tilted up 30 degrees), the whole model turned with
-  the ring (the game turns its `ConstellationGroup` node, so the starfields
-  turn here too); a skill's perks show `INTPerkSkydome.nif` from the origin,
-  not moving (its `CameraIntro` / `CameraOutro` / `Idle` sequences and the
-  camera path `MoveCamera` asks for aren't played). The three constellation
-  planes whose textures aren't in the installed archives (`INTmageConst`,
-  `INTtheifConst`, `INTwarConst`: `const01:0`, `const05:0`, `const09:0`) are
-  left out; the others' art is shared between the constellations, so the
-  ring does not show a constellation per skill.
+  font) for the longest label a node can have. This stands in until the
+  trees are the game's 3D stars (ROADMAP). Arrows pick the nearest node in
+  that direction within a slightly wider than quarter turn.
 - **Sounds**: `UISkillsForwardSD` / `UISkillsBackwardSD` turning the ring,
   `UISkillsTransitionUp` opening a tree, `UISkillsFocusSD` between perks,
   `UISkillsPerkSelectASD` taking one, `UIMenuCancelSD` going back: chosen

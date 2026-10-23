@@ -29,28 +29,29 @@ const M: &str = "_root.StatsMenuBaseInstance";
 const LEVEL_UP: &str = "_root.LevelUpMenu_mc";
 const STATIC: &str = "StatsMenu";
 
-/// The ring's skills in the order the movie's constants give them: the three
-/// constellations' groups, magic, stealth, then combat (the movie's
-/// `Mysticism` is Illusion).
+/// The ring's skills, left to right: the order of the skydome's
+/// constellation images (`cImage00` to `cImage17`, 20 degrees apart), each
+/// skill where its picture is. The movie's skill constants (`ALTERATION` 0 to
+/// `HEAVY_ARMOR` 17) are never read; the game fills the ring.
 const RING: [u32; 18] = [
-    18, // Alteration
-    19, // Conjuration
-    20, // Destruction
-    21, // Illusion
-    22, // Restoration
     av::ENCHANTING,
-    av::LIGHT_ARMOR,
-    av::PICKPOCKET,
-    av::LOCKPICKING,
-    av::SNEAK,
-    16, // Alchemy
-    av::SPEECHCRAFT,
-    av::ONE_HANDED,
-    av::TWO_HANDED,
-    av::MARKSMAN,
-    av::BLOCK,
     10, // Smithing
     av::HEAVY_ARMOR,
+    av::BLOCK,
+    av::TWO_HANDED,
+    av::ONE_HANDED,
+    av::MARKSMAN,
+    av::LIGHT_ARMOR,
+    av::SNEAK,
+    av::LOCKPICKING,
+    av::PICKPOCKET,
+    av::SPEECHCRAFT,
+    16, // Alchemy
+    21, // Illusion
+    19, // Conjuration
+    20, // Destruction
+    22, // Restoration
+    18, // Alteration
 ];
 /// Degrees a skill takes on the ring (`AnimatedSkillText.SKILL_ANGLE`).
 const SKILL_ANGLE: f32 = 20.0;
