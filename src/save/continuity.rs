@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub private_homes: HashMap<FormId, FormId>,
     pub trespass: Option<crate::crime::Trespass>,
     pub cleared_locations: std::collections::HashSet<FormId>,
     pub location_keyword_data: HashMap<(FormId, FormId), f32>,
@@ -87,6 +88,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            private_homes: e.crime.private_homes.clone(),
             trespass: e.crime.trespass,
             cleared_locations: e.cleared_locations.clone(),
             location_keyword_data: e.location_keyword_data.clone(),
@@ -112,6 +114,13 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.len(self.private_homes.len());
+        for (actor, cell) in sorted(&self.private_homes) {
+            w.form(actor);
+            w.form(*cell);
+        }
+        file.add(b"PHOM", w.0);
         let mut w = Writer::default();
         w.bool(self.trespass.is_some());
         if let Some(t) = self.trespass {
@@ -231,6 +240,15 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"PHOM")? {
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.private_homes.insert(actor, r.form()?);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"TRSP")? {
             if r.bool()? {
                 s.trespass = Some(crate::crime::Trespass {
@@ -377,6 +395,10 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for (&actor, &cell) in &self.private_homes {
+            nonnull(actor)?;
+            nonnull(cell)?;
+        }
         if let Some(t) = self.trespass {
             nonnull(t.cell)?;
             time(t.next)?;
@@ -451,6 +473,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.private_homes = self.private_homes;
         e.crime.trespass = self.trespass;
         let (third, distance) = self
             .camera
