@@ -4292,3 +4292,31 @@ fn durable_trespass_invalid() {
     });
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_private_homes() {
+    let (_fixture, mut e) = engine("durable-private_homes");
+    e.crime.private_homes.insert(ACTOR, CELL);
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"PHOM");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.crime.private_homes.clear();
+    e.crime.private_homes.insert(CELL, ACTOR);
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(
+        e.crime.private_homes,
+        std::collections::HashMap::from([(ACTOR, CELL)])
+    );
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"PHOM");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.private_homes.is_empty());
+}
+#[test]
+fn durable_private_homes_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.private_homes.insert(ACTOR, FormId::NULL);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
