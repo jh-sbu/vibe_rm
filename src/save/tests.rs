@@ -4460,3 +4460,27 @@ fn durable_jail_sentence_invalid() {
     s.continuity.sentence.1 = Some(FormId::NULL);
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_jail_days() {
+    let (_fixture, mut e) = engine("durable-jail_days");
+    e.crime.arrests.days_in_jail = 12;
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"JDYS");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.crime.arrests.days_in_jail = 99;
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(e.crime.arrests.days_in_jail, 12);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"JDYS");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.crime.arrests.days_in_jail, 0);
+}
+#[test]
+fn durable_jail_days_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.jail_days = -1;
+    assert!(Snapshot::read(&s.write()).is_err());
+}

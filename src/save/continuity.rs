@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub jail_days: i32,
     pub sentence: (Option<crate::arrest::Sentence>, Option<FormId>),
     pub resistance: (std::collections::HashSet<FormId>, bool, f32),
     pub pursuits: HashMap<FormId, crate::arrest::Pursuit>,
@@ -92,6 +93,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            jail_days: e.crime.arrests.days_in_jail,
             sentence: (e.crime.arrests.jailed, e.crime.arrests.pending),
             resistance: (
                 e.crime.arrests.resisting.clone(),
@@ -129,6 +131,9 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.i32(self.jail_days);
+        file.add(b"JDYS", w.0);
         let mut w = Writer::default();
         w.opt_form(self.sentence.1);
         w.bool(self.sentence.0.is_some());
@@ -298,6 +303,10 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"JDYS")? {
+            s.jail_days = r.i32()?;
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"JSEN")? {
             s.sentence.1 = r.opt_form()?;
             if r.bool()? {
@@ -506,6 +515,9 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        if self.jail_days < 0 {
+            return Err(Corrupt("negative jail days".into()));
+        }
         if let Some(id) = self.sentence.1 {
             nonnull(id)?;
         }
@@ -618,6 +630,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.arrests.days_in_jail = self.jail_days;
         e.crime.arrests.jailed = self.sentence.0;
         e.crime.arrests.pending = self.sentence.1;
         e.crime.arrests.resisting = self.resistance.0;
