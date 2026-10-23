@@ -4419,3 +4419,44 @@ fn durable_arrest_resistance_invalid() {
     s.continuity.resistance.2 = -1.0;
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_jail_sentence() {
+    let (_fixture, mut e) = engine("durable-jail_sentence");
+    e.crime.arrests.jailed = Some(crate::arrest::Sentence {
+        faction: QUEST,
+        days: 3,
+        inside: ACTOR,
+        owed: crate::crime::Bounty {
+            violent: 250,
+            nonviolent: 50,
+            infamy_violent: 300,
+            infamy_nonviolent: 100,
+        },
+    });
+    e.crime.arrests.pending = Some(CELL);
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"JSEN");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.crime.arrests.jailed = None;
+    e.crime.arrests.pending = None;
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(e.crime.arrests.jailed.unwrap().days, 3);
+    assert_eq!(e.crime.arrests.pending, Some(CELL));
+    e.escape_jail();
+    assert_eq!(e.bounty(QUEST).violent, 250);
+    assert_eq!(e.bounty(QUEST).nonviolent, 150);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"JSEN");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.arrests.jailed.is_none());
+    assert!(e.crime.arrests.pending.is_none());
+}
+#[test]
+fn durable_jail_sentence_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.sentence.1 = Some(FormId::NULL);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
