@@ -10,7 +10,6 @@ use esp::worldspace::{WorldMapData, WorldMapOffset};
 use glam::{Mat4, Vec2, Vec3};
 
 use crate::engine::{Engine, Location};
-use crate::map_markers::MapMarker;
 use crate::render::{Camera, Environment, Scene};
 use crate::world::lod::Lod;
 
@@ -69,6 +68,44 @@ pub struct MapView {
     lod: Lod,
     pub scene: Scene,
     pub rows: Vec<MapRow>,
+}
+
+/// Convert a worldspace position to the map it inherits, composing each
+/// authored ONAM transform. Cycles and malformed/nonfinite data have no point.
+pub(crate) fn world_map_point(
+    lo: &esp::LoadOrder,
+    mut world: FormId,
+    mut pos: Vec2,
+) -> Option<(FormId, Vec2)> {
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..64 {
+        if !pos.is_finite() || !seen.insert(world) {
+            return None;
+        }
+        let rec = lo.get(world).filter(|r| r.tag().0 == *b"WRLD")?;
+        let flags = match rec.get(b"PNAM") {
+            Some(d) => u16::from_le_bytes(d.get(..2)?.try_into().ok()?),
+            None => 0,
+        };
+        if flags & USE_MAP_DATA == 0 || rec.get(b"WNAM").is_none() {
+            return Some((world, pos));
+        }
+        let parent = rec.fid(FormId(u32::from_le_bytes(
+            rec.get(b"WNAM")?.get(..4)?.try_into().ok()?,
+        )));
+        if let Some(data) = rec.get(b"ONAM") {
+            let offset = WorldMapOffset::parse(data)?;
+            if !offset.scale.is_finite()
+                || offset.scale <= 0.0
+                || !offset.offset.iter().all(|v| v.is_finite())
+            {
+                return None;
+            }
+            pos = pos * offset.scale + Vec2::new(offset.offset[0], offset.offset[1]);
+        }
+        world = parent;
+    }
+    None
 }
 
 impl MapView {
@@ -172,47 +209,34 @@ pub fn frame_parts<'a>(
 impl Engine {
     /// The worldspace the map opens on, with its map data: where the player
     /// is (a child worldspace's is its parent's), else Tamriel.
-    fn map_world(&self) -> Option<(FormId, WorldMapData, Option<WorldMapOffset>)> {
+    fn map_world(&self) -> Option<(FormId, WorldMapData)> {
         let here = match self.location {
             Location::Exterior { world, .. } => world,
             _ => self.lo.find_editor_id("Tamriel")?,
         };
-        let (mnam, owner) = self.world_field(here, b"MNAM", USE_MAP_DATA)?;
-        let data = WorldMapData::parse(&mnam)?;
-        let offset = (owner != here)
-            .then(|| {
-                self.lo
-                    .get(here)?
-                    .get(b"ONAM")
-                    .and_then(WorldMapOffset::parse)
-            })
-            .flatten();
-        Some((owner, data, offset))
+        let (owner, _) = world_map_point(&self.lo, here, Vec2::ZERO)?;
+        let rec = self.lo.get(owner)?;
+        Some((owner, WorldMapData::parse(rec.get(b"MNAM")?)?))
     }
 
     /// Builds the map view. None when the worldspace has no map data or
     /// distant LOD.
     pub fn open_map_view(&mut self) -> Option<()> {
-        let (world, data, offset) = self.map_world()?;
+        let (world, data) = self.map_world()?;
         let edid = self.lo.get(world)?.editor_id()?;
         let lod = Lod::new(&self.vfs, &edid);
         if lod.is_empty() {
             log::warn!("map: no distant LOD for {edid}");
             return None;
         }
-        let in_world = match self.location {
-            Location::Exterior { world: here, .. } => here == world || offset.is_some(),
-            _ => false,
+        let player = match self.location {
+            Location::Exterior { world: here, .. } => {
+                world_map_point(&self.lo, here, self.player.position.truncate())
+                    .filter(|(owner, _)| *owner == world)
+                    .map(|(_, p)| (p, self.camera.yaw.to_degrees().rem_euclid(360.0)))
+            }
+            _ => None,
         };
-        let player = in_world.then(|| {
-            let p = self.player.position.truncate();
-            // A child worldspace sits on its parent's map at its offset.
-            let p = match offset {
-                Some(o) => p * o.scale + Vec2::new(o.offset[0], o.offset[1]),
-                None => p,
-            };
-            (p, self.camera.yaw.to_degrees().rem_euclid(360.0))
-        });
         let [min_x, min_y, max_x, max_y] = data.bounds();
         // The camera's field of view takes in the whole map's height from
         // the highest it goes.
@@ -262,32 +286,31 @@ impl Engine {
         self.map_view = None;
     }
 
-    /// The markers on the map: every one in the worldspace that is on the
-    /// map and enabled, then the player's.
+    /// Visible destination markers, including children that inherit this map.
+    pub(crate) fn map_rows_for_world(&self, world: FormId) -> Vec<MapRow> {
+        self.map_marker_list()
+            .iter()
+            .filter(|m| (1..=crate::map_markers::frame::LAST_LOCATION_TYPE).contains(&m.kind))
+            .filter(|m| self.map_marker_visible(m.r) && !self.is_disabled(m.r))
+            .filter_map(|m| {
+                let (owner, pos) = world_map_point(&self.lo, m.world, m.pos.truncate())?;
+                (owner == world).then(|| MapRow {
+                    marker: Some(m.r),
+                    name: m.name.clone(),
+                    kind: m.kind,
+                    undiscovered: !self.can_fast_travel_to(m.r),
+                    pos,
+                    rotation: 0.0,
+                })
+            })
+            .collect()
+    }
+
+    /// Destination markers, then the player, in stable callback order.
     fn map_view_rows(&mut self) {
         let Some(view) = &self.map_view else { return };
         let world = view.world;
-        let markers: Vec<MapMarker> = self
-            .map_marker_list()
-            .iter()
-            .filter(|m| {
-                m.world == world
-                    && (1..=crate::map_markers::frame::LAST_LOCATION_TYPE).contains(&m.kind)
-            })
-            .filter(|m| self.map_marker_visible(m.r) && !self.is_disabled(m.r))
-            .cloned()
-            .collect();
-        let mut rows: Vec<MapRow> = markers
-            .iter()
-            .map(|m| MapRow {
-                marker: Some(m.r),
-                name: m.name.clone(),
-                kind: m.kind,
-                undiscovered: !self.can_fast_travel_to(m.r),
-                pos: m.pos.truncate(),
-                rotation: 0.0,
-            })
-            .collect();
+        let mut rows = self.map_rows_for_world(world);
         if let Some((pos, rotation)) = self.map_view.as_ref().and_then(|v| v.player) {
             rows.push(MapRow {
                 marker: None,
@@ -372,6 +395,157 @@ mod tests {
             scene: Scene::default(),
             rows: Vec::new(),
         }
+    }
+
+    fn hierarchy_fixture(label: &str) -> std::path::PathBuf {
+        use esp::group_type as g;
+        use esp::writer::{Node, RecordBuilder as R, write_plugin};
+        let dir =
+            std::env::temp_dir().join(format!("vrm-map-parent-{label}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let world = |id, parent: Option<u32>, scale: f32, x: f32, y: f32| {
+            let mut r = R::new(b"WRLD", FormId(id));
+            if let Some(parent) = parent {
+                r = r
+                    .u32(b"WNAM", parent)
+                    .field(b"PNAM", &4u16.to_le_bytes())
+                    .field(
+                        b"ONAM",
+                        &[scale, x, y, 0.0]
+                            .into_iter()
+                            .flat_map(f32::to_le_bytes)
+                            .collect::<Vec<_>>(),
+                    );
+            }
+            r
+        };
+        let worlds = vec![
+            world(0x800, None, 1.0, 0.0, 0.0),
+            world(0x801, Some(0x800), 2.0, 100.0, 200.0),
+            world(0x802, Some(0x801), 0.5, -100.0, -200.0),
+            world(0x803, None, 1.0, 0.0, 0.0),
+            world(0x804, Some(0x805), 1.0, 0.0, 0.0),
+            world(0x805, Some(0x804), 1.0, 0.0, 0.0),
+            R::new(b"WRLD", FormId(0x806))
+                .u32(b"WNAM", 0x800)
+                .field(b"PNAM", &4u16.to_le_bytes())
+                .field(b"ONAM", &[0]),
+            world(0x807, Some(0x800), f32::NAN, 0.0, 0.0),
+            R::new(b"WRLD", FormId(0x808))
+                .u32(b"WNAM", 0x800)
+                .field(b"PNAM", &4u16.to_le_bytes()),
+        ];
+        let mut children = Vec::new();
+        for (i, r) in worlds.into_iter().enumerate() {
+            let w = r.form_id;
+            let c = FormId(0xA00 + i as u32);
+            let marker = R::new(b"REFR", FormId(0x900 + i as u32))
+                .u32(b"NAME", 0x880)
+                .field(b"XMRK", &[])
+                .field(b"FNAM", &[3])
+                .field(b"TNAM", &[1, 0])
+                .zstring(b"FULL", "Synthetic map marker")
+                .field(
+                    b"DATA",
+                    &[10.0, 20.0, 0.0, 0.0, 0.0, 0.0]
+                        .into_iter()
+                        .flat_map(f32::to_le_bytes)
+                        .collect::<Vec<_>>(),
+                );
+            children.push(Node::Record(r));
+            children.push(Node::Group {
+                label: w.0.to_le_bytes(),
+                group_type: g::WORLD_CHILDREN,
+                children: vec![
+                    Node::Record(R::new(b"CELL", c).flags(0x400).field(b"DATA", &[0, 0])),
+                    Node::Group {
+                        label: c.0.to_le_bytes(),
+                        group_type: g::CELL_CHILDREN,
+                        children: vec![Node::Group {
+                            label: c.0.to_le_bytes(),
+                            group_type: g::CELL_PERSISTENT,
+                            children: vec![Node::Record(marker)],
+                        }],
+                    },
+                ],
+            });
+        }
+        let nodes = vec![
+            Node::top(b"STAT", vec![R::new(b"STAT", FormId(0x880))]),
+            Node::Group {
+                label: *b"WRLD",
+                group_type: g::TOP,
+                children,
+            },
+        ];
+        std::fs::write(
+            dir.join("Map.esp"),
+            write_plugin(0, &[], "test", "synthetic hierarchy", 0xB00, &nodes),
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn map_parent_transforms_compose_and_reject_bad_hierarchies() {
+        let dir = hierarchy_fixture("projection");
+        let lo = esp::LoadOrder::load(&dir, &["Map.esp".into()]).unwrap();
+        let p = Vec2::new(10.0, 20.0);
+        assert_eq!(
+            world_map_point(&lo, FormId(0x801), p),
+            Some((FormId(0x800), Vec2::new(120.0, 240.0)))
+        );
+        assert_eq!(
+            world_map_point(&lo, FormId(0x802), p),
+            Some((FormId(0x800), Vec2::new(-90.0, -180.0)))
+        );
+        assert_eq!(
+            world_map_point(&lo, FormId(0x803), p),
+            Some((FormId(0x803), p))
+        );
+        assert_eq!(
+            world_map_point(&lo, FormId(0x808), p),
+            Some((FormId(0x800), p))
+        );
+        for id in [0x804, 0x805, 0x806, 0x807, 0xDEAD] {
+            assert_eq!(world_map_point(&lo, FormId(id), p), None);
+        }
+        assert_eq!(
+            world_map_point(&lo, FormId(0x800), Vec2::splat(f32::NAN)),
+            None
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn map_parent_rows_keep_destination_ids_and_permissions() {
+        let dir = hierarchy_fixture("rows");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Map.esp");
+        let rows = e.map_rows_for_world(FormId(0x800));
+        assert_eq!(rows.len(), 4);
+        let child = rows
+            .iter()
+            .find(|r| r.marker == Some(FormId(0x901)))
+            .unwrap();
+        assert_eq!(child.pos, Vec2::new(120.0, 240.0));
+        assert!(!child.undiscovered);
+        assert!(!rows.iter().any(|r| r.marker == Some(FormId(0x903))));
+        e.enable_fast_travel(FormId(0x901), false);
+        let rows = e.map_rows_for_world(FormId(0x800));
+        assert!(
+            rows.iter()
+                .find(|r| r.marker == Some(FormId(0x901)))
+                .unwrap()
+                .undiscovered
+        );
+        e.scripts.disabled.insert(FormId(0x902), true);
+        assert!(
+            !e.map_rows_for_world(FormId(0x800))
+                .iter()
+                .any(|r| r.marker == Some(FormId(0x902)))
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

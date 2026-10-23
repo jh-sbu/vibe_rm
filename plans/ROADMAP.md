@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Child-worldspace destination markers appear on inherited parent maps,
+  sharing composed projection with the player and camera owner. Reference IDs
+  stay physical destinations. Choices: `known_ambiguities/map-view.md`.
 - Loaded living teammates actively following the player use the shared
   travel/load-door party hooks; waiting and nonteammate actors stay behind.
   `TEAM` saves teammate/favor flags. Limits: `known_ambiguities/followers.md`.
@@ -1796,8 +1799,7 @@ game each piece unlocks.
      (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: unloaded-follower continuity, exact SE timing and cross-space
      time, mounted/Survival restrictions, loading-screen presentation and
      autosave timing (`known_ambiguities/fast-travel.md`); then quest targets and custom markers on the
-     map, the journal's Show on Map; markers of child worldspaces on their
-     parent's map; distant LOD around the loaded cells on by default (the
+     map, the journal's Show on Map; distant LOD around the loaded cells on by default (the
      blocks are now placed right: `VRM_LOD=1`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), rows grouped by captured soul with per-item
