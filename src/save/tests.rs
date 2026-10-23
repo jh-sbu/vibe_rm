@@ -4484,3 +4484,39 @@ fn durable_jail_days_invalid() {
     s.continuity.jail_days = -1;
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_delayed_activations() {
+    let (_fixture, mut e) = engine("durable-delayed_activations");
+    e.scripts.real_time = 10.0;
+    e.activation.pending = vec![(15.0, ACTOR, CELL), (12.0, CELL, ACTOR)];
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"ACTQ");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.activation.pending = vec![(0.0, QUEST, ACTOR)];
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(
+        e.activation.pending,
+        vec![(15.0, ACTOR, CELL), (12.0, CELL, ACTOR)]
+    );
+    e.update_activations();
+    assert_eq!(e.activation.pending.len(), 2);
+    e.scripts.real_time = 12.0;
+    e.update_activations();
+    assert_eq!(e.activation.pending, vec![(15.0, ACTOR, CELL)]);
+    e.scripts.real_time = 16.0;
+    e.update_activations();
+    assert!(e.activation.pending.is_empty());
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"ACTQ");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.activation.pending.is_empty());
+}
+#[test]
+fn durable_delayed_activations_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.activations.push((f64::NAN, ACTOR, CELL));
+    assert!(Snapshot::read(&s.write()).is_err());
+}

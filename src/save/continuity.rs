@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub activations: Vec<(f64, FormId, FormId)>,
     pub jail_days: i32,
     pub sentence: (Option<crate::arrest::Sentence>, Option<FormId>),
     pub resistance: (std::collections::HashSet<FormId>, bool, f32),
@@ -93,6 +94,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            activations: e.activation.pending.clone(),
             jail_days: e.crime.arrests.days_in_jail,
             sentence: (e.crime.arrests.jailed, e.crime.arrests.pending),
             resistance: (
@@ -131,6 +133,14 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.len(self.activations.len());
+        for &(at, child, parent) in &self.activations {
+            w.f64(at);
+            w.form(child);
+            w.form(parent);
+        }
+        file.add(b"ACTQ", w.0);
         let mut w = Writer::default();
         w.i32(self.jail_days);
         file.add(b"JDYS", w.0);
@@ -303,6 +313,12 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"ACTQ")? {
+            for _ in 0..r.count(16)? {
+                s.activations.push((r.f64()?, r.form()?, r.form()?));
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"JDYS")? {
             s.jail_days = r.i32()?;
             r.finish()?;
@@ -515,6 +531,11 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for &(at, child, parent) in &self.activations {
+            time(at)?;
+            nonnull(child)?;
+            nonnull(parent)?;
+        }
         if self.jail_days < 0 {
             return Err(Corrupt("negative jail days".into()));
         }
@@ -630,6 +651,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.activation.restore_pending(self.activations);
         e.crime.arrests.days_in_jail = self.jail_days;
         e.crime.arrests.jailed = self.sentence.0;
         e.crime.arrests.pending = self.sentence.1;

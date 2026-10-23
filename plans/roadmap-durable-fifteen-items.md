@@ -24,3 +24,5 @@ Completed items follow. Final validation is recorded at the end.
 6. Jail sentences, owed bounty and queued prison transport (`JSEN`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
 
 7. Accumulated jail days read by GetDaysInJail (`JDYS`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
+
+8. Ordered delayed parent activations and absolute deadlines (`ACTQ`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
