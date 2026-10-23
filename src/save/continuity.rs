@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub sneaking: bool,
     pub critical_hits: std::collections::HashSet<FormId>,
     pub random_streams: Option<(u64, u64)>,
     pub activations: Vec<(f64, FormId, FormId)>,
@@ -96,6 +97,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            sneaking: e.player.sneaking,
             critical_hits: e.critically_hit.clone(),
             random_streams: Some((e.rng, e.cond_rng.get())),
             activations: e.activation.pending.clone(),
@@ -137,6 +139,9 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.bool(self.sneaking);
+        file.add(b"SNEK", w.0);
         let mut w = Writer::default();
         let mut ids: Vec<_> = self.critical_hits.iter().copied().collect();
         ids.sort();
@@ -331,6 +336,10 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"SNEK")? {
+            s.sneaking = r.bool()?;
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"LHCR")? {
             let mut previous = None;
             for _ in 0..r.count(4)? {
@@ -688,6 +697,11 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.player.sneaking = self.sneaking;
+        e.player.crouch = self.sneaking as u8 as f32;
+        e.player.moving = false;
+        e.player.running = false;
+        e.player.sprinting = false;
         e.critically_hit = self.critical_hits;
         let (rng, cond) = self.random_streams.unwrap_or((1, 0x9E37_79B9_7F4A_7C15));
         e.rng = rng;
