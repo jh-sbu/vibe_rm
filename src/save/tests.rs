@@ -3652,3 +3652,51 @@ fn continuity_assault_runtime() {
     assert!(!e.assaulted_by_player(ACTOR));
     assert!(e.crime.player_assailants.is_empty());
 }
+
+#[test]
+fn continuity_witnesses_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.unreported.push(crate::crime::Unreported {
+        faction: GLOBAL,
+        gold: 40,
+        violent: true,
+        witnesses: vec![ACTOR, CELL],
+    });
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.unreported[0].witnesses,
+        vec![ACTOR, CELL]
+    );
+    assert_eq!(restored.continuity.unreported[0].gold, 40);
+    assert!(restored.continuity.unreported[0].violent);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"UWIT");
+    s.continuity.unreported[0].gold = -1;
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_witnesses_runtime() {
+    let (_fixture, mut e) = engine("continuity-witnesses");
+    e.crime.unreported.push(crate::crime::Unreported {
+        faction: GLOBAL,
+        gold: 40,
+        violent: true,
+        witnesses: vec![SCENE_ACTOR],
+    });
+    e.mod_crime_gold(GLOBAL, 40, true);
+    let saved = Snapshot::capture(&e).write();
+    e.crime.unreported.clear();
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.crime.unreported.len(), 1);
+    attach_scene_test_actor(&mut e);
+    e.actor_mut(SCENE_ACTOR).unwrap().dead = true;
+    e.update_witnesses();
+    assert!(e.crime.unreported.is_empty());
+    assert_eq!(e.bounty(GLOBAL).violent, 0);
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"UWIT");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.unreported.is_empty());
+}

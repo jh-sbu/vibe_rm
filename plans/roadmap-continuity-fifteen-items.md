@@ -62,3 +62,10 @@ replacement/legacy tests passed.
 ASLT retains player assault victims (used for murder attribution) and
 assailants whose continuing hits should not recount assault. Payload and
 host-Vulkan capture/apply/legacy tests passed.
+
+## 7 completed
+
+UWIT preserves pending crime order, bounty amount, violence and witness
+identities. The runtime regression restores a pending report and kills its last
+witness through the existing loaded-actor update, withdrawing its saved bounty.
+Payload, runtime and legacy tests passed with host Vulkan.
