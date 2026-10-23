@@ -41,6 +41,27 @@ mod tests {
             &[Value::Float(1.0), Value::Float(2.0), Value::Float(3.0)],
         );
         assert!(enabled(&mut e));
+        e.fast_travel_disabled = true;
+        e.map_markers.shown.insert(esp::FormId(0x900));
+        e.map_markers.denied.insert(esp::FormId(0x900));
+        let file = crate::save::state::Snapshot::capture(&e).write();
+        e.fast_travel_disabled = false;
+        e.map_markers.travel.insert(esp::FormId(0x901));
+        crate::save::state::Snapshot::read(&file)
+            .unwrap()
+            .apply(&mut e)
+            .unwrap();
+        assert!(!enabled(&mut e));
+        assert!(e.map_markers.denied.contains(&esp::FormId(0x900)));
+        assert!(e.map_markers.travel.is_empty());
+        let mut legacy = file;
+        legacy.sections.retain(|(tag, _)| tag != b"MAPS");
+        crate::save::state::Snapshot::read(&legacy)
+            .unwrap()
+            .apply(&mut e)
+            .unwrap();
+        assert!(enabled(&mut e));
+        assert!(e.map_markers.denied.is_empty());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

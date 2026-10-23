@@ -76,6 +76,11 @@ pub struct Snapshot {
     pub weapon_usage: Vec<(FormId, u64)>,
     pub power_uses: HashMap<FormId, f32>,
     pub spent_souls: HashSet<FormId>,
+    pub fast_travel_disabled: bool,
+    pub map_shown: HashSet<FormId>,
+    pub map_discovered: HashSet<FormId>,
+    pub map_travel: HashSet<FormId>,
+    pub map_denied: HashSet<FormId>,
     pub favorite_weapon: Option<FormId>,
     pub actor_values: HashMap<(FormId, u32), Modifiers>,
     pub other_actor_values: HashMap<(FormId, String), f32>,
@@ -491,6 +496,11 @@ impl Snapshot {
             weapon_usage,
             power_uses: e.casting.power_uses().clone(),
             spent_souls: e.magic.souls_taken.clone(),
+            fast_travel_disabled: e.fast_travel_disabled,
+            map_shown: e.map_markers.shown.clone(),
+            map_discovered: e.map_markers.discovered.clone(),
+            map_travel: e.map_markers.travel.clone(),
+            map_denied: e.map_markers.denied.clone(),
             favorite_weapon,
             actor_values: s.actor_values.clone(),
             other_actor_values: s.other_actor_values.clone(),
@@ -1102,6 +1112,17 @@ impl Snapshot {
             }
             file.add(b"WSTA", w.0);
         }
+        let mut w = Writer::default();
+        w.bool(self.fast_travel_disabled);
+        for set in [
+            &self.map_shown,
+            &self.map_discovered,
+            &self.map_travel,
+            &self.map_denied,
+        ] {
+            put_forms(&mut w, set);
+        }
+        file.add(b"MAPS", w.0);
         self.vm.write(&mut file);
         file
     }
@@ -1117,6 +1138,40 @@ impl Snapshot {
     /// Read every section; nothing is applied until all of them read.
     pub fn read(file: &SaveFile) -> Result<Snapshot> {
         let mut s = Snapshot::default();
+
+        if file
+            .sections
+            .iter()
+            .filter(|(tag, _)| tag == b"MAPS")
+            .count()
+            > 1
+        {
+            return Err(Corrupt("duplicate MAPS section".into()));
+        }
+        if let Some(data) = file.section(b"MAPS") {
+            let mut r = Reader::new(data);
+            s.fast_travel_disabled = r.bool()?;
+            for set in [
+                &mut s.map_shown,
+                &mut s.map_discovered,
+                &mut s.map_travel,
+                &mut s.map_denied,
+            ] {
+                let mut previous = None;
+                for _ in 0..r.count(4)? {
+                    let id = r.form()?;
+                    if id.is_null() || previous.is_some_and(|p| p >= id) {
+                        return Err(Corrupt("invalid or unsorted map marker".into()));
+                    }
+                    previous = Some(id);
+                    set.insert(id);
+                }
+            }
+            if !s.map_travel.is_disjoint(&s.map_denied) {
+                return Err(Corrupt("conflicting map travel permissions".into()));
+            }
+            r.finish()?;
+        }
 
         let mut r = section(file, b"HEAD")?;
         for _ in 0..r.count(4)? {
@@ -2073,6 +2128,11 @@ impl Snapshot {
         e.inventories = self.inventories;
         e.casting.restore_power_uses(self.power_uses);
         e.magic.souls_taken = self.spent_souls;
+        e.fast_travel_disabled = self.fast_travel_disabled;
+        e.map_markers.shown = self.map_shown;
+        e.map_markers.discovered = self.map_discovered;
+        e.map_markers.travel = self.map_travel;
+        e.map_markers.denied = self.map_denied;
         e.restore_rolled_spells(self.rolled_spells);
         e.magic.ward_states = self.ward_states;
         let ws = &mut e.world_state;

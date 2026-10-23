@@ -56,13 +56,15 @@ pub struct MapMarkers {
     /// Every marker in the load order, read on first use.
     all: std::cell::OnceCell<Vec<MapMarker>>,
     /// Markers put on the map by scripts or by coming near.
-    shown: HashSet<FormId>,
+    pub(crate) shown: HashSet<FormId>,
     /// Markers the player has reached.
     pub discovered: HashSet<FormId>,
     /// Markers scripts allowed travel to (`AddToMap(true)`,
     /// `EnableFastTravel`): not discovered (Locations Discovered doesn't
     /// count them: `test-mod autotest2`).
-    travel: HashSet<FormId>,
+    pub(crate) travel: HashSet<FormId>,
+    /// Explicit script denial overrides both plugin flags and discovery.
+    pub(crate) denied: HashSet<FormId>,
     next_check: f32,
 }
 
@@ -146,9 +148,10 @@ impl Engine {
         let Some(m) = self.map_marker(r) else {
             return false;
         };
-        m.flags & TRAVEL != 0
-            || self.map_markers.discovered.contains(&r)
-            || self.map_markers.travel.contains(&r)
+        !self.map_markers.denied.contains(&r)
+            && (m.flags & TRAVEL != 0
+                || self.map_markers.discovered.contains(&r)
+                || self.map_markers.travel.contains(&r))
     }
 
     /// `AddToMap(abAllowFastTravel)`: the marker goes on the map ("Map
@@ -166,6 +169,7 @@ impl Engine {
         }
         self.map_markers.shown.insert(r);
         if travel {
+            self.map_markers.denied.remove(&r);
             self.map_markers.travel.insert(r);
         }
     }
@@ -176,10 +180,11 @@ impl Engine {
             return;
         }
         if on {
+            self.map_markers.denied.remove(&r);
             self.map_markers.travel.insert(r);
         } else {
             self.map_markers.travel.remove(&r);
-            self.map_markers.discovered.remove(&r);
+            self.map_markers.denied.insert(r);
         }
     }
 
@@ -301,9 +306,7 @@ impl Engine {
                 continue;
             }
             let d = m.pos.distance(player);
-            let (base, alpha) = if self.map_markers.discovered.contains(&m.r)
-                || self.map_markers.travel.contains(&m.r)
-            {
+            let (base, alpha) = if self.can_fast_travel_to(m.r) {
                 (frame::LOCATIONS, 100.0)
             } else if d < visible {
                 let a = ((visible - d) / (visible - fade).max(1.0)).clamp(0.0, 1.0);
@@ -319,5 +322,49 @@ impl Engine {
             });
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn fast_travel_denial_overrides_plugin_flags_without_rediscovery() {
+        let dir = std::env::temp_dir().join(format!("vrm-marker-denial-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Travel.esp"),
+            esp::writer::write_plugin(0, &[], "test", "synthetic markers", 0x900, &[]),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Travel.esp");
+        let r = FormId(0x900);
+        e.map_markers
+            .all
+            .set(vec![MapMarker {
+                r,
+                world: FormId(0x901),
+                pos: Vec3::ZERO,
+                name: "Test".into(),
+                kind: 1,
+                flags: VISIBLE | TRAVEL,
+            }])
+            .unwrap();
+        e.map_markers.discovered.insert(r);
+        assert!(e.can_fast_travel_to(r));
+        e.enable_fast_travel(r, false);
+        assert!(!e.can_fast_travel_to(r));
+        assert!(e.map_marker_visible(r));
+        assert!(e.map_markers.discovered.contains(&r));
+        e.add_to_map(r, false);
+        assert!(!e.can_fast_travel_to(r));
+        e.add_to_map(r, true);
+        assert!(e.can_fast_travel_to(r));
+        e.enable_fast_travel(r, false);
+        e.enable_fast_travel(r, true);
+        assert!(e.can_fast_travel_to(r));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

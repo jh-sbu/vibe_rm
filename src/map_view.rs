@@ -271,8 +271,7 @@ impl Engine {
             .map(|m| MapRow {
                 name: m.name.clone(),
                 kind: m.kind,
-                undiscovered: !(self.map_markers.discovered.contains(&m.r)
-                    || self.can_fast_travel_to(m.r)),
+                undiscovered: !self.can_fast_travel_to(m.r),
                 pos: m.pos.truncate(),
                 rotation: 0.0,
             })
