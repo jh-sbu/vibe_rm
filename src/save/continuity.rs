@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub image_modifiers: Vec<crate::imagespace::Active>,
     pub map_camera: Option<(glam::Vec2, f32, f32)>,
     pub attack_recovery: f32,
     pub sneaking: bool,
@@ -99,6 +100,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            image_modifiers: e.imagespace.active.clone(),
             map_camera: e
                 .map_view
                 .as_ref()
@@ -147,6 +149,21 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.len(self.image_modifiers.len());
+        for a in &self.image_modifiers {
+            w.form(a.imad);
+            w.f32(a.t);
+            w.f32(a.strength);
+            w.f32(a.fade_in);
+            w.bool(a.fade_out.is_some());
+            if let Some((t, d)) = a.fade_out {
+                w.f32(t);
+                w.f32(d);
+            }
+            w.bool(a.cross_fade);
+        }
+        file.add(b"IMOD", w.0);
         let mut w = Writer::default();
         w.bool(self.map_camera.is_some());
         if let Some((at, zoom, pitch)) = self.map_camera {
@@ -356,6 +373,23 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"IMOD")? {
+            for _ in 0..r.count(18)? {
+                s.image_modifiers.push(crate::imagespace::Active {
+                    imad: r.form()?,
+                    t: r.f32()?,
+                    strength: r.f32()?,
+                    fade_in: r.f32()?,
+                    fade_out: if r.bool()? {
+                        Some((r.f32()?, r.f32()?))
+                    } else {
+                        None
+                    },
+                    cross_fade: r.bool()?,
+                });
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"MCAM")? {
             if r.bool()? {
                 s.map_camera = Some((glam::Vec2::new(r.f32()?, r.f32()?), r.f32()?, r.f32()?));
@@ -601,6 +635,26 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        let mut ids = std::collections::HashSet::new();
+        let mut cross_fades = 0;
+        for a in &self.image_modifiers {
+            nonnull(a.imad)?;
+            time(a.t as f64)?;
+            time(a.fade_in as f64)?;
+            if !a.strength.is_finite() || !ids.insert(a.imad) {
+                return Err(Corrupt("invalid image modifier".into()));
+            }
+            if let Some((t, d)) = a.fade_out {
+                time(t as f64)?;
+                time(d as f64)?;
+            }
+            if a.cross_fade && a.fade_out.is_none() {
+                cross_fades += 1;
+            }
+        }
+        if cross_fades > 1 {
+            return Err(Corrupt("multiple current cross-fade modifiers".into()));
+        }
         if let Some((at, zoom, pitch)) = self.map_camera {
             if !at.is_finite()
                 || !(0.0..=1.0).contains(&zoom)
@@ -736,6 +790,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.imagespace.active = self.image_modifiers;
         e.map_start = self.map_camera;
         e.close_map_view();
         if e.menu == Some(crate::items::Menu::Map) {

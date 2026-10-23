@@ -36,3 +36,5 @@ Completed items follow. Final validation is recorded at the end.
 12. Player attack cooldown, discarding unsaved swing/input/graph phases (`ATRC`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
 
 13. Map camera preference, including the open map view at capture (`MCAM`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
+
+14. Ordered image modifiers, strength, elapsed time and cross-fade progress (`IMOD`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.

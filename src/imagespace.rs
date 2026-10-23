@@ -219,18 +219,18 @@ impl Imgs {
 }
 
 /// A modifier applied to the view.
-#[derive(Debug, Clone)]
-struct Active {
-    imad: FormId,
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Active {
+    pub(crate) imad: FormId,
     /// Seconds since applied.
-    t: f32,
-    strength: f32,
+    pub(crate) t: f32,
+    pub(crate) strength: f32,
     /// Fading in over this many seconds (`ApplyCrossFade`).
-    fade_in: f32,
+    pub(crate) fade_in: f32,
     /// Fading out: (seconds since it began, over how long).
-    fade_out: Option<(f32, f32)>,
+    pub(crate) fade_out: Option<(f32, f32)>,
     /// The cross-fade modifier (there is one at most).
-    cross_fade: bool,
+    pub(crate) cross_fade: bool,
 }
 
 impl Active {
@@ -309,7 +309,7 @@ pub struct ImageSpace {
     pub interior: Option<FormId>,
     /// The base image space this frame.
     pub base: Imgs,
-    active: Vec<Active>,
+    pub(crate) active: Vec<Active>,
     fade: Option<GameFade>,
     shakes: Vec<Shake>,
     /// The view turn the shake added last frame (yaw, pitch), taken back first.

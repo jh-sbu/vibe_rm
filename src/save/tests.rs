@@ -139,6 +139,15 @@ fn engine(name: &str) -> (Fixture, Engine) {
     };
     let records = [
         Node::top(
+            b"IMAD",
+            vec![
+                RecordBuilder::new(b"IMAD", FormId(0x8D4))
+                    .field(b"BNAM", &[0, 0, 0, 0, 0, 0, 32, 65]), // blur 10
+                RecordBuilder::new(b"IMAD", FormId(0x8D5))
+                    .field(b"BNAM", &[0, 0, 0, 0, 0, 0, 160, 65]), // blur 20
+            ],
+        ),
+        Node::top(
             b"NPC_",
             vec![
                 RecordBuilder::new(b"NPC_", ACTOR),
@@ -4665,5 +4674,51 @@ fn durable_map_camera() {
 fn durable_map_camera_invalid() {
     let mut s = Snapshot::default();
     s.continuity.map_camera = Some((glam::Vec2::ZERO, f32::NAN, 60.0));
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_image_modifiers() {
+    let (_fixture, mut e) = engine("durable-image_modifiers");
+    e.apply_imod_cross_fade(FormId(0x8D4), 2.0);
+    e.update_imagespace(0.5);
+    e.apply_imod_cross_fade(FormId(0x8D5), 3.0);
+    e.update_imagespace(0.5);
+    let expected = e.imagespace.active.clone();
+    let blur = e.scene.post.blur;
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"IMOD");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.imagespace.active.clear();
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(e.imagespace.active, expected);
+    e.update_imagespace(0.0);
+    assert!((e.scene.post.blur - blur).abs() < 1e-5);
+    e.update_imagespace(3.0);
+    assert_eq!(e.imagespace.active.len(), 1);
+    assert_eq!(e.imagespace.active[0].imad, FormId(0x8D5));
+    assert!((e.scene.post.blur - 20.0).abs() < 1e-5);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"IMOD");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.imagespace.active.is_empty());
+    e.update_imagespace(0.0);
+    assert_eq!(e.scene.post.blur, 0.0);
+}
+#[test]
+fn durable_image_modifiers_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity
+        .image_modifiers
+        .push(crate::imagespace::Active {
+            imad: FormId(0x8D4),
+            t: f32::NAN,
+            strength: 1.0,
+            fade_in: 0.0,
+            fade_out: None,
+            cross_fade: false,
+        });
     assert!(Snapshot::read(&s.write()).is_err());
 }
