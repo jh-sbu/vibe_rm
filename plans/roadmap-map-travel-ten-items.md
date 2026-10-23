@@ -69,3 +69,13 @@ preflight and open a shared Yes/No box; cancellation preserves the map and
 acceptance rechecks live state. MBXW kind 2 preserves pending confirmation.
 Eight fast-travel regressions and the invalid/fractional/overlay callback-index
 test passed; the original map SWF was not exercised.
+
+## 8 completed
+
+Shared party hooks carry loaded living teammates actively following the player
+across map travel and load doors, deduplicated with summons. TEAM saves teammate
+and canDoFavor flags, replacing stale state and clearing legacy membership.
+The production party integration passed: selection, durable destination move,
+flag restoration and legacy clearing. Codec malformed-ID/duplicate/trailing-byte
+checks passed. Synthetic pinned goals stand in for unavailable PACK assets;
+unloaded followers and visual reattachment remain documented limits.

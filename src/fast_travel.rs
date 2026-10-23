@@ -611,6 +611,81 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn fast_travel_party_only_brings_living_following_teammates_and_summons() {
+        use crate::ai::package::Behaviour;
+        use crate::ai::{ActorRuntime, Goal};
+        use crate::engine::Location;
+        use crate::render::CellKey;
+        use esp::FormId;
+        use glam::{Mat4, Vec3};
+        let dir = destination_fixture("party");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Travel.esp");
+        e.location = Location::Exterior {
+            world: FormId(0x900),
+            center: (0, 0),
+        };
+        e.player.grounded = true;
+        let key = CellKey::Exterior(0, 0);
+        for id in 0x950..=0x954 {
+            let r = FormId(id);
+            let mut a = ActorRuntime::new(
+                r,
+                FormId(0x960),
+                std::sync::Arc::new(crate::world::skeleton::Skeleton::default()),
+                Mat4::IDENTITY,
+                Vec::new(),
+                0.0,
+            );
+            let mut goal = Goal::travel(Vec3::ZERO);
+            goal.behaviour = if id == 0x951 {
+                Behaviour::Hold
+            } else {
+                Behaviour::Follow
+            };
+            goal.target = Some(PLAYER_REF);
+            // Pin through the production pursuit hook; no PACK assets exist.
+            a.pursue(PLAYER_REF, &mut e.furniture);
+            a.goal = Some(goal);
+            a.dead = id == 0x952;
+            e.cells.entry(key).or_default().actors.push(a);
+            e.actor_cells.insert(r, key);
+            if id != 0x953 {
+                e.set_player_teammate(r, true, id != 0x954);
+            }
+        }
+        e.magic.commanded.insert(FormId(0x954), PLAYER_REF);
+        assert_eq!(e.player_party(), vec![FormId(0x950), FormId(0x954)]);
+        e.travel_to_map_marker(FormId(0x930)).unwrap();
+        for id in [0x950, 0x954] {
+            let moved = e.world_state.moved[&FormId(id)];
+            assert!(moved.pos.distance(e.player_feet()) < 400.0);
+            assert_eq!(
+                moved.place,
+                crate::ai::schedule::Place::Exterior(FormId(0x900), (1, 1))
+            );
+        }
+        for id in [0x951, 0x952, 0x953] {
+            assert!(!e.world_state.moved.contains_key(&FormId(id)));
+        }
+        let file = crate::save::state::Snapshot::capture(&e).write();
+        let s = crate::save::state::Snapshot::read(&file).unwrap();
+        assert_eq!(s.teammates, e.scripts.teammates);
+        assert!(s.moved.contains_key(&FormId(0x950)));
+        e.scripts.teammates.clear();
+        s.apply(&mut e).unwrap();
+        assert!(e.is_player_teammate(FormId(0x950)));
+        let mut legacy = file;
+        legacy.sections.retain(|(tag, _)| tag != b"TEAM");
+        crate::save::state::Snapshot::read(&legacy)
+            .unwrap()
+            .apply(&mut e)
+            .unwrap();
+        assert!(!e.is_player_teammate(FormId(0x950)));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     fn destination_fixture(label: &str) -> std::path::PathBuf {
         use esp::writer::{Node, RecordBuilder as R, write_plugin};
         use esp::{FormId, group_type as g};
@@ -651,6 +726,17 @@ mod tests {
                 .field(b"FNAM", &[3]),
         ];
         let nodes = vec![
+            Node::top(b"NPC_", vec![R::new(b"NPC_", FormId(0x960))]),
+            Node::top(
+                b"ACHR",
+                (0x950..=0x954)
+                    .map(|id| {
+                        R::new(b"ACHR", FormId(id))
+                            .form(b"NAME", FormId(0x960))
+                            .field(b"DATA", &data(0.0, 0.0, 0.0, 0.0))
+                    })
+                    .collect(),
+            ),
             Node::Group {
                 label: *b"CELL",
                 group_type: g::TOP,

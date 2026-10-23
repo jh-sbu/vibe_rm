@@ -104,3 +104,6 @@ retains the marker across native saves, with normal revalidation after load.
 UI/confirmation text keys use fallbacks; exact SE modal timing and autosaves are
 not claimed. The game movie was not exercised in this batch; callback handling
 and the shared Engine/message path are covered with synthetic data.
+
+Travel and load doors now carry actively following loaded teammates as well as
+summons. Selection, placement and save policies: `known_ambiguities/followers.md`.

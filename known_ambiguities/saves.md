@@ -190,3 +190,6 @@ saved: it is taken again from the place the save loads into.
 Optional `MAPS` retains map discovery and explicit travel grants/denials plus
 the global script travel gate. Legacy files reset this runtime memory; see
 `known_ambiguities/fast-travel.md`.
+
+Optional `TEAM` retains teammate and canDoFavor flags by replacement. Legacy
+files clear membership; see `known_ambiguities/followers.md`.

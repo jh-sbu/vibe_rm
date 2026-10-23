@@ -81,6 +81,7 @@ pub struct Snapshot {
     pub map_discovered: HashSet<FormId>,
     pub map_travel: HashSet<FormId>,
     pub map_denied: HashSet<FormId>,
+    pub teammates: HashMap<FormId, bool>,
     pub favorite_weapon: Option<FormId>,
     pub actor_values: HashMap<(FormId, u32), Modifiers>,
     pub other_actor_values: HashMap<(FormId, String), f32>,
@@ -501,6 +502,7 @@ impl Snapshot {
             map_discovered: e.map_markers.discovered.clone(),
             map_travel: e.map_markers.travel.clone(),
             map_denied: e.map_markers.denied.clone(),
+            teammates: e.scripts.teammates.clone(),
             favorite_weapon,
             actor_values: s.actor_values.clone(),
             other_actor_values: s.other_actor_values.clone(),
@@ -1123,6 +1125,13 @@ impl Snapshot {
             put_forms(&mut w, set);
         }
         file.add(b"MAPS", w.0);
+        let mut w = Writer::default();
+        w.len(self.teammates.len());
+        for (actor, can_do_favor) in sorted(&self.teammates) {
+            w.form(actor);
+            w.bool(*can_do_favor);
+        }
+        file.add(b"TEAM", w.0);
         self.vm.write(&mut file);
         file
     }
@@ -1173,6 +1182,32 @@ impl Snapshot {
             r.finish()?;
         }
 
+        if file
+            .sections
+            .iter()
+            .filter(|(tag, _)| tag == b"TEAM")
+            .count()
+            > 1
+        {
+            return Err(Corrupt("duplicate TEAM section".into()));
+        }
+        if let Some(data) = file.section(b"TEAM") {
+            let mut r = Reader::new(data);
+            let mut previous = None;
+            for _ in 0..r.count(5)? {
+                let actor = r.form()?;
+                if actor.is_null()
+                    || actor == crate::engine::PLAYER_REF
+                    || actor == FormId(7)
+                    || previous.is_some_and(|p| p >= actor)
+                {
+                    return Err(Corrupt("invalid or unsorted teammate".into()));
+                }
+                previous = Some(actor);
+                s.teammates.insert(actor, r.bool()?);
+            }
+            r.finish()?;
+        }
         let mut r = section(file, b"HEAD")?;
         for _ in 0..r.count(4)? {
             s.plugins.push(r.str()?);
@@ -2087,6 +2122,7 @@ impl Snapshot {
         s.lock_levels = self.lock_levels;
         s.owners = self.owners;
         s.faction_changes = self.faction_changes;
+        s.teammates = self.teammates;
         // What was queued or running before the load belongs to the old game.
         s.pending_stages.clear();
         s.pending_events.clear();

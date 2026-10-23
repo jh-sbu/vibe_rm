@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Loaded living teammates actively following the player use the shared
+  travel/load-door party hooks; waiting and nonteammate actors stay behind.
+  `TEAM` saves teammate/favor flags. Limits: `known_ambiguities/followers.md`.
 - World-map marker clicks open a travel confirmation. Cancel preserves the
   map; acceptance revalidates live eligibility and landing points. Pending
   native confirmation survives saves. `known_ambiguities/fast-travel.md`.
@@ -1639,8 +1642,8 @@ game each piece unlocks.
      that can't reach their target backing away; force-greets' "moving into a
      new space", player keyword and riding checks, "Greet Using Preferred
      Path?", `ForceGreetWaitSitting` and alias trigger locations
-   - Followers: teammates' following through load doors, fast travel and
-     waiting, their other combat behaviour (`known_ambiguities/followers.md`);
+   - Followers: already-unloaded teammates following through load doors and
+     fast travel, waiting catch-up, nonteammate quest followers, their other combat behaviour (`known_ambiguities/followers.md`);
      `AllyKilled` lines
    - Locks: sleepers asking the player to leave coming to them and staying up
      (their lines done: see Done);
@@ -1790,7 +1793,7 @@ game each piece unlocks.
      and travel permission are in `src/map_markers.rs`, the view in
      `src/map_view.rs`), in order: the map's clouds, lighting, sea and fog
      (research-gated); the local map for interiors and nearby cells
-     (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: follower continuity, exact SE timing and cross-space
+     (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: unloaded-follower continuity, exact SE timing and cross-space
      time, mounted/Survival restrictions, loading-screen presentation and
      autosave timing (`known_ambiguities/fast-travel.md`); then quest targets and custom markers on the
      map, the journal's Show on Map; markers of child worldspaces on their
