@@ -196,7 +196,12 @@ pub fn call(
                 .map_or(-1, |w| w.classification());
             v(Value::Int(class))
         }
-        ("game", "isplayersleeping") | ("game", "isfasttravelenabled") => v(Value::Bool(false)),
+        ("game", "isplayersleeping") => v(Value::Bool(false)),
+        ("game", "isfasttravelenabled") => v(Value::Bool(!e.fast_travel_disabled)),
+        ("game", "enablefasttravel") => {
+            e.fast_travel_disabled = !args.first().is_none_or(Value::as_bool);
+            none()
+        }
         // Player controls: each flag given true disables (enables) that control,
         // in Papyrus argument order. Missing arguments take
         // Papyrus's defaults.
@@ -763,6 +768,9 @@ pub fn call(
                 } else {
                     e.ref_rotation(r)
                 };
+                if r == crate::engine::PLAYER_REF {
+                    e.fast_travel_disabled = false;
+                }
                 e.move_ref(r, t, p + off, rot);
             }
             none()
@@ -775,6 +783,9 @@ pub fn call(
         }
         ("objectreference", "setposition") => {
             if let Some(r) = me {
+                if r == crate::engine::PLAYER_REF {
+                    e.fast_travel_disabled = false;
+                }
                 let rot = e.ref_rotation(r);
                 e.move_ref(
                     r,
