@@ -35,3 +35,19 @@ Optional native `MAPS` saves the script gate, shown/discovered markers, explicit
 travel grants and denials. Loading replaces these sets. Legacy saves clear them
 and enable the global gate; plugin flags still apply. This is our continuity
 format, not the original `.ess` representation.
+
+## Refusals
+
+The worldspace DATA bit 1 forbids departure, as documented by local UESP
+[WRLD revision 3192583](https://en.uesp.net/w/index.php?oldid=3192583).
+The runtime checks the script gate, life, exterior/world flag, carry weight,
+airborne state, pursuing guards, detrimental health effects, combat/search and
+nearby hostile actors. Nearby uses the existing combat engagement radius without
+requiring line of sight; the exact Skyrim refusal radius and priority are not
+published. Damage checks share waiting's detrimental-health-effect predicate,
+not every possible damage source. GMST lookups use English fallbacks when absent;
+exact message-key coverage and priority remain unverified.
+
+Mounted exceptions, dragon riding and Survival Mode are not implemented because
+the runtime lacks those systems. Script gate state does not claim to report all
+transient player eligibility. Invalid/unknown location never permits departure.

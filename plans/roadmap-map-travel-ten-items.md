@@ -29,3 +29,11 @@ recounting discovery. Optional MAPS replaces global gate and marker memory on
 load; legacy files reset runtime memory. Four travel-filtered tests passed,
 including production native/save and marker permission checks and malformed
 MAPS payloads. Deterministic encoding and old-save behavior are covered.
+
+## 3 completed
+
+Added live departure restrictions, world DATA flag handling and localized
+refusals with fallbacks. Reused waiting's detrimental-health predicate.
+Three fast-travel tests passed on host Vulkan, covering live gate, location,
+world flag, encumbrance, airborne and death transitions. Hostile radius and
+unsupported mounted/Survival behavior are documented as open limits.
