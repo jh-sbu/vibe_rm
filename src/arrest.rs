@@ -40,7 +40,7 @@ const YIELD_DELAY: f32 = 2.0;
 #[derive(Debug, Clone, Copy)]
 pub struct Pursuit {
     pub faction: FormId,
-    bark_in: f32,
+    pub(crate) bark_in: f32,
 }
 
 #[derive(Default)]
