@@ -4579,3 +4579,34 @@ fn durable_critical_hits_invalid() {
     s.continuity.critical_hits.insert(FormId::NULL);
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_sneak_stance() {
+    let (_fixture, mut e) = engine("durable-sneak_stance");
+    e.player.sneaking = true;
+    e.player.crouch = 1.0;
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"SNEK");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.player.sneaking = false;
+    e.player.crouch = 0.0;
+    e.player.sprinting = true;
+    decoded.apply(&mut e).unwrap();
+    assert!(e.player.sneaking);
+    assert_eq!(e.player.crouch, 1.0);
+    assert!(!e.player.sprinting);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"SNEK");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(!e.player.sneaking);
+    assert_eq!(e.player.crouch, 0.0);
+}
+#[test]
+fn durable_sneak_stance_invalid() {
+    let mut file = Snapshot::default().write();
+    file.sections.retain(|(tag, _)| tag != b"SNEK");
+    file.add(b"SNEK", vec![2]);
+    assert!(Snapshot::read(&file).is_err());
+}
