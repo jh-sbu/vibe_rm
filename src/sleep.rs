@@ -84,7 +84,7 @@ impl Engine {
     }
 
     /// Whether a magic effect on the player is taking their health away.
-    fn taking_health_damage(&self) -> bool {
+    pub(crate) fn taking_health_damage(&self) -> bool {
         self.magic.effects.iter().any(|x| {
             x.target == PLAYER_REF
                 && x.active

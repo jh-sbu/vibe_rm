@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Fast-travel departure checks read the script gate, world restriction,
+  encumbrance, airborne, pursuit, damage and hostile/combat state. Threshold
+  choices and missing mounted/Survival systems: `known_ambiguities/fast-travel.md`.
 - Map discovery and explicit fast-travel grants/denials survive native saves
   through optional `MAPS`, along with the global travel gate. Explicit denial
   overrides plugin flags; choices: `known_ambiguities/fast-travel.md`.
