@@ -33,7 +33,7 @@ Early but already visual:
 | Inventories (NPC items, outfits, containers), sheathed weapons and shields | in progress |
 | Combat (melee between NPCs, creatures and the player), ragdoll deaths; skills, leveling and perk trees | in progress |
 | Magic: effects on actors, abilities, potions, enchantments, effect scripts; the player casting spells and powers by hand (magicka, projectiles, areas); shouts (words of power, dragon souls, the voice's rest) | in progress |
-| Saves | planned |
+| Saves | native `.vrs` saves implemented; original `.ess` import remains planned |
 
 ## Building and running
 
@@ -88,8 +88,8 @@ toggles actor AI).
 - `crates/esp`: plugin reader, load order and record index
 - `crates/nif`: NIF model reader
 - `crates/vfs`: virtual file system (loose files over archives)
-- `crates/ess`: read-only save game reader, as far as test mods need (no save
-  system yet)
+- `crates/ess`: read-only original save game reader, as far as test mods need;
+  native `.vrs` saving and loading lives in `src/save`
 - `crates/ui-swf`: the game's Interface menus (Scaleform `.swf`) through Ruffle
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
   (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`, `nif-materials`, `fsts`,

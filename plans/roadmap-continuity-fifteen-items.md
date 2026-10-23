@@ -113,3 +113,34 @@ MUSE retains spell, school and shout counts plus incumbents on tied
 maxima. Histories reject unsorted/duplicate keys, zero counts, invalid schools
 and nonmaximal favorites. The production test checks favorite-name lookup and
 continued counting after load. Payload and host-Vulkan tests passed.
+
+## 15 completed
+
+CAMR restores first/third-person preference and the bounded third-person
+zoom distance. Legacy loads choose first person and the standard native zoom.
+Old combat camera interpolation is cleared. Payload and host-Vulkan tests passed.
+
+## Final validation and limits
+
+- Host-Vulkan workspace suite: 557 passed, 178 ignored, no failures.
+- Complete save suite, including ignored synthetic Engine integrations: 95 passed,
+  no failures or ignored tests. This includes all 33 new tests in this batch.
+- Added collection-key corruption checks (duplicates, descending keys and inflated
+  counts) and transactional apply rejection checks across every adjunct category.
+- Added a production regression proving both current and legacy loads discard
+  old cast-button input instead of releasing an unsaved spell.
+- Full save recapture exposed an old fixture with per-quest sequences above its
+  allocator. Capture now uses the same sequence floor as restoration, retaining
+  byte-stable save/load/save without weakening the legacy ordering fix.
+- Changed Rust files pass rustfmt; git diff --check is clean. The sandbox workspace
+  run hit the existing terrain GPU texture limit in 24 tests; the complete host
+  rerun passed. No renderer changes were needed.
+
+All fifteen items are independently committed. Updated the main roadmap and
+corrected the README's outdated save-system status. Public UESP sources are
+linked by permanent revision in known_ambiguities/saves.md. Its PKCT note and the
+roadmap explicitly retain the still-missing pickpocket retry-reset work described
+by public documentation. Native `.vrs` continuity does not establish original
+`.ess` compatibility or SE lifecycle parity. No game assets, leaked documents,
+engine executables or engine libraries were inspected or committed; all runtime
+fixtures were generated synthetic records.

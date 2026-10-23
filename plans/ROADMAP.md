@@ -5,9 +5,14 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
-- Harvested plants and their existing regrowth timestamps survive native saves
-  in optional `HRVT`; legacy loads clear harvest memory. Native policy and
-  unresolved cell-reset behavior: `known_ambiguities/saves.md`.
+- Native save continuity now retains harvest/regrowth timestamps, cleared
+  locations, scripted location keyword data, crime factions, caught pickpocket
+  victims, assault attribution, pending crime witnesses and last crime types.
+  Controls (both POV owners and cart HUD), voice recovery, player stamina/magicka
+  regeneration delays, journal tracking/order, magic usage favorites and camera
+  perspective/zoom also restore by replacement. Fifteen independent items and
+  validation: `plans/roadmap-continuity-fifteen-items.md`; native policies and
+  remaining SE questions: `known_ambiguities/saves.md`.
 - Active quest targets appear on the world map, projecting exterior targets
   through inherited maps and routing other targets to an entrance. Overlays
   share compass filters and have no travel destination identity. Choices:
@@ -1749,6 +1754,9 @@ game each piece unlocks.
      `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
      taper, area, addictions, the rest of potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target)
+   - Pickpocket retry resets: UESP documents two days away and several reset
+     exceptions; the current caught-victim gate has no timer, and now persists
+     through native saves. See `known_ambiguities/saves.md` (`PKCT`).
    - Crime, more: arrests (guards following through
      doors, opening the cell after five hits, The Chill, the follower wait
      marker, the jail outfit); `GetArrestingActor` already checks the conversation
