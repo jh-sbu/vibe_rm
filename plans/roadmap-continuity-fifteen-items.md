@@ -93,3 +93,9 @@ meter and expiry through update_shouts. Payload and host-Vulkan tests passed.
 SREG retains the player's remaining stamina regeneration delay. Expired
 negative runtime timers capture as zero. The production test verifies no early
 regeneration and normal regeneration after expiry. Both tests passed.
+
+## 12 completed
+
+MREG retains the player's remaining magicka regeneration delay. Load
+discards old cast inputs, pending releases, HUD blinks and NPC spell caches.
+The runtime test verifies delayed regeneration and expiry. Both tests passed.

@@ -260,3 +260,10 @@ No game assets or engine binaries were inspected for these additions.
   after expiry. Legacy loads have no delay. Original SE save timing and the
   exact within-frame expiry behavior remain unverified; existing update cadence
   is preserved. This does not save NPC stamina or combat execution.
+
+- `MREG` stores remaining magicka regeneration delay, with expired timers saved
+  as zero. Legacy loads have no delay. Loads discard cast/release input state
+  rather than firing an old spell; behavior graphs and channels are not resumed.
+  UESP [Magicka, revision 2947763](https://en.uesp.net/w/index.php?oldid=2947763)
+  describes regeneration and casting suppression but not SE save semantics.
+  Active effects and NPC casting execution remain separate work.
