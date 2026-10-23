@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub script_fade: Option<crate::imagespace::GameFade>,
     pub image_modifiers: Vec<crate::imagespace::Active>,
     pub map_camera: Option<(glam::Vec2, f32, f32)>,
     pub attack_recovery: f32,
@@ -100,12 +101,21 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            script_fade: e.imagespace.fade,
             image_modifiers: e.imagespace.active.clone(),
             map_camera: e
                 .map_view
                 .as_ref()
                 .map(|v| (v.center, v.zoom, v.pitch))
-                .or(e.map_start),
+                .or(e.map_start)
+                .filter(|(at, zoom, pitch)| at.is_finite() && zoom.is_finite() && pitch.is_finite())
+                .map(|(at, zoom, pitch)| {
+                    (
+                        at,
+                        zoom.clamp(0.0, 1.0),
+                        pitch.clamp(crate::map_view::MIN_PITCH, crate::map_view::MAX_PITCH),
+                    )
+                }),
             attack_recovery: e.player_attack_recovery.max(0.0),
             sneaking: e.player.sneaking,
             critical_hits: e.critically_hit.clone(),
@@ -149,6 +159,16 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.bool(self.script_fade.is_some());
+        if let Some(f) = self.script_fade {
+            w.bool(f.out);
+            w.bool(f.color == [0.0; 3]);
+            w.f32(f.delay);
+            w.f32(f.duration);
+            w.f32(f.t);
+        }
+        file.add(b"GFAD", w.0);
         let mut w = Writer::default();
         w.len(self.image_modifiers.len());
         for a in &self.image_modifiers {
@@ -373,6 +393,18 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"GFAD")? {
+            if r.bool()? {
+                s.script_fade = Some(crate::imagespace::GameFade {
+                    out: r.bool()?,
+                    color: if r.bool()? { [0.0; 3] } else { [1.0; 3] },
+                    delay: r.f32()?,
+                    duration: r.f32()?,
+                    t: r.f32()?,
+                });
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"IMOD")? {
             for _ in 0..r.count(18)? {
                 s.image_modifiers.push(crate::imagespace::Active {
@@ -635,6 +667,14 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        if let Some(f) = self.script_fade {
+            time(f.delay as f64)?;
+            time(f.duration as f64)?;
+            time(f.t as f64)?;
+            if f.color != [0.0; 3] && f.color != [1.0; 3] {
+                return Err(Corrupt("invalid screen fade color".into()));
+            }
+        }
         let mut ids = std::collections::HashSet::new();
         let mut cross_fades = 0;
         for a in &self.image_modifiers {
@@ -790,6 +830,8 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.imagespace.fade = self.script_fade;
+        e.clear_image_shakes_for_load();
         e.imagespace.active = self.image_modifiers;
         e.map_start = self.map_camera;
         e.close_map_view();

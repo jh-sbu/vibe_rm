@@ -313,3 +313,12 @@ animation phases do not. Map camera preference resumes independently of an open
 menu. Image modifiers retain order, clocks, strength and cross-fades; script screen
 fades retain their clocks and color. Sleep overlays and camera shakes are transient.
 SE behavior for each of these transitions remains unverified by a controlled test.
+
+Cell attachment uses the restored native random seed for reconstruction, then
+reinstates both saved streams so reconstruction does not consume subsequent
+rolls. This does not retain already-chosen AI decisions or procedural progress.
+The map preference uses the existing native world-independent `map_start`
+coordinates; it does not restore an open menu or establish cross-worldspace map
+camera semantics. Console camera limits are normalized on capture as on opening;
+nonfinite pending preferences are discarded. Script-fade snapshots exclude
+camera shake offsets; modifier/fade rendering is recomputed on the next update.

@@ -5,6 +5,13 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Fifteen more native save-continuity items retain trespass/home warnings,
+  guard pursuits, resistance/yield progress, jail sentences and days, delayed
+  activations, both random streams, last-hit critical memory, sneak stance,
+  attack recovery, map camera preferences, image modifiers and script fades.
+  Legacy loads clear or default each category. Scope and tests:
+  `plans/roadmap-durable-fifteen-items.md`; native policies and SE uncertainties:
+  `known_ambiguities/saves.md`.
 - Native save continuity now retains harvest/regrowth timestamps, cleared
   locations, scripted location keyword data, crime factions, caught pickpocket
   victims, assault attribution, pending crime witnesses and last crime types.

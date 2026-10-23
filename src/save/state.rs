@@ -28,7 +28,9 @@
 //! message-box VM waits), and `ANMW` (semantic animation-event VM waits).
 //! Additional optional native continuity sections live in `super::continuity`:
 //! harvests, locations, crime memory, controls, voice/regeneration timers,
-//! journal ordering, magic usage histories and camera preferences.
+//! journal ordering, magic usage histories, camera preferences, crime progression,
+//! delayed activation queues, random streams, player stance/recovery and image
+//! modifiers/script fades.
 //! Not yet saved:
 //! active magic effects, actor
 //! procedure progress, AI progress, objects' behaviour graphs; see
@@ -489,7 +491,7 @@ impl Snapshot {
                     location,
                     // What `place_player` takes, undoing its clearance.
                     feet: e.player_feet() - Vec3::Z * crate::engine::PLACEMENT_CLEARANCE,
-                    yaw: e.camera.yaw,
+                    yaw: e.imagespace.unshaken_yaw(e.camera.yaw),
                 }),
             },
             day: e.day,
@@ -2101,6 +2103,10 @@ impl Snapshot {
             "save has invalid ward-hit state"
         );
         self.continuity.validate()?;
+        let random_streams = self
+            .continuity
+            .random_streams
+            .unwrap_or((1, 0x9E37_79B9_7F4A_7C15));
         let magic_usage = crate::stats::MagicUsage::restore(&self.continuity.magic_usage)?;
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
@@ -2246,6 +2252,10 @@ impl Snapshot {
             }) => e.enter_exterior(world, feet, yaw)?,
             _ => {}
         }
+        // Rebuilding loaded actors may draw random numbers. Those draws must
+        // not consume the saved gameplay/condition continuation.
+        e.rng = random_streams.0;
+        e.cond_rng.set(random_streams.1);
         Ok(())
     }
 }
