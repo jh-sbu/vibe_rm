@@ -4259,3 +4259,36 @@ fn continuity_load_discards_cast_buttons_from_the_previous_session() {
         assert!(e.scripts.magic_usage.saved().spells.counts.is_empty());
     }
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_trespass() {
+    let (_fixture, mut e) = engine("durable-trespass");
+    e.crime.trespass = Some(crate::crime::Trespass {
+        cell: CELL,
+        level: 1,
+        next: 17.5,
+    });
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"TRSP");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.crime.trespass = None;
+    decoded.apply(&mut e).unwrap();
+    assert_eq!(e.crime.trespass.unwrap().level, 1);
+    assert_eq!(e.crime.trespass.unwrap().next, 17.5);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"TRSP");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.trespass.is_none());
+}
+#[test]
+fn durable_trespass_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.trespass = Some(crate::crime::Trespass {
+        cell: CELL,
+        level: 3,
+        next: 0.0,
+    });
+    assert!(Snapshot::read(&s.write()).is_err());
+}
