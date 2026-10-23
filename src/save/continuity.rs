@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub resistance: (std::collections::HashSet<FormId>, bool, f32),
     pub pursuits: HashMap<FormId, crate::arrest::Pursuit>,
     pub home_warnings: (HashMap<FormId, FormId>, f64),
     pub private_homes: HashMap<FormId, FormId>,
@@ -90,6 +91,11 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            resistance: (
+                e.crime.arrests.resisting.clone(),
+                e.crime.arrests.yield_attempted,
+                e.crime.arrests.sheathed_for.max(0.0),
+            ),
             pursuits: e.crime.arrests.alarmed.clone(),
             home_warnings: (
                 e.crime.warned_homes.clone(),
@@ -121,6 +127,16 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.bool(self.resistance.1);
+        w.f32(self.resistance.2);
+        let mut ids: Vec<_> = self.resistance.0.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"ARRY", w.0);
         let mut w = Writer::default();
         w.len(self.pursuits.len());
         for (guard, p) in sorted(&self.pursuits) {
@@ -263,6 +279,17 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"ARRY")? {
+            s.resistance.1 = r.bool()?;
+            s.resistance.2 = r.f32()?;
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                s.resistance.0.insert(id);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"GPRS")? {
             let mut previous = None;
             for _ in 0..r.count(12)? {
@@ -443,6 +470,10 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        time(self.resistance.2 as f64)?;
+        for &id in &self.resistance.0 {
+            nonnull(id)?;
+        }
         for (&guard, p) in &self.pursuits {
             nonnull(guard)?;
             nonnull(p.faction)?;
@@ -531,6 +562,9 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.arrests.resisting = self.resistance.0;
+        e.crime.arrests.yield_attempted = self.resistance.1;
+        e.crime.arrests.sheathed_for = self.resistance.2;
         e.crime.arrests.alarmed = self.pursuits;
         // Dialogue itself is transient; allow the restored guards to approach again.
         e.crime.arrests.arresting = None;

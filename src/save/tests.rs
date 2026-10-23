@@ -4387,3 +4387,35 @@ fn durable_guard_pursuits_invalid() {
     );
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_arrest_resistance() {
+    let (_fixture, mut e) = engine("durable-arrest_resistance");
+    e.crime.arrests.resisting.insert(QUEST);
+    e.crime.arrests.yield_attempted = true;
+    e.crime.arrests.sheathed_for = 0.75;
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"ARRY");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.crime.arrests.resisting.clear();
+    e.crime.arrests.yield_attempted = false;
+    e.crime.arrests.sheathed_for = 0.0;
+    decoded.apply(&mut e).unwrap();
+    assert!(e.crime.arrests.resisting.contains(&QUEST));
+    assert!(e.crime.arrests.yield_attempted);
+    assert_eq!(e.crime.arrests.sheathed_for, 0.75);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"ARRY");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.arrests.resisting.is_empty());
+    assert!(!e.crime.arrests.yield_attempted);
+    assert_eq!(e.crime.arrests.sheathed_for, 0.0);
+}
+#[test]
+fn durable_arrest_resistance_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.resistance.2 = -1.0;
+    assert!(Snapshot::read(&s.write()).is_err());
+}
