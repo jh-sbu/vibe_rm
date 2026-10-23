@@ -3583,3 +3583,35 @@ fn continuity_crime_factions_runtime() {
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(e.crime.crime_factions.is_empty());
 }
+
+#[test]
+fn continuity_pickpocket_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.pickpocket_caught.extend([ACTOR, CELL]);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.pickpocket_caught,
+        s.continuity.pickpocket_caught
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"PKCT");
+    s.continuity.pickpocket_caught.insert(FormId::NULL);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_pickpocket_runtime() {
+    let (_fixture, mut e) = engine("continuity-pickpocket");
+    e.crime.pickpocket_caught.insert(ACTOR);
+    let saved = Snapshot::capture(&e).write();
+    e.crime.pickpocket_caught.clear();
+    e.crime.pickpocket_caught.insert(CELL);
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.pickpocket_caught.contains(&ACTOR));
+    assert!(!e.crime.pickpocket_caught.contains(&CELL));
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"PKCT");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.pickpocket_caught.is_empty());
+}

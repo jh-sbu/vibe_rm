@@ -223,3 +223,8 @@ No game assets or engine binaries were inspected for these additions.
 - `CRFC` retains script crime-faction assignments and explicit `None` overrides.
   Loading does not report crimes or change bounty. SE reset/persistence rules
   are unverified; see the public API research in `known_ambiguities/crime.md`.
+
+- `PKCT` retains the existing caught-pickpocket gate by victim identity.
+  UESP [Pickpocket, revision 3581319](https://en.uesp.net/w/index.php?oldid=3581319)
+  discusses detection and retry restrictions; the precise SE reset lifetime and
+  save encoding remain unverified. This does not add a new retry timer.
