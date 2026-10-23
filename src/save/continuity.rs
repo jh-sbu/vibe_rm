@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub pursuits: HashMap<FormId, crate::arrest::Pursuit>,
     pub home_warnings: (HashMap<FormId, FormId>, f64),
     pub private_homes: HashMap<FormId, FormId>,
     pub trespass: Option<crate::crime::Trespass>,
@@ -89,6 +90,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            pursuits: e.crime.arrests.alarmed.clone(),
             home_warnings: (
                 e.crime.warned_homes.clone(),
                 e.crime.time_to_go_next.max(0.0),
@@ -119,6 +121,14 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.len(self.pursuits.len());
+        for (guard, p) in sorted(&self.pursuits) {
+            w.form(guard);
+            w.form(p.faction);
+            w.f32(p.bark_in.max(0.0));
+        }
+        file.add(b"GPRS", w.0);
         let mut w = Writer::default();
         w.f64(self.home_warnings.1);
         w.len(self.home_warnings.0.len());
@@ -253,6 +263,21 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"GPRS")? {
+            let mut previous = None;
+            for _ in 0..r.count(12)? {
+                let guard = r.form()?;
+                ordered(&mut previous, guard)?;
+                s.pursuits.insert(
+                    guard,
+                    crate::arrest::Pursuit {
+                        faction: r.form()?,
+                        bark_in: r.f32()?,
+                    },
+                );
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"HWAR")? {
             s.home_warnings.1 = r.f64()?;
             let mut previous = None;
@@ -418,6 +443,11 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for (&guard, p) in &self.pursuits {
+            nonnull(guard)?;
+            nonnull(p.faction)?;
+            time(p.bark_in as f64)?;
+        }
         time(self.home_warnings.1)?;
         for (&actor, &cell) in &self.home_warnings.0 {
             nonnull(actor)?;
@@ -501,6 +531,10 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.arrests.alarmed = self.pursuits;
+        // Dialogue itself is transient; allow the restored guards to approach again.
+        e.crime.arrests.arresting = None;
+        e.crime.reacting_victim = None;
         e.crime.warned_homes = self.home_warnings.0;
         e.crime.time_to_go_next = self.home_warnings.1;
         e.crime.private_homes = self.private_homes;

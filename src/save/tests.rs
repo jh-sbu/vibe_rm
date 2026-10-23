@@ -4348,3 +4348,42 @@ fn durable_home_warnings_invalid() {
     s.continuity.home_warnings.1 = f64::INFINITY;
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_guard_pursuits() {
+    let (_fixture, mut e) = engine("durable-guard_pursuits");
+    e.crime.arrests.alarmed.insert(
+        ACTOR,
+        crate::arrest::Pursuit {
+            faction: QUEST,
+            bark_in: 1.5,
+        },
+    );
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"GPRS");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.crime.arrests.alarmed.clear();
+    e.crime.arrests.arresting = Some((ACTOR, QUEST));
+    decoded.apply(&mut e).unwrap();
+    assert!(e.is_alarmed(ACTOR));
+    assert_eq!(e.crime.arrests.alarmed[&ACTOR].bark_in, 1.5);
+    assert!(e.crime.arrests.arresting.is_none());
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"GPRS");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(!e.is_alarmed(ACTOR));
+}
+#[test]
+fn durable_guard_pursuits_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.pursuits.insert(
+        ACTOR,
+        crate::arrest::Pursuit {
+            faction: QUEST,
+            bark_in: f32::NAN,
+        },
+    );
+    assert!(Snapshot::read(&s.write()).is_err());
+}
