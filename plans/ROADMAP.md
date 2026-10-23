@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Fast-travel landing points resolve a marker's unkeyed linked reference
+  with its current position and heading; invalid points fail before loading.
+  Link selection limits: `known_ambiguities/fast-travel.md`.
 - Fast-travel departure checks read the script gate, world restriction,
   encumbrance, airborne, pursuit, damage and hostile/combat state. Threshold
   choices and missing mounted/Survival systems: `known_ambiguities/fast-travel.md`.

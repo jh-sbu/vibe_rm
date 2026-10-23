@@ -37,3 +37,11 @@ refusals with fallbacks. Reused waiting's detrimental-health predicate.
 Three fast-travel tests passed on host Vulkan, covering live gate, location,
 world flag, encumbrance, airborne and death transitions. Hostile radius and
 unsupported mounted/Survival behavior are documented as open limits.
+
+## 4 completed
+
+Map destinations resolve unkeyed linked arrival references and their current
+transform, with a self-marker fallback. Reject unavailable markers and broken,
+disabled, deleted, nonfinite or unplaced landing points. Four fast-travel tests
+passed on host Vulkan, including generated world/cell/marker records, linked
+heading, keyworded-link isolation, denial and malformed destination cases.
