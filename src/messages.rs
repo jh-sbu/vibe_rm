@@ -36,6 +36,8 @@ pub struct MessageBox {
 pub enum BoxAction {
     /// Put a dose of `poison` on `weapon` (`crate::poisons`).
     Poison { weapon: FormId, poison: FormId },
+    /// A selected map marker; all travel checks run again on acceptance.
+    FastTravel { marker: FormId },
 }
 
 /// A help message (`ShowAsHelpMessage`): shown for `duration` seconds every
@@ -415,6 +417,12 @@ impl Engine {
             self.vm.signal_with(key, Value::Int(index));
         }
         match b.action {
+            Some(BoxAction::FastTravel { marker }) if index == 0 => {
+                if let Err(reason) = self.travel_to_map_marker(marker) {
+                    let text = reason.message(self);
+                    self.scripts.notify(text);
+                }
+            }
             Some(BoxAction::Poison { weapon, poison }) if index == 0 => {
                 self.apply_poison(PLAYER_REF, weapon, poison)
             }

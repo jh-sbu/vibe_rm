@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- World-map marker clicks open a travel confirmation. Cancel preserves the
+  map; acceptance revalidates live eligibility and landing points. Pending
+  native confirmation survives saves. `known_ambiguities/fast-travel.md`.
 - Same-world map travel advances game time with distance and configured
   speed/TimeScale, catching up weather, effects, regeneration and schedules.
   This is a native approximation; cross-space timing and exact SE formula:
@@ -1785,11 +1788,9 @@ game each piece unlocks.
      and travel permission are in `src/map_markers.rs`, the view in
      `src/map_view.rs`), in order: the map's clouds, lighting, sea and fog
      (research-gated); the local map for interiors and nearby cells
-     (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: picking a
-     marker (`MarkerClick` is logged), the confirmation, refusals
-     (over-encumbered, enemies near, guards pursuing, disabled by script),
-     moving to the marker's destination, time passing with distance, and
-     followers coming along; then quest targets and custom markers on the
+     (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: follower continuity, exact SE timing and cross-space
+     time, mounted/Survival restrictions, loading-screen presentation and
+     autosave timing (`known_ambiguities/fast-travel.md`); then quest targets and custom markers on the
      map, the journal's Show on Map; markers of child worldspaces on their
      parent's map; distant LOD around the loaded cells on by default (the
      blocks are now placed right: `VRM_LOD=1`)
