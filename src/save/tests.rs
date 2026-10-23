@@ -3700,3 +3700,53 @@ fn continuity_witnesses_runtime() {
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(e.crime.unreported.is_empty());
 }
+
+#[test]
+fn continuity_last_crime_payload() {
+    let mut s = Snapshot::default();
+    s.continuity
+        .last_crime
+        .insert(GLOBAL, crate::crime::CrimeType::Murder);
+    s.continuity
+        .last_crime
+        .insert(CELL, crate::crime::CrimeType::Steal);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.last_crime, s.continuity.last_crime);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"LCRM");
+    let mut bad = file.clone();
+    let data = &mut bad
+        .sections
+        .iter_mut()
+        .find(|(t, _)| t == b"LCRM")
+        .unwrap()
+        .1;
+    data[8] = 7;
+    assert!(Snapshot::read(&bad).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_last_crime_runtime() {
+    let (_fixture, mut e) = engine("continuity-last_crime");
+    e.crime
+        .last_crime
+        .insert(GLOBAL, crate::crime::CrimeType::Murder);
+    let saved = Snapshot::capture(&e).write();
+    e.crime
+        .last_crime
+        .insert(GLOBAL, crate::crime::CrimeType::Steal);
+    e.crime
+        .last_crime
+        .insert(CELL, crate::crime::CrimeType::Escape);
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert_eq!(
+        e.crime.last_crime.get(&GLOBAL),
+        Some(&crate::crime::CrimeType::Murder)
+    );
+    assert_eq!(e.crime.last_crime.len(), 1);
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"LCRM");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.last_crime.is_empty());
+}
