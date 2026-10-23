@@ -267,3 +267,9 @@ No game assets or engine binaries were inspected for these additions.
   UESP [Magicka, revision 2947763](https://en.uesp.net/w/index.php?oldid=2947763)
   describes regeneration and casting suppression but not SE save semantics.
   Active effects and NPC casting execution remain separate work.
+
+- `JMEM` retains the native miscellaneous-objective visibility toggle and
+  sequence allocators. Legacy loads show miscellaneous objectives and recover
+  allocator minima from saved quest entries/alias fills. This fixes native
+  ordering continuity; exact SE journal persistence and ordering remain
+  unverified (`known_ambiguities/journal.md`).

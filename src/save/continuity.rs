@@ -22,6 +22,7 @@ pub(crate) struct Continuity {
     pub voice_recovery: (f32, f32),
     pub stamina_wait: f32,
     pub magicka_wait: f32,
+    pub journal_memory: Option<(bool, u64, u64)>,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -76,10 +77,22 @@ impl Continuity {
             voice_recovery: (e.shouts.recovery, e.shouts.recovery_total),
             stamina_wait: e.player_stamina_wait.max(0.0),
             magicka_wait: e.casting.saved_regen_wait(),
+            journal_memory: Some((
+                e.scripts.misc_objectives_hidden,
+                e.scripts.journal_seq,
+                e.scripts.fill_seq,
+            )),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        if let Some((hidden, journal, fills)) = self.journal_memory {
+            let mut w = Writer::default();
+            w.bool(hidden);
+            w.u64(journal);
+            w.u64(fills);
+            file.add(b"JMEM", w.0);
+        }
         let mut w = Writer::default();
         w.f32(self.magicka_wait);
         file.add(b"MREG", w.0);
@@ -274,10 +287,20 @@ impl Continuity {
             s.magicka_wait = r.f32()?;
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"JMEM")? {
+            s.journal_memory = Some((r.bool()?, r.u64()?, r.u64()?));
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        if self
+            .journal_memory
+            .is_some_and(|(_, journal, fills)| journal == u64::MAX || fills == u64::MAX)
+        {
+            return Err(Corrupt("exhausted journal/alias sequence".into()));
+        }
         time(self.magicka_wait as f64)?;
         time(self.stamina_wait as f64)?;
         let (remaining, total) = self.voice_recovery;
@@ -330,6 +353,26 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        let (hidden, journal, fills) = self.journal_memory.unwrap_or_default();
+        e.scripts.misc_objectives_hidden = hidden;
+        // Older saves contain per-quest sequences but omitted their allocators.
+        e.scripts.journal_seq = journal.max(
+            e.scripts
+                .quests
+                .values()
+                .map(|q| q.journal_seq)
+                .max()
+                .unwrap_or(0),
+        );
+        e.scripts.fill_seq = fills.max(
+            e.scripts
+                .quests
+                .values()
+                .flat_map(|q| q.filled_at.values())
+                .copied()
+                .max()
+                .unwrap_or(0),
+        );
         e.casting.restore_regen_wait(self.magicka_wait);
         e.player_stamina_wait = self.stamina_wait;
         e.shouts
