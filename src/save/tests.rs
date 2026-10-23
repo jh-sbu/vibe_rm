@@ -3548,3 +3548,38 @@ fn continuity_location_keyword_runtime() {
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(e.location_keyword_data.is_empty());
 }
+
+#[test]
+fn continuity_crime_factions_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.crime_factions.insert(ACTOR, None);
+    s.continuity.crime_factions.insert(CELL, Some(GLOBAL));
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.crime_factions,
+        s.continuity.crime_factions
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"CRFC");
+    s.continuity.crime_factions.insert(FormId::NULL, None);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_crime_factions_runtime() {
+    let (_fixture, mut e) = engine("continuity-crime_factions");
+    e.set_crime_faction(ACTOR, Some(GLOBAL));
+    e.set_crime_faction(CELL, None);
+    let saved = Snapshot::capture(&e).write();
+    e.set_crime_faction(ACTOR, None);
+    e.set_crime_faction(GLOBAL, Some(QUEST));
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.crime_faction(ACTOR), Some(GLOBAL));
+    assert_eq!(e.crime.crime_factions.get(&CELL), Some(&None));
+    assert_eq!(e.crime.crime_factions.len(), 2);
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"CRFC");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.crime.crime_factions.is_empty());
+}

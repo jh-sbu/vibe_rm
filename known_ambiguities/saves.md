@@ -219,3 +219,7 @@ No game assets or engine binaries were inspected for these additions.
   SetKeywordData and SetCleared found no API pages. Persistence/lifetime in SE
   remains unverified; this adjunct preserves the existing native API state.
   Form identities are retained without requiring a currently loaded location.
+
+- `CRFC` retains script crime-faction assignments and explicit `None` overrides.
+  Loading does not report crimes or change bounty. SE reset/persistence rules
+  are unverified; see the public API research in `known_ambiguities/crime.md`.
