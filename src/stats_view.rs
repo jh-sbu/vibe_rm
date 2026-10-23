@@ -7,7 +7,11 @@
 //! skill's tree is its perks' stars (`INTPerkStars01.nif`) and the lines
 //! between them (`INTPerkLine01.nif`), each posed by its own sequences as its
 //! behaviour graph names them, on a plane facing the camera. The menu draws
-//! its own scene, as the map does; the loaded cells aren't in it.
+//! its own scene, as the map does; the loaded cells aren't in it. The
+//! skydome plays its own sequences: `CameraIntro` as the menu opens, rising
+//! from 3000 units below its origin (its `CameraPosition` node), then `Idle`'s
+//! slow drift of the star layers and scroll of the gases, and `CameraOutro`,
+//! sinking again, as it closes.
 //! Choices: `known_ambiguities/skills-menu.md`.
 
 use esp::FormId;
@@ -17,7 +21,7 @@ use crate::engine::Engine;
 use crate::render::{Camera, Environment, Instance, Scene};
 use crate::world::animated::AnimatedObject;
 
-const DOME: &str = "meshes/interface/intperkskydome.nif";
+const DOME: &str = "meshes/interface/intperkskydome.nif#world";
 const STAR: &str = "meshes/interface/intperkstars01.nif#world";
 const LINE: &str = "meshes/interface/intperkline01.nif#world";
 /// The camera's vertical field of view on the ring and in a skill's perks
@@ -99,8 +103,19 @@ struct Tree {
     lines: Vec<Line>,
 }
 
+/// The skydome: its still shapes (`scene.sky[0]`) and the parts its
+/// sequences move (the rest of `scene.sky`).
+struct Dome {
+    obj: Option<AnimatedObject>,
+    /// Where its `CameraPosition` node has the camera, relative to its
+    /// origin: the dome is drawn the other way about the camera, as sky.
+    rise: Vec3,
+    closing: bool,
+}
+
 pub struct StatsView {
     scene: Scene,
+    dome: Dome,
     in_perks: bool,
     /// The ring's turn, degrees: the heading the camera faces.
     angle: f32,
@@ -183,9 +198,21 @@ impl StatsView {
         self.angle = angle;
     }
 
-    /// Plays each star's and line's sequences on.
+    /// The menu is closing: the camera sinks away (`CameraOutro`).
+    pub fn set_closing(&mut self) {
+        let dome = &mut self.dome;
+        if !dome.closing {
+            dome.closing = true;
+            if let Some(obj) = &mut dome.obj {
+                obj.play("CameraOutro");
+            }
+        }
+    }
+
+    /// Plays the skydome's, each star's and each line's sequences on.
     pub fn update(&mut self, dt: f32) {
         self.clock += dt;
+        update_dome(&mut self.dome, &mut self.scene.sky, dt, self.clock);
         let Some(tree) = &mut self.tree else {
             return;
         };
@@ -204,6 +231,39 @@ impl StatsView {
                 obj.update(0.0, self.clock, instances);
             }
         }
+    }
+}
+
+/// Plays the skydome's sequence on: `CameraIntro` into `Idle`, or
+/// `CameraOutro`; while either camera sequence plays, the dome stands where
+/// its `CameraPosition` track puts the camera.
+fn update_dome(dome: &mut Dome, sky: &mut [Instance], dt: f32, clock: f32) {
+    let Some(obj) = &mut dome.obj else {
+        return;
+    };
+    let playing = obj.playing.map(|(si, _)| si);
+    obj.update(dt, clock, sky);
+    if let Some(si) = playing {
+        let seq = &obj.anim.sequences[si];
+        let camera = matches!(seq.name.as_str(), "CameraIntro" | "CameraOutro");
+        if let Some(ch) = seq
+            .channels
+            .iter()
+            .find(|c| c.node == "CameraPosition")
+            .filter(|_| camera)
+        {
+            let t = obj.playing.map_or(seq.stop, |(_, phase)| phase);
+            dome.rise = ch.sample(t, Mat4::IDENTITY).w_axis.truncate();
+        }
+        if obj.playing.is_none() && seq.name == "CameraIntro" {
+            dome.rise = Vec3::ZERO;
+            obj.play("Idle");
+        }
+    }
+    let shift = Mat4::from_translation(-dome.rise);
+    obj.transform = shift;
+    if let Some(still) = sky.first_mut() {
+        still.transform = shift;
     }
 }
 
@@ -234,9 +294,21 @@ impl Engine {
     pub fn open_stats_view(&mut self) -> Option<()> {
         let paths = [DOME, STAR, LINE].map(String::from);
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
-        let mut sky = Instance::new(self.models.get(DOME)?, Mat4::IDENTITY);
-        sky.sky = true;
-        sky.tint = Vec4::ONE;
+        let mut sky = vec![Instance::new(self.models.get(DOME)?, Mat4::IDENTITY)];
+        let mut obj = self.animated_object(FormId::NULL, DOME, Mat4::IDENTITY, &mut sky, &[]);
+        for inst in &mut sky {
+            inst.sky = true;
+            inst.tint = Vec4::ONE;
+        }
+        if let Some(obj) = &mut obj {
+            obj.play("CameraIntro");
+        }
+        let mut dome = Dome {
+            obj,
+            rise: Vec3::ZERO,
+            closing: false,
+        };
+        update_dome(&mut dome, &mut sky, 0.0, 0.0);
         let scene = Scene {
             env: Environment {
                 sun_color: Vec3::ZERO,
@@ -246,11 +318,12 @@ impl Engine {
                 sky: false,
                 ..Default::default()
             },
-            sky: vec![sky],
+            sky,
             ..Default::default()
         };
         self.stats_view = Some(StatsView {
             scene,
+            dome,
             in_perks: false,
             angle: 0.0,
             tree: None,
