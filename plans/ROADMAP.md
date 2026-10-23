@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Active quest targets appear on the world map, projecting exterior targets
+  through inherited maps and routing other targets to an entrance. Overlays
+  share compass filters and have no travel destination identity. Choices:
+  `known_ambiguities/quest-targets.md`.
 - Child-worldspace destination markers appear on inherited parent maps,
   sharing composed projection with the player and camera owner. Reference IDs
   stay physical destinations. Choices: `known_ambiguities/map-view.md`.
@@ -1785,8 +1789,8 @@ game each piece unlocks.
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; looping sounds of enabled references checked
      with an audio device
-6. **UI**: inventory (categories, equipping, item details), map, quest
-   targets on the map (on the compass: see Done)
+6. **UI**: inventory (categories, equipping, item details), map (quest
+   targets on the map and compass: see Done)
    - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
      item menus, the journal, the gift, magic, favorites and tween menus
      done: see Done): waiting's rest: getting into the bed first; the gamepad's d-pad
@@ -1798,8 +1802,8 @@ game each piece unlocks.
      (research-gated); the local map for interiors and nearby cells
      (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: unloaded-follower continuity, exact SE timing and cross-space
      time, mounted/Survival restrictions, loading-screen presentation and
-     autosave timing (`known_ambiguities/fast-travel.md`); then quest targets and custom markers on the
-     map, the journal's Show on Map; distant LOD around the loaded cells on by default (the
+     autosave timing (`known_ambiguities/fast-travel.md`); then custom markers on the
+     map and the journal's Show on Map; distant LOD around the loaded cells on by default (the
      blocks are now placed right: `VRM_LOD=1`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), rows grouped by captured soul with per-item

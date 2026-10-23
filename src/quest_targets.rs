@@ -227,15 +227,9 @@ impl Engine {
         None
     }
 
-    /// Twice a second: where the tracked quests' targets are for the
-    /// compass.
-    pub(crate) fn update_quest_targets(&mut self, dt: f32) {
-        self.quest_targets.next -= dt;
-        if self.quest_targets.next > 0.0 {
-            return;
-        }
-        self.quest_targets.next = UPDATE_INTERVAL;
-        let quests: Vec<(FormId, Vec<i32>)> = self
+    /// Shared objective/alias/condition selection for the map and compass.
+    fn active_quest_references(&mut self) -> Vec<(FormId, FormId)> {
+        let mut quests: Vec<(FormId, Vec<i32>)> = self
             .scripts
             .quests
             .iter()
@@ -252,11 +246,8 @@ impl Engine {
                 (q, open)
             })
             .collect();
-        let mut spots: Vec<QuestSpot> = Vec::new();
-        let (Some(here), player) = (self.player_space(), self.player.position) else {
-            self.quest_targets.spots.clear();
-            return;
-        };
+        quests.sort_by_key(|(q, _)| *q);
+        let mut refs = Vec::new();
         for (q, open) in quests {
             let targets = match self.quest_targets.targets.get(&q) {
                 Some(t) => t.clone(),
@@ -275,29 +266,101 @@ impl Engine {
                     quest: Some(q),
                     ..Default::default()
                 };
-                if !crate::condition::evaluate(self, &t.conditions, ctx) {
-                    continue;
+                if crate::condition::evaluate(self, &t.conditions, ctx) && !refs.contains(&(q, r)) {
+                    refs.push((q, r));
                 }
-                let Some((space, pos)) = self.target_spot(r) else {
+            }
+        }
+        refs
+    }
+
+    /// Twice a second: resolve tracked references or the first door towards them.
+    pub(crate) fn update_quest_targets(&mut self, dt: f32) {
+        self.quest_targets.next -= dt;
+        if self.quest_targets.next > 0.0 {
+            return;
+        }
+        self.quest_targets.next = UPDATE_INTERVAL;
+        let (Some(here), player) = (self.player_space(), self.player.position) else {
+            self.quest_targets.spots.clear();
+            return;
+        };
+        let mut spots = Vec::new();
+        for (_, r) in self.active_quest_references() {
+            let Some((space, pos)) = self.target_spot(r) else {
+                continue;
+            };
+            let spot = if space == here {
+                QuestSpot { pos, door: false }
+            } else {
+                let Some(pos) = self.door_on_way(here, space, player) else {
                     continue;
                 };
-                let spot = if space == here {
-                    QuestSpot { pos, door: false }
-                } else {
-                    let Some(pos) = self.door_on_way(here, space, player) else {
-                        continue;
-                    };
-                    QuestSpot { pos, door: true }
-                };
-                if !spots.contains(&spot) {
-                    spots.push(spot);
-                }
+                QuestSpot { pos, door: true }
+            };
+            if !spots.contains(&spot) {
+                spots.push(spot);
             }
         }
         if spots != self.quest_targets.spots {
             log::debug!("quest targets: {spots:?}");
         }
         self.quest_targets.spots = spots;
+    }
+
+    /// Map overlays use the movie's quest icon (62) and door icon (61).
+    /// They have no travel identity; only actual destination markers can travel.
+    pub(crate) fn map_quest_rows(&mut self, world: FormId) -> Vec<crate::map_view::MapRow> {
+        let origin = match self.location {
+            Location::Exterior { world: here, .. } => {
+                crate::map_view::world_map_point(&self.lo, here, self.player.position.truncate())
+                    .filter(|(owner, _)| *owner == world)
+                    .map(|(_, p)| p.extend(0.0))
+            }
+            _ => None,
+        }
+        .unwrap_or(Vec3::ZERO);
+        let mut rows: Vec<crate::map_view::MapRow> = Vec::new();
+        for (q, r) in self.active_quest_references() {
+            let Some((space, pos)) = self.target_spot(r) else {
+                continue;
+            };
+            let direct = match space {
+                Space::World(here) => {
+                    crate::map_view::world_map_point(&self.lo, here, pos.truncate())
+                        .filter(|(owner, _)| *owner == world)
+                        .map(|(_, p)| p)
+                }
+                _ => None,
+            };
+            let (pos, kind) = match direct {
+                Some(p) => (p, 62),
+                None => {
+                    let Some(p) = self.door_on_way(Space::World(world), space, origin) else {
+                        continue;
+                    };
+                    (p.truncate(), 61)
+                }
+            };
+            if !pos.is_finite() || rows.iter().any(|r| r.pos == pos && r.kind == kind) {
+                continue;
+            }
+            let mut name = self.quest_name(q);
+            if name.is_empty() {
+                name = self
+                    .gmst_string("sQuestTarget")
+                    .unwrap_or_else(|| "Quest target".into());
+            }
+            rows.push(crate::map_view::MapRow {
+                marker: None,
+                name,
+                kind,
+                undiscovered: false,
+                pos,
+                rotation: 0.0,
+            });
+        }
+        rows
     }
 
     /// The quest targets on the compass.

@@ -56,8 +56,8 @@ https://en.uesp.net/w/index.php?oldid=3192583); the movie's ActionScript
 - **Markers on it** are those the data or the player's progress put on the
   map (`map_markers`), including child worldspaces using this map, enabled, of type 1 to 60, placed at ground level (z 0)
   rather than at their own height. Undiscovered ones without travel allowed
-  are hollow (the movie's undiscovered icon). Quest targets and custom markers
-  aren't there yet.
+  are hollow (the movie's undiscovered icon). Quest targets use nontravel overlays (`known_ambiguities/quest-targets.md`);
+  custom markers aren't there yet.
 - **Hovering** a marker (within 3% of the screen's height of the pointer, the
   nearest) selects it; the movie shows the name as the marker's description
   (`MarkerDescriptionObj.SetDescription(name, [])`, with no lines under it:

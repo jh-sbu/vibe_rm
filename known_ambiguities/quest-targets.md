@@ -1,4 +1,4 @@
-# Quest targets on the compass
+# Quest targets on the compass and world map
 
 Implemented in `src/quest_targets.rs`, with the compass in `src/swf_ui.rs`.
 Sources: the data (`QOBJ`, `QSTA` (alias, flags) and the `CTDA` after each
@@ -78,3 +78,23 @@ controlled game/editor asset test establishes the behavior, keep direct
 location-alias targets research-gated and do not invent a marker-selection
 or condition-subject rule. Reference aliases filled from a location and its
 location-ref types are a separate, already implemented mechanism.
+
+## World-map overlays
+
+Local UESP [QUST revision 3507775](https://en.uesp.net/w/index.php?oldid=3507775),
+Quest Target, confirms AliasID targets and their following CTDA conditions.
+Map and compass now share objective/alias/condition selection. Running, active,
+unfinished quests contribute displayed unfinished objectives with passing
+conditions. Quests are visited in FormID order for stable map row ordering.
+
+The world map projects exterior targets through the same parent-map transform
+as destination markers. Other-space targets use the first load door on the
+existing fewest-doors route from the viewed world, favoring an entrance near the
+player's projected position (zero when unavailable). Same-position/same-icon
+rows are deduplicated and keep the first quest's localized name. The movie's
+quest icon 62 and door icon 61 are used. Neither overlay carries a travel FormID;
+clicking one never starts travel. These icon, label, deduplication and routing
+policies are native choices, not verified Skyrim SE behavior. Rows are rebuilt
+on map opening; live quest updates while the map stays open are separate work.
+Direct location-alias targets remain research-gated as described above. Journal
+Show on Map, custom markers and exact route/lock handling remain separate work.

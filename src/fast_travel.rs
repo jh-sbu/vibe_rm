@@ -32,7 +32,10 @@ impl Refusal {
                 "sNoFastTravelInCell",
                 "You cannot fast travel from this location.",
             ),
-            Self::Dead => ("sCantSaveNow", "You cannot do that right now."),
+            Self::Dead => (
+                "sNoFastTravelWhileDead",
+                "You cannot fast travel right now.",
+            ),
             Self::Overencumbered => (
                 "sNoFastTravelOverencumbered",
                 "You cannot fast travel while overencumbered.",
