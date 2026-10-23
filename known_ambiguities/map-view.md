@@ -50,11 +50,11 @@ https://en.uesp.net/w/index.php?oldid=3192583); the movie's ActionScript
 - **The player's marker** is on the map in the exterior worldspace they are
   in, or in the parent's at `position * scale + offset` from `ONAM` for a
   child worldspace, turned as the camera looks (degrees clockwise from
-  north). Child worldspaces' other markers aren't on their parent's map.
+  north). Child worldspaces' destination markers use the same inherited projection.
   From an interior there is none, the map opening on the middle of Tamriel
   (the game's local map for interiors isn't built).
 - **Markers on it** are those the data or the player's progress put on the
-  map (`map_markers`), enabled, of type 1 to 60, placed at ground level (z 0)
+  map (`map_markers`), including child worldspaces using this map, enabled, of type 1 to 60, placed at ground level (z 0)
   rather than at their own height. Undiscovered ones without travel allowed
   are hollow (the movie's undiscovered icon). Quest targets and custom markers
   aren't there yet.
@@ -78,3 +78,16 @@ https://en.uesp.net/w/index.php?oldid=3192583); the movie's ActionScript
   which is why distant LOD was marked experimental); the blocks to draw come
   from a quadtree refined within 1.2 times the block's size of the camera,
   reading the camera's height in.
+
+## Child-worldspace projection
+
+The local WRLD layout cited above establishes WNAM/PNAM and ONAM fields. Applying
+ONAM as `position * scale + xy offset` to all child destination markers extends
+the existing player-marker policy; exact Skyrim projection is still unverified.
+Each inherited level composes its transform until a world stops inheriting map
+data. Missing ONAM means identity. Malformed fields, nonpositive/nonfinite scale,
+nonfinite coordinates, cycles and chains over 64 worlds produce no map point.
+The camera's owner, player and destination rows share this resolver, avoiding
+inconsistent nesting. Child rows retain original reference IDs for actual travel;
+map coordinates never become physical arrival coordinates. Travel timing across
+spaces remains separately unresolved.

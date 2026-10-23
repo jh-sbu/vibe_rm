@@ -79,3 +79,11 @@ The production party integration passed: selection, durable destination move,
 flag restoration and legacy clearing. Codec malformed-ID/duplicate/trailing-byte
 checks passed. Synthetic pinned goals stand in for unavailable PACK assets;
 unloaded followers and visual reattachment remain documented limits.
+
+## 9 completed
+
+Child destination markers, the player and the map camera owner share a bounded
+parent-map resolver with composed ONAM transforms. Stable destination IDs remain
+physical references. Two regressions passed: nested/identity transforms, malformed
+and cyclic data, foreign maps, child-row permissions and disabled markers.
+Projection semantics and missing-field policy remain documented in map-view.md.
