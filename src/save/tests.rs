@@ -4520,3 +4520,31 @@ fn durable_delayed_activations_invalid() {
     s.continuity.activations.push((f64::NAN, ACTOR, CELL));
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_random_streams() {
+    let (_fixture, mut e) = engine("durable-random_streams");
+    e.rng = 12345;
+    e.cond_rng.set(789);
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"RNGS");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    let expected = (e.rand(), e.peek_rand(), e.rand(), e.peek_rand());
+    e.rng = 1;
+    e.cond_rng.set(2);
+    decoded.apply(&mut e).unwrap();
+    assert_eq!((e.rand(), e.peek_rand(), e.rand(), e.peek_rand()), expected);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"RNGS");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.rng, 1);
+    assert_eq!(e.cond_rng.get(), 0x9E37_79B9_7F4A_7C15);
+}
+#[test]
+fn durable_random_streams_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.random_streams = Some((0, 1));
+    assert!(Snapshot::read(&s.write()).is_err());
+}
