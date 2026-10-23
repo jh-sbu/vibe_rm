@@ -50,3 +50,9 @@ Payload and host-Vulkan replacement/legacy regressions passed.
 CRFC preserves actor crime-faction overrides, distinguishing an explicit
 removal from absence. Payload and host-Vulkan API lookup/replacement/legacy
 regressions passed.
+
+## 5 completed
+
+PKCT retains identities of victims who caught a pickpocket attempt, so load
+does not erase the current retry gate. Strict payload and host-Vulkan exact
+replacement/legacy tests passed.

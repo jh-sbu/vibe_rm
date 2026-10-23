@@ -12,6 +12,7 @@ pub(crate) struct Continuity {
     pub cleared_locations: std::collections::HashSet<FormId>,
     pub location_keyword_data: HashMap<(FormId, FormId), f32>,
     pub crime_factions: HashMap<FormId, Option<FormId>>,
+    pub pickpocket_caught: std::collections::HashSet<FormId>,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -56,10 +57,19 @@ impl Continuity {
             cleared_locations: e.cleared_locations.clone(),
             location_keyword_data: e.location_keyword_data.clone(),
             crime_factions: e.crime.crime_factions.clone(),
+            pickpocket_caught: e.crime.pickpocket_caught.clone(),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        let mut ids: Vec<_> = self.pickpocket_caught.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"PKCT", w.0);
         let mut w = Writer::default();
         w.len(self.crime_factions.len());
         for (actor, faction) in sorted(&self.crime_factions) {
@@ -129,10 +139,22 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"PKCT")? {
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                s.pickpocket_caught.insert(id);
+            }
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for &id in &self.pickpocket_caught {
+            nonnull(id)?;
+        }
         for (&actor, &faction) in &self.crime_factions {
             nonnull(actor)?;
             if let Some(faction) = faction {
@@ -156,6 +178,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.pickpocket_caught = self.pickpocket_caught;
         e.crime.crime_factions = self.crime_factions;
         e.location_keyword_data = self.location_keyword_data;
         e.cleared_locations = self.cleared_locations;
