@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Harvested plants and their existing regrowth timestamps survive native saves
+  in optional `HRVT`; legacy loads clear harvest memory. Native policy and
+  unresolved cell-reset behavior: `known_ambiguities/saves.md`.
 - Active quest targets appear on the world map, projecting exterior targets
   through inherited maps and routing other targets to an entrance. Overlays
   share compass filters and have no travel destination identity. Choices:

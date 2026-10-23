@@ -3417,3 +3417,64 @@ fn teammate_section_rejects_invalid_ids_duplicates_and_trailing_bytes() {
     bad.add(b"TEAM", payload);
     assert!(Snapshot::read(&bad).is_err());
 }
+
+/// Every new optional adjunct rejects duplicate sections, trailing bytes and
+/// every truncated prefix, including inflated collection counts.
+fn check_continuity_payload(file: &SaveFile, tag: &[u8; 4]) {
+    let payload = file.section(tag).unwrap();
+    for len in 0..payload.len() {
+        let mut broken = file.clone();
+        broken.sections.retain(|(t, _)| t != tag);
+        broken.add(tag, payload[..len].to_vec());
+        assert!(
+            Snapshot::read(&broken).is_err(),
+            "accepted {tag:?} prefix {len}"
+        );
+    }
+    let mut duplicate = file.clone();
+    duplicate.add(tag, payload.to_vec());
+    assert!(Snapshot::read(&duplicate).is_err());
+    let mut trailing = file.clone();
+    trailing.sections.retain(|(t, _)| t != tag);
+    let mut bytes = payload.to_vec();
+    bytes.push(0);
+    trailing.add(tag, bytes);
+    assert!(Snapshot::read(&trailing).is_err());
+}
+
+#[test]
+fn continuity_harvest_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.harvested.insert(ACTOR, 1.25);
+    s.continuity.harvested.insert(CELL, 30.0);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.harvested, s.continuity.harvested);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"HRVT");
+    s.continuity.harvested.insert(ACTOR, f64::NAN);
+    assert!(Snapshot::read(&s.write()).is_err());
+    s.continuity.harvested.clear();
+    s.continuity.harvested.insert(FormId::NULL, 0.0);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_harvest_runtime() {
+    let (_fixture, mut e) = engine("continuity-harvest");
+    e.hour = 20.0;
+    e.harvests.harvested.insert(ACTOR, 10.0);
+    let saved = Snapshot::capture(&e).write();
+    e.harvests.harvested.insert(CELL, 15.0);
+    e.harvests.harvested.remove(&ACTOR);
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert!(e.is_harvested(ACTOR));
+    assert!(!e.is_harvested(CELL));
+    e.day += 11;
+    assert!(!e.is_harvested(ACTOR));
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"HRVT");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(!e.is_harvested(ACTOR));
+}

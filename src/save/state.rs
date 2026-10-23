@@ -64,6 +64,7 @@ pub struct Spot {
 
 #[derive(Default)]
 pub struct Snapshot {
+    pub(crate) continuity: super::continuity::Continuity,
     pub plugins: Vec<String>,
     pub spot: Option<Spot>,
     pub day: u32,
@@ -472,6 +473,7 @@ impl Snapshot {
         let s = &e.scripts;
         let (weapon_usage, favorite_weapon) = s.weapon_usage.saved();
         Snapshot {
+            continuity: super::continuity::Continuity::capture(e),
             plugins: e
                 .lo
                 .plugins()
@@ -1132,6 +1134,7 @@ impl Snapshot {
             w.bool(*can_do_favor);
         }
         file.add(b"TEAM", w.0);
+        self.continuity.write(&mut file);
         self.vm.write(&mut file);
         file
     }
@@ -1147,6 +1150,7 @@ impl Snapshot {
     /// Read every section; nothing is applied until all of them read.
     pub fn read(file: &SaveFile) -> Result<Snapshot> {
         let mut s = Snapshot::default();
+        s.continuity = super::continuity::Continuity::read(file)?;
 
         if file
             .sections
@@ -2093,6 +2097,7 @@ impl Snapshot {
             }),
             "save has invalid ward-hit state"
         );
+        self.continuity.validate()?;
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.discard_conversation_for_load();
@@ -2213,6 +2218,7 @@ impl Snapshot {
             e.forced_weather = None;
         }
         e.restore_weather(self.weather);
+        self.continuity.apply(e);
         e.restore_scenes(
             self.scenes,
             self.scene_lifecycle,

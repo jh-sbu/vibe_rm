@@ -1,0 +1,89 @@
+//! Optional native-save adjuncts. Every payload is validated before live state
+//! changes. Absence replaces the destination state with the legacy default.
+//! These policies do not describe Skyrim's .ess representation; see saves.md.
+use super::codec::{Corrupt, Reader, Result, Writer};
+use super::file::SaveFile;
+use crate::engine::Engine;
+use esp::FormId;
+use std::collections::HashMap;
+
+#[derive(Default)]
+pub(crate) struct Continuity {
+    pub harvested: HashMap<FormId, f64>,
+}
+
+fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
+    let mut sections = file.sections.iter().filter(|(t, _)| t == tag);
+    let first = sections.next();
+    if sections.next().is_some() {
+        return Err(Corrupt(format!(
+            "duplicate {} section",
+            String::from_utf8_lossy(tag)
+        )));
+    }
+    Ok(first.map(|(_, data)| Reader::new(data)))
+}
+fn nonnull(id: FormId) -> Result<()> {
+    if id.is_null() {
+        return Err(Corrupt("null continuity form".into()));
+    }
+    Ok(())
+}
+fn time(value: f64) -> Result<()> {
+    if !value.is_finite() || value < 0.0 {
+        return Err(Corrupt("invalid continuity time".into()));
+    }
+    Ok(())
+}
+fn ordered<K: Ord + Copy>(previous: &mut Option<K>, key: K) -> Result<()> {
+    if previous.is_some_and(|p| p >= key) {
+        return Err(Corrupt("duplicate or unsorted continuity key".into()));
+    }
+    *previous = Some(key);
+    Ok(())
+}
+fn sorted<K: Ord + Copy, V>(map: &HashMap<K, V>) -> Vec<(K, &V)> {
+    let mut entries: Vec<_> = map.iter().map(|(&k, v)| (k, v)).collect();
+    entries.sort_by_key(|(k, _)| *k);
+    entries
+}
+impl Continuity {
+    pub fn capture(e: &Engine) -> Self {
+        Self {
+            harvested: e.harvests.harvested.clone(),
+        }
+    }
+    pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.len(self.harvested.len());
+        for (plant, at) in sorted(&self.harvested) {
+            w.form(plant);
+            w.f64(*at);
+        }
+        file.add(b"HRVT", w.0);
+    }
+    pub fn read(file: &SaveFile) -> Result<Self> {
+        let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"HRVT")? {
+            let mut previous = None;
+            for _ in 0..r.count(12)? {
+                let plant = r.form()?;
+                ordered(&mut previous, plant)?;
+                s.harvested.insert(plant, r.f64()?);
+            }
+            r.finish()?;
+        }
+        s.validate()?;
+        Ok(s)
+    }
+    pub fn validate(&self) -> Result<()> {
+        for (&plant, &at) in &self.harvested {
+            nonnull(plant)?;
+            time(at)?;
+        }
+        Ok(())
+    }
+    pub fn apply(self, e: &mut Engine) {
+        e.harvests.harvested = self.harvested;
+    }
+}
