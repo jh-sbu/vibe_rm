@@ -804,7 +804,8 @@ impl Channel {
         let i = &self.interpolator;
         let (mut rot, mut tr, mut sc) = (rr, rt, rs.x);
         // Interpolator poses use huge / NaN values for "unset".
-        if i.rotation.is_finite() && i.rotation.length_squared() > 0.5 {
+        // -FLT_MAX components are finite, but no unit quaternion.
+        if i.rotation.is_finite() && (0.5..2.0).contains(&i.rotation.length_squared()) {
             rot = i.rotation;
         }
         if i.translation.is_finite() && i.translation.abs().max_element() < 1.0e6 {
@@ -2349,4 +2350,35 @@ pub fn morph_thin(heavy: &mut CpuModel, thin: &CpuModel) -> usize {
         }
     }
     paired
+}
+
+#[cfg(test)]
+mod channel_tests {
+    use super::*;
+    use nif::anim::{TransformData, TransformInterpolator};
+
+    #[test]
+    fn unset_interpolator_values_keep_the_rest_pose() {
+        // The game's "unset" is -FLT_MAX in every component (the skills
+        // menu's stars key only their scale).
+        let unset = -f32::MAX;
+        let c = Channel {
+            node: "Plane01".into(),
+            interpolator: TransformInterpolator {
+                translation: Vec3::splat(unset),
+                rotation: glam::Quat::from_xyzw(unset, unset, unset, unset),
+                scale: unset,
+                data: nif::Ref(1),
+            },
+            data: Some(std::sync::Arc::new(TransformData {
+                scales: vec![(0.0, 2.0)],
+                ..Default::default()
+            })),
+        };
+        let rot = glam::Quat::from_rotation_z(std::f32::consts::FRAC_PI_4);
+        let rest = Mat4::from_rotation_translation(rot, Vec3::X);
+        let m = c.sample(0.0, rest);
+        let want = Mat4::from_scale_rotation_translation(Vec3::splat(2.0), rot, Vec3::X);
+        assert!(m.abs_diff_eq(want, 1e-5), "{m:?}");
+    }
 }

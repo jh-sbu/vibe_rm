@@ -22,6 +22,7 @@ use winit::keyboard::KeyCode;
 use crate::condition::{self, Condition, Context};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::perks::TreeNode;
+use crate::stats_view::{self, StarState, TreeShown};
 
 use super::{Buttons, num, text};
 
@@ -64,10 +65,10 @@ const FADED_OUT: f64 = 16.0;
 /// The movie's stage, pixels: the perk labels' fractions are of it
 /// (`UpdatePerkText` lerps them to 1280 and 720).
 const STAGE: (f32, f32) = (1280.0, 720.0);
-/// Where perk trees sit, as fractions of the stage (left, top, right,
-/// bottom), when the 3D constellations don't place them. The top is below
-/// the 175 pixels above which level up mode hides a label
-/// (`MaxPerkNameHeightLevelMode`; 115, `MaxPerkNameHeight`, otherwise).
+/// Where perk trees' stars sit, as fractions of the stage (left, top,
+/// right, bottom). The top is below the 175 pixels above which level up mode
+/// hides a label (`MaxPerkNameHeightLevelMode`; 115, `MaxPerkNameHeight`,
+/// otherwise).
 const TREE_AREA: [f32; 4] = [0.08, 0.27, 0.92, 0.66];
 /// A perk label's text box at full scale, stage pixels: its middle above the
 /// label's point and its height (the `PerkName` clip's `PerkNameClipInstance`
@@ -75,8 +76,8 @@ const TREE_AREA: [f32; 4] = [0.08, 0.27, 0.92, 0.66];
 const LABEL_RISE: f32 = 73.6;
 const LABEL_HEIGHT: f32 = 47.85;
 /// A perk label's width a character at full scale, stage pixels (measured
-/// on the movie's font).
-const LABEL_CHAR: f32 = 10.0;
+/// on the movie's font: about 10 for names, 12 with a rank's digits).
+const LABEL_CHAR: f32 = 12.0;
 /// Space kept between labels, stage pixels.
 const LABEL_GAP: f32 = 12.0;
 /// How far outside a label's text a click still picks it, stage pixels.
@@ -105,6 +106,15 @@ enum Mode {
     Perks { skill: u32, node: Option<u32> },
 }
 
+/// A tree's stars: where they stand (on the plane facing the camera, as
+/// fractions of a 16:9 stage), where they show on the stage (the same on a
+/// 16:9 window) and each label's length.
+struct Placed {
+    layout: Vec<(f32, f32)>,
+    screen: Vec<(f32, f32)>,
+    chars: Vec<usize>,
+}
+
 /// What the movie was last told, to tell it again only when it changes.
 #[derive(Default, PartialEq)]
 struct Shown {
@@ -130,6 +140,10 @@ pub(super) struct StatsMenu {
     presses: u32,
     acts: Vec<Act>,
     shown: Shown,
+    /// The tree the stars show.
+    tree: Option<TreeShown>,
+    /// The window, pixels: the stars project into it.
+    pub size: (u32, u32),
     /// Seconds towards the next frame of the labels' fade.
     fade: f32,
     /// Closing: it fades out, then the engine's menu closes.
@@ -274,6 +288,8 @@ impl StatsMenu {
             presses: 0,
             acts: Vec::new(),
             shown: Shown::default(),
+            tree: None,
+            size,
             fade: 0.0,
             closing: false,
         };
@@ -377,6 +393,36 @@ impl StatsMenu {
         let chars: Vec<usize> = nodes.iter().map(|n| Self::label_chars(engine, n)).collect();
         spread(&mut points, &chars);
         (points, chars)
+    }
+
+    /// Where a tree's stars stand and show.
+    fn placed(&self, engine: &Engine, skill: u32, nodes: &[TreeNode]) -> Placed {
+        let (points, chars) = Self::layout(engine, nodes);
+        let angle = self.heading(skill);
+        let cam = stats_view::perks_camera(angle);
+        let (w, h) = (self.size.0.max(1) as f32, self.size.1.max(1) as f32);
+        let view_proj = cam.proj(w / h) * cam.view();
+        let screen = points
+            .iter()
+            .map(|&p| {
+                let clip = view_proj * stats_view::tree_point(angle, p).extend(1.0);
+                let ndc = clip.truncate() / clip.w;
+                self.stage_fraction(
+                    ((ndc.x + 1.0) / 2.0 * w) as f64,
+                    ((1.0 - ndc.y) / 2.0 * h) as f64,
+                )
+            })
+            .collect();
+        Placed {
+            layout: points,
+            screen,
+            chars,
+        }
+    }
+
+    /// A ring skill's heading, degrees.
+    fn heading(&self, skill: u32) -> f32 {
+        RING.iter().position(|&s| s == skill).unwrap_or(0) as f32 * SKILL_ANGLE
     }
 
     /// The label whose text a click at `(x, y)` (stage fractions) is on or
@@ -539,7 +585,11 @@ impl StatsMenu {
         if nodes.is_empty() {
             return;
         }
-        let (points, chars) = Self::layout(engine, &nodes);
+        let Placed {
+            screen: points,
+            chars,
+            ..
+        } = self.placed(engine, skill, &nodes);
         let at = node.and_then(|n| nodes.iter().position(|t| t.index == n));
         let pick = |this: &mut Self, i: usize| {
             this.mode = Mode::Perks {
@@ -658,6 +708,7 @@ impl StatsMenu {
         if let Some(view) = &mut engine.stats_view {
             view.set_angle(self.angle);
             view.set_perks(matches!(self.mode, Mode::Perks { .. }));
+            view.update(dt);
         }
     }
 
@@ -782,16 +833,25 @@ impl StatsMenu {
             }
             Mode::Perks { skill, node } => self.perks_card(engine, skill, node),
         }
+        if mode == Mode::Ring && self.tree.is_some() {
+            self.tree = None;
+            engine.show_perk_tree(None);
+        }
     }
 
     /// A skill's tree: the labels at their nodes, and the card of the node
     /// picked.
     fn perks_card(&mut self, engine: &mut Engine, skill: u32, node: Option<u32>) {
         let nodes = engine.perk_tree(skill);
-        let (points, _) = Self::layout(engine, &nodes);
+        let Placed {
+            layout,
+            screen: points,
+            ..
+        } = self.placed(engine, skill, &nodes);
         let selected = node.and_then(|n| nodes.iter().position(|t| t.index == n));
         let mut labels = Vec::new();
         let mut list = Vec::new();
+        let mut states = Vec::new();
         for (i, (n, &(x, y))) in nodes.iter().zip(&points).enumerate() {
             let ranks = engine.perk_ranks(n.perk);
             let owned = ranks
@@ -799,6 +859,13 @@ impl StatsMenu {
                 .filter(|&&p| engine.has_perk(PLAYER_REF, p))
                 .count();
             let available = engine.next_perk_rank(n.perk).is_some_and(|x| x.1);
+            states.push(if owned > 0 {
+                StarState::Owned
+            } else if available {
+                StarState::Unlocked
+            } else {
+                StarState::Locked
+            });
             let name = engine
                 .perk(n.perk)
                 .map(|p| p.name.clone())
@@ -822,6 +889,29 @@ impl StatsMenu {
             let html = format!("<font color='{colour}'>{}</font>", super::html(&label));
             labels.push(format!("{html}|{x:.3}|{y:.3}"));
             list.extend([text(&html), num(x), num(y)]);
+        }
+        // The stars, and the lines from each perk to those it leads to.
+        let all = &nodes;
+        let lines = nodes
+            .iter()
+            .enumerate()
+            .flat_map(|(from, n)| {
+                n.children.iter().filter_map(move |c| {
+                    all.iter().position(|t| t.index == *c).map(|to| (from, to))
+                })
+            })
+            .collect();
+        let tree = TreeShown {
+            skill,
+            angle: self.heading(skill),
+            points: layout,
+            states,
+            lines,
+            selected,
+        };
+        if self.tree.as_ref() != Some(&tree) {
+            engine.show_perk_tree(Some(&tree));
+            self.tree = Some(tree);
         }
         if labels != self.shown.labels {
             self.menu

@@ -1,7 +1,8 @@
 # The skills menu (statsmenu.swf, levelupmenu.swf)
 
 Implemented in `src/swf_ui/stats_menu.rs` (the movies' contents and keys) and
-`src/stats_view.rs` (the sky behind them, as the map has its own scene).
+`src/stats_view.rs` (the sky and the perk trees' stars behind them, as the
+map has its own scene).
 Sources: the movies' ActionScript (`StatsMenu`, `AnimatedSkillText`,
 `LevelUpMenu`: the `SetDescriptionCard`, `SetPlayerInfo`, `UpdateSkillList`,
 `SetDirection`, `HideRing`, `SetStatsMode`, `SetPerkCount`,
@@ -14,7 +15,11 @@ and `BGSSkillPerkTreeNode` (the tree nodes' grid cells and offsets); the
 skydome in `Skyrim - Meshes1.bsa` (`Interface/INTPerkSkydome.nif`: its
 constellation images `cImage00` to `cImage17` from
 `INTConstellationImages.dds`, its `Point00` to `Point17` nodes; `vrm-tool
-nif-tree` prints where they stand); the game settings
+nif-tree` prints where they stand and their bounds); the star and line models
+(`Interface/INTPerkStars01.nif`, `INTPerkLine01.nif`) and their behaviour
+graphs in `Skyrim - Animations.bsa` (`InterfaceBehaviors/Behaviors/
+StarBehavior.hkx` and `Line/Line.hkx`, named by
+`meshes/animationdata/intperkstars01.txt` and `intperkline01.txt`); the game settings
 `sLegendaryResetConfirm`, `sLegendaryResetSecondConfirm`,
 `sRequirementsText`; `Interface/Controls/PC/controlmap.txt` (its Stats
 context binds only `Rotate`, to the right stick).
@@ -63,6 +68,26 @@ context binds only `Rotate`, to the right stick).
   control map has no event for it.
 - A perk's card shows no name: `SetDescriptionCard` empties the name field in
   perk mode and shows the skill and requirements under the description.
+- **The stars' and lines' states** are their behaviour graphs'
+  (`vrm-tool hkb-tree`, `hkb-obj ... BGSGamebryoSequenceGenerator`), each
+  state playing the model's sequence of its name. A star: `Locked`
+  (start), `Unlock` (0.67 s) then `Unlocked`, `Own` (0.67 s) then `Owned`,
+  `Select` (4.9 s) then `Selected`, `Deselect` (4.9 s) back to `Owned`;
+  events `Unlock`, `Own`, `Select`, `Deselect`, and wildcards
+  `UnlockedWild`, `OwnedWild`, `SelectedWild` and `reset` jumping to
+  `Unlocked`, `Owned`, `Selected` and `Locked` from anywhere. The resting
+  states loop; the transitions end (`End`). So the graph selects and lets go
+  of an owned star only. A line: `Locked` (start), `Unlock` (0.83 s) then
+  `Unlocked`, and `FadeOut` / `FadeIn` from either, through
+  `LockedFadeOut` / `UnlockedFadeOut` and back. The star's sequences scale
+  and colour its art (`Plane01`) and two glows; the line's fade its one
+  shape.
+- The star model lies in its xy plane under a facing billboard
+  (`FacingRoot`, mode 2), about 16 units across with a glow of 23; the line
+  is 11 units wide and runs 56.2 units along its y from its origin to
+  `BeamEnd`, under a billboard turning about one axis (mode 1). The
+  skydome's constellation images are about 24 by 42 units at a radius of
+  92: the game must scale the stars down or bring the camera close.
 - The level up popup is three buttons with the attribute names baked in;
   its calls are `addHealth`, `addMagicka` and `addStamina`, each followed by
   `PlaySound("UIMenuOK")`. Accept reaches the focused button twice: CLIK's
@@ -116,13 +141,36 @@ context binds only `Rotate`, to the right stick).
   locked dark grey; ranks as "name 2/5" once one is owned. Skill levels are
   always white (`#FFFFFF`; the colour string's source is unknown).
 - **Where perks sit**: the tree's grid cells plus offsets (`XNAM` + `HNAM`,
-  `YNAM` + `VNAM`) fitted flat to the stage between 8% and 92% across and
-  27% and 66% down (the top below level up mode's 175 pixels), then labels
-  whose text would overlap pushed apart the shorter way, their widths
-  estimated at 10 pixels a character at full scale (measured on the movie's
-  font) for the longest label a node can have. This stands in until the
-  trees are the game's 3D stars (ROADMAP). Arrows pick the nearest node in
-  that direction within a slightly wider than quarter turn.
+  `YNAM` + `VNAM`) fitted to the stage between 8% and 92% across and 27% and
+  66% down (the top below level up mode's 175 pixels), stretched to fill
+  both ways (cells as wide as tall left the tall trees' labels piled up),
+  then labels whose text would overlap pushed apart the shorter way, their
+  widths estimated at 12 pixels a character at full scale (about 10 for
+  names on the movie's font, more with a rank's digits) for the longest
+  label a node can have. The stars stand where those points are on a plane
+  facing the tree's camera 86 units out (just in front of the
+  constellation images), so a star moves with its label; how the game maps
+  the grid into the sky (its cell size, origin and whether a tree lines up
+  with its picture) isn't documented. The labels go where the stars
+  project, through the window's camera and the movie's stage transform.
+  Arrows pick the nearest node in that direction within a slightly wider
+  than quarter turn.
+- **The stars and lines**: each star faces the camera at 0.16 of its size
+  (2.6 units across), each line 0.12 of its width, stretched from its
+  perk's star to the next's (the model's billboard is set aside: it turns
+  about the world's up, which can't lean a line between two stars). Lines
+  are the trees' `CNAM` links between perks; the root's (no perk, no star)
+  aren't drawn. A star is `Owned` with a rank taken, `Unlocked` when its
+  next rank can be taken now (as the grey label), else `Locked`. A line is
+  lit once both its perks are taken. Opening a tree puts each star and line
+  straight into its resting sequence (as the graph's wildcards would);
+  then taking a perk plays `Own`, a perk coming within reach `Unlock`, a
+  line lighting `Unlock`. The picked star plays `Select` then `Selected`
+  when it is owned; otherwise, since the graph's `Select` starts only from
+  `Owned`, it jumps to `Selected` (`SelectedWild`) and back to its rest.
+  The lines' `FadeOut` / `FadeIn` aren't played (when the game uses them,
+  perhaps while the camera moves between the ring and a tree, is unknown),
+  nor the stars' own `reset`.
 - **Sounds**: `UISkillsForwardSD` / `UISkillsBackwardSD` turning the ring,
   `UISkillsTransitionUp` opening a tree, `UISkillsFocusSD` between perks,
   `UISkillsPerkSelectASD` taking one, `UIMenuCancelSD` going back: chosen
