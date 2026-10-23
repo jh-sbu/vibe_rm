@@ -10,6 +10,7 @@ use std::collections::HashMap;
 #[derive(Default)]
 pub(crate) struct Continuity {
     pub cleared_locations: std::collections::HashSet<FormId>,
+    pub location_keyword_data: HashMap<(FormId, FormId), f32>,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -52,10 +53,19 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         Self {
             cleared_locations: e.cleared_locations.clone(),
+            location_keyword_data: e.location_keyword_data.clone(),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.len(self.location_keyword_data.len());
+        for ((location, keyword), value) in sorted(&self.location_keyword_data) {
+            w.form(location);
+            w.form(keyword);
+            w.f32(*value);
+        }
+        file.add(b"LKWD", w.0);
         let mut w = Writer::default();
         let mut ids: Vec<_> = self.cleared_locations.iter().copied().collect();
         ids.sort();
@@ -92,10 +102,26 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"LKWD")? {
+            let mut previous = None;
+            for _ in 0..r.count(12)? {
+                let key = (r.form()?, r.form()?);
+                ordered(&mut previous, key)?;
+                s.location_keyword_data.insert(key, r.f32()?);
+            }
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for (&(location, keyword), &value) in &self.location_keyword_data {
+            nonnull(location)?;
+            nonnull(keyword)?;
+            if !value.is_finite() {
+                return Err(Corrupt("nonfinite location keyword data".into()));
+            }
+        }
         for &id in &self.cleared_locations {
             nonnull(id)?;
         }
@@ -106,6 +132,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.location_keyword_data = self.location_keyword_data;
         e.cleared_locations = self.cleared_locations;
         e.harvests.harvested = self.harvested;
     }

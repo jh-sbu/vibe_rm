@@ -213,3 +213,9 @@ No game assets or engine binaries were inspected for these additions.
 - `CLRD` retains cleared location identities without calling `SetCleared` during
   load. Original save encoding and reset lifetime remain unverified. The existing
   clear/statistic policy is unchanged; see `known_ambiguities/cleared.md`.
+
+- `LKWD` retains `Location.SetKeywordData` values by location/keyword pair,
+  including zero and negative values. Local UESP title searches for
+  SetKeywordData and SetCleared found no API pages. Persistence/lifetime in SE
+  remains unverified; this adjunct preserves the existing native API state.
+  Form identities are retained without requiring a currently loaded location.
