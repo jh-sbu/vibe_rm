@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub sentence: (Option<crate::arrest::Sentence>, Option<FormId>),
     pub resistance: (std::collections::HashSet<FormId>, bool, f32),
     pub pursuits: HashMap<FormId, crate::arrest::Pursuit>,
     pub home_warnings: (HashMap<FormId, FormId>, f64),
@@ -91,6 +92,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            sentence: (e.crime.arrests.jailed, e.crime.arrests.pending),
             resistance: (
                 e.crime.arrests.resisting.clone(),
                 e.crime.arrests.yield_attempted,
@@ -127,6 +129,23 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.opt_form(self.sentence.1);
+        w.bool(self.sentence.0.is_some());
+        if let Some(s) = self.sentence.0 {
+            w.form(s.faction);
+            w.i32(s.days);
+            w.form(s.inside);
+            for value in [
+                s.owed.violent,
+                s.owed.nonviolent,
+                s.owed.infamy_violent,
+                s.owed.infamy_nonviolent,
+            ] {
+                w.i32(value);
+            }
+        }
+        file.add(b"JSEN", w.0);
         let mut w = Writer::default();
         w.bool(self.resistance.1);
         w.f32(self.resistance.2);
@@ -279,6 +298,23 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"JSEN")? {
+            s.sentence.1 = r.opt_form()?;
+            if r.bool()? {
+                s.sentence.0 = Some(crate::arrest::Sentence {
+                    faction: r.form()?,
+                    days: r.i32()?,
+                    inside: r.form()?,
+                    owed: crate::crime::Bounty {
+                        violent: r.i32()?,
+                        nonviolent: r.i32()?,
+                        infamy_violent: r.i32()?,
+                        infamy_nonviolent: r.i32()?,
+                    },
+                });
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"ARRY")? {
             s.resistance.1 = r.bool()?;
             s.resistance.2 = r.f32()?;
@@ -470,6 +506,26 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        if let Some(id) = self.sentence.1 {
+            nonnull(id)?;
+        }
+        if let Some(s) = self.sentence.0 {
+            nonnull(s.faction)?;
+            nonnull(s.inside)?;
+            if !(1..=7).contains(&s.days)
+                || [
+                    s.owed.violent,
+                    s.owed.nonviolent,
+                    s.owed.infamy_violent,
+                    s.owed.infamy_nonviolent,
+                ]
+                .iter()
+                .any(|&v| v < 0)
+                || s.owed.violent.checked_add(s.owed.nonviolent).is_none()
+            {
+                return Err(Corrupt("invalid jail sentence".into()));
+            }
+        }
         time(self.resistance.2 as f64)?;
         for &id in &self.resistance.0 {
             nonnull(id)?;
@@ -562,6 +618,8 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.crime.arrests.jailed = self.sentence.0;
+        e.crime.arrests.pending = self.sentence.1;
         e.crime.arrests.resisting = self.resistance.0;
         e.crime.arrests.yield_attempted = self.resistance.1;
         e.crime.arrests.sheathed_for = self.resistance.2;

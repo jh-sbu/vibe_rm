@@ -55,7 +55,7 @@ pub struct Arrests {
     pub arresting: Option<(FormId, FormId)>,
     /// Where to send the player once the VM is done (the far side of a
     /// prison marker; see `send_player_through`).
-    pending: Option<FormId>,
+    pub(crate) pending: Option<FormId>,
     /// The player's jail sentence, while they are in jail.
     pub jailed: Option<Sentence>,
     /// Days the player has spent in jail (`GetDaysInJail`).
