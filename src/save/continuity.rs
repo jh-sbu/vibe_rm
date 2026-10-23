@@ -20,6 +20,7 @@ pub(crate) struct Continuity {
     pub controls: u16,
     pub cart_mode: bool,
     pub voice_recovery: (f32, f32),
+    pub stamina_wait: f32,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -72,10 +73,14 @@ impl Continuity {
             controls: e.disabled_controls.saved_bits(),
             cart_mode: e.hud_cart_mode,
             voice_recovery: (e.shouts.recovery, e.shouts.recovery_total),
+            stamina_wait: e.player_stamina_wait.max(0.0),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.f32(self.stamina_wait);
+        file.add(b"SREG", w.0);
         let mut w = Writer::default();
         w.f32(self.voice_recovery.0);
         w.f32(self.voice_recovery.1);
@@ -256,10 +261,15 @@ impl Continuity {
             s.voice_recovery = (r.f32()?, r.f32()?);
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"SREG")? {
+            s.stamina_wait = r.f32()?;
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        time(self.stamina_wait as f64)?;
         let (remaining, total) = self.voice_recovery;
         time(remaining as f64)?;
         time(total as f64)?;
@@ -310,6 +320,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.player_stamina_wait = self.stamina_wait;
         e.shouts
             .restore_recovery(self.voice_recovery.0, self.voice_recovery.1);
         e.disabled_controls = crate::player::DisabledControls::from_saved_bits(self.controls);

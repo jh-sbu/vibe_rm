@@ -255,3 +255,8 @@ No game assets or engine binaries were inspected for these additions.
   UESP [Dragon Shouts, revision 3279131](https://en.uesp.net/w/index.php?oldid=3279131)
   documents cooldown and its compass meter, not native save/reset semantics.
   Real-world time spent outside the runtime does not consume this countdown.
+
+- `SREG` stores remaining native stamina regeneration delay, clamped to zero
+  after expiry. Legacy loads have no delay. Original SE save timing and the
+  exact within-frame expiry behavior remain unverified; existing update cadence
+  is preserved. This does not save NPC stamina or combat execution.
