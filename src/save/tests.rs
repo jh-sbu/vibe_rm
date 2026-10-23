@@ -3826,3 +3826,45 @@ fn continuity_voice_runtime() {
     assert_eq!(e.shouts.recovery, 0.0);
     assert_eq!(e.shout_meter_percent(), 100.0);
 }
+
+#[test]
+fn continuity_stamina_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.stamina_wait = 1.25;
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.stamina_wait, 1.25);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"SREG");
+    s.continuity.stamina_wait = -0.5;
+    assert!(Snapshot::read(&s.write()).is_err());
+    s.continuity.stamina_wait = f32::INFINITY;
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_stamina_runtime() {
+    let (_fixture, mut e) = engine("continuity-stamina");
+    let stats = crate::ai::combat::CombatStats {
+        max_stamina: 100.0,
+        stamina_regen: 5.0,
+        ..Default::default()
+    };
+    e.player_stats.set(std::sync::Arc::new(stats)).unwrap();
+    e.player_stamina = 10.0;
+    e.player_stamina_wait = 1.25;
+    let saved = Snapshot::capture(&e).write();
+    e.player_stamina_wait = 30.0;
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.player_stamina_wait, 1.25);
+    e.update_stamina(0.5);
+    assert_eq!(e.player_stamina, 10.0);
+    e.update_stamina(1.0);
+    assert_eq!(e.player_stamina, 10.0);
+    e.update_stamina(1.0);
+    assert!(e.player_stamina > 10.0);
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"SREG");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.player_stamina_wait, 0.0);
+}

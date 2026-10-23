@@ -87,3 +87,9 @@ each POV owner separately after load. Payload and host-Vulkan tests passed.
 VREC restores remaining voice recovery and its HUD denominator, clearing
 held voice input and old meter flashes. The runtime test checks the restored
 meter and expiry through update_shouts. Payload and host-Vulkan tests passed.
+
+## 11 completed
+
+SREG retains the player's remaining stamina regeneration delay. Expired
+negative runtime timers capture as zero. The production test verifies no early
+regeneration and normal regeneration after expiry. Both tests passed.
