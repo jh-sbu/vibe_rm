@@ -4457,7 +4457,12 @@ fn durable_jail_sentence() {
 #[test]
 fn durable_jail_sentence_invalid() {
     let mut s = Snapshot::default();
-    s.continuity.sentence.1 = Some(FormId::NULL);
+    s.continuity.sentence.0 = Some(crate::arrest::Sentence {
+        faction: QUEST,
+        days: 8,
+        inside: ACTOR,
+        owed: Default::default(),
+    });
     assert!(Snapshot::read(&s.write()).is_err());
 }
 
@@ -4546,5 +4551,31 @@ fn durable_random_streams() {
 fn durable_random_streams_invalid() {
     let mut s = Snapshot::default();
     s.continuity.random_streams = Some((0, 1));
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_critical_hits() {
+    let (_fixture, mut e) = engine("durable-critical_hits");
+    e.critically_hit.insert(ACTOR);
+    let file = Snapshot::capture(&e).write();
+    check_continuity_payload(&file, b"LHCR");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    e.critically_hit.clear();
+    e.critically_hit.insert(CELL);
+    decoded.apply(&mut e).unwrap();
+    assert!(e.critically_hit.contains(&ACTOR));
+    assert!(!e.critically_hit.contains(&CELL));
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"LHCR");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert!(e.critically_hit.is_empty());
+}
+#[test]
+fn durable_critical_hits_invalid() {
+    let mut s = Snapshot::default();
+    s.continuity.critical_hits.insert(FormId::NULL);
     assert!(Snapshot::read(&s.write()).is_err());
 }

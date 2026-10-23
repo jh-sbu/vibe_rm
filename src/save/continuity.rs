@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub(crate) struct Continuity {
+    pub critical_hits: std::collections::HashSet<FormId>,
     pub random_streams: Option<(u64, u64)>,
     pub activations: Vec<(f64, FormId, FormId)>,
     pub jail_days: i32,
@@ -95,6 +96,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            critical_hits: e.critically_hit.clone(),
             random_streams: Some((e.rng, e.cond_rng.get())),
             activations: e.activation.pending.clone(),
             jail_days: e.crime.arrests.days_in_jail,
@@ -135,6 +137,14 @@ impl Continuity {
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        let mut ids: Vec<_> = self.critical_hits.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"LHCR", w.0);
         if let Some((rng, cond)) = self.random_streams {
             let mut w = Writer::default();
             w.u64(rng);
@@ -184,7 +194,7 @@ impl Continuity {
         for (guard, p) in sorted(&self.pursuits) {
             w.form(guard);
             w.form(p.faction);
-            w.f32(p.bark_in.max(0.0));
+            w.f32(p.bark_in);
         }
         file.add(b"GPRS", w.0);
         let mut w = Writer::default();
@@ -321,6 +331,15 @@ impl Continuity {
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"LHCR")? {
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                s.critical_hits.insert(id);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"RNGS")? {
             s.random_streams = Some((r.u64()?, r.u64()?));
             r.finish()?;
@@ -543,6 +562,9 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for &id in &self.critical_hits {
+            nonnull(id)?;
+        }
         if self.random_streams.is_some_and(|(rng, _)| rng == 0) {
             return Err(Corrupt("zero random generator state".into()));
         }
@@ -666,6 +688,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.critically_hit = self.critical_hits;
         let (rng, cond) = self.random_streams.unwrap_or((1, 0x9E37_79B9_7F4A_7C15));
         e.rng = rng;
         e.cond_rng.set(cond);
