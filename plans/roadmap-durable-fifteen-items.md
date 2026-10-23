@@ -18,3 +18,5 @@ Completed items follow. Final validation is recorded at the end.
 3. Owners asking the player to leave and their next dialogue deadline (`HWAR`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
 
 4. Guards approaching for arrest and remaining bark cooldown (`GPRS`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.
+
+5. Resisted factions, one-yield gate and sheathed-weapon timer (`ARRY`). Implemented replacement restoration, legacy defaults, strict decoding and a synthetic capture/read/apply regression.

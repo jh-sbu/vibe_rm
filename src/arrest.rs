@@ -66,7 +66,7 @@ pub struct Arrests {
     /// fights them.
     pub yield_attempted: bool,
     /// Seconds the player's weapons have been away while guards fight them.
-    sheathed_for: f32,
+    pub(crate) sheathed_for: f32,
 }
 
 /// A jail sentence: the faction's, so many days, and the prison marker
