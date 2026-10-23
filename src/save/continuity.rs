@@ -17,6 +17,8 @@ pub(crate) struct Continuity {
     pub player_assailants: std::collections::HashSet<FormId>,
     pub unreported: Vec<crate::crime::Unreported>,
     pub last_crime: HashMap<FormId, crate::crime::CrimeType>,
+    pub controls: u16,
+    pub cart_mode: bool,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -66,10 +68,16 @@ impl Continuity {
             player_assailants: e.crime.player_assailants.clone(),
             unreported: e.crime.unreported.clone(),
             last_crime: e.crime.last_crime.clone(),
+            controls: e.disabled_controls.saved_bits(),
+            cart_mode: e.hud_cart_mode,
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.u16(self.controls);
+        w.bool(self.cart_mode);
+        file.add(b"CTRL", w.0);
         let mut w = Writer::default();
         w.len(self.last_crime.len());
         for (faction, kind) in sorted(&self.last_crime) {
@@ -233,10 +241,18 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"CTRL")? {
+            s.controls = r.u16()?;
+            s.cart_mode = r.bool()?;
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        if self.controls & !0x1ff != 0 {
+            return Err(Corrupt("unknown disabled-control bits".into()));
+        }
         for &faction in self.last_crime.keys() {
             nonnull(faction)?;
         }
@@ -278,6 +294,8 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.disabled_controls = crate::player::DisabledControls::from_saved_bits(self.controls);
+        e.hud_cart_mode = self.cart_mode;
         e.crime.last_crime = self.last_crime;
         e.crime.unreported = self.unreported;
         e.crime.assaulted = self.assaulted;

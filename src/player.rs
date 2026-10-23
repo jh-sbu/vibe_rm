@@ -58,6 +58,33 @@ pub struct DisabledControls {
 }
 
 impl DisabledControls {
+    /// Persist the two independent POV-lock owners separately.
+    pub(crate) fn saved_bits(self) -> u16 {
+        let flags = [
+            self.movement,
+            self.fighting,
+            self.cam_switch,
+            self.looking,
+            self.sneaking,
+            self.menu,
+            self.activate,
+            self.journal,
+            self.werewolf_cam_switch,
+        ];
+        flags
+            .into_iter()
+            .enumerate()
+            .fold(0, |bits, (i, flag)| bits | ((flag as u16) << i))
+    }
+    pub(crate) fn from_saved_bits(bits: u16) -> Self {
+        let mut controls = Self::default();
+        for (i, flag) in controls.flags_mut().into_iter().enumerate() {
+            *flag = bits & (1 << i) != 0;
+        }
+        controls.werewolf_cam_switch = bits & (1 << 8) != 0;
+        controls
+    }
+
     /// Whether scripts have disabled any control.
     pub fn any(&self) -> bool {
         *self != Self::default()
