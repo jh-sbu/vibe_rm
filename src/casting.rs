@@ -160,6 +160,17 @@ pub struct Casting {
 }
 
 impl Casting {
+    pub(crate) fn saved_regen_wait(&self) -> f32 {
+        self.magicka_wait.max(0.0)
+    }
+    pub(crate) fn restore_regen_wait(&mut self, remaining: f32) {
+        self.magicka_wait = remaining;
+        self.hands = Default::default();
+        self.firing = Default::default();
+        self.magicka_blinks = 0;
+        self.npc_spells.clear();
+    }
+
     /// Greater Power cooldowns for native saves. Known-spell state is
     /// separate: removing a spell from the player's list does not erase it.
     pub(crate) fn power_uses(&self) -> &HashMap<FormId, f32> {

@@ -21,6 +21,7 @@ pub(crate) struct Continuity {
     pub cart_mode: bool,
     pub voice_recovery: (f32, f32),
     pub stamina_wait: f32,
+    pub magicka_wait: f32,
     pub harvested: HashMap<FormId, f64>,
 }
 
@@ -74,10 +75,14 @@ impl Continuity {
             cart_mode: e.hud_cart_mode,
             voice_recovery: (e.shouts.recovery, e.shouts.recovery_total),
             stamina_wait: e.player_stamina_wait.max(0.0),
+            magicka_wait: e.casting.saved_regen_wait(),
             harvested: e.harvests.harvested.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
+        let mut w = Writer::default();
+        w.f32(self.magicka_wait);
+        file.add(b"MREG", w.0);
         let mut w = Writer::default();
         w.f32(self.stamina_wait);
         file.add(b"SREG", w.0);
@@ -265,10 +270,15 @@ impl Continuity {
             s.stamina_wait = r.f32()?;
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"MREG")? {
+            s.magicka_wait = r.f32()?;
+            r.finish()?;
+        }
         s.validate()?;
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        time(self.magicka_wait as f64)?;
         time(self.stamina_wait as f64)?;
         let (remaining, total) = self.voice_recovery;
         time(remaining as f64)?;
@@ -320,6 +330,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.casting.restore_regen_wait(self.magicka_wait);
         e.player_stamina_wait = self.stamina_wait;
         e.shouts
             .restore_recovery(self.voice_recovery.0, self.voice_recovery.1);

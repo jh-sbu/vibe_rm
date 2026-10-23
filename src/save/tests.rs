@@ -3868,3 +3868,42 @@ fn continuity_stamina_runtime() {
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert_eq!(e.player_stamina_wait, 0.0);
 }
+
+#[test]
+fn continuity_magicka_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.magicka_wait = 1.25;
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.magicka_wait, 1.25);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"MREG");
+    s.continuity.magicka_wait = -0.5;
+    assert!(Snapshot::read(&s.write()).is_err());
+    s.continuity.magicka_wait = f32::NAN;
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_magicka_runtime() {
+    let (_fixture, mut e) = engine("continuity-magicka");
+    e.set_actor_value(PLAYER_REF, esp::actor_value::MAGICKA, 100.0);
+    e.set_actor_value(PLAYER_REF, esp::actor_value::MAGICKA_RATE, 3.0);
+    e.damage_actor_value(PLAYER_REF, esp::actor_value::MAGICKA, 50.0);
+    e.casting.restore_regen_wait(1.25);
+    let saved = Snapshot::capture(&e).write();
+    e.casting.restore_regen_wait(30.0);
+    e.casting.magicka_blinks = 5;
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.casting.magicka_blinks, 0);
+    let before = e.actor_value(PLAYER_REF, esp::actor_value::MAGICKA);
+    e.regen_magicka(0.5);
+    assert_eq!(e.actor_value(PLAYER_REF, esp::actor_value::MAGICKA), before);
+    e.regen_magicka(1.0);
+    e.regen_magicka(1.0);
+    assert!(e.actor_value(PLAYER_REF, esp::actor_value::MAGICKA) > before);
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"MREG");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.casting.saved_regen_wait(), 0.0);
+}
