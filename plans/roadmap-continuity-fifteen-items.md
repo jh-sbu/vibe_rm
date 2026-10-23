@@ -106,3 +106,10 @@ JMEM retains miscellaneous-objective tracking and journal/alias ordering
 allocators. Restores take at least the maxima already present in saved quests,
 including legacy files, preventing new updates from sorting behind old ones.
 Payload and host-Vulkan tests passed.
+
+## 14 completed
+
+MUSE retains spell, school and shout counts plus incumbents on tied
+maxima. Histories reject unsorted/duplicate keys, zero counts, invalid schools
+and nonmaximal favorites. The production test checks favorite-name lookup and
+continued counting after load. Payload and host-Vulkan tests passed.

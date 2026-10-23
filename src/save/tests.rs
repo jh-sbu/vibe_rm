@@ -62,6 +62,10 @@ const EMPTY_LIST_SPELL: FormId = FormId(0x8C7);
 const DUPLICATE_ROLL_ACTOR: FormId = FormId(0x8C8);
 const DUPLICATE_ROLL_LIST: FormId = FormId(0x8C9);
 const DUPLICATE_ROLL_SPELL: FormId = FormId(0x8CA);
+const USAGE_SPELL_A: FormId = FormId(0x8D0);
+const USAGE_SPELL_B: FormId = FormId(0x8D1);
+const USAGE_SHOUT_A: FormId = FormId(0x8D2);
+const USAGE_SHOUT_B: FormId = FormId(0x8D3);
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
@@ -405,8 +409,25 @@ fn engine(name: &str) -> (Fixture, Engine) {
             ]
         }),
         Node::top(
+            b"SHOU",
+            vec![
+                RecordBuilder::new(b"SHOU", USAGE_SHOUT_A).zstring(b"FULL", "Usage Shout A"),
+                RecordBuilder::new(b"SHOU", USAGE_SHOUT_B).zstring(b"FULL", "Usage Shout B"),
+            ],
+        ),
+        Node::top(
             b"SPEL",
             vec![
+                spell_record(
+                    USAGE_SPELL_A,
+                    crate::magic::spell_type::SPELL,
+                    "Usage Spell A",
+                ),
+                spell_record(
+                    USAGE_SPELL_B,
+                    crate::magic::spell_type::SPELL,
+                    "Usage Spell B",
+                ),
                 spell_record(
                     GREATER_POWER_A,
                     crate::magic::spell_type::POWER,
@@ -3948,4 +3969,85 @@ fn continuity_journal_runtime() {
     assert!(!e.scripts.misc_objectives_hidden);
     assert_eq!(e.scripts.journal_seq, 10);
     assert_eq!(e.scripts.fill_seq, 20);
+}
+
+#[test]
+fn continuity_magic_usage_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.magic_usage.spells = crate::stats::SavedUsage {
+        counts: vec![(ACTOR.0, 3), (CELL.0, 3)],
+        favorite: Some(CELL.0),
+    };
+    s.continuity.magic_usage.schools = crate::stats::SavedUsage {
+        counts: vec![(18, 2)],
+        favorite: Some(18),
+    };
+    s.continuity.magic_usage.shouts = crate::stats::SavedUsage {
+        counts: vec![(GLOBAL.0, u64::MAX)],
+        favorite: Some(GLOBAL.0),
+    };
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.magic_usage, s.continuity.magic_usage);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"MUSE");
+    s.continuity.magic_usage.schools.counts[0].0 = 17;
+    assert!(Snapshot::read(&s.write()).is_err());
+    s.continuity.magic_usage.schools.counts[0].0 = 18;
+    s.continuity.magic_usage.spells.favorite = Some(GLOBAL.0);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_magic_usage_runtime() {
+    let (_fixture, mut e) = engine("continuity-magic_usage");
+    e.scripts.magic_usage = crate::stats::MagicUsage::restore(&crate::stats::SavedMagicUsage {
+        spells: crate::stats::SavedUsage {
+            counts: vec![(USAGE_SPELL_A.0, 3), (USAGE_SPELL_B.0, 3)],
+            favorite: Some(USAGE_SPELL_B.0),
+        },
+        schools: crate::stats::SavedUsage {
+            counts: vec![(18, 3), (20, 3)],
+            favorite: Some(20),
+        },
+        shouts: crate::stats::SavedUsage {
+            counts: vec![(USAGE_SHOUT_A.0, 3)],
+            favorite: Some(USAGE_SHOUT_A.0),
+        },
+    })
+    .unwrap();
+    let saved = Snapshot::capture(&e).write();
+    e.scripts.magic_usage = Default::default();
+    Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
+    let usage = e.scripts.magic_usage.saved();
+    assert_eq!(usage.spells.favorite, Some(USAGE_SPELL_B.0));
+    assert_eq!(usage.schools.favorite, Some(20));
+    assert_eq!(
+        e.stat("Favorite Spell"),
+        crate::stats::StatValue::Name("Usage Spell B".into())
+    );
+    e.count_spell_cast(PLAYER_REF, USAGE_SPELL_A);
+    assert_eq!(
+        e.stat("Favorite Spell"),
+        crate::stats::StatValue::Name("Usage Spell A".into())
+    );
+    e.count_shout_use(USAGE_SHOUT_B);
+    e.count_shout_use(USAGE_SHOUT_B);
+    e.count_shout_use(USAGE_SHOUT_B);
+    assert_eq!(
+        e.scripts.magic_usage.saved().shouts.favorite,
+        Some(USAGE_SHOUT_A.0)
+    );
+    e.count_shout_use(USAGE_SHOUT_B);
+    assert_eq!(
+        e.scripts.magic_usage.saved().shouts.favorite,
+        Some(USAGE_SHOUT_B.0)
+    );
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"MUSE");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert_eq!(
+        e.scripts.magic_usage.saved(),
+        crate::stats::SavedMagicUsage::default()
+    );
 }
