@@ -75,6 +75,25 @@ pub struct Destination {
     pub yaw: f32,
 }
 
+/// Native approximation: walking distance, the configured speed multiplier and
+/// TimeScale. Exact Skyrim route/speed accounting is not publicly established.
+fn travel_time(distance: f32, speed_mult: f32, time_scale: f32) -> Option<(f32, f32)> {
+    if !distance.is_finite()
+        || distance < 0.0
+        || !speed_mult.is_finite()
+        || speed_mult <= 0.0
+        || !time_scale.is_finite()
+        || time_scale < 0.0
+    {
+        return None;
+    }
+    let seconds = distance / (crate::ai::WALK_SPEED * speed_mult);
+    let hours = seconds * time_scale / 3600.0;
+    // Bound catch-up work and reject corrupt settings/positions before mutation.
+    (seconds.is_finite() && hours.is_finite() && seconds <= 129600.0 && hours <= 720.0)
+        .then_some((hours, seconds))
+}
+
 impl Engine {
     /// Revalidate a map request and load its destination using the normal
     /// placement, weather, streaming and party hooks.
@@ -83,6 +102,8 @@ impl Engine {
             return Err(reason);
         }
         let destination = self.map_travel_destination(marker)?;
+        let (hours, seconds) = self.map_travel_time(destination)?;
+        self.advance_travel_time(hours, seconds);
         let result = match destination.place {
             Place::Exterior(world, _) => {
                 self.enter_exterior(world, destination.pos, destination.yaw)
@@ -98,6 +119,64 @@ impl Engine {
         self.menu = None;
         self.close_map_view();
         Ok(())
+    }
+
+    fn map_travel_time(&self, destination: Destination) -> Result<(f32, f32), Refusal> {
+        // Coordinates in unrelated worldspaces cannot be subtracted meaningfully.
+        let comparable = matches!((self.location, destination.place),
+            (Location::Exterior { world: a, .. }, Place::Exterior(b, _)) if a == b);
+        if !comparable {
+            return Ok((0.0, 0.0));
+        }
+        let distance = self
+            .player_feet()
+            .truncate()
+            .distance(destination.pos.truncate());
+        let multiplier = crate::ai::combat::gmst_f32(&self.lo, "fFastTravelSpeedMult", 1.0);
+        let scale = self
+            .lo
+            .find_editor_id("TimeScale")
+            .map_or(20.0, |g| self.global_value(g));
+        let time = travel_time(distance, multiplier, scale).ok_or(Refusal::InvalidDestination)?;
+        let total = self.hour as f64 + time.0 as f64;
+        if !total.is_finite()
+            || total < 0.0
+            || self.day as f64 + (total / 24.0).floor() > u32::MAX as f64
+        {
+            return Err(Refusal::InvalidDestination);
+        }
+        Ok(time)
+    }
+
+    fn advance_travel_time(&mut self, hours: f32, seconds: f32) {
+        if seconds <= 0.0 {
+            return;
+        }
+        let steps = (seconds / 180.0).ceil().max(1.0) as u32;
+        let dt = seconds / steps as f32;
+        let dh = hours / steps as f32;
+        for _ in 0..steps {
+            let total = self.hour as f64 + dh as f64;
+            self.day += (total / 24.0).floor() as u32;
+            self.hour = (total % 24.0) as f32;
+            self.update_weather(dh);
+            self.update_magic(dt);
+            self.update_stamina(dt);
+            self.regen_magicka(dt);
+            self.regen_npc_magicka(dt);
+            if !self.player_dead() {
+                let stats = self.player_stats();
+                self.damage_actor_value(
+                    PLAYER_REF,
+                    esp::actor_value::HEALTH,
+                    -stats.max_health * stats.health_regen.max(0.0) / 100.0 * dt,
+                );
+            }
+        }
+        self.heal_away(seconds);
+        if self.ai_enabled {
+            self.jump_to_schedules();
+        }
     }
 
     /// A map marker lands at its unkeyed linked reference, or at itself.
@@ -387,6 +466,63 @@ mod tests {
         assert_eq!(e.location, Location::Interior(FormId(0x940)));
         assert!((e.player_feet() - Vec3::new(100.0, 200.0, 32.0)).length() < 0.001);
         assert_eq!(e.camera.yaw, 2.0);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn fast_travel_time_is_distance_dependent_and_bounded() {
+        assert_eq!(super::travel_time(28800.0, 1.0, 20.0), Some((2.0, 360.0)));
+        assert_eq!(super::travel_time(28800.0, 2.0, 20.0), Some((1.0, 180.0)));
+        assert_eq!(super::travel_time(0.0, 1.0, 20.0), Some((0.0, 0.0)));
+        assert!(super::travel_time(f32::NAN, 1.0, 20.0).is_none());
+        assert!(super::travel_time(f32::MAX, 1.0, 20.0).is_none());
+        for invalid in [0.0, -1.0, f32::INFINITY, f32::NAN] {
+            assert!(super::travel_time(1000.0, invalid, 20.0).is_none());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn fast_travel_advances_clock_and_wounds_without_wait_statistics() {
+        use esp::FormId;
+        use glam::Vec3;
+        let dir = destination_fixture("clock");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Travel.esp");
+        e.location = crate::engine::Location::Exterior {
+            world: FormId(0x900),
+            center: (0, 0),
+        };
+        e.place_player(Vec3::ZERO, 0.0);
+        e.player.grounded = true;
+        e.day = 4;
+        e.hour = 23.9;
+        let wall = e.scripts.wall_time;
+        let real = e.scripts.real_time;
+        e.world_state.wounds.insert(
+            FormId(0x999),
+            crate::world_state::Wounds {
+                health: 10.0,
+                max: 100.0,
+                rate: 0.01,
+                at: real,
+            },
+        );
+        let expected = super::travel_time(6000.0f32.hypot(7000.0), 1.0, 20.0).unwrap();
+        e.travel_to_map_marker(FormId(0x930)).unwrap();
+        assert_eq!(e.day, 5);
+        assert!((e.hour - (23.9 + expected.0 - 24.0)).abs() < 0.001);
+        assert_eq!(e.scripts.wall_time, wall);
+        assert_eq!(e.scripts.real_time, real);
+        assert!(e.world_state.wounds[&FormId(0x999)].health_at(real) > 99.0);
+        assert_eq!(e.scripts.stats.get("Hours Waiting"), None);
+        assert_eq!(e.scripts.stats.get("Hours Slept"), None);
+        e.player.grounded = true;
+        e.day = u32::MAX;
+        e.hour = 23.999;
+        let before = e.player.position;
+        assert!(e.travel_to_map_marker(FormId(0x933)).is_err());
+        assert_eq!(e.player.position, before);
+        assert_eq!(e.hour, 23.999);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
