@@ -16,6 +16,11 @@ const ACTOR: FormId = FormId(0x802);
 /// An NPC taking its traits (race) from `NPC` (template flag 0x1).
 const TEMPLATED: FormId = FormId(0x803);
 const TEMPLATED_REF: FormId = FormId(0x804);
+/// Markers linked in a chain: `FIRST` -> `SECOND` -> `THIRD`.
+const STATIC: FormId = FormId(0x805);
+const FIRST: FormId = FormId(0x806);
+const SECOND: FormId = FormId(0x807);
+const THIRD: FormId = FormId(0x808);
 
 struct Fixture(std::path::PathBuf);
 
@@ -56,6 +61,19 @@ fn fixture(name: &str) -> (Fixture, Engine) {
             vec![
                 RecordBuilder::new(b"ACHR", ACTOR).form(b"NAME", NPC),
                 RecordBuilder::new(b"ACHR", TEMPLATED_REF).form(b"NAME", TEMPLATED),
+            ],
+        ),
+        Node::top(b"STAT", vec![RecordBuilder::new(b"STAT", STATIC)]),
+        Node::top(
+            b"REFR",
+            vec![
+                RecordBuilder::new(b"REFR", FIRST)
+                    .form(b"NAME", STATIC)
+                    .form(b"XLKR", SECOND),
+                RecordBuilder::new(b"REFR", SECOND)
+                    .form(b"NAME", STATIC)
+                    .form(b"XLKR", THIRD),
+                RecordBuilder::new(b"REFR", THIRD).form(b"NAME", STATIC),
             ],
         ),
     ];
@@ -101,4 +119,29 @@ fn get_race_reads_the_race_through_templates() {
     assert_eq!(call(&mut e, "actorbase", "getrace", NPC, &[]), race);
     assert_eq!(call(&mut e, "actor", "getrace", TEMPLATED_REF, &[]), race);
     assert_eq!(call(&mut e, "actorbase", "getrace", RACE, &[]), Value::None);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_nth_linked_ref_follows_the_chain() {
+    let (_f, mut e) = fixture("linked");
+    for (n, want) in [
+        (0, Some(FIRST)),
+        (1, Some(SECOND)),
+        (2, Some(THIRD)),
+        (3, None),
+    ] {
+        let want = want.map_or(Value::None, |r| e.object_value(r));
+        assert_eq!(
+            call(
+                &mut e,
+                "objectreference",
+                "getnthlinkedref",
+                FIRST,
+                &[Value::Int(n)]
+            ),
+            want,
+            "{n}"
+        );
+    }
 }
