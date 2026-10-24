@@ -86,6 +86,8 @@ impl Engine {
         self.knowledge.ini.insert(name.to_ascii_lowercase(), value);
     }
 
+    /// What a script set a setting to (nothing consumes settings yet).
+    #[allow(dead_code)]
     pub fn ini(&self, name: &str) -> Option<&IniValue> {
         self.knowledge.ini.get(&name.to_ascii_lowercase())
     }

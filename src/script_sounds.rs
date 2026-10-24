@@ -136,6 +136,7 @@ impl Engine {
     }
 
     /// The state scripts left a sound category in.
+    #[allow(dead_code)]
     pub fn sound_category(&self, category: FormId) -> crate::audio::CategoryState {
         self.script_sounds
             .categories
