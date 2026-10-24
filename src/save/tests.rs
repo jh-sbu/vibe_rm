@@ -5565,3 +5565,51 @@ fn attacked_on_sight_replaces_the_sessions_after_loading() {
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.factions.attacked_on_sight.is_empty());
 }
+
+#[test]
+fn base_flags_payload() {
+    use crate::protection::acbs;
+    let snapshot = |extra: Option<((FormId, u32), bool)>| {
+        let mut s = Snapshot::default();
+        s.continuity.base_flags.extend([
+            ((ACTOR, acbs::ESSENTIAL), true),
+            ((ACTOR, acbs::INVULNERABLE), false),
+            ((FormId(0x7), acbs::PROTECTED), true),
+        ]);
+        s.continuity.base_flags.extend(extra);
+        s
+    };
+    let s = snapshot(None);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.base_flags, s.continuity.base_flags);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"BFLG");
+    for bad in [
+        ((FormId::NULL, acbs::ESSENTIAL), true),
+        ((ACTOR, 0x4), true),
+        ((ACTOR, acbs::ESSENTIAL | acbs::PROTECTED), true),
+    ] {
+        assert!(Snapshot::read(&snapshot(Some(bad)).write()).is_err());
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn base_flags_replace_the_sessions_after_loading() {
+    use crate::protection::acbs;
+    let (_a, mut a) = engine("base-flags-a");
+    a.set_base_flag(ACTOR, acbs::ESSENTIAL, true);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("base-flags-b");
+    b.set_base_flag(ACTOR, acbs::PROTECTED, true);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(
+        b.protection.base_flags,
+        [((ACTOR, acbs::ESSENTIAL), true)].into_iter().collect()
+    );
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"BFLG");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.protection.base_flags.is_empty());
+}

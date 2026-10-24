@@ -2572,6 +2572,9 @@ impl Engine {
         stagger: f32,
         sneak: bool,
     ) {
+        if amount > 0.0 && self.is_invulnerable(target) {
+            return;
+        }
         if target == PLAYER_REF {
             if self.player_dead() {
                 return;

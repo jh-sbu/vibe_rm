@@ -411,3 +411,11 @@ The original keeps changed faction flags as change form data
 Optional `AOSG` lists the actors (the player included) that
 `SetAttackActorOnSight` marked, sorted. Loading replaces this session's
 marks, and legacy saves have none. Native policy, not an SE claim.
+
+## Actor bases' flags (`BFLG`)
+
+Optional `BFLG` lists (base, `ACBS` flag, set) for each essential, protected
+or invulnerable flag scripts changed, sorted. Loading replaces this
+session's changes; legacy saves have none, so bases are as their records
+say. The original keeps changed base data as change form data (layout not
+researched). Native policy, not an SE claim.

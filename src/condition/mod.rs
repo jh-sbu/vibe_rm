@@ -1569,21 +1569,25 @@ impl Engine {
             .unwrap_or(false)
     }
 
-    /// An actor's base `ACBS` flags: a loaded actor's (its templates' when
-    /// they give the base data), else its base's.
+    /// An actor's base `ACBS` flag (essential or protected): as a script
+    /// left it, else a loaded actor's (its templates' when they give the
+    /// base data), else its base's.
     fn base_flag(&self, actor: FormId, essential: bool) -> bool {
+        use crate::protection::acbs;
+        let flag = if essential {
+            acbs::ESSENTIAL
+        } else {
+            acbs::PROTECTED
+        };
+        if let Some(on) = self.changed_base_flag(actor, flag) {
+            return on;
+        }
         match self.actor_ref(actor) {
             Some(a) if essential => a.stats.essential,
             Some(a) => a.stats.protected,
             None => self
                 .base_of(actor)
-                .and_then(|n| self.lo.get(n))
-                .and_then(|r| {
-                    r.get(b"ACBS")
-                        .filter(|d| d.len() >= 4)
-                        .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
-                })
-                .is_some_and(|f| f & if essential { 0x2 } else { 0x800 } != 0),
+                .is_some_and(|b| self.base_has_flag(b, flag)),
         }
     }
 

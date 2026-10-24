@@ -23,3 +23,33 @@
   is cleared, and whether an alias flag counts for a quest that has started
   but whose start-up stage hasn't run. Whether a flagged alias pointing at a
   base that is already essential changes anything (we answer no).
+
+## Scripts changing the base's flags (`SetEssential`, `SetProtected`, `SetInvulnerable`)
+
+- `ActorBase.SetEssential`, `SetProtected` and `SetInvulnerable` (vanilla
+  `ActorBase.pex`; 134, 34 and 64 call sites, `vrm-tool pex-natives`) set or
+  clear the base's `ACBS` flag, true if the argument is missing; `IsEssential`,
+  `IsProtected` and `IsInvulnerable` on the base read it, and
+  `Actor.IsEssential` reads the actor's answer (base or alias). The change is
+  the base's, so every actor of that base follows it, loaded or not, and it
+  wins over a template's flags. Saved in optional `BFLG`.
+- CommonLibSSE keeps essential and protected on the actor as well
+  (`Actor::BOOL_FLAGS` `kEssential` 1 << 18, `kProtected` 1 << 19), with no
+  rule for when they are copied from the base. We read the base each time,
+  so a change reaches actors already loaded. Unconfirmed: whether a loaded
+  actor only follows its base's change after it reloads.
+
+## Invulnerable
+
+- `ACBS` 0x80000000 (CommonLibSSE `TESActorBaseData::kInvulnerable`,
+  `GetInvulnerable`), from the record or `SetInvulnerable`: nothing lowers
+  the actor's health, neither blows, spells and falls (`damage`) nor
+  `DamageActorValue("Health")`; raising it still works. The player's base
+  (`0x7`) counts: the vampire lord's script makes the player invulnerable
+  while transforming (UESP talk page
+  [Skyrim talk:Vampire Lord/Archive 2, revision 2224214](https://en.uesp.net/w/index.php?oldid=2224214)
+  quotes it, beside a commented-out `SetGhost`).
+- Unconfirmed: whether `DamageActorValue` and `ForceActorValue` bypass it,
+  whether blows still stagger and count as assaults (we drop the blow
+  entirely), and whether stamina and magicka are spared too (we spare health
+  only).
