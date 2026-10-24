@@ -6,6 +6,7 @@ use std::sync::Arc;
 use esp::FormId;
 use esp::writer::{Node, RecordBuilder, write_plugin};
 
+use crate::ai::ActorRuntime;
 use crate::ai::combat::CombatStats;
 use crate::engine::Engine;
 
@@ -118,4 +119,49 @@ fn reaction_modifiers_change_without_touching_combat_reactions() {
     e.set_reaction_modifier(TOWN, GUARDS, 7, true);
     assert_eq!(e.reaction_towards(TOWN, GUARDS).modifier, 7);
     assert_eq!(e.faction_combat_reaction(TOWN, GUARDS), 0, "still neutral");
+}
+
+/// Put an actor with these stats in a loaded interior, near the player.
+fn place(e: &mut Engine, r: FormId, stats: CombatStats) {
+    let key = crate::render::CellKey::Interior(FormId(0x820));
+    let mut a = ActorRuntime::new(
+        r,
+        FormId(2),
+        Arc::new(crate::world::skeleton::Skeleton::default()),
+        glam::Mat4::from_translation(glam::Vec3::X * 100.0),
+        Vec::new(),
+        0.0,
+    );
+    a.stats = Arc::new(stats);
+    e.actor_cells.insert(r, key);
+    e.cells.entry(key).or_default().actors.push(a);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn members_of_factions_the_player_is_an_enemy_of_attack_on_sight() {
+    const GUARD: FormId = FormId(0x901);
+    const CITIZEN: FormId = FormId(0x902);
+    const RESIDENT: FormId = FormId(0x903);
+    const FOLLOWER: FormId = FormId(0x904);
+    let (_f, mut e) = fixture("player-enemy");
+    place(&mut e, GUARD, member(GUARDS, 1));
+    place(&mut e, CITIZEN, member(GUARDS, 0));
+    // A guard whose crime faction is the town's.
+    place(&mut e, RESIDENT, member(GUARDS, 1));
+    e.set_crime_faction(RESIDENT, Some(TOWN));
+    place(&mut e, FOLLOWER, member(GUARDS, 1));
+    e.set_player_teammate(FOLLOWER, true, false);
+    for r in [GUARD, CITIZEN, RESIDENT, FOLLOWER] {
+        assert!(!e.would_attack_player(r), "{r} keeps the law");
+    }
+    e.set_faction_player_flag(GUARDS, crate::factions::PLAYER_ENEMY, true);
+    e.set_faction_player_flag(TOWN, crate::factions::PLAYER_ENEMY, true);
+    assert!(e.would_attack_player(GUARD));
+    assert!(e.would_attack_player(RESIDENT));
+    assert!(!e.would_attack_player(CITIZEN), "unaggressive");
+    assert!(!e.would_attack_player(FOLLOWER), "a teammate");
+    e.set_faction_player_flag(GUARDS, crate::factions::PLAYER_ENEMY, false);
+    assert!(!e.would_attack_player(GUARD));
+    assert!(e.would_attack_player(RESIDENT), "by its crime faction");
 }

@@ -123,7 +123,7 @@ fn infamy_of_an_actor_without_a_faction_is_its_crime_faction_or_nothing() {
 fn crime_functions_without_crime_state_are_unsupported() {
     let (_dir, e) = fixture();
     // Unsupported conditions fail whatever value they are compared with.
-    for func in [122, 176, 195, 199, 458] {
+    for func in [122, 176, 195, 199] {
         assert!(
             !holds(&e, PLAYER_REF, func, FACTION, 0.0),
             "condition {func} should be unsupported"
@@ -157,4 +157,41 @@ fn player_faction_flags_start_as_the_factions_data_and_follow_scripts() {
     // Only factions take the flags.
     e.set_faction_player_flag(QUEST, crate::factions::PLAYER_ENEMY, true);
     assert!(!e.factions.player_flags.contains_key(&QUEST));
+}
+
+#[test]
+fn actor_crime_player_enemy_reads_the_crime_factions_flag() {
+    const GET_ACTOR_CRIME_PLAYER_ENEMY: u16 = 458;
+    let (_dir, mut e) = fixture();
+    e.set_crime_faction(NPC, Some(SHUNNING));
+    e.set_crime_faction(BYSTANDER, Some(FACTION));
+    assert!(holds(
+        &e,
+        NPC,
+        GET_ACTOR_CRIME_PLAYER_ENEMY,
+        FormId::NULL,
+        1.0
+    ));
+    assert!(holds(
+        &e,
+        BYSTANDER,
+        GET_ACTOR_CRIME_PLAYER_ENEMY,
+        FormId::NULL,
+        0.0
+    ));
+    assert!(holds(
+        &e,
+        PLAYER_REF,
+        GET_ACTOR_CRIME_PLAYER_ENEMY,
+        FormId::NULL,
+        0.0
+    ));
+    e.set_faction_player_flag(FACTION, crate::factions::PLAYER_ENEMY, true);
+    assert!(holds(
+        &e,
+        BYSTANDER,
+        GET_ACTOR_CRIME_PLAYER_ENEMY,
+        FormId::NULL,
+        1.0
+    ));
 }

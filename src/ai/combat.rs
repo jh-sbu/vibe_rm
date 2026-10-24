@@ -1704,7 +1704,8 @@ impl Engine {
 
     /// Whether `r` would attack the player on detecting them: hostile to them
     /// (`hostile_to`), or they are within its aggro radius and it neither keeps
-    /// the law nor likes them.
+    /// the law nor likes them, or it is in a faction the player is an enemy
+    /// of and would fight its enemies (`known_ambiguities/factions.md`).
     pub(crate) fn would_attack_player(&mut self, r: FormId) -> bool {
         if self.player_dead() {
             return false;
@@ -1717,13 +1718,18 @@ impl Engine {
         };
         let (stats, d) = (a.stats.clone(), a.pos.distance(self.player.position));
         let player_factions = self.player_factions();
+        let likes = matches!(
+            self.faction_reaction(&stats.factions, &player_factions),
+            Some(2 | 3)
+        );
         let aggro = stats.aggro_attack.is_some_and(|r| d < r)
             && !self.law_abiding(&stats.factions)
-            && !matches!(
-                self.faction_reaction(&stats.factions, &player_factions),
-                Some(2 | 3)
-            );
-        aggro || self.hostile_to(&stats, &player_factions, true) || self.crime_hostile(r)
+            && !likes;
+        let enemy = stats.aggression >= 1
+            && !likes
+            && !self.is_player_teammate(r)
+            && self.in_player_enemy_faction(r, &stats.factions);
+        aggro || enemy || self.hostile_to(&stats, &player_factions, true) || self.crime_hostile(r)
     }
 
     /// The nearest fight `helper` detects (either side of it) that it would join, and whom it would
