@@ -1,0 +1,46 @@
+//! Papyrus math uses degrees at the API boundary. Public references: refs/pex-natives/.
+use papyrus::Value;
+
+pub(super) fn call(func: &str, args: &[Value]) -> Option<Value> {
+    let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
+    Some(match func {
+        "abs" => Value::Float(arg(0).as_float().abs()),
+        "sqrt" => Value::Float(arg(0).as_float().sqrt()),
+        "pow" => Value::Float(arg(0).as_float().powf(arg(1).as_float())),
+        "sin" => Value::Float(arg(0).as_float().to_radians().sin()),
+        "cos" => Value::Float(arg(0).as_float().to_radians().cos()),
+        "floor" => Value::Int(arg(0).as_float().floor() as i32),
+        "ceiling" => Value::Int(arg(0).as_float().ceil() as i32),
+        "acos" => Value::Float(arg(0).as_float().acos().to_degrees()),
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn check(func: &str, cases: &[(f32, f32)]) {
+        for &(input, expected) in cases {
+            let Some(Value::Float(actual)) = call(func, &[Value::Float(input)]) else {
+                panic!("{func} did not return a float");
+            };
+            assert!(
+                (actual - expected).abs() < 0.0001,
+                "{func}({input}) = {actual}, wanted {expected}"
+            );
+        }
+    }
+    #[test]
+    fn acos() {
+        check(
+            "acos",
+            &[(-1.0, 180.0), (0.0, 90.0), (0.5, 60.0), (1.0, 0.0)],
+        );
+        assert!(
+            call("acos", &[Value::Float(2.0)])
+                .unwrap()
+                .as_float()
+                .is_nan()
+        );
+    }
+}

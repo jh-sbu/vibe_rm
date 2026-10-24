@@ -5,6 +5,8 @@ use papyrus::{NativeResult, ObjectId, Value};
 
 use crate::engine::Engine;
 
+mod math;
+
 fn v(x: Value) -> NativeResult {
     NativeResult::Value(x)
 }
@@ -1854,13 +1856,7 @@ pub fn call(
         ("cell", "isattached") | ("cell", "isinterior") => v(Value::Bool(
             func == "isattached" || matches!(e.location, crate::engine::Location::Interior(_)),
         )),
-        ("math", "abs") => v(Value::Float(arg(0).as_float().abs())),
-        ("math", "sqrt") => v(Value::Float(arg(0).as_float().sqrt())),
-        ("math", "pow") => v(Value::Float(arg(0).as_float().powf(arg(1).as_float()))),
-        ("math", "sin") => v(Value::Float(arg(0).as_float().to_radians().sin())),
-        ("math", "cos") => v(Value::Float(arg(0).as_float().to_radians().cos())),
-        ("math", "floor") => v(Value::Int(arg(0).as_float().floor() as i32)),
-        ("math", "ceiling") => v(Value::Int(arg(0).as_float().ceil() as i32)),
+        ("math", _) => math::call(func, args).map_or_else(none, v),
         _ => {
             let key = format!("{class}.{func}");
             if e.scripts.warned.insert(key.clone()) {
