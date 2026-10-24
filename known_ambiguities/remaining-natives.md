@@ -69,3 +69,16 @@ GetGoldValue uses the existing inventory parser's stored values; dynamically
 calculated potion values and non-carryable light values remain unverified.
 Conflicting INFO group membership across plugins and duplicate keyword editor
 IDs follow the existing load-order index policy.
+
+## Batch 8
+
+IsRunning excludes player sprinting according to the native documentation; the
+older condition query includes sprinting. The documented backward-running quirk
+is not reproduced because last movement direction is not retained for queries.
+NPCs do not yet sprint, so IsSprinting is false for them. IsAlarmed currently
+covers guard arrest pursuit; Skyrim's non-guard witness/alarm transitions are
+unresolved. IsArrestingTarget uses the current arrest conversation; whether a
+pursuing guard also counts before reaching the target is unspecified.
+Is3DLoaded uses instantiated render data (including hidden or occluded instances),
+not cell attachment. Exact asynchronous creation/destruction timing, persistent
+3D kept after detachment and first-person-only body behavior remain unverified.

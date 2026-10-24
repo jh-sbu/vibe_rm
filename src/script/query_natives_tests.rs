@@ -1293,3 +1293,125 @@ fn batch07_form_value_deaths_and_info_owner() {
         Value::None
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn batch08_movement_arrest_and_loaded_3d() {
+    let mut class = [0u8; 36];
+    class[35] = 1;
+    let (_f, mut e) = fixture(vec![
+        Node::top(
+            b"CLAS",
+            vec![RecordBuilder::new(b"CLAS", FormId(0x820)).field(b"DATA", &class)],
+        ),
+        Node::top(
+            b"NPC_",
+            vec![RecordBuilder::new(b"NPC_", FormId(0x810)).form(b"CNAM", FormId(0x820))],
+        ),
+        Node::top(
+            b"ACHR",
+            vec![RecordBuilder::new(b"ACHR", FormId(0x800)).form(b"NAME", FormId(0x810))],
+        ),
+    ]);
+    for (moving, running, sprinting, is_run, is_sprint) in [
+        (false, true, false, false, false),
+        (true, true, false, true, false),
+        (true, true, true, false, true),
+        (true, false, false, false, false),
+    ] {
+        e.player.moving = moving;
+        e.player.running = running;
+        e.player.sprinting = sprinting;
+        assert_eq!(
+            call(&mut e, "actor", "isrunning", crate::engine::PLAYER_REF, &[]),
+            Value::Bool(is_run)
+        );
+        assert_eq!(
+            call(
+                &mut e,
+                "actor",
+                "issprinting",
+                crate::engine::PLAYER_REF,
+                &[]
+            ),
+            Value::Bool(is_sprint)
+        );
+    }
+    for func in ["isrunning", "issprinting", "isalarmed", "isarrestingtarget"] {
+        assert_eq!(
+            call(&mut e, "actor", func, FormId(0x800), &[]),
+            Value::Bool(false)
+        );
+    }
+    e.crime.arrests.alarmed.insert(
+        FormId(0x800),
+        crate::arrest::Pursuit {
+            faction: FormId(0x830),
+            bark_in: 0.0,
+        },
+    );
+    assert_eq!(
+        call(&mut e, "actor", "isalarmed", FormId(0x800), &[]),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        call(&mut e, "actor", "isarrestingtarget", FormId(0x800), &[]),
+        Value::Bool(false)
+    );
+    e.crime.arrests.arresting = Some((FormId(0x800), FormId(0x830)));
+    assert_eq!(
+        call(&mut e, "actor", "isarrestingtarget", FormId(0x800), &[]),
+        Value::Bool(true)
+    );
+    e.crime.arrests.alarmed.clear();
+    assert_eq!(
+        call(&mut e, "actor", "isarrestingtarget", FormId(0x800), &[]),
+        Value::Bool(false)
+    );
+    assert_eq!(
+        call(&mut e, "objectreference", "is3dloaded", FormId(0x800), &[]),
+        Value::Bool(false)
+    );
+    let key = crate::render::CellKey::Interior(FormId(0x840));
+    let actor = crate::ai::ActorRuntime::new(
+        FormId(0x800),
+        FormId(0x810),
+        std::sync::Arc::new(crate::world::skeleton::Skeleton::default()),
+        glam::Mat4::IDENTITY,
+        vec![],
+        0.0,
+    );
+    e.actor_cells.insert(FormId(0x800), key);
+    e.cells.entry(key).or_default().actors.push(actor);
+    assert_eq!(
+        call(&mut e, "objectreference", "is3dloaded", FormId(0x800), &[]),
+        Value::Bool(false)
+    );
+    e.scene
+        .cells
+        .entry(key)
+        .or_default()
+        .actors
+        .push(crate::render::ActorInstance {
+            meshes: vec![],
+            attachments: vec![],
+            equipment: vec![],
+            held_light: None,
+            transform: glam::Mat4::IDENTITY,
+            pose: vec![],
+            lights: [0; 8],
+            radius: 1.0,
+            shadow_only: true,
+            skin_tone: None,
+            weight: 0.0,
+        });
+    assert_eq!(
+        call(&mut e, "objectreference", "is3dloaded", FormId(0x800), &[]),
+        Value::Bool(true)
+    );
+    e.scene.cells.clear();
+    assert_eq!(
+        call(&mut e, "objectreference", "is3dloaded", FormId(0x800), &[]),
+        Value::Bool(false)
+    );
+}

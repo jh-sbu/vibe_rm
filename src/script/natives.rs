@@ -438,6 +438,25 @@ pub fn call(
                 Value::Int(count)
             })
         }
+        ("actor", "isrunning") => v(Value::Bool(me.is_some_and(|r| {
+            if r == crate::engine::PLAYER_REF {
+                e.player.moving && e.player.running && !e.player.sprinting
+            } else {
+                e.actor_running(r)
+            }
+        }))),
+        ("actor", "issprinting") => v(Value::Bool(
+            me == Some(crate::engine::PLAYER_REF) && e.player.moving && e.player.sprinting,
+        )),
+        ("actor", "isalarmed") => v(Value::Bool(me.is_some_and(|r| e.is_alarmed(r)))),
+        ("actor", "isarrestingtarget") => v(Value::Bool(me.is_some_and(|r| {
+            e.is_guard(r)
+                && e.is_alarmed(r)
+                && e.crime
+                    .arrests
+                    .arresting
+                    .is_some_and(|(guard, _)| guard == r)
+        }))),
         ("actor", "ischild") => v(Value::Bool(
             me.and_then(|r| e.race_of(r))
                 .is_some_and(|race| e.race_is_child(race)),
@@ -586,7 +605,29 @@ pub fn call(
             e.location,
             crate::engine::Location::Interior(_)
         ))),
-        ("objectreference", "is3dloaded") => v(Value::Bool(true)),
+        ("objectreference", "is3dloaded") => v(Value::Bool(me.is_some_and(|r| {
+            if r == crate::engine::PLAYER_REF {
+                return e.player_body.is_some() || e.scene.player.is_some();
+            }
+            let actor_loaded = e.actor_cells.get(&r).is_some_and(|key| {
+                e.cells
+                    .get(key)
+                    .and_then(|rt| rt.actors.iter().position(|a| a.ref_id == r))
+                    .is_some_and(|i| {
+                        e.scene
+                            .cells
+                            .get(key)
+                            .is_some_and(|cell| i < cell.actors.len())
+                    })
+            });
+            actor_loaded
+                || e.scene
+                    .cells
+                    .values()
+                    .flat_map(|cell| &cell.instances)
+                    .chain(e.scene.far.iter())
+                    .any(|instance| instance.ref_id == r.0)
+        }))),
         ("objectreference", "isactivationblocked") => {
             v(Value::Bool(me.is_some_and(|f| {
                 e.scripts.blocked_activation.contains(&f)
