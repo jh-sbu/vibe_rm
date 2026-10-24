@@ -5530,3 +5530,38 @@ fn faction_player_flags_replace_the_sessions_after_loading() {
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.factions.player_flags.is_empty());
 }
+
+#[test]
+fn attacked_on_sight_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.attacked_on_sight.extend([PLAYER_REF, ACTOR]);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.attacked_on_sight,
+        s.continuity.attacked_on_sight
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"AOSG");
+    s.continuity.attacked_on_sight.insert(FormId::NULL);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn attacked_on_sight_replaces_the_sessions_after_loading() {
+    let (_a, mut a) = engine("on-sight-a");
+    a.set_attacked_on_sight(PLAYER_REF, true);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("on-sight-b");
+    b.set_attacked_on_sight(ACTOR, true);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(
+        b.factions.attacked_on_sight,
+        [PLAYER_REF].into_iter().collect()
+    );
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"AOSG");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.factions.attacked_on_sight.is_empty());
+}

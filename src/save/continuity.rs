@@ -53,6 +53,8 @@ pub(crate) struct Continuity {
     pub faction_reactions: HashMap<(FormId, FormId), crate::factions::Reaction>,
     /// Factions' player flags changed by scripts.
     pub faction_player_flags: HashMap<FormId, u8>,
+    /// Actors scripts had attacked on sight.
+    pub attacked_on_sight: std::collections::HashSet<FormId>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -256,6 +258,7 @@ impl Continuity {
             graph_open: e.world_state.graph_open.clone(),
             faction_reactions: e.factions.reactions.clone(),
             faction_player_flags: e.factions.player_flags.clone(),
+            attacked_on_sight: e.factions.attacked_on_sight.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -541,6 +544,14 @@ impl Continuity {
             w.u8(*flags);
         }
         file.add(b"FPLR", w.0);
+        let mut w = Writer::default();
+        let mut ids: Vec<_> = self.attacked_on_sight.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"AOSG", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -712,6 +723,15 @@ impl Continuity {
                     combat: r.u32()?,
                 };
                 s.faction_reactions.insert(key, reaction);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"AOSG")? {
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                s.attacked_on_sight.insert(id);
             }
             r.finish()?;
         }
@@ -905,6 +925,9 @@ impl Continuity {
             if r.combat > crate::factions::MAX_COMBAT_REACTION {
                 return Err(Corrupt("invalid faction combat reaction".into()));
             }
+        }
+        for &id in &self.attacked_on_sight {
+            nonnull(id)?;
         }
         for (&faction, &flags) in &self.faction_player_flags {
             nonnull(faction)?;
@@ -1167,5 +1190,6 @@ impl Continuity {
         e.world_state.graph_open = self.graph_open;
         e.restore_faction_reactions(self.faction_reactions);
         e.restore_faction_player_flags(self.faction_player_flags);
+        e.restore_attacked_on_sight(self.attacked_on_sight);
     }
 }

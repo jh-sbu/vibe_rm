@@ -1345,6 +1345,12 @@ pub fn call(
             }
             none()
         }
+        ("actor", "setattackactoronsight") => {
+            if let Some(a) = me {
+                e.set_attacked_on_sight(a, args.first().is_none_or(|b| b.as_bool()));
+            }
+            none()
+        }
         ("faction", "isplayerexpelled") => {
             v(Value::Bool(me.is_some_and(|f| e.player_expelled_from(f))))
         }

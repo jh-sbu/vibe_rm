@@ -6,13 +6,16 @@
 //! modifier of one towards the other. Changes are kept by faction pair, over
 //! the plugin's entry, and saved (`FRCT`). The player's expelled and enemy
 //! flags start as the faction's `DATA` bits and change by `SetPlayerExpelled`
-//! / `SetPlayerEnemy` (saved: `FPLR`). Choices:
+//! / `SetPlayerEnemy` (saved: `FPLR`). Actors `SetAttackActorOnSight`
+//! marks are attacked by those who would fight their enemies (saved:
+//! `AOSG`). Choices:
 //! `known_ambiguities/factions.md`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use esp::FormId;
 
+use crate::ai::combat::CombatStats;
 use crate::engine::Engine;
 
 /// One faction's reaction towards another (`XNAM`).
@@ -37,6 +40,8 @@ pub struct Factions {
     pub(crate) reactions: HashMap<(FormId, FormId), Reaction>,
     /// The player flags (`PLAYER_FLAGS` bits) of factions scripts changed.
     pub(crate) player_flags: HashMap<FormId, u8>,
+    /// Actors others attack on sight (`SetAttackActorOnSight`).
+    pub(crate) attacked_on_sight: HashSet<FormId>,
 }
 
 impl Engine {
@@ -186,6 +191,44 @@ impl Engine {
     pub fn crime_player_enemy(&self, actor: FormId) -> bool {
         self.crime_faction(actor)
             .is_some_and(|f| self.player_enemy_of(f))
+    }
+
+    /// Papyrus `SetAttackActorOnSight`.
+    pub fn set_attacked_on_sight(&mut self, actor: FormId, on: bool) {
+        if actor.is_null() {
+            return;
+        }
+        if on {
+            self.factions.attacked_on_sight.insert(actor);
+        } else {
+            self.factions.attacked_on_sight.remove(&actor);
+        }
+    }
+
+    /// Whether an actor with `stats` would attack `target`, another actor
+    /// with `target_factions`, on sight: hostile to it (`hostile_to`), or
+    /// `target` is attacked on sight and the attacker would fight its
+    /// enemies and doesn't like it.
+    pub(crate) fn hostile_to_actor(
+        &mut self,
+        stats: &CombatStats,
+        target: FormId,
+        target_factions: &[FormId],
+    ) -> bool {
+        if self.hostile_to(stats, target_factions, false) {
+            return true;
+        }
+        stats.aggression >= 1
+            && self.factions.attacked_on_sight.contains(&target)
+            && !matches!(
+                self.faction_reaction(&stats.factions, target_factions),
+                Some(2 | 3)
+            )
+    }
+
+    /// Restore the actors attacked on sight a save kept.
+    pub(crate) fn restore_attacked_on_sight(&mut self, actors: HashSet<FormId>) {
+        self.factions.attacked_on_sight = actors;
     }
 
     /// Restore the player flags a save kept, in place of this session's.

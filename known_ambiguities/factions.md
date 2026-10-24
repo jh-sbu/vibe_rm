@@ -89,3 +89,20 @@
   Also whether aggression 0 members flee, which is what the lycanthropy page's
   "feared" suggests (we do nothing), and whether faction allies are exempt or
   only teammates. The exceptions the page lists suggest allies are.
+
+## Actors attacked on sight (`SetAttackActorOnSight`)
+
+- `Actor.SetAttackActorOnSight(abAttackOnSight)` (vanilla `Actor.pex`; the
+  werewolf, vampire lord and `C03RampageQuest` scripts set it and later clear
+  it) marks an actor, the player included. Anyone with aggression 1 or more
+  who doesn't like the marked actor (its factions aren't allied or friendly
+  towards the actor's) attacks it on sight. Teammates don't attack the
+  player. The mark is one way: the marked actor attacks no one new. It is
+  saved in optional `AOSG`; legacy saves have no marks.
+- The meaning is read from the name and from the werewolf's "most will
+  attack you on sight" (UESP Skyrim:Lycanthropy, revision 3637628). No
+  public description of the native was found.
+- Unconfirmed: whether unaggressive actors flee from a marked actor (we
+  leave them alone), whether faction allies of the marked actor are exempt
+  (we exempt them, matching the page's exceptions), and whether the mark
+  survives in the original's saves.

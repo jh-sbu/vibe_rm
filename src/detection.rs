@@ -656,7 +656,7 @@ impl Engine {
             return false;
         }
         let (stats, theirs) = (a.stats.clone(), t.stats.factions.clone());
-        self.hostile_to(&stats, &theirs, false)
+        self.hostile_to_actor(&stats, target, &theirs)
     }
 
     /// Work out loaded actors' detection of the player four times a second and
