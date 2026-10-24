@@ -18,6 +18,7 @@ mod disarm;
 mod encumbrance;
 mod engine;
 mod ethereal;
+mod factions;
 mod falling;
 mod fast_travel;
 mod followers;

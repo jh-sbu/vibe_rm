@@ -387,3 +387,13 @@ whether a graph that doesn't know `Opened` / `Closed` (only `Open` /
 `Close`) ends up in the right pose, which this replay can't do, and graph
 objects with other states (levers, rockfalls, traps), which this doesn't
 cover.
+
+## Faction reactions (`FRCT`)
+
+Optional `FRCT` keeps every faction reaction scripts changed (faction,
+towards, modifier, group combat reaction 0-3), sorted by pair; loading
+replaces this session's changes, and legacy saves have none, so factions
+react as their plugins say. The original saves a faction's changed
+reactions as change form data (CommonLibSSE `TESFaction::ChangeFlags`
+`kFactionReactions`); its layout is unknown. Native policy, not an SE claim.
+Choices: `known_ambiguities/factions.md`.

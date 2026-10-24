@@ -1496,31 +1496,20 @@ impl Engine {
         })
     }
 
-    /// The strongest reaction (`XNAM` group combat reaction: 0 neutral, 1 enemy,
-    /// 2 ally, 3 friend) any of `ours` has towards any of `theirs`; friends and allies
-    /// win over enemies.
+    /// The strongest reaction (`XNAM` group combat reaction, or a change made
+    /// since: 0 neutral, 1 enemy, 2 ally, 3 friend) any of `ours` has towards
+    /// any of `theirs`; friends and allies win over enemies.
     fn faction_reaction(&mut self, ours: &[FormId], theirs: &[FormId]) -> Option<u32> {
         if ours.iter().any(|f| theirs.contains(f)) {
             return Some(2);
         }
         let mut best: Option<u32> = None;
         for &f in ours {
-            let rel = self.faction_relations.entry(f).or_insert_with(|| {
-                let Some(rec) = self.lo.get(f) else {
-                    return Arc::new(Vec::new());
-                };
-                Arc::new(
-                    rec.subrecords()
-                        .filter(|s| s.tag.0 == *b"XNAM" && s.data.len() >= 12)
-                        .map(|s| {
-                            (
-                                rec.fid(s.form_id(0)),
-                                u32::from_le_bytes(s.data[8..12].try_into().unwrap()),
-                            )
-                        })
-                        .collect(),
-                )
-            });
+            if !self.faction_relations.contains_key(&f) {
+                let list = Arc::new(self.combat_reactions_of(f));
+                self.faction_relations.insert(f, list);
+            }
+            let rel = &self.faction_relations[&f];
             for &(other, r) in rel.iter() {
                 if theirs.contains(&other) {
                     best = Some(match (best, r) {
@@ -1534,22 +1523,14 @@ impl Engine {
     }
 
     /// How one faction regards another in combat (`XNAM` group combat reaction
-    /// on the first: 0 neutral, 1 enemy, 2 ally, 3 friend); a faction is its own
-    /// ally and anything unlisted is neutral. The first's list alone counts, so
-    /// the answer need not be mutual.
+    /// on the first, or a change made since: 0 neutral, 1 enemy, 2 ally,
+    /// 3 friend); a faction is its own ally and anything unlisted is neutral.
+    /// The first's list alone counts, so the answer need not be mutual.
     pub(crate) fn faction_combat_reaction(&self, from: FormId, to: FormId) -> u32 {
         if from == to {
             return 2;
         }
-        let Some(rec) = self.lo.get(from) else {
-            return 0;
-        };
-        rec.subrecords()
-            .filter(|s| s.tag.0 == *b"XNAM" && s.data.len() >= 12)
-            .filter(|s| rec.fid(s.form_id(0)) == to)
-            .map(|s| u32::from_le_bytes(s.data[8..12].try_into().unwrap()))
-            .next()
-            .unwrap_or(0)
+        self.reaction_towards(from, to).combat
     }
 
     /// Start (or switch) an actor's fight with `target`: weapons out.

@@ -5410,3 +5410,72 @@ fn graph_open_states_answer_get_open_state_after_loading() {
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.world_state.graph_open.is_empty());
 }
+
+#[test]
+fn faction_reactions_payload() {
+    use crate::factions::Reaction;
+    let mut s = Snapshot::default();
+    s.continuity.faction_reactions.extend([
+        (
+            (ACTOR, CELL),
+            Reaction {
+                modifier: -10,
+                combat: 1,
+            },
+        ),
+        (
+            (CELL, ACTOR),
+            Reaction {
+                modifier: 0,
+                combat: 3,
+            },
+        ),
+    ]);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.faction_reactions,
+        s.continuity.faction_reactions
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"FRCT");
+    let mut bad = s.continuity.faction_reactions.clone();
+    bad.insert(
+        (ACTOR, CELL),
+        Reaction {
+            modifier: 0,
+            combat: 4,
+        },
+    );
+    let mut broken = Snapshot::default();
+    broken.continuity.faction_reactions = bad;
+    assert!(
+        Snapshot::read(&broken.write()).is_err(),
+        "combat reaction 4"
+    );
+    let mut broken = Snapshot::default();
+    broken
+        .continuity
+        .faction_reactions
+        .insert((FormId::NULL, CELL), Reaction::default());
+    assert!(Snapshot::read(&broken.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn faction_reactions_replace_the_sessions_after_loading() {
+    let (_a, mut a) = engine("faction-reactions-a");
+    a.set_factions_enemies(ACTOR, CELL, false, true);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("faction-reactions-b");
+    b.set_factions_allies(CELL, GLOBAL, true, true);
+    assert_eq!(b.faction_combat_reaction(CELL, GLOBAL), 3);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.faction_combat_reaction(ACTOR, CELL), 1);
+    assert_eq!(b.faction_combat_reaction(CELL, ACTOR), 0);
+    assert_eq!(b.faction_combat_reaction(CELL, GLOBAL), 0, "replaced");
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"FRCT");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.factions.reactions.is_empty());
+}

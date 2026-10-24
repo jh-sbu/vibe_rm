@@ -49,6 +49,8 @@ pub(crate) struct Continuity {
     pub tapers: Vec<(crate::magic::ActiveEffect, f32, f32)>,
     /// Objects' open states from their behaviour graphs' events.
     pub graph_open: HashMap<FormId, crate::world::animated::OpenState>,
+    /// Factions' reactions towards others changed by scripts.
+    pub faction_reactions: HashMap<(FormId, FormId), crate::factions::Reaction>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -250,6 +252,7 @@ impl Continuity {
             active_effects: e.saved_active_effects(),
             tapers: e.saved_tapers(),
             graph_open: e.world_state.graph_open.clone(),
+            faction_reactions: e.factions.reactions.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -519,6 +522,15 @@ impl Continuity {
             w.u8(*s as u8);
         }
         file.add(b"GOPN", w.0);
+        let mut w = Writer::default();
+        w.len(self.faction_reactions.len());
+        for ((from, to), r) in sorted(&self.faction_reactions) {
+            w.form(from);
+            w.form(to);
+            w.i32(r.modifier);
+            w.u32(r.combat);
+        }
+        file.add(b"FRCT", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -677,6 +689,19 @@ impl Continuity {
                 let state = crate::world::animated::OpenState::from_code(r.u8()?)
                     .ok_or_else(|| Corrupt("invalid graph open state".into()))?;
                 s.graph_open.insert(id, state);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"FRCT")? {
+            let mut previous = None;
+            for _ in 0..r.count(16)? {
+                let key = (r.form()?, r.form()?);
+                ordered(&mut previous, key)?;
+                let reaction = crate::factions::Reaction {
+                    modifier: r.i32()?,
+                    combat: r.u32()?,
+                };
+                s.faction_reactions.insert(key, reaction);
             }
             r.finish()?;
         }
@@ -854,6 +879,13 @@ impl Continuity {
         }
         for &id in self.graph_open.keys() {
             nonnull(id)?;
+        }
+        for (&(from, to), r) in &self.faction_reactions {
+            nonnull(from)?;
+            nonnull(to)?;
+            if r.combat > crate::factions::MAX_COMBAT_REACTION {
+                return Err(Corrupt("invalid faction combat reaction".into()));
+            }
         }
         for (x, rate, elapsed) in &self.tapers {
             valid_effect(x)?;
@@ -1108,5 +1140,6 @@ impl Continuity {
         e.restore_tapers(self.tapers);
         // Before the save's cells load: graphs built afresh replay these.
         e.world_state.graph_open = self.graph_open;
+        e.restore_faction_reactions(self.faction_reactions);
     }
 }
