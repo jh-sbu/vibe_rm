@@ -89,3 +89,25 @@ fn the_first_blow_to_the_player_from_a_stranger_is_an_assault_that_is_no_crime()
     e.damage(PLAYER_REF, 5.0, None, 0.0);
     assert!(!e.scripts.quests[&ASSAULT_QUEST].running);
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_teammate_told_to_ignore_friendly_hits_does_not_turn_on_the_player() {
+    let (_f, mut e) = fixture();
+    let victim = FormId(0x902);
+    let key = crate::render::CellKey::Interior(FormId(0x820));
+    e.actor_cells.insert(victim, key);
+    let mut a = actor(victim);
+    a.health = 100.0;
+    e.cells.entry(key).or_default().actors.push(a);
+    e.set_player_teammate(victim, true, true);
+    e.set_ignore_friendly_hits(victim, true);
+    e.damage(victim, 5.0, Some(PLAYER_REF), 0.0);
+    let a = e.actor_ref(victim).unwrap();
+    assert_eq!(a.health, 95.0);
+    assert!(a.combat.is_none());
+    // Without the flag the same blow starts a fight.
+    e.set_ignore_friendly_hits(victim, false);
+    e.damage(victim, 5.0, Some(PLAYER_REF), 0.0);
+    assert!(e.actor_ref(victim).unwrap().combat.is_some());
+}

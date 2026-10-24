@@ -67,6 +67,8 @@ pub(crate) struct Continuity {
     pub ref_scales: HashMap<FormId, f32>,
     /// References scripts made followers refuse favors on.
     pub no_favor: std::collections::HashSet<FormId>,
+    /// References told to ignore friendly hits.
+    pub ignore_friendly_hits: std::collections::HashSet<FormId>,
     /// Outfits scripts gave actors.
     pub outfits: HashMap<FormId, FormId>,
     /// Music types scripts queued, in the order added.
@@ -283,6 +285,7 @@ impl Continuity {
             leveled_additions: e.scripts.globals.leveled.added.clone(),
             ref_scales: e.ref_state.scales.clone(),
             no_favor: e.ref_state.no_favor.clone(),
+            ignore_friendly_hits: e.ref_state.ignore_friendly_hits.clone(),
             outfits: e.outfits.set.clone(),
             music_queue: e.music.queue.script_entries(),
             ai_off: e.ai_off.clone(),
@@ -632,6 +635,14 @@ impl Continuity {
         }
         file.add(b"NOFV", w.0);
         let mut w = Writer::default();
+        let mut ids: Vec<_> = self.ignore_friendly_hits.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"IFHT", w.0);
+        let mut w = Writer::default();
         w.len(self.outfits.len());
         for (actor, outfit) in sorted(&self.outfits) {
             w.form(actor);
@@ -906,6 +917,15 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"IFHT")? {
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                s.ignore_friendly_hits.insert(id);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"GHST")? {
             let mut previous = None;
             for _ in 0..r.count(5)? {
@@ -1161,7 +1181,7 @@ impl Continuity {
                 return Err(Corrupt("reference scale out of range".into()));
             }
         }
-        for &r in &self.no_favor {
+        for &r in self.no_favor.iter().chain(&self.ignore_friendly_hits) {
             nonnull(r)?;
         }
         for &actor in self.ghosts.keys() {
@@ -1439,7 +1459,7 @@ impl Continuity {
         e.restore_ghosts(self.ghosts);
         e.restore_formlist_additions(self.formlist_additions);
         e.restore_leveled_additions(self.leveled_additions);
-        e.restore_ref_state(self.ref_scales, self.no_favor);
+        e.restore_ref_state(self.ref_scales, self.no_favor, self.ignore_friendly_hits);
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);
         e.ai_off = self.ai_off;

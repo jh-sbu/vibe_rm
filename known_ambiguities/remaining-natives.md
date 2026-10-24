@@ -119,3 +119,13 @@ actor keeps the NPC's and race's heights multiplied on top (we do). The player
 isn't rescaled. **test-mod** wanted: `SetDestroyed` on a destructible with
 `OnDestructionStageChanged` registered, and `SetScale(2)` on an NPC then
 `GetScale`.
+
+## Reference flags and encounter levels
+
+Unconfirmed: `CalculateEncounterLevel` multipliers. No plugin carries
+`fLeveledActorMult*`; we use 0.5 / 0.75 / 1.0 / 1.5 for easy to very hard, and the
+rounding is ours. `IgnoreFriendlyHits` is a flat "friendly blows never turn it",
+since the engine keeps no friendly-hit count (the number the game tolerates is
+unconfirmed). `IsDeleted` for created references is "id gone". **test-mod**
+wanted: `CalculateEncounterLevel(0..3)` on a reference in a zone with no limits,
+read back at a known player level.

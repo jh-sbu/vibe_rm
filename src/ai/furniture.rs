@@ -434,6 +434,11 @@ impl FurnitureWorld {
         }
     }
 
+    /// Who has reserved (is heading for or using) a marker of a furniture.
+    pub fn user_of(&self, furniture: FormId, marker: u8) -> Option<FormId> {
+        self.users.get(&(furniture, marker)).copied()
+    }
+
     pub fn release(&mut self, actor: FormId) {
         self.users.retain(|_, a| *a != actor);
     }

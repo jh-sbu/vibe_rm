@@ -2597,6 +2597,9 @@ impl Engine {
         let Some(key) = self.actor_cells.get(&target).copied() else {
             return;
         };
+        // Told to ignore friendly hits, it takes a blow from a friend without
+        // turning on them.
+        let attacker_hostile = attacker.filter(|&by| !self.ignores_friendly_hit(target, by));
         let (essential, protected) = (self.is_essential(target), self.is_protected(target));
         let Some(a) = self
             .cells
@@ -2617,7 +2620,7 @@ impl Engine {
             return;
         }
         // A first blow from someone it wasn't fighting is an assault.
-        let assault = attacker
+        let assault = attacker_hostile
             .filter(|&by| by != target && a.combat.as_ref().is_none_or(|c| c.target != by))
             .map(|by| (by, a.combat.is_none(), a.stats.factions.clone()));
         a.health -= amount;
@@ -2655,14 +2658,14 @@ impl Engine {
         }
         // A sneak attack's survivor searches from where the blow came (the
         // attacker, as it struck), once the assault has made it an enemy.
-        let search = attacker.filter(|&by| {
+        let search = attacker_hostile.filter(|&by| {
             sneak
                 && !self
                     .actor_ref(target)
                     .and_then(|a| a.combat.as_ref())
                     .is_some_and(|c| c.target == by)
         });
-        if let Some(by) = attacker {
+        if let Some(by) = attacker_hostile {
             self.break_calm(target);
             if search.is_none() {
                 self.start_combat(target, by);

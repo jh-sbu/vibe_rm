@@ -27,7 +27,7 @@ impl Activation {
 }
 
 /// A reference's activate parents (`XAPR`: parent, delay; repeated).
-fn parents_of(lo: &esp::LoadOrder, r: FormId) -> Vec<(FormId, f32)> {
+pub(crate) fn parents_of(lo: &esp::LoadOrder, r: FormId) -> Vec<(FormId, f32)> {
     let Some(rec) = lo.get(r) else {
         return Vec::new();
     };

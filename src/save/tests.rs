@@ -5762,6 +5762,9 @@ fn ref_scales_and_favor_payloads() {
             .ref_scales
             .extend([(CELL, 0.5), (ACTOR, scale)]);
         s.continuity.no_favor.extend([CELL, ACTOR]);
+        s.continuity
+            .ignore_friendly_hits
+            .extend([PLAYER_REF, ACTOR]);
         s.continuity.no_favor.extend(extra);
         s
     };
@@ -5770,9 +5773,14 @@ fn ref_scales_and_favor_payloads() {
     let restored = Snapshot::read(&file).unwrap();
     assert_eq!(restored.continuity.ref_scales, s.continuity.ref_scales);
     assert_eq!(restored.continuity.no_favor, s.continuity.no_favor);
+    assert_eq!(
+        restored.continuity.ignore_friendly_hits,
+        s.continuity.ignore_friendly_hits
+    );
     assert_eq!(restored.write().to_bytes(), file.to_bytes());
     check_continuity_payload(&file, b"RSCL");
     check_continuity_payload(&file, b"NOFV");
+    check_continuity_payload(&file, b"IFHT");
     for bad in [0.0, -1.0, f32::NAN, f32::INFINITY] {
         assert!(Snapshot::read(&snapshot(bad, None).write()).is_err());
     }
@@ -5785,19 +5793,26 @@ fn ref_scales_and_favor_replace_the_sessions_after_loading() {
     let (_a, mut a) = engine("refstate-a");
     a.ref_state.scales.insert(CELL, 2.0);
     a.ref_state.no_favor.insert(ACTOR);
+    a.ref_state.ignore_friendly_hits.insert(CELL);
     let file = Snapshot::capture(&a).write();
     let (_b, mut b) = engine("refstate-b");
     b.ref_state.scales.insert(PLAYER_REF, 3.0);
     b.ref_state.no_favor.insert(PLAYER_REF);
+    b.ref_state.ignore_friendly_hits.insert(PLAYER_REF);
     Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
     assert_eq!(b.ref_state.scales, [(CELL, 2.0)].into_iter().collect());
     assert_eq!(b.ref_state.no_favor, [ACTOR].into_iter().collect());
+    assert_eq!(
+        b.ref_state.ignore_friendly_hits,
+        [CELL].into_iter().collect()
+    );
     let mut legacy = file;
     legacy
         .sections
-        .retain(|(tag, _)| tag != b"RSCL" && tag != b"NOFV");
+        .retain(|(tag, _)| tag != b"RSCL" && tag != b"NOFV" && tag != b"IFHT");
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.ref_state.scales.is_empty() && b.ref_state.no_favor.is_empty());
+    assert!(b.ref_state.ignore_friendly_hits.is_empty());
 }
 
 #[test]

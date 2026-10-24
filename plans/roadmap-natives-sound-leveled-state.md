@@ -148,7 +148,9 @@ getheadingangle 9.
   reference's heading to the other's position. This is the documented formula;
   write tests at 0/90/180/−90.
 
-### 5. Reference flags and queries
+### 5. Reference flags and queries (done)
+
+Done in `src/ref_state.rs`; notes in `refs/pex-natives/ref-batch05-flags-queries.md`.
 
 `IgnoreFriendlyHits` (56) / `IsIgnoringFriendlyHits` (0), `Cell.SetPublic` (13),
 `IsFurnitureInUse` (19) / `IsFurnitureMarkerInUse` (0),

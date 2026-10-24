@@ -604,29 +604,56 @@ pub fn call(
             e.location,
             crate::engine::Location::Interior(_)
         ))),
-        ("objectreference", "is3dloaded") => v(Value::Bool(me.is_some_and(|r| {
-            if r == crate::engine::PLAYER_REF {
-                return e.player_body.is_some() || e.scene.player.is_some();
+        ("objectreference", "is3dloaded") => v(Value::Bool(me.is_some_and(|r| e.ref_3d_loaded(r)))),
+        ("objectreference", "hasnode") => {
+            let name = str_arg(args, 0);
+            v(Value::Bool(me.is_some_and(|r| e.ref_has_node(r, &name))))
+        }
+        ("objectreference", "getmass") => v(Value::Float(me.map_or(0.0, |r| e.ref_mass(r)))),
+        ("objectreference", "isdeleted") => v(Value::Bool(me.is_some_and(|r| e.ref_is_deleted(r)))),
+        ("objectreference", "isactivatechild") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(parent), Some(child)) => crate::activation::parents_of(&e.lo, child)
+                .iter()
+                .any(|&(p, _)| p == parent),
+            _ => false,
+        })),
+        ("objectreference", "ignorefriendlyhits") => {
+            if let Some(r) = me {
+                e.set_ignore_friendly_hits(r, args.is_empty() || arg(0).as_bool());
             }
-            let actor_loaded = e.actor_cells.get(&r).is_some_and(|key| {
-                e.cells
-                    .get(key)
-                    .and_then(|rt| rt.actors.iter().position(|a| a.ref_id == r))
-                    .is_some_and(|i| {
-                        e.scene
-                            .cells
-                            .get(key)
-                            .is_some_and(|cell| i < cell.actors.len())
-                    })
-            });
-            actor_loaded
-                || e.scene
-                    .cells
-                    .values()
-                    .flat_map(|cell| &cell.instances)
-                    .chain(e.scene.far.iter())
-                    .any(|instance| instance.ref_id == r.0)
+            none()
+        }
+        ("objectreference", "isignoringfriendlyhits") => {
+            v(Value::Bool(me.is_some_and(|r| {
+                e.ref_state.ignore_friendly_hits.contains(&r)
+            })))
+        }
+        ("objectreference", "isfurnitureinuse") => v(Value::Bool(
+            me.is_some_and(|r| e.furniture_in_use(r, arg(0).as_bool())),
+        )),
+        ("objectreference", "isfurnituremarkerinuse") => v(Value::Bool(me.is_some_and(|r| {
+            usize::try_from(arg(0).as_int())
+                .is_ok_and(|m| e.furniture_marker_in_use(r, m, arg(1).as_bool()))
         }))),
+        ("objectreference", "isindialoguewithplayer") => {
+            v(Value::Bool(me.is_some_and(|r| {
+                e.conversation.as_ref().is_some_and(|c| c.npc_ref == r)
+            })))
+        }
+        ("objectreference", "calculateencounterlevel") => {
+            let difficulty = if args.is_empty() { 4 } else { arg(0).as_int() };
+            v(Value::Int(
+                me.map_or(0, |r| e.encounter_level(r, difficulty)),
+            ))
+        }
+        ("cell", "setpublic") => {
+            if let Some(c) = me {
+                e.scripts
+                    .cell_public
+                    .insert(c, args.is_empty() || arg(0).as_bool());
+            }
+            none()
+        }
         ("objectreference", "isactivationblocked") => {
             v(Value::Bool(me.is_some_and(|f| {
                 e.scripts.blocked_activation.contains(&f)
