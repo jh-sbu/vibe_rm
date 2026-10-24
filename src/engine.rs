@@ -144,6 +144,7 @@ pub struct Engine {
     pub(crate) actor_flags: crate::actor_flags::ActorFlags,
     pub(crate) resets: crate::resets::Resets,
     pub(crate) game_flags: crate::game_queries::GameFlags,
+    pub(crate) knowledge: crate::knowledge::Knowledge,
     /// Armor and block game settings, read on first use.
     pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
     /// Independently timed strength contributions of loaded combat members.
@@ -482,6 +483,7 @@ impl Engine {
             actor_flags: Default::default(),
             resets: Default::default(),
             game_flags: Default::default(),
+            knowledge: Default::default(),
             combat_settings: Default::default(),
             combat_group_strengths: Default::default(),
             detection: Default::default(),
@@ -594,7 +596,7 @@ impl Engine {
         };
         let i = (self.rand() % desc.files.len() as u64) as usize;
         let v = self.roll_variation(&desc);
-        if let Some(a) = self.audio.as_mut() {
+        let voice = self.audio.as_mut().and_then(|a| {
             a.play_pitched(
                 &self.vfs,
                 &desc.files[i],
@@ -603,8 +605,9 @@ impl Engine {
                 v.pitch,
                 desc.positional.then_some(at),
                 desc.falloff,
-            );
-        }
+            )
+        });
+        self.tag_voice(voice, &desc.categories);
     }
 
     /// How this playing of `desc` differs from its recording (frequency and
@@ -668,6 +671,7 @@ impl Engine {
                 desc.positional.then_some(rf.position),
                 desc.falloff,
             ) {
+                audio.set_voice_categories(v, &desc.categories);
                 voices.push((r, v));
             }
         }

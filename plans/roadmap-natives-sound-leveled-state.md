@@ -1,5 +1,9 @@
 # Plan: sound, leveled-list and state/query natives
 
+**Status: done** (2026-10-24). All ten batches are implemented; the list of what is
+still undeclared in `src/script/natives.rs` is the systems the plan names as out of
+scope. See ROADMAP's Done section.
+
 This plan covers vanilla natives that are missing or stubbed and that need no
 new engine system. The exceptions are the music queue (batch 2) and the
 reset baseline (batch 8), which each grow a system that already exists. The
@@ -271,7 +275,9 @@ Done in `src/game_queries.rs` (saved as `GAMF`); notes in `refs/pex-natives/game
 - `CalculateFavorCost`: the gold cost formula from the CK wiki, or skip it with
   a note, since nothing calls it.
 
-### 10. Knowledge and the uncalled remainder
+### 10. Knowledge and the uncalled remainder (done)
+
+Done in `src/knowledge.rs`, `src/script_sounds.rs` (sound categories) and `src/audio/mod.rs`; notes in `refs/pex-natives/knowledge-batch10-remainder.md`. Dialogue, music and weather sounds aren't tagged with categories yet.
 
 `Ingredient.LearnEffect` / `LearnNextEffect` / `LearnAllEffects`,
 `Form.PlayerKnows`, `Utility.GameTimeToString`, `Spell.Preload` / `Unload` (5/5),

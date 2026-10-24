@@ -5,6 +5,23 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Sound, leveled-list and state natives (`vrm-tool pex-natives`, 88 of them):
+  sound instances (`Sound.Play`, `StopInstance`, `SetInstanceVolume`,
+  `PlayAndWait`) and the music queue (`MusicType.Add` / `Remove`; `MUSQ`);
+  leveled lists' `AddForm` / `Revert` (`LVAD`); `SetOpen`, `SetDestroyed`,
+  `SetScale` (`RSCL`), `SetNoFavorAllowed` (`NOFV`), `GetHeadingAngle`; reference
+  flags and queries (`IgnoreFriendlyHits` `IFHT`, `Cell.SetPublic`, furniture in
+  use, `HasNode`, `GetMass`, `IsDeleted`, `IsActivateChild`,
+  `CalculateEncounterLevel`); actor state (`Resurrect`, `SetCriticalStage` with
+  `IsInCriticalStage`, `UnequipAll`, sit and sleep states, voice recovery, the
+  stealth meter exemption; `ACST`); relationship and faction queries, `IsDoingFavor`
+  (`FAVR`), `ActorBase.SetOutfit` (`BOFT`); `ObjectReference.Reset`, `Cell.Reset`
+  (`RSTC`), `Quest.Reset` and `UpdateCurrentInstanceGlobal` (`QGLB`); the `Game`
+  finders, sun position, `SetPlayerReportCrime`, `ClearPrison`, `SetInChargen`
+  (`GAMF`); ingredient learning, `PlayerKnows`, `GameTimeToString`, sound
+  categories, `SetINI*`. Scope and tests:
+  `plans/roadmap-natives-sound-leveled-state.md`; notes: `refs/pex-natives/`;
+  choices: `known_ambiguities/remaining-natives.md`, `formlists.md`, `outfits.md`.
 - Ten of the natives vanilla scripts call most (`vrm-tool pex-natives`):
   quest aliases' Essential / Protected flags; `ActorBase.SetEssential`,
   `SetProtected`, `SetInvulnerable` (`BFLG`); ghosts (`SetGhost`,
@@ -1841,14 +1858,16 @@ game each piece unlocks.
      that state, and no public source describes it), `Exists` (what makes a
      reference exist: no public description or vanilla use yet)
    - Natives scripts call that still do nothing, most called first
-     (`vrm-tool pex-natives`; see Done for the last ten): effect shaders'
-     and visual effects' `Play` / `Stop`, `SetAlpha`, leveled lists'
-     `AddForm`, `SetSubGraphFloatVariable`, `TranslateTo` and the other
-     translations, `Reset` (references, cells), `IgnoreFriendlyHits`,
-     `GetCurrentPackage`, `HasLOS`, `MoveToPackageLocation`,
-     `SetCriticalStage`, `SetRace`, `Resurrect`, `SetScale`; `SetOutfit`'s
-     sleep outfits and `ActorBase.SetOutfit` (`known_ambiguities/outfits.md`);
-     `Delete`'s "once nothing holds it" (`known_ambiguities/created-refs.md`)
+     (`vrm-tool pex-natives`; see Done for the last ones): effect shaders'
+     and visual effects' `Play` / `Stop`, `SetAlpha`, `SetSubGraphFloatVariable`,
+     `TranslateTo` and the other translations, `GetCurrentPackage`, `HasLOS`,
+     `MoveToPackageLocation`, `SetRace`, riding, flying, character creation,
+     killmoves and beast forms; `SetOutfit`'s sleep outfits
+     (`known_ambiguities/outfits.md`); `Delete`'s "once nothing holds it"
+     (`known_ambiguities/created-refs.md`); follower favors (nothing asks, so
+     `SetNoFavorAllowed` and `SetDoingFavor` are only stored); `Quest.Reset`
+     rebuilding the quest's script variables; resetting a loaded behaviour-graph
+     object in place; categories for dialogue, music and weather sounds
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; looping sounds of enabled references checked
      with an audio device

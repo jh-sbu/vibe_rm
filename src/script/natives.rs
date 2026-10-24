@@ -247,6 +247,97 @@ pub fn call(
             e.set_third_person(true);
             none()
         }
+        ("ingredient", "learneffect") => {
+            if let Some(i) = me {
+                e.learn_effect(i, arg(0).as_int());
+            }
+            none()
+        }
+        ("ingredient", "learnnexteffect") => {
+            v(Value::Int(me.map_or(-1, |i| e.learn_next_effect(i))))
+        }
+        ("ingredient", "learnalleffects") => {
+            if let Some(i) = me {
+                e.learn_all_effects(i);
+            }
+            none()
+        }
+        ("form", "playerknows") => v(Value::Bool(me.is_some_and(|f| e.player_knows(f)))),
+        ("utility", "gametimetostring") => v(Value::str(&e.game_time_string(arg(0).as_float()))),
+        // The art streams in when it is needed here; there is nothing to hold
+        // or let go of.
+        ("spell", "preload") | ("spell", "unload") => none(),
+        ("soundcategory", "mute") | ("soundcategory", "unmute") => {
+            if let Some(c) = me {
+                let on = func == "mute";
+                e.change_sound_category(c, |s| s.muted = on);
+            }
+            none()
+        }
+        ("soundcategory", "pause") | ("soundcategory", "unpause") => {
+            if let Some(c) = me {
+                let on = func == "pause";
+                e.change_sound_category(c, |s| s.paused = on);
+            }
+            none()
+        }
+        ("soundcategory", "setvolume") => {
+            if let Some(c) = me {
+                let volume = arg(0).as_float();
+                e.change_sound_category(c, |s| {
+                    s.volume = if volume.is_finite() {
+                        volume.clamp(0.0, 1.0)
+                    } else {
+                        1.0
+                    }
+                });
+            }
+            none()
+        }
+        ("soundcategory", "setfrequency") => {
+            if let Some(c) = me {
+                let frequency = arg(0).as_float();
+                e.change_sound_category(c, |s| {
+                    s.frequency = if frequency.is_finite() {
+                        frequency.clamp(0.01, 1.0)
+                    } else {
+                        1.0
+                    }
+                });
+            }
+            none()
+        }
+        ("utility", "setinibool") => {
+            e.set_ini(
+                &str_arg(args, 0),
+                crate::knowledge::IniValue::Bool(arg(1).as_bool()),
+            );
+            none()
+        }
+        ("utility", "setiniint") => {
+            e.set_ini(
+                &str_arg(args, 0),
+                crate::knowledge::IniValue::Int(arg(1).as_int()),
+            );
+            none()
+        }
+        ("utility", "setinifloat") => {
+            e.set_ini(
+                &str_arg(args, 0),
+                crate::knowledge::IniValue::Float(arg(1).as_float()),
+            );
+            none()
+        }
+        ("utility", "setinistring") => {
+            e.set_ini(
+                &str_arg(args, 0),
+                crate::knowledge::IniValue::Str(str_arg(args, 1)),
+            );
+            none()
+        }
+        ("armor", "getwarmthrating")
+        | ("light", "getwarmthrating")
+        | ("actor", "getwarmthrating") => v(Value::Float(me.map_or(0.0, |f| e.warmth_rating(f)))),
         ("game", "setinchargen") => {
             e.set_in_chargen(arg(0).as_bool(), arg(1).as_bool(), arg(2).as_bool());
             none()

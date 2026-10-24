@@ -509,8 +509,14 @@ impl Engine {
     /// Today: (weekday, day of the month, month, year), the start date moved
     /// on by the days passed.
     pub fn calendar(&self) -> (usize, u32, usize, u32) {
+        self.calendar_on(self.day)
+    }
+
+    /// The date `days` days after the game began: (weekday, day of the
+    /// month, month, year).
+    pub fn calendar_on(&self, days: u32) -> (usize, u32, usize, u32) {
         let (mut day, mut month, mut year) = self.start_date();
-        for _ in 0..self.day {
+        for _ in 0..days {
             day += 1;
             if day > MONTHS[month as usize].1 {
                 day = 1;
@@ -522,8 +528,29 @@ impl Engine {
             }
         }
         // The first day is a Sundas.
-        let weekday = self.day as usize % 7;
+        let weekday = days as usize % 7;
         (weekday, day, month as usize, year)
+    }
+
+    /// `Utility.GameTimeToString`: a game time in days passed as
+    /// "MM/DD/YYYY HH:MM" on a 24-hour clock.
+    pub fn game_time_string(&self, game_days: f32) -> String {
+        let days = if game_days.is_finite() {
+            game_days.max(0.0)
+        } else {
+            0.0
+        };
+        // A thousand years is more than any save will see; it keeps the
+        // calendar walk short whatever a script passes.
+        let whole = (days.floor() as u32).min(365_000);
+        let (_, day, month, year) = self.calendar_on(whole);
+        let minutes = ((days - whole as f32) * 24.0 * 60.0).floor() as u32 % (24 * 60);
+        format!(
+            "{:02}/{day:02}/{year:04} {:02}:{:02}",
+            month + 1,
+            minutes / 60,
+            minutes % 60
+        )
     }
 
     /// The date and time as the journal's bottom bar shows them: "Sundas,

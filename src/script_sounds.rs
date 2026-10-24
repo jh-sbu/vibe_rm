@@ -23,6 +23,11 @@ struct Instance {
 pub(crate) struct ScriptSounds {
     next: i32,
     instances: HashMap<i32, Instance>,
+    /// What scripts did to sound categories, by form id; kept for the session
+    /// (inference: the audio mixer's settings aren't saved) and sent to the
+    /// mixer when they change.
+    categories: HashMap<u32, crate::audio::CategoryState>,
+    categories_dirty: bool,
 }
 
 impl Default for ScriptSounds {
@@ -30,6 +35,8 @@ impl Default for ScriptSounds {
         Self {
             next: 1,
             instances: HashMap::new(),
+            categories: HashMap::new(),
+            categories_dirty: false,
         }
     }
 }
@@ -65,6 +72,7 @@ impl Engine {
             ),
             None => (None, None),
         };
+        self.tag_voice(voice, &desc.categories);
         let id = self.script_sounds.next;
         self.script_sounds.next += 1;
         self.script_sounds.instances.insert(
@@ -112,7 +120,46 @@ impl Engine {
     }
 
     /// Drop the instances that ended and wake the scripts waiting on them.
+    /// What a script does to a sound category (`SoundCategory.Mute`...): any
+    /// SNCT, reaching the sounds in it and below it.
+    pub fn change_sound_category(
+        &mut self,
+        category: FormId,
+        change: impl FnOnce(&mut crate::audio::CategoryState),
+    ) {
+        if self.lo.tag_of(category).map(|t| t.0) != Some(*b"SNCT") {
+            return;
+        }
+        let state = self.script_sounds.categories.entry(category.0).or_default();
+        change(state);
+        self.script_sounds.categories_dirty = true;
+    }
+
+    /// The state scripts left a sound category in.
+    pub fn sound_category(&self, category: FormId) -> crate::audio::CategoryState {
+        self.script_sounds
+            .categories
+            .get(&category.0)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Put sounds that play in the categories their descriptor names.
+    pub(crate) fn tag_voice(&mut self, voice: Option<VoiceId>, categories: &[u32]) {
+        if let (Some(v), Some(a)) = (voice, self.audio.as_mut()) {
+            a.set_voice_categories(v, categories);
+        }
+    }
+
     pub(crate) fn update_script_sounds(&mut self) {
+        if self.script_sounds.categories_dirty
+            && let Some(a) = self.audio.as_ref()
+        {
+            for (&c, &state) in &self.script_sounds.categories {
+                a.set_category(c, state);
+            }
+            self.script_sounds.categories_dirty = false;
+        }
         let ended: Vec<i32> = self
             .script_sounds
             .instances

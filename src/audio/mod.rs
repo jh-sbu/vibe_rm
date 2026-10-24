@@ -51,8 +51,32 @@ impl Falloff {
     }
 }
 
+/// What a script did to a sound category (`SoundCategory.Mute`, `Pause`,
+/// `SetVolume`, `SetFrequency`): it reaches every voice in the category or
+/// below it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CategoryState {
+    pub muted: bool,
+    pub paused: bool,
+    pub volume: f32,
+    pub frequency: f32,
+}
+
+impl Default for CategoryState {
+    fn default() -> Self {
+        CategoryState {
+            muted: false,
+            paused: false,
+            volume: 1.0,
+            frequency: 1.0,
+        }
+    }
+}
+
 struct Voice {
     id: VoiceId,
+    /// The categories it is in: its own and each parent up to the master.
+    categories: Vec<u32>,
     clip: Arc<Clip>,
     pos: f64,
     volume: f32,
@@ -72,6 +96,25 @@ struct Mixer {
     master: f32,
     /// Voices stopped while their clips were still decoding.
     cancelled: Vec<VoiceId>,
+    categories: HashMap<u32, CategoryState>,
+}
+
+impl Mixer {
+    /// What the categories a voice is in do to it together: silenced,
+    /// held, its volume and its playback rate.
+    fn category_effect(
+        categories: &HashMap<u32, CategoryState>,
+        of: &[u32],
+    ) -> (bool, bool, f32, f64) {
+        let (mut muted, mut paused, mut volume, mut frequency) = (false, false, 1.0, 1.0);
+        for s in of.iter().filter_map(|c| categories.get(c)) {
+            muted |= s.muted;
+            paused |= s.paused;
+            volume *= s.volume;
+            frequency *= s.frequency as f64;
+        }
+        (muted, paused, volume, frequency)
+    }
 }
 
 impl Mixer {
@@ -80,15 +123,22 @@ impl Mixer {
         let frames = out.len() / channels;
         let listener = self.listener;
         let right = self.listener_right;
+        let categories = &self.categories;
         for v in &mut self.voices {
-            let (mut gl, mut gr) = (v.volume, v.volume);
+            let (muted, paused, volume, frequency) =
+                Self::category_effect(categories, &v.categories);
+            if paused {
+                continue;
+            }
+            let volume = if muted { 0.0 } else { v.volume * volume };
+            let (mut gl, mut gr) = (volume, volume);
             if let Some(p) = v.at {
                 let att = v.falloff.gain(p.distance(listener));
                 let pan = ((p - listener).normalize_or_zero().dot(right)).clamp(-1.0, 1.0);
                 gl *= att * (1.0 - pan.max(0.0) * 0.6);
                 gr *= att * (1.0 + pan.min(0.0) * 0.6);
             }
-            let step = v.clip.rate as f64 / self.rate as f64 * v.pitch;
+            let step = v.clip.rate as f64 / self.rate as f64 * v.pitch * frequency;
             let n = v.clip.frames();
             if n == 0 {
                 v.pos = f64::MAX;
@@ -127,6 +177,7 @@ enum Pending {
         pitch: f32,
         at: Option<Vec3>,
         falloff: Falloff,
+        categories: Vec<u32>,
     },
 }
 
@@ -151,6 +202,7 @@ impl Audio {
             rate: 44100,
             master: 0.8,
             cancelled: Vec::new(),
+            categories: HashMap::new(),
         }));
         let mut rate = 44100;
         let stream = (|| -> Option<cpal::Stream> {
@@ -295,6 +347,7 @@ impl Audio {
             pitch,
             at,
             falloff,
+            categories: Vec::new(),
         };
         match self.cache.get(&key) {
             Some(Some(clip)) => {
@@ -321,6 +374,7 @@ impl Audio {
             pitch,
             at,
             falloff,
+            categories,
         } = p;
         if let Ok(mut m) = self.mixer.lock() {
             if let Some(i) = m.cancelled.iter().position(|&c| c == id) {
@@ -329,6 +383,7 @@ impl Audio {
             }
             m.voices.push(Voice {
                 id,
+                categories,
                 clip,
                 pos: 0.0,
                 volume,
@@ -337,6 +392,37 @@ impl Audio {
                 at,
                 falloff,
             });
+        }
+    }
+
+    /// Put a voice in sound categories (its own and its parents'), so what is
+    /// done to them reaches it (a waiting one's too).
+    pub fn set_voice_categories(&mut self, id: VoiceId, categories: &[u32]) {
+        for p in self.waiting.values_mut().flatten() {
+            let Pending::Play {
+                id: i,
+                categories: c,
+                ..
+            } = p;
+            if *i == id {
+                *c = categories.to_vec();
+            }
+        }
+        if let Ok(mut m) = self.mixer.lock() {
+            for v in m.voices.iter_mut().filter(|v| v.id == id) {
+                v.categories = categories.to_vec();
+            }
+        }
+    }
+
+    /// Set what is done to a sound category.
+    pub fn set_category(&self, category: u32, state: CategoryState) {
+        if let Ok(mut m) = self.mixer.lock() {
+            if state == CategoryState::default() {
+                m.categories.remove(&category);
+            } else {
+                m.categories.insert(category, state);
+            }
         }
     }
 
@@ -419,6 +505,56 @@ impl Audio {
 mod tests {
     use super::*;
 
+    /// A voice in category 7 of the ramp mixer, whose category was changed.
+    fn mixed_in_category(state: CategoryState) -> (Mixer, Vec<f32>) {
+        let mut m = mixer(1.0);
+        m.voices[0].categories = vec![3, 7];
+        m.categories.insert(7, state);
+        let mut out = vec![0.0; 20];
+        m.mix(&mut out, 1);
+        (m, out)
+    }
+
+    #[test]
+    fn a_sound_category_mutes_pauses_scales_and_speeds_its_voices() {
+        let (_, normal) = mixed_in_category(CategoryState::default());
+        assert!(normal[10] > 0.0);
+        let (_, muted) = mixed_in_category(CategoryState {
+            muted: true,
+            ..Default::default()
+        });
+        assert!(muted.iter().all(|&s| s == 0.0));
+        let (m, paused) = mixed_in_category(CategoryState {
+            paused: true,
+            ..Default::default()
+        });
+        assert!(paused.iter().all(|&s| s == 0.0));
+        assert_eq!(m.voices[0].pos, 0.0, "a paused voice doesn't advance");
+        let (_, quiet) = mixed_in_category(CategoryState {
+            volume: 0.5,
+            ..Default::default()
+        });
+        assert!((quiet[10] - normal[10] * 0.5).abs() < 1e-6);
+        let (_, slow) = mixed_in_category(CategoryState {
+            frequency: 0.5,
+            ..Default::default()
+        });
+        assert!((slow[10] - normal[5]).abs() < 1e-6, "half the rate");
+        // Another category leaves it alone.
+        let mut m = mixer(1.0);
+        m.voices[0].categories = vec![3];
+        m.categories.insert(
+            7,
+            CategoryState {
+                muted: true,
+                ..Default::default()
+            },
+        );
+        let mut out = vec![0.0; 20];
+        m.mix(&mut out, 1);
+        assert_eq!(out, normal);
+    }
+
     fn mixer(pitch: f64) -> Mixer {
         let clip = Arc::new(Clip {
             // A ramp the mix can be read against: frame i holds i / 1000.
@@ -428,6 +564,7 @@ mod tests {
         Mixer {
             voices: vec![Voice {
                 id: VoiceId(1),
+                categories: Vec::new(),
                 clip,
                 pos: 0.0,
                 volume: 1.0,
@@ -441,6 +578,7 @@ mod tests {
             rate: 1000,
             master: 1.0,
             cancelled: Vec::new(),
+            categories: HashMap::new(),
         }
     }
 

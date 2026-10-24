@@ -167,3 +167,14 @@ unit direction), the angle that counts as sungazing (12 degrees), the
 `CalculateFavorCost` formula (we return the price), and what the controls-disabled
 message of `SetInChargen` says. **test-mod** wanted: `GetSunPositionX/Y/Z` at a
 known hour, read back through `Debug.Notification`.
+
+## Knowledge, sound categories and settings
+
+Unconfirmed: whether `PlayerKnows` on a magic effect also counts effects learned
+other ways than eating or experimenting with an ingredient (we count only those);
+how a four-digit year prints in `GameTimeToString` (zero-padded: "0201"); whether
+category changes survive saves (we don't save them); whether `SetFrequency` above 1
+is accepted (we cap it at 1, as the page says 0..1); and whether `SetINI*` rejects
+unknown names (we accept them). **test-mod** wanted: `Utility.GameTimeToString(0.0)`
+shown in a message box, and `Mute` then `UnMute` on the music category while music
+plays.

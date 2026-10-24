@@ -35,6 +35,7 @@ mod impacts;
 mod invisibility;
 mod items;
 mod journal;
+mod knowledge;
 mod leveled;
 mod locations;
 mod locks;

@@ -21,6 +21,9 @@ pub struct SoundDesc {
     pub frequency_shift: f32,
     pub frequency_variance: f32,
     pub db_variance: f32,
+    /// Its sound category and each parent up to the master (form ids), for
+    /// what scripts do to categories.
+    pub categories: Vec<u32>,
 }
 
 /// A sound output model (SOPM) as far as it's used: whether it attenuates with
@@ -164,6 +167,17 @@ fn chain_volume(id: FormId, get: impl Fn(FormId) -> Option<Category>) -> f32 {
     volume
 }
 
+/// A category and each parent above it (form ids), nearest first.
+pub fn category_chain(lo: &LoadOrder, id: FormId) -> Vec<u32> {
+    let mut chain = Vec::new();
+    let mut at = Some(id);
+    while let Some(c) = at.filter(|c| !chain.contains(&c.0)) {
+        chain.push(c.0);
+        at = category(lo, c).and_then(|cat| cat.parent);
+    }
+    chain
+}
+
 /// The volume of the category named `edid` (`AudioCategoryMUS`...), 1 if the
 /// data has no such category.
 pub fn named_category_volume(lo: &LoadOrder, edid: &str) -> f32 {
@@ -230,6 +244,7 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
         frequency_shift: 0.0,
         frequency_variance: 0.0,
         db_variance: 0.0,
+        categories: Vec::new(),
     };
     if let Some(b) = rec.get(b"BNAM")
         && b.len() >= 6
@@ -246,6 +261,7 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
     {
         let c = rec.fid(FormId(u32::from_le_bytes(g[0..4].try_into().unwrap())));
         desc.volume *= category_volume(lo, c);
+        desc.categories = category_chain(lo, c);
     }
     if let Some(o) = rec.get(b"ONAM")
         && let Some(m) = output_model(
@@ -341,6 +357,7 @@ mod tests {
             frequency_shift: shift,
             frequency_variance: variance,
             db_variance: db,
+            categories: vec![],
         }
     }
 
