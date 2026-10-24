@@ -515,6 +515,18 @@ pub fn call(
                 None => none(),
             }
         }
+        // (aiLinkedRef): follow the unkeyworded link that many times; 0 is
+        // the reference itself.
+        ("objectreference", "getnthlinkedref") => {
+            let mut at = me;
+            for _ in 0..arg(0).as_int().max(0) {
+                at = at.and_then(|r| e.linked_ref(r, None));
+            }
+            match at {
+                Some(r) => v(e.object_value(r)),
+                None => none(),
+            }
+        }
         ("objectreference", "getparentcell") => match me.and_then(|f| e.lo.cell_of_ref(f)) {
             Some(c) => v(e.object_value(c)),
             None => none(),

@@ -13,3 +13,16 @@ names shared between classes share their count).
   from a leveled list (we follow the first pick, as for a reference with no
   seed), and whether it returns the base's own `RNAM` instead. `SetRace` is
   not supported, so the race never changes.
+
+## `GetNthLinkedRef`
+
+- `ObjectReference.GetNthLinkedRef(aiLinkedRef)` (66 calls) follows the
+  reference's linked ref (`XLKR`, as `GetLinkedRef()` with no keyword reads
+  it) that many times: 1 is the linked ref, 2 its linked ref, and so on;
+  None once the chain ends. Vanilla scripts pair it with the non-native
+  `CountLinkedRefChain` and pick 1..count (`CWCatapultStrikeSpawnerScript`,
+  `DartTrap`, the DLC ambush scripts), which fixes 1 as the first link.
+- Unconfirmed: 0 and negative numbers (we return the reference itself; no
+  vanilla call passes them), and whether a keyworded link counts when the
+  reference has no unkeyworded one (`GetLinkedRef()` here takes the first
+  link of any keyword, so the chain does too).
