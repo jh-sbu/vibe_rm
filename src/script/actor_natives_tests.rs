@@ -87,7 +87,6 @@ fn fixture(name: &str) -> (Fixture, Engine) {
 }
 
 /// Put an actor in a loaded interior.
-#[allow(dead_code)]
 fn place(e: &mut Engine, r: FormId, base: FormId) {
     let key = crate::render::CellKey::Interior(FormId(0x820));
     let a = ActorRuntime::new(
@@ -144,4 +143,38 @@ fn get_nth_linked_ref_follows_the_chain() {
             "{n}"
         );
     }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn stop_combat_alarm_ends_fights_and_pursuits_of_the_actor() {
+    use crate::ai::combat::Combat;
+    use crate::engine::PLAYER_REF;
+    const ATTACKER: FormId = FormId(0x901);
+    const BRAWLER: FormId = FormId(0x902);
+    // A reference with a record, so scripts can name it.
+    const VICTIM: FormId = ACTOR;
+    const GUARD: FormId = FormId(0x904);
+    let (_f, mut e) = fixture("alarm");
+    for r in [ATTACKER, BRAWLER, VICTIM] {
+        place(&mut e, r, NPC);
+    }
+    e.actor_mut(ATTACKER).unwrap().combat = Some(Combat::new(PLAYER_REF));
+    e.actor_mut(BRAWLER).unwrap().combat = Some(Combat::new(VICTIM));
+    e.crime.arrests.alarmed.insert(
+        GUARD,
+        crate::arrest::Pursuit {
+            faction: FormId(0x905),
+            bark_in: 0.0,
+        },
+    );
+    call(&mut e, "actor", "stopcombatalarm", PLAYER_REF, &[]);
+    assert!(e.actor_ref(ATTACKER).unwrap().combat.is_none());
+    assert!(e.crime.arrests.alarmed.is_empty(), "pursuers give up");
+    assert!(
+        e.actor_ref(BRAWLER).unwrap().combat.is_some(),
+        "not the player's"
+    );
+    call(&mut e, "actor", "stopcombatalarm", VICTIM, &[]);
+    assert!(e.actor_ref(BRAWLER).unwrap().combat.is_none());
 }

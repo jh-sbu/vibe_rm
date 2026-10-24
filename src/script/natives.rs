@@ -977,6 +977,12 @@ pub fn call(
             none()
         }
         // Fighting or searching, it calms down (it may find a reason to fight again).
+        ("actor", "stopcombatalarm") => {
+            if let Some(a) = me {
+                e.stop_combat_alarm(a);
+            }
+            none()
+        }
         ("actor", "stopcombat") => {
             if let Some(a) = me {
                 e.end_combat(a);

@@ -352,6 +352,36 @@ impl Engine {
         }
     }
 
+    /// Papyrus `StopCombatAlarm` (vanilla calls it on the player after a
+    /// bribe or persuasion, `CrimeGuardsScript`): `actor` and everyone
+    /// fighting or searching for it stop, and the guards pursuing it (the
+    /// player's pursuers, for the player) give up.
+    pub fn stop_combat_alarm(&mut self, actor: FormId) {
+        let involved: Vec<FormId> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| {
+                a.ref_id == actor
+                    || a.combat.as_ref().is_some_and(|c| c.target == actor)
+                    || a.search.is_some_and(|s| s.target == actor)
+            })
+            .map(|a| a.ref_id)
+            .collect();
+        for r in involved {
+            self.end_combat(r);
+            self.stop_searching(r);
+        }
+        let pursuers: Vec<FormId> = if actor == PLAYER_REF {
+            self.crime.arrests.alarmed.keys().copied().collect()
+        } else {
+            vec![actor]
+        };
+        for g in pursuers {
+            self.calm_guard(g);
+        }
+    }
+
     /// A guard stops pursuing the player.
     fn calm_guard(&mut self, r: FormId) {
         self.crime.arrests.alarmed.remove(&r);
