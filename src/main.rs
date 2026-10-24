@@ -58,6 +58,7 @@ mod render;
 mod save;
 mod scene;
 mod script;
+mod script_sounds;
 mod shouts;
 mod skills;
 mod sleep;

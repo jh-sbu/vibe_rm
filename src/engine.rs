@@ -181,6 +181,8 @@ pub struct Engine {
     pub(crate) traps: crate::traps::Traps,
     /// Scripts registered for animation events, and the events to deliver.
     pub(crate) anim_events: crate::anim_events::AnimEvents,
+    /// Instances of the sounds scripts started (`Sound.Play`).
+    pub(crate) script_sounds: crate::script_sounds::ScriptSounds,
     /// Activate parents and the child activations waiting on their delay.
     pub(crate) activation: crate::activation::Activation,
     /// Activate held down, and what the player has grabbed.
@@ -489,6 +491,7 @@ impl Engine {
             activation: Default::default(),
             traps: Default::default(),
             anim_events: Default::default(),
+            script_sounds: Default::default(),
             disabled_controls: Default::default(),
             fast_travel_disabled: false,
             hud_cart_mode: false,
@@ -2621,6 +2624,7 @@ impl Engine {
             a.update();
         }
         self.update_music();
+        self.update_script_sounds();
         self.update_conversation();
         self.update_barks();
         self.update_imagespace(dt);
@@ -2659,6 +2663,7 @@ impl Engine {
             a.update();
         }
         self.update_music();
+        self.update_script_sounds();
     }
 
     fn update_look_target(&mut self) {

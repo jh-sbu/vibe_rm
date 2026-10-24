@@ -2065,8 +2065,33 @@ pub fn call(
             _ => none(),
         },
         // ------------------------------------------------------------- Misc
-        ("sound", "play") => v(Value::Int(0)),
-        ("sound", "playandwait") => none(),
+        // The instance id, 0 without a descriptor or a source.
+        ("sound", "play") | ("sound", "playandwait") => {
+            let at = form_arg(args, 0).and_then(|r| e.ref_position(r));
+            let id = match (me, at) {
+                (Some(s), Some(at)) => e.play_sound_instance(s, at),
+                _ => 0,
+            };
+            if func == "play" {
+                return v(Value::Int(id));
+            }
+            match e.sound_instance_wait(id) {
+                Some((key, timeout)) => NativeResult::WaitFor {
+                    key,
+                    timeout,
+                    value: Value::Int(id),
+                },
+                None => v(Value::Int(id)),
+            }
+        }
+        ("sound", "stopinstance") => {
+            e.stop_sound_instance(arg(0).as_int());
+            none()
+        }
+        ("sound", "setinstancevolume") => {
+            e.set_sound_instance_volume(arg(0).as_int(), arg(1).as_float());
+            none()
+        }
         // A message box waits for the player's button.
         ("message", "show") => match me {
             Some(m) => {
