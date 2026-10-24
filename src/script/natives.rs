@@ -1861,9 +1861,13 @@ pub fn call(
                 .map_or(-1, |i| i as i32),
             _ => -1,
         })),
-        ("cell", "isattached") | ("cell", "isinterior") => v(Value::Bool(
-            func == "isattached" || matches!(e.location, crate::engine::Location::Interior(_)),
-        )),
+        ("cell", "isattached") => v(Value::Bool(true)),
+        ("cell", "isinterior") => v(Value::Bool(me.and_then(|c| e.lo.get(c)).is_some_and(|r| {
+            r.tag().0 == *b"CELL"
+                && r.get(b"DATA")
+                    .and_then(|d| d.first())
+                    .is_some_and(|f| f & 1 != 0)
+        }))),
         ("math", _) => math::call(func, args).map_or_else(none, v),
         _ => {
             let key = format!("{class}.{func}");

@@ -96,3 +96,35 @@ fn get_class_follows_only_the_stats_template() {
         Value::None
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn is_interior_queries_the_cell_not_the_player() {
+    let (_f, mut e) = fixture(vec![Node::top(
+        b"CELL",
+        vec![
+            RecordBuilder::new(b"CELL", FormId(0x800)).field(b"DATA", &[1]),
+            RecordBuilder::new(b"CELL", FormId(0x801)).field(b"DATA", &[2, 0]),
+            RecordBuilder::new(b"CELL", FormId(0x802)).field(b"DATA", &[]),
+        ],
+    )]);
+    for location in [
+        crate::engine::Location::Interior(FormId(0x801)),
+        crate::engine::Location::Exterior {
+            world: FormId(0x900),
+            center: (0, 0),
+        },
+    ] {
+        e.location = location;
+        assert_eq!(
+            call(&mut e, "cell", "isinterior", FormId(0x800), &[]),
+            Value::Bool(true)
+        );
+        for id in [0x801, 0x802, 0] {
+            assert_eq!(
+                call(&mut e, "cell", "isinterior", FormId(id), &[]),
+                Value::Bool(false)
+            );
+        }
+    }
+}
