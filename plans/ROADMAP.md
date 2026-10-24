@@ -5,6 +5,12 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Active magic effects (`AEFF`), their scripts (`VM`) and tapers (`TAPR`)
+  survive native saves without restarting or doubling held values; graph
+  open states (`GOPN`) replay on rebuilt graphs. Caught pickpocket victims
+  forget after two days away (`PKTM`), and searchers give up lost targets
+  that fled. Scope and tests: `plans/roadmap-effects-six-items.md`; open
+  questions: `known_ambiguities/saves.md`, `crime.md`, `detection.md`.
 - Fifteen more native save-continuity items retain trespass/home warnings,
   guard pursuits, resistance/yield progress, jail sentences and days, delayed
   activations, both random streams, last-hit critical memory, sneak stance,
@@ -1887,7 +1893,7 @@ game each piece unlocks.
    speed-to-aspect runtime fidelity, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves** (the container, the engine's state and the Papyrus VM are done:
-   see Done): active magic effects, scene state,
+   see Done): scene state,
    AI progress, objects' behaviour graphs, detection; reading the
    original's `.ess` saves later; a save / load menu (the System page),
    load orders that changed since the save, and the original's refusals to
