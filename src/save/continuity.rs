@@ -51,6 +51,8 @@ pub(crate) struct Continuity {
     pub graph_open: HashMap<FormId, crate::world::animated::OpenState>,
     /// Factions' reactions towards others changed by scripts.
     pub faction_reactions: HashMap<(FormId, FormId), crate::factions::Reaction>,
+    /// Factions' player flags changed by scripts.
+    pub faction_player_flags: HashMap<FormId, u8>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -253,6 +255,7 @@ impl Continuity {
             tapers: e.saved_tapers(),
             graph_open: e.world_state.graph_open.clone(),
             faction_reactions: e.factions.reactions.clone(),
+            faction_player_flags: e.factions.player_flags.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -531,6 +534,13 @@ impl Continuity {
             w.u32(r.combat);
         }
         file.add(b"FRCT", w.0);
+        let mut w = Writer::default();
+        w.len(self.faction_player_flags.len());
+        for (faction, flags) in sorted(&self.faction_player_flags) {
+            w.form(faction);
+            w.u8(*flags);
+        }
+        file.add(b"FPLR", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -702,6 +712,15 @@ impl Continuity {
                     combat: r.u32()?,
                 };
                 s.faction_reactions.insert(key, reaction);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"FPLR")? {
+            let mut previous = None;
+            for _ in 0..r.count(5)? {
+                let faction = r.form()?;
+                ordered(&mut previous, faction)?;
+                s.faction_player_flags.insert(faction, r.u8()?);
             }
             r.finish()?;
         }
@@ -885,6 +904,12 @@ impl Continuity {
             nonnull(to)?;
             if r.combat > crate::factions::MAX_COMBAT_REACTION {
                 return Err(Corrupt("invalid faction combat reaction".into()));
+            }
+        }
+        for (&faction, &flags) in &self.faction_player_flags {
+            nonnull(faction)?;
+            if flags & !crate::factions::PLAYER_FLAGS != 0 {
+                return Err(Corrupt("unknown faction player flags".into()));
             }
         }
         for (x, rate, elapsed) in &self.tapers {
@@ -1141,5 +1166,6 @@ impl Continuity {
         // Before the save's cells load: graphs built afresh replay these.
         e.world_state.graph_open = self.graph_open;
         e.restore_faction_reactions(self.faction_reactions);
+        e.restore_faction_player_flags(self.faction_player_flags);
     }
 }

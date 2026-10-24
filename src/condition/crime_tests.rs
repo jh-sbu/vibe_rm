@@ -8,6 +8,8 @@ const FACTION: FormId = FormId(0x840);
 const OTHER_FACTION: FormId = FormId(0x841);
 const NPC: FormId = FormId(0x850);
 const BYSTANDER: FormId = FormId(0x851);
+/// A faction whose `DATA` has the player expelled and an enemy.
+const SHUNNING: FormId = FormId(0x842);
 
 const GET_CRIME_GOLD_VIOLENT: u16 = 375;
 const GET_INFAMY: u16 = 533;
@@ -30,7 +32,16 @@ fn fixture() -> (Fixture, Engine) {
         std::env::temp_dir().join(format!("vrm-crime-cond-{}-{stamp}", std::process::id())),
     );
     std::fs::create_dir(&dir.0).unwrap();
-    let records = [Node::top(b"QUST", vec![RecordBuilder::new(b"QUST", QUEST)])];
+    let records = [
+        Node::top(b"QUST", vec![RecordBuilder::new(b"QUST", QUEST)]),
+        Node::top(
+            b"FACT",
+            vec![
+                RecordBuilder::new(b"FACT", FACTION).field(b"DATA", &0u32.to_le_bytes()),
+                RecordBuilder::new(b"FACT", SHUNNING).field(b"DATA", &0x4Cu32.to_le_bytes()),
+            ],
+        ),
+    ];
     std::fs::write(
         dir.0.join("Crime.esp"),
         write_plugin(0, &[], "test", "synthetic crime state", 0x900, &records),
@@ -112,10 +123,38 @@ fn infamy_of_an_actor_without_a_faction_is_its_crime_faction_or_nothing() {
 fn crime_functions_without_crime_state_are_unsupported() {
     let (_dir, e) = fixture();
     // Unsupported conditions fail whatever value they are compared with.
-    for func in [122, 176, 193, 195, 197, 199, 458] {
+    for func in [122, 176, 195, 199, 458] {
         assert!(
             !holds(&e, PLAYER_REF, func, FACTION, 0.0),
             "condition {func} should be unsupported"
         );
     }
+}
+
+#[test]
+fn player_faction_flags_start_as_the_factions_data_and_follow_scripts() {
+    const GET_PC_EXPELLED: u16 = 193;
+    const GET_PC_ENEMY_OF_FACTION: u16 = 197;
+    let (_dir, mut e) = fixture();
+    for func in [GET_PC_EXPELLED, GET_PC_ENEMY_OF_FACTION] {
+        assert!(holds(&e, PLAYER_REF, func, SHUNNING, 1.0));
+        assert!(holds(&e, NPC, func, SHUNNING, 1.0), "any subject");
+        assert!(holds(&e, PLAYER_REF, func, FACTION, 0.0));
+        assert!(holds(&e, PLAYER_REF, func, OTHER_FACTION, 0.0), "no record");
+    }
+    e.set_faction_player_flag(FACTION, crate::factions::PLAYER_ENEMY, true);
+    e.set_faction_player_flag(SHUNNING, crate::factions::PLAYER_EXPELLED, false);
+    assert!(holds(&e, PLAYER_REF, GET_PC_ENEMY_OF_FACTION, FACTION, 1.0));
+    assert!(holds(&e, PLAYER_REF, GET_PC_EXPELLED, FACTION, 0.0));
+    assert!(holds(&e, PLAYER_REF, GET_PC_EXPELLED, SHUNNING, 0.0));
+    assert!(holds(
+        &e,
+        PLAYER_REF,
+        GET_PC_ENEMY_OF_FACTION,
+        SHUNNING,
+        1.0
+    ));
+    // Only factions take the flags.
+    e.set_faction_player_flag(QUEST, crate::factions::PLAYER_ENEMY, true);
+    assert!(!e.factions.player_flags.contains_key(&QUEST));
 }

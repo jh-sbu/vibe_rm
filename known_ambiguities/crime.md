@@ -195,10 +195,11 @@ locations name it.
   the rises (`mod_crime_gold`), so paying off a bounty leaves it. Not checked
   against the game.
 - Unsupported, failing whatever they are compared with: `GetCrime` (122),
-  `GetActorCrimePlayerEnemy` (458), `IsPCAMurderer` (176), `GetPCExpelled`
-  (193), `GetPCFactionMurder` (195), `GetPCEnemyofFaction` (197),
-  `GetPCFactionAttack` (199). Unconfirmed: what sets each flag and when, and
-  whether a murder flag is kept beyond the Murders stat. Sources checked:
+  `GetActorCrimePlayerEnemy` (458), `IsPCAMurderer` (176),
+  `GetPCFactionMurder` (195), `GetPCFactionAttack` (199). Unconfirmed: what
+  sets each flag and when, and whether a murder flag is kept beyond the
+  Murders stat. (`GetPCExpelled` and `GetPCEnemyofFaction` read the
+  faction's player flags: `known_ambiguities/factions.md`.) Sources checked:
   the function index and raw function data of the Skyrim Mod wiki
   (signatures only, no meanings), the Skyrim Console page (names only), and
   CommonLibSSE `TESFaction` (`kPlayerIsExpelled` 1 << 2, `kPlayerIsEnemy` 1 << 3

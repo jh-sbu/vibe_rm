@@ -53,3 +53,17 @@
   `QF_ccBGSSSE001_Crab_MQ4_050009E9`, sets the guards' reaction towards the
   flaming crabs to 1, which reads like "enemy" if it is the combat
   reaction. `ModReaction` and `GetReaction` have no vanilla callers.
+
+## The player's flags (`SetPlayerExpelled`, `SetPlayerEnemy`)
+
+- Each faction's flags start as its `DATA` bits 2 (expelled) and 3 (enemy),
+  as CommonLibSSE `FACTION_DATA` names them. `SetPlayerExpelled` and
+  `SetPlayerEnemy` set or clear one flag, true if the argument is missing.
+  `IsPlayerExpelled`, `GetPCExpelled` (193) and `GetPCEnemyofFaction` (197)
+  read them, the conditions whoever their subject is. Changes are saved in
+  optional `FPLR`; legacy saves have none, so factions are as their plugins
+  say. Calls on forms that aren't factions do nothing.
+- Unconfirmed: what being expelled does besides these reads. No vanilla
+  script calls `SetPlayerExpelled` or `IsPlayerExpelled` and no vanilla
+  condition uses 193 (`vrm-tool pex-calls`, `ctda-uses`), so we change
+  nothing else. Rank, membership and services stay as they were.

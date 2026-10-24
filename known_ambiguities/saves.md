@@ -397,3 +397,11 @@ react as their plugins say. The original saves a faction's changed
 reactions as change form data (CommonLibSSE `TESFaction::ChangeFlags`
 `kFactionReactions`); its layout is unknown. Native policy, not an SE claim.
 Choices: `known_ambiguities/factions.md`.
+
+## Faction player flags (`FPLR`)
+
+Optional `FPLR` keeps the player expelled / enemy flags (`DATA` bits 2 and 3)
+of each faction a script changed, sorted by faction. Loading replaces this
+session's flags; legacy saves have none, so each faction's `DATA` holds.
+The original keeps changed faction flags as change form data
+(`kFactionFlags`, layout unknown). Native policy, not an SE claim.
