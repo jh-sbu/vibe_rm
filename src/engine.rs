@@ -138,6 +138,7 @@ pub struct Engine {
     /// Factions' standing changed by scripts (`crate::factions`).
     pub(crate) factions: crate::factions::Factions,
     pub(crate) protection: crate::protection::Protection,
+    pub(crate) formlists: crate::formlists::FormLists,
     /// Armor and block game settings, read on first use.
     pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
     /// Independently timed strength contributions of loaded combat members.
@@ -464,6 +465,7 @@ impl Engine {
             faction_relations: Default::default(),
             factions: Default::default(),
             protection: Default::default(),
+            formlists: Default::default(),
             combat_settings: Default::default(),
             combat_group_strengths: Default::default(),
             detection: Default::default(),
@@ -3332,16 +3334,6 @@ impl Engine {
             self.inventory_event(to, true, item, n, Some(r));
         }
         removed
-    }
-
-    pub fn formlist(&self, f: FormId) -> Vec<FormId> {
-        let Some(rec) = self.lo.get(f) else {
-            return Vec::new();
-        };
-        rec.subrecords()
-            .filter(|s| s.tag.0 == *b"LNAM")
-            .map(|s| rec.fid(s.form_id(0)))
-            .collect()
     }
 
     pub fn objective_text(&self, q: FormId, objective: i32) -> String {

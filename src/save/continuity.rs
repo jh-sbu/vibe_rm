@@ -59,6 +59,8 @@ pub(crate) struct Continuity {
     pub base_flags: HashMap<(FormId, u32), bool>,
     /// References `SetGhost` made ghosts or not.
     pub ghosts: HashMap<FormId, bool>,
+    /// Forms scripts added to form lists, by list, in the order added.
+    pub formlist_additions: HashMap<FormId, Vec<FormId>>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -265,6 +267,7 @@ impl Continuity {
             attacked_on_sight: e.factions.attacked_on_sight.clone(),
             base_flags: e.protection.base_flags.clone(),
             ghosts: e.protection.ghosts.clone(),
+            formlist_additions: e.formlists.added.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -573,6 +576,16 @@ impl Continuity {
             w.bool(*on);
         }
         file.add(b"GHST", w.0);
+        let mut w = Writer::default();
+        w.len(self.formlist_additions.len());
+        for (list, forms) in sorted(&self.formlist_additions) {
+            w.form(list);
+            w.len(forms.len());
+            for &f in forms {
+                w.form(f);
+            }
+        }
+        file.add(b"FLAD", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -753,6 +766,19 @@ impl Continuity {
                 let id = r.form()?;
                 ordered(&mut previous, id)?;
                 s.attacked_on_sight.insert(id);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"FLAD")? {
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let list = r.form()?;
+                ordered(&mut previous, list)?;
+                let mut forms = Vec::new();
+                for _ in 0..r.count(4)? {
+                    forms.push(r.form()?);
+                }
+                s.formlist_additions.insert(list, forms);
             }
             r.finish()?;
         }
@@ -967,6 +993,18 @@ impl Continuity {
         }
         for &id in &self.attacked_on_sight {
             nonnull(id)?;
+        }
+        for (&list, forms) in &self.formlist_additions {
+            nonnull(list)?;
+            if forms.is_empty() {
+                return Err(Corrupt("empty form list additions".into()));
+            }
+            for (i, &f) in forms.iter().enumerate() {
+                nonnull(f)?;
+                if forms[..i].contains(&f) {
+                    return Err(Corrupt("form added to a list twice".into()));
+                }
+            }
         }
         for &actor in self.ghosts.keys() {
             nonnull(actor)?;
@@ -1241,5 +1279,6 @@ impl Continuity {
         e.restore_attacked_on_sight(self.attacked_on_sight);
         e.restore_base_flags(self.base_flags);
         e.restore_ghosts(self.ghosts);
+        e.restore_formlist_additions(self.formlist_additions);
     }
 }
