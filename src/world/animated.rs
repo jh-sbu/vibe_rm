@@ -49,6 +49,29 @@ impl OpenState {
             _ => return None,
         })
     }
+
+    /// The event that brings a graph built afresh (after a save loads) to
+    /// this state: the end states snap there, a movement under way plays
+    /// again (`known_ambiguities/saves.md`).
+    pub(crate) fn replay_event(self) -> Option<&'static str> {
+        match self {
+            Self::Open => Some("Opened"),
+            Self::Closed => Some("Closed"),
+            Self::Opening => Some("Open"),
+            Self::Closing => Some("Close"),
+            Self::None => None,
+        }
+    }
+
+    pub(crate) fn from_code(code: u8) -> Option<Self> {
+        Some(match code {
+            1 => Self::Open,
+            2 => Self::Opening,
+            3 => Self::Closed,
+            4 => Self::Closing,
+            _ => return None,
+        })
+    }
 }
 
 /// The `Vm::signal_with` key a `GetOpenState` on `r` waits for.
@@ -569,6 +592,21 @@ mod node_controller_tests {
         assert_eq!(S::after_event("Opening", true), None);
         assert_eq!(S::after_event("Trigger01", true), None);
     }
+
+    #[test]
+    fn rebuilt_graphs_replay_the_event_that_reaches_their_saved_state() {
+        use super::OpenState as S;
+        for s in [S::Open, S::Opening, S::Closed, S::Closing] {
+            assert_eq!(S::from_code(s as u8), Some(s));
+            // Sending the replayed event leads to the same state (snapped,
+            // or under way again).
+            let ev = s.replay_event().unwrap();
+            assert_eq!(S::after_event(ev, true), Some(s));
+        }
+        assert_eq!(S::None.replay_event(), None);
+        assert_eq!(S::from_code(0), None);
+        assert_eq!(S::from_code(5), None);
+    }
 }
 
 impl Engine {
@@ -709,13 +747,27 @@ impl Engine {
                 log::debug!("{}: graph resumes in {:?}", obj.ref_id, g.active_states());
                 g
             }
-            _ => crate::world::behavior::GraphAnim::new(
-                project,
-                &rig,
-                false,
-                &skeleton,
-                self.rng ^ obj.ref_id.0 as u64,
-            ),
+            _ => {
+                let mut g = crate::world::behavior::GraphAnim::new(
+                    project,
+                    &rig,
+                    false,
+                    &skeleton,
+                    self.rng ^ obj.ref_id.0 as u64,
+                );
+                // A graph whose state wasn't kept (a loaded save) goes back
+                // to the open state it had.
+                if let Some(ev) = self
+                    .world_state
+                    .graph_open
+                    .get(&obj.ref_id)
+                    .and_then(|s| s.replay_event())
+                {
+                    log::debug!("{}: graph rebuilt, sent {ev}", obj.ref_id);
+                    g.send_event(ev);
+                }
+                g
+            }
         };
         anim.label = obj.ref_id.to_string();
         let bones: Vec<Option<usize>> = obj

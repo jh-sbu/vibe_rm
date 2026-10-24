@@ -366,3 +366,24 @@ Native policies (not SE claims):
   effects `AEFF` keeps are written; finished effects' lingering scripts are
   dropped, as before. A save whose `VM` names an effect `AEFF` doesn't keep
   is refused before anything changes. Legacy saves had no effect objects.
+
+## Behaviour graph open states (`GOPN`)
+
+Objects' behaviour graphs themselves (states, clocks, variables) are not
+saved; loading clears the parked graphs as before. Optional `GOPN` keeps the
+open state each graph object reached through its `Open` / `Close` /
+`Opened` / `Closed` events and raised `Opening` / `Closing` (what
+`GetOpenState` reads). After a load, a graph built afresh is sent one event
+to get back there: `Opened` or `Closed` for the end states, `Open` or `Close`
+for a movement under way, which then plays again from the graph's start.
+Legacy saves have no open states, so graph objects start as their graphs
+start.
+
+Native policy, not an SE claim. UESP's
+[Save File Format, revision 3067914](https://en.uesp.net/w/index.php?oldid=3067914)
+lists an "Anim Objects" global section (1002) with no documented contents.
+Open: whether the original saves graph states and resumes them exactly,
+whether a graph that doesn't know `Opened` / `Closed` (only `Open` /
+`Close`) ends up in the right pose, which this replay can't do, and graph
+objects with other states (levers, rockfalls, traps), which this doesn't
+cover.
