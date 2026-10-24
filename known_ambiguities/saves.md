@@ -441,3 +441,9 @@ Optional `OUTF` lists (actor, outfit) for each reference `SetOutfit` gave a
 default outfit, sorted. The armor itself is in the saved inventories.
 Loading replaces this session's; legacy saves have none, so actors wear
 their NPC's `DOFT`. Native policy, not an SE claim.
+
+## Actors with their AI off (`AIOF`)
+
+Optional `AIOF` lists the actors `EnableAI(false)` turned off, sorted.
+Loading replaces this session's; legacy saves have none, so every actor's AI
+runs. Native policy, not an SE claim.

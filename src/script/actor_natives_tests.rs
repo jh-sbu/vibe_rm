@@ -290,3 +290,21 @@ fn delete_removes_references_made_while_playing() {
     call(&mut e, "objectreference", "delete", FIRST, &[]);
     assert!(!e.is_disabled(FIRST));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn enable_ai_turns_an_actors_ai_off_and_on() {
+    let (_f, mut e) = fixture("ai");
+    assert_eq!(
+        call(&mut e, "actor", "isaienabled", ACTOR, &[]),
+        Value::Bool(true)
+    );
+    call(&mut e, "actor", "enableai", ACTOR, &[Value::Bool(false)]);
+    assert_eq!(
+        call(&mut e, "actor", "isaienabled", ACTOR, &[]),
+        Value::Bool(false)
+    );
+    assert!(e.ai_enabled, "the console's switch is everyone's");
+    call(&mut e, "actor", "enableai", ACTOR, &[]);
+    assert!(e.ai_off.is_empty(), "true when the argument is missing");
+}

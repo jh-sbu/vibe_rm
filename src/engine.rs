@@ -295,6 +295,9 @@ pub struct Engine {
     pub moved_refs: HashMap<FormId, Vec3>,
     /// Actor AI processing (toggled with the `tai` console command).
     pub ai_enabled: bool,
+    /// Actors whose AI scripts turned off (`Actor.EnableAI(false)`): they
+    /// stand where they are (saved: `AIOF`).
+    pub(crate) ai_off: std::collections::HashSet<FormId>,
     pub whereabouts: crate::ai::schedule::Whereabouts,
     /// Cell each spawned actor reference belongs to.
     pub actor_cells: HashMap<FormId, CellKey>,
@@ -517,6 +520,7 @@ impl Engine {
             patrol_paths: Default::default(),
             moved_refs: HashMap::new(),
             ai_enabled: true,
+            ai_off: Default::default(),
             whereabouts: Default::default(),
             actor_cells: HashMap::new(),
         }
