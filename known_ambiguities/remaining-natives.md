@@ -91,3 +91,13 @@ source; `Audio` has no position setter). Script-started loops are not saved:
 after a load a stored id stops nothing. Inference: SE does not persist sound
 handles. **test-mod** wanted: start a looping `Sound.Play`, save, load, and
 check whether it is still audible and whether `StopInstance` stops it.
+
+## Music queue (MusicType.Add / Remove)
+
+Tie-breaking at equal priority (we take the first queued, and a queued type
+over the location's), whether `Add` of an already queued type moves it (we keep
+its place), and whether script-added entries survive a save (we save them as
+`MUSQ`) are unverified. Fades and ducking are not implemented, and an abrupt
+versus graceful change is our reading of the MUSC flags. **test-mod** wanted
+for the last two: `Add` a type, save, load and see whether it still plays; and
+`Add` two types of equal priority and see which plays.

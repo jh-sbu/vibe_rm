@@ -5725,6 +5725,38 @@ fn outfits_replace_the_sessions_after_loading() {
 }
 
 #[test]
+fn music_queue_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.music_queue = vec![CELL, ACTOR];
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.music_queue, s.continuity.music_queue);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"MUSQ");
+    for bad in [vec![FormId::NULL], vec![ACTOR, ACTOR]] {
+        s.continuity.music_queue = bad;
+        assert!(Snapshot::read(&s.write()).is_err());
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn music_queue_replaces_the_sessions_after_loading() {
+    let (_a, mut a) = engine("music-a");
+    a.music.queue.add(ACTOR, true);
+    a.music.queue.add(CELL, false);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("music-b");
+    b.music.queue.add(SCENE_ACTOR, true);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.music.queue.script_entries(), [ACTOR]);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"MUSQ");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.music.queue.script_entries().is_empty());
+}
+
+#[test]
 fn ai_off_payload() {
     let mut s = Snapshot::default();
     s.continuity.ai_off.extend([ACTOR, SCENE_ACTOR]);

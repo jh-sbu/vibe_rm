@@ -2084,6 +2084,16 @@ pub fn call(
                 None => v(Value::Int(id)),
             }
         }
+        ("musictype", "add") | ("musictype", "remove") => {
+            if let Some(m) = me {
+                if func == "add" {
+                    e.add_music(m);
+                } else {
+                    e.remove_music(m);
+                }
+            }
+            none()
+        }
         ("sound", "stopinstance") => {
             e.stop_sound_instance(arg(0).as_int());
             none()

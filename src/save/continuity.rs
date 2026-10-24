@@ -63,6 +63,8 @@ pub(crate) struct Continuity {
     pub formlist_additions: HashMap<FormId, Vec<FormId>>,
     /// Outfits scripts gave actors.
     pub outfits: HashMap<FormId, FormId>,
+    /// Music types scripts queued, in the order added.
+    pub music_queue: Vec<FormId>,
     /// Actors whose AI scripts turned off.
     pub ai_off: std::collections::HashSet<FormId>,
 }
@@ -273,6 +275,7 @@ impl Continuity {
             ghosts: e.protection.ghosts.clone(),
             formlist_additions: e.formlists.added.clone(),
             outfits: e.outfits.set.clone(),
+            music_queue: e.music.queue.script_entries(),
             ai_off: e.ai_off.clone(),
         }
     }
@@ -600,6 +603,12 @@ impl Continuity {
         }
         file.add(b"OUTF", w.0);
         let mut w = Writer::default();
+        w.len(self.music_queue.len());
+        for &music in &self.music_queue {
+            w.form(music);
+        }
+        file.add(b"MUSQ", w.0);
+        let mut w = Writer::default();
         let mut ids: Vec<_> = self.ai_off.iter().copied().collect();
         ids.sort();
         w.len(ids.len());
@@ -805,6 +814,12 @@ impl Continuity {
                 let actor = r.form()?;
                 ordered(&mut previous, actor)?;
                 s.outfits.insert(actor, r.form()?);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"MUSQ")? {
+            for _ in 0..r.count(4)? {
+                s.music_queue.push(r.form()?);
             }
             r.finish()?;
         }
@@ -1039,6 +1054,12 @@ impl Continuity {
         for (&actor, &outfit) in &self.outfits {
             nonnull(actor)?;
             nonnull(outfit)?;
+        }
+        for (i, &music) in self.music_queue.iter().enumerate() {
+            nonnull(music)?;
+            if self.music_queue[..i].contains(&music) {
+                return Err(Corrupt("music type queued twice".into()));
+            }
         }
         for (&list, forms) in &self.formlist_additions {
             nonnull(list)?;
@@ -1327,6 +1348,7 @@ impl Continuity {
         e.restore_ghosts(self.ghosts);
         e.restore_formlist_additions(self.formlist_additions);
         e.restore_outfits(self.outfits);
+        e.restore_music_queue(self.music_queue);
         e.ai_off = self.ai_off;
     }
 }

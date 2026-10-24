@@ -117,7 +117,7 @@ pub struct Engine {
     pub(crate) cond_rng: std::cell::Cell<u64>,
     pending_moveto: Option<FormId>,
     pub audio: Option<crate::audio::Audio>,
-    music: MusicState,
+    pub(crate) music: MusicState,
     pub conversation: Option<crate::dialogue::Conversation>,
     /// The console is open (it pauses the game: `Engine::in_menu_mode`).
     pub console_open: bool,
@@ -306,14 +306,15 @@ pub struct Engine {
 }
 
 #[derive(Default)]
-struct MusicState {
-    music_type: Option<FormId>,
-    /// A music type played once over the location's (discovering a place),
-    /// and whether its track has started.
-    once: Option<(FormId, bool)>,
-    voice: Option<crate::audio::VoiceId>,
+pub(crate) struct MusicState {
+    pub(crate) music_type: Option<FormId>,
+    /// Music types queued over the location's.
+    pub(crate) queue: crate::music::Queue,
+    /// The current type came from the queue.
+    pub(crate) from_queue: bool,
+    pub(crate) voice: Option<crate::audio::VoiceId>,
     /// Real time at which to start the next track.
-    next_at: f64,
+    pub(crate) next_at: f64,
 }
 
 /// The player character reference ("PlayerRef").
@@ -767,23 +768,39 @@ impl Engine {
             .music
             .voice
             .is_some_and(|v| self.audio.as_ref().unwrap().is_playing(v));
-        // A track played once ends: back to the location's, without a pause.
-        if let Some((_, true)) = self.music.once
+        let location = self.location_music();
+        let (mut want, mut queued) = self.choose_music(location);
+        // A queued type that plays one selection is done once its track ends:
+        // back to what is below it, without a pause.
+        if queued
+            && let Some(m) = want
             && !playing
+            && self.music_flags(m) & crate::music::PLAYS_ONE_SELECTION != 0
+            && self
+                .music
+                .queue
+                .entries
+                .iter()
+                .any(|e| e.music == m && e.started)
         {
-            self.music.once = None;
+            self.music.queue.remove(m);
             self.music.next_at = now;
+            (want, queued) = self.choose_music(location);
         }
-        let want = self
-            .music
-            .once
-            .map(|o| o.0)
-            .or_else(|| self.location_music());
         if want != self.music.music_type {
+            // Queue changes wait for the track to end unless the new type
+            // is an abrupt transition; the location's changes cut it off.
+            let graceful = playing
+                && (queued || self.music.from_queue)
+                && want.is_some_and(|w| self.music_flags(w) & crate::music::ABRUPT_TRANSITION == 0);
+            if graceful {
+                return;
+            }
             if let Some(v) = self.music.voice.take() {
                 self.audio.as_ref().unwrap().stop(v);
             }
             self.music.music_type = want;
+            self.music.from_queue = queued;
             log::debug!(
                 "music type -> {:?}",
                 want.and_then(|w| self.lo.get(w))
@@ -794,8 +811,15 @@ impl Engine {
         }
         if !playing && now >= self.music.next_at {
             self.music.voice = None;
-            if let Some(o) = &mut self.music.once {
-                o.1 = true;
+            if queued
+                && let Some(e) = self
+                    .music
+                    .queue
+                    .entries
+                    .iter_mut()
+                    .find(|e| Some(e.music) == want)
+            {
+                e.started = true;
             }
             if let Some(m) = want
                 && let Some(track) = self.pick_track(m)
@@ -814,9 +838,16 @@ impl Engine {
         }
     }
 
-    /// Plays a music type's track once over the location's music, at once.
-    pub(crate) fn play_music_once(&mut self, music: FormId) {
-        self.music.once = Some((music, false));
+    /// The music type to play and whether it is a queued one.
+    fn choose_music(&self, location: Option<FormId>) -> (Option<FormId>, bool) {
+        match self
+            .music
+            .queue
+            .choose(location, |m| self.music_priority(m))
+        {
+            Some((m, queued)) => (Some(m), queued),
+            None => (None, false),
+        }
     }
 
     /// Keep the distant LOD quadtree in sync with the camera.

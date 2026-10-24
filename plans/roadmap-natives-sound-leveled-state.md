@@ -40,7 +40,9 @@ upper bounds.
 
 ## Batches
 
-### 1. Sound instances: `Sound.Play`, `StopInstance`, `SetInstanceVolume`, `PlayAndWait`
+### 1. Sound instances: `Sound.Play`, `StopInstance`, `SetInstanceVolume`, `PlayAndWait` (done)
+
+Done in `src/script_sounds.rs`; notes in `refs/pex-natives/sound-batch01-instances.md`.
 
 Counts: play ≤929 (currently a stub returning 0), stopinstance 63,
 setinstancevolume 5, playandwait 0 (stub).
@@ -71,7 +73,9 @@ setinstancevolume 5, playandwait 0 (stub).
     **test-mod**: start a looping `Sound.Play`, save, load, and check whether
     it's still audible and `StopInstance` stops it.
 
-### 2. Music queue: `MusicType.Add`, `MusicType.Remove`
+### 2. Music queue: `MusicType.Add`, `MusicType.Remove` (done)
+
+Done in `src/music.rs` (saved as `MUSQ`); notes in `refs/pex-natives/sound-batch02-music-queue.md`.
 
 Counts: add 38, remove ≤84.
 

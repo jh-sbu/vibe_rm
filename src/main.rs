@@ -40,6 +40,7 @@ mod magic;
 mod map_markers;
 mod map_view;
 mod messages;
+mod music;
 mod obstacles;
 mod outfits;
 mod perks;
