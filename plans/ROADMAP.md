@@ -1775,9 +1775,9 @@ game each piece unlocks.
      `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
      taper, area, addictions, the rest of potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target)
-   - Pickpocket retry resets: UESP documents two days away and several reset
-     exceptions; the current caught-victim gate has no timer, and now persists
-     through native saves. See `known_ambiguities/saves.md` (`PKCT`).
+   - Pickpocket retry resets beyond the two-day gate (see Done): guards sent
+     off by bribes, Thanes or guild payment, and Harmony
+     (`known_ambiguities/crime.md`)
    - Crime, more: arrests (guards following through
      doors, opening the cell after five hits, The Chill, the follower wait
      marker, the jail outfit); `GetArrestingActor` already checks the conversation

@@ -345,3 +345,22 @@ locations name it.
   speak (the "warning").
 - The console's `setcrimegold` / `paycrimegold` default to the crime faction
   of the nearest location up from the current one that names one (`FNAM`).
+- **Pickpocket retry gate.** UESP
+  [Pickpocket, revision 3581319](https://en.uesp.net/w/index.php?oldid=3581319)
+  (Notes): after a failed attempt "the NPC cannot be pickpocketed again for 2
+  days", it "will not reset if the player waits two days in the same room",
+  and in the Dawnstar Sanctuary a caught victim can be tried again after just
+  leaving and re-entering. Those don't fit one rule: two days alone doesn't
+  explain the sanctuary, and leaving alone doesn't explain the two days. Here
+  the victim remembers until both 48 game hours have passed since the catch
+  and it has unloaded at least once since (`crate::pickpocket`), so the
+  sanctuary case still waits for two days. Open: whether unloading alone
+  resets it (the two days perhaps only how long players are usually away),
+  whether real or game time counts, whether waiting or sleeping elsewhere
+  without the victim unloading counts as away, and whether being unloaded
+  only at the start of the two days is enough.
+- Not built (same page): a guard sent off quietly by a bribe, a Thane's
+  standing or Thieves Guild payment clearing the gate (no bribes, Thanes or
+  guild payment yet: Roadmap Next 5), and Harmony making those it affects
+  "forget" (other Pacify spells don't). Which Harmony record or archetype
+  data does this, and whether it is the effect or a script, is unknown.

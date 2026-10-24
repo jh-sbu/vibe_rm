@@ -818,6 +818,7 @@ impl Engine {
         let Some(key) = self.actor_cells.remove(&r) else {
             return;
         };
+        self.pickpocket_victim_unloaded(r);
         self.moved_refs.remove(&r);
         self.furniture.release(r);
         let (Some(rt), Some(rc)) = (self.cells.get_mut(&key), self.scene.cells.get_mut(&key))

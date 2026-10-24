@@ -224,12 +224,12 @@ No game assets or engine binaries were inspected for these additions.
   Loading does not report crimes or change bounty. SE reset/persistence rules
   are unverified; see the public API research in `known_ambiguities/crime.md`.
 
-- `PKCT` retains the existing caught-pickpocket gate by victim identity.
-  UESP [Pickpocket, revision 3581319](https://en.uesp.net/w/index.php?oldid=3581319)
-  documents a two-day retry restriction while away, with guard, Harmony and
-  cell-transition exceptions. The current native caught-victim set has no retry
-  timer; persisting it does not implement those resets. Their exact timing and
-  the original save encoding need verification. Retry resets remain on the roadmap.
+- `PKCT` retains caught-pickpocket victims by identity; optional `PKTM` adds
+  the game hour each caught the player and whether it has unloaded since (the
+  two-day retry gate: `known_ambiguities/crime.md`). `PKTM` must cover exactly
+  `PKCT`'s victims. A save with `PKCT` and no `PKTM` treats its victims as
+  caught at the loaded hour, not yet away; with neither, nobody remembers.
+  The original save encoding is unknown.
 
 - `ASLT` stores both existing assault-memory sets. It preserves the current
   classification inputs without generating assault/murder events on load.
