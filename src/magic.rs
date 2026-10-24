@@ -361,7 +361,7 @@ impl MagicItem {
 }
 
 /// An effect on an actor.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ActiveEffect {
     pub id: u64,
     pub target: FormId,
@@ -508,6 +508,65 @@ impl Engine {
 
     pub(crate) fn restore_rolled_spells(&mut self, saved: Vec<SavedRolledSpell>) {
         self.magic.rolled.restore(saved);
+    }
+
+    /// The effects a native save keeps (`AEFF`), in id order, and the next
+    /// id. Finished effects and telekinesis (its hold on an object isn't
+    /// saved) are left out.
+    pub(crate) fn saved_active_effects(&self) -> (Vec<ActiveEffect>, u64) {
+        let mut saved: Vec<ActiveEffect> = self
+            .magic
+            .effects
+            .iter()
+            .filter(|x| !x.done)
+            .filter(|x| {
+                self.magic_effect(x.effect)
+                    .is_none_or(|m| m.archetype != archetype::TELEKINESIS)
+            })
+            .cloned()
+            .collect();
+        saved.sort_by_key(|x| x.id);
+        (saved, self.magic.next_id)
+    }
+
+    /// Saved effects must name this load order's items and their effects.
+    pub(crate) fn validate_saved_active_effects(
+        &self,
+        saved: &[ActiveEffect],
+    ) -> anyhow::Result<()> {
+        for x in saved {
+            let item = self.magic_item(x.item);
+            anyhow::ensure!(
+                item.as_ref()
+                    .and_then(|m| m.effects.get(x.index))
+                    .is_some_and(|e| e.effect == x.effect)
+                    && self.magic_effect(x.effect).is_some(),
+                "save has active effect {} that isn't effect {} of item {}",
+                x.id,
+                x.index,
+                x.item
+            );
+        }
+        Ok(())
+    }
+
+    /// Replace the active effects with saved ones. What they hold on actor
+    /// values is already in the saved modifiers, so nothing is started or
+    /// given back: the old game's effects go without releasing into the new
+    /// values, and the restored ones carry on. Summons command again.
+    pub(crate) fn restore_active_effects(&mut self, saved: Vec<ActiveEffect>, next_id: u64) {
+        let m = &mut self.magic;
+        m.next_id = saved.iter().map(|x| x.id).fold(next_id, u64::max);
+        m.commanded = saved
+            .iter()
+            .filter_map(|x| Some((x.summoned?, x.caster.unwrap_or(x.target))))
+            .collect();
+        m.effects = saved;
+        m.tapers.clear();
+        m.linger.clear();
+        m.sync = 0.0;
+        // What the old game held (with telekinesis or by hand) isn't saved.
+        self.grab = crate::grab::Grab::default();
     }
 
     pub fn magic_effect(&self, id: FormId) -> Option<Arc<MagicEffect>> {
