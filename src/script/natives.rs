@@ -755,6 +755,12 @@ pub fn call(
             let shield = me.and_then(|r| e.inventories.get(&r)?.shield(&e.lo));
             v(shield.map_or(Value::None, |s| e.object_value(s)))
         }
+        ("objectreference", "delete") => {
+            if let Some(r) = me {
+                e.delete_reference(r);
+            }
+            none()
+        }
         ("objectreference", "placeatme") | ("objectreference", "placeactoratme") => {
             let count = if func == "placeatme" {
                 args.get(1).map_or(1, |c| c.as_int().max(1))
