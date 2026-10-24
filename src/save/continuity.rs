@@ -63,6 +63,8 @@ pub(crate) struct Continuity {
     pub formlist_additions: HashMap<FormId, Vec<FormId>>,
     /// Outfits scripts gave actors.
     pub outfits: HashMap<FormId, FormId>,
+    /// Actors whose AI scripts turned off.
+    pub ai_off: std::collections::HashSet<FormId>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -271,6 +273,7 @@ impl Continuity {
             ghosts: e.protection.ghosts.clone(),
             formlist_additions: e.formlists.added.clone(),
             outfits: e.outfits.set.clone(),
+            ai_off: e.ai_off.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -596,6 +599,14 @@ impl Continuity {
             w.form(*outfit);
         }
         file.add(b"OUTF", w.0);
+        let mut w = Writer::default();
+        let mut ids: Vec<_> = self.ai_off.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"AIOF", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -776,6 +787,15 @@ impl Continuity {
                 let id = r.form()?;
                 ordered(&mut previous, id)?;
                 s.attacked_on_sight.insert(id);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"AIOF")? {
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                s.ai_off.insert(id);
             }
             r.finish()?;
         }
@@ -1011,6 +1031,9 @@ impl Continuity {
             }
         }
         for &id in &self.attacked_on_sight {
+            nonnull(id)?;
+        }
+        for &id in &self.ai_off {
             nonnull(id)?;
         }
         for (&actor, &outfit) in &self.outfits {
@@ -1304,5 +1327,6 @@ impl Continuity {
         e.restore_ghosts(self.ghosts);
         e.restore_formlist_additions(self.formlist_additions);
         e.restore_outfits(self.outfits);
+        e.ai_off = self.ai_off;
     }
 }

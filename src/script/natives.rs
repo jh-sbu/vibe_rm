@@ -983,6 +983,16 @@ pub fn call(
             none()
         }
         // Fighting or searching, it calms down (it may find a reason to fight again).
+        ("actor", "enableai") => {
+            if let Some(a) = me.filter(|a| !a.is_null()) {
+                if args.first().is_none_or(|b| b.as_bool()) {
+                    e.ai_off.remove(&a);
+                } else {
+                    e.ai_off.insert(a);
+                }
+            }
+            none()
+        }
         ("actor", "setoutfit") => {
             if let (Some(a), Some(o)) = (me, form_arg(args, 0)) {
                 e.set_outfit(a, o, arg(1).as_bool());

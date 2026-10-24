@@ -3670,7 +3670,10 @@ impl Engine {
                     a.turn_after_arrival = None;
                     a.halt(1.0);
                     a.turn_towards((at - a.pos).truncate().extend(0.0).normalize_or_zero(), dt);
-                } else if !self.ai_enabled || a.bleeding.is_some() {
+                } else if !self.ai_enabled
+                    || a.bleeding.is_some()
+                    || self.ai_off.contains(&a.ref_id)
+                {
                     a.halt(1.0);
                 } else if let Some(target) = a.combat.as_ref().map(|c| c.target) {
                     // Fighters lose a target that goes undetected (`detection`);

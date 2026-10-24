@@ -43,3 +43,15 @@ names shared between classes share their count).
   actors who would attack on sight start again at once (we do nothing to
   stop them: a bribe pays the bounty first), and whether unloaded actors'
   fights end too.
+
+## `EnableAI`
+
+- `Actor.EnableAI(abEnable)` (27 calls) turns one actor's AI off (false) or
+  back on (true, also when the argument is missing). An actor with its AI off stands where it is, as everyone does when
+  the console's `tai` turns all AI off: no packages, walking or fighting
+  moves. Saved in optional `AIOF`; legacy saves have none.
+- Unconfirmed: whether its animation graph freezes too (ours keeps
+  playing), whether it still detects, starts combat, speaks and reacts to
+  hits (we stop only its movement and actions: detection and combat state
+  still change), and whether the flag survives the actor unloading in the
+  original.
