@@ -266,6 +266,28 @@ impl Engine {
         self.whereabouts.remove_actor(r);
     }
 
+    /// Papyrus `ObjectReference.Delete`: a reference made while playing,
+    /// lying in the world or an actor, goes for good, unless a quest alias
+    /// holds it: then it is only disabled (the alias's quest cleans it up).
+    /// References from plugins and those made inside containers stay
+    /// (`known_ambiguities/created-refs.md`).
+    pub fn delete_reference(&mut self, r: FormId) {
+        if self.created(r).is_none_or(|c| c.container.is_some()) {
+            return;
+        }
+        self.set_disabled(r, true);
+        let held = self
+            .scripts
+            .quests
+            .values()
+            .any(|q| q.aliases.values().any(|&x| x == r));
+        if held {
+            return;
+        }
+        self.delete_created(r);
+        self.scripts.disabled.remove(&r);
+    }
+
     fn add_created_actor(&mut self, id: FormId, place: Place, position: Vec3) {
         self.whereabouts.add_actor(id, place, position);
         if let Some(key) = self.key_of_place(place) {

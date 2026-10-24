@@ -244,3 +244,49 @@ fn set_outfit_swaps_the_outfits_armor() {
     assert_eq!(inv.count(BOOTS), 1, "shared pieces stay");
     assert!(inv.is_equipped(ROBE) && inv.is_equipped(BOOTS));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn delete_removes_references_made_while_playing() {
+    let (_f, mut e) = fixture("delete");
+    // Made in an unloaded interior (the headless player has no place to
+    // `PlaceAtMe` at).
+    let mut next = 0xFF00_0800;
+    let mut made = |e: &mut Engine| {
+        let id = FormId(next);
+        next += 1;
+        e.created_refs.refs.insert(
+            id,
+            crate::created::Created {
+                base: STATIC,
+                position: glam::Vec3::ZERO,
+                rotation: glam::Vec3::ZERO,
+                origin: None,
+                place: Some(crate::ai::schedule::Place::Interior(FormId(0x8F1))),
+                container: None,
+                location: None,
+                actor: false,
+                count: 1,
+                owner: None,
+            },
+        );
+        id
+    };
+    let gone = made(&mut e);
+    call(&mut e, "objectreference", "delete", gone, &[]);
+    assert!(e.created(gone).is_none());
+    assert_eq!(e.object_value(gone), Value::None);
+    // Held by a quest alias: only disabled.
+    let held = made(&mut e);
+    e.scripts
+        .quests
+        .entry(FormId(0x8F0))
+        .or_default()
+        .aliases
+        .insert(0, held);
+    call(&mut e, "objectreference", "delete", held, &[]);
+    assert!(e.created(held).is_some() && e.is_disabled(held));
+    // A plugin's reference stays.
+    call(&mut e, "objectreference", "delete", FIRST, &[]);
+    assert!(!e.is_disabled(FIRST));
+}

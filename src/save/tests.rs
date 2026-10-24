@@ -5696,7 +5696,9 @@ fn formlist_additions_replace_the_sessions_after_loading() {
 #[test]
 fn outfits_payload() {
     let mut s = Snapshot::default();
-    s.continuity.outfits.extend([(ACTOR, CELL), (SCENE_ACTOR, ACTOR)]);
+    s.continuity
+        .outfits
+        .extend([(ACTOR, CELL), (SCENE_ACTOR, ACTOR)]);
     let file = s.write();
     let restored = Snapshot::read(&file).unwrap();
     assert_eq!(restored.continuity.outfits, s.continuity.outfits);
