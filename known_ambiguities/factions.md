@@ -1,0 +1,42 @@
+# Factions' runtime standing
+
+## Public sources
+
+- Vanilla `Faction.pex` (the game's `Scripts`, read with `vrm-tool pex-dump`):
+  native signatures `SetEnemy(Faction akOther, Bool abSelfIsNeutralToOther,
+  Bool abOtherIsNeutralToSelf)`, `SetAlly(Faction akOther, Bool
+  abSelfIsFriendToOther, Bool abOtherIsFriendToSelf)`, `SetReaction(Faction,
+  Int aiNewValue)`, `ModReaction(Faction, Int aiAmount)`, `GetReaction`,
+  `SetPlayerEnemy(Bool abIsEnemy)`, `SetPlayerExpelled(Bool abIsExpelled)`,
+  `IsPlayerExpelled()` and `IsFactionInCrimeGroup(Faction akOther)`. There is
+  no getter for the player-enemy flag.
+- [Papyrus Faction API](https://papyrus.bellcube.dev/skyrimse/script/faction/)
+  (one-line descriptions, no parameter notes): SetEnemy "sets the two
+  factions to be neutral or enemies of each other"; SetAlly "friend or allies
+  of eachother"; Set/Mod/GetReaction "the faction's reaction towards the other
+  one"; SetPlayerEnemy / SetPlayerExpelled "sets or clears the enemy /
+  expelled flag from this faction for the player"; IsFactionInCrimeGroup
+  "checks to see if the passed in faction is in this faction's crime group".
+- CommonLibSSE `TESReactionForm.h`: each `XNAM` is a `GROUP_REACTION` of
+  form, `int32 reaction` and `FIGHT_REACTION fightReaction` (0 neutral,
+  1 enemy, 2 ally, 3 friend). `TESFaction.h`: `SetAlly` / `SetEnemy` take the
+  same two booleans as Papyrus, and a separate `SetFactionFightReaction`.
+
+## Combat reactions (`SetEnemy`, `SetAlly`)
+
+- Each call sets both factions' group combat reaction towards the other:
+  enemy (1) or, where that side's boolean is true, neutral (0) for
+  `SetEnemy`; ally (2) or friend (3) for `SetAlly`. This is read from the
+  parameter names and the one-line descriptions. The reaction modifier is
+  left as it was.
+- Changes are kept per (faction, towards) pair over the plugin's `XNAM`
+  (added where the plugin listed nothing) and saved in optional `FRCT`;
+  legacy saves have none. Combat's hostility checks, `GetFactionCombatReaction`
+  and `GetFactionRelation` all read them.
+- Unconfirmed: whether fights under way end when the factions stop being
+  enemies. Vanilla resets such as `DA06LargashburHostileResetScript`
+  (`SetEnemy(PlayerFaction, true, true)` with no `StopCombat`) suggest they
+  might. We leave fighters fighting until they lose their target; searchers
+  give up because they no longer would attack. Also unconfirmed: whether a
+  faction listing another more than once has every entry changed (we answer
+  with the change alone).

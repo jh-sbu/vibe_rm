@@ -1312,6 +1312,18 @@ pub fn call(
             }
             none()
         }
+        // Factions' reactions (`crate::factions`).
+        ("faction", "setenemy") | ("faction", "setally") => {
+            if let (Some(a), Some(b)) = (me, form_arg(args, 0)) {
+                let (x, y) = (arg(1).as_bool(), arg(2).as_bool());
+                if func == "setenemy" {
+                    e.set_factions_enemies(a, b, x, y);
+                } else {
+                    e.set_factions_allies(a, b, x, y);
+                }
+            }
+            none()
+        }
         ("faction", "canpaycrimegold") => {
             v(Value::Bool(me.is_some_and(|f| e.can_pay_crime_gold(f))))
         }
