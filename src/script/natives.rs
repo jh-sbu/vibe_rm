@@ -845,6 +845,10 @@ pub fn call(
             .and_then(|r| e.ref_current_location(r))
             .map_or(Value::None, |l| e.object_value(l))),
         ("objectreference", "getediblelocation") => none(),
+        ("objectreference", "hasreftype") => v(Value::Bool(
+            me.zip(form_arg(args, 0))
+                .is_some_and(|(r, ty)| e.ref_types(r).contains(&ty)),
+        )),
         ("objectreference", "getreftype") | ("objectreference", "getowningfaction") => none(),
         // Owners: an actor base (the player's is 7) or a faction.
         ("objectreference", "setactorowner")

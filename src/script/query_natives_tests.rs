@@ -461,3 +461,42 @@ fn getreftypedeadcount_counts_enabled_editor_references_once() {
         Value::Int(0)
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn has_ref_type_reads_direct_and_location_indexed_types() {
+    let (_f, mut e) = population_fixture();
+    let ty = e.object_value(FormId(0x830));
+    for id in [0x800, 0x801] {
+        assert_eq!(
+            call(
+                &mut e,
+                "objectreference",
+                "hasreftype",
+                FormId(id),
+                &[ty.clone()]
+            ),
+            Value::Bool(true)
+        );
+    }
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "hasreftype",
+            FormId(0x810),
+            &[ty]
+        ),
+        Value::Bool(false)
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "hasreftype",
+            FormId(0x800),
+            &[Value::None]
+        ),
+        Value::Bool(false)
+    );
+}
