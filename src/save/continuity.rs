@@ -79,6 +79,10 @@ pub(crate) struct Continuity {
     pub doing_favor: std::collections::HashSet<FormId>,
     /// Default outfits scripts gave NPC records.
     pub base_outfits: HashMap<FormId, FormId>,
+    /// `SetPlayerReportCrime(false)` is in force.
+    pub crime_unreported: bool,
+    /// What `SetInChargen` turned off: saving, waiting, the controls message.
+    pub chargen: Option<(bool, bool, bool)>,
     /// Cells flagged to reset when they next load.
     pub reset_cells: std::collections::HashSet<FormId>,
     /// Text globals running quests keep copies of: (quest, global).
@@ -303,6 +307,11 @@ impl Continuity {
             critical_stages: e.actor_flags.critical.clone(),
             not_on_meter: e.actor_flags.not_on_meter.clone(),
             doing_favor: e.actor_flags.doing_favor.clone(),
+            crime_unreported: e.game_flags.crime_unreported,
+            chargen: e
+                .game_flags
+                .chargen
+                .map(|c| (c.no_saving, c.no_waiting, c.controls_message)),
             reset_cells: e.resets.cells.clone(),
             quest_globals: e.resets.quest_globals.clone(),
             base_outfits: e.scripts.globals.base_outfits.clone(),
@@ -698,6 +707,14 @@ impl Continuity {
         }
         file.add(b"RSTC", w.0);
         let mut w = Writer::default();
+        w.bool(self.crime_unreported);
+        w.bool(self.chargen.is_some());
+        let (a, b, c) = self.chargen.unwrap_or_default();
+        w.bool(a);
+        w.bool(b);
+        w.bool(c);
+        file.add(b"GAMF", w.0);
+        let mut w = Writer::default();
         w.len(self.quest_globals.len());
         for ((quest, global), value) in sorted(&self.quest_globals) {
             w.form(quest);
@@ -1035,6 +1052,16 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"GAMF")? {
+            s.crime_unreported = r.bool()?;
+            let set = r.bool()?;
+            let flags = (r.bool()?, r.bool()?, r.bool()?);
+            if !set && flags != (false, false, false) {
+                return Err(Corrupt("chargen flags without chargen".into()));
+            }
+            s.chargen = set.then_some(flags);
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"QGLB")? {
             let mut previous = None;
             for _ in 0..r.count(12)? {
@@ -1320,6 +1347,9 @@ impl Continuity {
         }
         for &actor in self.not_on_meter.iter().chain(&self.doing_favor) {
             nonnull(actor)?;
+        }
+        if self.chargen == Some((false, false, false)) {
+            return Err(Corrupt("chargen set with nothing disabled".into()));
         }
         for &cell in &self.reset_cells {
             nonnull(cell)?;
@@ -1624,6 +1654,17 @@ impl Continuity {
         );
         e.scripts.globals.base_outfits = self.base_outfits;
         e.restore_resets(self.reset_cells, self.quest_globals);
+        e.restore_game_flags(
+            self.crime_unreported,
+            self.chargen
+                .map(
+                    |(no_saving, no_waiting, controls_message)| crate::game_queries::Chargen {
+                        no_saving,
+                        no_waiting,
+                        controls_message,
+                    },
+                ),
+        );
         e.restore_ref_state(self.ref_scales, self.no_favor, self.ignore_friendly_hits);
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);

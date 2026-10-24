@@ -247,7 +247,9 @@ Done in `src/resets.rs` (saved as `RSTC` / `QGLB`); notes in `refs/pex-natives/r
 - `IsStarting` / `IsStopping`: our transitions are synchronous (batch 2 of the
   forty), so both return false. Document that as a policy, with no fake states.
 
-### 9. Game queries and flags
+### 9. Game queries and flags (done)
+
+Done in `src/game_queries.rs` (saved as `GAMF`); notes in `refs/pex-natives/game-batch09-queries-flags.md`.
 
 `Game.FindClosestActor`, `FindClosestReferenceOfType`,
 `FindClosestReferenceOfAnyTypeInList`, `FindRandomActor`,

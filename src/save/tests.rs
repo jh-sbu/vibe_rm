@@ -5977,6 +5977,50 @@ fn resets_replace_the_sessions_after_loading() {
 }
 
 #[test]
+fn game_flags_payload() {
+    let snapshot = |unreported: bool, chargen: Option<(bool, bool, bool)>| {
+        let mut s = Snapshot::default();
+        s.continuity.crime_unreported = unreported;
+        s.continuity.chargen = chargen;
+        s
+    };
+    for (unreported, chargen) in [
+        (false, None),
+        (true, None),
+        (false, Some((true, false, true))),
+        (true, Some((false, true, false))),
+    ] {
+        let s = snapshot(unreported, chargen);
+        let file = s.write();
+        let restored = Snapshot::read(&file).unwrap();
+        assert_eq!(restored.continuity.crime_unreported, unreported);
+        assert_eq!(restored.continuity.chargen, chargen);
+        assert_eq!(restored.write().to_bytes(), file.to_bytes());
+        check_continuity_payload(&file, b"GAMF");
+    }
+    // Chargen "set" with nothing turned off can't be written by a game.
+    assert!(Snapshot::read(&snapshot(false, Some((false, false, false))).write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn game_flags_replace_the_sessions_after_loading() {
+    let (_a, mut a) = engine("gameflags-a");
+    a.set_player_report_crime(false);
+    a.set_in_chargen(true, false, true);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("gameflags-b");
+    b.set_in_chargen(false, true, false);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert!(b.game_flags.crime_unreported);
+    assert!(b.saving_disabled() && !b.waiting_disabled());
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"GAMF");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(!b.game_flags.crime_unreported && b.game_flags.chargen.is_none());
+}
+
+#[test]
 fn outfits_payload() {
     let mut s = Snapshot::default();
     s.continuity

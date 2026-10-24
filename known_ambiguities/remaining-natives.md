@@ -157,3 +157,13 @@ starts or when its text first shows them (the latter); and what `Quest.Reset`
 does to a running quest and its script variables (we stop it and clear its state
 but keep its script). **test-mod** wanted: kill an NPC in a cell, `Cell.Reset`,
 leave and return; and `Reset` a disabled reference.
+
+## Game finders, sun and flags
+
+Unconfirmed: whether `FindClosestActor` and the random finders skip dead actors
+(we include them), whether they see unloaded or editor positions (we use the loaded
+references' current positions), the magnitude of `GetSunPosition*` (we return a
+unit direction), the angle that counts as sungazing (12 degrees), the
+`CalculateFavorCost` formula (we return the price), and what the controls-disabled
+message of `SetInChargen` says. **test-mod** wanted: `GetSunPositionX/Y/Z` at a
+known hour, read back through `Debug.Notification`.

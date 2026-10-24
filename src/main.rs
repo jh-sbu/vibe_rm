@@ -25,6 +25,7 @@ mod fast_travel;
 mod followers;
 mod footsteps;
 mod formlists;
+mod game_queries;
 mod gift;
 mod grab;
 mod harvest;

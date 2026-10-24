@@ -247,7 +247,58 @@ pub fn call(
             e.set_third_person(true);
             none()
         }
-        ("game", "setinchargen") => none(),
+        ("game", "setinchargen") => {
+            e.set_in_chargen(arg(0).as_bool(), arg(1).as_bool(), arg(2).as_bool());
+            none()
+        }
+        // Nothing in the game calls it and no source gives the formula: the
+        // price is the cost.
+        ("game", "calculatefavorcost") => v(Value::Int(arg(0).as_int())),
+        ("game", "setplayerreportcrime") => {
+            e.set_player_report_crime(args.is_empty() || arg(0).as_bool());
+            none()
+        }
+        ("game", "clearprison") => {
+            e.clear_prison();
+            none()
+        }
+        ("game", "getsunpositionx") => v(Value::Float(e.sun_direction().x)),
+        ("game", "getsunpositiony") => v(Value::Float(e.sun_direction().y)),
+        ("game", "getsunpositionz") => v(Value::Float(e.sun_direction().z)),
+        ("game", "isplayersungazing") => v(Value::Bool(e.player_sungazing())),
+        ("game", "findclosestactor") | ("game", "findrandomactor") => {
+            let at = glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float());
+            let radius = arg(3).as_float();
+            let found = if func == "findclosestactor" {
+                e.find_closest_actor(at, radius)
+            } else {
+                e.find_random_actor(at, radius)
+            };
+            v(found.map_or(Value::None, |r| e.object_value(r)))
+        }
+        ("game", "findclosestreferenceoftype")
+        | ("game", "findrandomreferenceoftype")
+        | ("game", "findclosestreferenceofanytypeinlist")
+        | ("game", "findrandomreferenceofanytypeinlist") => {
+            let at = glam::Vec3::new(arg(1).as_float(), arg(2).as_float(), arg(3).as_float());
+            let radius = arg(4).as_float();
+            let list;
+            let wanted = if func.ends_with("oftype") {
+                match form_arg(args, 0) {
+                    Some(b) => crate::game_queries::Wanted::One(b),
+                    None => return v(Value::None),
+                }
+            } else {
+                list = form_arg(args, 0).map(|l| e.formlist(l)).unwrap_or_default();
+                crate::game_queries::Wanted::AnyOf(&list)
+            };
+            let found = if func.starts_with("findclosest") {
+                e.find_closest_reference(&wanted, at, radius)
+            } else {
+                e.find_random_reference(&wanted, at, radius)
+            };
+            v(found.map_or(Value::None, |r| e.object_value(r)))
+        }
         ("game", "getgamesettingfloat") => v(Value::Float(crate::ai::combat::gmst_f32(
             &e.lo,
             &str_arg(args, 0),

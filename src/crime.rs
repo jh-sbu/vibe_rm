@@ -433,6 +433,9 @@ impl Engine {
         owner: Option<FormId>,
         value: i32,
     ) -> bool {
+        if self.game_flags.crime_unreported {
+            return false;
+        }
         let victim_faction = victim.and_then(|v| self.crime_faction(v)).or(owner);
         let mut witnesses = self.witnesses();
         if matches!(kind, CrimeType::Attack | CrimeType::Pickpocket)

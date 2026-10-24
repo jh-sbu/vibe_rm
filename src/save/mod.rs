@@ -134,6 +134,9 @@ impl Engine {
 
     /// Save as `name` in the saves directory.
     pub fn save_game(&self, name: &str) -> Result<PathBuf> {
+        if self.saving_disabled() {
+            bail!("saving is disabled");
+        }
         let Some(path) = save_path_in(&save_dir(), name) else {
             bail!("'{name}' isn't a save name (letters, digits, spaces, - and _)");
         };
@@ -165,7 +168,7 @@ impl Engine {
 
     fn flush_save_requests_in(&mut self, dir: &Path) {
         for (name, auto) in std::mem::take(&mut self.save_requests) {
-            if self.player_dead() {
+            if self.player_dead() || self.saving_disabled() {
                 let msg = self.gmst_string("sCantSaveNow");
                 self.scripts
                     .notify(msg.unwrap_or_else(|| "You cannot save right now.".into()));

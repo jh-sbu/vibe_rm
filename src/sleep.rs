@@ -36,6 +36,9 @@ impl Engine {
     /// player can't, says why.
     pub fn request_sleep_wait(&mut self, bed: Option<FormId>) {
         let sleeping = bed.is_some();
+        if self.waiting_disabled() {
+            return;
+        }
         if let Some(reason) = self.no_sleep_wait_reason(bed) {
             let (setting, english) = reason;
             let name = format!("sNo{}{setting}", if sleeping { "Sleep" } else { "Wait" });
