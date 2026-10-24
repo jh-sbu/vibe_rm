@@ -61,6 +61,8 @@ pub(crate) struct Continuity {
     pub ghosts: HashMap<FormId, bool>,
     /// Forms scripts added to form lists, by list, in the order added.
     pub formlist_additions: HashMap<FormId, Vec<FormId>>,
+    /// Outfits scripts gave actors.
+    pub outfits: HashMap<FormId, FormId>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -268,6 +270,7 @@ impl Continuity {
             base_flags: e.protection.base_flags.clone(),
             ghosts: e.protection.ghosts.clone(),
             formlist_additions: e.formlists.added.clone(),
+            outfits: e.outfits.set.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -586,6 +589,13 @@ impl Continuity {
             }
         }
         file.add(b"FLAD", w.0);
+        let mut w = Writer::default();
+        w.len(self.outfits.len());
+        for (actor, outfit) in sorted(&self.outfits) {
+            w.form(actor);
+            w.form(*outfit);
+        }
+        file.add(b"OUTF", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -766,6 +776,15 @@ impl Continuity {
                 let id = r.form()?;
                 ordered(&mut previous, id)?;
                 s.attacked_on_sight.insert(id);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"OUTF")? {
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.outfits.insert(actor, r.form()?);
             }
             r.finish()?;
         }
@@ -993,6 +1012,10 @@ impl Continuity {
         }
         for &id in &self.attacked_on_sight {
             nonnull(id)?;
+        }
+        for (&actor, &outfit) in &self.outfits {
+            nonnull(actor)?;
+            nonnull(outfit)?;
         }
         for (&list, forms) in &self.formlist_additions {
             nonnull(list)?;
@@ -1280,5 +1303,6 @@ impl Continuity {
         e.restore_base_flags(self.base_flags);
         e.restore_ghosts(self.ghosts);
         e.restore_formlist_additions(self.formlist_additions);
+        e.restore_outfits(self.outfits);
     }
 }

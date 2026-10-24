@@ -434,3 +434,10 @@ order added. Loading replaces this session's; legacy saves have none, so
 lists are as their plugins say. The original saves them as the list's
 `kAddedForm` change data (layout not researched). Native policy, not an SE
 claim.
+
+## Outfits (`OUTF`)
+
+Optional `OUTF` lists (actor, outfit) for each reference `SetOutfit` gave a
+default outfit, sorted. The armor itself is in the saved inventories.
+Loading replaces this session's; legacy saves have none, so actors wear
+their NPC's `DOFT`. Native policy, not an SE claim.
