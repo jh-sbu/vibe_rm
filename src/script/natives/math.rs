@@ -15,6 +15,7 @@ pub(super) fn call(func: &str, args: &[Value]) -> Option<Value> {
         "asin" => Value::Float(arg(0).as_float().asin().to_degrees()),
         "atan" => Value::Float(arg(0).as_float().atan().to_degrees()),
         "tan" => Value::Float(arg(0).as_float().to_radians().tan()),
+        "degreestoradians" => Value::Float(arg(0).as_float().to_radians()),
         _ => return None,
     })
 }
@@ -62,6 +63,17 @@ mod tests {
         check(
             "tan",
             &[(-45.0, -1.0), (0.0, 0.0), (45.0, 1.0), (180.0, 0.0)],
+        );
+    }
+    #[test]
+    fn degreestoradians() {
+        check(
+            "degreestoradians",
+            &[
+                (-180.0, -std::f32::consts::PI),
+                (0.0, 0.0),
+                (90.0, std::f32::consts::FRAC_PI_2),
+            ],
         );
     }
 }
