@@ -500,3 +500,43 @@ fn has_ref_type_reads_direct_and_location_indexed_types() {
         Value::Bool(false)
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn is_loaded_tracks_loaded_cells_and_parent_locations() {
+    let (_f, mut e) = fixture(vec![
+        Node::top(
+            b"LCTN",
+            vec![
+                RecordBuilder::new(b"LCTN", FormId(0x810)),
+                RecordBuilder::new(b"LCTN", FormId(0x811)).form(b"PNAM", FormId(0x810)),
+                RecordBuilder::new(b"LCTN", FormId(0x812)),
+            ],
+        ),
+        Node::top(
+            b"CELL",
+            vec![RecordBuilder::new(b"CELL", FormId(0x820)).form(b"XLCN", FormId(0x811))],
+        ),
+    ]);
+    assert_eq!(
+        call(&mut e, "location", "isloaded", FormId(0x811), &[]),
+        Value::Bool(false)
+    );
+    let key = crate::render::CellKey::Interior(FormId(0x820));
+    e.cells.entry(key).or_default();
+    for id in [0x810, 0x811] {
+        assert_eq!(
+            call(&mut e, "location", "isloaded", FormId(id), &[]),
+            Value::Bool(true)
+        );
+    }
+    assert_eq!(
+        call(&mut e, "location", "isloaded", FormId(0x812), &[]),
+        Value::Bool(false)
+    );
+    e.cells.remove(&key);
+    assert_eq!(
+        call(&mut e, "location", "isloaded", FormId(0x811), &[]),
+        Value::Bool(false)
+    );
+}

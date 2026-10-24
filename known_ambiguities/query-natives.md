@@ -21,3 +21,7 @@ GetCurrentLocation uses runtime cell, actor schedule, explicit moved or created 
 ## alive
 
 Location population queries include descendant locations, as the existing condition helper does; public documentation does not specify recursion clearly. We do not reproduce the reported plugin/master double-counting bug. Counts follow enabled editor references rather than actors wandering in; no Skyrim runtime comparison was performed.
+
+## loaded
+
+IsLoaded treats a loaded child location as loading its parents, matching our existing condition implementation. The public native description is terse and does not resolve parent inclusion or attachment-transition timing.

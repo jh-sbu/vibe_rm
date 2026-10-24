@@ -1441,6 +1441,11 @@ pub fn call(
             me.zip(form_arg(args, 0))
                 .map_or(0, |(l, ty)| e.location_population(l, ty, false) as i32),
         )),
+        ("location", "isloaded") => v(Value::Bool(me.is_some_and(|target| {
+            e.loaded_locations()
+                .into_iter()
+                .any(|l| e.location_within(l, target))
+        }))),
         ("location", "iscleared") => v(Value::Bool(me.is_some_and(|l| e.is_cleared(l)))),
         ("location", "setcleared") => {
             if let Some(l) = me {
