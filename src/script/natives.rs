@@ -818,9 +818,30 @@ pub fn call(
                 _ => Value::Float(x),
             })
         }
-        ("objectreference", "setopen")
-        | ("objectreference", "setdestroyed")
-        | ("objectreference", "setnofavorallowed") => v(Value::Bool(true)),
+        ("objectreference", "setopen") => {
+            if let Some(r) = me {
+                e.set_open(r, args.is_empty() || arg(0).as_bool());
+            }
+            none()
+        }
+        ("objectreference", "setdestroyed") => {
+            if let Some(r) = me {
+                e.set_destroyed(r, args.is_empty() || arg(0).as_bool());
+            }
+            none()
+        }
+        ("objectreference", "setnofavorallowed") => {
+            if let Some(r) = me {
+                e.set_no_favor_allowed(r, args.is_empty() || arg(0).as_bool());
+            }
+            none()
+        }
+        ("objectreference", "setscale") => {
+            if let Some(r) = me {
+                e.set_ref_scale(r, arg(0).as_float());
+            }
+            none()
+        }
         // Answered at the end of the frame, once the scripts it set going have
         // run: the pillar puzzles' lever activates its gate and asks at once,
         // and in the game sees it opening (it closes the gate again when a
@@ -1071,7 +1092,18 @@ pub fn call(
             v(faction.map_or(Value::None, |o| e.object_value(o)))
         }
         ("objectreference", "isnearplayer") => v(Value::Bool(true)),
-        ("objectreference", "getheadingangle") => v(Value::Float(0.0)),
+        ("objectreference", "getheadingangle") => {
+            let angle = match (
+                me.and_then(|r| e.ref_position(r).map(|p| (p, e.ref_rotation(r).z))),
+                form_arg(args, 0).and_then(|o| e.ref_position(o)),
+            ) {
+                (Some((from, heading)), Some(to)) => {
+                    crate::ref_state::heading_angle(from, heading, to)
+                }
+                _ => 0.0,
+            };
+            v(Value::Float(angle))
+        }
         // ------------------------------------------------------------- Actor
         ("actor", "isdead") => v(Value::Bool(me.is_some_and(|r| e.is_dead(r)))),
         ("actor", "getkiller") => {

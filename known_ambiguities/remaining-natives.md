@@ -108,3 +108,14 @@ Unconfirmed: whether additions survive an SE save (we save them as `LVAD`), what
 the game does when a list is already at 255 entries (we ignore the add), and
 whether `AddForm` skips duplicates (we keep them). **test-mod** wanted: add an
 item to an empty `LeveledItem`, save and load, then roll it through `AddItem`.
+
+## Reference setters (SetOpen / SetDestroyed / SetScale)
+
+Unconfirmed: whether `SetOpen` raises `OnOpen` / `OnClose` (we raise none);
+whether `SetDestroyed` runs the stage's explosion and debris and sends
+`OnDestructionStageChanged` (we do neither), and which stage the flag implies
+(we take the first that destroys, else the last); and whether `SetScale` on an
+actor keeps the NPC's and race's heights multiplied on top (we do). The player
+isn't rescaled. **test-mod** wanted: `SetDestroyed` on a destructible with
+`OnDestructionStageChanged` registered, and `SetScale(2)` on an NPC then
+`GetScale`.

@@ -53,6 +53,7 @@ mod poisons;
 mod protection;
 mod quest_targets;
 mod recharge;
+mod ref_state;
 mod relationships;
 #[cfg(feature = "remote-console")]
 mod remote;

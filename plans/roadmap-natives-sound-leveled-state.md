@@ -123,7 +123,9 @@ Counts: addform ≤245, revert ≤8 (shared with `FormList`).
   also restores entries edited by other means. **test-mod**: add an item to an
   empty list, save and load, then roll it through `AddItem`.
 
-### 4. Reference setters (replacing stubs): `SetOpen`, `SetDestroyed`, `SetNoFavorAllowed`, `SetScale`, `GetHeadingAngle`
+### 4. Reference setters (replacing stubs): `SetOpen`, `SetDestroyed`, `SetNoFavorAllowed`, `SetScale`, `GetHeadingAngle` (done)
+
+Done in `src/ref_state.rs` (saved as `RSCL` / `NOFV`); notes in `refs/pex-natives/ref-batch04-setters.md`. Nothing asks followers for favors yet, so `SetNoFavorAllowed` is only stored.
 
 Counts: setopen 146, setnofavorallowed 60, setdestroyed 39, setscale 25,
 getheadingangle 9.

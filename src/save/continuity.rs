@@ -63,6 +63,10 @@ pub(crate) struct Continuity {
     pub formlist_additions: HashMap<FormId, Vec<FormId>>,
     /// Entries scripts added to leveled lists, in the order added.
     pub leveled_additions: HashMap<FormId, Vec<(u16, FormId, u16)>>,
+    /// Scales scripts gave references.
+    pub ref_scales: HashMap<FormId, f32>,
+    /// References scripts made followers refuse favors on.
+    pub no_favor: std::collections::HashSet<FormId>,
     /// Outfits scripts gave actors.
     pub outfits: HashMap<FormId, FormId>,
     /// Music types scripts queued, in the order added.
@@ -277,6 +281,8 @@ impl Continuity {
             ghosts: e.protection.ghosts.clone(),
             formlist_additions: e.formlists.added.clone(),
             leveled_additions: e.scripts.globals.leveled.added.clone(),
+            ref_scales: e.ref_state.scales.clone(),
+            no_favor: e.ref_state.no_favor.clone(),
             outfits: e.outfits.set.clone(),
             music_queue: e.music.queue.script_entries(),
             ai_off: e.ai_off.clone(),
@@ -611,6 +617,21 @@ impl Continuity {
         }
         file.add(b"LVAD", w.0);
         let mut w = Writer::default();
+        w.len(self.ref_scales.len());
+        for (r, scale) in sorted(&self.ref_scales) {
+            w.form(r);
+            w.f32(*scale);
+        }
+        file.add(b"RSCL", w.0);
+        let mut w = Writer::default();
+        let mut ids: Vec<_> = self.no_favor.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"NOFV", w.0);
+        let mut w = Writer::default();
         w.len(self.outfits.len());
         for (actor, outfit) in sorted(&self.outfits) {
             w.form(actor);
@@ -867,6 +888,24 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"RSCL")? {
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                s.ref_scales.insert(id, r.f32()?);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"NOFV")? {
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                s.no_favor.insert(id);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"GHST")? {
             let mut previous = None;
             for _ in 0..r.count(5)? {
@@ -1115,6 +1154,15 @@ impl Continuity {
                     return Err(Corrupt("leveled entry with no count".into()));
                 }
             }
+        }
+        for (&r, &scale) in &self.ref_scales {
+            nonnull(r)?;
+            if !scale.is_finite() || scale <= 0.0 {
+                return Err(Corrupt("reference scale out of range".into()));
+            }
+        }
+        for &r in &self.no_favor {
+            nonnull(r)?;
         }
         for &actor in self.ghosts.keys() {
             nonnull(actor)?;
@@ -1391,6 +1439,7 @@ impl Continuity {
         e.restore_ghosts(self.ghosts);
         e.restore_formlist_additions(self.formlist_additions);
         e.restore_leveled_additions(self.leveled_additions);
+        e.restore_ref_state(self.ref_scales, self.no_favor);
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);
         e.ai_off = self.ai_off;

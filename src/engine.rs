@@ -140,6 +140,7 @@ pub struct Engine {
     pub(crate) protection: crate::protection::Protection,
     pub(crate) formlists: crate::formlists::FormLists,
     pub(crate) outfits: crate::outfits::Outfits,
+    pub(crate) ref_state: crate::ref_state::RefState,
     /// Armor and block game settings, read on first use.
     pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
     /// Independently timed strength contributions of loaded combat members.
@@ -474,6 +475,7 @@ impl Engine {
             protection: Default::default(),
             formlists: Default::default(),
             outfits: Default::default(),
+            ref_state: Default::default(),
             combat_settings: Default::default(),
             combat_group_strengths: Default::default(),
             detection: Default::default(),
@@ -1415,6 +1417,17 @@ impl Engine {
                 start * 0.3,
             );
             rt.alias_gen = self.scripts.alias_gen;
+            if let Some(&scale) = self.ref_state.scales.get(&d.ref_id) {
+                // Scripts gave the reference its own scale; the NPC's and the
+                // race's heights stay on top.
+                let placed = self
+                    .lo
+                    .get(d.ref_id)
+                    .map_or(1.0, |rec| crate::world::records::reference(&rec).scale);
+                if placed > 0.0 {
+                    rt.scale *= scale / placed;
+                }
+            }
             if let Some(crate::ai::schedule::PlacementHeading::Turn(heading)) = placement_heading {
                 rt.turn_after_arrival = Some(*heading);
             }
@@ -1914,6 +1927,7 @@ impl Engine {
         let made = self.created_objects(crate::ai::schedule::Place::Interior(cell_id));
         let made_ids: Vec<FormId> = made.iter().map(|o| o.ref_id).collect();
         objects.extend(made);
+        self.apply_scales(&mut objects);
         self.instantiate(key, &objects, lights, doors);
         let refs: Vec<FormId> = self
             .lo
@@ -2160,6 +2174,7 @@ impl Engine {
         let made = self.created_objects(crate::ai::schedule::Place::Exterior(world, (x, y)));
         let made_ids: Vec<FormId> = made.iter().map(|o| o.ref_id).collect();
         objects.extend(made);
+        self.apply_scales(&mut objects);
         self.instantiate(key, &objects, lights, doors);
         let mut refs: Vec<FormId> = cell_id
             .and_then(|c| self.lo.cell(c))

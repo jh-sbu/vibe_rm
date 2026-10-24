@@ -78,10 +78,14 @@ impl Engine {
 
     /// A placed or created reference.
     pub fn reference_of(&self, r: FormId) -> Option<records::Reference> {
-        match self.lo.get(r) {
-            Some(rec) => Some(records::reference(&rec)),
-            None => self.created_reference(r),
+        let mut rf = match self.lo.get(r) {
+            Some(rec) => records::reference(&rec),
+            None => self.created_reference(r)?,
+        };
+        if let Some(&scale) = self.ref_state.scales.get(&r) {
+            rf.scale = scale;
         }
+        Some(rf)
     }
 
     /// The place a reference is in now: the player's, a loaded actor's cell, else

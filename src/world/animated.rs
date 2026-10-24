@@ -720,6 +720,26 @@ impl Engine {
         true
     }
 
+    /// Papyrus `SetOpen`: open or close a door or openable object, whatever
+    /// it is now; opening a door also unlocks it (the CK wiki's note). No
+    /// activation events fire.
+    pub fn set_open(&mut self, r: FormId, open: bool) {
+        let door = self
+            .base_of(r)
+            .and_then(|b| self.lo.tag_of(b))
+            .is_some_and(|t| t.0 == *b"DOOR");
+        if open && door && self.is_locked(r) {
+            self.set_locked(r, false);
+        }
+        let is_open = matches!(self.open_state(r), OpenState::Open | OpenState::Opening);
+        if is_open == open || self.open_state(r) == OpenState::None {
+            return;
+        }
+        if !self.toggle_door(r, false) {
+            self.play_object_animation(r, if open { "Open" } else { "Close" });
+        }
+    }
+
     /// Start an object's behaviour graph, if its model has one: its parts and
     /// the colliders on them follow the graph's pose from now on.
     pub(crate) fn start_object_graph(
@@ -1145,6 +1165,18 @@ mod door_tests {
         let rt = e.cells.entry(CellKey::Interior(CELL)).or_default();
         rt.animated.push(door(DOOR));
         rt.animated.push(door(ACTOR_DOOR));
+
+        // SetOpen only acts when the state differs.
+        e.set_open(DOOR, false);
+        assert_eq!(e.open_state(DOOR), OpenState::Closed);
+        e.set_open(DOOR, true);
+        assert_eq!(e.open_state(DOOR), OpenState::Opening);
+        e.set_open(DOOR, true);
+        assert_eq!(e.open_state(DOOR), OpenState::Opening);
+        e.set_open(DOOR, false);
+        assert_eq!(e.open_state(DOOR), OpenState::Closing);
+        e.world_state.open_doors.clear();
+        e.cells.get_mut(&CellKey::Interior(CELL)).unwrap().animated[0] = door(DOOR);
 
         // The player's door stays remembered as open until the player shuts it.
         assert!(e.toggle_door(DOOR, false));
