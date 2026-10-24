@@ -79,6 +79,10 @@ pub(crate) struct Continuity {
     pub doing_favor: std::collections::HashSet<FormId>,
     /// Default outfits scripts gave NPC records.
     pub base_outfits: HashMap<FormId, FormId>,
+    /// Cells flagged to reset when they next load.
+    pub reset_cells: std::collections::HashSet<FormId>,
+    /// Text globals running quests keep copies of: (quest, global).
+    pub quest_globals: HashMap<(FormId, FormId), f32>,
     /// Outfits scripts gave actors.
     pub outfits: HashMap<FormId, FormId>,
     /// Music types scripts queued, in the order added.
@@ -299,6 +303,8 @@ impl Continuity {
             critical_stages: e.actor_flags.critical.clone(),
             not_on_meter: e.actor_flags.not_on_meter.clone(),
             doing_favor: e.actor_flags.doing_favor.clone(),
+            reset_cells: e.resets.cells.clone(),
+            quest_globals: e.resets.quest_globals.clone(),
             base_outfits: e.scripts.globals.base_outfits.clone(),
             actor_voice_recovery: e.voice_remaining(),
             outfits: e.outfits.set.clone(),
@@ -684,6 +690,22 @@ impl Continuity {
         }
         file.add(b"FAVR", w.0);
         let mut w = Writer::default();
+        let mut ids: Vec<_> = self.reset_cells.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"RSTC", w.0);
+        let mut w = Writer::default();
+        w.len(self.quest_globals.len());
+        for ((quest, global), value) in sorted(&self.quest_globals) {
+            w.form(quest);
+            w.form(global);
+            w.f32(*value);
+        }
+        file.add(b"QGLB", w.0);
+        let mut w = Writer::default();
         w.len(self.base_outfits.len());
         for (npc, outfit) in sorted(&self.base_outfits) {
             w.form(npc);
@@ -1004,6 +1026,25 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"RSTC")? {
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let cell = r.form()?;
+                ordered(&mut previous, cell)?;
+                s.reset_cells.insert(cell);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"QGLB")? {
+            let mut previous = None;
+            for _ in 0..r.count(12)? {
+                let quest = r.form()?;
+                let global = r.form()?;
+                ordered(&mut previous, (quest, global))?;
+                s.quest_globals.insert((quest, global), r.f32()?);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"BOFT")? {
             let mut previous = None;
             for _ in 0..r.count(8)? {
@@ -1279,6 +1320,16 @@ impl Continuity {
         }
         for &actor in self.not_on_meter.iter().chain(&self.doing_favor) {
             nonnull(actor)?;
+        }
+        for &cell in &self.reset_cells {
+            nonnull(cell)?;
+        }
+        for (&(quest, global), &value) in &self.quest_globals {
+            nonnull(quest)?;
+            nonnull(global)?;
+            if !value.is_finite() {
+                return Err(Corrupt("quest global out of range".into()));
+            }
         }
         for (&npc, &outfit) in &self.base_outfits {
             nonnull(npc)?;
@@ -1572,6 +1623,7 @@ impl Continuity {
             self.doing_favor,
         );
         e.scripts.globals.base_outfits = self.base_outfits;
+        e.restore_resets(self.reset_cells, self.quest_globals);
         e.restore_ref_state(self.ref_scales, self.no_favor, self.ignore_friendly_hits);
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);

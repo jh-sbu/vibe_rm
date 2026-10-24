@@ -5925,6 +5925,58 @@ fn doing_favor_and_base_outfits_replace_the_sessions_after_loading() {
 }
 
 #[test]
+fn resets_payloads() {
+    let snapshot = |cell: FormId, value: f32, repeat: bool| {
+        let mut s = Snapshot::default();
+        s.continuity.reset_cells.extend([CELL, ACTOR, cell]);
+        s.continuity
+            .quest_globals
+            .extend([((CELL, ACTOR), 1.5), ((CELL, PLAYER_REF), value)]);
+        if repeat {
+            s.continuity.quest_globals.insert((ACTOR, CELL), 2.0);
+        }
+        s
+    };
+    let s = snapshot(PLAYER_REF, 4.0, true);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.reset_cells, s.continuity.reset_cells);
+    assert_eq!(
+        restored.continuity.quest_globals,
+        s.continuity.quest_globals
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"RSTC");
+    check_continuity_payload(&file, b"QGLB");
+    assert!(Snapshot::read(&snapshot(FormId::NULL, 4.0, false).write()).is_err());
+    assert!(Snapshot::read(&snapshot(PLAYER_REF, f32::NAN, false).write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn resets_replace_the_sessions_after_loading() {
+    let (_a, mut a) = engine("resets-a");
+    a.resets.cells.insert(CELL);
+    a.resets.quest_globals.insert((ACTOR, CELL), 7.0);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("resets-b");
+    b.resets.cells.insert(PLAYER_REF);
+    b.resets.quest_globals.insert((CELL, ACTOR), 1.0);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.resets.cells, [CELL].into_iter().collect());
+    assert_eq!(
+        b.resets.quest_globals,
+        [((ACTOR, CELL), 7.0)].into_iter().collect()
+    );
+    let mut legacy = file;
+    legacy
+        .sections
+        .retain(|(tag, _)| tag != b"RSTC" && tag != b"QGLB");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.resets.cells.is_empty() && b.resets.quest_globals.is_empty());
+}
+
+#[test]
 fn outfits_payload() {
     let mut s = Snapshot::default();
     s.continuity

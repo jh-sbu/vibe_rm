@@ -845,6 +845,30 @@ pub fn call(
                 _ => Value::Float(x),
             })
         }
+        ("objectreference", "reset") => {
+            if let Some(r) = me {
+                e.reset_reference(r, form_arg(args, 0));
+            }
+            none()
+        }
+        ("cell", "reset") => {
+            if let Some(c) = me {
+                e.reset_cell(c);
+            }
+            none()
+        }
+        ("quest", "reset") => {
+            if let Some(q) = me {
+                e.reset_quest(q);
+            }
+            none()
+        }
+        ("quest", "updatecurrentinstanceglobal") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(q), Some(g)) => e.update_quest_global(q, g),
+            _ => false,
+        })),
+        // Quests start and stop at once here, so neither is ever half done.
+        ("quest", "isstarting") | ("quest", "isstopping") => v(Value::Bool(false)),
         ("objectreference", "setopen") => {
             if let Some(r) = me {
                 e.set_open(r, args.is_empty() || arg(0).as_bool());

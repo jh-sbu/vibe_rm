@@ -222,7 +222,9 @@ shared with `Actor.SetOutfit`).
   that shares it and has no reference-level override. This settles the item
   `known_ambiguities/outfits.md` lists as unconfirmed; keep that file current.
 
-### 8. Resets and quest instances
+### 8. Resets and quest instances (done)
+
+Done in `src/resets.rs` (saved as `RSTC` / `QGLB`); notes in `refs/pex-natives/reset-batch08-resets-instances.md`. `Quest.Reset` leaves the quest's script variables alone (no VM helper rebuilds them yet).
 
 `Quest.Reset`, `ObjectReference.Reset`, `Cell.Reset` (≤81 together),
 `Quest.UpdateCurrentInstanceGlobal` (77), `Quest.IsStarting` / `IsStopping` (0).

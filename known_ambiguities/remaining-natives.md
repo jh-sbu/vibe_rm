@@ -145,3 +145,15 @@ Unconfirmed: whether `IsHostileToActor` counts actors that are not loaded or
 are dead (we say no), and what `SetDoingFavor` changes besides the flag the
 scripts read (we change nothing). `GetFactionReaction` is read as the same
 faction combat relation the `GetFactionRelation` condition uses.
+
+## Resets (ObjectReference / Cell / Quest)
+
+Unconfirmed: exactly what `ObjectReference.Reset` restores beyond the location,
+inventory and a dead actor (we also restore enable, lock, destruction, open
+state and harvest, and leave factions, relationships, owners and alias fills);
+whether a cell reset resurrects the actors killed in it and re-enables what
+scripts disabled (we do both); whether a quest's text globals are copied when it
+starts or when its text first shows them (the latter); and what `Quest.Reset`
+does to a running quest and its script variables (we stop it and clear its state
+but keep its script). **test-mod** wanted: kill an NPC in a cell, `Cell.Reset`,
+leave and return; and `Reset` a disabled reference.

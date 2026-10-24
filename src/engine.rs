@@ -142,6 +142,7 @@ pub struct Engine {
     pub(crate) outfits: crate::outfits::Outfits,
     pub(crate) ref_state: crate::ref_state::RefState,
     pub(crate) actor_flags: crate::actor_flags::ActorFlags,
+    pub(crate) resets: crate::resets::Resets,
     /// Armor and block game settings, read on first use.
     pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
     /// Independently timed strength contributions of loaded combat members.
@@ -478,6 +479,7 @@ impl Engine {
             outfits: Default::default(),
             ref_state: Default::default(),
             actor_flags: Default::default(),
+            resets: Default::default(),
             combat_settings: Default::default(),
             combat_group_strengths: Default::default(),
             detection: Default::default(),
@@ -1900,6 +1902,7 @@ impl Engine {
         let t = Instant::now();
         let party = self.player_party();
         self.unload_all();
+        self.apply_cell_reset(cell_id);
         let contents = cell::load_cell(&self.lo, cell_id).context("cell not found")?;
         log::info!(
             "entering {} '{}' ({}): {} objects, {} lights",
@@ -2152,6 +2155,9 @@ impl Engine {
             None => return,
         };
         let cell_id = wi.cells.get(&(x, y)).copied();
+        if let Some(cid) = cell_id {
+            self.apply_cell_reset(cid);
+        }
         let mut objects = Vec::new();
         let mut lights = Vec::new();
         let mut doors = Vec::new();
@@ -3704,6 +3710,7 @@ impl Engine {
     /// scenes stop.
     pub fn stop_quest(&mut self, q: FormId) {
         self.clean_up_alias_creations(q);
+        self.drop_quest_globals(q);
         let st = self.scripts.quests.entry(q).or_default();
         st.running = false;
         st.aliases.clear();

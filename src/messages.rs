@@ -221,7 +221,10 @@ impl Engine {
         let (kind, form) = kind.split_once('.').unwrap_or((kind, ""));
         if kind.eq_ignore_ascii_case("global") {
             let g = self.lo.find_editor_id(name.trim())?;
-            return Some(format!("{}", self.global_value(g).round() as i64));
+            let value = quest
+                .and_then(|q| self.quest_global_value(q, g))
+                .unwrap_or_else(|| self.global_value(g));
+            return Some(format!("{}", value.round() as i64));
         }
         if !kind.eq_ignore_ascii_case("alias") {
             return None;
