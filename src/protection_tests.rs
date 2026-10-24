@@ -241,3 +241,47 @@ fn invulnerable_actors_health_cant_be_lowered() {
     e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
     assert_eq!(e.actor_ref(ACTOR).unwrap().health, 20.0);
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn blows_pass_ghosts_by() {
+    use esp::actor_value as av;
+    use papyrus::Value;
+    let (_f, mut e) = fixture("ghost");
+    assert_eq!(
+        call(&mut e, "actor", "isghost", ACTOR, &[]),
+        Value::Bool(false)
+    );
+    call(&mut e, "actor", "setghost", ACTOR, &[Value::Bool(true)]);
+    assert!(e.is_ghost(ACTOR) && !e.is_ghost(OTHER), "per reference");
+    assert_eq!(
+        call(&mut e, "actor", "isghost", ACTOR, &[]),
+        Value::Bool(true)
+    );
+    e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 50.0);
+    // Scripts still reach its health.
+    e.damage_actor_value(ACTOR, av::HEALTH, 10.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 40.0);
+    // GetIsGhost (237).
+    let rec = e.lo.get(NPC).unwrap();
+    let mut d = [0u8; 32];
+    d[4..8].copy_from_slice(&1.0f32.to_le_bytes());
+    d[8..10].copy_from_slice(&237u16.to_le_bytes());
+    let c = crate::condition::parse(&rec, &d).unwrap();
+    let ghost = |e: &Engine, r: FormId| {
+        crate::condition::evaluate(
+            e,
+            &[c.clone()],
+            crate::condition::Context {
+                subject: Some(r),
+                ..Default::default()
+            },
+        )
+    };
+    assert!(ghost(&e, ACTOR) && !ghost(&e, OTHER));
+    call(&mut e, "actor", "setghost", ACTOR, &[Value::Bool(false)]);
+    assert!(!ghost(&e, ACTOR));
+    e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 10.0);
+}

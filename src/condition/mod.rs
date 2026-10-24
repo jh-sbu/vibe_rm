@@ -1145,7 +1145,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         159 | 49 if ctx.idle.is_none() => {
             Some(subject.map_or(0.0, |s| e.sit_sleep_state(s, c.func == 49)))
         }
-        237 => b(false), // GetIsGhost
+        237 => b(subject.is_some_and(|s| e.is_ghost(s))), // GetIsGhost
         // The platform: a PC build (UESP Skyrim:Console, oldid 3628513, "Returns
         // true if the game is running on a Windows environment"). Gore is never
         // disabled (`known_ambiguities/status-conditions.md`).

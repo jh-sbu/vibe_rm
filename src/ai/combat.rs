@@ -2572,7 +2572,7 @@ impl Engine {
         stagger: f32,
         sneak: bool,
     ) {
-        if amount > 0.0 && self.is_invulnerable(target) {
+        if amount > 0.0 && (self.is_invulnerable(target) || self.is_ghost(target)) {
             return;
         }
         if target == PLAYER_REF {

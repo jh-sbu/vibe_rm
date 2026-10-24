@@ -57,6 +57,8 @@ pub(crate) struct Continuity {
     pub attacked_on_sight: std::collections::HashSet<FormId>,
     /// Actor bases' `ACBS` flags scripts set or cleared, by (base, flag).
     pub base_flags: HashMap<(FormId, u32), bool>,
+    /// References `SetGhost` made ghosts or not.
+    pub ghosts: HashMap<FormId, bool>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -262,6 +264,7 @@ impl Continuity {
             faction_player_flags: e.factions.player_flags.clone(),
             attacked_on_sight: e.factions.attacked_on_sight.clone(),
             base_flags: e.protection.base_flags.clone(),
+            ghosts: e.protection.ghosts.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -563,6 +566,13 @@ impl Continuity {
             w.bool(*on);
         }
         file.add(b"BFLG", w.0);
+        let mut w = Writer::default();
+        w.len(self.ghosts.len());
+        for (actor, on) in sorted(&self.ghosts) {
+            w.form(actor);
+            w.bool(*on);
+        }
+        file.add(b"GHST", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -743,6 +753,15 @@ impl Continuity {
                 let id = r.form()?;
                 ordered(&mut previous, id)?;
                 s.attacked_on_sight.insert(id);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"GHST")? {
+            let mut previous = None;
+            for _ in 0..r.count(5)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.ghosts.insert(actor, r.bool()?);
             }
             r.finish()?;
         }
@@ -948,6 +967,9 @@ impl Continuity {
         }
         for &id in &self.attacked_on_sight {
             nonnull(id)?;
+        }
+        for &actor in self.ghosts.keys() {
+            nonnull(actor)?;
         }
         for &(base, flag) in self.base_flags.keys() {
             nonnull(base)?;
@@ -1218,5 +1240,6 @@ impl Continuity {
         e.restore_faction_player_flags(self.faction_player_flags);
         e.restore_attacked_on_sight(self.attacked_on_sight);
         e.restore_base_flags(self.base_flags);
+        e.restore_ghosts(self.ghosts);
     }
 }

@@ -1502,6 +1502,13 @@ pub fn call(
             };
             v(Value::Bool(me.is_some_and(|b| e.base_has_flag(b, flag))))
         }
+        ("actor", "setghost") => {
+            if let Some(a) = me {
+                e.set_ghost(a, args.first().is_none_or(|b| b.as_bool()));
+            }
+            none()
+        }
+        ("actor", "isghost") => v(Value::Bool(me.is_some_and(|a| e.is_ghost(a)))),
         ("actor", "isessential") => v(Value::Bool(me.is_some_and(|a| e.is_essential(a)))),
         // The NPC's gift filter (`GNAM`, a form list of items).
         ("actorbase", "getgiftfilter") => {

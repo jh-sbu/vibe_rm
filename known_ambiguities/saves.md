@@ -419,3 +419,10 @@ or invulnerable flag scripts changed, sorted. Loading replaces this
 session's changes; legacy saves have none, so bases are as their records
 say. The original keeps changed base data as change form data (layout not
 researched). Native policy, not an SE claim.
+
+## Ghosts (`GHST`)
+
+Optional `GHST` lists the references `SetGhost` changed with their state,
+sorted. Loading replaces this session's; legacy saves have none, so each
+actor is as its base says. The original keeps `ExtraGhost` on the reference
+(change form layout not researched). Native policy, not an SE claim.
