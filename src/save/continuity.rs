@@ -75,6 +75,10 @@ pub(crate) struct Continuity {
     pub not_on_meter: std::collections::HashSet<FormId>,
     /// Seconds of voice recovery left on actors other than the player.
     pub actor_voice_recovery: HashMap<FormId, f32>,
+    /// Actors flagged as doing the player a favor.
+    pub doing_favor: std::collections::HashSet<FormId>,
+    /// Default outfits scripts gave NPC records.
+    pub base_outfits: HashMap<FormId, FormId>,
     /// Outfits scripts gave actors.
     pub outfits: HashMap<FormId, FormId>,
     /// Music types scripts queued, in the order added.
@@ -294,6 +298,8 @@ impl Continuity {
             ignore_friendly_hits: e.ref_state.ignore_friendly_hits.clone(),
             critical_stages: e.actor_flags.critical.clone(),
             not_on_meter: e.actor_flags.not_on_meter.clone(),
+            doing_favor: e.actor_flags.doing_favor.clone(),
+            base_outfits: e.scripts.globals.base_outfits.clone(),
             actor_voice_recovery: e.voice_remaining(),
             outfits: e.outfits.set.clone(),
             music_queue: e.music.queue.script_entries(),
@@ -670,6 +676,21 @@ impl Continuity {
         }
         file.add(b"ACST", w.0);
         let mut w = Writer::default();
+        let mut ids: Vec<_> = self.doing_favor.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        file.add(b"FAVR", w.0);
+        let mut w = Writer::default();
+        w.len(self.base_outfits.len());
+        for (npc, outfit) in sorted(&self.base_outfits) {
+            w.form(npc);
+            w.form(*outfit);
+        }
+        file.add(b"BOFT", w.0);
+        let mut w = Writer::default();
         w.len(self.outfits.len());
         for (actor, outfit) in sorted(&self.outfits) {
             w.form(actor);
@@ -974,6 +995,24 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"FAVR")? {
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.doing_favor.insert(actor);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"BOFT")? {
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let npc = r.form()?;
+                ordered(&mut previous, npc)?;
+                s.base_outfits.insert(npc, r.form()?);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"GHST")? {
             let mut previous = None;
             for _ in 0..r.count(5)? {
@@ -1238,8 +1277,12 @@ impl Continuity {
                 return Err(Corrupt("critical stage out of range".into()));
             }
         }
-        for &actor in &self.not_on_meter {
+        for &actor in self.not_on_meter.iter().chain(&self.doing_favor) {
             nonnull(actor)?;
+        }
+        for (&npc, &outfit) in &self.base_outfits {
+            nonnull(npc)?;
+            nonnull(outfit)?;
         }
         for (&actor, &secs) in &self.actor_voice_recovery {
             nonnull(actor)?;
@@ -1526,7 +1569,9 @@ impl Continuity {
             self.critical_stages,
             self.not_on_meter,
             self.actor_voice_recovery,
+            self.doing_favor,
         );
+        e.scripts.globals.base_outfits = self.base_outfits;
         e.restore_ref_state(self.ref_scales, self.no_favor, self.ignore_friendly_hits);
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);

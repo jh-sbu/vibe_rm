@@ -138,3 +138,10 @@ revive it), whether `UnequipAll` also readies away spells (we leave them), and t
 numbering `UnequipItemSlot` takes (we use biped slots 30..61). The critical stage
 ends remove the actor by disabling it; the game's ash and goo are not shown.
 **test-mod** wanted: `Resurrect` an NPC killed with armor, then `IsEquipped`.
+
+## Hostility and favor flags
+
+Unconfirmed: whether `IsHostileToActor` counts actors that are not loaded or
+are dead (we say no), and what `SetDoingFavor` changes besides the flag the
+scripts read (we change nothing). `GetFactionReaction` is read as the same
+faction combat relation the `GetFactionRelation` condition uses.

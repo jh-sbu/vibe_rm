@@ -200,7 +200,9 @@ Done in `src/actor_flags.rs` (saved as `ACST`); notes in `refs/pex-natives/actor
   the HUD's detected state.
 - Voice recovery: the shout cooldown in `src/shouts.rs`.
 
-### 7. Relationships, factions and followers
+### 7. Relationships, factions and followers (done)
+
+Done in `src/actor_flags.rs`, `src/outfits.rs` (base outfits, saved as `BOFT`; favor flag as `FAVR`); notes in `refs/pex-natives/social-batch07-relationships-followers.md`. There is no follower favor mode yet, so `SetDoingFavor` only stores.
 
 `IsCommandedActor` (28), `SetDoingFavor` (41) / `IsDoingFavor` (0),
 `HasFamilyRelationship` (1), `HasParentRelationship` (1), `HasAssociation` (6),

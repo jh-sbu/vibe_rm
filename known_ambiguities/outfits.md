@@ -13,7 +13,9 @@
   wear their NPC's `DOFT`.
 - A sleep outfit (`abSleepOutfit` true; `BYOHRelationshipAdoptionChildScript`
   only) does nothing: actors don't change for bed yet.
-- `ActorBase.SetOutfit` and the player are left alone.
+- `ActorBase.SetOutfit` sets the NPC record's outfit (saved in optional `BOFT`):
+  actors of it with no reference-level outfit swap armor as above, and actors made
+  later start with it; a reference-level outfit wins. The player is left alone.
 
 ## Unconfirmed
 
@@ -22,6 +24,7 @@
   here), and whether the old outfit's items vanish or stay unequipped in
   the inventory (we take them away).
 - Whether `Actor.SetOutfit` changes the reference only or its base (and so
-  every actor sharing it); we change the reference.
+  every actor sharing it); we change the reference. `ActorBase.SetOutfit` changes
+  the record's, as its name says.
 - Whether a new outfit's leveled lists are resolved again each time it is
   equipped (cell resets, respawns) or kept.

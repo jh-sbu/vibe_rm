@@ -28,6 +28,20 @@ const BOOTS: FormId = FormId(0x80A);
 const ROBE: FormId = FormId(0x80B);
 const OLD: FormId = FormId(0x80C);
 const NEW: FormId = FormId(0x80D);
+/// A second NPC, its reference, two association types and the link between
+/// the NPCs (a parent and a child by the Parent / Child association).
+const OTHER_NPC: FormId = FormId(0x80E);
+const OTHER_REF: FormId = FormId(0x80F);
+const PARENT_CHILD: FormId = FormId(0x810);
+const FRIENDS: FormId = FormId(0x811);
+const LINK: FormId = FormId(0x812);
+/// Two factions that are enemies, and an actor in each.
+const WOLVES: FormId = FormId(0x813);
+const HUNTERS: FormId = FormId(0x814);
+const WOLF_NPC: FormId = FormId(0x815);
+const HUNTER_NPC: FormId = FormId(0x816);
+const WOLF_REF: FormId = FormId(0x817);
+const HUNTER_REF: FormId = FormId(0x818);
 
 struct Fixture(std::path::PathBuf);
 
@@ -74,6 +88,44 @@ fn fixture(name: &str) -> (Fixture, Engine) {
                 RecordBuilder::new(b"NPC_", TEMPLATED)
                     .field(b"ACBS", &templated)
                     .form(b"TPLT", NPC),
+                RecordBuilder::new(b"NPC_", OTHER_NPC).field(b"ACBS", &acbs),
+                RecordBuilder::new(b"NPC_", WOLF_NPC)
+                    .field(b"ACBS", &acbs)
+                    .field(b"SNAM", &[&WOLVES.0.to_le_bytes()[..], &[0]].concat()),
+                RecordBuilder::new(b"NPC_", HUNTER_NPC)
+                    .field(b"ACBS", &acbs)
+                    .field(b"SNAM", &[&HUNTERS.0.to_le_bytes()[..], &[0]].concat()),
+            ],
+        ),
+        Node::top(
+            b"FACT",
+            vec![
+                RecordBuilder::new(b"FACT", WOLVES),
+                RecordBuilder::new(b"FACT", HUNTERS),
+            ],
+        ),
+        Node::top(
+            b"ASTP",
+            vec![
+                RecordBuilder::new(b"ASTP", PARENT_CHILD)
+                    .zstring(b"EDID", "ParentChild")
+                    .u32(b"DATA", 1),
+                RecordBuilder::new(b"ASTP", FRIENDS).u32(b"DATA", 0),
+            ],
+        ),
+        Node::top(
+            b"RELA",
+            vec![
+                RecordBuilder::new(b"RELA", LINK).field(
+                    b"DATA",
+                    &[
+                        &NPC.0.to_le_bytes()[..],
+                        &OTHER_NPC.0.to_le_bytes(),
+                        &[4, 0, 0, 0],
+                        &PARENT_CHILD.0.to_le_bytes(),
+                    ]
+                    .concat(),
+                ),
             ],
         ),
         Node::top(
@@ -81,6 +133,9 @@ fn fixture(name: &str) -> (Fixture, Engine) {
             vec![
                 RecordBuilder::new(b"ACHR", ACTOR).form(b"NAME", NPC),
                 RecordBuilder::new(b"ACHR", TEMPLATED_REF).form(b"NAME", TEMPLATED),
+                RecordBuilder::new(b"ACHR", OTHER_REF).form(b"NAME", OTHER_NPC),
+                RecordBuilder::new(b"ACHR", WOLF_REF).form(b"NAME", WOLF_NPC),
+                RecordBuilder::new(b"ACHR", HUNTER_REF).form(b"NAME", HUNTER_NPC),
             ],
         ),
         Node::top(b"STAT", vec![RecordBuilder::new(b"STAT", STATIC)]),
@@ -301,4 +356,148 @@ fn enable_ai_turns_an_actors_ai_off_and_on() {
     assert!(e.ai_enabled, "the console's switch is everyone's");
     call(&mut e, "actor", "enableai", ACTOR, &[]);
     assert!(e.ai_off.is_empty(), "true when the argument is missing");
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn relationship_natives_read_the_authored_links() {
+    let (_f, mut e) = fixture("relations");
+    let (other, actor) = (e.object_value(OTHER_REF), e.object_value(ACTOR));
+    let yes = Value::Bool(true);
+    let no = Value::Bool(false);
+    // Family is symmetric, and "with anyone" when no actor is named.
+    let family =
+        |e: &mut Engine, on, args: &[Value]| call(e, "actor", "hasfamilyrelationship", on, args);
+    assert_eq!(family(&mut e, ACTOR, &[other.clone()]), yes);
+    assert_eq!(family(&mut e, OTHER_REF, &[actor.clone()]), yes);
+    assert_eq!(family(&mut e, ACTOR, &[]), yes);
+    assert_eq!(family(&mut e, TEMPLATED_REF, &[]), no);
+    // Parent is the parent end only.
+    let parent =
+        |e: &mut Engine, on, args: &[Value]| call(e, "actor", "hasparentrelationship", on, args);
+    assert_eq!(parent(&mut e, ACTOR, &[other.clone()]), yes);
+    assert_eq!(parent(&mut e, OTHER_REF, &[actor]), no);
+    // Associations by type, either way round.
+    let kind = e.object_value(PARENT_CHILD);
+    let friends = e.object_value(FRIENDS);
+    let has = |e: &mut Engine, on, args: &[Value]| call(e, "actor", "hasassociation", on, args);
+    assert_eq!(has(&mut e, OTHER_REF, &[kind.clone()]), yes);
+    assert_eq!(has(&mut e, OTHER_REF, &[kind, Value::None]), yes);
+    assert_eq!(has(&mut e, ACTOR, &[friends, other]), no);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn faction_reaction_and_hostility_natives_follow_the_factions() {
+    let (_f, mut e) = fixture("reactions");
+    for (r, base) in [(WOLF_REF, WOLF_NPC), (HUNTER_REF, HUNTER_NPC)] {
+        place(&mut e, r, base);
+    }
+    for (r, faction) in [(WOLF_REF, WOLVES), (HUNTER_REF, HUNTERS)] {
+        let a = e.actor_mut(r).unwrap();
+        a.stats = Arc::new(crate::ai::combat::CombatStats {
+            factions: vec![faction],
+            aggression: 1,
+            ..(*a.stats).clone()
+        });
+    }
+    let (wolf, hunter) = (e.object_value(WOLF_REF), e.object_value(HUNTER_REF));
+    let reaction = |e: &mut Engine, on, other: &Value| {
+        call(e, "actor", "getfactionreaction", on, &[other.clone()])
+    };
+    assert_eq!(reaction(&mut e, WOLF_REF, &hunter), Value::Int(0));
+    e.set_combat_reaction(WOLVES, HUNTERS, 1);
+    e.set_combat_reaction(HUNTERS, WOLVES, 1);
+    assert_eq!(reaction(&mut e, WOLF_REF, &hunter), Value::Int(1));
+    assert_eq!(reaction(&mut e, HUNTER_REF, &wolf), Value::Int(1));
+    // Same faction: allies.
+    assert_eq!(reaction(&mut e, WOLF_REF, &wolf), Value::Int(2));
+    // Enemies are hostile; one actor isn't hostile to a stranger of no faction.
+    assert_eq!(
+        call(&mut e, "actor", "ishostiletoactor", WOLF_REF, &[hunter]),
+        Value::Bool(true)
+    );
+    place(&mut e, ACTOR, NPC);
+    let stranger = e.object_value(ACTOR);
+    assert_eq!(
+        call(&mut e, "actor", "ishostiletoactor", WOLF_REF, &[stranger]),
+        Value::Bool(false)
+    );
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn command_and_favor_flags() {
+    let (_f, mut e) = fixture("favor");
+    let flag = |e: &mut Engine, func: &str, args: &[Value]| call(e, "actor", func, ACTOR, args);
+    assert_eq!(flag(&mut e, "iscommandedactor", &[]), Value::Bool(false));
+    e.magic.commanded.insert(ACTOR, OTHER_REF);
+    assert_eq!(flag(&mut e, "iscommandedactor", &[]), Value::Bool(true));
+    assert_eq!(flag(&mut e, "isdoingfavor", &[]), Value::Bool(false));
+    flag(&mut e, "setdoingfavor", &[Value::Bool(true)]);
+    assert_eq!(flag(&mut e, "isdoingfavor", &[]), Value::Bool(true));
+    flag(&mut e, "setdoingfavor", &[Value::Bool(false)]);
+    assert_eq!(flag(&mut e, "isdoingfavor", &[]), Value::Bool(false));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn actor_base_set_outfit_changes_the_record_for_actors_without_their_own() {
+    let (_f, mut e) = fixture("base-outfit");
+    // Already dressed in the old outfit: it is swapped.
+    assert!(e.inventory_mut(ACTOR).is_equipped(CUIRASS));
+    let new = e.object_value(NEW);
+    call(
+        &mut e,
+        "actorbase",
+        "setoutfit",
+        NPC,
+        &[new.clone(), Value::Bool(true)],
+    );
+    assert_eq!(
+        e.default_outfit(ACTOR),
+        Some(OLD),
+        "a sleep outfit isn't worn"
+    );
+    call(
+        &mut e,
+        "actorbase",
+        "setoutfit",
+        NPC,
+        &[new, Value::Bool(false)],
+    );
+    assert_eq!(e.default_outfit(ACTOR), Some(NEW));
+    let inv = e.inventory_mut(ACTOR).clone();
+    assert_eq!(inv.count(CUIRASS), 0);
+    assert!(inv.is_equipped(ROBE) && inv.is_equipped(BOOTS));
+    // A reference-level outfit wins over the record's afterwards.
+    let old = e.object_value(OLD);
+    call(
+        &mut e,
+        "actor",
+        "setoutfit",
+        ACTOR,
+        &[old, Value::Bool(false)],
+    );
+    assert_eq!(e.default_outfit(ACTOR), Some(OLD));
+    // Other NPCs are unchanged.
+    assert_eq!(e.default_outfit(OTHER_REF), None);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn actor_base_outfit_dresses_actors_that_were_never_loaded() {
+    let (_f, mut e) = fixture("base-outfit-fresh");
+    let new = e.object_value(NEW);
+    call(
+        &mut e,
+        "actorbase",
+        "setoutfit",
+        NPC,
+        &[new, Value::Bool(false)],
+    );
+    // The inventory is made after the change: it starts with the new outfit.
+    let inv = e.inventory_mut(ACTOR).clone();
+    assert!(inv.is_equipped(ROBE) && inv.is_equipped(BOOTS));
+    assert_eq!(inv.count(CUIRASS), 0);
 }

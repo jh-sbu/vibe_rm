@@ -1268,6 +1268,45 @@ pub fn call(
             }
             none()
         }
+        ("actorbase", "setoutfit") => {
+            if let (Some(npc), Some(o)) = (me, form_arg(args, 0)) {
+                e.set_base_outfit(npc, o, arg(1).as_bool());
+            }
+            none()
+        }
+        ("actor", "iscommandedactor") => {
+            v(Value::Bool(me.is_some_and(|a| e.commander_of(a).is_some())))
+        }
+        ("actor", "setdoingfavor") => {
+            if let Some(a) = me {
+                e.set_doing_favor(a, args.is_empty() || arg(0).as_bool());
+            }
+            none()
+        }
+        ("actor", "isdoingfavor") => v(Value::Bool(
+            me.is_some_and(|a| e.actor_flags.doing_favor.contains(&a)),
+        )),
+        ("actor", "hasfamilyrelationship") => {
+            v(Value::Bool(me.is_some_and(|a| {
+                e.has_family_relationship(a, form_arg(args, 0))
+            })))
+        }
+        ("actor", "hasparentrelationship") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(o)) => e.has_parent_relationship(a, Some(o)),
+            _ => false,
+        })),
+        ("actor", "hasassociation") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(kind)) => e.has_association(a, form_arg(args, 1), kind),
+            _ => false,
+        })),
+        ("actor", "getfactionreaction") => v(Value::Int(match (me, form_arg(args, 0)) {
+            (Some(a), Some(o)) => e.faction_relation(a, o) as i32,
+            _ => 0,
+        })),
+        ("actor", "ishostiletoactor") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(o)) => e.would_attack(a, o),
+            _ => false,
+        })),
         ("actor", "stopcombatalarm") => {
             if let Some(a) = me {
                 e.stop_combat_alarm(a);

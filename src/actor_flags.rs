@@ -19,6 +19,8 @@ pub struct ActorFlags {
     pub(crate) not_on_meter: HashSet<FormId>,
     /// When (unpaused real-time seconds) each actor's voice has rested.
     pub(crate) voice_until: HashMap<FormId, f64>,
+    /// Actors flagged as doing the player a favor (`SetDoingFavor`).
+    pub(crate) doing_favor: HashSet<FormId>,
 }
 
 impl Engine {
@@ -49,6 +51,16 @@ impl Engine {
             self.actor_flags.not_on_meter.insert(actor);
         } else {
             self.actor_flags.not_on_meter.remove(&actor);
+        }
+    }
+
+    /// `SetDoingFavor`: a flag only; nothing asks followers for favors yet, so
+    /// it changes nothing else.
+    pub fn set_doing_favor(&mut self, actor: FormId, doing: bool) {
+        if doing {
+            self.actor_flags.doing_favor.insert(actor);
+        } else {
+            self.actor_flags.doing_favor.remove(&actor);
         }
     }
 
@@ -169,10 +181,12 @@ impl Engine {
         critical: HashMap<FormId, i32>,
         not_on_meter: HashSet<FormId>,
         voice_remaining: HashMap<FormId, f32>,
+        doing_favor: HashSet<FormId>,
     ) {
         let now = self.scripts.real_time;
         self.actor_flags.critical = critical;
         self.actor_flags.not_on_meter = not_on_meter;
+        self.actor_flags.doing_favor = doing_favor;
         self.actor_flags.voice_until = voice_remaining
             .into_iter()
             .map(|(a, secs)| (a, now + secs as f64))

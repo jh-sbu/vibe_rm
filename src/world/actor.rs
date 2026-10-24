@@ -13,6 +13,9 @@ pub struct Globals {
     values: std::collections::HashMap<FormId, f32>,
     /// Entries scripts added to leveled lists, which every roll sees.
     pub(crate) leveled: crate::leveled::Additions,
+    /// Default outfits scripts gave NPC records (`ActorBase.SetOutfit`), by
+    /// the record an actor takes its inventory from.
+    pub(crate) base_outfits: std::collections::HashMap<FormId, FormId>,
 }
 
 impl Globals {
@@ -723,7 +726,12 @@ fn npc_inventory(
             inventory.add(f, n);
         }
     }
-    for armo in outfit_armors(lo, traits.outfit, seed, globals) {
+    let outfit = globals
+        .base_outfits
+        .get(&traits.npc_for_inventory)
+        .copied()
+        .unwrap_or(traits.outfit);
+    for armo in outfit_armors(lo, outfit, seed, globals) {
         inventory.add(armo, 1);
         inventory.equip(lo, armo);
     }

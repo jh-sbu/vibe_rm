@@ -5878,6 +5878,53 @@ fn actor_flags_replace_the_sessions_after_loading() {
 }
 
 #[test]
+fn doing_favor_and_base_outfits_payloads() {
+    let snapshot = |extra: Option<FormId>, outfit: FormId| {
+        let mut s = Snapshot::default();
+        s.continuity.doing_favor.extend([CELL, ACTOR]);
+        s.continuity.doing_favor.extend(extra);
+        s.continuity
+            .base_outfits
+            .extend([(CELL, ACTOR), (ACTOR, outfit)]);
+        s
+    };
+    let s = snapshot(None, CELL);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.doing_favor, s.continuity.doing_favor);
+    assert_eq!(restored.continuity.base_outfits, s.continuity.base_outfits);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"FAVR");
+    check_continuity_payload(&file, b"BOFT");
+    assert!(Snapshot::read(&snapshot(Some(FormId::NULL), CELL).write()).is_err());
+    assert!(Snapshot::read(&snapshot(None, FormId::NULL).write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn doing_favor_and_base_outfits_replace_the_sessions_after_loading() {
+    let (_a, mut a) = engine("favor-a");
+    a.actor_flags.doing_favor.insert(ACTOR);
+    a.scripts.globals.base_outfits.insert(CELL, ACTOR);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("favor-b");
+    b.actor_flags.doing_favor.insert(PLAYER_REF);
+    b.scripts.globals.base_outfits.insert(ACTOR, CELL);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.actor_flags.doing_favor, [ACTOR].into_iter().collect());
+    assert_eq!(
+        b.scripts.globals.base_outfits,
+        [(CELL, ACTOR)].into_iter().collect()
+    );
+    let mut legacy = file;
+    legacy
+        .sections
+        .retain(|(tag, _)| tag != b"FAVR" && tag != b"BOFT");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.actor_flags.doing_favor.is_empty() && b.scripts.globals.base_outfits.is_empty());
+}
+
+#[test]
 fn outfits_payload() {
     let mut s = Snapshot::default();
     s.continuity
