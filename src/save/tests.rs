@@ -5613,3 +5613,34 @@ fn base_flags_replace_the_sessions_after_loading() {
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.protection.base_flags.is_empty());
 }
+
+#[test]
+fn ghosts_payload() {
+    let mut s = Snapshot::default();
+    s.continuity
+        .ghosts
+        .extend([(ACTOR, true), (PLAYER_REF, false)]);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.ghosts, s.continuity.ghosts);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"GHST");
+    s.continuity.ghosts.insert(FormId::NULL, true);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn ghosts_replace_the_sessions_after_loading() {
+    let (_a, mut a) = engine("ghosts-a");
+    a.set_ghost(ACTOR, true);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("ghosts-b");
+    b.set_ghost(PLAYER_REF, true);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.protection.ghosts, [(ACTOR, true)].into_iter().collect());
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"GHST");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.protection.ghosts.is_empty());
+}

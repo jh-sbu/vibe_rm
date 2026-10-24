@@ -53,3 +53,26 @@
   whether blows still stagger and count as assaults (we drop the blow
   entirely), and whether stamina and magicka are spared too (we spare health
   only).
+
+## Ghosts (`SetGhost`, `IsGhost`, `GetIsGhost`)
+
+- An actor is a ghost when `Actor.SetGhost` made it one (true if the
+  argument is missing), else when its base has `ACBS` 0x20000000 (UESP:
+  "Ghost/non-interactable (Ghosts, Nocturnal)"). The script's choice is the
+  reference's alone and wins over the base, as CommonLibSSE's `ExtraGhost`
+  (a per-reference `bool ghost`) suggests. `Actor.IsGhost` and `GetIsGhost`
+  (237) read it. Saved in optional `GHST`; vanilla calls `SetGhost` 222
+  times.
+- A ghost takes no damage from blows, spells or falls (`damage`).
+  `DamageActorValue` still lowers its health.
+- Sources for what a ghost is are Oblivion's: UESP
+  [Oblivion Mod:PCS Library/NPCs cannot hurt the player character, revision 2269838](https://en.uesp.net/w/index.php?oldid=2269838)
+  (a ghost player can't be hurt) and
+  [Oblivion Mod:Resurrecting the Player, revision 2308496](https://en.uesp.net/w/index.php?oldid=2308496)
+  ("can be used to make the player invulnerable (in most ways)", and a ghost
+  "should be ignored by enemies"). Not Skyrim evidence.
+- Unconfirmed in SE: whether blows pass through ghosts' collision or land
+  without effect, whether enemies ignore or stop targeting ghosts (we leave
+  targeting alone), whether ghosts can be activated or talked to
+  ("non-interactable"), whether `DamageActorValue` hurts them, and whether a
+  base flag changed by script would apply (no native sets it).
