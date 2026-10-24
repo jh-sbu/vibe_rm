@@ -873,3 +873,111 @@ fn batch03_location_hierarchy_reservations_and_packages() {
         Value::None
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn batch04_inventory_totals_and_worn_queries() {
+    let (_f, mut e) = fixture(vec![
+        Node::top(b"KYWD", vec![RecordBuilder::new(b"KYWD", FormId(0x820))]),
+        Node::top(
+            b"ARMO",
+            vec![
+                RecordBuilder::new(b"ARMO", FormId(0x810))
+                    .u32(b"BOD2", (1 << 2) | (1 << 9))
+                    .form(b"KWDA", FormId(0x820)),
+            ],
+        ),
+        Node::top(b"MISC", vec![RecordBuilder::new(b"MISC", FormId(0xf))]),
+        Node::top(b"ACHR", vec![RecordBuilder::new(b"ACHR", FormId(0x800))]),
+    ]);
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "iscontainerempty",
+            FormId(0x800),
+            &[]
+        ),
+        Value::Bool(true)
+    );
+    e.inventory_mut(FormId(0x800)).add(FormId(0xf), 23);
+    e.inventory_mut(FormId(0x800)).add(FormId(0x810), 2);
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getallitemscount",
+            FormId(0x800),
+            &[]
+        ),
+        Value::Int(25)
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "iscontainerempty",
+            FormId(0x800),
+            &[]
+        ),
+        Value::Bool(false)
+    );
+    assert_eq!(
+        call(&mut e, "actor", "getgoldamount", FormId(0x800), &[]),
+        Value::Int(23)
+    );
+    let kw = e.object_value(FormId(0x820));
+    assert_eq!(
+        call(
+            &mut e,
+            "actor",
+            "wornhaskeyword",
+            FormId(0x800),
+            &[kw.clone()]
+        ),
+        Value::Bool(false)
+    );
+    let mut inv = e.inventories.remove(&FormId(0x800)).unwrap();
+    inv.equip(&e.lo, FormId(0x810));
+    e.inventories.insert(FormId(0x800), inv);
+    assert_eq!(
+        call(&mut e, "actor", "wornhaskeyword", FormId(0x800), &[kw]),
+        Value::Bool(true)
+    );
+    let armor = e.object_value(FormId(0x810));
+    for slot in [32, 39] {
+        assert_eq!(
+            call(
+                &mut e,
+                "actor",
+                "getequippedarmorinslot",
+                FormId(0x800),
+                &[Value::Int(slot)]
+            ),
+            armor
+        );
+    }
+    for slot in [-1, 0, 30, 62] {
+        assert_eq!(
+            call(
+                &mut e,
+                "actor",
+                "getequippedarmorinslot",
+                FormId(0x800),
+                &[Value::Int(slot)]
+            ),
+            Value::None
+        );
+    }
+    e.inventory_mut(FormId(0x800)).items.clear();
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getallitemscount",
+            FormId(0x800),
+            &[]
+        ),
+        Value::Int(0)
+    );
+}

@@ -381,6 +381,45 @@ pub fn call(
             }
             none()
         }
+        ("objectreference", "getallitemscount") | ("objectreference", "iscontainerempty") => {
+            let count = me.map_or(0i32, |r| {
+                e.inventory_mut(r)
+                    .items
+                    .iter()
+                    .fold(0i32, |sum, (_, n)| sum.saturating_add((*n).max(0)))
+            });
+            v(if func == "iscontainerempty" {
+                Value::Bool(count == 0)
+            } else {
+                Value::Int(count)
+            })
+        }
+        ("actor", "getgoldamount") => v(Value::Int(me.map_or(0, |r| e.gold(r)))),
+        ("actor", "wornhaskeyword") => {
+            let worn = me
+                .map(|r| e.inventory_mut(r).equipped().to_vec())
+                .unwrap_or_default();
+            v(Value::Bool(form_arg(args, 0).is_some_and(|k| {
+                worn.into_iter().any(|f| e.has_keyword(f, k))
+            })))
+        }
+        ("actor", "getequippedarmorinslot") => {
+            let slot = arg(0).as_int();
+            let armor = if (30..=61).contains(&slot) {
+                let worn = me
+                    .map(|r| e.inventory_mut(r).equipped().to_vec())
+                    .unwrap_or_default();
+                worn.into_iter().find(|f| {
+                    e.lo.get(*f).is_some_and(|r| {
+                        r.tag().0 == *b"ARMO"
+                            && crate::world::inventory::armor_slots(&r) & (1u32 << (slot - 30)) != 0
+                    })
+                })
+            } else {
+                None
+            };
+            v(armor.map_or(Value::None, |f| e.object_value(f)))
+        }
         // ---------------------------------------------------- ObjectReference
         ("objectreference", "enable") | ("objectreference", "enablenowait") => {
             if let Some(f) = me {

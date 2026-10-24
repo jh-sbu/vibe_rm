@@ -30,3 +30,11 @@ includes descendant locations, following our existing location reference index;
 exact descendant and disabled-reference inclusion remains unverified. Reservations
 use running quest reference aliases with Reserves Reference, not furniture use.
 Malformed parent cycles terminate at the first repeated location.
+
+## Batch 4
+
+GetAllItemsCount sums copies rather than distinct base forms. The public wording
+is not precise about that distinction, quest items, unplayable items or gold.
+We count all positive inventory quantities; IsContainerEmpty uses the same rule.
+WornHasKeyword includes every equipped item in the runtime equipment list; exact
+hand-held weapon and hidden-skin inclusion in Skyrim remains unverified.
