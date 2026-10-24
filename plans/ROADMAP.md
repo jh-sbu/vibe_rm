@@ -1576,7 +1576,8 @@ game each piece unlocks.
      creatures' look-at modifiers (unbound:
      the game picks and aims them itself); NPCs looking at each other in conversation
    - Objects' behaviour graphs (see Done): graph state in saves (kept across
-     cell loads in memory)
+     cell loads in memory; only open states are saved, `GOPN`: levers,
+     rockfalls and traps start over on load)
    - Chooser start states, selectors' own blends
      (`known_ambiguities/selectors.md`)
    - NPCs strafing (`Direction`: see the player's body), sprinting; character

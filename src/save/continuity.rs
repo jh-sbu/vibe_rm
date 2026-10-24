@@ -47,6 +47,8 @@ pub(crate) struct Continuity {
     /// Value changes still tapering off: the effect as it landed, the rate it
     /// started at and the seconds since.
     pub tapers: Vec<(crate::magic::ActiveEffect, f32, f32)>,
+    /// Objects' open states from their behaviour graphs' events.
+    pub graph_open: HashMap<FormId, crate::world::animated::OpenState>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -247,6 +249,7 @@ impl Continuity {
             harvested: e.harvests.harvested.clone(),
             active_effects: e.saved_active_effects(),
             tapers: e.saved_tapers(),
+            graph_open: e.world_state.graph_open.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -508,6 +511,14 @@ impl Continuity {
             w.f32(*elapsed);
         }
         file.add(b"TAPR", w.0);
+        let mut w = Writer::default();
+        let open = sorted(&self.graph_open);
+        w.len(open.len());
+        for (id, s) in open {
+            w.form(id);
+            w.u8(*s as u8);
+        }
+        file.add(b"GOPN", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -657,6 +668,17 @@ impl Continuity {
             }
             r.finish()?;
             s.active_effects = (effects, next_id);
+        }
+        if let Some(mut r) = optional(file, b"GOPN")? {
+            let mut previous = None;
+            for _ in 0..r.count(5)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                let state = crate::world::animated::OpenState::from_code(r.u8()?)
+                    .ok_or_else(|| Corrupt("invalid graph open state".into()))?;
+                s.graph_open.insert(id, state);
+            }
+            r.finish()?;
         }
         if let Some(mut r) = optional(file, b"TAPR")? {
             for _ in 0..r.count(EFFECT_BYTES + 8)? {
@@ -829,6 +851,9 @@ impl Continuity {
             if x.id == 0 || x.id > *next_id || x.summoned.is_some_and(|r| !summons.insert(r)) {
                 return Err(Corrupt("invalid active magic effect".into()));
             }
+        }
+        for &id in self.graph_open.keys() {
+            nonnull(id)?;
         }
         for (x, rate, elapsed) in &self.tapers {
             valid_effect(x)?;
@@ -1081,5 +1106,7 @@ impl Continuity {
         e.harvests.harvested = self.harvested;
         e.restore_active_effects(self.active_effects.0, self.active_effects.1);
         e.restore_tapers(self.tapers);
+        // Before the save's cells load: graphs built afresh replay these.
+        e.world_state.graph_open = self.graph_open;
     }
 }

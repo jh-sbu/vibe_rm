@@ -5361,3 +5361,52 @@ fn tapering_value_changes_run_out_after_loading() {
     b.update_magic(2.0);
     assert_eq!(carry_weight(&b), full - 37.5, "legacy saves keep no tapers");
 }
+
+#[test]
+fn graph_open_states_payload() {
+    use crate::world::animated::OpenState;
+    let mut s = Snapshot::default();
+    s.continuity
+        .graph_open
+        .extend([(ACTOR, OpenState::Opening), (CELL, OpenState::Closed)]);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.graph_open, s.continuity.graph_open);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"GOPN");
+    for code in [0u8, 5] {
+        let mut broken = file.clone();
+        broken.sections.retain(|(tag, _)| tag != b"GOPN");
+        let mut w = Writer::default();
+        w.len(1);
+        w.form(ACTOR);
+        w.u8(code);
+        broken.add(b"GOPN", w.0);
+        assert!(Snapshot::read(&broken).is_err(), "state code {code}");
+    }
+    s.continuity
+        .graph_open
+        .insert(FormId::NULL, OpenState::Open);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn graph_open_states_answer_get_open_state_after_loading() {
+    use crate::world::animated::OpenState;
+    let (_a, mut a) = engine("graph-open-a");
+    a.world_state.graph_open.insert(ACTOR, OpenState::Open);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("graph-open-b");
+    b.world_state.graph_open.insert(CELL, OpenState::Closing);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.open_state(ACTOR), OpenState::Open);
+    assert_eq!(
+        b.world_state.graph_open,
+        [(ACTOR, OpenState::Open)].into_iter().collect()
+    );
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"GOPN");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.world_state.graph_open.is_empty());
+}
