@@ -147,6 +147,9 @@ pub struct Detection {
     /// Loaded actors' detection of the player (those within range), as last
     /// worked out.
     pub(crate) of_player: HashMap<FormId, f32>,
+    /// `of_player` less those the stealth meter leaves out
+    /// (`SetNotShowOnStealthMeter`, while not hostile).
+    pub(crate) on_meter: HashMap<FormId, f32>,
     /// Stealth points of the player and of actors enemies have been alert to
     /// (100 when missing).
     stealth: HashMap<FormId, Stealth>,
@@ -159,6 +162,7 @@ impl Default for Detection {
         Detection {
             settings: Default::default(),
             of_player: HashMap::new(),
+            on_meter: HashMap::new(),
             stealth: HashMap::new(),
             next_in: 0.0,
             states_in: 0.0,
@@ -182,6 +186,7 @@ impl Detection {
             .map(|(actor, (points, regen_wait))| (actor, Stealth { points, regen_wait }))
             .collect();
         self.of_player.clear();
+        self.on_meter.clear();
         self.next_in = 0.0;
         self.states_in = 0.0;
     }
@@ -688,6 +693,7 @@ impl Engine {
             .map(|a| a.ref_id)
             .collect();
         let mut of_player = HashMap::new();
+        let mut on_meter = HashMap::new();
         let mut most: Option<f32> = None;
         for r in observers {
             let Some(o) = self.observer(r) else { continue };
@@ -695,13 +701,18 @@ impl Engine {
                 continue;
             };
             of_player.insert(r, v);
-            if self.would_attack_player(r) {
+            let hostile = self.would_attack_player(r);
+            if hostile {
                 most = Some(most.map_or(v, |m| m.max(v)));
+            }
+            if hostile || !self.actor_flags.not_on_meter.contains(&r) {
+                on_meter.insert(r, v);
             }
         }
         let s = self.detection_settings();
         let fighting = self.fought(PLAYER_REF);
         self.detection.of_player = of_player;
+        self.detection.on_meter = on_meter;
         let st = self.detection.stealth.entry(PLAYER_REF).or_insert(Stealth {
             points: 100.0,
             regen_wait: 0.0,
@@ -987,7 +998,7 @@ impl Engine {
         let s = self.detection_settings();
         let most = self
             .detection
-            .of_player
+            .on_meter
             .values()
             .copied()
             .fold(f32::MIN, f32::max);

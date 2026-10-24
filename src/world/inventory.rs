@@ -292,7 +292,7 @@ fn slot_hands(lo: &LoadOrder, slot: FormId, depth: usize) -> EquipSlot {
 }
 
 /// Whether a form is held without being carried (spells, powers, shouts).
-fn is_magic(lo: &LoadOrder, form: FormId) -> bool {
+pub(crate) fn is_magic(lo: &LoadOrder, form: FormId) -> bool {
     matches!(lo.tag_of(form).map(|t| t.0), Some(t) if t == *b"SPEL" || t == *b"SHOU")
 }
 

@@ -129,3 +129,12 @@ since the engine keeps no friendly-hit count (the number the game tolerates is
 unconfirmed). `IsDeleted` for created references is "id gone". **test-mod**
 wanted: `CalculateEncounterLevel(0..3)` on a reference in a zone with no limits,
 read back at a known player level.
+
+## Actor state (Resurrect / UnequipAll / critical stages)
+
+Unconfirmed: whether a resurrected actor's equipment comes back worn (we keep it
+as it died), whether `Resurrect` should refuse an actor placed "starts dead" (we
+revive it), whether `UnequipAll` also readies away spells (we leave them), and the
+numbering `UnequipItemSlot` takes (we use biped slots 30..61). The critical stage
+ends remove the actor by disabling it; the game's ash and goo are not shown.
+**test-mod** wanted: `Resurrect` an NPC killed with armor, then `IsEquipped`.

@@ -1804,7 +1804,62 @@ pub fn call(
         ("actor", "evaluatepackage") | ("actor", "setrestrained") | ("actor", "setdontmove") => {
             none()
         }
-        ("actor", "getsitstate") | ("actor", "getsleepstate") => v(Value::Int(0)),
+        ("actor", "getsitstate") | ("actor", "getsleepstate") => {
+            let kind = if func == "getsitstate" {
+                crate::ai::furniture::Use::Sit
+            } else {
+                crate::ai::furniture::Use::Sleep
+            };
+            v(Value::Int(me.map_or(0, |a| e.furniture_state(a, kind))))
+        }
+        ("actor", "setcriticalstage") => {
+            if let Some(a) = me {
+                e.set_critical_stage(a, arg(0).as_int());
+            }
+            none()
+        }
+        ("actor", "resurrect") => {
+            if let Some(a) = me {
+                e.resurrect(a);
+            }
+            none()
+        }
+        ("actor", "resethealthandlimbs") => {
+            if let Some(a) = me {
+                e.reset_health_and_limbs(a);
+            }
+            none()
+        }
+        ("actor", "unequipall") => {
+            if let Some(a) = me {
+                e.unequip_all(a);
+            }
+            none()
+        }
+        ("actor", "unequipitemslot") => {
+            if let Some(a) = me {
+                e.unequip_item_slot(a, arg(0).as_int());
+            }
+            none()
+        }
+        // Arrows that strike an actor don't stay attached to it here, so there
+        // is no extra 3D to clear.
+        ("actor", "clearextraarrows") => none(),
+        ("actor", "setnotshowonstealthmeter") => {
+            if let Some(a) = me {
+                e.set_not_on_stealth_meter(a, arg(0).as_bool());
+            }
+            none()
+        }
+        ("actor", "setvoicerecoverytime") => {
+            if let Some(a) = me {
+                e.set_voice_recovery_time(a, arg(0).as_float());
+            }
+            none()
+        }
+        ("actor", "getvoicerecoverytime") => {
+            v(Value::Float(me.map_or(0.0, |a| e.voice_recovery_time(a))))
+        }
         ("actorbase", "getclass") => {
             let class = me.and_then(|b| e.templates_of(b)).and_then(|src| {
                 let r = e.lo.get(src.of(crate::world::template::STATS))?;

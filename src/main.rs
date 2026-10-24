@@ -1,4 +1,5 @@
 mod activation;
+mod actor_flags;
 mod actor_values;
 mod ai;
 mod aliases;

@@ -141,6 +141,7 @@ pub struct Engine {
     pub(crate) formlists: crate::formlists::FormLists,
     pub(crate) outfits: crate::outfits::Outfits,
     pub(crate) ref_state: crate::ref_state::RefState,
+    pub(crate) actor_flags: crate::actor_flags::ActorFlags,
     /// Armor and block game settings, read on first use.
     pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
     /// Independently timed strength contributions of loaded combat members.
@@ -476,6 +477,7 @@ impl Engine {
             formlists: Default::default(),
             outfits: Default::default(),
             ref_state: Default::default(),
+            actor_flags: Default::default(),
             combat_settings: Default::default(),
             combat_group_strengths: Default::default(),
             detection: Default::default(),

@@ -69,6 +69,12 @@ pub(crate) struct Continuity {
     pub no_favor: std::collections::HashSet<FormId>,
     /// References told to ignore friendly hits.
     pub ignore_friendly_hits: std::collections::HashSet<FormId>,
+    /// Critical stages scripts gave actors.
+    pub critical_stages: HashMap<FormId, i32>,
+    /// Actors kept off the stealth meter.
+    pub not_on_meter: std::collections::HashSet<FormId>,
+    /// Seconds of voice recovery left on actors other than the player.
+    pub actor_voice_recovery: HashMap<FormId, f32>,
     /// Outfits scripts gave actors.
     pub outfits: HashMap<FormId, FormId>,
     /// Music types scripts queued, in the order added.
@@ -286,6 +292,9 @@ impl Continuity {
             ref_scales: e.ref_state.scales.clone(),
             no_favor: e.ref_state.no_favor.clone(),
             ignore_friendly_hits: e.ref_state.ignore_friendly_hits.clone(),
+            critical_stages: e.actor_flags.critical.clone(),
+            not_on_meter: e.actor_flags.not_on_meter.clone(),
+            actor_voice_recovery: e.voice_remaining(),
             outfits: e.outfits.set.clone(),
             music_queue: e.music.queue.script_entries(),
             ai_off: e.ai_off.clone(),
@@ -643,6 +652,24 @@ impl Continuity {
         }
         file.add(b"IFHT", w.0);
         let mut w = Writer::default();
+        w.len(self.critical_stages.len());
+        for (actor, stage) in sorted(&self.critical_stages) {
+            w.form(actor);
+            w.u32(*stage as u32);
+        }
+        let mut ids: Vec<_> = self.not_on_meter.iter().copied().collect();
+        ids.sort();
+        w.len(ids.len());
+        for id in ids {
+            w.form(id);
+        }
+        w.len(self.actor_voice_recovery.len());
+        for (actor, secs) in sorted(&self.actor_voice_recovery) {
+            w.form(actor);
+            w.f32(*secs);
+        }
+        file.add(b"ACST", w.0);
+        let mut w = Writer::default();
         w.len(self.outfits.len());
         for (actor, outfit) in sorted(&self.outfits) {
             w.form(actor);
@@ -926,6 +953,27 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"ACST")? {
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.critical_stages.insert(actor, r.u32()? as i32);
+            }
+            let mut previous = None;
+            for _ in 0..r.count(4)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.not_on_meter.insert(actor);
+            }
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.actor_voice_recovery.insert(actor, r.f32()?);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"GHST")? {
             let mut previous = None;
             for _ in 0..r.count(5)? {
@@ -1183,6 +1231,21 @@ impl Continuity {
         }
         for &r in self.no_favor.iter().chain(&self.ignore_friendly_hits) {
             nonnull(r)?;
+        }
+        for (&actor, &stage) in &self.critical_stages {
+            nonnull(actor)?;
+            if !(1..=4).contains(&stage) {
+                return Err(Corrupt("critical stage out of range".into()));
+            }
+        }
+        for &actor in &self.not_on_meter {
+            nonnull(actor)?;
+        }
+        for (&actor, &secs) in &self.actor_voice_recovery {
+            nonnull(actor)?;
+            if !secs.is_finite() || secs <= 0.0 {
+                return Err(Corrupt("voice recovery out of range".into()));
+            }
         }
         for &actor in self.ghosts.keys() {
             nonnull(actor)?;
@@ -1459,6 +1522,11 @@ impl Continuity {
         e.restore_ghosts(self.ghosts);
         e.restore_formlist_additions(self.formlist_additions);
         e.restore_leveled_additions(self.leveled_additions);
+        e.restore_actor_flags(
+            self.critical_stages,
+            self.not_on_meter,
+            self.actor_voice_recovery,
+        );
         e.restore_ref_state(self.ref_scales, self.no_favor, self.ignore_friendly_hits);
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);

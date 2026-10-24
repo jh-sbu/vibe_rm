@@ -864,7 +864,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         117 => b(e
             .player_cell()
             .is_some_and(|c| e.cell_regions(c).contains(&p1))), // IsPlayerInRegion
-        445 => b(subject.and_then(|s| e.encounter_zone_of(s)) == Some(p1)), // GetInZone
+        528 => b(subject.is_some_and(|s| e.critical_stage(s) == c.p1 as i32)), // IsInCriticalStage
+        445 => b(subject.and_then(|s| e.encounter_zone_of(s)) == Some(p1)),    // GetInZone
         // Menu mode: a menu that pauses the game is open. Other menu numbers
         // (Oblivion's) name no Skyrim menu here, so they are unsupported.
         36 => (c.p1 == 0).then(|| e.in_menu_mode() as u32 as f32), // MenuMode

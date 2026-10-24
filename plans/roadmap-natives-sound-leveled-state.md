@@ -173,7 +173,9 @@ Done in `src/ref_state.rs`; notes in `refs/pex-natives/ref-batch05-flags-queries
   formula from UESP's leveling pages, clamped to the zone's min and max. Write
   down the difficulty multipliers in the batch note.
 
-### 6. Actor state
+### 6. Actor state (done)
+
+Done in `src/actor_flags.rs` (saved as `ACST`); notes in `refs/pex-natives/actor-batch06-state.md`.
 
 `SetCriticalStage` (45), `Resurrect` (34), `ResetHealthAndLimbs` (8),
 `UnequipAll` (7), `UnequipItemSlot` (4), `GetSitState` / `GetSleepState`

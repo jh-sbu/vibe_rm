@@ -767,6 +767,20 @@ impl ActorRuntime {
         self.sneaking
     }
 
+    /// The kind of furniture it is heading for, in or leaving and how far
+    /// along: 2 on its way or getting in, 3 in it, 4 getting out.
+    pub fn furniture_phase(&self) -> Option<(Use, i32)> {
+        let kind = self.seat.as_ref()?.kind;
+        match self.state {
+            State::Walk { to_seat: true, .. } | State::Approach(_) | State::Enter(_) => {
+                Some((kind, 2))
+            }
+            State::Use(_) => Some((kind, 3)),
+            State::Exit(_) => Some((kind, 4)),
+            _ => None,
+        }
+    }
+
     /// Getting into, using or getting out of furniture.
     pub fn in_furniture(&self) -> bool {
         matches!(self.state, State::Enter(_) | State::Use(_) | State::Exit(_))

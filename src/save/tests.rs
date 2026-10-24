@@ -5816,6 +5816,68 @@ fn ref_scales_and_favor_replace_the_sessions_after_loading() {
 }
 
 #[test]
+fn actor_flags_payload() {
+    let snapshot = |stage: i32, secs: f32, extra: Option<FormId>| {
+        let mut s = Snapshot::default();
+        s.continuity
+            .critical_stages
+            .extend([(CELL, 2), (ACTOR, stage)]);
+        s.continuity.not_on_meter.extend([ACTOR, PLAYER_REF]);
+        s.continuity.not_on_meter.extend(extra);
+        s.continuity
+            .actor_voice_recovery
+            .extend([(CELL, 4.5), (ACTOR, secs)]);
+        s
+    };
+    let s = snapshot(4, 1.0, None);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.critical_stages,
+        s.continuity.critical_stages
+    );
+    assert_eq!(restored.continuity.not_on_meter, s.continuity.not_on_meter);
+    assert_eq!(
+        restored.continuity.actor_voice_recovery,
+        s.continuity.actor_voice_recovery
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"ACST");
+    for bad in [
+        snapshot(0, 1.0, None),
+        snapshot(5, 1.0, None),
+        snapshot(1, 0.0, None),
+        snapshot(1, f32::NAN, None),
+        snapshot(1, -1.0, None),
+        snapshot(1, 1.0, Some(FormId::NULL)),
+    ] {
+        assert!(Snapshot::read(&bad.write()).is_err());
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn actor_flags_replace_the_sessions_after_loading() {
+    let (_a, mut a) = engine("actorflags-a");
+    a.actor_flags.critical.insert(CELL, 3);
+    a.actor_flags.not_on_meter.insert(ACTOR);
+    a.set_voice_recovery_time(ACTOR, 30.0);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("actorflags-b");
+    b.actor_flags.critical.insert(PLAYER_REF, 1);
+    b.actor_flags.not_on_meter.insert(PLAYER_REF);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.actor_flags.critical, [(CELL, 3)].into_iter().collect());
+    assert_eq!(b.actor_flags.not_on_meter, [ACTOR].into_iter().collect());
+    assert!((b.voice_recovery_time(ACTOR) - 30.0).abs() < 0.01);
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"ACST");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.actor_flags.critical.is_empty() && b.actor_flags.not_on_meter.is_empty());
+    assert_eq!(b.voice_recovery_time(ACTOR), 0.0);
+}
+
+#[test]
 fn outfits_payload() {
     let mut s = Snapshot::default();
     s.continuity
