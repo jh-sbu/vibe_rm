@@ -13,7 +13,9 @@ use crate::engine::Engine;
 /// Bandits list the guards as enemies (modifier -10); the guards list nobody.
 const BANDITS: FormId = FormId(0x810);
 const GUARDS: FormId = FormId(0x811);
+/// The town's crime group lists the guards.
 const TOWN: FormId = FormId(0x812);
+const TOWN_GROUP: FormId = FormId(0x830);
 
 struct Fixture(std::path::PathBuf);
 
@@ -41,14 +43,22 @@ fn fixture(name: &str) -> (Fixture, Engine) {
         std::process::id()
     )));
     std::fs::create_dir(&f.0).unwrap();
-    let records = [Node::top(
-        b"FACT",
-        vec![
-            RecordBuilder::new(b"FACT", BANDITS).field(b"XNAM", &relation(GUARDS, -10, 1)),
-            RecordBuilder::new(b"FACT", GUARDS).field(b"DATA", &0x40u32.to_le_bytes()),
-            RecordBuilder::new(b"FACT", TOWN).field(b"DATA", &0x40u32.to_le_bytes()),
-        ],
-    )];
+    let records = [
+        Node::top(
+            b"FACT",
+            vec![
+                RecordBuilder::new(b"FACT", BANDITS).field(b"XNAM", &relation(GUARDS, -10, 1)),
+                RecordBuilder::new(b"FACT", GUARDS).field(b"DATA", &0x40u32.to_le_bytes()),
+                RecordBuilder::new(b"FACT", TOWN)
+                    .field(b"DATA", &0x40u32.to_le_bytes())
+                    .field(b"CRGR", &TOWN_GROUP.0.to_le_bytes()),
+            ],
+        ),
+        Node::top(
+            b"FLST",
+            vec![RecordBuilder::new(b"FLST", TOWN_GROUP).field(b"LNAM", &GUARDS.0.to_le_bytes())],
+        ),
+    ];
     std::fs::write(
         f.0.join("Factions.esp"),
         write_plugin(0, &[], "test", "synthetic factions", 0x900, &records),
@@ -190,4 +200,24 @@ fn actors_attacked_on_sight_are_attacked_by_those_who_fight_enemies() {
     assert!(!e.would_attack(BEAST, GUARD), "one way");
     e.set_attacked_on_sight(crate::engine::PLAYER_REF, false);
     assert!(!e.would_attack_player(GUARD));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn a_factions_crime_group_is_the_list_it_names() {
+    const RESIDENT: FormId = FormId(0x901);
+    const GUARD: FormId = FormId(0x902);
+    let (_f, mut e) = fixture("crime-group");
+    assert!(e.faction_in_crime_group(TOWN, GUARDS));
+    assert!(
+        !e.faction_in_crime_group(GUARDS, TOWN),
+        "the guards name none"
+    );
+    assert!(!e.faction_in_crime_group(TOWN, TOWN), "not listed");
+    assert!(!e.faction_in_crime_group(TOWN, BANDITS));
+    // Witnesses still share crimes either way round.
+    e.set_crime_faction(RESIDENT, Some(TOWN));
+    e.set_crime_faction(GUARD, Some(GUARDS));
+    assert!(e.in_shared_crime_faction(GUARD, RESIDENT));
+    assert!(e.in_shared_crime_faction(RESIDENT, GUARD));
 }

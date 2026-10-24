@@ -1351,6 +1351,10 @@ pub fn call(
             }
             none()
         }
+        ("faction", "isfactionincrimegroup") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(b)) => e.faction_in_crime_group(a, b),
+            _ => false,
+        })),
         ("faction", "isplayerexpelled") => {
             v(Value::Bool(me.is_some_and(|f| e.player_expelled_from(f))))
         }

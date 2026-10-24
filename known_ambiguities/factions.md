@@ -106,3 +106,14 @@
   leave them alone), whether faction allies of the marked actor are exempt
   (we exempt them, matching the page's exceptions), and whether the mark
   survives in the original's saves.
+
+## Crime groups (`IsFactionInCrimeGroup`)
+
+- `IsFactionInCrimeGroup(akOther)` holds when `akOther` is in the form list
+  this faction names in `CRGR` ("the passed in faction is in this faction's
+  crime group"). It looks one way, and a faction is in its own group only if
+  the list names it. Sharing crimes between witnesses
+  (`in_shared_crime_faction`) still checks both lists and equal factions.
+- Unconfirmed: whether a faction counts as in its own crime group without
+  being listed, and whether the game checks the other faction's list too.
+  The native has no vanilla callers (`vrm-tool pex-calls`).
