@@ -12,6 +12,7 @@ pub(super) fn call(func: &str, args: &[Value]) -> Option<Value> {
         "floor" => Value::Int(arg(0).as_float().floor() as i32),
         "ceiling" => Value::Int(arg(0).as_float().ceil() as i32),
         "acos" => Value::Float(arg(0).as_float().acos().to_degrees()),
+        "asin" => Value::Float(arg(0).as_float().asin().to_degrees()),
         _ => return None,
     })
 }
@@ -41,6 +42,13 @@ mod tests {
                 .unwrap()
                 .as_float()
                 .is_nan()
+        );
+    }
+    #[test]
+    fn asin() {
+        check(
+            "asin",
+            &[(-1.0, -90.0), (-0.5, -30.0), (0.0, 0.0), (1.0, 90.0)],
         );
     }
 }
