@@ -13,3 +13,7 @@ GetClass follows Use Stats templates per the public NPC format. A leveled templa
 ## editor
 
 GetEditorLocation delegates to the existing location index, including its created-reference and player policies. Their precise Skyrim behavior remains unverified.
+
+## current
+
+GetCurrentLocation uses runtime cell, actor schedule, explicit moved or created place, then editor lookup. Public documentation mentions navmesh-dependent None results for airborne dragons; that state is not yet tracked. Exact inventory-held reference location behavior is unverified.

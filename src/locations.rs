@@ -188,6 +188,18 @@ impl Engine {
                 crate::ai::schedule::Place::Exterior(w, g) => self.grid_location(w, g),
             };
         }
+        if let Some(place) = self
+            .world_state
+            .moved
+            .get(&r)
+            .map(|m| m.place)
+            .or_else(|| self.created(r).and_then(|c| c.place))
+        {
+            return match place {
+                crate::ai::schedule::Place::Interior(c) => self.cell_location(c),
+                crate::ai::schedule::Place::Exterior(w, g) => self.grid_location(w, g),
+            };
+        }
         self.editor_location(r)
     }
 

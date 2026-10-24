@@ -192,3 +192,114 @@ fn geteditorlocation_uses_reference_location() {
         expected
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn getcurrentlocation_uses_reference_location() {
+    let (_f, mut e) = fixture(vec![
+        Node::top(
+            b"LCTN",
+            vec![
+                RecordBuilder::new(b"LCTN", FormId(0x810)),
+                RecordBuilder::new(b"LCTN", FormId(0x811)),
+            ],
+        ),
+        Node::top(
+            b"CELL",
+            vec![
+                RecordBuilder::new(b"CELL", FormId(0x820)).form(b"XLCN", FormId(0x811)),
+                RecordBuilder::new(b"CELL", FormId(0x821)),
+            ],
+        ),
+        Node::top(
+            b"REFR",
+            vec![
+                RecordBuilder::new(b"REFR", FormId(0x800)).form(b"XLCN", FormId(0x810)),
+                RecordBuilder::new(b"REFR", FormId(0x801)),
+            ],
+        ),
+    ]);
+    let original = e.object_value(FormId(0x810));
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getcurrentlocation",
+            FormId(0x800),
+            &[]
+        ),
+        original
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getcurrentlocation",
+            FormId(0x801),
+            &[]
+        ),
+        Value::None
+    );
+    e.actor_cells.insert(
+        FormId(0x800),
+        crate::render::CellKey::Interior(FormId(0x820)),
+    );
+    let expected = e.object_value(FormId(0x811));
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getcurrentlocation",
+            FormId(0x800),
+            &[]
+        ),
+        expected
+    );
+
+    e.actor_cells.insert(
+        FormId(0x800),
+        crate::render::CellKey::Interior(FormId(0x821)),
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getcurrentlocation",
+            FormId(0x800),
+            &[]
+        ),
+        Value::None
+    );
+
+    e.actor_cells.remove(&FormId(0x800));
+    e.world_state.moved.insert(
+        FormId(0x800),
+        crate::world_state::Moved {
+            place: crate::ai::schedule::Place::Interior(FormId(0x820)),
+            pos: glam::Vec3::ZERO,
+            rot: glam::Vec3::ZERO,
+        },
+    );
+    let moved = e.object_value(FormId(0x811));
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getcurrentlocation",
+            FormId(0x800),
+            &[]
+        ),
+        moved
+    );
+    let editor = e.object_value(FormId(0x810));
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "geteditorlocation",
+            FormId(0x800),
+            &[]
+        ),
+        editor
+    );
+}
