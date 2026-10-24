@@ -381,16 +381,18 @@ impl Engine {
         let (Some(fa), Some(fb)) = (self.crime_faction(a), self.crime_faction(b)) else {
             return false;
         };
-        let group = |f: FormId| {
-            self.lo.get(f).and_then(|r| {
-                r.get(b"CRGR")
-                    .filter(|d| d.len() >= 4)
-                    .map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
-            })
-        };
-        fa == fb
-            || group(fa).is_some_and(|g| self.formlist(g).contains(&fb))
-            || group(fb).is_some_and(|g| self.formlist(g).contains(&fa))
+        fa == fb || self.faction_in_crime_group(fa, fb) || self.faction_in_crime_group(fb, fa)
+    }
+
+    /// Papyrus `IsFactionInCrimeGroup`: whether `other` is in the form list
+    /// `faction` names as its crime group (`CRGR`).
+    pub fn faction_in_crime_group(&self, faction: FormId, other: FormId) -> bool {
+        let group = self.lo.get(faction).and_then(|r| {
+            r.get(b"CRGR")
+                .filter(|d| d.len() >= 4)
+                .map(|d| r.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+        });
+        group.is_some_and(|g| self.formlist(g).contains(&other))
     }
 
     /// Living actors who detect the player now (stealth points don't count
