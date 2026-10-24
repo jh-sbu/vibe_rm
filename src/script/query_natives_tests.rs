@@ -303,3 +303,96 @@ fn getcurrentlocation_uses_reference_location() {
         editor
     );
 }
+
+fn population_fixture() -> (Fixture, Engine) {
+    let entries: Vec<u8> = [
+        0x830u32, 0x800, 0, 0, 0x830, 0x801, 0, 0, 0x830, 0x800, 0, 0,
+    ]
+    .into_iter()
+    .flat_map(u32::to_le_bytes)
+    .collect();
+    fixture(vec![
+        Node::top(b"LCRT", vec![RecordBuilder::new(b"LCRT", FormId(0x830))]),
+        Node::top(
+            b"LCTN",
+            vec![
+                RecordBuilder::new(b"LCTN", FormId(0x810)).field(b"ACSR", &entries),
+                RecordBuilder::new(b"LCTN", FormId(0x811)),
+            ],
+        ),
+        Node::top(
+            b"ACHR",
+            vec![
+                RecordBuilder::new(b"ACHR", FormId(0x800))
+                    .form(b"XLCN", FormId(0x810))
+                    .form(b"XLRT", FormId(0x830)),
+                RecordBuilder::new(b"ACHR", FormId(0x801)),
+            ],
+        ),
+    ])
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn getreftypealivecount_counts_enabled_editor_references_once() {
+    let (_f, mut e) = population_fixture();
+    let ty = e.object_value(FormId(0x830));
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypealivecount",
+            FormId(0x810),
+            &[ty.clone()]
+        ),
+        Value::Int(2)
+    );
+    e.world_state.dead.insert(
+        FormId(0x800),
+        (
+            crate::ai::schedule::Place::Interior(FormId(0x820)),
+            glam::Vec3::ZERO,
+        ),
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypealivecount",
+            FormId(0x810),
+            &[ty.clone()]
+        ),
+        Value::Int(1)
+    );
+    e.scripts.disabled.insert(FormId(0x801), true);
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypealivecount",
+            FormId(0x810),
+            &[ty.clone()]
+        ),
+        Value::Int(0)
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypealivecount",
+            FormId(0x811),
+            &[ty]
+        ),
+        Value::Int(0)
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypealivecount",
+            FormId(0x810),
+            &[Value::None]
+        ),
+        Value::Int(0)
+    );
+}

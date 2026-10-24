@@ -264,9 +264,10 @@ impl Engine {
     /// How many references of ref type `ty` in location `l` (or inside it) are
     /// alive, or dead.
     pub fn location_population(&self, l: FormId, ty: FormId, alive: bool) -> usize {
+        let mut seen = std::collections::HashSet::new();
         self.location_refs_of_type(l, ty)
             .into_iter()
-            .filter(|&r| self.is_dead(r) != alive)
+            .filter(|&r| seen.insert(r) && !self.is_disabled(r) && self.is_dead(r) != alive)
             .count()
     }
 

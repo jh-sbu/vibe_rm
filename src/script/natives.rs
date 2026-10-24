@@ -1429,6 +1429,10 @@ pub fn call(
             none()
         }
         // ---------------------------------------------------------- Location
+        ("location", "getreftypealivecount") => v(Value::Int(
+            me.zip(form_arg(args, 0))
+                .map_or(0, |(l, ty)| e.location_population(l, ty, true) as i32),
+        )),
         ("location", "iscleared") => v(Value::Bool(me.is_some_and(|l| e.is_cleared(l)))),
         ("location", "setcleared") => {
             if let Some(l) = me {

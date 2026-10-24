@@ -17,3 +17,7 @@ GetEditorLocation delegates to the existing location index, including its create
 ## current
 
 GetCurrentLocation uses runtime cell, actor schedule, explicit moved or created place, then editor lookup. Public documentation mentions navmesh-dependent None results for airborne dragons; that state is not yet tracked. Exact inventory-held reference location behavior is unverified.
+
+## alive
+
+Location population queries include descendant locations, as the existing condition helper does; public documentation does not specify recursion clearly. We do not reproduce the reported plugin/master double-counting bug. Counts follow enabled editor references rather than actors wandering in; no Skyrim runtime comparison was performed.
