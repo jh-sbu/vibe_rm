@@ -1464,7 +1464,53 @@ pub fn call(
             }
             none()
         }
+        ("package", "gettemplate") | ("package", "getowningquest") => {
+            let target = me
+                .and_then(|p| {
+                    let rec = e.lo.get(p)?;
+                    if rec.tag().0 != *b"PACK" {
+                        return None;
+                    }
+                    let data = if func == "gettemplate" {
+                        rec.get(b"PKCU")?.get(4..8)?
+                    } else {
+                        rec.subrecords()
+                            .take_while(|s| s.tag.0 != *b"PKCU")
+                            .find(|s| s.tag.0 == *b"QNAM")?
+                            .data
+                            .get(..4)?
+                    };
+                    Some(rec.fid(FormId(u32::from_le_bytes(data.try_into().ok()?))))
+                })
+                .filter(|f| !f.is_null());
+            v(target.map_or(Value::None, |f| e.object_value(f)))
+        }
         // ---------------------------------------------------------- Location
+        ("location", "ischild") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(
+            |(parent, child)| {
+                e.is_location(parent)
+                    && e.is_location(child)
+                    && e.location_parents(child).contains(&parent)
+            },
+        ))),
+        ("location", "hascommonparent") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(
+            |(a, b)| {
+                if a == b || !e.is_location(a) || !e.is_location(b) {
+                    return false;
+                }
+                let theirs = e.location_parents(b);
+                e.location_parents(a).into_iter().any(|p| {
+                    theirs.contains(&p) && form_arg(args, 1).is_none_or(|k| e.has_keyword(p, k))
+                })
+            },
+        ))),
+        ("location", "hasreftype") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(
+            |(l, ty)| {
+                e.location_refs_of_type(l, ty)
+                    .into_iter()
+                    .any(|r| !e.in_alias_with(r, crate::aliases::flags::RESERVES))
+            },
+        ))),
         ("location", "getreftypealivecount") => v(Value::Int(
             me.zip(form_arg(args, 0))
                 .map_or(0, |(l, ty)| e.location_population(l, ty, true) as i32),

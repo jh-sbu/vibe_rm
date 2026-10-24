@@ -21,3 +21,12 @@ our quest start/stop transitions are synchronous; Skyrim's intermediate enabled
 and stopping states are not represented. GetKey follows the existing shared
 load-door lock policy; unusual pairs with two different keys are unverified.
 GetVoiceType inherits the existing actor template precedence.
+
+## Batch 3
+
+HasCommonParent compares strict ancestors on both sides. Whether Skyrim considers
+one of the two input locations itself a shared parent is unspecified. HasRefType
+includes descendant locations, following our existing location reference index;
+exact descendant and disabled-reference inclusion remains unverified. Reservations
+use running quest reference aliases with Reserves Reference, not furniture use.
+Malformed parent cycles terminate at the first repeated location.

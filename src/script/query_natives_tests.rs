@@ -729,3 +729,147 @@ fn batch02_live_quest_controls_locks_voices_cells() {
         Value::Bool(false)
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn batch03_location_hierarchy_reservations_and_packages() {
+    let mut template = [0u8; 12];
+    template[4..8].copy_from_slice(&0x850u32.to_le_bytes());
+    let typed: Vec<u8> = [0x840u32, 0x830, 0, 0]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect();
+    let (_f, mut e) = fixture(vec![
+        Node::top(
+            b"LCTN",
+            vec![
+                RecordBuilder::new(b"LCTN", FormId(0x800)).form(b"KWDA", FormId(0x841)),
+                RecordBuilder::new(b"LCTN", FormId(0x801)).form(b"PNAM", FormId(0x800)),
+                RecordBuilder::new(b"LCTN", FormId(0x802))
+                    .form(b"PNAM", FormId(0x801))
+                    .field(b"ACSR", &typed),
+                RecordBuilder::new(b"LCTN", FormId(0x803)).form(b"PNAM", FormId(0x800)),
+                RecordBuilder::new(b"LCTN", FormId(0x804)).field(b"PNAM", &[1]),
+            ],
+        ),
+        Node::top(b"KYWD", vec![RecordBuilder::new(b"KYWD", FormId(0x841))]),
+        Node::top(b"LCRT", vec![RecordBuilder::new(b"LCRT", FormId(0x840))]),
+        Node::top(b"REFR", vec![RecordBuilder::new(b"REFR", FormId(0x830))]),
+        Node::top(
+            b"QUST",
+            vec![
+                RecordBuilder::new(b"QUST", FormId(0x860))
+                    .u32(b"ALST", 0)
+                    .u32(b"FNAM", 1)
+                    .form(b"ALFR", FormId(0x830))
+                    .field(b"ALED", &[]),
+            ],
+        ),
+        Node::top(
+            b"PACK",
+            vec![
+                RecordBuilder::new(b"PACK", FormId(0x850)),
+                RecordBuilder::new(b"PACK", FormId(0x851))
+                    .form(b"QNAM", FormId(0x860))
+                    .field(b"PKCU", &template),
+                RecordBuilder::new(b"PACK", FormId(0x852))
+                    .field(b"PKCU", &[0; 12])
+                    .form(b"QNAM", FormId(0x860)),
+            ],
+        ),
+    ]);
+    let other = e.object_value(FormId(0x802));
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "ischild",
+            FormId(0x800),
+            &[other.clone()]
+        ),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "ischild",
+            FormId(0x802),
+            &[other.clone()]
+        ),
+        Value::Bool(false)
+    );
+    let sibling = e.object_value(FormId(0x803));
+    let keyword = e.object_value(FormId(0x841));
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "hascommonparent",
+            FormId(0x802),
+            &[sibling.clone(), keyword]
+        ),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "hascommonparent",
+            FormId(0x802),
+            &[other]
+        ),
+        Value::Bool(false)
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "hascommonparent",
+            FormId(0x804),
+            &[sibling]
+        ),
+        Value::Bool(false)
+    );
+    let ty = e.object_value(FormId(0x840));
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "hasreftype",
+            FormId(0x802),
+            &[ty.clone()]
+        ),
+        Value::Bool(true)
+    );
+    assert!(e.start_quest(FormId(0x860)));
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "hasreftype",
+            FormId(0x802),
+            &[ty.clone()]
+        ),
+        Value::Bool(false)
+    );
+    e.stop_quest(FormId(0x860));
+    assert_eq!(
+        call(&mut e, "location", "hasreftype", FormId(0x802), &[ty]),
+        Value::Bool(true)
+    );
+    let template = e.object_value(FormId(0x850));
+    let owner = e.object_value(FormId(0x860));
+    assert_eq!(
+        call(&mut e, "package", "gettemplate", FormId(0x851), &[]),
+        template
+    );
+    assert_eq!(
+        call(&mut e, "package", "getowningquest", FormId(0x851), &[]),
+        owner
+    );
+    assert_eq!(
+        call(&mut e, "package", "getowningquest", FormId(0x852), &[]),
+        Value::None
+    );
+}

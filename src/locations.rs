@@ -137,6 +137,20 @@ impl Engine {
         Some(rec.fid(FormId(u32_at(d, 0)))).filter(|f| !f.is_null())
     }
 
+    /// Strict ancestors, with corrupt cycles and missing records bounded.
+    pub(crate) fn location_parents(&self, mut location: FormId) -> Vec<FormId> {
+        let mut seen = std::collections::HashSet::from([location]);
+        let mut parents = Vec::new();
+        while let Some(parent) = self.form_field(location, b"PNAM") {
+            if !seen.insert(parent) || !self.is_location(parent) {
+                break;
+            }
+            parents.push(parent);
+            location = parent;
+        }
+        parents
+    }
+
     /// The location (`XLCN`) of a cell.
     pub fn cell_location(&self, cell: FormId) -> Option<FormId> {
         self.form_field(cell, b"XLCN")
