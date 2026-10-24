@@ -838,6 +838,9 @@ pub fn call(
                 .map(f32::to_degrees);
             v(Value::Float(rot[usize::from(func.as_bytes()[8] - b'x')]))
         }
+        ("objectreference", "geteditorlocation") => v(me
+            .and_then(|r| e.editor_location(r))
+            .map_or(Value::None, |l| e.object_value(l))),
         ("objectreference", "getcurrentlocation") | ("objectreference", "getediblelocation") => {
             none()
         }
