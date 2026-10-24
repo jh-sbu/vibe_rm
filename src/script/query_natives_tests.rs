@@ -57,3 +57,42 @@ fn is_unique_reads_the_base_flag() {
         );
     }
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn get_class_follows_only_the_stats_template() {
+    let mut stats = [0u8; 24];
+    stats[18..20].copy_from_slice(&2u16.to_le_bytes());
+    let (_f, mut e) = fixture(vec![
+        Node::top(
+            b"CLAS",
+            vec![
+                RecordBuilder::new(b"CLAS", FormId(0x810)),
+                RecordBuilder::new(b"CLAS", FormId(0x811)),
+            ],
+        ),
+        Node::top(
+            b"NPC_",
+            vec![
+                RecordBuilder::new(b"NPC_", FormId(0x800)).form(b"CNAM", FormId(0x810)),
+                RecordBuilder::new(b"NPC_", FormId(0x801))
+                    .field(b"ACBS", &stats)
+                    .form(b"TPLT", FormId(0x800))
+                    .form(b"CNAM", FormId(0x811)),
+                RecordBuilder::new(b"NPC_", FormId(0x802))
+                    .form(b"TPLT", FormId(0x800))
+                    .form(b"CNAM", FormId(0x811)),
+                RecordBuilder::new(b"NPC_", FormId(0x803)).field(b"CNAM", &[0]),
+            ],
+        ),
+    ]);
+    let a = e.object_value(FormId(0x810));
+    let b = e.object_value(FormId(0x811));
+    assert_eq!(call(&mut e, "actorbase", "getclass", FormId(0x800), &[]), a);
+    assert_eq!(call(&mut e, "actorbase", "getclass", FormId(0x801), &[]), a);
+    assert_eq!(call(&mut e, "actorbase", "getclass", FormId(0x802), &[]), b);
+    assert_eq!(
+        call(&mut e, "actorbase", "getclass", FormId(0x803), &[]),
+        Value::None
+    );
+}

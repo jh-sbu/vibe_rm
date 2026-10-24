@@ -1479,6 +1479,14 @@ pub fn call(
             none()
         }
         ("actor", "getsitstate") | ("actor", "getsleepstate") => v(Value::Int(0)),
+        ("actorbase", "getclass") => {
+            let class = me.and_then(|b| e.templates_of(b)).and_then(|src| {
+                let r = e.lo.get(src.of(crate::world::template::STATS))?;
+                let d = r.get(b"CNAM")?.get(..4)?;
+                Some(r.fid(FormId(u32::from_le_bytes(d.try_into().unwrap()))))
+            });
+            v(class.map_or(Value::None, |c| e.object_value(c)))
+        }
         ("actorbase", "getsex") => v(Value::Int(
             me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0),
         )),
