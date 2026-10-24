@@ -1351,6 +1351,11 @@ pub fn call(
             }
             none()
         }
+        ("faction", "getstolenitemvaluecrime") | ("faction", "getstolenitemvaluenocrime") => {
+            v(Value::Int(me.map_or(0, |f| {
+                e.stolen_item_value(f, func == "getstolenitemvaluecrime")
+            })))
+        }
         ("faction", "isfactionincrimegroup") => v(Value::Bool(match (me, form_arg(args, 0)) {
             (Some(a), Some(b)) => e.faction_in_crime_group(a, b),
             _ => false,

@@ -221,3 +221,107 @@ fn a_factions_crime_group_is_the_list_it_names() {
     assert!(e.in_shared_crime_faction(GUARD, RESIDENT));
     assert!(e.in_shared_crime_faction(RESIDENT, GUARD));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn faction_natives_reach_the_engine() {
+    use crate::script::natives::call;
+    use papyrus::{NativeResult, Value};
+    let (_f, mut e) = fixture("natives");
+    let [bandits, guards, town] = [BANDITS, GUARDS, TOWN].map(|f| e.object_value(f));
+    let player = e.object_value(crate::engine::PLAYER_REF);
+    let int = |r: NativeResult| match r {
+        NativeResult::Value(v) => v.as_int(),
+        _ => panic!("no value"),
+    };
+    let yes = |r: NativeResult| match r {
+        NativeResult::Value(v) => v.as_bool(),
+        _ => panic!("no value"),
+    };
+    let f = |b: bool| Value::Bool(b);
+    call(
+        &mut e,
+        "faction",
+        "setally",
+        Some(&bandits),
+        &[guards.clone(), f(true), f(false)],
+    );
+    assert_eq!(e.faction_combat_reaction(BANDITS, GUARDS), 3);
+    assert_eq!(e.faction_combat_reaction(GUARDS, BANDITS), 2);
+    call(
+        &mut e,
+        "faction",
+        "setenemy",
+        Some(&town),
+        &[guards.clone(), f(false), f(true)],
+    );
+    assert_eq!(e.faction_combat_reaction(TOWN, GUARDS), 1);
+    assert_eq!(e.faction_combat_reaction(GUARDS, TOWN), 0);
+    call(
+        &mut e,
+        "faction",
+        "modreaction",
+        Some(&bandits),
+        &[guards.clone(), Value::Int(4)],
+    );
+    let got = call(
+        &mut e,
+        "faction",
+        "getreaction",
+        Some(&bandits),
+        &[guards.clone()],
+    );
+    assert_eq!(int(got), -6);
+    call(
+        &mut e,
+        "faction",
+        "setplayerexpelled",
+        Some(&guards),
+        &[f(true)],
+    );
+    assert!(yes(call(
+        &mut e,
+        "faction",
+        "isplayerexpelled",
+        Some(&guards),
+        &[]
+    )));
+    call(&mut e, "faction", "setplayerenemy", Some(&town), &[]);
+    assert!(e.player_enemy_of(TOWN), "true when left out");
+    call(
+        &mut e,
+        "actor",
+        "setattackactoronsight",
+        Some(&player),
+        &[f(true)],
+    );
+    assert!(
+        e.factions
+            .attacked_on_sight
+            .contains(&crate::engine::PLAYER_REF)
+    );
+    assert!(yes(call(
+        &mut e,
+        "faction",
+        "isfactionincrimegroup",
+        Some(&town),
+        &[guards]
+    )));
+    e.add_stolen_value(TOWN, 30, false);
+    e.add_stolen_value(TOWN, 12, true);
+    let unseen = call(
+        &mut e,
+        "faction",
+        "getstolenitemvaluenocrime",
+        Some(&town),
+        &[],
+    );
+    let seen = call(
+        &mut e,
+        "faction",
+        "getstolenitemvaluecrime",
+        Some(&town),
+        &[],
+    );
+    assert_eq!((int(unseen), int(seen)), (30, 12));
+}

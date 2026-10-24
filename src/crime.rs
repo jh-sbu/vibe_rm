@@ -345,6 +345,15 @@ impl Engine {
         n
     }
 
+    /// The value of what the player stole from `faction`'s people, unseen
+    /// or seen (`GetStolenItemValueNoCrime` / `GetStolenItemValueCrime`).
+    pub fn stolen_item_value(&self, faction: FormId, witnessed: bool) -> i32 {
+        self.crime
+            .stolen_value
+            .get(&faction)
+            .map_or(0, |v| if witnessed { v.1 } else { v.0 })
+    }
+
     /// The player stole `value` worth from `faction`'s people, seen or not.
     pub(crate) fn add_stolen_value(&mut self, faction: FormId, value: i32, witnessed: bool) {
         let v = self.crime.stolen_value.entry(faction).or_default();

@@ -41,7 +41,10 @@ locations name it.
   The prompts are `sSteal` / `sStealFrom` (red). The player keeps a value
   stolen per faction, unwitnessed and witnessed (CommonLibSSE
   `StolenItemValueStruct`), which `GetStolenItemValueNoCrime` and
-  `GetStolenItemValue` read (no condition in the base game uses them).
+  `GetStolenItemValue` read (no condition in the base game uses them), as
+  do Papyrus `Faction.GetStolenItemValueNoCrime` / `...Crime` (the Thieves
+  Guild's `TGRNTQuestScript` calls the first for each hold). Unconfirmed:
+  whether the totals are ever cleared other than by confiscation.
 
 - Trespass (UESP Crime): one warning to leave, then a bounty (5) "after 30
   seconds" if the player lingers, NPCs calling the guards or attacking;
