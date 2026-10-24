@@ -1835,6 +1835,32 @@ pub fn call(
             (Some(f), Some(x)) => e.formlist(f).contains(&x),
             _ => false,
         })),
+        ("formlist", "addform") => {
+            if let (Some(list), Some(f)) = (me, form_arg(args, 0)) {
+                e.add_to_formlist(list, f);
+            }
+            none()
+        }
+        ("formlist", "removeaddedform") => {
+            if let (Some(list), Some(f)) = (me, form_arg(args, 0)) {
+                e.remove_added_form(list, f);
+            }
+            none()
+        }
+        ("formlist", "revert") => {
+            if let Some(list) = me {
+                e.revert_formlist(list);
+            }
+            none()
+        }
+        ("formlist", "find") => v(Value::Int(match (me, form_arg(args, 0)) {
+            (Some(list), Some(f)) => e
+                .formlist(list)
+                .iter()
+                .position(|&x| x == f)
+                .map_or(-1, |i| i as i32),
+            _ => -1,
+        })),
         ("keyword", "getkeyword") => none(),
         ("cell", "isattached") | ("cell", "isinterior") => v(Value::Bool(
             func == "isattached" || matches!(e.location, crate::engine::Location::Interior(_)),

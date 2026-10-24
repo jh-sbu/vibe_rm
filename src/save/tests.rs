@@ -5644,3 +5644,51 @@ fn ghosts_replace_the_sessions_after_loading() {
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.protection.ghosts.is_empty());
 }
+
+#[test]
+fn formlist_additions_payload() {
+    let snapshot = |extra: Option<(FormId, Vec<FormId>)>| {
+        let mut s = Snapshot::default();
+        s.continuity
+            .formlist_additions
+            .extend([(CELL, vec![ACTOR, PLAYER_REF]), (ACTOR, vec![CELL])]);
+        s.continuity.formlist_additions.extend(extra);
+        s
+    };
+    let s = snapshot(None);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.formlist_additions,
+        s.continuity.formlist_additions
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"FLAD");
+    for bad in [
+        (FormId::NULL, vec![ACTOR]),
+        (PLAYER_REF, vec![]),
+        (PLAYER_REF, vec![FormId::NULL]),
+        (PLAYER_REF, vec![ACTOR, ACTOR]),
+    ] {
+        assert!(Snapshot::read(&snapshot(Some(bad)).write()).is_err());
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn formlist_additions_replace_the_sessions_after_loading() {
+    let (_a, mut a) = engine("formlists-a");
+    a.add_to_formlist(CELL, ACTOR);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("formlists-b");
+    b.add_to_formlist(CELL, PLAYER_REF);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(
+        b.formlists.added,
+        [(CELL, vec![ACTOR])].into_iter().collect()
+    );
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"FLAD");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.formlists.added.is_empty());
+}

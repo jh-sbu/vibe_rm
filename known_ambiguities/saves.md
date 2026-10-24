@@ -426,3 +426,11 @@ Optional `GHST` lists the references `SetGhost` changed with their state,
 sorted. Loading replaces this session's; legacy saves have none, so each
 actor is as its base says. The original keeps `ExtraGhost` on the reference
 (change form layout not researched). Native policy, not an SE claim.
+
+## Form list additions (`FLAD`)
+
+Optional `FLAD` lists, by form list (sorted), the forms scripts added in the
+order added. Loading replaces this session's; legacy saves have none, so
+lists are as their plugins say. The original saves them as the list's
+`kAddedForm` change data (layout not researched). Native policy, not an SE
+claim.
