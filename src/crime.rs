@@ -168,8 +168,8 @@ pub struct Crimes {
     /// The player trespassing where someone has seen them.
     pub trespass: Option<Trespass>,
     /// Those who caught the player picking their pocket (they won't let them
-    /// try again).
-    pub pickpocket_caught: HashSet<FormId>,
+    /// try again for a while: `crate::pickpocket`).
+    pub pickpocket_caught: HashMap<FormId, PickpocketCaught>,
     /// The victim of the crime being reacted to, while its lines are picked
     /// (`IsActorAVictim`).
     pub reacting_victim: Option<FormId>,
@@ -860,3 +860,11 @@ impl Engine {
 
 /// Gold (`Gold001`).
 pub const GOLD: FormId = FormId(0xF);
+
+/// When a victim caught the player picking their pocket (game hours), and
+/// whether it has been unloaded since.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PickpocketCaught {
+    pub at: f64,
+    pub away: bool,
+}

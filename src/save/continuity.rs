@@ -27,7 +27,9 @@ pub(crate) struct Continuity {
     pub cleared_locations: std::collections::HashSet<FormId>,
     pub location_keyword_data: HashMap<(FormId, FormId), f32>,
     pub crime_factions: HashMap<FormId, Option<FormId>>,
-    pub pickpocket_caught: std::collections::HashSet<FormId>,
+    /// Caught-pickpocket victims (`PKCT`) with their memory (`PKTM`; legacy
+    /// saves have none: caught as they load).
+    pub pickpocket_caught: HashMap<FormId, Option<crate::crime::PickpocketCaught>>,
     pub assaulted: std::collections::HashSet<FormId>,
     pub player_assailants: std::collections::HashSet<FormId>,
     pub unreported: Vec<crate::crime::Unreported>,
@@ -139,7 +141,12 @@ impl Continuity {
             cleared_locations: e.cleared_locations.clone(),
             location_keyword_data: e.location_keyword_data.clone(),
             crime_factions: e.crime.crime_factions.clone(),
-            pickpocket_caught: e.crime.pickpocket_caught.clone(),
+            pickpocket_caught: e
+                .crime
+                .pickpocket_caught
+                .iter()
+                .map(|(&id, &c)| (id, Some(c)))
+                .collect(),
             assaulted: e.crime.assaulted.clone(),
             player_assailants: e.crime.player_assailants.clone(),
             unreported: e.crime.unreported.clone(),
@@ -355,13 +362,24 @@ impl Continuity {
         }
         file.add(b"ASLT", w.0);
         let mut w = Writer::default();
-        let mut ids: Vec<_> = self.pickpocket_caught.iter().copied().collect();
-        ids.sort();
-        w.len(ids.len());
-        for id in ids {
-            w.form(id);
+        let caught = sorted(&self.pickpocket_caught);
+        w.len(caught.len());
+        for (id, _) in &caught {
+            w.form(*id);
         }
         file.add(b"PKCT", w.0);
+        let mut w = Writer::default();
+        let remembered: Vec<_> = caught
+            .iter()
+            .filter_map(|&(id, c)| Some((id, (*c)?)))
+            .collect();
+        w.len(remembered.len());
+        for (id, c) in remembered {
+            w.form(id);
+            w.f64(c.at);
+            w.bool(c.away);
+        }
+        file.add(b"PKTM", w.0);
         let mut w = Writer::default();
         w.len(self.crime_factions.len());
         for (actor, faction) in sorted(&self.crime_factions) {
@@ -643,9 +661,28 @@ impl Continuity {
             for _ in 0..r.count(4)? {
                 let id = r.form()?;
                 ordered(&mut previous, id)?;
-                s.pickpocket_caught.insert(id);
+                s.pickpocket_caught.insert(id, None);
             }
             r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"PKTM")? {
+            let mut previous = None;
+            for _ in 0..r.count(13)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                let c = crate::crime::PickpocketCaught {
+                    at: r.f64()?,
+                    away: r.bool()?,
+                };
+                match s.pickpocket_caught.get_mut(&id) {
+                    Some(slot) => *slot = Some(c),
+                    None => return Err(Corrupt("pickpocket memory of no victim".into())),
+                }
+            }
+            r.finish()?;
+            if s.pickpocket_caught.values().any(Option::is_none) {
+                return Err(Corrupt("pickpocket victim without its memory".into()));
+            }
         }
         if let Some(mut r) = optional(file, b"ASLT")? {
             for set in [&mut s.assaulted, &mut s.player_assailants] {
@@ -899,8 +936,11 @@ impl Continuity {
         for &id in self.assaulted.iter().chain(&self.player_assailants) {
             nonnull(id)?;
         }
-        for &id in &self.pickpocket_caught {
+        for (&id, c) in &self.pickpocket_caught {
             nonnull(id)?;
+            if let Some(c) = c {
+                time(c.at)?;
+            }
         }
         for (&actor, &faction) in &self.crime_factions {
             nonnull(actor)?;
@@ -985,7 +1025,18 @@ impl Continuity {
         e.crime.unreported = self.unreported;
         e.crime.assaulted = self.assaulted;
         e.crime.player_assailants = self.player_assailants;
-        e.crime.pickpocket_caught = self.pickpocket_caught;
+        let now = e.game_hours_total();
+        e.crime.pickpocket_caught = self
+            .pickpocket_caught
+            .into_iter()
+            .map(|(id, c)| {
+                let c = c.unwrap_or(crate::crime::PickpocketCaught {
+                    at: now,
+                    away: false,
+                });
+                (id, c)
+            })
+            .collect();
         e.crime.crime_factions = self.crime_factions;
         e.location_keyword_data = self.location_keyword_data;
         e.cleared_locations = self.cleared_locations;

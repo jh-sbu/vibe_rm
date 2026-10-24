@@ -5,7 +5,8 @@
 //! wields stays put, but for perks (Misdirection, Perfect Touch), and a
 //! poison placed in its pockets takes effect with one (Poisoned). Caught,
 //! it is a crime the victim knows of, and the victim won't let them try
-//! again.
+//! again for two days, and not before they have been away from the player
+//! (UESP; `known_ambiguities/crime.md`).
 
 use esp::FormId;
 
@@ -16,13 +17,17 @@ use crate::engine::{Engine, PLAYER_REF};
 /// = 25"; no game setting found).
 const DETECTED_PENALTY: f32 = 25.0;
 
+/// Game hours a victim remembers catching the player (UESP: "cannot be
+/// pickpocketed again for 2 days").
+const CAUGHT_HOURS: f64 = 48.0;
+
 impl Engine {
     /// Whether the player may pick `r`'s pocket: sneaking, and `r` a living
     /// actor not fighting them who hasn't caught them at it.
     pub fn can_pickpocket(&self, r: FormId) -> bool {
         self.player.sneaking
             && !self.is_dead(r)
-            && !self.crime.pickpocket_caught.contains(&r)
+            && !self.caught_pickpocketing_by(r)
             && self
                 .actor_ref(r)
                 .is_some_and(|a| a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF))
@@ -181,11 +186,31 @@ impl Engine {
         self.apply_item_quietly(item, PLAYER_REF, victim);
     }
 
+    /// Whether `victim` still remembers catching the player: until two game
+    /// days have passed and it has been unloaded since ("will not reset if
+    /// the player waits two days in the same room").
+    pub fn caught_pickpocketing_by(&self, victim: FormId) -> bool {
+        self.crime
+            .pickpocket_caught
+            .get(&victim)
+            .is_some_and(|c| !c.away || self.game_hours_total() - c.at < CAUGHT_HOURS)
+    }
+
+    /// A victim who caught the player unloads: it may forget, in time.
+    pub(crate) fn pickpocket_victim_unloaded(&mut self, victim: FormId) {
+        if let Some(c) = self.crime.pickpocket_caught.get_mut(&victim) {
+            c.away = true;
+        }
+    }
+
     /// The victim caught the player: the menu closes and the pickpocketing is
     /// reported.
     fn caught_pickpocketing(&mut self, victim: FormId) {
         self.menu = None;
-        self.crime.pickpocket_caught.insert(victim);
+        let at = self.game_hours_total();
+        self.crime
+            .pickpocket_caught
+            .insert(victim, crate::crime::PickpocketCaught { at, away: false });
         let msg = self
             .gmst_string("sPickpocketFail")
             .unwrap_or_else(|| "You've been caught pickpocketing.".into());
@@ -202,7 +227,10 @@ impl Engine {
         if !self.player.sneaking || self.is_dead(victim) {
             return false;
         }
-        if self.crime.pickpocket_caught.contains(&victim) {
+        if !self.caught_pickpocketing_by(victim) {
+            // Forgotten (or never caught).
+            self.crime.pickpocket_caught.remove(&victim);
+        } else {
             let msg = self
                 .gmst_string("sNoPickPocketAgain")
                 .unwrap_or_else(|| " has already caught you.".into());

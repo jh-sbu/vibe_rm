@@ -3711,8 +3711,11 @@ fn continuity_crime_factions_runtime() {
 
 #[test]
 fn continuity_pickpocket_payload() {
+    let caught = |at: f64, away: bool| Some(crate::crime::PickpocketCaught { at, away });
     let mut s = Snapshot::default();
-    s.continuity.pickpocket_caught.extend([ACTOR, CELL]);
+    s.continuity
+        .pickpocket_caught
+        .extend([(ACTOR, caught(30.0, false)), (CELL, caught(12.5, true))]);
     let file = s.write();
     let restored = Snapshot::read(&file).unwrap();
     assert_eq!(
@@ -3721,22 +3724,79 @@ fn continuity_pickpocket_payload() {
     );
     assert_eq!(restored.write().to_bytes(), file.to_bytes());
     check_continuity_payload(&file, b"PKCT");
-    s.continuity.pickpocket_caught.insert(FormId::NULL);
+    check_continuity_payload(&file, b"PKTM");
+    // Without PKTM the victims are caught at an unknown time.
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"PKTM");
+    let restored = Snapshot::read(&legacy)
+        .unwrap()
+        .continuity
+        .pickpocket_caught;
+    assert_eq!(
+        restored,
+        [(ACTOR, None), (CELL, None)].into_iter().collect()
+    );
+    // PKTM must cover exactly PKCT's victims.
+    let mut fewer = file.clone();
+    fewer.sections.retain(|(tag, _)| tag != b"PKCT");
+    let mut w = Writer::default();
+    w.len(1);
+    w.form(ACTOR);
+    fewer.add(b"PKCT", w.0);
+    assert!(Snapshot::read(&fewer).is_err(), "memory of no victim");
+    let mut more = file.clone();
+    more.sections.retain(|(tag, _)| tag != b"PKCT");
+    let mut w = Writer::default();
+    w.len(3);
+    for id in [ACTOR, CELL, QUEST] {
+        w.form(id);
+    }
+    more.add(b"PKCT", w.0);
+    assert!(Snapshot::read(&more).is_err(), "victim without memory");
+    s.continuity
+        .pickpocket_caught
+        .insert(ACTOR, caught(f64::NAN, false));
+    assert!(Snapshot::read(&s.write()).is_err());
+    s.continuity.pickpocket_caught.remove(&ACTOR);
+    s.continuity
+        .pickpocket_caught
+        .insert(FormId::NULL, caught(1.0, false));
     assert!(Snapshot::read(&s.write()).is_err());
 }
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn continuity_pickpocket_runtime() {
     let (_fixture, mut e) = engine("continuity-pickpocket");
-    e.crime.pickpocket_caught.insert(ACTOR);
+    let caught = |at: f64, away: bool| crate::crime::PickpocketCaught { at, away };
+    e.day = 3;
+    e.hour = 0.0;
+    e.crime.pickpocket_caught.insert(ACTOR, caught(60.0, true));
     let saved = Snapshot::capture(&e).write();
     e.crime.pickpocket_caught.clear();
-    e.crime.pickpocket_caught.insert(CELL);
+    e.crime.pickpocket_caught.insert(CELL, caught(0.0, false));
     Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
-    assert!(e.crime.pickpocket_caught.contains(&ACTOR));
-    assert!(!e.crime.pickpocket_caught.contains(&CELL));
+    assert_eq!(
+        e.crime.pickpocket_caught,
+        [(ACTOR, caught(60.0, true))].into_iter().collect()
+    );
+    assert!(e.caught_pickpocketing_by(ACTOR));
+    e.day = 4;
+    e.hour = 11.5;
+    assert!(e.caught_pickpocketing_by(ACTOR), "47.5 hours");
+    e.hour = 12.0;
+    assert!(!e.caught_pickpocketing_by(ACTOR), "two days and away");
+    // A legacy PKCT without PKTM: caught as it loads, and not yet away.
+    let mut legacy = saved.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"PKTM");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert_eq!(
+        e.crime.pickpocket_caught,
+        [(ACTOR, caught(72.0, false))].into_iter().collect()
+    );
     let mut legacy = saved;
-    legacy.sections.retain(|(tag, _)| tag != b"PKCT");
+    legacy
+        .sections
+        .retain(|(tag, _)| tag != b"PKCT" && tag != b"PKTM");
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert!(e.crime.pickpocket_caught.is_empty());
 }
@@ -4210,7 +4270,13 @@ fn continuity_collection_keys_are_strict_and_counts_are_bounded() {
     s.continuity
         .crime_factions
         .extend([(ACTOR, None), (CELL, Some(GLOBAL))]);
-    s.continuity.pickpocket_caught.extend([ACTOR, CELL]);
+    let caught = Some(crate::crime::PickpocketCaught {
+        at: 1.0,
+        away: false,
+    });
+    s.continuity
+        .pickpocket_caught
+        .extend([(ACTOR, caught), (CELL, caught)]);
     s.continuity.assaulted.extend([ACTOR, CELL]);
     s.continuity.last_crime.extend([
         (ACTOR, crate::crime::CrimeType::Steal),
@@ -4281,7 +4347,7 @@ fn continuity_invalid_snapshots_leave_the_live_game_intact() {
             c.crime_factions.insert(ACTOR, Some(FormId::NULL));
         },
         |c| {
-            c.pickpocket_caught.insert(FormId::NULL);
+            c.pickpocket_caught.insert(FormId::NULL, None);
         },
         |c| {
             c.assaulted.insert(FormId::NULL);
@@ -5216,4 +5282,29 @@ fn saved_effects_keep_their_scripts_and_finish_them_after_loading() {
     c.day = 55;
     assert!(Snapshot::read(&orphan).unwrap().apply(&mut c).is_err());
     assert_eq!(c.day, 55);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn a_caught_pickpocket_victim_forgets_only_after_two_days_away() {
+    let (_fixture, mut e) = engine("pickpocket-forgets");
+    attach_scene_test_actor(&mut e);
+    e.crime.pickpocket_caught.insert(
+        SCENE_ACTOR,
+        crate::crime::PickpocketCaught {
+            at: e.game_hours_total(),
+            away: false,
+        },
+    );
+    e.day += 3;
+    assert!(
+        e.caught_pickpocketing_by(SCENE_ACTOR),
+        "waiting in the same room doesn't reset it"
+    );
+    e.despawn_actor(SCENE_ACTOR);
+    assert!(!e.caught_pickpocketing_by(SCENE_ACTOR));
+    e.player.sneaking = true;
+    // An expired memory goes when the player tries again.
+    assert!(!e.start_pickpocket(SCENE_ACTOR, "Victim"));
+    assert!(e.crime.pickpocket_caught.is_empty());
 }

@@ -242,7 +242,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                     engine.player.sneaking,
                     engine.is_dead(r),
                     engine.actor_ref(r).is_some(),
-                    engine.crime.pickpocket_caught.contains(&r),
+                    engine.caught_pickpocketing_by(r),
                 )];
             }
             engine.menu = Some(crate::items::Menu::Pickpocket(r));

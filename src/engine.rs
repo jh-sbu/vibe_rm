@@ -1810,6 +1810,7 @@ impl Engine {
                 self.furniture.release(a.ref_id);
                 self.moved_refs.remove(&a.ref_id);
                 self.actor_cells.remove(&a.ref_id);
+                self.pickpocket_victim_unloaded(a.ref_id);
             }
         }
     }
