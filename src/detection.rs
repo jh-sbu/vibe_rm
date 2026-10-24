@@ -229,6 +229,28 @@ pub struct Search {
     /// idle line (`AlertIdle` / `LostIdle`).
     dwell: f32,
     idle_line: f32,
+    /// Seconds since it last detected its target at all, and whether it has
+    /// seen the target fleeing while it searched.
+    unseen: f32,
+    fled: bool,
+}
+
+impl Search {
+    /// Note a state update: whether the target was detected, and whether it
+    /// is fleeing. True when the searcher gives up a lost target that fled,
+    /// undetected for `remove_after` seconds
+    /// (`fCombatDetectionFleeingLostRemoveTime`; `known_ambiguities/detection.md`).
+    fn forgets_fled_target(
+        &mut self,
+        detected: bool,
+        fleeing: bool,
+        step: f32,
+        remove_after: f32,
+    ) -> bool {
+        self.fled |= fleeing;
+        self.unseen = if detected { 0.0 } else { self.unseen + step };
+        self.lost && self.fled && self.unseen >= remove_after
+    }
 }
 
 /// How often actors' detection states are worked out (seconds; no source).
@@ -719,6 +741,7 @@ impl Engine {
             "fCombatStealthPointRegenDetectedEventWaitTime",
             10.0,
         );
+        let fled_remove = gmst_f32(&self.lo, "fCombatDetectionFleeingLostRemoveTime", 30.0);
         let actors: Vec<FormId> = self
             .cells
             .values()
@@ -807,6 +830,12 @@ impl Engine {
                     continue;
                 }
                 let v = values.get(&(r, sr.target)).copied();
+                let fleeing = self.is_fleeing(sr.target);
+                if sr.forgets_fled_target(v.is_some_and(|v| v > 0.0), fleeing, step, fled_remove) {
+                    log::info!("{r} gives up on {}, who fled", sr.target);
+                    self.calm_down(r, Some(b"LOTN"));
+                    continue;
+                }
                 if v.is_some_and(|v| self.enough_to_find(v, sr.target)) {
                     // `detect_enemies` starts the fight.
                     continue;
@@ -884,6 +913,8 @@ impl Engine {
             lost,
             dwell: SEARCH_DWELL.1,
             idle_line,
+            unseen: 0.0,
+            fled: false,
         });
         log::info!("{r} {} {target}", if lost { "lost" } else { "is alert to" });
         self.search_towards(r, at);
@@ -1254,5 +1285,48 @@ mod blindness_tests {
             engine.detection_between(&observer, &target).unwrap();
         assert_eq!(target_blind, unimpaired);
         assert_eq!(sees_target_blind, sees_unimpaired);
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    fn search(lost: bool) -> Search {
+        Search {
+            target: PLAYER_REF,
+            at: Vec3::ZERO,
+            lost,
+            dwell: 0.0,
+            idle_line: 0.0,
+            unseen: 0.0,
+            fled: false,
+        }
+    }
+
+    #[test]
+    fn a_lost_target_that_fled_is_forgotten_after_the_remove_time_unseen() {
+        let mut s = search(true);
+        assert!(!s.forgets_fled_target(false, true, 10.0, 30.0));
+        // It stopped fleeing (safe, out of the fight): it still fled.
+        assert!(!s.forgets_fled_target(false, false, 10.0, 30.0));
+        assert!(s.forgets_fled_target(false, false, 10.0, 30.0));
+    }
+
+    #[test]
+    fn detecting_the_target_restarts_the_remove_time() {
+        let mut s = search(true);
+        assert!(!s.forgets_fled_target(false, true, 25.0, 30.0));
+        assert!(!s.forgets_fled_target(true, true, 1.0, 30.0));
+        assert!(!s.forgets_fled_target(false, true, 25.0, 30.0));
+        assert!(s.forgets_fled_target(false, true, 5.0, 30.0));
+    }
+
+    #[test]
+    fn targets_that_never_fled_and_alert_searches_keep_the_stealth_rule() {
+        let mut s = search(true);
+        assert!(!s.forgets_fled_target(false, false, 100.0, 30.0));
+        let mut alert = search(false);
+        assert!(!alert.forgets_fled_target(false, true, 100.0, 30.0));
     }
 }
