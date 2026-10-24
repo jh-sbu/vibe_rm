@@ -1795,9 +1795,9 @@ game each piece unlocks.
        `GetPCExpelled`, `GetPCFactionMurder`, `GetPCFactionAttack` and
        `GetPCEnemyofFaction`, with what sets them; `IsPCAMurderer` (a murder flag
        kept past the Murders stat)
-   - Combat, more: attackers forgetting a lost fleeing target
-     (`fCombatDetectionFleeingLostRemoveTime`,
-     `fCombatLowFleeingTargetHitPercent`); flee dialogue's distance rules
+   - Combat, more: attackers' other lost-target timeouts
+     (`fCombatDetectionLostRemove*`; fleeing targets are forgotten: see Done),
+     `fCombatLowFleeingTargetHitPercent`; flee dialogue's distance rules
      (`fCombatDialogueFleeDistanceMult`; timer scheduling: see Done);
      impacts' results (bounce, impale, stick); their hazards' models, lights,
      sounds and flags

@@ -116,6 +116,20 @@ stealth points.
   (stealth points gone, or past the threshold) and gives up once it doesn't
   detect it and the target's stealth points are full; or at once if the
   target dies or it no longer would attack it.
+- **A lost target that fled**: a searcher that has lost its target, and has
+  seen it fleeing at any time during the search, gives up (`LostToNormal`)
+  once it hasn't detected it at all for
+  `fCombatDetectionFleeingLostRemoveTime` (30 s). The value comes from a
+  settings table on the UESP talk page
+  [Skyrim talk:Sneak/Archive 2, revision 2224198](https://en.uesp.net/w/index.php?oldid=2224198)
+  (discussion, not documentation); what the setting does is read from its
+  name. Open: whether "fleeing" means the target is fleeing when lost or
+  only while the search runs, whether any detection restarts the time or
+  only finding the target, and what the neighbouring
+  `fCombatDetectionLostRemoveTime` (30), `LostRemoveDistance` (4096) and
+  `LostRemoveDistanceTime` (60) do, and how they relate to the stealth-point
+  rule above. Those three aren't used. `fCombatLowFleeingTargetHitPercent`
+  isn't in the local UESP dump.
 - Topics: `NormalToCombat`, `AlertToCombat`, `LostToCombat` on starting a
   fight; `NormalToAlert`, `CombatToLost` on starting to search; `AlertIdle`
   / `LostIdle` every `fCombatDetectionDialogueIdleMin` to `MaxElapsedTime`
