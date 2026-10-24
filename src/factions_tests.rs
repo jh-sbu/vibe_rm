@@ -98,3 +98,24 @@ fn set_enemy_and_set_ally_change_both_factions_reactions() {
     assert_eq!(e.faction_combat_reaction(TOWN, BANDITS), 0);
     assert_eq!(e.factions.reactions.len(), 2);
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn reaction_modifiers_change_without_touching_combat_reactions() {
+    let (_f, mut e) = fixture("modifiers");
+    assert_eq!(e.reaction_towards(BANDITS, GUARDS).modifier, -10);
+    e.set_reaction_modifier(BANDITS, GUARDS, 25, true);
+    assert_eq!(
+        e.reaction_towards(BANDITS, GUARDS),
+        crate::factions::Reaction {
+            modifier: 15,
+            combat: 1
+        }
+    );
+    e.set_reaction_modifier(BANDITS, GUARDS, -3, false);
+    assert_eq!(e.reaction_towards(BANDITS, GUARDS).modifier, -3);
+    assert_eq!(e.reaction_towards(GUARDS, BANDITS).modifier, 0, "one way");
+    e.set_reaction_modifier(TOWN, GUARDS, 7, true);
+    assert_eq!(e.reaction_towards(TOWN, GUARDS).modifier, 7);
+    assert_eq!(e.faction_combat_reaction(TOWN, GUARDS), 0, "still neutral");
+}

@@ -40,3 +40,16 @@
   give up because they no longer would attack. Also unconfirmed: whether a
   faction listing another more than once has every entry changed (we answer
   with the change alone).
+
+## Reaction modifiers (`SetReaction`, `ModReaction`, `GetReaction`)
+
+- These read and change the `XNAM` reaction modifier (the `int32` CommonLibSSE
+  calls `reaction`) of this faction towards the other, one way only. They
+  leave the group combat reaction alone, and nothing else here reads the
+  modifier. Saved with the combat reactions in `FRCT`.
+- Unconfirmed: which field "reaction" means. CommonLibSSE's names favour the
+  modifier (the combat value is `fightReaction`, with its own
+  `SetFactionFightReaction`). Against that, the only vanilla call,
+  `QF_ccBGSSSE001_Crab_MQ4_050009E9`, sets the guards' reaction towards the
+  flaming crabs to 1, which reads like "enemy" if it is the combat
+  reaction. `ModReaction` and `GetReaction` have no vanilla callers.
