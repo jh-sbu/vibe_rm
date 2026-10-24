@@ -981,3 +981,155 @@ fn batch04_inventory_totals_and_worn_queries() {
         Value::Int(0)
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn batch05_actor_classification_package_dialogue_and_scene() {
+    let mut race = [0u8; 128];
+    race[32..36].copy_from_slice(&4u32.to_le_bytes());
+    let (_f, mut e) = fixture(vec![
+        Node::top(
+            b"RACE",
+            vec![RecordBuilder::new(b"RACE", FormId(0x820)).field(b"DATA", &race)],
+        ),
+        Node::top(
+            b"NPC_",
+            vec![RecordBuilder::new(b"NPC_", FormId(0x810)).form(b"RNAM", FormId(0x820))],
+        ),
+        Node::top(
+            b"ACHR",
+            vec![RecordBuilder::new(b"ACHR", FormId(0x800)).form(b"NAME", FormId(0x810))],
+        ),
+        Node::top(b"PACK", vec![RecordBuilder::new(b"PACK", FormId(0x830))]),
+        Node::top(
+            b"MISC",
+            vec![
+                RecordBuilder::new(b"MISC", FormId(0x840))
+                    .field(b"DATA", &[0, 0, 0, 0, 0, 0, 32, 65]),
+            ],
+        ),
+        Node::top(b"QUST", vec![RecordBuilder::new(b"QUST", FormId(0x850))]),
+        Node::top(
+            b"SCEN",
+            vec![
+                RecordBuilder::new(b"SCEN", FormId(0x860))
+                    .field(b"HNAM", &[])
+                    .field(b"NEXT", &[])
+                    .field(b"NEXT", &[])
+                    .field(b"HNAM", &[])
+                    .u32(b"ALID", 0)
+                    .u32(b"LNAM", 0)
+                    .u32(b"DNAM", 0)
+                    .field(b"ANAM", &2u16.to_le_bytes())
+                    .u32(b"INAM", 0)
+                    .u32(b"SNAM", 0)
+                    .u32(b"ENAM", 0)
+                    .field(b"SNAM", &10.0f32.to_le_bytes())
+                    .field(b"ANAM", &[])
+                    .form(b"PNAM", FormId(0x850)),
+            ],
+        ),
+    ]);
+    assert_eq!(
+        call(&mut e, "actor", "ischild", FormId(0x800), &[]),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        call(&mut e, "actor", "ischild", FormId(0), &[]),
+        Value::Bool(false)
+    );
+    // An unloaded actor's initial inventory is initialized before weighing it.
+    assert_eq!(
+        call(&mut e, "actor", "isoverencumbered", FormId(0x800), &[]),
+        Value::Bool(false)
+    );
+    e.inventory_mut(FormId(0x800)).add(FormId(0x840), 10000);
+    assert_eq!(
+        call(&mut e, "actor", "isoverencumbered", FormId(0x800), &[]),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        call(&mut e, "actor", "getcurrentpackage", FormId(0x800), &[]),
+        Value::None
+    );
+    e.whereabouts
+        .package
+        .insert(FormId(0x800), Some(FormId(0x830)));
+    let package = e.object_value(FormId(0x830));
+    assert_eq!(
+        call(&mut e, "actor", "getcurrentpackage", FormId(0x800), &[]),
+        package
+    );
+    e.conversation = Some(crate::dialogue::Conversation {
+        npc_ref: FormId(0x800),
+        npc: FormId(0x810),
+        name: String::new(),
+        voice_type: FormId(0),
+        options: vec![],
+        queue: vec![],
+        current: None,
+        info: None,
+        ending: false,
+        said_once: Default::default(),
+    });
+    let player = e.object_value(crate::engine::PLAYER_REF);
+    assert_eq!(
+        call(&mut e, "actor", "getdialoguetarget", FormId(0x800), &[]),
+        player
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "actor",
+            "getdialoguetarget",
+            crate::engine::PLAYER_REF,
+            &[]
+        ),
+        Value::None
+    );
+    e.conversation = None;
+    assert_eq!(
+        call(&mut e, "actor", "getdialoguetarget", FormId(0x800), &[]),
+        Value::None
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getcurrentscene",
+            FormId(0x800),
+            &[]
+        ),
+        Value::None
+    );
+    e.scripts.quests.entry(FormId(0x850)).or_default().running = true;
+    e.scripts
+        .quests
+        .get_mut(&FormId(0x850))
+        .unwrap()
+        .aliases
+        .insert(0, FormId(0x800));
+    assert!(e.start_scene(FormId(0x860), false));
+    let scene = e.object_value(FormId(0x860));
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getcurrentscene",
+            FormId(0x800),
+            &[]
+        ),
+        scene
+    );
+    e.stop_scene(FormId(0x860));
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getcurrentscene",
+            FormId(0x800),
+            &[]
+        ),
+        Value::None
+    );
+}

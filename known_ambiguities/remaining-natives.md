@@ -38,3 +38,13 @@ is not precise about that distinction, quest items, unplayable items or gold.
 We count all positive inventory quantities; IsContainerEmpty uses the same rule.
 WornHasKeyword includes every equipped item in the runtime equipment list; exact
 hand-held weapon and hidden-skin inclusion in Skyrim remains unverified.
+
+## Batch 5
+
+GetCurrentPackage returns None for a loaded actor without a selected package;
+unloaded actors report the schedule selection. Skyrim's timing and interrupt
+package reporting are unverified. GetDialogueTarget uses the scene's explicit
+headtracking target while speaking; headtracking and dialogue listeners need not
+coincide in all scenes. Implicit scene listeners, idle pauses between lines and
+non-scene ambient dialogue are unresolved and return None. Encumbrance uses our
+existing NPC capacity calculation, whose precise Skyrim enforcement is unverified.

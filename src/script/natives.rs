@@ -394,6 +394,51 @@ pub fn call(
                 Value::Int(count)
             })
         }
+        ("actor", "ischild") => v(Value::Bool(
+            me.and_then(|r| e.race_of(r))
+                .is_some_and(|race| e.race_is_child(race)),
+        )),
+        ("actor", "isoverencumbered") => {
+            let over = me.is_some_and(|r| {
+                e.inventory_mut(r);
+                !e.can_carry_more(r, 0.0)
+            });
+            v(Value::Bool(over))
+        }
+        ("actor", "getcurrentpackage") => {
+            let package = me.and_then(|r| {
+                if let Some(actor) = e
+                    .actor_cells
+                    .get(&r)
+                    .and_then(|k| e.cells.get(k))
+                    .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r))
+                {
+                    return actor
+                        .current
+                        .and_then(|i| actor.packages.get(i))
+                        .map(|p| p.id);
+                }
+                e.whereabouts.package.get(&r).copied().flatten()
+            });
+            v(package.map_or(Value::None, |p| e.object_value(p)))
+        }
+        ("actor", "getdialoguetarget") => {
+            let target = me
+                .filter(|r| *r != crate::engine::PLAYER_REF)
+                .and_then(|r| {
+                    if e.conversation.as_ref().is_some_and(|c| c.npc_ref == r) {
+                        Some(crate::engine::PLAYER_REF)
+                    } else if e.is_scene_speaking(r) {
+                        e.scene_headtracking().get(&r).map(|(t, _)| *t)
+                    } else {
+                        None
+                    }
+                });
+            v(target.map_or(Value::None, |r| e.object_value(r)))
+        }
+        ("objectreference", "getcurrentscene") => v(me
+            .and_then(|r| e.scene_of_actor(r))
+            .map_or(Value::None, |run| e.object_value(run.scene))),
         ("actor", "getgoldamount") => v(Value::Int(me.map_or(0, |r| e.gold(r)))),
         ("actor", "wornhaskeyword") => {
             let worn = me
