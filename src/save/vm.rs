@@ -30,6 +30,8 @@ pub struct VmSnapshot {
     /// (runtime wait key, sender, canonical event). `ANMW` encodes these as
     /// semantic descriptors tied to the filtered VM thread order.
     pub animation_waits: Vec<(u64, FormId, String)>,
+    /// Effects whose scripts are kept (those `AEFF` saves); not encoded.
+    pub kept_effects: std::collections::HashSet<u64>,
 }
 
 /// Arrays met while writing, by identity.
@@ -190,12 +192,32 @@ fn order(o: &ObjectId) -> (u8, u64, u64) {
     }
 }
 
-/// Effects aren't saved, so what hangs on them goes.
-fn on_effect(id: ObjectId) -> bool {
-    matches!(id, ObjectId::Effect(_))
-}
-
 impl VmSnapshot {
+    /// What hangs on effects that aren't saved goes.
+    fn dropped(&self, id: ObjectId) -> bool {
+        matches!(id, ObjectId::Effect(n) if !self.kept_effects.contains(&n))
+    }
+
+    /// The effects the VM's scripts, variables and threads hang on.
+    pub fn effect_objects(&self) -> std::collections::BTreeSet<u64> {
+        let effect = |o: &ObjectId| match *o {
+            ObjectId::Effect(n) => Some(n),
+            _ => None,
+        };
+        let vm = &self.vm;
+        vm.instances
+            .iter()
+            .filter_map(|(o, ..)| effect(o))
+            .chain(vm.attached.iter().filter_map(|(o, _)| effect(o)))
+            .chain(
+                vm.threads
+                    .iter()
+                    .flat_map(|t| t.frames.iter())
+                    .filter_map(|f| f.this.as_ref().and_then(|(o, _)| effect(o))),
+            )
+            .collect()
+    }
+
     pub fn write(&self, file: &mut SaveFile) {
         let mut arrays = ArrayTable::default();
         let mut w = Writer::default();
@@ -204,7 +226,7 @@ impl VmSnapshot {
                 .vm
                 .instances
                 .iter()
-                .filter(|(obj, ..)| !on_effect(*obj))
+                .filter(|(obj, ..)| !self.dropped(*obj))
                 .collect();
             v.sort_by(|a, b| (order(&a.0), &a.1).cmp(&(order(&b.0), &b.1)));
             v
@@ -223,7 +245,7 @@ impl VmSnapshot {
             .vm
             .attached
             .iter()
-            .filter(|(obj, _)| !on_effect(*obj))
+            .filter(|(obj, _)| !self.dropped(*obj))
             .collect();
         attached.sort_by_key(|(obj, _)| order(obj));
         w.len(attached.len());
@@ -241,7 +263,7 @@ impl VmSnapshot {
             .filter(|t| {
                 !t.frames
                     .iter()
-                    .any(|f| f.this.as_ref().is_some_and(|(o, _)| on_effect(*o)))
+                    .any(|f| f.this.as_ref().is_some_and(|(o, _)| self.dropped(*o)))
             })
             .collect();
         w.len(threads.len());

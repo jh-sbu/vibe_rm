@@ -580,6 +580,7 @@ impl Snapshot {
                 message_boxes: e.messages.boxes.clone(),
                 message_next_key: e.messages.next_key,
                 animation_waits: e.anim_events.waiting(),
+                kept_effects: e.saved_active_effects().0.iter().map(|x| x.id).collect(),
             },
         }
     }
@@ -2093,6 +2094,23 @@ impl Snapshot {
         )?;
         e.validate_saved_rolled_spells(&self.rolled_spells)?;
         e.validate_saved_active_effects(&self.continuity.active_effects.0)?;
+        // Effect scripts load only with their effects.
+        let effect_ids: HashSet<u64> = self
+            .continuity
+            .active_effects
+            .0
+            .iter()
+            .filter(|x| x.scripted)
+            .map(|x| x.id)
+            .collect();
+        if let Some(id) = self
+            .vm
+            .effect_objects()
+            .into_iter()
+            .find(|id| !effect_ids.contains(id))
+        {
+            anyhow::bail!("save has scripts on effect {id}, which it doesn't keep");
+        }
         anyhow::ensure!(
             self.ward_states.iter().all(|(actor, (state, remaining))| {
                 !actor.is_null()

@@ -72,6 +72,8 @@ const LESSER_POWER: FormId = FormId(0x8A6);
 const FORTIFY_CARRY: FormId = FormId(0x8E0);
 const FORTIFY_CARRY_SPELL: FormId = FormId(0x8E1);
 const FORTIFY_CARRY_ABILITY: FormId = FormId(0x8E2);
+const SCRIPTED_EFFECT: FormId = FormId(0x8E3);
+const SCRIPTED_SPELL: FormId = FormId(0x8E4);
 
 struct Fixture(std::path::PathBuf);
 
@@ -162,7 +164,26 @@ fn engine(name: &str) -> (Fixture, Engine) {
     let records = [
         Node::top(
             b"MGEF",
-            vec![RecordBuilder::new(b"MGEF", FORTIFY_CARRY).field(b"DATA", &fortify)],
+            vec![
+                RecordBuilder::new(b"MGEF", FORTIFY_CARRY).field(b"DATA", &fortify),
+                RecordBuilder::new(b"MGEF", SCRIPTED_EFFECT)
+                    .field(
+                        b"VMAD",
+                        &esp::writer::vmad(&[esp::writer::AttachedScript {
+                            name: "VrmEffectSaveTest".into(),
+                            properties: vec![],
+                        }]),
+                    )
+                    .field(b"DATA", &{
+                        let mut d = [0; 0x98];
+                        for o in [0x0C, 0x10, 0x44, 0x58] {
+                            d[o..o + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+                        }
+                        d[0x40..0x44]
+                            .copy_from_slice(&crate::magic::archetype::SCRIPT.to_le_bytes());
+                        d
+                    }),
+            ],
         ),
         Node::top(
             b"IMAD",
@@ -479,6 +500,16 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     "Lesser",
                 ),
                 fortify_spell(FORTIFY_CARRY_SPELL, crate::magic::spell_type::SPELL, 1, 30),
+                {
+                    let mut spit = [0; 36];
+                    spit[16..20].copy_from_slice(&1u32.to_le_bytes());
+                    let mut efit = [0; 12];
+                    efit[8..12].copy_from_slice(&30u32.to_le_bytes());
+                    RecordBuilder::new(b"SPEL", SCRIPTED_SPELL)
+                        .field(b"SPIT", &spit)
+                        .u32(b"EFID", SCRIPTED_EFFECT.0)
+                        .field(b"EFIT", &efit)
+                },
                 fortify_spell(
                     FORTIFY_CARRY_ABILITY,
                     crate::magic::spell_type::ABILITY,
@@ -667,6 +698,28 @@ fn engine(name: &str) -> (Fixture, Engine) {
     std::fs::write(
         f.0.join("scripts/VrmAnimationWaitTest.pex"),
         papyrus::pex::write(&animation_script.build().unwrap()).unwrap(),
+    )
+    .unwrap();
+    // An effect script counting its starts and noting its finish.
+    let mut effect_script =
+        papyrus::build::ScriptBuilder::new("VrmEffectSaveTest", "ActiveMagicEffect");
+    let starts = effect_script.variable("starts", "Int", papyrus::build::Arg::None);
+    let finished = effect_script.variable("finished", "Int", papyrus::build::Arg::None);
+    let mut on_start = papyrus::build::FunctionBuilder::new("None");
+    on_start.param("akTarget", "Actor");
+    on_start.param("akCaster", "Actor");
+    on_start.op(1, [starts.clone(), starts, papyrus::build::Arg::Int(1)]); // iadd
+    on_start.ret(papyrus::build::Arg::None);
+    effect_script.function("OnEffectStart", on_start);
+    let mut on_finish = papyrus::build::FunctionBuilder::new("None");
+    on_finish.param("akTarget", "Actor");
+    on_finish.param("akCaster", "Actor");
+    on_finish.assign(finished, papyrus::build::Arg::Int(1));
+    on_finish.ret(papyrus::build::Arg::None);
+    effect_script.function("OnEffectFinish", on_finish);
+    std::fs::write(
+        f.0.join("scripts/VrmEffectSaveTest.pex"),
+        papyrus::pex::write(&effect_script.build().unwrap()).unwrap(),
     )
     .unwrap();
     let e = crate::stats::action_tests::headless_engine(&f.0, "Save.esp");
@@ -5103,4 +5156,64 @@ fn restored_summon_effects_command_their_summons_again() {
         a.magic.commanded,
         [(FormId(0xFF00_0900), ACTOR)].into_iter().collect()
     );
+}
+
+/// Deliver queued script events, as an update does.
+fn run_pending_events(e: &mut Engine) {
+    let mut vm = std::mem::take(&mut e.vm);
+    {
+        let mut host = crate::script::EngineHost { engine: e };
+        for (obj, ev, args) in std::mem::take(&mut host.engine.scripts.pending_events) {
+            vm.send_event(&mut host, obj, &ev, args);
+        }
+        let now = host.engine.scripts.real_time;
+        vm.run(&mut host, now, 10_000);
+    }
+    e.vm = vm;
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn saved_effects_keep_their_scripts_and_finish_them_after_loading() {
+    let (_a, mut a) = engine("effect-scripts-a");
+    assert!(a.apply_item(SCRIPTED_SPELL, Some(PLAYER_REF), PLAYER_REF));
+    let id = a.magic.effects[0].id;
+    let obj = papyrus::ObjectId::Effect(id);
+    run_pending_events(&mut a);
+    assert_eq!(a.vm.get_var(obj, "starts"), Some(papyrus::Value::Int(1)));
+    let file = Snapshot::capture(&a).write();
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.vm.effect_objects(), [id].into());
+
+    let (_b, mut b) = engine("effect-scripts-b");
+    decoded.apply(&mut b).unwrap();
+    assert_eq!(b.vm.get_var(obj, "starts"), Some(papyrus::Value::Int(1)));
+    b.update_magic(1.0);
+    run_pending_events(&mut b);
+    assert_eq!(
+        b.vm.get_var(obj, "starts"),
+        Some(papyrus::Value::Int(1)),
+        "not started again"
+    );
+    b.update_magic(30.0);
+    run_pending_events(&mut b);
+    assert_eq!(b.vm.get_var(obj, "finished"), Some(papyrus::Value::Int(1)));
+
+    // Finished effects' lingering scripts aren't kept.
+    let file = Snapshot::capture(&b).write();
+    assert!(
+        Snapshot::read(&file)
+            .unwrap()
+            .vm
+            .effect_objects()
+            .is_empty()
+    );
+
+    // Scripts on an effect the save doesn't keep are refused.
+    let mut orphan = SaveFile::from_bytes(&Snapshot::capture(&a).write().to_bytes()).unwrap();
+    orphan.sections.retain(|(tag, _)| tag != b"AEFF");
+    let (_c, mut c) = engine("effect-scripts-orphan");
+    c.day = 55;
+    assert!(Snapshot::read(&orphan).unwrap().apply(&mut c).is_err());
+    assert_eq!(c.day, 55);
 }

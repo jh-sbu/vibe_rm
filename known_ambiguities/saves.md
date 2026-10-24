@@ -125,7 +125,8 @@ saved: it is taken again from the place the save loads into.
 - Other signal waits are kept as timed waits that finish when their timeout
   runs out, with the default result: their host state is not saved yet.
   A thread whose function no longer resolves (other scripts) is dropped with
-  a warning. Scripts on active magic effects are dropped with the effects.
+  a warning. Scripts on finished effects (kept briefly for `OnEffectFinish`)
+  are dropped.
   Registrations other than these (key, LOS gain, tracked hits...) aren't
   built in the engine yet.
 - Live player conversations, actor
@@ -358,5 +359,8 @@ Native policies (not SE claims):
 - **Legacy saves** without `AEFF` have no effects. Their `AVAL` still holds what
   the effects held, so those changes stay on, and abilities are applied over
   them again. Those saves can't say what was held, so nothing is subtracted.
-- **Scripted effects**: see `VM` below once effect scripts are kept; until
-  then a restored scripted effect has no script object.
+- **Scripted effects** keep their scripts, variables and waiting threads in
+  `VM` (object kind 2, already in the layout; the layout is unchanged). Only
+  effects `AEFF` keeps are written; finished effects' lingering scripts are
+  dropped, as before. A save whose `VM` names an effect `AEFF` doesn't keep
+  is refused before anything changes. Legacy saves had no effect objects.
