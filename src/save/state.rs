@@ -30,7 +30,8 @@
 //! harvests, locations, crime memory, controls, voice/regeneration timers,
 //! journal ordering, magic usage histories, camera preferences, crime progression,
 //! delayed activation queues, random streams, player stance/recovery and image
-//! modifiers/script fades, and active magic effects (`AEFF`).
+//! modifiers/script fades, and active magic effects (`AEFF`) and their
+//! tapers (`TAPR`).
 //! Not yet saved: actor
 //! procedure progress, AI progress, objects' behaviour graphs; see
 //! `plans/ROADMAP.md`.
@@ -2094,6 +2095,8 @@ impl Snapshot {
         )?;
         e.validate_saved_rolled_spells(&self.rolled_spells)?;
         e.validate_saved_active_effects(&self.continuity.active_effects.0)?;
+        let tapering: Vec<_> = self.continuity.tapers.iter().map(|t| t.0.clone()).collect();
+        e.validate_saved_active_effects(&tapering)?;
         // Effect scripts load only with their effects.
         let effect_ids: HashSet<u64> = self
             .continuity

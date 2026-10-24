@@ -74,6 +74,8 @@ const FORTIFY_CARRY_SPELL: FormId = FormId(0x8E1);
 const FORTIFY_CARRY_ABILITY: FormId = FormId(0x8E2);
 const SCRIPTED_EFFECT: FormId = FormId(0x8E3);
 const SCRIPTED_SPELL: FormId = FormId(0x8E4);
+const TAPERING_DRAIN: FormId = FormId(0x8E5);
+const TAPERING_SPELL: FormId = FormId(0x8E6);
 
 struct Fixture(std::path::PathBuf);
 
@@ -166,6 +168,14 @@ fn engine(name: &str) -> (Fixture, Engine) {
             b"MGEF",
             vec![
                 RecordBuilder::new(b"MGEF", FORTIFY_CARRY).field(b"DATA", &fortify),
+                // Drain Carry Weight at once, tapering at its full rate for 2 s.
+                RecordBuilder::new(b"MGEF", TAPERING_DRAIN).field(b"DATA", &{
+                    let mut d = fortify;
+                    d[0..4].copy_from_slice(&crate::magic::flags::DETRIMENTAL.to_le_bytes());
+                    d[0x1C..0x20].copy_from_slice(&1.0f32.to_le_bytes());
+                    d[0x38..0x3C].copy_from_slice(&2.0f32.to_le_bytes());
+                    d
+                }),
                 RecordBuilder::new(b"MGEF", SCRIPTED_EFFECT)
                     .field(
                         b"VMAD",
@@ -500,6 +510,16 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     "Lesser",
                 ),
                 fortify_spell(FORTIFY_CARRY_SPELL, crate::magic::spell_type::SPELL, 1, 30),
+                {
+                    let mut spit = [0; 36];
+                    spit[16..20].copy_from_slice(&1u32.to_le_bytes());
+                    let mut efit = [0; 12];
+                    efit[0..4].copy_from_slice(&25.0f32.to_le_bytes());
+                    RecordBuilder::new(b"SPEL", TAPERING_SPELL)
+                        .field(b"SPIT", &spit)
+                        .u32(b"EFID", TAPERING_DRAIN.0)
+                        .field(b"EFIT", &efit)
+                },
                 {
                     let mut spit = [0; 36];
                     spit[16..20].copy_from_slice(&1u32.to_le_bytes());
@@ -5307,4 +5327,37 @@ fn a_caught_pickpocket_victim_forgets_only_after_two_days_away() {
     // An expired memory goes when the player tries again.
     assert!(!e.start_pickpocket(SCENE_ACTOR, "Victim"));
     assert!(e.crime.pickpocket_caught.is_empty());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn tapering_value_changes_run_out_after_loading() {
+    let (_a, mut a) = engine("tapers-a");
+    a.mod_actor_value(PLAYER_REF, esp::actor_value::CARRY_WEIGHT, 500.0);
+    let full = carry_weight(&a);
+    assert!(a.apply_item(TAPERING_SPELL, Some(PLAYER_REF), PLAYER_REF));
+    a.update_magic(0.5);
+    assert_eq!(carry_weight(&a), full - 37.5);
+    let file = Snapshot::capture(&a).write();
+    check_continuity_payload(&file, b"TAPR");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+    assert_eq!(decoded.continuity.tapers.len(), 1);
+
+    let (_b, mut b) = engine("tapers-b");
+    decoded.apply(&mut b).unwrap();
+    assert_eq!(carry_weight(&b), full - 37.5);
+    b.update_magic(1.5);
+    b.update_magic(1.0);
+    assert_eq!(
+        carry_weight(&b),
+        full - 75.0,
+        "the rest of the taper, no more"
+    );
+
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"TAPR");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    b.update_magic(2.0);
+    assert_eq!(carry_weight(&b), full - 37.5, "legacy saves keep no tapers");
 }

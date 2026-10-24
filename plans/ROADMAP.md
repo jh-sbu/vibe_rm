@@ -1803,7 +1803,6 @@ game each piece unlocks.
      (`fCombatDialogueFleeDistanceMult`; timer scheduling: see Done);
      impacts' results (bounce, impale, stick); their hazards' models, lights,
      sounds and flags
-   - Encumbrance, more: fast travel refused over-encumbered (with the map)
    - Perks, more: staggers, bow zoom; NPCs' skills advancing
    - Combat conditions waiting on the attack phases: `GetAttackState` (the
      graph's draw, swing, hit, next attack, follow-through and bash; the engine

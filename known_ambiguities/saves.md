@@ -330,8 +330,10 @@ item and effect index, magnitude, duration, elapsed time, whether it is doing
 its work, what it holds on its actor values, its landing point, its summon and
 its quiet / dual / channelled / scripted flags, with the next effect id.
 Telekinesis is left out because the object it holds isn't saved; the grab ends
-on load. Lingering taper runs and the scripts of already-finished effects are
-not kept.
+on load. The scripts of already-finished effects are not kept. Optional
+`TAPR` keeps value changes still tapering off (the effect as it landed, the
+rate it started at and the seconds since), so they run out after loading;
+legacy saves have none. Whether SE saves tapers at all is unknown.
 
 Evidence: CommonLibSSE-NG's public `RE/A/ActiveEffect.h` declares `SaveGame`,
 `LoadGame`, `FinishLoadGame` and `Revert` on `ActiveEffect`, so SE does save
