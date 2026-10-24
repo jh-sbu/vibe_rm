@@ -3095,15 +3095,25 @@ impl Engine {
     pub fn templates_of(&self, actor: FormId) -> Option<crate::world::template::Sources> {
         use crate::world::template::Sources;
         if actor == PLAYER_REF {
-            return Some(Sources::of_npc(&self.lo, FormId(0x7), 0));
+            return Some(Sources::of_npc(
+                &self.lo,
+                FormId(0x7),
+                0,
+                &self.scripts.globals,
+            ));
         }
         if let Some(c) = self.created(actor).filter(|c| c.actor) {
-            return Sources::for_ref(&self.lo, c.base, actor.0 as u64);
+            return Sources::for_ref(&self.lo, c.base, actor.0 as u64, &self.scripts.globals);
         }
         let rec = self.lo.get(actor)?;
         match &rec.tag().0 {
-            b"ACHR" => Sources::for_ref(&self.lo, records::reference(&rec).base, actor.0 as u64),
-            b"NPC_" => Some(Sources::of_npc(&self.lo, actor, 0)),
+            b"ACHR" => Sources::for_ref(
+                &self.lo,
+                records::reference(&rec).base,
+                actor.0 as u64,
+                &self.scripts.globals,
+            ),
+            b"NPC_" => Some(Sources::of_npc(&self.lo, actor, 0, &self.scripts.globals)),
             _ => None,
         }
     }

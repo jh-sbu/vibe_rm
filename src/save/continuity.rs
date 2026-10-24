@@ -61,6 +61,8 @@ pub(crate) struct Continuity {
     pub ghosts: HashMap<FormId, bool>,
     /// Forms scripts added to form lists, by list, in the order added.
     pub formlist_additions: HashMap<FormId, Vec<FormId>>,
+    /// Entries scripts added to leveled lists, in the order added.
+    pub leveled_additions: HashMap<FormId, Vec<(u16, FormId, u16)>>,
     /// Outfits scripts gave actors.
     pub outfits: HashMap<FormId, FormId>,
     /// Music types scripts queued, in the order added.
@@ -274,6 +276,7 @@ impl Continuity {
             base_flags: e.protection.base_flags.clone(),
             ghosts: e.protection.ghosts.clone(),
             formlist_additions: e.formlists.added.clone(),
+            leveled_additions: e.scripts.globals.leveled.added.clone(),
             outfits: e.outfits.set.clone(),
             music_queue: e.music.queue.script_entries(),
             ai_off: e.ai_off.clone(),
@@ -596,6 +599,18 @@ impl Continuity {
         }
         file.add(b"FLAD", w.0);
         let mut w = Writer::default();
+        w.len(self.leveled_additions.len());
+        for (list, entries) in sorted(&self.leveled_additions) {
+            w.form(list);
+            w.len(entries.len());
+            for &(level, form, count) in entries {
+                w.u16(level);
+                w.form(form);
+                w.u16(count);
+            }
+        }
+        file.add(b"LVAD", w.0);
+        let mut w = Writer::default();
         w.len(self.outfits.len());
         for (actor, outfit) in sorted(&self.outfits) {
             w.form(actor);
@@ -836,6 +851,22 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"LVAD")? {
+            let mut previous = None;
+            for _ in 0..r.count(8)? {
+                let list = r.form()?;
+                ordered(&mut previous, list)?;
+                let mut entries = Vec::new();
+                for _ in 0..r.count(8)? {
+                    let level = r.u16()?;
+                    let form = r.form()?;
+                    let count = r.u16()?;
+                    entries.push((level, form, count));
+                }
+                s.leveled_additions.insert(list, entries);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"GHST")? {
             let mut previous = None;
             for _ in 0..r.count(5)? {
@@ -1070,6 +1101,18 @@ impl Continuity {
                 nonnull(f)?;
                 if forms[..i].contains(&f) {
                     return Err(Corrupt("form added to a list twice".into()));
+                }
+            }
+        }
+        for (&list, entries) in &self.leveled_additions {
+            nonnull(list)?;
+            if entries.is_empty() || entries.len() > crate::leveled::MAX_ENTRIES {
+                return Err(Corrupt("leveled list additions out of range".into()));
+            }
+            for &(_, form, count) in entries {
+                nonnull(form)?;
+                if count == 0 {
+                    return Err(Corrupt("leveled entry with no count".into()));
                 }
             }
         }
@@ -1347,6 +1390,7 @@ impl Continuity {
         e.restore_base_flags(self.base_flags);
         e.restore_ghosts(self.ghosts);
         e.restore_formlist_additions(self.formlist_additions);
+        e.restore_leveled_additions(self.leveled_additions);
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);
         e.ai_off = self.ai_off;

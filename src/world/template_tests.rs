@@ -79,10 +79,10 @@ fn spell_templates_do_not_fill_unflagged_empty_lists() {
         ],
         vec![],
     );
-    let empty = Sources::of_npc(&lo, id(0x800), 0);
+    let empty = Sources::of_npc(&lo, id(0x800), 0, &Default::default());
     assert!(empty.spells(&lo).is_empty());
     assert!(empty.perks(&lo).is_empty());
-    let own = Sources::of_npc(&lo, id(0x802), 0);
+    let own = Sources::of_npc(&lo, id(0x802), 0, &Default::default());
     assert_eq!(own.spells(&lo), [id(0xA01)]);
     assert_eq!(own.perks(&lo), [(id(0xB01), 1)]);
 }
@@ -107,7 +107,7 @@ fn spell_templates_replace_spells_and_perks_as_one_part() {
         ],
         vec![],
     );
-    let sources = Sources::of_npc(&lo, id(0x800), 0);
+    let sources = Sources::of_npc(&lo, id(0x800), 0, &Default::default());
     assert_eq!(sources.of(SPELLS), id(0x801));
     assert_eq!(sources.spells(&lo), [id(0xA00), id(0xA02)]);
     assert_eq!(sources.perks(&lo), [(id(0xB00), 2)]);
@@ -130,7 +130,7 @@ fn spell_templates_stop_at_empty_selected_source_and_keep_own_race() {
             ],
         )],
     );
-    let sources = Sources::of_npc(&lo, id(0x800), 0);
+    let sources = Sources::of_npc(&lo, id(0x800), 0, &Default::default());
     assert_eq!(sources.chain(), [id(0x800), id(0x801), id(0x802)]);
     assert_eq!(sources.of(SPELLS), id(0x801));
     assert_eq!(sources.spells(&lo), [id(0xA10)]);
@@ -160,7 +160,7 @@ fn spell_templates_follow_nested_flags_and_independent_traits_race() {
             ],
         )],
     );
-    let sources = Sources::of_npc(&lo, id(0x800), 0);
+    let sources = Sources::of_npc(&lo, id(0x800), 0, &Default::default());
     assert_eq!(sources.of(SPELLS), id(0x802));
     assert_eq!(sources.of(TRAITS), id(0x801));
     assert_eq!(sources.spells(&lo), [id(0xA00), id(0xA11)]);
@@ -195,11 +195,14 @@ fn spell_templates_use_the_same_seeded_leveled_pick_for_all_parts() {
     );
     let mut picked = std::collections::HashSet::new();
     for seed in 0..64 {
-        let sources = Sources::for_ref(&lo, id(0x800), seed).unwrap();
-        assert_eq!(sources, Sources::for_ref(&lo, id(0x800), seed).unwrap());
+        let sources = Sources::for_ref(&lo, id(0x800), seed, &Default::default()).unwrap();
+        assert_eq!(
+            sources,
+            Sources::for_ref(&lo, id(0x800), seed, &Default::default()).unwrap()
+        );
         let selected = sources.of(SPELLS);
         assert_eq!(selected, sources.of(TRAITS));
-        let leveled_base = Sources::for_ref(&lo, id(0xD00), seed).unwrap();
+        let leveled_base = Sources::for_ref(&lo, id(0xD00), seed, &Default::default()).unwrap();
         assert_eq!(leveled_base.of(SPELLS), selected);
         assert_eq!(leveled_base.spells(&lo), sources.spells(&lo));
         let suffix = selected.0 & 0xFF;
@@ -229,7 +232,7 @@ fn spell_templates_remap_source_references_and_ignore_invalid_entries() {
         )],
         vec![],
     );
-    let sources = Sources::of_npc(&lo, id(0x800), 0);
+    let sources = Sources::of_npc(&lo, id(0x800), 0, &Default::default());
     assert_eq!(sources.spells(&lo), [id(0xA00)]);
     assert_eq!(sources.perks(&lo), [(id(0xB00), 1)]);
 }
@@ -271,7 +274,7 @@ fn spell_templates_resolve_ids_in_the_selected_sources_plugin() {
         &["Empty.esp".into(), "Spells.esp".into(), "Child.esp".into()],
     )
     .unwrap();
-    let sources = Sources::of_npc(&lo, FormId(0x0200_0800), 0);
+    let sources = Sources::of_npc(&lo, FormId(0x0200_0800), 0, &Default::default());
     assert_eq!(sources.of(SPELLS), id(0x800));
     assert_eq!(sources.spells(&lo), [id(0xA00), id(0xA10)]);
     assert_eq!(sources.perks(&lo), [(id(0xB00), 2)]);

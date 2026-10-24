@@ -96,7 +96,9 @@ Counts: add 38, remove ≤84.
   added), whether `Add` of a queued type moves it, and whether the queue
   survives a save. **test-mod** for the last two.
 
-### 3. Leveled lists: `LeveledItem` / `LeveledActor` / `LeveledSpell` `.AddForm`, `.Revert`
+### 3. Leveled lists: `LeveledItem` / `LeveledActor` / `LeveledSpell` `.AddForm`, `.Revert` (done)
+
+Done in `src/leveled.rs` (additions ride in `Globals::leveled`; saved as `LVAD`); notes in `refs/pex-natives/leveled-batch03-addform.md`.
 
 Counts: addform ≤245, revert ≤8 (shared with `FormList`).
 

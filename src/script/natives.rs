@@ -2152,6 +2152,18 @@ pub fn call(
             }
             none()
         }
+        ("leveleditem", "addform") | ("leveledactor", "addform") | ("leveledspell", "addform") => {
+            if let (Some(list), Some(f)) = (me, form_arg(args, 0)) {
+                e.add_to_leveled(list, f, arg(1).as_int(), arg(2).as_int());
+            }
+            none()
+        }
+        ("leveleditem", "revert") | ("leveledactor", "revert") | ("leveledspell", "revert") => {
+            if let Some(list) = me {
+                e.revert_leveled(list);
+            }
+            none()
+        }
         ("formlist", "revert") => {
             if let Some(list) = me {
                 e.revert_formlist(list);

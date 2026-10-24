@@ -88,7 +88,7 @@ pub struct ScriptState {
     pub quests: HashMap<FormId, QuestState>,
     /// Containers the player has taken something from (Chests Looted).
     pub looted: HashSet<FormId>,
-    pub globals: HashMap<FormId, f32>,
+    pub globals: crate::world::actor::Globals,
     pub disabled: HashMap<FormId, bool>,
     pub blocked_activation: HashSet<FormId>,
     /// Locks set by scripts and packages, and keys used, over the references' own

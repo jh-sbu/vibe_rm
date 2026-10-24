@@ -101,3 +101,10 @@ its place), and whether script-added entries survive a save (we save them as
 versus graceful change is our reading of the MUSC flags. **test-mod** wanted
 for the last two: `Add` a type, save, load and see whether it still plays; and
 `Add` two types of equal priority and see which plays.
+
+## Leveled list additions (AddForm / Revert)
+
+Unconfirmed: whether additions survive an SE save (we save them as `LVAD`), what
+the game does when a list is already at 255 entries (we ignore the add), and
+whether `AddForm` skips duplicates (we keep them). **test-mod** wanted: add an
+item to an empty `LeveledItem`, save and load, then roll it through `AddItem`.

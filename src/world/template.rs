@@ -50,18 +50,34 @@ pub struct Sources {
 impl Sources {
     /// Where an actor placed with `base` (an NPC or a leveled NPC list) by reference
     /// `seed` takes each part from; `None` when a leveled list picks nothing.
-    pub fn for_ref(lo: &LoadOrder, base: FormId, seed: u64) -> Option<Sources> {
-        let npc = super::actor::resolve_leveled(lo, base, b"LVLN", seed, &Default::default())?;
+    pub fn for_ref(
+        lo: &LoadOrder,
+        base: FormId,
+        seed: u64,
+        globals: &super::actor::Globals,
+    ) -> Option<Sources> {
+        let npc = super::actor::resolve_leveled(lo, base, b"LVLN", seed, globals)?;
         lo.get(npc).filter(|r| r.tag().0 == *b"NPC_")?;
-        Some(Sources::of_npc(lo, npc, seed))
+        Some(Sources::of_npc(lo, npc, seed, globals))
     }
 
     /// The sources of an NPC record, leveled templates picked by `seed`.
-    pub fn of_npc(lo: &LoadOrder, npc: FormId, seed: u64) -> Sources {
-        Sources::resolve(lo, npc, seed, 0)
+    pub fn of_npc(
+        lo: &LoadOrder,
+        npc: FormId,
+        seed: u64,
+        globals: &super::actor::Globals,
+    ) -> Sources {
+        Sources::resolve(lo, npc, seed, globals, 0)
     }
 
-    fn resolve(lo: &LoadOrder, npc: FormId, seed: u64, depth: usize) -> Sources {
+    fn resolve(
+        lo: &LoadOrder,
+        npc: FormId,
+        seed: u64,
+        globals: &super::actor::Globals,
+        depth: usize,
+    ) -> Sources {
         let own = Sources {
             by_flag: [npc; FLAG_COUNT],
             chain: vec![npc],
@@ -75,12 +91,12 @@ impl Sources {
             .filter(|t| !t.is_null() && *t != npc);
         let Some(t) = template
             .filter(|_| depth < MAX_DEPTH)
-            .and_then(|t| super::actor::resolve_leveled(lo, t, b"LVLN", seed, &Default::default()))
+            .and_then(|t| super::actor::resolve_leveled(lo, t, b"LVLN", seed, globals))
             .filter(|t| lo.get(*t).is_some_and(|r| r.tag().0 == *b"NPC_"))
         else {
             return own;
         };
-        let inner = Sources::resolve(lo, t, seed, depth + 1);
+        let inner = Sources::resolve(lo, t, seed, globals, depth + 1);
         let mut out = own;
         for (i, slot) in out.by_flag.iter_mut().enumerate() {
             if flags & (1 << i) != 0 {

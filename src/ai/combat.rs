@@ -3664,7 +3664,7 @@ impl Engine {
         self.player_stats
             .get_or_init(|| {
                 let race = self.npc_race(FormId(0x7)).unwrap_or(FormId(0x13746));
-                let src = Sources::of_npc(&self.lo, FormId(0x7), 0);
+                let src = Sources::of_npc(&self.lo, FormId(0x7), 0, &self.scripts.globals);
                 let mut s = CombatStats::of(self, PLAYER_REF, &src, race);
                 self.apply_actor_values(PLAYER_REF, &mut s);
                 Arc::new(s)

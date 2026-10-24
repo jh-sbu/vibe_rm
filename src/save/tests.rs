@@ -5694,6 +5694,67 @@ fn formlist_additions_replace_the_sessions_after_loading() {
 }
 
 #[test]
+fn leveled_additions_payload() {
+    let snapshot = |extra: Option<(FormId, Vec<(u16, FormId, u16)>)>| {
+        let mut s = Snapshot::default();
+        s.continuity.leveled_additions.extend([
+            (
+                CELL,
+                vec![(1, ACTOR, 3), (10, PLAYER_REF, 1), (1, ACTOR, 3)],
+            ),
+            (ACTOR, vec![(0, CELL, 1)]),
+        ]);
+        s.continuity.leveled_additions.extend(extra);
+        s
+    };
+    let s = snapshot(None);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.leveled_additions,
+        s.continuity.leveled_additions
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"LVAD");
+    for bad in [
+        (FormId::NULL, vec![(1, ACTOR, 1)]),
+        (PLAYER_REF, vec![]),
+        (PLAYER_REF, vec![(1, FormId::NULL, 1)]),
+        (PLAYER_REF, vec![(1, ACTOR, 0)]),
+        (PLAYER_REF, vec![(1, ACTOR, 1); 256]),
+    ] {
+        assert!(Snapshot::read(&snapshot(Some(bad)).write()).is_err());
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn leveled_additions_replace_the_sessions_after_loading() {
+    let (_a, mut a) = engine("leveled-a");
+    a.scripts
+        .globals
+        .leveled
+        .added
+        .insert(CELL, vec![(2, ACTOR, 1)]);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("leveled-b");
+    b.scripts
+        .globals
+        .leveled
+        .added
+        .insert(CELL, vec![(5, PLAYER_REF, 1)]);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(
+        b.scripts.globals.leveled.added,
+        [(CELL, vec![(2, ACTOR, 1)])].into_iter().collect()
+    );
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"LVAD");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.scripts.globals.leveled.added.is_empty());
+}
+
+#[test]
 fn outfits_payload() {
     let mut s = Snapshot::default();
     s.continuity

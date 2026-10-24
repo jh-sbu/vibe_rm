@@ -498,7 +498,7 @@ impl Snapshot {
             hour: e.hour,
             real_time: s.real_time,
             wall_time: s.wall_time,
-            globals: s.globals.clone(),
+            globals: s.globals.values().clone(),
             quests: s.quests.clone(),
             stats: s.stats.clone(),
             weapon_usage,
@@ -2145,7 +2145,7 @@ impl Snapshot {
         let s = &mut e.scripts;
         s.real_time = self.real_time;
         s.wall_time = self.wall_time;
-        s.globals = self.globals;
+        s.globals.set_values(self.globals);
         s.quests = self.quests;
         s.stats = self.stats;
         s.magic_usage = magic_usage;

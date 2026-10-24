@@ -229,7 +229,12 @@ impl Engine {
         let key = match self.whereabouts.sources.get(&(achr, npc)) {
             Some(&k) => k,
             None => {
-                let src = crate::world::template::Sources::of_npc(&self.lo, npc, achr.0 as u64);
+                let src = crate::world::template::Sources::of_npc(
+                    &self.lo,
+                    npc,
+                    achr.0 as u64,
+                    &self.scripts.globals,
+                );
                 let k = (
                     src.of(crate::world::template::AI_PACKAGES),
                     src.of(crate::world::template::DEF_PACK_LIST),
@@ -241,7 +246,12 @@ impl Engine {
         if let Some(p) = self.whereabouts.packages.get(&key) {
             return p.clone();
         }
-        let src = crate::world::template::Sources::of_npc(&self.lo, npc, achr.0 as u64);
+        let src = crate::world::template::Sources::of_npc(
+            &self.lo,
+            npc,
+            achr.0 as u64,
+            &self.scripts.globals,
+        );
         let p = std::sync::Arc::new(super::package::npc_packages(&self.lo, &src));
         self.whereabouts.packages.insert(key, p.clone());
         p

@@ -8,7 +8,35 @@ use super::template::Sources;
 
 /// Global variables' values as the scripts have set them (`GLOB`s missing
 /// here have their record's value).
-pub type Globals = std::collections::HashMap<FormId, f32>;
+#[derive(Default, Clone)]
+pub struct Globals {
+    values: std::collections::HashMap<FormId, f32>,
+    /// Entries scripts added to leveled lists, which every roll sees.
+    pub(crate) leveled: crate::leveled::Additions,
+}
+
+impl Globals {
+    pub fn values(&self) -> &std::collections::HashMap<FormId, f32> {
+        &self.values
+    }
+
+    pub fn set_values(&mut self, values: std::collections::HashMap<FormId, f32>) {
+        self.values = values;
+    }
+}
+
+impl std::ops::Deref for Globals {
+    type Target = std::collections::HashMap<FormId, f32>;
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+impl std::ops::DerefMut for Globals {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
+    }
+}
 
 /// A leveled list's chance of none: its global's value (`LVLG`) if it names
 /// one, else `LVLD`.
@@ -85,13 +113,18 @@ const LVL_USE_ALL: u8 = 0x04;
 /// A leveled list's entries (`LVLO`: level, form, count) eligible at the player's
 /// level: with "calculate from all levels" every entry up to it, otherwise those of
 /// the highest level reached; the lowest-level entries if none is.
-fn eligible(rec: &LoadedRecord<'_>) -> Vec<(FormId, i32)> {
-    eligible_at(rec, crate::skills::player_level())
+fn eligible(rec: &LoadedRecord<'_>, id: FormId, globals: &Globals) -> Vec<(FormId, i32)> {
+    eligible_at(rec, id, crate::skills::player_level(), globals)
 }
 
 /// `eligible` at `level` rather than the player's.
-fn eligible_at(rec: &LoadedRecord<'_>, level: u16) -> Vec<(FormId, i32)> {
-    let entries: Vec<(u16, FormId, i32)> = rec
+fn eligible_at(
+    rec: &LoadedRecord<'_>,
+    id: FormId,
+    level: u16,
+    globals: &Globals,
+) -> Vec<(FormId, i32)> {
+    let mut entries: Vec<(u16, FormId, i32)> = rec
         .subrecords()
         .filter(|s| s.tag.0 == *b"LVLO" && s.data.len() >= 8)
         .map(|s| {
@@ -106,6 +139,13 @@ fn eligible_at(rec: &LoadedRecord<'_>, level: u16) -> Vec<(FormId, i32)> {
             )
         })
         .collect();
+    entries.extend(
+        globals
+            .leveled
+            .of(id)
+            .iter()
+            .map(|&(l, f, n)| (l, f, n.max(1) as i32)),
+    );
     let pc = level;
     let flags = rec
         .get(b"LVLF")
@@ -148,7 +188,7 @@ pub(crate) fn resolve_leveled(
         if (roll % 100) < chance_none(lo, &rec, globals) {
             return None;
         }
-        let entries = eligible(&rec);
+        let entries = eligible(&rec, id, globals);
         if entries.is_empty() {
             return None;
         }
@@ -209,7 +249,7 @@ fn resolve_items_once(
     if (roll % 100) < chance_none(lo, rec, globals) {
         return Vec::new();
     }
-    let entries = eligible(rec);
+    let entries = eligible(rec, id, globals);
     if flags & LVL_USE_ALL != 0 {
         return entries
             .into_iter()
@@ -244,7 +284,7 @@ pub(crate) fn resolve_spells(
     if (roll % 100) < chance_none(lo, &rec, globals) {
         return Vec::new();
     }
-    let entries = eligible_at(&rec, level);
+    let entries = eligible_at(&rec, id, level, globals);
     let flags = rec
         .get(b"LVLF")
         .and_then(|d| d.first().copied())
@@ -641,7 +681,7 @@ pub fn describe_player(
     npc: FormId,
     inventory: &super::inventory::Inventory,
 ) -> Option<ActorDesc> {
-    let templates = Sources::of_npc(lo, npc, 0);
+    let templates = Sources::of_npc(lo, npc, 0, &Globals::default());
     let traits = npc_traits(lo, &templates)?;
     let (skeleton, race_skin, race_height) = race_info(lo, traits.race, traits.female)?;
     let skin = if traits.skin.is_null() {
@@ -707,7 +747,7 @@ fn reference_traits(
     if lo.tag_of(npc)?.0 != *b"NPC_" {
         return None;
     }
-    npc_traits(lo, &Sources::of_npc(lo, npc, seed))
+    npc_traits(lo, &Sources::of_npc(lo, npc, seed, globals))
 }
 
 /// What an actor reference starts with (see `describe_reference`), before it
@@ -768,7 +808,7 @@ pub fn describe_reference(
     if base.tag().0 != *b"NPC_" {
         return None;
     }
-    let templates = Sources::of_npc(lo, npc, seed);
+    let templates = Sources::of_npc(lo, npc, seed, globals);
     let traits = npc_traits(lo, &templates)?;
     let (skeleton, race_skin, race_height) = race_info(lo, traits.race, traits.female)?;
     let skin = if traits.skin.is_null() {
