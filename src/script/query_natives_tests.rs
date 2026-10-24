@@ -540,3 +540,100 @@ fn is_loaded_tracks_loaded_cells_and_parent_locations() {
         Value::Bool(false)
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn batch01_alias_game_timers_and_settings() {
+    let (_f, mut e) = fixture(vec![Node::top(
+        b"GMST",
+        vec![
+            RecordBuilder::new(b"GMST", FormId(0x800))
+                .zstring(b"EDID", "sNativeTest")
+                .zstring(b"DATA", "A setting"),
+        ],
+    )]);
+    let alias = Value::Object(
+        papyrus::ObjectId::Alias {
+            quest: 0x810,
+            alias: 3,
+        },
+        "ReferenceAlias".into(),
+    );
+    for (func, repeat) in [
+        ("registerforsingleupdategametime", false),
+        ("registerforupdategametime", true),
+    ] {
+        super::natives::call(&mut e, "alias", func, Some(&alias), &[Value::Float(2.5)]);
+        assert_eq!(e.scripts.timers.len(), 1);
+        let timer = &e.scripts.timers[0];
+        assert_eq!(timer.obj, alias.as_object().unwrap());
+        assert_eq!(timer.event, "OnUpdateGameTime");
+        assert!(timer.game_time);
+        assert_eq!(timer.at, e.game_hours_total() + 2.5);
+        assert_eq!(timer.repeat, repeat.then_some(2.5));
+    }
+    super::natives::call(
+        &mut e,
+        "alias",
+        "registerforupdate",
+        Some(&alias),
+        &[Value::Float(1.0)],
+    );
+    super::natives::call(
+        &mut e,
+        "alias",
+        "unregisterforupdategametime",
+        Some(&alias),
+        &[],
+    );
+    assert_eq!(e.scripts.timers.len(), 1);
+    assert_eq!(e.scripts.timers[0].event, "OnUpdate");
+    assert_eq!(
+        call(
+            &mut e,
+            "game",
+            "getgamesettingstring",
+            FormId(0),
+            &[Value::str("sNativeTest")]
+        ),
+        Value::str("A setting")
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "game",
+            "getgamesettingstring",
+            FormId(0),
+            &[Value::str("sMissing")]
+        ),
+        Value::str("")
+    );
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn batch01_ingredient_hostility_uses_effects() {
+    let (_f, mut e) = fixture(vec![
+        Node::top(
+            b"MGEF",
+            vec![RecordBuilder::new(b"MGEF", FormId(0x810)).field(b"DATA", &[1; 152])],
+        ),
+        Node::top(
+            b"INGR",
+            vec![
+                RecordBuilder::new(b"INGR", FormId(0x800))
+                    .form(b"EFID", FormId(0x810))
+                    .field(b"EFIT", &[0; 12]),
+                RecordBuilder::new(b"INGR", FormId(0x801)),
+            ],
+        ),
+    ]);
+    assert_eq!(
+        call(&mut e, "ingredient", "ishostile", FormId(0x800), &[]),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        call(&mut e, "ingredient", "ishostile", FormId(0x801), &[]),
+        Value::Bool(false)
+    );
+}

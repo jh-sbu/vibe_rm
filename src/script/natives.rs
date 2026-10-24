@@ -256,6 +256,9 @@ pub fn call(
             &str_arg(args, 0),
             0,
         ))),
+        ("game", "getgamesettingstring") => v(Value::str(
+            &e.gmst_string(&str_arg(args, 0)).unwrap_or_default(),
+        )),
         // Skills (`crate::skills`): the player's.
         ("game", "advanceskill") => {
             if let Some(skill) = crate::skills::skill_index(&str_arg(args, 0)) {
@@ -320,6 +323,8 @@ pub fn call(
         }
         ("form", "registerforsingleupdategametime")
         | ("form", "registerforupdategametime")
+        | ("alias", "registerforsingleupdategametime")
+        | ("alias", "registerforupdategametime")
         | ("activemagiceffect", "registerforsingleupdategametime")
         | ("activemagiceffect", "registerforupdategametime") => {
             if let Some(t) = this.and_then(|t| t.as_object()) {
@@ -361,6 +366,7 @@ pub fn call(
         ("form", "unregisterforupdate")
         | ("form", "unregisterforupdategametime")
         | ("alias", "unregisterforupdate")
+        | ("alias", "unregisterforupdategametime")
         | ("activemagiceffect", "unregisterforupdate")
         | ("activemagiceffect", "unregisterforupdategametime") => {
             if let Some(t) = this.and_then(|t| t.as_object()) {
@@ -1247,14 +1253,17 @@ pub fn call(
             }
             none()
         }
-        ("spell", "ishostile") | ("potion", "ishostile") | ("enchantment", "ishostile") => v(
-            Value::Bool(me.and_then(|s| e.magic_item(s)).is_some_and(|m| {
+        ("spell", "ishostile")
+        | ("potion", "ishostile")
+        | ("ingredient", "ishostile")
+        | ("enchantment", "ishostile") => v(Value::Bool(
+            me.and_then(|s| e.magic_item(s)).is_some_and(|m| {
                 m.effects.iter().any(|x| {
                     e.magic_effect(x.effect)
                         .is_some_and(|f| f.has(crate::magic::flags::HOSTILE))
                 })
-            })),
-        ),
+            }),
+        )),
         ("magiceffect", "getassociatedskill") => v(Value::str(
             me.and_then(|m| e.magic_effect(m))
                 .and_then(|m| m.skill)
