@@ -145,3 +145,99 @@ fn alias_flags_protect_their_references_while_the_quest_runs() {
     assert!(!e.is_essential(ACTOR));
     assert!(!holds(&e, ACTOR, 354));
 }
+
+fn call(
+    e: &mut Engine,
+    class: &str,
+    func: &str,
+    on: FormId,
+    args: &[papyrus::Value],
+) -> papyrus::Value {
+    let this = e.object_value(on);
+    match crate::script::natives::call(e, class, func, Some(&this), args) {
+        papyrus::NativeResult::Value(v) => v,
+        _ => panic!("{class}.{func} didn't return"),
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn scripts_change_actor_bases_flags() {
+    use papyrus::Value;
+    let (_f, mut e) = fixture("base");
+    assert_eq!(
+        call(&mut e, "actorbase", "isessential", NPC, &[]),
+        Value::Bool(false)
+    );
+    call(
+        &mut e,
+        "actorbase",
+        "setessential",
+        NPC,
+        &[Value::Bool(true)],
+    );
+    assert_eq!(
+        call(&mut e, "actorbase", "isessential", NPC, &[]),
+        Value::Bool(true)
+    );
+    // Every actor of the base, loaded or not.
+    assert!(e.is_essential(ACTOR) && e.is_essential(BYSTANDER));
+    assert_eq!(
+        call(&mut e, "actor", "isessential", ACTOR, &[]),
+        Value::Bool(true)
+    );
+    e.damage(BYSTANDER, 100.0, Some(PLAYER_REF), 0.0);
+    assert!(e.is_bleeding_out(BYSTANDER));
+    call(
+        &mut e,
+        "actorbase",
+        "setessential",
+        NPC,
+        &[Value::Bool(false)],
+    );
+    assert!(!e.is_essential(ACTOR));
+    call(&mut e, "actorbase", "setprotected", NPC, &[]);
+    assert!(e.is_protected(OTHER), "true when the argument is missing");
+    assert_eq!(
+        call(&mut e, "actorbase", "isprotected", NPC, &[]),
+        Value::Bool(true)
+    );
+    assert_eq!(e.protection.base_flags.len(), 2);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn invulnerable_actors_health_cant_be_lowered() {
+    use esp::actor_value as av;
+    use papyrus::Value;
+    let (_f, mut e) = fixture("invulnerable");
+    call(
+        &mut e,
+        "actorbase",
+        "setinvulnerable",
+        NPC,
+        &[Value::Bool(true)],
+    );
+    assert_eq!(
+        call(&mut e, "actorbase", "isinvulnerable", NPC, &[]),
+        Value::Bool(true)
+    );
+    e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
+    e.damage_actor_value(ACTOR, av::HEALTH, 30.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 50.0);
+    // The player too, through their base.
+    let health = e.player_health;
+    e.set_base_flag(FormId(0x7), crate::protection::acbs::INVULNERABLE, true);
+    e.damage(PLAYER_REF, 10.0, Some(ACTOR), 0.0);
+    e.damage_actor_value(PLAYER_REF, av::HEALTH, 10.0);
+    assert_eq!(e.player_health, health);
+    call(
+        &mut e,
+        "actorbase",
+        "setinvulnerable",
+        NPC,
+        &[Value::Bool(false)],
+    );
+    e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 20.0);
+}

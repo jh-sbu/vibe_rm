@@ -304,6 +304,7 @@ impl Engine {
                         self.player_health = value;
                     }
                 }
+                av::HEALTH if amount > 0.0 && self.is_invulnerable(actor) => {}
                 av::HEALTH => {
                     if let Some(a) = self
                         .actor_mut(actor)

@@ -1441,6 +1441,30 @@ pub fn call(
             me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0),
         )),
         ("actorbase", "isunique") => v(Value::Bool(true)),
+        ("actorbase", "setessential")
+        | ("actorbase", "setprotected")
+        | ("actorbase", "setinvulnerable") => {
+            if let Some(base) = me {
+                let flag = match func {
+                    "setessential" => crate::protection::acbs::ESSENTIAL,
+                    "setprotected" => crate::protection::acbs::PROTECTED,
+                    _ => crate::protection::acbs::INVULNERABLE,
+                };
+                e.set_base_flag(base, flag, args.first().is_none_or(|b| b.as_bool()));
+            }
+            none()
+        }
+        ("actorbase", "isessential")
+        | ("actorbase", "isprotected")
+        | ("actorbase", "isinvulnerable") => {
+            let flag = match func {
+                "isessential" => crate::protection::acbs::ESSENTIAL,
+                "isprotected" => crate::protection::acbs::PROTECTED,
+                _ => crate::protection::acbs::INVULNERABLE,
+            };
+            v(Value::Bool(me.is_some_and(|b| e.base_has_flag(b, flag))))
+        }
+        ("actor", "isessential") => v(Value::Bool(me.is_some_and(|a| e.is_essential(a)))),
         // The NPC's gift filter (`GNAM`, a form list of items).
         ("actorbase", "getgiftfilter") => {
             let list = me.and_then(|f| e.lo.get(f)).and_then(|r| {

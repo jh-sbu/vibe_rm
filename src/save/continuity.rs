@@ -55,6 +55,8 @@ pub(crate) struct Continuity {
     pub faction_player_flags: HashMap<FormId, u8>,
     /// Actors scripts had attacked on sight.
     pub attacked_on_sight: std::collections::HashSet<FormId>,
+    /// Actor bases' `ACBS` flags scripts set or cleared, by (base, flag).
+    pub base_flags: HashMap<(FormId, u32), bool>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -259,6 +261,7 @@ impl Continuity {
             faction_reactions: e.factions.reactions.clone(),
             faction_player_flags: e.factions.player_flags.clone(),
             attacked_on_sight: e.factions.attacked_on_sight.clone(),
+            base_flags: e.protection.base_flags.clone(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -552,6 +555,14 @@ impl Continuity {
             w.form(id);
         }
         file.add(b"AOSG", w.0);
+        let mut w = Writer::default();
+        w.len(self.base_flags.len());
+        for ((base, flag), on) in sorted(&self.base_flags) {
+            w.form(base);
+            w.u32(flag);
+            w.bool(*on);
+        }
+        file.add(b"BFLG", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -732,6 +743,15 @@ impl Continuity {
                 let id = r.form()?;
                 ordered(&mut previous, id)?;
                 s.attacked_on_sight.insert(id);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"BFLG")? {
+            let mut previous = None;
+            for _ in 0..r.count(9)? {
+                let key = (r.form()?, r.u32()?);
+                ordered(&mut previous, key)?;
+                s.base_flags.insert(key, r.bool()?);
             }
             r.finish()?;
         }
@@ -928,6 +948,12 @@ impl Continuity {
         }
         for &id in &self.attacked_on_sight {
             nonnull(id)?;
+        }
+        for &(base, flag) in self.base_flags.keys() {
+            nonnull(base)?;
+            if flag.count_ones() != 1 || flag & !crate::protection::acbs::CHANGEABLE != 0 {
+                return Err(Corrupt("unknown actor base flag".into()));
+            }
         }
         for (&faction, &flags) in &self.faction_player_flags {
             nonnull(faction)?;
@@ -1191,5 +1217,6 @@ impl Continuity {
         e.restore_faction_reactions(self.faction_reactions);
         e.restore_faction_player_flags(self.faction_player_flags);
         e.restore_attacked_on_sight(self.attacked_on_sight);
+        e.restore_base_flags(self.base_flags);
     }
 }

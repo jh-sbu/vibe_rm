@@ -137,6 +137,7 @@ pub struct Engine {
     pub(crate) faction_relations: crate::ai::combat::FactionRelations,
     /// Factions' standing changed by scripts (`crate::factions`).
     pub(crate) factions: crate::factions::Factions,
+    pub(crate) protection: crate::protection::Protection,
     /// Armor and block game settings, read on first use.
     pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
     /// Independently timed strength contributions of loaded combat members.
@@ -462,6 +463,7 @@ impl Engine {
             alias_packs: Default::default(),
             faction_relations: Default::default(),
             factions: Default::default(),
+            protection: Default::default(),
             combat_settings: Default::default(),
             combat_group_strengths: Default::default(),
             detection: Default::default(),
