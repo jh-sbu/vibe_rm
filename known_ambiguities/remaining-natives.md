@@ -48,3 +48,13 @@ headtracking target while speaking; headtracking and dialogue listeners need not
 coincide in all scenes. Implicit scene listeners, idle pauses between lines and
 non-scene ambient dialogue are unresolved and return None. Encumbrance uses our
 existing NPC capacity calculation, whose precise Skyrim enforcement is unverified.
+
+## Batch 6
+
+Dimensions use authored OBND extents multiplied by effective scale, independent of
+rotation or animation. Whether Skyrim uses these bounds or current loaded-3D
+bounds, and when it applies scale, remains unresolved. Missing/malformed bounds
+return zero; reversed bounds clamp to zero. Scale uses our spawn-time actor
+height factors; original player scale and race-change timing are unverified.
+GetWorldSpace uses our current-placement resolver; unloaded schedule-only travel
+and inventory-held objects' worldspace inheritance remain unresolved.

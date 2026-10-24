@@ -6,6 +6,7 @@ use papyrus::{NativeResult, ObjectId, Value};
 use crate::engine::Engine;
 
 mod math;
+mod spatial;
 
 fn v(x: Value) -> NativeResult {
     NativeResult::Value(x)
@@ -508,6 +509,11 @@ pub fn call(
             }
             none()
         }
+        ("objectreference", "getworldspace")
+        | ("objectreference", "getscale")
+        | ("objectreference", "getheight")
+        | ("objectreference", "getwidth")
+        | ("objectreference", "getlength") => v(spatial::call(e, func, me)),
         ("objectreference", "getpositionx") => v(Value::Float(
             me.and_then(|f| e.ref_position(f))
                 .map(|p| p.x)

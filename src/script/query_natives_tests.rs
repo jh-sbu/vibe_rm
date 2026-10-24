@@ -1133,3 +1133,91 @@ fn batch05_actor_classification_package_dialogue_and_scene() {
         Value::None
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn batch06_scaled_bounds_and_current_worldspace() {
+    let bounds: Vec<u8> = [-10i16, -20, -30, 30, 40, 90]
+        .into_iter()
+        .flat_map(i16::to_le_bytes)
+        .collect();
+    let (_f, mut e) = fixture(vec![
+        Node::top(
+            b"STAT",
+            vec![
+                RecordBuilder::new(b"STAT", FormId(0x810)).field(b"OBND", &bounds),
+                RecordBuilder::new(b"STAT", FormId(0x811)).field(b"OBND", &[0; 5]),
+            ],
+        ),
+        Node::top(
+            b"REFR",
+            vec![
+                RecordBuilder::new(b"REFR", FormId(0x800))
+                    .form(b"NAME", FormId(0x810))
+                    .field(b"XSCL", &2.0f32.to_le_bytes()),
+                RecordBuilder::new(b"REFR", FormId(0x801)).form(b"NAME", FormId(0x811)),
+            ],
+        ),
+        Node::top(b"WRLD", vec![RecordBuilder::new(b"WRLD", FormId(0x820))]),
+    ]);
+    for (func, expected) in [
+        ("getscale", 2.0),
+        ("getwidth", 80.0),
+        ("getlength", 120.0),
+        ("getheight", 240.0),
+    ] {
+        assert_eq!(
+            call(&mut e, "objectreference", func, FormId(0x800), &[]),
+            Value::Float(expected)
+        );
+    }
+    assert_eq!(
+        call(&mut e, "objectreference", "getheight", FormId(0x801), &[]),
+        Value::Float(0.0)
+    );
+    e.world_state.moved.insert(
+        FormId(0x800),
+        crate::world_state::Moved {
+            place: crate::ai::schedule::Place::Exterior(FormId(0x820), (0, 0)),
+            pos: glam::Vec3::ZERO,
+            rot: glam::Vec3::ZERO,
+        },
+    );
+    let world = e.object_value(FormId(0x820));
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getworldspace",
+            FormId(0x800),
+            &[]
+        ),
+        world
+    );
+    e.world_state.moved.get_mut(&FormId(0x800)).unwrap().place =
+        crate::ai::schedule::Place::Interior(FormId(0x830));
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getworldspace",
+            FormId(0x800),
+            &[]
+        ),
+        Value::None
+    );
+    e.location = crate::engine::Location::Exterior {
+        world: FormId(0x820),
+        center: (0, 0),
+    };
+    assert_eq!(
+        call(
+            &mut e,
+            "objectreference",
+            "getworldspace",
+            crate::engine::PLAYER_REF,
+            &[]
+        ),
+        world
+    );
+}
