@@ -1221,3 +1221,75 @@ fn batch06_scaled_bounds_and_current_worldspace() {
         world
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn batch07_form_value_deaths_and_info_owner() {
+    let (_f, mut e) = fixture(vec![
+        Node::top(
+            b"MISC",
+            vec![
+                RecordBuilder::new(b"MISC", FormId(0x830))
+                    .u32(b"DATA", 123)
+                    .zstring(b"EDID", "OtherForm"),
+            ],
+        ),
+        Node::top(b"NPC_", vec![RecordBuilder::new(b"NPC_", FormId(0x810))]),
+        Node::top(
+            b"ACHR",
+            vec![
+                RecordBuilder::new(b"ACHR", FormId(0x800)).form(b"NAME", FormId(0x810)),
+                RecordBuilder::new(b"ACHR", FormId(0x801))
+                    .form(b"NAME", FormId(0x810))
+                    .flags(esp::record_flags::STARTS_DEAD),
+            ],
+        ),
+        Node::top(b"QUST", vec![RecordBuilder::new(b"QUST", FormId(0x850))]),
+        Node::Group {
+            label: *b"DIAL",
+            group_type: 0,
+            children: vec![
+                Node::Record(
+                    RecordBuilder::new(b"DIAL", FormId(0x860)).form(b"QNAM", FormId(0x850)),
+                ),
+                Node::Group {
+                    label: 0x860u32.to_le_bytes(),
+                    group_type: 7,
+                    children: vec![Node::Record(RecordBuilder::new(b"INFO", FormId(0x861)))],
+                },
+            ],
+        },
+    ]);
+    assert_eq!(
+        call(&mut e, "form", "getgoldvalue", FormId(0x830), &[]),
+        Value::Int(123)
+    );
+    assert_eq!(
+        call(&mut e, "form", "getgoldvalue", FormId(0x850), &[]),
+        Value::Int(-1)
+    );
+    assert_eq!(
+        call(&mut e, "actorbase", "getdeadcount", FormId(0x810), &[]),
+        Value::Int(1)
+    );
+    e.world_state.dead.insert(
+        FormId(0x800),
+        (
+            crate::ai::schedule::Place::Interior(FormId(0x870)),
+            glam::Vec3::ZERO,
+        ),
+    );
+    assert_eq!(
+        call(&mut e, "actorbase", "getdeadcount", FormId(0x810), &[]),
+        Value::Int(2)
+    );
+    let owner = e.object_value(FormId(0x850));
+    assert_eq!(
+        call(&mut e, "topicinfo", "getowningquest", FormId(0x861), &[]),
+        owner
+    );
+    assert_eq!(
+        call(&mut e, "topicinfo", "getowningquest", FormId(0), &[]),
+        Value::None
+    );
+}

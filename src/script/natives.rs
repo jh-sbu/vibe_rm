@@ -293,6 +293,49 @@ pub fn call(
             (Some(f), Some(k)) => e.has_keyword(f, k),
             _ => false,
         })),
+        ("form", "getgoldvalue") => v(Value::Int(
+            me.and_then(|f| crate::world::inventory::item_info(&e.lo, f))
+                .map_or(-1, |item| item.value),
+        )),
+        ("actorbase", "getdeadcount") => {
+            let count = me.map_or(0, |base| {
+                let mut refs: std::collections::HashSet<_> =
+                    e.lo.ids_of_type(b"ACHR").iter().copied().collect();
+                refs.extend(
+                    e.created_refs
+                        .refs
+                        .iter()
+                        .filter(|(_, c)| c.actor)
+                        .map(|(&r, _)| r),
+                );
+                refs.into_iter()
+                    .filter(|&r| {
+                        e.base_of(r) == Some(base)
+                            && (e.is_dead(r)
+                                || (e.actor_ref(r).is_none()
+                                    && e.lo.get(r).is_some_and(|rec| {
+                                        rec.flags() & esp::record_flags::STARTS_DEAD != 0
+                                    })))
+                    })
+                    .count()
+            });
+            v(Value::Int(count.min(i32::MAX as usize) as i32))
+        }
+        ("topicinfo", "getowningquest") => {
+            let quest = me
+                .and_then(|info| {
+                    e.lo.ids_of_type(b"DIAL")
+                        .iter()
+                        .find(|&&topic| e.lo.topic_infos(topic).contains(&info))
+                        .and_then(|&topic| {
+                            let rec = e.lo.get(topic)?;
+                            let data = rec.get(b"QNAM")?.get(..4)?;
+                            Some(rec.fid(FormId(u32::from_le_bytes(data.try_into().ok()?))))
+                        })
+                })
+                .filter(|f| !f.is_null());
+            v(quest.map_or(Value::None, |q| e.object_value(q)))
+        }
         ("form", "registerforsingleupdate")
         | ("form", "registerforupdate")
         | ("alias", "registerforsingleupdate")

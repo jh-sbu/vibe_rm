@@ -58,3 +58,14 @@ return zero; reversed bounds clamp to zero. Scale uses our spawn-time actor
 height factors; original player scale and race-change timing are unverified.
 GetWorldSpace uses our current-placement resolver; unloaded schedule-only travel
 and inventory-held objects' worldspace inheritance remain unresolved.
+
+## Batch 7
+
+GetDeadCount uses actors currently dead (including placed Starts Dead). Whether
+Skyrim instead maintains a cumulative counter across respawn, resurrection or
+cleanup is unclear from the public descriptions. Deleted created actors are no
+longer enumerated. Leveled actor bases follow our existing base resolver.
+GetGoldValue uses the existing inventory parser's stored values; dynamically
+calculated potion values and non-carryable light values remain unverified.
+Conflicting INFO group membership across plugins and duplicate keyword editor
+IDs follow the existing load-order index policy.

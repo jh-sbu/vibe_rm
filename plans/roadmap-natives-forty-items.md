@@ -13,3 +13,4 @@ behavior is recorded in known_ambiguities/remaining-natives.md.
 | 4 | ObjectReference.GetAllItemsCount, ObjectReference.IsContainerEmpty, Actor.GetGoldAmount, Actor.WornHasKeyword, Actor.GetEquippedArmorInSlot | focused GPU test passed |
 | 5 | Actor.IsChild, Actor.IsOverEncumbered, Actor.GetCurrentPackage, Actor.GetDialogueTarget, ObjectReference.GetCurrentScene | focused GPU test passed |
 | 6 | ObjectReference.GetWorldSpace, ObjectReference.GetScale, ObjectReference.GetHeight, ObjectReference.GetWidth, ObjectReference.GetLength | focused GPU test passed |
+| 7 | Form.GetGoldValue, ActorBase.GetDeadCount, TopicInfo.GetOwningQuest | focused GPU test passed |
