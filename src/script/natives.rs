@@ -113,7 +113,7 @@ pub fn call(
                 None => none(),
             }
         }
-        ("game", "getrealhoursspent") => v(Value::Float(e.scripts.wall_time as f32 / 3600.0)),
+        ("game", "getrealhourspassed") => v(Value::Float(e.scripts.wall_time as f32 / 3600.0)),
         // (abFadingOut, abBlackFade, afSecsBeforeFade, afFadeDuration)
         ("game", "fadeoutgame") => {
             e.fade_out_game(
@@ -199,7 +199,6 @@ pub fn call(
                 .map_or(-1, |w| w.classification());
             v(Value::Int(class))
         }
-        ("game", "isplayersleeping") => v(Value::Bool(false)),
         ("game", "isfasttravelenabled") | ("game", "isfasttravelcontrolsenabled") => {
             v(Value::Bool(!e.fast_travel_disabled))
         }
@@ -821,7 +820,7 @@ pub fn call(
         }
         ("objectreference", "setopen")
         | ("objectreference", "setdestroyed")
-        | ("objectreference", "setnoFavorallowed") => v(Value::Bool(true)),
+        | ("objectreference", "setnofavorallowed") => v(Value::Bool(true)),
         // Answered at the end of the frame, once the scripts it set going have
         // run: the pillar puzzles' lever activates its gate and asks at once,
         // and in the game sees it opening (it closes the gate again when a
@@ -1047,12 +1046,10 @@ pub fn call(
         ("objectreference", "getcurrentlocation") => v(me
             .and_then(|r| e.ref_current_location(r))
             .map_or(Value::None, |l| e.object_value(l))),
-        ("objectreference", "getediblelocation") => none(),
         ("objectreference", "hasreftype") => v(Value::Bool(
             me.zip(form_arg(args, 0))
                 .is_some_and(|(r, ty)| e.ref_types(r).contains(&ty)),
         )),
-        ("objectreference", "getreftype") | ("objectreference", "getowningfaction") => none(),
         // Owners: an actor base (the player's is 7) or a faction.
         ("objectreference", "setactorowner")
         | ("objectreference", "setfactionowner")
@@ -1435,10 +1432,7 @@ pub fn call(
         }
         // Spell.Cast(akSource, akTarget): lands on the target, else the caster.
         // RemoteCast(akSource, akBlameActor, akTarget).
-        ("spell", "cast")
-        | ("spell", "remotecast")
-        | ("scroll", "cast")
-        | ("enchantment", "cast") => {
+        ("spell", "cast") | ("spell", "remotecast") | ("scroll", "cast") => {
             let source = form_arg(args, 0);
             let (blame, target) = if func == "remotecast" {
                 (form_arg(args, 1).or(source), form_arg(args, 2))
@@ -2019,14 +2013,13 @@ pub fn call(
             }
             _ => none(),
         },
-        ("referencealias", "forcerefto") | ("referencealias", "forcereftoifempty") => {
+        // `ForceRefIfEmpty` is Papyrus in the game's ReferenceAlias script, over
+        // `GetReference` and this.
+        ("referencealias", "forcerefto") => {
             if let (Some(Value::Object(ObjectId::Alias { quest, alias }, _)), Some(r)) =
                 (this, form_arg(args, 0))
             {
-                let quest = FormId(*quest);
-                if func == "forcerefto" || e.alias_ref(quest, *alias).is_none() {
-                    e.force_alias_ref(quest, *alias, r);
-                }
+                e.force_alias_ref(FormId(*quest), *alias, r);
             }
             none()
         }

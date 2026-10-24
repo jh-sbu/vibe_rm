@@ -544,7 +544,7 @@ fn alias_inventory_grants_keys_only_on_successful_new_fills_and_stays_permanent(
     crate::script::natives::call(
         &mut e,
         "referencealias",
-        "forcereftoifempty",
+        "forcerefto",
         Some(&alias),
         &[actor],
     );
