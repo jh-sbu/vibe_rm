@@ -46,6 +46,7 @@ mod pickpocket;
 mod player;
 mod player_body;
 mod poisons;
+mod protection;
 mod quest_targets;
 mod recharge;
 mod relationships;

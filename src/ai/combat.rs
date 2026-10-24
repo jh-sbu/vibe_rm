@@ -2594,6 +2594,7 @@ impl Engine {
         let Some(key) = self.actor_cells.get(&target).copied() else {
             return;
         };
+        let (essential, protected) = (self.is_essential(target), self.is_protected(target));
         let Some(a) = self
             .cells
             .get_mut(&key)
@@ -2606,7 +2607,7 @@ impl Engine {
         }
         // Down and bleeding out: only the player finishes off a protected actor.
         if a.bleeding.is_some() {
-            if !a.stats.essential && attacker == Some(PLAYER_REF) {
+            if !essential && attacker == Some(PLAYER_REF) {
                 a.bleeding = None;
                 self.kill_actor_by(target, attacker);
             }
@@ -2628,7 +2629,7 @@ impl Engine {
         }
         if a.health <= 0.0 {
             // Essential actors (and protected ones, but to the player) bleed out.
-            let bleeds = a.stats.essential || (a.stats.protected && attacker != Some(PLAYER_REF));
+            let bleeds = essential || (protected && attacker != Some(PLAYER_REF));
             if let Some((by, calm, factions)) = assault {
                 self.send_assault(target, by, calm && self.law_abiding(&factions));
             }
@@ -2722,7 +2723,7 @@ impl Engine {
             .and_then(|k| self.cells.get(k))
             .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor))
             .filter(|a| !a.dead)
-            .map(|a| a.stats.essential);
+            .map(|_| self.is_essential(actor));
         match essential {
             Some(true) if !essential_too => {
                 if !self.is_bleeding_out(actor) {
@@ -3531,11 +3532,6 @@ impl Engine {
             Some(a) => a.dead,
             None => self.world_state.dead.contains_key(&actor),
         }
-    }
-
-    /// Essential (`IsEssential`): the base's flag, for a loaded actor.
-    pub fn is_essential(&self, actor: FormId) -> bool {
-        self.actor_ref(actor).is_some_and(|a| a.stats.essential)
     }
 
     /// A summary of a loaded actor's combat stats (console).
