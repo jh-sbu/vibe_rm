@@ -405,3 +405,9 @@ of each faction a script changed, sorted by faction. Loading replaces this
 session's flags; legacy saves have none, so each faction's `DATA` holds.
 The original keeps changed faction flags as change form data
 (`kFactionFlags`, layout unknown). Native policy, not an SE claim.
+
+## Actors attacked on sight (`AOSG`)
+
+Optional `AOSG` lists the actors (the player included) that
+`SetAttackActorOnSight` marked, sorted. Loading replaces this session's
+marks, and legacy saves have none. Native policy, not an SE claim.

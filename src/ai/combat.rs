@@ -1499,7 +1499,7 @@ impl Engine {
     /// The strongest reaction (`XNAM` group combat reaction, or a change made
     /// since: 0 neutral, 1 enemy, 2 ally, 3 friend) any of `ours` has towards
     /// any of `theirs`; friends and allies win over enemies.
-    fn faction_reaction(&mut self, ours: &[FormId], theirs: &[FormId]) -> Option<u32> {
+    pub(crate) fn faction_reaction(&mut self, ours: &[FormId], theirs: &[FormId]) -> Option<u32> {
         if ours.iter().any(|f| theirs.contains(f)) {
             return Some(2);
         }
@@ -1686,7 +1686,7 @@ impl Engine {
                 if *o == r || d > ENGAGE_DISTANCE || best.is_some_and(|b| b.0 <= d) {
                     continue;
                 }
-                if self.hostile_to(&stats, of, false) && self.finds(r, *o) {
+                if self.hostile_to_actor(&stats, *o, of) && self.finds(r, *o) {
                     best = Some((d, *o));
                 }
             }
@@ -1704,8 +1704,9 @@ impl Engine {
 
     /// Whether `r` would attack the player on detecting them: hostile to them
     /// (`hostile_to`), or they are within its aggro radius and it neither keeps
-    /// the law nor likes them, or it is in a faction the player is an enemy
-    /// of and would fight its enemies (`known_ambiguities/factions.md`).
+    /// the law nor likes them, or it would fight its enemies and is in a
+    /// faction the player is an enemy of, or the player is attacked on sight
+    /// (`known_ambiguities/factions.md`).
     pub(crate) fn would_attack_player(&mut self, r: FormId) -> bool {
         if self.player_dead() {
             return false;
@@ -1728,7 +1729,8 @@ impl Engine {
         let enemy = stats.aggression >= 1
             && !likes
             && !self.is_player_teammate(r)
-            && self.in_player_enemy_faction(r, &stats.factions);
+            && (self.in_player_enemy_faction(r, &stats.factions)
+                || self.factions.attacked_on_sight.contains(&PLAYER_REF));
         aggro || enemy || self.hostile_to(&stats, &player_factions, true) || self.crime_hostile(r)
     }
 

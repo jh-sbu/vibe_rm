@@ -165,3 +165,29 @@ fn members_of_factions_the_player_is_an_enemy_of_attack_on_sight() {
     assert!(!e.would_attack_player(GUARD));
     assert!(e.would_attack_player(RESIDENT), "by its crime faction");
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn actors_attacked_on_sight_are_attacked_by_those_who_fight_enemies() {
+    const GUARD: FormId = FormId(0x901);
+    const CITIZEN: FormId = FormId(0x902);
+    const BEAST: FormId = FormId(0x903);
+    const PACKMATE: FormId = FormId(0x904);
+    let (_f, mut e) = fixture("on-sight");
+    place(&mut e, GUARD, member(GUARDS, 1));
+    place(&mut e, CITIZEN, member(TOWN, 0));
+    place(&mut e, BEAST, member(TOWN, 0));
+    place(&mut e, PACKMATE, member(TOWN, 1));
+    assert!(!e.would_attack_player(GUARD));
+    assert!(!e.would_attack(GUARD, BEAST));
+    e.set_attacked_on_sight(crate::engine::PLAYER_REF, true);
+    e.set_attacked_on_sight(BEAST, true);
+    assert!(e.would_attack_player(GUARD));
+    assert!(!e.would_attack_player(CITIZEN), "unaggressive");
+    assert!(e.would_attack(GUARD, BEAST));
+    assert!(!e.would_attack(CITIZEN, BEAST), "unaggressive");
+    assert!(!e.would_attack(PACKMATE, BEAST), "same faction");
+    assert!(!e.would_attack(BEAST, GUARD), "one way");
+    e.set_attacked_on_sight(crate::engine::PLAYER_REF, false);
+    assert!(!e.would_attack_player(GUARD));
+}
