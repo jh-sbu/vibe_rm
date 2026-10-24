@@ -3634,6 +3634,60 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("pex-natives") => {
+            // pex-natives <data dir>: every native function the scripts
+            // declare (`class.function`, lower case) with how many calls the
+            // scripts make to a function of that name, most called first.
+            // Calls are matched by name alone, so names shared between
+            // classes share their count.
+            anyhow::ensure!(args.len() > 1, "usage: pex-natives <data dir>");
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let v = vfs::Vfs::new(data, &names);
+            let mut natives: Vec<(String, String)> = Vec::new();
+            let mut calls: std::collections::HashMap<String, usize> = Default::default();
+            for path in v.list("scripts/") {
+                if !path.ends_with(".pex") {
+                    continue;
+                }
+                let Some(p) = v.read(&path).and_then(|b| papyrus::pex::parse(&b).ok()) else {
+                    continue;
+                };
+                for o in &p.objects {
+                    let class = p.str(o.name).to_ascii_lowercase();
+                    for s in &o.states {
+                        for (n, f) in &s.functions {
+                            if f.is_native() {
+                                natives.push((class.clone(), p.str(*n).to_ascii_lowercase()));
+                            }
+                        }
+                    }
+                }
+                for line in papyrus::pex::disassemble(&p).lines() {
+                    let mut words = line.split_whitespace().skip(1);
+                    let (Some(op), Some(first)) = (words.next(), words.next()) else {
+                        continue;
+                    };
+                    let called = match op {
+                        "callmethod" => first,
+                        "callstatic" => match words.next() {
+                            Some(w) => w,
+                            None => continue,
+                        },
+                        _ => continue,
+                    };
+                    *calls
+                        .entry(called.trim_end_matches(',').to_ascii_lowercase())
+                        .or_default() += 1;
+                }
+            }
+            natives.sort();
+            natives.dedup();
+            natives.sort_by_key(|(_, f)| std::cmp::Reverse(calls.get(f).copied().unwrap_or(0)));
+            for (class, f) in natives {
+                println!("{}\t{class}.{f}", calls.get(&f).copied().unwrap_or(0));
+            }
+        }
         Some("pex-dump") => {
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
