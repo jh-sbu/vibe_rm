@@ -26,3 +26,20 @@ names shared between classes share their count).
   vanilla call passes them), and whether a keyworded link counts when the
   reference has no unkeyworded one (`GetLinkedRef()` here takes the first
   link of any keyword, so the chain does too).
+
+## `StopCombatAlarm`
+
+- `Actor.StopCombatAlarm()` (84 calls): the actor stops fighting and
+  searching, so does every loaded actor fighting or searching for it, and
+  the guards pursuing it give up (for the player: every pursuing guard).
+  `StopCombat` stays the actor's own. Vanilla calls it on the player after
+  a bribe or persuasion (`CrimeGuardsScript.BribeGuard` /
+  `PersuadeGuard`, `DLC2CrimeGuardsScript`) and in quests ending fights
+  (`QF_MQ303`, `CWFinaleScript`, `QF_MQSkyHavenSparring`), which is why the
+  others' side is ended too. No public description was found.
+- Unconfirmed: whether it also forgives resisted arrests
+  (`Arrests::resisting`; we leave them, so guards whose arrest the player
+  resisted attack again until the bounty is paid, as before), whether
+  actors who would attack on sight start again at once (we do nothing to
+  stop them: a bribe pays the bounty first), and whether unloaded actors'
+  fights end too.
