@@ -5,6 +5,16 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Ten of the natives vanilla scripts call most (`vrm-tool pex-natives`):
+  quest aliases' Essential / Protected flags; `ActorBase.SetEssential`,
+  `SetProtected`, `SetInvulnerable` (`BFLG`); ghosts (`SetGhost`,
+  `GetIsGhost`; `GHST`); `GetRace`; `GetNthLinkedRef`; form list additions
+  (`AddForm`, `RemoveAddedForm`, `Revert`, `Find`; `FLAD`);
+  `StopCombatAlarm`; `Actor.SetOutfit` (`OUTF`); `Delete` for references
+  made while playing; `EnableAI` (`AIOF`). Scope and tests:
+  `plans/roadmap-natives-ten-items.md`; choices:
+  `known_ambiguities/protection.md`, `actor-natives.md`, `formlists.md`,
+  `outfits.md`, `created-refs.md`.
 - Factions' runtime standing: Papyrus `SetEnemy` / `SetAlly` change both
   factions' combat reactions, `Set` / `Mod` / `GetReaction` the modifier
   (`FRCT`); the player's expelled and enemy flags (`SetPlayerExpelled`,
@@ -1832,6 +1842,15 @@ game each piece unlocks.
      was made in), `GetLockIsBroken` (a broken lock: picks break, but no lock keeps
      that state, and no public source describes it), `Exists` (what makes a
      reference exist: no public description or vanilla use yet)
+   - Natives scripts call that still do nothing, most called first
+     (`vrm-tool pex-natives`; see Done for the last ten): effect shaders'
+     and visual effects' `Play` / `Stop`, `SetAlpha`, leveled lists'
+     `AddForm`, `SetSubGraphFloatVariable`, `TranslateTo` and the other
+     translations, `Reset` (references, cells), `IgnoreFriendlyHits`,
+     `GetCurrentPackage`, `HasLOS`, `MoveToPackageLocation`,
+     `SetCriticalStage`, `SetRace`, `Resurrect`, `SetScale`; `SetOutfit`'s
+     sleep outfits and `ActorBase.SetOutfit` (`known_ambiguities/outfits.md`);
+     `Delete`'s "once nothing holds it" (`known_ambiguities/created-refs.md`)
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; looping sounds of enabled references checked
      with an audio device
