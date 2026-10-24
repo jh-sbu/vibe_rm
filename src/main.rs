@@ -41,6 +41,7 @@ mod map_markers;
 mod map_view;
 mod messages;
 mod obstacles;
+mod outfits;
 mod perks;
 mod physics;
 mod pickpocket;

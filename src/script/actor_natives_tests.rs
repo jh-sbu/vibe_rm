@@ -21,6 +21,13 @@ const STATIC: FormId = FormId(0x805);
 const FIRST: FormId = FormId(0x806);
 const SECOND: FormId = FormId(0x807);
 const THIRD: FormId = FormId(0x808);
+/// `NPC`'s default outfit (`OLD`: a cuirass and boots) and another (`NEW`:
+/// a robe and the same boots).
+const CUIRASS: FormId = FormId(0x809);
+const BOOTS: FormId = FormId(0x80A);
+const ROBE: FormId = FormId(0x80B);
+const OLD: FormId = FormId(0x80C);
+const NEW: FormId = FormId(0x80D);
 
 struct Fixture(std::path::PathBuf);
 
@@ -28,6 +35,18 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+/// `BOD2`: biped slots and armor type (clothing).
+fn body(slots: u32) -> [u8; 8] {
+    let mut d = [0u8; 8];
+    d[0..4].copy_from_slice(&slots.to_le_bytes());
+    d[4..8].copy_from_slice(&2u32.to_le_bytes());
+    d
+}
+
+fn forms(f: &[FormId]) -> Vec<u8> {
+    f.iter().flat_map(|f| f.0.to_le_bytes()).collect()
 }
 
 fn fixture(name: &str) -> (Fixture, Engine) {
@@ -50,7 +69,8 @@ fn fixture(name: &str) -> (Fixture, Engine) {
             vec![
                 RecordBuilder::new(b"NPC_", NPC)
                     .field(b"ACBS", &acbs)
-                    .form(b"RNAM", RACE),
+                    .form(b"RNAM", RACE)
+                    .form(b"DOFT", OLD),
                 RecordBuilder::new(b"NPC_", TEMPLATED)
                     .field(b"ACBS", &templated)
                     .form(b"TPLT", NPC),
@@ -64,6 +84,21 @@ fn fixture(name: &str) -> (Fixture, Engine) {
             ],
         ),
         Node::top(b"STAT", vec![RecordBuilder::new(b"STAT", STATIC)]),
+        Node::top(
+            b"ARMO",
+            vec![
+                RecordBuilder::new(b"ARMO", CUIRASS).field(b"BOD2", &body(0x4)),
+                RecordBuilder::new(b"ARMO", BOOTS).field(b"BOD2", &body(0x80)),
+                RecordBuilder::new(b"ARMO", ROBE).field(b"BOD2", &body(0x4)),
+            ],
+        ),
+        Node::top(
+            b"OTFT",
+            vec![
+                RecordBuilder::new(b"OTFT", OLD).field(b"INAM", &forms(&[CUIRASS, BOOTS])),
+                RecordBuilder::new(b"OTFT", NEW).field(b"INAM", &forms(&[ROBE, BOOTS])),
+            ],
+        ),
         Node::top(
             b"REFR",
             vec![
@@ -177,4 +212,35 @@ fn stop_combat_alarm_ends_fights_and_pursuits_of_the_actor() {
     );
     call(&mut e, "actor", "stopcombatalarm", VICTIM, &[]);
     assert!(e.actor_ref(BRAWLER).unwrap().combat.is_none());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn set_outfit_swaps_the_outfits_armor() {
+    let (_f, mut e) = fixture("outfit");
+    assert_eq!(e.default_outfit(ACTOR), Some(OLD));
+    let inv = e.inventory_mut(ACTOR).clone();
+    assert!(inv.is_equipped(CUIRASS) && inv.is_equipped(BOOTS));
+    let new = e.object_value(NEW);
+    // A sleep outfit isn't worn.
+    call(
+        &mut e,
+        "actor",
+        "setoutfit",
+        ACTOR,
+        &[new.clone(), Value::Bool(true)],
+    );
+    assert_eq!(e.default_outfit(ACTOR), Some(OLD));
+    call(
+        &mut e,
+        "actor",
+        "setoutfit",
+        ACTOR,
+        &[new, Value::Bool(false)],
+    );
+    assert_eq!(e.default_outfit(ACTOR), Some(NEW));
+    let inv = e.inventory_mut(ACTOR).clone();
+    assert_eq!(inv.count(CUIRASS), 0, "the old outfit's armor goes");
+    assert_eq!(inv.count(BOOTS), 1, "shared pieces stay");
+    assert!(inv.is_equipped(ROBE) && inv.is_equipped(BOOTS));
 }

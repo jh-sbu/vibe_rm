@@ -139,6 +139,7 @@ pub struct Engine {
     pub(crate) factions: crate::factions::Factions,
     pub(crate) protection: crate::protection::Protection,
     pub(crate) formlists: crate::formlists::FormLists,
+    pub(crate) outfits: crate::outfits::Outfits,
     /// Armor and block game settings, read on first use.
     pub(crate) combat_settings: std::cell::OnceCell<crate::ai::combat::CombatSettings>,
     /// Independently timed strength contributions of loaded combat members.
@@ -466,6 +467,7 @@ impl Engine {
             factions: Default::default(),
             protection: Default::default(),
             formlists: Default::default(),
+            outfits: Default::default(),
             combat_settings: Default::default(),
             combat_group_strengths: Default::default(),
             detection: Default::default(),

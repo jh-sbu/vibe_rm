@@ -986,6 +986,12 @@ pub fn call(
             none()
         }
         // Fighting or searching, it calms down (it may find a reason to fight again).
+        ("actor", "setoutfit") => {
+            if let (Some(a), Some(o)) = (me, form_arg(args, 0)) {
+                e.set_outfit(a, o, arg(1).as_bool());
+            }
+            none()
+        }
         ("actor", "stopcombatalarm") => {
             if let Some(a) = me {
                 e.stop_combat_alarm(a);

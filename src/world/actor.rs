@@ -467,7 +467,12 @@ fn armor_models(lo: &LoadOrder, armo: FormId, race: FormId, female: bool) -> Vec
 }
 
 /// Equipment worn by default: armors from the outfit, resolving leveled item lists.
-fn outfit_armors(lo: &LoadOrder, outfit: FormId, seed: u64, globals: &Globals) -> Vec<FormId> {
+pub(crate) fn outfit_armors(
+    lo: &LoadOrder,
+    outfit: FormId,
+    seed: u64,
+    globals: &Globals,
+) -> Vec<FormId> {
     let Some(rec) = lo.get(outfit) else {
         return Vec::new();
     };
