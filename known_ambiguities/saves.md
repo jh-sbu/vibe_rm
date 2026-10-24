@@ -128,8 +128,7 @@ saved: it is taken again from the place the save loads into.
   a warning. Scripts on active magic effects are dropped with the effects.
   Registrations other than these (key, LOS gain, tracked hits...) aren't
   built in the engine yet.
-- Active magic effects (timed effects, summons and ward spells), live player
-  conversations, actor
+- Live player conversations, actor
   procedure/animation progress, AI package progress
   and schedules, objects' behaviour
   graphs, and search/combat detection state and AI execution (stealth reservoirs
@@ -322,3 +321,42 @@ coordinates; it does not restore an open menu or establish cross-worldspace map
 camera semantics. Console camera limits are normalized on capture as on opening;
 nonfinite pending preferences are discarded. Script-fade snapshots exclude
 camera shake offsets; modifier/fade rendering is recomputed on the next update.
+
+## Active magic effects (`AEFF`)
+
+Optional `AEFF` keeps every unfinished active effect: its id, target, caster,
+item and effect index, magnitude, duration, elapsed time, whether it is doing
+its work, what it holds on its actor values, its landing point, its summon and
+its quiet / dual / channelled / scripted flags, with the next effect id.
+Telekinesis is left out because the object it holds isn't saved; the grab ends
+on load. Lingering taper runs and the scripts of already-finished effects are
+not kept.
+
+Evidence: CommonLibSSE-NG's public `RE/A/ActiveEffect.h` declares `SaveGame`,
+`LoadGame`, `FinishLoadGame` and `Revert` on `ActiveEffect`, so SE does save
+active effects with their `elapsedSeconds`, `duration` and `magnitude`. Which
+other fields it keeps, and what `FinishLoadGame` redoes (visuals, sounds,
+scripts, value changes), are not public. The local UESP
+[Save File Format, revision 3067914](https://en.uesp.net/w/index.php?oldid=3067914)
+lists the global `Effects` section, whose
+[Effects page, revision 2309066](https://en.uesp.net/w/index.php?oldid=2309066)
+holds image-space modifiers only, and the
+[ACHR change form, revision 3187377](https://en.uesp.net/w/index.php?oldid=3187377)
+doesn't document where actors' effects go.
+
+Native policies (not SE claims):
+
+- **No restart.** `AVAL` already holds what the effects hold, so restored effects
+  are not started again: no `OnEffectStart`, `OnMagicEffectApply`, hit, combat or
+  value change happens on load. The old session's effects are discarded without
+  giving their holds back into the loaded values.
+- **Summons** keep their created actor (saved in `WRLD`), and who commands it is
+  rebuilt from the summon effects. A summon left unloaded still ends the effect
+  on the next update, as at runtime.
+- **NPC effects** restore before the save's cells load, and end normally on the
+  next update if their actor didn't load.
+- **Legacy saves** without `AEFF` have no effects. Their `AVAL` still holds what
+  the effects held, so those changes stay on, and abilities are applied over
+  them again. Those saves can't say what was held, so nothing is subtracted.
+- **Scripted effects**: see `VM` below once effect scripts are kept; until
+  then a restored scripted effect has no script object.

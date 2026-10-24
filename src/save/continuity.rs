@@ -41,6 +41,7 @@ pub(crate) struct Continuity {
     pub magic_usage: crate::stats::SavedMagicUsage,
     pub camera: Option<(bool, f32)>,
     pub harvested: HashMap<FormId, f64>,
+    pub active_effects: (Vec<crate::magic::ActiveEffect>, u64),
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -156,6 +157,7 @@ impl Continuity {
             magic_usage: e.scripts.magic_usage.saved(),
             camera: Some((e.third_person, e.third_person_distance)),
             harvested: e.harvests.harvested.clone(),
+            active_effects: e.saved_active_effects(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -390,6 +392,34 @@ impl Continuity {
             w.f64(*at);
         }
         file.add(b"HRVT", w.0);
+        let mut w = Writer::default();
+        let (effects, next_id) = &self.active_effects;
+        w.u64(*next_id);
+        w.len(effects.len());
+        for x in effects {
+            w.u64(x.id);
+            w.form(x.target);
+            w.opt_form(x.caster);
+            w.form(x.item);
+            w.u32(x.index as u32);
+            w.form(x.effect);
+            w.f32(x.magnitude);
+            w.f32(x.duration);
+            w.f32(x.elapsed);
+            w.u8(x.active as u8
+                | (x.scripted as u8) << 1
+                | (x.quiet as u8) << 2
+                | (x.dual as u8) << 3
+                | (x.channelled as u8) << 4);
+            w.f32(x.held[0]);
+            w.f32(x.held[1]);
+            w.bool(x.at.is_some());
+            if let Some(at) = x.at {
+                w.vec3(at);
+            }
+            w.opt_form(x.summoned);
+        }
+        file.add(b"AEFF", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -531,6 +561,47 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"AEFF")? {
+            let next_id = r.u64()?;
+            let mut effects = Vec::new();
+            for _ in 0..r.count(54)? {
+                let id = r.u64()?;
+                let target = r.form()?;
+                let caster = r.opt_form()?;
+                let item = r.form()?;
+                let index = r.u32()? as usize;
+                let effect = r.form()?;
+                let (magnitude, duration, elapsed) = (r.f32()?, r.f32()?, r.f32()?);
+                let bits = r.u8()?;
+                if bits >= 1 << 5 {
+                    return Err(Corrupt("unknown active effect flags".into()));
+                }
+                let held = [r.f32()?, r.f32()?];
+                let at = if r.bool()? { Some(r.vec3()?) } else { None };
+                effects.push(crate::magic::ActiveEffect {
+                    id,
+                    target,
+                    caster,
+                    item,
+                    index,
+                    effect,
+                    magnitude,
+                    duration,
+                    elapsed,
+                    active: bits & 1 != 0,
+                    held,
+                    scripted: bits & 2 != 0,
+                    done: false,
+                    quiet: bits & 4 != 0,
+                    at,
+                    summoned: r.opt_form()?,
+                    dual: bits & 8 != 0,
+                    channelled: bits & 16 != 0,
+                });
+            }
+            r.finish()?;
+            s.active_effects = (effects, next_id);
+        }
         if let Some(mut r) = optional(file, b"HRVT")? {
             let mut previous = None;
             for _ in 0..r.count(12)? {
@@ -667,6 +738,30 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        let (effects, next_id) = &self.active_effects;
+        let mut previous = None;
+        let mut summons = std::collections::HashSet::new();
+        for x in effects {
+            ordered(&mut previous, x.id)?;
+            nonnull(x.target)?;
+            nonnull(x.item)?;
+            nonnull(x.effect)?;
+            let finite = x.magnitude.is_finite()
+                && x.held.iter().all(|h| h.is_finite())
+                && x.at.is_none_or(|at| at.is_finite());
+            // Constant effects last forever; the rest have a finite duration.
+            let duration = x.duration >= 0.0 && !x.duration.is_nan();
+            if x.id == 0
+                || x.id > *next_id
+                || !finite
+                || !duration
+                || x.caster.is_some_and(|c| c.is_null())
+                || x.summoned.is_some_and(|r| !summons.insert(r))
+            {
+                return Err(Corrupt("invalid active magic effect".into()));
+            }
+            time(x.elapsed as f64)?;
+        }
         if let Some(f) = self.script_fade {
             time(f.delay as f64)?;
             time(f.duration as f64)?;
@@ -895,5 +990,6 @@ impl Continuity {
         e.location_keyword_data = self.location_keyword_data;
         e.cleared_locations = self.cleared_locations;
         e.harvests.harvested = self.harvested;
+        e.restore_active_effects(self.active_effects.0, self.active_effects.1);
     }
 }

@@ -30,9 +30,8 @@
 //! harvests, locations, crime memory, controls, voice/regeneration timers,
 //! journal ordering, magic usage histories, camera preferences, crime progression,
 //! delayed activation queues, random streams, player stance/recovery and image
-//! modifiers/script fades.
-//! Not yet saved:
-//! active magic effects, actor
+//! modifiers/script fades, and active magic effects (`AEFF`).
+//! Not yet saved: actor
 //! procedure progress, AI progress, objects' behaviour graphs; see
 //! `plans/ROADMAP.md`.
 //!
@@ -2093,6 +2092,7 @@ impl Snapshot {
             &self.scene_force_greeted,
         )?;
         e.validate_saved_rolled_spells(&self.rolled_spells)?;
+        e.validate_saved_active_effects(&self.continuity.active_effects.0)?;
         anyhow::ensure!(
             self.ward_states.iter().all(|(actor, (state, remaining))| {
                 !actor.is_null()

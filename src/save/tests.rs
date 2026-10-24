@@ -69,6 +69,9 @@ const USAGE_SHOUT_B: FormId = FormId(0x8D3);
 const GREATER_POWER_A: FormId = FormId(0x8A4);
 const GREATER_POWER_B: FormId = FormId(0x8A5);
 const LESSER_POWER: FormId = FormId(0x8A6);
+const FORTIFY_CARRY: FormId = FormId(0x8E0);
+const FORTIFY_CARRY_SPELL: FormId = FormId(0x8E1);
+const FORTIFY_CARRY_ABILITY: FormId = FormId(0x8E2);
 
 struct Fixture(std::path::PathBuf);
 
@@ -137,7 +140,30 @@ fn engine(name: &str) -> (Fixture, Engine) {
         data[8..10].copy_from_slice(&1u16.to_le_bytes());
         data
     };
+    // Fortify Carry Weight (value modifier, Recover), timed and constant.
+    let mut fortify = [0; 0x98];
+    fortify[0..4].copy_from_slice(&crate::magic::flags::RECOVER.to_le_bytes());
+    for o in [0x0C, 0x10, 0x58] {
+        fortify[o..o + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    }
+    fortify[0x44..0x48].copy_from_slice(&esp::actor_value::CARRY_WEIGHT.to_le_bytes());
+    let fortify_spell = |id: FormId, spell_type: u32, casting: u32, duration: u32| {
+        let mut spit = [0; 36];
+        spit[8..12].copy_from_slice(&spell_type.to_le_bytes());
+        spit[16..20].copy_from_slice(&casting.to_le_bytes());
+        let mut efit = [0; 12];
+        efit[0..4].copy_from_slice(&25.0f32.to_le_bytes());
+        efit[8..12].copy_from_slice(&duration.to_le_bytes());
+        RecordBuilder::new(b"SPEL", id)
+            .field(b"SPIT", &spit)
+            .u32(b"EFID", FORTIFY_CARRY.0)
+            .field(b"EFIT", &efit)
+    };
     let records = [
+        Node::top(
+            b"MGEF",
+            vec![RecordBuilder::new(b"MGEF", FORTIFY_CARRY).field(b"DATA", &fortify)],
+        ),
         Node::top(
             b"IMAD",
             vec![
@@ -451,6 +477,13 @@ fn engine(name: &str) -> (Fixture, Engine) {
                     LESSER_POWER,
                     crate::magic::spell_type::LESSER_POWER,
                     "Lesser",
+                ),
+                fortify_spell(FORTIFY_CARRY_SPELL, crate::magic::spell_type::SPELL, 1, 30),
+                fortify_spell(
+                    FORTIFY_CARRY_ABILITY,
+                    crate::magic::spell_type::ABILITY,
+                    0,
+                    0,
                 ),
             ],
         ),
@@ -4915,4 +4948,159 @@ fn durable_cell_attachment_preserves_stance_and_random_continuation() {
     assert!(e.player.sneaking);
     assert_eq!(e.player.crouch, 1.0);
     assert_eq!((e.rand(), e.peek_rand()), expected);
+}
+
+fn carry_weight(e: &Engine) -> f32 {
+    e.actor_value(PLAYER_REF, esp::actor_value::CARRY_WEIGHT)
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn active_effects_resume_without_reapplying_their_held_values() {
+    let (_a, mut a) = engine("active-effects-a");
+    let base = carry_weight(&a);
+    assert!(a.add_spell(PLAYER_REF, FORTIFY_CARRY_ABILITY));
+    assert!(a.apply_item(FORTIFY_CARRY_SPELL, Some(PLAYER_REF), PLAYER_REF));
+    a.update_magic(10.0);
+    assert_eq!(carry_weight(&a), base + 50.0);
+    let expected = a.saved_active_effects();
+    assert_eq!(expected.0.len(), 2);
+    let file = Snapshot::capture(&a).write();
+    check_continuity_payload(&file, b"AEFF");
+    let decoded = Snapshot::read(&file).unwrap();
+    assert_eq!(decoded.write().to_bytes(), file.to_bytes());
+
+    // Into a fresh engine: the saved modifiers already hold both effects.
+    let (_b, mut b) = engine("active-effects-b");
+    decoded.apply(&mut b).unwrap();
+    assert_eq!(b.saved_active_effects(), expected);
+    assert_eq!(carry_weight(&b), base + 50.0);
+    b.update_magic(1.0);
+    assert_eq!(
+        carry_weight(&b),
+        base + 50.0,
+        "the ability isn't applied again"
+    );
+    b.update_magic(19.5);
+    assert_eq!(
+        carry_weight(&b),
+        base + 25.0,
+        "the spell keeps its elapsed time"
+    );
+    // New effects never take a restored id.
+    assert!(b.apply_item(FORTIFY_CARRY_SPELL, Some(PLAYER_REF), PLAYER_REF));
+    let ids: std::collections::HashSet<u64> = b.magic.effects.iter().map(|x| x.id).collect();
+    assert_eq!(ids.len(), b.magic.effects.len());
+    assert!(
+        b.magic
+            .effects
+            .iter()
+            .all(|x| x.id <= b.saved_active_effects().1)
+    );
+
+    // Into the engine that already has (other) effects: they go without
+    // giving anything back into the loaded values.
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.saved_active_effects(), expected);
+    assert_eq!(carry_weight(&b), base + 50.0);
+    b.update_magic(25.0);
+    assert_eq!(carry_weight(&b), base + 25.0);
+
+    // A legacy save keeps no effects and drops the live ones unreleased.
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"AEFF");
+    let (_c, mut c) = engine("active-effects-legacy");
+    assert!(c.apply_item(FORTIFY_CARRY_SPELL, Some(PLAYER_REF), PLAYER_REF));
+    Snapshot::read(&legacy).unwrap().apply(&mut c).unwrap();
+    assert!(c.saved_active_effects().0.is_empty());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn active_effects_naming_other_records_are_refused_before_loading() {
+    let (_a, mut a) = engine("active-effects-records");
+    assert!(a.apply_item(FORTIFY_CARRY_SPELL, Some(PLAYER_REF), PLAYER_REF));
+    let mut snapshot = Snapshot::capture(&a);
+    snapshot.continuity.active_effects.0[0].index = 1;
+    let file = snapshot.write();
+    let (_b, mut b) = engine("active-effects-records-b");
+    b.day = 77;
+    assert!(Snapshot::read(&file).unwrap().apply(&mut b).is_err());
+    assert_eq!(b.day, 77, "nothing applied");
+}
+
+#[test]
+fn active_effects_payload_is_validated() {
+    let effect = crate::magic::ActiveEffect {
+        id: 3,
+        target: PLAYER_REF,
+        caster: Some(PLAYER_REF),
+        item: FORTIFY_CARRY_SPELL,
+        index: 0,
+        effect: FORTIFY_CARRY,
+        magnitude: 25.0,
+        duration: f32::INFINITY,
+        elapsed: 2.0,
+        active: true,
+        held: [25.0, 0.0],
+        scripted: true,
+        done: false,
+        quiet: true,
+        at: Some(Vec3::new(1.0, 2.0, 3.0)),
+        summoned: Some(FormId(0xFF00_0800)),
+        dual: true,
+        channelled: false,
+    };
+    let mut s = Snapshot::default();
+    s.continuity.active_effects = (vec![effect.clone()], 4);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.active_effects,
+        s.continuity.active_effects
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"AEFF");
+    let broken: [fn(&mut crate::magic::ActiveEffect); 6] = [
+        |x| x.id = 9,
+        |x| x.magnitude = f32::NAN,
+        |x| x.duration = -1.0,
+        |x| x.elapsed = f32::INFINITY,
+        |x| x.held[1] = f32::NAN,
+        |x| x.target = FormId::NULL,
+    ];
+    for b in broken {
+        let mut x = effect.clone();
+        b(&mut x);
+        s.continuity.active_effects = (vec![x], 4);
+        assert!(Snapshot::read(&s.write()).is_err());
+    }
+    let mut twin = effect.clone();
+    twin.id = 4;
+    s.continuity.active_effects = (vec![effect.clone(), twin.clone()], 4);
+    assert!(
+        Snapshot::read(&s.write()).is_err(),
+        "one summon, two effects"
+    );
+    twin.summoned = None;
+    s.continuity.active_effects = (vec![twin, effect], 4);
+    assert!(Snapshot::read(&s.write()).is_err(), "unsorted ids");
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn restored_summon_effects_command_their_summons_again() {
+    let (_a, mut a) = engine("active-effects-summon");
+    assert!(a.apply_item(FORTIFY_CARRY_SPELL, Some(ACTOR), PLAYER_REF));
+    let mut snapshot = Snapshot::capture(&a);
+    snapshot.continuity.active_effects.0[0].summoned = Some(FormId(0xFF00_0900));
+    a.magic.commanded.insert(FormId(0xFF00_0901), PLAYER_REF);
+    Snapshot::read(&snapshot.write())
+        .unwrap()
+        .apply(&mut a)
+        .unwrap();
+    assert_eq!(
+        a.magic.commanded,
+        [(FormId(0xFF00_0900), ACTOR)].into_iter().collect()
+    );
 }
