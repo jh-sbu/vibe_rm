@@ -5,6 +5,15 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Factions' runtime standing: Papyrus `SetEnemy` / `SetAlly` change both
+  factions' combat reactions, `Set` / `Mod` / `GetReaction` the modifier
+  (`FRCT`); the player's expelled and enemy flags (`SetPlayerExpelled`,
+  `SetPlayerEnemy`, `IsPlayerExpelled`, `GetPCExpelled`, `GetPCEnemyofFaction`,
+  `GetActorCrimePlayerEnemy`; `FPLR`), with enemy factions' members attacking
+  the player on sight; `SetAttackActorOnSight` (`AOSG`);
+  `IsFactionInCrimeGroup`; `GetStolenItemValue(No)Crime`. Scope and tests:
+  `plans/roadmap-factions-seven-items.md`; choices:
+  `known_ambiguities/factions.md`.
 - Active magic effects (`AEFF`), their scripts (`VM`) and tapers (`TAPR`)
   survive native saves without restarting or doubling held values; graph
   open states (`GOPN`) replay on rebuilt graphs. Caught pickpocket victims
@@ -1799,11 +1808,12 @@ game each piece unlocks.
      unresolved; `known_ambiguities/barter.md`); the unreported crime faction;
      trespass for opening a lock
      - Crime conditions waiting on state the engine lacks (`known_ambiguities/crime.md`):
-       `GetCrime` and `GetActorCrimePlayerEnemy` (NPCs' crimes by type, and the
-       faction's player-enemy flag, which nothing sets); the player's faction flags
-       `GetPCExpelled`, `GetPCFactionMurder`, `GetPCFactionAttack` and
-       `GetPCEnemyofFaction`, with what sets them; `IsPCAMurderer` (a murder flag
-       kept past the Murders stat)
+       `GetCrime` (NPCs' crimes by type); the player's faction flags
+       `GetPCFactionMurder` and `GetPCFactionAttack`, with what sets them;
+       `IsPCAMurderer` (a murder flag kept past the Murders stat)
+     - Factions (see Done): unaggressive members fleeing factions' enemies and
+       actors attacked on sight; fights ending when factions stop being enemies
+       (`known_ambiguities/factions.md`)
    - Combat, more: attackers' other lost-target timeouts
      (`fCombatDetectionLostRemove*`; fleeing targets are forgotten: see Done),
      `fCombatLowFleeingTargetHitPercent`; flee dialogue's distance rules
