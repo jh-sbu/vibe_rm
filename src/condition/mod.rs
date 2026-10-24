@@ -1569,9 +1569,11 @@ impl Engine {
             .unwrap_or(false)
     }
 
-    /// Protected (`ACBS` 0x800): a loaded actor's flag, else its base's.
-    pub fn is_protected(&self, actor: FormId) -> bool {
+    /// An actor's base `ACBS` flags: a loaded actor's (its templates' when
+    /// they give the base data), else its base's.
+    fn base_flag(&self, actor: FormId, essential: bool) -> bool {
         match self.actor_ref(actor) {
+            Some(a) if essential => a.stats.essential,
             Some(a) => a.stats.protected,
             None => self
                 .base_of(actor)
@@ -1579,10 +1581,22 @@ impl Engine {
                 .and_then(|r| {
                     r.get(b"ACBS")
                         .filter(|d| d.len() >= 4)
-                        .map(|d| d[1] & 0x08 != 0)
+                        .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
                 })
-                .unwrap_or(false),
+                .is_some_and(|f| f & if essential { 0x2 } else { 0x800 } != 0),
         }
+    }
+
+    /// Essential (`IsEssential`; `ACBS` 0x2), or filling an essential alias
+    /// of a running quest (`known_ambiguities/protection.md`).
+    pub fn is_essential(&self, actor: FormId) -> bool {
+        self.base_flag(actor, true) || self.in_alias_with(actor, crate::aliases::flags::ESSENTIAL)
+    }
+
+    /// Protected (`IsProtected`; `ACBS` 0x800), or filling a protected alias
+    /// of a running quest.
+    pub fn is_protected(&self, actor: FormId) -> bool {
+        self.base_flag(actor, false) || self.in_alias_with(actor, crate::aliases::flags::PROTECTED)
     }
 
     /// Whether `attacker` can't kill `victim`: essential actors, and protected

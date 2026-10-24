@@ -24,8 +24,12 @@ pub mod flags {
     pub const ALLOW_REUSE: u32 = 0x8;
     pub const ALLOW_DEAD: u32 = 0x10;
     pub const IN_LOADED_AREA: u32 = 0x20;
+    /// The reference is essential while it fills the alias.
+    pub const ESSENTIAL: u32 = 0x40;
     pub const ALLOW_DISABLED: u32 = 0x80;
     pub const ALLOW_RESERVED: u32 = 0x200;
+    /// The reference is protected while it fills the alias.
+    pub const PROTECTED: u32 = 0x400;
     pub const CLOSEST: u32 = 0x2000;
 }
 
@@ -281,6 +285,20 @@ impl Engine {
     }
 
     /// A quest's aliases, parsed once.
+    /// Whether `reference` fills a reference alias with `flag` (`flags`) in
+    /// a running quest.
+    pub(crate) fn in_alias_with(&self, reference: FormId, flag: u32) -> bool {
+        self.scripts
+            .quests
+            .iter()
+            .filter(|(_, s)| s.running && s.aliases.values().any(|&r| r == reference))
+            .any(|(&quest, state)| {
+                self.alias_specs(quest).iter().any(|a| {
+                    !a.location && a.has(flag) && state.aliases.get(&a.id) == Some(&reference)
+                })
+            })
+    }
+
     pub fn alias_specs(&self, q: FormId) -> Arc<Vec<AliasSpec>> {
         if let Some(s) = self.alias_spec_cache.borrow().get(&q) {
             return s.clone();
