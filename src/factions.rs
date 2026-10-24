@@ -4,7 +4,9 @@
 //! 3 friend); Papyrus `SetEnemy` and `SetAlly` change the combat reactions of
 //! both factions towards each other, and `SetReaction` / `ModReaction` the
 //! modifier of one towards the other. Changes are kept by faction pair, over
-//! the plugin's entry, and saved (`FRCT`). Choices:
+//! the plugin's entry, and saved (`FRCT`). The player's expelled and enemy
+//! flags start as the faction's `DATA` bits and change by `SetPlayerExpelled`
+//! / `SetPlayerEnemy` (saved: `FPLR`). Choices:
 //! `known_ambiguities/factions.md`.
 
 use std::collections::HashMap;
@@ -24,10 +26,17 @@ pub struct Reaction {
 /// The highest group combat reaction (friend).
 pub const MAX_COMBAT_REACTION: u32 = 3;
 
+/// The faction's `DATA` flags for the player: expelled, and enemy.
+pub const PLAYER_EXPELLED: u8 = 1 << 2;
+pub const PLAYER_ENEMY: u8 = 1 << 3;
+pub const PLAYER_FLAGS: u8 = PLAYER_EXPELLED | PLAYER_ENEMY;
+
 #[derive(Default)]
 pub struct Factions {
     /// Reactions changed since the plugins, by (faction, towards).
     pub(crate) reactions: HashMap<(FormId, FormId), Reaction>,
+    /// The player flags (`PLAYER_FLAGS` bits) of factions scripts changed.
+    pub(crate) player_flags: HashMap<FormId, u8>,
 }
 
 impl Engine {
@@ -127,6 +136,48 @@ impl Engine {
         changed.sort();
         list.extend(changed);
         list
+    }
+
+    /// The faction's player flags now (`PLAYER_FLAGS` bits): changed by a
+    /// script, else its `DATA`.
+    pub fn faction_player_flags(&self, faction: FormId) -> u8 {
+        if let Some(&f) = self.factions.player_flags.get(&faction) {
+            return f;
+        }
+        self.lo
+            .get(faction)
+            .filter(|r| r.header.tag.0 == *b"FACT")
+            .and_then(|r| r.get(b"DATA").and_then(|d| d.first().copied()))
+            .map_or(0, |d| d & PLAYER_FLAGS)
+    }
+
+    /// Papyrus `SetPlayerExpelled` / `SetPlayerEnemy`: set or clear one of
+    /// a faction's player flags.
+    pub fn set_faction_player_flag(&mut self, faction: FormId, flag: u8, on: bool) {
+        let Some(rec) = self.lo.get(faction) else {
+            return;
+        };
+        if rec.header.tag.0 != *b"FACT" {
+            return;
+        }
+        let old = self.faction_player_flags(faction);
+        let new = if on { old | flag } else { old & !flag };
+        self.factions
+            .player_flags
+            .insert(faction, new & PLAYER_FLAGS);
+    }
+
+    pub fn player_expelled_from(&self, faction: FormId) -> bool {
+        self.faction_player_flags(faction) & PLAYER_EXPELLED != 0
+    }
+
+    pub fn player_enemy_of(&self, faction: FormId) -> bool {
+        self.faction_player_flags(faction) & PLAYER_ENEMY != 0
+    }
+
+    /// Restore the player flags a save kept, in place of this session's.
+    pub(crate) fn restore_faction_player_flags(&mut self, flags: HashMap<FormId, u8>) {
+        self.factions.player_flags = flags;
     }
 
     /// Restore the reactions a save kept, in place of this session's.

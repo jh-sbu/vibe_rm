@@ -1372,6 +1372,20 @@ pub fn call(
             (Some(a), Some(b)) => e.reaction_towards(a, b).modifier,
             _ => 0,
         })),
+        ("faction", "setplayerexpelled") | ("faction", "setplayerenemy") => {
+            if let Some(f) = me {
+                let flag = if func == "setplayerenemy" {
+                    crate::factions::PLAYER_ENEMY
+                } else {
+                    crate::factions::PLAYER_EXPELLED
+                };
+                e.set_faction_player_flag(f, flag, args.first().is_none_or(|b| b.as_bool()));
+            }
+            none()
+        }
+        ("faction", "isplayerexpelled") => {
+            v(Value::Bool(me.is_some_and(|f| e.player_expelled_from(f))))
+        }
         ("faction", "canpaycrimegold") => {
             v(Value::Bool(me.is_some_and(|f| e.can_pay_crime_gold(f))))
         }

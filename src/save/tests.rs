@@ -5479,3 +5479,54 @@ fn faction_reactions_replace_the_sessions_after_loading() {
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.factions.reactions.is_empty());
 }
+
+#[test]
+fn faction_player_flags_payload() {
+    use crate::factions::{PLAYER_ENEMY, PLAYER_EXPELLED};
+    let mut s = Snapshot::default();
+    s.continuity.faction_player_flags.extend([
+        (ACTOR, PLAYER_ENEMY),
+        (CELL, 0),
+        (GLOBAL, PLAYER_ENEMY | PLAYER_EXPELLED),
+    ]);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.faction_player_flags,
+        s.continuity.faction_player_flags
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"FPLR");
+    for flags in [1u8, 0x40] {
+        let mut broken = Snapshot::default();
+        broken.continuity.faction_player_flags.insert(ACTOR, flags);
+        assert!(Snapshot::read(&broken.write()).is_err(), "flags {flags:#x}");
+    }
+    let mut broken = Snapshot::default();
+    broken
+        .continuity
+        .faction_player_flags
+        .insert(FormId::NULL, 0);
+    assert!(Snapshot::read(&broken.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn faction_player_flags_replace_the_sessions_after_loading() {
+    let (_a, mut a) = engine("faction-flags-a");
+    a.factions
+        .player_flags
+        .insert(ACTOR, crate::factions::PLAYER_ENEMY);
+    let file = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("faction-flags-b");
+    b.factions
+        .player_flags
+        .insert(CELL, crate::factions::PLAYER_EXPELLED);
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert!(b.player_enemy_of(ACTOR));
+    assert!(!b.player_expelled_from(CELL), "replaced");
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"FPLR");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.factions.player_flags.is_empty());
+}
