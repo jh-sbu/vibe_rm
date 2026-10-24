@@ -1464,6 +1464,13 @@ pub fn call(
             };
             v(Value::Bool(me.is_some_and(|b| e.base_has_flag(b, flag))))
         }
+        // The race of the actor, or of the base, through its templates.
+        ("actor", "getrace") | ("actorbase", "getrace") => {
+            match me.and_then(|a| e.race_of(a).or_else(|| e.npc_race(a))) {
+                Some(r) => v(e.object_value(r)),
+                None => none(),
+            }
+        }
         ("actor", "setghost") => {
             if let Some(a) = me {
                 e.set_ghost(a, args.first().is_none_or(|b| b.as_bool()));

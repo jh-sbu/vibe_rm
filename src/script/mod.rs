@@ -230,3 +230,7 @@ mod notification_tests {
         assert!(state.notifications[0].id > last);
     }
 }
+
+#[cfg(test)]
+#[path = "actor_natives_tests.rs"]
+mod actor_natives_tests;
