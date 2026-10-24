@@ -234,3 +234,6 @@ mod notification_tests {
 #[cfg(test)]
 #[path = "actor_natives_tests.rs"]
 mod actor_natives_tests;
+
+#[cfg(test)]
+mod query_natives_tests;
