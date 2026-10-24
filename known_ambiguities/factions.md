@@ -67,3 +67,25 @@
   script calls `SetPlayerExpelled` or `IsPlayerExpelled` and no vanilla
   condition uses 193 (`vrm-tool pex-calls`, `ctda-uses`), so we change
   nothing else. Rank, membership and services stay as they were.
+
+## Members of factions the player is an enemy of
+
+- An actor attacks the player on sight when one of its factions, or its
+  crime faction, has the player-enemy flag. Actors that are unaggressive
+  (aggression 0), whose factions are allied or friendly to the player's, or
+  that are teammates are left out. `GetActorCrimePlayerEnemy` (458) reads the
+  subject's crime faction alone; the player has none, so it is false for
+  them.
+- Evidence: vanilla scripts set the flag on the hold crime factions while
+  the player is a werewolf (`PlayerWerewolfChangeScript`) or vampire lord,
+  on the Dark Brotherhood and hold factions (`QF_DB09_0001EA58`,
+  `BlackDoorScript`), and more. UESP
+  [Skyrim:Lycanthropy, revision 3637628](https://en.uesp.net/w/index.php?oldid=3637628)
+  says "most will attack you on sight", except for followers, the Dark
+  Brotherhood, the Circle, the Thieves Guild and others. That page describes
+  the werewolf as a whole, which also sets `SetAttackActorOnSight`.
+- Unconfirmed: whether the flag alone makes members attack, or only marks
+  them (combat could come from `SetAttackActorOnSight` or the crime system).
+  Also whether aggression 0 members flee, which is what the lycanthropy page's
+  "feared" suggests (we do nothing), and whether faction allies are exempt or
+  only teammates. The exceptions the page lists suggest allies are.

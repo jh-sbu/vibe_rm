@@ -175,6 +175,19 @@ impl Engine {
         self.faction_player_flags(faction) & PLAYER_ENEMY != 0
     }
 
+    /// Whether `actor` is in a faction the player is an enemy of: one of
+    /// `factions` (its memberships) or its crime faction.
+    pub(crate) fn in_player_enemy_faction(&self, actor: FormId, factions: &[FormId]) -> bool {
+        factions.iter().any(|&f| self.player_enemy_of(f)) || self.crime_player_enemy(actor)
+    }
+
+    /// `GetActorCrimePlayerEnemy`: the actor's crime faction has the player
+    /// as an enemy.
+    pub fn crime_player_enemy(&self, actor: FormId) -> bool {
+        self.crime_faction(actor)
+            .is_some_and(|f| self.player_enemy_of(f))
+    }
+
     /// Restore the player flags a save kept, in place of this session's.
     pub(crate) fn restore_faction_player_flags(&mut self, flags: HashMap<FormId, u8>) {
         self.factions.player_flags = flags;

@@ -671,6 +671,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // The faction's player flags (`crate::factions`), whoever the subject.
         193 => b(e.player_expelled_from(p1)), // GetPCExpelled
         197 => b(e.player_enemy_of(p1)),      // GetPCEnemyofFaction
+        458 => b(subject.is_some_and(|s| e.crime_player_enemy(s))), // GetActorCrimePlayerEnemy
         499 => Some(e.crime.arrests.days_in_jail as f32), // GetDaysInJail
         657 => b(subject.is_some_and(|s| e.crime.arrests.arresting.is_some_and(|a| a.0 == s))), // GetArrestingActor
         459 | 375 | 376 | 533 | 534 | 535 => {
