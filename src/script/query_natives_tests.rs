@@ -396,3 +396,68 @@ fn getreftypealivecount_counts_enabled_editor_references_once() {
         Value::Int(0)
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn getreftypedeadcount_counts_enabled_editor_references_once() {
+    let (_f, mut e) = population_fixture();
+    let ty = e.object_value(FormId(0x830));
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypedeadcount",
+            FormId(0x810),
+            &[ty.clone()]
+        ),
+        Value::Int(0)
+    );
+    e.world_state.dead.insert(
+        FormId(0x800),
+        (
+            crate::ai::schedule::Place::Interior(FormId(0x820)),
+            glam::Vec3::ZERO,
+        ),
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypedeadcount",
+            FormId(0x810),
+            &[ty.clone()]
+        ),
+        Value::Int(1)
+    );
+    e.scripts.disabled.insert(FormId(0x800), true);
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypedeadcount",
+            FormId(0x810),
+            &[ty.clone()]
+        ),
+        Value::Int(0)
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypedeadcount",
+            FormId(0x811),
+            &[ty]
+        ),
+        Value::Int(0)
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "getreftypedeadcount",
+            FormId(0x810),
+            &[Value::None]
+        ),
+        Value::Int(0)
+    );
+}
