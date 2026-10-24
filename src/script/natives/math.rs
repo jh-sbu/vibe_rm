@@ -13,6 +13,7 @@ pub(super) fn call(func: &str, args: &[Value]) -> Option<Value> {
         "ceiling" => Value::Int(arg(0).as_float().ceil() as i32),
         "acos" => Value::Float(arg(0).as_float().acos().to_degrees()),
         "asin" => Value::Float(arg(0).as_float().asin().to_degrees()),
+        "atan" => Value::Float(arg(0).as_float().atan().to_degrees()),
         _ => return None,
     })
 }
@@ -50,5 +51,9 @@ mod tests {
             "asin",
             &[(-1.0, -90.0), (-0.5, -30.0), (0.0, 0.0), (1.0, 90.0)],
         );
+    }
+    #[test]
+    fn atan() {
+        check("atan", &[(-1.0, -45.0), (0.0, 0.0), (1.0, 45.0)]);
     }
 }
