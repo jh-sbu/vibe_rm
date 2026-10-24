@@ -12,3 +12,12 @@ interaction and zero/negative/NaN intervals remain unverified. Ingredient
 hostility considers all its effects; whether only learned effects matter is not
 specified by the terse public native description. Missing string settings return
 an empty string; original diagnostic text is unverified.
+
+## Batch 2
+
+Cell attachment uses membership in the runtime loaded-cell map. Precise Skyrim
+attachment/detachment phase timing is unverified. IsStopped uses !running because
+our quest start/stop transitions are synchronous; Skyrim's intermediate enabled
+and stopping states are not represented. GetKey follows the existing shared
+load-door lock policy; unusual pairs with two different keys are unverified.
+GetVoiceType inherits the existing actor template precedence.

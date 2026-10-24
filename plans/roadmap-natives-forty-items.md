@@ -8,3 +8,4 @@ behavior is recorded in known_ambiguities/remaining-natives.md.
 | Batch | Five items | Validation |
 | --- | --- | --- |
 | 1 | Alias.RegisterForSingleUpdateGameTime, Alias.RegisterForUpdateGameTime, Alias.UnregisterForUpdateGameTime, Game.GetGameSettingString, Ingredient.IsHostile | 2 focused GPU tests passed |
+| 2 | Quest.IsStopped, Game.IsFastTravelControlsEnabled, ObjectReference.GetKey, ObjectReference.GetVoiceType, Cell.IsAttached | focused GPU test passed |

@@ -199,7 +199,9 @@ pub fn call(
             v(Value::Int(class))
         }
         ("game", "isplayersleeping") => v(Value::Bool(false)),
-        ("game", "isfasttravelenabled") => v(Value::Bool(!e.fast_travel_disabled)),
+        ("game", "isfasttravelenabled") | ("game", "isfasttravelcontrolsenabled") => {
+            v(Value::Bool(!e.fast_travel_disabled))
+        }
         ("game", "enablefasttravel") => {
             e.fast_travel_disabled = !args.first().is_none_or(Value::as_bool);
             none()
@@ -488,6 +490,27 @@ pub fn call(
                 }
             }
             v(Value::Bool(true))
+        }
+        ("objectreference", "getkey") => v(me
+            .and_then(|r| e.lock_of(r))
+            .and_then(|l| l.key)
+            .map_or(Value::None, |key| e.object_value(key))),
+        ("objectreference", "getvoicetype") => {
+            let voice = me
+                .and_then(|r| {
+                    let base = e.base_of(r)?;
+                    match e.lo.tag_of(base)?.0 {
+                        t if t == *b"NPC_" => e.actor_voice_type(r),
+                        t if t == *b"TACT" => {
+                            let rec = e.lo.get(base)?;
+                            let d = rec.get(b"VNAM")?.get(..4)?;
+                            Some(rec.fid(FormId(u32::from_le_bytes(d.try_into().ok()?))))
+                        }
+                        _ => None,
+                    }
+                })
+                .filter(|f| !f.is_null());
+            v(voice.map_or(Value::None, |f| e.object_value(f)))
         }
         ("objectreference", "islocked") => v(Value::Bool(me.is_some_and(|f| e.is_locked(f)))),
         ("objectreference", "lock") => {
@@ -1598,6 +1621,10 @@ pub fn call(
             me.and_then(|q| e.scripts.quests.get(&q))
                 .is_some_and(|s| s.running),
         )),
+        ("quest", "isstopped") => v(Value::Bool(me.is_some_and(|q| {
+            e.lo.tag_of(q).is_some_and(|t| t.0 == *b"QUST")
+                && e.scripts.quests.get(&q).is_none_or(|s| !s.running)
+        }))),
         // Tracked in the journal.
         ("quest", "isactive") => v(Value::Bool(
             me.and_then(|q| e.scripts.quests.get(&q))
@@ -1891,7 +1918,19 @@ pub fn call(
                 .map_or(-1, |i| i as i32),
             _ => -1,
         })),
-        ("cell", "isattached") => v(Value::Bool(true)),
+        ("cell", "isattached") => v(Value::Bool(me.is_some_and(|c| {
+            e.cells.keys().any(|key| match key {
+                crate::render::CellKey::Interior(id) => *id == c,
+                crate::render::CellKey::Exterior(x, y) => match e.location {
+                    crate::engine::Location::Exterior { world, .. } => {
+                        e.lo.world(world)
+                            .and_then(|w| w.cells.get(&(*x, *y)))
+                            .is_some_and(|id| *id == c)
+                    }
+                    _ => false,
+                },
+            })
+        }))),
         ("cell", "isinterior") => v(Value::Bool(me.and_then(|c| e.lo.get(c)).is_some_and(|r| {
             r.tag().0 == *b"CELL"
                 && r.get(b"DATA")

@@ -637,3 +637,95 @@ fn batch01_ingredient_hostility_uses_effects() {
         Value::Bool(false)
     );
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn batch02_live_quest_controls_locks_voices_cells() {
+    let mut lock = [0u8; 12];
+    lock[4..8].copy_from_slice(&0x830u32.to_le_bytes());
+    let (_f, mut e) = fixture(vec![
+        Node::top(b"QUST", vec![RecordBuilder::new(b"QUST", FormId(0x800))]),
+        Node::top(b"CELL", vec![RecordBuilder::new(b"CELL", FormId(0x810))]),
+        Node::top(b"KEYM", vec![RecordBuilder::new(b"KEYM", FormId(0x830))]),
+        Node::top(b"VTYP", vec![RecordBuilder::new(b"VTYP", FormId(0x840))]),
+        Node::top(
+            b"TACT",
+            vec![RecordBuilder::new(b"TACT", FormId(0x850)).form(b"VNAM", FormId(0x840))],
+        ),
+        Node::top(
+            b"NPC_",
+            vec![RecordBuilder::new(b"NPC_", FormId(0x851)).form(b"VTCK", FormId(0x840))],
+        ),
+        Node::top(
+            b"REFR",
+            vec![
+                RecordBuilder::new(b"REFR", FormId(0x820))
+                    .field(b"XLOC", &lock)
+                    .form(b"NAME", FormId(0x850)),
+            ],
+        ),
+        Node::top(
+            b"ACHR",
+            vec![RecordBuilder::new(b"ACHR", FormId(0x821)).form(b"NAME", FormId(0x851))],
+        ),
+    ]);
+    assert_eq!(
+        call(&mut e, "quest", "isstopped", FormId(0x800), &[]),
+        Value::Bool(true)
+    );
+    assert!(e.start_quest(FormId(0x800)));
+    assert_eq!(
+        call(&mut e, "quest", "isstopped", FormId(0x800), &[]),
+        Value::Bool(false)
+    );
+    e.stop_quest(FormId(0x800));
+    assert_eq!(
+        call(&mut e, "quest", "isstopped", FormId(0x800), &[]),
+        Value::Bool(true)
+    );
+    for disabled in [true, false] {
+        e.fast_travel_disabled = disabled;
+        assert_eq!(
+            call(
+                &mut e,
+                "game",
+                "isfasttravelcontrolsenabled",
+                FormId(0),
+                &[]
+            ),
+            Value::Bool(!disabled)
+        );
+    }
+    let key = e.object_value(FormId(0x830));
+    assert_eq!(
+        call(&mut e, "objectreference", "getkey", FormId(0x820), &[]),
+        key
+    );
+    assert_eq!(
+        call(&mut e, "objectreference", "getkey", FormId(0x821), &[]),
+        Value::None
+    );
+    let voice = e.object_value(FormId(0x840));
+    for id in [0x820, 0x821] {
+        assert_eq!(
+            call(&mut e, "objectreference", "getvoicetype", FormId(id), &[]),
+            voice
+        );
+    }
+    assert_eq!(
+        call(&mut e, "cell", "isattached", FormId(0x810), &[]),
+        Value::Bool(false)
+    );
+    e.cells
+        .entry(crate::render::CellKey::Interior(FormId(0x810)))
+        .or_default();
+    assert_eq!(
+        call(&mut e, "cell", "isattached", FormId(0x810), &[]),
+        Value::Bool(true)
+    );
+    e.cells.clear();
+    assert_eq!(
+        call(&mut e, "cell", "isattached", FormId(0x810), &[]),
+        Value::Bool(false)
+    );
+}
