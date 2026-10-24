@@ -1324,6 +1324,16 @@ pub fn call(
             }
             none()
         }
+        ("faction", "setreaction") | ("faction", "modreaction") => {
+            if let (Some(a), Some(b)) = (me, form_arg(args, 0)) {
+                e.set_reaction_modifier(a, b, arg(1).as_int(), func == "modreaction");
+            }
+            none()
+        }
+        ("faction", "getreaction") => v(Value::Int(match (me, form_arg(args, 0)) {
+            (Some(a), Some(b)) => e.reaction_towards(a, b).modifier,
+            _ => 0,
+        })),
         ("faction", "canpaycrimegold") => {
             v(Value::Bool(me.is_some_and(|f| e.can_pay_crime_gold(f))))
         }

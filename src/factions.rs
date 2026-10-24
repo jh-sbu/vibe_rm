@@ -2,7 +2,8 @@
 //! others start as its plugin's `XNAM` entries (another faction, a reaction
 //! modifier and a group combat reaction: 0 neutral, 1 enemy, 2 ally,
 //! 3 friend); Papyrus `SetEnemy` and `SetAlly` change the combat reactions of
-//! both factions towards each other. Changes are kept by faction pair, over
+//! both factions towards each other, and `SetReaction` / `ModReaction` the
+//! modifier of one towards the other. Changes are kept by faction pair, over
 //! the plugin's entry, and saved (`FRCT`). Choices:
 //! `known_ambiguities/factions.md`.
 
@@ -64,6 +65,24 @@ impl Engine {
             ..self.reaction_towards(from, to)
         };
         self.factions.reactions.insert((from, to), r);
+        self.faction_relations.remove(&from);
+    }
+
+    /// Papyrus `SetReaction` / `ModReaction`: the reaction modifier of `from`
+    /// towards `to`, set or added to, keeping its combat reaction.
+    pub fn set_reaction_modifier(&mut self, from: FormId, to: FormId, value: i32, add: bool) {
+        if from.is_null() || to.is_null() {
+            return;
+        }
+        let old = self.reaction_towards(from, to);
+        let modifier = if add {
+            old.modifier.saturating_add(value)
+        } else {
+            value
+        };
+        self.factions
+            .reactions
+            .insert((from, to), Reaction { modifier, ..old });
         self.faction_relations.remove(&from);
     }
 
