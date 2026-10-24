@@ -550,6 +550,28 @@ impl Engine {
         Ok(())
     }
 
+    /// The taper runs a native save keeps (`TAPR`): the effect as it
+    /// landed, its starting rate and the seconds since.
+    pub(crate) fn saved_tapers(&self) -> Vec<(ActiveEffect, f32, f32)> {
+        self.magic
+            .tapers
+            .iter()
+            .map(|(x, _, rate, elapsed)| (x.clone(), *rate, *elapsed))
+            .collect()
+    }
+
+    /// Saved tapers whose magic effect still loads go on; they replace any
+    /// running (after `restore_active_effects`, which clears them).
+    pub(crate) fn restore_tapers(&mut self, saved: Vec<(ActiveEffect, f32, f32)>) {
+        self.magic.tapers = saved
+            .into_iter()
+            .filter_map(|(x, rate, elapsed)| {
+                let mgef = self.magic_effect(x.effect)?;
+                Some((x, mgef, rate, elapsed))
+            })
+            .collect();
+    }
+
     /// Replace the active effects with saved ones. What they hold on actor
     /// values is already in the saved modifiers, so nothing is started or
     /// given back: the old game's effects go without releasing into the new
