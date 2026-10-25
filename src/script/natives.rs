@@ -1993,9 +1993,13 @@ pub fn call(
             }
             none()
         }
-        ("actor", "evaluatepackage") | ("actor", "setrestrained") | ("actor", "setdontmove") => {
+        ("actor", "evaluatepackage") => {
+            if let Some(a) = me {
+                e.evaluate_package(a);
+            }
             none()
         }
+        ("actor", "setrestrained") | ("actor", "setdontmove") => none(),
         ("actor", "getsitstate") | ("actor", "getsleepstate") => {
             let kind = if func == "getsitstate" {
                 crate::ai::furniture::Use::Sit

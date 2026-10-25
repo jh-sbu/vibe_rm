@@ -3,8 +3,8 @@
 For `plans/ai-actor-execution.md`. Public sources and what can be inferred
 from them are under Sources at the end. Where unloaded actors appear as
 their cell loads is in `unloaded-placement.md`. The readings are
-`test-mod autotest13`'s and `autotest14`'s (each run 2026-10-25, once);
-their module docs have the numbers.
+`test-mod autotest13`'s, `autotest14`'s and `autotest15`'s (each run
+2026-10-25, once); their module docs have the numbers.
 
 ## What is known
 
@@ -21,9 +21,17 @@ their module docs have the numbers.
   `EvaluatePackage`), an actor is put 40 short of a target in the same
   space 2,700 to 4,100 away, in its own cell or the next, in one step;
   `OnPackageEnd` follows 2.5 s after `OnPackageStart`. Actors whose target
-  was 4,950 to 8,200 away stayed put for minutes, through fast travel and as
-  their cell loaded. A target in another space (through a load door,
-  either way) moves the actor exactly onto it, with `OnLocationChange`.
+  was 4,950 to 8,200 away and 1,900 or more above or below stayed put for
+  minutes, through fast travel and as their cell loaded. A target in another
+  space (through a load door, either way) moves the actor exactly onto it,
+  with `OnLocationChange`.
+- **Later jumps** (autotest15). A scene sent an actor to a target 8,843
+  away but only 139 below: it was put 40 short of it 39 s later, with
+  `OnPackageEnd` in the same frame. An actor sent home unasked (2,670, its
+  scene letting it go, no `EvaluatePackage`) was put there 34 s after its
+  package started, in that same frame. autotest13's Scheduled, unasked,
+  hadn't moved 5 s on. So unasked or far, actors are still put at their
+  targets, later; one frame for both suggests a periodic pass.
 - **Loading a cell doesn't move them on.** Actors are found where the jump
   left them (dropped to the ground), or at home if they stayed.
 - **Fast travel** (`Game.FastTravel` to an exterior marker: 0.6 s, the clock
@@ -38,7 +46,9 @@ their module docs have the numbers.
   an hour in a schedule passes. `OnPackageChange` (old package) then
   `OnPackageStart` (new) fire 0.08 s apart.
 - **Buffered cells keep running.** An actor in the exterior the player left
-  for an interior keeps its 3D and walks on at loaded speed. Interiors the
+  for an interior keeps its 3D and walks on at loaded speed (autotest15's
+  Buffered, moved from its exterior into the palace: 3D kept for a minute,
+  walking along a path, 1,240 nearer its target 60 s on). Interiors the
   player left behaved two ways: in autotest13 the palace's actors lost their
   3D at once but walked on and ended exactly on their target; in autotest14
   they kept their 3D for 90 s, until the player went to another exterior.
@@ -49,6 +59,18 @@ their module docs have the numbers.
   `OnMagicEffectApply`) each time an actor loads. So active effects appear to
   be dropped on unload rather than paused or run out. While the actor kept
   its 3D in a buffered cell, the effect stayed (autotest14).
+- **Scenes play on with their actors unloaded** (autotest15). A scene
+  started with its actor unloaded plays at once; its travel package action
+  completes when the actor is put at its target (2.98 s after the start,
+  2,711 off) and its phase ends then, the scene going on to its timer. One
+  sent out of range completed 39 s on, as its actor was put there.
+- **A scene's package lets go without `OnPackageChange`.** As a scene's
+  travel action completed (`OnPackageEnd`), its actor took up its own
+  package with `OnPackageStart` alone: 0.1 s later loaded, 2.1 s later
+  unloaded (the scene's 2 s timer phase). Its own package, done before the
+  scene, started afresh: the loaded one walked home and logged
+  `OnPackageEnd` again. Starting the scene logged the usual
+  `OnPackageChange` then `OnPackageStart`.
 - **Event order:** loading logs `OnCellAttach`, `OnMagicEffectApply` for
   abilities, then `OnLoad`. Unloading logs `OnCellDetach`, then `OnUnload`
   0.2 s later. A buffered cell's actors get `OnCellDetach` but keep their
@@ -73,9 +95,12 @@ as the save loaded and changed at Go1). The rest is our choice:
   `OnPackageChange` / `OnPackageStart` for a combat package is untested.
 - **Scenes** suspend the run: the scene's package logs the usual change
   events, and when the scene lets go, the old run resumes with its start
-  time and progress (Activate count) kept, logging `OnPackageStart` again.
-  Whether the game restarts it instead, and which events it logs, is
-  untested. Any other change of package starts the next one afresh: an
+  time and progress (Activate count) kept, logging `OnPackageStart` again;
+  a scene's package that completed logs no `OnPackageChange` as it lets go
+  (autotest15). A run that had completed before the scene starts afresh
+  (autotest15's actors went home again). Whether the game resumes a run
+  that was still going, and what a scene's package still running logs as
+  it lets go (a scene stopped), is untested. Any other change of package starts the next one afresh: an
   Activate package left and taken up again counts from nothing.
 - **Fragments before events.** A package's begin / end / change fragment
   (`PACK` `VMAD`, xEdit's `wbVMADFragmentedPACK`) runs as its run changes,
@@ -123,14 +148,18 @@ had them re-read within about 3 s, and at once as the clock was set or an
 hour passed), a change of package logs the usual events, and its package
 moves it:
 
-- **Travel in the same space**, its target within 4,500 (3D): put on the
-  line to it, 40 short (or 10 inside a wider radius: `unloaded_arrival`, as
-  for actors new to a save), then `OnPackageEnd` 2.5 s after the start.
-  Beyond 4,500 it stays where it is, its run going on. The readings put the
-  line between 4,100 and 4,950; height may be what decides (open, below).
+- **Travel in the same space**, asked to evaluate its packages
+  (`EvaluatePackage`, or a scene giving it a package) and its target within
+  4,500 (3D): put on the line to it, 40 short (or 10 inside a wider radius:
+  `unloaded_arrival`, as for actors new to a save), then `OnPackageEnd`
+  2.5 s after the start. Unasked, or beyond 4,500, put there 36 s after the
+  start (`LATE_JUMP`), its run ending then (autotest15: 34 and 39 s). One
+  more than 1,400 above or below its target stays where it is, its run
+  going on (moved: within 830; stayed: 1,900 or more).
 - **Travel into another space** (through a load door): put exactly on its
   target, with `OnLocationChange` when the location changes, then
-  `OnPackageEnd` 2.5 s later.
+  `OnPackageEnd` 2.5 s later; unasked, late as above (the readings only
+  sent actors through doors with `EvaluatePackage`).
 - **In a cell the player has just left** (the places unloaded with the
   last change of location, until the next one) a traveller walks on in a
   straight line at 80 a second to the same end point, its run ending as it
@@ -146,8 +175,8 @@ moves it:
   it once more than 256 beyond the follow distance off); following someone
   loaded (the player) they stay where they are.
 - **A journey under way as the actor unloads** (it was walking, or hadn't
-  started) is taken up as one starting: put at the end point when in range.
-  The game's rule is untested (open, below).
+  started) is taken up as one starting unasked: put at the end point
+  late. The game's rule is untested (open, below).
 - **Despawned actors** (gone through a door, or out of sight for their
   schedule) are put where their schedule has them, as before; their run
   ends 2.5 s later when that is a traveller's target.
@@ -208,51 +237,53 @@ Step 6 of the plan (`ai::exec::Processing`, `Engine::pass_time`,
 
 ## Scenes: what we chose
 
-Step 7 of the plan (`scene::AwayActors`, `Engine::run_away`). No reading
-covers scenes with unloaded actors; autotest4 and autotest5 only played
-timers with loaded actors.
+Step 7 of the plan (`Engine::run_away`, `Engine::away_package_done`), by
+autotest15 ("Scenes play on", above):
 
-- **Package actions go on away.** An actor away runs its scene package as
-  it runs any other ("Away" above): a scene's travel is put 40 short of its
-  target in range, or onto it through a door, and its run ends 2.5 s on;
-  that ends the action, so the phase can end without the actor loading. A
-  Sit or Sleep action is done once the actor is at its place (it takes the
-  seat as it loads). Force greets need the player and wait for the actor
-  to load; Sandbox, Follow, Patrol and the like never finish, as loaded.
-  A traveller out of jumping range stays put, so its phase waits.
+- **Package actions go on away.** A scene giving an actor away its
+  package asks it to evaluate its packages, and it runs the package as it
+  runs any other ("Away" above): a scene's travel in range is put 40 short
+  of its target and its run ends 2.5 s on, one beyond range late; that
+  ends the action, so the phase ends without the actor loading. A Sit or
+  Sleep action is done once the actor is at its place (it takes the seat
+  as it loads: untested). Force greets need the player and wait for the
+  actor to load; Sandbox, Follow, Patrol and the like never finish, as
+  loaded.
+- **Letting go.** A scene's package that completed gives way to the
+  actor's own with `OnPackageStart` alone (`PackageRun::scene`). The
+  unloaded actor's 2.1 s wait before it isn't kept: ours lets go as the
+  phase ends.
 - **Actors new to the world** (no execution yet) get one from where their
   schedule has them as a scene gives them a package, and run away from
   there, with the usual package events.
 - **Lines wait.** A dialogue action waits for its speaker to load (voices,
   subtitles and head tracking need a body), so a phase with a line holds
   its scene until then. Timers run regardless, as before.
-- **The old policy** (package actions waiting for their actors to load,
-  whose scene packages still moved them away) is kept behind
-  `VRM_SCENES_WAIT_FOR_LOADED` until `test-mod autotest15` settles it.
+- **The old policy** (package actions waiting for their actors to load)
+  is gone: autotest15 settled it.
 
 ## Open questions
 
-- **Scenes with actors away** (`test-mod autotest15`, not run yet). Does a
-  scene's package action finish while its actor is unloaded (and its phase
-  end), or does the scene wait for the actor to load? Does a scene start at
-  all with its actor unloaded? Does an unloaded speaker's line hold its
-  phase, get skipped, or play on unheard (not covered: the test writers
-  don't build dialogue yet)?
-
-- **What decides the jump.** Every actor moved had its target within 4,100
-  and 830 of height; every one left had it 4,950 or more away and 1,900 or
-  more above or below. Distance, height or something else (a path, the
-  cells between) may decide. autotest15's Beyond (8,843 away, 139 below)
-  separates distance from height. autotest13's Scheduled, 600 to 1,000 from home,
-  didn't jump home in the 5 s after its schedule changed, without
-  `EvaluatePackage`: whether the jump needs it, or only takes longer, is
-  open.
+- **Unloaded speakers.** Does an unloaded speaker's scene line hold its
+  phase, get skipped, or play on unheard? Not covered: the test writers
+  don't build dialogue yet.
+- **What decides the jump, and when.** Every actor put at once had been
+  asked (`EvaluatePackage`, a scene) and had its target within 4,100;
+  every one put late (34 and 39 s) was unasked or 8,843 off; every one that
+  stayed was 1,900 or more above or below. Whether height (or a path)
+  decides staying, and whether late jumps come from a periodic pass (both
+  autotest15 jumps fell in one frame) rather than a delay per run, is open.
+- **Beyond going home.** After its late jump, autotest15's Beyond took up
+  its own Travel home (8,800 off, level) and was found 3,590 from home and
+  5,300 from where it jumped to as the player arrived 63 s later: neither
+  put home (our late jump, 36 s) nor left. Walked at about 83 a second
+  while unloaded, or placed along its path as its cell loaded?
 - **A journey under way as the actor unloads.** Does a walker outside the
   buffer jump to its target (as one starting a package does), stay, or walk
   on? We have it jump (when in range).
-- **What reaches far targets.** An actor whose target is out of jumping
-  range: does anything ever move it (game hours, waiting, a later
-  re-evaluation), or does it wait for the player?
+- **What reaches far targets** far above or below: does anything ever
+  move them (game hours, waiting, a later re-evaluation), or do they wait
+  for the player?
 - **Waiting and sleeping for unloaded actors** out of jumping range, and
   sleeping at all: not tested. Nor loaded actors in furniture or sandboxing
   through a wait: we start them over where their packages have them.

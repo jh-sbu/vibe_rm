@@ -4,9 +4,9 @@
 //! package action finish with its actor away, by what the actor's package
 //! did there (put 40 short of a Travel target in range, after which its run
 //! ends 2.5 s on), where we used to have it wait for the actor to load
-//! (`VRM_SCENES_WAIT_FOR_LOADED` still does). Here scenes are started with
-//! their actors loaded, unloaded, and in the cell the player just left, and
-//! watched from afar.
+//! (kept behind `VRM_SCENES_WAIT_FOR_LOADED` until this ran). Here scenes
+//! are started with their actors loaded, unloaded, and in the cell the
+//! player just left, and watched from afar.
 //!
 //! Each actor is made as in autotest13 (the same template NPC, its own
 //! Travel package home, its events logged into its `ResultEvents`) and is
@@ -47,7 +47,7 @@
 //! | reading                                                     | means                                          |
 //! | ----------------------------------------------------------- | ---------------------------------------------- |
 //! | SceneNear's action 1 done within seconds, the scene over 2 s later, Near unloaded | package actions finish away (our default) |
-//! | SceneNear still playing until Visit, done once Near walks there loaded | scenes wait for their actors to load (`VRM_SCENES_WAIT_FOR_LOADED`) |
+//! | SceneNear still playing until Visit, done once Near walks there loaded | scenes wait for their actors to load (the old policy) |
 //! | SceneNear never playing                                     | scenes don't start with their actors unloaded  |
 //! | SceneBeyond playing until Visit, done as Beyond arrives      | an out-of-range traveller holds its phase      |
 //! | SceneBeyond done away, Beyond put by its marker              | distance alone doesn't stop a jump (height may) |
@@ -60,7 +60,37 @@
 //! As with autotest13, don't keep playing with the plugin: it carries
 //! Skyrim.esm's records of Tamriel, its persistent cell and the palace.
 //!
-//! Not run yet.
+//! Run in Skyrim SE (2026-10-25, once, the test character's usual save near
+//! Riverwood):
+//!
+//! - **Loaded**: SceneLoaded played at once; Loaded's travel was done 8.1 s
+//!   on, 9 from its marker, the scene over 2 s later. Loaded logged
+//!   `OnPackageEnd` for the scene's package, then 0.1 s later
+//!   `OnPackageStart` for its own (no `OnPackageChange`), walked home and
+//!   logged its `OnPackageEnd`.
+//! - **Away**: both scenes played at once with their actors unloaded.
+//!   Near was 40 short of its marker, unloaded, and its travel done 2.98 s
+//!   on (`OnPackageEnd` 2.53 s after `OnPackageStart`), SceneNear over 1.8 s
+//!   later. Beyond (8,843 off, 139 below) stayed, then was 40 short and its
+//!   travel done 39 s on, still unloaded (`OnPackageEnd` in the frame it was
+//!   put there), SceneBeyond over 2.3 s later. Each took up its own Travel
+//!   home 2.1 s after its travel was done with `OnPackageStart` alone; Near
+//!   (2,670 from home, unasked) was put 40 short of home 34 s after that, in
+//!   the same frame as Beyond's jump.
+//! - **Buffered**: Buffered kept its 3D after the player went back into the
+//!   palace (`OnCellDetach`, no `OnUnload` until the player went on to Near
+//!   and Beyond's cell a minute later) and walked a path: 60 s on it was
+//!   1,442 from its marker (from 2,681) and 2,586 from home, SceneBuffered
+//!   still playing.
+//! - **Visit**: both scenes over. Near was 40 from home; Beyond, which had
+//!   set off home (8,800, level) 63 s before, was 3,588 from home and 5,298
+//!   from its marker.
+//!
+//! So scenes play on with their actors unloaded: a package action finishes
+//! as the package's run does away (our default; the waiting policy is
+//! gone). Unloaded travellers are put at once only when asked to evaluate
+//! (`EvaluatePackage`, a scene) and in range; otherwise later, at any
+//! distance seen so far when about level with their targets.
 
 use anyhow::{Context, Result};
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, write_plugin};

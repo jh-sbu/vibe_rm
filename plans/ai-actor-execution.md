@@ -295,18 +295,13 @@ place reached (the seat is taken as it loads). Force greets, and the
 packages that never finish loaded, still wait. An actor the world hadn't
 touched gets an execution from where its schedule has it as a scene gives
 it a package (`Engine::run_away`). Dialogue actions wait for their speaker
-to load, as before. `scene::AwayActors` is the switch: `Run` by default,
-`Wait` (the old policy, `VRM_SCENES_WAIT_FOR_LOADED`) until `test-mod
-autotest15` (built, not run yet: scenes started with their actors loaded,
-unloaded, out of jumping range and in the cell just left) settles it. The choices are in `known_ambiguities/actor-execution.md`
-("Scenes").
-
-- Today a scene waits for its actors to load. Once away actors have runs,
-  scene packages can progress while their actors are away, and phases whose
-  actions need only packages can advance. Dialogue phases keep waiting
-  (they need voices and head tracking) until evidence says otherwise.
-- Keep the current wait policy behind a switch until a test-mod case settles
-  it.
+to load, as before. `test-mod autotest15` (run once) confirmed package
+actions finishing away, so the old waiting policy is gone. It also showed
+unloaded travellers put at once only when asked (`EvaluatePackage`, which
+now prompts them, or a scene) and in range, others 34 to 39 s later even
+8,843 off (`LATE_JUMP`, with `JUMP_HEIGHT` deciding who stays), and a
+completed scene package letting go without `OnPackageChange`. The choices
+are in `known_ambiguities/actor-execution.md` ("Away", "Scenes").
 
 ### 8. Saves
 

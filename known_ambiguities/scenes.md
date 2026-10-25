@@ -42,6 +42,18 @@ records); `vrm-tool scenes <data> [scene]` dumps one scene or counts over all
 - Killing the actor of a scene whose actor ends it on death ended it within
   a second; a scene flagged to stop its quest on end stopped it.
 
+## Confirmed in the game (`test-mod autotest15`, 2026-10-25)
+
+- A scene started with its package actor unloaded plays, and its travel
+  action completes while the actor is still unloaded, as the actor is put
+  at its target (2.98 s for one 2,711 off; 39 s for one 8,843 off); the
+  phase ends then. Package actors needn't be loaded: one away runs its
+  scene package where it is (`known_ambiguities/actor-execution.md`,
+  "Scenes").
+- A loaded actor's travel action completed as it arrived, 9 off its
+  target; it took up its own package 0.1 s later, with `OnPackageStart`
+  but no `OnPackageChange` for the scene's.
+
 ## Confirmed in the game (`test-mod autotest5`, 2026-10-13)
 
 - With completion conditions, the phase waits for them alone: a phase with
@@ -53,13 +65,8 @@ records); `vrm-tool scenes <data> [scene]` dumps one scene or counts over all
 - A scene whose only phase's start conditions fail was never playing.
 
 ## Choices made without a source
-- Speakers must be loaded: a line waits for its speaker to load. Package
-  actors needn't be: one away runs its scene package where it is and its
-  action finishes there (`known_ambiguities/actor-execution.md`, "Scenes").
-  `VRM_SCENES_WAIT_FOR_LOADED` has package actions wait for their actors to
-  load instead, as they used to. Whether the game plays scenes on with
-  their actors unloaded, and how far, is untested (`test-mod autotest15`
-  asks, not run yet).
+- Speakers must be loaded: a line waits for its speaker to load (untested;
+  the test mods can't write dialogue yet).
 - `Start` fails when the scene's conditions fail; `ForceStart` ignores them.
   Both take actors from other scenes, which stop (in the game a scene
   started with its actor in another played; whether that one stopped then or

@@ -11,7 +11,7 @@
 //! Ending a phase stops the actions that end in it. Speakers must be loaded: a
 //! line waits for its speaker to load. Package actors needn't be: one away runs
 //! its scene package where it is (`Engine::run_away`), and its action is done
-//! by what its execution has done there (`AwayActors`).
+//! by what its execution has done there (`test-mod autotest15`).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -324,29 +324,6 @@ fn restore_lifecycle_actions(
         .collect()
 }
 
-/// What scenes do with package actors who aren't loaded
-/// (`plans/ai-actor-execution.md` step 7; unsettled:
-/// `known_ambiguities/scenes.md`).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum AwayActors {
-    /// They run their scene packages away, and their actions finish there.
-    #[default]
-    Run,
-    /// Their actions wait for them to load (`VRM_SCENES_WAIT_FOR_LOADED`).
-    Wait,
-}
-
-impl AwayActors {
-    /// The policy the environment asks for.
-    pub fn from_env() -> Self {
-        if std::env::var_os("VRM_SCENES_WAIT_FOR_LOADED").is_some() {
-            AwayActors::Wait
-        } else {
-            AwayActors::Run
-        }
-    }
-}
-
 #[derive(Default)]
 pub struct Scenes {
     defs: HashMap<FormId, Option<Arc<SceneDef>>>,
@@ -358,18 +335,6 @@ pub struct Scenes {
     pub(crate) force_greeted: HashSet<FormId>,
     /// Scenes to start again once ended ("Repeat Conditions While True").
     restart: Vec<FormId>,
-    /// Whether package actions go on with their actors away.
-    pub away_actors: AwayActors,
-}
-
-impl Scenes {
-    /// No scenes yet, away actors handled as the environment asks.
-    pub fn new() -> Self {
-        Scenes {
-            away_actors: AwayActors::from_env(),
-            ..Default::default()
-        }
-    }
 }
 
 fn conditions(rec: &esp::LoadedRecord<'_>, raw: &[esp::scene::RawCondition]) -> Vec<Condition> {
@@ -1917,8 +1882,10 @@ impl Engine {
             self.scenes.force_greeted.remove(&r);
             self.scripts.alias_gen += 1;
             self.scenes.running[i].actions[k].started_at = now;
-            // Away, it takes its scene package up where it is, now.
-            if self.scenes.away_actors == AwayActors::Run && self.run_away(r) {
+            // Away, it takes its scene package up where it is, now, as asked
+            // to (autotest15: put at a target in range within 3 s).
+            if self.run_away(r) {
+                self.evaluate_package(r);
                 self.step_away(r);
             }
             return false;
@@ -1927,9 +1894,7 @@ impl Engine {
         let talking = self.conversation.as_ref().map(|c| c.npc_ref);
         let greeted = self.scenes.force_greeted.contains(&r);
         let Some(a) = self.actor_ref(r) else {
-            return self.scenes.away_actors == AwayActors::Run
-                && self.run_away(r)
-                && self.away_package_done(r, packages, now - started);
+            return self.run_away(r) && self.away_package_done(r, packages, now - started);
         };
         let Some(p) = a
             .exec
@@ -2361,6 +2326,9 @@ mod away_tests {
         let (_f, mut e) = fixture();
         away(&mut e);
         play(&mut e);
+        // As the scene asks when it gives the package (`play` gives it
+        // ready-made).
+        e.evaluate_package(ACTOR);
         e.update_scenes();
         after(&mut e, 0.1);
         // Put 40 short of the marker; its run ends 2.5 s on.
@@ -2377,22 +2345,6 @@ mod away_tests {
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn waiting_for_loaded_actors_holds_the_package_action() {
-        let (_f, mut e) = fixture();
-        e.scenes.away_actors = AwayActors::Wait;
-        away(&mut e);
-        play(&mut e);
-        e.update_scenes();
-        after(&mut e, 0.1);
-        after(&mut e, 3.0);
-        // It went (its packages run away all the same), but the scene waits.
-        assert_eq!(e.away[&ACTOR].pos, Vec3::new(2960.0, 0.0, 0.0));
-        assert!(e.away[&ACTOR].run_completed());
-        assert!(!e.is_scene_action_complete(SCENE, 1));
-    }
-
-    #[test]
-    #[ignore = "needs a headless GPU adapter; synthetic records only"]
     fn an_actor_the_world_had_not_touched_runs_its_scene_package_away() {
         let (_f, mut e) = fixture();
         assert!(!e.away.contains_key(&ACTOR));
@@ -2403,8 +2355,12 @@ mod away_tests {
         assert!(x.packages.iter().any(|p| p.id == TRAVEL));
         after(&mut e, 0.1);
         assert_eq!(e.running_package(ACTOR), Some(TRAVEL));
+        // Unasked (`play` gives the package ready-made): put there late, its
+        // run ending then.
+        assert_eq!(e.away[&ACTOR].pos.x, 0.0);
+        after(&mut e, crate::ai::away::LATE_JUMP);
         assert_eq!(e.away[&ACTOR].pos.x, 2960.0);
-        after(&mut e, 3.0);
+        e.update_scenes();
         assert!(e.is_scene_action_complete(SCENE, 1));
     }
 }

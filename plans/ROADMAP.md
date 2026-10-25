@@ -1696,7 +1696,7 @@ game each piece unlocks.
      walkers walking on instead of starting over; damage to unloaded actors
      is taken at once and kills them away. Scenes' package actions finish
      with their actors away, lines waiting for their speakers to load
-     (`scene::AwayActors`). Saves next, step 8).
+     (autotest15). Saves next, step 8).
    - Processing policies: detailed updates nearby and coarse advancement away
      (done, step 6), still to add: travel progress through cells and load
      doors walked rather than jumped, and execution state, travel progress and
@@ -1716,8 +1716,8 @@ game each piece unlocks.
      continuity; control for instrumentation such as quest aliases changing
      persistence. Use the observations to establish transition and catch-up rules
      before treating the current approximations as compatibility requirements.
-     Built: `test-mod autotest13` and `autotest14` (run), `autotest15`
-     (scenes with unloaded actors, not run yet).
+     Built and run: `test-mod autotest13`, `autotest14` and `autotest15`
+     (scenes with unloaded actors).
    - Whole-cell sandboxers as their cell loads: the game has them at
      something to use anywhere in the cell (`test-mod autotest7`); ours start
      where they stood

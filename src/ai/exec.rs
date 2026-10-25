@@ -44,6 +44,13 @@ pub struct ActorExec {
     /// been put at its target (`OnPackageEnd` 2.5 s after the start:
     /// autotest14).
     pub(crate) ends_at: Option<f64>,
+    /// Away: asked to evaluate its packages (`EvaluatePackage`, a scene
+    /// giving it a package) since it was last stepped: a traveller in range
+    /// is put at its target at once rather than late (autotest15).
+    pub(crate) prompted: bool,
+    /// Away: the real time a traveller not put at once is put at its target
+    /// (autotest15: 34 and 39 s after its package started).
+    pub(crate) jump_at: Option<f64>,
     /// Away: how to turn it as it loads where its package put it.
     pub(crate) on_arrival: Option<super::schedule::PlacementHeading>,
     /// Away: the real time (`ScriptState::real_time`) and the game time
@@ -154,6 +161,9 @@ pub struct PackageRun {
     /// Game time it started at, in hours (`Engine::game_hours_total`).
     pub started_at: f64,
     pub outcome: Outcome,
+    /// A scene's package: done, it gives way without `OnPackageChange`
+    /// (autotest15).
+    pub(crate) scene: bool,
     /// Times it has activated an Activate package's target.
     pub(crate) activations: u32,
 }
@@ -198,7 +208,10 @@ impl ActorExec {
             return;
         }
         if let Some(old) = self.run.take() {
-            self.run_events.push(RunEvent::Change(old.id));
+            // A scene's package that ran its course just gives way.
+            if !(old.scene && old.outcome == Outcome::Completed) {
+                self.run_events.push(RunEvent::Change(old.id));
+            }
             if for_scene && old.outcome == Outcome::Running && self.suspended.is_none() {
                 self.suspended = Some(old);
             }
@@ -213,6 +226,7 @@ impl ActorExec {
                 started_at: now,
                 outcome: Outcome::Running,
                 activations: 0,
+                scene: for_scene,
             })
         });
         if let Some(id) = id {
@@ -268,6 +282,8 @@ impl ActorExec {
         self.stage = stage;
         self.settled = matches!(stage, Some(Stage::Standing | Stage::Seated { .. }));
         self.ends_at = None;
+        self.jump_at = None;
+        self.prompted = false;
         self.on_arrival = None;
         self.stamp(now, hours);
         self
@@ -561,6 +577,17 @@ pub(crate) mod tests {
         let run = x.run.unwrap();
         assert_eq!((run.started_at, run.activations), (1.0, 2));
         assert_eq!(x.suspended, None);
+    }
+
+    #[test]
+    fn a_scene_package_that_ran_its_course_gives_way_without_a_change() {
+        let mut x = exec();
+        x.begin_run(Some(0), 3.0, true);
+        x.complete_run(false);
+        x.run_events.clear();
+        // autotest15: OnPackageEnd, then the next one's OnPackageStart.
+        x.begin_run(Some(2), 5.0, false);
+        assert_eq!(x.run_events, [RunEvent::Start(HOME)]);
     }
 
     #[test]

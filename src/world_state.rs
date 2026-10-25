@@ -301,6 +301,7 @@ impl Engine {
             x.stage = None;
             x.settled = false;
             x.ends_at = None;
+            x.jump_at = None;
             x.on_arrival = None;
             (x.place, x.pos, x.heading) = (Some(place), pos, rot.z);
         }
