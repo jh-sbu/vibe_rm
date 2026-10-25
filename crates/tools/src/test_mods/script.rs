@@ -181,6 +181,7 @@ Game
     global None TeachWord(WordOfPower akWord)
     global None UnlockWord(WordOfPower akWord)
     global None AdvanceSkill(String asSkillName, Float afMagnitude)
+    global None FastTravel(ObjectReference akDestination)
 Debug
     global None MessageBox(String asMessageBoxText)
     global None Notification(String asNotificationText)
@@ -191,6 +192,7 @@ Utility
     global Float GetCurrentGameTime()
 Math
     global Int Floor(Float afValue)
+    global Float sqrt(Float afValue)
 ";
 
 /// A class of [`NATIVE_TABLE`].

@@ -423,6 +423,20 @@ pub fn copy(
     script: Option<AttachedScript>,
     patch: impl Fn(&[u8; 4], &mut Vec<u8>),
 ) -> Result<RecordBuilder> {
+    copy_inserting(lo, from, object_id, edid, script, patch, |_| Vec::new())
+}
+
+/// [`copy`], with the subrecords `insert` gives for each tag written
+/// straight after it (a package's conditions after its schedule, `PSDT`).
+pub fn copy_inserting(
+    lo: &LoadOrder,
+    from: &str,
+    object_id: u32,
+    edid: &str,
+    script: Option<AttachedScript>,
+    patch: impl Fn(&[u8; 4], &mut Vec<u8>),
+    insert: impl Fn(&[u8; 4]) -> Vec<([u8; 4], Vec<u8>)>,
+) -> Result<RecordBuilder> {
     let id = lo
         .find_editor_id(from)
         .with_context(|| format!("{from} not found"))?;
@@ -443,6 +457,9 @@ pub fn copy(
             continue;
         }
         out = out.field(&tag, &data);
+        for (t, d) in insert(&tag) {
+            out = out.field(&t, &d);
+        }
     }
     Ok(out)
 }

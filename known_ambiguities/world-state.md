@@ -18,17 +18,16 @@ only: nothing is written to disk until saves exist.
   seconds). Waiting and sleeping also advance that
   healing through `heal_away`: each game hour adds 180 seconds of recovery
   (`HOUR_SECONDS`, currently fixed at `3600 / 20` in `src/sleep.rs`).
+- Health a script takes from an unloaded actor (`DamageActorValue`) is
+  taken at once: brought to nothing, the actor dies while away, with
+  `OnDeath` then (autotest13, `actor-execution.md`). We keep the damage and
+  take it when the actor loads, so it dies only then
+  (`plans/ai-actor-execution.md` step 6).
 - Game-start quest scripts call `MoveTo` on 17 references once it works (MG01
   puts Faralda at the College bridge and the apprentices in the Hall of the
   Elements, the Companions are gathered in Jorrvaskr...).
 
 ## Open questions
-
-- Health and stamina damage scripts do to an unloaded actor
-  (`DamageActorValue`) is kept and taken when it loads, as if done then:
-  brought to nothing it dies (the essential bleed out) as it loads, with
-  no killer. Whether the game kills it while away (`OnDeath` sooner, the
-  body where it was) is unconfirmed.
 
 - Living actors' positions aren't kept when they unload: their schedules (or a
   script move) decide where they are next.

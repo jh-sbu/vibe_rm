@@ -66,7 +66,16 @@ for them.
 
 ### 1. Research note and test mod design
 
-- Write `refs/ai-processing/notes.md` (force-added). It should cover what
+**Status (2026-10-25):** done. The research (the Sources section of
+`known_ambiguities/actor-execution.md`) and `test-mod autotest13` are
+built, and autotest13 has run once. Its readings are in its module doc and in `known_ambiguities/actor-execution.md`,
+which now lists what the run settled and what it left open. Next: a second
+test mod for where a frozen walker is when its cell loads, save / reload,
+fast travel to a map marker, waiting and sleeping. Steps 5 and 6 below
+follow the readings.
+
+- Write up the public sources (now the Sources section of
+  `known_ambiguities/actor-execution.md`). It should cover what
   CommonLibSSE names: the process types, `HighProcessData` /
   `MiddleHighProcessData` members, `ProcessLists` queues, and any INI settings
   or game settings about processing that the headers or xEdit's GMST lists
@@ -146,11 +155,12 @@ for them.
 - An away stepper runs every frame on a time budget, the way
   `refresh_whereabouts_step` already spreads its work. For each actor it
   evaluates packages on the package cadence and advances the procedure:
-  - Travel moves toward its target at walk or run speed, in a straight line
-    within one space (as autotest6/7 observed). Until a cell graph exists,
-    other spaces are reached through the load door chain
-    (`door_towards` / `door_place` generalised to unloaded cells by reading the
-    `DOOR` refs' `XTEL` from the load order).
+  - Travel depends on where the actor is (autotest13). In a buffered cell
+    (the exterior or interior the player just left) it moves toward its
+    target at about loaded speed. Elsewhere it stays put while the target is
+    in its own space, and is moved straight onto a target in another space
+    (with `OnLocationChange`, `OnPackageEnd` 2.6 s later). Where a frozen
+    actor ends up when its cell loads is still open.
   - Sandbox and Sit stay where they are, and pick furniture when the actor
     attaches.
   - Follow and Escort track their target's away position.
@@ -180,10 +190,10 @@ for them.
   respawning as the fallback for loaded actors whose run can't be advanced.
   `heal_away` moves into this step.
 - Continuity rules for wounds, regeneration, bleedout (essential actors
-  brought down while away) and timed effects on away actors. Active effects
-  are already saved; this step decides whether they tick while the actor is
-  away (see `world-state.md`'s open question about `DamageActorValue` on
-  unloaded actors).
+  brought down while away) and timed effects on away actors. autotest13:
+  damage to an away actor is taken at once, and one brought to nothing dies
+  then, with `OnDeath` (we now wait until it loads). Timed effects are gone
+  within seconds of unloading, and abilities are applied again on load.
 
 ### 7. Scenes with away actors
 
