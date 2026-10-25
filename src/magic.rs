@@ -956,8 +956,8 @@ impl Engine {
         }
         let first = self.actor_ref(target).filter(|a| !a.dead).map(|a| {
             (
-                a.combat.as_ref().is_none_or(|c| c.target != caster),
-                a.combat.is_none(),
+                a.exec.combat.as_ref().is_none_or(|c| c.target != caster),
+                a.exec.combat.is_none(),
                 a.stats.factions.clone(),
             )
         });
@@ -1710,7 +1710,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.ref_id != wearer && a.pos.distance(at) <= reach)
+            .filter(|a| !a.dead && a.ref_id != wearer && a.exec.pos.distance(at) <= reach)
             .map(|a| a.ref_id)
             .collect();
         if wearer != PLAYER_REF && !self.player_dead() && self.player.position.distance(at) <= reach

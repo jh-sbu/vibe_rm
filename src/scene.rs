@@ -1569,7 +1569,7 @@ impl Engine {
             .collect();
         for (r, b) in actors {
             let dead = self.is_dead(r);
-            let fighting = self.actor_ref(r).is_some_and(|a| a.combat.is_some());
+            let fighting = self.actor_ref(r).is_some_and(|a| a.exec.combat.is_some());
             let talks = talking == Some(r);
             if (dead && b & actor_flags::DEATH_END != 0)
                 || (fighting && b & actor_flags::COMBAT_END != 0)
@@ -1891,13 +1891,16 @@ impl Engine {
             return false;
         };
         let Some(p) = a
+            .exec
             .current
-            .and_then(|c| a.packages.get(c))
+            .and_then(|c| a.exec.packages.get(c))
             .filter(|p| packages.contains(&p.id))
         else {
             return false;
         };
-        let Some(goal) = a.goal else { return false };
+        let Some(goal) = a.exec.goal else {
+            return false;
+        };
         match p.behaviour {
             Behaviour::Travel | Behaviour::Escort => {
                 // Arrived: in the place the package names (not on the way out of
@@ -1917,7 +1920,8 @@ impl Engine {
                 a.exiting.is_none()
                     && in_place
                     && !a.is_walking()
-                    && a.pos.truncate().distance(centre.truncate()) <= goal.radius + ARRIVED_SLACK
+                    && a.exec.pos.truncate().distance(centre.truncate())
+                        <= goal.radius + ARRIVED_SLACK
             }
             Behaviour::Sit | Behaviour::Sleep => a.in_furniture(),
             Behaviour::ForceGreet => greeted && talking != Some(r),

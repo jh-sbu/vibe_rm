@@ -307,8 +307,8 @@ impl Engine {
             .flat_map(|rt| &rt.actors)
             .filter(|a| {
                 !a.dead
-                    && a.bleeding.is_none()
-                    && a.pos.distance(self.player.position) < ENGAGE_DISTANCE
+                    && a.exec.bleeding.is_none()
+                    && a.exec.pos.distance(self.player.position) < ENGAGE_DISTANCE
             })
             .map(|a| a.ref_id)
             .collect();
@@ -537,14 +537,14 @@ mod tests {
         e.hour = 23.9;
         let wall = e.scripts.wall_time;
         let real = e.scripts.real_time;
-        e.world_state.wounds.insert(
+        e.away.insert(
             FormId(0x999),
-            crate::world_state::Wounds {
+            crate::ai::exec::ActorExec::wounded(crate::world_state::Wounds {
                 health: 10.0,
                 max: 100.0,
                 rate: 0.01,
                 at: real,
-            },
+            }),
         );
         let expected = super::travel_time(6000.0f32.hypot(7000.0), 1.0, 20.0).unwrap();
         e.travel_to_map_marker(FormId(0x930)).unwrap();
@@ -552,7 +552,7 @@ mod tests {
         assert!((e.hour - (23.9 + expected.0 - 24.0)).abs() < 0.001);
         assert_eq!(e.scripts.wall_time, wall);
         assert_eq!(e.scripts.real_time, real);
-        assert!(e.world_state.wounds[&FormId(0x999)].health_at(real) > 99.0);
+        assert!(e.away[&FormId(0x999)].wounds.unwrap().health_at(real) > 99.0);
         assert_eq!(e.scripts.stats.get("Hours Waiting"), None);
         assert_eq!(e.scripts.stats.get("Hours Slept"), None);
         e.player.grounded = true;
@@ -650,7 +650,7 @@ mod tests {
             goal.target = Some(PLAYER_REF);
             // Pin through the production pursuit hook; no PACK assets exist.
             a.pursue(PLAYER_REF, &mut e.furniture);
-            a.goal = Some(goal);
+            a.exec.goal = Some(goal);
             a.dead = id == 0x952;
             e.cells.entry(key).or_default().actors.push(a);
             e.actor_cells.insert(r, key);

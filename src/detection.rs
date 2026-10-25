@@ -324,13 +324,13 @@ impl Engine {
 
     fn observer(&self, r: FormId) -> Option<Observer> {
         let a = self.actor_ref(r)?;
-        if a.dead || a.bleeding.is_some() || self.is_disabled(r) {
+        if a.dead || a.exec.bleeding.is_some() || self.is_disabled(r) {
             return None;
         }
         Some(Observer {
             id: r,
-            eye: a.pos + Vec3::Z * EYE_HEIGHT * a.scale,
-            heading: a.heading,
+            eye: a.exec.pos + Vec3::Z * EYE_HEIGHT * a.scale,
+            heading: a.exec.heading,
             sneak: self.actor_value(r, av::SNEAK),
             // In bed, eyes shut.
             sleeping: self.sit_sleep_state(r, true) == 3.0,
@@ -359,7 +359,7 @@ impl Engine {
         let moving = a.speed() > 1.0 && !a.dead;
         Some(Target {
             id: r,
-            at: a.pos + Vec3::Z * EYE_HEIGHT * a.scale,
+            at: a.exec.pos + Vec3::Z * EYE_HEIGHT * a.scale,
             sneaking: a.is_sneaking(),
             moving,
             running: moving
@@ -448,7 +448,7 @@ impl Engine {
             return Some(self.player.eye());
         }
         if let Some(a) = self.actor_ref(r) {
-            return Some(a.pos + Vec3::Z * EYE_HEIGHT * a.scale);
+            return Some(a.exec.pos + Vec3::Z * EYE_HEIGHT * a.scale);
         }
         self.ref_position(r)
     }
@@ -509,7 +509,7 @@ impl Engine {
             self.player.position
         } else {
             match self.actor_ref(r) {
-                Some(a) => a.pos + Vec3::Z * EYE_HEIGHT * 0.6 * a.scale,
+                Some(a) => a.exec.pos + Vec3::Z * EYE_HEIGHT * 0.6 * a.scale,
                 None => return 0.0,
             }
         };
@@ -732,7 +732,8 @@ impl Engine {
     fn fought(&self, r: FormId) -> bool {
         self.cells.values().flat_map(|rt| &rt.actors).any(|a| {
             !a.dead
-                && a.combat
+                && a.exec
+                    .combat
                     .as_ref()
                     .is_some_and(|c| c.target == r && !c.fleeing)
         })
@@ -757,7 +758,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.bleeding.is_none())
+            .filter(|a| !a.dead && a.exec.bleeding.is_none())
             .map(|a| a.ref_id)
             .collect();
         // Who would attack whom, and by how much they detect them.
@@ -804,12 +805,15 @@ impl Engine {
             if t == PLAYER_REF {
                 Some(e.player.position)
             } else {
-                e.actor_ref(t).filter(|a| !a.dead).map(|a| a.pos)
+                e.actor_ref(t).filter(|a| !a.dead).map(|a| a.exec.pos)
             }
         };
         for &r in &actors {
             let Some(a) = self.actor_ref(r) else { continue };
-            let (combat, search) = (a.combat.as_ref().map(|c| (c.target, c.fleeing)), a.search);
+            let (combat, search) = (
+                a.exec.combat.as_ref().map(|c| (c.target, c.fleeing)),
+                a.exec.search,
+            );
             if let Some((t, fleeing)) = combat {
                 // Fighting: keep track of the target; lose it once undetected long
                 // enough. (Fleeing actors leave by the threat instead.)
@@ -822,7 +826,7 @@ impl Engine {
                     self.detection_value(r, t)
                 };
                 let seen_at = v.filter(|&v| v > 0.0).and_then(|_| position(self, t));
-                let Some(c) = self.actor_mut(r).and_then(|a| a.combat.as_mut()) else {
+                let Some(c) = self.actor_mut(r).and_then(|a| a.exec.combat.as_mut()) else {
                     continue;
                 };
                 if seen_at.is_some() {
@@ -860,7 +864,7 @@ impl Engine {
                 }
                 sr.dwell -= step;
                 sr.idle_line -= step;
-                let here = self.actor_ref(r).map_or(sr.at, |a| a.pos);
+                let here = self.actor_ref(r).map_or(sr.at, |a| a.exec.pos);
                 let mut go = None;
                 if sr.dwell <= 0.0 {
                     let near = here.distance(sr.at) < SEARCH_RADIUS;
@@ -880,7 +884,7 @@ impl Engine {
                     sr.idle_line = self.detection_idle_wait();
                 }
                 if let Some(a) = self.actor_mut(r) {
-                    a.search = Some(sr);
+                    a.exec.search = Some(sr);
                 }
                 if let Some(to) = go {
                     self.search_towards(r, to);
@@ -918,7 +922,7 @@ impl Engine {
     pub(crate) fn start_search(&mut self, r: FormId, target: FormId, at: Vec3, lost: bool) {
         let idle_line = self.detection_idle_wait();
         let Some(a) = self.actor_mut(r) else { return };
-        a.search = Some(Search {
+        a.exec.search = Some(Search {
             target,
             at,
             lost,
@@ -950,7 +954,7 @@ impl Engine {
     /// fighting and searches where it last saw it, if the target is still
     /// about.
     pub(crate) fn lose_target(&mut self, r: FormId) {
-        let Some(c) = self.actor_ref(r).and_then(|a| a.combat.as_ref()) else {
+        let Some(c) = self.actor_ref(r).and_then(|a| a.exec.combat.as_ref()) else {
             return;
         };
         let (target, last) = (c.target, c.last_seen);
@@ -960,7 +964,7 @@ impl Engine {
             if target == PLAYER_REF {
                 Some(self.player.position)
             } else {
-                self.actor_ref(target).map(|t| t.pos)
+                self.actor_ref(target).map(|t| t.exec.pos)
             }
         });
         match at.filter(|_| about && self.ai_enabled) {
@@ -974,7 +978,7 @@ impl Engine {
 
     /// Papyrus `StopCombat`: a searcher gives up without a word.
     pub fn stop_searching(&mut self, r: FormId) {
-        if self.actor_ref(r).is_some_and(|a| a.search.is_some()) {
+        if self.actor_ref(r).is_some_and(|a| a.exec.search.is_some()) {
             self.calm_down(r, None);
         }
     }
@@ -982,7 +986,7 @@ impl Engine {
     /// A searcher gives up: weapons away, back to its packages.
     fn calm_down(&mut self, r: FormId, topic: Option<&[u8; 4]>) {
         let Some(a) = self.actor_mut(r) else { return };
-        let target = a.search.map(|s| s.target);
+        let target = a.exec.search.map(|s| s.target);
         a.end_search();
         log::info!("{r} stops searching for {target:?}");
         self.draw_weapon(r, false);

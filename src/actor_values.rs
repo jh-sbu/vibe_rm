@@ -308,9 +308,9 @@ impl Engine {
                 av::HEALTH => {
                     if let Some(a) = self
                         .actor_mut(actor)
-                        .filter(|a| !a.dead && a.bleeding.is_none())
+                        .filter(|a| !a.dead && a.exec.bleeding.is_none())
                     {
-                        a.health = value.max(0.0);
+                        a.exec.health = value.max(0.0);
                         if value <= 0.0 {
                             self.kill(actor, false, None);
                         }
@@ -386,8 +386,8 @@ impl Engine {
             }
         } else if let Some(a) = self.actor_mut(actor) {
             match index {
-                av::HEALTH => a.health = (a.health + delta).clamp(1.0, s.max_health),
-                av::STAMINA => a.stamina = (a.stamina + delta).clamp(0.0, s.max_stamina),
+                av::HEALTH => a.exec.health = (a.exec.health + delta).clamp(1.0, s.max_health),
+                av::STAMINA => a.exec.stamina = (a.exec.stamina + delta).clamp(0.0, s.max_stamina),
                 _ => {}
             }
             a.stats = s;

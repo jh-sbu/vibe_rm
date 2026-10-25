@@ -528,7 +528,7 @@ impl Snapshot {
             open_doors: ws.open_doors.clone(),
             actor_open_doors: ws.actor_open_doors.clone(),
             body_poses: ws.body_poses.clone(),
-            wounds: ws.wounds.clone(),
+            wounds: e.away_wounds(),
             moved: ws.moved.clone(),
             item_charges: ws.item_charges.clone(),
             broken_joints: ws.broken_joints.clone(),
@@ -2208,6 +2208,7 @@ impl Snapshot {
         e.map_markers.denied = self.map_denied;
         e.restore_rolled_spells(self.rolled_spells);
         e.magic.ward_states = self.ward_states;
+        e.restore_away_wounds(self.wounds);
         let ws = &mut e.world_state;
         ws.alerted = self.alerted;
         ws.dead = self.dead;
@@ -2215,7 +2216,6 @@ impl Snapshot {
         ws.open_doors = self.open_doors;
         ws.actor_open_doors = self.actor_open_doors;
         ws.body_poses = self.body_poses;
-        ws.wounds = self.wounds;
         ws.moved = self.moved;
         ws.item_charges = self.item_charges;
         ws.broken_joints = self.broken_joints;

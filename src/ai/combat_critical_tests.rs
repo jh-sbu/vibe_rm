@@ -132,7 +132,7 @@ fn fixture() -> (Fixture, Engine) {
         Vec::new(),
         0.0,
     );
-    actor.health = 1000.0;
+    actor.exec.health = 1000.0;
     e.actor_cells.insert(ACTOR, key);
     e.cells
         .entry(key)

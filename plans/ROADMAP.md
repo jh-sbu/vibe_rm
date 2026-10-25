@@ -1681,6 +1681,9 @@ game each piece unlocks.
      and scene progress while actors are away; attach / remove animation and
      physics without restarting the actor's execution. This is the foundation
      for the package-tree, off-screen travel, unloaded actor-value and save work.
+     Plan: `plans/ai-actor-execution.md` (steps 1 and 2 done: the execution is
+     `ai::exec::ActorExec`, kept in `Engine::away` while unloaded; only wounds
+     carry back to a loading actor yet).
    - Processing policies: detailed updates nearby and coarse advancement away,
      with travel progress through cells and load doors, separate game / real-time
      timestamps and elapsed-time handling for waiting, sleeping and fast travel.

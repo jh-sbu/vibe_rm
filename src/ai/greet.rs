@@ -35,32 +35,33 @@ impl Engine {
         let mut ready: Vec<(FormId, ForceGreet)> = Vec::new();
         for a in self.cells.values_mut().flat_map(|rt| rt.actors.iter_mut()) {
             let Some(g) = a
+                .exec
                 .current
-                .and_then(|i| a.packages.get(i))
+                .and_then(|i| a.exec.packages.get(i))
                 .and_then(|p| p.greet)
             else {
-                a.greeting = false;
+                a.exec.greeting = false;
                 continue;
             };
             // The wait starts once the conversation is over.
             if talking == Some(a.ref_id) {
                 continue;
             }
-            a.greet_wait = (a.greet_wait - dt).max(0.0);
-            a.greet_check -= dt;
+            a.exec.greet_wait = (a.exec.greet_wait - dt).max(0.0);
+            a.exec.greet_check -= dt;
             let close =
-                g.seated || a.pos.truncate().distance(player.truncate()) <= g.distance + SLACK;
-            if a.greeting && close {
+                g.seated || a.exec.pos.truncate().distance(player.truncate()) <= g.distance + SLACK;
+            if a.exec.greeting && close {
                 ready.push((a.ref_id, g));
-            } else if a.greet_check <= 0.0 {
-                a.greet_check = CHECK_INTERVAL;
+            } else if a.exec.greet_check <= 0.0 {
+                a.exec.greet_check = CHECK_INTERVAL;
                 checks.push((a.ref_id, g));
             }
         }
         for (r, g) in checks {
             let due = self.force_greet_due(r, &g).is_some();
             if let Some(a) = self.actor_mut(r)
-                && a.greeting != due
+                && a.exec.greeting != due
             {
                 log::debug!(
                     "{r} {} the player",
@@ -70,9 +71,9 @@ impl Engine {
                         "stops going to greet"
                     }
                 );
-                a.greeting = due;
+                a.exec.greeting = due;
                 // Choose the goal for it now.
-                a.next_eval = 0.0;
+                a.exec.next_eval = 0.0;
             }
         }
         for (r, g) in ready {
@@ -81,8 +82,8 @@ impl Engine {
             }
             let Some(greeting) = self.force_greet_due(r, &g) else {
                 if let Some(a) = self.actor_mut(r) {
-                    a.greeting = false;
-                    a.next_eval = 0.0;
+                    a.exec.greeting = false;
+                    a.exec.next_eval = 0.0;
                 }
                 continue;
             };
@@ -92,9 +93,9 @@ impl Engine {
                 greeting.1.id
             );
             if let Some(a) = self.actor_mut(r) {
-                a.greeting = false;
-                a.greet_wait = COOLDOWN;
-                a.next_eval = 0.0;
+                a.exec.greeting = false;
+                a.exec.greet_wait = COOLDOWN;
+                a.exec.next_eval = 0.0;
             }
             if self.scenes.packages.contains_key(&r) {
                 self.scenes.force_greeted.insert(r);
@@ -115,17 +116,18 @@ impl Engine {
         }
         let a = self.actor_ref(r)?;
         if a.dead
-            || a.bleeding.is_some()
-            || a.combat.is_some()
-            || a.search.is_some()
+            || a.exec.bleeding.is_some()
+            || a.exec.combat.is_some()
+            || a.exec.search.is_some()
             || a.exiting.is_some()
-            || a.greet_wait > 0.0
+            || a.exec.greet_wait > 0.0
         {
             return None;
         }
         let quest = a
+            .exec
             .current
-            .and_then(|i| a.packages.get(i))
+            .and_then(|i| a.exec.packages.get(i))
             .and_then(|p| p.quest);
         let (centre, radius) = self.location_target(a, g.trigger.unwrap_or(DEFAULT_TRIGGER), quest);
         let player = self.player_feet();

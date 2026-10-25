@@ -173,8 +173,8 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.bleeding.is_none() && a.combat.is_none())
-            .filter(|a| a.pos.distance(player) < ENGAGE_DISTANCE)
+            .filter(|a| !a.dead && a.exec.bleeding.is_none() && a.exec.combat.is_none())
+            .filter(|a| a.exec.pos.distance(player) < ENGAGE_DISTANCE)
             .map(|a| a.ref_id)
             .collect();
         let mut found = false;

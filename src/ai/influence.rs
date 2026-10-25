@@ -61,7 +61,10 @@ impl Engine {
         }
         match archetype {
             archetype::CALM => {
-                if self.actor_ref(actor).is_some_and(|a| a.combat.is_some()) {
+                if self
+                    .actor_ref(actor)
+                    .is_some_and(|a| a.exec.combat.is_some())
+                {
                     log::info!("{actor} is calmed");
                     self.end_combat(actor);
                 }
@@ -90,24 +93,24 @@ impl Engine {
 
     /// Its confidence changed: whether to flee is looked at again now.
     fn recheck_flee(&mut self, actor: FormId) {
-        if let Some(c) = self.actor_mut(actor).and_then(|a| a.combat.as_mut()) {
+        if let Some(c) = self.actor_mut(actor).and_then(|a| a.exec.combat.as_mut()) {
             c.recheck = true;
         }
     }
 
     /// The nearest living actor (or the player) a frenzied actor finds.
     fn frenzy_target(&self, actor: FormId) -> Option<FormId> {
-        let pos = self.actor_ref(actor)?.pos;
+        let pos = self.actor_ref(actor)?.exec.pos;
         let mut best: Option<(f32, FormId)> = None;
         let d = pos.distance(self.player.position);
         if d < ENGAGE_DISTANCE && !self.player_dead() && self.finds_player(actor) {
             best = Some((d, PLAYER_REF));
         }
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
-            let d = pos.distance(a.pos);
+            let d = pos.distance(a.exec.pos);
             if a.ref_id == actor
                 || a.dead
-                || a.bleeding.is_some()
+                || a.exec.bleeding.is_some()
                 || d > ENGAGE_DISTANCE
                 || best.is_some_and(|b| b.0 <= d)
             {
@@ -125,7 +128,7 @@ impl Engine {
     fn frenzy_over(&mut self, actor: FormId) {
         let Some(me) = self
             .actor_ref(actor)
-            .map(|a| (a.stats.clone(), a.combat.as_ref().map(|c| c.target)))
+            .map(|a| (a.stats.clone(), a.exec.combat.as_ref().map(|c| c.target)))
         else {
             return;
         };
@@ -151,7 +154,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.combat.as_ref().is_some_and(|c| c.target == actor))
+            .filter(|a| !a.dead && a.exec.combat.as_ref().is_some_and(|c| c.target == actor))
             .map(|a| (a.ref_id, a.stats.clone()))
             .collect();
         let mine = stats.factions.clone();

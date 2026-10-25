@@ -482,10 +482,10 @@ impl Engine {
             .map(|a| {
                 (
                     a.ref_id,
-                    a.pos,
+                    a.exec.pos,
                     a.dead,
-                    a.combat.is_none()
-                        && a.bleeding.is_none()
+                    a.exec.combat.is_none()
+                        && a.exec.bleeding.is_none()
                         && a.graph.as_ref().is_some_and(|g| g.project().humanoid()),
                 )
             })
@@ -560,11 +560,14 @@ impl Engine {
             .values()
             .flat_map(|rt| &rt.actors)
             .filter(|a| {
-                !a.dead && a.combat.is_none() && a.bleeding.is_none() && a.exiting.is_none()
+                !a.dead
+                    && a.exec.combat.is_none()
+                    && a.exec.bleeding.is_none()
+                    && a.exiting.is_none()
             })
             .filter(|a| a.graph.as_ref().is_some_and(|g| g.project().humanoid()))
             .filter(|a| talking != Some(a.ref_id))
-            .map(|a| (a.ref_id, a.pos))
+            .map(|a| (a.ref_id, a.exec.pos))
             .collect();
         let mut due = Vec::new();
         for &(r, _) in &free {

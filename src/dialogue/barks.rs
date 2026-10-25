@@ -102,7 +102,7 @@ impl Engine {
             .flat_map(|rt| rt.actors.iter())
             .filter(|a| !a.dead)
             .filter(|a| a.graph.as_ref().is_some_and(|g| g.project().humanoid()))
-            .map(|a| (a.pos.distance(player), a.ref_id))
+            .map(|a| (a.exec.pos.distance(player), a.ref_id))
             .filter(|(d, _)| *d < CHATTER_DISTANCE)
             .collect();
         near.sort_by(|a, b| a.0.total_cmp(&b.0));

@@ -266,7 +266,7 @@ impl Engine {
         }
         self.despawn_actor(r);
         self.world_state.moved.remove(&r);
-        self.world_state.wounds.remove(&r);
+        self.away.remove(&r);
         self.whereabouts.remove_actor(r);
     }
 

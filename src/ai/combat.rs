@@ -857,7 +857,7 @@ impl ActorRuntime {
     /// Its combat state and target: fighting, or searching for the target
     /// it lost (an alert actor that hasn't found anyone yet isn't in combat).
     pub(crate) fn combat_state(&self) -> (CombatState, Option<FormId>) {
-        match (&self.combat, &self.search) {
+        match (&self.exec.combat, &self.exec.search) {
             (Some(c), _) => (CombatState::Fighting, Some(c.target)),
             (None, Some(s)) if s.lost => (CombatState::Searching, Some(s.target)),
             _ => (CombatState::None, None),
@@ -927,6 +927,7 @@ impl ActorRuntime {
     /// three separate power attacks"); never twice within `STRIKE_GAP`.
     pub(crate) fn strike(&mut self, frames: u8) -> Vec<Swing> {
         let attack = self
+            .exec
             .combat
             .as_ref()
             .and_then(|c| c.attack)
@@ -936,9 +937,9 @@ impl ActorRuntime {
         let power = attack
             .as_ref()
             .is_some_and(|a| a.power() && a.flags & ATK_BASH == 0);
-        let (pos, heading) = (self.feet(), self.heading);
+        let (pos, heading) = (self.feet(), self.exec.heading);
         let chest = pos.z + self.height() * 0.75;
-        let Some(c) = self.combat.as_mut().filter(|c| !c.struck) else {
+        let Some(c) = self.exec.combat.as_mut().filter(|c| !c.struck) else {
             return Vec::new();
         };
         let hands: Vec<usize> = side
@@ -995,12 +996,12 @@ impl ActorRuntime {
     /// Use up stamina; it doesn't come back for a moment (`update_stamina`).
     pub(crate) fn spend_stamina(&mut self, amount: f32) {
         if amount > 0.0 {
-            self.stamina = (self.stamina - amount).max(0.0);
+            self.exec.stamina = (self.exec.stamina - amount).max(0.0);
             self.stamina_spent = true;
             log::debug!(
                 "{} spends {amount:.0} stamina ({:.0} left)",
                 self.ref_id,
-                self.stamina
+                self.exec.stamina
             );
         }
     }
@@ -1014,7 +1015,7 @@ impl ActorRuntime {
             .attacks
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.flags & ATK_BASH != 0 && cost(a) <= self.stamina)
+            .filter(|(_, a)| a.flags & ATK_BASH != 0 && cost(a) <= self.exec.stamina)
             .map(|(i, a)| (i, a.chance.max(0.05)))
             .collect();
         let kind: Vec<(usize, f32)> = affordable
@@ -1025,7 +1026,7 @@ impl ActorRuntime {
         let pool = if kind.is_empty() { &affordable } else { &kind };
         let pick = pick_weighted(pool, w)?;
         let cost = cost(&self.stats.attacks[pick]);
-        let c = self.combat.as_mut()?;
+        let c = self.exec.combat.as_mut()?;
         c.attack = Some(pick);
         c.struck = false;
         c.strikes = 0;
@@ -1040,8 +1041,8 @@ impl ActorRuntime {
     /// where it can't be reached (up on a rock, off the navmesh), as near as the
     /// navmesh goes. Only an actor off the navmesh itself heads straight for it.
     pub(crate) fn chase(&mut self, dt: f32, w: &mut World, target: Vec3, run: f32) {
-        let pos = self.pos;
-        let Some(c) = self.combat.as_mut() else {
+        let pos = self.exec.pos;
+        let Some(c) = self.exec.combat.as_mut() else {
             return;
         };
         // Out of reach where it was: searching again won't help until it moves.
@@ -1077,7 +1078,7 @@ impl ActorRuntime {
             budget: 1.0,
             to_seat: false,
         };
-        let fwd = Vec3::new(self.heading.sin(), self.heading.cos(), 0.0);
+        let fwd = Vec3::new(self.exec.heading.sin(), self.exec.heading.cos(), 0.0);
         let mut p = pos + fwd * (speed * dt).min(d.length().max(1.0));
         // Off the navmesh, keep level rather than heading for the target's height.
         let nz = w.nav.height_at(Vec3::new(p.x, p.y, pos.z));
@@ -1086,12 +1087,12 @@ impl ActorRuntime {
             "{} chases: at {pos:?} target {target:?} way {way:?} nav z {nz:?}",
             self.ref_id
         );
-        self.pos = p;
+        self.exec.pos = p;
     }
 
     /// Raise its guard for `secs` (the AI step has the graph raise it), or lower it.
     pub(crate) fn set_guard(&mut self, secs: f32) {
-        let Some(c) = self.combat.as_mut() else {
+        let Some(c) = self.exec.combat.as_mut() else {
             return;
         };
         c.guard = secs.max(0.0);
@@ -1106,7 +1107,8 @@ impl ActorRuntime {
 
     /// Its guard is up (raised by the graph): blows from ahead are blocked.
     pub fn guarding(&self) -> bool {
-        self.combat
+        self.exec
+            .combat
             .as_ref()
             .is_some_and(|c| c.guard > 0.0 && c.guard_shown)
     }
@@ -1117,9 +1119,9 @@ impl ActorRuntime {
     /// (`threat`). False when cornered with the threat close: it fights.
     fn flee_step(&mut self, dt: f32, w: &mut World, threat: Vec3) -> bool {
         let reach = self.reach();
-        let pos = self.pos;
+        let pos = self.exec.pos;
         let run = self.run_speed();
-        let Some(c) = self.combat.as_mut() else {
+        let Some(c) = self.exec.combat.as_mut() else {
             return true;
         };
         c.repath -= dt;
@@ -1163,6 +1165,7 @@ impl ActorRuntime {
     pub(crate) fn combat_step(&mut self, dt: f32, w: &mut World, target: Vec3) -> Option<String> {
         // A swing under way is finished first.
         if self
+            .exec
             .combat
             .as_ref()
             .is_some_and(|c| c.fleeing && !c.swinging())
@@ -1172,7 +1175,7 @@ impl ActorRuntime {
         }
         let reach = self.reach();
         let run = self.run_speed();
-        let pos = self.pos;
+        let pos = self.exec.pos;
         // Those its hands can make (with none, as it did before it had
         // hands: the right hand's weapon attacks).
         let swings = |fit: &dyn Fn(&Attack) -> bool| -> Vec<(usize, f32)> {
@@ -1198,7 +1201,7 @@ impl ActorRuntime {
             self.drawn = g.send_event("WeapEquip");
         }
         let unready = humanoid && !self.weapon_out && self.weapon_reach > 0.0;
-        let c = self.combat.as_mut()?;
+        let c = self.exec.combat.as_mut()?;
         c.cooldown -= dt;
         c.repath -= dt;
         for t in &mut c.strike_age {
@@ -1235,7 +1238,7 @@ impl ActorRuntime {
                     return Some(ev);
                 }
                 // Short of stamina: keep the guard up.
-                if let Some(c) = self.combat.as_mut() {
+                if let Some(c) = self.exec.combat.as_mut() {
                     c.guard = 0.5;
                     c.guard_shown = true;
                 }
@@ -1243,12 +1246,12 @@ impl ActorRuntime {
                     g.set_variable("IsBlocking", 1.0);
                 }
             }
-            let c = self.combat.as_mut()?;
+            let c = self.exec.combat.as_mut()?;
             // Guard up: stand facing the target (the engine lowers it). Ask the
             // graph until it takes it.
             if !c.guard_shown {
                 let shown = self.graph_event("blockStart", &mut w.clips);
-                if let Some(c) = self.combat.as_mut() {
+                if let Some(c) = self.exec.combat.as_mut() {
                     c.guard_shown = shown;
                 }
                 if shown && let Some(g) = self.graph.as_mut() {
@@ -1262,7 +1265,7 @@ impl ActorRuntime {
         }
         // A restorative self spell can interrupt an archer's next shot too.
         if let Some(spell) = self.combat_spell.filter(|s| s.self_target) {
-            if let Some(c) = self.combat.as_mut()
+            if let Some(c) = self.exec.combat.as_mut()
                 && c.draw != super::archery::Draw::Idle
             {
                 // Lower an interrupted bow before casting. Returning to it
@@ -1284,7 +1287,7 @@ impl ActorRuntime {
             self.chase(dt, w, target, run);
             return None;
         }
-        let c = self.combat.as_mut()?;
+        let c = self.exec.combat.as_mut()?;
         // In reach: stand, face and strike.
         self.speed = 0.0;
         self.state = State::Idle(1.0);
@@ -1329,12 +1332,14 @@ impl ActorRuntime {
         let kind: Vec<(usize, f32)> = attacks
             .iter()
             .copied()
-            .filter(|&(i, _)| is_power(i) == want_power && (!want_power || cost(i) <= self.stamina))
+            .filter(|&(i, _)| {
+                is_power(i) == want_power && (!want_power || cost(i) <= self.exec.stamina)
+            })
             .collect();
         let attacks: Vec<(usize, f32)> = attacks
             .iter()
             .copied()
-            .filter(|&(i, _)| !is_power(i) || cost(i) <= self.stamina)
+            .filter(|&(i, _)| !is_power(i) || cost(i) <= self.exec.stamina)
             .collect();
         if attacks.is_empty() {
             return None;
@@ -1343,7 +1348,7 @@ impl ActorRuntime {
         let pick = pick_weighted(pool, w)?;
         let power = is_power(pick);
         let cost = if power { cost(pick) } else { 0.0 };
-        let c = self.combat.as_mut()?;
+        let c = self.exec.combat.as_mut()?;
         c.attack = Some(pick);
         c.cost = cost;
         c.struck = false;
@@ -1549,12 +1554,12 @@ impl Engine {
         else {
             return false;
         };
-        if a.dead || a.combat.as_ref().is_some_and(|c| c.target == target) {
+        if a.dead || a.exec.combat.as_ref().is_some_and(|c| c.target == target) {
             return false;
         }
         // Searching for it (alert, or having lost it) or not: the detection
         // topic for the change.
-        let topic = match a.search.as_ref() {
+        let topic = match a.exec.search.as_ref() {
             Some(s) if s.lost => b"LOTC",
             Some(_) => b"ALTC",
             None => b"NOTC",
@@ -1562,7 +1567,7 @@ impl Engine {
         a.end_search();
         a.interrupt(&mut self.furniture);
         a.turn_after_arrival = None;
-        a.combat = Some(super::threat::new_combat(&self.lo, target, &a.stats, rolls));
+        a.exec.combat = Some(super::threat::new_combat(&self.lo, target, &a.stats, rolls));
         a.strength_in = 0.0;
         self.combat_group_strengths.remove(actor);
         let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());
@@ -1602,14 +1607,14 @@ impl Engine {
         else {
             return;
         };
-        if a.combat.is_none() {
+        if a.exec.combat.is_none() {
             return;
         }
         a.set_guard(0.0);
-        a.combat = None;
+        a.exec.combat = None;
         self.combat_group_strengths.remove(actor);
         a.halt(2.0);
-        a.next_eval = 0.0;
+        a.exec.next_eval = 0.0;
         let humanoid = a.graph.as_ref().is_some_and(|g| g.project().humanoid());
         if keep_weapon {
         } else if humanoid {
@@ -1636,19 +1641,20 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.bleeding.is_none())
-            .map(|a| (a.ref_id, a.pos, a.stats.factions.clone()))
+            .filter(|a| !a.dead && a.exec.bleeding.is_none())
+            .map(|a| (a.ref_id, a.exec.pos, a.stats.factions.clone()))
             .collect();
         // Fights going on: who, where, and against whom. The player fights whoever
         // fights them.
         let mut fights: Vec<(FormId, Vec3, FormId)> = Vec::new();
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
             if let Some(c) = a
+                .exec
                 .combat
                 .as_ref()
-                .filter(|c| !c.fleeing && !a.dead && a.bleeding.is_none())
+                .filter(|c| !c.fleeing && !a.dead && a.exec.bleeding.is_none())
             {
-                fights.push((a.ref_id, a.pos, c.target));
+                fights.push((a.ref_id, a.exec.pos, c.target));
                 if c.target == PLAYER_REF {
                     fights.push((PLAYER_REF, player, a.ref_id));
                 }
@@ -1660,8 +1666,8 @@ impl Engine {
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut().filter(|a| {
                 !a.dead
-                    && a.bleeding.is_none()
-                    && a.combat.is_none()
+                    && a.exec.bleeding.is_none()
+                    && a.exec.combat.is_none()
                     && !calmed.contains(&a.ref_id)
                     && !self.magic.commanded.contains_key(&a.ref_id)
                     && (a.stats.aggression > 0
@@ -1671,7 +1677,7 @@ impl Engine {
                 a.detect_in -= dt;
                 if a.detect_in <= 0.0 {
                     a.detect_in = DETECT_INTERVAL;
-                    lookers.push((a.ref_id, a.pos, a.stats.clone()));
+                    lookers.push((a.ref_id, a.exec.pos, a.stats.clone()));
                 }
             }
         }
@@ -1713,11 +1719,11 @@ impl Engine {
         }
         let Some(a) = self
             .actor_ref(r)
-            .filter(|a| !a.dead && a.bleeding.is_none())
+            .filter(|a| !a.dead && a.exec.bleeding.is_none())
         else {
             return false;
         };
-        let (stats, d) = (a.stats.clone(), a.pos.distance(self.player.position));
+        let (stats, d) = (a.stats.clone(), a.exec.pos.distance(self.player.position));
         let player_factions = self.player_factions();
         let likes = matches!(
             self.faction_reaction(&stats.factions, &player_factions),
@@ -2169,7 +2175,7 @@ impl Engine {
         self.melee_impact(target, attacker, false, true);
         if let Some(a) = self.actor_mut(target) {
             a.set_guard(0.0);
-            if let Some(c) = a.combat.as_mut().filter(|c| c.swinging()) {
+            if let Some(c) = a.exec.combat.as_mut().filter(|c| c.swinging()) {
                 log::debug!("{target}'s swing is cut short");
                 c.swing = 0.0;
                 c.struck = true;
@@ -2294,15 +2300,15 @@ impl Engine {
         } else {
             let a = self.actor_ref(target).filter(|a| a.guarding())?;
             (
-                a.pos,
-                glam::Vec2::new(a.heading.sin(), a.heading.cos()),
+                a.exec.pos,
+                glam::Vec2::new(a.exec.heading.sin(), a.exec.heading.cos()),
                 a.stats.block_skill,
             )
         };
         let from = if attacker == PLAYER_REF {
             self.player.position
         } else {
-            self.actor_ref(attacker)?.pos
+            self.actor_ref(attacker)?.exec.pos
         };
         let angle = facing
             .angle_to((from - pos).truncate().normalize_or_zero())
@@ -2335,7 +2341,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| a.combat.is_some())
+            .filter(|a| a.exec.combat.is_some())
             .map(|a| {
                 (
                     a.ref_id,
@@ -2347,7 +2353,7 @@ impl Engine {
             })
             .collect();
         for (actor, bash) in bashers {
-            if let Some(c) = self.actor_mut(actor).and_then(|a| a.combat.as_mut()) {
+            if let Some(c) = self.actor_mut(actor).and_then(|a| a.exec.combat.as_mut()) {
                 c.bash = bash;
             }
         }
@@ -2357,7 +2363,8 @@ impl Engine {
             let Some(swing) = self
                 .actor_ref(attacker)
                 .and_then(|a| {
-                    a.combat
+                    a.exec
+                        .combat
                         .as_ref()?
                         .attack
                         .and_then(|i| a.stats.attacks.get(i))
@@ -2366,10 +2373,9 @@ impl Engine {
             else {
                 continue;
             };
-            let Some(a) = self
-                .actor_ref(target)
-                .filter(|a| a.guarding() && a.combat.as_ref().is_some_and(|c| c.bash.is_some()))
-            else {
+            let Some(a) = self.actor_ref(target).filter(|a| {
+                a.guarding() && a.exec.combat.as_ref().is_some_and(|c| c.bash.is_some())
+            }) else {
                 continue;
             };
             if swing & ATK_BASH != 0 {
@@ -2382,7 +2388,7 @@ impl Engine {
             };
             let roll = (self.rand() % 10_000) as f32 / 10_000.0;
             if roll < chance
-                && let Some(c) = self.actor_mut(target).and_then(|a| a.combat.as_mut())
+                && let Some(c) = self.actor_mut(target).and_then(|a| a.exec.combat.as_mut())
             {
                 c.counter = true;
             }
@@ -2390,7 +2396,8 @@ impl Engine {
         let mut want: Vec<(FormId, f32)> = Vec::new();
         for &(attacker, target) in started {
             let Some(a) = self.actor_ref(target).filter(|a| {
-                a.combat
+                a.exec
+                    .combat
                     .as_ref()
                     .is_some_and(|c| c.guard <= 0.0 && !c.swinging())
             }) else {
@@ -2401,14 +2408,14 @@ impl Engine {
             };
             let Some(from) = self
                 .actor_ref(attacker)
-                .map(|x| x.pos)
+                .map(|x| x.exec.pos)
                 .or((attacker == PLAYER_REF).then_some(self.player.position))
             else {
                 continue;
             };
-            let facing = glam::Vec2::new(a.heading.sin(), a.heading.cos());
+            let facing = glam::Vec2::new(a.exec.heading.sin(), a.exec.heading.cos());
             if facing
-                .angle_to((from - a.pos).truncate().normalize_or_zero())
+                .angle_to((from - a.exec.pos).truncate().normalize_or_zero())
                 .abs()
                 > 1.0
             {
@@ -2428,6 +2435,7 @@ impl Engine {
             .flat_map(|rt| &rt.actors)
             .filter(|a| {
                 let Some(c) = a
+                    .exec
                     .combat
                     .as_ref()
                     .filter(|c| c.guard <= 0.0 && !c.swinging() && c.cooldown > 0.4)
@@ -2437,11 +2445,11 @@ impl Engine {
                 let target = if c.target == PLAYER_REF {
                     Some(self.player.position)
                 } else {
-                    self.actor_ref(c.target).map(|t| t.pos)
+                    self.actor_ref(c.target).map(|t| t.exec.pos)
                 };
                 target.is_some_and(|t| {
-                    let to = (t - a.pos).truncate();
-                    let facing = glam::Vec2::new(a.heading.sin(), a.heading.cos());
+                    let to = (t - a.exec.pos).truncate();
+                    let facing = glam::Vec2::new(a.exec.heading.sin(), a.exec.heading.cos());
                     to.length() < a.reach() * 1.5
                         && facing.angle_to(to.normalize_or_zero()).abs() < 0.6
                 })
@@ -2472,10 +2480,10 @@ impl Engine {
             .collect();
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut() {
-                if let Some(c) = a.combat.as_mut() {
+                if let Some(c) = a.exec.combat.as_mut() {
                     c.target_guarding = guarding.contains(&c.target);
                 }
-                let Some(c) = a.combat.as_mut().filter(|c| c.guard > 0.0) else {
+                let Some(c) = a.exec.combat.as_mut().filter(|c| c.guard > 0.0) else {
                     continue;
                 };
                 let left = c.guard - dt;
@@ -2490,7 +2498,7 @@ impl Engine {
 
     /// Have a fighting actor hold its guard up for `secs` (console `guard`).
     pub fn force_guard(&mut self, actor: FormId, secs: f32) -> bool {
-        match self.actor_mut(actor).filter(|a| a.combat.is_some()) {
+        match self.actor_mut(actor).filter(|a| a.exec.combat.is_some()) {
             Some(a) => {
                 a.set_guard(secs);
                 true
@@ -2504,7 +2512,7 @@ impl Engine {
     fn can_bash(&self, a: &ActorRuntime) -> bool {
         if a.dead
             || a.bow
-            || a.bleeding.is_some()
+            || a.exec.bleeding.is_some()
             || !a.graph.as_ref().is_some_and(|g| g.project().humanoid())
         {
             return false;
@@ -2522,7 +2530,7 @@ impl Engine {
     /// weapon drawn (not one in each hand), as defensive as their combat style.
     fn block_chance(&self, a: &ActorRuntime, set: &CombatSettings) -> Option<f32> {
         if a.dead
-            || a.bleeding.is_some()
+            || a.exec.bleeding.is_some()
             || !a.graph.as_ref().is_some_and(|g| g.project().humanoid())
         {
             return None;
@@ -2547,7 +2555,11 @@ impl Engine {
     pub(crate) fn assault_on_player(&mut self, by: FormId) {
         let first = by != PLAYER_REF
             && self.actor_ref(by).is_some_and(|a| {
-                !a.dead && a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF)
+                !a.dead
+                    && a.exec
+                        .combat
+                        .as_ref()
+                        .is_none_or(|c| c.target != PLAYER_REF)
             })
             && self.crime.player_assailants.insert(by);
         if first {
@@ -2612,28 +2624,28 @@ impl Engine {
             return;
         }
         // Down and bleeding out: only the player finishes off a protected actor.
-        if a.bleeding.is_some() {
+        if a.exec.bleeding.is_some() {
             if !essential && attacker == Some(PLAYER_REF) {
-                a.bleeding = None;
+                a.exec.bleeding = None;
                 self.kill_actor_by(target, attacker);
             }
             return;
         }
         // A first blow from someone it wasn't fighting is an assault.
         let assault = attacker_hostile
-            .filter(|&by| by != target && a.combat.as_ref().is_none_or(|c| c.target != by))
-            .map(|by| (by, a.combat.is_none(), a.stats.factions.clone()));
-        a.health -= amount;
+            .filter(|&by| by != target && a.exec.combat.as_ref().is_none_or(|c| c.target != by))
+            .map(|by| (by, a.exec.combat.is_none(), a.stats.factions.clone()));
+        a.exec.health -= amount;
         log::info!(
             "{target} takes {amount:.0} damage ({:.0} / {:.0})",
-            a.health,
+            a.exec.health,
             a.stats.max_health
         );
         // Hurt while fleeing, it thinks again.
-        if let Some(c) = a.combat.as_mut().filter(|c| c.fleeing) {
+        if let Some(c) = a.exec.combat.as_mut().filter(|c| c.fleeing) {
             c.recheck = true;
         }
-        if a.health <= 0.0 {
+        if a.exec.health <= 0.0 {
             // Essential actors (and protected ones, but to the player) bleed out.
             let bleeds = essential || (protected && attacker != Some(PLAYER_REF));
             if let Some((by, calm, factions)) = assault {
@@ -2647,7 +2659,7 @@ impl Engine {
             return;
         }
         // Flinch unless mid-swing or behind its guard; heavy hits stagger.
-        let swinging = a.combat.as_ref().is_some_and(|c| c.swing > 0.0) || a.guarding();
+        let swinging = a.exec.combat.as_ref().is_some_and(|c| c.swing > 0.0) || a.guarding();
         if let Some(g) = a.graph.as_mut() {
             if stagger > 0.0 {
                 g.set_variable("staggerMagnitude", stagger.min(1.0));
@@ -2662,7 +2674,7 @@ impl Engine {
             sneak
                 && !self
                     .actor_ref(target)
-                    .and_then(|a| a.combat.as_ref())
+                    .and_then(|a| a.exec.combat.as_ref())
                     .is_some_and(|c| c.target == by)
         });
         if let Some(by) = attacker_hostile {
@@ -2697,9 +2709,9 @@ impl Engine {
         else {
             return;
         };
-        a.health = 0.0;
-        a.bleeding = Some(BLEEDOUT_TIME);
-        a.combat = None;
+        a.exec.health = 0.0;
+        a.exec.bleeding = Some(BLEEDOUT_TIME);
+        a.exec.combat = None;
         log::info!("{actor} bleeds out (was {})", a.state_name());
         a.fall_out_of_furniture(&mut self.furniture, &self.nav);
         a.halt(BLEEDOUT_TIME);
@@ -2711,7 +2723,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| a.combat.as_ref().is_some_and(|c| c.target == actor))
+            .filter(|a| a.exec.combat.as_ref().is_some_and(|c| c.target == actor))
             .map(|a| a.ref_id)
             .collect();
         for f in fighting {
@@ -2747,7 +2759,7 @@ impl Engine {
     pub(crate) fn update_bleedouts(&mut self, dt: f32) {
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut() {
-                let Some(t) = a.bleeding.as_mut() else {
+                let Some(t) = a.exec.bleeding.as_mut() else {
                     continue;
                 };
                 *t -= dt;
@@ -2755,8 +2767,8 @@ impl Engine {
                     a.halt(1.0);
                     continue;
                 }
-                a.bleeding = None;
-                a.health = a.stats.max_health * 0.25;
+                a.exec.bleeding = None;
+                a.exec.health = a.stats.max_health * 0.25;
                 if let Some(g) = a.graph.as_mut() {
                     g.send_event("bleedOutStop");
                 }
@@ -2892,7 +2904,8 @@ impl Engine {
             return self.player_swing.as_ref().is_some_and(|s| s.power);
         }
         self.actor_ref(actor).is_some_and(|a| {
-            a.combat
+            a.exec
+                .combat
                 .as_ref()
                 .filter(|c| c.swinging())
                 .and_then(|c| a.stats.attacks.get(c.attack?))
@@ -2931,7 +2944,7 @@ impl Engine {
             .get(&actor)
             .and_then(|k| self.cells.get(k))
             .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == actor))
-            .is_some_and(|a| a.bleeding.is_some())
+            .is_some_and(|a| a.exec.bleeding.is_some())
     }
 
     pub fn player_dead(&self) -> bool {
@@ -3011,7 +3024,10 @@ impl Engine {
             self.player_swing.as_ref()?.attack_type
         } else {
             let a = self.actor_ref(actor)?;
-            a.stats.attacks.get(a.combat.as_ref()?.attack?)?.attack_type
+            a.stats
+                .attacks
+                .get(a.exec.combat.as_ref()?.attack?)?
+                .attack_type
         };
         Some(kind).filter(|k| !k.is_null())
     }
@@ -3445,8 +3461,8 @@ impl Engine {
             return false;
         }
         a.dead = true;
-        a.health = 0.0;
-        a.combat = None;
+        a.exec.health = 0.0;
+        a.exec.combat = None;
         self.remember_dead(actor);
         let Some(a) = self
             .cells
@@ -3458,7 +3474,7 @@ impl Engine {
         a.objects_changed |= !a.objects.is_empty();
         a.objects.clear();
         a.carrying = false;
-        let velocity = Vec3::new(a.heading.sin(), a.heading.cos(), 0.0) * a.speed;
+        let velocity = Vec3::new(a.exec.heading.sin(), a.exec.heading.cos(), 0.0) * a.speed;
         let skeleton = a.skeleton.clone();
         let capsule = a.capsule;
         if let Some(c) = capsule {
@@ -3518,7 +3534,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| a.combat.as_ref().is_some_and(|c| c.target == actor))
+            .filter(|a| a.exec.combat.as_ref().is_some_and(|c| c.target == actor))
             .map(|a| a.ref_id)
             .collect();
         for f in fighting {
@@ -3554,26 +3570,26 @@ impl Engine {
         let mut out = vec![
             format!(
                 "{actor} at {:.0}: health {:.0} / {:.0} (+{}%/s), stamina {:.0} / {:.0} (power attack {:.0}), aggression {}, assistance {}, confidence {} ({:.3}{:+.2}), strength {:.0}, reach {:.0}, {} {:?}{}{}",
-                a.pos,
-                a.health,
+                a.exec.pos,
+                a.exec.health,
                 stats.max_health,
                 stats.health_regen,
-                a.stamina,
+                a.exec.stamina,
                 stats.max_stamina,
                 a.power_cost,
                 stats.aggression,
                 stats.assistance,
                 stats.confidence,
                 stats.confidence_value,
-                a.combat.as_ref().map_or(0.0, |c| c.confidence_mod),
+                a.exec.combat.as_ref().map_or(0.0, |c| c.confidence_mod),
                 a.strength,
                 a.reach(),
-                if a.combat.as_ref().is_some_and(|c| c.fleeing) {
+                if a.exec.combat.as_ref().is_some_and(|c| c.fleeing) {
                     "fleeing"
                 } else {
                     "fighting"
                 },
-                a.combat.as_ref().map(|c| c.target),
+                a.exec.combat.as_ref().map(|c| c.target),
                 if stats.essential { ", essential" } else { "" },
                 if stats.protected { ", protected" } else { "" }
             ),
@@ -3623,8 +3639,8 @@ impl Engine {
                 a.bow_speed,
                 arrow.as_ref().map(|x| x.ammo),
                 arrow.as_ref().map_or(0.0, |x| x.damage),
-                a.combat.as_ref().map(|c| c.draw),
-                a.combat.as_ref().is_some_and(|c| c.clear_shot)
+                a.exec.combat.as_ref().map(|c| c.draw),
+                a.exec.combat.as_ref().is_some_and(|c| c.clear_shot)
             ));
         }
         let bash = self.actor_ref(actor).is_some_and(|a| self.can_bash(a));
@@ -3727,7 +3743,11 @@ impl Engine {
         let mut player_fought = false;
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut().filter(|a| !a.dead) {
-                player_fought |= a.combat.as_ref().is_some_and(|c| c.target == PLAYER_REF);
+                player_fought |= a
+                    .exec
+                    .combat
+                    .as_ref()
+                    .is_some_and(|c| c.target == PLAYER_REF);
                 if std::mem::take(&mut a.stamina_spent) {
                     a.stamina_wait = set.regen_delay;
                 }
@@ -3736,26 +3756,28 @@ impl Engine {
                     continue;
                 }
                 let rate = a.stats.stamina_regen / 100.0
-                    * if a.combat.is_some() {
+                    * if a.exec.combat.is_some() {
                         set.combat_regen
                     } else {
                         1.0
                     };
-                a.stamina = (a.stamina + a.stats.max_stamina * rate * dt).min(a.stats.max_stamina);
+                a.exec.stamina =
+                    (a.exec.stamina + a.stats.max_stamina * rate * dt).min(a.stats.max_stamina);
             }
             // Health comes back out of combat (`fCombatHealthRegenRateMult` in it).
             for a in rt
                 .actors
                 .iter_mut()
-                .filter(|a| !a.dead && a.bleeding.is_none())
+                .filter(|a| !a.dead && a.exec.bleeding.is_none())
             {
                 let rate = a.stats.health_regen / 100.0
-                    * if a.combat.is_some() {
+                    * if a.exec.combat.is_some() {
                         set.combat_health_regen
                     } else {
                         1.0
                     };
-                a.health = (a.health + a.stats.max_health * rate * dt).min(a.stats.max_health);
+                a.exec.health =
+                    (a.exec.health + a.stats.max_health * rate * dt).min(a.stats.max_health);
             }
         }
         if self.player_stamina_wait > 0.0 {
@@ -3775,7 +3797,7 @@ impl Engine {
             return Some((self.player_stamina, self.player_stats().max_stamina));
         }
         let a = self.actor_ref(actor)?;
-        Some((a.stamina, a.stats.max_stamina))
+        Some((a.exec.stamina, a.stats.max_stamina))
     }
 
     /// Set a loaded actor's (or the player's) stamina (console, Papyrus).
@@ -3786,7 +3808,7 @@ impl Engine {
         }
         match self.actor_mut(actor) {
             Some(a) => {
-                a.stamina = value.clamp(0.0, a.stats.max_stamina);
+                a.exec.stamina = value.clamp(0.0, a.stats.max_stamina);
                 true
             }
             None => false,
@@ -3798,11 +3820,11 @@ impl Engine {
     /// unloaded (healing meanwhile).
     pub fn actor_health(&self, actor: FormId) -> Option<(f32, f32)> {
         match self.actor_ref(actor) {
-            Some(a) => Some((a.health, a.stats.max_health)),
+            Some(a) => Some((a.exec.health, a.stats.max_health)),
             None => self
-                .world_state
-                .wounds
+                .away
                 .get(&actor)
+                .and_then(|x| x.wounds)
                 .map(|w| (w.health_at(self.scripts.real_time), w.max)),
         }
     }

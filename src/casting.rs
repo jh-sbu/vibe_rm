@@ -415,7 +415,7 @@ impl Engine {
             return self.player_dual_casting();
         }
         self.actor_ref(actor)
-            .and_then(|a| a.combat.as_ref()?.hand_cast)
+            .and_then(|a| a.exec.combat.as_ref()?.hand_cast)
             .is_some_and(|h| h.cast.dual)
     }
 
@@ -528,6 +528,7 @@ impl Engine {
                 })
         } else {
             self.actor_ref(actor)?
+                .exec
                 .combat
                 .as_ref()?
                 .hand_cast
@@ -808,11 +809,13 @@ impl Engine {
             self.casting.magicka_wait -= dt;
             return;
         }
-        let fighting = self
-            .cells
-            .values()
-            .flat_map(|rt| &rt.actors)
-            .any(|a| !a.dead && a.combat.as_ref().is_some_and(|c| c.target == PLAYER_REF));
+        let fighting = self.cells.values().flat_map(|rt| &rt.actors).any(|a| {
+            !a.dead
+                && a.exec
+                    .combat
+                    .as_ref()
+                    .is_some_and(|c| c.target == PLAYER_REF)
+        });
         let gain = self.magicka_regen(PLAYER_REF, fighting, dt);
         if gain > 0.0 {
             self.damage_actor_value(PLAYER_REF, av::MAGICKA, -gain);
@@ -833,12 +836,12 @@ impl Engine {
             let Some(a) = self.actor_ref(actor).filter(|a| !a.dead) else {
                 continue;
             };
-            let channeling = a.combat.as_ref().is_some_and(|c| c.channel > 0.0)
+            let channeling = a.exec.combat.as_ref().is_some_and(|c| c.channel > 0.0)
                 || a.magic_practice.is_some_and(|m| m.channelling());
             if channeling {
                 continue;
             }
-            let fighting = a.combat.is_some();
+            let fighting = a.exec.combat.is_some();
             let gain = self.magicka_regen(actor, fighting, dt);
             if gain > 0.0 {
                 self.damage_actor_value(actor, av::MAGICKA, -gain);
@@ -870,16 +873,16 @@ impl Engine {
                 let caster = a.stats.magic_mult > a.stats.melee_mult
                     || (a.stats.magic_mult == a.stats.melee_mult && unarmed());
                 let active = !a.dead
-                    && a.bleeding.is_none()
-                    && a.combat.as_ref().is_some_and(|c| !c.fleeing);
+                    && a.exec.bleeding.is_none()
+                    && a.exec.combat.as_ref().is_some_and(|c| !c.fleeing);
                 (
                     a.ref_id,
                     active,
                     caster,
                     a.combat_spell.is_some_and(|s| s.self_target),
                     a.stats.staff_mult >= a.stats.magic_mult,
-                    (a.magic_practising() && !a.dead && a.bleeding.is_none())
-                        .then(|| a.goal.and_then(|g| g.magic).map(|m| (m.spell, m.dual)))
+                    (a.magic_practising() && !a.dead && a.exec.bleeding.is_none())
+                        .then(|| a.exec.goal.and_then(|g| g.magic).map(|m| (m.spell, m.dual)))
                         .flatten(),
                 )
             })
@@ -963,7 +966,7 @@ impl Engine {
                 .is_some_and(|a| a.combat_spell.is_some_and(|s| s.ward));
             let ward_wait = self.ward_wait_roll();
             if let Some(a) = self.actor_mut(actor) {
-                if let Some(c) = a.combat.as_mut() {
+                if let Some(c) = a.exec.combat.as_mut() {
                     if pick.is_some_and(|s| s.ward) {
                         // Raised at once, whatever its last throw.
                         c.cooldown = c.cooldown.min(0.0);
@@ -974,7 +977,7 @@ impl Engine {
                 }
                 // A spell being channelled stops with it; one thrown plays
                 // out, unless there is none to fight with now.
-                if let Some(c) = a.combat.as_mut()
+                if let Some(c) = a.exec.combat.as_mut()
                     && c.channel > 0.0
                 {
                     c.channel = 0.0;
@@ -1182,15 +1185,16 @@ impl Engine {
             for a in rt.actors.iter_mut() {
                 let Some(cast) = a.casts.take() else { continue };
                 // Fighting (not fleeing), or practising a spell out of combat.
-                let casting = match a.combat.as_ref() {
+                let casting = match a.exec.combat.as_ref() {
                     Some(c) => !c.fleeing,
                     None => a.magic_practising(),
                 };
-                if a.dead || a.bleeding.is_some() || !casting {
+                if a.dead || a.exec.bleeding.is_some() || !casting {
                     continue;
                 }
                 // A practice target may be a thing, not an actor.
                 let practice_aim = a
+                    .exec
                     .combat
                     .is_none()
                     .then(|| a.magic_practice.and_then(|m| m.aim))
@@ -1200,10 +1204,10 @@ impl Engine {
                     cast.spell,
                     cast.landings,
                     cast.target,
-                    a.pos + Vec3::Z * 110.0 * a.scale,
+                    a.exec.pos + Vec3::Z * 110.0 * a.scale,
                     cast.dual,
                     practice_aim,
-                    a.combat.is_some(),
+                    a.exec.combat.is_some(),
                 ));
             }
         }
@@ -1217,7 +1221,7 @@ impl Engine {
                 Some(self.player.position)
             } else {
                 self.actor_ref(target)
-                    .map(|t| t.pos + Vec3::Z * BODY_CENTRE * t.scale)
+                    .map(|t| t.exec.pos + Vec3::Z * BODY_CENTRE * t.scale)
             };
             let Some(aim) = aim else { continue };
             let share = if spell.concentration {
@@ -1280,8 +1284,8 @@ impl Engine {
         } else {
             match self.actor_ref(caster) {
                 Some(a) => (
-                    a.pos + Vec3::Z * 110.0 * a.scale,
-                    Vec3::new(a.heading.sin(), a.heading.cos(), 0.0),
+                    a.exec.pos + Vec3::Z * 110.0 * a.scale,
+                    Vec3::new(a.exec.heading.sin(), a.exec.heading.cos(), 0.0),
                 ),
                 None => return,
             }
@@ -1391,7 +1395,7 @@ impl Engine {
             .values()
             .flat_map(|rt| &rt.actors)
             .filter(|a| !a.dead && a.ref_id != caster)
-            .map(|a| (a.ref_id, a.pos + Vec3::Z * BODY_CENTRE * a.scale))
+            .map(|a| (a.ref_id, a.exec.pos + Vec3::Z * BODY_CENTRE * a.scale))
             .collect();
         if caster != PLAYER_REF {
             bodies.push((PLAYER_REF, self.player.position));
@@ -1447,7 +1451,7 @@ impl Engine {
         if actor == PLAYER_REF {
             return Some(self.player.position);
         }
-        self.actor_ref(actor).map(|a| a.pos)
+        self.actor_ref(actor).map(|a| a.exec.pos)
     }
 
     /// Whether a reference is an actor (placed or made while playing).
@@ -1567,7 +1571,7 @@ impl Engine {
                 .values()
                 .flat_map(|rt| &rt.actors)
                 .filter(|a| !a.dead && a.ref_id != caster)
-                .map(|a| (a.ref_id, a.pos + Vec3::Z * BODY_CENTRE * a.scale));
+                .map(|a| (a.ref_id, a.exec.pos + Vec3::Z * BODY_CENTRE * a.scale));
             let player = (caster != PLAYER_REF).then_some((PLAYER_REF, self.player.position));
             let reached: Vec<(FormId, u64)> = near
                 .chain(player)

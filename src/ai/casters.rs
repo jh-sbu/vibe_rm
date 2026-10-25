@@ -56,7 +56,7 @@ mod tests {
         );
         let mut combat = Combat::new(FormId(3));
         combat.cooldown = 0.0;
-        actor.combat = Some(combat);
+        actor.exec.combat = Some(combat);
         actor
     }
 
@@ -110,7 +110,7 @@ mod tests {
                 actor.combat_step(0.01, world, target).as_deref(),
                 Some("BeginCastRight")
             );
-            assert_eq!(actor.heading, 0.0);
+            assert_eq!(actor.exec.heading, 0.0);
             assert_eq!(actor.speed, 0.0);
             let cast = actor.casts.unwrap();
             assert_eq!(cast.spell, spell);
@@ -131,14 +131,14 @@ mod tests {
                 Some("BeginCastRight")
             );
             assert!(actor.casts.is_none());
-            actor.combat.as_mut().unwrap().channel = 1.0;
+            actor.exec.combat.as_mut().unwrap().channel = 1.0;
             assert!(
                 actor
                     .caster_step(0.5, world, Vec3::ZERO, 0.0, spell)
                     .is_none()
             );
             assert_eq!(actor.casts.take().unwrap().landings, 2);
-            assert_eq!(actor.combat.as_ref().unwrap().channel, 0.5);
+            assert_eq!(actor.exec.combat.as_ref().unwrap().channel, 0.5);
             // Its end is sent to the graph by the caster (none here).
             assert!(
                 actor
@@ -146,8 +146,8 @@ mod tests {
                     .is_none()
             );
             assert_eq!(actor.casts.take().unwrap().landings, 2);
-            assert_eq!(actor.combat.as_ref().unwrap().channel, 0.0);
-            assert!(actor.combat.as_ref().unwrap().cooldown > 0.0);
+            assert_eq!(actor.exec.combat.as_ref().unwrap().channel, 0.0);
+            assert!(actor.exec.combat.as_ref().unwrap().cooldown > 0.0);
         });
     }
 
@@ -158,7 +158,7 @@ mod tests {
             let spell = healing(false);
             actor.caster_step(0.1, world, Vec3::ZERO, 0.0, spell);
             actor.combat_spell = None;
-            actor.combat.as_mut().unwrap().target = FormId(99);
+            actor.exec.combat.as_mut().unwrap().target = FormId(99);
             let queued = actor.casts.take().unwrap();
             assert_eq!(queued.spell, spell);
             assert_eq!(queued.target, actor.ref_id);
@@ -181,7 +181,7 @@ mod tests {
                     dual: false,
                 },
             };
-            actor.combat.as_mut().unwrap().hand_cast = Some(hand_cast(HandPhase::Released));
+            actor.exec.combat.as_mut().unwrap().hand_cast = Some(hand_cast(HandPhase::Released));
             assert!(
                 actor
                     .caster_step(0.1, world, Vec3::ZERO, 0.0, spell)
@@ -195,21 +195,21 @@ mod tests {
             actor.spell_fire[LEFT] = true;
             actor.caster_step(0.1, world, Vec3::ZERO, 0.0, spell);
             assert_eq!(actor.casts.take().unwrap().target, FormId(1));
-            let c = actor.combat.as_ref().unwrap();
+            let c = actor.exec.combat.as_ref().unwrap();
             assert_eq!(c.hand_cast.unwrap().phase, HandPhase::Fired);
             actor.hand_equipped[LEFT] = true;
             actor.caster_step(0.1, world, Vec3::ZERO, 0.0, spell);
-            let c = actor.combat.as_ref().unwrap();
+            let c = actor.exec.combat.as_ref().unwrap();
             assert!(c.hand_cast.is_none());
             assert!(c.cooldown > 0.0);
 
             // No SpellFire at all: nothing is cast.
-            actor.combat.as_mut().unwrap().hand_cast = Some(hand_cast(HandPhase::Released));
+            actor.exec.combat.as_mut().unwrap().hand_cast = Some(hand_cast(HandPhase::Released));
             for _ in 0..20 {
                 actor.caster_step(0.1, world, Vec3::ZERO, 0.0, spell);
             }
             assert!(actor.casts.is_none());
-            assert!(actor.combat.as_ref().unwrap().hand_cast.is_none());
+            assert!(actor.exec.combat.as_ref().unwrap().hand_cast.is_none());
         });
     }
 
@@ -229,16 +229,16 @@ mod tests {
                     .caster_step(0.1, world, target, 1000.0, ward)
                     .is_none()
             );
-            assert!(actor.heading != 0.0);
-            actor.heading = std::f32::consts::PI;
+            assert!(actor.exec.heading != 0.0);
+            actor.exec.heading = std::f32::consts::PI;
             assert_eq!(
                 actor
                     .caster_step(0.1, world, target, 1000.0, ward)
                     .as_deref(),
                 Some("BeginCastRight")
             );
-            assert_eq!(actor.combat.as_ref().unwrap().channel, WARD_HOLD);
-            actor.combat.as_mut().unwrap().channel = 1.0;
+            assert_eq!(actor.exec.combat.as_ref().unwrap().channel, WARD_HOLD);
+            actor.exec.combat.as_mut().unwrap().channel = 1.0;
             actor.caster_step(0.5, world, target, 1000.0, ward);
             let cast = actor.casts.take().unwrap();
             assert_eq!(cast.target, actor.ref_id);
@@ -261,7 +261,7 @@ mod tests {
                     .is_none()
             );
             assert!(actor.casts.is_none());
-            actor.combat.as_mut().unwrap().clear_shot = true;
+            actor.exec.combat.as_mut().unwrap().clear_shot = true;
             assert_eq!(
                 actor
                     .caster_step(0.1, world, Vec3::Y * 100.0, 100.0, spell)
@@ -280,7 +280,7 @@ mod tests {
                 let mut actor = actor();
                 actor.bow = true;
                 actor.combat_spell = Some(healing(false));
-                actor.combat.as_mut().unwrap().draw = draw;
+                actor.exec.combat.as_mut().unwrap().draw = draw;
                 actor.arrow_release = true;
                 actor.loose = true;
                 let target = Vec3::Y * 1000.0;
@@ -288,7 +288,7 @@ mod tests {
                     actor.combat_step(0.01, world, target).as_deref(),
                     Some("attackStop")
                 );
-                assert_eq!(actor.combat.as_ref().unwrap().draw, Draw::Idle);
+                assert_eq!(actor.exec.combat.as_ref().unwrap().draw, Draw::Idle);
                 assert!(!actor.arrow_release);
                 assert!(!actor.loose);
                 assert!(actor.casts.is_none());
@@ -298,7 +298,7 @@ mod tests {
                 );
                 actor.casts.take();
                 actor.combat_spell = None;
-                let combat = actor.combat.as_mut().unwrap();
+                let combat = actor.exec.combat.as_mut().unwrap();
                 combat.cooldown = 0.0;
                 combat.clear_shot = true;
                 assert_eq!(
@@ -306,7 +306,7 @@ mod tests {
                     Some("bowAttackStart")
                 );
                 assert!(matches!(
-                    actor.combat.as_ref().unwrap().draw,
+                    actor.exec.combat.as_ref().unwrap().draw,
                     Draw::Drawing(0.0, _)
                 ));
                 assert!(!actor.loose);
@@ -388,14 +388,14 @@ impl ActorRuntime {
         dist: f32,
         spell: CombatSpell,
     ) -> Option<String> {
-        if let Some(h) = self.combat.as_ref()?.hand_cast
+        if let Some(h) = self.exec.combat.as_ref()?.hand_cast
             && !h.cast.spell.concentration
         {
             self.throw_step(dt, w, target, h);
             return None;
         }
         let run = self.run_speed();
-        let c = self.combat.as_mut()?;
+        let c = self.exec.combat.as_mut()?;
         let in_range = spell.self_target || (dist < spell.range * 0.85 && c.clear_shot);
         if !in_range {
             if c.channel > 0.0 {
@@ -407,14 +407,14 @@ impl ActorRuntime {
         }
         self.speed = 0.0;
         self.state = State::Idle(1.0);
-        let to = (target - self.pos).normalize_or_zero();
+        let to = (target - self.exec.pos).normalize_or_zero();
         // A ward is held towards the enemy, as it covers the front only.
         let off = if spell.self_target && !spell.ward {
             0.0
         } else {
             self.turn_towards(to, dt).abs()
         };
-        let c = self.combat.as_mut()?;
+        let c = self.exec.combat.as_mut()?;
         let recipient = if spell.self_target {
             self.ref_id
         } else {
@@ -429,7 +429,7 @@ impl ActorRuntime {
                 let ev = format!("{}_SpellRelease_Event", hand_prefix(h.hand));
                 self.graph_event(&ev, &mut w.clips);
             }
-            let c = self.combat.as_mut()?;
+            let c = self.exec.combat.as_mut()?;
             let dual = c.hand_cast.is_some_and(|h| h.cast.dual);
             // A landing each tick while it lasts.
             let before = (c.channel / CHANNEL_TICK).ceil();
@@ -463,14 +463,14 @@ impl ActorRuntime {
         if humanoid {
             let Some(started) = self.start_hand_cast(hand, cast, w) else {
                 // Not drawn yet, or busy (a stagger): again shortly.
-                if let Some(c) = self.combat.as_mut() {
+                if let Some(c) = self.exec.combat.as_mut() {
                     c.cooldown = REFUSED_RETRY;
                 }
                 return None;
             };
             hand = started;
         }
-        let c = self.combat.as_mut()?;
+        let c = self.exec.combat.as_mut()?;
         if spell.ward {
             c.channel = WARD_HOLD;
         } else if spell.concentration {
@@ -495,7 +495,7 @@ impl ActorRuntime {
     /// hand casting, or `None` if the graph won't.
     fn start_hand_cast(&mut self, hand: usize, cast: CombatCast, w: &mut World) -> Option<usize> {
         let h = self.begin_hand_cast(hand, cast, w)?;
-        if let Some(c) = self.combat.as_mut() {
+        if let Some(c) = self.exec.combat.as_mut() {
             c.hand_cast = Some(h);
         }
         Some(h.hand)
@@ -559,11 +559,11 @@ impl ActorRuntime {
         self.speed = 0.0;
         self.state = State::Idle(1.0);
         if !h.cast.spell.self_target {
-            self.turn_towards((target - self.pos).normalize_or_zero(), dt);
+            self.turn_towards((target - self.exec.pos).normalize_or_zero(), dt);
         }
         match self.advance_throw(dt, w, h) {
             Some(h) => {
-                if let Some(c) = self.combat.as_mut() {
+                if let Some(c) = self.exec.combat.as_mut() {
                     c.hand_cast = Some(h);
                 }
             }
@@ -616,7 +616,7 @@ impl ActorRuntime {
 
     fn end_throw(&mut self, w: &mut World) {
         self.stop_hand_cast();
-        if let Some(c) = self.combat.as_mut() {
+        if let Some(c) = self.exec.combat.as_mut() {
             c.cooldown = uniform(w.rand, THROW_COOLDOWN.0, THROW_COOLDOWN.1);
         }
     }
@@ -624,7 +624,7 @@ impl ActorRuntime {
     /// The hand stops casting in the graph: back to ready (its own
     /// `Equipped` event, as for the player), and out of the casting state.
     pub(crate) fn stop_hand_cast(&mut self) {
-        let Some(h) = self.combat.as_mut().and_then(|c| c.hand_cast.take()) else {
+        let Some(h) = self.exec.combat.as_mut().and_then(|c| c.hand_cast.take()) else {
             return;
         };
         self.release_hand(h.hand);

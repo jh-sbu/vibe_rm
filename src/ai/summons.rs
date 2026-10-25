@@ -101,7 +101,7 @@ impl Engine {
                     !a.dead && !self.is_disabled(a.ref_id) && self.is_player_teammate(a.ref_id)
                 })
                 .filter(|a| {
-                    a.goal.is_some_and(|g| {
+                    a.exec.goal.is_some_and(|g| {
                         g.behaviour == super::package::Behaviour::Follow
                             && g.target == Some(PLAYER_REF)
                     })
@@ -146,8 +146,8 @@ impl Engine {
             let Some(a) = self.actor_ref(r).filter(|a| !a.dead) else {
                 continue;
             };
-            let (pos, heading) = (a.pos, a.heading);
-            let idle = a.combat.is_none();
+            let (pos, heading) = (a.exec.pos, a.exec.heading);
+            let idle = a.exec.combat.is_none();
             // Left far behind, it catches up at once, beside its commander.
             if let Some(c) = self.ref_position(commander)
                 && idle
@@ -183,7 +183,7 @@ impl Engine {
             }
             // Never against its commander; a fight over (its target dead)
             // ends.
-            let fighting = a.combat.as_ref().map(|c| c.target);
+            let fighting = a.exec.combat.as_ref().map(|c| c.target);
             if let Some(t) = fighting {
                 if t == commander || self.is_dead(t) {
                     self.end_combat(r);
@@ -216,7 +216,7 @@ impl Engine {
             None
         } else {
             self.actor_ref(commander)
-                .and_then(|a| a.combat.as_ref())
+                .and_then(|a| a.exec.combat.as_ref())
                 .map(|c| c.target)
         };
         let mut best: Option<(f32, FormId)> = theirs
@@ -224,13 +224,13 @@ impl Engine {
             .and_then(|t| Some((self.ref_position(t)?.distance(pos), t)));
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
             if a.dead
-                || a.bleeding.is_some()
+                || a.exec.bleeding.is_some()
                 || self.magic.commanded.get(&a.ref_id) == Some(&commander)
-                || a.combat.as_ref().is_none_or(|c| c.target != commander)
+                || a.exec.combat.as_ref().is_none_or(|c| c.target != commander)
             {
                 continue;
             }
-            let d = a.pos.distance(pos);
+            let d = a.exec.pos.distance(pos);
             if d < DEFEND_RADIUS && best.is_none_or(|b| d < b.0) {
                 best = Some((d, a.ref_id));
             }

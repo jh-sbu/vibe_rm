@@ -413,7 +413,7 @@ impl Engine {
             return Some((feet, p.player_half_height * 2.0, p.player_radius));
         }
         let a = self.actor_ref(actor)?;
-        Some((a.pos, 120.0 * a.scale, 20.0 * a.scale))
+        Some((a.exec.pos, 120.0 * a.scale, 20.0 * a.scale))
     }
 
     /// A melee blow (or bash) by `attacker` landing on `target`.

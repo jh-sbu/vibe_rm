@@ -32,8 +32,6 @@ pub struct WorldState {
     pub actor_open_doors: std::collections::HashSet<FormId>,
     /// Dead actors' ragdoll bodies as they lay (world transforms).
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
-    /// Hurt actors that unloaded.
-    pub wounds: HashMap<FormId, Wounds>,
     /// References scripts moved (`MoveTo`, `SetPosition`, `SetAngle`): where to.
     pub moved: HashMap<FormId, Moved>,
     /// Dropped weapon references' spent charge, one entry per depleted copy
@@ -103,8 +101,8 @@ pub struct Wounds {
 impl Wounds {
     /// How hurt a living actor leaves (none when well).
     pub(crate) fn of(a: &crate::ai::ActorRuntime, now: f64) -> Option<Wounds> {
-        (a.health < a.stats.max_health - 0.5).then(|| Wounds {
-            health: a.health,
+        (a.exec.health < a.stats.max_health - 0.5).then(|| Wounds {
+            health: a.exec.health,
             max: a.stats.max_health,
             rate: a.stats.health_regen / 100.0,
             at: now,
@@ -126,7 +124,7 @@ impl Engine {
     }
 
     /// Before a cell unloads: where its dead actors' bodies came to rest (and
-    /// how), and how hurt the living are.
+    /// how), and the living's executions (how hurt they are among them).
     pub(crate) fn remember_actors(&mut self, key: crate::render::CellKey) {
         let Some(place) = self.place_of_key(key) else {
             return;
@@ -136,10 +134,13 @@ impl Engine {
         };
         let now = self.scripts.real_time;
         let mut rest = Vec::new();
-        let mut hurt = Vec::new();
+        let mut away = Vec::new();
         for a in &rt.actors {
             if !a.dead {
-                hurt.push((a.ref_id, Wounds::of(a, now)));
+                away.push((
+                    a.ref_id,
+                    a.exec.clone().away(Some(place), Wounds::of(a, now)),
+                ));
                 continue;
             }
             let bodies = a
@@ -149,7 +150,7 @@ impl Engine {
             let mut pos = bodies
                 .as_ref()
                 .and_then(|b| b.first())
-                .map_or(a.pos, |m| m.w_axis.truncate());
+                .map_or(a.exec.pos, |m| m.w_axis.truncate());
             if let Some(z) = self.nav.height_at(pos) {
                 pos.z = z;
             }
@@ -161,28 +162,47 @@ impl Engine {
                 self.world_state.body_poses.insert(r, b);
             }
         }
-        for (r, w) in hurt {
-            match w {
-                Some(w) => self.world_state.wounds.insert(r, w),
-                None => self.world_state.wounds.remove(&r),
-            };
+        self.away.extend(away);
+    }
+
+    /// Hurt actors that unloaded, and how hurt (what saves keep of `away`).
+    pub(crate) fn away_wounds(&self) -> HashMap<FormId, Wounds> {
+        self.away
+            .iter()
+            .filter_map(|(&r, x)| Some((r, x.wounds?)))
+            .collect()
+    }
+
+    /// A save's hurt actors away: they are all that is away.
+    pub(crate) fn restore_away_wounds(&mut self, wounds: HashMap<FormId, Wounds>) {
+        self.away = wounds
+            .into_iter()
+            .map(|(r, w)| (r, crate::ai::exec::ActorExec::wounded(w)))
+            .collect();
+    }
+
+    /// An actor away is well again (resurrected, reset).
+    pub(crate) fn heal_wounds_away(&mut self, actor: FormId) {
+        if let Some(x) = self.away.get_mut(&actor) {
+            x.wounds = None;
         }
     }
 
     /// Time passed without running (hours waited): the hurt actors away heal
     /// for `secs` more.
     pub(crate) fn heal_away(&mut self, secs: f32) {
-        for w in self.world_state.wounds.values_mut() {
+        for w in self.away.values_mut().filter_map(|x| x.wounds.as_mut()) {
             w.at -= secs as f64;
         }
     }
 
-    /// The health a loading actor comes back with (its most, unless it left hurt).
+    /// The health a loading actor comes back with (its most, unless it left
+    /// hurt), its execution away taken back.
     pub(crate) fn returning_health(&mut self, actor: FormId, max: f32) -> f32 {
         let now = self.scripts.real_time;
-        self.world_state
-            .wounds
+        self.away
             .remove(&actor)
+            .and_then(|x| x.wounds)
             .map_or(max, |w| w.health_at(now).min(max))
     }
 
@@ -199,7 +219,7 @@ impl Engine {
             return Vec3::new(0.0, 0.0, self.camera.yaw);
         }
         if let Some(a) = self.actor_ref(r) {
-            return Vec3::new(0.0, 0.0, a.heading);
+            return Vec3::new(0.0, 0.0, a.exec.heading);
         }
         if let Some(m) = self.world_state.moved.get(&r) {
             return m.rot;
@@ -290,8 +310,8 @@ impl Engine {
             (Some(h), Some(t)) if h == t => {
                 if let Some(a) = self.actor_mut(r) {
                     a.turn_after_arrival = None;
-                    a.pos = pos;
-                    a.heading = rot.z;
+                    a.exec.pos = pos;
+                    a.exec.heading = rot.z;
                     a.halt(0.5);
                 }
                 self.moved_refs.insert(r, pos);

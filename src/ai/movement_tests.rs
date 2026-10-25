@@ -21,7 +21,7 @@ fn actor() -> ActorRuntime {
     };
     a.moves = Some((movement(100.0, 300.0), 0.0));
     a.sneak_moves = Some((movement(50.0, 150.0), 2.0));
-    a.goal = Some(Goal::travel(Vec3::Y * 1000.0));
+    a.exec.goal = Some(Goal::travel(Vec3::Y * 1000.0));
     a
 }
 
@@ -60,17 +60,17 @@ fn armor_scales_package_gaits_and_combat_without_changing_animation_speeds() {
         (package::Gait::Jog, 140.0),
         (package::Gait::Run, 210.0),
     ] {
-        a.goal.as_mut().unwrap().gait = gait;
+        a.exec.goal.as_mut().unwrap().gait = gait;
         assert_eq!(a.move_speed(), speed);
     }
     assert_eq!(a.run_speed(), 210.0);
     assert_eq!(a.walk_speed(), 100.0);
 
-    a.goal.as_mut().unwrap().sneak = true;
+    a.exec.goal.as_mut().unwrap().sneak = true;
     assert_eq!(a.move_speed(), 105.0);
-    a.goal.as_mut().unwrap().gait = package::Gait::Walk;
+    a.exec.goal.as_mut().unwrap().gait = package::Gait::Walk;
     assert_eq!(a.move_speed(), 35.0);
-    a.goal.as_mut().unwrap().sneak = false;
+    a.exec.goal.as_mut().unwrap().sneak = false;
     a.hurry = true;
     assert_eq!(a.move_speed(), 210.0);
 
@@ -93,13 +93,13 @@ fn armor_slows_actual_package_steps_and_combat_chases() {
     a.armor_speed_mult = 0.7;
     with_world(|w| {
         assert!(a.step(1.0, w));
-        assert_eq!(a.pos, Vec3::Y * 70.0);
+        assert_eq!(a.exec.pos, Vec3::Y * 70.0);
         assert_eq!(a.speed(), 70.0);
 
-        a.pos = Vec3::ZERO;
-        a.combat = Some(combat::Combat::new(FormId(3)));
+        a.exec.pos = Vec3::ZERO;
+        a.exec.combat = Some(combat::Combat::new(FormId(3)));
         a.chase(1.0, w, destination, a.run_speed());
-        assert_eq!(a.pos, Vec3::Y * 210.0);
+        assert_eq!(a.exec.pos, Vec3::Y * 210.0);
         assert_eq!(a.speed(), 210.0);
         assert!(matches!(a.gait(), crate::world::footsteps::Gait::Run));
     });
@@ -112,10 +112,10 @@ fn scheduled_travel_heading_turns_at_movement_rate_and_cancels_on_halt() {
     a.turn_after_arrival = Some(target);
     with_world(|w| {
         a.step(0.1, w);
-        assert!((a.heading - 0.4).abs() < 1e-5);
+        assert!((a.exec.heading - 0.4).abs() < 1e-5);
         assert!(a.turn_after_arrival.is_some());
         a.step(0.3, w);
-        assert!((a.heading - target).abs() < 1e-5);
+        assert!((a.exec.heading - target).abs() < 1e-5);
         assert!(a.turn_after_arrival.is_none());
 
         a.turn_after_arrival = Some(0.0);
@@ -123,12 +123,12 @@ fn scheduled_travel_heading_turns_at_movement_rate_and_cancels_on_halt() {
         assert!(a.turn_after_arrival.is_none());
 
         a.turn_after_arrival = Some(0.0);
-        a.goal.as_mut().unwrap().behaviour = Behaviour::Sandbox;
+        a.exec.goal.as_mut().unwrap().behaviour = Behaviour::Sandbox;
         a.state = State::Idle(1.0);
         a.step(0.1, w);
         assert!(a.turn_after_arrival.is_none());
 
-        a.goal.as_mut().unwrap().behaviour = Behaviour::Travel;
+        a.exec.goal.as_mut().unwrap().behaviour = Behaviour::Travel;
         a.turn_after_arrival = Some(0.0);
         a.face = Some((FormId(4), false));
         a.step(0.1, w);
@@ -144,23 +144,23 @@ fn scheduled_travel_heading_turns_at_movement_rate_and_cancels_on_halt() {
 fn arrival_heading_waits_for_initial_package_evaluation() {
     let mut a = actor();
     let target = std::f32::consts::FRAC_PI_2;
-    a.goal = None;
-    a.current = None;
-    a.next_eval = 0.5;
+    a.exec.goal = None;
+    a.exec.current = None;
+    a.exec.next_eval = 0.5;
     a.turn_after_arrival = Some(target);
     with_world(|w| {
         // A newly spawned actor may spend its stagger with no goal yet. It
         // must neither turn early nor discard the schedule's pending heading.
         a.step(0.1, w);
-        assert_eq!(a.heading, 0.0);
+        assert_eq!(a.exec.heading, 0.0);
         assert_eq!(a.turn_after_arrival, Some(target));
 
         // This is the same reconciliation used when evaluate_packages adopts
         // the first applicable package (which does not interrupt the actor).
-        a.goal = Some(Goal::travel(Vec3::Y * 1000.0));
-        a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, a.goal);
+        a.exec.goal = Some(Goal::travel(Vec3::Y * 1000.0));
+        a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, a.exec.goal);
         a.step(0.1, w);
-        assert!((a.heading - 0.4).abs() < 1e-5);
+        assert!((a.exec.heading - 0.4).abs() < 1e-5);
         assert!(a.turn_after_arrival.is_some());
 
         // At an actual evaluation with no applicable package, the target is

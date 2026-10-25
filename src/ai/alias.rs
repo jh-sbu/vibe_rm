@@ -135,14 +135,15 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| a.alias_gen != generation)
+            .filter(|a| a.exec.alias_gen != generation)
             .map(|a| (a.ref_id, a.npc))
             .collect();
         for (r, npc) in stale {
             let packages = self.actor_packages(r, npc);
             let Some(a) = self.actor_mut(r) else { continue };
-            a.alias_gen = generation;
-            if a.packages
+            a.exec.alias_gen = generation;
+            if a.exec
+                .packages
                 .iter()
                 .map(|p| p.id)
                 .eq(packages.iter().map(|p| p.id))
@@ -156,11 +157,15 @@ impl Engine {
                     .map(|p| p.editor_id.as_str())
                     .collect::<Vec<_>>()
             );
-            let current = a.current.and_then(|i| a.packages.get(i)).map(|p| p.id);
-            a.current = current.and_then(|id| packages.iter().position(|p| p.id == id));
-            a.packages = packages;
+            let current = a
+                .exec
+                .current
+                .and_then(|i| a.exec.packages.get(i))
+                .map(|p| p.id);
+            a.exec.current = current.and_then(|id| packages.iter().position(|p| p.id == id));
+            a.exec.packages = packages;
             // Choose again now.
-            a.next_eval = 0.0;
+            a.exec.next_eval = 0.0;
         }
     }
 }

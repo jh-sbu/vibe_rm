@@ -232,9 +232,9 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.bleeding.is_none())
+            .filter(|a| !a.dead && a.exec.bleeding.is_none())
             .filter_map(|a| {
-                let c = a.combat.as_ref()?;
+                let c = a.exec.combat.as_ref()?;
                 Some(Fighter {
                     id: a.ref_id,
                     target: Some(c.target),
@@ -279,7 +279,7 @@ impl Engine {
             };
             let interval = if a.bow { BOW_INTERVAL } else { ATTACK_INTERVAL };
             (
-                a.health,
+                a.exec.health,
                 self.attack_damage(a, None, crate::world::inventory::RIGHT) / interval,
             )
         };
@@ -299,7 +299,7 @@ impl Engine {
     /// IsFleeing.
     pub fn is_fleeing(&self, actor: FormId) -> bool {
         self.actor_ref(actor)
-            .and_then(|a| a.combat.as_ref())
+            .and_then(|a| a.exec.combat.as_ref())
             .is_some_and(|c| c.fleeing)
     }
 
@@ -321,7 +321,7 @@ impl Engine {
             .cells
             .values_mut()
             .flat_map(|rt| rt.actors.iter_mut())
-            .filter(|a| a.combat.is_some() && !a.dead)
+            .filter(|a| a.exec.combat.is_some() && !a.dead)
         {
             a.strength_in -= dt;
             if a.strength_in <= 0.0 {
@@ -340,9 +340,10 @@ impl Engine {
                 a.strength = s;
             }
             let Some(c) = a
+                .exec
                 .combat
                 .as_mut()
-                .filter(|_| !a.dead && a.bleeding.is_none())
+                .filter(|_| !a.dead && a.exec.bleeding.is_none())
             else {
                 continue;
             };
@@ -369,13 +370,13 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| a.combat.is_some() && !a.dead && a.bleeding.is_none())
+            .filter(|a| a.exec.combat.is_some() && !a.dead && a.exec.bleeding.is_none())
             .map(|a| a.ref_id)
             .collect();
         if !self.player_dead()
             && members.iter().any(|&r| {
                 self.actor_ref(r)
-                    .and_then(|a| a.combat.as_ref())
+                    .and_then(|a| a.exec.combat.as_ref())
                     .is_some_and(|c| c.target == PLAYER_REF)
             })
         {
@@ -396,10 +397,12 @@ impl Engine {
             let own = self.actor_ref(r).map_or(0.0, |a| a.strength);
             let ratio = group_threat_ratio(r, own, &fighters);
             let Some(a) = self.actor_mut(r) else { continue };
-            let Some(c) = a.combat.as_mut() else { continue };
+            let Some(c) = a.exec.combat.as_mut() else {
+                continue;
+            };
             let threshold = a.stats.confidence_value + c.confidence_mod;
             // Only the hurt think of fleeing (cowards always do).
-            let hurt = a.health < a.stats.max_health || a.stats.confidence == 0;
+            let hurt = a.exec.health < a.stats.max_health || a.stats.confidence == 0;
             log::debug!(
                 "{r}: threat ratio {ratio:.3} against {threshold:.3}{}{}",
                 if hurt { "" } else { " (unhurt)" },
@@ -416,7 +419,7 @@ impl Engine {
                 a.set_guard(0.0);
                 log::info!(
                     "{r} flees (threat ratio {ratio:.3} < {threshold:.3}; health {:.0} / {:.0})",
-                    a.health,
+                    a.exec.health,
                     a.stats.max_health
                 );
             } else if c.fleeing && ratio >= threshold {
@@ -436,9 +439,9 @@ impl Engine {
             .cells
             .values_mut()
             .flat_map(|rt| rt.actors.iter_mut())
-            .filter(|a| !a.dead && a.bleeding.is_none())
+            .filter(|a| !a.dead && a.exec.bleeding.is_none())
             .filter_map(|a| {
-                let c = a.combat.as_mut()?;
+                let c = a.exec.combat.as_mut()?;
                 c.flee_dialogue_due(dt).then_some(a.ref_id)
             })
             .collect();
@@ -455,7 +458,7 @@ impl Engine {
                 continue;
             }
             let wait = flee_dialogue_interval(min, max, self.rand());
-            if let Some(c) = self.actor_mut(r).and_then(|a| a.combat.as_mut()) {
+            if let Some(c) = self.actor_mut(r).and_then(|a| a.exec.combat.as_mut()) {
                 c.flee_dialogue = wait;
             }
             self.bark(r, b"FLEE");

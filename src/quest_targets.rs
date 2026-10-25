@@ -176,7 +176,7 @@ impl Engine {
         }
         if let Some(a) = self.actor_ref(r) {
             let key = self.actor_cells.get(&r)?;
-            return Some((self.place_of_key(*key)?.into(), a.pos));
+            return Some((self.place_of_key(*key)?.into(), a.exec.pos));
         }
         if let Some(&(place, pos)) = self.whereabouts.of.get(&r) {
             return Some((place.into(), pos));

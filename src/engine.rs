@@ -308,6 +308,9 @@ pub struct Engine {
     pub whereabouts: crate::ai::schedule::Whereabouts,
     /// Cell each spawned actor reference belongs to.
     pub actor_cells: HashMap<FormId, CellKey>,
+    /// Living actors that unloaded: their executions, until they load again
+    /// (`plans/ai-actor-execution.md`; for now only their wounds carry back).
+    pub away: HashMap<FormId, crate::ai::exec::ActorExec>,
 }
 
 #[derive(Default)]
@@ -536,6 +539,7 @@ impl Engine {
             ai_enabled: true,
             ai_off: Default::default(),
             whereabouts: Default::default(),
+            away: HashMap::new(),
             actor_cells: HashMap::new(),
         }
     }
@@ -1321,7 +1325,7 @@ impl Engine {
         let mut taken: Vec<Vec3> = self
             .cells
             .get(&key)
-            .map(|rt| rt.actors.iter().map(|a| a.pos).collect())
+            .map(|rt| rt.actors.iter().map(|a| a.exec.pos).collect())
             .unwrap_or_default();
         for &(r, at) in refs {
             let is_actor = self.lo.tag_of(r).map_or_else(
@@ -1426,7 +1430,7 @@ impl Engine {
                 packages,
                 start * 0.3,
             );
-            rt.alias_gen = self.scripts.alias_gen;
+            rt.exec.alias_gen = self.scripts.alias_gen;
             if let Some(&scale) = self.ref_state.scales.get(&d.ref_id) {
                 // Scripts gave the reference its own scale; the NPC's and the
                 // race's heights stay on top.
@@ -1452,8 +1456,8 @@ impl Engine {
             if self.scripts.faction_changes.contains_key(&d.ref_id) {
                 stats.factions = self.member_factions(d.ref_id);
             }
-            rt.health = self.returning_health(d.ref_id, stats.max_health);
-            rt.stamina = stats.max_stamina;
+            rt.exec.health = self.returning_health(d.ref_id, stats.max_health);
+            rt.exec.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.ref_id, d.inventory.weapon(&self.lo));
             if let Some(bow) = d
                 .inventory
@@ -1565,7 +1569,7 @@ impl Engine {
                     .editor_id()
                     .map(|e| e.to_string())),
                 d.transform.w_axis.truncate(),
-                rt.packages.len()
+                rt.exec.packages.len()
             );
             actors.push(crate::render::ActorInstance {
                 meshes,
@@ -3210,7 +3214,7 @@ impl Engine {
         // Loaded actors spawned away from their editor place (schedules) before
         // they move.
         if let Some(a) = self.actor_ref(r) {
-            return Some(a.pos);
+            return Some(a.exec.pos);
         }
         if let Some(m) = self.world_state.moved.get(&r) {
             return Some(m.pos);

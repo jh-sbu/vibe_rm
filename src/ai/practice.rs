@@ -228,17 +228,18 @@ impl ActorRuntime {
         self.speed = 0.0;
         // A package that has run its course stays done until it stops applying.
         let package = self
+            .exec
             .current
-            .and_then(|i| self.packages.get(i))
+            .and_then(|i| self.exec.packages.get(i))
             .map(|p| p.id);
-        if package.is_some() && package == self.finished_package {
+        if package.is_some() && package == self.exec.finished_package {
             return;
         }
         let mut p = self.practice.unwrap_or_default();
         if matches!(p.phase, Phase::Cancelling)
             || (p
                 .target
-                .is_some_and(|t| !goal.eligible(t, self.ref_id, self.pos, w.targets))
+                .is_some_and(|t| !goal.eligible(t, self.ref_id, self.exec.pos, w.targets))
                 && !matches!(p.phase, Phase::Loosed(..)))
         {
             self.arrow_release = false;
@@ -250,7 +251,7 @@ impl ActorRuntime {
         // A new barrage: choose only among targets whose own trigger passes.
         if p.left == 0 && matches!(p.phase, Phase::Ready) && p.wait <= 0.0 {
             let targets: Vec<usize> = (0..goal.targets.len())
-                .filter(|&t| goal.eligible(t, self.ref_id, self.pos, w.targets))
+                .filter(|&t| goal.eligible(t, self.ref_id, self.exec.pos, w.targets))
                 .collect();
             if targets.is_empty() {
                 self.practice = Some(p);
@@ -269,7 +270,7 @@ impl ActorRuntime {
         let Some(aim) = p.target.and_then(|index| {
             let target = goal.targets[index]?;
             let pos = if target == self.ref_id {
-                self.pos
+                self.exec.pos
             } else {
                 *w.targets.get(&target)?
             };
@@ -279,7 +280,7 @@ impl ActorRuntime {
             return;
         };
         let off = self
-            .turn_towards((aim - self.pos).with_z(0.0).normalize_or_zero(), dt)
+            .turn_towards((aim - self.exec.pos).with_z(0.0).normalize_or_zero(), dt)
             .abs();
         if !self.drawn {
             if self.graph_event("WeapEquip", &mut w.clips) {
@@ -326,8 +327,8 @@ impl ActorRuntime {
                 p.barrages_done,
                 p.elapsed
             );
-            self.finished_package = package;
-            self.next_eval = 0.0;
+            self.exec.finished_package = package;
+            self.exec.next_eval = 0.0;
         }
         self.practice = Some(p);
     }
@@ -342,7 +343,7 @@ impl ActorRuntime {
             self.practice = Some(practice);
             return;
         }
-        if self.drawn && self.combat.is_none() && self.graph_event("Unequip", &mut w.clips) {
+        if self.drawn && self.exec.combat.is_none() && self.graph_event("Unequip", &mut w.clips) {
             self.drawn = false;
         }
     }
@@ -354,10 +355,10 @@ impl crate::engine::Engine {
     pub(crate) fn update_practice_weapons(&mut self) {
         let mut swaps = Vec::new();
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
-            if a.combat.is_some() || a.dead {
+            if a.exec.combat.is_some() || a.dead {
                 continue;
             }
-            let kind = a.goal.and_then(|g| g.practice).map(|p| p.weapon);
+            let kind = a.exec.goal.and_then(|g| g.practice).map(|p| p.weapon);
             let inv = self.inventories.get(&a.ref_id);
             let current = inv.and_then(|i| i.weapon(&self.lo));
             match kind {

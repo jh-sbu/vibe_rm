@@ -45,7 +45,7 @@ impl Engine {
             .map(|p| (PLAYER_REF, p.distance(centre)));
         out.extend(player.filter(|&(_, d)| d <= radius));
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
-            let d = a.pos.distance(centre);
+            let d = a.exec.pos.distance(centre);
             if d <= radius && !self.is_disabled(a.ref_id) {
                 out.push((a.ref_id, d));
             }
@@ -344,7 +344,7 @@ mod tests {
             Vec::new(),
             0.0,
         );
-        a.health = 10.0;
+        a.exec.health = 10.0;
         e.cells.entry(key).or_default().actors.push(a);
         e.player.position = Vec3::new(0.0, 0.0, 0.0);
         let player_at = e.ref_position(PLAYER_REF).unwrap();

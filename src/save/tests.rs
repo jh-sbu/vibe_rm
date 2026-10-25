@@ -102,12 +102,12 @@ fn attach_scene_test_actor(e: &mut Engine) {
 fn ready_scene_force_greet_actor(e: &mut Engine) {
     let packages = e.scenes.packages[&SCENE_ACTOR].2.clone();
     let actor = e.actor_mut(SCENE_ACTOR).unwrap();
-    actor.packages = packages;
-    actor.current = Some(0);
+    actor.exec.packages = packages;
+    actor.exec.current = Some(0);
     let mut goal = crate::ai::Goal::travel(Vec3::ZERO);
     goal.behaviour = crate::ai::package::Behaviour::ForceGreet;
-    actor.goal = Some(goal);
-    actor.greeting = true;
+    actor.exec.goal = Some(goal);
+    actor.exec.greeting = true;
 }
 
 fn engine(name: &str) -> (Fixture, Engine) {
@@ -847,14 +847,14 @@ fn play(e: &mut Engine) {
         ACTOR,
         vec![Mat4::from_translation(Vec3::new(5.0, 6.0, 7.0))],
     );
-    ws.wounds.insert(
+    e.away.insert(
         ACTOR,
-        Wounds {
+        crate::ai::exec::ActorExec::wounded(Wounds {
             health: 10.0,
             max: 50.0,
             rate: 0.01,
             at: 99.0,
-        },
+        }),
     );
     ws.moved.insert(
         FormId(0x909),

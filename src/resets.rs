@@ -191,7 +191,7 @@ impl Engine {
         if actor {
             self.resurrect(r);
             self.reset_health_and_limbs(r);
-            self.world_state.wounds.remove(&r);
+            self.heal_wounds_away(r);
             self.actor_flags.critical.remove(&r);
         }
         self.reset_loose(r);

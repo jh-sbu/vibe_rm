@@ -99,6 +99,16 @@ the runs settled and what they left open. Steps 5 and 6 below follow them.
 
 ### 2. Split durable execution out of `ActorRuntime` (refactor)
 
+**Status (2026-10-25):** done. `ActorExec` (`src/ai/exec.rs`) holds the
+fields listed above, with position, heading and the place it unloaded from.
+`stamina_wait` and `stamina_spent` stayed loaded-only. Dead actors get no
+`away` entry: `world_state.dead` keeps them. `world_state.wounds` is gone, not
+kept as a view: `ActorExec::wounds` holds them, and the `WRLD` section's list is
+read from `away` (`Engine::away_wounds`). Loading a save puts back
+wounds-only executions (`ActorExec::wounded`). Resurrecting and resetting an
+actor that is away clear its wounds, as they cleared the old entry; deleting a
+created one removes its execution. Tests are in `src/ai/exec.rs`.
+
 - Add `ai::exec::ActorExec`, holding the durable fields listed above plus
   position, heading, current place and a procedure stage (step 3).
   `ActorRuntime` keeps the loaded-only state and gets an `exec: ActorExec`

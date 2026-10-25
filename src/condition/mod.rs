@@ -1632,7 +1632,7 @@ impl Engine {
             !a.dead
                 && a.stats
                     .aggro_attack
-                    .is_some_and(|r| a.pos.distance(self.player.position) < r)
+                    .is_some_and(|r| a.exec.pos.distance(self.player.position) < r)
         })
     }
 

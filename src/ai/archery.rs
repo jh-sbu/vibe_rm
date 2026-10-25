@@ -258,10 +258,10 @@ impl ActorRuntime {
         dist: f32,
     ) -> Option<String> {
         let run = self.run_speed();
-        let pos = self.pos;
+        let pos = self.exec.pos;
         let close = dist < FALLBACK_RANGE * self.scale;
         let fallback = self.stats.fallback;
-        let c = self.combat.as_mut()?;
+        let c = self.exec.combat.as_mut()?;
         let draw = c.draw;
         // Backing off from a target close in: between shots, now and then.
         if c.away_to.is_some_and(|t| arrived_away(pos, t, target)) {
@@ -294,9 +294,9 @@ impl ActorRuntime {
         }
         self.speed = 0.0;
         self.state = State::Idle(1.0);
-        let to = (target - self.pos).normalize_or_zero();
+        let to = (target - self.exec.pos).normalize_or_zero();
         let off = self.turn_towards(to, dt).abs();
-        let c = self.combat.as_mut()?;
+        let c = self.exec.combat.as_mut()?;
         match draw {
             Draw::Idle if c.cooldown <= 0.0 && off < 0.5 => {
                 // The last release's clip raises arrowRelease more than once.
@@ -354,8 +354,8 @@ impl Engine {
             .filter_map(|a| {
                 Some((
                     a.ref_id,
-                    a.combat.as_ref()?.target,
-                    a.pos + Vec3::Z * 110.0 * a.scale,
+                    a.exec.combat.as_ref()?.target,
+                    a.exec.pos + Vec3::Z * 110.0 * a.scale,
                 ))
             })
             .collect();
@@ -364,7 +364,7 @@ impl Engine {
                 Some(self.player.position + Vec3::Z * 20.0)
             } else {
                 self.actor_ref(target)
-                    .map(|t| t.pos + Vec3::Z * CAPSULE_CENTRE * t.scale)
+                    .map(|t| t.exec.pos + Vec3::Z * CAPSULE_CENTRE * t.scale)
             };
             let clear = aim.is_some_and(|aim| {
                 let to = aim - eye;
@@ -389,7 +389,7 @@ impl Engine {
                     }
                 })
             });
-            if let Some(c) = self.actor_mut(archer).and_then(|a| a.combat.as_mut()) {
+            if let Some(c) = self.actor_mut(archer).and_then(|a| a.exec.combat.as_mut()) {
                 c.clear_shot = clear;
             }
         }
@@ -489,8 +489,8 @@ impl Engine {
                 if !std::mem::take(&mut a.loose) {
                     continue;
                 }
-                let eye = a.pos + Vec3::Z * 110.0 * a.scale;
-                match (a.combat.as_ref(), a.practice_aim.take()) {
+                let eye = a.exec.pos + Vec3::Z * 110.0 * a.scale;
+                match (a.exec.combat.as_ref(), a.practice_aim.take()) {
                     (Some(c), _) => shots.push((a.ref_id, c.target, eye, None)),
                     (None, Some(aim)) => shots.push((a.ref_id, FormId::NULL, eye, Some(aim))),
                     _ => {}
@@ -508,7 +508,7 @@ impl Engine {
                 Some(self.player.position + Vec3::Z * 20.0)
             } else {
                 self.actor_ref(target)
-                    .map(|t| t.pos + Vec3::Z * CAPSULE_CENTRE * t.scale)
+                    .map(|t| t.exec.pos + Vec3::Z * CAPSULE_CENTRE * t.scale)
             };
             let Some(aim) = aim else { continue };
             let Some(arrow) = self.arrows_of(shooter) else {

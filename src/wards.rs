@@ -151,7 +151,7 @@ impl Engine {
         let cast_at: std::collections::HashSet<FormId> = actors
             .filter(|a| !a.dead)
             .filter_map(|a| {
-                let c = a.combat.as_ref().filter(|c| !c.fleeing)?;
+                let c = a.exec.combat.as_ref().filter(|c| !c.fleeing)?;
                 let throwing = c.hand_cast.is_some_and(|h| !h.cast.spell.self_target);
                 let channelling = c.channel > 0.0 && a.combat_spell.is_some_and(|s| !s.self_target);
                 (throwing || channelling).then_some(c.target)
@@ -159,8 +159,10 @@ impl Engine {
             .collect();
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut() {
-                let at = a.pos + Vec3::Z * BODY_CENTRE * a.scale;
-                let Some(c) = a.combat.as_mut() else { continue };
+                let at = a.exec.pos + Vec3::Z * BODY_CENTRE * a.scale;
+                let Some(c) = a.exec.combat.as_mut() else {
+                    continue;
+                };
                 let threatened = cast_at.contains(&a.ref_id)
                     || (player_threat && c.target == PLAYER_REF && aimed_at(eye, dir, at));
                 c.ward_keep = keep_step(c.ward_keep, threatened, dt);
@@ -173,7 +175,7 @@ impl Engine {
     /// it has waited since its last ward ended or broke.
     pub(crate) fn wants_ward(&self, actor: FormId) -> bool {
         self.actor_ref(actor)
-            .and_then(|a| a.combat.as_ref())
+            .and_then(|a| a.exec.combat.as_ref())
             .is_some_and(|c| c.ward_keep > 0.0 && c.ward_wait <= 0.0)
     }
 
@@ -225,8 +227,12 @@ impl Engine {
         if actor == PLAYER_REF {
             return Some((self.player.position, self.camera.forward()));
         }
-        self.actor_ref(actor)
-            .map(|a| (a.pos, Vec3::new(a.heading.sin(), a.heading.cos(), 0.0)))
+        self.actor_ref(actor).map(|a| {
+            (
+                a.exec.pos,
+                Vec3::new(a.exec.heading.sin(), a.exec.heading.cos(), 0.0),
+            )
+        })
     }
 
     /// `item` cast by `caster` (`power`: dual casting's) reaches `target`:
@@ -346,7 +352,7 @@ impl Engine {
                 // An NPC's hand stops, and it waits before warding again.
                 let wait = self.ward_wait_roll();
                 if let Some(a) = self.actor_mut(target)
-                    && let Some(c) = a.combat.as_mut()
+                    && let Some(c) = a.exec.combat.as_mut()
                     && a.combat_spell.is_some_and(|s| s.ward)
                 {
                     c.channel = 0.0;

@@ -615,9 +615,9 @@ impl Engine {
                 if place == here || self.key_of_place(place).is_some() || a.exiting.is_some() {
                     continue;
                 }
-                match self.door_towards(a.pos, place) {
+                match self.door_towards(a.exec.pos, place) {
                     Some((door, spot)) => exits.push((key, a.ref_id, door, spot)),
-                    None if a.pos.distance(player) > UNSEEN_DISTANCE => despawn.push(a.ref_id),
+                    None if a.exec.pos.distance(player) > UNSEEN_DISTANCE => despawn.push(a.ref_id),
                     None => {}
                 }
             }
@@ -630,10 +630,10 @@ impl Engine {
             {
                 log::debug!(
                     "{r} leaving through door {door} at {spot:?} ({:.0} away)",
-                    spot.distance(a.pos)
+                    spot.distance(a.exec.pos)
                 );
                 a.exiting = Some(door);
-                a.goal = Some(super::Goal::travel(spot));
+                a.exec.goal = Some(super::Goal::travel(spot));
                 a.interrupt(&mut self.furniture);
             }
         }
@@ -716,10 +716,10 @@ impl Engine {
                 continue;
             };
             for a in &rt.actors {
-                if a.dead || a.pinned || a.combat.is_some() || a.bleeding.is_some() {
+                if a.dead || a.exec.pinned || a.exec.combat.is_some() || a.exec.bleeding.is_some() {
                     continue;
                 }
-                let follower = a.goal.is_some_and(|g| {
+                let follower = a.exec.goal.is_some_and(|g| {
                     matches!(
                         g.behaviour,
                         super::Behaviour::Follow | super::Behaviour::Escort
@@ -728,16 +728,18 @@ impl Engine {
                 if follower {
                     continue;
                 }
-                let pick = self.current_package(a.ref_id, &a.packages);
+                let pick = self.current_package(a.ref_id, &a.exec.packages);
                 let scheduled = self.whereabouts.of.get(&a.ref_id).copied();
                 // Its place: the schedule's for actors it has, else the
                 // package's when it names one.
                 let place = match scheduled {
                     Some((p, _)) => p,
-                    None => match pick.and_then(|i| self.package_place(a.ref_id, &a.packages[i])) {
-                        Some((p, _)) if !same_space(p, here) => continue,
-                        _ => here,
-                    },
+                    None => {
+                        match pick.and_then(|i| self.package_place(a.ref_id, &a.exec.packages[i])) {
+                            Some((p, _)) if !same_space(p, here) => continue,
+                            _ => here,
+                        }
+                    }
                 };
                 let to = if same_space(place, here) {
                     self.key_of_place(place)
@@ -750,11 +752,11 @@ impl Engine {
                 };
                 let Some(i) = pick else {
                     if to != key {
-                        respawn.push((a.ref_id, to, scheduled.map_or(a.pos, |s| s.1)));
+                        respawn.push((a.ref_id, to, scheduled.map_or(a.exec.pos, |s| s.1)));
                     }
                     continue;
                 };
-                let p = &a.packages[i];
+                let p = &a.exec.packages[i];
                 let (centre, radius) = self.package_target(a, p);
                 let away = !matches!(
                     p.behaviour,
@@ -762,10 +764,10 @@ impl Engine {
                         | super::Behaviour::Escort
                         | super::Behaviour::Hold
                         | super::Behaviour::ForceGreet
-                ) && a.pos.truncate().distance(centre.truncate())
+                ) && a.exec.pos.truncate().distance(centre.truncate())
                     > radius.max(96.0) * 1.5;
                 // (One not yet given a package keeps to what it does.)
-                let changed = a.current.is_some_and(|c| c != i);
+                let changed = a.exec.current.is_some_and(|c| c != i);
                 if changed || to != key || away {
                     respawn.push((a.ref_id, to, centre));
                 }
@@ -817,7 +819,7 @@ impl Engine {
         }
         // Their packages taken at once (the world doesn't run in the menu).
         for a in self.cells.values_mut().flat_map(|rt| &mut rt.actors) {
-            a.next_eval = 0.0;
+            a.exec.next_eval = 0.0;
         }
         self.evaluate_packages(0.0);
         log::debug!("schedules jumped to in {:?}", start.elapsed());
@@ -840,19 +842,18 @@ impl Engine {
         };
         let a = rt.actors.remove(i);
         rc.actors.remove(i);
-        // It comes back as hurt as it left (less what it heals meanwhile).
-        if !a.dead {
-            let w = crate::world_state::Wounds::of(&a, self.scripts.real_time);
-            match w {
-                Some(w) => self.world_state.wounds.insert(r, w),
-                None => self.world_state.wounds.remove(&r),
-            };
-        }
         if let Some(c) = a.capsule {
             rt.colliders.retain(|h| *h != c);
             self.physics.remove_colliders(&[c]);
         }
         self.put_torch_away_for_now(&a);
+        // Its execution kept; it comes back as hurt as it left (less what it
+        // heals meanwhile).
+        if !a.dead {
+            let w = crate::world_state::Wounds::of(&a, self.scripts.real_time);
+            let place = self.place_of_key(key);
+            self.away.insert(r, a.exec.away(place, w));
+        }
         log::debug!("{r} despawned from {key:?}");
     }
 }

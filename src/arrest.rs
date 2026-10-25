@@ -158,9 +158,9 @@ impl Engine {
             .flat_map(|rt| &rt.actors)
             .filter(|a| {
                 !a.dead
-                    && a.bleeding.is_none()
-                    && a.combat.is_none()
-                    && a.pos.distance(player) < ALARM_DISTANCE
+                    && a.exec.bleeding.is_none()
+                    && a.exec.combat.is_none()
+                    && a.exec.pos.distance(player) < ALARM_DISTANCE
             })
             .map(|a| a.ref_id)
             .filter(|&r| {
@@ -214,8 +214,8 @@ impl Engine {
         for (r, mut p) in ids {
             let live = self
                 .actor_ref(r)
-                .filter(|a| !a.dead && a.bleeding.is_none());
-            let fighting = live.is_some_and(|a| a.combat.is_some());
+                .filter(|a| !a.dead && a.exec.bleeding.is_none());
+            let fighting = live.is_some_and(|a| a.exec.combat.is_some());
             if live.is_none()
                 || fighting
                 || self.bounty(p.faction).total() <= 0
@@ -232,7 +232,7 @@ impl Engine {
             if self.crime.arrests.arresting.is_some_and(|(g, _)| g == r) {
                 continue;
             }
-            let pos = self.actor_ref(r).map(|a| a.pos).unwrap_or_default();
+            let pos = self.actor_ref(r).map(|a| a.exec.pos).unwrap_or_default();
             if let Some(a) = self.actor_mut_any(r) {
                 a.0.pursue(PLAYER_REF, a.1);
             }
@@ -313,7 +313,13 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.combat.as_ref().is_some_and(|c| c.target == PLAYER_REF))
+            .filter(|a| {
+                !a.dead
+                    && a.exec
+                        .combat
+                        .as_ref()
+                        .is_some_and(|c| c.target == PLAYER_REF)
+            })
             .map(|a| a.ref_id)
             .collect();
         if fighters.is_empty() {
@@ -363,8 +369,8 @@ impl Engine {
             .flat_map(|rt| &rt.actors)
             .filter(|a| {
                 a.ref_id == actor
-                    || a.combat.as_ref().is_some_and(|c| c.target == actor)
-                    || a.search.is_some_and(|s| s.target == actor)
+                    || a.exec.combat.as_ref().is_some_and(|c| c.target == actor)
+                    || a.exec.search.is_some_and(|s| s.target == actor)
             })
             .map(|a| a.ref_id)
             .collect();
@@ -465,7 +471,12 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| a.combat.as_ref().is_some_and(|c| c.target == PLAYER_REF))
+            .filter(|a| {
+                a.exec
+                    .combat
+                    .as_ref()
+                    .is_some_and(|c| c.target == PLAYER_REF)
+            })
             .map(|a| a.ref_id)
             .filter(|&r| self.crime_faction(r) == Some(faction) && self.is_guard(r))
             .collect();
@@ -774,7 +785,7 @@ mod tests {
         e.set_crime_faction(GUARD, Some(faction));
         e.mod_crime_gold(faction, 40, true);
         e.set_player_resisting_arrest(GUARD);
-        assert!(e.actor_ref(GUARD).unwrap().combat.is_some());
+        assert!(e.actor_ref(GUARD).unwrap().exec.combat.is_some());
     }
 
     #[test]
@@ -784,9 +795,9 @@ mod tests {
         resist(&mut e, HOLD);
         // Not yet: the weapons must stay away a moment.
         e.update_yield(YIELD_DELAY / 2.0);
-        assert!(e.actor_ref(GUARD).unwrap().combat.is_some());
+        assert!(e.actor_ref(GUARD).unwrap().exec.combat.is_some());
         e.update_yield(YIELD_DELAY);
-        assert!(e.actor_ref(GUARD).unwrap().combat.is_none());
+        assert!(e.actor_ref(GUARD).unwrap().exec.combat.is_none());
         assert!(!e.crime.arrests.resisting.contains(&HOLD));
         assert!(e.is_alarmed(GUARD));
         assert!(!e.crime_hostile(GUARD));
@@ -802,7 +813,7 @@ mod tests {
         // Resisting the second arrest too: the guard fights on.
         e.set_player_resisting_arrest(GUARD);
         e.update_yield(YIELD_DELAY * 2.0);
-        assert!(e.actor_ref(GUARD).unwrap().combat.is_some());
+        assert!(e.actor_ref(GUARD).unwrap().exec.combat.is_some());
         // Once nobody fights the player, yielding is open again.
         e.end_combat(GUARD);
         e.update_yield(0.1);
@@ -815,7 +826,7 @@ mod tests {
         let (_f, mut e) = fixture();
         resist(&mut e, OTHER_HOLD);
         e.update_yield(YIELD_DELAY * 2.0);
-        assert!(e.actor_ref(GUARD).unwrap().combat.is_some());
+        assert!(e.actor_ref(GUARD).unwrap().exec.combat.is_some());
         assert!(!e.crime.arrests.yield_attempted);
     }
 }

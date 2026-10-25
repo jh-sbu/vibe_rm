@@ -618,8 +618,9 @@ pub fn call(
                     .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r))
                 {
                     return actor
+                        .exec
                         .current
-                        .and_then(|i| actor.packages.get(i))
+                        .and_then(|i| actor.exec.packages.get(i))
                         .map(|p| p.id);
                 }
                 e.whereabouts.package.get(&r).copied().flatten()

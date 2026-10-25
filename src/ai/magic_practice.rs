@@ -72,10 +72,10 @@ impl MagicGoal {
 impl ActorRuntime {
     /// At a UseMagic goal's location, out of combat.
     pub(crate) fn magic_practising(&self) -> bool {
-        self.combat.is_none()
-            && self.goal.is_some_and(|g| {
+        self.exec.combat.is_none()
+            && self.exec.goal.is_some_and(|g| {
                 g.magic.is_some()
-                    && self.pos.truncate().distance(g.centre.truncate()) <= g.radius.max(96.0)
+                    && self.exec.pos.truncate().distance(g.centre.truncate()) <= g.radius.max(96.0)
             })
     }
 
@@ -84,10 +84,11 @@ impl ActorRuntime {
     pub(crate) fn magic_practice_step(&mut self, dt: f32, goal: &MagicGoal, w: &mut World) {
         self.speed = 0.0;
         let package = self
+            .exec
             .current
-            .and_then(|i| self.packages.get(i))
+            .and_then(|i| self.exec.packages.get(i))
             .map(|p| p.id);
-        if package.is_some() && package == self.finished_package {
+        if package.is_some() && package == self.exec.finished_package {
             return;
         }
         // The engine puts the spell in the hands once it is here and known.
@@ -121,7 +122,7 @@ impl ActorRuntime {
         if let Some(aim) = aim {
             self.state = State::Idle(1.0);
             off = self
-                .turn_towards((aim - self.pos).with_z(0.0).normalize_or_zero(), dt)
+                .turn_towards((aim - self.exec.pos).with_z(0.0).normalize_or_zero(), dt)
                 .abs();
         }
         let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
@@ -254,8 +255,8 @@ impl ActorRuntime {
         m.wait = uniform(w.rand, goal.cooldown.0, goal.cooldown.1);
         if left <= 1 {
             log::debug!("{} finished its casting practice", self.ref_id);
-            self.finished_package = package;
-            self.next_eval = 0.0;
+            self.exec.finished_package = package;
+            self.exec.next_eval = 0.0;
             *m = MagicPractice {
                 package: m.package,
                 ..Default::default()
@@ -272,7 +273,7 @@ impl ActorRuntime {
         if let Some(h) = m.cast {
             self.release_hand(h.hand);
         }
-        if self.drawn && self.combat.is_none() && self.graph_event("Unequip", &mut w.clips) {
+        if self.drawn && self.exec.combat.is_none() && self.graph_event("Unequip", &mut w.clips) {
             self.drawn = false;
         }
     }
@@ -292,12 +293,12 @@ impl crate::engine::Engine {
             .flat_map(|rt| &rt.actors)
             .filter(|a| a.magic_practising() && !a.dead)
             .filter_map(|a| {
-                let goal = a.goal.and_then(|g| g.magic)?;
+                let goal = a.exec.goal.and_then(|g| g.magic)?;
                 let target = goal.target.filter(|&t| t != a.ref_id)?;
                 goal.hold_when_blocked.then_some((
                     a.ref_id,
                     target,
-                    a.pos + Vec3::Z * 110.0 * a.scale,
+                    a.exec.pos + Vec3::Z * 110.0 * a.scale,
                     goal.aim_offset,
                 ))
             })
@@ -375,7 +376,7 @@ mod tests {
         a.combat_spell = Some(spell);
         let mut g = Goal::travel(Vec3::ZERO);
         g.magic = Some(goal);
-        a.goal = Some(g);
+        a.exec.goal = Some(g);
         a
     }
 
@@ -430,14 +431,14 @@ mod tests {
         with_world(Vec3::Y * 500.0, |w| {
             let g = goal();
             let mut a = caster(spell(false, false), g);
-            a.next_eval = 9.0;
+            a.exec.next_eval = 9.0;
             a.magic_practice_step(0.1, &g, w);
             assert!(a.casts.take().is_some());
-            assert_eq!(a.next_eval, 9.0, "one to go");
+            assert_eq!(a.exec.next_eval, 9.0, "one to go");
             a.magic_practice_step(3.1, &g, w);
             assert!(a.casts.take().is_some());
             // Done: the actor looks for its next package at once.
-            assert_eq!(a.next_eval, 0.0);
+            assert_eq!(a.exec.next_eval, 0.0);
         });
     }
 
@@ -465,11 +466,11 @@ mod tests {
             let mut g = goal();
             g.target = None;
             let mut a = caster(spell(false, true), g);
-            a.heading = 3.0;
+            a.exec.heading = 3.0;
             a.magic_practice_step(0.1, &g, w);
             let cast = a.casts.take().expect("a cast");
             assert_eq!(cast.target, a.ref_id);
-            assert_eq!(a.heading, 3.0);
+            assert_eq!(a.exec.heading, 3.0);
         });
     }
 
@@ -478,13 +479,15 @@ mod tests {
         with_world(Vec3::Y * 500.0, |w| {
             let g = goal();
             let mut a = caster(spell(false, false), g);
-            a.heading = std::f32::consts::PI;
+            a.exec.heading = std::f32::consts::PI;
             a.magic_practice_step(0.1, &g, w);
             assert!(a.casts.is_none());
             for _ in 0..40 {
                 a.magic_practice_step(0.1, &g, w);
             }
-            assert!(a.heading.abs() < 0.3 || (a.heading - std::f32::consts::TAU).abs() < 0.3);
+            assert!(
+                a.exec.heading.abs() < 0.3 || (a.exec.heading - std::f32::consts::TAU).abs() < 0.3
+            );
             assert!(a.casts.is_some() || a.magic_practice.unwrap().left == Some(1));
         });
     }
@@ -622,7 +625,7 @@ mod tests {
                 target: Some(TARGET),
                 ..goal()
             });
-            e.actor_mut(ACTOR).unwrap().goal = Some(g);
+            e.actor_mut(ACTOR).unwrap().exec.goal = Some(g);
         }
 
         #[test]
@@ -645,7 +648,7 @@ mod tests {
             e.npc_casts();
             assert_eq!(e.actor_value(ACTOR, av::MAGICKA), 50.0);
             // Away from its place the spell goes back.
-            e.actor_mut(ACTOR).unwrap().pos = Vec3::X * 5000.0;
+            e.actor_mut(ACTOR).unwrap().exec.pos = Vec3::X * 5000.0;
             e.update_combat_spells(0.1);
             assert!(e.actor_ref(ACTOR).unwrap().combat_spell.is_none());
             let _ = std::fs::remove_dir_all(dir);

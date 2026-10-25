@@ -963,7 +963,7 @@ impl Engine {
             .values()
             .flat_map(|rt| &rt.actors)
             .filter(|a| a.is_walking())
-            .map(|a| (a.ref_id, a.pos))
+            .map(|a| (a.ref_id, a.exec.pos))
             .collect();
         let near = |p: Vec3, d: f32, with_player: bool| {
             walkers.iter().any(|w| w.1.distance(p) < d) || (with_player && player.distance(p) < d)

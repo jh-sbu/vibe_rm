@@ -90,7 +90,7 @@ fn place(e: &mut Engine, r: FormId) {
         max_health: 50.0,
         ..CombatStats::default()
     });
-    a.health = 50.0;
+    a.exec.health = 50.0;
     e.actor_cells.insert(r, key);
     e.cells.entry(key).or_default().actors.push(a);
 }
@@ -224,7 +224,7 @@ fn invulnerable_actors_health_cant_be_lowered() {
     );
     e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
     e.damage_actor_value(ACTOR, av::HEALTH, 30.0);
-    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 50.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 50.0);
     // The player too, through their base.
     let health = e.player_health;
     e.set_base_flag(FormId(0x7), crate::protection::acbs::INVULNERABLE, true);
@@ -239,7 +239,7 @@ fn invulnerable_actors_health_cant_be_lowered() {
         &[Value::Bool(false)],
     );
     e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
-    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 20.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 20.0);
 }
 
 #[test]
@@ -259,10 +259,10 @@ fn blows_pass_ghosts_by() {
         Value::Bool(true)
     );
     e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
-    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 50.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 50.0);
     // Scripts still reach its health.
     e.damage_actor_value(ACTOR, av::HEALTH, 10.0);
-    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 40.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 40.0);
     // GetIsGhost (237).
     let rec = e.lo.get(NPC).unwrap();
     let mut d = [0u8; 32];
@@ -283,5 +283,5 @@ fn blows_pass_ghosts_by() {
     call(&mut e, "actor", "setghost", ACTOR, &[Value::Bool(false)]);
     assert!(!ghost(&e, ACTOR));
     e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
-    assert_eq!(e.actor_ref(ACTOR).unwrap().health, 10.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 10.0);
 }

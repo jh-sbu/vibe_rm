@@ -170,7 +170,7 @@ impl Engine {
             .values()
             .flat_map(|rt| &rt.actors)
             .filter(|a| !a.dead)
-            .map(|a| (a.ref_id, a.pos))
+            .map(|a| (a.ref_id, a.exec.pos))
             .collect();
         if !self.player_dead()
             && let Some(p) = self.ref_position(PLAYER_REF)

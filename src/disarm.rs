@@ -160,7 +160,7 @@ mod tests {
             Vec::new(),
             0.0,
         );
-        actor.health = 100.0;
+        actor.exec.health = 100.0;
         actor.drawn = true;
         let key = crate::render::CellKey::Interior(CELL);
         e.actor_cells.insert(ACTOR, key);

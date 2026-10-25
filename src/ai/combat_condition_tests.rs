@@ -138,7 +138,7 @@ fn fixture() -> (Fixture, Engine) {
         Vec::new(),
         0.0,
     );
-    actor.health = 100.0;
+    actor.exec.health = 100.0;
     actor.stats = Arc::new(CombatStats {
         attacks: vec![attack("testBasic", 0), attack("testPower", ATK_POWER)],
         ..Default::default()
@@ -199,14 +199,14 @@ fn combat_state_and_target_follow_the_actors_fight() {
     let (_f, mut e) = fixture();
     assert!(holds(&e, ACTOR, GET_COMBAT_STATE, 0, 0.0));
     assert!(!holds(&e, ACTOR, IS_COMBAT_TARGET, PLAYER_REF.0, 1.0));
-    actor_mut(&mut e).combat = Some(Combat::new(PLAYER_REF));
+    actor_mut(&mut e).exec.combat = Some(Combat::new(PLAYER_REF));
     // Fighting (1), its target the player and no one else.
     assert!(holds(&e, ACTOR, GET_COMBAT_STATE, 0, 1.0));
     assert!(!holds(&e, ACTOR, GET_COMBAT_STATE, 0, 2.0));
     assert!(holds(&e, ACTOR, IS_COMBAT_TARGET, PLAYER_REF.0, 1.0));
     assert!(!holds(&e, ACTOR, IS_COMBAT_TARGET, OTHER.0, 1.0));
     // Searching (2) for a target it lost.
-    actor_mut(&mut e).combat = None;
+    actor_mut(&mut e).exec.combat = None;
     e.start_search(ACTOR, PLAYER_REF, Vec3::ZERO, true);
     assert!(holds(&e, ACTOR, GET_COMBAT_STATE, 0, 2.0));
     // The target it lost is still the one `GetCombatTarget` reports (see
@@ -220,13 +220,13 @@ fn power_attacking_is_the_swing_being_made_while_it_runs() {
     let (_f, mut e) = fixture();
     let mut combat = Combat::new(PLAYER_REF);
     combat.attack = Some(1);
-    actor_mut(&mut e).combat = Some(combat);
+    actor_mut(&mut e).exec.combat = Some(combat);
     // No swing running: the attack it last chose isn't being made.
     assert!(!holds(&e, ACTOR, IS_POWER_ATTACKING, 0, 1.0));
-    actor_mut(&mut e).combat.as_mut().unwrap().swing = 0.5;
+    actor_mut(&mut e).exec.combat.as_mut().unwrap().swing = 0.5;
     assert!(holds(&e, ACTOR, IS_POWER_ATTACKING, 0, 1.0));
     // A basic attack running is not one.
-    actor_mut(&mut e).combat.as_mut().unwrap().attack = Some(0);
+    actor_mut(&mut e).exec.combat.as_mut().unwrap().attack = Some(0);
     assert!(!holds(&e, ACTOR, IS_POWER_ATTACKING, 0, 1.0));
 }
 
@@ -261,14 +261,14 @@ fn a_null_reference_in_positional_conditions_is_the_combat_target() {
     const GET_LINE_OF_SIGHT: u16 = 27;
     const GET_HEADING_ANGLE: u16 = 99;
     let (_f, mut e) = fixture();
-    actor_mut(&mut e).pos = Vec3::ZERO;
+    actor_mut(&mut e).exec.pos = Vec3::ZERO;
     let z = e.physics.player_half_height + e.physics.player_radius;
     e.player.position = Vec3::new(100.0, 0.0, z);
     // Nobody fought: the null names nothing.
     assert!(!holds(&e, ACTOR, GET_HEADING_ANGLE, 0, 90.0));
     assert!(!holds(&e, ACTOR, GET_LINE_OF_SIGHT, 0, 1.0));
     // Fighting the player, to the east of an actor facing north.
-    actor_mut(&mut e).combat = Some(Combat::new(PLAYER_REF));
+    actor_mut(&mut e).exec.combat = Some(Combat::new(PLAYER_REF));
     assert!(holds(&e, ACTOR, GET_HEADING_ANGLE, 0, 90.0));
     assert!(holds(&e, ACTOR, GET_HEADING_ANGLE, PLAYER_REF.0, 90.0));
     assert!(holds(&e, ACTOR, GET_LINE_OF_SIGHT, 0, 1.0));
@@ -284,7 +284,7 @@ fn add_actor(e: &mut Engine, id: FormId, base: FormId) {
         Vec::new(),
         0.0,
     );
-    actor.health = 100.0;
+    actor.exec.health = 100.0;
     let key = crate::render::CellKey::Interior(CELL);
     e.actor_cells.insert(id, key);
     e.cells
@@ -295,7 +295,7 @@ fn add_actor(e: &mut Engine, id: FormId, base: FormId) {
 }
 
 fn fights(e: &mut Engine, who: FormId, target: FormId) {
-    e.actor_mut(who).unwrap().combat = Some(Combat::new(target));
+    e.actor_mut(who).unwrap().exec.combat = Some(Combat::new(target));
 }
 
 #[test]
@@ -414,7 +414,7 @@ fn protected_actors_loaded_or_not_and_aggro_radius() {
     // The player inside the attack radius.
     stats.aggro_attack = Some(500.0);
     e.actor_mut(ACTOR).unwrap().stats = Arc::new(stats);
-    actor_mut(&mut e).pos = Vec3::ZERO;
+    actor_mut(&mut e).exec.pos = Vec3::ZERO;
     e.player.position = Vec3::new(300.0, 0.0, 0.0);
     assert!(holds(&e, ACTOR, AGGRO_RADIUS_VIOLATED, 0, 1.0));
     e.player.position = Vec3::new(900.0, 0.0, 0.0);

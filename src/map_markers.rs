@@ -265,12 +265,13 @@ impl Engine {
         let player = self.player.position;
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
             let fighting = a
+                .exec
                 .combat
                 .as_ref()
                 .is_some_and(|c| c.target == crate::engine::PLAYER_REF && !c.fleeing);
-            if fighting && !a.dead && a.bleeding.is_none() {
+            if fighting && !a.dead && a.exec.bleeding.is_none() {
                 out.push(CompassMarker {
-                    heading: heading(player, a.pos),
+                    heading: heading(player, a.exec.pos),
                     alpha: 100.0,
                     frame: frame::ENEMY,
                     scale: 100.0,

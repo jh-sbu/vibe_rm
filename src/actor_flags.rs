@@ -104,14 +104,14 @@ impl Engine {
         self.world_state.dead.remove(&actor);
         self.world_state.deaths.remove(&actor);
         self.world_state.body_poses.remove(&actor);
-        self.world_state.wounds.remove(&actor);
+        self.heal_wounds_away(actor);
         let Some(a) = self.actor_mut(actor).filter(|a| a.dead) else {
             return;
         };
         a.dead = false;
-        a.health = a.stats.max_health;
-        a.bleeding = None;
-        a.combat = None;
+        a.exec.health = a.stats.max_health;
+        a.exec.bleeding = None;
+        a.exec.combat = None;
         a.halt(1.0);
         let ragdoll = a.ragdoll.take();
         let capsule = a.capsule;
@@ -134,8 +134,8 @@ impl Engine {
             return;
         }
         if let Some(a) = self.actor_mut(actor).filter(|a| !a.dead) {
-            a.health = a.stats.max_health;
-            a.bleeding = None;
+            a.exec.health = a.stats.max_health;
+            a.exec.bleeding = None;
         }
     }
 
@@ -312,7 +312,7 @@ mod tests {
         {
             let a = e.actor_mut(ACTOR).unwrap();
             a.dead = true;
-            a.health = 0.0;
+            a.exec.health = 0.0;
             a.stats = std::sync::Arc::new(crate::ai::combat::CombatStats {
                 max_health: 80.0,
                 ..(*a.stats).clone()
@@ -330,7 +330,7 @@ mod tests {
         assert!(e.is_dead(ACTOR));
         call(&mut e, "resurrect", &[]);
         assert!(!e.is_dead(ACTOR));
-        assert_eq!(e.actor_ref(ACTOR).unwrap().health, 80.0);
+        assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 80.0);
         assert!(e.death(ACTOR).is_none());
         assert!(e.world_state.dead.is_empty());
         // Unloaded: only the record of the body goes.
@@ -346,9 +346,9 @@ mod tests {
         let (_f, mut e) = fixture();
         loaded_actor(&mut e);
         let max = e.actor_ref(ACTOR).unwrap().stats.max_health;
-        e.actor_mut(ACTOR).unwrap().health = 1.0;
+        e.actor_mut(ACTOR).unwrap().exec.health = 1.0;
         call(&mut e, "resethealthandlimbs", &[]);
-        assert_eq!(e.actor_ref(ACTOR).unwrap().health, max);
+        assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, max);
     }
 
     #[test]

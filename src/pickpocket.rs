@@ -28,9 +28,12 @@ impl Engine {
         self.player.sneaking
             && !self.is_dead(r)
             && !self.caught_pickpocketing_by(r)
-            && self
-                .actor_ref(r)
-                .is_some_and(|a| a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF))
+            && self.actor_ref(r).is_some_and(|a| {
+                a.exec
+                    .combat
+                    .as_ref()
+                    .is_none_or(|c| c.target != PLAYER_REF)
+            })
     }
 
     /// Whether `item` in `victim`'s pockets may be taken: what it doesn't

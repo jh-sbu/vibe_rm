@@ -141,7 +141,7 @@ fn load_actor(engine: &mut Engine, pos: Vec3) {
         Vec::new(),
         0.0,
     );
-    actor.health = 1000.0;
+    actor.exec.health = 1000.0;
     engine.actor_cells.insert(ACTOR, key);
     engine
         .cells

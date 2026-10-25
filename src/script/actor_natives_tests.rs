@@ -249,8 +249,8 @@ fn stop_combat_alarm_ends_fights_and_pursuits_of_the_actor() {
     for r in [ATTACKER, BRAWLER, VICTIM] {
         place(&mut e, r, NPC);
     }
-    e.actor_mut(ATTACKER).unwrap().combat = Some(Combat::new(PLAYER_REF));
-    e.actor_mut(BRAWLER).unwrap().combat = Some(Combat::new(VICTIM));
+    e.actor_mut(ATTACKER).unwrap().exec.combat = Some(Combat::new(PLAYER_REF));
+    e.actor_mut(BRAWLER).unwrap().exec.combat = Some(Combat::new(VICTIM));
     e.crime.arrests.alarmed.insert(
         GUARD,
         crate::arrest::Pursuit {
@@ -259,14 +259,14 @@ fn stop_combat_alarm_ends_fights_and_pursuits_of_the_actor() {
         },
     );
     call(&mut e, "actor", "stopcombatalarm", PLAYER_REF, &[]);
-    assert!(e.actor_ref(ATTACKER).unwrap().combat.is_none());
+    assert!(e.actor_ref(ATTACKER).unwrap().exec.combat.is_none());
     assert!(e.crime.arrests.alarmed.is_empty(), "pursuers give up");
     assert!(
-        e.actor_ref(BRAWLER).unwrap().combat.is_some(),
+        e.actor_ref(BRAWLER).unwrap().exec.combat.is_some(),
         "not the player's"
     );
     call(&mut e, "actor", "stopcombatalarm", VICTIM, &[]);
-    assert!(e.actor_ref(BRAWLER).unwrap().combat.is_none());
+    assert!(e.actor_ref(BRAWLER).unwrap().exec.combat.is_none());
 }
 
 #[test]

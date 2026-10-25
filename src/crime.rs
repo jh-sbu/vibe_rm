@@ -543,7 +543,7 @@ impl Engine {
     ) {
         let alive = |e: &Self, w: FormId| {
             e.actor_ref(w)
-                .is_some_and(|a| !a.dead && a.bleeding.is_none())
+                .is_some_and(|a| !a.dead && a.exec.bleeding.is_none())
         };
         let mut fighters = Vec::new();
         for &w in witnesses {
@@ -562,7 +562,10 @@ impl Engine {
             let Some(a) = self.actor_ref(w) else { continue };
             if a.stats.aggression >= 1
                 && a.stats.confidence > 0
-                && a.combat.as_ref().is_none_or(|c| c.target != PLAYER_REF)
+                && a.exec
+                    .combat
+                    .as_ref()
+                    .is_none_or(|c| c.target != PLAYER_REF)
             {
                 fighters.push(w);
             }
@@ -742,7 +745,7 @@ impl Engine {
                     && in_cell(r)
                     && self
                         .actor_ref(r)
-                        .is_some_and(|a| !a.dead && a.combat.is_none())
+                        .is_some_and(|a| !a.dead && a.exec.combat.is_none())
                     && self.sit_sleep_state(r, true) != 3.0
             })
             .max_by(|a, b| a.1.total_cmp(b.1))
@@ -812,7 +815,7 @@ impl Engine {
                     && in_cell(r)
                     && self
                         .actor_ref(r)
-                        .is_some_and(|a| !a.dead && a.combat.is_none())
+                        .is_some_and(|a| !a.dead && a.exec.combat.is_none())
                     && self.sit_sleep_state(r, true) != 3.0
             })
             .map(|(&r, _)| r)
