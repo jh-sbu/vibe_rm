@@ -393,6 +393,51 @@ impl Engine {
         }
     }
 
+    /// Have actor `r`, not loaded, run away (a scene gave it a package): one
+    /// the world hadn't touched, placed by its schedule (or given only
+    /// wounds), gets an execution from where it is, its packages read at
+    /// once. False when it is loaded, dead, disabled or nowhere.
+    pub(crate) fn run_away(&mut self, r: FormId) -> bool {
+        if r == PLAYER_REF
+            || self.actor_cells.contains_key(&r)
+            || self.is_dead(r)
+            || self.is_disabled(r)
+            || !self.is_actor_ref(r)
+        {
+            return false;
+        }
+        if self.away.get(&r).is_some_and(|x| x.place.is_some()) {
+            return true;
+        }
+        let Some(npc) = self.base_of(r) else {
+            return false;
+        };
+        let Some((place, pos)) = self
+            .whereabouts
+            .of
+            .get(&r)
+            .copied()
+            .or_else(|| self.current_place_of(r))
+        else {
+            return false;
+        };
+        let packages = self.actor_packages(r, npc);
+        let heading = self.whereabouts.placement_heading.get(&r).copied();
+        let (now, hours) = (self.scripts.real_time, self.game_hours_total());
+        let generation = self.scripts.alias_gen;
+        let x = self.away.entry(r).or_default();
+        x.packages = packages;
+        x.npc = npc;
+        x.alias_gen = generation;
+        (x.place, x.pos) = (Some(place), pos);
+        x.on_arrival = heading;
+        x.next_eval = 0.0;
+        x.stamp(now, hours);
+        log::debug!("{r} runs away from {place:?}");
+        self.whereabouts.put(r, place, pos);
+        true
+    }
+
     /// Where an actor not loaded is: its execution's place, else where its
     /// schedule has it.
     fn away_position(&self, r: FormId) -> Option<(Place, Vec3)> {

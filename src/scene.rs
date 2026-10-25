@@ -8,8 +8,10 @@
 //! line is said, a package once it is done (a travel package's actor has arrived,
 //! a seat taken, a force greet's conversation held), a timer once it runs out.
 //! Looping dialogue repeats until its end phase ends and doesn't hold it up.
-//! Ending a phase stops the actions that end in it. Speakers and package actors
-//! must be loaded: a scene whose actors are elsewhere waits for them.
+//! Ending a phase stops the actions that end in it. Speakers must be loaded: a
+//! line waits for its speaker to load. Package actors needn't be: one away runs
+//! its scene package where it is (`Engine::run_away`), and its action is done
+//! by what its execution has done there (`AwayActors`).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -322,6 +324,29 @@ fn restore_lifecycle_actions(
         .collect()
 }
 
+/// What scenes do with package actors who aren't loaded
+/// (`plans/ai-actor-execution.md` step 7; unsettled:
+/// `known_ambiguities/scenes.md`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum AwayActors {
+    /// They run their scene packages away, and their actions finish there.
+    #[default]
+    Run,
+    /// Their actions wait for them to load (`VRM_SCENES_WAIT_FOR_LOADED`).
+    Wait,
+}
+
+impl AwayActors {
+    /// The policy the environment asks for.
+    pub fn from_env() -> Self {
+        if std::env::var_os("VRM_SCENES_WAIT_FOR_LOADED").is_some() {
+            AwayActors::Wait
+        } else {
+            AwayActors::Run
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Scenes {
     defs: HashMap<FormId, Option<Arc<SceneDef>>>,
@@ -333,6 +358,18 @@ pub struct Scenes {
     pub(crate) force_greeted: HashSet<FormId>,
     /// Scenes to start again once ended ("Repeat Conditions While True").
     restart: Vec<FormId>,
+    /// Whether package actions go on with their actors away.
+    pub away_actors: AwayActors,
+}
+
+impl Scenes {
+    /// No scenes yet, away actors handled as the environment asks.
+    pub fn new() -> Self {
+        Scenes {
+            away_actors: AwayActors::from_env(),
+            ..Default::default()
+        }
+    }
 }
 
 fn conditions(rec: &esp::LoadedRecord<'_>, raw: &[esp::scene::RawCondition]) -> Vec<Condition> {
@@ -1880,13 +1917,19 @@ impl Engine {
             self.scenes.force_greeted.remove(&r);
             self.scripts.alias_gen += 1;
             self.scenes.running[i].actions[k].started_at = now;
+            // Away, it takes its scene package up where it is, now.
+            if self.scenes.away_actors == AwayActors::Run && self.run_away(r) {
+                self.step_away(r);
+            }
             return false;
         }
         let started = self.scenes.running[i].actions[k].started_at;
         let talking = self.conversation.as_ref().map(|c| c.npc_ref);
         let greeted = self.scenes.force_greeted.contains(&r);
         let Some(a) = self.actor_ref(r) else {
-            return false;
+            return self.scenes.away_actors == AwayActors::Run
+                && self.run_away(r)
+                && self.away_package_done(r, packages, now - started);
         };
         let Some(p) = a
             .exec
@@ -1907,6 +1950,37 @@ impl Engine {
             Behaviour::Hold => now - started >= UNSUPPORTED_PACKAGE_SECS,
             // Never done: they run until their end phase ends.
             Behaviour::Sandbox
+            | Behaviour::Follow
+            | Behaviour::Patrol
+            | Behaviour::UseWeapon
+            | Behaviour::UseMagic
+            | Behaviour::Activate => false,
+        }
+    }
+
+    /// Whether away actor `r`'s scene package (one of `packages`, its action
+    /// `elapsed` real seconds on) is done by what its execution did away: a
+    /// Travel or Escort run completed (put at its target, or walked there in
+    /// a cell just left); a Sit or Sleep package's place reached (it takes the
+    /// seat as it loads). A force greet needs the player, so waits for it to
+    /// load.
+    fn away_package_done(&self, r: FormId, packages: &[FormId], elapsed: f64) -> bool {
+        let Some(x) = self.away.get(&r) else {
+            return false;
+        };
+        let Some(p) = x
+            .current
+            .and_then(|c| x.packages.get(c))
+            .filter(|p| packages.contains(&p.id) && x.package() == Some(p.id))
+        else {
+            return false;
+        };
+        match p.behaviour {
+            Behaviour::Travel | Behaviour::Escort => x.run_completed(),
+            Behaviour::Sit | Behaviour::Sleep => x.settled,
+            Behaviour::Hold => elapsed >= UNSUPPORTED_PACKAGE_SECS,
+            Behaviour::ForceGreet
+            | Behaviour::Sandbox
             | Behaviour::Follow
             | Behaviour::Patrol
             | Behaviour::UseWeapon
@@ -2161,5 +2235,176 @@ mod save_tests {
         assert_eq!(resumed[1].state, State::Done);
         assert_eq!(resumed[2].state, State::Stopped);
         assert_eq!(resumed[3].state, State::Waiting);
+    }
+}
+
+#[cfg(test)]
+mod away_tests {
+    use super::*;
+    use crate::ai::exec::tests::{
+        ACTOR, BASE, CELL, MARKER, PACKAGE as HOME, fixture, loaded_actor,
+    };
+    use crate::ai::package::{Location, LocationKind};
+    use crate::ai::schedule::Place;
+
+    const SCENE: FormId = FormId(0x8F0);
+    const QUEST: FormId = FormId(0x8F1);
+    const TRAVEL: FormId = FormId(0x8F2);
+    const TOPIC: FormId = FormId(0x8F3);
+
+    /// Applying all day.
+    fn package(id: FormId, behaviour: Behaviour) -> Package {
+        let mut p = Package::bare(id, behaviour);
+        p.schedule.day_of_week = -1;
+        p.schedule.hour = -1;
+        p
+    }
+
+    /// `QUEST`'s scene playing its one phase with `ACTOR`: action 1 sends it
+    /// to `MARKER` (3,000 east), action 2 has it say `TOPIC`.
+    fn play(e: &mut Engine) {
+        let action = |index, kind| esp::scene::Action {
+            kind,
+            name: String::new(),
+            actor: 0,
+            index,
+            flags: 0,
+            start_phase: 0,
+            end_phase: 0,
+        };
+        let def = Arc::new(SceneDef {
+            scene: esp::scene::Scene {
+                id: SCENE,
+                quest: QUEST,
+                phases: vec![Default::default()],
+                actions: vec![
+                    action(
+                        1,
+                        ActionKind::Package {
+                            packages: vec![TRAVEL],
+                        },
+                    ),
+                    action(
+                        2,
+                        ActionKind::Dialogue {
+                            topic: TOPIC,
+                            headtrack: None,
+                            loop_min: 0.0,
+                            loop_max: 0.0,
+                            emotion: 0,
+                            emotion_value: 0,
+                        },
+                    ),
+                ],
+                ..Default::default()
+            },
+            start: vec![vec![]],
+            completion: vec![vec![]],
+            conditions: vec![],
+            vmad: Default::default(),
+        });
+        e.scripts.quests.entry(QUEST).or_default().running = true;
+        let now = e.scripts.real_time;
+        let running = || ActionRun {
+            state: State::Running,
+            actor: Some(ACTOR),
+            started_at: now,
+            ..ActionRun::new()
+        };
+        e.scenes.running.push(SceneRun {
+            scene: SCENE,
+            def,
+            phase: Some(0),
+            begun: true,
+            stopping: false,
+            paused: false,
+            actions: vec![running(), running()],
+        });
+        // Its package, as the action gives it.
+        let mut travel = package(TRAVEL, Behaviour::Travel);
+        travel.location = Some(Location {
+            kind: LocationKind::NearReference(MARKER),
+            radius: 0.0,
+        });
+        e.scenes.packages.insert(ACTOR, (SCENE, 1, vec![travel]));
+        e.scripts.alias_gen += 1;
+    }
+
+    /// The fixture's actor, sandboxing at the origin of its room, unloaded
+    /// outside the cells just left.
+    fn away(e: &mut Engine) {
+        loaded_actor(e);
+        let now = e.game_hours_total();
+        let a = e.actor_mut(ACTOR).unwrap();
+        a.fresh = false;
+        a.exec.npc = BASE;
+        a.exec.pos = Vec3::ZERO;
+        a.exec.packages = vec![package(HOME, Behaviour::Sandbox)];
+        a.exec.current = Some(0);
+        a.exec.begin_run(Some(0), now, false);
+        a.exec.run_events.clear();
+        e.unload_all();
+        e.away_steps.buffered.clear();
+        e.step_away(ACTOR);
+    }
+
+    /// The scene updated, then the actor stepped away `secs` on.
+    fn after(e: &mut Engine, secs: f64) {
+        e.scripts.real_time += secs;
+        e.step_away(ACTOR);
+        e.update_scenes();
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_package_action_finishes_with_its_actor_away_and_its_line_waits() {
+        let (_f, mut e) = fixture();
+        away(&mut e);
+        play(&mut e);
+        e.update_scenes();
+        after(&mut e, 0.1);
+        // Put 40 short of the marker; its run ends 2.5 s on.
+        assert_eq!(e.running_package(ACTOR), Some(TRAVEL));
+        assert_eq!(e.away[&ACTOR].pos, Vec3::new(2960.0, 0.0, 0.0));
+        assert!(!e.is_scene_action_complete(SCENE, 1));
+        after(&mut e, 3.0);
+        assert!(e.is_scene_action_complete(SCENE, 1));
+        // Its line waits for it to load.
+        assert!(!e.is_scene_action_complete(SCENE, 2));
+        assert!(e.is_scene_playing(SCENE));
+        assert_eq!(e.away[&ACTOR].place, Some(Place::Interior(CELL)));
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn waiting_for_loaded_actors_holds_the_package_action() {
+        let (_f, mut e) = fixture();
+        e.scenes.away_actors = AwayActors::Wait;
+        away(&mut e);
+        play(&mut e);
+        e.update_scenes();
+        after(&mut e, 0.1);
+        after(&mut e, 3.0);
+        // It went (its packages run away all the same), but the scene waits.
+        assert_eq!(e.away[&ACTOR].pos, Vec3::new(2960.0, 0.0, 0.0));
+        assert!(e.away[&ACTOR].run_completed());
+        assert!(!e.is_scene_action_complete(SCENE, 1));
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn an_actor_the_world_had_not_touched_runs_its_scene_package_away() {
+        let (_f, mut e) = fixture();
+        assert!(!e.away.contains_key(&ACTOR));
+        play(&mut e);
+        e.update_scenes();
+        let x = &e.away[&ACTOR];
+        assert_eq!(x.place, Some(Place::Interior(CELL)));
+        assert!(x.packages.iter().any(|p| p.id == TRAVEL));
+        after(&mut e, 0.1);
+        assert_eq!(e.running_package(ACTOR), Some(TRAVEL));
+        assert_eq!(e.away[&ACTOR].pos.x, 2960.0);
+        after(&mut e, 3.0);
+        assert!(e.is_scene_action_complete(SCENE, 1));
     }
 }

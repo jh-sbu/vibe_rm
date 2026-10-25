@@ -53,9 +53,12 @@ records); `vrm-tool scenes <data> [scene]` dumps one scene or counts over all
 - A scene whose only phase's start conditions fail was never playing.
 
 ## Choices made without a source
-- Speakers and package actors must be loaded: a scene whose actors are
-  elsewhere waits for them (their scene packages still move them off-screen,
-  through whereabouts). Off-screen scenes in the game may play on regardless.
+- Speakers must be loaded: a line waits for its speaker to load. Package
+  actors needn't be: one away runs its scene package where it is and its
+  action finishes there (`known_ambiguities/actor-execution.md`, "Scenes").
+  `VRM_SCENES_WAIT_FOR_LOADED` has package actions wait for their actors to
+  load instead, as they used to. Whether the game plays scenes on with
+  their actors unloaded, and how far, is untested.
 - `Start` fails when the scene's conditions fail; `ForceStart` ignores them.
   Both take actors from other scenes, which stop (in the game a scene
   started with its actor in another played; whether that one stopped then or

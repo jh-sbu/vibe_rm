@@ -206,7 +206,36 @@ Step 6 of the plan (`ai::exec::Processing`, `Engine::pass_time`,
   reading had one gone 6 s after), and abilities are applied again as it
   loads, as autotest13 saw. Nothing is paused.
 
+## Scenes: what we chose
+
+Step 7 of the plan (`scene::AwayActors`, `Engine::run_away`). No reading
+covers scenes with unloaded actors; autotest4 and autotest5 only played
+timers with loaded actors.
+
+- **Package actions go on away.** An actor away runs its scene package as
+  it runs any other ("Away" above): a scene's travel is put 40 short of its
+  target in range, or onto it through a door, and its run ends 2.5 s on;
+  that ends the action, so the phase can end without the actor loading. A
+  Sit or Sleep action is done once the actor is at its place (it takes the
+  seat as it loads). Force greets need the player and wait for the actor
+  to load; Sandbox, Follow, Patrol and the like never finish, as loaded.
+  A traveller out of jumping range stays put, so its phase waits.
+- **Actors new to the world** (no execution yet) get one from where their
+  schedule has them as a scene gives them a package, and run away from
+  there, with the usual package events.
+- **Lines wait.** A dialogue action waits for its speaker to load (voices,
+  subtitles and head tracking need a body), so a phase with a line holds
+  its scene until then. Timers run regardless, as before.
+- **The old policy** (package actions waiting for their actors to load,
+  whose scene packages still moved them away) is kept behind
+  `VRM_SCENES_WAIT_FOR_LOADED` until a test-mod case settles it.
+
 ## Open questions
+
+- **Scenes with actors away.** Does a scene's package action finish while
+  its actor is unloaded (and its phase end), or does the scene wait for the
+  actor to load? Does an unloaded speaker's line hold its phase, get
+  skipped, or play on unheard?
 
 - **What decides the jump.** Every actor moved had its target within 4,100
   and 830 of height; every one left had it 4,950 or more away and 1,900 or

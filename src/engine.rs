@@ -469,7 +469,7 @@ impl Engine {
             harvests: Default::default(),
             restocks: Default::default(),
             barks: Default::default(),
-            scenes: Default::default(),
+            scenes: crate::scene::Scenes::new(),
             story: Default::default(),
             relationships: Default::default(),
             crime: Default::default(),

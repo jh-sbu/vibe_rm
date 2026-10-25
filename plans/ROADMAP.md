@@ -1165,8 +1165,8 @@ game each piece unlocks.
   their actions): dialogue actions say their topic's line where the speaker
   stands (voiced, subtitled, gesturing, looping ones again and again), head
   tracking and facing whom the action names; package actions run their
-  packages ahead of all others until done (arrived, seated, force greet held);
-  timers. Phase and scene fragments, actors' death / combat / dialogue pause
+  packages ahead of all others until done (arrived, seated, force greet held),
+  their actors running them away when unloaded; timers. Phase and scene fragments, actors' death / combat / dialogue pause
   and end flags, "no player activation", "stop quest on end".
   `IsSceneActionComplete`, `IsScenePlaying`, `IsInScene`,
   `IsScenePackageRunning`; `GetDistance` between interiors / worldspaces is
@@ -1681,7 +1681,7 @@ game each piece unlocks.
      and scene progress while actors are away; attach / remove animation and
      physics without restarting the actor's execution. This is the foundation
      for the package-tree, off-screen travel, unloaded actor-value and save work.
-     Plan: `plans/ai-actor-execution.md` (steps 1 to 6 done: the execution is
+     Plan: `plans/ai-actor-execution.md` (steps 1 to 7 done: the execution is
      `ai::exec::ActorExec`, kept in `Engine::away` while unloaded, with a
      package run that `GetCurrentPackage` reads and whose changes fire
      `OnPackageStart` / `End` / `Change` and the `PACK` fragments. An actor
@@ -1694,8 +1694,9 @@ game each piece unlocks.
      (`ai::exec::Processing`: loaded, buffered, coarse); waiting, sleeping and
      fast travel pass time for every actor (`Engine::pass_time`), loaded
      walkers walking on instead of starting over; damage to unloaded actors
-     is taken at once and kills them away. Scenes with away actors or saves
-     next, steps 7 and 8).
+     is taken at once and kills them away. Scenes' package actions finish
+     with their actors away, lines waiting for their speakers to load
+     (`scene::AwayActors`). Saves next, step 8).
    - Processing policies: detailed updates nearby and coarse advancement away
      (done, step 6), still to add: travel progress through cells and load
      doors walked rather than jumped, and execution state, travel progress and

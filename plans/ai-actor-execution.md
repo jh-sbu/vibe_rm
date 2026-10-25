@@ -286,6 +286,20 @@ are. Timed effects already ended on unloading. The choices are in
 
 ### 7. Scenes with away actors
 
+**Status (2026-10-25):** done. A scene's package action no longer waits for
+its actor to load: the actor runs its scene package away (`ai::away`), and
+the action is done by what the execution did there
+(`Engine::away_package_done`): a Travel or Escort run completed (put at its
+target, or walked there in a cell just left), a Sit or Sleep package's
+place reached (the seat is taken as it loads). Force greets, and the
+packages that never finish loaded, still wait. An actor the world hadn't
+touched gets an execution from where its schedule has it as a scene gives
+it a package (`Engine::run_away`). Dialogue actions wait for their speaker
+to load, as before. `scene::AwayActors` is the switch: `Run` by default,
+`Wait` (the old policy, `VRM_SCENES_WAIT_FOR_LOADED`) until a test-mod
+case settles it. The choices are in `known_ambiguities/actor-execution.md`
+("Scenes").
+
 - Today a scene waits for its actors to load. Once away actors have runs,
   scene packages can progress while their actors are away, and phases whose
   actions need only packages can advance. Dialogue phases keep waiting
