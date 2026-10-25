@@ -124,6 +124,16 @@ impl Whereabouts {
         self.by_place.entry(place).or_default().push(r);
     }
 
+    /// Actor `r` is at `pos` in `place` until the next refresh says otherwise.
+    pub fn put(&mut self, r: FormId, place: Place, pos: Vec3) {
+        if let Some((old, _)) = self.of.insert(r, (place, pos))
+            && let Some(v) = self.by_place.get_mut(&old)
+        {
+            v.retain(|&a| a != r);
+        }
+        self.by_place.entry(place).or_default().push(r);
+    }
+
     /// A created actor gone for good.
     pub fn remove_actor(&mut self, r: FormId) {
         self.actors.retain(|&a| a != r);
@@ -379,6 +389,7 @@ impl Engine {
         } else {
             std::mem::take(&mut self.whereabouts.pending_headings)
         };
+        let mut moved_on = Vec::new();
         for &a in &actors[start..end] {
             pending_headings.remove(&a);
             if self.is_disabled(a) {
@@ -430,6 +441,18 @@ impl Engine {
                     None => (home.0, home.1, None),
                 };
             pending_packages.insert(a, current.map(|p| p.id));
+            // One that unloaded with its cell stays where it left while its
+            // schedule gives it the package it left with (autotest13: loading
+            // a cell doesn't move them on; step 5 of the plan advances them).
+            if let Some(x) = self.away.get(&a).filter(|x| x.stage.is_some()) {
+                match x.place {
+                    Some(left) if x.package() == current.map(|p| p.id) => {
+                        pending.insert(a, (left, x.pos));
+                        continue;
+                    }
+                    _ => moved_on.push(a),
+                }
+            }
             if let Some(heading) = heading {
                 pending_headings.insert(a, heading);
             }
@@ -440,6 +463,11 @@ impl Engine {
                 );
             }
             pending.insert(a, (place, pos));
+        }
+        for r in moved_on {
+            if let Some(x) = self.away.get_mut(&r) {
+                x.stage = None;
+            }
         }
         let done = end >= actors.len();
         self.whereabouts.actors = actors;
@@ -848,11 +876,12 @@ impl Engine {
         }
         self.put_torch_away_for_now(&a);
         // Its execution kept; it comes back as hurt as it left (less what it
-        // heals meanwhile).
+        // heals meanwhile), and where its schedule has it then (it went
+        // there, or was moved).
         if !a.dead {
             let w = crate::world_state::Wounds::of(&a, self.scripts.real_time);
             let place = self.place_of_key(key);
-            self.away.insert(r, a.exec.away(place, w));
+            self.away.insert(r, a.exec.away(place, w, None));
         }
         log::debug!("{r} despawned from {key:?}");
     }

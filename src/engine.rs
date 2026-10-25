@@ -1327,7 +1327,8 @@ impl Engine {
             .get(&key)
             .map(|rt| rt.actors.iter().map(|a| a.exec.pos).collect())
             .unwrap_or_default();
-        for &(r, at) in refs {
+        let here = self.place_of_key(key);
+        for &(r, mut at) in refs {
             let is_actor = self.lo.tag_of(r).map_or_else(
                 || self.created(r).is_some_and(|c| c.actor),
                 |t| t.0 == *b"ACHR",
@@ -1346,13 +1347,27 @@ impl Engine {
                 self.inventories.get(&r),
             ) {
                 let editor_pos = d.transform.w_axis.truncate();
+                // Back where it left, as it left: standing where it stood,
+                // turned as it was.
+                let resume = self.away.get(&r).and_then(|x| {
+                    let stage = x.resumes_in(here)?;
+                    at = Some(x.pos);
+                    let (scale, _, pos) = d.transform.to_scale_rotation_translation();
+                    d.transform = glam::Mat4::from_scale_rotation_translation(
+                        scale,
+                        glam::Quat::from_rotation_z(-x.heading),
+                        pos,
+                    );
+                    Some(stage)
+                });
                 // Explicitly moved references and bodies retain their own
                 // transform. Ordinary (unscheduled) spawns never pass a policy.
                 let placement_heading = crate::ai::schedule::heading_for_spawn(
                     headings.get(&r).copied(),
                     self.world_state.dead.contains_key(&r),
                     self.world_state.moved.contains_key(&r),
-                );
+                )
+                .filter(|_| resume.is_none());
                 if let Some(heading) = placement_heading {
                     d.transform = heading.orient(d.transform);
                 }
@@ -1381,7 +1396,7 @@ impl Engine {
                     taken.push(spot);
                     d.transform.w_axis = spot.extend(1.0);
                 }
-                descs.push((d, editor_pos, placement_heading));
+                descs.push((d, editor_pos, placement_heading, resume));
             }
         }
         if descs.is_empty() {
@@ -1389,12 +1404,12 @@ impl Engine {
         }
         let paths: Vec<String> = descs
             .iter()
-            .flat_map(|(d, _, _)| d.models.iter().map(|(m, _)| m.clone()))
+            .flat_map(|(d, ..)| d.models.iter().map(|(m, _)| m.clone()))
             .collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let mut actors = Vec::new();
         let mut runtimes = Vec::new();
-        for (ai, (d, editor_pos, placement_heading)) in descs.iter().enumerate() {
+        for (ai, (d, editor_pos, placement_heading, resume)) in descs.iter().enumerate() {
             let Some(skel) = self.skeleton(&d.skeleton) else {
                 continue;
             };
@@ -1457,7 +1472,17 @@ impl Engine {
                 stats.factions = self.member_factions(d.ref_id);
             }
             if let Some(x) = self.away.get(&d.ref_id) {
-                rt.exec.take_back_runs(x);
+                rt.exec.take_back(x, resume.is_some());
+            }
+            // It carries on from the stage it reached: in the furniture it
+            // was using when that is still free, else walking or standing on
+            // from where it was (not started out in furniture).
+            match resume {
+                Some(crate::ai::exec::Stage::Seated { furniture, marker }) => {
+                    rt.resume_seat = Some((*furniture, *marker));
+                }
+                Some(_) => rt.fresh = false,
+                None => {}
             }
             rt.exec.health = self.returning_health(d.ref_id, stats.max_health);
             rt.exec.stamina = stats.max_stamina;
@@ -1597,7 +1622,7 @@ impl Engine {
         for a in &runtimes {
             self.actor_cells.insert(a.ref_id, key);
         }
-        for (d, _, _) in descs {
+        for (d, ..) in descs {
             self.inventories.entry(d.ref_id).or_insert(d.inventory);
         }
         let runtimes_ids: Vec<FormId> = runtimes.iter().map(|a| a.ref_id).collect();

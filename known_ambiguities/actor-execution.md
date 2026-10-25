@@ -89,6 +89,36 @@ as the save loaded and changed at Go1). The rest is our choice:
   start their runs afresh (`OnPackageStart`) until saves keep them (step 8),
   where autotest14's reloaded actors logged nothing.
 
+## Attaching: what we chose
+
+Step 4 of the plan (`ActorExec::stage`, `ActorExec::take_back`). The
+readings say actors are found where they were left (loading a cell doesn't
+move them on); the rest is our choice:
+
+- **Where it left, while the schedule agrees.** An actor that unloaded with
+  its cell comes back where it stood, turned as it was, while its schedule
+  gives the package it left with. Once the schedule gives another (a
+  whereabouts refresh: every 20 s and each half hour), it is placed by its
+  schedule from then on, as actors new to the world are, even if the first
+  package comes back. Until step 5 advances away actors, an actor walking as
+  it unloaded is found where it was, not at its target or 40 short of it.
+  autotest13 saw unloaded actors jump within seconds of a package
+  *starting*; whether one already walking jumps is untested.
+- **As it left.** One seated (getting in or using furniture) starts out in
+  the same marker when it is still free and usable, else as fresh actors do
+  (a free seat nearby). One walking or standing carries on from there,
+  without starting out in furniture. A sandbox's stop and a patrol's point
+  carry on. Whether the game seats an actor in the same furniture is
+  untested.
+- **Fights and searches end** as an actor unloads: it comes back out of
+  combat, not searching, and not bleeding out, as hurt as it left. The game's
+  rule is untested (an actor fighting as the player leaves).
+- **Not taken up:** actors on their way out through a door, or despawned
+  far off for their schedule, and actors a script moved while away. They are
+  where their schedule or the move put them.
+- **Saves don't keep stages** (step 8): actors loaded from a save are
+  placed by their schedules.
+
 ## Open questions
 
 - **What decides the jump.** Every actor moved had its target within 4,100
@@ -98,6 +128,9 @@ as the save loaded and changed at Go1). The rest is our choice:
   didn't jump home in the 5 s after its schedule changed, without
   `EvaluatePackage`: whether the jump needs it, or only takes longer, is
   open.
+- **A journey under way as the actor unloads.** Does a walker outside the
+  buffer jump to its target (as one starting a package does), stay, or walk
+  on? We leave it where it was until step 5.
 - **What reaches far targets.** An actor whose target is out of jumping
   range: does anything ever move it (game hours, waiting, a later
   re-evaluation), or does it wait for the player?

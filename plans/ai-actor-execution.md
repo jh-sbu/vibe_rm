@@ -163,6 +163,24 @@ Away actors fire no package events until step 5. The choices are in
 
 ### 4. Attaching and detaching
 
+**Status (2026-10-25):** done. `ActorExec::stage` is a `Stage` (`Standing`,
+`Walking`, `Seated { furniture, marker }`), taken by `remember_actors` from
+the loaded AI's state as a cell unloads (`ActorRuntime::stage`); `Seat`
+now records its marker. It is unset for actors that left for their
+schedule (door exits, the far despawn, `jump_to_schedules`' respawns), that
+a script moved, and that hadn't planned anything yet. An actor with a
+stage is put back in `whereabouts.of` where it left, and refreshes keep it
+there while its schedule gives the package it left with; once the schedule
+gives another, the stage is dropped for good and scheduled placement
+(`unloaded_arrival`) takes over. Spawning into the place it left
+(`ActorExec::resumes_in`) puts it at its position and heading, takes back
+its goal, sandbox stop and patrol point when the package is still at the
+same index (`ActorExec::take_back`), and starts it seated in its marker
+when still free (`ActorRuntime::resume_seat`, tried first by
+`seek_furniture`, skipping a sandbox's chance to stand), else walking or
+standing on (not `fresh`). Combat and searches are dropped. Rules and what's
+untested are in `known_ambiguities/actor-execution.md` ("Attaching").
+
 - Spawning from an existing `ActorExec` builds the body to match the run it
   holds:
   - an actor in furniture comes back seated (today's `fresh` path, but chosen

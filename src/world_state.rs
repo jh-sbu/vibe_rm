@@ -137,9 +137,11 @@ impl Engine {
         let mut away = Vec::new();
         for a in &rt.actors {
             if !a.dead {
+                // At the stage it reached, unless it was on its way out.
+                let stage = a.stage().filter(|_| a.exiting.is_none());
                 away.push((
                     a.ref_id,
-                    a.exec.clone().away(Some(place), Wounds::of(a, now)),
+                    a.exec.clone().away(Some(place), Wounds::of(a, now), stage),
                 ));
                 continue;
             }
@@ -160,6 +162,12 @@ impl Engine {
             self.world_state.dead.insert(r, (place, pos));
             if let Some(b) = bodies {
                 self.world_state.body_poses.insert(r, b);
+            }
+        }
+        // Where they are until their schedules move them on.
+        for (r, x) in &away {
+            if x.stage.is_some() {
+                self.whereabouts.put(*r, place, x.pos);
             }
         }
         self.away.extend(away);
@@ -278,6 +286,10 @@ impl Engine {
         );
         let old = self.ref_transform(r);
         self.world_state.moved.insert(r, Moved { place, pos, rot });
+        // Not where it left any more: placed where it was moved to.
+        if let Some(x) = self.away.get_mut(&r) {
+            x.stage = None;
+        }
         if let Some(c) = self.created_refs.refs.get_mut(&r) {
             (c.position, c.rotation, c.place) = (pos, rot, Some(place));
         }

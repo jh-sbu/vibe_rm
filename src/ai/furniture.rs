@@ -118,6 +118,8 @@ pub struct FurnitureWorld {
 #[derive(Clone)]
 pub struct Seat {
     pub furniture: FormId,
+    /// Which of its markers.
+    pub marker: u8,
     pub kind: Use,
     pub anim_type: u32,
     pub entry: Entry,

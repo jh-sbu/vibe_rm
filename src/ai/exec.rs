@@ -29,6 +29,11 @@ pub struct ActorExec {
     /// Where it was as it unloaded (unset while loaded: `Engine::actor_cells`
     /// says where it is).
     pub place: Option<Place>,
+    /// What it was doing there as its cell unloaded, to take up again as it
+    /// attaches; none when it isn't where it left (new to the world, gone
+    /// where its schedule has it, moved by a script, or its schedule moved on
+    /// meanwhile): its schedule places it then.
+    pub stage: Option<Stage>,
     /// The goal was set by hand (console `travel`): packages leave it alone.
     pub(super) pinned: bool,
     /// Which of a multi-location sandbox package's stops it is at.
@@ -65,6 +70,17 @@ pub struct ActorExec {
     pub(crate) greeting: bool,
     pub(crate) greet_check: f32,
     pub(crate) greet_wait: f32,
+}
+
+/// How far a loaded actor had got with its package as it unloaded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    /// Standing (or getting out of furniture).
+    Standing,
+    /// On its way somewhere: it sets off again from where it stood.
+    Walking,
+    /// In (or getting into) marker `marker` of `furniture`.
+    Seated { furniture: FormId, marker: u8 },
 }
 
 /// One package from when an actor takes it up until another takes its place.
@@ -174,19 +190,54 @@ impl ActorExec {
         }
     }
 
-    /// Its actor unloaded from `place`, `wounds` as hurt as it left.
-    pub(crate) fn away(mut self, place: Option<Place>, wounds: Option<Wounds>) -> Self {
+    /// Its actor unloaded from `place`, `wounds` as hurt as it left, at
+    /// `stage` of its package when it unloaded with its cell.
+    pub(crate) fn away(
+        mut self,
+        place: Option<Place>,
+        wounds: Option<Wounds>,
+        stage: Option<Stage>,
+    ) -> Self {
         self.place = place;
         self.wounds = wounds;
+        self.stage = stage;
         self
     }
 
     /// Its actor loads again: it carries on with the package runs it left with
-    /// (unloading neither ends nor restarts them).
-    pub(crate) fn take_back_runs(&mut self, away: &ActorExec) {
+    /// (unloading neither ends nor restarts them). `resuming` where it left, it
+    /// takes up its package where it left off too: its goal, a sandbox's stop
+    /// and a patrol's point, and a goal set by hand. Fights and searches
+    /// aren't taken back: it attaches out of combat, not searching.
+    pub(crate) fn take_back(&mut self, away: &ActorExec, resuming: bool) {
         self.run = away.run;
         self.suspended = away.suspended;
         self.done_once = away.done_once;
+        if !resuming {
+            return;
+        }
+        if away.pinned {
+            self.pinned = true;
+            self.goal = away.goal;
+            return;
+        }
+        let same = away
+            .current
+            .and_then(|i| self.packages.get(i))
+            .is_some_and(|p| Some(p.id) == away.package());
+        if same {
+            self.current = away.current;
+            self.goal = away.goal;
+            self.stop = away.stop;
+            self.patrol = away.patrol;
+        }
+    }
+
+    /// Where it is to attach in `here`, as it left: it unloaded there with its
+    /// cell, and nothing has moved it on since.
+    pub(crate) fn resumes_in(&self, here: Option<Place>) -> Option<Stage> {
+        self.stage
+            .filter(|_| self.place.is_some() && self.place == here)
     }
 
     /// Only wounds: all that saves keep yet of an actor away.
@@ -419,7 +470,7 @@ mod tests {
         away.begin_run(Some(1), 1.0, false);
         away.complete_run(true);
         let mut x = exec();
-        x.take_back_runs(&away);
+        x.take_back(&away, false);
         assert_eq!(x.run, away.run);
         assert_eq!(x.done_once, Some(FAR));
         // Taking up the same package again tells its scripts nothing.
@@ -436,6 +487,116 @@ mod tests {
         assert_eq!(x.suspended, None);
         x.begin_run(Some(2), 6.0, false);
         assert_eq!(x.run.unwrap().started_at, 6.0);
+    }
+
+    /// Away on `HOME`'s run, part way through it, at `stage` in `place`.
+    fn left_at(stage: Option<Stage>, place: Place) -> ActorExec {
+        let mut away = exec();
+        away.begin_run(Some(2), 1.0, false);
+        away.current = Some(2);
+        away.goal = Some(Goal::travel(Vec3::X * 500.0));
+        away.stop.index = 1;
+        away.patrol = Some((FAR, 3));
+        away.combat = Some(combat::Combat::new(FAR));
+        away.away(Some(place), None, stage)
+    }
+
+    #[test]
+    fn an_actor_resuming_where_it_left_takes_up_its_package_where_it_left_off() {
+        let here = Place::Interior(FormId(0x830));
+        let away = left_at(Some(Stage::Walking), here);
+        assert_eq!(away.resumes_in(Some(here)), Some(Stage::Walking));
+        assert_eq!(away.resumes_in(Some(Place::Interior(FAR))), None);
+        assert_eq!(away.resumes_in(None), None);
+        let mut x = exec();
+        x.take_back(&away, true);
+        assert_eq!(x.current, Some(2));
+        assert_eq!(x.goal.map(|g| g.centre), Some(Vec3::X * 500.0));
+        assert_eq!(x.stop.index, 1);
+        assert_eq!(x.patrol, Some((FAR, 3)));
+        // Out of combat.
+        assert!(x.combat.is_none());
+        // Not where it left: only its runs.
+        let mut x = exec();
+        x.take_back(&away, false);
+        assert_eq!(x.package(), Some(HOME));
+        assert_eq!((x.current, x.stop.index, x.patrol), (None, 0, None));
+        assert!(x.goal.is_none());
+        // Nothing to take up where it was gone (its schedule moved it on).
+        let gone = left_at(None, here);
+        assert_eq!(gone.resumes_in(Some(here)), None);
+    }
+
+    #[test]
+    fn a_resuming_actor_whose_packages_changed_starts_its_package_afresh() {
+        let here = Place::Interior(FormId(0x830));
+        let away = left_at(Some(Stage::Standing), here);
+        // Its package list isn't what it was: index 2 is another package.
+        let mut x = ActorExec::new(
+            vec![Package::bare(FAR, Behaviour::Travel); 3],
+            Vec3::ZERO,
+            0.0,
+            0.0,
+        );
+        x.take_back(&away, true);
+        assert_eq!(x.package(), Some(HOME));
+        assert_eq!((x.current, x.stop.index, x.patrol), (None, 0, None));
+        // A goal set by hand is kept, whatever its packages.
+        let mut pinned = away.clone();
+        pinned.pinned = true;
+        x.take_back(&pinned, true);
+        assert!(x.pinned);
+        assert_eq!(x.goal.map(|g| g.centre), Some(Vec3::X * 500.0));
+    }
+
+    #[test]
+    fn unloading_captures_the_stage_the_actor_reached() {
+        use crate::ai::State;
+        let mut a = ActorRuntime::new(
+            ACTOR,
+            BASE,
+            std::sync::Arc::new(crate::world::skeleton::Skeleton::default()),
+            Mat4::IDENTITY,
+            Vec::new(),
+            0.0,
+        );
+        // Not yet started on anything.
+        assert_eq!(a.stage(), None);
+        a.fresh = false;
+        assert_eq!(a.stage(), Some(Stage::Standing));
+        a.state = State::Walk {
+            path: Vec::new(),
+            next: 0,
+            budget: 0.0,
+            to_seat: true,
+        };
+        assert_eq!(a.stage(), Some(Stage::Walking));
+        a.state = State::Approach(1.0);
+        assert_eq!(a.stage(), Some(Stage::Walking));
+        let chair = FormId(0x840);
+        let seated = Stage::Seated {
+            furniture: chair,
+            marker: 2,
+        };
+        for s in [State::Enter(1.0), State::Use(5.0)] {
+            assert_eq!(crate::ai::stage_of(&s, Some((chair, 2))), seated);
+        }
+        // Getting out, or playing an idle where it stands.
+        let out = crate::ai::stage_of(&State::Exit(1.0), Some((chair, 2)));
+        assert_eq!(out, Stage::Standing);
+        let idle = crate::ai::stage_of(&State::Use(1.0), Some((FormId::NULL, 0)));
+        assert_eq!(idle, Stage::Standing);
+    }
+
+    #[test]
+    fn the_seat_it_left_is_tried_first() {
+        let mut options = vec![(FAR, 0, ()), (HOME, 1, ()), (HOME, 0, ())];
+        crate::ai::put_first(&mut options, Some((HOME, 0)));
+        assert_eq!(options, [(HOME, 0, ()), (FAR, 0, ()), (HOME, 1, ())]);
+        // Taken or gone: as they were.
+        crate::ai::put_first(&mut options, Some((SCENE, 0)));
+        crate::ai::put_first(&mut options, None);
+        assert_eq!(options, [(HOME, 0, ()), (FAR, 0, ()), (HOME, 1, ())]);
     }
     use esp::writer::{Node, RecordBuilder, write_plugin};
     use glam::Mat4;
@@ -463,11 +624,25 @@ mod tests {
         std::fs::create_dir(&f.0).unwrap();
         let records = [
             Node::top(b"NPC_", vec![RecordBuilder::new(b"NPC_", BASE)]),
-            Node::top(
-                b"ACHR",
-                vec![RecordBuilder::new(b"ACHR", ACTOR).form(b"NAME", BASE)],
-            ),
             Node::top(b"PACK", vec![RecordBuilder::new(b"PACK", PACKAGE)]),
+            Node::Group {
+                label: *b"CELL",
+                group_type: 0,
+                children: vec![
+                    Node::Record(RecordBuilder::new(b"CELL", CELL).field(b"DATA", &[1, 0])),
+                    Node::Group {
+                        label: CELL.0.to_le_bytes(),
+                        group_type: esp::group_type::CELL_CHILDREN,
+                        children: vec![Node::Group {
+                            label: CELL.0.to_le_bytes(),
+                            group_type: esp::group_type::CELL_TEMPORARY,
+                            children: vec![Node::Record(
+                                RecordBuilder::new(b"ACHR", ACTOR).form(b"NAME", BASE),
+                            )],
+                        }],
+                    },
+                ],
+            },
         ];
         std::fs::write(
             f.0.join("Exec.esp"),
@@ -664,5 +839,64 @@ mod tests {
         assert_eq!(e.running_package(ACTOR), Some(PACKAGE));
         e.whereabouts.package.insert(ACTOR, None);
         assert_eq!(e.running_package(ACTOR), None);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn an_actor_unloading_with_its_cell_stays_where_it_left_until_its_schedule_moves_on() {
+        let (_f, mut e) = fixture();
+        loaded_actor(&mut e);
+        e.actor_mut(ACTOR).unwrap().fresh = false;
+        e.unload_all();
+        let here = Place::Interior(CELL);
+        let left = (here, Vec3::new(10.0, 20.0, 30.0));
+        assert_eq!(e.away[&ACTOR].stage, Some(Stage::Standing));
+        assert_eq!(e.whereabouts.of.get(&ACTOR), Some(&left));
+        assert_eq!(e.whereabouts.by_place[&here], [ACTOR]);
+        // Its schedule gives it what it left with (nothing): it stays.
+        e.refresh_whereabouts();
+        assert_eq!(e.whereabouts.of.get(&ACTOR), Some(&left));
+        assert_eq!(e.away[&ACTOR].resumes_in(Some(here)), Some(Stage::Standing));
+        // Its schedule moves on from the run it left with: placed by it from
+        // then on, even once it gives that package again.
+        e.away.get_mut(&ACTOR).unwrap().run = Some(PackageRun {
+            id: PACKAGE,
+            started_at: 0.0,
+            outcome: Outcome::Running,
+            activations: 0,
+        });
+        e.refresh_whereabouts();
+        assert_eq!(e.away[&ACTOR].stage, None);
+        assert_eq!(e.away[&ACTOR].resumes_in(Some(here)), None);
+        assert_ne!(e.whereabouts.of.get(&ACTOR), Some(&left));
+        e.away.get_mut(&ACTOR).unwrap().run = None;
+        e.refresh_whereabouts();
+        assert_ne!(e.whereabouts.of.get(&ACTOR), Some(&left));
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_script_moving_an_actor_away_puts_it_where_it_was_moved() {
+        let (_f, mut e) = fixture();
+        loaded_actor(&mut e);
+        e.actor_mut(ACTOR).unwrap().fresh = false;
+        e.unload_all();
+        // Back to where the editor placed it (the cell's origin).
+        assert!(e.move_to_editor_location(ACTOR));
+        assert_eq!(e.away[&ACTOR].stage, None);
+        let there = (Place::Interior(CELL), Vec3::ZERO);
+        assert_eq!(e.whereabouts.of.get(&ACTOR), Some(&there));
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn an_actor_on_its_way_out_unloads_with_nothing_to_resume() {
+        let (_f, mut e) = fixture();
+        loaded_actor(&mut e);
+        let a = e.actor_mut(ACTOR).unwrap();
+        a.fresh = false;
+        a.exiting = Some(FormId(0x850));
+        e.unload_all();
+        assert_eq!(e.away[&ACTOR].stage, None);
     }
 }
