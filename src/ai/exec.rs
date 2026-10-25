@@ -5,10 +5,14 @@
 use esp::FormId;
 use glam::Vec3;
 
-use super::package::Package;
+use super::package::{Behaviour, Package};
 use super::schedule::Place;
-use super::{Goal, StopProgress, combat};
+use super::{ActorRuntime, Goal, StopProgress, combat};
+use crate::engine::Engine;
 use crate::world_state::Wounds;
+
+/// How close to a travel package's location counts as arrived, beyond its radius.
+const ARRIVED_SLACK: f32 = 150.0;
 
 /// An actor's execution: its packages and how far it has got with them, its
 /// position and its condition. A loaded actor's is in its `ActorRuntime`;
@@ -31,11 +35,16 @@ pub struct ActorExec {
     pub(super) stop: StopProgress,
     /// Patrol progress: (route start, index of the point heading for).
     pub(super) patrol: Option<(FormId, usize)>,
-    /// Times it has activated the target of the Activate package it runs.
-    pub(super) activations: (Option<FormId>, u32),
-    /// A UseWeapon package that completed (its barrages or time ran out): it is
-    /// not picked again until it stops applying.
-    pub(crate) finished_package: Option<FormId>,
+    /// The run of its current package, and one a scene's package took over
+    /// from, to resume once the scene lets it go.
+    pub run: Option<PackageRun>,
+    pub(crate) suspended: Option<PackageRun>,
+    /// A package whose run completed and gives way (an Activate, UseWeapon or
+    /// UseMagic package that ran its course): it is passed over until it stops
+    /// applying.
+    pub(crate) done_once: Option<FormId>,
+    /// Package events its scripts haven't heard yet (`Engine::report_package_runs`).
+    pub(crate) run_events: Vec<RunEvent>,
     /// `ScriptState::alias_gen` its packages were taken at.
     pub(crate) alias_gen: u64,
     /// Real seconds until its packages are evaluated again.
@@ -58,7 +67,98 @@ pub struct ActorExec {
     pub(crate) greet_wait: f32,
 }
 
+/// One package from when an actor takes it up until another takes its place.
+/// Unloading neither ends nor restarts it; combat and conversations leave it
+/// as it is (their procedures run instead of its); a scene's package
+/// suspends it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PackageRun {
+    pub id: FormId,
+    /// Game time it started at, in hours (`Engine::game_hours_total`).
+    pub started_at: f64,
+    pub outcome: Outcome,
+    /// Times it has activated an Activate package's target.
+    pub(crate) activations: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    Running,
+    /// Done (`OnPackageEnd`): it stays the actor's package until another
+    /// applies, or gives way at once (`ActorExec::done_once`).
+    Completed,
+}
+
+/// What a run's change tells the package's scripts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunEvent {
+    /// `OnPackageStart` and the begin fragment.
+    Start(FormId),
+    /// `OnPackageEnd` and the end fragment.
+    End(FormId),
+    /// `OnPackageChange` and the change fragment: another package took over
+    /// from this one, ended or not (autotest13).
+    Change(FormId),
+}
+
 impl ActorExec {
+    /// The package it runs.
+    pub fn package(&self) -> Option<FormId> {
+        self.run.map(|r| r.id)
+    }
+
+    /// Whether the package it runs has completed.
+    pub(crate) fn run_completed(&self) -> bool {
+        self.run.is_some_and(|r| r.outcome == Outcome::Completed)
+    }
+
+    /// Take up package `pick` (an index into `packages`) at game time `now`:
+    /// the run it replaces is over, or, `for_scene`, kept to resume once the
+    /// scene's package gives way. The same package carries on.
+    pub(crate) fn begin_run(&mut self, pick: Option<usize>, now: f64, for_scene: bool) {
+        let id = pick.and_then(|i| self.packages.get(i)).map(|p| p.id);
+        if self.package() == id {
+            return;
+        }
+        if let Some(old) = self.run.take() {
+            self.run_events.push(RunEvent::Change(old.id));
+            if for_scene && old.outcome == Outcome::Running && self.suspended.is_none() {
+                self.suspended = Some(old);
+            }
+        }
+        let resumed = self.suspended.filter(|s| Some(s.id) == id);
+        if !for_scene {
+            self.suspended = None;
+        }
+        self.run = id.map(|id| {
+            resumed.unwrap_or(PackageRun {
+                id,
+                started_at: now,
+                outcome: Outcome::Running,
+                activations: 0,
+            })
+        });
+        if let Some(id) = id {
+            self.run_events.push(RunEvent::Start(id));
+        }
+    }
+
+    /// The package it runs is done; `gives_way`, it is passed over until it
+    /// stops applying, and its packages are evaluated again at once.
+    pub(crate) fn complete_run(&mut self, gives_way: bool) {
+        if gives_way {
+            self.next_eval = 0.0;
+        }
+        let Some(run) = self.run.as_mut().filter(|r| r.outcome == Outcome::Running) else {
+            return;
+        };
+        run.outcome = Outcome::Completed;
+        self.run_events.push(RunEvent::End(run.id));
+        if gives_way {
+            self.done_once = Some(run.id);
+        }
+    }
+
     /// A fresh start: `stagger` spreads actors' first package evaluations and
     /// greeting checks.
     pub fn new(packages: Vec<Package>, pos: Vec3, heading: f32, stagger: f32) -> Self {
@@ -81,6 +181,14 @@ impl ActorExec {
         self
     }
 
+    /// Its actor loads again: it carries on with the package runs it left with
+    /// (unloading neither ends nor restarts them).
+    pub(crate) fn take_back_runs(&mut self, away: &ActorExec) {
+        self.run = away.run;
+        self.suspended = away.suspended;
+        self.done_once = away.done_once;
+    }
+
     /// Only wounds: all that saves keep yet of an actor away.
     pub(crate) fn wounded(wounds: Wounds) -> Self {
         ActorExec {
@@ -91,15 +199,250 @@ impl ActorExec {
     }
 }
 
+impl Engine {
+    /// Whether loaded actor `a`, running Travel or Escort package `p` toward
+    /// `goal`, has arrived: it is in the place the package names (not on the
+    /// way out of another), standing near its location.
+    pub(crate) fn arrived(&self, a: &ActorRuntime, p: &Package, goal: Goal) -> bool {
+        let here = self.current_place_of(a.ref_id).map(|x| x.0);
+        let there = self.package_place(a.ref_id, p);
+        let in_place = match there {
+            Some((place, _)) => here.is_some_and(|h| super::schedule::same_space(h, place)),
+            None => true,
+        };
+        let centre = there
+            .map(|t| t.1)
+            .filter(|c| !c.is_nan())
+            .unwrap_or(goal.centre);
+        a.exiting.is_none()
+            && in_place
+            && !a.is_walking()
+            && a.exec.pos.truncate().distance(centre.truncate()) <= goal.radius + ARRIVED_SLACK
+    }
+
+    /// Loaded actors' Travel and Escort runs complete once they arrive (out of
+    /// combat). They stay their actors' packages.
+    pub(crate) fn complete_arrivals(&mut self) {
+        let mut done = Vec::new();
+        for a in self.cells.values().flat_map(|rt| &rt.actors) {
+            if a.dead || a.exec.pinned || a.exec.combat.is_some() {
+                continue;
+            }
+            let (Some(run), Some(goal)) = (a.exec.run, a.exec.goal) else {
+                continue;
+            };
+            let Some(p) = a
+                .exec
+                .current
+                .and_then(|i| a.exec.packages.get(i))
+                .filter(|p| p.id == run.id)
+            else {
+                continue;
+            };
+            if run.outcome == Outcome::Running
+                && matches!(p.behaviour, Behaviour::Travel | Behaviour::Escort)
+                && self.arrived(a, p, goal)
+            {
+                done.push(a.ref_id);
+            }
+        }
+        for r in done {
+            if let Some(a) = self.actor_mut(r) {
+                a.exec.complete_run(false);
+            }
+        }
+    }
+
+    /// Tell actors' scripts what their package runs did: `OnPackageStart`,
+    /// `OnPackageEnd` and `OnPackageChange`, each after the package's own
+    /// fragment for it.
+    pub(crate) fn report_package_runs(&mut self) {
+        let mut events = Vec::new();
+        for a in self.cells.values_mut().flat_map(|rt| rt.actors.iter_mut()) {
+            events.extend(a.exec.run_events.drain(..).map(|e| (a.ref_id, e)));
+        }
+        for (&r, x) in &mut self.away {
+            events.extend(x.run_events.drain(..).map(|e| (r, e)));
+        }
+        for (actor, e) in events {
+            let (package, event) = match e {
+                RunEvent::Start(p) => (p, "OnPackageStart"),
+                RunEvent::End(p) => (p, "OnPackageEnd"),
+                RunEvent::Change(p) => (p, "OnPackageChange"),
+            };
+            log::debug!("{actor} {event} {package}");
+            self.run_package_fragment(package, actor, e);
+            let arg = self.object_value(package);
+            self.send_script_event(actor, event, vec![arg]);
+        }
+    }
+
+    /// Run package `package`'s fragment for `e`, if it has one, for `actor`.
+    fn run_package_fragment(&mut self, package: FormId, actor: FormId, e: RunEvent) {
+        let Some(vmad) = self
+            .lo
+            .get(package)
+            .and_then(|r| crate::script::vmad::parse(&r))
+        else {
+            return;
+        };
+        let Some(frag) = &vmad.package else { return };
+        let func = match e {
+            RunEvent::Start(_) => &frag.begin,
+            RunEvent::End(_) => &frag.end,
+            RunEvent::Change(_) => &frag.change,
+        };
+        let Some(func) = func.clone() else { return };
+        let obj = papyrus::ObjectId::Form(package.0);
+        let actor = self.object_value(actor);
+        let mut vm = std::mem::take(&mut self.vm);
+        {
+            let mut host = crate::script::EngineHost { engine: self };
+            for s in &vmad.scripts {
+                let props: Vec<(String, papyrus::Value)> = s
+                    .properties
+                    .iter()
+                    .map(|(n, pv)| {
+                        (
+                            n.clone(),
+                            crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
+                        )
+                    })
+                    .collect();
+                vm.attach(&mut host, obj, &s.name, &props);
+            }
+            log::debug!("package {package} fragment {func}");
+            vm.call_method(&mut host, obj, &frag.script, &func, vec![actor]);
+        }
+        self.vm = vm;
+    }
+
+    /// The package an actor runs (`GetCurrentPackage`): a loaded actor's run's;
+    /// for one elsewhere, the one its schedule gives it now, else the run it
+    /// unloaded with.
+    pub(crate) fn running_package(&self, r: FormId) -> Option<FormId> {
+        if let Some(a) = self.actor_ref(r) {
+            return a.exec.package();
+        }
+        match self.whereabouts.package.get(&r) {
+            Some(&p) => p,
+            None => self.away.get(&r).and_then(|x| x.package()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::Engine;
+
+    const HOME: FormId = FormId(0x810);
+    const FAR: FormId = FormId(0x811);
+    const SCENE: FormId = FormId(0x812);
+
+    fn exec() -> ActorExec {
+        let packages = [SCENE, FAR, HOME]
+            .map(|id| Package::bare(id, Behaviour::Travel))
+            .to_vec();
+        ActorExec::new(packages, Vec3::ZERO, 0.0, 0.0)
+    }
+
+    #[test]
+    fn a_change_of_package_tells_the_old_one_then_starts_the_new() {
+        let mut x = exec();
+        x.begin_run(Some(2), 1.0, false);
+        assert_eq!(x.run_events, [RunEvent::Start(HOME)]);
+        x.run_events.clear();
+        // The same package carries on.
+        x.begin_run(Some(2), 2.0, false);
+        assert!(x.run_events.is_empty());
+        assert_eq!(x.run.unwrap().started_at, 1.0);
+        x.begin_run(Some(1), 3.0, false);
+        assert_eq!(x.run_events, [RunEvent::Change(HOME), RunEvent::Start(FAR)]);
+        assert_eq!(x.package(), Some(FAR));
+        assert_eq!(x.run.unwrap().started_at, 3.0);
+        x.run_events.clear();
+        x.begin_run(None, 4.0, false);
+        assert_eq!(x.run_events, [RunEvent::Change(FAR)]);
+        assert_eq!(x.run, None);
+    }
+
+    #[test]
+    fn a_completed_run_ends_once_and_another_package_still_tells_it() {
+        let mut x = exec();
+        x.begin_run(Some(1), 0.0, false);
+        x.run_events.clear();
+        x.complete_run(false);
+        x.complete_run(false);
+        assert_eq!(x.run_events, [RunEvent::End(FAR)]);
+        assert!(x.run_completed());
+        // It stays the actor's package, and isn't passed over.
+        assert_eq!(x.package(), Some(FAR));
+        assert_eq!(x.done_once, None);
+        x.run_events.clear();
+        x.begin_run(Some(2), 1.0, false);
+        assert_eq!(x.run_events, [RunEvent::Change(FAR), RunEvent::Start(HOME)]);
+    }
+
+    #[test]
+    fn a_run_that_gives_way_is_passed_over_and_evaluated_again_at_once() {
+        let mut x = exec();
+        x.begin_run(Some(1), 0.0, false);
+        x.next_eval = 5.0;
+        x.complete_run(true);
+        assert_eq!(x.done_once, Some(FAR));
+        assert_eq!(x.next_eval, 0.0);
+    }
+
+    #[test]
+    fn a_scene_suspends_the_run_and_it_resumes_after() {
+        let mut x = exec();
+        x.begin_run(Some(2), 1.0, false);
+        x.run.as_mut().unwrap().activations = 2;
+        x.begin_run(Some(0), 3.0, true);
+        assert_eq!(x.package(), Some(SCENE));
+        assert_eq!(x.suspended.map(|r| r.id), Some(HOME));
+        x.run_events.clear();
+        x.begin_run(Some(2), 5.0, false);
+        // Its scripts hear of it as of any change; its progress is kept.
+        assert_eq!(
+            x.run_events,
+            [RunEvent::Change(SCENE), RunEvent::Start(HOME)]
+        );
+        let run = x.run.unwrap();
+        assert_eq!((run.started_at, run.activations), (1.0, 2));
+        assert_eq!(x.suspended, None);
+    }
+
+    #[test]
+    fn a_loading_actor_carries_on_with_its_run() {
+        let mut away = exec();
+        away.begin_run(Some(1), 1.0, false);
+        away.complete_run(true);
+        let mut x = exec();
+        x.take_back_runs(&away);
+        assert_eq!(x.run, away.run);
+        assert_eq!(x.done_once, Some(FAR));
+        // Taking up the same package again tells its scripts nothing.
+        x.begin_run(Some(1), 2.0, false);
+        assert!(x.run_events.is_empty());
+    }
+
+    #[test]
+    fn a_scene_giving_way_to_another_package_drops_the_suspended_run() {
+        let mut x = exec();
+        x.begin_run(Some(2), 1.0, false);
+        x.begin_run(Some(0), 3.0, true);
+        x.begin_run(Some(1), 5.0, false);
+        assert_eq!(x.suspended, None);
+        x.begin_run(Some(2), 6.0, false);
+        assert_eq!(x.run.unwrap().started_at, 6.0);
+    }
     use esp::writer::{Node, RecordBuilder, write_plugin};
     use glam::Mat4;
 
     const BASE: FormId = FormId(0x800);
     const ACTOR: FormId = FormId(0x801);
+    const PACKAGE: FormId = FormId(0x802);
     const CELL: FormId = FormId(0x820);
 
     struct Fixture(std::path::PathBuf);
@@ -124,6 +467,7 @@ mod tests {
                 b"ACHR",
                 vec![RecordBuilder::new(b"ACHR", ACTOR).form(b"NAME", BASE)],
             ),
+            Node::top(b"PACK", vec![RecordBuilder::new(b"PACK", PACKAGE)]),
         ];
         std::fs::write(
             f.0.join("Exec.esp"),
@@ -249,5 +593,76 @@ mod tests {
         assert_eq!(x.place, None);
         assert!(x.packages.is_empty());
         assert_eq!(e.returning_health(ACTOR, 80.0), 30.0);
+    }
+
+    /// The loaded actor running a Travel package to where it stands.
+    fn travelling(e: &mut Engine) {
+        loaded_actor(e);
+        let a = e.actor_mut(ACTOR).unwrap();
+        a.exec.packages = vec![Package::bare(PACKAGE, Behaviour::Travel)];
+        a.exec.current = Some(0);
+        a.exec.goal = Some(Goal::travel(a.exec.pos));
+        a.exec.begin_run(Some(0), 2.0, false);
+    }
+
+    fn heard(e: &Engine) -> Vec<String> {
+        e.scripts
+            .pending_events
+            .iter()
+            .filter(|(o, _, args)| {
+                *o == papyrus::ObjectId::Form(ACTOR.0)
+                    && matches!(&args[..], [papyrus::Value::Object(papyrus::ObjectId::Form(p), _)]
+                        if *p == PACKAGE.0)
+            })
+            .map(|(_, ev, _)| ev.clone())
+            .collect()
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn an_arrival_ends_the_travel_run_and_its_scripts_hear_of_it() {
+        let (_f, mut e) = fixture();
+        travelling(&mut e);
+        e.complete_arrivals();
+        e.report_package_runs();
+        assert_eq!(heard(&e), ["OnPackageStart", "OnPackageEnd"]);
+        // Done once: it stays the actor's package.
+        assert!(e.actor_ref(ACTOR).unwrap().exec.run_completed());
+        assert_eq!(e.running_package(ACTOR), Some(PACKAGE));
+        e.scripts.pending_events.clear();
+        e.complete_arrivals();
+        e.report_package_runs();
+        assert!(heard(&e).is_empty());
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_traveller_short_of_its_goal_runs_on() {
+        let (_f, mut e) = fixture();
+        travelling(&mut e);
+        let a = e.actor_mut(ACTOR).unwrap();
+        a.exec.goal = Some(Goal::travel(a.exec.pos + Vec3::X * 1000.0));
+        e.complete_arrivals();
+        assert_eq!(
+            e.actor_ref(ACTOR).unwrap().exec.run.unwrap().outcome,
+            Outcome::Running
+        );
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn unloading_neither_ends_nor_restarts_the_run() {
+        let (_f, mut e) = fixture();
+        travelling(&mut e);
+        e.report_package_runs();
+        e.unload_all();
+        let run = e.away[&ACTOR].run.expect("still running");
+        assert_eq!((run.id, run.started_at), (PACKAGE, 2.0));
+        assert!(e.away[&ACTOR].run_events.is_empty());
+        // Away, it runs the package it left with until its schedule says
+        // otherwise.
+        assert_eq!(e.running_package(ACTOR), Some(PACKAGE));
+        e.whereabouts.package.insert(ACTOR, None);
+        assert_eq!(e.running_package(ACTOR), None);
     }
 }

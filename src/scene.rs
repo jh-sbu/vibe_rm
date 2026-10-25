@@ -28,8 +28,6 @@ pub const SUBTITLE_DISTANCE: f32 = 1500.0;
 /// Package actions of procedures not run here (shouting, magic, activating...)
 /// count as done this long after they start.
 const UNSUPPORTED_PACKAGE_SECS: f64 = 1.0;
-/// How close to a travel package's location counts as arrived, beyond its radius.
-const ARRIVED_SLACK: f32 = 150.0;
 
 /// A scene as read, conditions parsed.
 pub struct SceneDef {
@@ -1902,27 +1900,7 @@ impl Engine {
             return false;
         };
         match p.behaviour {
-            Behaviour::Travel | Behaviour::Escort => {
-                // Arrived: in the place the package names (not on the way out of
-                // another), standing near its location.
-                let here = self.current_place_of(r).map(|x| x.0);
-                let there = self.package_place(r, p);
-                let in_place = match there {
-                    Some((place, _)) => {
-                        here.is_some_and(|h| crate::ai::schedule::same_space(h, place))
-                    }
-                    None => true,
-                };
-                let centre = there
-                    .map(|t| t.1)
-                    .filter(|c| !c.is_nan())
-                    .unwrap_or(goal.centre);
-                a.exiting.is_none()
-                    && in_place
-                    && !a.is_walking()
-                    && a.exec.pos.truncate().distance(centre.truncate())
-                        <= goal.radius + ARRIVED_SLACK
-            }
+            Behaviour::Travel | Behaviour::Escort => self.arrived(a, p, goal),
             Behaviour::Sit | Behaviour::Sleep => a.in_furniture(),
             Behaviour::ForceGreet => greeted && talking != Some(r),
             // Procedures not run here.

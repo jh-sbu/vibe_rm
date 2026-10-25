@@ -126,6 +126,23 @@ created one removes its execution. Tests are in `src/ai/exec.rs`.
 
 ### 3. Package lifecycle
 
+**Status (2026-10-25):** done. `ActorExec::run` is a `PackageRun { id,
+started_at, outcome: Running | Completed, activations }`; `begin_run` and
+`complete_run` make the transitions and queue `RunEvent`s, which
+`Engine::report_package_runs` turns into the `PACK` fragments and
+`OnPackageStart` / `End` / `Change`. `finished_package` became `done_once`
+(a completed run that gives way: CommonLibSSE's `kPackageDoneOnce` names
+the like), and Activate counts moved into the run. Loaded Travel and Escort
+runs complete on arrival, by the rule scenes used (`Engine::arrived`, now
+shared). There's no `Failed` or `Interrupted` outcome: nothing fails yet,
+and a run that's replaced is gone (a scene's is kept in
+`ActorExec::suspended`). A loading actor takes back its run, so taking up
+the same package fires nothing. `stage` waits for step 4, which is what fills it.
+`GetCurrentPackage` (already answering from `current` and `Whereabouts`)
+reads the run, and the away run for actors whose schedule has no answer.
+Away actors fire no package events until step 5. The choices are in
+`known_ambiguities/actor-execution.md` ("Package runs").
+
 - Make the package run explicit in `ActorExec`: `PackageRun { id, started_at
   (game hours), stage, outcome: Running | Completed | Failed | Interrupted }`.
   It replaces `finished_package` and the scattered completion checks: scenes'

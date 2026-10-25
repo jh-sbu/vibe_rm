@@ -1342,26 +1342,19 @@ impl ActorRuntime {
     /// The Activate package's target was activated once more: after "Number to
     /// Activate" of them it is done, and passed over while it still applies.
     fn activation_done(&mut self, goal: &Goal) {
-        let package = self
-            .exec
-            .current
-            .and_then(|i| self.exec.packages.get(i))
-            .map(|p| p.id);
-        if self.exec.activations.0 != package {
-            self.exec.activations = (package, 0);
-        }
-        self.exec.activations.1 += 1;
+        let Some(run) = self.exec.run.as_mut() else {
+            return;
+        };
+        run.activations += 1;
         log::debug!(
             "{} activated {:?} ({} of {})",
             self.ref_id,
             goal.target,
-            self.exec.activations.1,
+            run.activations,
             goal.activate
         );
-        if goal.activate > 0 && self.exec.activations.1 >= goal.activate {
-            self.exec.finished_package = package;
-            self.exec.next_eval = 0.0;
-            self.exec.activations = (None, 0);
+        if goal.activate > 0 && run.activations >= goal.activate {
+            self.exec.complete_run(true);
         }
     }
 
@@ -3240,13 +3233,13 @@ impl Engine {
                     p.schedule.matches(self.hour, self.day)
                         && crate::condition::evaluate(self, &p.conditions, ctx)
                 };
-                // A completed package is passed over while it still applies, and
-                // runs afresh once it has stopped (and starts again).
+                // A completed package that gives way is passed over while it still
+                // applies, and runs afresh once it has stopped (and starts again).
                 let finished = a
                     .exec
-                    .finished_package
+                    .done_once
                     .filter(|&id| a.exec.packages.iter().any(|p| p.id == id && applies(p)));
-                if finished.is_none() && a.exec.finished_package.is_some() {
+                if finished.is_none() && a.exec.done_once.is_some() {
                     forgotten.push((*key, i));
                 }
                 let pick = a
@@ -3381,7 +3374,7 @@ impl Engine {
         }
         for (key, i) in forgotten {
             if let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) {
-                a.exec.finished_package = None;
+                a.exec.done_once = None;
             }
         }
         for (f, way) in creature_ways {
@@ -3390,6 +3383,7 @@ impl Engine {
             }
         }
         let mut lock_changes = Vec::new();
+        let now = self.game_hours_total();
         for (key, i, pick, goal, stop) in decisions {
             let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else {
                 continue;
@@ -3427,6 +3421,12 @@ impl Engine {
                 // The first package an actor gets doesn't interrupt what it is doing
                 // (e.g. an idle a script started on load).
                 let first = a.exec.current.is_none();
+                let for_scene = self
+                    .scenes
+                    .packages
+                    .get(&a.ref_id)
+                    .is_some_and(|(_, _, ps)| ps.iter().any(|p| Some(p.id) == id));
+                a.exec.begin_run(pick, now, for_scene);
                 a.exec.current = pick;
                 a.exec.goal = goal;
                 a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
@@ -3844,6 +3844,8 @@ impl Engine {
             self.update_witnesses();
         }
         self.report_combat_states();
+        self.complete_arrivals();
+        self.report_package_runs();
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);
         }

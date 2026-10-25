@@ -54,6 +54,41 @@ their module docs have the numbers.
   0.2 s later. A buffered cell's actors get `OnCellDetach` but keep their
   3D, with no `OnUnload` until the player goes elsewhere.
 
+## Package runs: what we chose
+
+`ai::exec::PackageRun` (step 3 of the plan). The readings above settle the
+order of a change (`OnPackageChange` for the old package, then
+`OnPackageStart`) and that a package that ended still gets
+`OnPackageChange` when another takes over (autotest13's home packages ended
+as the save loaded and changed at Go1). The rest is our choice:
+
+- **What completes a run.** Loaded Travel and Escort runs complete on
+  arrival (scenes' arrival rule) and stay the actor's package; Activate,
+  UseWeapon and UseMagic runs complete when their count or time runs out and
+  give way until they stop applying. Sit, Sleep, Sandbox, Follow, Patrol and
+  ForceGreet runs don't complete, though scenes count a seat taken or a
+  greeting held as done: whether those log `OnPackageEnd` is untested.
+- **Combat and conversations** leave the run as it is (no events), its
+  procedure waiting until they end. Whether the game logs
+  `OnPackageChange` / `OnPackageStart` for a combat package is untested.
+- **Scenes** suspend the run: the scene's package logs the usual change
+  events, and when the scene lets go, the old run resumes with its start
+  time and progress (Activate count) kept, logging `OnPackageStart` again.
+  Whether the game restarts it instead, and which events it logs, is
+  untested. Any other change of package starts the next one afresh: an
+  Activate package left and taken up again counts from nothing.
+- **Fragments before events.** A package's begin / end / change fragment
+  (`PACK` `VMAD`, xEdit's `wbVMADFragmentedPACK`) runs as its run changes,
+  then the event is queued for the actor's scripts. The game's order is
+  unknown.
+- **Away actors' runs don't advance yet** (step 5): their packages change
+  only by `Whereabouts`, which fires no events, so the unloaded actors'
+  `OnPackageStart` / `Change` / `End` that autotest13 logged are missing.
+  `GetCurrentPackage` on an away actor answers the package its schedule
+  gives it now, else the run it unloaded with. Actors loaded from a save
+  start their runs afresh (`OnPackageStart`) until saves keep them (step 8),
+  where autotest14's reloaded actors logged nothing.
+
 ## Open questions
 
 - **What decides the jump.** Every actor moved had its target within 4,100

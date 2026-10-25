@@ -37,6 +37,16 @@ pub struct Vmad {
     pub alias_scripts: Vec<(u32, Vec<ScriptRef>)>,
     /// SCEN only: the scene's begin / end fragments and its phases'.
     pub scene: Option<SceneFragments>,
+    /// PACK only: the package's begin / end / change fragments.
+    pub package: Option<PackageFragments>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PackageFragments {
+    pub script: String,
+    pub begin: Option<String>,
+    pub end: Option<String>,
+    pub change: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -194,6 +204,9 @@ pub fn parse(rec: &LoadedRecord<'_>) -> Option<Vmad> {
     if rec.tag().0 == *b"SCEN" && r.ok(3) {
         v.scene = scene_fragments(&mut r);
     }
+    if rec.tag().0 == *b"PACK" && r.ok(3) {
+        v.package = package_fragments(&mut r);
+    }
     Some(v)
 }
 
@@ -231,6 +244,31 @@ fn scene_fragments(r: &mut R<'_>) -> Option<SceneFragments> {
     Some(f)
 }
 
+/// Package fragment data (xEdit's `wbVMADFragmentedPACK`): a version byte,
+/// flags (1 begin, 2 end, 4 change), the script, then each of those fragments
+/// in that order (a byte, script, function).
+fn package_fragments(r: &mut R<'_>) -> Option<PackageFragments> {
+    r.u8()?;
+    let flags = r.u8()?;
+    let mut f = PackageFragments {
+        script: r.wstring()?,
+        ..Default::default()
+    };
+    for bit in [1, 2, 4] {
+        if flags & bit != 0 {
+            r.u8()?;
+            r.wstring()?;
+            let func = Some(r.wstring()?);
+            match bit {
+                1 => f.begin = func,
+                2 => f.end = func,
+                _ => f.change = func,
+            }
+        }
+    }
+    Some(f)
+}
+
 /// Convert a VMAD property value into a VM value. Object values need the form's script class.
 pub fn to_value(v: &PropValue, class_of: &dyn Fn(FormId) -> &'static str) -> Value {
     match v {
@@ -256,5 +294,37 @@ pub fn to_value(v: &PropValue, class_of: &dyn Fn(FormId) -> &'static str) -> Val
         PropValue::Array(items) => Value::Array(std::rc::Rc::new(std::cell::RefCell::new(
             items.iter().map(|i| to_value(i, class_of)).collect(),
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wstring(out: &mut Vec<u8>, s: &str) {
+        out.extend((s.len() as u16).to_le_bytes());
+        out.extend(s.as_bytes());
+    }
+
+    #[test]
+    fn package_fragments_are_read_in_flag_order() {
+        // Begin and change, no end.
+        let mut d = vec![2, 1 | 4];
+        wstring(&mut d, "PF_Test_01000800");
+        for func in ["Fragment_0", "Fragment_2"] {
+            d.push(0);
+            wstring(&mut d, "PF_Test_01000800");
+            wstring(&mut d, func);
+        }
+        let f = package_fragments(&mut R {
+            d: &d,
+            p: 0,
+            format: 2,
+        })
+        .unwrap();
+        assert_eq!(f.script, "PF_Test_01000800");
+        assert_eq!(f.begin.as_deref(), Some("Fragment_0"));
+        assert_eq!(f.end, None);
+        assert_eq!(f.change.as_deref(), Some("Fragment_2"));
     }
 }

@@ -227,12 +227,7 @@ impl ActorRuntime {
     pub(crate) fn practice_step(&mut self, dt: f32, goal: &PracticeGoal, w: &mut World) {
         self.speed = 0.0;
         // A package that has run its course stays done until it stops applying.
-        let package = self
-            .exec
-            .current
-            .and_then(|i| self.exec.packages.get(i))
-            .map(|p| p.id);
-        if package.is_some() && package == self.exec.finished_package {
+        if self.exec.run_completed() {
             return;
         }
         let mut p = self.practice.unwrap_or_default();
@@ -327,8 +322,7 @@ impl ActorRuntime {
                 p.barrages_done,
                 p.elapsed
             );
-            self.exec.finished_package = package;
-            self.exec.next_eval = 0.0;
+            self.exec.complete_run(true);
         }
         self.practice = Some(p);
     }

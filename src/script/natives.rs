@@ -610,21 +610,7 @@ pub fn call(
             v(Value::Bool(over))
         }
         ("actor", "getcurrentpackage") => {
-            let package = me.and_then(|r| {
-                if let Some(actor) = e
-                    .actor_cells
-                    .get(&r)
-                    .and_then(|k| e.cells.get(k))
-                    .and_then(|rt| rt.actors.iter().find(|a| a.ref_id == r))
-                {
-                    return actor
-                        .exec
-                        .current
-                        .and_then(|i| actor.exec.packages.get(i))
-                        .map(|p| p.id);
-                }
-                e.whereabouts.package.get(&r).copied().flatten()
-            });
+            let package = me.and_then(|r| e.running_package(r));
             v(package.map_or(Value::None, |p| e.object_value(p)))
         }
         ("actor", "getdialoguetarget") => {

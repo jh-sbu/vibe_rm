@@ -295,6 +295,44 @@ pub struct Package {
     pub random_stops: bool,
 }
 
+#[cfg(test)]
+impl Package {
+    /// A package of `behaviour` with nothing else to it, for tests.
+    pub(crate) fn bare(id: FormId, behaviour: Behaviour) -> Self {
+        Package {
+            id,
+            editor_id: format!("Test{:X}", id.0),
+            quest: None,
+            template: String::new(),
+            behaviour,
+            schedule: Default::default(),
+            conditions: Vec::new(),
+            location: None,
+            target: None,
+            allow: Default::default(),
+            energy: 50.0,
+            point_radius: 0.0,
+            repeat: false,
+            start_nearest: false,
+            follow_radius: (0.0, 0.0),
+            escort_wait: 0.0,
+            escort_run: 0.0,
+            gait: Gait::Walk,
+            sneak: false,
+            lock_doors: false,
+            warn_before_locking: false,
+            unlock_at_start: false,
+            unlock_on_change: false,
+            greet: None,
+            use_weapon: None,
+            use_magic: None,
+            activate: 0,
+            stops: Vec::new(),
+            random_stops: false,
+        }
+    }
+}
+
 fn behaviour_of(template: &str) -> Behaviour {
     let t = template.to_ascii_lowercase();
     if t.starts_with("sleep") {

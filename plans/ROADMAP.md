@@ -1681,9 +1681,11 @@ game each piece unlocks.
      and scene progress while actors are away; attach / remove animation and
      physics without restarting the actor's execution. This is the foundation
      for the package-tree, off-screen travel, unloaded actor-value and save work.
-     Plan: `plans/ai-actor-execution.md` (steps 1 and 2 done: the execution is
-     `ai::exec::ActorExec`, kept in `Engine::away` while unloaded; only wounds
-     carry back to a loading actor yet).
+     Plan: `plans/ai-actor-execution.md` (steps 1 to 3 done: the execution is
+     `ai::exec::ActorExec`, kept in `Engine::away` while unloaded, with a
+     package run that `GetCurrentPackage` reads and whose changes fire
+     `OnPackageStart` / `End` / `Change` and the `PACK` fragments for loaded
+     actors; only wounds and the package run carry back to a loading actor yet).
    - Processing policies: detailed updates nearby and coarse advancement away,
      with travel progress through cells and load doors, separate game / real-time
      timestamps and elapsed-time handling for waiting, sleeping and fast travel.
@@ -1889,7 +1891,7 @@ game each piece unlocks.
    - Natives scripts call that still do nothing, most called first
      (`vrm-tool pex-natives`; see Done for the last ones): effect shaders'
      and visual effects' `Play` / `Stop`, `SetAlpha`, `SetSubGraphFloatVariable`,
-     `TranslateTo` and the other translations, `GetCurrentPackage`, `HasLOS`,
+     `TranslateTo` and the other translations, `HasLOS`,
      `MoveToPackageLocation`, `SetRace`, riding, flying, character creation,
      killmoves and beast forms; `SetOutfit`'s sleep outfits
      (`known_ambiguities/outfits.md`); `Delete`'s "once nothing holds it"

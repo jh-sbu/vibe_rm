@@ -1456,6 +1456,9 @@ impl Engine {
             if self.scripts.faction_changes.contains_key(&d.ref_id) {
                 stats.factions = self.member_factions(d.ref_id);
             }
+            if let Some(x) = self.away.get(&d.ref_id) {
+                rt.exec.take_back_runs(x);
+            }
             rt.exec.health = self.returning_health(d.ref_id, stats.max_health);
             rt.exec.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.ref_id, d.inventory.weapon(&self.lo));

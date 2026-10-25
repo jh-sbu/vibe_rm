@@ -88,7 +88,7 @@ impl ActorRuntime {
             .current
             .and_then(|i| self.exec.packages.get(i))
             .map(|p| p.id);
-        if package.is_some() && package == self.exec.finished_package {
+        if self.exec.run_completed() {
             return;
         }
         // The engine puts the spell in the hands once it is here and known.
@@ -135,7 +135,7 @@ impl ActorRuntime {
         if m.channel > 0.0 {
             self.channel_step(dt, &mut m, spell, recipient);
             if m.channel <= 0.0 {
-                self.cast_over(&mut m, goal, left, package, w);
+                self.cast_over(&mut m, goal, left, w);
             }
             self.magic_practice = Some(m);
             return;
@@ -146,7 +146,7 @@ impl ActorRuntime {
                 None => {
                     self.release_hand(h.hand);
                     m.cast = None;
-                    self.cast_over(&mut m, goal, left, package, w);
+                    self.cast_over(&mut m, goal, left, w);
                 }
             }
             self.magic_practice = Some(m);
@@ -200,7 +200,7 @@ impl ActorRuntime {
             m.channel = uniform(w.rand, goal.cast_time.0, goal.cast_time.1).max(CHANNEL_TICK);
         } else if !humanoid {
             self.casts = Some(cast);
-            self.cast_over(&mut m, goal, left, package, w);
+            self.cast_over(&mut m, goal, left, w);
         }
         self.magic_practice = Some(m);
     }
@@ -243,20 +243,12 @@ impl ActorRuntime {
 
     /// A cast is over: the next one comes after the cooldown, and the package
     /// is done after its last.
-    fn cast_over(
-        &mut self,
-        m: &mut MagicPractice,
-        goal: &MagicGoal,
-        left: u32,
-        package: Option<FormId>,
-        w: &mut World,
-    ) {
+    fn cast_over(&mut self, m: &mut MagicPractice, goal: &MagicGoal, left: u32, w: &mut World) {
         m.left = Some(left.saturating_sub(1));
         m.wait = uniform(w.rand, goal.cooldown.0, goal.cooldown.1);
         if left <= 1 {
             log::debug!("{} finished its casting practice", self.ref_id);
-            self.exec.finished_package = package;
-            self.exec.next_eval = 0.0;
+            self.exec.complete_run(true);
             *m = MagicPractice {
                 package: m.package,
                 ..Default::default()
