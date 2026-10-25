@@ -212,10 +212,7 @@ impl Engine {
                 );
             }
         }
-        self.heal_away(seconds);
-        if self.ai_enabled {
-            self.jump_to_schedules();
-        }
+        self.pass_time(seconds);
     }
 
     /// A map marker lands at its unkeyed linked reference, or at itself.

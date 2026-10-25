@@ -740,19 +740,21 @@ impl Engine {
         }
     }
 
-    /// Time passed without the world running (the hours waited or slept):
-    /// every actor is put where its schedule has it now. Those whose place is
-    /// elsewhere go (and those whose place is a loaded cell turn up there);
-    /// those whose package changed, or who are away from where it has them,
-    /// start over at its location (in its furniture, as a cell loading puts
-    /// them). The fallen, the fighting and the player's followers are left be.
-    pub(crate) fn jump_to_schedules(&mut self) {
+    /// Time passed without the world running (the hours waited or slept),
+    /// standing for `secs` real seconds, for the loaded actors (`pass_time`
+    /// has stepped those away): those walking on with the package they had
+    /// walk on along their paths for those seconds (autotest14: a two-hour
+    /// wait put a walker exactly on its target). The others are put where
+    /// their schedules have them now: those whose place is elsewhere go (and
+    /// those whose place is a loaded cell turn up there); those whose package
+    /// changed, or who are away from where it has them, start over at its
+    /// location (in its furniture, as a cell loading puts them). The fallen,
+    /// the fighting and the player's followers are left be.
+    pub(crate) fn jump_to_schedules(&mut self, secs: f32) {
         let start = std::time::Instant::now();
-        // Those away read their packages for the new time, and go where they
-        // take them (autotest14: those already there stay).
-        self.step_all_away();
         self.refresh_whereabouts();
         let mut despawn = Vec::new();
+        let mut walk_on = Vec::new();
         let mut respawn: Vec<(FormId, CellKey, Vec3)> = Vec::new();
         for (&key, rt) in &self.cells {
             let Some(here) = self.place_of_key(key) else {
@@ -799,6 +801,12 @@ impl Engine {
                     }
                     continue;
                 };
+                // (One not yet given a package keeps to what it does.)
+                let changed = a.exec.current.is_some_and(|c| c != i);
+                if a.is_walking() && !changed && to == key {
+                    walk_on.push((a.ref_id, a.walk_speed() * secs));
+                    continue;
+                }
                 let p = &a.exec.packages[i];
                 let (centre, radius) = self.package_target(a, p);
                 let away = !matches!(
@@ -809,11 +817,15 @@ impl Engine {
                         | super::Behaviour::ForceGreet
                 ) && a.exec.pos.truncate().distance(centre.truncate())
                     > radius.max(96.0) * 1.5;
-                // (One not yet given a package keeps to what it does.)
-                let changed = a.exec.current.is_some_and(|c| c != i);
                 if changed || to != key || away {
                     respawn.push((a.ref_id, to, centre));
                 }
+            }
+        }
+        for (r, reach) in walk_on {
+            if let Some(a) = self.actor_mut(r) {
+                a.walk_on(reach);
+                log::debug!("{r} walks on {reach:.0} to {:?}", a.exec.pos);
             }
         }
         for r in despawn {
@@ -897,7 +909,8 @@ impl Engine {
         if !a.dead {
             let now = self.scripts.real_time;
             let w = crate::world_state::Wounds::of(&a, now);
-            let mut x = a.exec.away(self.place_of_key(key), w, None, now);
+            let clocks = (now, self.game_hours_total());
+            let mut x = a.exec.away(self.place_of_key(key), w, None, clocks);
             if let Some(&(place, pos)) = self.whereabouts.of.get(&r) {
                 (x.place, x.pos) = (Some(place), pos);
                 x.on_arrival = self.whereabouts.placement_heading.get(&r).copied();

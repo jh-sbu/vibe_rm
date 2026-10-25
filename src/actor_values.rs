@@ -294,6 +294,10 @@ impl Engine {
     /// restoring heals damage but never raises it past its most. Health taken
     /// to nothing kills (essential actors bleed out).
     pub fn damage_actor_value(&mut self, actor: FormId, index: u32, amount: f32) {
+        // Unloaded actors' health changes at once (autotest13).
+        if index == av::HEALTH && self.hurt_away(actor, amount) {
+            return;
+        }
         if let Some((current, max)) = self.av_live(actor, index) {
             let value = (current - amount).min(max);
             match index {
@@ -340,9 +344,10 @@ impl Engine {
         m.damage = (m.damage - amount).min(0.0);
     }
 
-    /// Actors just loaded take the health and stamina damage scripts did them
-    /// while away (`DamageActorValue` on an unloaded actor), as if done now:
-    /// health brought to nothing kills them, or bleeds out the essential.
+    /// Actors just loaded take the stamina damage scripts did them while away
+    /// (`DamageActorValue` on an unloaded actor), as if done now; and health
+    /// damage kept from before away actors' health changed at once (saves),
+    /// health brought to nothing killing them, or bleeding out the essential.
     pub(crate) fn carry_unloaded_damage(&mut self, actors: &[FormId]) {
         for &actor in actors {
             for index in [av::HEALTH, av::STAMINA] {

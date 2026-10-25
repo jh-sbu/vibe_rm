@@ -244,6 +244,24 @@ buffered cells. The choices are in `known_ambiguities/actor-execution.md`
 
 ### 6. Processing policies and time
 
+**Status (2026-10-25):** done. `ai::exec::Processing` is `Full`,
+`Buffered { cadence }` (away in the cells just left: walks on) or
+`Coarse { cadence }`, picked by `Engine::processing` from whether the actor
+is loaded and its place (the readings showed the cell deciding, not the
+distance; `AWAY_CADENCE` 3 s). It is derived, not stored. `ActorExec` stamps
+both clocks as it is stepped (`stepped_at`, `stepped_hours`), and
+`Processing`'s doc says which clock each piece follows. Waiting, sleeping
+and fast travel call `Engine::pass_time(secs)` (the plan's
+`advance_away(game_hours)`; the per-actor mover is now `move_away`): wounds
+heal and away bleeding runs out for the real seconds the time stands for,
+away actors are stepped with them, and loaded walkers walk on along their
+paths (`ActorRuntime::walk_on`) instead of being respawned;
+`jump_to_schedules` is the fallback for the rest. Damage to unloaded
+actors is taken at once (`Engine::hurt_away`), killing them away
+(`kill_away`, with `OnDeath`) or bleeding essential ones out where they
+are. Timed effects already ended on unloading. The choices are in
+`known_ambiguities/actor-execution.md` ("Time and condition").
+
 - `ai::exec::Processing`: `Full` (loaded and stepped every frame),
   `Coarse { cadence }` (away, stepped by the away stepper), and room for more
   tiers between those two. A policy function picks the tier from whether the
@@ -279,7 +297,7 @@ buffered cells. The choices are in `known_ambiguities/actor-execution.md`
 
 - New optional section `AEXC`: every `ActorExec` in `away` plus loaded actors'
   `exec`. It holds the run, procedure stage, position and place, both
-  timestamps and the processing tier. Loading installs it before cells attach
+  timestamps and away bleeding (the processing tier is derived: step 6). Loading installs it before cells attach
   actors (as scene packages are installed today). Saves without it fall back
   to scheduled placement.
 - Update the `Not yet saved` doc line in `src/save/state.rs` and

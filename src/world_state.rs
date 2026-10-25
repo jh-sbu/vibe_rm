@@ -133,6 +133,7 @@ impl Engine {
             return;
         };
         let now = self.scripts.real_time;
+        let clocks = (now, self.game_hours_total());
         let mut rest = Vec::new();
         let mut away = Vec::new();
         for a in &rt.actors {
@@ -143,7 +144,7 @@ impl Engine {
                     a.ref_id,
                     a.exec
                         .clone()
-                        .away(Some(place), Wounds::of(a, now), stage, now),
+                        .away(Some(place), Wounds::of(a, now), stage, clocks),
                 ));
                 continue;
             }
@@ -199,7 +200,7 @@ impl Engine {
     }
 
     /// Time passed without running (hours waited): the hurt actors away heal
-    /// for `secs` more.
+    /// for `secs` more (`Engine::pass_time`).
     pub(crate) fn heal_away(&mut self, secs: f32) {
         for w in self.away.values_mut().filter_map(|x| x.wounds.as_mut()) {
             w.at -= secs as f64;
@@ -207,13 +208,19 @@ impl Engine {
     }
 
     /// The health a loading actor comes back with (its most, unless it left
-    /// hurt), its execution away taken back.
+    /// hurt), its execution away taken back. One bleeding out away (or with
+    /// no health left: saves don't keep bleeding) gets up as it loads, with a
+    /// quarter of its health, as at the end of a bleedout.
     pub(crate) fn returning_health(&mut self, actor: FormId, max: f32) -> f32 {
         let now = self.scripts.real_time;
-        self.away
-            .remove(&actor)
-            .and_then(|x| x.wounds)
-            .map_or(max, |w| w.health_at(now).min(max))
+        let down = |x: &crate::ai::exec::ActorExec| {
+            x.bleeding.is_some() || x.wounds.is_some_and(|w| w.health <= 0.0)
+        };
+        match self.away.remove(&actor) {
+            Some(x) if down(&x) => max * 0.25,
+            Some(x) => x.wounds.map_or(max, |w| w.health_at(now).min(max)),
+            None => max,
+        }
     }
 
     /// Where a dead actor's body lies.

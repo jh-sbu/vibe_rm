@@ -46,9 +46,12 @@ pub struct ActorExec {
     pub(crate) ends_at: Option<f64>,
     /// Away: how to turn it as it loads where its package put it.
     pub(crate) on_arrival: Option<super::schedule::PlacementHeading>,
-    /// Away: the real time it was last stepped, and the half hour of game
-    /// time its packages were last read in.
+    /// Away: the real time (`ScriptState::real_time`) and the game time
+    /// (hours, `Engine::game_hours_total`) it was last stepped, and the half
+    /// hour of game time its packages were last read in. Which clock each
+    /// piece follows is on `Processing`.
     pub(crate) stepped_at: f64,
+    pub(crate) stepped_hours: f64,
     pub(crate) eval_slot: Option<i64>,
     /// The NPC record its packages come from (taken again away when its
     /// aliases change).
@@ -90,6 +93,45 @@ pub struct ActorExec {
     pub(crate) greet_check: f32,
     pub(crate) greet_wait: f32,
 }
+
+/// How an actor is run: its processing tier (`Engine::processing`).
+/// CommonLibSSE names four process levels (High, MiddleHigh, MiddleLow, Low)
+/// but no rules for them; these tiers follow what `test-mod autotest13` and
+/// `autotest14` saw from outside, where the cell, not the distance, made the
+/// difference (actors 2,700 away in a cell the player hadn't been in jumped;
+/// ones 3,000 away in the cell just left walked on).
+///
+/// Clocks: game time drives schedules (when packages apply and the half hour
+/// they are read again in), runs' start times and catching up after time
+/// passed in a menu (`Engine::pass_time`). Real time
+/// (`ScriptState::real_time`, which stands still in menus) drives the reading
+/// cadence, a jumped traveller's `OnPackageEnd` delay, walking in a buffered
+/// cell, bleeding out and wounds healing (`Wounds::health_at`): time passed
+/// in a menu counts for these as the real seconds it stands for.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Processing {
+    /// Loaded: stepped every frame, with its body.
+    Full,
+    /// Away in a cell the player has just left (`Stepper::buffered`):
+    /// stepped in turn, walking on at about loaded speed.
+    Buffered { cadence: f32 },
+    /// Away anywhere else: stepped in turn, put where its package has it.
+    Coarse { cadence: f32 },
+}
+
+impl Processing {
+    /// Real seconds between readings of its packages (none: every frame's own).
+    pub fn cadence(self) -> Option<f32> {
+        match self {
+            Processing::Full => None,
+            Processing::Buffered { cadence } | Processing::Coarse { cadence } => Some(cadence),
+        }
+    }
+}
+
+/// Real seconds between readings of an away actor's packages (autotest13:
+/// within about 3 s of a condition changing, buffered or not).
+pub(crate) const AWAY_CADENCE: f32 = 3.0;
 
 /// How far a loaded actor had got with its package as it unloaded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,16 +251,17 @@ impl ActorExec {
         }
     }
 
-    /// Its actor unloaded from `place` at real time `now`, `wounds` as hurt as
-    /// it left, at `stage` of its package when it unloaded with its cell. One
-    /// standing or seated is where its package has it; one walking, or with
-    /// nothing to take up, has its journey still to make.
+    /// Its actor unloaded from `place` at real time `now` and game time
+    /// `hours`, `wounds` as hurt as it left, at `stage` of its package when it
+    /// unloaded with its cell. One standing or seated is where its package
+    /// has it; one walking, or with nothing to take up, has its journey still
+    /// to make.
     pub(crate) fn away(
         mut self,
         place: Option<Place>,
         wounds: Option<Wounds>,
         stage: Option<Stage>,
-        now: f64,
+        (now, hours): (f64, f64),
     ) -> Self {
         self.place = place;
         self.wounds = wounds;
@@ -226,8 +269,14 @@ impl ActorExec {
         self.settled = matches!(stage, Some(Stage::Standing | Stage::Seated { .. }));
         self.ends_at = None;
         self.on_arrival = None;
-        self.stepped_at = now;
+        self.stamp(now, hours);
         self
+    }
+
+    /// Stamped as stepped at real time `now` and game time `hours`.
+    pub(crate) fn stamp(&mut self, now: f64, hours: f64) {
+        self.stepped_at = now;
+        self.stepped_hours = hours;
     }
 
     /// Its actor loads again: it carries on with the package runs it left with
@@ -277,6 +326,28 @@ impl ActorExec {
 }
 
 impl Engine {
+    /// The tier actor `r` runs at: loaded, in a cell the player just left, or
+    /// elsewhere (none for actors not running: dead, disabled, or never
+    /// touched by the world and placed by their schedules).
+    pub fn processing(&self, r: FormId) -> Option<Processing> {
+        if let Some(a) = self.actor_ref(r) {
+            return (!a.dead).then_some(Processing::Full);
+        }
+        let place = self.away.get(&r)?.place?;
+        if self.is_disabled(r) {
+            return None;
+        }
+        Some(if self.away_steps.buffered.contains(&place) {
+            Processing::Buffered {
+                cadence: AWAY_CADENCE,
+            }
+        } else {
+            Processing::Coarse {
+                cadence: AWAY_CADENCE,
+            }
+        })
+    }
+
     /// Whether loaded actor `a`, running Travel or Escort package `p` toward
     /// `goal`, has arrived: it is in the place the package names (not on the
     /// way out of another), standing near its location.
@@ -526,7 +597,7 @@ pub(crate) mod tests {
         away.stop.index = 1;
         away.patrol = Some((FAR, 3));
         away.combat = Some(combat::Combat::new(FAR));
-        away.away(Some(place), None, stage, 0.0)
+        away.away(Some(place), None, stage, (0.0, 0.0))
     }
 
     #[test]
@@ -629,7 +700,7 @@ pub(crate) mod tests {
     use esp::writer::{Node, RecordBuilder, write_plugin};
     use glam::Mat4;
 
-    const BASE: FormId = FormId(0x800);
+    pub(crate) const BASE: FormId = FormId(0x800);
     pub(crate) const ACTOR: FormId = FormId(0x801);
     pub(crate) const PACKAGE: FormId = FormId(0x802);
     pub(crate) const PACKAGE2: FormId = FormId(0x823);

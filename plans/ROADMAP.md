@@ -1681,7 +1681,7 @@ game each piece unlocks.
      and scene progress while actors are away; attach / remove animation and
      physics without restarting the actor's execution. This is the foundation
      for the package-tree, off-screen travel, unloaded actor-value and save work.
-     Plan: `plans/ai-actor-execution.md` (steps 1 to 5 done: the execution is
+     Plan: `plans/ai-actor-execution.md` (steps 1 to 6 done: the execution is
      `ai::exec::ActorExec`, kept in `Engine::away` while unloaded, with a
      package run that `GetCurrentPackage` reads and whose changes fire
      `OnPackageStart` / `End` / `Change` and the `PACK` fragments. An actor
@@ -1690,13 +1690,16 @@ game each piece unlocks.
      running (`ai::away`): their packages are read every few seconds and
      each half hour, and travellers are put 40 short of targets in range,
      onto targets through doors, or walk on in the cells just left, by
-     autotest13's and autotest14's readings; processing policies and time
-     next, step 6).
-   - Processing policies: detailed updates nearby and coarse advancement away,
-     with travel progress through cells and load doors, separate game / real-time
-     timestamps and elapsed-time handling for waiting, sleeping and fast travel.
-     Define continuity for wounds, regeneration, bleedout and timed effects;
-     include execution state, travel progress and timestamps in saves.
+     autotest13's and autotest14's readings. Actors run at a processing tier
+     (`ai::exec::Processing`: loaded, buffered, coarse); waiting, sleeping and
+     fast travel pass time for every actor (`Engine::pass_time`), loaded
+     walkers walking on instead of starting over; damage to unloaded actors
+     is taken at once and kills them away. Scenes with away actors or saves
+     next, steps 7 and 8).
+   - Processing policies: detailed updates nearby and coarse advancement away
+     (done, step 6), still to add: travel progress through cells and load
+     doors walked rather than jumped, and execution state, travel progress and
+     timestamps in saves (step 8).
      CommonLibSSE exposes High, MiddleHigh, MiddleLow and Low processing levels,
      but their exact eligibility, update cadence and subsystem behavior need
      investigation. Keep room for intermediate processing policies; matching

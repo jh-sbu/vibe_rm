@@ -8,15 +8,13 @@
 use esp::FormId;
 use glam::Vec3;
 
+use super::exec::Processing;
 use super::package::{Behaviour, Package};
 use super::schedule::{Place, same_space, unloaded_arrival};
 use crate::engine::{Engine, PLAYER_REF};
 
 /// Away actors stepped per frame, in turn.
 const BUDGET: usize = 100;
-/// Real seconds between readings of an away actor's packages (autotest13:
-/// within about 3 s of a condition changing).
-const EVAL_INTERVAL: f32 = 3.0;
 /// How far off a Travel package's target in the same space can be for an
 /// actor away to be put at it: every one moved had it within 4,100 (and 830
 /// of height), every one left 4,950 or more (autotest13, autotest14).
@@ -66,17 +64,17 @@ enum Move {
 }
 
 /// Where a package has an actor away at `pos` in `place` go, its package's
-/// target `target` in `there`: Travel is put on its target's line 40 short
-/// when that's in range in the same space (in a buffered cell it walks
-/// there), onto it in another space, and left where it is beyond; other
-/// packages are put at their place when away from it.
+/// target `target` in `there`, run at `tier`: Travel is put on its target's
+/// line 40 short when that's in range in the same space (in a buffered cell
+/// it walks there), onto it in another space, and left where it is beyond;
+/// other packages are put at their place when away from it.
 fn plan_move(
     p: &Package,
     place: Place,
     pos: Vec3,
     there: Place,
     target: Vec3,
-    buffered: bool,
+    tier: Processing,
 ) -> Move {
     let radius = p.location.map_or(0.0, |l| l.radius);
     let end = unloaded_arrival(p.behaviour, radius, (place, pos), there, target);
@@ -90,7 +88,7 @@ fn plan_move(
             }
         } else if target.is_nan() || pos.is_nan() {
             Move::Settle
-        } else if buffered {
+        } else if matches!(tier, Processing::Buffered { .. }) {
             Move::Walk { end }
         } else if pos.distance(target) <= JUMP_RANGE {
             Move::Put {
@@ -153,8 +151,9 @@ impl Engine {
         }
     }
 
-    /// Step every away actor at once (time passed in a menu).
-    pub(crate) fn step_all_away(&mut self) {
+    /// Step every away actor at once, `secs` more real seconds having passed
+    /// for them (time passed in a menu: `Engine::pass_time`).
+    pub(crate) fn step_all_away(&mut self, secs: f32) {
         let mut all: Vec<FormId> = self
             .away
             .iter()
@@ -163,38 +162,47 @@ impl Engine {
             .collect();
         all.sort();
         for r in all {
-            self.step_away(r);
+            self.step_away_by(r, secs);
         }
     }
 
     /// Advance actor `r`'s execution away: read its packages when due, move it
     /// as its package has it, and end a run that has had its time.
     pub(crate) fn step_away(&mut self, r: FormId) {
+        self.step_away_by(r, 0.0);
+    }
+
+    /// `step_away`, `extra` more real seconds having passed for it than the
+    /// clock says (time passed in a menu).
+    fn step_away_by(&mut self, r: FormId, extra: f32) {
         let now = self.scripts.real_time;
-        if self.actor_cells.contains_key(&r) || self.is_disabled(r) {
-            return;
-        }
-        let Some(x) = self.away.get(&r).filter(|x| x.place.is_some()) else {
+        let Some(tier) = self.processing(r).filter(|&t| t != Processing::Full) else {
             return;
         };
-        let dt = (now - x.stepped_at).max(0.0) as f32;
+        let Some(x) = self.away.get(&r) else {
+            return;
+        };
+        let dt = (now - x.stepped_at).max(0.0) as f32 + extra.max(0.0);
         self.refresh_away_packages(r);
-        let slot = (self.game_hours_total() * 2.0).floor() as i64;
+        let hours = self.game_hours_total();
+        let slot = (hours * 2.0).floor() as i64;
         let Some(x) = self.away.get_mut(&r) else {
             return;
         };
-        x.stepped_at = now;
+        x.stamp(now, hours);
         x.next_eval -= dt;
         if x.next_eval <= 0.0 || x.eval_slot != Some(slot) {
-            self.evaluate_away(r, slot);
+            self.evaluate_away(r, slot, tier);
         }
-        self.advance_away(r, dt);
-        if let Some(x) = self.away.get_mut(&r)
-            && x.ends_at.is_some_and(|t| t <= now)
-        {
+        self.move_away(r, dt, tier);
+        let Some(x) = self.away.get_mut(&r) else {
+            return;
+        };
+        if x.ends_at.is_some_and(|t| t <= now + extra as f64) {
             x.ends_at = None;
             x.complete_run(false);
         }
+        self.bleed_away(r, dt);
     }
 
     /// An away actor whose aliases changed takes up its new package stack.
@@ -227,9 +235,10 @@ impl Engine {
         x.next_eval = 0.0;
     }
 
-    /// Read away actor `r`'s packages (in half hour `slot`), as loaded actors'
-    /// are (`evaluate_packages`), and start the one that applies.
-    fn evaluate_away(&mut self, r: FormId, slot: i64) {
+    /// Read away actor `r`'s packages (in half hour `slot`, at `tier`), as
+    /// loaded actors' are (`evaluate_packages`), and start the one that
+    /// applies.
+    fn evaluate_away(&mut self, r: FormId, slot: i64, tier: Processing) {
         let Some(x) = self.away.get(&r) else {
             return;
         };
@@ -268,7 +277,7 @@ impl Engine {
         let Some(x) = self.away.get_mut(&r) else {
             return;
         };
-        x.next_eval = EVAL_INTERVAL;
+        x.next_eval = tier.cadence().unwrap_or_default();
         x.eval_slot = Some(slot);
         if forget {
             x.done_once = None;
@@ -296,8 +305,9 @@ impl Engine {
         }
     }
 
-    /// Move away actor `r` as its package has it, `dt` real seconds on.
-    fn advance_away(&mut self, r: FormId, dt: f32) {
+    /// Move away actor `r`, run at `tier`, as its package has it, `dt` real
+    /// seconds on.
+    fn move_away(&mut self, r: FormId, dt: f32, tier: Processing) {
         let Some(x) = self.away.get(&r) else {
             return;
         };
@@ -326,14 +336,7 @@ impl Engine {
             return;
         } else {
             match self.package_place(r, p) {
-                Some((there, target)) => plan_move(
-                    p,
-                    place,
-                    pos,
-                    there,
-                    target,
-                    self.away_steps.buffered.contains(&place),
-                ),
+                Some((there, target)) => plan_move(p, place, pos, there, target, tier),
                 None => Move::Settle,
             }
         };
@@ -436,12 +439,128 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// `DamageActorValue` (positive `amount`) or `RestoreActorValue` on the
+    /// health of an actor that isn't loaded: taken at once (autotest13), its
+    /// wounds kept in its execution (one made for an actor the world hadn't
+    /// touched, its schedule placing it still). Brought to nothing it dies
+    /// then, or bleeds out where it is when essential. False when `actor`
+    /// isn't a living actor away.
+    pub(crate) fn hurt_away(&mut self, actor: FormId, amount: f32) -> bool {
+        if actor == PLAYER_REF
+            || self.actor_cells.contains_key(&actor)
+            || self.is_dead(actor)
+            || !self.is_actor_ref(actor)
+        {
+            return false;
+        }
+        let bleeding = self.away.get(&actor).is_some_and(|x| x.bleeding.is_some());
+        if amount > 0.0 && (bleeding || self.is_invulnerable(actor)) {
+            return true;
+        }
+        let (current, max) = self.actor_health(actor).unwrap_or_else(|| {
+            let most = self.av_max(actor, esp::actor_value::HEALTH).max(1.0);
+            (most, most)
+        });
+        let health = (current - amount).clamp(0.0, max);
+        let wounds = (health < max - 0.5).then(|| crate::world_state::Wounds {
+            health,
+            max,
+            rate: self
+                .actor_value(actor, esp::actor_value::HEAL_RATE)
+                .max(0.0)
+                / 100.0,
+            at: self.scripts.real_time,
+        });
+        log::debug!("{actor} away: health {current:.0} -> {health:.0}");
+        let essential = self.is_essential(actor);
+        let x = self.away.entry(actor).or_default();
+        (x.health, x.wounds) = (health, wounds);
+        if health > 0.0 {
+            return true;
+        }
+        if essential {
+            x.bleeding = Some(super::combat::BLEEDOUT_TIME);
+            log::info!("{actor} bleeds out away");
+            self.send_script_event(actor, "OnEnterBleedout", Vec::new());
+        } else {
+            self.kill_actor_by(actor, None);
+        }
+        true
+    }
+
+    /// Kill an actor that isn't loaded, quietly: its body lies where it was
+    /// (where its schedule had it, for one the world hadn't touched). False
+    /// when it is loaded, or dead already.
+    pub(crate) fn kill_away(&mut self, actor: FormId) -> bool {
+        if actor == PLAYER_REF
+            || self.actor_cells.contains_key(&actor)
+            || self.is_dead(actor)
+            || !self.is_actor_ref(actor)
+        {
+            return false;
+        }
+        let at = self
+            .away_position(actor)
+            .filter(|(_, pos)| pos.is_finite())
+            .or_else(|| self.current_place_of(actor));
+        let Some((place, pos)) = at else {
+            return false;
+        };
+        log::info!("{actor} dies away, in {place:?}");
+        self.away.remove(&actor);
+        self.world_state.dead.insert(actor, (place, pos));
+        self.whereabouts.put(actor, place, pos);
+        true
+    }
+
+    /// An essential actor bleeding out away, `dt` real seconds on: it gets up
+    /// after as long as a loaded one, with a quarter of its health.
+    fn bleed_away(&mut self, r: FormId, dt: f32) {
+        let now = self.scripts.real_time;
+        let Some(x) = self.away.get_mut(&r) else {
+            return;
+        };
+        let Some(t) = x.bleeding.as_mut() else {
+            return;
+        };
+        *t -= dt;
+        if *t > 0.0 {
+            return;
+        }
+        x.bleeding = None;
+        x.health = x.wounds.map_or(x.health, |w| w.max * 0.25);
+        if let Some(w) = x.wounds.as_mut() {
+            (w.health, w.at) = (w.max * 0.25, now);
+        }
+        log::info!("{r} recovers away");
+    }
+
+    /// Time passed in a menu (waiting, sleeping, fast travel), standing for
+    /// `secs` real seconds; the clock already shows it. Wounds heal and bleeding runs
+    /// out for those seconds; away actors read their packages for the new time
+    /// and go where they take them, walking on for those seconds in a
+    /// buffered cell; and loaded actors walk on along their paths, or start
+    /// over where their schedules have them (`jump_to_schedules`).
+    pub(crate) fn pass_time(&mut self, secs: f32) {
+        self.heal_away(secs);
+        if !self.ai_enabled {
+            return;
+        }
+        log::debug!("{secs:.0} s pass");
+        self.step_all_away(secs);
+        self.jump_to_schedules(secs);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const CELL: FormId = FormId(0x830);
     const WORLD: FormId = FormId(0x831);
+    const COARSE: Processing = Processing::Coarse { cadence: 3.0 };
+    const BUFFERED: Processing = Processing::Buffered { cadence: 3.0 };
 
     fn travel(radius: f32) -> Package {
         let mut p = Package::bare(FormId(0x810), Behaviour::Travel);
@@ -464,7 +583,7 @@ mod tests {
     fn travel_in_range_is_put_40_short_and_ends() {
         let (place, pos) = outside(0.0, 0.0);
         let (there, target) = outside(3000.0, 0.0);
-        let m = plan_move(&travel(0.0), place, pos, there, target, false);
+        let m = plan_move(&travel(0.0), place, pos, there, target, COARSE);
         assert_eq!(
             m,
             Move::Put {
@@ -481,13 +600,13 @@ mod tests {
         let (place, pos) = outside(0.0, 0.0);
         let (there, target) = outside(5000.0, 0.0);
         assert_eq!(
-            plan_move(&travel(0.0), place, pos, there, target, false),
+            plan_move(&travel(0.0), place, pos, there, target, COARSE),
             Move::Settle
         );
         // Far below counts too (autotest14's FerryEast: 7,600 off, 2,650 below).
         let below = target - Vec3::new(1000.0, 0.0, 4000.0);
         assert_eq!(
-            plan_move(&travel(0.0), place, pos, there, below, false),
+            plan_move(&travel(0.0), place, pos, there, below, COARSE),
             Move::Settle
         );
     }
@@ -498,7 +617,7 @@ mod tests {
         let inside = Place::Interior(CELL);
         let target = Vec3::new(10.0, 20.0, 30.0);
         // However far: the doors' actors were moved whatever the distance.
-        let m = plan_move(&travel(0.0), place, pos, inside, target, false);
+        let m = plan_move(&travel(0.0), place, pos, inside, target, COARSE);
         assert_eq!(
             m,
             Move::Put {
@@ -514,7 +633,7 @@ mod tests {
     fn travel_in_a_buffered_cell_walks() {
         let (place, pos) = outside(0.0, 0.0);
         let (there, target) = outside(6000.0, 0.0);
-        let m = plan_move(&travel(0.0), place, pos, there, target, true);
+        let m = plan_move(&travel(0.0), place, pos, there, target, BUFFERED);
         assert_eq!(
             m,
             Move::Walk {
@@ -530,14 +649,14 @@ mod tests {
         let (place, pos) = outside(0.0, 0.0);
         let (there, target) = outside(250.0, 0.0);
         assert_eq!(
-            plan_move(&sandbox, place, pos, there, target, false),
+            plan_move(&sandbox, place, pos, there, target, COARSE),
             Move::Settle
         );
         // Out of range for Travel, but other packages go (as schedules had
         // them).
         let (there, target) = outside(9000.0, 0.0);
         assert_eq!(
-            plan_move(&sandbox, place, pos, there, target, false),
+            plan_move(&sandbox, place, pos, there, target, COARSE),
             Move::Put {
                 place: there,
                 pos: target,
@@ -548,7 +667,7 @@ mod tests {
         // A whole cell elsewhere: anywhere in it.
         let inside = Place::Interior(CELL);
         let Move::Put { place, pos, .. } =
-            plan_move(&sandbox, place, pos, inside, Vec3::NAN, false)
+            plan_move(&sandbox, place, pos, inside, Vec3::NAN, COARSE)
         else {
             panic!("not put");
         };
@@ -567,7 +686,7 @@ mod tests {
     }
 
     use crate::ai::exec::tests::{
-        ACTOR, CELL as ROOM, MARKER, PACKAGE as HOME, PACKAGE2 as FAR, fixture, loaded_actor,
+        ACTOR, BASE, CELL as ROOM, MARKER, PACKAGE as HOME, PACKAGE2 as FAR, fixture, loaded_actor,
     };
 
     /// Applying all day, or from noon to midnight.
@@ -751,5 +870,178 @@ mod tests {
         // Its package takes it on from there.
         e.step_away(ACTOR);
         assert_eq!(e.away[&ACTOR].pos, Vec3::new(2960.0, 0.0, 0.0));
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn the_tier_follows_loading_and_the_cells_just_left() {
+        let (_f, mut e) = fixture();
+        assert_eq!(e.processing(ACTOR), None);
+        loaded_actor(&mut e);
+        assert_eq!(e.processing(ACTOR), Some(Processing::Full));
+        e.unload_all();
+        assert_eq!(e.processing(ACTOR), Some(BUFFERED));
+        e.away_steps.buffered.clear();
+        assert_eq!(e.processing(ACTOR), Some(COARSE));
+        assert!(e.kill_away(ACTOR));
+        assert_eq!(e.processing(ACTOR), None);
+    }
+
+    fn health(e: &Engine) -> f32 {
+        e.actor_value(ACTOR, esp::actor_value::HEALTH)
+    }
+
+    fn died(e: &Engine) -> bool {
+        e.scripts
+            .pending_events
+            .iter()
+            .any(|(o, ev, _)| *o == papyrus::ObjectId::Form(ACTOR.0) && ev == "OnDeath")
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn damage_away_is_taken_at_once_and_kills_then() {
+        let (_f, mut e) = fixture();
+        away_at(&mut e, 500.0, false);
+        // It left with 30 of 80.
+        e.damage_actor_value(ACTOR, esp::actor_value::HEALTH, 10.0);
+        assert_eq!(health(&e), 20.0);
+        e.damage_actor_value(ACTOR, esp::actor_value::HEALTH, -5.0);
+        assert_eq!(health(&e), 25.0);
+        assert!(!died(&e));
+        e.damage_actor_value(ACTOR, esp::actor_value::HEALTH, 100.0);
+        assert!(e.is_dead(ACTOR));
+        assert!(died(&e));
+        assert!(!e.away.contains_key(&ACTOR));
+        // Its body lies where it was.
+        let at = (Place::Interior(ROOM), Vec3::new(500.0, 0.0, 0.0));
+        assert_eq!(e.body_of(ACTOR), Some(at));
+        assert_eq!(e.running_package(ACTOR), None);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn an_actor_never_loaded_is_hurt_at_once_too() {
+        let (_f, mut e) = fixture();
+        e.mod_actor_value(ACTOR, esp::actor_value::HEALTH, 60.0);
+        let most = e.av_max(ACTOR, esp::actor_value::HEALTH);
+        assert!(most >= 60.0);
+        e.damage_actor_value(ACTOR, esp::actor_value::HEALTH, 10.0);
+        assert_eq!(health(&e), most - 10.0);
+        // Only its wounds: its schedule still places it.
+        assert_eq!(e.away[&ACTOR].place, None);
+        assert_eq!(e.away_wounds()[&ACTOR].health, most - 10.0);
+        e.damage_actor_value(ACTOR, esp::actor_value::HEALTH, most);
+        assert!(e.is_dead(ACTOR) && died(&e));
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn an_essential_actor_brought_down_away_bleeds_out_and_gets_up() {
+        let (_f, mut e) = fixture();
+        e.set_base_flag(BASE, crate::protection::acbs::ESSENTIAL, true);
+        away_at(&mut e, 500.0, false);
+        e.damage_actor_value(ACTOR, esp::actor_value::HEALTH, 100.0);
+        assert!(!e.is_dead(ACTOR));
+        assert_eq!(health(&e), 0.0);
+        assert!(e.away[&ACTOR].bleeding.is_some());
+        // Down, it takes nothing more.
+        e.damage_actor_value(ACTOR, esp::actor_value::HEALTH, 100.0);
+        assert!(!e.is_dead(ACTOR));
+        e.scripts.real_time += 13.0;
+        e.step_away(ACTOR);
+        assert!(e.away[&ACTOR].bleeding.is_none());
+        assert_eq!(health(&e), 20.0);
+        // Loading while still down, it gets up as it loads.
+        e.damage_actor_value(ACTOR, esp::actor_value::HEALTH, 100.0);
+        assert_eq!(e.returning_health(ACTOR, 80.0), 20.0);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn time_passing_ends_jumped_runs_and_brings_walkers_in_the_buffer_there() {
+        let (_f, mut e) = fixture();
+        away_at(&mut e, 0.0, false);
+        e.hour = 12.1;
+        e.step_away(ACTOR);
+        heard(&mut e);
+        // An hour's wait: its run has had its 2.5 s.
+        e.pass_time(180.0);
+        assert_eq!(heard(&mut e), [ev("OnPackageEnd", FAR)]);
+        assert_eq!(e.away[&ACTOR].stepped_hours, e.game_hours_total());
+
+        let (_f, mut e) = fixture();
+        away_at(&mut e, -3000.0, true);
+        e.hour = 12.1;
+        e.pass_time(180.0);
+        assert_eq!(e.away[&ACTOR].pos, Vec3::new(2960.0, 0.0, 0.0));
+        assert_eq!(
+            heard(&mut e),
+            [
+                ev("OnPackageChange", HOME),
+                ev("OnPackageStart", FAR),
+                ev("OnPackageEnd", FAR)
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn wounds_away_heal_for_the_time_passed() {
+        let (_f, mut e) = fixture();
+        away_at(&mut e, 0.0, false);
+        let w = e.away.get_mut(&ACTOR).unwrap().wounds.as_mut().unwrap();
+        w.rate = 0.01;
+        e.pass_time(10.0);
+        // 30 of 80, and 0.8 a second for 10 s.
+        assert!((health(&e) - 38.0).abs() < 0.01);
+    }
+
+    /// The fixture's actor loaded on a Travel package to the marker (3,000
+    /// east), walking there along a path.
+    fn walking(e: &mut Engine) {
+        e.hour = 8.0;
+        e.location = crate::engine::Location::Interior(ROOM);
+        loaded_actor(e);
+        let generation = e.scripts.alias_gen;
+        let a = e.actor_mut(ACTOR).unwrap();
+        a.fresh = false;
+        a.exec.pos = Vec3::ZERO;
+        // Its packages as its aliases have them.
+        a.exec.alias_gen = generation;
+        let mut far = package(FAR, Behaviour::Travel, false);
+        far.location = Some(super::super::package::Location {
+            kind: super::super::package::LocationKind::NearReference(MARKER),
+            radius: 0.0,
+        });
+        a.exec.packages = vec![far];
+        a.exec.current = Some(0);
+        a.exec.goal = Some(crate::ai::Goal::travel(Vec3::new(3000.0, 0.0, 0.0)));
+        a.exec.begin_run(Some(0), 8.0, false);
+        a.state = crate::ai::State::Walk {
+            path: vec![Vec3::new(1000.0, 0.0, 0.0), Vec3::new(1000.0, 2000.0, 0.0)],
+            next: 0,
+            budget: 30.0,
+            to_seat: false,
+        };
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_loaded_walker_walks_on_for_the_time_passed() {
+        let (_f, mut e) = fixture();
+        walking(&mut e);
+        let speed = e.actor_ref(ACTOR).unwrap().walk_speed();
+        e.pass_time(1500.0 / speed);
+        let a = e.actor_ref(ACTOR).unwrap();
+        assert!(a.exec.pos.distance(Vec3::new(1000.0, 500.0, 0.0)) < 0.5);
+        assert!(a.is_walking());
+        // Facing along its path, and not started over.
+        assert!(a.exec.heading.abs() < 1e-3);
+        assert_eq!(a.exec.run.unwrap().started_at, 8.0);
+        // An hour more takes it to the end.
+        e.pass_time(180.0);
+        let a = e.actor_ref(ACTOR).unwrap();
+        assert_eq!(a.exec.pos, Vec3::new(1000.0, 2000.0, 0.0));
     }
 }

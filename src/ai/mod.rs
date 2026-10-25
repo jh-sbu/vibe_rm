@@ -778,6 +778,37 @@ impl ActorRuntime {
         (!self.fresh).then(|| stage_of(&self.state, seat))
     }
 
+    /// Time passed in a menu: walking, it goes on along its path by `reach`
+    /// units at once, to finish its walk as it would have (arriving) when it
+    /// reaches the end. Whether it walked.
+    pub(crate) fn walk_on(&mut self, reach: f32) -> bool {
+        let State::Walk {
+            path, next, budget, ..
+        } = &mut self.state
+        else {
+            return false;
+        };
+        let mut left = reach.max(0.0);
+        while let Some(&point) = path.get(*next) {
+            let to = point - self.exec.pos;
+            let flat = to.truncate();
+            if flat.length() > 1.0 {
+                self.exec.heading = flat.x.atan2(flat.y);
+            }
+            let d = to.length();
+            if d > left {
+                self.exec.pos += to * (left / d);
+                return true;
+            }
+            left -= d;
+            self.exec.pos = point;
+            *next += 1;
+        }
+        // Not out of time: it arrived.
+        *budget = budget.max(1.0);
+        true
+    }
+
     /// Stop and stand (e.g. when spoken to). Actors in furniture stay put.
     pub fn halt(&mut self, idle: f32) {
         if self.in_furniture() {

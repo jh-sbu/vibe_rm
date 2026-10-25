@@ -156,9 +156,55 @@ moves it:
   events, as autotest6–9 calibrated. `Whereabouts` reads every other away
   actor's place from its execution.
 - **Waiting and sleeping** step every away actor once as the time has
-  passed, before loaded actors are put where their schedules have them.
-  Fast travel does nothing more (the readings: it moved no unloaded actor).
+  passed ("Time and condition" below). Fast travel does nothing more (the
+  readings: it moved no unloaded actor).
 - The stepper visits 100 away actors a frame, in turn.
+
+## Time and condition: what we chose
+
+Step 6 of the plan (`ai::exec::Processing`, `Engine::pass_time`,
+`Engine::hurt_away`).
+
+- **Tiers.** An actor runs `Full` (loaded, every frame), `Buffered` (away
+  in a place unloaded with the player's last change of location: walks on)
+  or `Coarse` (away elsewhere: put where its package has it), its packages
+  read every 3 s at both away tiers. The cell decides, not the distance:
+  autotest13's actors 2,700 off in a cell the player hadn't been in jumped,
+  while those in the cell just left walked. The game's four process levels
+  have no public rules; nothing here claims to match them one for one.
+- **Clocks.** Game time drives schedules, the half hour packages are read
+  again in, runs' start times and catching up. Real time (which stands
+  still in menus) drives the reading cadence, the 2.5 s to a jumped
+  traveller's `OnPackageEnd`, walking in a buffered cell, bleeding out and
+  healing. Each execution records both clocks as it is stepped.
+- **Time passed in a menu** (waiting, sleeping, fast travel) counts as the
+  real seconds it stands for (180 a game hour; fast travel its travel
+  time's): wounds heal and bleeding runs out for them; away actors read
+  their packages for the new time, jump or are put as above, end jumped
+  runs, and in a buffered cell walk on for those seconds; loaded actors
+  walking on with the package they had walk on along their paths for those
+  seconds at their walk speed, finishing the walk (and a Travel run) when
+  they reach its end (autotest14: a loaded walker 3,230 off was exactly on
+  its target after two hours). Loaded actors whose package changed, or
+  who stand away from where it has them, still start over there
+  (respawned, in their furniture), and those whose place is elsewhere go:
+  only walking has been seen. The fallen, the fighting and the player's
+  followers are left be. The same applies after every hour of a wait.
+- **Damage away** (`DamageActorValue` / `RestoreActorValue` on health) is
+  taken at once into the execution (one is made for an actor never
+  loaded, its schedule still placing it), by autotest13. Brought to
+  nothing, it dies then: `OnDying`, `OnDeath` and the kill event, its body
+  where it was (its schedule's place for one never loaded; its editor
+  place when its package had it anywhere in a cell).
+- **Bleedout away.** An essential actor brought to nothing away bleeds out
+  where it is (`OnEnterBleedout`), takes no more damage, and gets up 12 s of
+  real time later (as loaded ones) with a quarter of its health; loading
+  while still down, it gets up as it loads. Untested.
+- **Healing away** follows the actor's `HealRate` (0 for NPCs: autotest13's
+  HurtAway stayed at half).
+- **Timed effects** end as their actor unloads (within a frame; the
+  reading had one gone 6 s after), and abilities are applied again as it
+  loads, as autotest13 saw. Nothing is paused.
 
 ## Open questions
 
@@ -176,7 +222,8 @@ moves it:
   range: does anything ever move it (game hours, waiting, a later
   re-evaluation), or does it wait for the player?
 - **Waiting and sleeping for unloaded actors** out of jumping range, and
-  sleeping at all: not tested.
+  sleeping at all: not tested. Nor loaded actors in furniture or sandboxing
+  through a wait: we start them over where their packages have them.
 - **When effects end.** Are active effects dropped at the moment of
   unloading, or a few seconds later? Only one reading (6 s after) exists;
   autotest14's actor kept its 3D throughout.

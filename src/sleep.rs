@@ -199,10 +199,7 @@ impl Engine {
         // The other actors' health and stamina come back for the hour, near
         // and away.
         self.update_stamina(HOUR_SECONDS);
-        self.heal_away(HOUR_SECONDS);
-        if self.ai_enabled {
-            self.jump_to_schedules();
-        }
+        self.pass_time(HOUR_SECONDS);
         for index in [av::HEALTH, av::MAGICKA, av::STAMINA] {
             self.damage_actor_value(PLAYER_REF, index, -1.0e9);
         }

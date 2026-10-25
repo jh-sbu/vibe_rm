@@ -15,22 +15,22 @@ only: nothing is written to disk until saves exist.
 - NPCs regenerate their `HealRate` percent of their health a second out of
   combat, which is 0 for NPCs (`actor-values.md`: they don't heal); one that
   unloads hurt is given what that rate would have restored meanwhile (real
-  seconds). Waiting and sleeping also advance that
-  healing through `heal_away`: each game hour adds 180 seconds of recovery
-  (`HOUR_SECONDS`, currently fixed at `3600 / 20` in `src/sleep.rs`).
+  seconds). Time passed in a menu also advances that healing
+  (`Engine::pass_time`): each game hour waited or slept adds 180 seconds of
+  recovery (`HOUR_SECONDS`, currently fixed at `3600 / 20` in
+  `src/sleep.rs`), and fast travel its travel time's seconds.
 - Health a script takes from an unloaded actor (`DamageActorValue`) is
   taken at once: brought to nothing, the actor dies while away, with
-  `OnDeath` then (autotest13, `actor-execution.md`). We keep the damage and
-  take it when the actor loads, so it dies only then
-  (`plans/ai-actor-execution.md` step 6).
+  `OnDeath` then (autotest13). We do the same (`Engine::hurt_away`); the
+  choices are in `actor-execution.md` ("Time and condition").
 - Game-start quest scripts call `MoveTo` on 17 references once it works (MG01
   puts Faralda at the College bridge and the apprentices in the Hall of the
   Elements, the Companions are gathered in Jorrvaskr...).
 
 ## Open questions
 
-- Living actors' positions aren't kept when they unload: their schedules (or a
-  script move) decide where they are next.
+- Living actors' positions are kept as they unload, and their packages move
+  them on while away: `actor-execution.md`.
 - Whether the game's unloaded regeneration follows these timing rules,
   including waiting / sleeping, is unconfirmed; fast-travel recovery remains
   to be established.

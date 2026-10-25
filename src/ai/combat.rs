@@ -59,7 +59,7 @@ const FLEE_TRIES: usize = 8;
 const FLEE_ARRIVED: f32 = 64.0;
 
 /// Seconds an essential actor stays down before getting back up.
-const BLEEDOUT_TIME: f32 = 12.0;
+pub(crate) const BLEEDOUT_TIME: f32 = 12.0;
 
 /// Attack data flags (`ATKD`).
 const ATK_IGNORE_WEAPON: u32 = 0x1;
@@ -3402,7 +3402,8 @@ impl Engine {
     /// hear of it (`OnDying`, `OnDeath`) and the Story Manager gets a kill event.
     pub fn kill_actor_by(&mut self, actor: FormId, killer: Option<FormId>) -> bool {
         let rank = killer.map_or(0, |k| self.relationship_rank(actor, k));
-        let killed = self.kill_actor_quietly(actor);
+        // Loaded, or away (autotest13: damage kills unloaded actors at once).
+        let killed = self.kill_actor_quietly(actor) || self.kill_away(actor);
         if killed {
             let at = self.game_hours_total();
             self.world_state
