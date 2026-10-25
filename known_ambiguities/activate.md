@@ -23,6 +23,3 @@ Implemented in `src/ai/mod.rs` (`Behaviour::Activate`, `activation_done`) and
   done and passed over while it still applies (as a finished UseWeapon package).
 - A use of furniture whose idle loops lasts 3 to 6 seconds; a one-shot idle lasts
   its clip.
-- Not done: the sawmills' cycle. Their packages choose by `ResourceState` on the
-  log pile, which its script changes on animation events of the object's own
-  graph; the workers load the pile once and then sandbox.

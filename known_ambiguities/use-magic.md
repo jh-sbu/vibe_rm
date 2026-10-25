@@ -28,7 +28,7 @@ pack-templates <data>` with `SHOW=UseMagic`, `pack-tree <data> <package>`).
   Sparks and Turn Undead at the marker he is given, one package after another
   (the packages choose by `GetRandomPercent` and a quest variable), and his
   graph goes through its casting state; Colette casts Oakflesh and Detect Life
-  on herself. Casting visuals (flames, hand effects) are not drawn yet.
+  on herself.
 
 ## Choices made without a source
 
@@ -57,8 +57,3 @@ pack-templates <data>` with `SHOW=UseMagic`, `pack-tree <data> <package>`).
 - The actor draws its hands (`WeapEquip`) at its place and puts them away
   when the package ends. A package's actor that is fighting does neither.
 - Concentration spells' magicka doesn't come back while they are held, as in a fight.
-
-## Not done
-
-- Practice that makes the target react (the College's targets are statics here);
-  unloaded actors' casts; skill experience for NPCs.

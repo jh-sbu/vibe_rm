@@ -60,8 +60,8 @@ the lifetime description, not behavior measured in Skyrim SE.
 - The existing ability/effect synchronization interval still determines when
   changed effect conditions suspend or resume a grant. This change does not
   establish Skyrim's exact reevaluation cadence.
-- Active effects are not yet restored by saves. Derived grants follow the
-  same limitation and are deliberately not saved as permanent perks.
+- Derived grants are deliberately not saved as permanent perks; they follow
+  the active effects native saves keep (`AEFF`, `known_ambiguities/saves.md`).
 
 ## Validation limits
 

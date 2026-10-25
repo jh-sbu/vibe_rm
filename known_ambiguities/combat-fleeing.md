@@ -75,7 +75,7 @@ not a health threshold. It is compared with a *threat ratio*:
   draw. Busy dialogue defers an attempt until its channel becomes available.
 - `GetThreatRatio` (subject strength / parameter's strength) and `IsFleeing`.
 
-## Gaps
+## Unconfirmed
 
 1. **DPS estimate.** How Skyrim estimates DPS is undocumented: which weapon, skill
    and perk scaling, attack speed, power attacks, magic and shouts. We use base

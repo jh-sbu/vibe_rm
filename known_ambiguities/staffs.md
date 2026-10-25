@@ -29,8 +29,7 @@ release clips for hand type 8: `StfMagicRight_Release`, `SpellFire` at
   leave first, then depleted copies in reverse insertion order, keeping
   the selected copy until last. Values go with copies stored, sold,
   given, taken or dropped, including when another depleted copy of the
-  same kind is already at the destination. Individual copies aren't yet
-  selectable in the menus or hands. Fully recharging the selected copy
+  same kind is already at the destination. Fully recharging the selected copy
   removes its sparse entry and selects the next depleted copy, if any.
   The game's instance-selection order, including how charge attaches to
   separately owned copies and to two identical weapons in different
@@ -70,24 +69,14 @@ spells isn't public. Here:
 - **Charge**: NPCs' staffs spend charge as the player's do (their cost by
   their own skill), and run dry.
 
-## Still open
-
-- The HUD's charge meters; NPCs' self-cast and summoning staffs (only
-  offensive ones are fought with); NPCs recharging.
-- The charge reduced by Fortify Destruction-like items (UESP: "Items with
-  enchantments that
-  reduce the magicka cost of spells will also affect charge levels on
-  weapons associated with that school"; `spell_cost` doesn't read the
-  schools' `...Mod` values yet).
-
 ## Dropping and picking up
 
 Implemented in `src/loose.rs`, `src/items.rs`, `src/world_state.rs` and
 `src/world/inventory.rs`. A dropped reference keeps one value for each
 depleted copy in its stack; full copies need no entry. Picking it up
 restores these values without changing already-carried copies. The values
-live outside loaded-cell state, so unloading the cell doesn't discard them;
-as with other world state, disk saves remain pending.
+live outside loaded-cell state, so unloading the cell doesn't discard them,
+and native saves keep them with the world state.
 
 Public evidence for charge belonging to the instance, including a world
 reference:

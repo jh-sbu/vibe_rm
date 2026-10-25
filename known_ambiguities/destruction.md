@@ -3,9 +3,7 @@
 Destructible definitions, queries, scripted damage and stage events are
 implemented in `crates/esp/src/destructible.rs`, `src/world/destruction.rs`,
 `src/script/natives.rs` and `src/condition/mod.rs`. `ClearDestruction` resets
-runtime state, and the engine's own save format persists it. Weapon/spell
-damage, stage side effects and visual/effect clearing remain unimplemented.
-This is not Skyrim `.ess` save support. Sources: UESP's DEST field page
+runtime state, and the engine's own save format persists it. This is not Skyrim `.ess` save support. Sources: UESP's DEST field page
 ([permanent rev 2334527](https://en.uesp.net/w/index.php?oldid=2334527)),
 [xEdit's TES5 definitions](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5.pas)
 (`wbDEST`, `EXPL`), CommonLibSSE's `BGSDestructibleObjectForm.h`, and the
@@ -77,10 +75,6 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   sends one old/final notification per call even when thresholds are skipped;
   whether Skyrim sends one event per skipped stage is unknown. The unresolved
   `DSTD.index` versus model-damage-stage mapping also applies to these values.
-- **Still absent from `DamageObject`.** It does not emit explosions/debris,
-  change the model, collision, navmesh or flags (including disable/destroy).
-  The event only reports the runtime state change; stage side effects remain
-  future work.
 - **`ClearDestruction` state reset.** The Papyrus native clears this
   reference's stored health/stage entry regardless of load state; repeated
   calls are no-ops and do not queue `OnDestructionStageChanged` or other
@@ -156,14 +150,12 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   magnitude to an object it lands on or whose area reaches it. Its magnitude
   is taken as authored, without resistances or dual-cast power, and a
   stage's Ignore External Damage flag blocks it as it blocks blows. Touch
-  spells land on the object they touch. Explosions are not yet applied;
-  their `EXPL` damage within their radius is unbuilt.
+  spells land on the object they touch.
 - **Ignore external damage** (650 stages, mostly mine ores and the civil
   war resource objects; DSTD flag 0x08). Choice: while the reference is in
   a stage with the flag set, weapon, arrow and spell hits do nothing; the
   flag is read from the current stage, not the one a hit would enter.
-  Explosions are not yet applied, so only `DamageObject` and the stage's
-  self damage per second also reach these. Source: UESP DEST Field,
+  `DamageObject` and the stage's self damage per second still reach these. Source: UESP DEST Field,
   https://en.uesp.net/w/index.php?oldid=2334527 (flag name only).
 - **To settle in game** (`vrm-tool test-mod`): how many hits of what size
   the web takes with cap damage; whether frost or shock spells damage it;

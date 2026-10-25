@@ -39,8 +39,8 @@ and `IsUnlockedDoor` (718). Engine helpers: `is_destroyed`
   destroyed. Whether the game sets its destroyed state from the flag, or from
   something else, is not documented. Vanilla uses it only as `GetDestroyed == 0`
   in the `CWPatrolAndGuardContestedHold` packages (no destructible), so the choice
-  doesn't change any vanilla result we can see. `SetDestroyed` (204) is not
-  implemented, so a script can't set this state yet.
+  doesn't change any vanilla result we can see. Papyrus `SetDestroyed` sets it
+  by moving to a destroying stage (`known_ambiguities/remaining-natives.md`).
 - `GetIsObjectType` compares the base object's record type, and a subject with
   no base (or a base whose type the table doesn't list) is not that type.
   Vanilla never passes a value the table omits.
@@ -53,5 +53,4 @@ and `IsUnlockedDoor` (718). Engine helpers: `is_destroyed`
   for the player. Whether the game treats a door opened by a key or a pick
   differently from one that was never locked is not documented.
 - `GetDefaultOpen` is false for references the engine made itself, which have no
-  record to carry `ONAM`. Placed references follow their record. `SetDefaultOpen`
-  (216) is not implemented.
+  record to carry `ONAM`. Placed references follow their record.

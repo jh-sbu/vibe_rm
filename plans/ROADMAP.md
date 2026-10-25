@@ -1706,7 +1706,9 @@ game each piece unlocks.
      where they stood
    - Alias fills: created actors cleaned up; "from alias" locations
      followed through travel, not only at refresh; packages for "from event"
-     aliases, and package targets by object id / type and interrupt data
+     aliases, and package targets by object id / type and interrupt data;
+     form-list and leveled-list entries in alias inventory (`CNTO`: direct
+     items are granted, `known_ambiguities/locks.md`)
    - Remaining procedures: guard (restricted areas), dialogue,
      carry, flee, the sawmills' lever and log-pile cycle (object graph events), orbit packages; ambush triggers (sleepers'
      reduced detection: see Detection);
@@ -1716,9 +1718,14 @@ game each piece unlocks.
      avoidance outside combat (`fCombatAvoidThreatsChance`, `AVTH`); actors
      that can't reach their target backing away; force-greets' "moving into a
      new space", player keyword and riding checks, "Greet Using Preferred
-     Path?", `ForceGreetWaitSitting` and alias trigger locations
+     Path?", `ForceGreetWaitSitting` and alias trigger locations; UseMagic
+     practice targets reacting (the College's are statics here) and unloaded
+     actors' UseMagic casts; disarmed NPCs picking their weapon back up
+     ("Taking an enemy's weapon if you have lost yours", Salma in Ironbind
+     Barrow)
    - Followers: already-unloaded teammates following through load doors and
      fast travel, waiting catch-up, nonteammate quest followers, their other combat behaviour (`known_ambiguities/followers.md`);
+     teammates while the player waits or sleeps; dismissal by death;
      `AllyKilled` lines
    - Locks: sleepers asking the player to leave coming to them and staying up
      (their lines done: see Done);
@@ -1753,7 +1760,8 @@ game each piece unlocks.
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
    waiting on casting, crafting, barter, attack types;
    `known_ambiguities/perks.md`), inventory (player's, armor from
-   inventory, ammo / quivers; torches in dark interiors, burning out), crime
+   inventory, ammo / quivers (the weakest arrows equipped with a bow, UESP);
+   torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
    - Death conditions: `GetCauseofDeath` (the cause's values are unknown,
@@ -1784,7 +1792,10 @@ game each piece unlocks.
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
      `known_ambiguities/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
-     (and falls hurting NPCs: `fJumpFall*NPC`, `crate::falling`)
+     (and falls hurting NPCs: `fJumpFall*NPC`, `crate::falling`; UESP
+     [Skyrim:Damage](https://en.uesp.net/w/index.php?oldid=3485809) gives the
+     formula, but NPCs need airborne movement and a landing first:
+     `ActorRuntime::stand_on_ground` only follows navmesh height)
    - Scenes: the player's own lines (skipped for now; see `known_ambiguities/scenes.md`);
      priority between scenes
    - Physics, more: arrows sticking in loose objects; opened display-case lids
@@ -1816,9 +1827,21 @@ game each piece unlocks.
      `known_ambiguities/soul-trap.md`; inventory transfers now carry souls);
      taper, area, addictions, the rest of potion and food flags; image-space modifiers
      applied by effects (`TriggerIfNotActive`'s target)
+   - Magic, NPCs and items: NPC healing out of combat, healing allies, with
+     powers or absorb spells (`known_ambiguities/npc-healing.md`); NPCs warding
+     against blows; wards' sounds (`WardAbsorbSound`, `WardBreakSound`,
+     `WardDeflectSound`) and visuals; NPCs' self-cast and summoning staffs and
+     recharging; staff charge reduced by the school's cost reduction (UESP:
+     items reducing a school's magicka cost reduce its weapons' charge use;
+     `spell_cost` doesn't read the schools' `...Mod`); individual staff copies
+     selectable in the menus and hands (`known_ambiguities/staffs.md`); scrolls
+     holding the player in place while cast (UESP Skyrim:Scrolls), NPCs casting
+     scrolls; charges interrupted by blows or shouts (spells and scrolls)
    - Pickpocket retry resets beyond the two-day gate (see Done): guards sent
      off by bribes, Thanes or guild payment, and Harmony
      (`known_ambiguities/crime.md`)
+   - Yielding's other ways (UESP Skyrim:Crime: Calm on a guard, punching an
+     innocent while keeping fists raised) and the `HelpYielding` message
    - Crime, more: arrests (guards following through
      doors, opening the cell after five hits, The Chill, the follower wait
      marker, the jail outfit); `GetArrestingActor` already checks the conversation
@@ -1844,7 +1867,7 @@ game each piece unlocks.
      `fCombatLowFleeingTargetHitPercent`; flee dialogue's distance rules
      (`fCombatDialogueFleeDistanceMult`; timer scheduling: see Done);
      impacts' results (bounce, impale, stick); their hazards' models, lights,
-     sounds and flags
+     sounds, impact data and flags, following their cell, and saved
    - Perks, more: staggers, bow zoom; NPCs' skills advancing
    - Combat conditions waiting on the attack phases: `GetAttackState` (the
      graph's draw, swing, hit, next attack, follow-through and bash; the engine
@@ -1857,6 +1880,9 @@ game each piece unlocks.
      was made in), `GetLockIsBroken` (a broken lock: picks break, but no lock keeps
      that state, and no public source describes it), `Exists` (what makes a
      reference exist: no public description or vanilla use yet)
+   - Dialogue selection: Say Once, Hours Until Reset and DIAL's Do All Before
+     Repeating (flags parsed, not enforced; scope open in
+     `known_ambiguities/dialogue-selection.md`); automatic Invisible Continue
    - Natives scripts call that still do nothing, most called first
      (`vrm-tool pex-natives`; see Done for the last ones): effect shaders'
      and visual effects' `Play` / `Stop`, `SetAlpha`, `SetSubGraphFloatVariable`,
@@ -1867,7 +1893,8 @@ game each piece unlocks.
      (`known_ambiguities/created-refs.md`); follower favors (nothing asks, so
      `SetNoFavorAllowed` and `SetDoingFavor` are only stored); `Quest.Reset`
      rebuilding the quest's script variables; resetting a loaded behaviour-graph
-     object in place; categories for dialogue, music and weather sounds
+     object in place; categories for dialogue, music and weather sounds;
+     `Actor.IsArrested`, `ObjectReference.SetDefaultOpen`, `Game.FastTravel`
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; looping sounds of enabled references checked
      with an audio device
@@ -1896,7 +1923,8 @@ game each piece unlocks.
      (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: unloaded-follower continuity, exact SE timing and cross-space
      time, mounted/Survival restrictions, loading-screen presentation and
      autosave timing (`known_ambiguities/fast-travel.md`); then custom markers on the
-     map and the journal's Show on Map; distant LOD around the loaded cells on by default (the
+     map and the journal's Show on Map; quest targets updating while the map
+     stays open; distant LOD around the loaded cells on by default (the
      blocks are now placed right: `VRM_LOD=1`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), rows grouped by captured soul with per-item
@@ -1907,7 +1935,8 @@ game each piece unlocks.
    - The HUD: notifications' display
      time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;
      research-gated: the movie's queue and fade timeline expose no duration
-     input; `known_ambiguities/messages.md`); controller rumble for camera shakes
+     input; `known_ambiguities/messages.md`); controller rumble for camera shakes;
+     quest banners expiring while the HUD is hidden
    - The journal's rest: the System page (saves, settings, controls, help,
      quitting), Show on Map; the statistics whose systems aren't there yet
      (crafting, dragon souls collected, horses stolen)
@@ -1918,7 +1947,7 @@ game each piece unlocks.
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);
      NPCs only use pre-baked heads
-7. **Audio**: lip sync; categories' mute when submerged and menu / dialogue ducking, the
+7. **Audio**: lip sync; music fades; categories' mute when submerged and menu / dialogue ducking, the
    Audio menu's sliders; output models' reverb send and speaker output (acoustic spaces),
    sounds' priorities when voices run out
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
@@ -1938,11 +1967,19 @@ game each piece unlocks.
    `BSProceduralLightningController` and actor / effect graph sequence-owned
    shader / alpha-test controllers (placed rigid objects: see Done); particles'
    decay, turbulence, drag's exact formula and animated objects, rotation axis,
+   transform keys' quadratic and TBC interpolation (rotation, translation,
+   scale), controllers' playback-backwards / forced-update / scaled-time flags,
+   `NiAlphaProperty` test functions other than the lower bound,
    speed-to-aspect runtime fidelity, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves** (the container, the engine's state and the Papyrus VM are done:
    see Done): scene state,
-   AI progress, objects' behaviour graphs, detection; reading the
+   AI progress (procedures, animation, packages and schedules, combat and NPC
+   casting), objects' behaviour graphs (also for `PlayAnimationAndWait`
+   senders), detection (searches, combat targets), live player
+   conversations, the player's spells held ready, script signal waits other
+   than animation events (now timed waits on load) and registrations not
+   built yet (key, LOS gain, tracked hits); reading the
    original's `.ess` saves later; a save / load menu (the System page),
    load orders that changed since the save, and the original's refusals to
    save (combat, menus, scripted)

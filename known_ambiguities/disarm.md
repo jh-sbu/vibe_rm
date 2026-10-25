@@ -36,7 +36,5 @@ xEdit's `WEAP` `DNAM` definition (flags2 0x2000 "Bound Weapon", checked on
 - **The player with no body graph** (console-only runs) never counts as having
   a weapon drawn, so is not disarmed.
 - **What follows.** A disarmed NPC fights with what it still carries (its
-  other weapons or its fists), and picking the dropped weapon up again
-  ("Taking an enemy's weapon if you have lost yours", Salma in Ironbind
-  Barrow) isn't built.
+  other weapons or its fists).
 - No hit reaction (the target is not staggered), no `OnHit` and no sound or art.

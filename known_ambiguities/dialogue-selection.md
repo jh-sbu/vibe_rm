@@ -152,8 +152,7 @@ target/debug/vrm-tool topic-lines "$SKYRIM_DATA" RUMO
   INFO that ends a random group in the draw. It serves every caller, so
   this also applies to greetings, blocking-branch greetings, barks, AI
   greetings and scene lines. The previous `0x20` Invisible Continue
-  constant was corrected to `0x40`; automatic Invisible Continue playback
-  is still unimplemented.
+  constant was corrected to `0x40`.
 
 ## Remaining open questions and limitations
 
@@ -181,13 +180,11 @@ target/debug/vrm-tool topic-lines "$SKYRIM_DATA" RUMO
   occurs at rebuild and the displayed response remains committed through
   the click. New/grey behavior for a mixed heard/unheard pool is also
   unverified.
-- Say Once and Hours Until Reset are documented eligibility rules but
-  are not yet enforced by this engine's dialogue selector. This is an
-  existing implementation gap, not evidence that SSE ignores them, and
-  vanilla rumors depend on them (Hulda's 24 hours, the College's one).
-  DIAL's Do All Before Repeating is also not implemented. Their precise
-  scope (speaker/player/global), interactions and reset behavior need
-  controlled tests, including leaving/reopening dialogue.
+- Say Once, Hours Until Reset and DIAL's Do All Before Repeating are
+  documented eligibility rules (vanilla rumors depend on them: Hulda's 24
+  hours, the College's one), but their precise scope (speaker/player/
+  global), interactions and reset behavior need controlled tests, including
+  leaving/reopening dialogue.
 
 See `plans/autotest-survey.md` for a manual test design. Asset metadata
 cannot prove probability distributions or resolve equal-priority ties.

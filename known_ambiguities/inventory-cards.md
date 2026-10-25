@@ -41,8 +41,7 @@ gifts received from an actor, rather than always the player's inventory.
   Their cost is shown as 0: [public player accounts describe scrolls as
   consuming the item instead of magicka](https://www.reddit.com/r/skyrim/comments/sutjpe/),
   but the original card's exact appearance and cost label have not been
-  established by a controlled game comparison. Equipping/casting scrolls
-  is a separate unfinished roadmap item.
+  established by a controlled game comparison.
 - **Mixed souls and owners.** Inventory rows still group by base form and
   ownership; captured souls aggregate by base form and soul size without
   ownership identity. A whole form's homogeneous soul state is safe to show
@@ -50,8 +49,7 @@ gifts received from an actor, rather than always the player's inventory.
   several soul sizes, the card shows an em dash instead of asserting that
   the selected ownership row is empty or has a particular soul. Invalid
   levels also show the dash. This placeholder is an implementation choice,
-  not an original-game string. Splitting soul-size rows requires instance
-  identity in selection and transfer operations; it is not implemented.
+  not an original-game string.
 - **Black soul labels.** The current soul metadata stores size only;
   grand white and black souls both use value 5. This card therefore shows
   the grand label for either. Whether the original card distinguishes them
@@ -94,7 +92,7 @@ exact number compared or the tie rule, so:
   never marked.
 - **What is compared.** The card's own numbers: base weapon damage; an
   armor's rating through `protection_of` (skill and armor perks included,
-  enchantments not). Tempering and poisons are not tracked on items yet.
+  enchantments not).
 - **Ties and singles.** Every item tied for the top is marked, and a lone item
   of its class is marked.
 - **Scope.** The player's rows only (worn items included), in every item
@@ -110,10 +108,9 @@ ingredient learns effects by the entry point `kModInitialIngredientEffectsLearne
 - **Unconfirmed: the label.** The effect's magic effect name alone (for
   example "Restore Health"), without magnitude or duration. Whether the card
   also shows those once learned is not in the SWF's inputs, which carry text only.
-- **Unconfirmed: other ways to learn.** Alchemy teaching shared effects is
-  unbuilt (crafting). Whether anything else teaches effects (some quest
-  rewards, books) was not found in the data.
-- Learned effects are kept in memory with the world state, not yet in saves.
+- **Unconfirmed: other ways to learn.** Besides eating and alchemy, whether
+  anything teaches effects (some quest rewards, books) was not found in the
+  data.
 
 ## Quantity selection in the egui fallback
 

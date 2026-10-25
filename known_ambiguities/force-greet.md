@@ -21,7 +21,7 @@ packages fill those inputs (`vrm-tool force-greets <data>`).
 - ForceGreetFromSitting: Topic, a sit target, a trigger location and "OBS Player
   must be detected?"; the tree's fallback is Sit.
 - Of 88 + 20 NPC package slots, most force greets are quest alias packages
-  (`ALPC`), which the engine doesn't run yet.
+  (`ALPC`).
 
 ## Open questions
 

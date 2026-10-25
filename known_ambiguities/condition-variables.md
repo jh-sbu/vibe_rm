@@ -1,8 +1,8 @@
 # Script variable conditions (GetScriptVariable, GetQuestVariable)
 
 Implemented: `GetScriptVariable` (53) in `function_value` (`src/condition/mod.rs`),
-tests in `src/condition/variable_tests.rs`. Not implemented: `GetQuestVariable` (79),
-see ROADMAP Next (story manager).
+tests in `src/condition/variable_tests.rs`. `GetQuestVariable` (79) is left
+unsupported (below).
 
 ## What is known
 

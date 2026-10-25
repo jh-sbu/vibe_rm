@@ -59,7 +59,7 @@ No engine binary or SDK source mirror was examined.
   removal cannot identify which particular owner's gems contain souls.
   The existing rule takes empty gems first across the form's entire count,
   then soul entries in insertion order; this is an approximation for mixed
-  owners or multiple soul sizes. Menus do not yet select a soul-size stack.
+  owners or multiple soul sizes.
 - Synthetic tests check removal ordering, partial and oversized removals,
   multiple soul sizes, an owned-gem round trip, no-op removals and destructive
   removal. They validate metadata conservation, not original-game behavior.

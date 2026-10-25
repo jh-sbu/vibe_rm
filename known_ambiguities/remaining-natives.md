@@ -97,8 +97,7 @@ check whether it is still audible and whether `StopInstance` stops it.
 Tie-breaking at equal priority (we take the first queued, and a queued type
 over the location's), whether `Add` of an already queued type moves it (we keep
 its place), and whether script-added entries survive a save (we save them as
-`MUSQ`) are unverified. Fades and ducking are not implemented, and an abrupt
-versus graceful change is our reading of the MUSC flags. **test-mod** wanted
+`MUSQ`) are unverified. An abrupt versus graceful change is our reading of the MUSC flags. **test-mod** wanted
 for the last two: `Add` a type, save, load and see whether it still plays; and
 `Add` two types of equal priority and see which plays.
 

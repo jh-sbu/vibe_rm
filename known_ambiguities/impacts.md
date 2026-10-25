@@ -49,10 +49,7 @@ places impacts isn't public.
   its interval, within its radius) is left at the impact point when the
   impact lands, lasting its record's lifetime (`DATA` 0x08; 10 s when that is
   not over 0). At its limit (`DATA` 0x00, when over 0) the oldest of its
-  record goes. Not done: its model, light, sound and impact data set, and
-  its flags (drop to ground, align to the surface, the spell's duration
-  or radius); the hazard stays where it landed whatever cell it is in, and
-  is not saved.
+  record goes.
 - **Sound-only records without the no-decal flag.** The existing full
   impact loader requires `DNAM` when `DATA` does not set No Decal Data;
   a missing texture set therefore prevents weapon/projectile sound playback

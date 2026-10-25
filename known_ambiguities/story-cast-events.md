@@ -44,7 +44,7 @@ enable those events.
 - Which casts generate `CAST` for NPCs, including casts made by scripts,
   has not been established. The current NPC AI casts only during combat,
   so enabling its events would conflict with the reported combat
-  restriction without further evidence. NPC events remain pending.
+  restriction without further evidence, so NPCs send none.
 - The existing player path also emits in combat. It is preserved here;
   reproducing the reported restriction needs evidence about whose combat
   state matters, whether searching counts, and whether suppression happens

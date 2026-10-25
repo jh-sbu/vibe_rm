@@ -48,8 +48,6 @@ letterbox offsets and positions outside the movie's nominal stage.
 - **Offscreen screenshots.** `--menu-key click:x,y` supplies a known pointer
   position and draws the cursor after the other UI if a SWF menu remains up.
   Keyboard-only screenshots have no pointer position and retain no cursor art.
-- **Gamepad.** This does not add virtual pointer movement or gamepad-driven
-  cursor visibility; gamepad support remains a separate roadmap item.
 
 Three synthetic tests cover initial/updated positions, permission and menu
 gates, leaving/re-entering, focus loss, and non-finite positions. The actual

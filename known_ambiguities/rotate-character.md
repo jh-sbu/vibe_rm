@@ -62,9 +62,7 @@ Tests use invented packfile contents and graphs.
   on top would double the turn. Only furniture, which already takes the root
   motion yaw, sees it.
 - The AI and player body already supply `TurnDelta`, but its original-engine
-  units and meaning relative to this modifier remain unverified. Turning through
-  action-tree events also remains pending. Parsing and exposing these settings
-  does not complete the roadmap's NPC turning behavior.
+  units and meaning relative to this modifier remain unverified.
 
 Synthetic tests cover alignment-sensitive field reads, all four axis components,
 signed scalar values, authored disable, live scalar bindings, event gates,

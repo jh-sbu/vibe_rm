@@ -32,8 +32,7 @@ documents, or game assets were examined or added for this work.
 
 - TBC value curves now derive Hermite tangents; see
   [tbc-value-interpolation.md](tbc-value-interpolation.md) for source-order
-  disagreement and limits. Transform key groups still discard interpolation metadata;
-  their quadratic rotation / translation / scale evaluation is separate work.
+  disagreement and limits.
 - Endpoint holds and repeated-timestamp selection retain existing policy;
   Skyrim's duplicate / unsorted key handling remains unverified. A NaN sample
   time returns no value, allowing material channels to retain their base value.

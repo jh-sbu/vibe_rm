@@ -93,7 +93,7 @@ and location pages, CK wiki descriptions) and the game's data files.
 - Home doors: the load doors (both sides, those with a lock) of the interior where
   the actor's lock-doors sleep package puts it (or its editor cell).
 
-## Gaps
+## Unconfirmed
 
 ### Quest-alias factions and inventory
 
@@ -104,8 +104,7 @@ existing faction consumers. Clearing/refilling an alias or stopping its quest
 removes only that contribution; another filled alias can still supply it.
 The actor's base factions and scripted ranks are not rewritten. Existing quest
 and alias save state reconstructs these memberships after load; no separate
-membership state is saved. Direct alias inventory items/keys are also supported;
-form-list and leveled-list grants remain pending.
+membership state is saved. Direct alias inventory items/keys are also supported.
 
 The local [UESP QUST reference, revision 3507775](https://en.uesp.net/w/index.php?oldid=3507775)
 documents `ALFC` as repeated faction FormIDs on reference aliases, granted for
@@ -135,8 +134,7 @@ Clearing and filling again is a new placement, so its permanent grant is added
 again. Failed startup applies no grants, and native load restores the saved
 inventory and alias state without replaying them. Location aliases, invalid
 item forms, and targets other than actors, the player, or containers are
-ignored. The runtime currently grants direct inventory items; form lists and
-leveled lists are outside this implementation. Counts above `i32::MAX` are
+ignored. Counts above `i32::MAX` are
 rejected because authored counts are unsigned but runtime counts are signed.
 Before granting, the count is capped at the remaining `i32` capacity for that
 item, preventing unchecked inventory addition from overflowing. This
@@ -176,8 +174,7 @@ pair targets the interior from either half; between two interiors it targets the
 destination cell. Non-teleport doors have no adjoining cell in the current data
 model, so only their lock changes. Interactions among several entrances to one
 cell, the exact relationship with Off Limits, and package-driven access changes
-after an explicit override remain unresolved. Existing lock creation and open-door
-closing behavior are separate gaps; this extension handles the owner argument.
+after an explicit override remain unresolved.
 Synthetic tests validate native defaults, door/container discrimination, access
 changes, save restoration, old saves and malformed sections, not engine parity.
 
@@ -217,10 +214,7 @@ changes, save restoration, old saves and malformed sections, not engine parity.
    shop often not reopening as a bug); Arcadia, moved home before 8:00,
    didn't, so perhaps unlocking waits on the owner being home as its
    package ends. The engine unlocks wherever the owner is.
-   **Not modelled while asked to leave:** the owner coming to the player
-   and staying up (Arcadia stayed near the player in her sleep package);
-   the engine's goes to bed, and its lines stop once it sleeps. Whether the
-   home locks later in the night if the player stays out, or warns again if
+   **After asking the player to leave:** whether the home locks later in the night if the player stays out, or warns again if
    they come back, isn't known (the engine leaves it unlocked and warns
    again).
 3. **Leaving from inside.** That one can always leave an interior through a

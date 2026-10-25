@@ -109,8 +109,5 @@ claim about Skyrim SE save compatibility.
 
 ## Still open
 
-- NPCs warding against arrows or blows, or against a spell already in
-  flight they see coming; whether combat styles weigh it.
-- The ward's sounds (`WardAbsorbSound`, `WardBreakSound`,
-  `WardDeflectSound` default objects) and visuals.
+- Whether combat styles weigh NPCs' warding.
 - `WardDeflection` (actor value 67): nothing in the records sets it.

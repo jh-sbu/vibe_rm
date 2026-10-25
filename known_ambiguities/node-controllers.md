@@ -84,10 +84,7 @@ was examined and no game assets are stored in the repository.
   World-space particles in moving standalone parts do not yet receive the
   carry adjustment used by impact effects. Hidden placed emitters currently
   clear their particle state, rather than preserving live particles offscreen.
-- **Timing and curves:** playback-backwards/forced-update/scaled-time flags
-  beyond the existing evaluator and exact nonlinear key interpolation remain
-  separate work. This change does not claim to resolve them.
-  Reverse cycles now use the start-relative clock described by public
+- **Timing and curves:** Reverse cycles now use the start-relative clock described by public
   [NifSkope `Controller::ctrlTime`](https://github.com/niftools/nifskope/blob/develop/src/gl/glcontroller.cpp)
   for both forward and return legs. This fixes the previous phase error for
   nonzero starts; it does not establish Skyrim's clock initialization policy.

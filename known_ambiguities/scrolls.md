@@ -15,19 +15,13 @@ Source: [UESP's Skyrim:Scrolls](https://en.uesp.net/w/index.php?oldid=3543120)
   as for spells); casting one gives no magic skill experience, apart from
   the Scroll of Blizzard.
 
-## Choices and gaps
+## Choices
 
 - A held scroll is an item (equipped and counted like a weapon), not a spell:
   `Actor.GetEquippedSpell` doesn't report it, and the "Favorite Spell" and
   "Favorite School" statistics don't count it (they count spells).
 - The cast is the charge-and-release of a spell, with the scroll's own charge
   time; dual casting isn't offered for scrolls.
-- **Not built**: the player not being able to walk or run while casting a
-  scroll (UESP says the casting animation holds them; the engine lets them
-  move as with spells); the Scroll of Blizzard's skill experience (the page
-  gives no amount); NPCs casting scrolls; what interrupts a charge (this engine's
-  spells aren't interrupted by blows or shouts either, so scrolls aren't).
+- The Scroll of Blizzard gives no skill experience: the page gives no amount.
 - The inventory marks a held scroll with the plain "equipped" icon, not a
   hand's.
-- Torches (`LIGH`) can't be equipped from the inventory yet: the player's
-  body doesn't show a carried light (see the roadmap).

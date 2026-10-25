@@ -51,13 +51,11 @@ https://en.uesp.net/w/index.php?oldid=3192583); the movie's ActionScript
   in, or in the parent's at `position * scale + offset` from `ONAM` for a
   child worldspace, turned as the camera looks (degrees clockwise from
   north). Child worldspaces' destination markers use the same inherited projection.
-  From an interior there is none, the map opening on the middle of Tamriel
-  (the game's local map for interiors isn't built).
+  From an interior there is none, the map opening on the middle of Tamriel.
 - **Markers on it** are those the data or the player's progress put on the
   map (`map_markers`), including child worldspaces using this map, enabled, of type 1 to 60, placed at ground level (z 0)
   rather than at their own height. Undiscovered ones without travel allowed
-  are hollow (the movie's undiscovered icon). Quest targets use nontravel overlays (`known_ambiguities/quest-targets.md`);
-  custom markers aren't there yet.
+  are hollow (the movie's undiscovered icon). Quest targets use nontravel overlays (`known_ambiguities/quest-targets.md`).
 - **Hovering** a marker (within 3% of the screen's height of the pointer, the
   nearest) selects it; the movie shows the name as the marker's description
   (`MarkerDescriptionObj.SetDescription(name, [])`, with no lines under it:
@@ -68,7 +66,7 @@ https://en.uesp.net/w/index.php?oldid=3192583); the movie's ActionScript
   without dragging sends `MarkerClick` (a travel confirmation, then eligibility and
   destination revalidation; `known_ambiguities/fast-travel.md`), Esc, Tab or M close it (straight back to the world, not to the tween
   menu), "Journal" opens the journal, "Current Location" re-centres on the
-  player. The bottom bar's "Local Map" does nothing yet. M opens it as the
+  player. M opens it as the
   control map's Quick Map; the tween menu's Map does too.
 - **The movie's clock** is `SetDateString` with the journal's date text.
 - **Stage.visibleRect** has the edges (`left`, `top`, `right`, `bottom`) the

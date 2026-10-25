@@ -11,8 +11,6 @@
   outfit's armor is added where missing and worn. The choice is the
   reference's, saved in optional `OUTF`; legacy saves have none, so actors
   wear their NPC's `DOFT`.
-- A sleep outfit (`abSleepOutfit` true; `BYOHRelationshipAdoptionChildScript`
-  only) does nothing: actors don't change for bed yet.
 - `ActorBase.SetOutfit` sets the NPC record's outfit (saved in optional `BOFT`):
   actors of it with no reference-level outfit swap armor as above, and actors made
   later start with it; a reference-level outfit wins. The player is left alone.

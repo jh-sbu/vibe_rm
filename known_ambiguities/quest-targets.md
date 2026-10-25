@@ -95,6 +95,5 @@ rows are deduplicated and keep the first quest's localized name. The movie's
 quest icon 62 and door icon 61 are used. Neither overlay carries a travel FormID;
 clicking one never starts travel. These icon, label, deduplication and routing
 policies are native choices, not verified Skyrim SE behavior. Rows are rebuilt
-on map opening; live quest updates while the map stays open are separate work.
-Direct location-alias targets remain research-gated as described above. Journal
-Show on Map, custom markers and exact route/lock handling remain separate work.
+on map opening. Direct location-alias targets remain research-gated as
+described above.

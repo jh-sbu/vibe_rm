@@ -22,8 +22,6 @@ Unconfirmed, with what we chose:
 - **Weight**: the held object is carried with Activate's force limit
   (`fZKeyMaxForceWeightHigh`); whether telekinesis lifts heavier things is
   unknown.
-- **Throwing** the held object (the grab / throw sounds suggest one) isn't
-  built.
 - Holding something already when the spell takes hold shows
   `sMagicTelekinesisNoRecast`: taken to be what the setting is for.
 - Only the player's casts do it (NPC casters, enchantments and the

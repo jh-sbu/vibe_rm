@@ -48,7 +48,7 @@ An enemy set on a victim, a helper of ours placed off to the side; after 8 s:
   `kPlayerTeammate`) is not read yet, and no public source says what else it
   changes in a fight.
 
-## Gaps
+## Unconfirmed
 
 1. **Relationships.** `RELA` ranks (ally, confidant, friend...) between two NPCs
    probably count too. Only factions are used.

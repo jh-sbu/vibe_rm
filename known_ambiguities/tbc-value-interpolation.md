@@ -42,9 +42,7 @@ added. This is not a claim of measured Skyrim SE runtime equivalence.
   resolve that disagreement. Public schema blame/history endpoints could not
   be retrieved during this investigation; no historical-order conclusion is
   drawn from that failure.
-- Transform key groups still discard interpolation metadata; quaternion,
-  translation, Euler and scale transform interpolation are separate work.
-  Sequence ownership/blending and particle material-animation routing are
+- Sequence ownership/blending and particle material-animation routing are
   unchanged. This change only samples controller channels already supported.
 - Endpoint holds, repeated timestamps and unsorted/nonfinite inputs retain
   existing policy. An interior zero neighbouring time span produces zero

@@ -75,18 +75,14 @@ Unresolved: public documentation does not establish cart mode's precedence
 against conversations or whether mode changes within one simulation frame
 should be observed individually. Here disabled movement takes precedence,
 then cart mode, then dialogue; the HUD sees the final state each frame. The
-fallback conversation UI retains its existing separate presentation. Changes
-to quest banners' expiration while hidden remain outside this implementation.
+fallback conversation UI retains its existing separate presentation.
 No engine executable or binary data was inspected.
 
-## Player AI-driven mode remains pending
+## Player AI-driven mode
 
 [SetPlayerAIDriven's public
 contract](https://papyrus.bellcube.dev/skyrimse/script/game/function/setplayeraidriven/)
-(default true) permits the player to run AI packages. The current package
-scheduler operates on NPC actor runtimes; the player has a separate movement
-and body controller. This needs player package execution, including scene and
-quest-alias packages, before the native can be meaningfully supported. It has
-not been replaced with a movement-disable toggle or an inert success stub.
-Exact arbitration between user input and package motion remains unverified;
-public information reviewed here does not settle it.
+(default true) permits the player to run AI packages. Exact arbitration
+between user input and package motion is unverified; public information
+reviewed here does not settle it. The native is not faked with a
+movement-disable toggle or an inert success stub.

@@ -53,7 +53,5 @@ property; the controller does not enable it.
   ordering retain the existing animation limitations. A valid constant
   `NiFloatInterpolator` pose is supported when key data is absent; unset
   poses and nonfinite samples leave the material unchanged.
-- **Test functions.** The renderer's existing lower-bound cutout test remains
-  in use; the other `NiAlphaProperty` comparison functions are a separate gap.
 - **Particle materials.** Particle descriptions currently discard material
   animation, so this does not add alpha-test controller playback to particles.

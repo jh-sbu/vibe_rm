@@ -36,7 +36,3 @@ SNCT`, `esp-dump`).
   dialogue lines at `AudioCategoryVOC`'s (`VOC`'s parent `VOCGeneral` is the
   menu's Voice). Which categories the engine really files them under isn't
   public.
-- **Not used yet.** `Mute When Submerged` (`FNAM` bit 1: the
-  `AudioCategoryMuteSubmerged` category), the categories that pause or fade
-  during menus and dialogue (`PausedDuringMenu`, `SFXFadeDuringDialogue`...)
-  and the Audio menu's own sliders.

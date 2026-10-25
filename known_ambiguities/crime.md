@@ -290,10 +290,8 @@ locations name it.
   length is nowhere); only guards of a faction that arrests and whose bounty
   is below the Attack on Sight one take it (the "sometimes"), since without an
   arrest dialogue there is nothing to go back to; once per fight, until nobody
-  fights the player. Not done: UESP's other ways (Calm on a guard, punching an
-  innocent while keeping fists raised), the `ACYI` ("accept yield") line, which
-  the generic voice lines carry but no source says guards speak here, and the
-  `HelpYielding` message.
+  fights the player. The `ACYI` ("accept yield") line isn't spoken: the
+  generic voice lines carry it, but no source says guards speak it here.
 - Paying with "go to jail" sends the player through the jail's inner prison
   marker to the outer one (UESP: outside the jail); it is the alarmed
   guard's line that passes true.
@@ -318,8 +316,7 @@ locations name it.
   [UESP's function index](https://en.uesp.net/w/index.php?oldid=3566882)
   documents the function's presence, but not its return semantics or the exact
   pursuit/conversation boundary. The boolean comparison and lifecycle remain
-  our existing policy, unverified against Skyrim SE. `Actor.IsArrested` and
-  `Actor.IsArrestingTarget` are separate, unfinished Papyrus behavior.
+  our existing policy, unverified against Skyrim SE.
 - **Stolen sales counter.** Condition 190 `GetAmountSoldStolen` and console
   command 191 `ModAmountSoldStolen` are listed in the same
   [UESP function index](https://en.uesp.net/w/index.php?oldid=3566882).
@@ -364,8 +361,6 @@ locations name it.
   whether real or game time counts, whether waiting or sleeping elsewhere
   without the victim unloading counts as away, and whether being unloaded
   only at the start of the two days is enough.
-- Not built (same page): a guard sent off quietly by a bribe, a Thane's
-  standing or Thieves Guild payment clearing the gate (no bribes, Thanes or
-  guild payment yet: Roadmap Next 5), and Harmony making those it affects
-  "forget" (other Pacify spells don't). Which Harmony record or archetype
-  data does this, and whether it is the effect or a script, is unknown.
+- The same page has Harmony making those it affects "forget" (other Pacify
+  spells don't). Which Harmony record or archetype data does this, and
+  whether it is the effect or a script, is unknown.

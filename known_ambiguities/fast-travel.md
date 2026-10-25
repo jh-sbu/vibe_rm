@@ -48,8 +48,7 @@ published. Damage checks share waiting's detrimental-health-effect predicate,
 not every possible damage source. GMST lookups use English fallbacks when absent;
 exact message-key coverage and priority remain unverified.
 
-Mounted exceptions, dragon riding and Survival Mode are not implemented because
-the runtime lacks those systems. Script gate state does not claim to report all
+Script gate state does not claim to report all
 transient player eligibility. Invalid/unknown location never permits departure.
 
 ## Arrival references
@@ -69,8 +68,7 @@ ragdoll behavior remain unverified.
 Accepted map travel uses the existing exterior/interior loaders, including feet
 clearance, ground correction, heading, weather setup, streaming and party hooks.
 All known refusals and destination validation happen before unloading. The map
-closes only on successful arrival. A loading-screen presentation, autosave timing
-and the distinct scripted Game.FastTravel native remain separate work.
+closes only on successful arrival.
 
 ## Elapsed time and catch-up (native approximation)
 
@@ -82,7 +80,7 @@ distance to the resolved arrival point, divided by its existing 80-unit walking
 speed and fFastTravelSpeedMult (default 1); TimeScale (default 20) converts this
 to game hours. Armor, roads and horses do not change it. Unrelated-worldspace and
 interior-linked arrivals currently pass zero time: no meaningful coordinate
-conversion is established. Parent-map projection is separate work.
+conversion is established.
 
 Catch-up advances clock/weather, magic, ordinary regeneration, away wounds and
 schedules before relocation. Bounded batches of at most 180 simulated real

@@ -153,7 +153,7 @@ Implemented policy and unresolved behavior:
   weighting, repeated references, references to nodes instead of geometry,
   and the original runtime's missing-reference behavior remain unresolved.
   Skinned meshes and `BSDynamicTriShape` are skipped; animated rigid meshes
-  use their rest transform. Live deformation and transform sampling are pending.
+  use their rest transform.
 - Sample vertices, triangle centres or unique indexed-edge centres uniformly.
   Face surfaces use area-weighted triangles with uniform barycentric samples;
   edge surfaces use length-weighted unique edges with uniform segment samples.

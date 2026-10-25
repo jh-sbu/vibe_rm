@@ -111,8 +111,7 @@ to the sender reference and case-insensitive event name. Loading recomputes the
 runtime signal key and replaces stale wait descriptors; legacy saves without
 `ANMW` keep the existing timed fallback. This resumes a wait for a subsequent
 matching event, but does not save or restore the sender's behavior graph pose,
-timeline, or already-raised events. Persisting those graph states remains
-separate work.
+timeline, or already-raised events.
 
 The weather (optional `WTHR`): the current and outgoing weathers, how far the
 transition has come, whether an override holds, the weather it replaced, and
@@ -120,26 +119,12 @@ the game hours until the next roll. Older native saves load with no weather,
 so the place picks one as it does for a new game. The regional list isn't
 saved: it is taken again from the place the save loads into.
 
-## Not saved yet (see `plans/ROADMAP.md`)
-
-- Other signal waits are kept as timed waits that finish when their timeout
-  runs out, with the default result: their host state is not saved yet.
-  A thread whose function no longer resolves (other scripts) is dropped with
-  a warning. Scripts on finished effects (kept briefly for `OnEffectFinish`)
-  are dropped.
-  Registrations other than these (key, LOS gain, tracked hits...) aren't
-  built in the engine yet.
-- Live player conversations, actor
-  procedure/animation progress, AI package progress
-  and schedules, objects' behaviour
-  graphs, and search/combat detection state and AI execution (stealth reservoirs
-  alone are saved),
-  and the player's spells held ready (the equipped spells
-  are saved with the inventory's hands).
-- Ward-hit outcome and remaining `IsWardState` time are preserved separately
-  in optional `WSTA`; this does not resume an active ward spell or its graph
-  animation. The one-second hold is a native runtime policy, not a Skyrim SE
-  save-format claim (`known_ambiguities/wards.md`).
+Signal waits whose host state isn't saved load as timed waits that finish
+when their timeout runs out, with the default result. A thread whose function
+no longer resolves (other scripts) is dropped with a warning. Scripts on
+finished effects (kept briefly for `OnEffectFinish`) are dropped. Ward-hit
+outcome and remaining `IsWardState` time are in optional `WSTA`
+(`known_ambiguities/wards.md`).
 
 ## Unconfirmed choices
 
@@ -158,8 +143,7 @@ saved: it is taken again from the place the save loads into.
   in one pending update remain deduplicated. This is an engine policy, not a
   claim of Skyrim SE parity. The save is made on the next update, after the
   script returns, not inside the native call. A save is refused while the
-  player is dead ("You cannot save right now.", `sCantSaveNow`); the original's
-  other refusals (combat, menus, scripted forbidding) aren't built.
+  player is dead ("You cannot save right now.", `sCantSaveNow`).
   "Autosaving..." (`sAutoSaving`) is shown for the autosave, which is our guess
   for when the game prints it.
 - **Weather on load.** The local UESP
@@ -208,7 +192,7 @@ No game assets or engine binaries were inspected for these additions.
   produce or replay sounds. UESP [Respawning, revision 3558013](https://en.uesp.net/w/index.php?oldid=3558013)
   describes reset schedules, including the default 240 hours, but does not settle
   individual plant save payloads or validate our harvest-time-based regrowth
-  approximation (cell re-entry/reset behavior is separate work).
+  approximation.
 
 - `CLRD` retains cleared location identities without calling `SetCleared` during
   load. Original save encoding and reset lifetime remain unverified. The existing
@@ -233,8 +217,8 @@ No game assets or engine binaries were inspected for these additions.
 
 - `ASLT` stores both existing assault-memory sets. It preserves the current
   classification inputs without generating assault/murder events on load.
-  Combat resumption and the original SE clearing lifetime remain separate,
-  unresolved work; no inference about `.ess` structures is made.
+  The original SE clearing lifetime is unresolved; no inference about `.ess`
+  structures is made.
 
 - `UWIT` preserves existing pending reports, ordered witness lists and amounts.
   UESP [Crime, revision 3639929](https://en.uesp.net/w/index.php?oldid=3639929)
@@ -268,7 +252,6 @@ No game assets or engine binaries were inspected for these additions.
   rather than firing an old spell; behavior graphs and channels are not resumed.
   UESP [Magicka, revision 2947763](https://en.uesp.net/w/index.php?oldid=2947763)
   describes regeneration and casting suppression but not SE save semantics.
-  Active effects and NPC casting execution remain separate work.
 
 - `JMEM` retains the native miscellaneous-objective visibility toggle and
   sequence allocators. Legacy loads show miscellaneous objectives and recover

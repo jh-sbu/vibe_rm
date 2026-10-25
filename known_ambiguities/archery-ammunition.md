@@ -32,17 +32,11 @@ change; no game assets or engine binary data were examined or added.
   not verified Skyrim behavior.
 - The player's existing fallback picks the strongest carried arrow at shot
   time. UESP's weakest-ammunition auto-equip rule describes weapon equipping,
-  a different transition; that auto-equip behavior is not implemented here.
-  Exact behavior when compatible ammunition is already equipped, when only
-  incompatible ammunition is equipped, or when an arrow stack is exhausted
-  still needs public documentation or permitted asset evidence before changing
-  the equipment lifecycle. The source-backed weakest-ammunition default remains
-  future work, rather than being treated as an unknown rule.
+  a different transition. Exact behavior when compatible ammunition is
+  already equipped, when only incompatible ammunition is equipped, or when an
+  arrow stack is exhausted is not documented publicly.
 - NPCs without usable arrows retain the existing iron-arrow fallback. A mod
   changing that record into a bolt no longer permits a bow to fire it. The
   general projectile reader still reads both arrows and bolts; the restriction
   belongs to bow selection.
-- Crossbow firing, reload animation events and cadence, default NPC bolts, and
-  crossbow-specific effects remain roadmap work. No firing or reload timing is
-  inferred from the ammunition flag. This change establishes bow compatibility
-  only and does not claim to implement crossbow combat.
+- No crossbow firing or reload timing is inferred from the ammunition flag.

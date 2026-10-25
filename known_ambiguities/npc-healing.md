@@ -40,13 +40,11 @@ are included in the repository or tests.
   threat and combat style remain unresolved. Healing can precede a weapon or
   bow attack regardless of the style's offensive magic multiplier; a swing or
   guard already under way finishes first, and an interrupted bow is lowered
-  before healing and starts a fresh draw afterward. Out-of-combat healing is
-  pending.
+  before healing and starts a fresh draw afterward.
 - Candidates must be ordinary spells with Self delivery and a positive
   non-Recover Health value modifier (including Health as the second value of
   a dual modifier), with no hostile effect. At least one restorative effect's
   spell-entry and effect conditions must currently pass on the caster.
-  Healing allies, powers, absorb spells, wards and buffs are pending.
 - Among eligible spells, choose the costliest affordable one, as offensive
   selection already does. Concentration requires one second's cost available
   to remain selected, pays per quarter-second landing, and uses the existing
@@ -57,8 +55,6 @@ are included in the repository or tests.
   bleedout, fleeing and full-health checks prevent further healing doses.
   Known-spell changes rebuild both offensive and healing candidate lists;
   live effect conditions and costs are evaluated when selecting.
-- Casting animations still use the existing combat casting events and lack
-  the full magic graph/hand integration listed in the roadmap.
 
 ## Verification limits
 
