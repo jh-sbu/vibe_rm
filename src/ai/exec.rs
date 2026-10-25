@@ -26,14 +26,33 @@ pub struct ActorExec {
     /// navmesh's, which pathing and movement keep to.
     pub pos: Vec3,
     pub heading: f32,
-    /// Where it was as it unloaded (unset while loaded: `Engine::actor_cells`
-    /// says where it is).
+    /// Where it is away (unset while loaded: `Engine::actor_cells` says where
+    /// it is; and for actors a save gave only wounds, placed by their
+    /// schedules). Its position there is NaN when its package put it
+    /// anywhere in a cell.
     pub place: Option<Place>,
     /// What it was doing there as its cell unloaded, to take up again as it
-    /// attaches; none when it isn't where it left (new to the world, gone
-    /// where its schedule has it, moved by a script, or its schedule moved on
-    /// meanwhile): its schedule places it then.
+    /// attaches; none when it isn't where it left (gone through a door or out
+    /// of sight, moved by a script, or its package changed or moved it on
+    /// meanwhile).
     pub stage: Option<Stage>,
+    /// Away: where its package has it is worked out (`Engine::step_away`);
+    /// unset while it has a journey to make, or hasn't been looked at since
+    /// its package started or it left.
+    pub(crate) settled: bool,
+    /// Away: the real time (`ScriptState::real_time`) its run ends, having
+    /// been put at its target (`OnPackageEnd` 2.5 s after the start:
+    /// autotest14).
+    pub(crate) ends_at: Option<f64>,
+    /// Away: how to turn it as it loads where its package put it.
+    pub(crate) on_arrival: Option<super::schedule::PlacementHeading>,
+    /// Away: the real time it was last stepped, and the half hour of game
+    /// time its packages were last read in.
+    pub(crate) stepped_at: f64,
+    pub(crate) eval_slot: Option<i64>,
+    /// The NPC record its packages come from (taken again away when its
+    /// aliases change).
+    pub(crate) npc: FormId,
     /// The goal was set by hand (console `travel`): packages leave it alone.
     pub(super) pinned: bool,
     /// Which of a multi-location sandbox package's stops it is at.
@@ -190,17 +209,24 @@ impl ActorExec {
         }
     }
 
-    /// Its actor unloaded from `place`, `wounds` as hurt as it left, at
-    /// `stage` of its package when it unloaded with its cell.
+    /// Its actor unloaded from `place` at real time `now`, `wounds` as hurt as
+    /// it left, at `stage` of its package when it unloaded with its cell. One
+    /// standing or seated is where its package has it; one walking, or with
+    /// nothing to take up, has its journey still to make.
     pub(crate) fn away(
         mut self,
         place: Option<Place>,
         wounds: Option<Wounds>,
         stage: Option<Stage>,
+        now: f64,
     ) -> Self {
         self.place = place;
         self.wounds = wounds;
         self.stage = stage;
+        self.settled = matches!(stage, Some(Stage::Standing | Stage::Seated { .. }));
+        self.ends_at = None;
+        self.on_arrival = None;
+        self.stepped_at = now;
         self
     }
 
@@ -368,12 +394,14 @@ impl Engine {
         self.vm = vm;
     }
 
-    /// The package an actor runs (`GetCurrentPackage`): a loaded actor's run's;
-    /// for one elsewhere, the one its schedule gives it now, else the run it
-    /// unloaded with.
+    /// The package an actor runs (`GetCurrentPackage`): its run's, loaded or
+    /// away; for one the world hasn't touched, the one its schedule gives it.
     pub(crate) fn running_package(&self, r: FormId) -> Option<FormId> {
         if let Some(a) = self.actor_ref(r) {
             return a.exec.package();
+        }
+        if let Some(x) = self.away.get(&r).filter(|x| x.place.is_some()) {
+            return x.package();
         }
         match self.whereabouts.package.get(&r) {
             Some(&p) => p,
@@ -383,7 +411,7 @@ impl Engine {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const HOME: FormId = FormId(0x810);
@@ -498,7 +526,7 @@ mod tests {
         away.stop.index = 1;
         away.patrol = Some((FAR, 3));
         away.combat = Some(combat::Combat::new(FAR));
-        away.away(Some(place), None, stage)
+        away.away(Some(place), None, stage, 0.0)
     }
 
     #[test]
@@ -602,11 +630,15 @@ mod tests {
     use glam::Mat4;
 
     const BASE: FormId = FormId(0x800);
-    const ACTOR: FormId = FormId(0x801);
-    const PACKAGE: FormId = FormId(0x802);
-    const CELL: FormId = FormId(0x820);
+    pub(crate) const ACTOR: FormId = FormId(0x801);
+    pub(crate) const PACKAGE: FormId = FormId(0x802);
+    pub(crate) const PACKAGE2: FormId = FormId(0x823);
+    pub(crate) const CELL: FormId = FormId(0x820);
+    /// A marker in `CELL`, 3,000 east of its origin.
+    pub(crate) const MARKER: FormId = FormId(0x821);
+    const MARKER_BASE: FormId = FormId(0x822);
 
-    struct Fixture(std::path::PathBuf);
+    pub(crate) struct Fixture(std::path::PathBuf);
 
     impl Drop for Fixture {
         fn drop(&mut self) {
@@ -614,7 +646,7 @@ mod tests {
         }
     }
 
-    fn fixture() -> (Fixture, Engine) {
+    pub(crate) fn fixture() -> (Fixture, Engine) {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -622,9 +654,18 @@ mod tests {
         let f =
             Fixture(std::env::temp_dir().join(format!("vrm-exec-{}-{stamp}", std::process::id())));
         std::fs::create_dir(&f.0).unwrap();
+        let mut marker = [0; 24];
+        marker[0..4].copy_from_slice(&3000.0f32.to_le_bytes());
         let records = [
+            Node::top(b"STAT", vec![RecordBuilder::new(b"STAT", MARKER_BASE)]),
             Node::top(b"NPC_", vec![RecordBuilder::new(b"NPC_", BASE)]),
-            Node::top(b"PACK", vec![RecordBuilder::new(b"PACK", PACKAGE)]),
+            Node::top(
+                b"PACK",
+                vec![
+                    RecordBuilder::new(b"PACK", PACKAGE),
+                    RecordBuilder::new(b"PACK", PACKAGE2),
+                ],
+            ),
             Node::Group {
                 label: *b"CELL",
                 group_type: 0,
@@ -636,9 +677,16 @@ mod tests {
                         children: vec![Node::Group {
                             label: CELL.0.to_le_bytes(),
                             group_type: esp::group_type::CELL_TEMPORARY,
-                            children: vec![Node::Record(
-                                RecordBuilder::new(b"ACHR", ACTOR).form(b"NAME", BASE),
-                            )],
+                            children: vec![
+                                Node::Record(
+                                    RecordBuilder::new(b"ACHR", ACTOR).form(b"NAME", BASE),
+                                ),
+                                Node::Record(
+                                    RecordBuilder::new(b"REFR", MARKER)
+                                        .form(b"NAME", MARKER_BASE)
+                                        .field(b"DATA", &marker),
+                                ),
+                            ],
                         }],
                     },
                 ],
@@ -655,7 +703,7 @@ mod tests {
 
     /// The actor loaded in `CELL`, hurt, at a goal, with its packages
     /// taken at alias generation 7.
-    fn loaded_actor(e: &mut Engine) {
+    pub(crate) fn loaded_actor(e: &mut Engine) {
         let key = crate::render::CellKey::Interior(CELL);
         e.actor_cells.insert(ACTOR, key);
         let mut a = crate::ai::ActorRuntime::new(
@@ -834,16 +882,16 @@ mod tests {
         let run = e.away[&ACTOR].run.expect("still running");
         assert_eq!((run.id, run.started_at), (PACKAGE, 2.0));
         assert!(e.away[&ACTOR].run_events.is_empty());
-        // Away, it runs the package it left with until its schedule says
-        // otherwise.
+        // Away, it runs the package it left with until its own packages say
+        // otherwise, whatever a schedule would give it.
         assert_eq!(e.running_package(ACTOR), Some(PACKAGE));
         e.whereabouts.package.insert(ACTOR, None);
-        assert_eq!(e.running_package(ACTOR), None);
+        assert_eq!(e.running_package(ACTOR), Some(PACKAGE));
     }
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn an_actor_unloading_with_its_cell_stays_where_it_left_until_its_schedule_moves_on() {
+    fn an_actor_unloading_with_its_cell_stays_where_it_left_while_nothing_moves_it_on() {
         let (_f, mut e) = fixture();
         loaded_actor(&mut e);
         e.actor_mut(ACTOR).unwrap().fresh = false;
@@ -853,25 +901,11 @@ mod tests {
         assert_eq!(e.away[&ACTOR].stage, Some(Stage::Standing));
         assert_eq!(e.whereabouts.of.get(&ACTOR), Some(&left));
         assert_eq!(e.whereabouts.by_place[&here], [ACTOR]);
-        // Its schedule gives it what it left with (nothing): it stays.
+        // It has no package to take it anywhere: it stays.
+        e.step_away(ACTOR);
         e.refresh_whereabouts();
         assert_eq!(e.whereabouts.of.get(&ACTOR), Some(&left));
         assert_eq!(e.away[&ACTOR].resumes_in(Some(here)), Some(Stage::Standing));
-        // Its schedule moves on from the run it left with: placed by it from
-        // then on, even once it gives that package again.
-        e.away.get_mut(&ACTOR).unwrap().run = Some(PackageRun {
-            id: PACKAGE,
-            started_at: 0.0,
-            outcome: Outcome::Running,
-            activations: 0,
-        });
-        e.refresh_whereabouts();
-        assert_eq!(e.away[&ACTOR].stage, None);
-        assert_eq!(e.away[&ACTOR].resumes_in(Some(here)), None);
-        assert_ne!(e.whereabouts.of.get(&ACTOR), Some(&left));
-        e.away.get_mut(&ACTOR).unwrap().run = None;
-        e.refresh_whereabouts();
-        assert_ne!(e.whereabouts.of.get(&ACTOR), Some(&left));
     }
 
     #[test]

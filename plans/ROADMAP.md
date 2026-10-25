@@ -1681,13 +1681,17 @@ game each piece unlocks.
      and scene progress while actors are away; attach / remove animation and
      physics without restarting the actor's execution. This is the foundation
      for the package-tree, off-screen travel, unloaded actor-value and save work.
-     Plan: `plans/ai-actor-execution.md` (steps 1 to 4 done: the execution is
+     Plan: `plans/ai-actor-execution.md` (steps 1 to 5 done: the execution is
      `ai::exec::ActorExec`, kept in `Engine::away` while unloaded, with a
      package run that `GetCurrentPackage` reads and whose changes fire
-     `OnPackageStart` / `End` / `Change` and the `PACK` fragments for loaded
-     actors. An actor that unloaded with its cell comes back where it left and
-     as it left, in the same furniture, until its schedule moves it on; away
-     actors don't advance yet, step 5).
+     `OnPackageStart` / `End` / `Change` and the `PACK` fragments. An actor
+     that unloaded with its cell comes back where it left and as it left, in
+     the same furniture, until its package moves it on. Away actors keep
+     running (`ai::away`): their packages are read every few seconds and
+     each half hour, and travellers are put 40 short of targets in range,
+     onto targets through doors, or walk on in the cells just left, by
+     autotest13's and autotest14's readings; processing policies and time
+     next, step 6).
    - Processing policies: detailed updates nearby and coarse advancement away,
      with travel progress through cells and load doors, separate game / real-time
      timestamps and elapsed-time handling for waiting, sleeping and fast travel.

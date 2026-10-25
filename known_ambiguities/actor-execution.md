@@ -81,13 +81,12 @@ as the save loaded and changed at Go1). The rest is our choice:
   (`PACK` `VMAD`, xEdit's `wbVMADFragmentedPACK`) runs as its run changes,
   then the event is queued for the actor's scripts. The game's order is
   unknown.
-- **Away actors' runs don't advance yet** (step 5): their packages change
-  only by `Whereabouts`, which fires no events, so the unloaded actors'
-  `OnPackageStart` / `Change` / `End` that autotest13 logged are missing.
-  `GetCurrentPackage` on an away actor answers the package its schedule
-  gives it now, else the run it unloaded with. Actors loaded from a save
-  start their runs afresh (`OnPackageStart`) until saves keep them (step 8),
-  where autotest14's reloaded actors logged nothing.
+- **Away actors' runs** start, change and end as loaded actors' do, with
+  the same events and fragments ("Away" below). `GetCurrentPackage` on an
+  away actor answers its run; on an actor the world hasn't touched, the
+  package its schedule gives it. Actors loaded from a save start their runs
+  afresh (`OnPackageStart`) until saves keep them (step 8), where
+  autotest14's reloaded actors logged nothing.
 
 ## Attaching: what we chose
 
@@ -95,15 +94,11 @@ Step 4 of the plan (`ActorExec::stage`, `ActorExec::take_back`). The
 readings say actors are found where they were left (loading a cell doesn't
 move them on); the rest is our choice:
 
-- **Where it left, while the schedule agrees.** An actor that unloaded with
-  its cell comes back where it stood, turned as it was, while its schedule
-  gives the package it left with. Once the schedule gives another (a
-  whereabouts refresh: every 20 s and each half hour), it is placed by its
-  schedule from then on, as actors new to the world are, even if the first
-  package comes back. Until step 5 advances away actors, an actor walking as
-  it unloaded is found where it was, not at its target or 40 short of it.
-  autotest13 saw unloaded actors jump within seconds of a package
-  *starting*; whether one already walking jumps is untested.
+- **Where it left, until its package moves it on.** An actor that unloaded
+  with its cell comes back where it stood, turned as it was, while it runs
+  the package it left with and that package hasn't moved it. Once its
+  packages give another, or its package moves it ("Away" below), it is
+  placed where it went.
 - **As it left.** One seated (getting in or using furniture) starts out in
   the same marker when it is still free and usable, else as fresh actors do
   (a free seat nearby). One walking or standing carries on from there,
@@ -114,10 +109,56 @@ move them on); the rest is our choice:
   combat, not searching, and not bleeding out, as hurt as it left. The game's
   rule is untested (an actor fighting as the player leaves).
 - **Not taken up:** actors on their way out through a door, or despawned
-  far off for their schedule, and actors a script moved while away. They are
-  where their schedule or the move put them.
+  far off for their schedule, and actors a script moved while away. Those
+  despawned are where their schedule has them; those moved, where the move
+  put them; either way their package takes them on from there.
 - **Saves don't keep stages** (step 8): actors loaded from a save are
   placed by their schedules.
+
+## Away: what we chose
+
+Step 5 of the plan (`ai::away`). An actor away keeps running: its packages
+are read every 3 s and as each half hour of game time begins (the readings
+had them re-read within about 3 s, and at once as the clock was set or an
+hour passed), a change of package logs the usual events, and its package
+moves it:
+
+- **Travel in the same space**, its target within 4,500 (3D): put on the
+  line to it, 40 short (or 10 inside a wider radius: `unloaded_arrival`, as
+  for actors new to a save), then `OnPackageEnd` 2.5 s after the start.
+  Beyond 4,500 it stays where it is, its run going on. The readings put the
+  line between 4,100 and 4,950; height may be what decides (open, below).
+- **Travel into another space** (through a load door): put exactly on its
+  target, with `OnLocationChange` when the location changes, then
+  `OnPackageEnd` 2.5 s later.
+- **In a cell the player has just left** (the places unloaded with the
+  last change of location, until the next one) a traveller walks on in a
+  straight line at 80 a second to the same end point, its run ending as it
+  arrives (as loaded travellers'). Not walked along the navmesh, and not
+  through doors: a target in another space is reached as above. The game
+  keeps such cells loaded (3D and all); ours unload them.
+- **Other packages with a place** (sandbox, sit, sleep, patrol...): put at
+  it (on its centre, anywhere in a whole cell) when away from it by more
+  than 1.5 times its radius (at least 96), as schedules had them, whatever
+  the distance; else left where they are, to find furniture as they load.
+  Untested: autotest13 and 14 only sent actors travelling.
+- **Follow and Escort** keep with their target when it is away too (put on
+  it once more than 256 beyond the follow distance off); following someone
+  loaded (the player) they stay where they are.
+- **A journey under way as the actor unloads** (it was walking, or hadn't
+  started) is taken up as one starting: put at the end point when in range.
+  The game's rule is untested (open, below).
+- **Despawned actors** (gone through a door, or out of sight for their
+  schedule) are put where their schedule has them, as before; their run
+  ends 2.5 s later when that is a traveller's target.
+- **Actors new to the world** (never loaded, no execution) are still placed
+  by their schedules (`Whereabouts`, every 20 s and each half hour) without
+  events, as autotest6–9 calibrated. `Whereabouts` reads every other away
+  actor's place from its execution.
+- **Waiting and sleeping** step every away actor once as the time has
+  passed, before loaded actors are put where their schedules have them.
+  Fast travel does nothing more (the readings: it moved no unloaded actor).
+- The stepper visits 100 away actors a frame, in turn.
 
 ## Open questions
 
@@ -130,7 +171,7 @@ move them on); the rest is our choice:
   open.
 - **A journey under way as the actor unloads.** Does a walker outside the
   buffer jump to its target (as one starting a package does), stay, or walk
-  on? We leave it where it was until step 5.
+  on? We have it jump (when in range).
 - **What reaches far targets.** An actor whose target is out of jumping
   range: does anything ever move it (game hours, waiting, a later
   re-evaluation), or does it wait for the player?

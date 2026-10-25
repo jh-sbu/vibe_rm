@@ -2,6 +2,7 @@
 
 pub mod alias;
 pub mod archery;
+pub mod away;
 pub mod casters;
 pub mod combat;
 mod equipment;
@@ -3104,15 +3105,25 @@ impl Engine {
         p: &package::Package,
         t: Option<Target>,
     ) -> Option<FormId> {
+        self.package_target_of(a.ref_id, p, t)
+    }
+
+    /// The reference package target `t` names for actor `achr`.
+    pub(crate) fn package_target_of(
+        &self,
+        achr: FormId,
+        p: &package::Package,
+        t: Option<Target>,
+    ) -> Option<FormId> {
         match t {
             Some(Target::Ref(r)) => Some(r),
-            Some(Target::LinkedRef(kw)) => self.linked_ref(a.ref_id, kw),
+            Some(Target::LinkedRef(kw)) => self.linked_ref(achr, kw),
             Some(Target::Alias(alias)) => p.quest.and_then(|q| self.alias_ref(q, alias)),
             // Patrolling from itself: along its own linked references.
             Some(Target::SelfRef) if p.behaviour == Behaviour::Patrol => {
-                self.linked_ref(a.ref_id, Some(FormId::NULL))
+                self.linked_ref(achr, Some(FormId::NULL))
             }
-            Some(Target::SelfRef) => Some(a.ref_id),
+            Some(Target::SelfRef) => Some(achr),
             _ => None,
         }
     }

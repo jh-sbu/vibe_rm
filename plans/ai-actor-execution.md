@@ -195,6 +195,29 @@ untested are in `known_ambiguities/actor-execution.md` ("Attaching").
 
 ### 5. Advancing away actors
 
+**Status (2026-10-25):** done. `ai::away` steps 100 away actors a frame
+(`Engine::update_away`): each reads its packages every 3 s and as a half
+hour begins (`evaluate_away`, as `evaluate_packages` does, aliases'
+packages taken again when they change), starts runs with their events, and
+moves by `plan_move`: Travel put 40 short of a target within 4,500 in the
+same space (else left), exactly onto one in another space with
+`OnLocationChange`, and ended 2.5 s on (`ActorExec::ends_at`); in the
+places unloaded with the player's last change of location
+(`Stepper::buffered`) walked there at 80 a second instead; other packages
+with a place put at it when off it; Follow and Escort kept with an away
+target. `ActorExec::settled` marks one with no journey left. One that
+unloaded walking (or not yet started) takes up its journey at once.
+Despawned actors start from their schedule's place, script moves set the
+execution's place, and an actor put into a loaded cell comes in by
+`bring_in` (factored from `update_whereabouts`). `Whereabouts` reads away
+actors' places from `away` and still places actors with no execution by
+schedule (autotest6–9's rules); `running_package` reads the away run.
+Waiting steps every away actor first (`step_all_away`). Not done:
+`by_place` as an index kept only from `away` and loaded actors (the refresh
+still builds it), and walking along the navmesh or through doors in
+buffered cells. The choices are in `known_ambiguities/actor-execution.md`
+("Away").
+
 - An away stepper runs every frame on a time budget, the way
   `refresh_whereabouts_step` already spreads its work. For each actor it
   evaluates packages on the package cadence and advances the procedure:

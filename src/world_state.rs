@@ -141,7 +141,9 @@ impl Engine {
                 let stage = a.stage().filter(|_| a.exiting.is_none());
                 away.push((
                     a.ref_id,
-                    a.exec.clone().away(Some(place), Wounds::of(a, now), stage),
+                    a.exec
+                        .clone()
+                        .away(Some(place), Wounds::of(a, now), stage, now),
                 ));
                 continue;
             }
@@ -164,11 +166,10 @@ impl Engine {
                 self.world_state.body_poses.insert(r, b);
             }
         }
-        // Where they are until their schedules move them on.
+        // Where they are until their packages move them on (`step_away`).
         for (r, x) in &away {
-            if x.stage.is_some() {
-                self.whereabouts.put(*r, place, x.pos);
-            }
+            self.whereabouts.put(*r, place, x.pos);
+            self.whereabouts.placement_heading.remove(r);
         }
         self.away.extend(away);
     }
@@ -183,6 +184,7 @@ impl Engine {
 
     /// A save's hurt actors away: they are all that is away.
     pub(crate) fn restore_away_wounds(&mut self, wounds: HashMap<FormId, Wounds>) {
+        self.away_steps = Default::default();
         self.away = wounds
             .into_iter()
             .map(|(r, w)| (r, crate::ai::exec::ActorExec::wounded(w)))
@@ -286,9 +288,14 @@ impl Engine {
         );
         let old = self.ref_transform(r);
         self.world_state.moved.insert(r, Moved { place, pos, rot });
-        // Not where it left any more: placed where it was moved to.
-        if let Some(x) = self.away.get_mut(&r) {
+        // Not where it left any more: it carries on from where it was moved
+        // to, its package taking it on from there.
+        if let Some(x) = self.away.get_mut(&r).filter(|x| x.place.is_some()) {
             x.stage = None;
+            x.settled = false;
+            x.ends_at = None;
+            x.on_arrival = None;
+            (x.place, x.pos, x.heading) = (Some(place), pos, rot.z);
         }
         if let Some(c) = self.created_refs.refs.get_mut(&r) {
             (c.position, c.rotation, c.place) = (pos, rot, Some(place));

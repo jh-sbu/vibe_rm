@@ -82,7 +82,8 @@ pub struct Whereabouts {
     /// By actor and NPC record: the NPC records its AI packages and default
     /// package list come from.
     sources: HashMap<(FormId, FormId), (FormId, FormId)>,
-    /// Scheduled place and position for each actor.
+    /// Where each actor is: an away one's execution has it, others their
+    /// schedules.
     pub of: HashMap<FormId, (Place, Vec3)>,
     /// `of` before the last refresh.
     prev: HashMap<FormId, (Place, Vec3)>,
@@ -157,7 +158,7 @@ impl Whereabouts {
 /// reference is at that reference; one about a whole cell (no target
 /// position) stays at home when home is in it. Coming from another space,
 /// at the target (unobserved).
-fn unloaded_arrival(
+pub(crate) fn unloaded_arrival(
     behaviour: Behaviour,
     radius: f32,
     home: (Place, Vec3),
@@ -313,7 +314,7 @@ impl Engine {
 
     /// A package marker's authored heading, when that package's scheduled
     /// placement has an observed heading rule (Sandbox or Travel).
-    fn package_placement_heading(
+    pub(crate) fn package_placement_heading(
         &self,
         achr: FormId,
         p: &Package,
@@ -389,7 +390,6 @@ impl Engine {
         } else {
             std::mem::take(&mut self.whereabouts.pending_headings)
         };
-        let mut moved_on = Vec::new();
         for &a in &actors[start..end] {
             pending_headings.remove(&a);
             if self.is_disabled(a) {
@@ -399,6 +399,17 @@ impl Engine {
             if let Some(body) = self.body_of(a) {
                 pending.insert(a, body);
                 pending_packages.insert(a, None);
+                continue;
+            }
+            // One away is where its execution has it (`step_away`).
+            if let Some(x) = self.away.get(&a)
+                && let Some(place) = x.place
+            {
+                pending.insert(a, (place, x.pos));
+                pending_packages.insert(a, x.package());
+                if let Some(heading) = x.on_arrival {
+                    pending_headings.insert(a, heading);
+                }
                 continue;
             }
             let Some(rf) = self.reference_of(a) else {
@@ -441,18 +452,6 @@ impl Engine {
                     None => (home.0, home.1, None),
                 };
             pending_packages.insert(a, current.map(|p| p.id));
-            // One that unloaded with its cell stays where it left while its
-            // schedule gives it the package it left with (autotest13: loading
-            // a cell doesn't move them on; step 5 of the plan advances them).
-            if let Some(x) = self.away.get(&a).filter(|x| x.stage.is_some()) {
-                match x.place {
-                    Some(left) if x.package() == current.map(|p| p.id) => {
-                        pending.insert(a, (left, x.pos));
-                        continue;
-                    }
-                    _ => moved_on.push(a),
-                }
-            }
             if let Some(heading) = heading {
                 pending_headings.insert(a, heading);
             }
@@ -463,11 +462,6 @@ impl Engine {
                 );
             }
             pending.insert(a, (place, pos));
-        }
-        for r in moved_on {
-            if let Some(x) = self.away.get_mut(&r) {
-                x.stage = None;
-            }
         }
         let done = end >= actors.len();
         self.whereabouts.actors = actors;
@@ -685,44 +679,62 @@ impl Engine {
                         .collect()
                 })
                 .unwrap_or_default();
-            let mut spawn = Vec::new();
-            let mut through_door = Vec::new();
-            for r in arrivals {
-                let Some(&(_, pos)) = self.whereabouts.of.get(&r) else {
-                    continue;
-                };
-                let from = self
-                    .whereabouts
-                    .prev
-                    .get(&r)
-                    .map(|p| p.0)
-                    .filter(|p| *p != here);
-                // Enter through the door from where they were, else appear if unseen.
-                let near = if pos.is_nan() { player } else { pos };
-                let door = from.and_then(|f| self.door_towards(near, f));
-                match door {
-                    Some((_, spot)) => {
-                        spawn.push((r, Some(spot)));
-                        through_door.push(r);
-                    }
-                    None if pos.is_nan() || pos.distance(player) > UNSEEN_DISTANCE => {
-                        spawn.push((r, Some(pos)))
-                    }
-                    None => {}
-                }
+            let arrivals = arrivals
+                .into_iter()
+                .map(|r| {
+                    let from = self.whereabouts.prev.get(&r).map(|p| p.0);
+                    (r, from.filter(|p| *p != here))
+                })
+                .collect();
+            self.bring_in(key, here, arrivals);
+        }
+    }
+
+    /// Actors whose place is now loaded cell `key` (`here`) come in: through
+    /// the door from where they were (`from`), else appearing out of sight.
+    pub(crate) fn bring_in(
+        &mut self,
+        key: CellKey,
+        here: Place,
+        arrivals: Vec<(FormId, Option<Place>)>,
+    ) {
+        let player = self
+            .ref_position(crate::engine::PLAYER_REF)
+            .unwrap_or_default();
+        let mut spawn = Vec::new();
+        let mut through_door = Vec::new();
+        for (r, from) in arrivals {
+            let Some(&(place, pos)) = self.whereabouts.of.get(&r) else {
+                continue;
+            };
+            if place != here || self.actor_cells.contains_key(&r) {
+                continue;
             }
-            if !spawn.is_empty() {
-                log::debug!("{} actors arriving in {key:?}", spawn.len());
-                self.spawn_scheduled_actors(key, &spawn);
-                // Arrivals walk in rather than appearing already seated.
-                if let Some(rt) = self.cells.get_mut(&key) {
-                    for a in rt
-                        .actors
-                        .iter_mut()
-                        .filter(|a| through_door.contains(&a.ref_id))
-                    {
-                        a.fresh = false;
-                    }
+            // Enter through the door from where they were, else appear if unseen.
+            let near = if pos.is_nan() { player } else { pos };
+            let door = from.and_then(|f| self.door_towards(near, f));
+            match door {
+                Some((_, spot)) => {
+                    spawn.push((r, Some(spot)));
+                    through_door.push(r);
+                }
+                None if pos.is_nan() || pos.distance(player) > UNSEEN_DISTANCE => {
+                    spawn.push((r, Some(pos)))
+                }
+                None => {}
+            }
+        }
+        if !spawn.is_empty() {
+            log::debug!("{} actors arriving in {key:?}", spawn.len());
+            self.spawn_scheduled_actors(key, &spawn);
+            // Arrivals walk in rather than appearing already seated.
+            if let Some(rt) = self.cells.get_mut(&key) {
+                for a in rt
+                    .actors
+                    .iter_mut()
+                    .filter(|a| through_door.contains(&a.ref_id))
+                {
+                    a.fresh = false;
                 }
             }
         }
@@ -736,6 +748,9 @@ impl Engine {
     /// them). The fallen, the fighting and the player's followers are left be.
     pub(crate) fn jump_to_schedules(&mut self) {
         let start = std::time::Instant::now();
+        // Those away read their packages for the new time, and go where they
+        // take them (autotest14: those already there stay).
+        self.step_all_away();
         self.refresh_whereabouts();
         let mut despawn = Vec::new();
         let mut respawn: Vec<(FormId, CellKey, Vec3)> = Vec::new();
@@ -876,12 +891,21 @@ impl Engine {
         }
         self.put_torch_away_for_now(&a);
         // Its execution kept; it comes back as hurt as it left (less what it
-        // heals meanwhile), and where its schedule has it then (it went
-        // there, or was moved).
+        // heals meanwhile), from where its schedule has it (it went there,
+        // through a door or out of sight), its package taking it on from
+        // there (`step_away`).
         if !a.dead {
-            let w = crate::world_state::Wounds::of(&a, self.scripts.real_time);
-            let place = self.place_of_key(key);
-            self.away.insert(r, a.exec.away(place, w, None));
+            let now = self.scripts.real_time;
+            let w = crate::world_state::Wounds::of(&a, now);
+            let mut x = a.exec.away(self.place_of_key(key), w, None, now);
+            if let Some(&(place, pos)) = self.whereabouts.of.get(&r) {
+                (x.place, x.pos) = (Some(place), pos);
+                x.on_arrival = self.whereabouts.placement_heading.get(&r).copied();
+            }
+            if let Some(place) = x.place {
+                self.whereabouts.put(r, place, x.pos);
+            }
+            self.away.insert(r, x);
         }
         log::debug!("{r} despawned from {key:?}");
     }

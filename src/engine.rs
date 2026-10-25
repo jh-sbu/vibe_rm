@@ -309,8 +309,9 @@ pub struct Engine {
     /// Cell each spawned actor reference belongs to.
     pub actor_cells: HashMap<FormId, CellKey>,
     /// Living actors that unloaded: their executions, until they load again
-    /// (`plans/ai-actor-execution.md`; for now only their wounds carry back).
+    /// (`plans/ai-actor-execution.md`), and the stepper advancing them.
     pub away: HashMap<FormId, crate::ai::exec::ActorExec>,
+    pub(crate) away_steps: crate::ai::away::Stepper,
 }
 
 #[derive(Default)]
@@ -540,6 +541,7 @@ impl Engine {
             ai_off: Default::default(),
             whereabouts: Default::default(),
             away: HashMap::new(),
+            away_steps: Default::default(),
             actor_cells: HashMap::new(),
         }
     }
@@ -903,6 +905,8 @@ impl Engine {
         }
         self.music.voice = None;
         let keys: Vec<CellKey> = self.cells.keys().copied().collect();
+        // The cells left behind keep their actors going for a while.
+        self.away_steps.buffered = keys.iter().filter_map(|&k| self.place_of_key(k)).collect();
         for k in keys {
             self.remember_actors(k);
             self.unload_loose(k);
@@ -1471,6 +1475,7 @@ impl Engine {
             if self.scripts.faction_changes.contains_key(&d.ref_id) {
                 stats.factions = self.member_factions(d.ref_id);
             }
+            rt.exec.npc = d.npc;
             if let Some(x) = self.away.get(&d.ref_id) {
                 rt.exec.take_back(x, resume.is_some());
             }
@@ -2661,6 +2666,7 @@ impl Engine {
         self.update_loose();
         self.update_traps();
         self.update_whereabouts(world_dt);
+        self.update_away();
         self.update_nav_obstacles();
         self.update_actors(world_dt);
         self.update_triggers(world_dt);

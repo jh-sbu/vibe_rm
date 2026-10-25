@@ -197,10 +197,7 @@ impl Engine {
             };
         }
         if let Some((place, _)) = self.whereabouts.of.get(&r) {
-            return match *place {
-                crate::ai::schedule::Place::Interior(c) => self.cell_location(c),
-                crate::ai::schedule::Place::Exterior(w, g) => self.grid_location(w, g),
-            };
+            return self.place_location(*place);
         }
         if let Some(place) = self
             .world_state
@@ -209,12 +206,17 @@ impl Engine {
             .map(|m| m.place)
             .or_else(|| self.created(r).and_then(|c| c.place))
         {
-            return match place {
-                crate::ai::schedule::Place::Interior(c) => self.cell_location(c),
-                crate::ai::schedule::Place::Exterior(w, g) => self.grid_location(w, g),
-            };
+            return self.place_location(place);
         }
         self.editor_location(r)
+    }
+
+    /// The location of a place's cell.
+    pub fn place_location(&self, place: crate::ai::schedule::Place) -> Option<FormId> {
+        match place {
+            crate::ai::schedule::Place::Interior(c) => self.cell_location(c),
+            crate::ai::schedule::Place::Exterior(w, g) => self.grid_location(w, g),
+        }
     }
 
     /// The locations of the cells that are loaded now (an exterior cell's
