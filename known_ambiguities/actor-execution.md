@@ -228,19 +228,22 @@ timers with loaded actors.
   its scene until then. Timers run regardless, as before.
 - **The old policy** (package actions waiting for their actors to load,
   whose scene packages still moved them away) is kept behind
-  `VRM_SCENES_WAIT_FOR_LOADED` until a test-mod case settles it.
+  `VRM_SCENES_WAIT_FOR_LOADED` until `test-mod autotest15` settles it.
 
 ## Open questions
 
-- **Scenes with actors away.** Does a scene's package action finish while
-  its actor is unloaded (and its phase end), or does the scene wait for the
-  actor to load? Does an unloaded speaker's line hold its phase, get
-  skipped, or play on unheard?
+- **Scenes with actors away** (`test-mod autotest15`, not run yet). Does a
+  scene's package action finish while its actor is unloaded (and its phase
+  end), or does the scene wait for the actor to load? Does a scene start at
+  all with its actor unloaded? Does an unloaded speaker's line hold its
+  phase, get skipped, or play on unheard (not covered: the test writers
+  don't build dialogue yet)?
 
 - **What decides the jump.** Every actor moved had its target within 4,100
   and 830 of height; every one left had it 4,950 or more away and 1,900 or
   more above or below. Distance, height or something else (a path, the
-  cells between) may decide. autotest13's Scheduled, 600 to 1,000 from home,
+  cells between) may decide. autotest15's Beyond (8,843 away, 139 below)
+  separates distance from height. autotest13's Scheduled, 600 to 1,000 from home,
   didn't jump home in the 5 s after its schedule changed, without
   `EvaluatePackage`: whether the jump needs it, or only takes longer, is
   open.

@@ -275,7 +275,7 @@ fn k_of(label: &str) -> usize {
 /// `Where(Int n, ObjectReference home, ObjectReference far)`: our actor
 /// `n`'s distance from its far marker (and height), from home, its cell,
 /// 3D and package, or that the game has none.
-fn where_fn() -> FunctionBuilder {
+pub(super) fn where_fn() -> FunctionBuilder {
     let mut c = Code::new("String");
     let n = c.param("n", "Int");
     let home = c.param("home", "ObjectReference");
@@ -358,7 +358,7 @@ fn set_off(c: &mut Code, n: u32) {
 }
 
 /// The seconds since `T0`.
-fn since(c: &mut Code, t0: &str) -> Arg {
+pub(super) fn since(c: &mut Code, t0: &str) -> Arg {
     let t = now(c);
     c.calc(op::FSUB, "Float", t, id(t0))
 }
@@ -369,7 +369,7 @@ fn hours(c: &mut Code) -> Arg {
     c.calc(op::FMUL, "Float", game, 24.0f32.into())
 }
 
-fn move_player(c: &mut Code, to: Arg) {
+pub(super) fn move_player(c: &mut Code, to: Arg) {
     c.method(
         "ObjectReference",
         auto_var("Player"),

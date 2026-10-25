@@ -41,6 +41,7 @@ Scene : Form
     None Stop()
     None ForceStart()
     Bool IsPlaying()
+    Bool IsActionComplete(Int aiActionID)
 Keyword : Form
     None SendStoryEvent(Location akLoc, ObjectReference akRef1, ObjectReference akRef2, Int aiValue1, Int aiValue2)
     Bool SendStoryEventAndWait(Location akLoc, ObjectReference akRef1, ObjectReference akRef2, Int aiValue1, Int aiValue2)

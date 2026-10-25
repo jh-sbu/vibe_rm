@@ -388,6 +388,57 @@ pub fn scene(
     rec.field(b"VNAM", &[0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0])
 }
 
+/// A scene (`SCEN`) of `quest` in two phases, with one actor (a reference
+/// alias of the quest, no behaviour flags): in the first the actor runs
+/// `package` (action 1), in the second a timer of `seconds` runs (action
+/// 2). Laid out as the game's scenes are (MS08SaadiaAmbushScene's package
+/// action).
+pub fn package_scene(
+    object_id: u32,
+    edid: &str,
+    quest: FormId,
+    alias: u32,
+    package: FormId,
+    seconds: f32,
+) -> RecordBuilder {
+    let mut rec = RecordBuilder::new(b"SCEN", own(object_id))
+        .zstring(b"EDID", edid)
+        .u32(b"FNAM", 0);
+    for _ in 0..2 {
+        rec = rec
+            .field(b"HNAM", &[])
+            .zstring(b"NAM0", "")
+            .field(b"NEXT", &[])
+            .field(b"NEXT", &[])
+            .u32(b"WNAM", 200)
+            .field(b"HNAM", &[]);
+    }
+    rec.u32(b"ALID", alias)
+        .u32(b"LNAM", 0)
+        .u32(b"DNAM", 0)
+        // The package: type 1, its actor, index 1, phase 0.
+        .field(b"ANAM", &1u16.to_le_bytes())
+        .zstring(b"NAM0", "")
+        .u32(b"ALID", alias)
+        .u32(b"INAM", 1)
+        .u32(b"SNAM", 0)
+        .u32(b"ENAM", 0)
+        .form(b"PNAM", package)
+        .field(b"ANAM", &[])
+        // The timer: type 2, index 2, phase 1, seconds.
+        .field(b"ANAM", &2u16.to_le_bytes())
+        .zstring(b"NAM0", "")
+        .u32(b"ALID", alias)
+        .u32(b"INAM", 2)
+        .u32(b"SNAM", 1)
+        .u32(b"ENAM", 1)
+        .f32(b"SNAM", seconds)
+        .field(b"ANAM", &[])
+        .form(b"PNAM", quest)
+        .u32(b"INAM", 3)
+        .field(b"VNAM", &[0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0])
+}
+
 pub fn word_of_power(object_id: u32, edid: &str) -> RecordBuilder {
     RecordBuilder::new(b"WOOP", own(object_id))
         .zstring(b"EDID", edid)

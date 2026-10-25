@@ -296,8 +296,9 @@ packages that never finish loaded, still wait. An actor the world hadn't
 touched gets an execution from where its schedule has it as a scene gives
 it a package (`Engine::run_away`). Dialogue actions wait for their speaker
 to load, as before. `scene::AwayActors` is the switch: `Run` by default,
-`Wait` (the old policy, `VRM_SCENES_WAIT_FOR_LOADED`) until a test-mod
-case settles it. The choices are in `known_ambiguities/actor-execution.md`
+`Wait` (the old policy, `VRM_SCENES_WAIT_FOR_LOADED`) until `test-mod
+autotest15` (built, not run yet: scenes started with their actors loaded,
+unloaded, out of jumping range and in the cell just left) settles it. The choices are in `known_ambiguities/actor-execution.md`
 ("Scenes").
 
 - Today a scene waits for its actors to load. Once away actors have runs,
