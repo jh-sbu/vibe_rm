@@ -2,8 +2,9 @@
 
 For `plans/ai-actor-execution.md`. Public sources and what can be inferred
 from them are under Sources at the end. Where unloaded actors appear as
-their cell loads is in `unloaded-placement.md`. The readings are `test-mod autotest13`'s
-(run 2026-10-25, once); its module doc has the numbers.
+their cell loads is in `unloaded-placement.md`. The readings are
+`test-mod autotest13`'s and `autotest14`'s (each run 2026-10-25, once);
+their module docs have the numbers.
 
 ## What is known
 
@@ -15,46 +16,64 @@ their cell loads is in `unloaded-placement.md`. The readings are `test-mod autot
   logging `OnPackageStart` then `OnPackageEnd` (autotest13). That could be a
   placement pass (CommonLibSSE names an `initPackageLocationsQueue`) rather
   than walking.
-- **Unloaded actors don't walk mid-session.** In an exterior that isn't
-  loaded or buffered, an actor sent 4,500 to 7,800 away in the same
-  worldspace stays put, walking or running, for 3.5 minutes and past two
-  hours on the clock. A target in another cell (through a load door, either way) moves it
-  there at once, exactly onto the target, with `OnLocationChange`; its
-  `OnPackageEnd` follows 2.6 s later.
+- **Unloaded actors aren't walked: they jump or stay.** Outside the loaded
+  and buffered cells, within 2 s of a package starting (with
+  `EvaluatePackage`), an actor is put 40 short of a target in the same
+  space 2,700 to 4,100 away, in its own cell or the next, in one step;
+  `OnPackageEnd` follows 2.5 s after `OnPackageStart`. Actors whose target
+  was 4,950 to 8,200 away stayed put for minutes, through fast travel and as
+  their cell loaded. A target in another space (through a load door,
+  either way) moves the actor exactly onto it, with `OnLocationChange`.
+- **Loading a cell doesn't move them on.** Actors are found where the jump
+  left them (dropped to the ground), or at home if they stayed.
+- **Fast travel** (`Game.FastTravel` to an exterior marker: 0.6 s, the clock
+  3.2 hours on) moved no unloaded actor.
+- **Waiting** two hours put a loaded actor that was 3,230 from its target
+  exactly on it (1 off), with `OnPackageEnd`. Unloaded actors already at
+  their targets stayed.
+- **Loading a save** left unloaded actors where they were when it was made
+  (40 short of targets they had jumped to), with no package events.
 - **Packages are re-read while unloaded** within about 3 s of a condition
   changing, `EvaluatePackage` or not, and at once when the clock is set or
   an hour in a schedule passes. `OnPackageChange` (old package) then
   `OnPackageStart` (new) fire 0.08 s apart.
 - **Buffered cells keep running.** An actor in the exterior the player left
-  for an interior keeps its 3D and walks on at loaded speed. An actor in the
-  interior the player left loses its 3D but walks on at about loaded speed,
-  and ends exactly on its target.
+  for an interior keeps its 3D and walks on at loaded speed. Interiors the
+  player left behaved two ways: in autotest13 the palace's actors lost their
+  3D at once but walked on and ended exactly on their target; in autotest14
+  they kept their 3D for 90 s, until the player went to another exterior.
 - **Damage away:** brought to nothing, an unloaded actor dies at once, with
   `OnDeath` then. A hurt one doesn't heal (NPCs' `HealRate` is 0).
 - **Timed effects away:** a 90 s effect on an actor was gone 6 s after its
   cell unloaded, and racial abilities are applied again (with
   `OnMagicEffectApply`) each time an actor loads. So active effects appear to
-  be dropped on unload rather than paused or run out.
+  be dropped on unload rather than paused or run out. While the actor kept
+  its 3D in a buffered cell, the effect stayed (autotest14).
 - **Event order:** loading logs `OnCellAttach`, `OnMagicEffectApply` for
   abilities, then `OnLoad`. Unloading logs `OnCellDetach`, then `OnUnload`
-  0.2 s later. A buffered exterior's actors get `OnCellDetach` but keep their
+  0.2 s later. A buffered cell's actors get `OnCellDetach` but keep their
   3D, with no `OnUnload` until the player goes elsewhere.
 
 ## Open questions
 
-- **Frozen walkers when their cell loads.** Is an actor that was sent off
-  while frozen found at home, on its target (40 short, as at save load),
-  or partway, when the player arrives? autotest13 never visited the long
-  walkers' cell.
-- **Save and reload mid-journey.** Does loading a save put frozen walkers on
-  their targets, as it does actors new to the save?
-- **Fast travel, waiting and sleeping.** Do they move frozen walkers?
-  autotest13's `Game.FastTravel` to an interior entry marker did nothing; a
-  map marker may be needed.
+- **What decides the jump.** Every actor moved had its target within 4,100
+  and 830 of height; every one left had it 4,950 or more away and 1,900 or
+  more above or below. Distance, height or something else (a path, the
+  cells between) may decide. autotest13's Scheduled, 600 to 1,000 from home,
+  didn't jump home in the 5 s after its schedule changed, without
+  `EvaluatePackage`: whether the jump needs it, or only takes longer, is
+  open.
+- **What reaches far targets.** An actor whose target is out of jumping
+  range: does anything ever move it (game hours, waiting, a later
+  re-evaluation), or does it wait for the player?
+- **Waiting and sleeping for unloaded actors** out of jumping range, and
+  sleeping at all: not tested.
 - **When effects end.** Are active effects dropped at the moment of
-  unloading, or a few seconds later? Only one reading (6 s after) exists.
-- **The buffer's reach.** How many cells, and for how long, keep running
-  after the player leaves: one exterior and one interior did here.
+  unloading, or a few seconds later? Only one reading (6 s after) exists;
+  autotest14's actor kept its 3D throughout.
+- **The buffer's reach.** Which cells keep running, and keep their 3D,
+  after the player leaves, and for how long: one exterior and one interior
+  did, the interior's actors with 3D once and without once.
 - **A dead actor's package events.** Dead KilledAway logged an
   `OnPackageStart` minutes after dying.
 - **Not covered:**

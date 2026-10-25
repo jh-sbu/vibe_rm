@@ -67,12 +67,10 @@ for them.
 ### 1. Research note and test mod design
 
 **Status (2026-10-25):** done. The research (the Sources section of
-`known_ambiguities/actor-execution.md`) and `test-mod autotest13` are
-built, and autotest13 has run once. Its readings are in its module doc and in `known_ambiguities/actor-execution.md`,
-which now lists what the run settled and what it left open. Next: a second
-test mod for where a frozen walker is when its cell loads, save / reload,
-fast travel to a map marker, waiting and sleeping. Steps 5 and 6 below
-follow the readings.
+`known_ambiguities/actor-execution.md`), `test-mod autotest13` and
+`autotest14` are built, and each has run once. Their readings are in their
+module docs and in `known_ambiguities/actor-execution.md`, which lists what
+the runs settled and what they left open. Steps 5 and 6 below follow them.
 
 - Write up the public sources (now the Sources section of
   `known_ambiguities/actor-execution.md`). It should cover what
@@ -155,12 +153,15 @@ follow the readings.
 - An away stepper runs every frame on a time budget, the way
   `refresh_whereabouts_step` already spreads its work. For each actor it
   evaluates packages on the package cadence and advances the procedure:
-  - Travel depends on where the actor is (autotest13). In a buffered cell
-    (the exterior or interior the player just left) it moves toward its
-    target at about loaded speed. Elsewhere it stays put while the target is
-    in its own space, and is moved straight onto a target in another space
-    (with `OnLocationChange`, `OnPackageEnd` 2.6 s later). Where a frozen
-    actor ends up when its cell loads is still open.
+  - Travel depends on where the actor is (autotest13, autotest14). In a
+    buffered cell (the exterior or interior the player just left) it moves
+    toward its target at about loaded speed. Elsewhere it isn't walked:
+    within seconds of the package starting it is put 40 short of a target
+    in the same space within range (4,100 moved, 4,950 didn't; what decides
+    is open), or stays where it is, and is put exactly onto a target in
+    another space (with `OnLocationChange`). `OnPackageEnd` follows 2.5 s
+    later. Loading the cell, fast travel and loading a save don't move it
+    further.
   - Sandbox and Sit stay where they are, and pick furniture when the actor
     attaches.
   - Follow and Escort track their target's away position.
@@ -185,8 +186,10 @@ follow the readings.
   and the elapsed real time only where the current code already uses real time
   (wound regeneration, `Wounds::health_at`). Write down which clock each piece
   of state follows.
-- Waiting, sleeping and fast travel call `advance_away(game_hours)` on every
-  actor, loaded ones included, instead of `jump_to_schedules`' respawn. Keep
+- Waiting and sleeping call `advance_away(game_hours)` on every actor,
+  loaded ones included, instead of `jump_to_schedules`' respawn. autotest14:
+  a two-hour wait put a loaded walker exactly on its target, and moved no
+  unloaded actor. Fast travel moved no unloaded actor either. Keep
   respawning as the fallback for loaded actors whose run can't be advanced.
   `heal_away` moves into this step.
 - Continuity rules for wounds, regeneration, bleedout (essential actors

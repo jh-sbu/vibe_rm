@@ -182,6 +182,9 @@ Game
     global None UnlockWord(WordOfPower akWord)
     global None AdvanceSkill(String asSkillName, Float afMagnitude)
     global None FastTravel(ObjectReference akDestination)
+    global None EnableFastTravel(Bool abEnable)
+    global Bool IsFastTravelControlsEnabled()
+    global Bool IsFastTravelEnabled()
 Debug
     global None MessageBox(String asMessageBoxText)
     global None Notification(String asNotificationText)

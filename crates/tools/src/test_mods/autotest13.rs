@@ -138,11 +138,12 @@
 //!   KilledAway logged an `OnPackageStart` at the FastTravel page.
 //!
 //! So an actor outside the loaded and buffered cells doesn't walk: its
-//! packages are re-read within seconds and its events fire, but it stays put,
-//! except that a target in another cell moves it there at once. An actor in
-//! a buffered cell keeps walking at about its loaded speed, 3D or not.
-//! Where a frozen walker is when its cell loads, and what fast travel, waiting
-//! and reloading do: `known_ambiguities/actor-execution.md`.
+//! packages are re-read within seconds and its events fire. These long
+//! walkers stayed put, and a target in another cell moved its actor there at
+//! once. autotest14 found that nearer targets (2,700 to 4,100 away, not
+//! 4,950 to 8,200 as here) move an unloaded actor to 40 short of them in one
+//! step. An actor in a buffered cell keeps walking at about its loaded
+//! speed, 3D or not.
 
 use anyhow::{Context, Result};
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, write_plugin};
@@ -957,9 +958,10 @@ fn test_fast_travel() -> FunctionBuilder {
     c.finish(r)
 }
 
-/// The actors' script: each event logged into its own `ResultEvents`.
-fn actor_script() -> Result<ScriptBuilder> {
-    let mut s = ScriptBuilder::new(ACTOR_SCRIPT, "Actor");
+/// The actors' script `name`: each event logged into its own
+/// `ResultEvents`.
+pub(super) fn actor_script(name: &str) -> Result<ScriptBuilder> {
+    let mut s = ScriptBuilder::new(name, "Actor");
     s.variable("ResultEvents", "String", string(""));
     // `Log(String what, String detail)`.
     let mut log = Code::new("None");
@@ -1108,7 +1110,7 @@ fn scripts() -> Result<Vec<(String, Vec<u8>)>> {
         .function("TestReturn", test_return())
         .function("TestSchedule", test_schedule())
         .function("TestFastTravel", test_fast_travel());
-    let actors = actor_script()?;
+    let actors = actor_script(ACTOR_SCRIPT)?;
     Ok(vec![
         (SCRIPT.to_owned(), papyrus::pex::write(&s.build()?)?),
         (
@@ -1227,10 +1229,10 @@ const NOON: [u8; 12] = [0xFF, 0xFF, 0, 12, 0xFF, 0, 0, 0, 0xD0, 0x02, 0, 0];
 
 /// `PKDT` general flag: use the preferred speed.
 const PREFERRED_SPEED: u32 = 1 << 13;
-const WALK: u8 = 0;
+pub(super) const WALK: u8 = 0;
 const RUN: u8 = 2;
 
-fn package(
+pub(super) fn package(
     lo: &LoadOrder,
     object_id: u32,
     edid: &str,
@@ -1573,7 +1575,7 @@ mod tests {
     #[test]
     fn object_ids_fit() {
         let n = ACTOR_LIST.len() as u32;
-        assert!(GLOBALS + GOES <= SPELL);
+        const { assert!(GLOBALS + GOES <= SPELL) };
         assert!(NPCS + n <= PACKAGES);
         assert!(PACKAGES + 2 * n <= HOMES);
         assert!(HOMES + n <= FARS);
