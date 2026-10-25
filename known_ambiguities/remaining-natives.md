@@ -2,7 +2,7 @@
 
 These implementations use public community documentation and existing runtime
 systems. They have not been compared experimentally with Skyrim SE. References
-and source-versus-inference distinctions are in refs/pex-natives/batch*.md.
+and source-versus-inference distinctions are in research/pex-natives/batch*.md.
 
 ## Batch 1
 

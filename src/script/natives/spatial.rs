@@ -1,4 +1,4 @@
-//! Reference spatial queries. Public sources and unresolved details: refs/pex-natives/batch06-spatial.md.
+//! Reference spatial queries. Public sources and unresolved details: research/pex-natives/batch06-spatial.md.
 use crate::engine::Engine;
 use esp::FormId;
 use papyrus::Value;

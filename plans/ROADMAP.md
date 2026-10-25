@@ -20,7 +20,7 @@ game each piece unlocks.
   finders, sun position, `SetPlayerReportCrime`, `ClearPrison`, `SetInChargen`
   (`GAMF`); ingredient learning, `PlayerKnows`, `GameTimeToString`, sound
   categories, `SetINI*`. Scope and tests:
-  `plans/roadmap-natives-sound-leveled-state.md`; notes: `refs/pex-natives/`;
+  `plans/roadmap-natives-sound-leveled-state.md`; notes: `research/pex-natives/`;
   choices: `known_ambiguities/remaining-natives.md`, `formlists.md`, `outfits.md`.
 - Ten of the natives vanilla scripts call most (`vrm-tool pex-natives`):
   quest aliases' Essential / Protected flags; `ActorBase.SetEssential`,

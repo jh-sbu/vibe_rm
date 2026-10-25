@@ -1,4 +1,4 @@
-//! Papyrus math uses degrees at the API boundary. Public references: refs/pex-natives/.
+//! Papyrus math uses degrees at the API boundary. Public references: research/pex-natives/.
 use papyrus::Value;
 
 pub(super) fn call(func: &str, args: &[Value]) -> Option<Value> {

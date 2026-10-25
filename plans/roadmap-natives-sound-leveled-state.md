@@ -25,7 +25,7 @@ upper bounds.
 - Public sources only: the Papyrus Index / community CK wiki pages
   (papyrus.bellcube.dev), local UESP (`scripts/uesp.py`), xEdit definitions and
   `refs/CommonLibSSE-NG` headers. Write one authored note per batch under
-  `refs/pex-natives/batchNN-*.md` (force-added), citing the revision links and
+  `research/pex-natives/batchNN-*.md`, citing the revision links and
   separating what the sources say from inference.
 - Policies the sources leave open go in `known_ambiguities/remaining-natives.md`,
   or in the existing topic file (`outfits.md`, `formlists.md`, `crime.md`...)
@@ -46,7 +46,7 @@ upper bounds.
 
 ### 1. Sound instances: `Sound.Play`, `StopInstance`, `SetInstanceVolume`, `PlayAndWait` (done)
 
-Done in `src/script_sounds.rs`; notes in `refs/pex-natives/sound-batch01-instances.md`.
+Done in `src/script_sounds.rs`; notes in `research/pex-natives/sound-batch01-instances.md`.
 
 Counts: play ≤929 (currently a stub returning 0), stopinstance 63,
 setinstancevolume 5, playandwait 0 (stub).
@@ -79,7 +79,7 @@ setinstancevolume 5, playandwait 0 (stub).
 
 ### 2. Music queue: `MusicType.Add`, `MusicType.Remove` (done)
 
-Done in `src/music.rs` (saved as `MUSQ`); notes in `refs/pex-natives/sound-batch02-music-queue.md`.
+Done in `src/music.rs` (saved as `MUSQ`); notes in `research/pex-natives/sound-batch02-music-queue.md`.
 
 Counts: add 38, remove ≤84.
 
@@ -102,7 +102,7 @@ Counts: add 38, remove ≤84.
 
 ### 3. Leveled lists: `LeveledItem` / `LeveledActor` / `LeveledSpell` `.AddForm`, `.Revert` (done)
 
-Done in `src/leveled.rs` (additions ride in `Globals::leveled`; saved as `LVAD`); notes in `refs/pex-natives/leveled-batch03-addform.md`.
+Done in `src/leveled.rs` (additions ride in `Globals::leveled`; saved as `LVAD`); notes in `research/pex-natives/leveled-batch03-addform.md`.
 
 Counts: addform ≤245, revert ≤8 (shared with `FormList`).
 
@@ -129,7 +129,7 @@ Counts: addform ≤245, revert ≤8 (shared with `FormList`).
 
 ### 4. Reference setters (replacing stubs): `SetOpen`, `SetDestroyed`, `SetNoFavorAllowed`, `SetScale`, `GetHeadingAngle` (done)
 
-Done in `src/ref_state.rs` (saved as `RSCL` / `NOFV`); notes in `refs/pex-natives/ref-batch04-setters.md`. Nothing asks followers for favors yet, so `SetNoFavorAllowed` is only stored.
+Done in `src/ref_state.rs` (saved as `RSCL` / `NOFV`); notes in `research/pex-natives/ref-batch04-setters.md`. Nothing asks followers for favors yet, so `SetNoFavorAllowed` is only stored.
 
 Counts: setopen 146, setnofavorallowed 60, setdestroyed 39, setscale 25,
 getheadingangle 9.
@@ -154,7 +154,7 @@ getheadingangle 9.
 
 ### 5. Reference flags and queries (done)
 
-Done in `src/ref_state.rs`; notes in `refs/pex-natives/ref-batch05-flags-queries.md`.
+Done in `src/ref_state.rs`; notes in `research/pex-natives/ref-batch05-flags-queries.md`.
 
 `IgnoreFriendlyHits` (56) / `IsIgnoringFriendlyHits` (0), `Cell.SetPublic` (13),
 `IsFurnitureInUse` (19) / `IsFurnitureMarkerInUse` (0),
@@ -179,7 +179,7 @@ Done in `src/ref_state.rs`; notes in `refs/pex-natives/ref-batch05-flags-queries
 
 ### 6. Actor state (done)
 
-Done in `src/actor_flags.rs` (saved as `ACST`); notes in `refs/pex-natives/actor-batch06-state.md`.
+Done in `src/actor_flags.rs` (saved as `ACST`); notes in `research/pex-natives/actor-batch06-state.md`.
 
 `SetCriticalStage` (45), `Resurrect` (34), `ResetHealthAndLimbs` (8),
 `UnequipAll` (7), `UnequipItemSlot` (4), `GetSitState` / `GetSleepState`
@@ -206,7 +206,7 @@ Done in `src/actor_flags.rs` (saved as `ACST`); notes in `refs/pex-natives/actor
 
 ### 7. Relationships, factions and followers (done)
 
-Done in `src/actor_flags.rs`, `src/outfits.rs` (base outfits, saved as `BOFT`; favor flag as `FAVR`); notes in `refs/pex-natives/social-batch07-relationships-followers.md`. There is no follower favor mode yet, so `SetDoingFavor` only stores.
+Done in `src/actor_flags.rs`, `src/outfits.rs` (base outfits, saved as `BOFT`; favor flag as `FAVR`); notes in `research/pex-natives/social-batch07-relationships-followers.md`. There is no follower favor mode yet, so `SetDoingFavor` only stores.
 
 `IsCommandedActor` (28), `SetDoingFavor` (41) / `IsDoingFavor` (0),
 `HasFamilyRelationship` (1), `HasParentRelationship` (1), `HasAssociation` (6),
@@ -228,7 +228,7 @@ shared with `Actor.SetOutfit`).
 
 ### 8. Resets and quest instances (done)
 
-Done in `src/resets.rs` (saved as `RSTC` / `QGLB`); notes in `refs/pex-natives/reset-batch08-resets-instances.md`. `Quest.Reset` leaves the quest's script variables alone (no VM helper rebuilds them yet).
+Done in `src/resets.rs` (saved as `RSTC` / `QGLB`); notes in `research/pex-natives/reset-batch08-resets-instances.md`. `Quest.Reset` leaves the quest's script variables alone (no VM helper rebuilds them yet).
 
 `Quest.Reset`, `ObjectReference.Reset`, `Cell.Reset` (≤81 together),
 `Quest.UpdateCurrentInstanceGlobal` (77), `Quest.IsStarting` / `IsStopping` (0).
@@ -253,7 +253,7 @@ Done in `src/resets.rs` (saved as `RSTC` / `QGLB`); notes in `refs/pex-natives/r
 
 ### 9. Game queries and flags (done)
 
-Done in `src/game_queries.rs` (saved as `GAMF`); notes in `refs/pex-natives/game-batch09-queries-flags.md`.
+Done in `src/game_queries.rs` (saved as `GAMF`); notes in `research/pex-natives/game-batch09-queries-flags.md`.
 
 `Game.FindClosestActor`, `FindClosestReferenceOfType`,
 `FindClosestReferenceOfAnyTypeInList`, `FindRandomActor`,
@@ -277,7 +277,7 @@ Done in `src/game_queries.rs` (saved as `GAMF`); notes in `refs/pex-natives/game
 
 ### 10. Knowledge and the uncalled remainder (done)
 
-Done in `src/knowledge.rs`, `src/script_sounds.rs` (sound categories) and `src/audio/mod.rs`; notes in `refs/pex-natives/knowledge-batch10-remainder.md`. Dialogue, music and weather sounds aren't tagged with categories yet.
+Done in `src/knowledge.rs`, `src/script_sounds.rs` (sound categories) and `src/audio/mod.rs`; notes in `research/pex-natives/knowledge-batch10-remainder.md`. Dialogue, music and weather sounds aren't tagged with categories yet.
 
 `Ingredient.LearnEffect` / `LearnNextEffect` / `LearnAllEffects`,
 `Form.PlayerKnows`, `Utility.GameTimeToString`, `Spell.Preload` / `Unload` (5/5),

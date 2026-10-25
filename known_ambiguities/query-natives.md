@@ -1,6 +1,6 @@
 # Record and location query natives
 
-References: refs/pex-natives/. These choices have not been verified in Skyrim SE.
+References: research/pex-natives/. These choices have not been verified in Skyrim SE.
 
 ## unique
 
