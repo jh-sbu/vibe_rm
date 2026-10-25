@@ -30,11 +30,13 @@
 //! harvests, locations, crime memory, controls, voice/regeneration timers,
 //! journal ordering, magic usage histories, camera preferences, crime progression,
 //! delayed activation queues, random streams, player stance/recovery and image
-//! modifiers/script fades, and active magic effects (`AEFF`) and their
-//! tapers (`TAPR`).
-//! Not yet saved: actor
-//! procedure progress, AI progress, objects' behaviour graphs; see
-//! `plans/ROADMAP.md`.
+//! modifiers/script fades, active magic effects (`AEFF`) and their
+//! tapers (`TAPR`), and actors' executions (`AEXC`: package runs, how far
+//! they got with them, where they are and their clocks, for actors away and
+//! loaded alike; their wounds stay in `WRLD`).
+//! Not yet saved: actors' goals set by hand, fights, searches and greetings,
+//! the rest of AI progress (animation, procedures' loaded-only state) and
+//! objects' behaviour graphs; see `plans/ROADMAP.md`.
 //!
 //! Form ids are saved as loaded (their top byte is the load-order index), so a
 //! save only loads with the same plugins in the same order: `HEAD` lists them
@@ -174,7 +176,7 @@ fn get_forms(r: &mut Reader) -> Result<HashSet<FormId>> {
     (0..r.count(4)?).map(|_| r.form()).collect()
 }
 
-fn put_place(w: &mut Writer, p: Place) {
+pub(super) fn put_place(w: &mut Writer, p: Place) {
     match p {
         Place::Interior(c) => {
             w.u8(0);
@@ -189,7 +191,7 @@ fn put_place(w: &mut Writer, p: Place) {
     }
 }
 
-fn get_place(r: &mut Reader) -> Result<Place> {
+pub(super) fn get_place(r: &mut Reader) -> Result<Place> {
     match r.u8()? {
         0 => Ok(Place::Interior(r.form()?)),
         1 => Ok(Place::Exterior(r.form()?, (r.i32()?, r.i32()?))),
@@ -477,8 +479,11 @@ impl Snapshot {
         let ws = &e.world_state;
         let s = &e.scripts;
         let (weapon_usage, favorite_weapon) = s.weapon_usage.saved();
+        let (executions, wounds) = e.saved_executions();
+        let mut continuity = super::continuity::Continuity::capture(e);
+        continuity.executions = executions;
         Snapshot {
-            continuity: super::continuity::Continuity::capture(e),
+            continuity,
             plugins: e
                 .lo
                 .plugins()
@@ -528,7 +533,7 @@ impl Snapshot {
             open_doors: ws.open_doors.clone(),
             actor_open_doors: ws.actor_open_doors.clone(),
             body_poses: ws.body_poses.clone(),
-            wounds: e.away_wounds(),
+            wounds,
             moved: ws.moved.clone(),
             item_charges: ws.item_charges.clone(),
             broken_joints: ws.broken_joints.clone(),
@@ -2124,6 +2129,14 @@ impl Snapshot {
             "save has invalid ward-hit state"
         );
         self.continuity.validate()?;
+        let is_package = |p: FormId| e.lo.get(p).is_some_and(|r| r.tag().0 == *b"PACK");
+        for (actor, x) in &self.continuity.executions {
+            let runs = [x.run, x.suspended].into_iter().flatten().map(|r| r.id);
+            anyhow::ensure!(
+                runs.chain(x.done_once).all(is_package),
+                "save has an execution of {actor} running what isn't a package"
+            );
+        }
         let random_streams = self
             .continuity
             .random_streams

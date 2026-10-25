@@ -69,8 +69,29 @@ Player and actor stealth-point reservoirs, with their remaining regeneration
 delay, are stored in optional `STPT`. Loading replaces the entire reservoir map;
 an older save without the section clears it. Loading also drops cached
 observer-to-player detection values and schedules an immediate fresh observation.
-This persists the engine's reservoir values only: searches, combat targets,
-detection state transitions and AI execution remain outside save state.
+This persists the engine's reservoir values only: searches, combat targets
+and detection state transitions remain outside save state.
+
+Actors' executions (`ai::exec::ActorExec`) are stored in optional `AEXC`, one
+entry per actor with a place or a package run: those away and those loaded,
+the loaded ones as they would be were their cells to unload as the save is
+made (so they attach again where they stood, at the stage they reached, in
+the same furniture when free). An entry keeps the package run and the one a
+scene suspended, the package that gave way, the package index, a sandbox's
+stop and a patrol's point, position, heading and place, the stage, the away
+stepper's state (settled, prompted, pending jump and run end, placement
+heading), both clocks it was last stepped at, its next package reading,
+health, stamina and away bleeding. Wounds stay in `WRLD`, which now lists
+loaded actors' too, and are joined to their executions as the save loads.
+Not kept: the package list and goal (taken again from the records: the
+execution's alias generation never matches the loaded game's, and its goal is
+worked out at its next reading, at once for one that attaches), a goal set by
+hand with the console, fights, searches and greetings (as on unloading), and
+package events not yet delivered. Loading replaces every execution before the
+save's cells attach their actors; runs carry on without package events, as
+autotest14 saw of Skyrim SE. Saves without `AEXC` keep only wounds, and their
+actors are placed by their schedules. This is the engine's own layout; how
+`.ess` saves store AI processes is not established.
 
 Greater Powers' last-use game days are stored by spell form in optional `PWCD`.
 Loading replaces the cooldown map; legacy native saves without `PWCD` clear it.

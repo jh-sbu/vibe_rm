@@ -3,6 +3,8 @@
 //! These policies do not describe Skyrim's .ess representation; see saves.md.
 use super::codec::{Corrupt, Reader, Result, Writer};
 use super::file::SaveFile;
+use crate::ai::exec::{Outcome, PackageRun, SavedExec, Stage};
+use crate::ai::schedule::{Place, PlacementHeading};
 use crate::engine::Engine;
 use esp::FormId;
 use std::collections::HashMap;
@@ -93,6 +95,9 @@ pub(crate) struct Continuity {
     pub music_queue: Vec<FormId>,
     /// Actors whose AI scripts turned off.
     pub ai_off: std::collections::HashSet<FormId>,
+    /// Actors' executions (`AEXC`), away and loaded; legacy saves have none,
+    /// and their actors are placed by their schedules.
+    pub executions: HashMap<FormId, SavedExec>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -130,6 +135,225 @@ fn sorted<K: Ord + Copy, V>(map: &HashMap<K, V>) -> Vec<(K, &V)> {
     entries.sort_by_key(|(k, _)| *k);
     entries
 }
+/// The least an execution takes (`put_exec`), its actor included.
+pub(super) const EXEC_BYTES: usize = 74;
+
+fn put_opt_f64(w: &mut Writer, v: Option<f64>) {
+    w.bool(v.is_some());
+    if let Some(v) = v {
+        w.f64(v);
+    }
+}
+fn get_opt_f64(r: &mut Reader) -> Result<Option<f64>> {
+    Ok(if r.bool()? { Some(r.f64()?) } else { None })
+}
+fn put_run(w: &mut Writer, run: Option<PackageRun>) {
+    w.bool(run.is_some());
+    if let Some(run) = run {
+        w.form(run.id);
+        w.f64(run.started_at);
+        w.bool(run.outcome == Outcome::Completed);
+        w.bool(run.scene);
+        w.u32(run.activations);
+    }
+}
+fn get_run(r: &mut Reader) -> Result<Option<PackageRun>> {
+    if !r.bool()? {
+        return Ok(None);
+    }
+    let id = r.form()?;
+    nonnull(id)?;
+    let started_at = r.f64()?;
+    time(started_at)?;
+    let outcome = if r.bool()? {
+        Outcome::Completed
+    } else {
+        Outcome::Running
+    };
+    Ok(Some(PackageRun {
+        id,
+        started_at,
+        outcome,
+        scene: r.bool()?,
+        activations: r.u32()?,
+    }))
+}
+
+pub(super) fn put_exec(w: &mut Writer, actor: FormId, x: &SavedExec) {
+    w.form(actor);
+    w.opt_form(x.npc);
+    w.bool(x.place.is_some());
+    if let Some(p) = x.place {
+        super::state::put_place(w, p);
+    }
+    w.vec3(x.pos);
+    w.f32(x.heading);
+    match x.stage {
+        None => w.u8(0),
+        Some(Stage::Standing) => w.u8(1),
+        Some(Stage::Walking) => w.u8(2),
+        Some(Stage::Seated { furniture, marker }) => {
+            w.u8(3);
+            w.form(furniture);
+            w.u8(marker);
+        }
+    }
+    w.bool(x.settled);
+    w.bool(x.prompted);
+    put_opt_f64(w, x.ends_at);
+    put_opt_f64(w, x.jump_at);
+    match x.on_arrival {
+        None => w.u8(0),
+        Some(PlacementHeading::Set(h)) => {
+            w.u8(1);
+            w.f32(h);
+        }
+        Some(PlacementHeading::Turn(h)) => {
+            w.u8(2);
+            w.f32(h);
+        }
+    }
+    w.f64(x.stepped_at);
+    w.f64(x.stepped_hours);
+    w.bool(x.eval_slot.is_some());
+    if let Some(slot) = x.eval_slot {
+        w.u64(slot as u64);
+    }
+    w.f32(x.next_eval);
+    w.bool(x.current.is_some());
+    if let Some(i) = x.current {
+        w.u32(i);
+    }
+    w.u32(x.stop.0);
+    put_opt_f64(w, x.stop.1);
+    w.bool(x.patrol.is_some());
+    if let Some((start, i)) = x.patrol {
+        w.form(start);
+        w.u32(i);
+    }
+    put_run(w, x.run);
+    put_run(w, x.suspended);
+    w.opt_form(x.done_once);
+    w.f32(x.health);
+    w.f32(x.stamina);
+    w.bool(x.bleeding.is_some());
+    if let Some(b) = x.bleeding {
+        w.f32(b);
+    }
+}
+
+fn get_exec(r: &mut Reader) -> Result<(FormId, SavedExec)> {
+    let bad = || Corrupt("invalid actor execution".into());
+    let actor = r.form()?;
+    nonnull(actor)?;
+    let npc = r.opt_form()?;
+    let place = if r.bool()? {
+        Some(super::state::get_place(r)?)
+    } else {
+        None
+    };
+    if let Some(Place::Interior(f) | Place::Exterior(f, _)) = place {
+        nonnull(f)?;
+    }
+    // A position is NaN when its package put it anywhere in its cell.
+    let pos = r.vec3()?;
+    let heading = r.f32()?;
+    if pos.to_array().iter().any(|c| c.is_infinite()) || !heading.is_finite() {
+        return Err(bad());
+    }
+    let stage = match r.u8()? {
+        0 => None,
+        1 => Some(Stage::Standing),
+        2 => Some(Stage::Walking),
+        3 => {
+            let furniture = r.form()?;
+            nonnull(furniture)?;
+            Some(Stage::Seated {
+                furniture,
+                marker: r.u8()?,
+            })
+        }
+        _ => return Err(bad()),
+    };
+    let (settled, prompted) = (r.bool()?, r.bool()?);
+    let (ends_at, jump_at) = (get_opt_f64(r)?, get_opt_f64(r)?);
+    let on_arrival = match r.u8()? {
+        0 => None,
+        1 => Some(PlacementHeading::Set(r.f32()?)),
+        2 => Some(PlacementHeading::Turn(r.f32()?)),
+        _ => return Err(bad()),
+    };
+    if on_arrival
+        .is_some_and(|(PlacementHeading::Set(h) | PlacementHeading::Turn(h))| !h.is_finite())
+    {
+        return Err(bad());
+    }
+    let (stepped_at, stepped_hours) = (r.f64()?, r.f64()?);
+    for t in [Some(stepped_at), Some(stepped_hours), ends_at, jump_at]
+        .into_iter()
+        .flatten()
+    {
+        time(t)?;
+    }
+    let eval_slot = if r.bool()? {
+        Some(r.u64()? as i64)
+    } else {
+        None
+    };
+    let next_eval = r.f32()?;
+    let current = if r.bool()? { Some(r.u32()?) } else { None };
+    let stop = (r.u32()?, get_opt_f64(r)?);
+    if let Some(t) = stop.1 {
+        time(t)?;
+    }
+    let patrol = if r.bool()? {
+        let start = r.form()?;
+        nonnull(start)?;
+        Some((start, r.u32()?))
+    } else {
+        None
+    };
+    let (run, suspended) = (get_run(r)?, get_run(r)?);
+    let done_once = r.opt_form()?;
+    let (health, stamina) = (r.f32()?, r.f32()?);
+    let bleeding = if r.bool()? { Some(r.f32()?) } else { None };
+    let finite = next_eval.is_finite()
+        && health.is_finite()
+        && stamina.is_finite()
+        && bleeding.is_none_or(|b| b.is_finite() && b >= 0.0);
+    if !finite {
+        return Err(bad());
+    }
+    Ok((
+        actor,
+        SavedExec {
+            npc,
+            place,
+            pos,
+            heading,
+            stage,
+            settled,
+            prompted,
+            ends_at,
+            jump_at,
+            on_arrival,
+            stepped_at,
+            stepped_hours,
+            eval_slot,
+            next_eval,
+            current,
+            stop,
+            patrol,
+            run,
+            suspended,
+            done_once,
+            health,
+            stamina,
+            bleeding,
+        },
+    ))
+}
+
 /// The least an active effect takes (`put_effect`).
 const EFFECT_BYTES: usize = 54;
 
@@ -319,6 +543,8 @@ impl Continuity {
             outfits: e.outfits.set.clone(),
             music_queue: e.music.queue.script_entries(),
             ai_off: e.ai_off.clone(),
+            // Taken with the wounds they go with (`Snapshot::capture`).
+            executions: HashMap::new(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -750,6 +976,12 @@ impl Continuity {
             w.form(id);
         }
         file.add(b"AIOF", w.0);
+        let mut w = Writer::default();
+        w.len(self.executions.len());
+        for (actor, x) in sorted(&self.executions) {
+            put_exec(&mut w, actor, x);
+        }
+        file.add(b"AEXC", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
@@ -939,6 +1171,15 @@ impl Continuity {
                 let id = r.form()?;
                 ordered(&mut previous, id)?;
                 s.ai_off.insert(id);
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"AEXC")? {
+            let mut previous = None;
+            for _ in 0..r.count(EXEC_BYTES)? {
+                let (actor, x) = get_exec(&mut r)?;
+                ordered(&mut previous, actor)?;
+                s.executions.insert(actor, x);
             }
             r.finish()?;
         }
@@ -1669,5 +1910,7 @@ impl Continuity {
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);
         e.ai_off = self.ai_off;
+        // Before the save's cells load and attach their actors.
+        e.restore_executions(self.executions);
     }
 }

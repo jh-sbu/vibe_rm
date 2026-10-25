@@ -3526,7 +3526,11 @@ impl Engine {
             } else {
                 // A force greeter setting off to the player (or giving up) stops
                 // what it is doing.
-                let changed = a.exec.goal.map(|g| g.behaviour) != goal.map(|g| g.behaviour);
+                // One without a goal yet (back from a save) has nothing to stop.
+                let changed = a
+                    .exec
+                    .goal
+                    .is_some_and(|g| Some(g.behaviour) != goal.map(|g| g.behaviour));
                 a.exec.goal = goal;
                 a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
                 if changed {

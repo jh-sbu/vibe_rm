@@ -305,6 +305,21 @@ are in `known_ambiguities/actor-execution.md` ("Away", "Scenes").
 
 ### 8. Saves
 
+**Status (2026-10-25):** done. `AEXC` (`save::continuity`) keeps
+`ActorExec::saved` (`SavedExec`) for every execution with a place or a run:
+away ones, and loaded ones taken as their cells would unload
+(`Engine::saved_executions`, sharing `remember_actors`' rule), so `WRLD`'s
+wounds now list loaded actors too. `continuity.apply` puts them back over
+`WRLD`'s wounds (`Engine::restore_executions`), before the spot's cells load,
+with `whereabouts` pointing at them. Package lists and goals aren't saved:
+the alias generation never matches after a load, so away ones take their
+packages again; one attaching takes its goal again at once
+(`take_back`), and a reading that gives an actor without a goal one no longer
+interrupts it. Not saved: a console goal (`pinned`), fights, searches,
+greetings, undelivered `run_events`. Validated on read (finite, non-negative
+clocks, non-null forms) and on apply (runs name `PACK` records). Tests:
+`save::tests::execution_payload`, `ai::exec`'s `a_save_*`.
+
 - New optional section `AEXC`: every `ActorExec` in `away` plus loaded actors'
   `exec`. It holds the run, procedure stage, position and place, both
   timestamps and away bleeding (the processing tier is derived: step 6). Loading installs it before cells attach

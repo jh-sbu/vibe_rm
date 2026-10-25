@@ -109,9 +109,10 @@ as the save loaded and changed at Go1). The rest is our choice:
 - **Away actors' runs** start, change and end as loaded actors' do, with
   the same events and fragments ("Away" below). `GetCurrentPackage` on an
   away actor answers its run; on an actor the world hasn't touched, the
-  package its schedule gives it. Actors loaded from a save start their runs
-  afresh (`OnPackageStart`) until saves keep them (step 8), where
-  autotest14's reloaded actors logged nothing.
+  package its schedule gives it. Saves keep runs (`AEXC`, step 8): actors
+  loaded from a save carry on with theirs without events, as autotest14's
+  reloaded actors logged nothing. Saves made before `AEXC` start them
+  afresh (`OnPackageStart`).
 
 ## Attaching: what we chose
 
@@ -137,8 +138,12 @@ move them on); the rest is our choice:
   far off for their schedule, and actors a script moved while away. Those
   despawned are where their schedule has them; those moved, where the move
   put them; either way their package takes them on from there.
-- **Saves don't keep stages** (step 8): actors loaded from a save are
-  placed by their schedules.
+- **Saves keep stages** (`AEXC`, step 8): an actor loaded as the save was
+  made is saved as though its cell unloaded then, and attaches as it was
+  when the save loads, its goal worked out again at once from its package.
+  Whether the game seats a reloaded actor back in its furniture is
+  untested. Actors in saves made before `AEXC` are placed by their
+  schedules.
 
 ## Away: what we chose
 

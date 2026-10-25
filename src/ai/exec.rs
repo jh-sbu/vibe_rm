@@ -321,6 +321,10 @@ impl ActorExec {
             self.goal = away.goal;
             self.stop = away.stop;
             self.patrol = away.patrol;
+            // Back from a save, which keeps no goal: worked out again at once.
+            if away.goal.is_none() {
+                self.next_eval = 0.0;
+            }
         }
     }
 
@@ -331,7 +335,8 @@ impl ActorExec {
             .filter(|_| self.place.is_some() && self.place == here)
     }
 
-    /// Only wounds: all that saves keep yet of an actor away.
+    /// Only wounds: all that saves without executions (`AEXC`) keep of an
+    /// actor away.
     pub(crate) fn wounded(wounds: Wounds) -> Self {
         ActorExec {
             health: wounds.health,
@@ -339,6 +344,106 @@ impl ActorExec {
             ..Default::default()
         }
     }
+
+    /// What saves keep of it (`AEXC`).
+    pub(crate) fn saved(&self) -> SavedExec {
+        SavedExec {
+            npc: Some(self.npc).filter(|n| !n.is_null()),
+            place: self.place,
+            pos: self.pos,
+            heading: self.heading,
+            stage: self.stage,
+            settled: self.settled,
+            prompted: self.prompted,
+            ends_at: self.ends_at,
+            jump_at: self.jump_at,
+            on_arrival: self.on_arrival,
+            stepped_at: self.stepped_at,
+            stepped_hours: self.stepped_hours,
+            eval_slot: self.eval_slot,
+            next_eval: self.next_eval,
+            current: self.current.map(|i| i as u32),
+            stop: (self.stop.index as u32, self.stop.arrived),
+            patrol: self.patrol.map(|(start, i)| (start, i as u32)),
+            run: self.run,
+            suspended: self.suspended,
+            done_once: self.done_once,
+            health: self.health,
+            stamina: self.stamina,
+            bleeding: self.bleeding,
+        }
+    }
+
+    /// An execution back from a save, `wounds` as hurt as the save has it
+    /// (`WRLD`). Its packages are taken again as it is next stepped or loads
+    /// (its alias generation is none the scripts have); its goal is worked out
+    /// again from its package.
+    pub(crate) fn from_saved(s: SavedExec, wounds: Option<Wounds>) -> Self {
+        ActorExec {
+            npc: s.npc.unwrap_or(FormId::NULL),
+            place: s.place,
+            pos: s.pos,
+            heading: s.heading,
+            stage: s.stage,
+            settled: s.settled,
+            prompted: s.prompted,
+            ends_at: s.ends_at,
+            jump_at: s.jump_at,
+            on_arrival: s.on_arrival,
+            stepped_at: s.stepped_at,
+            stepped_hours: s.stepped_hours,
+            eval_slot: s.eval_slot,
+            next_eval: s.next_eval,
+            current: s.current.map(|i| i as usize),
+            stop: StopProgress {
+                index: s.stop.0 as usize,
+                arrived: s.stop.1,
+            },
+            patrol: s.patrol.map(|(start, i)| (start, i as usize)),
+            run: s.run,
+            suspended: s.suspended,
+            done_once: s.done_once,
+            health: s.health,
+            stamina: s.stamina,
+            wounds,
+            bleeding: s.bleeding,
+            alias_gen: 0,
+            ..Default::default()
+        }
+    }
+}
+
+/// What saves keep of an actor's execution (`AEXC`): its runs, how far it
+/// got with them, where it is and its clocks. Not kept: its package list and
+/// goal (taken again from its records), a goal set by hand (console
+/// `travel`), fights, searches and greetings (it attaches without them), and
+/// package events its scripts hadn't heard yet. Wounds are `WRLD`'s.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SavedExec {
+    pub npc: Option<FormId>,
+    pub place: Option<Place>,
+    pub pos: Vec3,
+    pub heading: f32,
+    pub stage: Option<Stage>,
+    pub settled: bool,
+    pub prompted: bool,
+    pub ends_at: Option<f64>,
+    pub jump_at: Option<f64>,
+    pub on_arrival: Option<super::schedule::PlacementHeading>,
+    pub stepped_at: f64,
+    pub stepped_hours: f64,
+    pub eval_slot: Option<i64>,
+    pub next_eval: f32,
+    pub current: Option<u32>,
+    /// A multi-location sandbox's stop, and when it arrived there.
+    pub stop: (u32, Option<f64>),
+    pub patrol: Option<(FormId, u32)>,
+    pub run: Option<PackageRun>,
+    pub suspended: Option<PackageRun>,
+    pub done_once: Option<FormId>,
+    pub health: f32,
+    pub stamina: f32,
+    pub bleeding: Option<f32>,
 }
 
 impl Engine {
@@ -914,6 +1019,93 @@ pub(crate) mod tests {
         assert_eq!(x.place, None);
         assert!(x.packages.is_empty());
         assert_eq!(e.returning_health(ACTOR, 80.0), 30.0);
+    }
+
+    /// Save `e` and load the save back into it, `without` its sections.
+    fn reload(e: &mut Engine, without: &[&[u8; 4]]) {
+        use crate::save::state::Snapshot;
+        let mut file = Snapshot::capture(e).write();
+        file.sections.retain(|(tag, _)| !without.contains(&tag));
+        // What happens meanwhile is undone by the load.
+        e.unload_all();
+        e.away.get_mut(&ACTOR).unwrap().pos = Vec3::ZERO;
+        Snapshot::read(&file).unwrap().apply(e).unwrap();
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_save_keeps_a_loaded_actors_execution_to_attach_as_it_was() {
+        let (_f, mut e) = fixture();
+        travelling(&mut e);
+        e.actor_mut(ACTOR).unwrap().fresh = false;
+        e.actor_mut(ACTOR).unwrap().exec.npc = BASE;
+        reload(&mut e, &[]);
+        let x = &e.away[&ACTOR];
+        let here = Place::Interior(CELL);
+        assert_eq!(x.place, Some(here));
+        assert_eq!((x.pos, x.heading), (Vec3::new(10.0, 20.0, 30.0), 1.25));
+        assert_eq!(x.resumes_in(Some(here)), Some(Stage::Standing));
+        let run = x.run.expect("its run");
+        assert_eq!((run.id, run.started_at), (PACKAGE, 2.0));
+        assert_eq!(x.current, Some(0));
+        assert_eq!(x.npc, BASE);
+        // Its packages are taken again; its goal is worked out again.
+        assert!(x.packages.is_empty() && x.goal.is_none());
+        assert_ne!(x.alias_gen, e.scripts.alias_gen);
+        // As hurt as it was (`WRLD`).
+        assert_eq!(x.wounds.map(|w| (w.health, w.max)), Some((30.0, 80.0)));
+        assert_eq!(
+            e.whereabouts.of[&ACTOR],
+            (here, Vec3::new(10.0, 20.0, 30.0))
+        );
+        assert_eq!(e.running_package(ACTOR), Some(PACKAGE));
+        // Taking it back as it loads, it carries on with the same run.
+        let mut a = exec();
+        a.packages = vec![Package::bare(PACKAGE, Behaviour::Travel)];
+        a.take_back(x, true);
+        assert_eq!((a.current, a.run), (Some(0), x.run));
+        assert_eq!(a.next_eval, 0.0);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_save_keeps_an_away_actors_journey() {
+        let (_f, mut e) = fixture();
+        travelling(&mut e);
+        e.unload_all();
+        let x = e.away.get_mut(&ACTOR).unwrap();
+        x.stage = None;
+        x.settled = false;
+        x.jump_at = Some(40.0);
+        x.bleeding = Some(3.0);
+        x.eval_slot = Some(5);
+        let before = x.saved();
+        reload(&mut e, &[]);
+        assert_eq!(e.away[&ACTOR].saved(), before);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_save_without_executions_falls_back_to_schedules() {
+        let (_f, mut e) = fixture();
+        travelling(&mut e);
+        e.actor_mut(ACTOR).unwrap().fresh = false;
+        reload(&mut e, &[b"AEXC"]);
+        let x = &e.away[&ACTOR];
+        assert_eq!((x.place, x.run, x.stage), (None, None, None));
+        assert_eq!(x.wounds.map(|w| w.health), Some(30.0));
+        // Well actors loaded as it was saved leave nothing.
+        let (_f, mut e) = fixture();
+        travelling(&mut e);
+        e.actor_mut(ACTOR).unwrap().exec.health = 80.0;
+        let mut file = crate::save::state::Snapshot::capture(&e).write();
+        file.sections.retain(|(tag, _)| tag != b"AEXC");
+        e.unload_all();
+        crate::save::state::Snapshot::read(&file)
+            .unwrap()
+            .apply(&mut e)
+            .unwrap();
+        assert!(!e.away.contains_key(&ACTOR));
     }
 
     /// The loaded actor running a Travel package to where it stands.

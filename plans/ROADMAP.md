@@ -1696,11 +1696,12 @@ game each piece unlocks.
      walkers walking on instead of starting over; damage to unloaded actors
      is taken at once and kills them away. Scenes' package actions finish
      with their actors away, lines waiting for their speakers to load
-     (autotest15). Saves next, step 8).
+     (autotest15). Saves keep every execution, loaded actors' too
+     (`AEXC`, step 8). Calibration next, step 9).
    - Processing policies: detailed updates nearby and coarse advancement away
      (done, step 6), still to add: travel progress through cells and load
-     doors walked rather than jumped, and execution state, travel progress and
-     timestamps in saves (step 8).
+     doors walked rather than jumped (execution state, travel progress and
+     timestamps are saved: step 8).
      CommonLibSSE exposes High, MiddleHigh, MiddleLow and Low processing levels,
      but their exact eligibility, update cadence and subsystem behavior need
      investigation. Keep room for intermediate processing policies; matching
@@ -1991,8 +1992,8 @@ game each piece unlocks.
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
 9. **Saves** (the container, the engine's state and the Papyrus VM are done:
    see Done): scene state,
-   AI progress (procedures, animation, packages and schedules, combat and NPC
-   casting), objects' behaviour graphs (also for `PlayAnimationAndWait`
+   AI progress (procedures' loaded-only state, animation, combat and NPC
+   casting; actors' executions are saved in `AEXC`), objects' behaviour graphs (also for `PlayAnimationAndWait`
    senders), detection (searches, combat targets), live player
    conversations, the player's spells held ready, script signal waits other
    than animation events (now timed waits on load) and registrations not

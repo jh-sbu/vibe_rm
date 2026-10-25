@@ -6111,3 +6111,97 @@ fn ai_off_replaces_the_sessions_after_loading() {
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.ai_off.is_empty());
 }
+
+fn full_execution() -> crate::ai::exec::SavedExec {
+    use crate::ai::exec::{Outcome, PackageRun, SavedExec, Stage};
+    let run = |id, outcome| PackageRun {
+        id,
+        started_at: 30.5,
+        outcome,
+        scene: true,
+        activations: 2,
+    };
+    SavedExec {
+        npc: Some(SCENE_ACTOR),
+        place: Some(Place::Exterior(FormId(0x3C), (-2, 7))),
+        pos: Vec3::new(1.0, 2.0, 3.0),
+        heading: 1.5,
+        stage: Some(Stage::Seated {
+            furniture: FormId(0x9B0),
+            marker: 3,
+        }),
+        settled: true,
+        prompted: true,
+        ends_at: Some(12.5),
+        jump_at: Some(40.0),
+        on_arrival: Some(crate::ai::schedule::PlacementHeading::Turn(0.5)),
+        stepped_at: 10.0,
+        stepped_hours: 31.0,
+        eval_slot: Some(62),
+        next_eval: 2.0,
+        current: Some(1),
+        stop: (2, Some(30.75)),
+        patrol: Some((FormId(0x9B1), 4)),
+        run: Some(run(SCENE_PACKAGE, Outcome::Completed)),
+        suspended: Some(run(PACKAGE_SCENE, Outcome::Running)),
+        done_once: Some(SCENE_PACKAGE),
+        health: 20.0,
+        stamina: 40.0,
+        bleeding: Some(5.0),
+    }
+}
+
+#[test]
+fn execution_payload() {
+    let mut s = Snapshot::default();
+    s.continuity.executions.insert(ACTOR, full_execution());
+    let bare = crate::ai::exec::SavedExec {
+        npc: None,
+        place: None,
+        pos: Vec3::NAN,
+        stage: Some(crate::ai::exec::Stage::Walking),
+        on_arrival: Some(crate::ai::schedule::PlacementHeading::Set(-1.0)),
+        ..crate::ai::exec::ActorExec::default().saved()
+    };
+    s.continuity.executions.insert(SCENE_ACTOR, bare);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.executions[&ACTOR], full_execution());
+    let back = &restored.continuity.executions[&SCENE_ACTOR];
+    assert!(back.pos.is_nan() && back.place.is_none() && back.run.is_none());
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"AEXC");
+    // The least an entry takes is what `count` allows for.
+    let mut w = Writer::default();
+    super::continuity::put_exec(
+        &mut w,
+        ACTOR,
+        &crate::ai::exec::ActorExec::default().saved(),
+    );
+    assert_eq!(w.0.len(), super::continuity::EXEC_BYTES);
+
+    let refused = |change: fn(&mut crate::ai::exec::SavedExec)| {
+        let mut s = Snapshot::default();
+        let mut x = full_execution();
+        change(&mut x);
+        s.continuity.executions.insert(ACTOR, x);
+        Snapshot::read(&s.write()).is_err()
+    };
+    assert!(refused(|x| x.heading = f32::NAN));
+    assert!(refused(|x| x.pos.x = f32::INFINITY));
+    assert!(refused(|x| x.stepped_at = -1.0));
+    assert!(refused(|x| x.ends_at = Some(f64::NAN)));
+    assert!(refused(|x| x.bleeding = Some(-1.0)));
+    assert!(refused(|x| x.run.as_mut().unwrap().id = FormId::NULL));
+    assert!(refused(|x| {
+        x.stage = Some(crate::ai::exec::Stage::Seated {
+            furniture: FormId::NULL,
+            marker: 0,
+        })
+    }));
+    let mut s = Snapshot::default();
+    s.continuity
+        .executions
+        .insert(FormId::NULL, full_execution());
+    assert!(Snapshot::read(&s.write()).is_err());
+}

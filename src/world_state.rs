@@ -115,6 +115,19 @@ impl Wounds {
     }
 }
 
+/// Loaded actor `a`'s execution as it leaves `place` at real and game time
+/// `clocks`: at the stage it reached, unless it was on its way out.
+fn leaving(
+    a: &crate::ai::ActorRuntime,
+    place: Place,
+    clocks: (f64, f64),
+) -> crate::ai::exec::ActorExec {
+    let stage = a.stage().filter(|_| a.exiting.is_none());
+    a.exec
+        .clone()
+        .away(Some(place), Wounds::of(a, clocks.0), stage, clocks)
+}
+
 impl Engine {
     /// An actor died: remember it, and where (until its body settles elsewhere).
     pub(crate) fn remember_dead(&mut self, actor: FormId) {
@@ -132,20 +145,12 @@ impl Engine {
         let Some(rt) = self.cells.get(&key) else {
             return;
         };
-        let now = self.scripts.real_time;
-        let clocks = (now, self.game_hours_total());
+        let clocks = (self.scripts.real_time, self.game_hours_total());
         let mut rest = Vec::new();
         let mut away = Vec::new();
         for a in &rt.actors {
             if !a.dead {
-                // At the stage it reached, unless it was on its way out.
-                let stage = a.stage().filter(|_| a.exiting.is_none());
-                away.push((
-                    a.ref_id,
-                    a.exec
-                        .clone()
-                        .away(Some(place), Wounds::of(a, now), stage, clocks),
-                ));
+                away.push((a.ref_id, leaving(a, place, clocks)));
                 continue;
             }
             let bodies = a
@@ -175,12 +180,75 @@ impl Engine {
         self.away.extend(away);
     }
 
-    /// Hurt actors that unloaded, and how hurt (what saves keep of `away`).
+    /// Hurt actors that unloaded, and how hurt.
+    #[cfg(test)]
     pub(crate) fn away_wounds(&self) -> HashMap<FormId, Wounds> {
         self.away
             .iter()
             .filter_map(|(&r, x)| Some((r, x.wounds?)))
             .collect()
+    }
+
+    /// What saves keep of actors' executions (`AEXC`) and wounds (`WRLD`):
+    /// those away, and loaded ones' as they would be were their cells to
+    /// unload now, so that they load back where and as they were. Executions
+    /// that are only wounds aren't listed.
+    pub(crate) fn saved_executions(
+        &self,
+    ) -> (
+        HashMap<FormId, crate::ai::exec::SavedExec>,
+        HashMap<FormId, Wounds>,
+    ) {
+        let clocks = (self.scripts.real_time, self.game_hours_total());
+        let mut loaded = Vec::new();
+        for (key, rt) in &self.cells {
+            let Some(place) = self.place_of_key(*key) else {
+                continue;
+            };
+            for a in rt.actors.iter().filter(|a| !a.dead) {
+                loaded.push((a.ref_id, leaving(a, place, clocks)));
+            }
+        }
+        let all = loaded.iter().map(|(r, x)| (*r, x)).chain(
+            self.away
+                .iter()
+                .filter(|(r, _)| !self.actor_cells.contains_key(r))
+                .map(|(&r, x)| (r, x)),
+        );
+        let (mut executions, mut wounds) = (HashMap::new(), HashMap::new());
+        for (r, x) in all {
+            if let Some(w) = x.wounds {
+                wounds.insert(r, w);
+            }
+            if x.place.is_some() || x.run.is_some() {
+                executions.insert(r, x.saved());
+            }
+        }
+        (executions, wounds)
+    }
+
+    /// A save's executions, over the wounds `restore_away_wounds` put back:
+    /// every one is away until its cell loads and attaches it, and is where
+    /// it is until its packages move it on.
+    pub(crate) fn restore_executions(
+        &mut self,
+        saved: HashMap<FormId, crate::ai::exec::SavedExec>,
+    ) {
+        for (r, s) in saved {
+            if self.world_state.dead.contains_key(&r) {
+                continue;
+            }
+            let wounds = self.away.remove(&r).and_then(|x| x.wounds);
+            let x = crate::ai::exec::ActorExec::from_saved(s, wounds);
+            if let Some(place) = x.place {
+                self.whereabouts.put(r, place, x.pos);
+                match x.on_arrival {
+                    Some(h) => self.whereabouts.placement_heading.insert(r, h),
+                    None => self.whereabouts.placement_heading.remove(&r),
+                };
+            }
+            self.away.insert(r, x);
+        }
     }
 
     /// A save's hurt actors away: they are all that is away.
