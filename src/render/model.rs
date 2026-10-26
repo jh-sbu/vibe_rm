@@ -515,6 +515,8 @@ mod alpha_test_tests {
                     controller: Ref(1),
                     node: "SameName".into(),
                     controller_type: "BSNiAlphaPropertyTestRefController".into(),
+                    controller_id: String::new(),
+                    interpolator_id: String::new(),
                 }],
                 cycle: 2,
                 frequency: 2.0,
@@ -872,7 +874,7 @@ impl Sequence {
 }
 
 /// Controller sequences of a model with transform channels, and the nodes they move.
-fn sequences(nif: &Nif) -> Vec<Sequence> {
+pub(crate) fn sequences(nif: &Nif) -> Vec<Sequence> {
     let mut out = Vec::new();
     for b in &nif.blocks {
         let Block::ControllerSequence(seq) = b else {
@@ -908,7 +910,7 @@ fn sequences(nif: &Nif) -> Vec<Sequence> {
             )
             .is_some()
         });
-        if !channels.is_empty() || has_material {
+        if !channels.is_empty() || has_material || !seq.blocks.is_empty() {
             out.push(Sequence {
                 name: seq.name.clone(),
                 cycle: seq.cycle,
@@ -1053,7 +1055,22 @@ pub fn animation_start(nif: &Nif) -> f32 {
 /// own drawn apart, to be moved, scaled and shown by them.
 pub fn convert_effect(nif: &Nif) -> (CpuModel, Vec<NodeChannel>) {
     let controllers = node_controllers(nif);
-    let model = convert_controlled(nif, &Default::default(), &controllers);
+    let mut split = nif.animated_nodes();
+    for block in &nif.blocks {
+        if let Block::ControllerSequence(seq) = block {
+            for cb in &seq.blocks {
+                if cb.controller_type.contains("VisController") {
+                    split.insert(cb.node.clone());
+                }
+            }
+        }
+    }
+    for (&block, _) in &nif::attach_tags(nif) {
+        if let Some(av) = nif.blocks.get(block as usize).and_then(Block::av) {
+            split.insert(av.net.name.clone());
+        }
+    }
+    let model = convert_controlled(nif, &split, &controllers);
     (model, controllers)
 }
 
@@ -1064,6 +1081,7 @@ pub fn convert_controlled(
     controllers: &[NodeChannel],
 ) -> CpuModel {
     let mut blocks: std::collections::HashSet<_> = controllers.iter().map(|c| c.block).collect();
+    blocks.extend(nif::attach_tags(nif).keys().copied());
     // Sequence-only material animation must still create a placed-object part
     // and keep the sequence. Default/actor conversions retain static geometry.
     for (index, block) in nif.blocks.iter().enumerate() {

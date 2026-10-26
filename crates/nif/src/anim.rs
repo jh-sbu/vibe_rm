@@ -16,6 +16,8 @@ pub struct ControlledBlock {
     pub controller: Ref,
     pub node: String,
     pub controller_type: String,
+    pub controller_id: String,
+    pub interpolator_id: String,
 }
 
 /// `NiControllerSequence`: a named animation ("Open", "Close", "Idle"...).
@@ -388,13 +390,15 @@ pub(crate) fn controller_sequence(r: &mut Reader) -> Result<ControllerSequence> 
         let node = r.string_value()?;
         r.string_value()?; // property type
         let controller_type = r.string_value()?;
-        r.string_value()?; // controller id
-        r.string_value()?; // interpolator id
+        let controller_id = r.string_value()?;
+        let interpolator_id = r.string_value()?;
         blocks.push(ControlledBlock {
             interpolator,
             controller,
             node,
             controller_type,
+            controller_id,
+            interpolator_id,
         });
     }
     r.f32()?; // weight

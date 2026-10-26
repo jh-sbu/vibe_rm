@@ -485,6 +485,8 @@ impl ColliderDesc {
 
 #[derive(Debug, Clone)]
 pub struct ParticleDesc {
+    /// Manager-owned controllers rebound to each named sequence's interpolators.
+    pub sequences: HashMap<String, Box<ParticleDesc>>,
     pub material: MaterialDesc,
     pub max: usize,
     /// Atlas cells (u, width, v, height).
@@ -635,6 +637,71 @@ pub fn describe(
     world: Mat4,
     root: Mat4,
 ) -> Option<ParticleDesc> {
+    let mut desc = describe_base(nif, sys, world, root)?;
+    for block in &nif.blocks {
+        let Block::ControllerSequence(seq) = block else {
+            continue;
+        };
+        let mut bound = nif.clone();
+        // Resolve by controller identity first. Some exporters omit that link;
+        // then both the system name and modifier id must match.
+        for (index, block) in bound.blocks.iter_mut().enumerate() {
+            let Block::ParticleController(c) = block else {
+                continue;
+            };
+            if c.timing.flags & 0x20 == 0 {
+                continue;
+            }
+            c.interpolator = Ref(-1);
+            if let ControllerKind::Emitter { visibility } = &mut c.kind {
+                *visibility = Ref(-1);
+            }
+            let mut owned = false;
+            for cb in &seq.blocks {
+                if cb.controller.0 != index as i32
+                    && !(cb.controller.is_none()
+                        && cb.node == sys.av.net.name
+                        && !cb.controller_id.is_empty()
+                        && cb.controller_id == c.modifier)
+                {
+                    continue;
+                }
+                match nif.get(cb.interpolator) {
+                    Some(Block::BoolInterpolator(_))
+                        if matches!(c.kind, ControllerKind::Emitter { .. }) =>
+                    {
+                        if let ControllerKind::Emitter { visibility } = &mut c.kind {
+                            *visibility = cb.interpolator;
+                        }
+                    }
+                    _ => c.interpolator = cb.interpolator,
+                }
+                owned = true;
+            }
+            if owned {
+                c.timing = nif::anim::Timing {
+                    flags: 8 | 4,
+                    frequency: 1.0,
+                    phase: 0.0,
+                    start: seq.start,
+                    stop: seq.stop,
+                };
+            }
+        }
+        if let Some(variant) = describe_base(&bound, sys, world, root) {
+            desc.sequences
+                .insert(seq.name.to_ascii_lowercase(), Box::new(variant));
+        }
+    }
+    Some(desc)
+}
+
+fn describe_base(
+    nif: &Nif,
+    sys: &nif::psys::ParticleSystem,
+    world: Mat4,
+    root: Mat4,
+) -> Option<ParticleDesc> {
     if sys.strip {
         return None;
     }
@@ -650,7 +717,9 @@ pub fn describe(
         if ctlrs.len() > 64 {
             break;
         }
-        ctlrs.push(pc);
+        if pc.timing.flags & 0x20 == 0 && (pc.timing.active() || pc.timing.app_init()) {
+            ctlrs.push(pc);
+        }
         c = pc.next;
     }
     let float_ctlr = |name: &str, target: FloatTarget| {
@@ -680,6 +749,7 @@ pub fn describe(
     material.z_write = false;
     material.anim = None;
     let mut d = ParticleDesc {
+        sequences: HashMap::new(),
         material,
         max: data.max_particles.max(1) as usize,
         subtextures: data.subtexture_offsets.clone(),
@@ -1593,6 +1663,69 @@ mod tests {
     fn drag_fixture(object: nif::Transform, axis: Vec3, range: f32, falloff: f32) -> ParticleDesc {
         let (nif, sys) = drag_nif_fixture(object, axis, range, falloff);
         describe(&nif, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap()
+    }
+
+    #[test]
+    fn named_sequences_bind_manager_emitters_and_leave_unowned_emitters_off() {
+        let (mut n, mut sys) = drag_nif_fixture(nif::Transform::default(), Vec3::Z, 0.0, 0.0);
+        if let Block::ParticleModifier(m) = &mut n.blocks[4] {
+            m.active = true;
+        }
+        let ctl = n.blocks.len() as i32;
+        n.blocks
+            .push(Block::ParticleController(nif::psys::ParticleController {
+                next: Ref(-1),
+                timing: nif::anim::Timing {
+                    flags: 0x68,
+                    frequency: 1.0,
+                    phase: 50.0,
+                    start: 0.0,
+                    stop: 10.0,
+                },
+                interpolator: Ref(-1),
+                modifier: "emitter".into(),
+                kind: ControllerKind::Emitter {
+                    visibility: Ref(-1),
+                },
+            }));
+        sys.av.net.controller = Ref(ctl);
+        for (name, rate) in [("On", 8.0), ("Off", 0.0)] {
+            let interp = n.blocks.len() as i32;
+            n.blocks
+                .push(Block::ValueInterpolator(nif::anim::ValueInterpolator {
+                    value: Vec3::splat(rate),
+                    data: Ref(-1),
+                }));
+            n.blocks.push(Block::ControllerSequence(Box::new(
+                nif::anim::ControllerSequence {
+                    name: name.into(),
+                    blocks: vec![nif::anim::ControlledBlock {
+                        interpolator: Ref(interp),
+                        controller: Ref(ctl),
+                        node: String::new(),
+                        controller_type: "NiPSysEmitterCtlr".into(),
+                        controller_id: "emitter".into(),
+                        interpolator_id: String::new(),
+                    }],
+                    cycle: 0,
+                    frequency: 1.0,
+                    start: 0.0,
+                    stop: 2.0,
+                    text_keys: Ref(-1),
+                },
+            )));
+        }
+        let d = describe(&n, &sys, Mat4::IDENTITY, Mat4::IDENTITY).unwrap();
+        assert_eq!(d.emitters[0].birth_rate.sample(1.0), 0.0);
+        let on = &d.sequences["on"];
+        assert_eq!(on.emitters[0].birth_rate.sample(1.0), 8.0);
+        let mut state = ParticleState::new(1);
+        state.step(on, 0.5, Mat3::IDENTITY);
+        assert_eq!(state.count(), 4);
+        state.step(&d.sequences["off"], 0.5, Mat3::IDENTITY);
+        assert_eq!(state.count(), 4);
+        state.step(on, 0.5, Mat3::IDENTITY);
+        assert_eq!(state.count(), 8);
     }
 
     fn rotation_nif_fixture() -> (Nif, nif::psys::ParticleSystem) {

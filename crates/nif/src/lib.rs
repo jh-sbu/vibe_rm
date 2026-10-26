@@ -51,6 +51,7 @@ pub struct Header {
     pub strings: Vec<String>,
 }
 
+#[derive(Clone)]
 pub struct Nif {
     pub header: Header,
     pub blocks: Vec<Block>,

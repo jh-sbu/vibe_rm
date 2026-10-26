@@ -19,8 +19,8 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::engine::{Engine, PLAYER_REF};
 use crate::render::{CellKey, Instance};
+use crate::spell_fx::effect::EffectInstance;
 use crate::world::decal::DecalData;
-use crate::world::loader::ModelAnim;
 use crate::world::records;
 
 /// Runtime decals kept at once (the oldest go first).
@@ -213,76 +213,10 @@ impl Impact {
     }
 }
 
-/// An impact's effect running: its model's meshes and particle systems,
-/// the nodes with controllers of their own (parts) moved, scaled and shown
-/// by them, and its materials' controllers, all from when it started.
-struct Effect {
-    /// Where it was placed.
-    transform: Mat4,
-    /// The model's still meshes and particle systems, if any.
-    root: Option<Instance>,
-    anim: Option<Arc<ModelAnim>>,
-    /// Each part (in `anim.parts` order) and whether it shows.
-    parts: Vec<(Instance, bool)>,
-    age: f32,
-    duration: f32,
-}
-
-impl Effect {
-    /// Pose the parts at the effect's age (each after the part it lies in);
-    /// world-space particles stay where they were emitted.
-    fn pose(&mut self) {
-        let Some(anim) = &self.anim else { return };
-        let t = anim.start + self.age;
-        let mut poses: Vec<Mat4> = Vec::with_capacity(anim.parts.len());
-        for (i, part) in anim.parts.iter().enumerate() {
-            let own = anim.controllers.iter().filter(|c| c.block == part.block);
-            let mut local = part.rest;
-            let mut shown = true;
-            for c in own {
-                if let Some(m) = c.transform(t, part.rest) {
-                    local = m;
-                }
-                if let Some(v) = c.visible(t) {
-                    shown &= v;
-                }
-            }
-            let parent = match part.within {
-                Some((o, rel)) if o < i => {
-                    shown &= self.parts[o].1;
-                    poses[o] * rel
-                }
-                _ => part.parent,
-            };
-            let pose = parent * local;
-            poses.push(pose);
-            let (inst, visible) = &mut self.parts[i];
-            *visible = shown;
-            let to = self.transform * pose;
-            let delta = to.inverse() * inst.transform;
-            for (state, sys) in inst.particles.iter_mut().zip(&inst.model.particles) {
-                if sys.desc.world_space {
-                    state.carry(delta);
-                }
-            }
-            inst.transform = to;
-            inst.world_center = to.transform_point3(inst.model.bound_center);
-        }
-    }
-
-    /// Its instances and whether each shows.
-    fn instances_mut(&mut self) -> impl Iterator<Item = (&mut Instance, bool)> {
-        self.root
-            .iter_mut()
-            .map(|i| (i, true))
-            .chain(self.parts.iter_mut().map(|(i, v)| (i, *v)))
-    }
-}
-
 #[derive(Default)]
 pub struct ImpactState {
     loaded: HashMap<FormId, Option<Arc<Impact>>>,
-    effects: Vec<Effect>,
+    effects: Vec<EffectInstance>,
     /// Hazards impacts left (`NAM2`), while they last.
     pub(crate) hazards: Vec<crate::hazards::Hazard>,
     /// The cells holding the runtime decals, oldest first.
@@ -599,14 +533,8 @@ impl Engine {
             anim.as_ref().map_or(0, |a| a.controllers.len()),
             impact.duration
         );
-        let mut effect = Effect {
-            transform,
-            root,
-            anim,
-            parts,
-            age: 0.0,
-            duration: impact.duration.max(0.05),
-        };
+        let mut effect =
+            EffectInstance::from_parts(transform, root, anim, parts, impact.duration.max(0.05));
         effect.pose();
         self.impacts.effects.push(effect);
     }
