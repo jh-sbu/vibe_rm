@@ -192,6 +192,7 @@ pub struct Projectile {
     pub vel: Vec3,
     pub damage: f32,
     pub model: Option<Arc<GpuModel>>,
+    pub fx: Option<crate::spell_fx::effect::EffectInstance>,
     pub age: f32,
     /// Stuck in the world (pointing the way it flew), for this many seconds more.
     pub stuck: Option<f32>,
@@ -428,6 +429,7 @@ impl Engine {
             vel,
             damage,
             model,
+            fx: None,
             age: 0.0,
             stuck: None,
             dir: vel.normalize_or_zero(),
@@ -449,7 +451,59 @@ impl Engine {
         dir: Vec3,
         dual: bool,
     ) {
-        let model = shot.model.clone().and_then(|m| {
+        let mut visual = shot.clone();
+        let mut visual_scale = 1.0;
+        if dual
+            && let Some(mgef) = self
+                .magic_item(spell)
+                .and_then(|m| m.effects.first().and_then(|e| self.magic_effect(e.effect)))
+        {
+            if let Some(data) =
+                crate::spell_fx::records::DualCastData::load(&self.lo, mgef.dual_cast.0)
+            {
+                if let Some(override_shot) = spell_projectile(&self.lo, data.projectile) {
+                    visual = override_shot;
+                }
+                if data.inherit_scale & 2 != 0 {
+                    visual_scale = mgef.dual_cast.1.max(0.01);
+                }
+            }
+        }
+        let visual_info = self.lo.get(visual.projectile).and_then(|r| {
+            r.get(b"DATA").map(|d| {
+                (
+                    crate::spell_fx::records::optional_form(&r, d, 16),
+                    f32_at(d, 48),
+                )
+            })
+        });
+        let mut fx = visual.model.as_deref().and_then(|m| {
+            self.load_spell_model(
+                m,
+                Mat4::from_rotation_translation(
+                    Quat::from_rotation_arc(Vec3::Y, dir.normalize_or(Vec3::Y)),
+                    from,
+                ),
+            )
+        });
+        if let Some(effect) = &mut fx {
+            effect.scale = visual_scale;
+            if let Some((light, fade)) = visual_info {
+                effect.light = light;
+                if fade > 0.0 {
+                    effect.fade_duration = fade;
+                } else if let Some(anim) = &effect.anim {
+                    effect.fade_duration = anim
+                        .sequences
+                        .iter()
+                        .filter(|s| s.name.eq_ignore_ascii_case("mEnd"))
+                        .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
+                        .fold(0.0, f32::max)
+                        .max(0.05);
+                }
+            }
+        }
+        let model = shot.model.clone().filter(|_| fx.is_none()).and_then(|m| {
             self.models
                 .load_all(&mut self.renderer, &self.vfs, std::slice::from_ref(&m));
             self.models.get(&m)
@@ -468,6 +522,7 @@ impl Engine {
             vel,
             damage: 0.0,
             model,
+            fx,
             age: 0.0,
             stuck: None,
             dir: vel.normalize_or_zero(),
@@ -709,6 +764,19 @@ impl Engine {
             log::debug!(
                 "{shooter}'s arrow sticks at {at:?} after {age:.2}s in {owner:?} ({what:?}), flying {dir:?}"
             );
+        }
+        for p in &mut self.projectiles {
+            if p.stuck.is_some()
+                && let Some(mut fx) = p.fx.take()
+            {
+                fx.transform = Mat4::from_scale_rotation_translation(
+                    Vec3::splat(fx.scale),
+                    Quat::from_rotation_arc(Vec3::Y, p.dir.normalize_or(Vec3::Y)),
+                    p.pos,
+                );
+                fx.stop();
+                self.spell_fx.tails.push(fx);
+            }
         }
         // Keep the newest stuck arrows, a while.
         self.projectiles.retain(|p| p.stuck.is_none_or(|t| t > 0.0));

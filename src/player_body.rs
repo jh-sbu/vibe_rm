@@ -20,7 +20,7 @@ const PLAYER_NPC: FormId = FormId(0x7);
 const TURN_RATE: f32 = 10.0;
 
 pub struct PlayerBody {
-    skeleton: Arc<Skeleton>,
+    pub(crate) skeleton: Arc<Skeleton>,
     graph: Option<GraphAnim>,
     scale: f32,
     /// Facing, clockwise from +Y as the camera's yaw.
@@ -703,6 +703,7 @@ impl Engine {
 
     /// Send an event to the player's body's graph; whether it took it.
     pub(crate) fn player_graph_event(&mut self, ev: &str) -> bool {
+        self.spell_fx.events.push((PLAYER_REF, ev.to_owned()));
         self.player_body.as_mut().is_some_and(|b| {
             let Some(g) = b.graph.as_mut() else {
                 return false;

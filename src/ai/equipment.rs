@@ -380,10 +380,11 @@ impl Engine {
                 })
             })
             .collect();
-        if held.is_empty() && !had {
+        if held.is_empty() && self.spell_fx.lights.is_empty() && !had {
             return;
         }
         self.scene.lights.extend(held);
+        self.scene.lights.extend_from_slice(&self.spell_fx.lights);
         self.scene.assign_moving_lights(first);
     }
 }

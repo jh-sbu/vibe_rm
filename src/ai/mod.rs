@@ -407,6 +407,7 @@ pub struct ActorRuntime {
     pub(crate) sounds: Vec<String>,
     /// Every event the graph raised this frame, for scripts (`OnAnimationEvent`).
     pub(crate) graph_events: Vec<String>,
+    pub(crate) spell_fx_events: Vec<String>,
     /// Furniture it began getting into this frame: it activates it.
     pub(crate) activated: Option<FormId>,
     /// The footstep set of what it wears, and its footstep events (lowercase) the
@@ -555,6 +556,7 @@ impl ActorRuntime {
             drawn: false,
             sounds: Vec::new(),
             graph_events: Vec::new(),
+            spell_fx_events: Vec::new(),
             activated: None,
             footstep_set: None,
             footsteps: Vec::new(),
@@ -1038,6 +1040,9 @@ impl ActorRuntime {
 
     /// Send the graph an event now; true when it took it.
     fn graph_event(&mut self, event: &str, clips: &mut Clips) -> bool {
+        if event.contains("Spell") || event.contains("Equipped_Event") {
+            self.spell_fx_events.push(event.to_owned());
+        }
         match &mut self.graph {
             Some(g) => g.handle_event(event, clips.vfs, clips.anims, &self.skeleton),
             None => false,

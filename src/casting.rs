@@ -1354,6 +1354,7 @@ impl Engine {
                 });
                 match shot {
                     Some((proj, shot)) if projectile_type(&self.lo, proj) & PROJ_CONE != 0 => {
+                        self.request_spell_stream(caster, proj, eye, dir, None);
                         let spread = cone_spread(&self.lo, proj);
                         for (actor, at) in self.actors_in_cone(caster, eye, dir, shot.range, spread)
                         {
@@ -1361,6 +1362,11 @@ impl Engine {
                         }
                     }
                     Some((proj, shot)) if reaches_at_once(&self.lo, proj) => {
+                        let end = (projectile_type(&self.lo, proj) & PROJ_BEAM != 0).then(|| {
+                            self.spell_ray(eye, dir, shot.range, caster)
+                                .map_or(eye + dir * shot.range, |(t, _)| eye + dir * t)
+                        });
+                        self.request_spell_stream(caster, proj, eye, dir, end);
                         if let Some((t, owner)) = self.spell_ray(eye, dir, shot.range, caster) {
                             self.spell_lands(caster, spell, owner, eye + dir * t, dir, dual);
                         }

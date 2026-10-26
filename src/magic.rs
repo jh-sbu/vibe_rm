@@ -1064,6 +1064,7 @@ impl Engine {
             return;
         };
         self.magic.effects[i].active = true;
+        self.spell_fx.hits.push(x.clone());
         let sign = if mgef.has(flags::DETRIMENTAL) {
             -1.0
         } else {

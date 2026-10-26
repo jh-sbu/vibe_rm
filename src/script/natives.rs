@@ -44,6 +44,27 @@ pub fn call(
     let me = this.and_then(|t| t.as_form()).map(FormId);
     let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
     match (class, func) {
+        ("effectshader", "play") | ("visualeffect", "play") => {
+            if let (Some(form), Some(target)) = (me, form_arg(args, 0)) {
+                let duration = args.get(1).map_or(-1.0, Value::as_float);
+                if class == "effectshader" {
+                    e.play_shader_fx(target, form, duration);
+                } else {
+                    e.play_visual_fx(target, form, duration, form_arg(args, 2));
+                }
+            }
+            none()
+        }
+        ("effectshader", "stop") | ("visualeffect", "stop") => {
+            if let (Some(form), Some(target)) = (me, form_arg(args, 0)) {
+                if class == "effectshader" {
+                    e.stop_shader_fx(target, form);
+                } else {
+                    e.stop_visual_fx(target, form);
+                }
+            }
+            none()
+        }
         // ------------------------------------------------------------ Debug
         ("debug", "notification") => {
             e.scripts.notify(arg(0).to_string());

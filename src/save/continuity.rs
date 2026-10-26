@@ -1876,6 +1876,7 @@ impl Continuity {
         e.location_keyword_data = self.location_keyword_data;
         e.cleared_locations = self.cleared_locations;
         e.harvests.harvested = self.harvested;
+        e.spell_fx = Default::default();
         e.restore_active_effects(self.active_effects.0, self.active_effects.1);
         e.restore_tapers(self.tapers);
         // Before the save's cells load: graphs built afresh replay these.
