@@ -1108,6 +1108,39 @@ pub(crate) mod tests {
         assert!(!e.away.contains_key(&ACTOR));
     }
 
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn loading_a_save_places_actors_by_it_not_by_the_old_game() {
+        use crate::save::state::Snapshot;
+        let (_f, mut e) = fixture();
+        // The save has the actor untouched, warned off its home by nothing
+        // else than the save itself.
+        e.crime.warned_homes.insert(ACTOR, CELL);
+        let file = Snapshot::capture(&e).write();
+        // The old game had it elsewhere, running another package, and its
+        // home doors following that one.
+        let elsewhere = Place::Interior(FormId(0x830));
+        e.whereabouts.built = true;
+        e.whereabouts.put(ACTOR, elsewhere, Vec3::splat(500.0));
+        e.whereabouts.package.insert(ACTOR, Some(PACKAGE));
+        e.whereabouts.lock_package.insert(ACTOR, Some(PACKAGE2));
+        Snapshot::read(&file).unwrap().apply(&mut e).unwrap();
+        // Where its records have it (no packages: its editor place).
+        let (place, pos) = e.whereabouts.of[&ACTOR];
+        assert_eq!(place, Place::Interior(CELL));
+        assert_ne!(pos, Vec3::splat(500.0));
+        assert!(
+            !e.whereabouts
+                .by_place
+                .get(&elsewhere)
+                .is_some_and(|v| v.contains(&ACTOR))
+        );
+        assert_eq!(e.running_package(ACTOR), None);
+        // Its doors aren't touched: the save's warning stands.
+        assert_eq!(e.whereabouts.lock_package[&ACTOR], None);
+        assert_eq!(e.crime.warned_homes.get(&ACTOR), Some(&CELL));
+    }
+
     /// The loaded actor running a Travel package to where it stands.
     fn travelling(e: &mut Engine) {
         loaded_actor(e);

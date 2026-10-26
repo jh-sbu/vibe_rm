@@ -90,7 +90,11 @@ hand with the console, fights, searches and greetings (as on unloading), and
 package events not yet delivered. Loading replaces every execution before the
 save's cells attach their actors; runs carry on without package events, as
 autotest14 saw of Skyrim SE. Saves without `AEXC` keep only wounds, and their
-actors are placed by their schedules. This is the engine's own layout; how
+actors are placed by their schedules. Either way, where every unloaded actor
+is gets worked out again from the save as it loads, before its cells load:
+its executions, its schedules at its clock. Nothing from the game that was
+running before is kept. Home doors keep the saved locks: the packages that
+pass finds count as the ones the doors already follow. This is the engine's own layout; how
 `.ess` saves store AI processes is not established.
 
 Greater Powers' last-use game days are stored by spell form in optional `PWCD`.

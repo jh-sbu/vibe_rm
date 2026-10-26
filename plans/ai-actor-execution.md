@@ -310,8 +310,11 @@ are in `known_ambiguities/actor-execution.md` ("Away", "Scenes").
 away ones, and loaded ones taken as their cells would unload
 (`Engine::saved_executions`, sharing `remember_actors`' rule), so `WRLD`'s
 wounds now list loaded actors too. `continuity.apply` puts them back over
-`WRLD`'s wounds (`Engine::restore_executions`), before the spot's cells load,
-with `whereabouts` pointing at them. Package lists and goals aren't saved:
+`WRLD`'s wounds (`Engine::restore_executions`), and
+`Engine::rebuild_whereabouts` then works out where everyone is from the save
+alone (its executions, schedules and clock; the old game's table was kept
+until the next refresh before), taking the packages it finds as the ones
+home doors last followed, before the spot's cells load. Package lists and goals aren't saved:
 the alias generation never matches after a load, so away ones take their
 packages again; one attaching takes its goal again at once
 (`take_back`), and a reading that gives an actor without a goal one no longer

@@ -229,7 +229,7 @@ impl Engine {
 
     /// A save's executions, over the wounds `restore_away_wounds` put back:
     /// every one is away until its cell loads and attaches it, and is where
-    /// it is until its packages move it on.
+    /// it is until its packages move it on (`rebuild_whereabouts` reads them).
     pub(crate) fn restore_executions(
         &mut self,
         saved: HashMap<FormId, crate::ai::exec::SavedExec>,
@@ -240,13 +240,6 @@ impl Engine {
             }
             let wounds = self.away.remove(&r).and_then(|x| x.wounds);
             let x = crate::ai::exec::ActorExec::from_saved(s, wounds);
-            if let Some(place) = x.place {
-                self.whereabouts.put(r, place, x.pos);
-                match x.on_arrival {
-                    Some(h) => self.whereabouts.placement_heading.insert(r, h),
-                    None => self.whereabouts.placement_heading.remove(&r),
-                };
-            }
             self.away.insert(r, x);
         }
     }

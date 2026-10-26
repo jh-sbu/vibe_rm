@@ -360,12 +360,25 @@ impl Engine {
     /// Recompute where every actor should be, all at once.
     pub fn refresh_whereabouts(&mut self) {
         self.whereabouts.cursor = 0;
-        while !self.refresh_whereabouts_step(usize::MAX) {}
+        while !self.refresh_whereabouts_step(usize::MAX, true) {}
+    }
+
+    /// A save loaded: forget where the old game had everyone and work it out
+    /// afresh from the save's executions, schedules and clock, before its
+    /// cells load. Home doors are as the save has them, so the packages
+    /// found are taken as the ones they last followed, changing none.
+    pub(crate) fn rebuild_whereabouts(&mut self) {
+        let w = std::mem::take(&mut self.whereabouts);
+        self.whereabouts.packages = w.packages;
+        self.whereabouts.sources = w.sources;
+        while !self.refresh_whereabouts_step(usize::MAX, false) {}
+        self.whereabouts.lock_package = self.whereabouts.package.clone();
     }
 
     /// Recompute up to `budget` actors; returns true when a full pass completed
-    /// and the new table took effect.
-    fn refresh_whereabouts_step(&mut self, budget: usize) -> bool {
+    /// and the new table took effect, unloaded actors' home doors following
+    /// their packages' changes when `doors`.
+    fn refresh_whereabouts_step(&mut self, budget: usize, doors: bool) -> bool {
         if !self.whereabouts.built {
             // Every actor reference, flagged persistent or not: the game
             // moves both alike while their cell is unloaded (autotest8).
@@ -489,6 +502,10 @@ impl Engine {
         self.whereabouts.cursor = 0;
         self.whereabouts.package = pending_packages;
         self.whereabouts.placement_heading = pending_headings;
+        self.whereabouts.next_refresh = REFRESH_INTERVAL;
+        if !doors {
+            return true;
+        }
         // Loaded actors' doors follow their AI's own picks (`evaluate_packages`).
         let changed: Vec<_> = self
             .whereabouts
@@ -505,7 +522,6 @@ impl Engine {
             })
             .collect();
         self.package_door_locks(changed);
-        self.whereabouts.next_refresh = REFRESH_INTERVAL;
         true
     }
 
@@ -617,7 +633,7 @@ impl Engine {
         if self.whereabouts.next_refresh > 0.0 || !self.ai_enabled {
             return;
         }
-        if !self.refresh_whereabouts_step(REFRESH_BUDGET) {
+        if !self.refresh_whereabouts_step(REFRESH_BUDGET, true) {
             return;
         }
         let player = self

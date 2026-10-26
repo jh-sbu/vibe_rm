@@ -2273,6 +2273,9 @@ impl Snapshot {
             self.scene_restarts,
             self.scene_force_greeted,
         );
+        // Where everyone is, by the save rather than the old game, before
+        // its cells load.
+        e.rebuild_whereabouts();
         match self.spot {
             Some(Spot {
                 location: Location::Interior(cell),
